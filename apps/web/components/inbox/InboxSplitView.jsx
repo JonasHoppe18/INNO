@@ -61,6 +61,7 @@ export function InboxSplitView({ messages = [], threads = [] }) {
   const [composerMode, setComposerMode] = useState("reply");
   const [draftValue, setDraftValue] = useState("");
   const [insightsOpen, setInsightsOpen] = useState(false);
+  const [draftLogId, setDraftLogId] = useState(null);
   const supabase = useClerkSupabase();
 
   const derivedThreads = useMemo(() => {
@@ -167,6 +168,33 @@ export function InboxSplitView({ messages = [], threads = [] }) {
     () => derivedThreads.find((thread) => thread.id === selectedThreadId) || null,
     [derivedThreads, selectedThreadId]
   );
+
+  useEffect(() => {
+    let active = true;
+    const fetchDraftLogId = async () => {
+      if (!supabase || !selectedThread?.provider_thread_id) {
+        if (active) setDraftLogId(null);
+        return;
+      }
+      const { data, error } = await supabase
+        .from("drafts")
+        .select("id")
+        .eq("thread_id", selectedThread.provider_thread_id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!active) return;
+      if (error) {
+        setDraftLogId(null);
+        return;
+      }
+      setDraftLogId(typeof data?.id === "number" ? data.id : null);
+    };
+    fetchDraftLogId();
+    return () => {
+      active = false;
+    };
+  }, [selectedThread?.provider_thread_id, supabase]);
 
   const threadMessages = useMemo(() => {
     if (!selectedThreadId) return [];
@@ -318,6 +346,7 @@ export function InboxSplitView({ messages = [], threads = [] }) {
         open={insightsOpen}
         onOpenChange={setInsightsOpen}
         actions={actions}
+        draftId={draftLogId}
         customerLookup={customerLookup}
         customerLookupLoading={customerLookupLoading}
         customerLookupError={customerLookupError}
