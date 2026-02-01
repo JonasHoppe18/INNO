@@ -1,18 +1,66 @@
+import { useEffect, useMemo, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { ActionsTimeline } from "@/components/inbox/ActionsTimeline";
 import { CustomerTab } from "@/components/inbox/CustomerTab";
 import { X } from "lucide-react";
+import { useClerkSupabase } from "@/lib/useClerkSupabase";
 
 export function SonaInsightsModal({
   open,
   onOpenChange,
   actions,
+  draftId,
   customerLookup,
   customerLookupLoading,
   customerLookupError,
   onCustomerRefresh,
 }) {
+  const supabase = useClerkSupabase();
+  const [logs, setLogs] = useState([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const fetchLogs = async () => {
+      if (!supabase || !open || !draftId) {
+        setLogs([]);
+        setLogsLoading(false);
+        return;
+      }
+      setLogsLoading(true);
+      const { data, error } = await supabase
+        .from("agent_logs")
+        .select("id, step_name, step_detail, status, created_at")
+        .eq("draft_id", draftId)
+        .order("created_at", { ascending: true });
+      if (!active) return;
+      if (error) {
+        setLogs([]);
+      } else {
+        setLogs(Array.isArray(data) ? data : []);
+      }
+      setLogsLoading(false);
+    };
+    fetchLogs();
+    return () => {
+      active = false;
+    };
+  }, [draftId, open, supabase]);
+
+  const timelineItems = useMemo(() => {
+    return logs.map((log) => ({
+      id: String(log.id),
+      title: log.step_name,
+      statusLabel: log.step_detail,
+      timestamp: new Date(log.created_at).toLocaleTimeString("da-DK", {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+      status: log.status,
+    }));
+  }, [logs]);
+
   return (
     <aside
       className={`flex h-full flex-none flex-col border-l border-gray-200 bg-background transition-[width] duration-200 ease-linear ${
@@ -40,7 +88,13 @@ export function SonaInsightsModal({
           </TabsList>
           <TabsContent value="actions" className="flex-1 overflow-y-auto">
             <div className="rounded-2xl border border-blue-100 bg-gradient-to-b from-blue-50/50 to-white p-4">
-              <ActionsTimeline items={actions} />
+              {logsLoading ? (
+                <div className="text-sm text-slate-500">Loading investigation data…</div>
+              ) : timelineItems.length ? (
+                <ActionsTimeline items={timelineItems} />
+              ) : (
+                <div className="text-sm text-slate-500">No investigation data available.</div>
+              )}
             </div>
           </TabsContent>
           <TabsContent value="customer" className="flex-1 overflow-y-auto">

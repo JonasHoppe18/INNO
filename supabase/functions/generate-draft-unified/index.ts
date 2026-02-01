@@ -58,6 +58,7 @@ type AgentContext = {
   policies: Awaited<ReturnType<typeof fetchPolicies>>;
   orderSummary: string;
   matchedSubjectNumber: string | null;
+  orders: any[];
 };
 
 type OpenAIResult = {
@@ -133,7 +134,11 @@ async function fetchProductContext(
 }
 
 // Saml persona, automation flags, policies og ordre-kontekst for shoppen.
-async function getAgentContext(shopId: string, email?: string, subject?: string): Promise<AgentContext> {
+async function getAgentContext(
+  shopId: string,
+  email?: string,
+  subject?: string,
+): Promise<AgentContext> {
   const ownerUserId = await resolveShopOwnerId(shopId);
   const persona = await fetchPersona(supabase, ownerUserId);
   const automation = await fetchAutomation(supabase, ownerUserId);
@@ -154,6 +159,7 @@ async function getAgentContext(shopId: string, email?: string, subject?: string)
     policies,
     orderSummary,
     matchedSubjectNumber,
+    orders,
   };
 }
 
@@ -394,7 +400,33 @@ Deno.serve(async (req) => {
       });
     }
 
+    const reasoningLogs: Array<{
+      step_name: string;
+      step_detail: string;
+      status: string;
+    }> = [];
     const context = await getAgentContext(shopId, emailData.fromEmail, emailData.subject);
+    if (context?.orders?.length) {
+      const order = context.orders[0];
+      const orderLabel =
+        order?.name ?? order?.order_number ?? order?.id ?? context.matchedSubjectNumber ?? "";
+      reasoningLogs.push({
+        step_name: "Shopify Lookup",
+        step_detail: `Found Order ${orderLabel}`.trim(),
+        status: "success",
+      });
+    } else {
+      reasoningLogs.push({
+        step_name: "Shopify Lookup",
+        step_detail: "No order found",
+        status: "warning",
+      });
+    }
+    reasoningLogs.push({
+      step_name: "Context",
+      step_detail: "Loaded Store Policies",
+      status: "info",
+    });
     // Gatekeeper: spring over hvis mailen ikke skal behandles.
     const classification = await classifyEmail({
       from: emailData.from ?? "",
@@ -444,6 +476,13 @@ Deno.serve(async (req) => {
       ownerUserId,
       emailData.body || emailData.subject || "",
     );
+    if (productContext?.trim()) {
+      reasoningLogs.push({
+        step_name: "Product Search",
+        step_detail: "Found matching products",
+        status: "success",
+      });
+    }
 
     // Byg shared prompt med policies, automation-regler og ordre-kontekst.
     const promptBase = buildMailPrompt({
@@ -593,19 +632,40 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
     }
 
     // Log draft i Supabase til tracking.
+    let loggedDraftId: number | null = null;
     if (supabase && shopId) {
-      const { error } = await supabase.from("drafts").insert({
-        shop_id: shopId,
-        customer_email: customerEmail,
-        subject,
-        platform: provider,
-        status: "pending",
-        draft_id: draftId,
-        thread_id: threadId,
-        created_at: new Date().toISOString(),
-      });
+      const { data, error } = await supabase
+        .from("drafts")
+        .insert({
+          shop_id: shopId,
+          customer_email: customerEmail,
+          subject,
+          platform: provider,
+          status: "pending",
+          draft_id: draftId,
+          thread_id: threadId,
+          created_at: new Date().toISOString(),
+        })
+        .select("id")
+        .maybeSingle();
+      loggedDraftId = typeof data?.id === "number" ? data.id : null;
       if (error) {
         console.warn("generate-draft-unified: failed to log draft", error.message);
+      }
+    }
+
+    if (supabase && loggedDraftId && reasoningLogs.length) {
+      const now = new Date().toISOString();
+      const rows = reasoningLogs.map((log) => ({
+        draft_id: loggedDraftId,
+        step_name: log.step_name,
+        step_detail: log.step_detail,
+        status: log.status,
+        created_at: now,
+      }));
+      const { error } = await supabase.from("agent_logs").insert(rows);
+      if (error) {
+        console.warn("generate-draft-unified: failed to log reasoning", error.message);
       }
     }
 
