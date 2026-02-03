@@ -154,7 +154,9 @@ export function useThreads(options = {}) {
       const userId = await ensureUserId();
       const { data: rows, error: queryError } = await supabase
         .from("mail_threads")
-        .select("id, user_id, mailbox_id, provider, provider_thread_id, subject, snippet, last_message_at, unread_count, created_at, updated_at")
+        .select(
+          "id, user_id, mailbox_id, provider, provider_thread_id, subject, snippet, last_message_at, unread_count, is_read, status, assignee_id, priority, tags, created_at, updated_at"
+        )
         .eq("user_id", userId)
         .order("last_message_at", { ascending: false, nullsLast: true });
       if (queryError) throw queryError;

@@ -97,7 +97,7 @@ async function loadThreads(serviceClient, userId, mailboxIds) {
   const { data, error } = await serviceClient
     .from("mail_threads")
     .select(
-      "id, user_id, mailbox_id, provider, provider_thread_id, subject, snippet, last_message_at, unread_count, created_at, updated_at"
+      "id, user_id, mailbox_id, provider, provider_thread_id, subject, snippet, last_message_at, unread_count, is_read, status, assignee_id, priority, tags, created_at, updated_at"
     )
     .eq("user_id", userId)
     .in("mailbox_id", mailboxIds)
