@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import { SidebarInset } from "@/components/ui/sidebar";
 import { SiteHeader } from "@/components/site-header";
+import { SiteHeaderActionsProvider } from "@/components/site-header-actions";
 import { cn } from "@/lib/utils";
 
 export function DashboardShell({ children }) {
@@ -11,22 +12,24 @@ export function DashboardShell({ children }) {
 
   return (
     <SidebarInset className={cn(isInbox ? "h-svh overflow-hidden" : "min-h-svh")}>
-      <SiteHeader />
-      <div
-        className={cn(
-          "flex min-h-0 flex-1 flex-col",
-          isInbox ? "overflow-hidden" : "overflow-auto"
-        )}
-      >
+      <SiteHeaderActionsProvider>
+        <SiteHeader />
         <div
           className={cn(
-            "flex min-h-0 flex-1 flex-col gap-2",
-            isInbox ? "overflow-hidden" : "overflow-visible"
+            "flex min-h-0 flex-1 flex-col",
+            isInbox ? "overflow-hidden" : "overflow-auto"
           )}
         >
-          {children}
+          <div
+            className={cn(
+              "flex min-h-0 flex-1 flex-col gap-2",
+              isInbox ? "overflow-hidden" : "overflow-visible"
+            )}
+          >
+            {children}
+          </div>
         </div>
-      </div>
+      </SiteHeaderActionsProvider>
     </SidebarInset>
   );
 }

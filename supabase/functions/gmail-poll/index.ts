@@ -1,6 +1,7 @@
 // supabase/functions/gmail-poll/index.ts
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { shouldSkipInboxMessage } from "../_shared/inbox-filter.ts";
+import { categorizeEmail, EmailCategory } from "../_shared/email-category.ts";
 
 const GMAIL_BASE = "https://gmail.googleapis.com/gmail/v1/users/me";
 const PROJECT_URL = Deno.env.get("PROJECT_URL") ?? Deno.env.get("SUPABASE_URL");
@@ -80,6 +81,7 @@ async function upsertThread({
   snippet,
   lastMessageAt,
   isRead,
+  category,
 }: {
   mailboxId: string;
   userId: string;
@@ -88,11 +90,12 @@ async function upsertThread({
   snippet: string;
   lastMessageAt: string | null;
   isRead: boolean;
+  category: EmailCategory;
 }) {
   if (!supabase || !providerThreadId) return null;
   const { data } = await supabase
     .from("mail_threads")
-    .select("id, unread_count")
+    .select("id, unread_count, tags")
     .eq("mailbox_id", mailboxId)
     .eq("provider_thread_id", providerThreadId)
     .maybeSingle();
@@ -104,6 +107,11 @@ async function upsertThread({
       last_message_at: lastMessageAt,
       updated_at: new Date().toISOString(),
     };
+    const existingTags = Array.isArray(data?.tags) ? data.tags : [];
+    const hasTags = existingTags.length > 0;
+    if (!hasTags || (existingTags[0] === "General" && category !== "General")) {
+      updates.tags = [category];
+    }
     await supabase.from("mail_threads").update(updates).eq("id", data.id);
     return data.id as string;
   }
@@ -120,6 +128,7 @@ async function upsertThread({
       snippet,
       last_message_at: lastMessageAt,
       unread_count: unreadCount,
+      tags: [category],
     })
     .select("id")
     .maybeSingle();
@@ -590,6 +599,11 @@ Deno.serve(async (req) => {
           ) {
             continue;
           }
+          const category = await categorizeEmail({
+            subject,
+            body: plain,
+            from: from || "",
+          });
           const threadRecordId = await upsertThread({
             mailboxId: account.id,
             userId,
@@ -598,6 +612,7 @@ Deno.serve(async (req) => {
             snippet,
             lastMessageAt: receivedAt,
             isRead,
+            category,
           });
           if (messageId) {
             await upsertMessage({

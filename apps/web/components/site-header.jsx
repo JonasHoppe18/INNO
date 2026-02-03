@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import { useSiteHeaderActions } from "@/components/site-header-actions";
 
 const TITLE_MAP = {
   "/dashboard": "Dashboard",
@@ -17,6 +18,7 @@ const TITLE_MAP = {
 export function SiteHeader() {
   const pathname = usePathname();
   const title = TITLE_MAP[pathname] || "Sona";
+  const { actions } = useSiteHeaderActions();
 
   return (
     <header
@@ -25,6 +27,7 @@ export function SiteHeader() {
         <SidebarTrigger className="-ml-1" />
         <Separator orientation="vertical" className="mx-2 data-[orientation=vertical]:h-4" />
         <h1 className="text-base font-medium">{title}</h1>
+        {actions ? <div className="ml-auto flex items-center gap-2">{actions}</div> : null}
       </div>
     </header>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { TicketList } from "@/components/inbox/TicketList";
 import { TicketDetail } from "@/components/inbox/TicketDetail";
 import { SonaInsightsModal } from "@/components/inbox/SonaInsightsModal";
@@ -9,12 +9,118 @@ import { getMessageTimestamp, getSenderLabel, isOutboundMessage } from "@/compon
 import { useClerkSupabase } from "@/lib/useClerkSupabase";
 import { toast } from "sonner";
 import { useCustomerLookup } from "@/hooks/useCustomerLookup";
+import { useSiteHeaderActions } from "@/components/site-header-actions";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { CheckCircle, CheckCircle2, Plus, User } from "lucide-react";
 
 const DEFAULT_TICKET_STATE = {
-  status: "Open",
+  status: "New",
   assignee: null,
   priority: null,
 };
+
+const STATUS_OPTIONS = ["New", "Open", "Waiting", "Solved"];
+const ASSIGNEE_OPTIONS = ["Unassigned", "Emma", "Jonas", "Support Bot"];
+
+const normalizeStatus = (value) => {
+  if (!value) return null;
+  const normalized = String(value).trim().toLowerCase();
+  if (normalized === "solved" || normalized === "resolved") return "Solved";
+  if (normalized === "waiting") return "Waiting";
+  if (normalized === "open") return "Open";
+  if (normalized === "new") return "New";
+  return value;
+};
+
+function InboxHeaderActions({
+  ticketState,
+  tagLabel,
+  onTicketStateChange,
+  onOpenInsights,
+}) {
+  if (!ticketState) return null;
+  const statusLabel =
+    ticketState.status === "Solved" ? "Resolved" : ticketState.status;
+  const statusStylesByStatus = {
+    New: "bg-green-50 text-green-700 border-green-200",
+    Open: "bg-blue-50 text-blue-700 border-blue-200",
+    Waiting: "bg-orange-50 text-orange-700 border-orange-200",
+    Solved: "bg-red-50 text-red-700 border-red-200",
+  };
+  const statusStyles =
+    statusStylesByStatus[ticketState.status] ||
+    statusStylesByStatus.Open;
+  return (
+    <div className="flex items-center gap-2">
+      <Select
+        value={ticketState.status}
+        onValueChange={(value) => onTicketStateChange({ status: value })}
+      >
+        <SelectTrigger
+          className={`h-auto w-auto cursor-pointer gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium ${statusStyles}`}
+        >
+          {ticketState.status === "Solved" ? (
+            <CheckCircle2 className="h-3.5 w-3.5" />
+          ) : (
+            <CheckCircle className="h-3.5 w-3.5" />
+          )}
+          <SelectValue placeholder={statusLabel} />
+        </SelectTrigger>
+        <SelectContent>
+          {STATUS_OPTIONS.map((option) => (
+            <SelectItem key={option} value={option}>
+              {option}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Select
+        value={ticketState.assignee || "Unassigned"}
+        onValueChange={(value) =>
+          onTicketStateChange({ assignee: value === "Unassigned" ? null : value })
+        }
+      >
+        <SelectTrigger className="h-auto w-auto cursor-pointer gap-1.5 rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100">
+          <User className="h-3.5 w-3.5" />
+          <SelectValue placeholder="Assignee" />
+        </SelectTrigger>
+        <SelectContent>
+          {ASSIGNEE_OPTIONS.map((option) => (
+            <SelectItem key={option} value={option}>
+              {option}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <button
+        type="button"
+        className="cursor-pointer rounded-md border border-orange-200 bg-orange-50 px-3 py-1.5 text-xs font-medium text-orange-700"
+      >
+        {tagLabel || "General"}
+      </button>
+      <button
+        type="button"
+        className="flex cursor-pointer items-center gap-1.5 rounded-md border border-dashed border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-500 hover:border-gray-400"
+      >
+        <Plus className="h-3.5 w-3.5" />
+        Add tag
+      </button>
+      <button
+        type="button"
+        onClick={onOpenInsights}
+        className="cursor-pointer rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:border-gray-300"
+      >
+        View actions
+      </button>
+    </div>
+  );
+}
 
 const extractOrderNumber = (value = "") => {
   if (!value) return null;
@@ -53,6 +159,7 @@ const MOCK_ACTIONS = [
 export function InboxSplitView({ messages = [], threads = [] }) {
   const [selectedThreadId, setSelectedThreadId] = useState(null);
   const [ticketStateByThread, setTicketStateByThread] = useState({});
+  const [readOverrides, setReadOverrides] = useState({});
   const [filters, setFilters] = useState({
     query: "",
     status: "All",
@@ -62,7 +169,9 @@ export function InboxSplitView({ messages = [], threads = [] }) {
   const [draftValue, setDraftValue] = useState("");
   const [insightsOpen, setInsightsOpen] = useState(false);
   const [draftLogId, setDraftLogId] = useState(null);
+  const headerActionsKeyRef = useRef("");
   const supabase = useClerkSupabase();
+  const { setActions: setHeaderActions } = useSiteHeaderActions();
 
   const derivedThreads = useMemo(() => {
     if (threads?.length) return threads;
@@ -92,7 +201,9 @@ export function InboxSplitView({ messages = [], threads = [] }) {
         const unread = thread.unread_count ?? 0;
         next[thread.id] = {
           ...DEFAULT_TICKET_STATE,
-          status: unread > 0 ? "New" : "Open",
+          status: normalizeStatus(thread.status) || "New",
+          priority: thread.priority ?? DEFAULT_TICKET_STATE.priority,
+          assignee: thread.assignee_id ?? DEFAULT_TICKET_STATE.assignee,
         };
         changed = true;
       });
@@ -168,6 +279,11 @@ export function InboxSplitView({ messages = [], threads = [] }) {
     () => derivedThreads.find((thread) => thread.id === selectedThreadId) || null,
     [derivedThreads, selectedThreadId]
   );
+  const selectedTicketState = ticketStateByThread[selectedThreadId] || DEFAULT_TICKET_STATE;
+  const selectedTagLabel =
+    Array.isArray(selectedThread?.tags) && selectedThread.tags.length
+      ? selectedThread.tags[0]
+      : "General";
 
   useEffect(() => {
     let active = true;
@@ -195,6 +311,41 @@ export function InboxSplitView({ messages = [], threads = [] }) {
       active = false;
     };
   }, [selectedThread?.provider_thread_id, supabase]);
+
+  useEffect(() => {
+    if (!supabase || !selectedThreadId) return;
+    const thread = derivedThreads.find((item) => item.id === selectedThreadId);
+    if (!thread) return;
+
+    if (!thread.is_read) {
+      setReadOverrides((prev) => ({ ...prev, [selectedThreadId]: true }));
+      fetch("/api/inbox/thread-status", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          threadId: selectedThreadId,
+          isRead: true,
+          unreadCount: 0,
+        }),
+      }).catch(() => null);
+    }
+
+    const currentState = ticketStateByThread[selectedThreadId];
+    if (!thread.is_read && currentState?.status === "New") {
+      setTicketStateByThread((prev) => ({
+        ...prev,
+        [selectedThreadId]: {
+          ...prev[selectedThreadId],
+          status: "Open",
+        },
+      }));
+      fetch("/api/inbox/thread-status", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ threadId: selectedThreadId, status: "Open" }),
+      }).catch(() => null);
+    }
+  }, [derivedThreads, selectedThreadId, supabase, ticketStateByThread]);
 
   const threadMessages = useMemo(() => {
     if (!selectedThreadId) return [];
@@ -272,7 +423,68 @@ export function InboxSplitView({ messages = [], threads = [] }) {
         ...updates,
       },
     }));
+    const payload = {};
+    if (typeof updates.status === "string") {
+      payload.status = updates.status;
+    }
+    if (typeof updates.priority === "string" || updates.priority === null) {
+      payload.priority = updates.priority;
+    }
+    if (typeof updates.assignee === "string" || updates.assignee === null) {
+      payload.assigneeId = updates.assignee;
+    }
+    if (!Object.keys(payload).length) return;
+
+    fetch("/api/inbox/thread-status", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        threadId: selectedThreadId,
+        ...payload,
+      }),
+    })
+      .then(async (response) => {
+        if (response.ok) return;
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.error || "Could not update ticket status.");
+      })
+      .catch((error) => {
+        toast.error(error.message || "Could not update ticket status.");
+      });
   };
+
+  useEffect(() => {
+    if (!setHeaderActions) return;
+    if (!selectedThreadId) {
+      headerActionsKeyRef.current = "";
+      setHeaderActions(null);
+      return;
+    }
+    const key = `${selectedThreadId}:${selectedTicketState?.status || ""}:${
+      selectedTicketState?.assignee || ""
+    }`;
+    if (headerActionsKeyRef.current === key) return;
+    headerActionsKeyRef.current = key;
+    setHeaderActions(
+      <InboxHeaderActions
+        ticketState={selectedTicketState}
+        tagLabel={selectedTagLabel}
+        onTicketStateChange={handleTicketStateChange}
+        onOpenInsights={() => setInsightsOpen(true)}
+      />
+    );
+  }, [
+    handleTicketStateChange,
+    selectedTicketState,
+    selectedThreadId,
+    selectedTagLabel,
+    setHeaderActions,
+  ]);
+
+  useEffect(() => {
+    if (!setHeaderActions) return;
+    return () => setHeaderActions(null);
+  }, [setHeaderActions]);
 
   const handleSendDraft = async () => {
     if (!draftMessage?.id) {
@@ -309,7 +521,10 @@ export function InboxSplitView({ messages = [], threads = [] }) {
 
   const getThreadTimestamp = (thread) => thread.last_message_at || "";
 
-  const getThreadUnreadCount = (thread) => thread.unread_count || 0;
+  const getThreadUnreadCount = (thread) => {
+    if (readOverrides[thread.id] || thread.is_read) return 0;
+    return thread.unread_count || 0;
+  };
 
   return (
     <div className="flex h-full flex-1 flex-col overflow-hidden bg-background lg:flex-row">
