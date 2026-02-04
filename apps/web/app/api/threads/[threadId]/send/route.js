@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
+import { sendPostmarkEmail } from "@/lib/server/postmark";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -18,10 +19,8 @@ const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
 const MICROSOFT_CLIENT_ID = process.env.MICROSOFT_CLIENT_ID || "";
 const MICROSOFT_CLIENT_SECRET = process.env.MICROSOFT_CLIENT_SECRET || "";
 const MICROSOFT_TENANT_ID = process.env.MICROSOFT_TENANT_ID || "common";
-const POSTMARK_SERVER_TOKEN = process.env.POSTMARK_SERVER_TOKEN || "";
 const POSTMARK_FROM_EMAIL = process.env.POSTMARK_FROM_EMAIL || "support@sona-ai.dk";
 const POSTMARK_FROM_NAME = process.env.POSTMARK_FROM_NAME || "Sona";
-const POSTMARK_MESSAGE_STREAM = process.env.POSTMARK_MESSAGE_STREAM || "transactional";
 
 function createServiceClient() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null;
@@ -269,6 +268,54 @@ function normalizeMessageId(value) {
   return `<${cleaned.replace(/^<|>$/g, "")}>`;
 }
 
+function parseEmailDomain(email) {
+  const value = String(email || "").trim().toLowerCase();
+  const atIndex = value.lastIndexOf("@");
+  if (atIndex <= 0 || atIndex === value.length - 1) return null;
+  return value.slice(atIndex + 1);
+}
+
+function buildFromAddress(name, email) {
+  if (!email) return null;
+  const safeName = String(name || "").trim();
+  if (!safeName) return email;
+  return `${safeName} <${email}>`;
+}
+
+function resolvePostmarkSender(mailbox, senderName) {
+  const safeSharedFromEmail = String(POSTMARK_FROM_EMAIL || "").trim().toLowerCase();
+  if (!safeSharedFromEmail) {
+    throw new Error("POSTMARK_FROM_EMAIL is missing.");
+  }
+
+  const safeCustomFromEmail = String(mailbox?.from_email || "").trim().toLowerCase();
+  const safeSendingDomain = String(mailbox?.sending_domain || "").trim().toLowerCase();
+  const customIsAllowed =
+    mailbox?.sending_type === "custom" &&
+    mailbox?.domain_status === "verified" &&
+    safeCustomFromEmail &&
+    safeSendingDomain &&
+    parseEmailDomain(safeCustomFromEmail) === safeSendingDomain;
+
+  if (customIsAllowed) {
+    const resolvedName = String(senderName || "").trim() || String(mailbox?.from_name || "").trim();
+    return {
+      fromEmail: safeCustomFromEmail,
+      fromDisplay: buildFromAddress(resolvedName, safeCustomFromEmail),
+      fromName: resolvedName || null,
+      mode: "custom",
+    };
+  }
+
+  const resolvedName = String(senderName || "").trim() || POSTMARK_FROM_NAME;
+  return {
+    fromEmail: safeSharedFromEmail,
+    fromDisplay: buildFromAddress(resolvedName, safeSharedFromEmail),
+    fromName: resolvedName || null,
+    mode: "shared",
+  };
+}
+
 async function sendViaPostmark({
   to,
   cc,
@@ -279,21 +326,14 @@ async function sendViaPostmark({
   inReplyTo,
   references,
   replyTo,
-  senderName,
+  fromDisplay,
 }) {
-  if (!POSTMARK_SERVER_TOKEN) {
-    throw new Error("POSTMARK_SERVER_TOKEN is missing.");
-  }
-  const fromName = senderName || POSTMARK_FROM_NAME;
   const headers = [];
   if (inReplyTo) headers.push({ Name: "In-Reply-To", Value: inReplyTo });
   if (references?.length) headers.push({ Name: "References", Value: references.join(" ") });
-  const safeFromEmail = String(POSTMARK_FROM_EMAIL || "").trim();
-  if (!safeFromEmail) {
-    throw new Error("POSTMARK_FROM_EMAIL is missing.");
-  }
-  const basePayload = {
-    From: `${fromName} <${safeFromEmail}>`,
+
+  return await sendPostmarkEmail({
+    From: fromDisplay,
     ReplyTo: replyTo || undefined,
     To: to.join(", "),
     Cc: cc?.length ? cc.join(", ") : undefined,
@@ -302,44 +342,7 @@ async function sendViaPostmark({
     TextBody: textBody || undefined,
     HtmlBody: htmlBody || undefined,
     Headers: headers.length ? headers : undefined,
-  };
-
-  const candidateStreams = [POSTMARK_MESSAGE_STREAM, "transactional", "outbound"].filter(Boolean);
-  const tried = new Set();
-  let lastError = null;
-
-  for (const stream of candidateStreams) {
-    if (tried.has(stream)) continue;
-    tried.add(stream);
-
-    const response = await fetch("https://api.postmarkapp.com/email", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        "X-Postmark-Server-Token": POSTMARK_SERVER_TOKEN,
-      },
-      body: JSON.stringify({
-        ...basePayload,
-        MessageStream: stream,
-      }),
-    });
-    const payload = await response.json().catch(() => null);
-    if (response.ok) return payload;
-
-    const message = payload?.Message || payload?.ErrorCode || `Postmark ${response.status}`;
-    lastError = new Error(String(message));
-
-    const streamErrorText = String(message || "").toLowerCase();
-    const isStreamError =
-      streamErrorText.includes("messagestream") ||
-      streamErrorText.includes("message stream") ||
-      streamErrorText.includes("stream provided") ||
-      streamErrorText.includes("stream");
-    if (!isStreamError) break;
-  }
-
-  throw lastError || new Error("Postmark send failed");
+  });
 }
 
 async function sendGmail({ token, raw, threadId }) {
@@ -495,7 +498,7 @@ export async function POST(request, { params }) {
   const { data: mailbox, error: mailboxError } = await serviceClient
     .from("mail_accounts")
     .select(
-      "id, user_id, provider, provider_email, access_token_enc, refresh_token_enc, token_expires_at, status, smtp_host, smtp_port, smtp_secure, smtp_username_enc, smtp_password_enc, smtp_status"
+      "id, user_id, provider, provider_email, access_token_enc, refresh_token_enc, token_expires_at, status, smtp_host, smtp_port, smtp_secure, smtp_username_enc, smtp_password_enc, smtp_status, sending_type, sending_domain, domain_status, from_email, from_name"
     )
     .eq("id", thread.mailbox_id)
     .maybeSingle();
@@ -534,9 +537,14 @@ export async function POST(request, { params }) {
     : "Re:";
 
   let providerMessageId = null;
+  let sentFromEmail = mailbox.provider_email || null;
+  let sentFromName = senderName || null;
   const nowIso = new Date().toISOString();
   try {
     if (mailbox.provider === "smtp") {
+      const senderConfig = resolvePostmarkSender(mailbox, senderName);
+      sentFromEmail = senderConfig.fromEmail;
+      sentFromName = senderConfig.fromName;
       const references = (Array.isArray(inboundMessages) ? inboundMessages : [])
         .map((row) => normalizeMessageId(row?.provider_message_id))
         .filter(Boolean);
@@ -551,7 +559,7 @@ export async function POST(request, { params }) {
         inReplyTo,
         references,
         replyTo: mailbox.provider_email || undefined,
-        senderName,
+        fromDisplay: senderConfig.fromDisplay,
       });
       providerMessageId = postmarkResponse?.MessageID || null;
 
@@ -559,6 +567,7 @@ export async function POST(request, { params }) {
         provider: "smtp",
         threadId,
         transport: "postmark",
+        from_mode: senderConfig.mode,
       });
     } else {
       const token = await getAccessToken(serviceClient, mailbox);
@@ -638,7 +647,7 @@ export async function POST(request, { params }) {
           error:
             "Postmark account is pending approval. You can only send to recipients on your own domain right now.",
           recipient_domains: Array.from(new Set(recipientDomains)),
-          from_domain: String(POSTMARK_FROM_EMAIL || "").split("@")[1] || null,
+          from_domain: String(sentFromEmail || "").split("@")[1] || null,
         },
         { status: 400 }
       );
@@ -660,8 +669,8 @@ export async function POST(request, { params }) {
         snippet,
         body_text: bodyText || stripHtml(bodyHtml),
         body_html: bodyHtml || null,
-        from_name: senderName || null,
-        from_email: mailbox.provider_email,
+        from_name: sentFromName,
+        from_email: sentFromEmail,
         from_me: true,
         to_emails: finalTo,
         cc_emails: ccEmails,
@@ -693,8 +702,8 @@ export async function POST(request, { params }) {
         snippet,
         body_text: bodyText || stripHtml(bodyHtml),
         body_html: bodyHtml || null,
-        from_name: senderName || null,
-        from_email: mailbox.provider_email,
+        from_name: sentFromName,
+        from_email: sentFromEmail,
         from_me: true,
         to_emails: finalTo,
         cc_emails: ccEmails,

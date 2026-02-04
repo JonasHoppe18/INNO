@@ -34,7 +34,9 @@ async function resolveSupabaseUserId(serviceClient, clerkUserId) {
 async function loadMailAccounts(serviceClient, userId) {
   const { data, error } = await serviceClient
     .from("mail_accounts")
-    .select("id, provider, provider_email, status, inbound_slug")
+    .select(
+      "id, provider, provider_email, status, inbound_slug, sending_type, sending_domain, domain_status, domain_dns, from_email, from_name"
+    )
     .eq("user_id", userId)
     .in("provider", ["gmail", "outlook", "smtp"])
     .order("created_at", { ascending: true });
@@ -76,6 +78,12 @@ export default async function MailboxesPage() {
       isActive: Boolean(account.provider_email),
       status: account.status || null,
       inboundSlug: account.inbound_slug || null,
+      sendingType: account.sending_type || "shared",
+      sendingDomain: account.sending_domain || null,
+      domainStatus: account.domain_status || "pending",
+      domainDns: account.domain_dns || null,
+      fromEmail: account.from_email || null,
+      fromName: account.from_name || null,
     }));
 
   return (
@@ -111,6 +119,12 @@ export default async function MailboxesPage() {
                   status={mailbox.status}
                   mailboxId={mailbox.id}
                   inboundSlug={mailbox.inboundSlug}
+                  sendingType={mailbox.sendingType}
+                  sendingDomain={mailbox.sendingDomain}
+                  domainStatus={mailbox.domainStatus}
+                  domainDns={mailbox.domainDns}
+                  fromEmail={mailbox.fromEmail}
+                  fromName={mailbox.fromName}
                 />
               ))}
             </div>
