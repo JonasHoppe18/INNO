@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TicketList } from "@/components/inbox/TicketList";
 import { TicketDetail } from "@/components/inbox/TicketDetail";
 import { SonaInsightsModal } from "@/components/inbox/SonaInsightsModal";
 import { deriveThreadsFromMessages } from "@/hooks/useInboxData";
 import { getMessageTimestamp, getSenderLabel, isOutboundMessage } from "@/components/inbox/inbox-utils";
 import { useClerkSupabase } from "@/lib/useClerkSupabase";
+import { useUser } from "@clerk/nextjs";
 import { toast } from "sonner";
 import { useCustomerLookup } from "@/hooks/useCustomerLookup";
 import { useSiteHeaderActions } from "@/components/site-header-actions";
@@ -160,6 +161,7 @@ export function InboxSplitView({ messages = [], threads = [] }) {
   const [selectedThreadId, setSelectedThreadId] = useState(null);
   const [ticketStateByThread, setTicketStateByThread] = useState({});
   const [readOverrides, setReadOverrides] = useState({});
+  const [localSentMessagesByThread, setLocalSentMessagesByThread] = useState({});
   const [filters, setFilters] = useState({
     query: "",
     status: "All",
@@ -167,11 +169,23 @@ export function InboxSplitView({ messages = [], threads = [] }) {
   });
   const [composerMode, setComposerMode] = useState("reply");
   const [draftValue, setDraftValue] = useState("");
+  const [activeDraftId, setActiveDraftId] = useState(null);
+  const [suppressAutoDraftByThread, setSuppressAutoDraftByThread] = useState({});
+  const [draftReady, setDraftReady] = useState(false);
   const [insightsOpen, setInsightsOpen] = useState(false);
   const [draftLogId, setDraftLogId] = useState(null);
   const headerActionsKeyRef = useRef("");
+  const draftLastSavedRef = useRef("");
+  const savingDraftRef = useRef(false);
+  const draftValueRef = useRef("");
   const supabase = useClerkSupabase();
+  const { user } = useUser();
   const { setActions: setHeaderActions } = useSiteHeaderActions();
+  const currentUserName = [user?.firstName, user?.lastName].filter(Boolean).join(" ") || "You";
+
+  useEffect(() => {
+    draftValueRef.current = draftValue;
+  }, [draftValue]);
 
   const derivedThreads = useMemo(() => {
     if (threads?.length) return threads;
@@ -255,24 +269,30 @@ export function InboxSplitView({ messages = [], threads = [] }) {
   }, [derivedThreads, mailboxEmails, messagesByThread]);
 
   const filteredThreads = useMemo(() => {
-    return derivedThreads.filter((thread) => {
-      const uiState = ticketStateByThread[thread.id] || DEFAULT_TICKET_STATE;
-      if (filters.status !== "All" && uiState.status !== filters.status) {
-        return false;
-      }
-      const unreadCount = thread.unread_count ?? 0;
-      if (filters.unreadsOnly && unreadCount === 0) return false;
-      if (filters.query) {
-        const query = filters.query.toLowerCase();
-        const subject = (thread.subject || "").toLowerCase();
-        const snippet = (thread.snippet || "").toLowerCase();
-        const customer = (customerByThread[thread.id] || "").toLowerCase();
-        if (!subject.includes(query) && !snippet.includes(query) && !customer.includes(query)) {
+    return derivedThreads
+      .filter((thread) => {
+        const uiState = ticketStateByThread[thread.id] || DEFAULT_TICKET_STATE;
+        if (filters.status !== "All" && uiState.status !== filters.status) {
           return false;
         }
-      }
-      return true;
-    });
+        const unreadCount = thread.unread_count ?? 0;
+        if (filters.unreadsOnly && unreadCount === 0) return false;
+        if (filters.query) {
+          const query = filters.query.toLowerCase();
+          const subject = (thread.subject || "").toLowerCase();
+          const snippet = (thread.snippet || "").toLowerCase();
+          const customer = (customerByThread[thread.id] || "").toLowerCase();
+          if (!subject.includes(query) && !snippet.includes(query) && !customer.includes(query)) {
+            return false;
+          }
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        const aTs = Date.parse(a?.last_message_at || a?.updated_at || a?.created_at || 0);
+        const bTs = Date.parse(b?.last_message_at || b?.updated_at || b?.created_at || 0);
+        return (Number.isFinite(bTs) ? bTs : 0) - (Number.isFinite(aTs) ? aTs : 0);
+      });
   }, [customerByThread, derivedThreads, filters, ticketStateByThread]);
 
   const selectedThread = useMemo(
@@ -347,24 +367,45 @@ export function InboxSplitView({ messages = [], threads = [] }) {
     }
   }, [derivedThreads, selectedThreadId, supabase, ticketStateByThread]);
 
-  const threadMessages = useMemo(() => {
+  const rawThreadMessages = useMemo(() => {
     if (!selectedThreadId) return [];
-    return messagesByThread.get(selectedThreadId) || [];
-  }, [messagesByThread, selectedThreadId]);
+    const base = messagesByThread.get(selectedThreadId) || [];
+    const local = localSentMessagesByThread[selectedThreadId] || [];
+    const byId = new Map();
+    [...base, ...local].forEach((message) => {
+      const key = message?.id || `${message?.thread_id || "thread"}:${message?.created_at || ""}`;
+      if (!key) return;
+      byId.set(key, message);
+    });
+    return Array.from(byId.values()).sort((a, b) => {
+      const aTime = new Date(getMessageTimestamp(a)).getTime();
+      const bTime = new Date(getMessageTimestamp(b)).getTime();
+      return aTime - bTime;
+    });
+  }, [localSentMessagesByThread, messagesByThread, selectedThreadId]);
+
+  const threadMessages = useMemo(() => {
+    return rawThreadMessages.filter((message) => {
+      if (message?.is_draft) return false;
+      // Hide unsent local draft artifacts (old rows without is_draft flag).
+      if (message?.from_me && !message?.sent_at && !message?.received_at) return false;
+      return true;
+    });
+  }, [rawThreadMessages]);
 
   const threadAttachments = useMemo(() => [], []);
 
-  const draftMessage = useMemo(
-    () => threadMessages.find((message) => message?.is_draft && message?.from_me) || null,
-    [threadMessages]
-  );
+  const draftMessage = useMemo(() => {
+    const reversed = [...rawThreadMessages].reverse();
+    return reversed.find((message) => message?.is_draft && message?.from_me) || null;
+  }, [rawThreadMessages]);
 
   const aiDraft = useMemo(() => {
     if (draftMessage) return "";
-    const reversed = [...threadMessages].reverse();
+    const reversed = [...rawThreadMessages].reverse();
     const match = reversed.find((message) => message.ai_draft_text?.trim());
     return match?.ai_draft_text?.trim() || "";
-  }, [draftMessage, threadMessages]);
+  }, [draftMessage, rawThreadMessages]);
 
   const customerLookupParams = useMemo(() => {
     const inbound = threadMessages.find(
@@ -397,24 +438,71 @@ export function InboxSplitView({ messages = [], threads = [] }) {
 
   useEffect(() => {
     setDraftValue("");
+    setActiveDraftId(null);
+    setDraftReady(false);
+    draftLastSavedRef.current = "";
   }, [selectedThreadId]);
 
   useEffect(() => {
-    if (!selectedThreadId || !aiDraft) return;
-    setDraftValue((prev) => (prev ? prev : aiDraft));
-  }, [aiDraft, selectedThreadId]);
+    let active = true;
+    const loadDraft = async () => {
+      if (!selectedThreadId) return;
+      const res = await fetch(`/api/threads/${selectedThreadId}/draft`, {
+        method: "GET",
+      }).catch(() => null);
+      if (!active) return;
+      if (!res?.ok) {
+        setDraftReady(true);
+        return;
+      }
+      const payload = await res.json().catch(() => ({}));
+      const draft = payload?.draft || null;
+      const draftText = draft?.body_text || draft?.body_html || "";
+      if (draftText) {
+        setDraftValue(draftText);
+        draftLastSavedRef.current = draftText.trim();
+      }
+      if (draft?.id) {
+        setActiveDraftId(draft.id);
+      }
+      setDraftReady(true);
+    };
+    loadDraft();
+    return () => {
+      active = false;
+    };
+  }, [selectedThreadId]);
 
   useEffect(() => {
-    if (!draftMessage) return;
+    if (!selectedThreadId || !draftReady || !aiDraft) return;
+    if (suppressAutoDraftByThread[selectedThreadId]) return;
+    setDraftValue((prev) => (prev ? prev : aiDraft));
+  }, [aiDraft, draftReady, selectedThreadId, suppressAutoDraftByThread]);
+
+  useEffect(() => {
+    if (!selectedThreadId) return;
+    if (!suppressAutoDraftByThread[selectedThreadId]) return;
+    if (aiDraft || draftMessage) return;
+    setSuppressAutoDraftByThread((prev) => {
+      if (!prev[selectedThreadId]) return prev;
+      const next = { ...prev };
+      delete next[selectedThreadId];
+      return next;
+    });
+  }, [aiDraft, draftMessage, selectedThreadId, suppressAutoDraftByThread]);
+
+  useEffect(() => {
+    if (!selectedThreadId || !draftReady || !draftMessage) return;
+    if (suppressAutoDraftByThread[selectedThreadId]) return;
     const draftBody = draftMessage.body_text || draftMessage.body_html || "";
     setDraftValue((prev) => (prev ? prev : draftBody));
-  }, [draftMessage]);
+  }, [draftMessage, draftReady, selectedThreadId, suppressAutoDraftByThread]);
 
   const handleFiltersChange = (updates) => {
     setFilters((prev) => ({ ...prev, ...updates }));
   };
 
-  const handleTicketStateChange = (updates) => {
+  const handleTicketStateChange = useCallback((updates) => {
     if (!selectedThreadId) return;
     setTicketStateByThread((prev) => ({
       ...prev,
@@ -451,7 +539,7 @@ export function InboxSplitView({ messages = [], threads = [] }) {
       .catch((error) => {
         toast.error(error.message || "Could not update ticket status.");
       });
-  };
+  }, [selectedThreadId]);
 
   useEffect(() => {
     if (!setHeaderActions) return;
@@ -486,35 +574,123 @@ export function InboxSplitView({ messages = [], threads = [] }) {
     return () => setHeaderActions(null);
   }, [setHeaderActions]);
 
-  const handleSendDraft = async () => {
-    if (!draftMessage?.id) {
-      toast.error("No draft to send.");
+  const saveThreadDraft = useCallback(async ({ immediate = false, valueOverride } = {}) => {
+    if (!selectedThreadId || !draftReady) return;
+    const text = String(valueOverride ?? draftValueRef.current ?? "");
+    const trimmed = text.trim();
+    if (!trimmed) {
+      if (!immediate || savingDraftRef.current) return;
+      try {
+        await fetch(`/api/threads/${selectedThreadId}/draft`, {
+          method: "DELETE",
+        });
+      } catch {
+        // ignore delete draft errors in UI flow
+      }
+      setActiveDraftId(null);
+      draftLastSavedRef.current = "";
+      setSuppressAutoDraftByThread((prev) => ({
+        ...prev,
+        [selectedThreadId]: true,
+      }));
+      return;
+    }
+    if (!immediate && trimmed === draftLastSavedRef.current) return;
+    if (savingDraftRef.current) return;
+    savingDraftRef.current = true;
+    try {
+      const res = await fetch(`/api/threads/${selectedThreadId}/draft`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          body_text: text,
+          subject: selectedThread?.subject || "",
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || "Could not save draft.");
+      }
+      draftLastSavedRef.current = trimmed;
+      if (data?.draft_id) {
+        setActiveDraftId(data.draft_id);
+      }
+    } catch {
+      // keep UI responsive; autosave retries on next change/interval
+    } finally {
+      savingDraftRef.current = false;
+    }
+  }, [draftReady, selectedThread?.subject, selectedThreadId]);
+
+  useEffect(() => {
+    if (!selectedThreadId || !draftReady) return;
+    const timer = setInterval(() => {
+      saveThreadDraft({ immediate: false, valueOverride: draftValueRef.current });
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [draftReady, saveThreadDraft, selectedThreadId]);
+
+  const handleSendDraft = async (payload = {}) => {
+    if (!selectedThreadId) {
+      toast.error("No thread selected.");
       return;
     }
     if (!draftValue.trim()) {
       toast.error("Draft is empty.");
       return;
     }
-    if (!supabase) {
-      toast.error("Supabase client not ready.");
-      return;
-    }
     const toastId = toast.loading("Sending draft...");
     try {
-      const { error } = await supabase
-        .from("mail_messages")
-        .update({
+      const res = await fetch(`/api/threads/${selectedThreadId}/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           body_text: draftValue,
-          body_html: draftValue,
-          is_draft: false,
-          sent_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", draftMessage.id);
-      if (error) throw error;
-      toast.success("Draft sent.", { id: toastId });
+          to_emails: payload.toRecipients,
+          cc_emails: payload.ccRecipients,
+          bcc_emails: payload.bccRecipients,
+          sender_name: currentUserName,
+          draft_message_id: draftMessage?.id || activeDraftId || null,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || "Could not send reply.");
+      }
+      const nowIso = new Date().toISOString();
+      setLocalSentMessagesByThread((prev) => ({
+        ...prev,
+        [selectedThreadId]: [
+          ...(prev[selectedThreadId] || []),
+          {
+            id: data?.message_id || `local-sent-${Date.now()}`,
+            thread_id: selectedThreadId,
+            from_name: currentUserName,
+            from_email: mailboxEmails[0] || "",
+            from_me: true,
+            to_emails: payload.toRecipients || [],
+            cc_emails: payload.ccRecipients || [],
+            bcc_emails: payload.bccRecipients || [],
+            body_text: draftValue,
+            body_html: draftValue,
+            is_read: true,
+            sent_at: nowIso,
+            received_at: null,
+            created_at: nowIso,
+          },
+        ],
+      }));
+      const providerId = data?.provider_message_id ? ` (${data.provider_message_id})` : "";
+      toast.success(`Reply sent${providerId}.`, { id: toastId });
+      setDraftValue("");
+      setActiveDraftId(null);
+      draftLastSavedRef.current = "";
+      setSuppressAutoDraftByThread((prev) => ({
+        ...prev,
+        [selectedThreadId]: true,
+      }));
     } catch (err) {
-      toast.error("Could not send draft.", { id: toastId });
+      toast.error(err?.message || "Could not send draft.", { id: toastId });
     }
   };
 
@@ -544,11 +720,13 @@ export function InboxSplitView({ messages = [], threads = [] }) {
         thread={selectedThread}
         messages={threadMessages}
         attachments={threadAttachments}
+        currentUserName={currentUserName}
         ticketState={ticketStateByThread[selectedThreadId] || DEFAULT_TICKET_STATE}
         onTicketStateChange={handleTicketStateChange}
         onOpenInsights={() => setInsightsOpen(true)}
         draftValue={draftValue}
         onDraftChange={setDraftValue}
+        onDraftBlur={() => saveThreadDraft({ immediate: true })}
         draftLoaded={Boolean(draftMessage)}
         canSend={Boolean(draftMessage?.id)}
         onSend={handleSendDraft}

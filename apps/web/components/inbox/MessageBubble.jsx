@@ -41,23 +41,31 @@ const linkifyText = (value) => {
   return withLinks.replace(/\n\n/g, "<br/><br/>").replace(/\n/g, "<br/>");
 };
 
-export function MessageBubble({ message, direction = "inbound", attachments = [] }) {
+export function MessageBubble({
+  message,
+  direction = "inbound",
+  attachments = [],
+  outboundSenderName,
+}) {
   const isOutbound = direction === "outbound";
+  const senderLabel = isOutbound
+    ? outboundSenderName || getSenderLabel(message)
+    : getSenderLabel(message);
   const timestampValue = message.received_at || message.sent_at || message.created_at;
   const timestamp = timestampValue
     ? new Date(timestampValue).toLocaleString("en-US", {
-        month: "short",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      })
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
     : "";
   const toList = message.to_emails || [];
   const ccList = message.cc_emails || [];
-  const avatarStyle = pickAvatarStyle(getSenderLabel(message));
+  const avatarStyle = pickAvatarStyle(senderLabel);
   const isDraft = Boolean(message?.is_draft);
 
-  const initials = getSenderLabel(message)
+  const initials = senderLabel
     .split(" ")
     .map((part) => part[0])
     .join("")
@@ -67,49 +75,53 @@ export function MessageBubble({ message, direction = "inbound", attachments = []
   return (
     <div
       className={cn(
-        "w-full py-6 text-sm",
-        isOutbound && "ml-auto max-w-[85%] text-right"
+        "w-full overflow-hidden rounded-lg border text-xs",
+        isOutbound
+          ? "bg-slate-50 border-slate-200"
+          : "bg-white border-gray-200 shadow-sm"
       )}
     >
       <div
         className={cn(
-          "flex flex-wrap items-start justify-between gap-3",
-          isOutbound && "flex-row-reverse"
+          "flex flex-wrap items-start justify-between gap-2 border-b border-gray-100 px-4 py-2.5",
+          isOutbound && "border-slate-200"
         )}
       >
         <div
-          className={cn("flex items-start gap-3", isOutbound && "flex-row-reverse")}
+          className="flex items-start gap-3"
         >
           <div
             className={cn(
-              "flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold",
+              "flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-semibold",
               avatarStyle
             )}
           >
             {initials || "?"}
           </div>
-          <div className={cn("min-w-0", isOutbound && "text-right")}>
+          <div className="min-w-0">
             <div
-              className={cn(
-                "flex flex-wrap items-center gap-2",
-                isOutbound && "justify-end"
-              )}
+              className="flex flex-wrap items-center gap-2"
             >
-              <span className="text-sm font-semibold text-gray-900">
-                {getSenderLabel(message)}
+              <span className="text-xs font-semibold text-gray-900">
+                {senderLabel}
               </span>
-              {isDraft ? (
-                <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
-                  Draft
-                </span>
-              ) : null}
+                {isOutbound ? (
+                  <span className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                    You
+                  </span>
+                ) : null}
+                {isDraft ? (
+                  <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
+                    Draft
+                  </span>
+                ) : null}
             </div>
             {toList.length || ccList.length ? (
-              <details className={cn("mt-1 text-xs text-gray-400", isOutbound && "ml-auto")}>
+              <details className="mt-1 text-xs text-gray-400">
                 <summary className="cursor-pointer select-none">Details</summary>
                 <div className="mt-1 space-y-1">
                   {toList.length ? (
-                    <div className={cn("flex flex-wrap gap-2", isOutbound && "justify-end")}>
+                    <div className="flex flex-wrap gap-2">
                       <span className="text-[11px] uppercase tracking-wide text-gray-300">
                         To
                       </span>
@@ -121,7 +133,7 @@ export function MessageBubble({ message, direction = "inbound", attachments = []
                     </div>
                   ) : null}
                   {ccList.length ? (
-                    <div className={cn("flex flex-wrap gap-2", isOutbound && "justify-end")}>
+                    <div className="flex flex-wrap gap-2">
                       <span className="text-[11px] uppercase tracking-wide text-gray-300">
                         Cc
                       </span>
@@ -138,24 +150,24 @@ export function MessageBubble({ message, direction = "inbound", attachments = []
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-400">{timestamp}</span>
+          <span className="text-[11px] text-gray-400">{timestamp}</span>
           <div className="flex items-center gap-1">
-            <Button type="button" variant="ghost" size="icon" className="h-7 w-7">
-              <Reply className="h-4 w-4" />
+            <Button type="button" variant="ghost" size="icon" className="h-6 w-6">
+              <Reply className="h-3.5 w-3.5" />
             </Button>
           </div>
         </div>
       </div>
-      <div className="mt-3 text-gray-800 leading-relaxed">
+      <div className="p-4 text-gray-800 leading-relaxed">
         {message.body_html ? (
           <div
-            className="prose prose-sm max-w-none w-full text-gray-800"
+            className="prose prose-sm max-w-none w-full text-sm text-gray-800"
             // Trusts email HTML from upstream providers; if needed, sanitize before render.
             dangerouslySetInnerHTML={{ __html: message.body_html }}
           />
         ) : (
           <div
-            className="prose prose-sm max-w-none w-full text-gray-800"
+            className="prose prose-sm max-w-none w-full text-sm text-gray-800"
             dangerouslySetInnerHTML={{
               __html: linkifyText(message.body_text || message.snippet || "No preview available."),
             }}
@@ -163,17 +175,19 @@ export function MessageBubble({ message, direction = "inbound", attachments = []
         )}
       </div>
       {attachments.length ? (
-        <div className="mt-4 flex flex-wrap gap-2">
-          {attachments.map((attachment) => (
-            <div key={attachment.id} className="text-xs text-gray-500">
-              <div className="font-medium text-gray-700">
-                {attachment.filename || "Attachment"}
+        <div className="px-4 pb-4">
+          <div className="flex flex-wrap gap-2">
+            {attachments.map((attachment) => (
+              <div key={attachment.id} className="text-xs text-gray-500">
+                <div className="font-medium text-gray-700">
+                  {attachment.filename || "Attachment"}
+                </div>
+                <div className="text-[11px] opacity-70">
+                  {attachment.size_bytes ? formatBytes(attachment.size_bytes) : ""}
+                </div>
               </div>
-              <div className="text-[11px] opacity-70">
-                {attachment.size_bytes ? formatBytes(attachment.size_bytes) : ""}
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       ) : null}
     </div>

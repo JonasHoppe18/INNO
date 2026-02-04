@@ -39,6 +39,10 @@ export function getSenderLabel(message) {
 }
 
 export function isOutboundMessage(message, mailboxEmails = []) {
+  if (message?.from_me === true) return true;
+  // Any received message is inbound unless explicitly marked as sent by us.
+  if (message?.received_at && message?.from_me !== true) return false;
+  if (message?.sent_at && !message?.received_at) return true;
   const sender = (message?.from_email || "").toLowerCase();
   if (!sender) return false;
   if (mailboxEmails.length) {

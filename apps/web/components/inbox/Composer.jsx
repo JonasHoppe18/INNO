@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bold,
   ChevronDown,
@@ -26,6 +26,7 @@ export function Composer({
   mode,
   onModeChange,
   toLabel,
+  onBlur,
 }) {
   const isNote = mode === "note";
   const initialTo = useMemo(() => {
@@ -42,6 +43,14 @@ export function Composer({
   const [toInput, setToInput] = useState("");
   const [ccInput, setCcInput] = useState("");
   const [bccInput, setBccInput] = useState("");
+  const textareaRef = useRef(null);
+
+  const resizeTextarea = () => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.max(el.scrollHeight, 124)}px`;
+  };
 
   useEffect(() => {
     setToRecipients(initialTo);
@@ -53,6 +62,10 @@ export function Composer({
     setCcInput("");
     setBccInput("");
   }, [initialTo]);
+
+  useEffect(() => {
+    resizeTextarea();
+  }, [value]);
 
   const addRecipient = (valueToAdd, setter, inputSetter) => {
     const trimmed = valueToAdd.trim();
@@ -72,13 +85,20 @@ export function Composer({
     setter((prev) => prev.filter((item) => item !== valueToRemove));
   };
 
+  const buildRecipients = (existing, pendingValue) => {
+    const next = [...existing];
+    const pending = String(pendingValue || "").trim();
+    if (pending && !next.includes(pending)) next.push(pending);
+    return next;
+  };
+
   return (
-    <div className="flex-none border-t border-gray-100 bg-white px-6 py-4">
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-1 items-start justify-between gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700">
+    <div className="flex-none border-t border-gray-100 bg-white px-4 py-2.5">
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-1 items-start justify-between gap-2 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-700">
             <div className="flex flex-1 flex-wrap items-center gap-2">
-              <Mail className="h-4 w-4 text-gray-400" />
+              <Mail className="h-3.5 w-3.5 text-gray-400" />
               <span className="font-medium text-gray-500">To:</span>
               {toRecipients.map((recipient) => (
                 <span
@@ -102,16 +122,16 @@ export function Composer({
                   onRecipientKey(event, toInput, setToRecipients, setToInput)
                 }
                 placeholder={toRecipients.length ? "" : "Add recipient"}
-                className="min-w-[120px] flex-1 bg-transparent text-sm text-gray-700 outline-none"
+                className="min-w-[120px] flex-1 bg-transparent text-xs text-gray-700 outline-none"
               />
             </div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-700"
+                  className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-500 hover:text-gray-700"
                 >
-                  <ChevronDown className="h-4 w-4" />
+                  <ChevronDown className="h-3.5 w-3.5" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
@@ -125,10 +145,10 @@ export function Composer({
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                className="inline-flex h-8 items-center gap-2 rounded-md border border-gray-200 bg-white px-2.5 text-[11px] font-medium text-gray-600 hover:bg-gray-50"
               >
                 Reply
-                <ChevronDown className="h-4 w-4" />
+                <ChevronDown className="h-3.5 w-3.5" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -139,7 +159,7 @@ export function Composer({
           </DropdownMenu>
         </div>
         {showCC ? (
-          <div className="flex items-start gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700">
+          <div className="flex items-start gap-2 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-700">
             <span className="font-medium text-gray-500">Cc:</span>
             {ccRecipients.map((recipient) => (
               <span
@@ -163,7 +183,7 @@ export function Composer({
                 onRecipientKey(event, ccInput, setCcRecipients, setCcInput)
               }
               placeholder="Add CC"
-              className="min-w-[120px] flex-1 bg-transparent text-sm text-gray-700 outline-none"
+              className="min-w-[120px] flex-1 bg-transparent text-xs text-gray-700 outline-none"
             />
             <button
               type="button"
@@ -179,7 +199,7 @@ export function Composer({
           </div>
         ) : null}
         {showBCC ? (
-          <div className="flex items-start gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700">
+          <div className="flex items-start gap-2 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-700">
             <span className="font-medium text-gray-500">Bcc:</span>
             {bccRecipients.map((recipient) => (
               <span
@@ -203,7 +223,7 @@ export function Composer({
                 onRecipientKey(event, bccInput, setBccRecipients, setBccInput)
               }
               placeholder="Add BCC"
-              className="min-w-[120px] flex-1 bg-transparent text-sm text-gray-700 outline-none"
+              className="min-w-[120px] flex-1 bg-transparent text-xs text-gray-700 outline-none"
             />
             <button
               type="button"
@@ -224,19 +244,22 @@ export function Composer({
             Generated by Sona
           </div>
         ) : null}
-        <div className="rounded-md border border-gray-200 bg-white p-4">
+        <div className="rounded-md border border-gray-200 bg-white p-2.5">
           <Textarea
+            ref={textareaRef}
             value={value}
             onChange={(event) => onChange(event.target.value)}
+            onInput={resizeTextarea}
+            onBlur={onBlur}
             placeholder={mode === "reply" ? "Write your reply..." : "Leave an internal note..."}
-            rows={6}
-            className={`min-h-[180px] resize-y border-0 bg-transparent p-0 text-sm focus-visible:ring-0 ${
+            rows={5}
+            className={`min-h-[124px] resize-y border-0 bg-transparent p-0 text-sm leading-relaxed focus-visible:ring-0 ${
               isNote ? "bg-yellow-50/40" : ""
             }`}
           />
         </div>
         <div className="flex items-center justify-between text-xs text-gray-400">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => onModeChange(isNote ? "reply" : "note")}
@@ -249,22 +272,29 @@ export function Composer({
               Internal note
             </button>
             <button type="button" className="text-gray-400 hover:text-gray-600">
-              <Bold className="h-4 w-4" />
+              <Bold className="h-3.5 w-3.5" />
             </button>
             <button type="button" className="text-gray-400 hover:text-gray-600">
-              <Paperclip className="h-4 w-4" />
+              <Paperclip className="h-3.5 w-3.5" />
             </button>
             <button type="button" className="text-xs text-gray-400 hover:text-gray-600">
               Use template
             </button>
           </div>
-          <div className="flex items-center">
-            <Button
-              type="button"
-              onClick={onSend}
-              className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-900"
-            >
-              <Send className="mr-2 h-4 w-4" />
+        <div className="flex items-center">
+          <Button
+            type="button"
+            onClick={() =>
+              onSend?.({
+                bodyText: value,
+                toRecipients: buildRecipients(toRecipients, toInput),
+                ccRecipients: buildRecipients(ccRecipients, ccInput),
+                bccRecipients: buildRecipients(bccRecipients, bccInput),
+              })
+            }
+            className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-900"
+          >
+              <Send className="mr-2 h-3.5 w-3.5" />
               Send Reply
             </Button>
           </div>
