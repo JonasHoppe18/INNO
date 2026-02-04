@@ -360,6 +360,19 @@ async function createInternalDraft(options: {
   textBody: string;
 }) {
   if (!supabase || !options.userId || !options.threadId) return null;
+
+  // Keep a single active draft per thread, so newer customer emails replace stale drafts.
+  const { error: cleanupError } = await supabase
+    .from("mail_messages")
+    .delete()
+    .eq("user_id", options.userId)
+    .eq("thread_id", options.threadId)
+    .eq("is_draft", true)
+    .eq("from_me", true);
+  if (cleanupError) {
+    throw new Error(`Internal draft cleanup failed: ${cleanupError.message}`);
+  }
+
   const payload: Record<string, unknown> = {
     user_id: options.userId,
     mailbox_id: options.mailboxId,
@@ -616,6 +629,23 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
     const customerEmail = emailData.fromEmail || emailData.from || null;
     const subject = emailData.subject || "";
 
+    if (supabase && ownerUserId && threadId) {
+      const { error: clearThreadDraftsError } = await supabase
+        .from("mail_messages")
+        .update({
+          ai_draft_text: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("user_id", ownerUserId)
+        .eq("thread_id", threadId);
+      if (clearThreadDraftsError) {
+        console.warn(
+          "generate-draft-unified: failed clearing previous thread drafts",
+          clearThreadDraftsError.message,
+        );
+      }
+    }
+
     if (supabase && ownerUserId && emailData.messageId) {
       const { error: updateError } = await supabase
         .from("mail_messages")
@@ -634,6 +664,21 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
     // Log draft i Supabase til tracking.
     let loggedDraftId: number | null = null;
     if (supabase && shopId) {
+      if (threadId) {
+        const { error: staleDraftsError } = await supabase
+          .from("drafts")
+          .delete()
+          .eq("shop_id", shopId)
+          .eq("platform", provider)
+          .eq("thread_id", threadId)
+          .eq("status", "pending");
+        if (staleDraftsError) {
+          console.warn(
+            "generate-draft-unified: failed to clear stale pending drafts",
+            staleDraftsError.message,
+          );
+        }
+      }
       const { data, error } = await supabase
         .from("drafts")
         .insert({

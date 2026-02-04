@@ -30,7 +30,7 @@ export async function GET() {
   authUrl.searchParams.set("response_mode", "query");
   authUrl.searchParams.set(
     "scope",
-    ["offline_access", "Mail.ReadWrite", "User.Read"].join(" ")
+    ["offline_access", "Mail.ReadWrite", "Mail.Send", "User.Read"].join(" ")
   );
   authUrl.searchParams.set("prompt", "consent");
 

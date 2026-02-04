@@ -1,19 +1,10 @@
-import Link from "next/link";
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
-import { ChevronDown } from "lucide-react";
-
 import { DashboardPageShell } from "@/components/dashboard-page-shell";
 import { MailboxRow } from "@/components/mailboxes/MailboxRow";
+import { MailboxesAddMenu } from "@/components/mailboxes/MailboxesAddMenu";
 import { MailboxesHelpCard } from "@/components/mailboxes/MailboxesHelpCard";
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -43,9 +34,9 @@ async function resolveSupabaseUserId(serviceClient, clerkUserId) {
 async function loadMailAccounts(serviceClient, userId) {
   const { data, error } = await serviceClient
     .from("mail_accounts")
-    .select("provider, provider_email")
+    .select("id, provider, provider_email, status, inbound_slug")
     .eq("user_id", userId)
-    .in("provider", ["gmail", "outlook"])
+    .in("provider", ["gmail", "outlook", "smtp"])
     .order("created_at", { ascending: true });
   if (error) throw new Error(error.message);
   return Array.isArray(data) ? data : [];
@@ -71,7 +62,7 @@ export default async function MailboxesPage() {
     }
   }
 
-  const providerOrder = { gmail: 0, outlook: 1 };
+  const providerOrder = { gmail: 0, outlook: 1, smtp: 2 };
   const mailboxes = mailAccounts
     .filter((account) => account?.provider)
     .sort(
@@ -79,9 +70,12 @@ export default async function MailboxesPage() {
         (providerOrder[a.provider] ?? 99) - (providerOrder[b.provider] ?? 99)
     )
     .map((account) => ({
+      id: account.id,
       provider: account.provider,
       email: account.provider_email || "",
       isActive: Boolean(account.provider_email),
+      status: account.status || null,
+      inboundSlug: account.inbound_slug || null,
     }));
 
   return (
@@ -93,22 +87,7 @@ export default async function MailboxesPage() {
             Manage the email accounts Sona uses to draft replies.
           </p>
         </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button className="w-full justify-between lg:w-auto">
-              Add Mail
-              <ChevronDown className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-44">
-            <DropdownMenuItem asChild>
-              <Link href="/api/integrations/gmail/auth">Connect Gmail</Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link href="/api/integrations/outlook/auth">Connect Outlook</Link>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <MailboxesAddMenu />
       </header>
 
       <section className="space-y-4">
@@ -117,18 +96,21 @@ export default async function MailboxesPage() {
             Connected accounts
           </h2>
           <p className="text-sm text-muted-foreground">
-            Gmail and Outlook inboxes currently linked to Sona.
+            Gmail, Outlook, and forwarded inboxes currently linked to Sona.
           </p>
         </div>
-        <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
           {mailboxes.length ? (
-            <div className="divide-y">
+            <div className="divide-y divide-gray-100">
               {mailboxes.map((mailbox) => (
                 <MailboxRow
                   key={`${mailbox.provider}-${mailbox.email}`}
                   provider={mailbox.provider}
                   email={mailbox.email}
                   isActive={mailbox.isActive}
+                  status={mailbox.status}
+                  mailboxId={mailbox.id}
+                  inboundSlug={mailbox.inboundSlug}
                 />
               ))}
             </div>
@@ -143,9 +125,11 @@ export default async function MailboxesPage() {
         </div>
       </section>
 
-      <section>
-        <MailboxesHelpCard />
-      </section>
+      {mailboxes.length ? null : (
+        <section>
+          <MailboxesHelpCard />
+        </section>
+      )}
     </DashboardPageShell>
   );
 }

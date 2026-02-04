@@ -1,17 +1,20 @@
 import { Button } from "@/components/ui/button";
 import { MessageBubble } from "@/components/inbox/MessageBubble";
 import { Composer } from "@/components/inbox/Composer";
+import { ThinkingCard } from "@/components/inbox/ThinkingCard";
 import { formatMessageTime, getSenderLabel, isOutboundMessage } from "@/components/inbox/inbox-utils";
 
 export function TicketDetail({
   thread,
   messages,
   attachments,
+  currentUserName,
   ticketState,
   onTicketStateChange,
   onOpenInsights,
   draftValue,
   onDraftChange,
+  onDraftBlur,
   draftLoaded,
   canSend,
   onSend,
@@ -33,19 +36,12 @@ export function TicketDetail({
     firstMessage?.from_email || "unknown@email.com"
   }>`;
   const headerTitle = thread.subject || "Untitled ticket";
-  const statusLabel =
-    ticketState.status === "Solved" ? "Resolved" : ticketState.status;
-  const statusStyles =
-    ticketState.status === "Solved"
-      ? "bg-red-50 text-red-700 border-red-200"
-      : "bg-green-50 text-green-700 border-green-200";
-
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white lg:min-w-0">
-      <header className="flex h-16 items-center justify-between border-b border-gray-100 bg-white px-6">
+      <header className="flex h-14 items-center justify-between border-b border-gray-100 bg-white px-4">
         <div className="min-w-0">
-          <div className="text-lg font-bold text-gray-900">{headerTitle}</div>
-          <div className="text-xs text-muted-foreground">
+          <div className="text-sm font-semibold text-gray-900">{headerTitle}</div>
+          <div className="text-[11px] text-muted-foreground">
             {getSenderLabel(firstMessage)} • {firstMessage?.from_email} • Last update {lastUpdated}
           </div>
         </div>
@@ -53,22 +49,26 @@ export function TicketDetail({
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="w-full divide-y divide-gray-100 px-6 pb-6 pt-0">
-          {messages.map((message, index) => {
-          const direction = isOutboundMessage(message, mailboxEmails) ? "outbound" : "inbound";
-          const messageAttachments = attachments.filter(
-            (attachment) => attachment.message_id === message.id
-          );
-          return (
-            <div key={message.id} className="py-2">
-              <MessageBubble
-                message={message}
-                direction={direction}
-                attachments={messageAttachments}
-              />
-            </div>
-          );
-        })}
+        <div className="w-full space-y-3 px-4 pb-3 pt-3">
+          {messages.map((message) => {
+            const direction = isOutboundMessage(message, mailboxEmails) ? "outbound" : "inbound";
+            const messageAttachments = attachments.filter(
+              (attachment) => attachment.message_id === message.id
+            );
+            return (
+              <div key={message.id} className="space-y-2">
+                <ThinkingCard
+                  data={message?.ai_context?.order_data || message?.order_data || null}
+                />
+                <MessageBubble
+                  message={message}
+                  direction={direction}
+                  attachments={messageAttachments}
+                  outboundSenderName={currentUserName}
+                />
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -81,6 +81,7 @@ export function TicketDetail({
     mode={composerMode}
     onModeChange={onComposerModeChange}
     toLabel={toLabel}
+    onBlur={onDraftBlur}
   />
     </section>
   );

@@ -40,8 +40,8 @@ export function TicketListItem({
       type="button"
       onClick={onSelect}
       className={cn(
-        "relative flex w-full flex-col gap-3 border-b border-gray-200 bg-white px-4 py-4 text-left transition-colors hover:bg-gray-50",
-        isActive && "z-10 border-b-0 ring-1 ring-inset ring-slate-800",
+        "relative mx-2 my-1.5 flex w-[calc(100%-1rem)] flex-col gap-2 rounded-lg border border-gray-200 bg-white px-3.5 py-3.5 text-left transition-colors hover:bg-gray-50",
+        isActive && "z-10 border-slate-800 ring-1 ring-inset ring-slate-800",
         isUnread && "bg-slate-50"
       )}
       aria-pressed={isActive}
@@ -50,14 +50,14 @@ export function TicketListItem({
         <span className="absolute left-0 top-0 h-full w-[2px] bg-indigo-500" />
       ) : null}
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 truncate text-sm font-semibold text-slate-900">
+        <div className="flex items-center gap-2 truncate text-xs font-semibold text-slate-900">
           {isUnread ? <span className="h-2 w-2 rounded-full bg-indigo-500" /> : null}
           {customerLabel}
         </div>
-        <span className="text-xs text-gray-400">{formatMessageTime(timestamp)}</span>
+        <span className="text-[11px] text-gray-400">{formatMessageTime(timestamp)}</span>
       </div>
         <div className="flex items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-2 text-sm text-slate-700">
+          <div className="flex min-w-0 items-center gap-1.5 text-xs text-slate-700">
             <span className={cn("truncate", isUnread && "font-semibold text-slate-900")}>
               {thread.subject || "Untitled ticket"}
             </span>
@@ -66,7 +66,7 @@ export function TicketListItem({
         <Badge
           variant="secondary"
           className={cn(
-            "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-bold",
+            "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-bold",
             STATUS_STYLES[status]
           )}
         >

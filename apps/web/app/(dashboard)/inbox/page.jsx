@@ -44,7 +44,7 @@ async function loadMessages(serviceClient, userId, mailboxIds, { query, unreadOn
   let request = serviceClient
     .from("mail_messages")
     .select(
-      "id, mailbox_id, thread_id, subject, snippet, body_text, body_html, from_name, from_email, is_read, received_at, sent_at, created_at, ai_draft_text"
+      "id, mailbox_id, thread_id, subject, snippet, body_text, body_html, from_name, from_email, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at, ai_draft_text"
     )
     .eq("user_id", userId)
     .in("mailbox_id", mailboxIds)
@@ -67,7 +67,7 @@ async function loadMessages(serviceClient, userId, mailboxIds, { query, unreadOn
     const fallbackRequest = serviceClient
       .from("mail_messages")
       .select(
-        "id, mailbox_id, thread_id, subject, snippet, body_text, body_html, from_name, from_email, is_read, received_at, sent_at, created_at"
+        "id, mailbox_id, thread_id, subject, snippet, body_text, body_html, from_name, from_email, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at"
       )
       .eq("user_id", userId)
       .in("mailbox_id", mailboxIds)
@@ -181,13 +181,13 @@ export default async function InboxPage({ searchParams }) {
 
   if (!mailboxes.length) {
     return (
-      <div className="flex flex-1 items-center justify-center px-6 py-16">
+      <div className="flex flex-1 items-center justify-center px-4 py-12">
         <div className="max-w-md text-center">
-          <h2 className="text-xl font-semibold text-slate-900">Connect a mailbox</h2>
-          <p className="mt-2 text-sm text-muted-foreground">
+          <h2 className="text-lg font-semibold text-slate-900">Connect a mailbox</h2>
+          <p className="mt-2 text-xs text-muted-foreground">
             You need to connect a support inbox before Sona can fetch your emails.
           </p>
-          <Button asChild className="mt-4">
+          <Button asChild className="mt-3 h-8 text-xs">
             <Link href="/mailboxes">Go to Mailboxes</Link>
           </Button>
         </div>

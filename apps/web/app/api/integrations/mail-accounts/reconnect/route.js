@@ -43,54 +43,25 @@ export async function POST(request) {
   }
 
   const body = await request.json().catch(() => ({}));
-  const provider = typeof body?.provider === "string" ? body.provider.trim() : "";
   const mailboxId = typeof body?.id === "string" ? body.id.trim() : "";
-  if (!provider && !mailboxId) {
-    return NextResponse.json(
-      { error: "provider or id is required." },
-      { status: 400 }
-    );
+  if (!mailboxId) {
+    return NextResponse.json({ error: "id is required." }, { status: 400 });
   }
 
   let supabaseUserId = null;
   try {
     supabaseUserId = await resolveSupabaseUserId(serviceClient, userId);
   } catch (error) {
-    return NextResponse.json(
-      {
-        error: "Supabase user lookup failed.",
-        debug: {
-          clerkUserId: userId,
-          supabaseUrlHost: SUPABASE_BASE_URL ? new URL(SUPABASE_BASE_URL).host : null,
-        },
-      },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const query = serviceClient.from("mail_accounts").delete().eq("user_id", supabaseUserId);
-  const { error } = mailboxId
-    ? await query.eq("id", mailboxId)
-    : await query.eq("provider", provider);
+  const { error } = await serviceClient
+    .from("mail_accounts")
+    .update({ status: "inactive", updated_at: new Date().toISOString() })
+    .eq("id", mailboxId)
+    .eq("user_id", supabaseUserId);
 
   if (error) {
-    const isFkError = /mail_threads_mailbox_id_fkey/i.test(error.message || "");
-    if (isFkError) {
-      const updateQuery = serviceClient
-        .from("mail_accounts")
-        .update({
-          status: "disconnected",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("user_id", supabaseUserId);
-      const { error: updateError } = mailboxId
-        ? await updateQuery.eq("id", mailboxId)
-        : await updateQuery.eq("provider", provider);
-      if (updateError) {
-        return NextResponse.json({ error: updateError.message }, { status: 500 });
-      }
-      return NextResponse.json({ success: true, softDeleted: true }, { status: 200 });
-    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
