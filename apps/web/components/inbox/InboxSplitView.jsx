@@ -850,6 +850,16 @@ export function InboxSplitView({ messages = [], threads = [] }) {
         ticketState={ticketStateByThread[selectedThreadId] || DEFAULT_TICKET_STATE}
         onTicketStateChange={handleTicketStateChange}
         onOpenInsights={() => setInsightsOpen(true)}
+        showThinkingCard={
+          Boolean(selectedThreadId) &&
+          !isLocalThreadId(selectedThreadId) &&
+          threadMessages.some((message) => !isOutboundMessage(message, mailboxEmails)) &&
+          !draftReady &&
+          !draftMessage &&
+          !aiDraft &&
+          !draftValue.trim() &&
+          !suppressAutoDraftByThread[selectedThreadId]
+        }
         draftValue={draftValue}
         onDraftChange={setDraftValue}
         onDraftBlur={() => saveThreadDraft({ immediate: true })}

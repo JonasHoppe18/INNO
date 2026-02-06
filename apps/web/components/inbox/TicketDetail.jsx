@@ -13,6 +13,7 @@ export function TicketDetail({
   ticketState,
   onTicketStateChange,
   onOpenInsights,
+  showThinkingCard = false,
   draftValue,
   onDraftChange,
   onDraftBlur,
@@ -70,11 +71,29 @@ export function TicketDetail({
             const messageAttachments = attachments.filter(
               (attachment) => attachment.message_id === message.id
             );
+            const isDraft = Boolean(message.from_me && message.is_draft);
+            const primaryLog =
+              Array.isArray(message.ai_logs) && message.ai_logs.length
+                ? message.ai_logs[0]
+                : null;
+            const thinkingData = isDraft
+              ? primaryLog
+                ? {
+                    type: primaryLog.step_name,
+                    detail: primaryLog.step_detail,
+                  }
+                : message?.ai_context || message?.context || {
+                    summary: "Analyzed request using Store Policies.",
+                  }
+              : null;
             return (
               <div key={message.id} className="space-y-2">
-                <ThinkingCard
-                  data={message?.ai_context?.order_data || message?.order_data || null}
-                />
+                {isDraft ? (
+                  <ThinkingCard
+                    data={thinkingData}
+                    onClick={() => onOpenInsights?.(true)}
+                  />
+                ) : null}
                 <MessageBubble
                   message={message}
                   direction={direction}
@@ -84,6 +103,9 @@ export function TicketDetail({
               </div>
             );
           })}
+          {showThinkingCard ? (
+            <ThinkingCard loading onClick={() => onOpenInsights?.(true)} />
+          ) : null}
         </div>
       </div>
 
