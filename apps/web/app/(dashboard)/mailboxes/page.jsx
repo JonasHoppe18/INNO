@@ -5,6 +5,7 @@ import { DashboardPageShell } from "@/components/dashboard-page-shell";
 import { MailboxRow } from "@/components/mailboxes/MailboxRow";
 import { MailboxesAddMenu } from "@/components/mailboxes/MailboxesAddMenu";
 import { MailboxesHelpCard } from "@/components/mailboxes/MailboxesHelpCard";
+import { MailboxesOnboardingTracker } from "@/components/onboarding/MailboxesOnboardingTracker";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -88,6 +89,7 @@ export default async function MailboxesPage() {
 
   return (
     <DashboardPageShell className="space-y-10">
+      <MailboxesOnboardingTracker />
       <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="space-y-1">
           <h1 className="text-3xl font-semibold">Mailboxes</h1>

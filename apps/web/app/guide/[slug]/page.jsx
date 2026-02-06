@@ -1,203 +1,70 @@
-import { auth } from "@clerk/nextjs/server";
 import Image from "next/image";
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { SonaLogo } from "@/components/ui/SonaLogo";
 import shopifyLogo from "../../../../../assets/Shopify-Logo.png";
 import gmailLogo from "../../../../../assets/Gmail-logo.webp";
 import outlookLogo from "../../../../../assets/Outlook-logo.png";
 
-const INBOUND_FORMAT = "inbound+{team-slug}@inbound.sona-ai.dk";
-
 const GUIDE_CONTENT = {
-  gmail: {
+  "connect-gmail": {
     title: "Connect Gmail",
     intro: "Authorize Gmail with Google OAuth and start syncing inbox activity.",
     logoSrc: gmailLogo,
     logoAlt: "Gmail",
     steps: [
-      {
-        title: "Step 1: Open Mailboxes in Sona",
-        items: ["Go to Mailboxes in Sona.", "Click “Connect Gmail”."],
-      },
-      {
-        title: "Step 2: Authorize Google",
-        items: [
-          "Choose the Gmail account to connect.",
-          "Review the permissions and click “Allow”.",
-        ],
-      },
-      {
-        title: "Step 3: Confirm sync",
-        items: [
-          "Return to Sona and wait for the mailbox to sync.",
-          "You will see incoming emails in the Inbox.",
-        ],
-      },
+      "Go to Mailboxes in Sona.",
+      "Click “Connect Gmail”.",
+      "Choose your Gmail account and approve permissions.",
+      "Return to Sona and wait for sync to finish.",
     ],
   },
-  outlook: {
+  "connect-outlook": {
     title: "Connect Outlook",
     intro: "Authorize Outlook with Microsoft OAuth and start syncing inbox activity.",
     logoSrc: outlookLogo,
     logoAlt: "Outlook",
     steps: [
-      {
-        title: "Step 1: Open Mailboxes in Sona",
-        items: ["Go to Mailboxes in Sona.", "Click “Connect Outlook”."],
-      },
-      {
-        title: "Step 2: Authorize Microsoft",
-        items: [
-          "Choose the Outlook account to connect.",
-          "Review the permissions and click “Accept”.",
-        ],
-      },
-      {
-        title: "Step 3: Confirm sync",
-        items: [
-          "Return to Sona and wait for the mailbox to sync.",
-          "You will see incoming emails in the Inbox.",
-        ],
-      },
+      "Go to Mailboxes in Sona.",
+      "Click “Connect Outlook”.",
+      "Choose your Outlook account and approve permissions.",
+      "Return to Sona and wait for sync to finish.",
     ],
   },
-  forwarding: {
-    title: "Forwarding Setup",
-    intro: "Use forwarding if you are not connecting Gmail or Outlook directly.",
-    logoAlt: "Sona",
-    prerequisites: [
-      "Access to your mailbox settings (admin or owner).",
-      `Your team’s inbound address: ${INBOUND_FORMAT}.`,
-    ],
+  "other-mail": {
+    title: "Other mail",
+    intro: "Use forwarding when you are not connecting Gmail or Outlook directly.",
     steps: [
-      {
-        title: "Step 1: Open mailbox settings",
-        items: [
-          "Open your email provider’s admin or mailbox settings.",
-          "Find the forwarding section.",
-        ],
-      },
-      {
-        title: "Step 2: Add the forwarding address",
-        items: [
-          "Click “Add a forwarding address”.",
-          `Enter your team’s inbound address: ${INBOUND_FORMAT}.`,
-          "Confirm any prompts from your provider.",
-        ],
-      },
-      {
-        title: "Step 3: Verification & completion",
-        items: [
-          "Your provider may send a verification email.",
-          "Our system automatically detects and confirms it.",
-          "You’ll see status updates inside Sona.",
-        ],
-      },
-      {
-        title: "Optional: Enable forwarding rules",
-        items: [
-          "Forward a copy of incoming mail to the Sona address.",
-          "Keep a copy in your inbox as backup.",
-          "Save changes.",
-        ],
-      },
-      {
-        title: "Test your setup (optional)",
-        items: [
-          "Send a test email to your mailbox.",
-          "Confirm it appears in Sona and becomes a ticket.",
-        ],
-      },
+      "Create a forwarding address in your email provider.",
+      "Forward inbound emails to your Sona address.",
+      "Verify your domain if you want branded sending.",
     ],
-    troubleshooting: [
-      {
-        title: "Forwarding not working",
-        items: [
-          "Check spam for verification emails.",
-          "Confirm the inbound address format is correct.",
-          "Review forwarding rules and spam filters.",
-          "Wait for propagation (can take up to 24 hours).",
-        ],
-      },
-      {
-        title: "Still having issues?",
-        items: [
-          "Remove and re-add the forwarding address.",
-          "Some providers allow only one external forwarding address.",
-          "Contact your team admin to verify the inbound address.",
-        ],
-      },
-    ],
-    notes: [
-      "Forwarding typically happens within seconds.",
-      "Emails are sent securely through your provider.",
-      "Keep original emails in your mailbox as a backup.",
+  },
+  "connect-shopify": {
+    title: "Connect Shopify",
+    intro: "Sync orders, customers, and policies for smarter replies.",
+    logoSrc: shopifyLogo,
+    logoAlt: "Shopify",
+    steps: [
+      "Go to Integrations in Sona.",
+      "Click “Connect Shopify”.",
+      "Log in to Shopify and approve permissions.",
+      "Wait for the sync to complete.",
     ],
   },
   "custom-domain": {
     title: "Set up Custom Domain",
-    intro: "Verify your domain in DNS and send from your own address.",
-    logoAlt: "Sona",
+    intro: "Verify DNS and send from your own address.",
     steps: [
-      {
-        title: "Step 1: Start domain setup",
-        items: [
-          "Go to Mailboxes in Sona.",
-          "Open “Sending Identity” and choose “Use my own domain”.",
-          "Enter your domain and preferred From address.",
-        ],
-      },
-      {
-        title: "Step 2: Add DNS records",
-        items: [
-          "Copy the DKIM TXT record into your DNS provider.",
-          "Copy the Return-Path CNAME record into your DNS provider.",
-        ],
-      },
-      {
-        title: "Step 3: Verify",
-        items: [
-          "Click “Check status” in Sona.",
-          "Once verified, you can send from your custom domain.",
-        ],
-      },
-    ],
-  },
-  shopify: {
-    title: "Shopify Setup",
-    intro: "Connect Shopify and sync orders, customers, and policies.",
-    logoSrc: shopifyLogo,
-    logoAlt: "Shopify",
-    steps: [
-      {
-        title: "Step 1: Connect Shopify",
-        items: ["Go to Integrations in Sona.", "Click “Connect Shopify”."],
-      },
-      {
-        title: "Step 2: Authorize",
-        items: ["Log in to your Shopify store.", "Approve the app permissions."],
-      },
-      {
-        title: "Step 3: Confirm sync",
-        items: [
-          "Return to Sona and wait for the sync to complete.",
-          "Orders and customers will appear in the Inbox context.",
-        ],
-      },
+      "Open Sending Identity in Mailboxes.",
+      "Add DKIM TXT and Return-Path CNAME records.",
+      "Click “Check status” to verify.",
     ],
   },
 };
 
-export default async function GuideDetailPage({ params }) {
-  const { userId } = await auth();
-
-  if (!userId) {
-    redirect(`/sign-in?redirect_url=/guide/${params.slug}`);
-  }
-
+export default function GuideDetailPage({ params }) {
   const guide = GUIDE_CONTENT[params.slug];
-
   if (!guide) {
     notFound();
   }
@@ -238,61 +105,16 @@ export default async function GuideDetailPage({ params }) {
           </div>
         </section>
 
-        {guide.prerequisites ? (
-          <section className="mt-12">
-            <h2 className="text-lg font-semibold">Prerequisites</h2>
-            <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-slate-700">
-              {guide.prerequisites.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
-
         <section className="mt-10">
           <h2 className="text-lg font-semibold">Step-by-step setup</h2>
-          <div className="mt-4 space-y-4">
+          <div className="mt-4 space-y-3">
             {guide.steps.map((step) => (
-              <div key={step.title} className="rounded-xl border border-slate-200 bg-white p-5">
-                <div className="text-sm font-semibold text-slate-900">{step.title}</div>
-                <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
-                  {step.items.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
+              <div key={step} className="rounded-xl border border-slate-200 bg-white p-5">
+                <p className="text-sm text-slate-700">{step}</p>
               </div>
             ))}
           </div>
         </section>
-
-        {guide.troubleshooting ? (
-          <section className="mt-10">
-            <h2 className="text-lg font-semibold">Troubleshooting</h2>
-            <div className="mt-3 space-y-4 text-sm text-slate-700">
-              {guide.troubleshooting.map((section) => (
-                <div key={section.title}>
-                  <div className="font-semibold text-slate-900">{section.title}</div>
-                  <ul className="mt-2 list-disc space-y-1 pl-5">
-                    {section.items.map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
-          </section>
-        ) : null}
-
-        {guide.notes ? (
-          <section className="mt-10">
-            <h2 className="text-lg font-semibold">Important notes</h2>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
-              {guide.notes.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
       </main>
     </div>
   );

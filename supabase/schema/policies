@@ -249,6 +249,34 @@ create policy "mail_learning_profiles_modify_own"
 
 ---
 
+## public.user_onboarding
+
+```sql
+alter table public.user_onboarding enable row level security;
+
+drop policy if exists "user_onboarding_select_own" on public.user_onboarding;
+drop policy if exists "user_onboarding_modify_own" on public.user_onboarding;
+
+create policy "user_onboarding_select_own"
+  on public.user_onboarding
+  for select
+  using (
+    user_id::text = coalesce(auth.jwt()->>'supabase_user_id', '')
+  );
+
+create policy "user_onboarding_modify_own"
+  on public.user_onboarding
+  for all
+  using (
+    user_id::text = coalesce(auth.jwt()->>'supabase_user_id', '')
+  )
+  with check (
+    user_id::text = coalesce(auth.jwt()->>'supabase_user_id', '')
+  );
+```
+
+---
+
 ## public.customer_lookup_cache
 
 ```sql

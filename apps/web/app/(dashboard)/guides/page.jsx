@@ -3,43 +3,44 @@ import { redirect } from "next/navigation";
 import Image from "next/image";
 import { DashboardPageShell } from "@/components/dashboard-page-shell";
 import { SonaLogo } from "@/components/ui/SonaLogo";
+import { ExternalLink } from "lucide-react";
 import shopifyLogo from "../../../../../assets/Shopify-Logo.png";
 import gmailLogo from "../../../../../assets/Gmail-logo.webp";
 import outlookLogo from "../../../../../assets/Outlook-logo.png";
 
 const GUIDES = [
   {
-    slug: "gmail",
+    slug: "connect-gmail",
     title: "Connect Gmail",
     description: "Authorize Gmail and start syncing inbound mail.",
     logoSrc: gmailLogo,
     logoAlt: "Gmail",
   },
   {
-    slug: "outlook",
+    slug: "connect-outlook",
     title: "Connect Outlook",
     description: "Link Outlook and enable unified drafting.",
     logoSrc: outlookLogo,
     logoAlt: "Outlook",
   },
   {
-    slug: "forwarding",
-    title: "Forwarding Setup",
+    slug: "other-mail",
+    title: "Other mail",
     description: "Forward emails to Sona if you use another provider.",
     logoAlt: "Sona",
+  },
+  {
+    slug: "connect-shopify",
+    title: "Connect Shopify",
+    description: "Connect Shopify and sync orders, customers, and policies.",
+    logoSrc: shopifyLogo,
+    logoAlt: "Shopify",
   },
   {
     slug: "custom-domain",
     title: "Set up Custom Domain",
     description: "Verify your domain in DNS and send from your own address.",
     logoAlt: "Sona",
-  },
-  {
-    slug: "shopify",
-    title: "Shopify Setup",
-    description: "Connect Shopify and sync orders, customers, and policies.",
-    logoSrc: shopifyLogo,
-    logoAlt: "Shopify",
   },
 ];
 
@@ -86,9 +87,10 @@ export default async function GuidesPage() {
               href={`/guide/${guide.slug}`}
               target="_blank"
               rel="noreferrer"
-              className="mt-auto inline-flex items-center justify-center self-end rounded-md border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:border-indigo-300 hover:bg-indigo-50"
+              className="mt-auto inline-flex items-center justify-center gap-1.5 self-end rounded-md border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:border-indigo-300 hover:bg-indigo-50"
             >
               Read Guide
+              <ExternalLink className="h-3 w-3 text-slate-400" />
             </a>
           </article>
         ))}

@@ -106,6 +106,18 @@ CREATE TABLE public.mail_learning_profiles (
   CONSTRAINT mail_learning_profiles_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
   CONSTRAINT mail_learning_profiles_mailbox_id_fkey FOREIGN KEY (mailbox_id) REFERENCES public.mail_accounts(id)
 );
+CREATE TABLE public.user_onboarding (
+  user_id uuid NOT NULL,
+  step_email_connected boolean DEFAULT false,
+  step_shopify_connected boolean DEFAULT false,
+  step_ai_configured boolean DEFAULT false,
+  first_draft_at timestamp with time zone,
+  completed_at timestamp with time zone,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT user_onboarding_pkey PRIMARY KEY (user_id),
+  CONSTRAINT user_onboarding_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
 CREATE TABLE public.mail_threads (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,

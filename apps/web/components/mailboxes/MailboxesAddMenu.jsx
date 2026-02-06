@@ -68,6 +68,11 @@ export function MailboxesAddMenu() {
         throw new Error(payload?.error || "Could not create forwarding address.");
       }
       setResult(payload);
+      await fetch("/api/onboarding/mark", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ step: "email_connected" }),
+      }).catch(() => null);
       toast.success("Forwarding address created.");
       router.refresh();
     } catch (error) {

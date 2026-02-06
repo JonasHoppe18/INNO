@@ -57,6 +57,7 @@ const DEFAULT_AUTOMATION = {
   learnFromEdits: false,
   autoDraftEnabled: false,
   draftDestination: "email_provider",
+  minConfidence: 0.6,
 };
 
 const SUPABASE_TEMPLATE =
@@ -131,6 +132,7 @@ export function useAgentAutomation(options = {}) {
         row.draft_destination === "sona_inbox"
           ? "sona_inbox"
           : DEFAULT_AUTOMATION.draftDestination,
+      minConfidence: row.min_confidence ?? DEFAULT_AUTOMATION.minConfidence,
     };
   }, []);
 
@@ -179,6 +181,7 @@ export function useAgentAutomation(options = {}) {
           learn_from_edits: updates.learnFromEdits ?? settings.learnFromEdits,
           auto_draft_enabled: updates.autoDraftEnabled ?? settings.autoDraftEnabled,
           draft_destination: updates.draftDestination ?? settings.draftDestination,
+          min_confidence: updates.minConfidence ?? settings.minConfidence,
         };
 
         const { data, error: upsertError } = await supabase

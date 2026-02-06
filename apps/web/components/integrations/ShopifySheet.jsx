@@ -104,6 +104,11 @@ export function ShopifySheet({
       setOpen(false);
       setApiKey("");
       setDomain(cleanDomain);
+      await fetch("/api/onboarding/mark", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ step: "shopify_connected" }),
+      }).catch(() => null);
       await onConnected?.();
     } catch (submitError) {
       const message =
