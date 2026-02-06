@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { Mail, Server, Settings, UserPlus, X, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import googleLogo from "../../../../assets/google-logo.png";
+import gmailLogo from "../../../../assets/Gmail-logo.webp";
 
 const steps = [
   {
@@ -46,7 +46,7 @@ export function ImapGuideModal({ isOpen, onClose }) {
           <div className="flex items-start gap-4">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50">
               <Image
-                src={googleLogo}
+                src={gmailLogo}
                 alt="Gmail logo"
                 width={32}
                 height={32}

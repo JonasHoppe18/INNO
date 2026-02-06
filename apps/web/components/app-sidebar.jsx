@@ -70,6 +70,11 @@ const baseData = {
       icon: CableIcon,
     },
     {
+      title: "Guides",
+      url: "/guides",
+      icon: HelpCircleIcon,
+    },
+    {
       title: "Settings",
       url: "#",
       icon: SettingsIcon,

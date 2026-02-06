@@ -1,7 +1,7 @@
 import Image from "next/image";
 import shopifyLogo from "../../../assets/Shopify-Logo.png";
-import googleLogo from "../../../assets/google-logo.png";
-import microsoftLogo from "../../../assets/Microsoft-logo.png";
+import gmailLogo from "../../../assets/Gmail-logo.webp";
+import outlookLogo from "../../../assets/Outlook-logo.png";
 
 const logos = [
   {
@@ -11,12 +11,12 @@ const logos = [
   },
   {
     name: "Gmail",
-    src: googleLogo,
+    src: gmailLogo,
     scale: "scale-115",
   },
   {
     name: "Outlook",
-    src: microsoftLogo,
+    src: outlookLogo,
     scale: "scale-100",
   },
 ];

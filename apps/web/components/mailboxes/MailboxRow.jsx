@@ -8,18 +8,18 @@ import { CheckCircle2, Copy, Mail, RotateCcw, ShieldCheck, Trash2 } from "lucide
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { SendingIdentityModal } from "@/components/mailboxes/SendingIdentityModal";
-import googleLogo from "../../../../assets/google-logo.png";
-import microsoftLogo from "../../../../assets/Microsoft-logo.png";
+import gmailLogo from "../../../../assets/Gmail-logo.webp";
+import outlookLogo from "../../../../assets/Outlook-logo.png";
 
 const PROVIDER_CONFIG = {
   gmail: {
     label: "Gmail",
-    logo: googleLogo,
+    logo: gmailLogo,
     logoAlt: "Gmail logo",
   },
   outlook: {
     label: "Outlook",
-    logo: microsoftLogo,
+    logo: outlookLogo,
     logoAlt: "Outlook logo",
   },
   smtp: {
