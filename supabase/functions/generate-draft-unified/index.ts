@@ -1,5 +1,5 @@
 // supabase/functions/generate-draft-unified/index.ts
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "jsr:@supabase/supabase-js@2";
 import {
   buildAutomationGuidance,
   fetchAutomation,
@@ -328,6 +328,15 @@ async function resolveInternalThread(
   emailData: EmailData,
 ) {
   if (!supabase || !userId) return { threadId: null, mailboxId: null };
+  if (provider === "smtp" && emailData.threadId) {
+    const { data } = await supabase
+      .from("mail_threads")
+      .select("id, mailbox_id")
+      .eq("user_id", userId)
+      .eq("id", emailData.threadId)
+      .maybeSingle();
+    if (data?.id) return { threadId: data.id, mailboxId: data.mailbox_id ?? null };
+  }
   if (emailData.threadId) {
     const { data } = await supabase
       .from("mail_threads")
@@ -355,11 +364,12 @@ async function createInternalDraft(options: {
   userId: string | null;
   mailboxId: string | null;
   threadId: string | null;
+  provider: string;
   subject: string;
   htmlBody: string;
   textBody: string;
 }) {
-  if (!supabase || !options.userId || !options.threadId) return null;
+  if (!supabase || !options.userId || !options.threadId || !options.provider) return null;
 
   // Keep a single active draft per thread, so newer customer emails replace stale drafts.
   const { error: cleanupError } = await supabase
@@ -377,6 +387,8 @@ async function createInternalDraft(options: {
     user_id: options.userId,
     mailbox_id: options.mailboxId,
     thread_id: options.threadId,
+    provider: options.provider,
+    provider_message_id: `draft-${options.threadId}-${Date.now()}`,
     subject: options.subject,
     snippet: options.textBody.slice(0, 160),
     body_text: options.textBody,
@@ -435,11 +447,6 @@ Deno.serve(async (req) => {
         status: "warning",
       });
     }
-    reasoningLogs.push({
-      step_name: "Context",
-      step_detail: "Loaded Store Policies",
-      status: "info",
-    });
     // Gatekeeper: spring over hvis mailen ikke skal behandles.
     const classification = await classifyEmail({
       from: emailData.from ?? "",
@@ -586,10 +593,15 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       }
     }
 
-    let draftResponse: any = null;
-    let internalDraft: any = null;
-    let draftId: string | null = null;
-    let threadId: string | null = null;
+    if (provider === "smtp") {
+      draftDestination = "sona_inbox";
+    }
+
+  let draftResponse: any = null;
+  let internalDraft: any = null;
+  let draftId: string | null = null;
+  let threadId: string | null = null;
+  let automationResults: Array<{ type: string; ok: boolean; orderId?: number; detail?: string; error?: string }> = [];
 
     if (draftDestination === "email_provider") {
       if (!accessToken) {
@@ -616,6 +628,7 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         userId: ownerUserId,
         mailboxId: internal.mailboxId,
         threadId: internal.threadId,
+        provider,
         subject: emailData.subject ? `Re: ${emailData.subject}` : "Re:",
         htmlBody,
         textBody: finalText,
@@ -663,26 +676,23 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
 
     // Log draft i Supabase til tracking.
     let loggedDraftId: number | null = null;
-    if (supabase && shopId) {
-      if (threadId) {
-        const { error: staleDraftsError } = await supabase
-          .from("drafts")
-          .delete()
-          .eq("shop_id", shopId)
-          .eq("platform", provider)
-          .eq("thread_id", threadId)
-          .eq("status", "pending");
-        if (staleDraftsError) {
-          console.warn(
-            "generate-draft-unified: failed to clear stale pending drafts",
-            staleDraftsError.message,
-          );
-        }
+    if (supabase && threadId) {
+      const { error: staleDraftsError } = await supabase
+        .from("drafts")
+        .update({ status: "superseded" })
+        .eq("platform", provider)
+        .eq("thread_id", threadId)
+        .eq("status", "pending");
+      if (staleDraftsError) {
+        console.warn(
+          "generate-draft-unified: failed to clear stale pending drafts",
+          staleDraftsError.message,
+        );
       }
       const { data, error } = await supabase
         .from("drafts")
         .insert({
-          shop_id: shopId,
+          shop_id: shopId || null,
           customer_email: customerEmail,
           subject,
           platform: provider,
@@ -701,10 +711,11 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
 
     if (supabase && loggedDraftId && reasoningLogs.length) {
       const now = new Date().toISOString();
+      const threadMarker = threadId ? ` |thread_id:${threadId}` : "";
       const rows = reasoningLogs.map((log) => ({
         draft_id: loggedDraftId,
         step_name: log.step_name,
-        step_detail: log.step_detail,
+        step_detail: `${log.step_detail}${threadMarker}`,
         status: log.status,
         created_at: now,
       }));
@@ -716,15 +727,66 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
 
     // Udfør godkendte Shopify-actions fra model output.
     if (ownerUserId) {
-      const automationResults = await executeAutomationActions({
+      const orderIdMap: Record<string, number> = {};
+      for (const order of context.orders ?? []) {
+        const shopifyId = Number(order?.id ?? 0);
+        if (!shopifyId || Number.isNaN(shopifyId)) continue;
+        const orderNumber = order?.order_number ?? order?.orderNumber ?? null;
+        const name = typeof order?.name === "string" ? order.name.trim() : "";
+        const nameKey = name.replace("#", "");
+        if (orderNumber) {
+          orderIdMap[String(orderNumber)] = shopifyId;
+        }
+        if (nameKey) {
+          orderIdMap[nameKey] = shopifyId;
+        }
+        orderIdMap[String(shopifyId)] = shopifyId;
+      }
+
+      automationResults = await executeAutomationActions({
         supabase,
         supabaseUserId: ownerUserId,
         actions: automationActions,
         automation: context.automation,
         tokenSecret: SHOPIFY_TOKEN_KEY,
         apiVersion: SHOPIFY_API_VERSION,
+        orderIdMap,
       });
       emitDebugLog("generate-draft-unified: automation results", automationResults);
+    }
+
+    if (supabase && loggedDraftId && automationResults.length) {
+      const now = new Date().toISOString();
+      const threadMarker = threadId ? ` |thread_id:${threadId}` : "";
+      const rows = automationResults.map((result) => ({
+        draft_id: loggedDraftId,
+        step_name: "Shopify Action",
+        step_detail: result.ok
+          ? `${result.detail || `Executed ${result.type.replace(/_/g, " ")}.`}`.trim() +
+            threadMarker
+          : `Failed ${result.type.replace(/_/g, " ")}: ${result.error || "unknown error"}.` +
+            threadMarker,
+        status: result.ok ? "success" : "error",
+        created_at: now,
+      }));
+      const { error } = await supabase.from("agent_logs").insert(rows);
+      if (error) {
+        console.warn("generate-draft-unified: failed to log automation results", error.message);
+      }
+    }
+
+    if (supabase && loggedDraftId) {
+      const threadMarker = threadId ? ` |thread_id:${threadId}` : "";
+      const { error } = await supabase.from("agent_logs").insert({
+        draft_id: loggedDraftId,
+        step_name: "Context",
+        step_detail: `Loaded Store Policies${threadMarker}`,
+        status: "info",
+        created_at: new Date().toISOString(),
+      });
+      if (error) {
+        console.warn("generate-draft-unified: failed to log policies", error.message);
+      }
     }
 
     emitDebugLog("generate-draft-unified", {

@@ -11,6 +11,8 @@ export function SonaInsightsModal({
   onOpenChange,
   actions,
   draftId,
+  threadId,
+  draftLoading = false,
   customerLookup,
   customerLookupLoading,
   customerLookupError,
@@ -23,17 +25,44 @@ export function SonaInsightsModal({
   useEffect(() => {
     let active = true;
     const fetchLogs = async () => {
-      if (!supabase || !open || !draftId) {
+      if (!supabase || !open || (!draftId && !threadId)) {
         setLogs([]);
         setLogsLoading(false);
         return;
       }
       setLogsLoading(true);
-      const { data, error } = await supabase
+      let draftIds = [];
+      if (threadId) {
+        const { data: draftRows, error: draftError } = await supabase
+          .from("drafts")
+          .select("id")
+          .eq("thread_id", threadId)
+          .order("created_at", { ascending: true });
+        if (!draftError) {
+          draftIds = (draftRows || []).map((row) => row.id).filter(Boolean);
+        }
+      }
+
+      let query = supabase
         .from("agent_logs")
         .select("id, step_name, step_detail, status, created_at")
-        .eq("draft_id", draftId)
         .order("created_at", { ascending: true });
+
+      if (threadId) {
+        const safeThread = String(threadId).replace(/%/g, "\\%").replace(/_/g, "\\_");
+        if (draftIds.length) {
+          const list = draftIds.join(",");
+          query = query.or(`draft_id.in.(${list}),step_detail.ilike.%thread_id:${safeThread}%`);
+        } else if (draftId) {
+          query = query.or(`draft_id.eq.${draftId},step_detail.ilike.%thread_id:${safeThread}%`);
+        } else {
+          query = query.ilike("step_detail", `%thread_id:${safeThread}%`);
+        }
+      } else if (draftId) {
+        query = query.eq("draft_id", draftId);
+      }
+
+      const { data, error } = await query;
       if (!active) return;
       if (error) {
         setLogs([]);
@@ -46,13 +75,45 @@ export function SonaInsightsModal({
     return () => {
       active = false;
     };
-  }, [draftId, open, supabase]);
+  }, [draftId, open, supabase, threadId]);
 
   const timelineItems = useMemo(() => {
+    const formatTitle = (value) => {
+      const raw = String(value || "");
+      if (!raw) return "Activity";
+      return raw
+        .replace(/_/g, " ")
+        .replace(/\bpostmark\b/gi, "Postmark")
+        .replace(/\bai\b/gi, "AI")
+        .replace(/\b\w/g, (char) => char.toUpperCase());
+    };
+    const formatDetail = (value, name) => {
+      if (!value) return "";
+      const raw = String(value);
+      const stripped = raw.replace(/\s*\|thread_id:[a-z0-9-]+\s*/i, "").trim();
+      if (stripped.trim().startsWith("{") && stripped.trim().endsWith("}")) {
+        try {
+          const parsed = JSON.parse(stripped);
+          if (name === "postmark_inbound_draft_created") {
+            return "Forwarded email draft created.";
+          }
+          if (parsed?.orderId) {
+            return `Order ${parsed.orderId}`;
+          }
+          return "";
+        } catch {
+          return stripped;
+        }
+      }
+      if (name === "postmark_inbound_draft_created") {
+        return "Forwarded email draft created.";
+      }
+      return stripped;
+    };
     return logs.map((log) => ({
       id: String(log.id),
-      title: log.step_name,
-      statusLabel: log.step_detail,
+      title: formatTitle(log.step_name),
+      statusLabel: formatDetail(log.step_detail, log.step_name),
       timestamp: new Date(log.created_at).toLocaleTimeString("da-DK", {
         hour: "2-digit",
         minute: "2-digit",
@@ -88,7 +149,7 @@ export function SonaInsightsModal({
           </TabsList>
           <TabsContent value="actions" className="flex-1 overflow-y-auto">
             <div className="rounded-2xl border border-blue-100 bg-gradient-to-b from-blue-50/50 to-white p-4">
-              {logsLoading ? (
+              {logsLoading || (draftLoading && !timelineItems.length) ? (
                 <div className="text-sm text-slate-500">Loading investigation data…</div>
               ) : timelineItems.length ? (
                 <ActionsTimeline items={timelineItems} />

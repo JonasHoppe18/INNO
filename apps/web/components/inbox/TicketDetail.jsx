@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { Trash2 } from "lucide-react";
 import { MessageBubble } from "@/components/inbox/MessageBubble";
 import { Composer } from "@/components/inbox/Composer";
 import { ThinkingCard } from "@/components/inbox/ThinkingCard";
@@ -18,6 +19,8 @@ export function TicketDetail({
   draftLoaded,
   canSend,
   onSend,
+  onDeleteThread,
+  deletingThread,
   composerMode,
   onComposerModeChange,
   mailboxEmails,
@@ -32,9 +35,9 @@ export function TicketDetail({
 
   const lastUpdated = formatMessageTime(thread.last_message_at);
   const firstMessage = messages[0] || {};
-  const toLabel = `${getSenderLabel(firstMessage) || "Unknown"} <${
-    firstMessage?.from_email || "unknown@email.com"
-  }>`;
+  const toEmail = firstMessage?.from_email || "";
+  const senderLabel = getSenderLabel(firstMessage) || "";
+  const toLabel = toEmail ? `${senderLabel || "Unknown"} <${toEmail}>` : "";
   const headerTitle = thread.subject || "Untitled ticket";
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white lg:min-w-0">
@@ -45,7 +48,19 @@ export function TicketDetail({
             {getSenderLabel(firstMessage)} • {firstMessage?.from_email} • Last update {lastUpdated}
           </div>
         </div>
-        <div />
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={onDeleteThread}
+            disabled={deletingThread}
+            aria-label="Delete ticket"
+            className="text-gray-400 hover:text-red-600"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto">

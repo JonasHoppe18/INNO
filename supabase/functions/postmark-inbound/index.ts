@@ -1,12 +1,15 @@
 // Deploy: supabase functions deploy postmark-inbound --no-verify
 // Env vars: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SONA_WEBHOOK_SECRET
 // SQL: create unique index if not exists uniq_mail_messages_provider_msg on public.mail_messages(provider, provider_message_id);
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "jsr:@supabase/supabase-js@2";
+import { shouldSkipInboxMessage } from "../_shared/inbox-filter.ts";
 
 const PROJECT_URL = Deno.env.get("SUPABASE_URL") ?? Deno.env.get("PROJECT_URL");
 const SERVICE_ROLE_KEY =
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? Deno.env.get("SERVICE_ROLE_KEY");
 const WEBHOOK_SECRET = Deno.env.get("SONA_WEBHOOK_SECRET") ?? "";
+const INTERNAL_AGENT_SECRET = Deno.env.get("INTERNAL_AGENT_SECRET") ?? "";
+const IGNORE_SPAM_FILTER = Deno.env.get("POSTMARK_IGNORE_SPAM") === "true";
 
 const supabase =
   PROJECT_URL && SERVICE_ROLE_KEY ? createClient(PROJECT_URL, SERVICE_ROLE_KEY) : null;
@@ -187,6 +190,121 @@ async function findThreadByReplyMessage(
   return (data as any)?.thread_id ?? null;
 }
 
+async function resolveShopId(ownerUserId: string): Promise<string | null> {
+  if (!supabase || !ownerUserId) return null;
+  const { data, error } = await supabase
+    .from("shops")
+    .select("id")
+    .eq("owner_user_id", ownerUserId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.warn("postmark-inbound: failed to resolve shop id", error.message);
+  }
+  return (data as any)?.id ?? null;
+}
+
+async function isAutoDraftEnabled(userId: string): Promise<boolean> {
+  if (!supabase || !userId) return false;
+  const { data, error } = await supabase
+    .from("agent_automation")
+    .select("auto_draft_enabled")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) {
+    console.warn("postmark-inbound: failed to fetch automation settings", error.message);
+  }
+  return Boolean((data as any)?.auto_draft_enabled);
+}
+
+async function triggerDraftForInbound(params: {
+  shopId: string;
+  messageId: string;
+  threadId: string;
+  subject: string;
+  fromRaw: string;
+  fromEmail: string | null;
+  body: string;
+  headers: PostmarkHeader[];
+}) {
+  if (!PROJECT_URL) throw new Error("PROJECT_URL mangler");
+  const endpoint = `${PROJECT_URL.replace(/\/$/, "")}/functions/v1/generate-draft-unified`;
+  const res = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(INTERNAL_AGENT_SECRET ? { "x-internal-secret": INTERNAL_AGENT_SECRET } : {}),
+      ...(SERVICE_ROLE_KEY ? { Authorization: `Bearer ${SERVICE_ROLE_KEY}` } : {}),
+    },
+    body: JSON.stringify({
+      shop_id: params.shopId,
+      provider: "smtp",
+      access_token: "",
+      email_data: {
+        messageId: params.messageId,
+        threadId: params.threadId,
+        subject: params.subject,
+        from: params.fromRaw,
+        fromEmail: params.fromEmail ?? "",
+        body: params.body,
+        headers: params.headers.map((header) => ({
+          name: header?.Name ?? "",
+          value: header?.Value ?? "",
+        })),
+      },
+    }),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`generate-draft-unified fejlede ${res.status}: ${text}`);
+  }
+  return text ? JSON.parse(text) : null;
+}
+
+async function ensureDraftLog(params: {
+  threadId: string;
+  shopId: string | null;
+  subject: string;
+  customerEmail: string | null;
+  draftMessageId: string | null;
+}) {
+  if (!supabase) return null;
+  const { data: existing, error: lookupError } = await supabase
+    .from("drafts")
+    .select("id")
+    .eq("thread_id", params.threadId)
+    .eq("platform", "smtp")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (lookupError) {
+    console.warn("postmark-inbound: failed to lookup drafts", lookupError.message);
+  } else if (existing?.id) {
+    return existing.id;
+  }
+
+  const { data, error } = await supabase
+    .from("drafts")
+    .insert({
+      shop_id: params.shopId,
+      customer_email: params.customerEmail,
+      subject: params.subject,
+      platform: "smtp",
+      status: "pending",
+      draft_id: params.draftMessageId,
+      thread_id: params.threadId,
+      created_at: new Date().toISOString(),
+    })
+    .select("id")
+    .maybeSingle();
+  if (error) {
+    console.warn("postmark-inbound: failed to insert draft log", error.message);
+    return null;
+  }
+  return data?.id ?? null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
@@ -266,6 +384,10 @@ Deno.serve(async (req) => {
   const snippet = buildSnippet(textBody);
 
   const inReplyTo = normalizeMessageId(findHeader(headers, "In-Reply-To"));
+  const messageIdHeader =
+    normalizeMessageId(findHeader(headers, "Message-ID")) ??
+    normalizeMessageId(findHeader(headers, "Message-Id"));
+  const storedMessageId = messageIdHeader || messageId;
   const referencesRaw = findHeader(headers, "References");
   const referenceIds = [
     inReplyTo,
@@ -278,7 +400,7 @@ Deno.serve(async (req) => {
     .from("mail_messages")
     .select("id, thread_id")
     .eq("provider", "smtp")
-    .eq("provider_message_id", messageId)
+    .eq("provider_message_id", storedMessageId)
     .maybeSingle();
   if (existingMessage?.id) {
     return jsonResponse(200, {
@@ -344,7 +466,7 @@ Deno.serve(async (req) => {
       mailbox_id: mailbox.mailbox_id,
       thread_id: threadId,
       provider: "smtp",
-      provider_message_id: messageId,
+      provider_message_id: storedMessageId,
       subject,
       snippet,
       body_text: textBody,
@@ -414,9 +536,68 @@ Deno.serve(async (req) => {
 
   await logAgent(
     "postmark_inbound_received",
-    { messageId, slug, subject, from: fromRaw, to: toList },
+    { messageId: storedMessageId, slug, subject, from: fromRaw, to: toList },
     "success",
   );
+
+  try {
+    const autoDraftEnabled = await isAutoDraftEnabled(mailbox.user_id);
+    if (autoDraftEnabled) {
+      if (
+        !IGNORE_SPAM_FILTER &&
+        shouldSkipInboxMessage({
+          from: fromRaw,
+          subject,
+          snippet,
+          body: textBody,
+          headers: headers.map((header) => ({
+            name: header?.Name ?? "",
+            value: header?.Value ?? "",
+          })),
+        })
+      ) {
+        await logAgent(
+          "postmark_inbound_draft_skipped",
+          { messageId, slug, reason: "spam_filter" },
+          "info",
+        );
+      } else {
+        const shopId = await resolveShopId(mailbox.user_id);
+        if (shopId) {
+          const draftOutcome = await triggerDraftForInbound({
+            shopId,
+            messageId: storedMessageId,
+            threadId,
+            subject,
+            fromRaw,
+            fromEmail,
+            body: textBody,
+            headers,
+          });
+          const draftId = await ensureDraftLog({
+            threadId,
+            shopId,
+            subject,
+            customerEmail: fromEmail,
+            draftMessageId: draftOutcome?.draftId ? String(draftOutcome.draftId) : null,
+          });
+          await supabase.from("agent_logs").insert({
+            draft_id: draftId ?? null,
+            step_name: "draft_created",
+            step_detail: `Email draft created.|thread_id:${threadId}`,
+            status: "success",
+            created_at: new Date().toISOString(),
+          });
+        }
+      }
+    }
+  } catch (error) {
+    await logAgent(
+      "postmark_inbound_draft_failed",
+      { messageId, slug, error: (error as Error).message },
+      "error",
+    );
+  }
 
   return jsonResponse(200, {
     ok: true,

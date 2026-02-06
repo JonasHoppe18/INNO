@@ -21,6 +21,8 @@ export type AutomationAction = {
 export type AutomationResult = {
   type: string;
   ok: boolean;
+  orderId?: number;
+  detail?: string;
   error?: string;
 };
 
@@ -336,11 +338,49 @@ export async function executeAutomationActions({
         ...action,
         orderId: Number(orderIdToUse),
       });
-      results.push({ type: action.type, ok: true });
+      let detail = "";
+      if (action.type === "update_shipping_address") {
+        const address = (action.payload?.shipping_address ?? action.payload?.shippingAddress) as Record<
+          string,
+          unknown
+        >;
+        const parts = [
+          address?.address1,
+          address?.address2,
+          address?.zip || address?.postal_code,
+          address?.city,
+          address?.country,
+        ]
+          .map((value) => (typeof value === "string" ? value.trim() : ""))
+          .filter(Boolean);
+        if (parts.length > 4) {
+          parts.pop();
+        }
+        const name =
+          typeof address?.name === "string" && address.name.trim() ? `${address.name.trim()}, ` : "";
+        if (parts.length) {
+          detail = `Updated shipping address to ${name}${parts.join(", ")}.`;
+        }
+      } else if (action.type === "add_tag") {
+        const tag = typeof action.payload?.tag === "string" ? action.payload.tag.trim() : "";
+        if (tag) detail = `Added tag "${tag}".`;
+      } else if (action.type === "cancel_order") {
+        const reason = typeof action.payload?.reason === "string" ? action.payload.reason.trim() : "";
+        detail = reason ? `Cancelled order (reason: ${reason}).` : "Cancelled order.";
+      }
+
+      results.push({
+        type: action.type,
+        ok: true,
+        orderId: Number(orderIdToUse),
+        detail: detail || undefined,
+      });
     } catch (err) {
       results.push({
         type: action.type,
         ok: false,
+        orderId: Number(action.orderId ?? 0) || undefined,
+        detail: undefined,
         error: err instanceof Error ? err.message : String(err),
       });
     }

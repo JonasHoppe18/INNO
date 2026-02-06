@@ -11,6 +11,7 @@ import { useUser } from "@clerk/nextjs";
 import { toast } from "sonner";
 import { useCustomerLookup } from "@/hooks/useCustomerLookup";
 import { useSiteHeaderActions } from "@/components/site-header-actions";
+import { useRouter } from "next/navigation";
 import {
   Select,
   SelectContent,
@@ -159,6 +160,9 @@ const MOCK_ACTIONS = [
 
 export function InboxSplitView({ messages = [], threads = [] }) {
   const [selectedThreadId, setSelectedThreadId] = useState(null);
+  const [localNewThread, setLocalNewThread] = useState(null);
+  const [draftLogLoading, setDraftLogLoading] = useState(false);
+  const [draftLogIdByThread, setDraftLogIdByThread] = useState({});
   const [ticketStateByThread, setTicketStateByThread] = useState({});
   const [readOverrides, setReadOverrides] = useState({});
   const [localSentMessagesByThread, setLocalSentMessagesByThread] = useState({});
@@ -170,10 +174,13 @@ export function InboxSplitView({ messages = [], threads = [] }) {
   const [composerMode, setComposerMode] = useState("reply");
   const [draftValue, setDraftValue] = useState("");
   const [activeDraftId, setActiveDraftId] = useState(null);
+  const [isSending, setIsSending] = useState(false);
   const [suppressAutoDraftByThread, setSuppressAutoDraftByThread] = useState({});
   const [draftReady, setDraftReady] = useState(false);
   const [insightsOpen, setInsightsOpen] = useState(false);
   const [draftLogId, setDraftLogId] = useState(null);
+  const sendingStartedAtRef = useRef(0);
+  const [deletingThread, setDeletingThread] = useState(false);
   const headerActionsKeyRef = useRef("");
   const draftLastSavedRef = useRef("");
   const savingDraftRef = useRef(false);
@@ -181,16 +188,22 @@ export function InboxSplitView({ messages = [], threads = [] }) {
   const supabase = useClerkSupabase();
   const { user } = useUser();
   const { setActions: setHeaderActions } = useSiteHeaderActions();
+  const router = useRouter();
   const currentUserName = [user?.firstName, user?.lastName].filter(Boolean).join(" ") || "You";
 
   useEffect(() => {
     draftValueRef.current = draftValue;
   }, [draftValue]);
 
+  const isLocalThreadId = useCallback(
+    (threadId) => String(threadId || "").startsWith("local-new-ticket-"),
+    []
+  );
+
   const derivedThreads = useMemo(() => {
-    if (threads?.length) return threads;
-    return deriveThreadsFromMessages(messages);
-  }, [messages, threads]);
+    const base = threads?.length ? threads : deriveThreadsFromMessages(messages);
+    return localNewThread ? [localNewThread, ...base] : base;
+  }, [localNewThread, messages, threads]);
 
   useEffect(() => {
     if (!derivedThreads.length) {
@@ -204,6 +217,12 @@ export function InboxSplitView({ messages = [], threads = [] }) {
       return derivedThreads[0].id;
     });
   }, [derivedThreads]);
+
+  useEffect(() => {
+    if (!localNewThread) return;
+    if (selectedThreadId === localNewThread.id) return;
+    setLocalNewThread(null);
+  }, [localNewThread, selectedThreadId]);
 
   useEffect(() => {
     if (!derivedThreads.length) return;
@@ -306,33 +325,62 @@ export function InboxSplitView({ messages = [], threads = [] }) {
       : "General";
 
   useEffect(() => {
+    if (!selectedThreadId || isLocalThreadId(selectedThreadId)) return;
     let active = true;
     const fetchDraftLogId = async () => {
-      if (!supabase || !selectedThread?.provider_thread_id) {
-        if (active) setDraftLogId(null);
+      if (draftLogIdByThread[selectedThreadId]) {
+        setDraftLogId(draftLogIdByThread[selectedThreadId]);
+      }
+      setDraftLogLoading(true);
+      const draftThreadId =
+        selectedThread?.provider_thread_id || selectedThread?.id || null;
+      if (!supabase || !draftThreadId) {
+        if (active) {
+          setDraftLogId(null);
+          setDraftLogLoading(false);
+        }
         return;
       }
       const { data, error } = await supabase
         .from("drafts")
         .select("id")
-        .eq("thread_id", selectedThread.provider_thread_id)
+        .eq("thread_id", draftThreadId)
+        .eq("platform", selectedThread?.provider || "")
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
       if (!active) return;
       if (error) {
         setDraftLogId(null);
+        setDraftLogLoading(false);
         return;
       }
-      setDraftLogId(typeof data?.id === "number" ? data.id : null);
+      const nextId = typeof data?.id === "number" ? data.id : null;
+      setDraftLogId(nextId);
+      if (nextId) {
+        setDraftLogIdByThread((prev) => ({
+          ...prev,
+          [selectedThreadId]: nextId,
+        }));
+      }
+      setDraftLogLoading(false);
     };
     fetchDraftLogId();
     return () => {
       active = false;
     };
-  }, [selectedThread?.provider_thread_id, supabase]);
+  }, [
+    isLocalThreadId,
+    selectedThread?.id,
+    selectedThread?.provider,
+    selectedThread?.provider_thread_id,
+    selectedThreadId,
+    supabase,
+    draftLogIdByThread,
+  ]);
 
   useEffect(() => {
+    if (isLocalThreadId(selectedThreadId)) return;
     if (!supabase || !selectedThreadId) return;
     const thread = derivedThreads.find((item) => item.id === selectedThreadId);
     if (!thread) return;
@@ -365,7 +413,7 @@ export function InboxSplitView({ messages = [], threads = [] }) {
         body: JSON.stringify({ threadId: selectedThreadId, status: "Open" }),
       }).catch(() => null);
     }
-  }, [derivedThreads, selectedThreadId, supabase, ticketStateByThread]);
+  }, [derivedThreads, isLocalThreadId, selectedThreadId, supabase, ticketStateByThread]);
 
   const rawThreadMessages = useMemo(() => {
     if (!selectedThreadId) return [];
@@ -446,6 +494,10 @@ export function InboxSplitView({ messages = [], threads = [] }) {
   useEffect(() => {
     let active = true;
     const loadDraft = async () => {
+      if (isLocalThreadId(selectedThreadId)) {
+        setDraftReady(true);
+        return;
+      }
       if (!selectedThreadId) return;
       const res = await fetch(`/api/threads/${selectedThreadId}/draft`, {
         method: "GET",
@@ -471,7 +523,7 @@ export function InboxSplitView({ messages = [], threads = [] }) {
     return () => {
       active = false;
     };
-  }, [selectedThreadId]);
+  }, [isLocalThreadId, selectedThreadId]);
 
   useEffect(() => {
     if (!selectedThreadId || !draftReady || !aiDraft) return;
@@ -575,6 +627,7 @@ export function InboxSplitView({ messages = [], threads = [] }) {
   }, [setHeaderActions]);
 
   const saveThreadDraft = useCallback(async ({ immediate = false, valueOverride } = {}) => {
+    if (isLocalThreadId(selectedThreadId)) return;
     if (!selectedThreadId || !draftReady) return;
     const text = String(valueOverride ?? draftValueRef.current ?? "");
     const trimmed = text.trim();
@@ -620,25 +673,57 @@ export function InboxSplitView({ messages = [], threads = [] }) {
     } finally {
       savingDraftRef.current = false;
     }
-  }, [draftReady, selectedThread?.subject, selectedThreadId]);
+  }, [draftReady, isLocalThreadId, selectedThread?.subject, selectedThreadId]);
 
   useEffect(() => {
+    if (isLocalThreadId(selectedThreadId)) return;
     if (!selectedThreadId || !draftReady) return;
     const timer = setInterval(() => {
       saveThreadDraft({ immediate: false, valueOverride: draftValueRef.current });
     }, 4000);
     return () => clearInterval(timer);
-  }, [draftReady, saveThreadDraft, selectedThreadId]);
+  }, [draftReady, isLocalThreadId, saveThreadDraft, selectedThreadId]);
+
+  const handleCreateTicket = useCallback(() => {
+    const nowIso = new Date().toISOString();
+    const id = `local-new-ticket-${Date.now()}`;
+    const nextThread = {
+      id,
+      subject: "New ticket",
+      snippet: "",
+      status: "New",
+      unread_count: 0,
+      is_read: true,
+      last_message_at: nowIso,
+      updated_at: nowIso,
+      created_at: nowIso,
+      tags: [],
+      is_local: true,
+    };
+    setLocalNewThread(nextThread);
+    setSelectedThreadId(id);
+    setDraftValue("");
+    setActiveDraftId(null);
+    setDraftReady(true);
+    setComposerMode("reply");
+  }, []);
 
   const handleSendDraft = async (payload = {}) => {
+    if (isSending) return;
     if (!selectedThreadId) {
       toast.error("No thread selected.");
+      return;
+    }
+    if (isLocalThreadId(selectedThreadId)) {
+      toast.error("Saving/sending brand new tickets is not ready yet.");
       return;
     }
     if (!draftValue.trim()) {
       toast.error("Draft is empty.");
       return;
     }
+    sendingStartedAtRef.current = Date.now();
+    setIsSending(true);
     const toastId = toast.loading("Sending draft...");
     try {
       const res = await fetch(`/api/threads/${selectedThreadId}/send`, {
@@ -691,6 +776,46 @@ export function InboxSplitView({ messages = [], threads = [] }) {
       }));
     } catch (err) {
       toast.error(err?.message || "Could not send draft.", { id: toastId });
+    } finally {
+      const elapsed = Date.now() - (sendingStartedAtRef.current || 0);
+      const delay = Math.max(0, 600 - elapsed);
+      if (delay) {
+        setTimeout(() => setIsSending(false), delay);
+      } else {
+        setIsSending(false);
+      }
+    }
+  };
+
+  const handleDeleteThread = async () => {
+    if (!selectedThreadId || deletingThread) return;
+    if (isLocalThreadId(selectedThreadId)) {
+      setLocalNewThread(null);
+      setSelectedThreadId(null);
+      setDraftValue("");
+      setActiveDraftId(null);
+      return;
+    }
+    const confirmed = window.confirm("Are you sure you want to delete this ticket? This cannot be undone.");
+    if (!confirmed) return;
+    setDeletingThread(true);
+    try {
+      const res = await fetch(`/api/threads/${selectedThreadId}/delete`, {
+        method: "DELETE",
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload?.error || "Could not delete ticket.");
+      }
+      toast.success("Ticket deleted.");
+      setSelectedThreadId(null);
+      setDraftValue("");
+      setActiveDraftId(null);
+      router.refresh();
+    } catch (error) {
+      toast.error(error?.message || "Could not delete ticket.");
+    } finally {
+      setDeletingThread(false);
     }
   };
 
@@ -714,6 +839,7 @@ export function InboxSplitView({ messages = [], threads = [] }) {
         onFiltersChange={handleFiltersChange}
         getTimestamp={getThreadTimestamp}
         getUnreadCount={getThreadUnreadCount}
+        onCreateTicket={handleCreateTicket}
       />
 
       <TicketDetail
@@ -728,8 +854,11 @@ export function InboxSplitView({ messages = [], threads = [] }) {
         onDraftChange={setDraftValue}
         onDraftBlur={() => saveThreadDraft({ immediate: true })}
         draftLoaded={Boolean(draftMessage)}
-        canSend={Boolean(draftMessage?.id)}
+        canSend={Boolean(selectedThreadId) && !isLocalThreadId(selectedThreadId)}
         onSend={handleSendDraft}
+        onDeleteThread={handleDeleteThread}
+        deletingThread={deletingThread}
+        isSending={isSending}
         composerMode={composerMode}
         onComposerModeChange={setComposerMode}
         mailboxEmails={mailboxEmails}
@@ -740,6 +869,8 @@ export function InboxSplitView({ messages = [], threads = [] }) {
         onOpenChange={setInsightsOpen}
         actions={actions}
         draftId={draftLogId}
+        threadId={selectedThread?.id || null}
+        draftLoading={draftLogLoading}
         customerLookup={customerLookup}
         customerLookupLoading={customerLookupLoading}
         customerLookupError={customerLookupError}

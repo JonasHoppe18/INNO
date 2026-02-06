@@ -213,7 +213,7 @@ export async function POST(request, { params }) {
   // Best-effort tracking in drafts table (legacy analytics).
   await serviceClient
     .from("drafts")
-    .delete()
+    .update({ status: "superseded" })
     .eq("thread_id", thread.provider_thread_id || threadId)
     .eq("platform", thread.provider || "smtp")
     .eq("status", "pending");
@@ -287,7 +287,7 @@ export async function DELETE(_request, { params }) {
 
   await serviceClient
     .from("drafts")
-    .delete()
+    .update({ status: "superseded" })
     .eq("thread_id", thread.provider_thread_id || threadId)
     .eq("platform", thread.provider || "smtp")
     .eq("status", "pending");

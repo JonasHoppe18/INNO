@@ -20,6 +20,7 @@ export function TicketList({
   onFiltersChange,
   getTimestamp,
   getUnreadCount,
+  onCreateTicket,
 }) {
   return (
     <aside className="flex w-full flex-col border-b bg-white lg:w-[20vw] lg:min-w-[20vw] lg:max-w-[20vw] lg:flex-none lg:border-b-0 lg:border-r lg:border-gray-200">
@@ -93,6 +94,7 @@ export function TicketList({
         </div>
         <button
           type="button"
+          onClick={onCreateTicket}
           className="flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-dashed border-gray-300 bg-white px-3 text-xs font-medium text-gray-500 transition hover:border-gray-400 hover:text-gray-700"
         >
           <span className="text-sm font-semibold">+</span>

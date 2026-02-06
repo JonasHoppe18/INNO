@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bold,
   ChevronDown,
+  Loader2,
   Mail,
   Paperclip,
   Send,
@@ -23,6 +24,7 @@ export function Composer({
   draftLoaded = false,
   canSend = false,
   onSend,
+  isSending = false,
   mode,
   onModeChange,
   toLabel,
@@ -284,6 +286,7 @@ export function Composer({
         <div className="flex items-center">
           <Button
             type="button"
+            disabled={!canSend || !value.trim() || isSending}
             onClick={() =>
               onSend?.({
                 bodyText: value,
@@ -294,8 +297,17 @@ export function Composer({
             }
             className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-900"
           >
-              <Send className="mr-2 h-3.5 w-3.5" />
-              Send Reply
+              {isSending ? (
+                <>
+                  <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <Send className="mr-2 h-3.5 w-3.5" />
+                  Send Reply
+                </>
+              )}
             </Button>
           </div>
         </div>

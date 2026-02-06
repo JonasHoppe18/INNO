@@ -2,9 +2,9 @@ import { cn } from "@/lib/utils";
 
 const statusStyles = {
   success: {
-    dot: "border-blue-500",
-    line: "bg-blue-200",
-    badge: "border-blue-200 bg-blue-50 text-blue-700",
+    dot: "border-indigo-500",
+    line: "bg-indigo-200",
+    badge: "border-indigo-200 bg-indigo-50 text-indigo-700",
   },
   warning: {
     dot: "border-amber-500",
@@ -12,9 +12,9 @@ const statusStyles = {
     badge: "border-amber-200 bg-amber-50 text-amber-700",
   },
   info: {
-    dot: "border-slate-400",
-    line: "bg-slate-200",
-    badge: "border-slate-200 bg-slate-50 text-slate-600",
+    dot: "border-indigo-300",
+    line: "bg-indigo-100",
+    badge: "border-indigo-100 bg-indigo-50 text-indigo-600",
   },
   error: {
     dot: "border-red-500",
