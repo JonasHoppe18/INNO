@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 
 import { ChartAreaInteractive } from "@/components/chart-area-interactive";
+import { LearningCard } from "@/components/agent/LearningCard";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -104,6 +105,8 @@ export default async function Page() {
 
   const serviceClient = createServiceClient();
   let drafts = [];
+  let sentMailCount = 0;
+  let sentConversations = 0;
   if (serviceClient) {
     try {
       const supabaseUserId = await resolveSupabaseUserId(serviceClient, userId);
@@ -121,6 +124,27 @@ export default async function Page() {
         }
         drafts = Array.isArray(data) ? data : [];
       }
+
+      if (supabaseUserId) {
+        const { count: sentMailCountResult } = await serviceClient
+          .from("mail_messages")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", supabaseUserId)
+          .eq("from_me", true)
+          .not("sent_at", "is", null);
+        sentMailCount = sentMailCountResult ?? 0;
+
+        const { data: conversationRows } = await serviceClient
+          .from("mail_messages")
+          .select("thread_id")
+          .eq("user_id", supabaseUserId)
+          .eq("from_me", true)
+          .not("sent_at", "is", null)
+          .limit(2000);
+        sentConversations = new Set(
+          (conversationRows || []).map((row) => row.thread_id).filter(Boolean)
+        ).size;
+      }
     } catch (error) {
       console.error("Dashboard drafts lookup failed:", error);
     }
@@ -128,12 +152,12 @@ export default async function Page() {
 
   const totalDrafts = drafts.length;
   const pendingCount = drafts.filter((draft) => draft.status === "pending").length;
-  const sentCount = drafts.filter((draft) => draft.status === "sent").length;
+  const sentDraftCount = drafts.filter((draft) => draft.status === "sent").length;
   const timeSavedMinutes = totalDrafts * 5;
   const timeSavedLabel =
     totalDrafts === 0 ? "0 hrs" : formatTimeSaved(timeSavedMinutes);
   const successRate =
-    totalDrafts === 0 ? "N/A" : `${Math.round((sentCount / totalDrafts) * 100)}%`;
+    totalDrafts === 0 ? "N/A" : `${Math.round((sentDraftCount / totalDrafts) * 100)}%`;
   const recentDrafts = drafts.slice(0, 5);
 
   return (
@@ -171,7 +195,7 @@ export default async function Page() {
                 <div className="absolute right-4 top-4">
                   <Badge variant="outline" className="flex gap-1 rounded-lg text-xs">
                     <FileTextIcon className="size-3" />
-                    {sentCount} sent
+                    {sentDraftCount} sent
                   </Badge>
                 </div>
               </CardHeader>
@@ -193,7 +217,7 @@ export default async function Page() {
                 <div className="absolute right-4 top-4">
                   <Badge variant="outline" className="flex gap-1 rounded-lg text-xs">
                     <PercentIcon className="size-3" />
-                    {sentCount}/{totalDrafts || 0} sent
+                    {sentDraftCount}/{totalDrafts || 0} sent
                   </Badge>
                 </div>
               </CardHeader>
@@ -232,6 +256,9 @@ export default async function Page() {
                 <div className="text-muted-foreground">Drafts queued for approval</div>
               </CardFooter>
             </Card>
+          </div>
+          <div className="px-4 lg:px-6">
+            <LearningCard sentCount={sentMailCount} conversationCount={sentConversations} />
           </div>
           <div className="px-4 lg:px-6">
             {totalDrafts === 0 ? (

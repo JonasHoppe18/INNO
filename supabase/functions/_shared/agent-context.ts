@@ -11,6 +11,7 @@ export type Automation = {
   cancel_orders: boolean;
   automatic_refunds: boolean;
   historic_inbox_access: boolean;
+  learn_from_edits: boolean;
   draft_destination: "email_provider" | "sona_inbox";
 };
 
@@ -32,6 +33,7 @@ export const DEFAULT_AUTOMATION: Automation = {
   cancel_orders: true,
   automatic_refunds: false,
   historic_inbox_access: false,
+  learn_from_edits: false,
   draft_destination: "email_provider",
 };
 
@@ -106,7 +108,9 @@ export async function fetchAutomation(
   if (!supabase || !userId) return DEFAULT_AUTOMATION;
   const { data, error } = await supabase
     .from("agent_automation")
-    .select("order_updates,cancel_orders,automatic_refunds,historic_inbox_access,draft_destination")
+    .select(
+      "order_updates,cancel_orders,automatic_refunds,historic_inbox_access,learn_from_edits,draft_destination"
+    )
     .eq("user_id", userId)
     .maybeSingle();
   if (error) {
@@ -129,6 +133,10 @@ export async function fetchAutomation(
       typeof data?.historic_inbox_access === "boolean"
         ? data.historic_inbox_access
         : DEFAULT_AUTOMATION.historic_inbox_access,
+    learn_from_edits:
+      typeof data?.learn_from_edits === "boolean"
+        ? data.learn_from_edits
+        : DEFAULT_AUTOMATION.learn_from_edits,
     draft_destination:
       data?.draft_destination === "sona_inbox"
         ? "sona_inbox"

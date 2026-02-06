@@ -66,6 +66,167 @@ type OpenAIResult = {
   actions: AutomationAction[];
 };
 
+const PII_EMAIL_REGEX = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
+const PII_PHONE_REGEX = /\+?\d[\d\s().-]{7,}\d/g;
+
+const stripHtmlSimple = (html: string) =>
+  String(html || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+
+const normalizeLine = (value: string) => String(value || "").replace(/\s+/g, " ").trim();
+
+const maskPii = (value: string) =>
+  normalizeLine(value).replace(PII_EMAIL_REGEX, "[email]").replace(PII_PHONE_REGEX, "[phone]");
+
+const splitLines = (value: string) =>
+  String(value || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+const wordCount = (value: string) =>
+  normalizeLine(value)
+    .split(" ")
+    .filter(Boolean).length;
+
+const detectLanguage = (samples: string[]) => {
+  const danishHints = ["hej", "tak", "venlig", "hilsen", "mvh", "ordre", "pakke"];
+  const englishHints = ["hi", "hello", "thanks", "regards", "order", "shipping"];
+  let da = 0;
+  let en = 0;
+  samples.forEach((text) => {
+    const lower = text.toLowerCase();
+    danishHints.forEach((word) => {
+      if (lower.includes(word)) da += 1;
+    });
+    englishHints.forEach((word) => {
+      if (lower.includes(word)) en += 1;
+    });
+  });
+  if (da === 0 && en === 0) return null;
+  return da >= en ? "Danish" : "English";
+};
+
+const extractGreeting = (text: string) => {
+  const firstLine = splitLines(text)[0] || "";
+  const lower = firstLine.toLowerCase();
+  if (lower.startsWith("hej")) return "Hej";
+  if (lower.startsWith("hi")) return "Hi";
+  if (lower.startsWith("hello")) return "Hello";
+  if (lower.startsWith("dear")) return "Dear";
+  return null;
+};
+
+const extractSignoff = (text: string) => {
+  const lines = splitLines(text);
+  const last = lines[lines.length - 1]?.toLowerCase() || "";
+  if (last.includes("mvh")) return "Mvh";
+  if (last.includes("venlig hilsen")) return "Venlig hilsen";
+  if (last.includes("best regards")) return "Best regards";
+  if (last.includes("kind regards")) return "Kind regards";
+  if (last.includes("regards")) return "Regards";
+  if (last.includes("cheers")) return "Cheers";
+  return null;
+};
+
+const extractPhrasesToAvoid = (text: string) => {
+  const phrases = [
+    "hope this email finds you well",
+    "tak for din henvendelse",
+    "vi beklager ulejligheden",
+  ];
+  const lower = text.toLowerCase();
+  return phrases.filter((phrase) => lower.includes(phrase));
+};
+
+const mergeBullets = (base: string[], extra: string[], max = 8) => {
+  const seen = new Set<string>();
+  const output: string[] = [];
+  [...base, ...extra].forEach((item) => {
+    const cleaned = item.replace(/^[-•]\s*/, "").trim();
+    if (!cleaned || seen.has(cleaned)) return;
+    seen.add(cleaned);
+    output.push(`- ${cleaned}`);
+  });
+  return output.slice(0, max);
+};
+
+async function fetchLearningProfile(
+  mailboxId: string | null,
+  userId: string | null,
+): Promise<{ enabled: boolean; styleRules: string[] }> {
+  if (!supabase || !mailboxId || !userId) return { enabled: false, styleRules: [] };
+  const { data, error } = await supabase
+    .from("mail_learning_profiles")
+    .select("enabled, style_rules")
+    .eq("mailbox_id", mailboxId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) {
+    console.warn("generate-draft-unified: learning profile fetch failed", error.message);
+    return { enabled: false, styleRules: [] };
+  }
+  const styleRules = String(data?.style_rules || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return { enabled: data?.enabled !== false, styleRules };
+}
+
+async function fetchMailboxHistory(mailboxId: string | null, userId: string | null) {
+  if (!supabase || !mailboxId || !userId) return [];
+  const { data, error } = await supabase
+    .from("mail_messages")
+    .select("body_text, body_html, from_me, sent_at, received_at, created_at")
+    .eq("mailbox_id", mailboxId)
+    .eq("user_id", userId)
+    .order("sent_at", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(20);
+  if (error) {
+    console.warn("generate-draft-unified: mailbox history fetch failed", error.message);
+    return [];
+  }
+  return Array.isArray(data) ? data : [];
+}
+
+function buildStyleHeuristics(history: Array<any>): string[] {
+  if (!history.length) return [];
+  const sent = history.filter((msg) => msg?.from_me && msg?.sent_at);
+  const samples = (sent.length ? sent : history)
+    .map((msg) => msg?.body_text || stripHtmlSimple(msg?.body_html || ""))
+    .map(maskPii)
+    .filter(Boolean);
+  if (!samples.length) return [];
+
+  const avgWords =
+    samples.reduce((sum, text) => sum + wordCount(text), 0) / samples.length;
+
+  const greetings = samples.map(extractGreeting).filter(Boolean) as string[];
+  const signoffs = samples.map(extractSignoff).filter(Boolean) as string[];
+  const avoidPhrases = samples.flatMap(extractPhrasesToAvoid);
+
+  const topGreeting = greetings.sort(
+    (a, b) => greetings.filter((g) => g === b).length - greetings.filter((g) => g === a).length
+  )[0];
+  const topSignoff = signoffs.sort(
+    (a, b) => signoffs.filter((g) => g === b).length - signoffs.filter((g) => g === a).length
+  )[0];
+
+  const language = detectLanguage(samples);
+
+  const bullets: string[] = [];
+  if (Number.isFinite(avgWords)) {
+    const rounded = Math.round(avgWords / 5) * 5;
+    bullets.push(`Keep replies around ${rounded} words on average.`);
+  }
+  if (topGreeting) bullets.push(`Typical greeting: "${topGreeting}".`);
+  if (topSignoff) bullets.push(`Typical sign-off: "${topSignoff}".`);
+  if (language) bullets.push(`Preferred language: ${language}.`);
+  if (avoidPhrases.length) bullets.push("Avoid filler phrases (e.g., “hope this email finds you well”).");
+
+  return bullets;
+}
+
 // Find owner_user_id for shop så vi kan hente persona/policies/automation.
 async function resolveShopOwnerId(shopId: string): Promise<string | null> {
   if (!supabase) return null;
@@ -472,6 +633,7 @@ Deno.serve(async (req) => {
     }
 
     const ownerUserId = await resolveShopOwnerId(shopId);
+    const internalThread = await resolveInternalThread(ownerUserId, provider, emailData);
     const providerMessageId =
       typeof emailData.messageId === "string" ? emailData.messageId.trim() : "";
     if (supabase && ownerUserId && providerMessageId) {
@@ -504,6 +666,16 @@ Deno.serve(async (req) => {
       });
     }
 
+    let learnedStyle = "";
+    const learningProfile = await fetchLearningProfile(internalThread.mailboxId, ownerUserId);
+    if (context.automation?.historic_inbox_access && learningProfile.enabled) {
+      const history = await fetchMailboxHistory(internalThread.mailboxId, ownerUserId);
+      const heuristicBullets = buildStyleHeuristics(history);
+      learnedStyle = mergeBullets(heuristicBullets, learningProfile.styleRules).join("\n");
+    } else if (learningProfile.enabled && learningProfile.styleRules.length) {
+      learnedStyle = mergeBullets([], learningProfile.styleRules).join("\n");
+    }
+
     // Byg shared prompt med policies, automation-regler og ordre-kontekst.
     const promptBase = buildMailPrompt({
       emailBody: emailData.body || "(tomt indhold)",
@@ -513,6 +685,7 @@ Deno.serve(async (req) => {
       extraContext:
         "Returner altid JSON hvor 'actions' beskriver konkrete handlinger du udfører i Shopify. Brug orderId (det numeriske id i parentes) når du udfylder actions. udfyld altid payload.shipping_address (brug nuværende adresse hvis den ikke ændres) og sæt payload.note og payload.tag til tom streng hvis de ikke bruges. Hvis kunden beder om adresseændring, udfyld shipping_address med alle felter (name, address1, address2, zip, city, country, phone). Hvis en handling ikke er tilladt i automationsreglerne, lad actions listen være tom og forklar brugeren at handlingen udføres manuelt.",
       signature: context.persona.signature,
+      learnedStyle: learnedStyle || null,
       policies: context.policies,
     });
     const prompt = productContext
@@ -620,7 +793,7 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       draftId = draftResponse?.id ?? draftResponse?.message?.id ?? null;
       threadId = draftResponse?.message?.threadId ?? emailData.threadId ?? null;
     } else {
-      const internal = await resolveInternalThread(ownerUserId, provider, emailData);
+      const internal = internalThread;
       if (!internal.threadId) {
         console.warn("generate-draft-unified: missing internal thread for draft");
       }
