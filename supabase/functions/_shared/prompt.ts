@@ -6,6 +6,7 @@ type MailPromptOptions = {
   matchedSubjectNumber?: string | null;
   extraContext?: string | null;
   signature?: string | null;
+  learnedStyle?: string | null;
   policies?: {
     policy_refund?: string;
     policy_shipping?: string;
@@ -21,6 +22,7 @@ export function buildMailPrompt({
   matchedSubjectNumber,
   extraContext,
   signature,
+  learnedStyle,
   policies,
 }: MailPromptOptions): string {
   // Samler kundens mail, ordredata, persona og politikker til et enkelt prompt
@@ -53,6 +55,8 @@ ${internalTone ? `INTERNE REGLER (DEL IKKE ORDRET): ${internalTone}` : ""}
 ${personaInstructions ? `Specifik instruks: ${personaInstructions}` : "Vær venlig, professionel, men 'nede på jorden'. Undgå kancellisprog."}
 Ingen fluff. Start direkte. Skriv kort og naturligt.
 Sprogregel har altid forrang over persona- og tone-instruktioner.
+
+${learnedStyle ? `--- LEARNED STYLE (auto) ---\n${learnedStyle}\n` : ""}
 `;
 
   // 2. Sikkerhed – kort og tydeligt så ensartede svar kan produceres på tværs af kanaler.

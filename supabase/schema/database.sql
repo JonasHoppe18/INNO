@@ -7,6 +7,7 @@ CREATE TABLE public.agent_automation (
   cancel_orders boolean DEFAULT true,
   automatic_refunds boolean DEFAULT false,
   historic_inbox_access boolean DEFAULT false,
+  learn_from_edits boolean DEFAULT false,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
   auto_draft_enabled boolean NOT NULL DEFAULT false,
@@ -94,6 +95,16 @@ CREATE TABLE public.mail_accounts (
   updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT mail_accounts_pkey PRIMARY KEY (id),
   CONSTRAINT mail_accounts_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.mail_learning_profiles (
+  mailbox_id uuid NOT NULL,
+  user_id uuid NOT NULL,
+  enabled boolean DEFAULT true,
+  style_rules text,
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT mail_learning_profiles_pkey PRIMARY KEY (mailbox_id),
+  CONSTRAINT mail_learning_profiles_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT mail_learning_profiles_mailbox_id_fkey FOREIGN KEY (mailbox_id) REFERENCES public.mail_accounts(id)
 );
 CREATE TABLE public.mail_threads (
   id uuid NOT NULL DEFAULT gen_random_uuid(),

@@ -59,6 +59,117 @@ function buildSnippet(text, maxLength = 240) {
   return cleaned.length > maxLength ? `${cleaned.slice(0, maxLength).trim()}…` : cleaned;
 }
 
+function countWords(text) {
+  return String(text || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean).length;
+}
+
+function summarizeDraftDiff(aiText, finalText) {
+  const ai = String(aiText || "");
+  const final = String(finalText || "");
+  const aiWords = countWords(ai);
+  const finalWords = countWords(final);
+  const delta = finalWords - aiWords;
+  const deltaPct = aiWords ? delta / aiWords : 0;
+  const removedFluff =
+    /hope this email finds you well/i.test(ai) && !/hope this email finds you well/i.test(final);
+  const addedNextSteps =
+    /\b(next steps?|please|you can|we will)\b/i.test(final) &&
+    !/\b(next steps?|please|you can|we will)\b/i.test(ai);
+  return {
+    ai_words: aiWords,
+    final_words: finalWords,
+    delta_words: delta,
+    delta_pct: Number.isFinite(deltaPct) ? Number(deltaPct.toFixed(2)) : 0,
+    removed_fluff: removedFluff,
+    added_next_steps: addedNextSteps,
+  };
+}
+
+function buildLearningBullets(diff) {
+  const bullets = [];
+  if (diff.delta_pct < -0.2) {
+    bullets.push("Prefer shorter replies when possible.");
+  } else if (diff.delta_pct > 0.2) {
+    bullets.push("Allow more detail when the customer needs clarity.");
+  }
+  if (diff.removed_fluff) {
+    bullets.push("Avoid filler greetings and unnecessary pleasantries.");
+  }
+  if (diff.added_next_steps) {
+    bullets.push("Include clear next steps in the response.");
+  }
+  return bullets.slice(0, 3);
+}
+
+function mergeLearningRules(existing, updates) {
+  const parsed = String(existing || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const match = line.match(/^(?:[-•]\s*)?(.*?)(?:\s*\(confidence:\s*([0-9.]+)\))?$/i);
+      return {
+        text: match?.[1]?.trim() || line.replace(/^[-•]\s*/, "").trim(),
+        confidence: match?.[2] ? Number(match[2]) : 0.55,
+      };
+    });
+
+  const map = new Map(parsed.map((item) => [item.text.toLowerCase(), item]));
+  updates.forEach((bullet) => {
+    const key = bullet.toLowerCase();
+    const existingItem = map.get(key);
+    if (existingItem) {
+      existingItem.confidence = Math.min(0.95, Number((existingItem.confidence + 0.05).toFixed(2)));
+    } else {
+      map.set(key, { text: bullet, confidence: 0.55 });
+    }
+  });
+
+  return Array.from(map.values())
+    .map((item) => `- ${item.text} (confidence: ${item.confidence.toFixed(2)})`)
+    .join("\n");
+}
+
+async function updateLearningProfile(serviceClient, mailboxId, userId, diffSummary) {
+  if (!mailboxId || !userId) return;
+  const { data, error } = await serviceClient
+    .from("mail_learning_profiles")
+    .select("style_rules")
+    .eq("mailbox_id", mailboxId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const updates = buildLearningBullets(diffSummary);
+  if (!updates.length) return;
+
+  const nextRules = mergeLearningRules(data?.style_rules || "", updates);
+
+  const { error: upsertError } = await serviceClient
+    .from("mail_learning_profiles")
+    .upsert(
+      {
+        mailbox_id: mailboxId,
+        user_id: userId,
+        enabled: true,
+        style_rules: nextRules,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "mailbox_id" }
+    );
+
+  if (upsertError) {
+    throw new Error(upsertError.message);
+  }
+}
+
 function encodeBase64(bytes) {
   return Buffer.from(bytes).toString("base64");
 }
@@ -506,6 +617,29 @@ export async function POST(request, { params }) {
     return NextResponse.json({ error: "Mailbox not found." }, { status: 404 });
   }
 
+  const { data: automationSettings } = await serviceClient
+    .from("agent_automation")
+    .select("learn_from_edits,draft_destination")
+    .eq("user_id", supabaseUserId)
+    .maybeSingle();
+  const learnFromEdits = automationSettings?.learn_from_edits === true;
+  const draftDestinationSetting =
+    automationSettings?.draft_destination === "sona_inbox" ? "sona_inbox" : "email_provider";
+
+  let aiDraftText = "";
+  if (learnFromEdits && draftDestinationSetting === "sona_inbox") {
+    const { data: aiRow } = await serviceClient
+      .from("mail_messages")
+      .select("ai_draft_text")
+      .eq("thread_id", threadId)
+      .eq("user_id", supabaseUserId)
+      .not("ai_draft_text", "is", null)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    aiDraftText = aiRow?.ai_draft_text || "";
+  }
+
   const { data: inboundMessages } = await serviceClient
     .from("mail_messages")
     .select("id, from_email, provider_message_id, received_at, subject")
@@ -751,6 +885,31 @@ export async function POST(request, { params }) {
     .eq("thread_id", thread.provider_thread_id || threadId)
     .eq("platform", mailbox.provider)
     .eq("status", "pending");
+
+  if (learnFromEdits && draftDestinationSetting === "sona_inbox" && aiDraftText) {
+    const finalText = bodyText || stripHtml(bodyHtml);
+    if (finalText.trim()) {
+      const diffSummary = summarizeDraftDiff(aiDraftText, finalText);
+      try {
+        await serviceClient.from("agent_logs").insert({
+          draft_id: null,
+          step_name: "learning_event",
+          step_detail: JSON.stringify({
+            mailbox_id: mailbox.id,
+            thread_id: threadId,
+            ai_draft_text: aiDraftText,
+            final_text: finalText,
+            diff_summary: diffSummary,
+          }),
+          status: "success",
+          created_at: nowIso,
+        });
+        await updateLearningProfile(serviceClient, mailbox.id, supabaseUserId, diffSummary);
+      } catch (error) {
+        console.warn("[threads/send] learning update failed", error?.message || error);
+      }
+    }
+  }
 
   return NextResponse.json(
     {

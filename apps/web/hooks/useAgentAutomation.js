@@ -54,6 +54,7 @@ const DEFAULT_AUTOMATION = {
   cancelOrders: true,
   automaticRefunds: false,
   historicInboxAccess: false,
+  learnFromEdits: false,
   autoDraftEnabled: false,
   draftDestination: "email_provider",
 };
@@ -124,6 +125,7 @@ export function useAgentAutomation(options = {}) {
       cancelOrders: row.cancel_orders ?? DEFAULT_AUTOMATION.cancelOrders,
       automaticRefunds: row.automatic_refunds ?? DEFAULT_AUTOMATION.automaticRefunds,
       historicInboxAccess: row.historic_inbox_access ?? DEFAULT_AUTOMATION.historicInboxAccess,
+      learnFromEdits: row.learn_from_edits ?? DEFAULT_AUTOMATION.learnFromEdits,
       autoDraftEnabled: row.auto_draft_enabled ?? DEFAULT_AUTOMATION.autoDraftEnabled,
       draftDestination:
         row.draft_destination === "sona_inbox"
@@ -174,6 +176,7 @@ export function useAgentAutomation(options = {}) {
           cancel_orders: updates.cancelOrders ?? settings.cancelOrders,
           automatic_refunds: updates.automaticRefunds ?? settings.automaticRefunds,
           historic_inbox_access: updates.historicInboxAccess ?? settings.historicInboxAccess,
+          learn_from_edits: updates.learnFromEdits ?? settings.learnFromEdits,
           auto_draft_enabled: updates.autoDraftEnabled ?? settings.autoDraftEnabled,
           draft_destination: updates.draftDestination ?? settings.draftDestination,
         };

@@ -33,7 +33,7 @@ const toggles = [
     icon: Archive,
     label: "Historical inbox",
     description: "Allow access to old emails so the agent can reference past conversations.",
-  }
+  },
 ];
 
 const draftDestinations = [
@@ -141,6 +141,24 @@ export function AutomationPanel({ children = null }) {
     [draftDestination, save]
   );
 
+  const handleResetLearning = useCallback(async () => {
+    const toastId = toast.loading("Resetting learning...");
+    try {
+      const res = await fetch("/api/learning/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scope: "all" }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload?.error || "Could not reset learning.");
+      }
+      toast.success("Learning reset.", { id: toastId });
+    } catch (err) {
+      toast.error(err?.message || "Could not reset learning.", { id: toastId });
+    }
+  }, []);
+
   const selectedDestination = useMemo(
     () => draftDestinations.find((destination) => destination.id === draftDestination),
     [draftDestination]
@@ -150,11 +168,11 @@ export function AutomationPanel({ children = null }) {
     <AutomationPanelContext.Provider value={contextValue}>
       {children}
 
-      <Card className="mb-4 rounded-xl border border-border bg-white shadow-sm">
-        <CardContent className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
+      <Card className="mb-4 rounded-2xl border border-indigo-200/60 bg-white shadow-sm">
+        <CardContent className="flex flex-wrap items-center justify-between gap-4 px-6 py-5">
           <div>
-            <p className="text-sm font-semibold text-foreground">Auto-draft agent</p>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm font-semibold text-slate-900">Auto-draft agent</p>
+            <p className="text-sm text-slate-600">
               Toggle AI drafts on/off. When enabled, the agent automatically creates drafts in your inbox.
             </p>
           </div>
@@ -176,8 +194,8 @@ export function AutomationPanel({ children = null }) {
               variant={local?.autoDraftEnabled ? "outline" : "default"}
               className={
                 local?.autoDraftEnabled
-                  ? "border-sky-100 text-sky-500 hover:bg-sky-50 hover:text-sky-700"
-                  : "bg-sky-500 text-slate-900 shadow-lg shadow-sky-900/40 hover:bg-sky-400"
+                  ? "border-slate-200 text-slate-700 hover:bg-slate-50"
+                  : "bg-slate-900 text-white shadow-lg shadow-slate-900/20 hover:bg-slate-800"
               }
             >
               {local?.autoDraftEnabled ? "Disable" : "Enable"}
@@ -186,15 +204,15 @@ export function AutomationPanel({ children = null }) {
         </CardContent>
       </Card>
 
-      <Card className="mb-4 rounded-xl border border-border bg-white shadow-sm">
-        <CardContent className="px-5 py-4">
+      <Card className="mb-4 rounded-2xl border border-indigo-200/60 bg-white shadow-sm">
+        <CardContent className="px-6 py-5">
           <div className="flex items-center gap-3">
-            <div className="rounded-full bg-sky-100 p-2 text-sky-500">
+            <div className="rounded-full bg-slate-100 p-2 text-slate-700">
               <SlidersHorizontal className="h-4 w-4" />
             </div>
             <div>
-              <p className="text-base font-semibold text-foreground">Draft Destination</p>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-base font-semibold text-slate-900">Draft Destination</p>
+              <p className="text-sm text-slate-600">
                 Choose where you want AI drafts to appear.
               </p>
             </div>
@@ -211,31 +229,31 @@ export function AutomationPanel({ children = null }) {
                   onClick={() => handleDestinationPick(destination.id)}
                   className={`group flex w-full items-center gap-4 rounded-2xl border p-5 text-left transition ${
                     isActive
-                      ? "border-blue-500 bg-blue-50 ring-2 ring-blue-500"
-                      : "border-border bg-white hover:border-sky-200"
+                      ? "border-slate-900 bg-slate-50 ring-2 ring-slate-900"
+                      : "border-slate-200 bg-white hover:border-slate-300"
                   }`}
                 >
                   <div
                     className={`flex h-12 w-12 items-center justify-center rounded-2xl ${
                       isActive
-                        ? "bg-sky-100 text-sky-500"
-                        : "bg-slate-100 text-sky-500"
+                        ? "bg-slate-900 text-white"
+                        : "bg-slate-100 text-slate-700"
                     }`}
                   >
                     <Icon className="h-5 w-5" />
                   </div>
                   <div className="flex-1">
-                    <p className="text-sm font-medium text-foreground">{destination.label}</p>
+                    <p className="text-sm font-medium text-slate-900">{destination.label}</p>
                   </div>
                   <div
                     className={`flex h-6 w-6 items-center justify-center rounded-full border ${
                       isActive
-                        ? "border-blue-500 text-blue-600"
-                        : "border-muted-foreground/40 text-muted-foreground/60"
+                        ? "border-slate-900 text-slate-900"
+                        : "border-slate-300 text-slate-400"
                     }`}
                     aria-hidden="true"
                   >
-                    {isActive && <span className="h-2.5 w-2.5 rounded-full bg-blue-500" />}
+                    {isActive && <span className="h-2.5 w-2.5 rounded-full bg-slate-900" />}
                   </div>
                 </button>
               );
@@ -243,7 +261,7 @@ export function AutomationPanel({ children = null }) {
           </div>
 
           {selectedDestination && (
-            <div className="mt-3 text-xs text-muted-foreground">
+            <div className="mt-3 text-xs text-slate-600">
               Selected: {selectedDestination.label}
             </div>
           )}
@@ -319,6 +337,20 @@ export function AutomationPanel({ children = null }) {
               </p>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      <Card className="mt-4 rounded-xl border border-border bg-white shadow-sm">
+        <CardContent className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+          <div>
+            <p className="text-sm font-semibold text-foreground">Learning profile</p>
+            <p className="text-sm text-muted-foreground">
+              Clear saved writing preferences and rebuild from future edits.
+            </p>
+          </div>
+          <Button type="button" size="sm" variant="outline" onClick={handleResetLearning}>
+            Reset learning
+          </Button>
         </CardContent>
       </Card>
     </AutomationPanelContext.Provider>

@@ -221,6 +221,34 @@ create policy "agent_automation_modify_own"
 
 ---
 
+## public.mail_learning_profiles
+
+```sql
+alter table public.mail_learning_profiles enable row level security;
+
+drop policy if exists "mail_learning_profiles_select_own" on public.mail_learning_profiles;
+drop policy if exists "mail_learning_profiles_modify_own" on public.mail_learning_profiles;
+
+create policy "mail_learning_profiles_select_own"
+  on public.mail_learning_profiles
+  for select
+  using (
+    user_id::text = coalesce(auth.jwt()->>'supabase_user_id', '')
+  );
+
+create policy "mail_learning_profiles_modify_own"
+  on public.mail_learning_profiles
+  for all
+  using (
+    user_id::text = coalesce(auth.jwt()->>'supabase_user_id', '')
+  )
+  with check (
+    user_id::text = coalesce(auth.jwt()->>'supabase_user_id', '')
+  );
+```
+
+---
+
 ## public.customer_lookup_cache
 
 ```sql
