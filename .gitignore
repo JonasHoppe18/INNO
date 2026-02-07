@@ -45,3 +45,4 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+apps/web/.env.production
