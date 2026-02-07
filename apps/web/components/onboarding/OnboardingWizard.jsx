@@ -92,7 +92,7 @@ export function OnboardingWizard() {
     }));
   }, [settings]);
 
-  const steps = state?.steps || {};
+  const steps = useMemo(() => state?.steps || {}, [state?.steps]);
   const activeStep = useMemo(() => {
     if (stepOverride) return stepOverride;
     if (!steps.email_connected) return 1;
@@ -429,7 +429,7 @@ export function OnboardingWizard() {
             </div>
             {steps.first_draft_created ? (
               <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
-                First draft created. You're all set.
+                First draft created. You&apos;re all set.
               </div>
             ) : (
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">

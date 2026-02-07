@@ -90,10 +90,10 @@ export default function ProcessingDemo() {
     },
   ];
 
-  const stepIntervals = [2200, 1600, 2000, 1200];
   const totalSteps = steps.length + 1; // extra tick for draft reveal
 
   useEffect(() => {
+    const stepIntervals = [2200, 1600, 2000, 1200];
     if (activeStep >= totalSteps - 1) {
       return;
     }
@@ -102,7 +102,7 @@ export default function ProcessingDemo() {
     }, stepIntervals[activeStep % stepIntervals.length]);
 
     return () => clearTimeout(timer);
-  }, [activeStep, totalSteps, stepIntervals]);
+  }, [activeStep, totalSteps]);
 
   return (
     <div className="relative min-h-[360px] w-full max-w-[620px] p-2 sm:min-h-[420px]">
