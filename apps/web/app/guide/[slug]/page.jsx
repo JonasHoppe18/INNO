@@ -70,7 +70,7 @@ const GUIDE_CONTENT = {
         items: [
           "Open Shopify Partner Dashboard in a different browser than your store admin.",
           "Click App distribution and then Visit Dev Dashboard.",
-          "Click Create an app, name it (e.g., “Sona Integration”), and click Create.",
+          "Click Create an app, name it (e.g., “Sona AI), and click Create.",
         ],
       },
       {
@@ -79,7 +79,7 @@ const GUIDE_CONTENT = {
           "Set App URL to the Sona app URL.",
           "Ensure Embed app in Shopify admin is NOT checked.",
           "Choose the oldest available API version.",
-          "Select required Admin API scopes.",
+          "Select all Admin API scopes.",
         ],
         fields: [
           { label: "App URL", value: "https://sona-ai.dk" },
@@ -102,7 +102,7 @@ const GUIDE_CONTENT = {
         title: "Step 6: Request Read all orders access",
         items: [
           "Open API access requests.",
-          "Request Read all orders with a short reason (e.g., “Sona AI helpdesk integration”).",
+          "Request Read all orders with a short reason (e.g., “Sona AI integration”).",
           "Verify it says your app can access full order history.",
         ],
       },

@@ -69,7 +69,7 @@ const GUIDE_CONTENT = {
           "Set App URL to the Sona app URL.",
           "Ensure Embed app in Shopify admin is NOT checked.",
           "Choose the oldest available API version.",
-          "Select required Admin API scopes.",
+          "Select all Admin API scopes.",
         ],
         fields: [
           { label: "App URL", value: "https://sona-ai.dk" },
