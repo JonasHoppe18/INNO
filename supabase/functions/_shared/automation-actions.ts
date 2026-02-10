@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getShopCredentialsForUser } from "./shopify-credentials.ts";
 
 type AutomationSettings = {
   order_updates: boolean;
@@ -36,23 +37,15 @@ type ExecuteOptions = {
   orderIdMap?: Record<string | number, number>;
 };
 
-// Henter Shopify domæne og token via krypteret Supabase RPC
+// Henter Shopify domæne og token fra shops-tabellen og dekrypterer via ENCRYPTION_KEY
 async function getShopCredentials(
   supabase: SupabaseClient,
   userId: string,
-  tokenSecret: string,
 ): Promise<ShopCredentials> {
-  const { data, error } = await supabase
-    .rpc<ShopCredentials>("get_shop_credentials_for_user", {
-      p_owner_user_id: userId,
-      p_secret: tokenSecret,
-    })
-    .single();
-
-  if (error || !data) {
-    throw new Error(error?.message || "Kunne ikke finde Shopify credentials.");
-  }
-  return data;
+  return await getShopCredentialsForUser({
+    supabase,
+    userId,
+  });
 }
 
 // Sikrer at handlingen er tilladt ud fra automation-settings
@@ -280,17 +273,18 @@ export async function executeAutomationActions({
 }: ExecuteOptions): Promise<AutomationResult[]> {
   const results: AutomationResult[] = [];
   if (!actions?.length) return results;
-  if (!supabase || !supabaseUserId || !tokenSecret) {
+  if (!supabase || !supabaseUserId) {
     return actions.map((action) => ({
       type: action?.type ?? "ukendt",
       ok: false,
-      error: "Shopify konfiguration mangler (supabase connection/token).",
+      error: "Shopify konfiguration mangler (supabase connection/user).",
     }));
   }
 
   let shop: ShopCredentials | null = null;
   try {
-    shop = await getShopCredentials(supabase, supabaseUserId, tokenSecret);
+    void tokenSecret;
+    shop = await getShopCredentials(supabase, supabaseUserId);
     console.log("automation: shop credentials resolved", {
       shop_domain: shop?.shop_domain,
       supabaseUserId,

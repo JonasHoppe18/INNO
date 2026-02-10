@@ -34,8 +34,13 @@ async function resolveSupabaseUserId(serviceClient, clerkUserId) {
 
 function normalizeEmail(value) {
   if (typeof value !== "string") return null;
-  const trimmed = value.trim().toLowerCase();
+  const trimmed = value.trim();
   return trimmed || null;
+}
+
+function normalizeEmailForKey(value) {
+  if (typeof value !== "string") return "";
+  return value.trim().toLowerCase();
 }
 
 function normalizeOrderNumber(value) {
@@ -55,9 +60,20 @@ function extractOrderNumber(subject) {
 
 function buildCacheKey({ platform, email, orderNumber }) {
   const parts = [platform];
+  const emailKey = normalizeEmailForKey(email);
   if (orderNumber) parts.push(`order:${orderNumber}`);
-  if (email) parts.push(`email:${email}`);
+  if (emailKey) parts.push(`email:${emailKey}`);
   return parts.join("|");
+}
+
+function buildEmailVariants(email) {
+  if (!email) return [];
+  const variants = new Set([email.trim(), email.trim().toLowerCase()]);
+  const [localPart, domain] = email.trim().split("@");
+  if (localPart && domain) {
+    variants.add(`${localPart.charAt(0).toUpperCase()}${localPart.slice(1)}@${domain}`);
+  }
+  return Array.from(variants).filter(Boolean);
 }
 
 function matchesOrderNumber(order, candidate) {
@@ -178,6 +194,7 @@ export async function POST(request) {
   const inputOrder = normalizeOrderNumber(body?.orderNumber);
   const subject = typeof body?.subject === "string" ? body.subject : "";
   const forceRefresh = Boolean(body?.forceRefresh);
+  const debug = Boolean(body?.debug);
 
   const derivedOrderNumber = inputOrder || extractOrderNumber(subject);
   const platform = "shopify";
@@ -250,6 +267,9 @@ export async function POST(request) {
     const url = new URL(`${SUPABASE_EDGE_BASE}/functions/v1/shopify-orders`);
     url.searchParams.set("status", "any");
     url.searchParams.set("limit", String(SHOPIFY_LIMIT));
+    if (debug) {
+      url.searchParams.set("debug", "1");
+    }
     Object.entries(params || {}).forEach(([key, value]) => {
       if (value) url.searchParams.set(key, value);
     });
@@ -283,12 +303,53 @@ export async function POST(request) {
 
   let payload = primaryResult.json || {};
   let rawOrders = Array.isArray(payload?.orders) ? payload.orders : [];
+  const lookupDebug = payload?.debug || null;
+
+  if (!rawOrders.length && inputEmail) {
+    const emailVariants = buildEmailVariants(inputEmail);
+    for (const candidateEmail of emailVariants) {
+      if (candidateEmail === primaryParams.email) continue;
+      const variantResult = await fetchOrders({
+        email: candidateEmail,
+        order_number: derivedOrderNumber || "",
+      });
+      if (variantResult.response.ok) {
+        payload = variantResult.json || payload;
+        rawOrders = Array.isArray(payload?.orders) ? payload.orders : [];
+        if (rawOrders.length) break;
+      }
+    }
+  }
 
   if (!rawOrders.length && derivedOrderNumber && inputEmail) {
     const fallbackResult = await fetchOrders({ email: inputEmail });
     if (fallbackResult.response.ok) {
       payload = fallbackResult.json || {};
       rawOrders = Array.isArray(payload?.orders) ? payload.orders : [];
+    }
+  }
+
+  if (!rawOrders.length && inputEmail && derivedOrderNumber) {
+    const fallbackWithoutEmail = await fetchOrders({ order_number: derivedOrderNumber });
+    if (fallbackWithoutEmail.response.ok) {
+      payload = fallbackWithoutEmail.json || payload;
+      rawOrders = Array.isArray(payload?.orders) ? payload.orders : [];
+    }
+  }
+
+  // Ekstra fallback: hvis ordrenummer-lookup fejler, hent uden filtre og match lokalt.
+  if (!rawOrders.length && derivedOrderNumber) {
+    const broadResult = await fetchOrders({});
+    if (broadResult.response.ok) {
+      const broadPayload = broadResult.json || {};
+      const broadOrders = Array.isArray(broadPayload?.orders) ? broadPayload.orders : [];
+      const matchedByNumber = broadOrders.filter((order) =>
+        matchesOrderNumber(order, derivedOrderNumber)
+      );
+      if (matchedByNumber.length) {
+        payload = broadPayload;
+        rawOrders = matchedByNumber;
+      }
     }
   }
 
@@ -321,6 +382,7 @@ export async function POST(request) {
     matchedOrderNumber: derivedOrderNumber,
     source: platform,
     shopDomain,
+    ...(debug && lookupDebug ? { debug: lookupDebug } : {}),
   };
 
   const ttlMinutes = ordersToUse.length ? DEFAULT_TTL_MINUTES : NEGATIVE_TTL_MINUTES;

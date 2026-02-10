@@ -43,7 +43,7 @@ const MICROSOFT_CLIENT_SECRET = Deno.env.get("MICROSOFT_CLIENT_SECRET");
 const MICROSOFT_TENANT_ID = Deno.env.get("MICROSOFT_TENANT_ID") ?? "common";
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
 const OPENAI_MODEL = Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini";
-const SHOPIFY_TOKEN_KEY = Deno.env.get("SHOPIFY_TOKEN_KEY");
+const ENCRYPTION_KEY = Deno.env.get("ENCRYPTION_KEY");
 const SHOPIFY_API_VERSION = Deno.env.get("SHOPIFY_API_VERSION") ?? "2024-07";
 const INTERNAL_AGENT_SECRET = Deno.env.get("INTERNAL_AGENT_SECRET");
 const OPENAI_EMBEDDING_MODEL = Deno.env.get("OPENAI_EMBEDDING_MODEL") ?? "text-embedding-3-small";
@@ -56,8 +56,8 @@ if (!MICROSOFT_CLIENT_ID || !MICROSOFT_CLIENT_SECRET)
   console.warn("MICROSOFT_CLIENT_ID/SECRET mangler – outlook-create-draft-ai kan ikke forny tokens.");
 if (!OPENAI_API_KEY) console.warn("OPENAI_API_KEY mangler – AI udkast vil kun bruge fallback.");
 if (!Deno.env.get("OPENAI_MODEL")) console.warn("OPENAI_MODEL mangler – bruger default gpt-4o-mini.");
-if (!SHOPIFY_TOKEN_KEY)
-  console.warn("SHOPIFY_TOKEN_KEY mangler – direkte Shopify-opslag fra interne kald er slået fra.");
+if (!ENCRYPTION_KEY)
+  console.warn("ENCRYPTION_KEY mangler – direkte Shopify-opslag fra interne kald kan fejle.");
 if (!INTERNAL_AGENT_SECRET)
   console.warn("INTERNAL_AGENT_SECRET mangler – interne automatiske kald er ikke sikret.");
 
@@ -553,7 +553,7 @@ Deno.serve(async (req) => {
       userId: supabaseUserId,
       email: fromAddress,
       subject,
-      tokenSecret: SHOPIFY_TOKEN_KEY,
+      tokenSecret: ENCRYPTION_KEY,
       apiVersion: SHOPIFY_API_VERSION,
     });
 
@@ -668,7 +668,7 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       supabaseUserId,
       actions: automationActions,
       automation,
-      tokenSecret: SHOPIFY_TOKEN_KEY,
+      tokenSecret: ENCRYPTION_KEY,
       apiVersion: SHOPIFY_API_VERSION,
     });
     if (debugEnabled) {

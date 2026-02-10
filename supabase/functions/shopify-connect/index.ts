@@ -1,5 +1,6 @@
 import { createRemoteJWKSet, jwtVerify } from "https://deno.land/x/jose@v5.2.0/index.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { encryptShopifyToken } from "../_shared/shopify-credentials.ts";
 
 const SHOPIFY_API_VERSION = "2024-07"; // Holder API-version ét sted så vi nemt kan opgradere
 
@@ -7,14 +8,12 @@ const PROJECT_URL = Deno.env.get("PROJECT_URL") ?? Deno.env.get("SUPABASE_URL");
 const SERVICE_ROLE_KEY =
   Deno.env.get("SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const CLERK_JWT_ISSUER = Deno.env.get("CLERK_JWT_ISSUER");
-const SHOPIFY_TOKEN_KEY = Deno.env.get("SHOPIFY_TOKEN_KEY");
 
 if (!PROJECT_URL) console.warn("PROJECT_URL mangler – kan ikke skrive til shops-tabellen.");
 if (!SERVICE_ROLE_KEY)
   console.warn("SERVICE_ROLE_KEY mangler – edge function kan ikke bruge Supabase service rolle.");
 if (!CLERK_JWT_ISSUER)
   console.warn("CLERK_JWT_ISSUER mangler – Clerk sessioner kan ikke verificeres.");
-if (!SHOPIFY_TOKEN_KEY) console.warn("SHOPIFY_TOKEN_KEY mangler – Shopify tokens kan ikke krypteres.");
 
 const supabase =
   PROJECT_URL && SERVICE_ROLE_KEY ? createClient(PROJECT_URL, SERVICE_ROLE_KEY) : null;
@@ -153,16 +152,12 @@ async function upsertShop(options: {
   if (!supabase) {
     throw Object.assign(new Error("Supabase klient ikke konfigureret."), { status: 500 });
   }
-  if (!SHOPIFY_TOKEN_KEY) {
-    throw Object.assign(new Error("SHOPIFY_TOKEN_KEY mangler på edge functionen."), {
-      status: 500,
-    });
-  }
 
   // Sikr at butikken ikke ejes af anden bruger
   const { data: existing, error: fetchError } = await supabase
     .from("shops")
     .select("owner_user_id")
+    .eq("platform", "shopify")
     .eq("shop_domain", domain)
     .maybeSingle();
 
@@ -179,11 +174,17 @@ async function upsertShop(options: {
     );
   }
 
-  const { error: upsertError } = await supabase.rpc("upsert_shop", {
-    p_owner_user_id: supabaseUserId,
-    p_domain: domain,
-    p_access_token: token,
-    p_secret: SHOPIFY_TOKEN_KEY,
+  const encryptedToken = await encryptShopifyToken(token);
+
+  const { error: upsertError } = await supabase.from("shops").upsert({
+    owner_user_id: supabaseUserId,
+    platform: "shopify",
+    shop_domain: domain,
+    access_token_encrypted: encryptedToken,
+    installed_at: new Date().toISOString(),
+    uninstalled_at: null,
+  }, {
+    onConflict: "owner_user_id,platform,shop_domain",
   });
 
   if (upsertError) {

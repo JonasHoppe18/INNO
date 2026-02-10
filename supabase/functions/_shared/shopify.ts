@@ -1,9 +1,5 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-type ShopifyCredentials = {
-  shop_domain: string;
-  access_token: string;
-};
+import { getShopCredentialsForUser } from "./shopify-credentials.ts";
 
 export type ShopifyOrder = Record<string, any>;
 
@@ -28,26 +24,19 @@ async function fetchShopifyOrdersPage(options: FetchOrdersOptions): Promise<{
     userId,
     email,
     limit = 50,
-    tokenSecret,
     apiVersion,
     pageInfo = null,
   } = options;
 
-  if (!supabase || !tokenSecret || !userId) {
+  if (!supabase || !userId) {
     return { orders: [], nextPageInfo: null };
   }
 
   try {
-    const { data, error } = await supabase
-      .rpc<ShopifyCredentials>("get_shop_credentials_for_user", {
-        p_owner_user_id: userId,
-        p_secret: tokenSecret,
-      })
-      .single();
-    if (error || !data) {
-      console.warn("shopify-shared: kunne ikke hente credentials", error);
-      return { orders: [], nextPageInfo: null };
-    }
+    const data = await getShopCredentialsForUser({
+      supabase,
+      userId,
+    });
 
     const domain = data.shop_domain.replace(/^https?:\/\//, "");
     const url = new URL(`https://${domain}/admin/api/${apiVersion}/orders.json`);

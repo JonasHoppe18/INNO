@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
+import { decryptString } from "@/lib/server/shopify-oauth";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -13,7 +14,6 @@ const SUPABASE_SERVICE_ROLE_KEY =
   process.env.SUPABASE_SERVICE_KEY ||
   "";
 const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || "2024-07";
-const SHOPIFY_TOKEN_KEY = process.env.SHOPIFY_TOKEN_KEY || "";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const OPENAI_EMBEDDING_MODEL = process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small";
 
@@ -51,6 +51,7 @@ async function fetchShop(serviceClient, ownerUserId) {
     .from("shops")
     .select("id, shop_domain, platform")
     .eq("owner_user_id", ownerUserId)
+    .eq("platform", "shopify")
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -60,18 +61,22 @@ async function fetchShop(serviceClient, ownerUserId) {
 }
 
 async function fetchShopifyCredentials(serviceClient, ownerUserId) {
-  if (!SHOPIFY_TOKEN_KEY) throw new Error("SHOPIFY_TOKEN_KEY missing.");
   const { data, error } = await serviceClient
-    .rpc("get_shop_credentials_for_user", {
-      p_owner_user_id: ownerUserId,
-      p_secret: SHOPIFY_TOKEN_KEY,
-    })
+    .from("shops")
+    .select("shop_domain, access_token_encrypted")
+    .eq("owner_user_id", ownerUserId)
+    .eq("platform", "shopify")
+    .order("created_at", { ascending: false })
+    .limit(1)
     .maybeSingle();
   if (error) throw new Error(error.message);
-  if (!data?.shop_domain || !data?.access_token) {
+  if (!data?.shop_domain || !data?.access_token_encrypted) {
     throw new Error("Missing Shopify credentials.");
   }
-  return data;
+  return {
+    shop_domain: data.shop_domain,
+    access_token: decryptString(data.access_token_encrypted),
+  };
 }
 
 async function fetchShopifyProducts({ domain, accessToken }) {

@@ -1,5 +1,6 @@
 import { createRemoteJWKSet, jwtVerify } from "https://deno.land/x/jose@v5.2.0/index.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getShopCredentialsForUser } from "../_shared/shopify-credentials.ts";
 
 const SHOPIFY_API_VERSION = "2024-07"; // Brug samme version hvert sted
 
@@ -7,15 +8,12 @@ const PROJECT_URL = Deno.env.get("PROJECT_URL") ?? Deno.env.get("SUPABASE_URL");
 const SERVICE_ROLE_KEY =
   Deno.env.get("SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const CLERK_JWT_ISSUER = Deno.env.get("CLERK_JWT_ISSUER");
-const SHOPIFY_TOKEN_KEY = Deno.env.get("SHOPIFY_TOKEN_KEY");
 
 if (!PROJECT_URL) console.warn("PROJECT_URL mangler – shop data kan ikke hentes.");
 if (!SERVICE_ROLE_KEY)
   console.warn("SERVICE_ROLE_KEY mangler – edge function kan ikke spørge Supabase.");
 if (!CLERK_JWT_ISSUER)
   console.warn("CLERK_JWT_ISSUER mangler – Clerk sessioner kan ikke verificeres.");
-if (!SHOPIFY_TOKEN_KEY)
-  console.warn("SHOPIFY_TOKEN_KEY mangler – kan ikke dekryptere Shopify tokens.");
 
 const supabase =
   PROJECT_URL && SERVICE_ROLE_KEY ? createClient(PROJECT_URL, SERVICE_ROLE_KEY) : null;
@@ -121,37 +119,24 @@ async function getShopForUser(clerkUserId: string): Promise<ShopRecord> {
   if (!supabase) {
     throw Object.assign(new Error("Supabase klient ikke konfigureret."), { status: 500 });
   }
-  if (!SHOPIFY_TOKEN_KEY) {
-    throw Object.assign(new Error("SHOPIFY_TOKEN_KEY mangler på edge functionen."), {
-      status: 500,
-    });
-  }
 
   const supabaseUserId = await resolveSupabaseUserId(clerkUserId);
-
-  const { data, error } = await supabase
-    .rpc<ShopRecord>("get_shop_credentials_for_user", {
-      p_owner_user_id: supabaseUserId,
-      p_secret: SHOPIFY_TOKEN_KEY,
-    })
-    .single();
-
-  if (error) {
-    throw Object.assign(new Error(`Kunne ikke slå butik op: ${error.message}`), {
+  try {
+    return await getShopCredentialsForUser({
+      supabase,
+      userId: supabaseUserId,
+    });
+  } catch (error) {
+    throw Object.assign(new Error(error instanceof Error ? error.message : String(error)), {
       status: 500,
     });
   }
-  if (!data) {
-    throw Object.assign(new Error("Ingen Shopify butik forbundet."), { status: 404 });
-  }
-
-  return data;
 }
 
 async function fetchShopifyOrders(
   shop: ShopRecord,
   searchParams: URLSearchParams,
-): Promise<Response> {
+): Promise<{ payload: Record<string, unknown> }> {
   // Kalder Shopify REST API'et og returnerer JSON tilbage til appen
   const domain = shop.shop_domain.replace(/^https?:\/\//, "");
   const url = new URL(`https://${domain}/admin/api/${SHOPIFY_API_VERSION}/orders.json`);
@@ -190,10 +175,12 @@ async function fetchShopifyOrders(
     );
   }
 
-  return Response.json({
+  return {
+    payload: {
     orders: (json as any)?.orders ?? [],
     raw: json,
-  });
+    },
+  };
 }
 
 function mapGraphqlOrder(order: any) {
@@ -471,6 +458,99 @@ async function fetchShopifyOrdersByNumber(
   return { orders: [], raw: lastPayload };
 }
 
+async function fetchShopifyOrdersByEmailGraphql(
+  shop: ShopRecord,
+  email: string,
+  limit: number,
+): Promise<{ orders: any[]; raw: any }> {
+  const domain = shop.shop_domain.replace(/^https?:\/\//, "");
+  const url = `https://${domain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`;
+  const query = `
+    query OrdersByEmail($query: String!, $first: Int!) {
+      orders(first: $first, query: $query, reverse: true) {
+        edges {
+          node {
+            id
+            name
+            orderNumber
+            financialStatus
+            fulfillmentStatus
+            createdAt
+            email
+            currentTotalPriceSet {
+              shopMoney {
+                amount
+                currencyCode
+              }
+            }
+            customer {
+              firstName
+              lastName
+              email
+            }
+            shippingAddress {
+              name
+              address1
+              address2
+              zip
+              city
+              country
+              phone
+              email
+            }
+            lineItems(first: 10) {
+              edges {
+                node {
+                  title
+                  name
+                  quantity
+                  variantTitle
+                }
+              }
+            }
+            fulfillments(first: 5) {
+              edges {
+                node {
+                  trackingInfo {
+                    number
+                    url
+                    company
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "X-Shopify-Access-Token": shop.access_token,
+    },
+    body: JSON.stringify({
+      query,
+      variables: { query: `email:${email.trim()}`, first: Math.max(1, Math.min(limit, 50)) },
+    }),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok || payload?.errors) {
+    const message =
+      payload?.errors?.[0]?.message ||
+      payload?.error ||
+      res.statusText ||
+      `Shopify svarede med status ${res.status}.`;
+    throw Object.assign(new Error(String(message)), { status: res.status });
+  }
+  const edges = payload?.data?.orders?.edges ?? [];
+  const orders = edges.map((edge: any) => mapGraphqlOrder(edge?.node)).filter(Boolean);
+  return { orders, raw: payload };
+}
+
 Deno.serve(async (req) => {
   try {
     if (req.method !== "GET") {
@@ -481,6 +561,7 @@ Deno.serve(async (req) => {
     const shop = await getShopForUser(userId);
 
     const url = new URL(req.url);
+    const debug = url.searchParams.get("debug") === "1";
     const searchParams = new URLSearchParams();
 
     const limit = Math.min(Math.max(Number(url.searchParams.get("limit") ?? 20), 1), 250);
@@ -496,7 +577,16 @@ Deno.serve(async (req) => {
     if (orderNumber) {
       const graphqlResult = await fetchShopifyOrdersByNumber(shop, orderNumber, email);
       if (graphqlResult.orders.length) {
-        return Response.json(graphqlResult);
+        console.log("shopify-orders", {
+          shop_domain: shop.shop_domain,
+          order_number: orderNumber,
+          source: "graphql",
+          orders_count: graphqlResult.orders.length,
+        });
+        return Response.json({
+          ...graphqlResult,
+          ...(debug ? { debug: { shop_domain: shop.shop_domain } } : {}),
+        });
       }
       const restResult = await fetchShopifyOrdersByNumberViaRest(
         shop,
@@ -504,7 +594,16 @@ Deno.serve(async (req) => {
         email ?? undefined,
       );
       if (restResult.orders.length) {
-        return Response.json(restResult);
+        console.log("shopify-orders", {
+          shop_domain: shop.shop_domain,
+          order_number: orderNumber,
+          source: "rest_fallback",
+          orders_count: restResult.orders.length,
+        });
+        return Response.json({
+          ...restResult,
+          ...(debug ? { debug: { shop_domain: shop.shop_domain } } : {}),
+        });
       }
     }
 
@@ -514,7 +613,35 @@ Deno.serve(async (req) => {
     const createdAtMax = url.searchParams.get("created_at_max");
     if (createdAtMax) searchParams.set("created_at_max", createdAtMax);
 
-    return await fetchShopifyOrders(shop, searchParams);
+    const result = await fetchShopifyOrders(shop, searchParams);
+    const initialOrders = Array.isArray(result.payload?.orders) ? result.payload.orders : [];
+    if (!initialOrders.length && email && !orderNumber) {
+      const graphqlByEmail = await fetchShopifyOrdersByEmailGraphql(shop, email, limit);
+      if (graphqlByEmail.orders.length) {
+        console.log("shopify-orders", {
+          shop_domain: shop.shop_domain,
+          email,
+          order_number: orderNumber,
+          source: "graphql_email_fallback",
+          orders_count: graphqlByEmail.orders.length,
+        });
+        return Response.json({
+          orders: graphqlByEmail.orders,
+          raw: graphqlByEmail.raw,
+          ...(debug ? { debug: { shop_domain: shop.shop_domain } } : {}),
+        });
+      }
+    }
+    console.log("shopify-orders", {
+      shop_domain: shop.shop_domain,
+      email,
+      order_number: orderNumber,
+      orders_count: initialOrders.length,
+    });
+    return Response.json({
+      ...result.payload,
+      ...(debug ? { debug: { shop_domain: shop.shop_domain } } : {}),
+    });
   } catch (error) {
     const status = (error as any)?.status ?? 500;
     const message = error instanceof Error ? error.message : String(error);

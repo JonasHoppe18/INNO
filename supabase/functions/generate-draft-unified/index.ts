@@ -22,7 +22,7 @@ const SERVICE_ROLE_KEY =
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
 const OPENAI_MODEL = Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini";
 const OPENAI_EMBEDDING_MODEL = Deno.env.get("OPENAI_EMBEDDING_MODEL") ?? "text-embedding-3-small";
-const SHOPIFY_TOKEN_KEY = Deno.env.get("SHOPIFY_TOKEN_KEY");
+const ENCRYPTION_KEY = Deno.env.get("ENCRYPTION_KEY");
 const SHOPIFY_API_VERSION = Deno.env.get("SHOPIFY_API_VERSION") ?? "2024-07";
 const EDGE_DEBUG_LOGS = Deno.env.get("EDGE_DEBUG_LOGS") === "true";
 
@@ -33,6 +33,8 @@ if (!OPENAI_API_KEY) console.warn("OPENAI_API_KEY mangler – AI udkast vil kun 
 if (!Deno.env.get("OPENAI_MODEL")) console.warn("OPENAI_MODEL mangler – bruger default gpt-4o-mini.");
 if (!Deno.env.get("OPENAI_EMBEDDING_MODEL"))
   console.warn("OPENAI_EMBEDDING_MODEL mangler – bruger default text-embedding-3-small.");
+if (!ENCRYPTION_KEY)
+  console.warn("ENCRYPTION_KEY mangler – Shopify opslag/dekryptering kan fejle.");
 
 // Service-role klient bruges til at læse/skrive på tværs af tenants.
 const supabase =
@@ -309,7 +311,7 @@ async function getAgentContext(
     userId: ownerUserId,
     email,
     subject,
-    tokenSecret: SHOPIFY_TOKEN_KEY,
+    tokenSecret: ENCRYPTION_KEY,
     apiVersion: SHOPIFY_API_VERSION,
   });
   const orderSummary = buildOrderSummary(orders);
@@ -921,7 +923,7 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         supabaseUserId: ownerUserId,
         actions: automationActions,
         automation: context.automation,
-        tokenSecret: SHOPIFY_TOKEN_KEY,
+        tokenSecret: ENCRYPTION_KEY,
         apiVersion: SHOPIFY_API_VERSION,
         orderIdMap,
       });
