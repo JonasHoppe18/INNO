@@ -1,5 +1,6 @@
 import { createRemoteJWKSet, jwtVerify } from "https://deno.land/x/jose@v5.2.0/index.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getShopCredentialsForUser } from "../_shared/shopify-credentials.ts";
 
 const SHOPIFY_API_VERSION = "2024-07"; // Samme version som i de andre endpoints
 
@@ -7,15 +8,12 @@ const PROJECT_URL = Deno.env.get("PROJECT_URL") ?? Deno.env.get("SUPABASE_URL");
 const SERVICE_ROLE_KEY =
   Deno.env.get("SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const CLERK_JWT_ISSUER = Deno.env.get("CLERK_JWT_ISSUER");
-const SHOPIFY_TOKEN_KEY = Deno.env.get("SHOPIFY_TOKEN_KEY");
 
 if (!PROJECT_URL) console.warn("PROJECT_URL mangler – shop data kan ikke hentes.");
 if (!SERVICE_ROLE_KEY)
   console.warn("SERVICE_ROLE_KEY mangler – edge function kan ikke spørge Supabase.");
 if (!CLERK_JWT_ISSUER)
   console.warn("CLERK_JWT_ISSUER mangler – Clerk sessioner kan ikke verificeres.");
-if (!SHOPIFY_TOKEN_KEY)
-  console.warn("SHOPIFY_TOKEN_KEY mangler – kan ikke dekryptere Shopify tokens.");
 
 const supabase =
   PROJECT_URL && SERVICE_ROLE_KEY ? createClient(PROJECT_URL, SERVICE_ROLE_KEY) : null;
@@ -111,31 +109,18 @@ async function getShopForUser(clerkUserId: string): Promise<ShopRecord> {
   if (!supabase) {
     throw Object.assign(new Error("Supabase klient ikke konfigureret."), { status: 500 });
   }
-  if (!SHOPIFY_TOKEN_KEY) {
-    throw Object.assign(new Error("SHOPIFY_TOKEN_KEY mangler på edge functionen."), {
-      status: 500,
-    });
-  }
 
   const supabaseUserId = await resolveSupabaseUserId(clerkUserId);
-
-  const { data, error } = await supabase
-    .rpc<ShopRecord>("get_shop_credentials_for_user", {
-      p_owner_user_id: supabaseUserId,
-      p_secret: SHOPIFY_TOKEN_KEY,
-    })
-    .single();
-
-  if (error) {
-    throw Object.assign(new Error(`Kunne ikke slå butik op: ${error.message}`), {
+  try {
+    return await getShopCredentialsForUser({
+      supabase,
+      userId: supabaseUserId,
+    });
+  } catch (error) {
+    throw Object.assign(new Error(error instanceof Error ? error.message : String(error)), {
       status: 500,
     });
   }
-  if (!data) {
-    throw Object.assign(new Error("Ingen Shopify butik forbundet."), { status: 404 });
-  }
-
-  return data;
 }
 
 // Slår automationsflagene op, så vi kan blokere ulovlige handlinger

@@ -31,7 +31,7 @@ const SERVICE_ROLE_KEY =
   Deno.env.get("SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
 const OPENAI_MODEL = Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini";
-const SHOPIFY_TOKEN_KEY = Deno.env.get("SHOPIFY_TOKEN_KEY");
+const ENCRYPTION_KEY = Deno.env.get("ENCRYPTION_KEY");
 const SHOPIFY_API_VERSION = Deno.env.get("SHOPIFY_API_VERSION") ?? "2024-07";
 
 const supabase =
@@ -42,8 +42,8 @@ if (!SERVICE_ROLE_KEY)
   console.warn("SERVICE_ROLE_KEY mangler – Gorgias webhook kan ikke læse Supabase tabeller.");
 if (!OPENAI_API_KEY)
   console.warn("OPENAI_API_KEY mangler – Gorgias webhook kan ikke generere AI-udkast.");
-if (!SHOPIFY_TOKEN_KEY)
-  console.warn("SHOPIFY_TOKEN_KEY mangler – Shopify opslagsfunktionalitet er slået fra.");
+if (!ENCRYPTION_KEY)
+  console.warn("ENCRYPTION_KEY mangler – Shopify opslagsfunktionalitet kan fejle.");
 
 type IntegrationRecord = {
   id: string;
@@ -454,7 +454,7 @@ Deno.serve(async (req) => {
       userId: integration.user_id,
       email: contactEmail,
       subject,
-      tokenSecret: SHOPIFY_TOKEN_KEY,
+      tokenSecret: ENCRYPTION_KEY,
       apiVersion: SHOPIFY_API_VERSION,
     });
 
@@ -483,7 +483,7 @@ Deno.serve(async (req) => {
       supabaseUserId: integration.user_id,
       actions,
       automation,
-      tokenSecret: SHOPIFY_TOKEN_KEY,
+      tokenSecret: ENCRYPTION_KEY,
       apiVersion: SHOPIFY_API_VERSION,
     });
     console.log("🤖 Gorgias automation actions:", automationResults);

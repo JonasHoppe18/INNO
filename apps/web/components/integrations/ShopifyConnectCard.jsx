@@ -32,7 +32,8 @@ export function ShopifyConnectCard() {
     setLoading(true);
     const { data, error } = await supabase
       .from("shops")
-      .select("shop_domain, owner_user_id")
+      .select("shop_domain, owner_user_id, platform, installed_at, scopes")
+      .eq("platform", "shopify")
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();

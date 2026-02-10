@@ -13,10 +13,8 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import { useAuth } from "@clerk/nextjs";
 import { useClerkSupabase } from "@/lib/useClerkSupabase";
 
-// Normaliserer brugerinput så vi gemmer et rent domæne.
 const normalizeDomain = (value) =>
   value
     .trim()
@@ -29,44 +27,43 @@ export function ShopifySheet({
   onConnected,
   initialConnection = null,
 }) {
-  const { getToken } = useAuth();
   const supabase = useClerkSupabase();
 
-  // Lokale form- og UI-states
   const [open, setOpen] = useState(false);
   const [domain, setDomain] = useState("");
-  const [apiKey, setApiKey] = useState("");
+  const [clientId, setClientId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
 
-  // Vi kan kun disconnecte hvis der findes en shop_domain i Supabase.
   const existingDomain =
     initialConnection?.shop_domain || initialConnection?.store_domain || "";
   const hasExistingConnection = Boolean(existingDomain);
 
-  // Synker feltværdier når sheetet åbnes og rydder fejl når man lukker det igen.
   useEffect(() => {
     if (open) {
       setDomain(existingDomain || "");
-      setApiKey("");
+      setClientId("");
+      setClientSecret("");
       setError("");
     }
   }, [open, existingDomain]);
 
-  // Forbinder eller opdaterer Shopify integrationen via Supabase functionen.
   const handleSubmit = async (event) => {
     event.preventDefault();
+
     const cleanDomain = normalizeDomain(domain);
-    const tokenValue = apiKey.trim();
+    const cleanClientId = clientId.trim();
+    const cleanClientSecret = clientSecret.trim();
 
     if (!cleanDomain) {
       setError("Enter your Shopify domain.");
       return;
     }
 
-    if (!tokenValue) {
-      setError("Enter your Admin API access token.");
+    if (!cleanClientId || !cleanClientSecret) {
+      setError("Enter Shopify Client ID and Client Secret.");
       return;
     }
 
@@ -74,54 +71,45 @@ export function ShopifySheet({
     setError("");
 
     try {
-      const clerkToken = await getToken();
-      if (!clerkToken) {
-        throw new Error("Could not fetch Clerk session token.");
-      }
-
-      // Brug server-side proxy for at undgå CORS på functions
-      const response = await fetch("/api/shopify/connect", {
+      const credentialsResponse = await fetch("/api/shopify/credentials", {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${clerkToken}`,
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          domain: cleanDomain,
-          accessToken: tokenValue,
+          shop_domain: cleanDomain,
+          client_id: cleanClientId,
+          client_secret: cleanClientSecret,
         }),
       });
 
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        const message =
-          typeof payload?.error === "string"
-            ? payload.error
-            : "Could not connect Shopify.";
-        throw new Error(message);
+      const credentialsPayload = await credentialsResponse.json().catch(() => ({}));
+      if (!credentialsResponse.ok) {
+        throw new Error(credentialsPayload?.error || "Could not save Shopify credentials.");
       }
 
-      setOpen(false);
-      setApiKey("");
-      setDomain(cleanDomain);
-      await fetch("/api/onboarding/mark", {
+      const connectResponse = await fetch("/api/shopify/connect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ step: "shopify_connected" }),
-      }).catch(() => null);
-      await onConnected?.();
+        body: JSON.stringify({
+          shop_domain: cleanDomain,
+        }),
+      });
+
+      const connectPayload = await connectResponse.json().catch(() => ({}));
+      if (!connectResponse.ok || !connectPayload?.authorizeUrl) {
+        throw new Error(connectPayload?.error || "Could not start Shopify OAuth.");
+      }
+
+      window.location.assign(connectPayload.authorizeUrl);
     } catch (submitError) {
       const message =
         submitError instanceof Error
           ? submitError.message
-          : "Unknown error while connecting to Shopify.";
+          : "Unknown error while connecting Shopify.";
       setError(message);
-    } finally {
       setSubmitting(false);
     }
   };
 
-  // Frakobler Shopify ved at slette butikken fra shops tabellen.
   const handleDisconnect = async () => {
     if (!supabase) {
       setError("Supabase client is not ready yet.");
@@ -140,6 +128,7 @@ export function ShopifySheet({
       const { error: deleteError } = await supabase
         .from("shops")
         .delete()
+        .eq("platform", "shopify")
         .eq("shop_domain", existingDomain);
 
       if (deleteError) {
@@ -147,7 +136,8 @@ export function ShopifySheet({
       }
 
       setDomain("");
-      setApiKey("");
+      setClientId("");
+      setClientSecret("");
       setOpen(false);
       await onConnected?.();
     } catch (disconnectError) {
@@ -161,14 +151,14 @@ export function ShopifySheet({
     }
   };
 
-  // Primær CTA skifter text afhængigt af state og om der findes data i forvejen.
   const primaryLabel = submitting
     ? hasExistingConnection
-      ? "Updating..."
-      : "Connecting..."
-    : "Update";
+      ? "Starting OAuth..."
+      : "Starting OAuth..."
+    : hasExistingConnection
+    ? "Update and reconnect"
+    : "Connect Shopify";
 
-  // Separat label til disconnect knappen for tydelig statusfeedback.
   const disconnectLabel = disconnecting
     ? "Disconnecting..."
     : "Disconnect integration";
@@ -179,10 +169,10 @@ export function ShopifySheet({
       <SheetContent side="right" className="sm:max-w-md overflow-y-auto">
         <SheetHeader className="mb-6">
           <SheetTitle>
-            {hasExistingConnection ? "Update Shopify" : "Connect Shopify"}
+            {hasExistingConnection ? "Update Shopify OAuth" : "Connect Shopify OAuth"}
           </SheetTitle>
           <SheetDescription>
-            Enter your store domain and Admin API access token to connect Shopify.
+            Enter shop domain, app client ID and client secret, then complete OAuth in Shopify.
           </SheetDescription>
         </SheetHeader>
 
@@ -197,19 +187,28 @@ export function ShopifySheet({
               onChange={(event) => setDomain(event.target.value)}
             />
           </div>
+
           <div className="space-y-2">
-            <Label htmlFor="shopify-api">Admin API access token</Label>
+            <Label htmlFor="shopify-client-id">Client ID</Label>
             <Input
-              id="shopify-api"
-              type="password"
-              placeholder="shpat_..."
+              id="shopify-client-id"
+              placeholder="Shopify app client ID"
               autoComplete="off"
-              value={apiKey}
-              onChange={(event) => setApiKey(event.target.value)}
+              value={clientId}
+              onChange={(event) => setClientId(event.target.value)}
             />
-            <p className="text-[10px] text-muted-foreground">
-              Find it under Apps &gt; Develop apps &gt; API credentials.
-            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="shopify-client-secret">Client secret</Label>
+            <Input
+              id="shopify-client-secret"
+              type="password"
+              placeholder="Shopify app client secret"
+              autoComplete="off"
+              value={clientSecret}
+              onChange={(event) => setClientSecret(event.target.value)}
+            />
           </div>
 
           {error && <p className="text-sm text-red-500">{error}</p>}

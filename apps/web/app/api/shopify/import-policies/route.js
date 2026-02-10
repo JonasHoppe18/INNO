@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
+import { decryptString } from "@/lib/server/shopify-oauth";
 
 const SUPABASE_BASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -16,7 +17,6 @@ const SUPABASE_SERVICE_KEY =
   process.env.SERVICE_ROLE_KEY ||
   process.env.SUPABASE_SERVICE_KEY ||
   "";
-const SHOPIFY_TOKEN_KEY = process.env.SHOPIFY_TOKEN_KEY || "";
 const SUPABASE_TEMPLATE =
   process.env.NEXT_PUBLIC_CLERK_SUPABASE_TEMPLATE?.trim() ||
   process.env.EXPO_PUBLIC_CLERK_SUPABASE_TEMPLATE?.trim() ||
@@ -37,13 +37,6 @@ function createServiceSupabase() {
   return createClient(SUPABASE_BASE_URL, SUPABASE_SERVICE_KEY);
 }
 
-function createUserSupabase(token) {
-  if (!SUPABASE_BASE_URL || !SUPABASE_ANON_KEY || !token) return null;
-  return createClient(SUPABASE_BASE_URL, SUPABASE_ANON_KEY, {
-    global: { headers: { Authorization: `Bearer ${token}` } },
-  });
-}
-
 async function resolveSupabaseUserId(serviceClient, clerkUserId) {
   if (!serviceClient || !clerkUserId) return null;
   const { data, error } = await serviceClient
@@ -56,15 +49,34 @@ async function resolveSupabaseUserId(serviceClient, clerkUserId) {
 }
 
 async function fetchShopCredentials(serviceClient, supabaseUserId) {
-  if (!serviceClient || !supabaseUserId || !SHOPIFY_TOKEN_KEY) return null;
+  if (!serviceClient || !supabaseUserId) return null;
   const { data, error } = await serviceClient
-    .rpc("get_shop_credentials_for_user", {
-      p_owner_user_id: supabaseUserId,
-      p_secret: SHOPIFY_TOKEN_KEY,
-    })
+    .from("shops")
+    .select("shop_domain, access_token_encrypted")
+    .eq("owner_user_id", supabaseUserId)
+    .eq("platform", "shopify")
+    .order("created_at", { ascending: false })
+    .limit(1)
     .maybeSingle();
   if (error) throw new Error(`Could not fetch Shopify credentials: ${error.message}`);
-  return data;
+  if (!data) return null;
+
+  if (!data.access_token_encrypted) {
+    return { shop_domain: data.shop_domain, access_token: null };
+  }
+
+  try {
+    return {
+      shop_domain: data.shop_domain,
+      access_token: decryptString(data.access_token_encrypted),
+    };
+  } catch (decryptError) {
+    throw new Error(
+      `Could not decrypt Shopify token: ${
+        decryptError instanceof Error ? decryptError.message : String(decryptError)
+      }`
+    );
+  }
 }
 
 async function fetchShopRowService(serviceClient, supabaseUserId) {
@@ -73,6 +85,7 @@ async function fetchShopRowService(serviceClient, supabaseUserId) {
     .from("shops")
     .select("id, shop_domain, policy_refund, policy_shipping, policy_terms, internal_tone")
     .eq("owner_user_id", supabaseUserId)
+    .eq("platform", "shopify")
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -114,6 +127,7 @@ async function getShopRecord({ token }) {
   );
   url.searchParams.set("order", "created_at.desc");
   url.searchParams.set("limit", "1");
+  url.searchParams.set("platform", "eq.shopify");
 
   const response = await fetch(url.toString(), {
     headers: {
@@ -196,7 +210,7 @@ export async function POST(request) {
 
   // Forsøg at hente dekrypteret token via service role (samme som edge functions gør).
   let supabaseUserId = null;
-  if (SUPABASE_SERVICE_KEY && SHOPIFY_TOKEN_KEY) {
+  if (SUPABASE_SERVICE_KEY) {
     try {
       const serviceClient = createServiceSupabase();
       supabaseUserId = await resolveSupabaseUserId(serviceClient, userId);
@@ -211,25 +225,6 @@ export async function POST(request) {
       }
     } catch (error) {
       console.warn("Dekryptering af Shopify token fejlede:", error);
-    }
-  }
-  // Fallback: prøv med brugerens RLS-token, hvis service role ikke virkede.
-  if (!decrypted && !bodyToken && SHOPIFY_TOKEN_KEY && supabaseToken) {
-    try {
-      const userClient = createUserSupabase(supabaseToken);
-      if (userClient) {
-        const { data, error } = await userClient
-          .rpc("get_shop_credentials_for_user", {
-            p_owner_user_id: null, // RLS i funktionen bør sikre current_user
-            p_secret: SHOPIFY_TOKEN_KEY,
-          })
-          .maybeSingle();
-        if (!error && data) {
-          decrypted = data;
-        }
-      }
-    } catch (error) {
-      console.warn("Dekryptering via RLS-token fejlede:", error);
     }
   }
   // Kun slå Supabase op hvis vi ikke fik domæne/token i requesten.
@@ -283,7 +278,6 @@ export async function POST(request) {
           domainSource,
           tokenSource,
           hasServiceKey: Boolean(SUPABASE_SERVICE_KEY),
-          hasTokenKey: Boolean(SHOPIFY_TOKEN_KEY),
           hasSupabaseToken: Boolean(supabaseToken),
         },
       },
