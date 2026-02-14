@@ -22,7 +22,7 @@ export function NavAgent({
 
   return (
     <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-      <SidebarGroupLabel>AI Agent</SidebarGroupLabel>
+      <SidebarGroupLabel>Configuration</SidebarGroupLabel>
       <SidebarMenu>
         {items.map((item) => (
           <SidebarMenuItem key={item.name}>
