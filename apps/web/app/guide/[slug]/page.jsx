@@ -229,7 +229,7 @@ export default function GuideDetailPage({ params }) {
 
         {guide.prerequisites ? (
           <section className="mt-10">
-            <h2 className="text-lg font-semibold">Prerequisites</h2>
+            <h2 className="text-lg font-semibold">Before you start</h2>
             <ul className="mt-3 space-y-2 text-sm text-slate-700">
               {guide.prerequisites.map((item) => (
                 <li key={item} className="flex gap-2">

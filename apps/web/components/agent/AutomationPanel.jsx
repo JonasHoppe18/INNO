@@ -1,55 +1,182 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
-import { Archive, DollarSign, Inbox, Mail, Package, SlidersHorizontal, XCircle } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAgentAutomation } from "@/hooks/useAgentAutomation";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 // Definition af de tilstande vi lader brugeren styre fra automation-panelet.
 const toggles = [
   {
     key: "orderUpdates",
-    icon: Package,
     label: "Order updates",
-    description: "Allow the agent to look up tracking and share status updates with customers.",
+    description: "Tracking + status replies",
   },
   {
     key: "cancelOrders",
-    icon: XCircle,
     label: "Allow cancellations",
-    description: "Allow the agent to cancel orders if they have not shipped yet.",
-  },
-  {
-    key: "automaticRefunds",
-    icon: DollarSign,
-    label: "Automatic refunds",
-    description: "Allow the agent to process small refunds automatically.",
+    description: "Cancel unshipped orders",
   },
   {
     key: "historicInboxAccess",
-    icon: Archive,
     label: "Historical inbox",
-    description: "Allow access to old emails so the agent can reference past conversations.",
+    description: "Use older emails for context",
+  },
+  {
+    key: "automaticRefunds",
+    label: "Automatic refunds",
+    description: "Process small refunds automatically",
+    status: "comingSoon",
   },
 ];
 
 const draftDestinations = [
   {
     id: "sona_inbox",
-    label: "Drafts stay in Sona AI dashboard - Answer directly in your inbox",
-    icon: Inbox,
+    label: "Sona Inbox",
+    description: "Review and send from Sona.",
+    badge: "Recommended",
   },
   {
-    id: "email_provider",
-    label: "Drafts appear directly in Gmail or Outlook",
-    icon: Mail,
+    id: "provider_inbox",
+    label: "Your Inbox",
+    description: "Drafts appear in Gmail/Outlook.",
+    badge: "Gmail/Outlook",
   },
 ];
 
 const AutomationPanelContext = createContext(null);
+
+function SettingsSection({
+  title,
+  description,
+  action,
+  children,
+  className,
+  note,
+  titleBadge,
+}) {
+  return (
+    <Card className={cn("rounded-2xl border border-border bg-white shadow-sm", className)}>
+      <CardContent className="p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-semibold text-foreground">{title}</h2>
+              {titleBadge}
+            </div>
+            <p className="text-sm text-muted-foreground">{description}</p>
+            {note ? (
+              <p className="text-xs text-muted-foreground">{note}</p>
+            ) : null}
+          </div>
+          {action ? <div className="flex items-center gap-2">{action}</div> : null}
+        </div>
+        {children ? (
+          <>
+            <Separator className="my-5" />
+            {children}
+          </>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ToggleRow({
+  label,
+  description,
+  checked,
+  onCheckedChange,
+  disabled,
+  badge,
+  helper,
+}) {
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="space-y-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-sm font-medium text-foreground">{label}</p>
+          {badge}
+        </div>
+        <p className="text-sm text-muted-foreground">{description}</p>
+        {helper ? <p className="text-xs text-muted-foreground">{helper}</p> : null}
+      </div>
+      <Switch
+        checked={checked}
+        onCheckedChange={onCheckedChange}
+        disabled={disabled}
+        aria-label={label}
+      />
+    </div>
+  );
+}
+
+function RadioCard({ id, value, title, description, badge, disabled, active }) {
+  return (
+    <label
+      htmlFor={id}
+      className={cn(
+        "flex items-start gap-3 rounded-xl border p-4 text-sm transition",
+        active
+          ? "border-foreground/60 bg-muted/40"
+          : "border-border bg-background hover:border-foreground/30",
+        disabled && "pointer-events-none opacity-60"
+      )}
+    >
+      <RadioGroupItem id={id} value={value} className="mt-1" disabled={disabled} />
+      <div className="flex-1 space-y-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-medium text-foreground">{title}</span>
+          {badge ? (
+            <Badge variant="secondary" className="text-xs">
+              {badge}
+            </Badge>
+          ) : null}
+        </div>
+        <p className="text-sm text-muted-foreground">{description}</p>
+      </div>
+    </label>
+  );
+}
+
+function StickySaveBar({ isDirty, isSaving, onSave, onReset }) {
+  if (!isDirty) return null;
+  return (
+    <div className="fixed bottom-4 left-1/2 z-20 w-[calc(100%-2rem)] max-w-3xl -translate-x-1/2 rounded-2xl border border-border bg-background/95 px-4 py-3 shadow-lg backdrop-blur">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="text-sm font-medium text-muted-foreground">Unsaved changes</span>
+        <div className="flex items-center gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={onReset}>
+            Discard
+          </Button>
+          <Button type="button" size="sm" onClick={onSave} disabled={isSaving}>
+            {isSaving ? "Saving..." : "Save changes"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function useAutomationPanelActions() {
   const ctx = useContext(AutomationPanelContext);
@@ -63,14 +190,24 @@ export function AutomationPanel({ children = null }) {
   const { settings, loading, saving, error, save } = useAgentAutomation();
   // Lokalt spejl af Supabase settings så vi kan optimistisk toggle switches.
   const [local, setLocal] = useState(settings || {});
-  // Skjult input i UI (ikke gemt endnu), placeholder for fremtidig funktionalitet.
-  const [refundMax, setRefundMax] = useState("500");
+  const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
+  const [pendingHref, setPendingHref] = useState(null);
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const dirtyRef = useRef(false);
 
   useEffect(() => {
     setLocal(settings || {});
   }, [settings]);
 
-  const draftDestination = local?.draftDestination || settings?.draftDestination || "email_provider";
+  useEffect(() => {
+    if (!loading) {
+      setHasLoaded(true);
+    }
+  }, [loading]);
+
+  const draftDestination =
+    local?.draftDestination ?? settings?.draftDestination ?? "provider_inbox";
 
   // Hver switch får sin egen change handler der opdaterer lokale state felter.
   const handleToggle = useCallback(
@@ -81,28 +218,92 @@ export function AutomationPanel({ children = null }) {
   );
 
   const handleSave = useCallback(async () => {
+    if (!settings) return;
+    const toastId = toast.loading("Saving changes...");
     try {
-      // Sender kun de kendte boolean felter til hooken for at undgå utilsigtede updates.
-      await save({
-        orderUpdates: Boolean(local?.orderUpdates),
-        cancelOrders: Boolean(local?.cancelOrders),
-        automaticRefunds: Boolean(local?.automaticRefunds),
-        historicInboxAccess: Boolean(local?.historicInboxAccess),
+      const updates = {};
+
+      toggles.forEach(({ key }) => {
+        if (Boolean(local?.[key]) !== Boolean(settings?.[key])) {
+          updates[key] = Boolean(local?.[key]);
+        }
       });
+
+      if (Boolean(local?.autoDraftEnabled) !== Boolean(settings?.autoDraftEnabled)) {
+        updates.autoDraftEnabled = Boolean(local?.autoDraftEnabled);
+      }
+
+      if ((local?.draftDestination ?? settings?.draftDestination) !== settings?.draftDestination) {
+        updates.draftDestination = local?.draftDestination ?? settings?.draftDestination;
+      }
+
+      if (Object.keys(updates).length === 0) {
+        toast.success("Nothing to save.", { id: toastId });
+        return;
+      }
+
+      await save(updates);
+      toast.success("Saved.", { id: toastId });
     } catch (_) {
-      // swallow here; the hook surfaces `error` already
+      toast.error("Could not save changes.", { id: toastId });
     }
-  }, [local, save]);
+  }, [local, save, settings]);
 
   // dirty bruges både af header knappen og lokale CTA'er.
   const dirty = useMemo(() => {
     const baseDirty = toggles.some(
       ({ key }) => Boolean(local?.[key]) !== Boolean(settings?.[key])
     );
-    const draftDirty = Boolean(local?.autoDraftEnabled) !== Boolean(settings?.autoDraftEnabled);
-    const destinationDirty = local?.draftDestination !== settings?.draftDestination;
+    const draftDirty =
+      Boolean(local?.autoDraftEnabled) !== Boolean(settings?.autoDraftEnabled);
+    const destinationDirty =
+      (local?.draftDestination ?? settings?.draftDestination) !==
+      settings?.draftDestination;
     return baseDirty || draftDirty || destinationDirty;
   }, [local, settings]);
+
+  useEffect(() => {
+    dirtyRef.current = dirty;
+  }, [dirty]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (event) => {
+      if (!dirtyRef.current) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, []);
+
+  useEffect(() => {
+    const handleClick = (event) => {
+      if (!dirtyRef.current) return;
+      const target = event.target;
+      const anchor = target?.closest?.("a");
+      if (!anchor) return;
+      const href = anchor.getAttribute("href");
+      if (!href) return;
+      if (href.startsWith("#") || href.startsWith("mailto:") || href.startsWith("tel:")) {
+        return;
+      }
+      if (anchor.target === "_blank" || anchor.dataset.noGuard) return;
+      const nextUrl = new URL(href, window.location.href);
+      const currentUrl = new URL(window.location.href);
+      if (
+        nextUrl.pathname === currentUrl.pathname &&
+        nextUrl.search === currentUrl.search &&
+        nextUrl.hash
+      ) {
+        return;
+      }
+      event.preventDefault();
+      setPendingHref(nextUrl.toString());
+      setLeaveDialogOpen(true);
+    };
+    document.addEventListener("click", handleClick, true);
+    return () => document.removeEventListener("click", handleClick, true);
+  }, []);
 
   // Samlet API der deles via context så headeren kan gengemme ændringer.
   const contextValue = useMemo(
@@ -115,30 +316,16 @@ export function AutomationPanel({ children = null }) {
     [handleSave, saving, loading, dirty]
   );
 
-  const handleToggleAutoDraft = useCallback(async () => {
-    const next = !Boolean(local?.autoDraftEnabled);
-    setLocal((s) => ({ ...(s || {}), autoDraftEnabled: next }));
-    try {
-      await save({ autoDraftEnabled: next });
-    } catch (_) {
-      // error already handled by hook
-    }
-  }, [local?.autoDraftEnabled, save]);
+  const handleToggleAutoDraft = useCallback((next) => {
+    setLocal((s) => ({ ...(s || {}), autoDraftEnabled: Boolean(next) }));
+  }, []);
 
   const handleDestinationPick = useCallback(
-    async (next) => {
+    (next) => {
       if (!next || next === draftDestination) return;
       setLocal((s) => ({ ...(s || {}), draftDestination: next }));
-      const toastId = toast.loading("Updating draft destination...");
-      try {
-        await save({ draftDestination: next });
-        toast.success("Draft destination updated.", { id: toastId });
-      } catch (err) {
-        toast.error("Could not update draft destination.", { id: toastId });
-        setLocal((s) => ({ ...(s || {}), draftDestination }));
-      }
     },
-    [draftDestination, save]
+    [draftDestination]
   );
 
   const handleResetLearning = useCallback(async () => {
@@ -159,200 +346,234 @@ export function AutomationPanel({ children = null }) {
     }
   }, []);
 
-  const selectedDestination = useMemo(
-    () => draftDestinations.find((destination) => destination.id === draftDestination),
-    [draftDestination]
-  );
+  const handleResetLocal = useCallback(() => {
+    setLocal(settings || {});
+  }, [settings]);
+
+  const handleConfirmLeave = useCallback(() => {
+    if (pendingHref) {
+      window.location.href = pendingHref;
+    }
+  }, [pendingHref]);
+
+  const isAutoDraftEnabled = Boolean(local?.autoDraftEnabled);
+  const canEditDependent = isAutoDraftEnabled && !loading && !saving;
+  const showSkeleton = loading && !hasLoaded;
 
   return (
     <AutomationPanelContext.Provider value={contextValue}>
       {children}
-
-      <Card className="mb-4 rounded-2xl border border-indigo-200/60 bg-white shadow-sm">
-        <CardContent className="flex flex-wrap items-center justify-between gap-4 px-6 py-5">
-          <div>
-            <p className="text-sm font-semibold text-slate-900">Auto-draft agent</p>
-            <p className="text-sm text-slate-600">
-              Toggle AI drafts on/off. When enabled, the agent automatically creates drafts in your inbox.
-            </p>
+      <TooltipProvider>
+        {showSkeleton ? (
+          <div className="mt-6 space-y-6 pb-24">
+            <Card className="rounded-2xl border border-border bg-white shadow-sm">
+              <CardContent className="space-y-4 p-6">
+                <Skeleton className="h-5 w-40" />
+                <Skeleton className="h-4 w-72" />
+                <Skeleton className="h-10 w-32" />
+              </CardContent>
+            </Card>
+            <Card className="rounded-2xl border border-border bg-white shadow-sm">
+              <CardContent className="space-y-4 p-6">
+                <Skeleton className="h-5 w-48" />
+                <Skeleton className="h-4 w-80" />
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Skeleton className="h-20 w-full" />
+                  <Skeleton className="h-20 w-full" />
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="rounded-2xl border border-border bg-white shadow-sm">
+              <CardContent className="space-y-4 p-6">
+                <Skeleton className="h-5 w-56" />
+                <Skeleton className="h-4 w-80" />
+                <Skeleton className="h-16 w-full" />
+                <Skeleton className="h-16 w-full" />
+              </CardContent>
+            </Card>
           </div>
-          <div className="flex items-center gap-3">
-            <span
-              className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${
-                local?.autoDraftEnabled
-                  ? "bg-emerald-100 text-emerald-700"
-                  : "bg-slate-100 text-slate-600"
-              }`}
-            >
-              {local?.autoDraftEnabled ? "Active" : "Inactive"}
-            </span>
-            <Button
-              type="button"
-              size="sm"
-              onClick={handleToggleAutoDraft}
-              disabled={loading || saving}
-              variant={local?.autoDraftEnabled ? "outline" : "default"}
-              className={
-                local?.autoDraftEnabled
-                  ? "border-slate-200 text-slate-700 hover:bg-slate-50"
-                  : "bg-slate-900 text-white shadow-lg shadow-slate-900/20 hover:bg-slate-800"
+        ) : (
+          <div className="mt-6 space-y-6">
+            <SettingsSection
+              title="Sona Assistant"
+              description="When enabled, Sona prepares draft replies for new emails. You review and send."
+              action={
+                <div className="flex items-center gap-3">
+                  <Badge
+                    variant="secondary"
+                    className={cn(
+                      "text-xs",
+                      isAutoDraftEnabled
+                        ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
+                        : "border border-border bg-muted text-muted-foreground"
+                    )}
+                  >
+                    {isAutoDraftEnabled ? "Assistant ON" : "Assistant OFF"}
+                  </Badge>
+                  <Switch
+                    id="auto-draft-toggle"
+                    checked={isAutoDraftEnabled}
+                    onCheckedChange={handleToggleAutoDraft}
+                    disabled={loading || saving}
+                  />
+                </div>
+              }
+            />
+
+            <SettingsSection
+              title="Where drafts appear"
+              description="Choose where drafts appear after Sona writes them."
+              note={
+                !isAutoDraftEnabled
+                  ? "Enable Auto-draft to configure these settings."
+                  : "Inbox drafts require Gmail or Outlook connected."
               }
             >
-              {local?.autoDraftEnabled ? "Disable" : "Enable"}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="mb-4 rounded-2xl border border-indigo-200/60 bg-white shadow-sm">
-        <CardContent className="px-6 py-5">
-          <div className="flex items-center gap-3">
-            <div className="rounded-full bg-slate-100 p-2 text-slate-700">
-              <SlidersHorizontal className="h-4 w-4" />
-            </div>
-            <div>
-              <p className="text-base font-semibold text-slate-900">Draft Destination</p>
-              <p className="text-sm text-slate-600">
-                Choose where you want AI drafts to appear.
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            {draftDestinations.map((destination) => {
-              const Icon = destination.icon;
-              const isActive = destination.id === draftDestination;
-              return (
-                <button
-                  key={destination.id}
-                  type="button"
-                  onClick={() => handleDestinationPick(destination.id)}
-                  className={`group flex w-full items-center gap-4 rounded-2xl border p-5 text-left transition ${
-                    isActive
-                      ? "border-slate-900 bg-slate-50 ring-2 ring-slate-900"
-                      : "border-slate-200 bg-white hover:border-slate-300"
-                  }`}
-                >
-                  <div
-                    className={`flex h-12 w-12 items-center justify-center rounded-2xl ${
-                      isActive
-                        ? "bg-slate-900 text-white"
-                        : "bg-slate-100 text-slate-700"
-                    }`}
+              <RadioGroup
+                value={draftDestination}
+                onValueChange={handleDestinationPick}
+                className="grid gap-3 md:grid-cols-2"
+                disabled={!canEditDependent}
+              >
+                {draftDestinations.map((destination) => {
+                  const isActive = destination.id === draftDestination;
+                  return (
+                    <RadioCard
+                      key={destination.id}
+                      id={`draft-destination-${destination.id}`}
+                      value={destination.id}
+                      title={destination.label}
+                      description={destination.description}
+                      badge={destination.badge}
+                      disabled={!canEditDependent}
+                      active={isActive}
+                    />
+                  );
+                })}
+              </RadioGroup>
+              {draftDestination === "provider_inbox" && (
+                <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  <Badge variant="secondary" className="text-xs">
+                    Requires Gmail/Outlook connected
+                  </Badge>
+                  <Link
+                    href="/mailboxes"
+                    className="text-xs font-medium text-foreground underline underline-offset-4"
                   >
-                    <Icon className="h-5 w-5" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-slate-900">{destination.label}</p>
-                  </div>
-                  <div
-                    className={`flex h-6 w-6 items-center justify-center rounded-full border ${
-                      isActive
-                        ? "border-slate-900 text-slate-900"
-                        : "border-slate-300 text-slate-400"
-                    }`}
-                    aria-hidden="true"
-                  >
-                    {isActive && <span className="h-2.5 w-2.5 rounded-full bg-slate-900" />}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          {selectedDestination && (
-            <div className="mt-3 text-xs text-slate-600">
-              Selected: {selectedDestination.label}
-            </div>
-          )}
-
-        </CardContent>
-      </Card>
-
-      <Card className="rounded-xl border border-border bg-white shadow-sm">
-        <CardContent className="p-0">
-          <div className="divide-y divide-border/70">
-            {toggles.map((t) => {
-              const Icon = t.icon;
-              const isOn = Boolean(local?.[t.key]);
-              return (
-                <div key={t.key} className="px-5 py-5 transition hover:bg-muted/40">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex items-start gap-3">
-                      <div className="mt-0.5 rounded-full bg-slate-100 p-2 text-slate-700">
-                        <Icon className="h-4 w-4" />
-                      </div>
-                      <div>
-                        <p className="font-medium text-foreground">{t.label}</p>
-                        <p className="mt-1 text-sm text-muted-foreground">{t.description}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center">
-                      <Switch
-                        checked={isOn}
-                        onCheckedChange={handleToggle(t.key)}
-                        disabled={loading || saving}
-                      />
-                    </div>
-                  </div>
-
-                  {t.key === "automaticRefunds" && (
-                    <div
-                      className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${
-                        isOn
-                          ? "mt-4 grid-rows-[1fr] opacity-100"
-                          : "grid-rows-[0fr] opacity-0"
-                      }`}
-                      aria-hidden={!isOn}
-                    >
-                      <div className="overflow-hidden">
-                        <div className="rounded-lg border border-border/80 bg-white px-4 py-3 text-sm shadow-inner">
-                          <label
-                            htmlFor="automation-refund-max"
-                            className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-                          >
-                            Maximum amount (DKK)
-                          </label>
-                          <input
-                            id="automation-refund-max"
-                            type="number"
-                            inputMode="numeric"
-                            placeholder="500"
-                            value={refundMax}
-                            onChange={(event) => setRefundMax(event.target.value)}
-                            className="mt-2 w-32 rounded-md border border-input px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                    Manage mailboxes
+                  </Link>
                 </div>
-              );
-            })}
-          </div>
-          {error && (
-            <div className="px-5 py-4">
-              <p className="text-sm text-destructive">
-                {error.message ?? "Could not save automation settings."}
-              </p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+              )}
+            </SettingsSection>
 
-      <Card className="mt-4 rounded-xl border border-border bg-white shadow-sm">
-        <CardContent className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
-          <div>
-            <p className="text-sm font-semibold text-foreground">Learning profile</p>
-            <p className="text-sm text-muted-foreground">
-              Clear saved writing preferences and rebuild from future edits.
-            </p>
+            <SettingsSection
+              title="What Sona is allowed to do"
+              description="Choose what the agent can handle automatically."
+              note={!isAutoDraftEnabled ? "Enable Auto-draft to configure these settings." : null}
+            >
+              <div className="space-y-4">
+                {toggles.map((item, index) => {
+                  const isOn = Boolean(local?.[item.key]);
+                  const isComingSoon = item.status === "comingSoon";
+                  const disabled = !canEditDependent || isComingSoon;
+                  return (
+                    <div key={item.key} className="space-y-4">
+                      <ToggleRow
+                        label={item.label}
+                        description={item.description}
+                        checked={isOn}
+                        onCheckedChange={handleToggle(item.key)}
+                        disabled={disabled}
+                        badge={
+                          isComingSoon ? (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span>
+                                  <Badge variant="secondary" className="text-xs">
+                                    Coming soon
+                                  </Badge>
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent>Not available yet.</TooltipContent>
+                            </Tooltip>
+                          ) : null
+                        }
+                      />
+                      {index < toggles.length - 1 ? <Separator /> : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </SettingsSection>
+
+            <SettingsSection
+              title="Learning profile"
+              description="Clear learned writing preferences from edits."
+              action={
+                <Button type="button" size="sm" variant="outline" onClick={() => setResetDialogOpen(true)}>
+                  Reset learning
+                </Button>
+              }
+            />
+
+            {error && (
+              <Card className="rounded-2xl border border-destructive/40 bg-destructive/5">
+                <CardContent className="px-5 py-4">
+                  <p className="text-sm text-destructive">
+                    {error.message ?? "Could not save automation settings."}
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+            <StickySaveBar
+              isDirty={dirty}
+              isSaving={saving || loading}
+              onSave={handleSave}
+              onReset={handleResetLocal}
+            />
           </div>
-          <Button type="button" size="sm" variant="outline" onClick={handleResetLearning}>
-            Reset learning
-          </Button>
-        </CardContent>
-      </Card>
+        )}
+      </TooltipProvider>
+
+      <AlertDialog
+        open={leaveDialogOpen}
+        onOpenChange={(open) => {
+          setLeaveDialogOpen(open);
+          if (!open) setPendingHref(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard unsaved changes?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have unsaved changes. Leave this page without saving?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Stay</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmLeave}>
+              Leave
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reset learning?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This clears learned writing preferences from edits. This can’t be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleResetLearning}>
+              Reset learning
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AutomationPanelContext.Provider>
   );
 }

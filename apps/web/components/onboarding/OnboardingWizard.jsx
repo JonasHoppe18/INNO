@@ -343,7 +343,7 @@ export function OnboardingWizard() {
                   className="rounded-md border border-slate-200 px-2 py-1 text-sm"
                 >
                   <option value="sona_inbox">Sona inbox</option>
-                  <option value="email_provider">Gmail/Outlook</option>
+                  <option value="provider_inbox">Gmail/Outlook</option>
                 </select>
               </label>
               <label className="flex items-center justify-between rounded-lg border border-slate-200 p-3 text-sm">

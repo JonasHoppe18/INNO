@@ -20,7 +20,7 @@ export function InboxPageClient({ threads = [], messages = [] }) {
     return () => window.clearInterval(interval);
   }, [router]);
 
-  if (!loading && draftDestination === "email_provider") {
+  if (!loading && (draftDestination === "provider_inbox" || draftDestination === "email_provider")) {
     return (
       <div className="flex flex-1 items-center justify-center px-4 py-12">
         <div className="max-w-md text-center">

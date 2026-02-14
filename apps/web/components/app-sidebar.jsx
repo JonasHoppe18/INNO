@@ -138,7 +138,6 @@ export function AppSidebar({
       <SidebarContent>
         <NavMain items={data.navMain} />
         <NavAgent items={data.agent} />
-        <NavNewsletter items={data.newsletter} />
         <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>
       <SidebarFooter>

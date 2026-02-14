@@ -22,11 +22,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useAgentAutomation } from "@/hooks/useAgentAutomation";
 
 const INBOUND_DOMAIN = "inbound.sona-ai.dk";
 
 export function MailboxesAddMenu() {
   const router = useRouter();
+  const { settings: automationSettings, loading: automationLoading, refresh, save } =
+    useAgentAutomation();
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -73,6 +76,12 @@ export function MailboxesAddMenu() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ step: "email_connected" }),
       }).catch(() => null);
+      if (automationLoading) {
+        await refresh().catch(() => null);
+      }
+      if (automationSettings?.draftDestination !== "sona_inbox") {
+        await save({ draftDestination: "sona_inbox" });
+      }
       toast.success("Forwarding address created.");
       router.refresh();
     } catch (error) {

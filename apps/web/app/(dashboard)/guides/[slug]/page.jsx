@@ -202,7 +202,7 @@ export default async function GuideDetailPage({ params }) {
 
       {guide.prerequisites ? (
         <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="text-base font-semibold text-slate-900">Prerequisites</h2>
+          <h2 className="text-base font-semibold text-slate-900">Before you start</h2>
           <ul className="mt-3 space-y-2 text-sm text-slate-600">
             {guide.prerequisites.map((item) => (
               <li key={item} className="flex gap-2">

@@ -13,7 +13,7 @@ export function LearningCard({ sentCount = 0, conversationCount = 0 }) {
   const { settings, loading, saving, save } = useAgentAutomation();
 
   const isEnabled = Boolean(settings?.learnFromEdits);
-  const draftDestination = settings?.draftDestination || "email_provider";
+  const draftDestination = settings?.draftDestination || "provider_inbox";
   const requiresSonaInbox = draftDestination !== "sona_inbox";
   const isUnlocked = sentCount >= EMAIL_GOAL;
 
