@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
-import { CheckCircle2, Copy, Mail, RotateCcw, ShieldCheck, Trash2 } from "lucide-react";
+import { Copy, Mail, ShieldCheck, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { SendingIdentityModal } from "@/components/mailboxes/SendingIdentityModal";
@@ -79,54 +79,15 @@ export function MailboxRow({
     }
   };
 
-  const handleReconnect = async () => {
-    if (!mailboxId || isDisconnecting) return;
-    setIsDisconnecting(true);
-    try {
-      const res = await fetch("/api/integrations/mail-accounts/reconnect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: mailboxId }),
-      });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(payload?.error || "Reconnect failed.");
-      }
-      toast.success("Mailbox reactivated.");
-      router.refresh();
-    } catch (error) {
-      toast.error(error?.message || "Reconnect failed.");
-    } finally {
-      setIsDisconnecting(false);
-    }
-  };
-
   const isForwarding = provider === "smtp";
   const isDisconnected = status === "disconnected";
-  const isForwardingInactive = isForwarding && status !== "active";
-  const isReconnectable = status === "disconnected" || isForwardingInactive;
   const forwardingAddress = inboundSlug ? `${inboundSlug}@inbound.sona-ai.dk` : "";
 
-  const smtpBadgeLabel = isDisconnected ? "Send paused" : "Ready to send";
-  const smtpBadgeStyles = isDisconnected
-    ? "border-rose-200 bg-rose-50 text-rose-700"
-    : "border-emerald-200 bg-emerald-50 text-emerald-700";
-
-  const forwardingLabel = isDisconnected
-    ? "Disconnected"
-    : status === "active"
-    ? "Active"
-    : "Waiting for first email";
+  const forwardingLabel = isDisconnected ? "Disconnected" : "Active";
   const forwardingStyles = isDisconnected
     ? "border-rose-200 bg-rose-50 text-rose-700"
-    : status === "active"
-    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-    : "border-amber-200 bg-amber-50 text-amber-700";
-  const forwardingDot = isDisconnected
-    ? "bg-rose-500"
-    : status === "active"
-    ? "bg-emerald-500"
-    : "bg-amber-500";
+    : "border-emerald-200 bg-emerald-50 text-emerald-700";
+  const forwardingDot = isDisconnected ? "bg-rose-500" : "bg-emerald-500";
 
   const statusLabel = isForwarding
     ? forwardingLabel
@@ -236,35 +197,6 @@ export function MailboxRow({
               <span className={`h-2 w-2 rounded-full ${dotStyles}`} />
               {statusLabel}
             </span>
-            {isForwarding ? (
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium",
-                  smtpBadgeStyles
-                )}
-              >
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                {smtpBadgeLabel}
-              </span>
-            ) : null}
-
-            {isReconnectable ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  handleReconnect();
-                }}
-                disabled={isDisconnecting}
-                className="gap-2 text-xs font-medium"
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-                Reactivate
-              </Button>
-            ) : null}
-
             <Button
               type="button"
               variant="ghost"

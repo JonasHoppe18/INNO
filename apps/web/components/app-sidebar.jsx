@@ -92,42 +92,16 @@ function InboxSection({ isInboxOpen, setIsInboxOpen, handleCreateInbox }) {
   const searchParams = useSearchParams()
   const view = searchParams.get("view")
 
-  const inboxItems = [
-    {
-      title: "All Tickets",
-      url: "/inbox",
-      icon: Inbox,
-      isActive: pathname === "/inbox" && !view,
-    },
-    {
-      title: "Assigned to me",
-      url: "/inbox?view=mine",
-      icon: User,
-      isActive: pathname === "/inbox" && view === "mine",
-    },
-    {
-      title: "Resolved",
-      url: "/inbox?view=resolved",
-      icon: CheckCircle2,
-      isActive: pathname === "/inbox" && view === "resolved",
-    },
-  ]
+  const isAllTicketsActive = pathname === "/inbox" && !view
+  const isAssignedActive = pathname === "/inbox" && view === "mine"
+  const isResolvedActive = pathname === "/inbox" && view === "resolved"
 
   return (
     <SidebarGroup className="group-data-[collapsible=icon]:hidden pt-0">
       <div className="mb-1 flex items-center justify-between px-2">
-        <button
-          type="button"
-          onClick={() => setIsInboxOpen((prev) => !prev)}
-          className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-slate-500"
-        >
-          {isInboxOpen ? (
-            <ChevronDown className="h-3.5 w-3.5" />
-          ) : (
-            <ChevronRight className="h-3.5 w-3.5" />
-          )}
-          <span>INBOXES</span>
-        </button>
+        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+          INBOXES
+        </span>
         <button
           type="button"
           onClick={(e) => {
@@ -141,26 +115,67 @@ function InboxSection({ isInboxOpen, setIsInboxOpen, handleCreateInbox }) {
         </button>
       </div>
 
-      {isInboxOpen && (
-        <SidebarGroupContent>
-          <SidebarMenu>
-            {inboxItems.map((item) => (
-              <SidebarMenuItem key={item.title}>
+      <SidebarGroupContent>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <Link
+              href="/inbox"
+              className={cn(
+                "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100",
+                isAllTicketsActive && "bg-slate-100 text-slate-900"
+              )}
+            >
+              <Inbox className="h-4 w-4 shrink-0" />
+              <span>All Tickets</span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  setIsInboxOpen((prev) => !prev)
+                }}
+                className="ml-auto rounded p-0.5 hover:bg-slate-200"
+              >
+                {isInboxOpen ? (
+                  <ChevronDown className="h-3.5 w-3.5" />
+                ) : (
+                  <ChevronRight className="h-3.5 w-3.5" />
+                )}
+                <span className="sr-only">Toggle inbox filters</span>
+              </button>
+            </Link>
+          </SidebarMenuItem>
+
+          {isInboxOpen ? (
+            <>
+              <SidebarMenuItem>
                 <Link
-                  href={item.url}
+                  href="/inbox?view=mine"
                   className={cn(
-                    "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100",
-                    item.isActive && "bg-slate-100 text-slate-900"
+                    "flex items-center gap-2 rounded-md px-2 py-1.5 pl-8 text-sm text-slate-600 hover:bg-slate-100",
+                    isAssignedActive && "bg-slate-100 text-slate-900"
                   )}
                 >
-                  <item.icon className="h-4 w-4 shrink-0" />
-                  <span>{item.title}</span>
+                  <User className="h-4 w-4 shrink-0" />
+                  <span>Assigned to me</span>
                 </Link>
               </SidebarMenuItem>
-            ))}
-          </SidebarMenu>
-        </SidebarGroupContent>
-      )}
+              <SidebarMenuItem>
+                <Link
+                  href="/inbox?view=resolved"
+                  className={cn(
+                    "flex items-center gap-2 rounded-md px-2 py-1.5 pl-8 text-sm text-slate-600 hover:bg-slate-100",
+                    isResolvedActive && "bg-slate-100 text-slate-900"
+                  )}
+                >
+                  <CheckCircle2 className="h-4 w-4 shrink-0" />
+                  <span>Resolved</span>
+                </Link>
+              </SidebarMenuItem>
+            </>
+          ) : null}
+        </SidebarMenu>
+      </SidebarGroupContent>
     </SidebarGroup>
   )
 }
