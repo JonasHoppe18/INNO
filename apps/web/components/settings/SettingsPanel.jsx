@@ -464,7 +464,7 @@ export function SettingsPanel() {
     } finally {
       setLoading(false);
     }
-  }, [supabase, user?.id]);
+  }, [supabase, user?.id, user?.publicMetadata?.supabase_uuid]);
 
   useEffect(() => {
     loadData().catch(() => null);
