@@ -3,6 +3,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import {
   buildAutomationGuidance,
   fetchAutomation,
+  fetchOwnerProfile,
   fetchPersona,
   fetchPolicies,
 } from "../_shared/agent-context.ts";
@@ -55,6 +56,7 @@ type EmailData = {
 };
 
 type AgentContext = {
+  profile: Awaited<ReturnType<typeof fetchOwnerProfile>>;
   persona: Awaited<ReturnType<typeof fetchPersona>>;
   automation: Awaited<ReturnType<typeof fetchAutomation>>;
   policies: Awaited<ReturnType<typeof fetchPolicies>>;
@@ -303,6 +305,7 @@ async function getAgentContext(
   subject?: string,
 ): Promise<AgentContext> {
   const ownerUserId = await resolveShopOwnerId(shopId);
+  const profile = await fetchOwnerProfile(supabase, ownerUserId);
   const persona = await fetchPersona(supabase, ownerUserId);
   const automation = await fetchAutomation(supabase, ownerUserId);
   const policies = await fetchPolicies(supabase, ownerUserId);
@@ -317,6 +320,7 @@ async function getAgentContext(
   const orderSummary = buildOrderSummary(orders);
 
   return {
+    profile,
     persona,
     automation,
     policies,
@@ -324,6 +328,14 @@ async function getAgentContext(
     matchedSubjectNumber,
     orders,
   };
+}
+
+function buildFallbackSignature(firstName: string | null | undefined): string {
+  const safeName = String(firstName || "").trim();
+  if (safeName) {
+    return `Best regards,\n${safeName}`;
+  }
+  return "Best regards,\nSona Team";
 }
 
 function stripTrailingSignoff(text: string): string {
@@ -686,7 +698,9 @@ Deno.serve(async (req) => {
       matchedSubjectNumber: context.matchedSubjectNumber,
       extraContext:
         "Returner altid JSON hvor 'actions' beskriver konkrete handlinger du udfører i Shopify. Brug orderId (det numeriske id i parentes) når du udfylder actions. udfyld altid payload.shipping_address (brug nuværende adresse hvis den ikke ændres) og sæt payload.note og payload.tag til tom streng hvis de ikke bruges. Hvis kunden beder om adresseændring, udfyld shipping_address med alle felter (name, address1, address2, zip, city, country, phone). Hvis en handling ikke er tilladt i automationsreglerne, lad actions listen være tom og forklar brugeren at handlingen udføres manuelt.",
-      signature: context.persona.signature,
+      signature:
+        context.profile.signature?.trim() ||
+        buildFallbackSignature(context.profile.first_name),
       learnedStyle: learnedStyle || null,
       policies: context.policies,
     });
@@ -738,7 +752,9 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
     }
 
     let finalText = aiText.trim();
-    const signature = context.persona.signature?.trim();
+    const signature =
+      context.profile.signature?.trim() ||
+      buildFallbackSignature(context.profile.first_name);
     if (signature && signature.length && !finalText.includes(signature)) {
       finalText = stripTrailingSignoff(finalText);
       finalText = `${finalText}\n\n${signature}`;

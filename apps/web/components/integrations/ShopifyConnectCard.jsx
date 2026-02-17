@@ -32,7 +32,7 @@ export function ShopifyConnectCard() {
     setLoading(true);
     const { data, error } = await supabase
       .from("shops")
-      .select("shop_domain, owner_user_id, platform, installed_at, scopes")
+      .select("shop_domain, owner_user_id, platform, installed_at, uninstalled_at")
       .eq("platform", "shopify")
       .order("created_at", { ascending: false })
       .limit(1)
@@ -52,7 +52,7 @@ export function ShopifyConnectCard() {
     loadConnection();
   }, [loadConnection]);
 
-  const isConnected = Boolean(connection);
+  const isConnected = Boolean(connection) && !connection?.uninstalled_at;
   const connectedDomain = connection?.shop_domain || connection?.store_domain;
   // Status badges skal vise loading/aktiv/inaktiv baseret på Supabase record.
   const statusLabel = loading

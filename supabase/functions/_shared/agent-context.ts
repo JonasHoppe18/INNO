@@ -22,6 +22,12 @@ export type Policies = {
   internal_tone: string;
 };
 
+export type OwnerProfile = {
+  first_name: string;
+  last_name: string;
+  signature: string;
+};
+
 export const DEFAULT_PERSONA: Persona = {
   signature: "",
   scenario: "",
@@ -42,6 +48,12 @@ export const DEFAULT_POLICIES: Policies = {
   policy_shipping: "",
   policy_terms: "",
   internal_tone: "",
+};
+
+export const DEFAULT_OWNER_PROFILE: OwnerProfile = {
+  first_name: "",
+  last_name: "",
+  signature: "",
 };
 
 // Finder Supabase user_id ud fra Clerk userId via profiles-tabellen
@@ -86,15 +98,14 @@ export async function fetchPersona(
   if (!supabase || !userId) return DEFAULT_PERSONA;
   const { data, error } = await supabase
     .from("agent_persona")
-    .select("signature,scenario,instructions")
+    .select("scenario,instructions")
     .eq("user_id", userId)
     .maybeSingle();
   if (error) {
     console.warn("agent-context: kunne ikke hente persona", error);
   }
   return {
-    signature:
-      data?.signature?.trim()?.length ? data.signature : DEFAULT_PERSONA.signature,
+    signature: DEFAULT_PERSONA.signature,
     scenario: data?.scenario ?? DEFAULT_PERSONA.scenario,
     instructions: data?.instructions ?? DEFAULT_PERSONA.instructions,
   };
@@ -191,5 +202,29 @@ export async function fetchPolicies(
     policy_shipping: data?.policy_shipping ?? DEFAULT_POLICIES.policy_shipping,
     policy_terms: data?.policy_terms ?? DEFAULT_POLICIES.policy_terms,
     internal_tone: data?.internal_tone ?? DEFAULT_POLICIES.internal_tone,
+  };
+}
+
+// Henter profil-oplysninger for shop owner, inkl. brugerens signatur
+export async function fetchOwnerProfile(
+  supabase: SupabaseClient | null,
+  userId: string | null,
+): Promise<OwnerProfile> {
+  if (!supabase || !userId) return DEFAULT_OWNER_PROFILE;
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("first_name,last_name,signature")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) {
+    console.warn("agent-context: kunne ikke hente owner profile", error);
+  }
+  return {
+    first_name: data?.first_name ?? DEFAULT_OWNER_PROFILE.first_name,
+    last_name: data?.last_name ?? DEFAULT_OWNER_PROFILE.last_name,
+    signature:
+      data?.signature?.trim()?.length
+        ? data.signature
+        : DEFAULT_OWNER_PROFILE.signature,
   };
 }

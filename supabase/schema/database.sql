@@ -208,6 +208,7 @@ CREATE TABLE public.profiles (
   first_name text,
   last_name text,
   image_url text,
+  signature text,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
   user_id uuid NOT NULL UNIQUE,
@@ -217,6 +218,7 @@ CREATE TABLE public.profiles (
 CREATE TABLE public.shops (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   shop_domain text NOT NULL UNIQUE,
+  team_name text,
   access_token_encrypted bytea NOT NULL,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   owner_user_id uuid NOT NULL,

@@ -5,6 +5,7 @@ type MailPromptOptions = {
   personaInstructions?: string | null;
   matchedSubjectNumber?: string | null;
   extraContext?: string | null;
+  // Signatur kommer fra profiles.signatur i runtime og tilføjes automatisk efter model-output.
   signature?: string | null;
   learnedStyle?: string | null;
   policies?: {
@@ -21,7 +22,6 @@ export function buildMailPrompt({
   personaInstructions,
   matchedSubjectNumber,
   extraContext,
-  signature,
   learnedStyle,
   policies,
 }: MailPromptOptions): string {
@@ -97,11 +97,7 @@ INSTRUKTIONER TIL SVARET:
 6. **Tone:** Ingen fluff. Ingen "Tak for din tålmodighed". Brug kun empati ved reel klage eller alvorlig frustration.
 7. **Længde & format:** Hold det kort (3-5 sætninger, max ~90 ord). Max 3-4 korte afsnit. Undgå store mellemrum.
 8. **Next Steps:** Fortæl kunden præcis, hvad der sker nu, eller hvad de skal gøre.
-${
-  signature
-    ? `9. **Signatur:** Afslut mailen med præcis denne signatur (og tilføj ikke andre hilsner): ${signature}`
-    : ""
-}
+9. **Signatur:** Skriv IKKE signatur i svaret. Systemet tilføjer automatisk brugerens profilsignatur.
 
 NEJ-LISTE (Gør ALDRIG dette):
 - Brug ALDRIG placeholders som "[Indsæt dato]" eller "[Dine initialer]". Hvis du mangler info, så skriv generelt.
