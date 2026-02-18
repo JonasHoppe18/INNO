@@ -1,24 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { InboxSplitView } from "@/components/inbox/InboxSplitView";
 import { Button } from "@/components/ui/button";
 import { useAgentAutomation } from "@/hooks/useAgentAutomation";
 
 export function InboxPageClient({ threads = [], messages = [] }) {
-  const router = useRouter();
   const { settings, loading } = useAgentAutomation();
   const draftDestination = settings?.draftDestination;
-
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      if (document.visibilityState !== "visible") return;
-      router.refresh();
-    }, 10000);
-    return () => window.clearInterval(interval);
-  }, [router]);
 
   if (!loading && (draftDestination === "provider_inbox" || draftDestination === "email_provider")) {
     return (

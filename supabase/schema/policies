@@ -249,6 +249,49 @@ create policy "mail_learning_profiles_modify_own"
 
 ---
 
+## public.thread_actions
+
+```sql
+alter table public.thread_actions enable row level security;
+
+drop policy if exists "thread_actions_select_own" on public.thread_actions;
+drop policy if exists "thread_actions_modify_own" on public.thread_actions;
+
+create policy "thread_actions_select_own"
+  on public.thread_actions
+  for select
+  using (
+    user_id::text = coalesce(auth.jwt()->>'supabase_user_id', '')
+    or exists (
+      select 1 from public.profiles p
+      where p.user_id = public.thread_actions.user_id
+        and p.clerk_user_id = coalesce(auth.jwt()->>'sub', '')
+    )
+  );
+
+create policy "thread_actions_modify_own"
+  on public.thread_actions
+  for all
+  using (
+    user_id::text = coalesce(auth.jwt()->>'supabase_user_id', '')
+    or exists (
+      select 1 from public.profiles p
+      where p.user_id = public.thread_actions.user_id
+        and p.clerk_user_id = coalesce(auth.jwt()->>'sub', '')
+    )
+  )
+  with check (
+    user_id::text = coalesce(auth.jwt()->>'supabase_user_id', '')
+    or exists (
+      select 1 from public.profiles p
+      where p.user_id = public.thread_actions.user_id
+        and p.clerk_user_id = coalesce(auth.jwt()->>'sub', '')
+    )
+  );
+```
+
+---
+
 ## public.user_onboarding
 
 ```sql

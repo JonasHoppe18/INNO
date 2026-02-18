@@ -249,6 +249,33 @@ CREATE TABLE public.customer_lookup_cache (
 CREATE INDEX customer_lookup_cache_user_idx ON public.customer_lookup_cache(user_id);
 CREATE INDEX customer_lookup_cache_expires_idx ON public.customer_lookup_cache(expires_at);
 
+CREATE TABLE public.thread_actions (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  thread_id uuid NOT NULL,
+  action_type text NOT NULL,
+  action_key text NOT NULL,
+  status text NOT NULL DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'approved'::text, 'applied'::text, 'declined'::text, 'failed'::text, 'superseded'::text])),
+  detail text,
+  payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  order_id text,
+  order_number text,
+  source text NOT NULL DEFAULT 'automation'::text,
+  error text,
+  decided_at timestamp with time zone,
+  applied_at timestamp with time zone,
+  declined_at timestamp with time zone,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT thread_actions_pkey PRIMARY KEY (id),
+  CONSTRAINT thread_actions_user_fk FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT thread_actions_thread_fk FOREIGN KEY (thread_id) REFERENCES public.mail_threads(id) ON DELETE CASCADE
+);
+
+CREATE INDEX thread_actions_user_thread_idx ON public.thread_actions(user_id, thread_id, updated_at DESC);
+CREATE INDEX thread_actions_thread_status_idx ON public.thread_actions(thread_id, status, updated_at DESC);
+CREATE INDEX thread_actions_action_key_idx ON public.thread_actions(user_id, thread_id, action_key);
+
 -- Simpel venteliste / landing page signup
 CREATE TABLE public.landing_signups (
   id uuid NOT NULL DEFAULT gen_random_uuid(),

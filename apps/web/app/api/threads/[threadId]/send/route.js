@@ -791,6 +791,8 @@ export async function POST(request, { params }) {
   }
 
   const snippet = buildSnippet(bodyText || stripHtml(bodyHtml));
+  const persistedProviderMessageId =
+    providerMessageId || `sent-${mailbox.provider}-${threadId}-${Date.now()}`;
   let insertedMessage = null;
   let insertError = null;
   if (draftMessageId) {
@@ -798,7 +800,7 @@ export async function POST(request, { params }) {
       .from("mail_messages")
       .update({
         provider: mailbox.provider,
-        provider_message_id: providerMessageId,
+        provider_message_id: persistedProviderMessageId,
         subject,
         snippet,
         body_text: bodyText || stripHtml(bodyHtml),
@@ -831,7 +833,7 @@ export async function POST(request, { params }) {
         mailbox_id: mailbox.id,
         thread_id: threadId,
         provider: mailbox.provider,
-        provider_message_id: providerMessageId,
+        provider_message_id: persistedProviderMessageId,
         subject,
         snippet,
         body_text: bodyText || stripHtml(bodyHtml),
@@ -854,12 +856,70 @@ export async function POST(request, { params }) {
     insertError = result.error;
   }
 
+  if (!insertError && !insertedMessage) {
+    const fallback = await serviceClient
+      .from("mail_messages")
+      .insert({
+        user_id: supabaseUserId,
+        mailbox_id: mailbox.id,
+        thread_id: threadId,
+        provider: mailbox.provider,
+        provider_message_id: persistedProviderMessageId,
+        subject,
+        snippet,
+        body_text: bodyText || stripHtml(bodyHtml),
+        body_html: bodyHtml || null,
+        from_name: sentFromName,
+        from_email: sentFromEmail,
+        from_me: true,
+        to_emails: finalTo,
+        cc_emails: ccEmails,
+        bcc_emails: bccEmails,
+        is_read: true,
+        sent_at: nowIso,
+        received_at: null,
+        created_at: nowIso,
+        updated_at: nowIso,
+      })
+      .select("id")
+      .maybeSingle();
+    insertedMessage = fallback.data;
+    insertError = fallback.error;
+  }
+
   if (insertError) {
     await logAgent(serviceClient, {
       provider: mailbox.provider,
       threadId,
       error: insertError.message,
     });
+    return NextResponse.json(
+      {
+        error:
+          "Email was sent, but we could not persist it in the thread. Please refresh and try again.",
+      },
+      { status: 500 }
+    );
+  }
+
+  // Ensure stale unsent drafts are removed after successful send.
+  if (insertedMessage?.id) {
+    await serviceClient
+      .from("mail_messages")
+      .delete()
+      .eq("thread_id", threadId)
+      .eq("user_id", supabaseUserId)
+      .eq("from_me", true)
+      .eq("is_draft", true)
+      .neq("id", insertedMessage.id);
+  } else {
+    await serviceClient
+      .from("mail_messages")
+      .delete()
+      .eq("thread_id", threadId)
+      .eq("user_id", supabaseUserId)
+      .eq("from_me", true)
+      .eq("is_draft", true);
   }
 
   await serviceClient
@@ -879,12 +939,15 @@ export async function POST(request, { params }) {
     })
     .eq("id", threadId);
 
-  await serviceClient
-    .from("drafts")
-    .delete()
-    .eq("thread_id", thread.provider_thread_id || threadId)
-    .eq("platform", mailbox.provider)
-    .eq("status", "pending");
+  const draftThreadKeys = [thread.provider_thread_id, threadId].filter(Boolean);
+  if (draftThreadKeys.length) {
+    await serviceClient
+      .from("drafts")
+      .delete()
+      .in("thread_id", draftThreadKeys)
+      .eq("platform", mailbox.provider)
+      .eq("status", "pending");
+  }
 
   if (learnFromEdits && draftDestinationSetting === "sona_inbox" && aiDraftText) {
     const finalText = bodyText || stripHtml(bodyHtml);
@@ -915,7 +978,7 @@ export async function POST(request, { params }) {
     {
       ok: true,
       message_id: insertedMessage?.id ?? null,
-      provider_message_id: providerMessageId,
+      provider_message_id: persistedProviderMessageId,
       provider: mailbox.provider,
     },
     { status: 200 }

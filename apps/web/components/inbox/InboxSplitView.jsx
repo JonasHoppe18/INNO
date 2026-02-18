@@ -11,7 +11,6 @@ import { useUser } from "@clerk/nextjs";
 import { toast } from "sonner";
 import { useCustomerLookup } from "@/hooks/useCustomerLookup";
 import { useSiteHeaderActions } from "@/components/site-header-actions";
-import { useRouter } from "next/navigation";
 import {
   Select,
   SelectContent,
@@ -158,6 +157,279 @@ const MOCK_ACTIONS = [
   },
 ];
 
+const stripThreadSuffix = (value) =>
+  String(value || "").replace(/\s*\|thread_id:[a-z0-9-]+\s*/i, "").trim();
+
+const asString = (value) => (typeof value === "string" ? value.trim() : "");
+
+const parsePendingLogDetail = (value) => {
+  const raw = stripThreadSuffix(value);
+  if (!raw) {
+    return { detail: "", actionType: null, payload: {}, threadId: null };
+  }
+  if (raw.startsWith("{") && raw.endsWith("}")) {
+    try {
+      const parsed = JSON.parse(raw);
+      const detail =
+        asString(parsed?.detail) ||
+        asString(parsed?.message) ||
+        asString(parsed?.summary) ||
+        asString(parsed?.text) ||
+        asString(parsed?.action) ||
+        asString(parsed?.error) ||
+        asString(parsed?.reason) ||
+        asString(parsed?.status);
+      const actionType = asString(parsed?.actionType || parsed?.action) || null;
+      const payload = parsed?.payload && typeof parsed.payload === "object" ? parsed.payload : {};
+      const threadId = asString(parsed?.thread_id || parsed?.threadId) || null;
+      return { detail: stripThreadSuffix(detail), actionType, payload, threadId };
+    } catch {
+      return { detail: raw, actionType: null, payload: {}, threadId: null };
+    }
+  }
+  return { detail: raw, actionType: null, payload: {}, threadId: null };
+};
+
+const isOrderUpdateAction = (log) => {
+  const stepName = String(log?.step_name || "").toLowerCase();
+  const status = String(log?.status || "").toLowerCase();
+  const parsed = parsePendingLogDetail(log?.step_detail);
+  const detail = parsed.detail;
+  const lower = detail.toLowerCase();
+  const approvalSignals =
+    lower.includes("approval") ||
+    lower.includes("awaiting") ||
+    lower.includes("pending") ||
+    lower.includes("deaktiveret") ||
+    lower.includes("disabled");
+
+  if (stepName.includes("shopify_action_applied")) return false;
+  if (stepName.includes("shopify_action_failed")) return approvalSignals;
+  if (stepName.includes("shopify_action") || stepName.includes("shopify action")) {
+    if (status === "warning" || status === "pending" || status === "awaiting_approval") return true;
+    if (parsed.actionType) return true;
+    if (parsed.payload && Object.keys(parsed.payload).length) return true;
+    return approvalSignals;
+  }
+  return (
+    lower.includes("updated shipping address") ||
+    lower.includes("updated address") ||
+    lower.includes("update shipping address") ||
+    lower.includes("shipping address") ||
+    lower.includes("cancel") ||
+    lower.includes("refund")
+  );
+};
+
+const isAppliedOrderUpdateAction = (log) => {
+  const stepName = String(log?.step_name || "").toLowerCase();
+  return stepName.includes("shopify_action_applied");
+};
+
+const getDecisionFromLog = (log) => {
+  const stepName = String(log?.step_name || "").toLowerCase();
+  if (stepName.includes("shopify_action_applied")) return "accepted";
+  return null;
+};
+
+const getDecisionFromActionStatus = (status = "") => {
+  const normalized = String(status || "").toLowerCase();
+  if (normalized === "applied" || normalized === "approved") return "accepted";
+  if (normalized === "declined" || normalized === "denied") return "denied";
+  return null;
+};
+
+const normalizeActionDetail = (value = "") =>
+  String(value || "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+
+const stripHtml = (value = "") =>
+  String(value || "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/\s+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+const extractAddressCandidate = (value = "") => {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  const lines = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const lower = line.toLowerCase();
+    if (
+      lower.includes("ny leveringsadresse") ||
+      lower.includes("new shipping address") ||
+      lower.includes("updated shipping address")
+    ) {
+      const inline = line.split(":").slice(1).join(":").trim();
+      if (inline && inline.length > 6) return inline;
+      const nextLine = lines[index + 1] || "";
+      if (nextLine && nextLine.length > 6) return nextLine;
+    }
+  }
+  const correctionMatch =
+    text.match(/det\s+skal\s+v[æa]re\s+(.+?)(?:\n|$)/i) ||
+    text.match(/should\s+be\s+(.+?)(?:\n|$)/i);
+  if (correctionMatch?.[1]) {
+    return correctionMatch[1].trim().replace(/[.!?]\s*$/, "");
+  }
+  return "";
+};
+
+const normalizeAddressToken = (value = "") =>
+  String(value || "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+
+const includesAddressPart = (base = "", part = "") => {
+  const normalizedBase = normalizeAddressToken(base);
+  const normalizedPart = normalizeAddressToken(part);
+  if (!normalizedBase || !normalizedPart) return false;
+  return normalizedBase.includes(normalizedPart);
+};
+
+const enrichAddressWithOrderContext = (candidate = "", shippingAddress = null) => {
+  const base = String(candidate || "").trim();
+  if (!base || !shippingAddress) return base;
+
+  const zipCity = [shippingAddress?.zip, shippingAddress?.city].filter(Boolean).join(" ").trim();
+  const country = String(shippingAddress?.country || "").trim();
+  const suffix = [];
+  if (zipCity && !includesAddressPart(base, zipCity)) {
+    suffix.push(zipCity);
+  }
+  if (country && !includesAddressPart(base, country)) {
+    suffix.push(country);
+  }
+  if (!suffix.length) return base;
+  return `${base}, ${suffix.join(", ")}`;
+};
+
+const isLikelyAddressUpdateText = (value = "") => {
+  const lower = String(value || "").toLowerCase();
+  return (
+    lower.includes("shipping address") ||
+    lower.includes("leveringsadresse") ||
+    lower.includes("address") ||
+    lower.includes("adresse")
+  );
+};
+
+const formatPendingOrderUpdateDetail = ({
+  pendingDetail,
+  actionType,
+  payload,
+  draftText,
+  aiDraftText,
+  threadMessages,
+  orderShippingAddress,
+}) => {
+  const base = String(pendingDetail || "").trim();
+  const action = String(actionType || "").toLowerCase();
+
+  if (action === "cancel_order") {
+    return base || "Sona wants to cancel this order.";
+  }
+  if (action === "refund_order") {
+    const amount =
+      typeof payload?.amount === "number"
+        ? payload.amount
+        : Number.parseFloat(String(payload?.amount || ""));
+    const currency = String(payload?.currency || payload?.currency_code || "").trim();
+    if (Number.isFinite(amount)) {
+      return `Sona wants to refund ${amount.toFixed(2)}${currency ? ` ${currency}` : ""}.`;
+    }
+    return base || "Sona wants to refund this order.";
+  }
+  if (action === "change_shipping_method") {
+    const title = String(payload?.title || payload?.shipping_title || "").trim();
+    return title
+      ? `Sona wants to change shipping method to: ${title}.`
+      : base || "Sona wants to change the shipping method.";
+  }
+  if (action === "hold_or_release_fulfillment") {
+    const mode = String(payload?.mode || payload?.operation || "").toLowerCase();
+    return mode === "release"
+      ? "Sona wants to release fulfillment hold on this order."
+      : base || "Sona wants to put this order on fulfillment hold.";
+  }
+  if (action === "edit_line_items") {
+    const summary = String(payload?.edit_summary || payload?.summary || payload?.requested_changes || "").trim();
+    return summary ? `Sona wants to edit line items: ${summary}` : base || "Sona wants to edit line items on this order.";
+  }
+  if (action === "update_customer_contact") {
+    const email = String(payload?.email || "").trim();
+    const phone = String(payload?.phone || "").trim();
+    if (email || phone) {
+      const parts = [];
+      if (email) parts.push(`email ${email}`);
+      if (phone) parts.push(`phone ${phone}`);
+      return `Sona wants to update customer contact: ${parts.join(", ")}.`;
+    }
+    return base || "Sona wants to update customer contact details.";
+  }
+  if (action === "resend_confirmation_or_invoice") {
+    const to = String(payload?.to_email || payload?.email || "").trim();
+    return to
+      ? `Sona wants to resend confirmation/invoice to ${to}.`
+      : base || "Sona wants to resend confirmation or invoice.";
+  }
+  if (action === "add_tag") {
+    const tag = String(payload?.tag || "").trim();
+    return tag ? `Sona wants to add the tag: ${tag}.` : base || "Sona wants to add an internal tag.";
+  }
+  if (action === "add_note" || action === "add_internal_note_or_tag") {
+    const note = String(payload?.note || "").trim();
+    return note ? `Sona wants to add an internal note: ${note}` : base || "Sona wants to add an internal note.";
+  }
+
+  if (!base) return "Sona wants to apply an order update for this customer.";
+  const lower = base.toLowerCase();
+  const isFailedShippingUpdate =
+    lower.includes("failed update shipping address") ||
+    lower.includes("ordreopdateringer er deaktiveret") ||
+    lower.includes("order updates are disabled");
+
+  const outboundBodies = (threadMessages || [])
+    .filter((msg) => msg?.from_me)
+    .map((msg) => msg?.body_text || stripHtml(msg?.body_html || ""))
+    .filter(Boolean)
+    .reverse();
+  const inboundBodies = (threadMessages || [])
+    .filter((msg) => !msg?.from_me)
+    .map((msg) => msg?.body_text || stripHtml(msg?.body_html || ""))
+    .filter(Boolean)
+    .reverse();
+  if (isLikelyAddressUpdateText(base)) {
+    const candidate =
+      extractAddressCandidate(stripHtml(draftText)) ||
+      extractAddressCandidate(stripHtml(aiDraftText)) ||
+      outboundBodies.map((text) => extractAddressCandidate(text)).find(Boolean) ||
+      inboundBodies.map((text) => extractAddressCandidate(text)).find(Boolean) ||
+      "";
+    if (candidate) {
+      const enriched = enrichAddressWithOrderContext(candidate, orderShippingAddress);
+      return `Sona wants to update shipping address to: ${enriched}`;
+    }
+  }
+  if (!isFailedShippingUpdate && isLikelyAddressUpdateText(base)) {
+    return "Sona wants to update the shipping address for this order.";
+  }
+  if (!isFailedShippingUpdate) return base;
+  return "Sona wants to update the shipping address for this order.";
+};
+
 export function InboxSplitView({ messages = [], threads = [] }) {
   const [selectedThreadId, setSelectedThreadId] = useState(null);
   const [localNewThread, setLocalNewThread] = useState(null);
@@ -181,6 +453,10 @@ export function InboxSplitView({ messages = [], threads = [] }) {
   const [draftLogId, setDraftLogId] = useState(null);
   const sendingStartedAtRef = useRef(0);
   const [deletingThread, setDeletingThread] = useState(false);
+  const [pendingOrderUpdateByThread, setPendingOrderUpdateByThread] = useState({});
+  const [orderUpdateDecisionByThread, setOrderUpdateDecisionByThread] = useState({});
+  const [orderUpdateSubmittingByThread, setOrderUpdateSubmittingByThread] = useState({});
+  const [orderUpdateErrorByThread, setOrderUpdateErrorByThread] = useState({});
   const headerActionsKeyRef = useRef("");
   const draftLastSavedRef = useRef("");
   const savingDraftRef = useRef(false);
@@ -188,7 +464,6 @@ export function InboxSplitView({ messages = [], threads = [] }) {
   const supabase = useClerkSupabase();
   const { user } = useUser();
   const { setActions: setHeaderActions } = useSiteHeaderActions();
-  const router = useRouter();
   const currentUserName = [user?.firstName, user?.lastName].filter(Boolean).join(" ") || "You";
 
   useEffect(() => {
@@ -473,7 +748,9 @@ export function InboxSplitView({ messages = [], threads = [] }) {
     refresh: refreshCustomerLookup,
   } = useCustomerLookup({
     ...customerLookupParams,
-    enabled: insightsOpen && Boolean(selectedThreadId),
+    enabled:
+      Boolean(selectedThreadId) &&
+      (insightsOpen || Boolean(pendingOrderUpdateByThread[selectedThreadId])),
   });
 
   const actions = useMemo(() => {
@@ -483,6 +760,223 @@ export function InboxSplitView({ messages = [], threads = [] }) {
       threadId: selectedThreadId || "",
     }));
   }, [selectedThreadId]);
+
+  useEffect(() => {
+    if (!selectedThreadId) return;
+    if (isLocalThreadId(selectedThreadId)) return;
+    if (!supabase) return;
+
+    let active = true;
+    const loadPendingOrderUpdate = async () => {
+      const thread = derivedThreads.find((item) => item.id === selectedThreadId);
+      if (!thread) return;
+
+      const { data: threadActions } = await supabase
+        .from("thread_actions")
+        .select("id, action_type, status, detail, payload, error, created_at, updated_at")
+        .eq("thread_id", thread.id)
+        .order("updated_at", { ascending: false })
+        .limit(20);
+      if (!active) return;
+
+      const latestAction = Array.isArray(threadActions) ? threadActions[0] : null;
+      if (latestAction) {
+        const detail =
+          asString(latestAction?.detail) ||
+          "Sona wants to apply an order update for this customer.";
+        setPendingOrderUpdateByThread((prev) => ({
+          ...prev,
+          [selectedThreadId]: {
+            id: String(latestAction.id || ""),
+            detail,
+            actionType: asString(latestAction.action_type) || null,
+            payload:
+              latestAction?.payload && typeof latestAction.payload === "object"
+                ? latestAction.payload
+                : {},
+            createdAt: latestAction.created_at || null,
+            status: asString(latestAction.status) || "pending",
+            error: asString(latestAction.error) || null,
+          },
+        }));
+        const decisionFromAction = getDecisionFromActionStatus(latestAction.status);
+        setOrderUpdateDecisionByThread((prev) => {
+          const next = { ...prev };
+          if (decisionFromAction) next[selectedThreadId] = decisionFromAction;
+          else delete next[selectedThreadId];
+          return next;
+        });
+        setOrderUpdateErrorByThread((prev) => {
+          const next = { ...prev };
+          if (String(latestAction.status || "").toLowerCase() === "failed" && latestAction.error) {
+            next[selectedThreadId] = String(latestAction.error);
+          } else {
+            delete next[selectedThreadId];
+          }
+          return next;
+        });
+        return;
+      }
+
+      const threadKeys = [thread.id, thread.provider_thread_id].filter(Boolean);
+      const uniqueThreadKeys = Array.from(new Set(threadKeys));
+
+      let draftIds = [];
+      if (uniqueThreadKeys.length) {
+        const { data: draftRows } = await supabase
+          .from("drafts")
+          .select("id")
+          .in("thread_id", uniqueThreadKeys)
+          .order("created_at", { ascending: false })
+          .limit(25);
+        draftIds = (draftRows || []).map((row) => row?.id).filter(Boolean);
+      }
+
+      let logs = [];
+      if (draftIds.length) {
+        const { data: draftLogs } = await supabase
+          .from("agent_logs")
+          .select("id, step_name, step_detail, status, created_at")
+          .in("draft_id", draftIds)
+          .order("created_at", { ascending: false })
+          .limit(60);
+        logs = Array.isArray(draftLogs) ? draftLogs : [];
+      }
+
+      let threadLogs = [];
+      const { data: recentActionLogs } = await supabase
+        .from("agent_logs")
+        .select("id, step_name, step_detail, status, created_at")
+        .in("step_name", ["shopify_action", "shopify_action_failed", "shopify_action_applied"])
+        .order("created_at", { ascending: false })
+        .limit(250);
+      if (Array.isArray(recentActionLogs) && recentActionLogs.length) {
+        const threadKeySet = new Set(uniqueThreadKeys.map((key) => String(key)));
+        threadLogs = recentActionLogs.filter((log) => {
+          const parsed = parsePendingLogDetail(log?.step_detail);
+          return parsed.threadId && threadKeySet.has(String(parsed.threadId));
+        });
+      }
+
+      if (!active) return;
+      const mergedLogs = [...logs, ...threadLogs].sort((a, b) => {
+        const aTs = Date.parse(a?.created_at || 0);
+        const bTs = Date.parse(b?.created_at || 0);
+        return (Number.isFinite(bTs) ? bTs : 0) - (Number.isFinite(aTs) ? aTs : 0);
+      });
+      const timelineLogs = mergedLogs.filter(
+        (log) => isAppliedOrderUpdateAction(log) || isOrderUpdateAction(log)
+      );
+      const latestApplied = timelineLogs.find((log) => isAppliedOrderUpdateAction(log)) || null;
+      const latestPending = timelineLogs.find((log) => isOrderUpdateAction(log)) || null;
+      if (!latestApplied && !latestPending) {
+        setPendingOrderUpdateByThread((prev) => {
+          if (!prev[selectedThreadId]) return prev;
+          const next = { ...prev };
+          delete next[selectedThreadId];
+          return next;
+        });
+        setOrderUpdateDecisionByThread((prev) => {
+          if (!prev[selectedThreadId]) return prev;
+          const next = { ...prev };
+          delete next[selectedThreadId];
+          return next;
+        });
+        setOrderUpdateErrorByThread((prev) => {
+          if (!prev[selectedThreadId]) return prev;
+          const next = { ...prev };
+          delete next[selectedThreadId];
+          return next;
+        });
+        return;
+      }
+
+      const appliedTs = latestApplied ? Date.parse(latestApplied.created_at || 0) : Number.NEGATIVE_INFINITY;
+      const pendingTs = latestPending ? Date.parse(latestPending.created_at || 0) : Number.NEGATIVE_INFINITY;
+      const parsedLatestApplied = latestApplied ? parsePendingLogDetail(latestApplied.step_detail) : null;
+      const parsedLatestPending = latestPending ? parsePendingLogDetail(latestPending.step_detail) : null;
+
+      const isSameAction =
+        Boolean(parsedLatestApplied?.actionType) &&
+        Boolean(parsedLatestPending?.actionType) &&
+        String(parsedLatestApplied?.actionType) === String(parsedLatestPending?.actionType);
+      const isSameDetail =
+        normalizeActionDetail(parsedLatestApplied?.detail || "") ===
+        normalizeActionDetail(parsedLatestPending?.detail || "");
+      const appliedMatchesPending = Boolean(latestApplied && latestPending && (isSameAction || isSameDetail));
+
+      // Prefer applied when it represents the same action, even if a stale/retriggered pending log is newer.
+      const useApplied =
+        Boolean(latestApplied) &&
+        (appliedTs >= pendingTs || appliedMatchesPending);
+      const chosenLog = useApplied ? latestApplied : latestPending;
+      if (!chosenLog) {
+        setPendingOrderUpdateByThread((prev) => {
+          if (!prev[selectedThreadId]) return prev;
+          const next = { ...prev };
+          delete next[selectedThreadId];
+          return next;
+        });
+        setOrderUpdateDecisionByThread((prev) => {
+          if (!prev[selectedThreadId]) return prev;
+          const next = { ...prev };
+          delete next[selectedThreadId];
+          return next;
+        });
+        setOrderUpdateErrorByThread((prev) => {
+          if (!prev[selectedThreadId]) return prev;
+          const next = { ...prev };
+          delete next[selectedThreadId];
+          return next;
+        });
+        return;
+      }
+
+      const parsedDetail = parsePendingLogDetail(chosenLog.step_detail);
+      const detail =
+        parsedDetail.detail || "Sona wants to apply an order update for this customer.";
+      const decisionFromLog = useApplied ? "accepted" : getDecisionFromLog(chosenLog);
+      setPendingOrderUpdateByThread((prev) => ({
+        ...prev,
+        [selectedThreadId]: {
+          id: String(chosenLog.id || ""),
+          detail,
+          actionType: parsedDetail.actionType,
+          payload: parsedDetail.payload,
+          createdAt: chosenLog.created_at || null,
+        },
+      }));
+      if (decisionFromLog) {
+        setOrderUpdateDecisionByThread((prev) => ({
+          ...prev,
+          [selectedThreadId]: decisionFromLog,
+        }));
+      } else {
+        setOrderUpdateDecisionByThread((prev) => {
+          if (!prev[selectedThreadId]) return prev;
+          const next = { ...prev };
+          delete next[selectedThreadId];
+          return next;
+        });
+      }
+      setOrderUpdateErrorByThread((prev) => {
+        if (!prev[selectedThreadId]) return prev;
+        const next = { ...prev };
+        delete next[selectedThreadId];
+        return next;
+      });
+    };
+
+    loadPendingOrderUpdate().catch(() => null);
+    return () => {
+      active = false;
+    };
+  }, [
+    derivedThreads,
+    isLocalThreadId,
+    selectedThreadId,
+    supabase,
+  ]);
 
   useEffect(() => {
     setDraftValue("");
@@ -811,13 +1305,85 @@ export function InboxSplitView({ messages = [], threads = [] }) {
       setSelectedThreadId(null);
       setDraftValue("");
       setActiveDraftId(null);
-      router.refresh();
+      if (typeof window !== "undefined") {
+        window.location.reload();
+      }
     } catch (error) {
       toast.error(error?.message || "Could not delete ticket.");
     } finally {
       setDeletingThread(false);
     }
   };
+
+  const handleOrderUpdateDecision = useCallback(
+    async (decision) => {
+      if (!selectedThreadId) return;
+      const normalized = decision === "accepted" ? "accepted" : "denied";
+      const pending = pendingOrderUpdateByThread[selectedThreadId];
+      if (!pending) {
+        toast.error("No pending order update found.");
+        return;
+      }
+
+      if (orderUpdateSubmittingByThread[selectedThreadId]) return;
+      setOrderUpdateSubmittingByThread((prev) => ({
+        ...prev,
+        [selectedThreadId]: true,
+      }));
+      setOrderUpdateErrorByThread((prev) => {
+        const next = { ...prev };
+        delete next[selectedThreadId];
+        return next;
+      });
+      const toastId = toast.loading("Applying action...");
+      try {
+        const pendingId = String(pending.id || "").trim();
+        const pendingLooksLikeUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          pendingId
+        );
+        const res = await fetch(`/api/threads/${selectedThreadId}/order-updates/accept`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            decision: normalized === "accepted" ? "accepted" : "declined",
+            actionId: pendingLooksLikeUuid ? pendingId : null,
+            proposalLogId: pendingLooksLikeUuid ? null : pending.id || null,
+            proposalText: pending.detail || "",
+          }),
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(payload?.error || "Could not update action.");
+        }
+        setOrderUpdateDecisionByThread((prev) => ({
+          ...prev,
+          [selectedThreadId]: normalized,
+        }));
+        setOrderUpdateErrorByThread((prev) => {
+          const next = { ...prev };
+          delete next[selectedThreadId];
+          return next;
+        });
+        toast.success(
+          normalized === "accepted" ? "Action approved and applied." : "Order update denied.",
+          { id: toastId }
+        );
+      } catch (error) {
+        const message = error?.message || "Could not update action.";
+        setOrderUpdateErrorByThread((prev) => ({
+          ...prev,
+          [selectedThreadId]: message,
+        }));
+        toast.error(error?.message || "Could not update action.", { id: toastId });
+      } finally {
+        setOrderUpdateSubmittingByThread((prev) => ({
+          ...prev,
+          [selectedThreadId]: false,
+        }));
+      }
+    },
+    [orderUpdateSubmittingByThread, pendingOrderUpdateByThread, selectedThreadId]
+  );
 
 
   const getThreadTimestamp = (thread) => thread.last_message_at || "";
@@ -826,6 +1392,31 @@ export function InboxSplitView({ messages = [], threads = [] }) {
     if (readOverrides[thread.id] || thread.is_read) return 0;
     return thread.unread_count || 0;
   };
+
+  const selectedPendingOrderUpdate = useMemo(() => {
+    if (!selectedThreadId) return null;
+    const pending = pendingOrderUpdateByThread[selectedThreadId];
+    if (!pending) return null;
+    return {
+      ...pending,
+      detail: formatPendingOrderUpdateDetail({
+        pendingDetail: pending.detail,
+        actionType: pending.actionType,
+        payload: pending.payload,
+        draftText: draftValue,
+        aiDraftText: aiDraft,
+        threadMessages: rawThreadMessages,
+        orderShippingAddress: customerLookup?.orders?.[0]?.shippingAddress || null,
+      }),
+    };
+  }, [
+    aiDraft,
+    customerLookup?.orders,
+    draftValue,
+    pendingOrderUpdateByThread,
+    rawThreadMessages,
+    selectedThreadId,
+  ]);
 
   return (
     <div className="flex h-full flex-1 flex-col overflow-hidden bg-background lg:flex-row">
@@ -868,6 +1459,19 @@ export function InboxSplitView({ messages = [], threads = [] }) {
         onSend={handleSendDraft}
         onDeleteThread={handleDeleteThread}
         deletingThread={deletingThread}
+        pendingOrderUpdate={
+          selectedPendingOrderUpdate
+        }
+        orderUpdateDecision={
+          selectedThreadId ? orderUpdateDecisionByThread[selectedThreadId] || null : null
+        }
+        onOrderUpdateDecision={handleOrderUpdateDecision}
+        orderUpdateSubmitting={
+          selectedThreadId ? Boolean(orderUpdateSubmittingByThread[selectedThreadId]) : false
+        }
+        orderUpdateError={
+          selectedThreadId ? orderUpdateErrorByThread[selectedThreadId] || null : null
+        }
         isSending={isSending}
         composerMode={composerMode}
         onComposerModeChange={setComposerMode}

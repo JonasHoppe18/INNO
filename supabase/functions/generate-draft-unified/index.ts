@@ -154,6 +154,201 @@ const mergeBullets = (base: string[], extra: string[], max = 8) => {
   return output.slice(0, max);
 };
 
+const extractNameFromFromField = (value: string) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const withoutEmail = raw.replace(/<[^>]+>/g, "").replace(/["']/g, "").trim();
+  if (!withoutEmail || withoutEmail.includes("@")) return "";
+  const cleaned = withoutEmail.replace(/\s+/g, " ").trim();
+  const first = cleaned.split(" ").find(Boolean) || "";
+  return first.replace(/[^A-Za-zÆØÅæøåÀ-ÿ'-]/g, "").trim();
+};
+
+const extractNameFromBody = (value: string) => {
+  const lines = splitLines(String(value || ""));
+  if (!lines.length) return "";
+  for (let idx = lines.length - 1; idx >= 0; idx -= 1) {
+    const line = lines[idx];
+    if (!line) continue;
+    if (line.length > 28) continue;
+    const lower = line.toLowerCase();
+    if (
+      lower === "mvh" ||
+      lower === "venlig hilsen" ||
+      lower === "best regards" ||
+      lower === "kind regards" ||
+      lower === "regards"
+    ) {
+      continue;
+    }
+    const token = line.split(" ")[0] || "";
+    const cleaned = token.replace(/[^A-Za-zÆØÅæøåÀ-ÿ'-]/g, "").trim();
+    if (cleaned.length < 2) continue;
+    if (!/[A-Za-zÆØÅæøåÀ-ÿ]/.test(cleaned)) continue;
+    return cleaned;
+  }
+  return "";
+};
+
+const normalizeCustomerFirstName = (value: string) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const cleaned = raw.replace(/\d+/g, "").replace(/[^A-Za-zÆØÅæøåÀ-ÿ'-]/g, "").trim();
+  if (!cleaned) return "";
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1).toLowerCase();
+};
+
+const extractCustomerFirstName = (emailData: EmailData) => {
+  const fromName = extractNameFromFromField(emailData?.from || "");
+  if (fromName) return normalizeCustomerFirstName(fromName);
+  const bodyName = extractNameFromBody(emailData?.body || "");
+  if (bodyName) return normalizeCustomerFirstName(bodyName);
+  const localPart = String(emailData?.fromEmail || "")
+    .split("@")[0]
+    .replace(/[._-]+/g, " ")
+    .trim();
+  const localToken = localPart.split(" ")[0] || "";
+  const localName = normalizeCustomerFirstName(localToken);
+  return localName.length >= 2 ? localName : "";
+};
+
+const enforceHejGreeting = (text: string, firstName: string) => {
+  const body = String(text || "").trim();
+  if (!body) return body;
+  const greeting = firstName ? `Hej ${firstName},` : "Hej,";
+  const withoutGreeting = body.replace(
+    /^(hej|hi|hello|dear)\s*[^\n,]*,?\s*\n*/i,
+    "",
+  );
+  return `${greeting}\n\n${withoutGreeting.trim()}`.trim();
+};
+
+const stableStringify = (value: unknown): string => {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+      a.localeCompare(b),
+    );
+    return `{${entries
+      .map(([key, inner]) => `${JSON.stringify(key)}:${stableStringify(inner)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value ?? null);
+};
+
+const buildThreadActionKey = ({
+  type,
+  orderId,
+  payload,
+}: {
+  type: string;
+  orderId?: number;
+  payload?: Record<string, unknown>;
+}) =>
+  `${String(type || "").trim().toLowerCase()}::${String(orderId || "").trim()}::${stableStringify(
+    payload || {},
+  )}`;
+
+async function persistThreadActions({
+  ownerUserId,
+  threadId,
+  results,
+}: {
+  ownerUserId: string;
+  threadId: string;
+  results: Array<{
+    type: string;
+    ok: boolean;
+    status?: "success" | "pending_approval" | "error";
+    orderId?: number;
+    payload?: Record<string, unknown>;
+    detail?: string;
+    error?: string;
+  }>;
+}) {
+  if (!supabase || !ownerUserId || !threadId || !results.length) return;
+  const nowIso = new Date().toISOString();
+
+  for (const result of results) {
+    const actionType = String(result?.type || "").trim().toLowerCase();
+    if (!actionType) continue;
+    const actionKey = buildThreadActionKey({
+      type: actionType,
+      orderId: result?.orderId,
+      payload: result?.payload || {},
+    });
+    const nextStatus =
+      result?.status === "pending_approval"
+        ? "pending"
+        : result?.status === "success"
+        ? "applied"
+        : "failed";
+
+    const { data: existing, error: existingError } = await supabase
+      .from("thread_actions")
+      .select("id, status")
+      .eq("user_id", ownerUserId)
+      .eq("thread_id", threadId)
+      .eq("action_key", actionKey)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (existingError) {
+      console.warn("generate-draft-unified: thread_actions lookup failed", existingError.message);
+      continue;
+    }
+
+    const existingStatus = String(existing?.status || "").toLowerCase();
+    const isFinalized =
+      existingStatus === "applied" ||
+      existingStatus === "approved" ||
+      existingStatus === "declined";
+    if (nextStatus === "pending" && isFinalized) {
+      continue;
+    }
+
+    const rowPayload = {
+      action_type: actionType,
+      action_key: actionKey,
+      status: nextStatus,
+      detail: result?.detail || result?.error || null,
+      payload: result?.payload || {},
+      order_id: result?.orderId ? String(result.orderId) : null,
+      error: result?.ok ? null : result?.error || null,
+      updated_at: nowIso,
+      ...(nextStatus === "applied"
+        ? { decided_at: nowIso, applied_at: nowIso, declined_at: null }
+        : nextStatus === "declined"
+        ? { decided_at: nowIso, declined_at: nowIso, applied_at: null }
+        : {}),
+    };
+
+    if (existing?.id) {
+      const { error: updateError } = await supabase
+        .from("thread_actions")
+        .update(rowPayload)
+        .eq("id", existing.id);
+      if (updateError) {
+        console.warn("generate-draft-unified: thread_actions update failed", updateError.message);
+      }
+      continue;
+    }
+
+    const { error: insertError } = await supabase.from("thread_actions").insert({
+      user_id: ownerUserId,
+      thread_id: threadId,
+      source: "automation",
+      created_at: nowIso,
+      ...rowPayload,
+    });
+    if (insertError) {
+      console.warn("generate-draft-unified: thread_actions insert failed", insertError.message);
+    }
+  }
+}
+
 async function fetchLearningProfile(
   mailboxId: string | null,
   userId: string | null,
@@ -690,14 +885,17 @@ Deno.serve(async (req) => {
       learnedStyle = mergeBullets([], learningProfile.styleRules).join("\n");
     }
 
+    const customerFirstName = extractCustomerFirstName(emailData);
+
     // Byg shared prompt med policies, automation-regler og ordre-kontekst.
     const promptBase = buildMailPrompt({
       emailBody: emailData.body || "(tomt indhold)",
       orderSummary: context.orderSummary,
       personaInstructions: context.persona.instructions,
       matchedSubjectNumber: context.matchedSubjectNumber,
+      customerName: customerFirstName || null,
       extraContext:
-        "Returner altid JSON hvor 'actions' beskriver konkrete handlinger du udfører i Shopify. Brug orderId (det numeriske id i parentes) når du udfylder actions. udfyld altid payload.shipping_address (brug nuværende adresse hvis den ikke ændres) og sæt payload.note og payload.tag til tom streng hvis de ikke bruges. Hvis kunden beder om adresseændring, udfyld shipping_address med alle felter (name, address1, address2, zip, city, country, phone). Hvis en handling ikke er tilladt i automationsreglerne, lad actions listen være tom og forklar brugeren at handlingen udføres manuelt.",
+        "Returner altid JSON hvor 'actions' beskriver konkrete handlinger du udfører i Shopify. Brug orderId (det numeriske id i parentes) når du udfylder actions. For payload: udfyld kun de felter der er nødvendige for handlingen. Hvis kunden beder om adresseændring, udfyld shipping_address med alle felter du kender (name, address1, address2, zip, city, country, phone). Ved edit_line_items skal du bruge line_item_id/variant_id fra KONTEKST. Hvis en handling ikke er tilladt i automationsreglerne, må du stadig returnere handlingen i actions; systemet markerer den til manuel approval i tråden.",
       signature:
         context.profile.signature?.trim() ||
         buildFallbackSignature(context.profile.first_name),
@@ -721,14 +919,16 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
           "Du er en kundeservice-assistent.",
           "Skriv kort, venligt og professionelt pa samme sprog som kundens mail.",
           "Hvis kunden skriver pa engelsk, svar pa engelsk selv om andre instruktioner er pa dansk.",
+          `Start altid svaret med "Hej ${customerFirstName || "kunden"},".`,
           "Brug KONTEKST-sektionen til at finde relevante oplysninger og nævn dem eksplicit i svaret.",
           personaGuidance,
           "Automationsregler:",
           automationGuidance,
           "Ud over forventet svar skal du returnere JSON med 'reply' og 'actions'.",
-          "Hvis en handling udføres (f.eks. opdater adresse, annuller ordre, tilføj note/tag), skal actions-listen indeholde et objekt med type, orderId og payload.",
-          "Tilladte actions: update_shipping_address, cancel_order, add_tag. Brug kun actions hvis automationsreglerne tillader det – ellers lad listen være tom og forklar kunden at handlingen udføres manuelt.",
+          "Hvis en handling udføres (f.eks. opdater adresse, annuller ordre, refund, hold, line item edit, opdater kontakt, resend invoice, tilføj note/tag), skal actions-listen indeholde et objekt med type, orderId og payload.",
+          "Tilladte actions: update_shipping_address, cancel_order, refund_order, change_shipping_method, hold_or_release_fulfillment, edit_line_items, update_customer_contact, add_note, add_tag, add_internal_note_or_tag, resend_confirmation_or_invoice.",
           "For update_shipping_address skal payload.shipping_address mindst indeholde name, address1, city, zip/postal_code og country.",
+          "For edit_line_items skal payload.operations bruges med type: set_quantity/remove_line_item/add_variant samt line_item_id/variant_id og quantity.",
           "Afslut ikke med signatur – signaturen tilføjes automatisk senere.",
         ].join("\n");
         const systemMsg = context.matchedSubjectNumber
@@ -751,7 +951,7 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       aiText = `Hej,\n\nTak for din besked. Vi vender tilbage hurtigst muligt med en opdatering.`;
     }
 
-    let finalText = aiText.trim();
+    let finalText = enforceHejGreeting(aiText.trim(), customerFirstName);
     const signature =
       context.profile.signature?.trim() ||
       buildFallbackSignature(context.profile.first_name);
@@ -792,7 +992,15 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
   let internalDraft: any = null;
   let draftId: string | null = null;
   let threadId: string | null = null;
-  let automationResults: Array<{ type: string; ok: boolean; orderId?: number; detail?: string; error?: string }> = [];
+  let automationResults: Array<{
+    type: string;
+    ok: boolean;
+    status?: "success" | "pending_approval" | "error";
+    orderId?: number;
+    payload?: Record<string, unknown>;
+    detail?: string;
+    error?: string;
+  }> = [];
 
     if (draftDestination === "email_provider") {
       if (!accessToken) {
@@ -952,18 +1160,44 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       const rows = automationResults.map((result) => ({
         draft_id: loggedDraftId,
         step_name: "Shopify Action",
-        step_detail: result.ok
-          ? `${result.detail || `Executed ${result.type.replace(/_/g, " ")}.`}`.trim() +
-            threadMarker
-          : `Failed ${result.type.replace(/_/g, " ")}: ${result.error || "unknown error"}.` +
-            threadMarker,
-        status: result.ok ? "success" : "error",
+        step_detail:
+          result.status === "pending_approval"
+            ? JSON.stringify({
+                thread_id: threadId,
+                actionType: result.type,
+                orderId: result.orderId ?? null,
+                payload: result.payload ?? null,
+                detail:
+                  result.detail ||
+                  result.error ||
+                  "Automation setting requires approval before execution.",
+                reason: result.error || null,
+              })
+            : result.ok
+            ? `${result.detail || `Executed ${result.type.replace(/_/g, " ")}.`}`.trim() +
+              threadMarker
+            : `Failed ${result.type.replace(/_/g, " ")}: ${result.error || "unknown error"}.` +
+              threadMarker,
+        status:
+          result.status === "pending_approval"
+            ? "warning"
+            : result.ok
+            ? "success"
+            : "error",
         created_at: now,
       }));
       const { error } = await supabase.from("agent_logs").insert(rows);
       if (error) {
         console.warn("generate-draft-unified: failed to log automation results", error.message);
       }
+    }
+
+    if (ownerUserId && threadId && automationResults.length) {
+      await persistThreadActions({
+        ownerUserId,
+        threadId,
+        results: automationResults,
+      });
     }
 
     if (supabase && loggedDraftId) {

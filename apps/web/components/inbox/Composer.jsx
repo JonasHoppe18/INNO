@@ -29,6 +29,8 @@ export function Composer({
   onModeChange,
   toLabel,
   onBlur,
+  disabled = false,
+  disabledPlaceholder = "Waiting for action approval...",
 }) {
   const isNote = mode === "note";
   const initialTo = useMemo(() => {
@@ -96,7 +98,7 @@ export function Composer({
 
   return (
     <div className="flex-none border-t border-gray-100 bg-white px-4 py-2.5">
-      <div className="flex flex-col gap-2">
+      <div className={`flex flex-col gap-2 ${disabled ? "opacity-60" : ""}`}>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-1 items-start justify-between gap-2 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-700">
             <div className="flex flex-1 flex-wrap items-center gap-2">
@@ -124,6 +126,7 @@ export function Composer({
                   onRecipientKey(event, toInput, setToRecipients, setToInput)
                 }
                 placeholder={toRecipients.length ? "" : "Add recipient"}
+                disabled={disabled}
                 className="min-w-[120px] flex-1 bg-transparent text-xs text-gray-700 outline-none"
               />
             </div>
@@ -131,6 +134,7 @@ export function Composer({
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
+                  disabled={disabled}
                   className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-500 hover:text-gray-700"
                 >
                   <ChevronDown className="h-3.5 w-3.5" />
@@ -147,6 +151,7 @@ export function Composer({
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
+                disabled={disabled}
                 className="inline-flex h-8 items-center gap-2 rounded-md border border-gray-200 bg-white px-2.5 text-[11px] font-medium text-gray-600 hover:bg-gray-50"
               >
                 Reply
@@ -185,10 +190,12 @@ export function Composer({
                 onRecipientKey(event, ccInput, setCcRecipients, setCcInput)
               }
               placeholder="Add CC"
+              disabled={disabled}
               className="min-w-[120px] flex-1 bg-transparent text-xs text-gray-700 outline-none"
             />
             <button
               type="button"
+              disabled={disabled}
               onClick={() => {
                 setShowCC(false);
                 setCcRecipients([]);
@@ -225,10 +232,12 @@ export function Composer({
                 onRecipientKey(event, bccInput, setBccRecipients, setBccInput)
               }
               placeholder="Add BCC"
+              disabled={disabled}
               className="min-w-[120px] flex-1 bg-transparent text-xs text-gray-700 outline-none"
             />
             <button
               type="button"
+              disabled={disabled}
               onClick={() => {
                 setShowBCC(false);
                 setBccRecipients([]);
@@ -253,8 +262,15 @@ export function Composer({
             onChange={(event) => onChange(event.target.value)}
             onInput={resizeTextarea}
             onBlur={onBlur}
-            placeholder={mode === "reply" ? "Write your reply..." : "Leave an internal note..."}
+            placeholder={
+              disabled
+                ? disabledPlaceholder
+                : mode === "reply"
+                ? "Write your reply..."
+                : "Leave an internal note..."
+            }
             rows={5}
+            disabled={disabled}
             className={`min-h-[124px] resize-y border-0 bg-transparent p-0 text-sm leading-relaxed focus-visible:ring-0 ${
               isNote ? "bg-yellow-50/40" : ""
             }`}
@@ -264,6 +280,7 @@ export function Composer({
           <div className="flex items-center gap-2">
             <button
               type="button"
+              disabled={disabled}
               onClick={() => onModeChange(isNote ? "reply" : "note")}
               className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium ${
                 isNote
@@ -273,20 +290,20 @@ export function Composer({
             >
               Internal note
             </button>
-            <button type="button" className="text-gray-400 hover:text-gray-600">
+            <button type="button" disabled={disabled} className="text-gray-400 hover:text-gray-600">
               <Bold className="h-3.5 w-3.5" />
             </button>
-            <button type="button" className="text-gray-400 hover:text-gray-600">
+            <button type="button" disabled={disabled} className="text-gray-400 hover:text-gray-600">
               <Paperclip className="h-3.5 w-3.5" />
             </button>
-            <button type="button" className="text-xs text-gray-400 hover:text-gray-600">
+            <button type="button" disabled={disabled} className="text-xs text-gray-400 hover:text-gray-600">
               Use template
             </button>
           </div>
         <div className="flex items-center">
           <Button
             type="button"
-            disabled={!canSend || !value.trim() || isSending}
+            disabled={disabled || !canSend || !value.trim() || isSending}
             onClick={() =>
               onSend?.({
                 bodyText: value,

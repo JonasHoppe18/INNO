@@ -163,7 +163,19 @@ export function buildOrderSummary(orders: ShopifyOrder[]): string {
         .map((item: any) => {
           const qty = typeof item?.quantity === "number" ? item.quantity : 1;
           const title = item?.title ?? item?.name ?? "Vare";
-          return `${qty}× ${title}`;
+          const lineId =
+            item?.admin_graphql_api_id ??
+            (item?.id ? `gid://shopify/LineItem/${item.id}` : null);
+          const variantId =
+            item?.variant_admin_graphql_api_id ??
+            (item?.variant_id ? `gid://shopify/ProductVariant/${item.variant_id}` : null);
+          const refs = [
+            lineId ? `line_item_id=${lineId}` : null,
+            variantId ? `variant_id=${variantId}` : null,
+          ]
+            .filter(Boolean)
+            .join(", ");
+          return refs ? `${qty}× ${title} [${refs}]` : `${qty}× ${title}`;
         })
         .filter(Boolean);
       if (lines.length) {

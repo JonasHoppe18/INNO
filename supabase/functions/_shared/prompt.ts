@@ -4,6 +4,7 @@ type MailPromptOptions = {
   orderSummary: string; // Antager dette er en streng med JSON eller tekst-data om ordren
   personaInstructions?: string | null;
   matchedSubjectNumber?: string | null;
+  customerName?: string | null;
   extraContext?: string | null;
   // Signatur kommer fra profiles.signatur i runtime og tilføjes automatisk efter model-output.
   signature?: string | null;
@@ -21,6 +22,7 @@ export function buildMailPrompt({
   orderSummary,
   personaInstructions,
   matchedSubjectNumber,
+  customerName,
   extraContext,
   learnedStyle,
   policies,
@@ -45,6 +47,7 @@ Læs kundens mail og den medfølgende ordre-data. Skriv et svar der løser probl
 --- DATA & KONTEKST ---
 Ordre Data: ${orderSummary || "Ingen ordredata fundet."}
 ${matchedSubjectNumber ? `Note: Kunden har nævnt ordrenummer #${matchedSubjectNumber} i emnefeltet. Spørg IKKE efter det igen.` : ""}
+${customerName ? `Kundens navn: ${customerName}` : "Kundens navn: ukendt"}
 ${extraContext ? `Ekstra viden: ${extraContext}` : ""}
 ${
   refundPolicy || shippingPolicy || termsPolicy
@@ -75,7 +78,10 @@ INSTRUKTIONER TIL SVARET:
    - Ved små rettelser: Bekræft ændringen med det samme.
    - Ved spørgsmål: Svar direkte.
    - Ingen standard-høflighed eller small talk.
-2. **Hilsen:** Brug en kort hilsen på kundens sprog, fx "Hi" / "Hej". Brug navn kun hvis det fremgår tydeligt af data.
+2. **Hilsen (obligatorisk):**
+   - Start altid svaret med: "Hej <kundens fornavn>,"
+   - Hvis kundenavn findes i data, brug det.
+   - Hvis der mangler navn, brug "Hej,".
 3. **Brand voice (vigtigt):**
    - Skriv kort, menneskeligt og effektivt som en moderne webshop.
    - Foretræk formuleringer som: "Det er rettet.", "Jeg har opdateret ...", "Adressen er opdateret."

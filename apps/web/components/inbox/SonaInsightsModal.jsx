@@ -6,6 +6,44 @@ import { CustomerTab } from "@/components/inbox/CustomerTab";
 import { X } from "lucide-react";
 import { useClerkSupabase } from "@/lib/useClerkSupabase";
 
+const asString = (value) => (typeof value === "string" ? value.trim() : "");
+
+const stripThreadMeta = (value) =>
+  String(value || "")
+    .replace(/\|?\s*thread_id\s*[:=]\s*[a-z0-9-]+/gi, "")
+    .replace(/\s*\|thread_id:[a-z0-9-]+\s*/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+const parseLogDetail = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return { detail: "", threadId: null, orderId: null };
+  if (raw.startsWith("{") && raw.endsWith("}")) {
+    try {
+      const parsed = JSON.parse(raw);
+      const detail =
+        asString(parsed?.detail) ||
+        asString(parsed?.message) ||
+        asString(parsed?.summary) ||
+        asString(parsed?.text) ||
+        asString(parsed?.action) ||
+        asString(parsed?.error) ||
+        asString(parsed?.reason) ||
+        asString(parsed?.status);
+      return {
+        detail: stripThreadMeta(detail),
+        threadId: asString(parsed?.thread_id || parsed?.threadId) || null,
+        orderId:
+          asString(parsed?.order_id || parsed?.orderId) ||
+          (typeof parsed?.orderId === "number" ? String(parsed.orderId) : null),
+      };
+    } catch {
+      return { detail: stripThreadMeta(raw), threadId: null, orderId: null };
+    }
+  }
+  return { detail: stripThreadMeta(raw), threadId: null, orderId: null };
+};
+
 export function SonaInsightsModal({
   open,
   onOpenChange,
@@ -45,18 +83,27 @@ export function SonaInsightsModal({
 
       let query = supabase
         .from("agent_logs")
-        .select("id, step_name, step_detail, status, created_at")
-        .order("created_at", { ascending: true });
+        .select("id, draft_id, step_name, step_detail, status, created_at")
+        .order("created_at", { ascending: false })
+        .limit(250);
 
       if (threadId) {
-        const safeThread = String(threadId).replace(/%/g, "\\%").replace(/_/g, "\\_");
         if (draftIds.length) {
           const list = draftIds.join(",");
-          query = query.or(`draft_id.in.(${list}),step_detail.ilike.%thread_id:${safeThread}%`);
+          query = query.or(
+            `draft_id.in.(${list}),step_name.eq.shopify_action,step_name.eq.shopify_action_failed,step_name.eq.shopify_action_applied,step_name.eq.shopify_action_declined`
+          );
         } else if (draftId) {
-          query = query.or(`draft_id.eq.${draftId},step_detail.ilike.%thread_id:${safeThread}%`);
+          query = query.or(
+            `draft_id.eq.${draftId},step_name.eq.shopify_action,step_name.eq.shopify_action_failed,step_name.eq.shopify_action_applied,step_name.eq.shopify_action_declined`
+          );
         } else {
-          query = query.ilike("step_detail", `%thread_id:${safeThread}%`);
+          query = query.in("step_name", [
+            "shopify_action",
+            "shopify_action_failed",
+            "shopify_action_applied",
+            "shopify_action_declined",
+          ]);
         }
       } else if (draftId) {
         query = query.eq("draft_id", draftId);
@@ -67,7 +114,18 @@ export function SonaInsightsModal({
       if (error) {
         setLogs([]);
       } else {
-        setLogs(Array.isArray(data) ? data : []);
+        const rawLogs = Array.isArray(data) ? data : [];
+        if (threadId) {
+          const normalizedThread = String(threadId);
+          const filtered = rawLogs.filter((log) => {
+            if (draftIds.length && draftIds.includes(log?.draft_id)) return true;
+            const parsed = parseLogDetail(log?.step_detail);
+            return parsed.threadId && String(parsed.threadId) === normalizedThread;
+          });
+          setLogs(filtered.reverse());
+        } else {
+          setLogs(rawLogs.reverse());
+        }
       }
       setLogsLoading(false);
     };
@@ -79,8 +137,15 @@ export function SonaInsightsModal({
 
   const timelineItems = useMemo(() => {
     const formatTitle = (value) => {
-      const raw = String(value || "");
+      const raw = String(value || "").toLowerCase();
       if (!raw) return "Activity";
+      if (raw === "shopify_lookup") return "Shopify Lookup";
+      if (raw === "shopify_action") return "Shopify Action";
+      if (raw === "shopify_action_applied") return "Shopify Action Applied";
+      if (raw === "shopify_action_declined") return "Shopify Action Declined";
+      if (raw === "context") return "Context";
+      if (raw === "draft_created") return "Draft Created";
+      if (raw === "postmark_inbound_draft_created") return "Draft Created";
       return raw
         .replace(/_/g, " ")
         .replace(/\bpostmark\b/gi, "Postmark")
@@ -89,26 +154,26 @@ export function SonaInsightsModal({
     };
     const formatDetail = (value, name) => {
       if (!value) return "";
-      const raw = String(value);
-      const stripped = raw.replace(/\s*\|thread_id:[a-z0-9-]+\s*/i, "").trim();
-      if (stripped.trim().startsWith("{") && stripped.trim().endsWith("}")) {
-        try {
-          const parsed = JSON.parse(stripped);
-          if (name === "postmark_inbound_draft_created") {
-            return "Forwarded email draft created.";
-          }
-          if (parsed?.orderId) {
-            return `Order ${parsed.orderId}`;
-          }
-          return "";
-        } catch {
-          return stripped;
-        }
-      }
-      if (name === "postmark_inbound_draft_created") {
+      const parsed = parseLogDetail(value);
+      const step = String(name || "").toLowerCase();
+      if (step === "postmark_inbound_draft_created" || step === "draft_created") {
         return "Forwarded email draft created.";
       }
-      return stripped;
+      if (step === "context") {
+        return parsed.detail || "Loaded store context.";
+      }
+      if (step === "shopify_lookup") {
+        return parsed.detail || (parsed.orderId ? `Found order ${parsed.orderId}` : "Order found.");
+      }
+      if (
+        step === "shopify_action" ||
+        step === "shopify_action_applied" ||
+        step === "shopify_action_declined"
+      ) {
+        return parsed.detail || (parsed.orderId ? `Order ${parsed.orderId}` : "Shopify action executed.");
+      }
+      if (parsed.orderId && !parsed.detail) return `Order ${parsed.orderId}`;
+      return parsed.detail || "";
     };
     return logs.map((log) => ({
       id: String(log.id),

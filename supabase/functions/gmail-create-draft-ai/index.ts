@@ -618,7 +618,7 @@ Deno.serve(async (req) => {
       personaInstructions: persona.instructions,
       matchedSubjectNumber,
       extraContext:
-        "Returner altid JSON hvor 'actions' beskriver konkrete handlinger du udfører i Shopify. Brug orderId (det numeriske id i parentes) når du udfylder actions. udfyld altid payload.shipping_address (brug nuværende adresse hvis den ikke ændres) og sæt payload.note og payload.tag til tom streng hvis de ikke bruges. Hvis kunden beder om adresseændring, udfyld shipping_address med alle felter (name, address1, address2, zip, city, country, phone). Hvis en handling ikke er tilladt i automationsreglerne, lad actions listen være tom og forklar brugeren at du sender sagen videre.",
+        "Returner altid JSON hvor 'actions' beskriver konkrete handlinger du udfører i Shopify. Brug orderId (det numeriske id i parentes) når du udfylder actions. For payload: udfyld kun de felter der er nødvendige for handlingen. Hvis kunden beder om adresseændring, udfyld shipping_address med alle felter du kender (name, address1, address2, zip, city, country, phone). Ved edit_line_items skal du bruge line_item_id/variant_id fra KONTEKST. Hvis en handling ikke er tilladt i automationsreglerne, må du stadig returnere handlingen i actions; systemet markerer den til manuel approval i tråden.",
       signature: persona.signature,
       policies,
     });
@@ -647,9 +647,10 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
           "Automationsregler:",
           automationGuidance,
           "Ud over forventet svar skal du returnere JSON med 'reply' og 'actions'.",
-          "Hvis en handling udføres (f.eks. opdater adresse, annuller ordre, tilføj note/tag), skal actions-listen indeholde et objekt med type, orderId og payload.",
-          "Tilladte actions: update_shipping_address, cancel_order, add_tag. Brug kun actions hvis automationsreglerne tillader det – ellers lad listen være tom og forklar kunden at handlingen udføres manuelt.",
+          "Hvis en handling udføres (f.eks. opdater adresse, annuller ordre, refund, hold, line item edit, opdater kontakt, resend invoice, tilføj note/tag), skal actions-listen indeholde et objekt med type, orderId og payload.",
+          "Tilladte actions: update_shipping_address, cancel_order, refund_order, change_shipping_method, hold_or_release_fulfillment, edit_line_items, update_customer_contact, add_note, add_tag, add_internal_note_or_tag, resend_confirmation_or_invoice.",
           "For update_shipping_address skal payload.shipping_address mindst indeholde name, address1, city, zip/postal_code og country.",
+          "For edit_line_items skal payload.operations bruges med type: set_quantity/remove_line_item/add_variant samt line_item_id/variant_id og quantity.",
           "Afslut ikke med signatur – signaturen tilføjes automatisk senere.",
         ].join("\n");
         // Tilføj info om ordrenummer hvis vi fandt det
