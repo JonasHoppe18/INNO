@@ -10,6 +10,15 @@ import { EditSignatureModal } from "@/components/settings/EditSignatureModal";
 import { useClerkSupabase } from "@/lib/useClerkSupabase";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const MENU_SECTIONS = [
   {
@@ -130,9 +139,9 @@ function getDisplayName(member) {
 }
 
 function MembersTab({ members, ownerUserId, onSignatureSaved }) {
-  const inviteLink = "mailto:hello@sona-ai.dk?subject=Invite%20member%20to%20workspace";
   const [activeMember, setActiveMember] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [inviteComingSoonOpen, setInviteComingSoonOpen] = useState(false);
 
   const handleOpenSignatureModal = (member) => {
     setActiveMember(member);
@@ -147,8 +156,8 @@ function MembersTab({ members, ownerUserId, onSignatureSaved }) {
             <h2 className="text-2xl font-semibold text-slate-900">Team Members</h2>
             <p className="mt-1 text-sm text-slate-600">Manage who has access.</p>
           </div>
-          <Button asChild>
-            <a href={inviteLink}>Invite Member</a>
+          <Button type="button" onClick={() => setInviteComingSoonOpen(true)}>
+            Invite Member
           </Button>
         </div>
 
@@ -212,6 +221,20 @@ function MembersTab({ members, ownerUserId, onSignatureSaved }) {
         member={activeMember}
         onSaved={onSignatureSaved}
       />
+
+      <AlertDialog open={inviteComingSoonOpen} onOpenChange={setInviteComingSoonOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Invite Member coming soon</AlertDialogTitle>
+            <AlertDialogDescription>
+              Team invitations are not enabled yet. This feature will be available soon.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction>OK</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

@@ -382,6 +382,18 @@ Deno.serve(async (req) => {
   const textBodyRaw = String(payload?.TextBody ?? "").trim();
   const textBody = textBodyRaw || (htmlBody ? stripHtml(htmlBody) : "");
   const snippet = buildSnippet(textBody);
+  const shouldSkipAsSpam =
+    !IGNORE_SPAM_FILTER &&
+    shouldSkipInboxMessage({
+      from: fromRaw,
+      subject,
+      snippet,
+      body: textBody,
+      headers: headers.map((header) => ({
+        name: header?.Name ?? "",
+        value: header?.Value ?? "",
+      })),
+    });
 
   const inReplyTo = normalizeMessageId(findHeader(headers, "In-Reply-To"));
   const messageIdHeader =
@@ -408,6 +420,19 @@ Deno.serve(async (req) => {
       thread_id: existingMessage.thread_id,
       message_id: existingMessage.id,
       duplicate: true,
+    });
+  }
+
+  if (shouldSkipAsSpam) {
+    await logAgent(
+      "postmark_inbound_skipped",
+      { messageId: storedMessageId, slug, reason: "spam_filter", from: fromRaw, subject },
+      "info",
+    );
+    return jsonResponse(200, {
+      ok: true,
+      skipped: true,
+      reason: "spam_filter",
     });
   }
 
@@ -543,52 +568,32 @@ Deno.serve(async (req) => {
   try {
     const autoDraftEnabled = await isAutoDraftEnabled(mailbox.user_id);
     if (autoDraftEnabled) {
-      if (
-        !IGNORE_SPAM_FILTER &&
-        shouldSkipInboxMessage({
-          from: fromRaw,
+      const shopId = await resolveShopId(mailbox.user_id);
+      if (shopId) {
+        const draftOutcome = await triggerDraftForInbound({
+          shopId,
+          messageId: storedMessageId,
+          threadId,
           subject,
-          snippet,
+          fromRaw,
+          fromEmail,
           body: textBody,
-          headers: headers.map((header) => ({
-            name: header?.Name ?? "",
-            value: header?.Value ?? "",
-          })),
-        })
-      ) {
-        await logAgent(
-          "postmark_inbound_draft_skipped",
-          { messageId, slug, reason: "spam_filter" },
-          "info",
-        );
-      } else {
-        const shopId = await resolveShopId(mailbox.user_id);
-        if (shopId) {
-          const draftOutcome = await triggerDraftForInbound({
-            shopId,
-            messageId: storedMessageId,
-            threadId,
-            subject,
-            fromRaw,
-            fromEmail,
-            body: textBody,
-            headers,
-          });
-          const draftId = await ensureDraftLog({
-            threadId,
-            shopId,
-            subject,
-            customerEmail: fromEmail,
-            draftMessageId: draftOutcome?.draftId ? String(draftOutcome.draftId) : null,
-          });
-          await supabase.from("agent_logs").insert({
-            draft_id: draftId ?? null,
-            step_name: "draft_created",
-            step_detail: `Email draft created.|thread_id:${threadId}`,
-            status: "success",
-            created_at: new Date().toISOString(),
-          });
-        }
+          headers,
+        });
+        const draftId = await ensureDraftLog({
+          threadId,
+          shopId,
+          subject,
+          customerEmail: fromEmail,
+          draftMessageId: draftOutcome?.draftId ? String(draftOutcome.draftId) : null,
+        });
+        await supabase.from("agent_logs").insert({
+          draft_id: draftId ?? null,
+          step_name: "draft_created",
+          step_detail: `Email draft created.|thread_id:${threadId}`,
+          status: "success",
+          created_at: new Date().toISOString(),
+        });
       }
     }
   } catch (error) {

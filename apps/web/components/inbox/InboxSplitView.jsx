@@ -27,7 +27,18 @@ const DEFAULT_TICKET_STATE = {
 };
 
 const STATUS_OPTIONS = ["New", "Open", "Waiting", "Solved"];
-const ASSIGNEE_OPTIONS = ["Unassigned", "Emma", "Jonas", "Support Bot"];
+const UNASSIGNED_ASSIGNEE_VALUE = "__unassigned__";
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const isUuid = (value) => typeof value === "string" && UUID_REGEX.test(value);
+
+const getAssigneeLabel = (profile, fallbackValue) => {
+  const fullName = [profile?.first_name, profile?.last_name].filter(Boolean).join(" ").trim();
+  if (fullName) return fullName;
+  if (profile?.email) return profile.email;
+  return String(fallbackValue || "Unknown user");
+};
 
 const normalizeStatus = (value) => {
   if (!value) return null;
@@ -41,6 +52,7 @@ const normalizeStatus = (value) => {
 
 function InboxHeaderActions({
   ticketState,
+  assigneeOptions,
   tagLabel,
   onTicketStateChange,
   onOpenInsights,
@@ -82,9 +94,11 @@ function InboxHeaderActions({
         </SelectContent>
       </Select>
       <Select
-        value={ticketState.assignee || "Unassigned"}
+        value={ticketState.assignee || UNASSIGNED_ASSIGNEE_VALUE}
         onValueChange={(value) =>
-          onTicketStateChange({ assignee: value === "Unassigned" ? null : value })
+          onTicketStateChange({
+            assignee: value === UNASSIGNED_ASSIGNEE_VALUE ? null : value,
+          })
         }
       >
         <SelectTrigger className="h-auto w-auto cursor-pointer gap-1.5 rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100">
@@ -92,9 +106,9 @@ function InboxHeaderActions({
           <SelectValue placeholder="Assignee" />
         </SelectTrigger>
         <SelectContent>
-          {ASSIGNEE_OPTIONS.map((option) => (
-            <SelectItem key={option} value={option}>
-              {option}
+          {assigneeOptions.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
             </SelectItem>
           ))}
         </SelectContent>
@@ -451,6 +465,7 @@ export function InboxSplitView({ messages = [], threads = [] }) {
   const [isSending, setIsSending] = useState(false);
   const [suppressAutoDraftByThread, setSuppressAutoDraftByThread] = useState({});
   const [draftReady, setDraftReady] = useState(false);
+  const [systemDraftUneditedByThread, setSystemDraftUneditedByThread] = useState({});
   const [insightsOpen, setInsightsOpen] = useState(false);
   const [draftLogId, setDraftLogId] = useState(null);
   const sendingStartedAtRef = useRef(0);
@@ -459,6 +474,7 @@ export function InboxSplitView({ messages = [], threads = [] }) {
   const [orderUpdateDecisionByThread, setOrderUpdateDecisionByThread] = useState({});
   const [orderUpdateSubmittingByThread, setOrderUpdateSubmittingByThread] = useState({});
   const [orderUpdateErrorByThread, setOrderUpdateErrorByThread] = useState({});
+  const [assigneeProfilesById, setAssigneeProfilesById] = useState({});
   const headerActionsKeyRef = useRef("");
   const draftLastSavedRef = useRef("");
   const savingDraftRef = useRef(false);
@@ -656,11 +672,89 @@ export function InboxSplitView({ messages = [], threads = [] }) {
       });
   }, [customerByThread, derivedThreads, filters, ticketStateByThread]);
 
+  useEffect(() => {
+    if (!supabase) return;
+    let active = true;
+
+    const loadAssigneeProfiles = async () => {
+      const candidateUserIds = Array.from(
+        new Set(
+          derivedThreads
+            .flatMap((thread) => [thread?.user_id, thread?.assignee_id])
+            .filter(isUuid)
+        )
+      );
+
+      if (user?.id) {
+        const { data: ownProfile } = await supabase
+          .from("profiles")
+          .select("user_id")
+          .eq("clerk_user_id", user.id)
+          .maybeSingle();
+        if (isUuid(ownProfile?.user_id)) {
+          candidateUserIds.push(ownProfile.user_id);
+        }
+      }
+
+      const uniqueUserIds = Array.from(new Set(candidateUserIds)).filter(isUuid);
+      if (!uniqueUserIds.length) {
+        if (active) setAssigneeProfilesById({});
+        return;
+      }
+
+      const { data: profileRows, error } = await supabase
+        .from("profiles")
+        .select("user_id, first_name, last_name, email")
+        .in("user_id", uniqueUserIds);
+      if (!active || error) return;
+
+      const next = {};
+      (profileRows || []).forEach((profile) => {
+        if (!isUuid(profile?.user_id)) return;
+        next[profile.user_id] = profile;
+      });
+      setAssigneeProfilesById(next);
+    };
+
+    loadAssigneeProfiles().catch(() => null);
+    return () => {
+      active = false;
+    };
+  }, [derivedThreads, supabase, user?.id]);
+
   const selectedThread = useMemo(
     () => derivedThreads.find((thread) => thread.id === selectedThreadId) || null,
     [derivedThreads, selectedThreadId]
   );
   const selectedTicketState = ticketStateByThread[selectedThreadId] || DEFAULT_TICKET_STATE;
+  const assigneeOptions = useMemo(() => {
+    const values = new Set();
+    values.add(UNASSIGNED_ASSIGNEE_VALUE);
+    Object.keys(assigneeProfilesById).forEach((userId) => values.add(String(userId)));
+    derivedThreads.forEach((thread) => {
+      if (thread?.assignee_id) values.add(String(thread.assignee_id));
+    });
+    if (selectedTicketState?.assignee) {
+      values.add(String(selectedTicketState.assignee));
+    }
+
+    const resolved = Array.from(values)
+      .filter(Boolean)
+      .map((value) => {
+        if (value === UNASSIGNED_ASSIGNEE_VALUE) {
+          return { value, label: "Unassigned" };
+        }
+        const profile = assigneeProfilesById[value];
+        return {
+          value,
+          label: getAssigneeLabel(profile, value),
+        };
+      });
+
+    const [unassigned, ...rest] = resolved;
+    rest.sort((a, b) => a.label.localeCompare(b.label));
+    return [unassigned, ...rest];
+  }, [assigneeProfilesById, derivedThreads, selectedTicketState?.assignee]);
   const selectedTagLabel =
     Array.isArray(selectedThread?.tags) && selectedThread.tags.length
       ? selectedThread.tags[0]
@@ -1074,6 +1168,15 @@ export function InboxSplitView({ messages = [], threads = [] }) {
       if (draftText) {
         setDraftValue(draftText);
         draftLastSavedRef.current = draftText.trim();
+        setSystemDraftUneditedByThread((prev) => ({
+          ...prev,
+          [selectedThreadId]: true,
+        }));
+      } else {
+        setSystemDraftUneditedByThread((prev) => ({
+          ...prev,
+          [selectedThreadId]: false,
+        }));
       }
       if (draft?.id) {
         setActiveDraftId(draft.id);
@@ -1089,7 +1192,12 @@ export function InboxSplitView({ messages = [], threads = [] }) {
   useEffect(() => {
     if (!selectedThreadId || !draftReady || !aiDraft) return;
     if (suppressAutoDraftByThread[selectedThreadId]) return;
-    setDraftValue((prev) => (prev ? prev : aiDraft));
+    if (draftValueRef.current) return;
+    setDraftValue(aiDraft);
+    setSystemDraftUneditedByThread((prev) => ({
+      ...prev,
+      [selectedThreadId]: true,
+    }));
   }, [aiDraft, draftReady, selectedThreadId, suppressAutoDraftByThread]);
 
   useEffect(() => {
@@ -1108,8 +1216,28 @@ export function InboxSplitView({ messages = [], threads = [] }) {
     if (!selectedThreadId || !draftReady || !draftMessage) return;
     if (suppressAutoDraftByThread[selectedThreadId]) return;
     const draftBody = draftMessage.body_text || draftMessage.body_html || "";
-    setDraftValue((prev) => (prev ? prev : draftBody));
+    if (draftValueRef.current) return;
+    setDraftValue(draftBody);
+    setSystemDraftUneditedByThread((prev) => ({
+      ...prev,
+      [selectedThreadId]: true,
+    }));
   }, [draftMessage, draftReady, selectedThreadId, suppressAutoDraftByThread]);
+
+  const handleDraftChange = useCallback(
+    (nextValue) => {
+      setDraftValue(nextValue);
+      if (!selectedThreadId) return;
+      setSystemDraftUneditedByThread((prev) => {
+        if (!prev[selectedThreadId]) return prev;
+        return {
+          ...prev,
+          [selectedThreadId]: false,
+        };
+      });
+    },
+    [selectedThreadId]
+  );
 
   const handleFiltersChange = (updates) => {
     setFilters((prev) => ({ ...prev, ...updates }));
@@ -1169,6 +1297,7 @@ export function InboxSplitView({ messages = [], threads = [] }) {
     setHeaderActions(
       <InboxHeaderActions
         ticketState={selectedTicketState}
+        assigneeOptions={assigneeOptions}
         tagLabel={selectedTagLabel}
         onTicketStateChange={handleTicketStateChange}
         onOpenInsights={() => setInsightsOpen(true)}
@@ -1176,6 +1305,7 @@ export function InboxSplitView({ messages = [], threads = [] }) {
     );
   }, [
     handleTicketStateChange,
+    assigneeOptions,
     selectedTicketState,
     selectedThreadId,
     selectedTagLabel,
@@ -1318,7 +1448,7 @@ export function InboxSplitView({ messages = [], threads = [] }) {
             cc_emails: payload.ccRecipients || [],
             bcc_emails: payload.bccRecipients || [],
             body_text: draftValue,
-            body_html: draftValue,
+            body_html: null,
             is_read: true,
             sent_at: nowIso,
             received_at: null,
@@ -1331,6 +1461,10 @@ export function InboxSplitView({ messages = [], threads = [] }) {
       setDraftValue("");
       setActiveDraftId(null);
       draftLastSavedRef.current = "";
+      setSystemDraftUneditedByThread((prev) => ({
+        ...prev,
+        [selectedThreadId]: false,
+      }));
       setSuppressAutoDraftByThread((prev) => ({
         ...prev,
         [selectedThreadId]: true,
@@ -1519,9 +1653,13 @@ export function InboxSplitView({ messages = [], threads = [] }) {
           !suppressAutoDraftByThread[selectedThreadId]
         }
         draftValue={draftValue}
-        onDraftChange={setDraftValue}
+        onDraftChange={handleDraftChange}
         onDraftBlur={() => saveThreadDraft({ immediate: true })}
-        draftLoaded={Boolean(draftMessage)}
+        draftLoaded={
+          Boolean(selectedThreadId) &&
+          Boolean(draftValue.trim()) &&
+          Boolean(systemDraftUneditedByThread[selectedThreadId])
+        }
         canSend={Boolean(selectedThreadId) && !isLocalThreadId(selectedThreadId)}
         onSend={handleSendDraft}
         onDeleteThread={handleDeleteThread}
