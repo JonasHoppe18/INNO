@@ -941,12 +941,37 @@ export async function POST(request, { params }) {
 
   const draftThreadKeys = [thread.provider_thread_id, threadId].filter(Boolean);
   if (draftThreadKeys.length) {
-    await serviceClient
+    const { data: pendingDraftRows, error: pendingDraftsLookupError } = await serviceClient
       .from("drafts")
-      .update({ status: "superseded" })
+      .select("id, created_at")
       .in("thread_id", draftThreadKeys)
       .eq("platform", mailbox.provider)
-      .eq("status", "pending");
+      .eq("status", "pending")
+      .order("created_at", { ascending: false });
+
+    if (pendingDraftsLookupError) {
+      console.warn("[threads/send] failed to lookup pending drafts", pendingDraftsLookupError.message);
+    } else if (Array.isArray(pendingDraftRows) && pendingDraftRows.length) {
+      const latestDraftId = pendingDraftRows[0]?.id ?? null;
+      const staleDraftIds = pendingDraftRows
+        .slice(1)
+        .map((row) => row?.id)
+        .filter(Boolean);
+
+      if (latestDraftId !== null) {
+        await serviceClient
+          .from("drafts")
+          .update({ status: "sent" })
+          .eq("id", latestDraftId);
+      }
+
+      if (staleDraftIds.length) {
+        await serviceClient
+          .from("drafts")
+          .update({ status: "superseded" })
+          .in("id", staleDraftIds);
+      }
+    }
   }
 
   if (learnFromEdits && draftDestinationSetting === "sona_inbox" && aiDraftText) {
