@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { decryptString } from "@/lib/server/shopify-oauth";
+import { resolveShopId } from "@/lib/server/shops";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -44,20 +45,6 @@ async function resolveSupabaseUserId(serviceClient, clerkUserId) {
   if (error) throw new Error(error.message);
   if (!data?.user_id) throw new Error("Supabase user not found for this Clerk user.");
   return data.user_id;
-}
-
-async function fetchShop(serviceClient, ownerUserId) {
-  const { data, error } = await serviceClient
-    .from("shops")
-    .select("id, shop_domain, platform")
-    .eq("owner_user_id", ownerUserId)
-    .eq("platform", "shopify")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  if (!data) throw new Error("No shop found for this user.");
-  return data;
 }
 
 async function fetchShopifyCredentials(serviceClient, ownerUserId) {
@@ -149,7 +136,7 @@ async function embedText(text) {
   return vector;
 }
 
-async function syncShopify({ supabaseUserId, serviceClient }) {
+async function syncShopify({ supabaseUserId, shopRefId, serviceClient }) {
   const creds = await fetchShopifyCredentials(serviceClient, supabaseUserId);
   const domain = creds.shop_domain.replace(/^https?:\/\//, "");
   const products = await fetchShopifyProducts({ domain, accessToken: creds.access_token });
@@ -165,7 +152,7 @@ async function syncShopify({ supabaseUserId, serviceClient }) {
     const context = `Product: ${title}. Price: ${price || "N/A"}. Details: ${description || "No details."}`;
     const embedding = await embedText(context);
     rows.push({
-      shop_id: supabaseUserId,
+      shop_ref_id: shopRefId,
       external_id: String(product?.id ?? ""),
       platform: "shopify",
       title,
@@ -177,9 +164,18 @@ async function syncShopify({ supabaseUserId, serviceClient }) {
 
   if (rows.length) {
     const { error } = await serviceClient.from("shop_products").upsert(rows, {
-      onConflict: "shop_id,external_id,platform",
+      onConflict: "shop_ref_id,external_id,platform",
     });
-    if (error) throw new Error(error.message);
+    if (error) {
+      if (error.code === "42P10") {
+        throw new Error(
+          `${error.message}. Missing unique constraint for shop_products upsert. ` +
+            "TODO SQL: create unique index if not exists shop_products_shop_ref_external_platform_idx " +
+            "on public.shop_products(shop_ref_id, external_id, platform);",
+        );
+      }
+      throw new Error(error.message);
+    }
   }
 
   return { synced: rows.length };
@@ -197,13 +193,8 @@ export async function POST() {
   const serviceClient = createServiceClient();
   try {
     const supabaseUserId = await resolveSupabaseUserId(serviceClient, userId);
-    const shop = await fetchShop(serviceClient, supabaseUserId);
-
-    if (shop.platform && shop.platform !== "shopify") {
-      throw new Error("Platform not supported yet");
-    }
-
-    const result = await syncShopify({ supabaseUserId, serviceClient });
+    const shopRefId = await resolveShopId(serviceClient, { ownerUserId: supabaseUserId });
+    const result = await syncShopify({ supabaseUserId, shopRefId, serviceClient });
     return NextResponse.json({ success: true, platform: "shopify", ...result }, { status: 200 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Sync failed";

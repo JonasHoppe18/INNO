@@ -42,14 +42,15 @@ async function embedQuery(query) {
   return vector;
 }
 
-export async function findRelevantProducts(query, shopId) {
+export async function findRelevantProducts(query, shopRefId) {
   const supabase = createServiceClient();
   const embedding = await embedQuery(query);
   const { data, error } = await supabase.rpc("match_products", {
     query_embedding: embedding,
     match_threshold: 0.2,
     match_count: 5,
-    filter_shop_id: shopId,
+    // RPC argument name is legacy; value must be public.shops.id
+    filter_shop_id: shopRefId,
   });
   if (error) throw error;
   if (!Array.isArray(data) || !data.length) return "";
