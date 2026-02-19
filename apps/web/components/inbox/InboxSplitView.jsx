@@ -431,6 +431,8 @@ const formatPendingOrderUpdateDetail = ({
 };
 
 export function InboxSplitView({ messages = [], threads = [] }) {
+  const [liveThreads, setLiveThreads] = useState(threads || []);
+  const [liveMessages, setLiveMessages] = useState(messages || []);
   const [selectedThreadId, setSelectedThreadId] = useState(null);
   const [localNewThread, setLocalNewThread] = useState(null);
   const [draftLogLoading, setDraftLogLoading] = useState(false);
@@ -467,6 +469,69 @@ export function InboxSplitView({ messages = [], threads = [] }) {
   const currentUserName = [user?.firstName, user?.lastName].filter(Boolean).join(" ") || "You";
 
   useEffect(() => {
+    setLiveThreads(Array.isArray(threads) ? threads : []);
+  }, [threads]);
+
+  useEffect(() => {
+    setLiveMessages(Array.isArray(messages) ? messages : []);
+  }, [messages]);
+
+  useEffect(() => {
+    let active = true;
+    let polling = false;
+
+    const refreshInboxData = async () => {
+      if (!active || polling) return;
+      polling = true;
+      try {
+        const response = await fetch("/api/inbox/live", {
+          method: "GET",
+          cache: "no-store",
+          credentials: "include",
+        });
+        if (!response.ok) return;
+        const payload = await response.json().catch(() => null);
+        const threadRows = Array.isArray(payload?.threads) ? payload.threads : [];
+        const messageRows = Array.isArray(payload?.messages) ? payload.messages : [];
+        if (!active) return;
+        if (Array.isArray(threadRows)) {
+          setLiveThreads((prev) => {
+            if (threadRows.length > 0) return threadRows;
+            return prev.length > 0 ? prev : threadRows;
+          });
+        }
+        if (Array.isArray(messageRows)) {
+          setLiveMessages((prev) => {
+            if (messageRows.length > 0) return messageRows;
+            return prev.length > 0 ? prev : messageRows;
+          });
+        }
+      } finally {
+        polling = false;
+      }
+    };
+
+    refreshInboxData().catch(() => null);
+    const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+      refreshInboxData().catch(() => null);
+    }, 10000);
+
+    const onFocus = () => refreshInboxData().catch(() => null);
+    if (typeof window !== "undefined") {
+      window.addEventListener("focus", onFocus);
+    }
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+      if (typeof window !== "undefined") {
+        window.removeEventListener("focus", onFocus);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     draftValueRef.current = draftValue;
   }, [draftValue]);
 
@@ -476,9 +541,11 @@ export function InboxSplitView({ messages = [], threads = [] }) {
   );
 
   const derivedThreads = useMemo(() => {
-    const base = threads?.length ? threads : deriveThreadsFromMessages(messages);
+    const base = liveThreads?.length
+      ? liveThreads
+      : deriveThreadsFromMessages(liveMessages);
     return localNewThread ? [localNewThread, ...base] : base;
-  }, [localNewThread, messages, threads]);
+  }, [liveMessages, liveThreads, localNewThread]);
 
   useEffect(() => {
     if (!derivedThreads.length) {
@@ -521,7 +588,7 @@ export function InboxSplitView({ messages = [], threads = [] }) {
 
   const messagesByThread = useMemo(() => {
     const map = new Map();
-    messages.forEach((message) => {
+    liveMessages.forEach((message) => {
       const threadId = message.thread_id || message.id;
       if (!threadId) return;
       if (!map.has(threadId)) map.set(threadId, []);
@@ -538,17 +605,17 @@ export function InboxSplitView({ messages = [], threads = [] }) {
       );
     });
     return map;
-  }, [messages]);
+  }, [liveMessages]);
 
   const mailboxEmails = useMemo(() => {
     const emails = new Set();
-    messages.forEach((message) => {
+    liveMessages.forEach((message) => {
       (message.to_emails || []).forEach((email) => emails.add(email));
       (message.cc_emails || []).forEach((email) => emails.add(email));
       (message.bcc_emails || []).forEach((email) => emails.add(email));
     });
     return Array.from(emails);
-  }, [messages]);
+  }, [liveMessages]);
 
   const customerByThread = useMemo(() => {
     const map = {};

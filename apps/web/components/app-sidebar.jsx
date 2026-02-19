@@ -69,11 +69,11 @@ const baseData = {
       url: "/mailboxes",
       icon: MailIcon,
     },
-    {
-      name: "Persona",
-      url: "/persona",
-      icon: UserRoundPenIcon,
-    },
+    // {
+    //   name: "Persona",
+    //   url: "/persona",
+    //   icon: UserRoundPenIcon,
+    // },
     {
       name: "Automation",
       url: "/automation",

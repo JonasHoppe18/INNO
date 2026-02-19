@@ -943,7 +943,7 @@ export async function POST(request, { params }) {
   if (draftThreadKeys.length) {
     await serviceClient
       .from("drafts")
-      .delete()
+      .update({ status: "superseded" })
       .in("thread_id", draftThreadKeys)
       .eq("platform", mailbox.provider)
       .eq("status", "pending");

@@ -35,8 +35,8 @@ export const DEFAULT_PERSONA: Persona = {
 };
 
 export const DEFAULT_AUTOMATION: Automation = {
-  order_updates: true,
-  cancel_orders: true,
+  order_updates: false,
+  cancel_orders: false,
   automatic_refunds: false,
   historic_inbox_access: false,
   learn_from_edits: false,

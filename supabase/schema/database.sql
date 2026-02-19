@@ -3,8 +3,8 @@
 
 CREATE TABLE public.agent_automation (
   user_id uuid NOT NULL,
-  order_updates boolean DEFAULT true,
-  cancel_orders boolean DEFAULT true,
+  order_updates boolean DEFAULT false,
+  cancel_orders boolean DEFAULT false,
   automatic_refunds boolean DEFAULT false,
   historic_inbox_access boolean DEFAULT false,
   learn_from_edits boolean DEFAULT false,

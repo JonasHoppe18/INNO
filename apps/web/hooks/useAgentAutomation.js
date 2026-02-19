@@ -50,8 +50,8 @@ const decodeJwtPayload = (token) => {
 };
 
 const DEFAULT_AUTOMATION = {
-  orderUpdates: true,
-  cancelOrders: true,
+  orderUpdates: false,
+  cancelOrders: false,
   automaticRefunds: false,
   historicInboxAccess: false,
   learnFromEdits: false,

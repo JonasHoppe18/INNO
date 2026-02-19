@@ -38,8 +38,8 @@ type UpdatePayload = {
 };
 
 const DEFAULT_AUTOMATION = {
-  order_updates: true,
-  cancel_orders: true,
+  order_updates: false,
+  cancel_orders: false,
   automatic_refunds: false,
   historic_inbox_access: false,
 };
