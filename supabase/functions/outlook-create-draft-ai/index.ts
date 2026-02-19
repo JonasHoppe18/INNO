@@ -10,7 +10,6 @@ import {
 } from "../_shared/agent-context.ts";
 import { AutomationAction, executeAutomationActions } from "../_shared/automation-actions.ts";
 import { buildOrderSummary, resolveOrderContext } from "../_shared/shopify.ts";
-import { resolveShopId } from "../_shared/shops.ts";
 import { PERSONA_REPLY_JSON_SCHEMA } from "../_shared/openai-schema.ts";
 import { buildMailPrompt } from "../_shared/prompt.ts";
 import { classifyEmail } from "../_shared/classify-email.ts";
@@ -272,6 +271,24 @@ function stripTrailingSignoff(text: string): string {
   return text;
 }
 
+async function resolveShopId(
+  supabaseClient: ReturnType<typeof createClient> | null,
+  ownerUserId: string | null,
+): Promise<string | null> {
+  if (!supabaseClient || !ownerUserId) return null;
+  const { data, error } = await supabaseClient
+    .from("shops")
+    .select("id")
+    .eq("owner_user_id", ownerUserId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.warn("outlook-create-draft-ai: failed to resolve shop id", error.message);
+  }
+  return data?.id ?? null;
+}
+
 // Genererer embeddings til produktmatch i Supabase
 async function embedText(input: string): Promise<number[]> {
   if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY missing");
@@ -298,17 +315,17 @@ async function embedText(input: string): Promise<number[]> {
 // Henter produktkontekst via Supabase vector search til brug i prompten
 async function fetchProductContext(
   supabaseClient: ReturnType<typeof createClient> | null,
-  shopRefId: string | null,
+  userId: string | null,
   text: string,
 ) {
-  if (!supabaseClient || !shopRefId || !text?.trim()) return "";
+  if (!supabaseClient || !userId || !text?.trim()) return "";
   try {
     const embedding = await embedText(text.slice(0, 4000));
     const { data, error } = await supabaseClient.rpc("match_products", {
       query_embedding: embedding,
       match_threshold: 0.2,
       match_count: 5,
-      filter_shop_id: shopRefId,
+      filter_shop_id: userId,
     });
     if (error || !Array.isArray(data) || !data.length) return "";
     return data
@@ -627,7 +644,7 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
     });
     const draftInsertPromise = (async () => {
       if (!supabase || !supabaseUserId) return;
-      const shopId = await resolveShopId(supabase, { ownerUserId: supabaseUserId });
+      const shopId = await resolveShopId(supabase, supabaseUserId);
       if (!shopId) {
         console.warn("outlook-create-draft-ai: no shop id found, skipping draft log");
         return;

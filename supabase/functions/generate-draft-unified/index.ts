@@ -466,17 +466,17 @@ async function embedText(input: string): Promise<number[]> {
 // Hent produktkontekst så svaret kan blive mere præcist.
 async function fetchProductContext(
   supabaseClient: ReturnType<typeof createClient> | null,
-  shopRefId: string | null,
+  userId: string | null,
   text: string,
 ) {
-  if (!supabaseClient || !shopRefId || !text?.trim()) return "";
+  if (!supabaseClient || !userId || !text?.trim()) return "";
   try {
     const embedding = await embedText(text.slice(0, 4000));
     const { data, error } = await supabaseClient.rpc("match_products", {
       query_embedding: embedding,
       match_threshold: 0.2,
       match_count: 5,
-      filter_shop_id: shopRefId,
+      filter_shop_id: userId,
     });
     if (error || !Array.isArray(data) || !data.length) return "";
     return data
@@ -864,7 +864,7 @@ Deno.serve(async (req) => {
     }
     const productContext = await fetchProductContext(
       supabase,
-      shopId,
+      ownerUserId,
       emailData.body || emailData.subject || "",
     );
     if (productContext?.trim()) {

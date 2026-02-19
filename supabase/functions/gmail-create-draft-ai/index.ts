@@ -12,7 +12,6 @@ import {
 } from "../_shared/agent-context.ts";
 import { AutomationAction, executeAutomationActions } from "../_shared/automation-actions.ts";
 import { buildOrderSummary, resolveOrderContext } from "../_shared/shopify.ts";
-import { resolveShopId } from "../_shared/shops.ts";
 import { PERSONA_REPLY_JSON_SCHEMA } from "../_shared/openai-schema.ts";
 import { buildMailPrompt } from "../_shared/prompt.ts";
 import { classifyEmail } from "../_shared/classify-email.ts";
@@ -141,11 +140,11 @@ async function embedText(input: string): Promise<number[]> {
 // Henter produktbeskrivelser fra Supabase via vector search for mere kontekst
 async function fetchProductContext(
   supabaseClient: ReturnType<typeof createClient> | null,
-  shopRefId: string | null,
+  userId: string | null,
   text: string,
 ) {
   // Hvis vi mangler data, returner tom tekst
-  if (!supabaseClient || !shopRefId || !text?.trim()) return "";
+  if (!supabaseClient || !userId || !text?.trim()) return "";
   try {
     // Embed den første del af teksten for at spare tokens
     const embedding = await embedText(text.slice(0, 4000));
@@ -154,7 +153,7 @@ async function fetchProductContext(
       query_embedding: embedding,
       match_threshold: 0.2,
       match_count: 5,
-      filter_shop_id: shopRefId,
+      filter_shop_id: userId,
     });
     // Returner tom hvis ingen matches
     if (error || !Array.isArray(data) || !data.length) return "";
@@ -356,6 +355,26 @@ function stripTrailingSignoff(text: string): string {
     return lines.join("\n");
   }
   return text;
+}
+
+async function resolveShopId(
+  supabaseClient: ReturnType<typeof createClient> | null,
+  ownerUserId: string | null,
+): Promise<string | null> {
+  // Stop hvis vi mangler data
+  if (!supabaseClient || !ownerUserId) return null;
+  // Hent seneste shop-id for ejeren
+  const { data, error } = await supabaseClient
+    .from("shops")
+    .select("id")
+    .eq("owner_user_id", ownerUserId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.warn("gmail-create-draft-ai: failed to resolve shop id", error.message);
+  }
+  return data?.id ?? null;
 }
 
 // Henter fuld Gmail-besked (payload) med auth token
@@ -582,14 +601,13 @@ Deno.serve(async (req) => {
       orders: orders.length,
       matchedSubjectNumber,
     });
-    const shopRefId = await resolveShopId(supabase, { ownerUserId: supabaseUserId });
 
     // Byg kort resume af ordrer
     const orderSummary = buildOrderSummary(orders);
     // Hent ekstra produktkontekst via embeddings
     const productContext = await fetchProductContext(
       supabase,
-      shopRefId,
+      supabaseUserId,
       plain || subject || ""
     );
 
@@ -707,13 +725,15 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
     // Log draft i Supabase async
     const draftInsertPromise = (async () => {
       if (!supabase || !supabaseUserId) return;
-      if (!shopRefId) {
+      // Find shop id til logging
+      const shopId = await resolveShopId(supabase, supabaseUserId);
+      if (!shopId) {
         console.warn("gmail-create-draft-ai: no shop id found, skipping draft log");
         return;
       }
       // Indsæt draft metadata i DB
       const { error } = await supabase.from("drafts").insert({
-        shop_id: shopRefId,
+        shop_id: shopId,
         customer_email: fromEmail || from,
         subject,
         platform: "gmail",
