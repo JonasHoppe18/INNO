@@ -82,15 +82,29 @@ export function ShopifyConnectCard() {
       .select("shop_domain, owner_user_id, platform, installed_at, uninstalled_at")
       .eq("platform", "shopify")
       .order("created_at", { ascending: false })
+      .is("uninstalled_at", null)
       .limit(1);
 
     if (workspaceId) {
-      query = query.eq("workspace_id", workspaceId).is("uninstalled_at", null);
-    } else if (ownerUserId) {
-      query = query.eq("owner_user_id", ownerUserId);
+      query = query.eq("workspace_id", workspaceId);
     }
 
-    const { data, error } = await query.maybeSingle();
+    let { data, error } = await query.maybeSingle();
+
+    // Legacy fallback: only scope by owner if the primary (RLS-scoped) read found nothing.
+    if (!data && !error && !workspaceId && ownerUserId) {
+      const fallback = await supabase
+        .from("shops")
+        .select("shop_domain, owner_user_id, platform, installed_at, uninstalled_at")
+        .eq("platform", "shopify")
+        .eq("owner_user_id", ownerUserId)
+        .is("uninstalled_at", null)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      data = fallback.data ?? null;
+      error = fallback.error ?? null;
+    }
 
     if (error) {
       console.warn("Could not load Shopify connection:", error);
