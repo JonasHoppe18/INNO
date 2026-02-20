@@ -126,13 +126,25 @@ export function sanitizeScopes(input) {
     .join(",");
 }
 
-export async function getUserId(request, supabase) {
-  // Placeholder: replace Clerk lookup with your app's auth cookie/JWT parsing if needed.
-  void request;
+export async function resolveWorkspaceIdFromOrg(supabase, orgId) {
+  if (!supabase || !orgId) return null;
+  const { data, error } = await supabase
+    .from("workspaces")
+    .select("id")
+    .eq("clerk_org_id", orgId)
+    .maybeSingle();
+  if (error) {
+    throw new Error(`Could not resolve workspace from org: ${error.message}`);
+  }
+  return data?.id ?? null;
+}
 
-  const { userId: clerkUserId } = auth();
-  if (!clerkUserId) return null;
-  if (!supabase) return null;
+export async function getAuthContext(request, supabase) {
+  void request;
+  const { userId: clerkUserId, orgId } = auth();
+  if (!clerkUserId || !supabase) {
+    return { clerkUserId: null, orgId: orgId ?? null, userId: null, workspaceId: null };
+  }
 
   const { data, error } = await supabase
     .from("profiles")
@@ -144,5 +156,16 @@ export async function getUserId(request, supabase) {
     throw new Error(`Could not resolve user: ${error.message}`);
   }
 
-  return data?.user_id ?? null;
+  const workspaceId = await resolveWorkspaceIdFromOrg(supabase, orgId);
+  return {
+    clerkUserId,
+    orgId: orgId ?? null,
+    userId: data?.user_id ?? null,
+    workspaceId,
+  };
+}
+
+export async function getUserId(request, supabase) {
+  const context = await getAuthContext(request, supabase);
+  return context.userId;
 }

@@ -33,6 +33,64 @@ type EnsureUserOptions = {
   serviceRoleKey: string | null;
 };
 
+const upsertWorkspace = async (
+  supabase: any,
+  orgId: string,
+  name: string | null,
+): Promise<string | null> => {
+  if (!orgId) return null;
+  const payload: Record<string, unknown> = { clerk_org_id: orgId };
+  if (typeof name === "string") {
+    payload.name = name;
+  }
+  const { data, error } = await supabase
+    .from("workspaces")
+    .upsert(payload, { onConflict: "clerk_org_id" })
+    .select("id")
+    .maybeSingle();
+  if (error) {
+    throw new Error(`Workspace upsert fejlede: ${error.message}`);
+  }
+  return data?.id ?? null;
+};
+
+const resolveWorkspaceIdByOrgId = async (
+  supabase: any,
+  orgId: string | null | undefined,
+): Promise<string | null> => {
+  if (!orgId) return null;
+  const { data, error } = await supabase
+    .from("workspaces")
+    .select("id")
+    .eq("clerk_org_id", orgId)
+    .maybeSingle();
+  if (error) {
+    throw new Error(`Workspace lookup fejlede: ${error.message}`);
+  }
+  return data?.id ?? null;
+};
+
+const upsertWorkspaceMember = async (
+  supabase: any,
+  workspaceId: string,
+  clerkUserId: string,
+  role: string,
+) => {
+  const { error } = await supabase
+    .from("workspace_members")
+    .upsert(
+      {
+        workspace_id: workspaceId,
+        clerk_user_id: clerkUserId,
+        role: role || "member",
+      },
+      { onConflict: "workspace_id,clerk_user_id" },
+    );
+  if (error) {
+    throw new Error(`Workspace member upsert fejlede: ${error.message}`);
+  }
+};
+
 const resolveAuthUserId = async (
   supabase: any,
   candidateId: string | null | undefined,
@@ -498,6 +556,67 @@ serve(async (req) => {
           { status: 500 },
         );
       }
+    } else if (type === "organization.created") {
+      const orgId = typeof data?.id === "string" ? data.id : "";
+      const orgName =
+        typeof data?.name === "string" && data.name.trim().length
+          ? data.name.trim()
+          : null;
+      if (!orgId) {
+        console.error("organization.created mangler data.id", { data });
+        return new Response("organization.created mangler org id", { status: 400 });
+      }
+      const workspaceId = await upsertWorkspace(supabase, orgId, orgName);
+      if (!workspaceId) {
+        console.error("organization.created kunne ikke oprette workspace", {
+          orgId,
+          orgName,
+        });
+        return new Response("Kunne ikke oprette workspace", { status: 500 });
+      }
+    } else if (type === "organizationMembership.created") {
+      const orgId =
+        typeof data?.organization?.id === "string"
+          ? data.organization.id
+          : typeof data?.organization_id === "string"
+          ? data.organization_id
+          : "";
+      const clerkUserId =
+        typeof data?.public_user_data?.user_id === "string"
+          ? data.public_user_data.user_id
+          : typeof data?.public_user_data?.userId === "string"
+          ? data.public_user_data.userId
+          : "";
+      const role =
+        typeof data?.role === "string" && data.role.trim().length
+          ? data.role.trim()
+          : "member";
+
+      if (!orgId || !clerkUserId) {
+        console.error("organizationMembership.created mangler org/user", {
+          orgId,
+          clerkUserId,
+          data,
+        });
+        return new Response("organizationMembership.created mangler org/user", {
+          status: 400,
+        });
+      }
+
+      let workspaceId = await resolveWorkspaceIdByOrgId(supabase, orgId);
+      if (!workspaceId) {
+        workspaceId = await upsertWorkspace(supabase, orgId, null);
+      }
+      if (!workspaceId) {
+        console.error("organizationMembership.created kunne ikke finde/oprette workspace", {
+          orgId,
+          clerkUserId,
+        });
+        return new Response("Kunne ikke resolve workspace for organizationMembership", {
+          status: 500,
+        });
+      }
+      await upsertWorkspaceMember(supabase, workspaceId, clerkUserId, role);
     }
 
     return new Response(JSON.stringify({ ok: true }), {

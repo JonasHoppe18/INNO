@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useUser } from "@clerk/nextjs";
+import { useAuth, useUser } from "@clerk/nextjs";
 import { Building2, CreditCard, FileSignature, Lock, User, Users2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -171,7 +171,13 @@ function MembersTab({ members, ownerUserId, onSignatureSaved }) {
                 .join("")
                 .slice(0, 2)
                 .toUpperCase();
-              const role = member.user_id === ownerUserId ? "Owner" : "Member";
+              const workspaceRole = String(member?.workspace_role || "").toLowerCase();
+              const role =
+                workspaceRole.includes("admin")
+                  ? "Owner"
+                  : member.user_id === ownerUserId
+                  ? "Owner"
+                  : "Member";
 
               return (
                 <div key={member.user_id} className="flex items-center justify-between border-b px-4 py-4 last:border-b-0">
@@ -385,6 +391,7 @@ function ProfileTab({ user, isLoaded }) {
 export function SettingsPanel() {
   const supabase = useClerkSupabase();
   const { user, isLoaded } = useUser();
+  const { orgId } = useAuth();
   const [activeTab, setActiveTab] = useState("general");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -435,26 +442,61 @@ export function SettingsPanel() {
         return;
       }
 
+      let workspaceId = null;
+      if (orgId) {
+        const { data: workspaceRow, error: workspaceError } = await supabase
+          .from("workspaces")
+          .select("id")
+          .eq("clerk_org_id", orgId)
+          .maybeSingle();
+        if (workspaceError) throw workspaceError;
+        workspaceId = workspaceRow?.id ?? null;
+      }
+
       let shopRow = null;
       let shopError = null;
-      const withTeamName = await supabase
-        .from("shops")
-        .select("id, owner_user_id, shop_domain, team_name")
-        .eq("owner_user_id", supabaseUserId)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      shopRow = withTeamName.data ?? null;
-      shopError = withTeamName.error ?? null;
-
-      if (shopError && shopError.code === "42703") {
-        const fallback = await supabase
+      let withTeamName = null;
+      if (workspaceId) {
+        withTeamName = await supabase
           .from("shops")
-          .select("id, owner_user_id, shop_domain")
+          .select("id, owner_user_id, shop_domain, team_name")
+          .eq("workspace_id", workspaceId)
+          .is("uninstalled_at", null)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+      } else {
+        withTeamName = await supabase
+          .from("shops")
+          .select("id, owner_user_id, shop_domain, team_name")
           .eq("owner_user_id", supabaseUserId)
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle();
+      }
+      shopRow = withTeamName?.data ?? null;
+      shopError = withTeamName?.error ?? null;
+
+      if (shopError && shopError.code === "42703") {
+        let fallback = null;
+        if (workspaceId) {
+          fallback = await supabase
+            .from("shops")
+            .select("id, owner_user_id, shop_domain")
+            .eq("workspace_id", workspaceId)
+            .is("uninstalled_at", null)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+        } else {
+          fallback = await supabase
+            .from("shops")
+            .select("id, owner_user_id, shop_domain")
+            .eq("owner_user_id", supabaseUserId)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+        }
         shopRow = fallback.data ?? null;
         shopError = fallback.error ?? null;
       }
@@ -473,21 +515,49 @@ export function SettingsPanel() {
       setInitialTeamName(resolvedTeamName);
 
       const memberOwnerId = shopRow?.owner_user_id ?? supabaseUserId;
-      const { data: profileRows, error: membersError } = await supabase
-        .from("profiles")
-        .select("user_id, first_name, last_name, email, image_url, signature")
-        .eq("user_id", memberOwnerId)
-        .order("created_at", { ascending: true });
-
-      if (membersError) throw membersError;
-      setMembers(Array.isArray(profileRows) ? profileRows : []);
+      if (workspaceId) {
+        const { data: workspaceMembers, error: workspaceMembersError } = await supabase
+          .from("workspace_members")
+          .select("clerk_user_id, role")
+          .eq("workspace_id", workspaceId);
+        if (workspaceMembersError) throw workspaceMembersError;
+        const clerkIds = (workspaceMembers || [])
+          .map((row) => String(row?.clerk_user_id || "").trim())
+          .filter(Boolean);
+        if (!clerkIds.length) {
+          setMembers([]);
+        } else {
+          const { data: profileRows, error: membersError } = await supabase
+            .from("profiles")
+            .select("user_id, clerk_user_id, first_name, last_name, email, image_url, signature")
+            .in("clerk_user_id", clerkIds)
+            .order("created_at", { ascending: true });
+          if (membersError) throw membersError;
+          const roleByClerkId = new Map(
+            (workspaceMembers || []).map((row) => [row.clerk_user_id, row.role || "member"])
+          );
+          const merged = (profileRows || []).map((row) => ({
+            ...row,
+            workspace_role: roleByClerkId.get(row.clerk_user_id) || "member",
+          }));
+          setMembers(merged);
+        }
+      } else {
+        const { data: profileRows, error: membersError } = await supabase
+          .from("profiles")
+          .select("user_id, first_name, last_name, email, image_url, signature")
+          .eq("user_id", memberOwnerId)
+          .order("created_at", { ascending: true });
+        if (membersError) throw membersError;
+        setMembers(Array.isArray(profileRows) ? profileRows : []);
+      }
     } catch (error) {
       console.error("Settings load failed:", error);
       toast.error("Could not load settings.");
     } finally {
       setLoading(false);
     }
-  }, [supabase, user?.id, user?.publicMetadata?.supabase_uuid]);
+  }, [orgId, supabase, user?.id, user?.publicMetadata?.supabase_uuid]);
 
   useEffect(() => {
     loadData().catch(() => null);

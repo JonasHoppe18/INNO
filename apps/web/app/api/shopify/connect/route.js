@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   createServiceSupabase,
   generateOauthState,
+  getAuthContext,
   getUserId,
   isValidShopDomain,
   normalizeShopDomain,
@@ -35,6 +36,7 @@ export async function POST(request) {
 
     const supabase = createServiceSupabase();
     const ownerUserId = await getUserId(request, supabase);
+    const { workspaceId } = await getAuthContext(request, supabase);
 
     if (!ownerUserId) {
       return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
@@ -53,15 +55,21 @@ export async function POST(request) {
       );
     }
 
-    const { data: integration, error: fetchError } = await supabase
+    let query = supabase
       .from("shops")
       .select("id, shopify_client_id, shopify_client_secret_encrypted")
-      .eq("owner_user_id", ownerUserId)
       .eq("platform", "shopify")
       .eq("shop_domain", shopDomain)
       .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(1);
+
+    if (workspaceId) {
+      query = query.eq("workspace_id", workspaceId).is("uninstalled_at", null);
+    } else {
+      query = query.eq("owner_user_id", ownerUserId);
+    }
+
+    const { data: integration, error: fetchError } = await query.maybeSingle();
 
     if (fetchError) {
       return NextResponse.json({ error: fetchError.message }, { status: 500 });

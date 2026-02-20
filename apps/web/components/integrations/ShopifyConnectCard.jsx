@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useCallback, useEffect, useState } from "react";
+import { useAuth } from "@clerk/nextjs";
 import {
   Card,
   CardContent,
@@ -18,6 +19,7 @@ import { ShopifySheet } from "./ShopifySheet";
 
 export function ShopifyConnectCard() {
   const supabase = useClerkSupabase();
+  const { orgId } = useAuth();
   // Holder den seneste shop connection så vi kan vise status og bruge den i sheetet.
   const [connection, setConnection] = useState(null);
   // Bruges til at vise "Henter..." badge og blokere knapper hvis Supabase klienten mangler.
@@ -30,13 +32,32 @@ export function ShopifyConnectCard() {
       return;
     }
     setLoading(true);
-    const { data, error } = await supabase
+    let workspaceId = null;
+    if (orgId) {
+      const { data: workspace, error: workspaceError } = await supabase
+        .from("workspaces")
+        .select("id")
+        .eq("clerk_org_id", orgId)
+        .maybeSingle();
+      if (workspaceError) {
+        console.warn("Could not resolve workspace:", workspaceError);
+      } else {
+        workspaceId = workspace?.id ?? null;
+      }
+    }
+
+    let query = supabase
       .from("shops")
       .select("shop_domain, owner_user_id, platform, installed_at, uninstalled_at")
       .eq("platform", "shopify")
       .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(1);
+
+    if (workspaceId) {
+      query = query.eq("workspace_id", workspaceId).is("uninstalled_at", null);
+    }
+
+    const { data, error } = await query.maybeSingle();
 
     if (error) {
       console.warn("Could not load Shopify connection:", error);
@@ -45,7 +66,7 @@ export function ShopifyConnectCard() {
       setConnection(data);
     }
     setLoading(false);
-  }, [supabase]);
+  }, [orgId, supabase]);
 
   // Når supabase klienten er klar henter vi forbindelsen én gang og når onConnected kaldes.
   useEffect(() => {

@@ -495,9 +495,27 @@ export function InboxSplitView({ messages = [], threads = [] }) {
   useEffect(() => {
     let active = true;
     let polling = false;
+    let timerId = null;
+    let consecutiveFailures = 0;
+
+    const BASE_POLL_MS = 10_000;
+    const HIDDEN_POLL_MS = 30_000;
+    const MAX_BACKOFF_MS = 60_000;
+
+    const scheduleNext = (ms) => {
+      if (!active) return;
+      if (timerId) clearTimeout(timerId);
+      timerId = setTimeout(() => {
+        refreshInboxData().catch(() => null);
+      }, ms);
+    };
 
     const refreshInboxData = async () => {
       if (!active || polling) return;
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+        scheduleNext(HIDDEN_POLL_MS);
+        return;
+      }
       polling = true;
       try {
         const response = await fetch("/api/inbox/live", {
@@ -505,7 +523,19 @@ export function InboxSplitView({ messages = [], threads = [] }) {
           cache: "no-store",
           credentials: "include",
         });
-        if (!response.ok) return;
+        if (!response.ok) {
+          consecutiveFailures += 1;
+          if (response.status === 401 || response.status === 403 || response.status === 404) {
+            scheduleNext(MAX_BACKOFF_MS);
+            return;
+          }
+          const backoffMs = Math.min(
+            BASE_POLL_MS * Math.max(1, 2 ** Math.min(consecutiveFailures, 3)),
+            MAX_BACKOFF_MS
+          );
+          scheduleNext(backoffMs);
+          return;
+        }
         const payload = await response.json().catch(() => null);
         const threadRows = Array.isArray(payload?.threads) ? payload.threads : [];
         const messageRows = Array.isArray(payload?.messages) ? payload.messages : [];
@@ -522,25 +552,32 @@ export function InboxSplitView({ messages = [], threads = [] }) {
             return prev.length > 0 ? prev : messageRows;
           });
         }
+        consecutiveFailures = 0;
+        scheduleNext(BASE_POLL_MS);
+      } catch {
+        consecutiveFailures += 1;
+        const backoffMs = Math.min(
+          BASE_POLL_MS * Math.max(1, 2 ** Math.min(consecutiveFailures, 3)),
+          MAX_BACKOFF_MS
+        );
+        scheduleNext(backoffMs);
       } finally {
         polling = false;
       }
     };
 
     refreshInboxData().catch(() => null);
-    const interval = setInterval(() => {
-      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
-      refreshInboxData().catch(() => null);
-    }, 10000);
-
-    const onFocus = () => refreshInboxData().catch(() => null);
+    const onFocus = () => {
+      if (!active || polling) return;
+      scheduleNext(0);
+    };
     if (typeof window !== "undefined") {
       window.addEventListener("focus", onFocus);
     }
 
     return () => {
       active = false;
-      clearInterval(interval);
+      if (timerId) clearTimeout(timerId);
       if (typeof window !== "undefined") {
         window.removeEventListener("focus", onFocus);
       }

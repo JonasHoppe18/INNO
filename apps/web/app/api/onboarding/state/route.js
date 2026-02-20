@@ -28,19 +28,31 @@ async function resolveSupabaseUserId(serviceClient, clerkUserId) {
 }
 
 async function getShopId(serviceClient, userId) {
-  const { data } = await serviceClient
+  const { data: workspace } = await serviceClient
+    .from("workspaces")
+    .select("id")
+    .eq("clerk_org_id", userId?.orgId || "")
+    .maybeSingle();
+
+  let query = serviceClient
     .from("shops")
     .select("id")
-    .eq("owner_user_id", userId)
     .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(1);
+
+  if (workspace?.id) {
+    query = query.eq("workspace_id", workspace.id).is("uninstalled_at", null);
+  } else {
+    query = query.eq("owner_user_id", userId?.supabaseUserId || "");
+  }
+
+  const { data } = await query.maybeSingle();
   return data?.id ?? null;
 }
 
 export async function GET() {
-  const { userId } = await auth();
-  if (!userId) {
+  const { userId: clerkUserId, orgId } = await auth();
+  if (!clerkUserId) {
     return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
   }
 
@@ -54,7 +66,7 @@ export async function GET() {
 
   let supabaseUserId = null;
   try {
-    supabaseUserId = await resolveSupabaseUserId(serviceClient, userId);
+    supabaseUserId = await resolveSupabaseUserId(serviceClient, clerkUserId);
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -70,7 +82,7 @@ export async function GET() {
     .select("user_id", { count: "exact", head: true })
     .eq("user_id", supabaseUserId);
 
-  const shopId = await getShopId(serviceClient, supabaseUserId);
+  const shopId = await getShopId(serviceClient, { supabaseUserId, orgId: orgId ?? null });
 
   let firstDraftAt = null;
   if (shopId) {
