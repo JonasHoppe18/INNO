@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
+import { useUser } from "@clerk/nextjs";
 import {
   Card,
   CardContent,
@@ -20,6 +21,7 @@ import { ShopifySheet } from "./ShopifySheet";
 export function ShopifyConnectCard() {
   const supabase = useClerkSupabase();
   const { orgId } = useAuth();
+  const { user } = useUser();
   // Holder den seneste shop connection så vi kan vise status og bruge den i sheetet.
   const [connection, setConnection] = useState(null);
   // Bruges til at vise "Henter..." badge og blokere knapper hvis Supabase klienten mangler.
@@ -46,6 +48,21 @@ export function ShopifyConnectCard() {
       }
     }
 
+    if (!workspaceId && user?.id) {
+      const { data: membership, error: membershipError } = await supabase
+        .from("workspace_members")
+        .select("workspace_id")
+        .eq("clerk_user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (membershipError) {
+        console.warn("Could not resolve workspace from membership:", membershipError);
+      } else {
+        workspaceId = membership?.workspace_id ?? null;
+      }
+    }
+
     let query = supabase
       .from("shops")
       .select("shop_domain, owner_user_id, platform, installed_at, uninstalled_at")
@@ -66,7 +83,7 @@ export function ShopifyConnectCard() {
       setConnection(data);
     }
     setLoading(false);
-  }, [orgId, supabase]);
+  }, [orgId, supabase, user?.id]);
 
   // Når supabase klienten er klar henter vi forbindelsen én gang og når onConnected kaldes.
   useEffect(() => {

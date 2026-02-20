@@ -139,6 +139,21 @@ export async function resolveWorkspaceIdFromOrg(supabase, orgId) {
   return data?.id ?? null;
 }
 
+export async function resolveWorkspaceIdFromMembership(supabase, clerkUserId) {
+  if (!supabase || !clerkUserId) return null;
+  const { data, error } = await supabase
+    .from("workspace_members")
+    .select("workspace_id")
+    .eq("clerk_user_id", clerkUserId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    throw new Error(`Could not resolve workspace from membership: ${error.message}`);
+  }
+  return data?.workspace_id ?? null;
+}
+
 export async function getAuthContext(request, supabase) {
   void request;
   const { userId: clerkUserId, orgId } = auth();
@@ -156,7 +171,10 @@ export async function getAuthContext(request, supabase) {
     throw new Error(`Could not resolve user: ${error.message}`);
   }
 
-  const workspaceId = await resolveWorkspaceIdFromOrg(supabase, orgId);
+  let workspaceId = await resolveWorkspaceIdFromOrg(supabase, orgId);
+  if (!workspaceId) {
+    workspaceId = await resolveWorkspaceIdFromMembership(supabase, clerkUserId);
+  }
   return {
     clerkUserId,
     orgId: orgId ?? null,
