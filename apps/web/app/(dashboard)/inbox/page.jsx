@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import { Button } from "@/components/ui/button";
 import { InboxPageClient } from "@/components/inbox/InboxPageClient";
+import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -20,36 +21,30 @@ function createServiceClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
-async function resolveSupabaseUserId(serviceClient, clerkUserId) {
-  const { data, error } = await serviceClient
-    .from("profiles")
-    .select("user_id")
-    .eq("clerk_user_id", clerkUserId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  return data?.user_id ?? null;
-}
-
-async function loadMailboxes(serviceClient, userId) {
-  const { data, error } = await serviceClient
-    .from("mail_accounts")
-    .select("id, provider, provider_email")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: true });
+async function loadMailboxes(serviceClient, scope) {
+  const { data, error } = await applyScope(
+    serviceClient
+      .from("mail_accounts")
+      .select("id, provider, provider_email")
+      .order("created_at", { ascending: true }),
+    scope
+  );
   if (error) throw new Error(error.message);
   return Array.isArray(data) ? data : [];
 }
 
-async function loadMessages(serviceClient, userId, mailboxIds, { query, unreadOnly }) {
-  let request = serviceClient
+async function loadMessages(serviceClient, scope, mailboxIds, { query, unreadOnly }) {
+  let request = applyScope(
+    serviceClient
     .from("mail_messages")
     .select(
       "id, mailbox_id, thread_id, subject, snippet, body_text, body_html, from_name, from_email, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at, ai_draft_text"
     )
-    .eq("user_id", userId)
     .in("mailbox_id", mailboxIds)
     .order("received_at", { ascending: false, nullsLast: true })
-    .limit(60);
+    .limit(60),
+    scope
+  );
 
   if (unreadOnly) {
     request = request.eq("is_read", false);
@@ -64,15 +59,15 @@ async function loadMessages(serviceClient, userId, mailboxIds, { query, unreadOn
 
   let { data, error } = await request;
   if (error && /ai_draft_text/i.test(error.message || "")) {
-    const fallbackRequest = serviceClient
+    let fallbackRequest = serviceClient
       .from("mail_messages")
       .select(
         "id, mailbox_id, thread_id, subject, snippet, body_text, body_html, from_name, from_email, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at"
       )
-      .eq("user_id", userId)
       .in("mailbox_id", mailboxIds)
       .order("received_at", { ascending: false, nullsLast: true })
       .limit(60);
+    fallbackRequest = applyScope(fallbackRequest, scope);
 
     if (unreadOnly) {
       fallbackRequest.eq("is_read", false);
@@ -93,15 +88,17 @@ async function loadMessages(serviceClient, userId, mailboxIds, { query, unreadOn
   return Array.isArray(data) ? data : [];
 }
 
-async function loadThreads(serviceClient, userId, mailboxIds) {
-  const { data, error } = await serviceClient
-    .from("mail_threads")
-    .select(
-      "id, user_id, mailbox_id, provider, provider_thread_id, subject, snippet, last_message_at, unread_count, is_read, status, assignee_id, priority, tags, created_at, updated_at"
-    )
-    .eq("user_id", userId)
-    .in("mailbox_id", mailboxIds)
-    .order("last_message_at", { ascending: false, nullsLast: true });
+async function loadThreads(serviceClient, scope, mailboxIds) {
+  const { data, error } = await applyScope(
+    serviceClient
+      .from("mail_threads")
+      .select(
+        "id, user_id, mailbox_id, provider, provider_thread_id, subject, snippet, last_message_at, unread_count, is_read, status, assignee_id, priority, tags, created_at, updated_at"
+      )
+      .in("mailbox_id", mailboxIds)
+      .order("last_message_at", { ascending: false, nullsLast: true }),
+    scope
+  );
   if (error) throw new Error(error.message);
   return Array.isArray(data) ? data : [];
 }
@@ -148,8 +145,8 @@ function shouldHideFromInbox(message) {
 }
 
 export default async function InboxPage({ searchParams }) {
-  const { userId } = await auth();
-  if (!userId) {
+  const { userId: clerkUserId, orgId } = await auth();
+  if (!clerkUserId) {
     redirect("/sign-in?redirect_url=/inbox");
   }
 
@@ -162,13 +159,13 @@ export default async function InboxPage({ searchParams }) {
 
   if (serviceClient) {
     try {
-      const supabaseUserId = await resolveSupabaseUserId(serviceClient, userId);
-      if (supabaseUserId) {
-        mailboxes = await loadMailboxes(serviceClient, supabaseUserId);
+      const scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
+      if (scope.workspaceId || scope.supabaseUserId) {
+        mailboxes = await loadMailboxes(serviceClient, scope);
         const mailboxIds = mailboxes.map((mailbox) => mailbox.id);
         if (mailboxIds.length) {
-          threads = await loadThreads(serviceClient, supabaseUserId, mailboxIds);
-          messages = await loadMessages(serviceClient, supabaseUserId, mailboxIds, {
+          threads = await loadThreads(serviceClient, scope, mailboxIds);
+          messages = await loadMessages(serviceClient, scope, mailboxIds, {
             query,
             unreadOnly,
           });

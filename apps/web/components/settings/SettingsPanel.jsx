@@ -2,7 +2,19 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth, useOrganization, useUser } from "@clerk/nextjs";
-import { Building2, CreditCard, FileSignature, Lock, User, Users2 } from "lucide-react";
+import {
+  Building2,
+  ChevronDown,
+  CreditCard,
+  Crown,
+  Mail,
+  Lock,
+  PenLine,
+  Settings,
+  Trash2,
+  User,
+  Users2,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +30,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const MENU_SECTIONS = [
   {
@@ -145,10 +163,30 @@ function normalizeOrgRole(role) {
   return "Member";
 }
 
-function MembersTab({ members, onSignatureSaved, onInviteCreated, onMembersChanged, canManageRoles }) {
+function formatJoinedDate(value) {
+  if (!value) return "";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function MembersTab({
+  members,
+  onSignatureSaved,
+  onInviteCreated,
+  onMembersChanged,
+  canManageRoles,
+  currentOrgRole,
+  currentClerkUserId,
+}) {
   const { organization, isLoaded: organizationLoaded } = useOrganization();
-  const { memberships } = useOrganization({
+  const { memberships, invitations } = useOrganization({
     memberships: { infinite: true, keepPreviousData: true },
+    invitations: { infinite: true, keepPreviousData: true },
   });
   const [activeMember, setActiveMember] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -157,6 +195,8 @@ function MembersTab({ members, onSignatureSaved, onInviteCreated, onMembersChang
   const [inviteRole, setInviteRole] = useState("org:member");
   const [inviteLoading, setInviteLoading] = useState(false);
   const [roleUpdatingForUserId, setRoleUpdatingForUserId] = useState(null);
+  const normalizedCurrentRole = String(currentOrgRole || "").toLowerCase();
+  const currentIsOwner = normalizedCurrentRole.includes("owner");
 
   const handleOpenSignatureModal = (member) => {
     setActiveMember(member);
@@ -182,6 +222,9 @@ function MembersTab({ members, onSignatureSaved, onInviteCreated, onMembersChang
         user_id: profile?.user_id ?? null,
         clerk_user_id: clerkUserId || null,
         org_user_id: clerkUserId || null,
+        org_membership_id: membership?.id ?? null,
+        status: "active",
+        joined_at: membership?.createdAt ?? membership?.created_at ?? null,
         first_name: profile?.first_name ?? pud?.firstName ?? pud?.first_name ?? "",
         last_name: profile?.last_name ?? pud?.lastName ?? pud?.last_name ?? "",
         email: profile?.email ?? pud?.identifier ?? "",
@@ -192,13 +235,41 @@ function MembersTab({ members, onSignatureSaved, onInviteCreated, onMembersChang
     });
   }, [memberships?.data, profileByClerkUserId]);
 
-  const rows = orgRows.length ? orgRows : members;
+  const invitedRows = useMemo(() => {
+    const data = invitations?.data || [];
+    return data.map((invitation) => {
+      const email = String(
+        invitation?.emailAddress || invitation?.email_address || ""
+      ).trim();
+      return {
+        user_id: null,
+        clerk_user_id: null,
+        org_user_id: null,
+        org_membership_id: null,
+        invitation_id: invitation?.id ?? null,
+        status: "invited",
+        joined_at: invitation?.createdAt ?? invitation?.created_at ?? null,
+        first_name: "",
+        last_name: "",
+        email,
+        image_url: "",
+        signature: "",
+        workspace_role: invitation?.role ?? "org:member",
+      };
+    });
+  }, [invitations?.data]);
+
+  const rows = orgRows.length ? [...invitedRows, ...orgRows] : members;
 
   const handleRoleChange = useCallback(
     async (member, nextRole) => {
       const userId = String(member?.org_user_id || member?.clerk_user_id || "").trim();
       if (!organizationLoaded || !organization || !userId) {
         toast.error("Could not resolve organization member.");
+        return;
+      }
+      if (!canManageRoles) {
+        toast.error("Only admins can change roles.");
         return;
       }
       setRoleUpdatingForUserId(userId);
@@ -213,12 +284,16 @@ function MembersTab({ members, onSignatureSaved, onInviteCreated, onMembersChang
         setRoleUpdatingForUserId(null);
       }
     },
-    [memberships, onMembersChanged, organization, organizationLoaded]
+    [canManageRoles, memberships, onMembersChanged, organization, organizationLoaded]
   );
 
   const handleInvite = useCallback(async () => {
     if (!organizationLoaded || !organization) {
       toast.error("No active organization found.");
+      return;
+    }
+    if (!canManageRoles) {
+      toast.error("Only admins can invite members.");
       return;
     }
     const email = String(inviteEmail || "").trim();
@@ -246,11 +321,125 @@ function MembersTab({ members, onSignatureSaved, onInviteCreated, onMembersChang
     } finally {
       setInviteLoading(false);
     }
-  }, [inviteEmail, inviteRole, onInviteCreated, organization, organizationLoaded]);
+  }, [canManageRoles, inviteEmail, inviteRole, onInviteCreated, organization, organizationLoaded]);
+
+  const handleResendInvite = useCallback(
+    async (member) => {
+      if (!organizationLoaded || !organization) {
+        toast.error("No active organization found.");
+        return;
+      }
+      const email = String(member?.email || "").trim();
+      const role = String(member?.workspace_role || "org:member");
+      if (!email) {
+        toast.error("Missing invite email.");
+        return;
+      }
+      try {
+        if (typeof organization.inviteMember === "function") {
+          await organization.inviteMember({ emailAddress: email, role });
+        } else if (typeof organization.createInvitation === "function") {
+          await organization.createInvitation({ emailAddress: email, role });
+        } else {
+          throw new Error("Invite API not available.");
+        }
+        toast.success("Invitation resent.");
+        onInviteCreated?.();
+      } catch (error) {
+        toast.error(
+          error?.errors?.[0]?.longMessage || error?.message || "Could not resend invite."
+        );
+      }
+    },
+    [onInviteCreated, organization, organizationLoaded]
+  );
+
+  const handleRemoveMember = useCallback(
+    async (member) => {
+      if (String(member?.status || "") === "invited") {
+        const invitationId = String(member?.invitation_id || "").trim();
+        if (!organizationLoaded || !organization || !invitationId) {
+          toast.error("Could not resolve invitation.");
+          return;
+        }
+        const confirmed = window.confirm(`Delete pending invitation for ${member?.email || "user"}?`);
+        if (!confirmed) return;
+        try {
+          if (typeof organization.revokeInvitation === "function") {
+            await organization.revokeInvitation({ invitationId });
+          } else {
+            throw new Error("Revoke invitation API not available.");
+          }
+          toast.success("Invitation deleted.");
+          await invitations?.revalidate?.();
+          onMembersChanged?.();
+        } catch (error) {
+          toast.error(
+            error?.errors?.[0]?.longMessage || error?.message || "Could not delete invitation."
+          );
+        }
+        return;
+      }
+
+      const userId = String(member?.org_user_id || member?.clerk_user_id || "").trim();
+      const role = String(member?.workspace_role || "").toLowerCase();
+      const isOwner = role.includes("owner");
+      const isSelf = userId === String(currentClerkUserId || "").trim();
+
+      if (!organizationLoaded || !organization || !userId) {
+        toast.error("Could not resolve organization member.");
+        return;
+      }
+      if (!canManageRoles) {
+        toast.error("Only admins can remove members.");
+        return;
+      }
+      if (isOwner) {
+        toast.error("Owner cannot be removed from this screen.");
+        return;
+      }
+      if (isSelf) {
+        toast.error("You cannot remove yourself.");
+        return;
+      }
+
+      const displayName = getDisplayName(member);
+      const confirmed = window.confirm(`Remove ${displayName} from the team?`);
+      if (!confirmed) return;
+
+      try {
+        if (typeof organization.removeMember === "function") {
+          await organization.removeMember({ userId });
+        } else if (typeof organization.destroyMembership === "function") {
+          await organization.destroyMembership({ userId });
+        } else if (typeof organization.updateMember === "function") {
+          throw new Error("No remove API available in this Clerk SDK.");
+        } else {
+          throw new Error("Organization membership removal is not available.");
+        }
+        toast.success("Member removed.");
+        await memberships?.revalidate?.();
+        onMembersChanged?.();
+      } catch (error) {
+        toast.error(
+          error?.errors?.[0]?.longMessage || error?.message || "Could not remove member."
+        );
+      }
+    },
+    [
+      canManageRoles,
+      currentClerkUserId,
+      invitations,
+      memberships,
+      onMembersChanged,
+      organization,
+      organizationLoaded,
+    ]
+  );
 
   return (
     <>
-      <section className="max-w-2xl rounded-lg bg-white p-6">
+      <section className="w-full max-w-none rounded-lg bg-white p-6">
         <div className="flex items-center justify-between gap-3">
           <div>
             <h2 className="text-2xl font-semibold text-slate-900">Team Members</h2>
@@ -261,7 +450,7 @@ function MembersTab({ members, onSignatureSaved, onInviteCreated, onMembersChang
           </Button>
         </div>
 
-        <div className="mt-6 rounded-lg border border-slate-200 bg-white">
+        <div className="mt-5 w-full overflow-hidden rounded-lg border border-gray-200 divide-y divide-gray-100 bg-white">
           {rows.length ? (
             rows.map((member) => {
               const displayName = getDisplayName(member);
@@ -274,18 +463,30 @@ function MembersTab({ members, onSignatureSaved, onInviteCreated, onMembersChang
               const role = normalizeOrgRole(member?.workspace_role);
               const rawRole = String(member?.workspace_role || "").toLowerCase();
               const isOwner = rawRole.includes("owner");
-              const canEditRole = canManageRoles && Boolean(member?.org_user_id || member?.clerk_user_id) && !isOwner;
+              const memberUserId = String(member?.org_user_id || member?.clerk_user_id || "").trim();
+              const isSelf =
+                Boolean(memberUserId) &&
+                memberUserId === String(currentClerkUserId || "").trim();
+              const canEditRole =
+                canManageRoles &&
+                Boolean(memberUserId) &&
+                !isOwner &&
+                !isSelf &&
+                (currentIsOwner || !rawRole.includes("admin"));
+              const canRemoveMember = canEditRole;
               const isRoleUpdating =
                 roleUpdatingForUserId &&
-                roleUpdatingForUserId === String(member?.org_user_id || member?.clerk_user_id || "");
+                roleUpdatingForUserId === memberUserId;
+              const isInvited = String(member?.status || "") === "invited";
+              const joinedLabel = formatJoinedDate(member?.joined_at);
 
               return (
                 <div
                   key={member.user_id || member.clerk_user_id || member.email}
-                  className="flex items-center justify-between border-b px-4 py-4 last:border-b-0"
+                  className="flex items-center justify-between p-4 bg-white hover:bg-gray-50/50 transition-colors"
                 >
-                  <div className="flex items-center gap-3">
-                    {member.image_url ? (
+                  <div className="flex min-w-0 flex-1 items-center gap-3">
+                    {member.image_url && !isInvited ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={member.image_url}
@@ -293,41 +494,127 @@ function MembersTab({ members, onSignatureSaved, onInviteCreated, onMembersChang
                         className="h-9 w-9 rounded-full object-cover"
                       />
                     ) : (
-                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-slate-700">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-sm font-medium text-slate-600">
                         {initials || "U"}
                       </div>
                     )}
-                    <div>
-                      <p className="text-sm font-medium text-slate-900">{displayName}</p>
-                      <p className="text-xs text-slate-500">{member.email || "No email"}</p>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="truncate font-medium text-gray-900">{displayName}</p>
+                        {isInvited && (
+                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                            Pending
+                          </span>
+                        )}
+                      </div>
+                      <p className="truncate text-sm text-gray-500">
+                        {member.email || "No email"}
+                        {!isInvited && joinedLabel ? ` • Joined ${joinedLabel}` : ""}
+                      </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {canEditRole ? (
-                      <select
-                        className="h-8 rounded-md border border-input bg-background px-2 text-xs"
-                        value={rawRole.includes("admin") ? "org:admin" : "org:member"}
-                        onChange={(event) => handleRoleChange(member, event.target.value)}
-                        disabled={Boolean(isRoleUpdating)}
-                      >
-                        <option value="org:member">Member</option>
-                        <option value="org:admin">Admin</option>
-                      </select>
+
+                  <div className="ml-6 flex shrink-0 items-center gap-1.5">
+                    {isInvited ? (
+                      <>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                          onClick={() => handleResendInvite(member)}
+                        >
+                          <Mail className="mr-2 h-[14px] w-[14px]" />
+                          Resend
+                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="ghost"
+                              className="text-gray-400 hover:text-gray-700"
+                            >
+                              <Settings className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-44">
+                            <DropdownMenuItem onSelect={() => handleResendInvite(member)}>
+                              <Mail className="mr-2 h-4 w-4" />
+                              Resend invite
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="text-red-600 focus:text-red-600"
+                              onSelect={() => handleRemoveMember(member)}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Remove user
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </>
                     ) : (
-                      <Badge variant="secondary">{role}</Badge>
+                      <>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                          onClick={() => handleOpenSignatureModal(member)}
+                          disabled={!member?.user_id}
+                          title={!member?.user_id ? "User profile not synced yet" : ""}
+                        >
+                          <PenLine className="mr-2 h-[14px] w-[14px]" />
+                          Signature
+                        </Button>
+                        {canEditRole ? (
+                          <div className="relative">
+                            <Crown className="pointer-events-none absolute left-2 top-1/2 h-[14px] w-[14px] -translate-y-1/2 text-gray-600" />
+                            <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-[14px] w-[14px] -translate-y-1/2 text-gray-600" />
+                            <select
+                              className="h-8 appearance-none rounded-md border border-gray-200 bg-white pl-7 pr-7 text-xs font-medium text-gray-700"
+                              value={rawRole.includes("admin") ? "org:admin" : "org:member"}
+                              onChange={(event) => handleRoleChange(member, event.target.value)}
+                              disabled={Boolean(isRoleUpdating)}
+                            >
+                              <option value="org:member">Member</option>
+                              {(currentIsOwner || !rawRole.includes("admin")) && (
+                                <option value="org:admin">Admin</option>
+                              )}
+                            </select>
+                          </div>
+                        ) : (
+                          <Badge
+                            variant="secondary"
+                            className="h-8 rounded-md border border-gray-200 bg-white px-2.5 text-xs font-medium text-gray-700"
+                          >
+                            {role}
+                          </Badge>
+                        )}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="ghost"
+                              className="text-gray-400 hover:text-gray-700"
+                              disabled={!canManageRoles}
+                              title={canManageRoles ? "More actions" : "Only admins can manage members"}
+                            >
+                              <Settings className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-44">
+                            <DropdownMenuItem
+                              className="text-red-600 focus:text-red-600"
+                              disabled={!canRemoveMember}
+                              onSelect={() => handleRemoveMember(member)}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Remove user
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </>
                     )}
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="border-gray-200 bg-white"
-                      onClick={() => handleOpenSignatureModal(member)}
-                      disabled={!member?.user_id}
-                      title={!member?.user_id ? "User profile not synced yet" : ""}
-                    >
-                      <FileSignature className="mr-1.5 h-3.5 w-3.5" />
-                      Edit Signature
-                    </Button>
                   </div>
                 </div>
               );
@@ -379,7 +666,7 @@ function MembersTab({ members, onSignatureSaved, onInviteCreated, onMembersChang
                 disabled={inviteLoading}
               >
                 <option value="org:member">Member</option>
-                <option value="org:admin">Admin</option>
+                {currentIsOwner && <option value="org:admin">Admin</option>}
               </select>
             </div>
           </div>
@@ -578,22 +865,6 @@ export function SettingsPanel() {
         supabaseUserId = profile?.user_id ?? null;
       }
 
-      if (!supabaseUserId) {
-        const { data: authData, error: authError } = await supabase.auth.getUser();
-        if (authError) throw authError;
-        supabaseUserId = authData?.user?.id ?? null;
-      }
-
-      if (!supabaseUserId) {
-        setWorkspaceId(null);
-        setShopId(null);
-        setShopDomain("");
-        setTeamName("Sona Team");
-        setInitialTeamName("Sona Team");
-        setMembers([]);
-        return;
-      }
-
       let workspaceId = null;
       let workspaceName = null;
       if (orgId) {
@@ -606,60 +877,69 @@ export function SettingsPanel() {
         workspaceId = workspaceRow?.id ?? null;
         workspaceName = workspaceRow?.name ?? null;
       }
+      if (!workspaceId && user?.id) {
+        const { data: membership, error: membershipError } = await supabase
+          .from("workspace_members")
+          .select("workspace_id")
+          .eq("clerk_user_id", user.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (!membershipError) {
+          workspaceId = membership?.workspace_id ?? null;
+        }
+        if (workspaceId) {
+          const { data: workspaceRow, error: workspaceError } = await supabase
+            .from("workspaces")
+            .select("id, name")
+            .eq("id", workspaceId)
+            .maybeSingle();
+          if (!workspaceError) {
+            workspaceName = workspaceRow?.name ?? null;
+          }
+        }
+      }
 
       let shopRow = null;
       let shopError = null;
-      let withTeamName = null;
+      let latestShop = null;
       if (workspaceId) {
-        withTeamName = await supabase
+        latestShop = await supabase
           .from("shops")
-          .select("id, owner_user_id, shop_domain, team_name")
+          .select("id, owner_user_id, shop_domain")
           .eq("workspace_id", workspaceId)
           .is("uninstalled_at", null)
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle();
-      } else {
-        withTeamName = await supabase
+      } else if (supabaseUserId) {
+        latestShop = await supabase
           .from("shops")
-          .select("id, owner_user_id, shop_domain, team_name")
+          .select("id, owner_user_id, shop_domain")
           .eq("owner_user_id", supabaseUserId)
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle();
+      } else {
+        latestShop = { data: null, error: null };
       }
-      shopRow = withTeamName?.data ?? null;
-      shopError = withTeamName?.error ?? null;
-
-      if (shopError && shopError.code === "42703") {
-        let fallback = null;
-        if (workspaceId) {
-          fallback = await supabase
-            .from("shops")
-            .select("id, owner_user_id, shop_domain")
-            .eq("workspace_id", workspaceId)
-            .is("uninstalled_at", null)
-            .order("created_at", { ascending: false })
-            .limit(1)
-            .maybeSingle();
-        } else {
-          fallback = await supabase
-            .from("shops")
-            .select("id, owner_user_id, shop_domain")
-            .eq("owner_user_id", supabaseUserId)
-            .order("created_at", { ascending: false })
-            .limit(1)
-            .maybeSingle();
-        }
-        shopRow = fallback.data ?? null;
-        shopError = fallback.error ?? null;
-      }
+      shopRow = latestShop?.data ?? null;
+      shopError = latestShop?.error ?? null;
 
       if (shopError) throw shopError;
 
+      if (!workspaceId && !supabaseUserId) {
+        setWorkspaceId(null);
+        setShopId(null);
+        setShopDomain("");
+        setTeamName("Sona Team");
+        setInitialTeamName("Sona Team");
+        setMembers([]);
+        return;
+      }
+
       const resolvedTeamName =
         String(workspaceName || "").trim() ||
-        String(shopRow?.team_name || "").trim() ||
         String(shopRow?.shop_domain || "").replace(".myshopify.com", "") ||
         "Sona Team";
 
@@ -764,6 +1044,8 @@ export function SettingsPanel() {
         return (
           <MembersTab
             members={members}
+            currentOrgRole={orgRole}
+            currentClerkUserId={user?.id ?? null}
             canManageRoles={
               Boolean(orgId) &&
               (String(orgRole || "").toLowerCase().includes("admin") ||

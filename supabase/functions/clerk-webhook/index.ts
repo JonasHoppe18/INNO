@@ -91,6 +91,43 @@ const upsertWorkspaceMember = async (
   }
 };
 
+const deleteOrDetachWorkspaceByOrgId = async (
+  supabase: any,
+  orgId: string,
+) => {
+  const workspaceId = await resolveWorkspaceIdByOrgId(supabase, orgId);
+  if (!workspaceId) return;
+
+  const { error: deleteMembersError } = await supabase
+    .from("workspace_members")
+    .delete()
+    .eq("workspace_id", workspaceId);
+  if (deleteMembersError) {
+    throw new Error(
+      `Kunne ikke slette workspace members ved org delete: ${deleteMembersError.message}`,
+    );
+  }
+
+  const { error: deleteWorkspaceError } = await supabase
+    .from("workspaces")
+    .delete()
+    .eq("id", workspaceId);
+
+  if (!deleteWorkspaceError) return;
+
+  // Fallback: behold workspace/data men frakobl den slettede Clerk-org.
+  const { error: detachWorkspaceError } = await supabase
+    .from("workspaces")
+    .update({ clerk_org_id: null })
+    .eq("id", workspaceId);
+
+  if (detachWorkspaceError) {
+    throw new Error(
+      `Kunne ikke slette eller frakoble workspace ved org delete: ${detachWorkspaceError.message}`,
+    );
+  }
+};
+
 const resolveAuthUserId = async (
   supabase: any,
   candidateId: string | null | undefined,
@@ -665,6 +702,14 @@ serve(async (req) => {
           { status: 500 },
         );
       }
+    } else if (type === "organization.deleted") {
+      const orgId = typeof data?.id === "string" ? data.id : "";
+      if (!orgId) {
+        console.error("organization.deleted mangler data.id", { data });
+        return new Response("organization.deleted mangler org id", { status: 400 });
+      }
+
+      await deleteOrDetachWorkspaceByOrgId(supabase, orgId);
     }
 
     return new Response(JSON.stringify({ ok: true }), {
