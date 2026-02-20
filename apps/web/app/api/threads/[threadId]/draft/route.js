@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
+import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -17,16 +18,6 @@ function createServiceClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
-async function resolveSupabaseUserId(serviceClient, clerkUserId) {
-  const { data, error } = await serviceClient
-    .from("profiles")
-    .select("user_id")
-    .eq("clerk_user_id", clerkUserId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  return data?.user_id ?? null;
-}
-
 function buildSnippet(text, maxLength = 240) {
   const cleaned = String(text || "").replace(/\s+/g, " ").trim();
   if (!cleaned) return "";
@@ -34,8 +25,8 @@ function buildSnippet(text, maxLength = 240) {
 }
 
 export async function GET(_request, { params }) {
-  const { userId } = await auth();
-  if (!userId) {
+  const { userId: clerkUserId, orgId } = await auth();
+  if (!clerkUserId) {
     return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
   }
 
@@ -52,23 +43,28 @@ export async function GET(_request, { params }) {
     );
   }
 
-  let supabaseUserId = null;
+  let scope = null;
   try {
-    supabaseUserId = await resolveSupabaseUserId(serviceClient, userId);
+    scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+  if (!scope?.workspaceId && !scope?.supabaseUserId) {
+    return NextResponse.json({ error: "Auth scope not found." }, { status: 404 });
+  }
 
-  const { data: draft, error } = await serviceClient
-    .from("mail_messages")
-    .select("id, body_text, body_html, subject, updated_at")
-    .eq("thread_id", threadId)
-    .eq("user_id", supabaseUserId)
-    .eq("from_me", true)
-    .eq("is_draft", true)
-    .order("updated_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const { data: draft, error } = await applyScope(
+    serviceClient
+      .from("mail_messages")
+      .select("id, body_text, body_html, subject, updated_at")
+      .eq("thread_id", threadId)
+      .eq("from_me", true)
+      .eq("is_draft", true)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    scope
+  );
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -91,8 +87,8 @@ export async function GET(_request, { params }) {
 }
 
 export async function POST(request, { params }) {
-  const { userId } = await auth();
-  if (!userId) {
+  const { userId: clerkUserId, orgId } = await auth();
+  if (!clerkUserId) {
     return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
   }
 
@@ -117,19 +113,24 @@ export async function POST(request, { params }) {
     return NextResponse.json({ error: "Draft body is required." }, { status: 400 });
   }
 
-  let supabaseUserId = null;
+  let scope = null;
   try {
-    supabaseUserId = await resolveSupabaseUserId(serviceClient, userId);
+    scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+  if (!scope?.workspaceId && !scope?.supabaseUserId) {
+    return NextResponse.json({ error: "Auth scope not found." }, { status: 404 });
+  }
 
-  const { data: thread, error: threadError } = await serviceClient
-    .from("mail_threads")
-    .select("id, user_id, mailbox_id, provider, provider_thread_id, subject")
-    .eq("id", threadId)
-    .eq("user_id", supabaseUserId)
-    .maybeSingle();
+  const { data: thread, error: threadError } = await applyScope(
+    serviceClient
+      .from("mail_threads")
+      .select("id, user_id, workspace_id, mailbox_id, provider, provider_thread_id, subject")
+      .eq("id", threadId)
+      .maybeSingle(),
+    scope
+  );
   if (threadError || !thread) {
     return NextResponse.json({ error: "Thread not found." }, { status: 404 });
   }
@@ -139,34 +140,38 @@ export async function POST(request, { params }) {
   const nextBodyText = bodyText || bodyHtml;
   const snippet = buildSnippet(nextBodyText);
 
-  const { data: existingDraft } = await serviceClient
-    .from("mail_messages")
-    .select("id")
-    .eq("thread_id", threadId)
-    .eq("user_id", supabaseUserId)
-    .eq("from_me", true)
-    .eq("is_draft", true)
-    .order("updated_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const { data: existingDraft } = await applyScope(
+    serviceClient
+      .from("mail_messages")
+      .select("id")
+      .eq("thread_id", threadId)
+      .eq("from_me", true)
+      .eq("is_draft", true)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    scope
+  );
 
   let draftId = null;
   if (existingDraft?.id) {
-    const { data, error } = await serviceClient
-      .from("mail_messages")
-      .update({
-        subject: nextSubject,
-        snippet,
-        body_text: nextBodyText,
-        body_html: bodyHtml || null,
-        ai_draft_text: nextBodyText,
-        updated_at: nowIso,
-      })
-      .eq("id", existingDraft.id)
-      .eq("thread_id", threadId)
-      .eq("user_id", supabaseUserId)
-      .select("id")
-      .maybeSingle();
+    const { data, error } = await applyScope(
+      serviceClient
+        .from("mail_messages")
+        .update({
+          subject: nextSubject,
+          snippet,
+          body_text: nextBodyText,
+          body_html: bodyHtml || null,
+          ai_draft_text: nextBodyText,
+          updated_at: nowIso,
+        })
+        .eq("id", existingDraft.id)
+        .eq("thread_id", threadId)
+        .select("id")
+        .maybeSingle(),
+      scope
+    );
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
@@ -175,7 +180,8 @@ export async function POST(request, { params }) {
     const { data, error } = await serviceClient
       .from("mail_messages")
       .insert({
-        user_id: supabaseUserId,
+        user_id: scope.supabaseUserId,
+        workspace_id: scope.workspaceId || null,
         mailbox_id: thread.mailbox_id,
         thread_id: threadId,
         provider: thread.provider || "smtp",
@@ -203,20 +209,28 @@ export async function POST(request, { params }) {
     draftId = data?.id || null;
   }
 
-  await serviceClient
-    .from("mail_messages")
-    .update({ ai_draft_text: nextBodyText, updated_at: nowIso })
-    .eq("thread_id", threadId)
-    .eq("user_id", supabaseUserId)
-    .is("from_me", false);
+  await applyScope(
+    serviceClient
+      .from("mail_messages")
+      .update({ ai_draft_text: nextBodyText, updated_at: nowIso })
+      .eq("thread_id", threadId)
+      .is("from_me", false),
+    scope
+  );
 
   // Best-effort tracking in drafts table (legacy analytics).
-  await serviceClient
-    .from("drafts")
-    .update({ status: "superseded" })
-    .eq("thread_id", thread.provider_thread_id || threadId)
-    .eq("platform", thread.provider || "smtp")
-    .eq("status", "pending");
+  {
+    let supersedeQuery = serviceClient
+      .from("drafts")
+      .update({ status: "superseded" })
+      .eq("thread_id", thread.provider_thread_id || threadId)
+      .eq("platform", thread.provider || "smtp")
+      .eq("status", "pending");
+    supersedeQuery = scope.workspaceId
+      ? supersedeQuery.eq("workspace_id", scope.workspaceId)
+      : supersedeQuery;
+    await supersedeQuery;
+  }
 
   await serviceClient.from("drafts").insert({
     shop_id: null,
@@ -227,6 +241,7 @@ export async function POST(request, { params }) {
     draft_id: draftId ? String(draftId) : null,
     message_id: draftId ? String(draftId) : null,
     thread_id: thread.provider_thread_id || threadId,
+    workspace_id: scope.workspaceId || null,
     created_at: nowIso,
   });
 
@@ -234,8 +249,8 @@ export async function POST(request, { params }) {
 }
 
 export async function DELETE(_request, { params }) {
-  const { userId } = await auth();
-  if (!userId) {
+  const { userId: clerkUserId, orgId } = await auth();
+  if (!clerkUserId) {
     return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
   }
 
@@ -252,45 +267,60 @@ export async function DELETE(_request, { params }) {
     );
   }
 
-  let supabaseUserId = null;
+  let scope = null;
   try {
-    supabaseUserId = await resolveSupabaseUserId(serviceClient, userId);
+    scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+  if (!scope?.workspaceId && !scope?.supabaseUserId) {
+    return NextResponse.json({ error: "Auth scope not found." }, { status: 404 });
+  }
 
-  const { data: thread, error: threadError } = await serviceClient
-    .from("mail_threads")
-    .select("id, user_id, provider, provider_thread_id")
-    .eq("id", threadId)
-    .eq("user_id", supabaseUserId)
-    .maybeSingle();
+  const { data: thread, error: threadError } = await applyScope(
+    serviceClient
+      .from("mail_threads")
+      .select("id, user_id, workspace_id, provider, provider_thread_id")
+      .eq("id", threadId)
+      .maybeSingle(),
+    scope
+  );
   if (threadError || !thread) {
     return NextResponse.json({ error: "Thread not found." }, { status: 404 });
   }
 
   const nowIso = new Date().toISOString();
-  await serviceClient
-    .from("mail_messages")
-    .delete()
-    .eq("thread_id", threadId)
-    .eq("user_id", supabaseUserId)
-    .eq("from_me", true)
-    .eq("is_draft", true);
+  await applyScope(
+    serviceClient
+      .from("mail_messages")
+      .delete()
+      .eq("thread_id", threadId)
+      .eq("from_me", true)
+      .eq("is_draft", true),
+    scope
+  );
 
-  await serviceClient
-    .from("mail_messages")
-    .update({ ai_draft_text: null, updated_at: nowIso })
-    .eq("thread_id", threadId)
-    .eq("user_id", supabaseUserId)
-    .is("from_me", false);
+  await applyScope(
+    serviceClient
+      .from("mail_messages")
+      .update({ ai_draft_text: null, updated_at: nowIso })
+      .eq("thread_id", threadId)
+      .is("from_me", false),
+    scope
+  );
 
-  await serviceClient
-    .from("drafts")
-    .update({ status: "superseded" })
-    .eq("thread_id", thread.provider_thread_id || threadId)
-    .eq("platform", thread.provider || "smtp")
-    .eq("status", "pending");
+  {
+    let supersedeQuery = serviceClient
+      .from("drafts")
+      .update({ status: "superseded" })
+      .eq("thread_id", thread.provider_thread_id || threadId)
+      .eq("platform", thread.provider || "smtp")
+      .eq("status", "pending");
+    supersedeQuery = scope.workspaceId
+      ? supersedeQuery.eq("workspace_id", scope.workspaceId)
+      : supersedeQuery;
+    await supersedeQuery;
+  }
 
   return NextResponse.json({ ok: true }, { status: 200 });
 }

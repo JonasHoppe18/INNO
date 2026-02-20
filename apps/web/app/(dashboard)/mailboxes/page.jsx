@@ -6,6 +6,7 @@ import { MailboxRow } from "@/components/mailboxes/MailboxRow";
 import { MailboxesAddMenu } from "@/components/mailboxes/MailboxesAddMenu";
 import { MailboxesHelpCard } from "@/components/mailboxes/MailboxesHelpCard";
 import { MailboxesOnboardingTracker } from "@/components/onboarding/MailboxesOnboardingTracker";
+import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -22,33 +23,25 @@ function createServiceClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
-async function resolveSupabaseUserId(serviceClient, clerkUserId) {
-  const { data, error } = await serviceClient
-    .from("profiles")
-    .select("user_id")
-    .eq("clerk_user_id", clerkUserId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  return data?.user_id ?? null;
-}
-
-async function loadMailAccounts(serviceClient, userId) {
-  const { data, error } = await serviceClient
+async function loadMailAccounts(serviceClient, scope) {
+  const { data, error } = await applyScope(
+    serviceClient
     .from("mail_accounts")
     .select(
       "id, provider, provider_email, status, inbound_slug, sending_type, sending_domain, domain_status, domain_dns, from_email, from_name"
     )
-    .eq("user_id", userId)
     .in("provider", ["gmail", "outlook", "smtp"])
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: true }),
+    scope
+  );
   if (error) throw new Error(error.message);
   return Array.isArray(data) ? data : [];
 }
 
 export default async function MailboxesPage() {
-  const { userId } = await auth();
+  const { userId: clerkUserId, orgId } = await auth();
 
-  if (!userId) {
+  if (!clerkUserId) {
     redirect("/sign-in?redirect_url=/mailboxes");
   }
 
@@ -56,9 +49,9 @@ export default async function MailboxesPage() {
   let mailAccounts = [];
   if (serviceClient) {
     try {
-      const supabaseUserId = await resolveSupabaseUserId(serviceClient, userId);
-      if (supabaseUserId) {
-        mailAccounts = await loadMailAccounts(serviceClient, supabaseUserId);
+      const scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
+      if (scope.workspaceId || scope.supabaseUserId) {
+        mailAccounts = await loadMailAccounts(serviceClient, scope);
       }
     } catch (error) {
       console.error("Mailboxes mail account lookup failed:", error);
