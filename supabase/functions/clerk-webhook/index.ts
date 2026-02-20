@@ -574,7 +574,10 @@ serve(async (req) => {
         });
         return new Response("Kunne ikke oprette workspace", { status: 500 });
       }
-    } else if (type === "organizationMembership.created") {
+    } else if (
+      type === "organizationMembership.created" ||
+      type === "organizationMembership.updated"
+    ) {
       const orgId =
         typeof data?.organization?.id === "string"
           ? data.organization.id
@@ -617,6 +620,51 @@ serve(async (req) => {
         });
       }
       await upsertWorkspaceMember(supabase, workspaceId, clerkUserId, role);
+    } else if (type === "organizationMembership.deleted") {
+      const orgId =
+        typeof data?.organization?.id === "string"
+          ? data.organization.id
+          : typeof data?.organization_id === "string"
+          ? data.organization_id
+          : "";
+      const clerkUserId =
+        typeof data?.public_user_data?.user_id === "string"
+          ? data.public_user_data.user_id
+          : typeof data?.public_user_data?.userId === "string"
+          ? data.public_user_data.userId
+          : "";
+
+      if (!orgId || !clerkUserId) {
+        console.error("organizationMembership.deleted mangler org/user", {
+          orgId,
+          clerkUserId,
+          data,
+        });
+        return new Response("organizationMembership.deleted mangler org/user", {
+          status: 400,
+        });
+      }
+
+      const workspaceId = await resolveWorkspaceIdByOrgId(supabase, orgId);
+      if (!workspaceId) {
+        // idempotent: if workspace is gone/missing we can safely ignore.
+        return new Response(JSON.stringify({ ok: true }), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        });
+      }
+
+      const { error: deleteMemberError } = await supabase
+        .from("workspace_members")
+        .delete()
+        .eq("workspace_id", workspaceId)
+        .eq("clerk_user_id", clerkUserId);
+      if (deleteMemberError) {
+        return new Response(
+          `Kunne ikke slette workspace member: ${deleteMemberError.message}`,
+          { status: 500 },
+        );
+      }
     }
 
     return new Response(JSON.stringify({ ok: true }), {

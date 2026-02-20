@@ -63,6 +63,20 @@ export function ShopifyConnectCard() {
       }
     }
 
+    let ownerUserId = null;
+    if (!workspaceId && user?.id) {
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("user_id")
+        .eq("clerk_user_id", user.id)
+        .maybeSingle();
+      if (profileError) {
+        console.warn("Could not resolve owner user id:", profileError);
+      } else {
+        ownerUserId = profile?.user_id ?? null;
+      }
+    }
+
     let query = supabase
       .from("shops")
       .select("shop_domain, owner_user_id, platform, installed_at, uninstalled_at")
@@ -72,6 +86,8 @@ export function ShopifyConnectCard() {
 
     if (workspaceId) {
       query = query.eq("workspace_id", workspaceId).is("uninstalled_at", null);
+    } else if (ownerUserId) {
+      query = query.eq("owner_user_id", ownerUserId);
     }
 
     const { data, error } = await query.maybeSingle();
