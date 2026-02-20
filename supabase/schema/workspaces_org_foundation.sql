@@ -64,3 +64,48 @@ begin
       foreign key (workspace_id) references public.workspaces(id);
   end if;
 end $$;
+
+-- RLS cleanup + stable policies for workspace reads.
+alter table public.workspace_members enable row level security;
+alter table public.shops enable row level security;
+
+-- Drop all legacy/experimental policies on workspace_members to avoid recursion.
+do $$
+declare p record;
+begin
+  for p in
+    select policyname
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'workspace_members'
+  loop
+    execute format('drop policy if exists %I on public.workspace_members', p.policyname);
+  end loop;
+end $$;
+
+create policy workspace_members_select_self
+on public.workspace_members
+for select
+to authenticated
+using (
+  clerk_user_id = auth.jwt() ->> 'sub'
+);
+
+drop policy if exists shops_select_workspace_members on public.shops;
+
+create policy shops_select_workspace_members
+on public.shops
+for select
+to authenticated
+using (
+  (
+    workspace_id is not null
+    and exists (
+      select 1
+      from public.workspace_members wm
+      where wm.workspace_id = shops.workspace_id
+        and wm.clerk_user_id = auth.jwt() ->> 'sub'
+    )
+  )
+  or owner_user_id::text = coalesce(auth.jwt() ->> 'supabase_user_id', '')
+);

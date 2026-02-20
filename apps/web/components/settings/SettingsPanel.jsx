@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useAuth, useUser } from "@clerk/nextjs";
+import { useAuth, useOrganization, useUser } from "@clerk/nextjs";
 import { Building2, CreditCard, FileSignature, Lock, User, Users2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,14 +11,13 @@ import { useClerkSupabase } from "@/lib/useClerkSupabase";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 const MENU_SECTIONS = [
   {
@@ -138,15 +137,116 @@ function getDisplayName(member) {
   return "Unknown user";
 }
 
-function MembersTab({ members, ownerUserId, onSignatureSaved }) {
+function normalizeOrgRole(role) {
+  const normalized = String(role || "").toLowerCase();
+  if (normalized.includes("admin")) return "Admin";
+  if (normalized.includes("owner")) return "Owner";
+  if (normalized.includes("member")) return "Member";
+  return "Member";
+}
+
+function MembersTab({ members, onSignatureSaved, onInviteCreated, onMembersChanged, canManageRoles }) {
+  const { organization, isLoaded: organizationLoaded } = useOrganization();
+  const { memberships } = useOrganization({
+    memberships: { infinite: true, keepPreviousData: true },
+  });
   const [activeMember, setActiveMember] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
-  const [inviteComingSoonOpen, setInviteComingSoonOpen] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState("org:member");
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [roleUpdatingForUserId, setRoleUpdatingForUserId] = useState(null);
 
   const handleOpenSignatureModal = (member) => {
     setActiveMember(member);
     setModalOpen(true);
   };
+
+  const profileByClerkUserId = useMemo(() => {
+    const map = new Map();
+    for (const profile of members || []) {
+      const clerkId = String(profile?.clerk_user_id || "").trim();
+      if (clerkId) map.set(clerkId, profile);
+    }
+    return map;
+  }, [members]);
+
+  const orgRows = useMemo(() => {
+    const data = memberships?.data || [];
+    return data.map((membership) => {
+      const pud = membership?.publicUserData || membership?.public_user_data || null;
+      const clerkUserId = String(pud?.userId || pud?.user_id || "").trim();
+      const profile = clerkUserId ? profileByClerkUserId.get(clerkUserId) : null;
+      return {
+        user_id: profile?.user_id ?? null,
+        clerk_user_id: clerkUserId || null,
+        org_user_id: clerkUserId || null,
+        first_name: profile?.first_name ?? pud?.firstName ?? pud?.first_name ?? "",
+        last_name: profile?.last_name ?? pud?.lastName ?? pud?.last_name ?? "",
+        email: profile?.email ?? pud?.identifier ?? "",
+        image_url: profile?.image_url ?? pud?.imageUrl ?? pud?.image_url ?? "",
+        signature: profile?.signature ?? "",
+        workspace_role: membership?.role ?? "org:member",
+      };
+    });
+  }, [memberships?.data, profileByClerkUserId]);
+
+  const rows = orgRows.length ? orgRows : members;
+
+  const handleRoleChange = useCallback(
+    async (member, nextRole) => {
+      const userId = String(member?.org_user_id || member?.clerk_user_id || "").trim();
+      if (!organizationLoaded || !organization || !userId) {
+        toast.error("Could not resolve organization member.");
+        return;
+      }
+      setRoleUpdatingForUserId(userId);
+      try {
+        await organization.updateMember({ userId, role: nextRole });
+        toast.success("Member role updated.");
+        await memberships?.revalidate?.();
+        onMembersChanged?.();
+      } catch (error) {
+        toast.error(error?.errors?.[0]?.longMessage || error?.message || "Could not update role.");
+      } finally {
+        setRoleUpdatingForUserId(null);
+      }
+    },
+    [memberships, onMembersChanged, organization, organizationLoaded]
+  );
+
+  const handleInvite = useCallback(async () => {
+    if (!organizationLoaded || !organization) {
+      toast.error("No active organization found.");
+      return;
+    }
+    const email = String(inviteEmail || "").trim();
+    if (!email) {
+      toast.error("Enter an email address.");
+      return;
+    }
+
+    setInviteLoading(true);
+    try {
+      if (typeof organization.inviteMember === "function") {
+        await organization.inviteMember({ emailAddress: email, role: inviteRole });
+      } else if (typeof organization.createInvitation === "function") {
+        await organization.createInvitation({ emailAddress: email, role: inviteRole });
+      } else {
+        throw new Error("Organization invites are not available in this environment.");
+      }
+      toast.success("Invitation sent.");
+      setInviteOpen(false);
+      setInviteEmail("");
+      setInviteRole("org:member");
+      onInviteCreated?.();
+    } catch (error) {
+      toast.error(error?.errors?.[0]?.longMessage || error?.message || "Could not send invitation.");
+    } finally {
+      setInviteLoading(false);
+    }
+  }, [inviteEmail, inviteRole, onInviteCreated, organization, organizationLoaded]);
 
   return (
     <>
@@ -156,14 +256,14 @@ function MembersTab({ members, ownerUserId, onSignatureSaved }) {
             <h2 className="text-2xl font-semibold text-slate-900">Team Members</h2>
             <p className="mt-1 text-sm text-slate-600">Manage who has access.</p>
           </div>
-          <Button type="button" onClick={() => setInviteComingSoonOpen(true)}>
+          <Button type="button" onClick={() => setInviteOpen(true)} disabled={!canManageRoles}>
             Invite Member
           </Button>
         </div>
 
         <div className="mt-6 rounded-lg border border-slate-200 bg-white">
-          {members.length ? (
-            members.map((member) => {
+          {rows.length ? (
+            rows.map((member) => {
               const displayName = getDisplayName(member);
               const initials = displayName
                 .split(" ")
@@ -171,16 +271,19 @@ function MembersTab({ members, ownerUserId, onSignatureSaved }) {
                 .join("")
                 .slice(0, 2)
                 .toUpperCase();
-              const workspaceRole = String(member?.workspace_role || "").toLowerCase();
-              const role =
-                workspaceRole.includes("admin")
-                  ? "Owner"
-                  : member.user_id === ownerUserId
-                  ? "Owner"
-                  : "Member";
+              const role = normalizeOrgRole(member?.workspace_role);
+              const rawRole = String(member?.workspace_role || "").toLowerCase();
+              const isOwner = rawRole.includes("owner");
+              const canEditRole = canManageRoles && Boolean(member?.org_user_id || member?.clerk_user_id) && !isOwner;
+              const isRoleUpdating =
+                roleUpdatingForUserId &&
+                roleUpdatingForUserId === String(member?.org_user_id || member?.clerk_user_id || "");
 
               return (
-                <div key={member.user_id} className="flex items-center justify-between border-b px-4 py-4 last:border-b-0">
+                <div
+                  key={member.user_id || member.clerk_user_id || member.email}
+                  className="flex items-center justify-between border-b px-4 py-4 last:border-b-0"
+                >
                   <div className="flex items-center gap-3">
                     {member.image_url ? (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -200,13 +303,27 @@ function MembersTab({ members, ownerUserId, onSignatureSaved }) {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge variant="secondary">{role}</Badge>
+                    {canEditRole ? (
+                      <select
+                        className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                        value={rawRole.includes("admin") ? "org:admin" : "org:member"}
+                        onChange={(event) => handleRoleChange(member, event.target.value)}
+                        disabled={Boolean(isRoleUpdating)}
+                      >
+                        <option value="org:member">Member</option>
+                        <option value="org:admin">Admin</option>
+                      </select>
+                    ) : (
+                      <Badge variant="secondary">{role}</Badge>
+                    )}
                     <Button
                       type="button"
                       size="sm"
                       variant="outline"
                       className="border-gray-200 bg-white"
                       onClick={() => handleOpenSignatureModal(member)}
+                      disabled={!member?.user_id}
+                      title={!member?.user_id ? "User profile not synced yet" : ""}
                     >
                       <FileSignature className="mr-1.5 h-3.5 w-3.5" />
                       Edit Signature
@@ -228,19 +345,54 @@ function MembersTab({ members, ownerUserId, onSignatureSaved }) {
         onSaved={onSignatureSaved}
       />
 
-      <AlertDialog open={inviteComingSoonOpen} onOpenChange={setInviteComingSoonOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Invite Member coming soon</AlertDialogTitle>
-            <AlertDialogDescription>
-              Team invitations are not enabled yet. This feature will be available soon.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogAction>OK</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Invite member</DialogTitle>
+            <DialogDescription>
+              Send an organization invitation by email.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <label htmlFor="invite-email" className="text-sm font-medium text-slate-700">
+                Email
+              </label>
+              <Input
+                id="invite-email"
+                type="email"
+                value={inviteEmail}
+                onChange={(event) => setInviteEmail(event.target.value)}
+                placeholder="teammate@company.com"
+                disabled={inviteLoading}
+              />
+            </div>
+            <div className="space-y-1">
+              <label htmlFor="invite-role" className="text-sm font-medium text-slate-700">
+                Role
+              </label>
+              <select
+                id="invite-role"
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                value={inviteRole}
+                onChange={(event) => setInviteRole(event.target.value)}
+                disabled={inviteLoading}
+              >
+                <option value="org:member">Member</option>
+                <option value="org:admin">Admin</option>
+              </select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setInviteOpen(false)} disabled={inviteLoading}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={handleInvite} disabled={inviteLoading}>
+              {inviteLoading ? "Sending..." : "Send invite"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
@@ -391,12 +543,12 @@ function ProfileTab({ user, isLoaded }) {
 export function SettingsPanel() {
   const supabase = useClerkSupabase();
   const { user, isLoaded } = useUser();
-  const { orgId } = useAuth();
+  const { orgId, orgRole } = useAuth();
   const [activeTab, setActiveTab] = useState("general");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [workspaceId, setWorkspaceId] = useState(null);
   const [shopId, setShopId] = useState(null);
-  const [ownerUserId, setOwnerUserId] = useState(null);
   const [shopDomain, setShopDomain] = useState("");
   const [teamName, setTeamName] = useState("Sona Team");
   const [initialTeamName, setInitialTeamName] = useState("Sona Team");
@@ -433,8 +585,8 @@ export function SettingsPanel() {
       }
 
       if (!supabaseUserId) {
+        setWorkspaceId(null);
         setShopId(null);
-        setOwnerUserId(null);
         setShopDomain("");
         setTeamName("Sona Team");
         setInitialTeamName("Sona Team");
@@ -443,14 +595,16 @@ export function SettingsPanel() {
       }
 
       let workspaceId = null;
+      let workspaceName = null;
       if (orgId) {
         const { data: workspaceRow, error: workspaceError } = await supabase
           .from("workspaces")
-          .select("id")
+          .select("id, name")
           .eq("clerk_org_id", orgId)
           .maybeSingle();
         if (workspaceError) throw workspaceError;
         workspaceId = workspaceRow?.id ?? null;
+        workspaceName = workspaceRow?.name ?? null;
       }
 
       let shopRow = null;
@@ -504,12 +658,13 @@ export function SettingsPanel() {
       if (shopError) throw shopError;
 
       const resolvedTeamName =
+        String(workspaceName || "").trim() ||
         String(shopRow?.team_name || "").trim() ||
         String(shopRow?.shop_domain || "").replace(".myshopify.com", "") ||
         "Sona Team";
 
+      setWorkspaceId(workspaceId ?? null);
       setShopId(shopRow?.id ?? null);
-      setOwnerUserId(shopRow?.owner_user_id ?? supabaseUserId);
       setShopDomain(shopRow?.shop_domain ?? "");
       setTeamName(resolvedTeamName);
       setInitialTeamName(resolvedTeamName);
@@ -569,13 +724,20 @@ export function SettingsPanel() {
   );
 
   const handleSaveGeneral = useCallback(async () => {
-    if (!supabase || !shopId || !canSave || saving) return;
+    if (!supabase || !canSave || saving) return;
 
     setSaving(true);
     try {
       const nextTeamName = String(teamName || "").trim() || "Sona Team";
-      const { error } = await supabase.from("shops").update({ team_name: nextTeamName }).eq("id", shopId);
-      if (error) throw error;
+      if (workspaceId) {
+        const { error } = await supabase.from("workspaces").update({ name: nextTeamName }).eq("id", workspaceId);
+        if (error) throw error;
+      } else if (shopId) {
+        const { error } = await supabase.from("shops").update({ team_name: nextTeamName }).eq("id", shopId);
+        if (error) throw error;
+      } else {
+        throw new Error("No workspace or shop found to save team name.");
+      }
       setTeamName(nextTeamName);
       setInitialTeamName(nextTeamName);
       toast.success("Settings saved.");
@@ -588,7 +750,7 @@ export function SettingsPanel() {
     } finally {
       setSaving(false);
     }
-  }, [canSave, saving, shopId, supabase, teamName]);
+  }, [canSave, saving, shopId, supabase, teamName, workspaceId]);
 
   const renderContent = () => {
     if (loading) {
@@ -602,7 +764,13 @@ export function SettingsPanel() {
         return (
           <MembersTab
             members={members}
-            ownerUserId={ownerUserId}
+            canManageRoles={
+              Boolean(orgId) &&
+              (String(orgRole || "").toLowerCase().includes("admin") ||
+                String(orgRole || "").toLowerCase().includes("owner"))
+            }
+            onInviteCreated={loadData}
+            onMembersChanged={loadData}
             onSignatureSaved={(userId, signature) => {
               setMembers((prev) =>
                 prev.map((member) =>
