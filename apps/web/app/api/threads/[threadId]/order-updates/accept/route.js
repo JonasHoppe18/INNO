@@ -684,6 +684,83 @@ async function executeShopifyAction({ domain, token, actionType, orderId, payloa
   }
 }
 
+export async function GET(_request, { params }) {
+  const { userId: clerkUserId, orgId } = await auth();
+  if (!clerkUserId) {
+    return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
+  }
+
+  const serviceClient = createServiceClient();
+  if (!serviceClient) {
+    return NextResponse.json(
+      { error: "Supabase service configuration is missing." },
+      { status: 500 }
+    );
+  }
+
+  const threadId = params?.threadId;
+  if (!threadId) {
+    return NextResponse.json({ error: "threadId is required." }, { status: 400 });
+  }
+
+  let scope = null;
+  try {
+    scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
+  } catch (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  const supabaseUserId = scope?.supabaseUserId ?? null;
+  if (!scope?.workspaceId && !supabaseUserId) {
+    return NextResponse.json({ error: "Could not resolve user scope." }, { status: 401 });
+  }
+
+  let threadQuery = serviceClient
+    .from("mail_threads")
+    .select("id, provider_thread_id")
+    .eq("id", threadId);
+  threadQuery = applyScope(threadQuery, scope);
+  const { data: thread, error: threadError } = await threadQuery.maybeSingle();
+  if (threadError || !thread) {
+    return NextResponse.json({ error: "Thread not found." }, { status: 404 });
+  }
+
+  let actionQuery = serviceClient
+    .from("thread_actions")
+    .select("id, action_type, status, detail, payload, error, created_at, updated_at")
+    .eq("thread_id", thread.id)
+    .order("updated_at", { ascending: false })
+    .limit(1);
+  actionQuery = applyScope(actionQuery, scope);
+  const { data: latestAction, error: latestActionError } = await actionQuery.maybeSingle();
+  if (latestActionError) {
+    return NextResponse.json({ error: latestActionError.message }, { status: 500 });
+  }
+  if (!latestAction) {
+    return NextResponse.json({ action: null }, { status: 200 });
+  }
+
+  const status = normalizeActionStatus(latestAction.status);
+  return NextResponse.json(
+    {
+      action: {
+        id: String(latestAction.id || ""),
+        detail:
+          asString(latestAction.detail) ||
+          "Sona wants to apply an order update for this customer.",
+        actionType: asString(latestAction.action_type) || null,
+        payload:
+          latestAction?.payload && typeof latestAction.payload === "object"
+            ? latestAction.payload
+            : {},
+        createdAt: latestAction.created_at || null,
+        status,
+        error: asString(latestAction.error) || null,
+      },
+    },
+    { status: 200 }
+  );
+}
+
 export async function POST(request, { params }) {
   const { userId: clerkUserId, orgId } = await auth();
   if (!clerkUserId) {

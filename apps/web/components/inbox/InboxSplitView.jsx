@@ -962,22 +962,18 @@ export function InboxSplitView({ messages = [], threads = [] }) {
   useEffect(() => {
     if (!selectedThreadId) return;
     if (isLocalThreadId(selectedThreadId)) return;
-    if (!supabase) return;
 
     let active = true;
     const loadPendingOrderUpdate = async () => {
-      const thread = derivedThreads.find((item) => item.id === selectedThreadId);
-      if (!thread) return;
-
-      const { data: threadActions } = await supabase
-        .from("thread_actions")
-        .select("id, action_type, status, detail, payload, error, created_at, updated_at")
-        .eq("thread_id", thread.id)
-        .order("updated_at", { ascending: false })
-        .limit(20);
+      const res = await fetch(
+        `/api/threads/${encodeURIComponent(selectedThreadId)}/order-updates/accept`,
+        { method: "GET" }
+      ).catch(() => null);
       if (!active) return;
-
-      const latestAction = Array.isArray(threadActions) ? threadActions[0] : null;
+      if (!res?.ok) return;
+      const payload = await res.json().catch(() => ({}));
+      if (!active) return;
+      const latestAction = payload?.action || null;
       if (latestAction) {
         const detail =
           asString(latestAction?.detail) ||
@@ -992,7 +988,7 @@ export function InboxSplitView({ messages = [], threads = [] }) {
               latestAction?.payload && typeof latestAction.payload === "object"
                 ? latestAction.payload
                 : {},
-            createdAt: latestAction.created_at || null,
+            createdAt: latestAction.createdAt || null,
             status: asString(latestAction.status) || "pending",
             error: asString(latestAction.error) || null,
           },
@@ -1015,148 +1011,18 @@ export function InboxSplitView({ messages = [], threads = [] }) {
         });
         return;
       }
-
-      const threadKeys = [thread.id, thread.provider_thread_id].filter(Boolean);
-      const uniqueThreadKeys = Array.from(new Set(threadKeys));
-
-      let draftIds = [];
-      if (uniqueThreadKeys.length) {
-        const { data: draftRows } = await supabase
-          .from("drafts")
-          .select("id")
-          .in("thread_id", uniqueThreadKeys)
-          .order("created_at", { ascending: false })
-          .limit(25);
-        draftIds = (draftRows || []).map((row) => row?.id).filter(Boolean);
-      }
-
-      let logs = [];
-      if (draftIds.length) {
-        const { data: draftLogs } = await supabase
-          .from("agent_logs")
-          .select("id, step_name, step_detail, status, created_at")
-          .in("draft_id", draftIds)
-          .order("created_at", { ascending: false })
-          .limit(60);
-        logs = Array.isArray(draftLogs) ? draftLogs : [];
-      }
-
-      let threadLogs = [];
-      const { data: recentActionLogs } = await supabase
-        .from("agent_logs")
-        .select("id, step_name, step_detail, status, created_at")
-        .in("step_name", ["shopify_action", "shopify_action_failed", "shopify_action_applied"])
-        .order("created_at", { ascending: false })
-        .limit(250);
-      if (Array.isArray(recentActionLogs) && recentActionLogs.length) {
-        const threadKeySet = new Set(uniqueThreadKeys.map((key) => String(key)));
-        threadLogs = recentActionLogs.filter((log) => {
-          const parsed = parsePendingLogDetail(log?.step_detail);
-          return parsed.threadId && threadKeySet.has(String(parsed.threadId));
-        });
-      }
-
-      if (!active) return;
-      const mergedLogs = [...logs, ...threadLogs].sort((a, b) => {
-        const aTs = Date.parse(a?.created_at || 0);
-        const bTs = Date.parse(b?.created_at || 0);
-        return (Number.isFinite(bTs) ? bTs : 0) - (Number.isFinite(aTs) ? aTs : 0);
+      setPendingOrderUpdateByThread((prev) => {
+        if (!prev[selectedThreadId]) return prev;
+        const next = { ...prev };
+        delete next[selectedThreadId];
+        return next;
       });
-      const timelineLogs = mergedLogs.filter(
-        (log) => isAppliedOrderUpdateAction(log) || isOrderUpdateAction(log)
-      );
-      const latestApplied = timelineLogs.find((log) => isAppliedOrderUpdateAction(log)) || null;
-      const latestPending = timelineLogs.find((log) => isOrderUpdateAction(log)) || null;
-      if (!latestApplied && !latestPending) {
-        setPendingOrderUpdateByThread((prev) => {
-          if (!prev[selectedThreadId]) return prev;
-          const next = { ...prev };
-          delete next[selectedThreadId];
-          return next;
-        });
-        setOrderUpdateDecisionByThread((prev) => {
-          if (!prev[selectedThreadId]) return prev;
-          const next = { ...prev };
-          delete next[selectedThreadId];
-          return next;
-        });
-        setOrderUpdateErrorByThread((prev) => {
-          if (!prev[selectedThreadId]) return prev;
-          const next = { ...prev };
-          delete next[selectedThreadId];
-          return next;
-        });
-        return;
-      }
-
-      const appliedTs = latestApplied ? Date.parse(latestApplied.created_at || 0) : Number.NEGATIVE_INFINITY;
-      const pendingTs = latestPending ? Date.parse(latestPending.created_at || 0) : Number.NEGATIVE_INFINITY;
-      const parsedLatestApplied = latestApplied ? parsePendingLogDetail(latestApplied.step_detail) : null;
-      const parsedLatestPending = latestPending ? parsePendingLogDetail(latestPending.step_detail) : null;
-
-      const isSameAction =
-        Boolean(parsedLatestApplied?.actionType) &&
-        Boolean(parsedLatestPending?.actionType) &&
-        String(parsedLatestApplied?.actionType) === String(parsedLatestPending?.actionType);
-      const isSameDetail =
-        normalizeActionDetail(parsedLatestApplied?.detail || "") ===
-        normalizeActionDetail(parsedLatestPending?.detail || "");
-      const appliedMatchesPending = Boolean(latestApplied && latestPending && (isSameAction || isSameDetail));
-
-      // Prefer applied when it represents the same action, even if a stale/retriggered pending log is newer.
-      const useApplied =
-        Boolean(latestApplied) &&
-        (appliedTs >= pendingTs || appliedMatchesPending);
-      const chosenLog = useApplied ? latestApplied : latestPending;
-      if (!chosenLog) {
-        setPendingOrderUpdateByThread((prev) => {
-          if (!prev[selectedThreadId]) return prev;
-          const next = { ...prev };
-          delete next[selectedThreadId];
-          return next;
-        });
-        setOrderUpdateDecisionByThread((prev) => {
-          if (!prev[selectedThreadId]) return prev;
-          const next = { ...prev };
-          delete next[selectedThreadId];
-          return next;
-        });
-        setOrderUpdateErrorByThread((prev) => {
-          if (!prev[selectedThreadId]) return prev;
-          const next = { ...prev };
-          delete next[selectedThreadId];
-          return next;
-        });
-        return;
-      }
-
-      const parsedDetail = parsePendingLogDetail(chosenLog.step_detail);
-      const detail =
-        parsedDetail.detail || "Sona wants to apply an order update for this customer.";
-      const decisionFromLog = useApplied ? "accepted" : getDecisionFromLog(chosenLog);
-      setPendingOrderUpdateByThread((prev) => ({
-        ...prev,
-        [selectedThreadId]: {
-          id: String(chosenLog.id || ""),
-          detail,
-          actionType: parsedDetail.actionType,
-          payload: parsedDetail.payload,
-          createdAt: chosenLog.created_at || null,
-        },
-      }));
-      if (decisionFromLog) {
-        setOrderUpdateDecisionByThread((prev) => ({
-          ...prev,
-          [selectedThreadId]: decisionFromLog,
-        }));
-      } else {
-        setOrderUpdateDecisionByThread((prev) => {
-          if (!prev[selectedThreadId]) return prev;
-          const next = { ...prev };
-          delete next[selectedThreadId];
-          return next;
-        });
-      }
+      setOrderUpdateDecisionByThread((prev) => {
+        if (!prev[selectedThreadId]) return prev;
+        const next = { ...prev };
+        delete next[selectedThreadId];
+        return next;
+      });
       setOrderUpdateErrorByThread((prev) => {
         if (!prev[selectedThreadId]) return prev;
         const next = { ...prev };
@@ -1170,10 +1036,8 @@ export function InboxSplitView({ messages = [], threads = [] }) {
       active = false;
     };
   }, [
-    derivedThreads,
     isLocalThreadId,
     selectedThreadId,
-    supabase,
   ]);
 
   useEffect(() => {
