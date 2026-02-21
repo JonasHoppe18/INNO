@@ -2,12 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bold,
   ChevronDown,
+  X,
   Loader2,
   Mail,
+  Maximize2,
   Paperclip,
   Send,
   Sparkles,
-  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -32,6 +33,8 @@ export function Composer({
   onModeChange,
   toLabel,
   onBlur,
+  collapsed = false,
+  onToggleCollapse,
   disabled = false,
   disabledPlaceholder = "Waiting for action approval...",
 }) {
@@ -56,7 +59,8 @@ export function Composer({
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.max(el.scrollHeight, 124)}px`;
+    const minHeight = 56;
+    el.style.height = `${Math.max(el.scrollHeight, minHeight)}px`;
   };
 
   useEffect(() => {
@@ -98,6 +102,24 @@ export function Composer({
     if (pending && !next.includes(pending)) next.push(pending);
     return next;
   };
+
+  if (collapsed) {
+    return (
+      <div className="flex-none border-t border-gray-100 bg-white px-4 py-2.5">
+        <div className="flex items-center justify-between rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
+          <span className="text-xs font-medium text-gray-600">Reply box hidden</span>
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
+          >
+            <Maximize2 className="h-3.5 w-3.5" />
+            Expand
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-none border-t border-gray-100 bg-white px-4 py-2.5">
@@ -167,6 +189,15 @@ export function Composer({
               <DropdownMenuItem>Forward</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            aria-label="Hide reply box"
+            title="Hide reply box"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-white text-gray-600 hover:bg-gray-50"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
         </div>
         {showCC ? (
           <div className="flex items-start gap-2 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-700">
@@ -272,9 +303,9 @@ export function Composer({
                 ? "Write your reply..."
                 : "Leave an internal note..."
             }
-            rows={5}
+            rows={2}
             disabled={disabled}
-            className={`min-h-[124px] resize-y !border-0 !shadow-none !bg-transparent !p-0 text-sm leading-relaxed focus-visible:!ring-0 ${
+            className={`min-h-[56px] resize-y !border-0 !shadow-none !bg-transparent !p-0 text-sm leading-relaxed focus-visible:!ring-0 ${
               isNote ? "bg-yellow-50/40" : ""
             }`}
           />

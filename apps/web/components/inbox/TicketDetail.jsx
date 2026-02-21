@@ -5,6 +5,7 @@ import { Composer } from "@/components/inbox/Composer";
 import { ThinkingCard } from "@/components/inbox/ThinkingCard";
 import { ActionCard } from "@/components/inbox/ActionCard";
 import { formatMessageTime, getSenderLabel, isOutboundMessage } from "@/components/inbox/inbox-utils";
+import { useState } from "react";
 
 export function TicketDetail({
   thread,
@@ -36,6 +37,8 @@ export function TicketDetail({
   mailboxEmails,
   isSending = false,
 }) {
+  const [composerCollapsed, setComposerCollapsed] = useState(false);
+
   if (!thread) {
     return (
       <section className="flex min-h-0 flex-1 flex-col items-center justify-center text-sm text-muted-foreground">
@@ -225,6 +228,8 @@ export function TicketDetail({
           signatureValue={signatureValue}
           onSignatureChange={onSignatureChange}
           onSignatureBlur={onSignatureBlur}
+          collapsed={composerCollapsed}
+          onToggleCollapse={() => setComposerCollapsed((prev) => !prev)}
           draftLoaded={draftLoaded}
           canSend={canSend}
           onSend={onSend}
