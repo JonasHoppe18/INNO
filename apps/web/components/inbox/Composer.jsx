@@ -21,6 +21,9 @@ import {
 export function Composer({
   value,
   onChange,
+  signatureValue = "",
+  onSignatureChange,
+  onSignatureBlur,
   draftLoaded = false,
   canSend = false,
   onSend,
@@ -271,10 +274,24 @@ export function Composer({
             }
             rows={5}
             disabled={disabled}
-            className={`min-h-[124px] resize-y border-0 bg-transparent p-0 text-sm leading-relaxed focus-visible:ring-0 ${
+            className={`min-h-[124px] resize-y !border-0 !shadow-none !bg-transparent !p-0 text-sm leading-relaxed focus-visible:!ring-0 ${
               isNote ? "bg-yellow-50/40" : ""
             }`}
           />
+          {!isNote ? (
+            <>
+              <div className="mt-2 border-t border-gray-200 pt-2" />
+              <textarea
+                value={signatureValue}
+                onChange={(event) => onSignatureChange?.(event.target.value)}
+                onBlur={onSignatureBlur}
+                placeholder="Your signature..."
+                rows={3}
+                disabled={disabled}
+                className="w-full resize-none border-0 bg-transparent p-0 text-sm leading-relaxed text-gray-700 outline-none"
+              />
+            </>
+          ) : null}
         </div>
         <div className="flex items-center justify-between text-xs text-gray-400">
           <div className="flex items-center gap-2">
@@ -307,6 +324,7 @@ export function Composer({
             onClick={() =>
               onSend?.({
                 bodyText: value,
+                signature: signatureValue,
                 toRecipients: buildRecipients(toRecipients, toInput),
                 ccRecipients: buildRecipients(ccRecipients, ccInput),
                 bccRecipients: buildRecipients(bccRecipients, bccInput),

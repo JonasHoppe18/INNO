@@ -461,6 +461,7 @@ export function InboxSplitView({ messages = [], threads = [] }) {
   });
   const [composerMode, setComposerMode] = useState("reply");
   const [draftValue, setDraftValue] = useState("");
+  const [signatureByThread, setSignatureByThread] = useState({});
   const [activeDraftId, setActiveDraftId] = useState(null);
   const [isSending, setIsSending] = useState(false);
   const [suppressAutoDraftByThread, setSuppressAutoDraftByThread] = useState({});
@@ -1065,8 +1066,12 @@ export function InboxSplitView({ messages = [], threads = [] }) {
       }
       const payload = await res.json().catch(() => ({}));
       const draft = payload?.draft || null;
-      const draftText =
-        draft?.rendered_body_text || draft?.body_text || draft?.body_html || "";
+      const signature = String(payload?.signature || "");
+      setSignatureByThread((prev) => ({
+        ...prev,
+        [selectedThreadId]: signature,
+      }));
+      const draftText = draft?.body_text || draft?.body_html || "";
       if (draftText) {
         setDraftValue(draftText);
         draftLastSavedRef.current = draftText.trim();
@@ -1137,6 +1142,17 @@ export function InboxSplitView({ messages = [], threads = [] }) {
           [selectedThreadId]: false,
         };
       });
+    },
+    [selectedThreadId]
+  );
+
+  const handleSignatureChange = useCallback(
+    (nextValue) => {
+      if (!selectedThreadId) return;
+      setSignatureByThread((prev) => ({
+        ...prev,
+        [selectedThreadId]: String(nextValue || ""),
+      }));
     },
     [selectedThreadId]
   );
@@ -1324,6 +1340,7 @@ export function InboxSplitView({ messages = [], threads = [] }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           body_text: draftValue,
+          signature: typeof payload?.signature === "string" ? payload.signature : "",
           to_emails: payload.toRecipients,
           cc_emails: payload.ccRecipients,
           bcc_emails: payload.bccRecipients,
@@ -1349,7 +1366,9 @@ export function InboxSplitView({ messages = [], threads = [] }) {
             to_emails: payload.toRecipients || [],
             cc_emails: payload.ccRecipients || [],
             bcc_emails: payload.bccRecipients || [],
-            body_text: draftValue,
+            body_text: String(payload?.signature || "").trim()
+              ? `${draftValue}\n\n${String(payload.signature).trim()}`
+              : draftValue,
             body_html: null,
             is_read: true,
             sent_at: nowIso,
@@ -1556,6 +1575,9 @@ export function InboxSplitView({ messages = [], threads = [] }) {
         }
         draftValue={draftValue}
         onDraftChange={handleDraftChange}
+        signatureValue={selectedThreadId ? signatureByThread[selectedThreadId] || "" : ""}
+        onSignatureChange={handleSignatureChange}
+        onSignatureBlur={() => null}
         onDraftBlur={() => saveThreadDraft({ immediate: true })}
         draftLoaded={
           Boolean(selectedThreadId) &&

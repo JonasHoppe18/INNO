@@ -629,6 +629,10 @@ export async function POST(request, { params }) {
     return NextResponse.json({ error: "Could not resolve user scope." }, { status: 401 });
   }
   const userSignature = await loadUserSignature(serviceClient, supabaseUserId);
+  const hasSignatureOverride = Object.prototype.hasOwnProperty.call(body || {}, "signature");
+  const requestedSignature = hasSignatureOverride
+    ? normalizeSignature(body?.signature)
+    : userSignature;
 
   let threadQuery = serviceClient
     .from("mail_threads")
@@ -708,8 +712,15 @@ export async function POST(request, { params }) {
     : subjectRaw
     ? `Re: ${subjectRaw}`
     : "Re:";
-  const coreBodyText = stripTrailingSignature(bodyText || stripHtml(bodyHtml), userSignature);
-  const finalBodyText = appendSignature(coreBodyText, userSignature);
+  const textWithoutProfileSignature = stripTrailingSignature(
+    bodyText || stripHtml(bodyHtml),
+    userSignature
+  );
+  const coreBodyText = stripTrailingSignature(
+    textWithoutProfileSignature,
+    requestedSignature
+  );
+  const finalBodyText = appendSignature(coreBodyText, requestedSignature);
 
   let providerMessageId = null;
   let sentFromEmail = mailbox.provider_email || null;

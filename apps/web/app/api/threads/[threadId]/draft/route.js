@@ -111,6 +111,7 @@ export async function GET(_request, { params }) {
 
   return NextResponse.json(
     {
+      signature: userSignature,
       draft: draft
         ? {
             id: draft.id,

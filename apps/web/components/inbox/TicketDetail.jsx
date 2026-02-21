@@ -17,6 +17,9 @@ export function TicketDetail({
   showThinkingCard = false,
   draftValue,
   onDraftChange,
+  signatureValue,
+  onSignatureChange,
+  onSignatureBlur,
   onDraftBlur,
   draftLoaded,
   canSend,
@@ -219,6 +222,9 @@ export function TicketDetail({
         <Composer
           value={draftValue}
           onChange={onDraftChange}
+          signatureValue={signatureValue}
+          onSignatureChange={onSignatureChange}
+          onSignatureBlur={onSignatureBlur}
           draftLoaded={draftLoaded}
           canSend={canSend}
           onSend={onSend}
