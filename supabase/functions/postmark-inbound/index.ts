@@ -24,7 +24,12 @@ type PostmarkAttachment = {
   ContentID?: string | null;
 };
 
-type MailboxLookup = { mailbox_id: string; user_id: string; status?: string | null };
+type MailboxLookup = {
+  mailbox_id: string;
+  user_id: string;
+  workspace_id: string | null;
+  status?: string | null;
+};
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -156,12 +161,17 @@ async function lookupMailbox(slug: string): Promise<MailboxLookup | null> {
   if (!supabase) return null;
   const { data, error } = await supabase
     .from("mail_accounts")
-    .select("id, user_id, inbound_slug, status")
+    .select("id, user_id, workspace_id, inbound_slug, status")
     .ilike("inbound_slug", slug)
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!data?.id || !data?.user_id) return null;
-  return { mailbox_id: data.id, user_id: data.user_id, status: data.status };
+  return {
+    mailbox_id: data.id,
+    user_id: data.user_id,
+    workspace_id: data.workspace_id ?? null,
+    status: data.status,
+  };
 }
 
 async function logAgent(step: string, detail: Record<string, unknown>, status: string) {
@@ -190,30 +200,72 @@ async function findThreadByReplyMessage(
   return (data as any)?.thread_id ?? null;
 }
 
-async function resolveShopId(ownerUserId: string): Promise<string | null> {
-  if (!supabase || !ownerUserId) return null;
+async function resolveShopId(options: {
+  ownerUserId: string | null;
+  workspaceId: string | null;
+}): Promise<string | null> {
+  if (!supabase) return null;
+  const { ownerUserId, workspaceId } = options;
+
+  if (workspaceId) {
+    const { data, error } = await supabase
+      .from("shops")
+      .select("id")
+      .eq("workspace_id", workspaceId)
+      .is("uninstalled_at", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!error && data?.id) return data.id as string;
+    if (error) {
+      console.warn("postmark-inbound: failed to resolve workspace shop id", error.message);
+    }
+  }
+
+  if (!ownerUserId) return null;
   const { data, error } = await supabase
     .from("shops")
     .select("id")
     .eq("owner_user_id", ownerUserId)
+    .is("uninstalled_at", null)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
   if (error) {
-    console.warn("postmark-inbound: failed to resolve shop id", error.message);
+    console.warn("postmark-inbound: failed to resolve user shop id", error.message);
   }
   return (data as any)?.id ?? null;
 }
 
-async function isAutoDraftEnabled(userId: string): Promise<boolean> {
-  if (!supabase || !userId) return false;
+async function isAutoDraftEnabled(options: {
+  userId: string | null;
+  workspaceId: string | null;
+}): Promise<boolean> {
+  if (!supabase) return false;
+  const { userId, workspaceId } = options;
+
+  if (workspaceId) {
+    const { data, error } = await supabase
+      .from("agent_automation")
+      .select("auto_draft_enabled")
+      .eq("workspace_id", workspaceId)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!error && data) return Boolean((data as any)?.auto_draft_enabled);
+    if (error) {
+      console.warn("postmark-inbound: failed to fetch workspace automation", error.message);
+    }
+  }
+
+  if (!userId) return false;
   const { data, error } = await supabase
     .from("agent_automation")
     .select("auto_draft_enabled")
     .eq("user_id", userId)
     .maybeSingle();
   if (error) {
-    console.warn("postmark-inbound: failed to fetch automation settings", error.message);
+    console.warn("postmark-inbound: failed to fetch user automation", error.message);
   }
   return Boolean((data as any)?.auto_draft_enabled);
 }
@@ -265,16 +317,21 @@ async function triggerDraftForInbound(params: {
 async function ensureDraftLog(params: {
   threadId: string;
   shopId: string | null;
+  workspaceId: string | null;
   subject: string;
   customerEmail: string | null;
   draftMessageId: string | null;
 }) {
   if (!supabase) return null;
-  const { data: existing, error: lookupError } = await supabase
+  let existingQuery = supabase
     .from("drafts")
     .select("id")
     .eq("thread_id", params.threadId)
-    .eq("platform", "smtp")
+    .eq("platform", "smtp");
+  existingQuery = params.workspaceId
+    ? existingQuery.eq("workspace_id", params.workspaceId)
+    : existingQuery.is("workspace_id", null);
+  const { data: existing, error: lookupError } = await existingQuery
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -288,6 +345,7 @@ async function ensureDraftLog(params: {
     .from("drafts")
     .insert({
       shop_id: params.shopId,
+      workspace_id: params.workspaceId,
       customer_email: params.customerEmail,
       subject: params.subject,
       platform: "smtp",
@@ -452,6 +510,7 @@ Deno.serve(async (req) => {
       .from("mail_threads")
       .insert({
         user_id: mailbox.user_id,
+        workspace_id: mailbox.workspace_id,
         mailbox_id: mailbox.mailbox_id,
         provider: "smtp",
         provider_thread_id: null,
@@ -488,6 +547,7 @@ Deno.serve(async (req) => {
     .from("mail_messages")
     .insert({
       user_id: mailbox.user_id,
+      workspace_id: mailbox.workspace_id,
       mailbox_id: mailbox.mailbox_id,
       thread_id: threadId,
       provider: "smtp",
@@ -566,9 +626,15 @@ Deno.serve(async (req) => {
   );
 
   try {
-    const autoDraftEnabled = await isAutoDraftEnabled(mailbox.user_id);
+    const autoDraftEnabled = await isAutoDraftEnabled({
+      userId: mailbox.user_id,
+      workspaceId: mailbox.workspace_id,
+    });
     if (autoDraftEnabled) {
-      const shopId = await resolveShopId(mailbox.user_id);
+      const shopId = await resolveShopId({
+        ownerUserId: mailbox.user_id,
+        workspaceId: mailbox.workspace_id,
+      });
       if (shopId) {
         const draftOutcome = await triggerDraftForInbound({
           shopId,
@@ -583,6 +649,7 @@ Deno.serve(async (req) => {
         const draftId = await ensureDraftLog({
           threadId,
           shopId,
+          workspaceId: mailbox.workspace_id,
           subject,
           customerEmail: fromEmail,
           draftMessageId: draftOutcome?.draftId ? String(draftOutcome.draftId) : null,

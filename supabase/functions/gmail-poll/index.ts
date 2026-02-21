@@ -36,6 +36,7 @@ const supabase =
 type MailAccount = {
   id: string;
   user_id: string;
+  workspace_id: string | null;
   access_token_enc: string | null;
   refresh_token_enc: string | null;
   token_expires_at: string | null;
@@ -76,6 +77,7 @@ function buildSnippet(input = "", maxLength = 180) {
 async function upsertThread({
   mailboxId,
   userId,
+  workspaceId,
   providerThreadId,
   subject,
   snippet,
@@ -85,6 +87,7 @@ async function upsertThread({
 }: {
   mailboxId: string;
   userId: string;
+  workspaceId: string | null;
   providerThreadId: string | null;
   subject: string;
   snippet: string;
@@ -121,6 +124,7 @@ async function upsertThread({
     .from("mail_threads")
     .insert({
       user_id: userId,
+      workspace_id: workspaceId,
       mailbox_id: mailboxId,
       provider: "gmail",
       provider_thread_id: providerThreadId,
@@ -138,6 +142,7 @@ async function upsertThread({
 async function upsertMessage({
   mailboxId,
   userId,
+  workspaceId,
   threadId,
   providerMessageId,
   subject,
@@ -150,6 +155,7 @@ async function upsertMessage({
 }: {
   mailboxId: string;
   userId: string;
+  workspaceId: string | null;
   threadId: string | null;
   providerMessageId: string;
   subject: string;
@@ -170,6 +176,7 @@ async function upsertMessage({
 
   const payload: Record<string, unknown> = {
     user_id: userId,
+    workspace_id: workspaceId,
     mailbox_id: mailboxId,
     thread_id: threadId,
     provider: "gmail",
@@ -312,19 +319,43 @@ function decodeBase64Url(data: string): string {
 
 const shopIdCache = new Map<string, string | null>();
 
-async function resolveShopId(userId: string): Promise<string | null> {
+async function resolveShopId(options: {
+  userId: string;
+  workspaceId: string | null;
+}): Promise<string | null> {
   if (!supabase) return null;
-  if (shopIdCache.has(userId)) return shopIdCache.get(userId) ?? null;
+  const cacheKey = options.workspaceId
+    ? `ws:${options.workspaceId}`
+    : `u:${options.userId}`;
+  if (shopIdCache.has(cacheKey)) return shopIdCache.get(cacheKey) ?? null;
+
+  if (options.workspaceId) {
+    const { data, error } = await supabase
+      .from("shops")
+      .select("id")
+      .eq("workspace_id", options.workspaceId)
+      .is("uninstalled_at", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!error && data?.id) {
+      shopIdCache.set(cacheKey, data.id);
+      return data.id as string;
+    }
+    if (error) throw new Error(error.message);
+  }
+
   const { data, error } = await supabase
     .from("shops")
     .select("id")
-    .eq("owner_user_id", userId)
+    .eq("owner_user_id", options.userId)
+    .is("uninstalled_at", null)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
   if (error) throw new Error(error.message);
   const shopId = data?.id ?? null;
-  shopIdCache.set(userId, shopId);
+  shopIdCache.set(cacheKey, shopId);
   return shopId;
 }
 
@@ -502,7 +533,7 @@ Deno.serve(async (req) => {
 
     const { data: accounts, error } = await supabase
       .from("mail_accounts")
-      .select("id, user_id, access_token_enc, refresh_token_enc, token_expires_at, metadata")
+      .select("id, user_id, workspace_id, access_token_enc, refresh_token_enc, token_expires_at, metadata")
       .eq("provider", "gmail")
       .limit(limit);
     if (error) {
@@ -517,7 +548,10 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      const shopId = await resolveShopId(userId);
+      const shopId = await resolveShopId({
+        userId,
+        workspaceId: account.workspace_id ?? null,
+      });
 
       try {
         const accessToken = await decryptToken(account.access_token_enc);
@@ -607,6 +641,7 @@ Deno.serve(async (req) => {
           const threadRecordId = await upsertThread({
             mailboxId: account.id,
             userId,
+            workspaceId: account.workspace_id ?? null,
             providerThreadId: threadId,
             subject,
             snippet,
@@ -618,6 +653,7 @@ Deno.serve(async (req) => {
             await upsertMessage({
               mailboxId: account.id,
               userId,
+              workspaceId: account.workspace_id ?? null,
               threadId: threadRecordId,
               providerMessageId: messageId,
               subject,

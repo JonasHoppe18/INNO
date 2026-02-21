@@ -1065,7 +1065,8 @@ export function InboxSplitView({ messages = [], threads = [] }) {
       }
       const payload = await res.json().catch(() => ({}));
       const draft = payload?.draft || null;
-      const draftText = draft?.body_text || draft?.body_html || "";
+      const draftText =
+        draft?.rendered_body_text || draft?.body_text || draft?.body_html || "";
       if (draftText) {
         setDraftValue(draftText);
         draftLastSavedRef.current = draftText.trim();

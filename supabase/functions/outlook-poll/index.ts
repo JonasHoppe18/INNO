@@ -38,7 +38,8 @@ const supabase =
   PROJECT_URL && SERVICE_ROLE_KEY ? createClient(PROJECT_URL, SERVICE_ROLE_KEY) : null;
 
 type AutomationUser = {
-  user_id: string;
+  user_id: string | null;
+  workspace_id: string | null;
 };
 
 type PollState = {
@@ -59,6 +60,7 @@ type GraphMessageMeta = {
 type MailboxTarget = {
   user_id: string;
   mailbox_id: string;
+  workspace_id: string | null;
 };
 
 function buildSnippet(input = "", maxLength = 180) {
@@ -70,6 +72,7 @@ function buildSnippet(input = "", maxLength = 180) {
 async function upsertThread({
   mailboxId,
   userId,
+  workspaceId,
   providerThreadId,
   subject,
   snippet,
@@ -79,6 +82,7 @@ async function upsertThread({
 }: {
   mailboxId: string;
   userId: string;
+  workspaceId: string | null;
   providerThreadId: string | null;
   subject: string;
   snippet: string;
@@ -115,6 +119,7 @@ async function upsertThread({
     .from("mail_threads")
     .insert({
       user_id: userId,
+      workspace_id: workspaceId,
       mailbox_id: mailboxId,
       provider: "outlook",
       provider_thread_id: providerThreadId,
@@ -132,6 +137,7 @@ async function upsertThread({
 async function upsertMessage({
   mailboxId,
   userId,
+  workspaceId,
   threadId,
   providerMessageId,
   subject,
@@ -145,6 +151,7 @@ async function upsertMessage({
 }: {
   mailboxId: string;
   userId: string;
+  workspaceId: string | null;
   threadId: string | null;
   providerMessageId: string;
   subject: string;
@@ -166,6 +173,7 @@ async function upsertMessage({
 
   const payload: Record<string, unknown> = {
     user_id: userId,
+    workspace_id: workspaceId,
     mailbox_id: mailboxId,
     thread_id: threadId,
     provider: "outlook",
@@ -205,7 +213,6 @@ Deno.serve(async (req) => {
   const autoDraftUsers = await loadAutoDraftUsers(
     Math.min(MAX_USERS_PER_RUN, Number(body?.userLimit ?? MAX_USERS_PER_RUN)),
   );
-  const autoDraftSet = new Set(autoDraftUsers.map((row) => row.user_id));
 
   const targets: MailboxTarget[] = explicitUsers?.length
     ? await loadOutlookMailboxesByUsers(explicitUsers)
@@ -215,7 +222,12 @@ Deno.serve(async (req) => {
 
     const results = [] as Array<Record<string, unknown>>;
     for (const target of targets) {
-      const outcome = await pollSingleMailbox(target, autoDraftSet.has(target.user_id));
+      const shouldDraft = autoDraftUsers.some((row) =>
+        target.workspace_id
+          ? row.workspace_id === target.workspace_id
+          : row.workspace_id === null && row.user_id === target.user_id
+      );
+      const outcome = await pollSingleMailbox(target, shouldDraft);
       results.push(outcome);
     }
 
@@ -232,8 +244,11 @@ Deno.serve(async (req) => {
 async function pollSingleMailbox(target: MailboxTarget, shouldDraft: boolean) {
   if (!supabase) throw new Error("Supabase klient ikke konfigureret");
   try {
-    const token = await getFreshOutlookAccessToken(target.user_id);
-    const shopId = await resolveShopId(target.user_id);
+    const token = await getFreshOutlookAccessToken(target.mailbox_id);
+    const shopId = await resolveShopId({
+      ownerUserId: target.user_id,
+      workspaceId: target.workspace_id,
+    });
     if (shopId) {
       await syncDraftStatuses(shopId, token);
     }
@@ -286,6 +301,7 @@ async function pollSingleMailbox(target: MailboxTarget, shouldDraft: boolean) {
       const threadRecordId = await upsertThread({
         mailboxId: target.mailbox_id,
         userId: target.user_id,
+        workspaceId: target.workspace_id,
         providerThreadId,
         subject,
         snippet,
@@ -296,6 +312,7 @@ async function pollSingleMailbox(target: MailboxTarget, shouldDraft: boolean) {
       await upsertMessage({
         mailboxId: target.mailbox_id,
         userId: target.user_id,
+        workspaceId: target.workspace_id,
         threadId: threadRecordId,
         providerMessageId,
         subject,
@@ -497,12 +514,12 @@ function decodeBase64String(value: string): string | null {
   }
 }
 
-async function getFreshOutlookAccessToken(userId: string): Promise<string> {
+async function getFreshOutlookAccessToken(mailboxId: string): Promise<string> {
   if (!supabase) throw new Error("Supabase klient ikke konfigureret");
   const { data, error } = await supabase
     .from("mail_accounts")
     .select("access_token_enc, refresh_token_enc, token_expires_at")
-    .eq("user_id", userId)
+    .eq("id", mailboxId)
     .eq("provider", "outlook")
     .maybeSingle();
   if (error) throw new Error(error.message);
@@ -561,7 +578,7 @@ async function getFreshOutlookAccessToken(userId: string): Promise<string> {
   const { error: updateError } = await supabase
     .from("mail_accounts")
     .update(updatePayload)
-    .eq("user_id", userId)
+    .eq("id", mailboxId)
     .eq("provider", "outlook");
   if (updateError) {
     console.warn("outlook-poll: failed to update tokens", updateError.message);
@@ -574,21 +591,23 @@ async function loadAutoDraftUsers(limit: number): Promise<AutomationUser[]> {
   if (!supabase) return [];
   const { data: automation, error } = await supabase
     .from("agent_automation")
-    .select("user_id")
+    .select("user_id, workspace_id")
     .eq("auto_draft_enabled", true)
     .limit(limit);
   if (error || !automation?.length) return [];
   return automation
-    .map((row) => row.user_id)
-    .filter((id: unknown): id is string => typeof id === "string")
-    .map((id) => ({ user_id: id }));
+    .map((row) => ({
+      user_id: typeof row?.user_id === "string" ? row.user_id : null,
+      workspace_id: typeof row?.workspace_id === "string" ? row.workspace_id : null,
+    }))
+    .filter((row) => Boolean(row.user_id || row.workspace_id));
 }
 
 async function loadActiveOutlookMailboxes(limit: number): Promise<MailboxTarget[]> {
   if (!supabase) return [];
   const { data, error } = await supabase
     .from("mail_accounts")
-    .select("id,user_id")
+    .select("id,user_id,workspace_id")
     .eq("provider", "outlook")
     .eq("status", "active")
     .limit(limit);
@@ -598,6 +617,7 @@ async function loadActiveOutlookMailboxes(limit: number): Promise<MailboxTarget[
     .map((row) => ({
       mailbox_id: row.id as string,
       user_id: row.user_id as string,
+      workspace_id: (row.workspace_id as string | null) ?? null,
     }));
 }
 
@@ -605,7 +625,7 @@ async function loadOutlookMailboxesByUsers(userIds: string[]): Promise<MailboxTa
   if (!supabase || !userIds.length) return [];
   const { data, error } = await supabase
     .from("mail_accounts")
-    .select("id,user_id")
+    .select("id,user_id,workspace_id")
     .eq("provider", "outlook")
     .eq("status", "active")
     .in("user_id", userIds);
@@ -615,6 +635,7 @@ async function loadOutlookMailboxesByUsers(userIds: string[]): Promise<MailboxTa
     .map((row) => ({
       mailbox_id: row.id as string,
       user_id: row.user_id as string,
+      workspace_id: (row.workspace_id as string | null) ?? null,
     }));
 }
 
@@ -654,17 +675,38 @@ async function savePollState(
   });
 }
 
-async function resolveShopId(ownerUserId: string): Promise<string | null> {
-  if (!supabase || !ownerUserId) return null;
+async function resolveShopId(options: {
+  ownerUserId: string | null;
+  workspaceId: string | null;
+}): Promise<string | null> {
+  if (!supabase) return null;
+
+  if (options.workspaceId) {
+    const { data, error } = await supabase
+      .from("shops")
+      .select("id")
+      .eq("workspace_id", options.workspaceId)
+      .is("uninstalled_at", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!error && data?.id) return data.id as string;
+    if (error) {
+      console.warn("outlook-poll: failed to resolve workspace shop id", error.message);
+    }
+  }
+
+  if (!options.ownerUserId) return null;
   const { data, error } = await supabase
     .from("shops")
     .select("id")
-    .eq("owner_user_id", ownerUserId)
+    .eq("owner_user_id", options.ownerUserId)
+    .is("uninstalled_at", null)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
   if (error) {
-    console.warn("outlook-poll: failed to resolve shop id", error.message);
+    console.warn("outlook-poll: failed to resolve user shop id", error.message);
   }
   return data?.id ?? null;
 }

@@ -56,6 +56,8 @@ type EmailData = {
 };
 
 type AgentContext = {
+  workspaceId: string | null;
+  ownerUserId: string | null;
   profile: Awaited<ReturnType<typeof fetchOwnerProfile>>;
   persona: Awaited<ReturnType<typeof fetchPersona>>;
   automation: Awaited<ReturnType<typeof fetchAutomation>>;
@@ -63,6 +65,11 @@ type AgentContext = {
   orderSummary: string;
   matchedSubjectNumber: string | null;
   orders: any[];
+};
+
+type ShopScope = {
+  ownerUserId: string | null;
+  workspaceId: string | null;
 };
 
 type OpenAIResult = {
@@ -253,10 +260,12 @@ const buildThreadActionKey = ({
 
 async function persistThreadActions({
   ownerUserId,
+  workspaceId,
   threadId,
   results,
 }: {
   ownerUserId: string;
+  workspaceId: string | null;
   threadId: string;
   results: Array<{
     type: string;
@@ -286,12 +295,15 @@ async function persistThreadActions({
         ? "applied"
         : "failed";
 
-    const { data: existing, error: existingError } = await supabase
+    let existingQuery = supabase
       .from("thread_actions")
       .select("id, status")
-      .eq("user_id", ownerUserId)
       .eq("thread_id", threadId)
-      .eq("action_key", actionKey)
+      .eq("action_key", actionKey);
+    existingQuery = workspaceId
+      ? existingQuery.eq("workspace_id", workspaceId)
+      : existingQuery.eq("user_id", ownerUserId);
+    const { data: existing, error: existingError } = await existingQuery
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -338,6 +350,7 @@ async function persistThreadActions({
 
     const { error: insertError } = await supabase.from("thread_actions").insert({
       user_id: ownerUserId,
+      workspace_id: workspaceId,
       thread_id: threadId,
       source: "automation",
       created_at: nowIso,
@@ -426,18 +439,23 @@ function buildStyleHeuristics(history: Array<any>): string[] {
   return bullets;
 }
 
-// Find owner_user_id for shop så vi kan hente persona/policies/automation.
-async function resolveShopOwnerId(shopId: string): Promise<string | null> {
-  if (!supabase) return null;
+// Find shop scope så vi kan læse workspace-shared konfiguration.
+async function resolveShopScope(shopId: string): Promise<ShopScope> {
+  const fallback: ShopScope = { ownerUserId: null, workspaceId: null };
+  if (!supabase) return fallback;
   const { data, error } = await supabase
     .from("shops")
-    .select("owner_user_id")
+    .select("owner_user_id, workspace_id")
     .eq("id", shopId)
     .maybeSingle();
   if (error) {
-    console.warn("generate-draft-unified: failed to resolve shop owner", error.message);
+    console.warn("generate-draft-unified: failed to resolve shop scope", error.message);
+    return fallback;
   }
-  return data?.owner_user_id ?? null;
+  return {
+    ownerUserId: data?.owner_user_id ?? null,
+    workspaceId: data?.workspace_id ?? null,
+  };
 }
 
 // Laver embedding af mailtekst for at slå relevante produkter op via vector search.
@@ -466,17 +484,17 @@ async function embedText(input: string): Promise<number[]> {
 // Hent produktkontekst så svaret kan blive mere præcist.
 async function fetchProductContext(
   supabaseClient: ReturnType<typeof createClient> | null,
-  userId: string | null,
+  shopId: string | null,
   text: string,
 ) {
-  if (!supabaseClient || !userId || !text?.trim()) return "";
+  if (!supabaseClient || !shopId || !text?.trim()) return "";
   try {
     const embedding = await embedText(text.slice(0, 4000));
     const { data, error } = await supabaseClient.rpc("match_products", {
       query_embedding: embedding,
       match_threshold: 0.2,
       match_count: 5,
-      filter_shop_id: userId,
+      filter_shop_id: shopId,
     });
     if (error || !Array.isArray(data) || !data.length) return "";
     return data
@@ -499,14 +517,16 @@ async function getAgentContext(
   email?: string,
   subject?: string,
 ): Promise<AgentContext> {
-  const ownerUserId = await resolveShopOwnerId(shopId);
+  const scope = await resolveShopScope(shopId);
+  const ownerUserId = scope.ownerUserId;
   const profile = await fetchOwnerProfile(supabase, ownerUserId);
   const persona = await fetchPersona(supabase, ownerUserId);
-  const automation = await fetchAutomation(supabase, ownerUserId);
-  const policies = await fetchPolicies(supabase, ownerUserId);
+  const automation = await fetchAutomation(supabase, ownerUserId, scope.workspaceId);
+  const policies = await fetchPolicies(supabase, ownerUserId, scope.workspaceId);
   const { orders, matchedSubjectNumber } = await resolveOrderContext({
     supabase,
     userId: ownerUserId,
+    workspaceId: scope.workspaceId,
     email,
     subject,
     tokenSecret: ENCRYPTION_KEY,
@@ -515,6 +535,8 @@ async function getAgentContext(
   const orderSummary = buildOrderSummary(orders);
 
   return {
+    workspaceId: scope.workspaceId,
+    ownerUserId,
     profile,
     persona,
     automation,
@@ -523,40 +545,6 @@ async function getAgentContext(
     matchedSubjectNumber,
     orders,
   };
-}
-
-function buildFallbackSignature(firstName: string | null | undefined): string {
-  const safeName = String(firstName || "").trim();
-  if (safeName) {
-    return `Best regards,\n${safeName}`;
-  }
-  return "Best regards,\nSona Team";
-}
-
-function stripTrailingSignoff(text: string): string {
-  const closings = [
-    "venlig hilsen",
-    "med venlig hilsen",
-    "mvh",
-    "best regards",
-    "kind regards",
-    "regards",
-    "sincerely",
-    "cheers",
-  ];
-  const lines = text.split("\n");
-  let i = lines.length - 1;
-  while (i >= 0 && !lines[i].trim()) i -= 1;
-  if (i < 0) return text;
-  const last = lines[i].trim().toLowerCase();
-  if (closings.includes(last)) {
-    lines.splice(i, 1);
-    while (lines.length && !lines[lines.length - 1].trim()) {
-      lines.pop();
-    }
-    return lines.join("\n");
-  }
-  return text;
 }
 
 // Brug JSON schema så vi altid får reply + automation actions.
@@ -694,37 +682,35 @@ async function createOutlookDraft(
 
 async function resolveInternalThread(
   userId: string | null,
+  workspaceId: string | null,
   provider: string,
   emailData: EmailData,
 ) {
-  if (!supabase || !userId) return { threadId: null, mailboxId: null };
+  if (!supabase || (!userId && !workspaceId)) return { threadId: null, mailboxId: null };
   if (provider === "smtp" && emailData.threadId) {
-    const { data } = await supabase
-      .from("mail_threads")
-      .select("id, mailbox_id")
-      .eq("user_id", userId)
-      .eq("id", emailData.threadId)
-      .maybeSingle();
+    let query = supabase.from("mail_threads").select("id, mailbox_id").eq("id", emailData.threadId);
+    query = workspaceId ? query.eq("workspace_id", workspaceId) : query.eq("user_id", userId);
+    const { data } = await query.maybeSingle();
     if (data?.id) return { threadId: data.id, mailboxId: data.mailbox_id ?? null };
   }
   if (emailData.threadId) {
-    const { data } = await supabase
+    let query = supabase
       .from("mail_threads")
       .select("id, mailbox_id")
-      .eq("user_id", userId)
       .eq("provider", provider)
-      .eq("provider_thread_id", emailData.threadId)
-      .maybeSingle();
+      .eq("provider_thread_id", emailData.threadId);
+    query = workspaceId ? query.eq("workspace_id", workspaceId) : query.eq("user_id", userId);
+    const { data } = await query.maybeSingle();
     if (data?.id) return { threadId: data.id, mailboxId: data.mailbox_id ?? null };
   }
   if (emailData.messageId) {
-    const { data } = await supabase
+    let query = supabase
       .from("mail_messages")
       .select("thread_id, mailbox_id")
-      .eq("user_id", userId)
       .eq("provider", provider)
-      .eq("provider_message_id", emailData.messageId)
-      .maybeSingle();
+      .eq("provider_message_id", emailData.messageId);
+    query = workspaceId ? query.eq("workspace_id", workspaceId) : query.eq("user_id", userId);
+    const { data } = await query.maybeSingle();
     if (data?.thread_id) return { threadId: data.thread_id, mailboxId: data.mailbox_id ?? null };
   }
   return { threadId: null, mailboxId: null };
@@ -732,6 +718,7 @@ async function resolveInternalThread(
 
 async function createInternalDraft(options: {
   userId: string | null;
+  workspaceId: string | null;
   mailboxId: string | null;
   threadId: string | null;
   provider: string;
@@ -739,22 +726,33 @@ async function createInternalDraft(options: {
   htmlBody: string;
   textBody: string;
 }) {
-  if (!supabase || !options.userId || !options.threadId || !options.provider) return null;
+  if (
+    !supabase ||
+    (!options.userId && !options.workspaceId) ||
+    !options.threadId ||
+    !options.provider
+  ) {
+    return null;
+  }
 
   // Keep a single active draft per thread, so newer customer emails replace stale drafts.
-  const { error: cleanupError } = await supabase
+  let cleanupQuery = supabase
     .from("mail_messages")
     .delete()
-    .eq("user_id", options.userId)
     .eq("thread_id", options.threadId)
     .eq("is_draft", true)
     .eq("from_me", true);
+  cleanupQuery = options.workspaceId
+    ? cleanupQuery.eq("workspace_id", options.workspaceId)
+    : cleanupQuery.eq("user_id", options.userId);
+  const { error: cleanupError } = await cleanupQuery;
   if (cleanupError) {
     throw new Error(`Internal draft cleanup failed: ${cleanupError.message}`);
   }
 
   const payload: Record<string, unknown> = {
     user_id: options.userId,
+    workspace_id: options.workspaceId,
     mailbox_id: options.mailboxId,
     thread_id: options.threadId,
     provider: options.provider,
@@ -841,18 +839,26 @@ Deno.serve(async (req) => {
       );
     }
 
-    const ownerUserId = await resolveShopOwnerId(shopId);
-    const internalThread = await resolveInternalThread(ownerUserId, provider, emailData);
+    const ownerUserId = context.ownerUserId;
+    const workspaceId = context.workspaceId;
+    const internalThread = await resolveInternalThread(
+      ownerUserId,
+      workspaceId,
+      provider,
+      emailData,
+    );
     const providerMessageId =
       typeof emailData.messageId === "string" ? emailData.messageId.trim() : "";
-    if (supabase && ownerUserId && providerMessageId) {
-      const { data, error } = await supabase
+    if (supabase && (ownerUserId || workspaceId) && providerMessageId) {
+      let dedupeQuery = supabase
         .from("mail_messages")
         .select("ai_draft_text")
-        .eq("user_id", ownerUserId)
         .eq("provider", provider)
-        .eq("provider_message_id", providerMessageId)
-        .maybeSingle();
+        .eq("provider_message_id", providerMessageId);
+      dedupeQuery = workspaceId
+        ? dedupeQuery.eq("workspace_id", workspaceId)
+        : dedupeQuery.eq("user_id", ownerUserId);
+      const { data, error } = await dedupeQuery.maybeSingle();
       if (error) {
         console.warn("generate-draft-unified: dedupe lookup failed", error.message);
       } else if (data?.ai_draft_text?.trim()) {
@@ -864,7 +870,7 @@ Deno.serve(async (req) => {
     }
     const productContext = await fetchProductContext(
       supabase,
-      ownerUserId,
+      shopId,
       emailData.body || emailData.subject || "",
     );
     if (productContext?.trim()) {
@@ -896,9 +902,7 @@ Deno.serve(async (req) => {
       customerName: customerFirstName || null,
       extraContext:
         "Returner altid JSON hvor 'actions' beskriver konkrete handlinger du udfører i Shopify. Brug orderId (det numeriske id i parentes) når du udfylder actions. For payload: udfyld kun de felter der er nødvendige for handlingen. Hvis kunden beder om adresseændring, udfyld shipping_address med alle felter du kender (name, address1, address2, zip, city, country, phone). Ved edit_line_items skal du bruge line_item_id/variant_id fra KONTEKST. Hvis en handling ikke er tilladt i automationsreglerne, må du stadig returnere handlingen i actions; systemet markerer den til manuel approval i tråden.",
-      signature:
-        context.profile.signature?.trim() ||
-        buildFallbackSignature(context.profile.first_name),
+      signature: context.profile.signature?.trim() || "",
       learnedStyle: learnedStyle || null,
       policies: context.policies,
     });
@@ -951,14 +955,7 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       aiText = `Hej,\n\nTak for din besked. Vi vender tilbage hurtigst muligt med en opdatering.`;
     }
 
-    let finalText = enforceHejGreeting(aiText.trim(), customerFirstName);
-    const signature =
-      context.profile.signature?.trim() ||
-      buildFallbackSignature(context.profile.first_name);
-    if (signature && signature.length && !finalText.includes(signature)) {
-      finalText = stripTrailingSignoff(finalText);
-      finalText = `${finalText}\n\n${signature}`;
-    }
+    const finalText = enforceHejGreeting(aiText.trim(), customerFirstName);
 
     // Render HTML med konsistent styling og line breaks.
     const htmlBody = formatEmailBody(finalText);
@@ -967,12 +964,14 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       context?.automation?.draft_destination === "sona_inbox"
         ? "sona_inbox"
         : "email_provider";
-    if (supabase && ownerUserId) {
-      const { data, error } = await supabase
+    if (supabase && (ownerUserId || workspaceId)) {
+      let destinationQuery = supabase
         .from("agent_automation")
-        .select("draft_destination")
-        .eq("user_id", ownerUserId)
-        .maybeSingle();
+        .select("draft_destination");
+      destinationQuery = workspaceId
+        ? destinationQuery.eq("workspace_id", workspaceId).order("updated_at", { ascending: false }).limit(1)
+        : destinationQuery.eq("user_id", ownerUserId);
+      const { data, error } = await destinationQuery.maybeSingle();
       if (error) {
         console.warn("generate-draft-unified: draft destination lookup failed", error.message);
       } else if (data?.draft_destination === "sona_inbox") {
@@ -1025,6 +1024,7 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       }
       internalDraft = await createInternalDraft({
         userId: ownerUserId,
+        workspaceId,
         mailboxId: internal.mailboxId,
         threadId: internal.threadId,
         provider,
@@ -1041,15 +1041,18 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
     const customerEmail = emailData.fromEmail || emailData.from || null;
     const subject = emailData.subject || "";
 
-    if (supabase && ownerUserId && threadId) {
-      const { error: clearThreadDraftsError } = await supabase
+    if (supabase && (ownerUserId || workspaceId) && threadId) {
+      let clearThreadDraftsQuery = supabase
         .from("mail_messages")
         .update({
           ai_draft_text: null,
           updated_at: new Date().toISOString(),
         })
-        .eq("user_id", ownerUserId)
         .eq("thread_id", threadId);
+      clearThreadDraftsQuery = workspaceId
+        ? clearThreadDraftsQuery.eq("workspace_id", workspaceId)
+        : clearThreadDraftsQuery.eq("user_id", ownerUserId);
+      const { error: clearThreadDraftsError } = await clearThreadDraftsQuery;
       if (clearThreadDraftsError) {
         console.warn(
           "generate-draft-unified: failed clearing previous thread drafts",
@@ -1058,16 +1061,19 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       }
     }
 
-    if (supabase && ownerUserId && emailData.messageId) {
-      const { error: updateError } = await supabase
+    if (supabase && (ownerUserId || workspaceId) && emailData.messageId) {
+      let updateMessageQuery = supabase
         .from("mail_messages")
         .update({
           ai_draft_text: finalText,
           updated_at: new Date().toISOString(),
         })
-        .eq("user_id", ownerUserId)
         .eq("provider", provider)
         .eq("provider_message_id", emailData.messageId);
+      updateMessageQuery = workspaceId
+        ? updateMessageQuery.eq("workspace_id", workspaceId)
+        : updateMessageQuery.eq("user_id", ownerUserId);
+      const { error: updateError } = await updateMessageQuery;
       if (updateError) {
         console.warn("generate-draft-unified: failed to store ai draft", updateError.message);
       }
@@ -1076,12 +1082,16 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
     // Log draft i Supabase til tracking.
     let loggedDraftId: number | null = null;
     if (supabase && threadId) {
-      const { error: staleDraftsError } = await supabase
+      let staleDraftsQuery = supabase
         .from("drafts")
         .update({ status: "superseded" })
         .eq("platform", provider)
         .eq("thread_id", threadId)
         .eq("status", "pending");
+      staleDraftsQuery = workspaceId
+        ? staleDraftsQuery.eq("workspace_id", workspaceId)
+        : staleDraftsQuery.eq("user_id", ownerUserId);
+      const { error: staleDraftsError } = await staleDraftsQuery;
       if (staleDraftsError) {
         console.warn(
           "generate-draft-unified: failed to clear stale pending drafts",
@@ -1092,6 +1102,7 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         .from("drafts")
         .insert({
           shop_id: shopId || null,
+          workspace_id: workspaceId,
           customer_email: customerEmail,
           subject,
           platform: provider,
@@ -1195,6 +1206,7 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
     if (ownerUserId && threadId && automationResults.length) {
       await persistThreadActions({
         ownerUserId,
+        workspaceId,
         threadId,
         results: automationResults,
       });

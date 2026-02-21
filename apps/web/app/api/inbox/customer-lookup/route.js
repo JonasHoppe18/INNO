@@ -86,6 +86,20 @@ function matchesOrderNumber(order, candidate) {
   });
 }
 
+function matchesCustomerEmail(order, candidateEmail) {
+  const normalizedCandidate = normalizeEmailForKey(candidateEmail);
+  if (!normalizedCandidate) return false;
+  const candidates = [
+    order?.email,
+    order?.customer?.email,
+    order?.shipping_address?.email,
+    order?.billing_address?.email,
+  ]
+    .map((value) => normalizeEmailForKey(value))
+    .filter(Boolean);
+  return candidates.includes(normalizedCandidate);
+}
+
 function mapOrder(order) {
   const shipping = order?.shipping_address || {};
   const fulfillments = Array.isArray(order?.fulfillments) ? order.fulfillments : [];
@@ -217,12 +231,14 @@ export async function POST(request) {
     return NextResponse.json({ error: "Supabase user not found." }, { status: 404 });
   }
 
+  const scopedCacheKey = `${scope?.workspaceId ? `ws:${scope.workspaceId}` : `u:${supabaseUserId}`}|${cacheKey}`;
+
   if (!forceRefresh) {
     const { data: cached, error: cacheError } = await serviceClient
       .from("customer_lookup_cache")
       .select("data, fetched_at, expires_at, source")
       .eq("user_id", supabaseUserId)
-      .eq("cache_key", cacheKey)
+      .eq("cache_key", scopedCacheKey)
       .maybeSingle();
     if (cacheError) {
       return NextResponse.json({ error: cacheError.message }, { status: 500 });
@@ -356,10 +372,13 @@ export async function POST(request) {
     }
   }
 
-  const filteredOrders = derivedOrderNumber
-    ? rawOrders.filter((order) => matchesOrderNumber(order, derivedOrderNumber))
+  const emailFilteredOrders = inputEmail
+    ? rawOrders.filter((order) => matchesCustomerEmail(order, inputEmail))
     : rawOrders;
-  const ordersToUse = filteredOrders.length ? filteredOrders : rawOrders;
+  const orderFilteredOrders = derivedOrderNumber
+    ? emailFilteredOrders.filter((order) => matchesOrderNumber(order, derivedOrderNumber))
+    : emailFilteredOrders;
+  const ordersToUse = orderFilteredOrders;
   const { data: shopRow } = await serviceClient
     .from("shops")
     .select("shop_domain")
@@ -378,7 +397,7 @@ export async function POST(request) {
     }
     return mapped;
   });
-  const customer = mapCustomer(ordersToUse, inputEmail);
+  const customer = ordersToUse.length ? mapCustomer(ordersToUse, inputEmail) : null;
 
   const data = {
     customer,
@@ -397,7 +416,7 @@ export async function POST(request) {
     {
       user_id: supabaseUserId,
       platform,
-      cache_key: cacheKey,
+      cache_key: scopedCacheKey,
       email: inputEmail,
       order_number: derivedOrderNumber,
       data,

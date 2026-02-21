@@ -115,18 +115,43 @@ export async function fetchPersona(
 export async function fetchAutomation(
   supabase: SupabaseClient | null,
   userId: string | null,
+  workspaceId: string | null = null,
 ): Promise<Automation> {
-  if (!supabase || !userId) return DEFAULT_AUTOMATION;
-  const { data, error } = await supabase
-    .from("agent_automation")
-    .select(
-      "order_updates,cancel_orders,automatic_refunds,historic_inbox_access,learn_from_edits,draft_destination"
-    )
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (error) {
-    console.warn("agent-context: kunne ikke hente automation", error);
+  if (!supabase || (!userId && !workspaceId)) return DEFAULT_AUTOMATION;
+  let data: any = null;
+
+  if (workspaceId) {
+    const { data: workspaceData, error: workspaceError } = await supabase
+      .from("agent_automation")
+      .select(
+        "order_updates,cancel_orders,automatic_refunds,historic_inbox_access,learn_from_edits,draft_destination"
+      )
+      .eq("workspace_id", workspaceId)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (workspaceError) {
+      console.warn("agent-context: kunne ikke hente workspace automation", workspaceError);
+    } else if (workspaceData) {
+      data = workspaceData;
+    }
   }
+
+  if (!data && userId) {
+    const { data: userData, error } = await supabase
+      .from("agent_automation")
+      .select(
+        "order_updates,cancel_orders,automatic_refunds,historic_inbox_access,learn_from_edits,draft_destination"
+      )
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error) {
+      console.warn("agent-context: kunne ikke hente user automation", error);
+    } else {
+      data = userData;
+    }
+  }
+
   return {
     order_updates:
       typeof data?.order_updates === "boolean"
@@ -185,18 +210,42 @@ export function buildAutomationGuidance(automation: Automation) {
 export async function fetchPolicies(
   supabase: SupabaseClient | null,
   userId: string | null,
+  workspaceId: string | null = null,
 ): Promise<Policies> {
-  if (!supabase || !userId) return DEFAULT_POLICIES;
-  const { data, error } = await supabase
-    .from("shops")
-    .select("policy_refund,policy_shipping,policy_terms,internal_tone")
-    .eq("owner_user_id", userId)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error) {
-    console.warn("agent-context: kunne ikke hente policies", error);
+  if (!supabase || (!userId && !workspaceId)) return DEFAULT_POLICIES;
+  let data: any = null;
+
+  if (workspaceId) {
+    const { data: workspaceData, error: workspaceError } = await supabase
+      .from("shops")
+      .select("policy_refund,policy_shipping,policy_terms,internal_tone")
+      .eq("workspace_id", workspaceId)
+      .is("uninstalled_at", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (workspaceError) {
+      console.warn("agent-context: kunne ikke hente workspace policies", workspaceError);
+    } else if (workspaceData) {
+      data = workspaceData;
+    }
   }
+
+  if (!data && userId) {
+    const { data: userData, error } = await supabase
+      .from("shops")
+      .select("policy_refund,policy_shipping,policy_terms,internal_tone")
+      .eq("owner_user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) {
+      console.warn("agent-context: kunne ikke hente user policies", error);
+    } else {
+      data = userData;
+    }
+  }
+
   return {
     policy_refund: data?.policy_refund ?? DEFAULT_POLICIES.policy_refund,
     policy_shipping: data?.policy_shipping ?? DEFAULT_POLICIES.policy_shipping,

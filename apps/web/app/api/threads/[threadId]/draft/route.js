@@ -24,6 +24,44 @@ function buildSnippet(text, maxLength = 240) {
   return cleaned.length > maxLength ? `${cleaned.slice(0, maxLength).trim()}...` : cleaned;
 }
 
+function normalizeSignature(value) {
+  return String(value || "").trim();
+}
+
+function appendSignature(text, signature) {
+  const base = String(text || "").trimEnd();
+  const normalizedSignature = normalizeSignature(signature);
+  if (!normalizedSignature) return base;
+  if (base.endsWith(normalizedSignature)) return base;
+  if (!base) return normalizedSignature;
+  return `${base}\n\n${normalizedSignature}`;
+}
+
+function stripTrailingSignature(text, signature) {
+  const normalizedText = String(text || "").trimEnd();
+  const normalizedSignature = normalizeSignature(signature);
+  if (!normalizedText || !normalizedSignature) return normalizedText;
+  if (!normalizedText.endsWith(normalizedSignature)) return normalizedText;
+  const withoutSignature = normalizedText
+    .slice(0, normalizedText.length - normalizedSignature.length)
+    .replace(/\s+$/, "");
+  return withoutSignature.trimEnd();
+}
+
+async function loadUserSignature(serviceClient, supabaseUserId) {
+  if (!supabaseUserId) return "";
+  const { data: profile, error } = await serviceClient
+    .from("profiles")
+    .select("signature")
+    .eq("user_id", supabaseUserId)
+    .maybeSingle();
+  if (error) {
+    console.warn("[threads/draft] profile signature lookup failed", error.message);
+    return "";
+  }
+  return normalizeSignature(profile?.signature);
+}
+
 export async function GET(_request, { params }) {
   const { userId: clerkUserId, orgId } = await auth();
   if (!clerkUserId) {
@@ -52,6 +90,7 @@ export async function GET(_request, { params }) {
   if (!scope?.workspaceId && !scope?.supabaseUserId) {
     return NextResponse.json({ error: "Auth scope not found." }, { status: 404 });
   }
+  const userSignature = await loadUserSignature(serviceClient, scope.supabaseUserId);
 
   const { data: draft, error } = await applyScope(
     serviceClient
@@ -76,6 +115,7 @@ export async function GET(_request, { params }) {
         ? {
             id: draft.id,
             body_text: draft.body_text || "",
+            rendered_body_text: appendSignature(draft.body_text || "", userSignature),
             body_html: draft.body_html || "",
             subject: draft.subject || "",
             updated_at: draft.updated_at,
@@ -137,7 +177,8 @@ export async function POST(request, { params }) {
 
   const nowIso = new Date().toISOString();
   const nextSubject = subject || thread.subject || "Re:";
-  const nextBodyText = bodyText || bodyHtml;
+  const userSignature = await loadUserSignature(serviceClient, scope.supabaseUserId);
+  const nextBodyText = stripTrailingSignature(bodyText || bodyHtml, userSignature);
   const snippet = buildSnippet(nextBodyText);
 
   const { data: existingDraft } = await applyScope(

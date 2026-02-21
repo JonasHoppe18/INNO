@@ -44,6 +44,44 @@ function stripHtml(html) {
   return String(html || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
+function normalizeSignature(value) {
+  return String(value || "").trim();
+}
+
+function appendSignature(text, signature) {
+  const base = String(text || "").trimEnd();
+  const normalizedSignature = normalizeSignature(signature);
+  if (!normalizedSignature) return base;
+  if (base.endsWith(normalizedSignature)) return base;
+  if (!base) return normalizedSignature;
+  return `${base}\n\n${normalizedSignature}`;
+}
+
+function stripTrailingSignature(text, signature) {
+  const normalizedText = String(text || "").trimEnd();
+  const normalizedSignature = normalizeSignature(signature);
+  if (!normalizedText || !normalizedSignature) return normalizedText;
+  if (!normalizedText.endsWith(normalizedSignature)) return normalizedText;
+  return normalizedText
+    .slice(0, normalizedText.length - normalizedSignature.length)
+    .replace(/\s+$/, "")
+    .trimEnd();
+}
+
+async function loadUserSignature(serviceClient, supabaseUserId) {
+  if (!supabaseUserId) return "";
+  const { data: profile, error } = await serviceClient
+    .from("profiles")
+    .select("signature")
+    .eq("user_id", supabaseUserId)
+    .maybeSingle();
+  if (error) {
+    console.warn("[threads/send] profile signature lookup failed", error.message);
+    return "";
+  }
+  return normalizeSignature(profile?.signature);
+}
+
 function buildSnippet(text, maxLength = 240) {
   const cleaned = String(text || "").replace(/\s+/g, " ").trim();
   if (!cleaned) return "";
@@ -590,6 +628,7 @@ export async function POST(request, { params }) {
   if (!scope?.workspaceId && !supabaseUserId) {
     return NextResponse.json({ error: "Could not resolve user scope." }, { status: 401 });
   }
+  const userSignature = await loadUserSignature(serviceClient, supabaseUserId);
 
   let threadQuery = serviceClient
     .from("mail_threads")
@@ -669,6 +708,8 @@ export async function POST(request, { params }) {
     : subjectRaw
     ? `Re: ${subjectRaw}`
     : "Re:";
+  const coreBodyText = stripTrailingSignature(bodyText || stripHtml(bodyHtml), userSignature);
+  const finalBodyText = appendSignature(coreBodyText, userSignature);
 
   let providerMessageId = null;
   let sentFromEmail = mailbox.provider_email || null;
@@ -688,7 +729,7 @@ export async function POST(request, { params }) {
         cc: ccEmails,
         bcc: bccEmails,
         subject,
-        textBody: bodyText || stripHtml(bodyHtml),
+        textBody: finalBodyText,
         htmlBody: bodyHtml || undefined,
         inReplyTo,
         references,
@@ -712,7 +753,7 @@ export async function POST(request, { params }) {
         cc: ccEmails,
         bcc: bccEmails,
         subject,
-        bodyText: bodyText || stripHtml(bodyHtml),
+        bodyText: finalBodyText,
         inReplyTo: inboundMessage?.provider_message_id || null,
       });
       const payload = await sendGmail({
@@ -726,7 +767,7 @@ export async function POST(request, { params }) {
           subject,
           body: {
             contentType: bodyHtml ? "HTML" : "Text",
-            content: bodyHtml || bodyText,
+            content: bodyHtml || finalBodyText,
           },
           toRecipients: finalTo.map((email) => ({ emailAddress: { address: email } })),
           ccRecipients: ccEmails.map((email) => ({ emailAddress: { address: email } })),
@@ -790,7 +831,7 @@ export async function POST(request, { params }) {
     return NextResponse.json({ error: message }, { status });
   }
 
-  const snippet = buildSnippet(bodyText || stripHtml(bodyHtml));
+  const snippet = buildSnippet(finalBodyText);
   const persistedProviderMessageId =
     providerMessageId || `sent-${mailbox.provider}-${threadId}-${Date.now()}`;
   let insertedMessage = null;
@@ -803,7 +844,7 @@ export async function POST(request, { params }) {
         provider_message_id: persistedProviderMessageId,
         subject,
         snippet,
-        body_text: bodyText || stripHtml(bodyHtml),
+        body_text: finalBodyText,
         body_html: bodyHtml || null,
         from_name: sentFromName,
         from_email: sentFromEmail,
@@ -836,7 +877,7 @@ export async function POST(request, { params }) {
         provider_message_id: persistedProviderMessageId,
         subject,
         snippet,
-        body_text: bodyText || stripHtml(bodyHtml),
+        body_text: finalBodyText,
         body_html: bodyHtml || null,
         from_name: sentFromName,
         from_email: sentFromEmail,
@@ -868,7 +909,7 @@ export async function POST(request, { params }) {
         provider_message_id: persistedProviderMessageId,
         subject,
         snippet,
-        body_text: bodyText || stripHtml(bodyHtml),
+        body_text: finalBodyText,
         body_html: bodyHtml || null,
         from_name: sentFromName,
         from_email: sentFromEmail,
@@ -993,7 +1034,7 @@ export async function POST(request, { params }) {
   }
 
   if (supabaseUserId && learnFromEdits && draftDestinationSetting === "sona_inbox" && aiDraftText) {
-    const finalText = bodyText || stripHtml(bodyHtml);
+    const finalText = coreBodyText;
     if (finalText.trim()) {
       const diffSummary = summarizeDraftDiff(aiDraftText, finalText);
       try {

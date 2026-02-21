@@ -73,10 +73,11 @@ export function CustomerTab({ data, loading, error, onRefresh }) {
   }
 
   if (!data?.customer && !data?.orders?.length) {
+    const source = data?.source ? String(data.source).trim() : "datakilden";
     return (
       <div className="space-y-4 text-sm text-slate-500">
         <div className="flex items-center justify-between">
-          <span>Ingen kundedata endnu.</span>
+          <span>{`Vi fandt ingen kunde i ${source} for denne henvendelse.`}</span>
           <Button variant="outline" size="sm" onClick={onRefresh}>
             Refresh
           </Button>

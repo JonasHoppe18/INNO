@@ -8,6 +8,7 @@ type ShopifyOrderFetcher = (email?: string | null) => Promise<ShopifyOrder[] | n
 type FetchOrdersOptions = {
   supabase: SupabaseClient | null;
   userId?: string | null;
+  workspaceId?: string | null;
   email?: string | null;
   limit?: number;
   tokenSecret?: string | null;
@@ -22,6 +23,7 @@ async function fetchShopifyOrdersPage(options: FetchOrdersOptions): Promise<{
   const {
     supabase,
     userId,
+    workspaceId,
     email,
     limit = 50,
     apiVersion,
@@ -36,6 +38,7 @@ async function fetchShopifyOrdersPage(options: FetchOrdersOptions): Promise<{
     const data = await getShopCredentialsForUser({
       supabase,
       userId,
+      workspaceId,
     });
 
     const domain = data.shop_domain.replace(/^https?:\/\//, "");
@@ -235,6 +238,7 @@ function formatShopifyTimestamp(value?: string | null) {
 export async function resolveOrderContext(options: {
   supabase: SupabaseClient | null;
   userId?: string | null;
+  workspaceId?: string | null;
   email?: string | null;
   subject?: string | null;
   tokenSecret?: string | null;
@@ -249,6 +253,7 @@ export async function resolveOrderContext(options: {
   const {
     supabase,
     userId,
+    workspaceId,
     email,
     subject,
     tokenSecret,
@@ -273,6 +278,7 @@ export async function resolveOrderContext(options: {
     return await fetchShopifyOrders({
       supabase,
       userId,
+      workspaceId,
       email: candidateEmail,
       tokenSecret,
       apiVersion,
@@ -289,6 +295,7 @@ export async function resolveOrderContext(options: {
     orders = await fetchAcrossPages({
       supabase,
       userId,
+      workspaceId,
       tokenSecret,
       apiVersion,
       predicate: (order) => matchesOrderEmail(order, email),
@@ -304,6 +311,7 @@ export async function resolveOrderContext(options: {
     const matched = await fetchAcrossPages({
       supabase,
       userId,
+      workspaceId,
       tokenSecret,
       apiVersion,
       predicate: (order) => matchesOrderNumber(order, subjectNumber!),
@@ -358,6 +366,7 @@ function collectOrderEmails(order: any): string[] {
 type FetchAcrossPagesOptions = {
   supabase: SupabaseClient | null;
   userId?: string | null;
+  workspaceId?: string | null;
   tokenSecret?: string | null;
   apiVersion: string;
   predicate: (order: ShopifyOrder) => boolean;
@@ -370,6 +379,7 @@ async function fetchAcrossPages(options: FetchAcrossPagesOptions): Promise<Shopi
   const {
     supabase,
     userId,
+    workspaceId,
     tokenSecret,
     apiVersion,
     predicate,
@@ -381,6 +391,7 @@ async function fetchAcrossPages(options: FetchAcrossPagesOptions): Promise<Shopi
     const { orders, nextPageInfo } = await fetchShopifyOrdersPage({
       supabase,
       userId,
+      workspaceId,
       tokenSecret,
       apiVersion,
       limit,

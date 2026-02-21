@@ -18,25 +18,14 @@ function createServiceClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
-async function getShopId(serviceClient, userId) {
-  const { data: workspace } = await serviceClient
-    .from("workspaces")
-    .select("id")
-    .eq("clerk_org_id", userId?.orgId || "")
-    .maybeSingle();
-
+async function getShopId(serviceClient, scope) {
   let query = serviceClient
     .from("shops")
     .select("id")
+    .is("uninstalled_at", null)
     .order("created_at", { ascending: false })
     .limit(1);
-
-  if (workspace?.id) {
-    query = query.eq("workspace_id", workspace.id).is("uninstalled_at", null);
-  } else {
-    query = query.eq("owner_user_id", userId?.supabaseUserId || "");
-  }
-
+  query = applyScope(query, scope, { workspaceColumn: "workspace_id", userColumn: "owner_user_id" });
   const { data } = await query.maybeSingle();
   return data?.id ?? null;
 }
@@ -76,7 +65,7 @@ export async function GET() {
   );
   const { count: automationCount } = await automationCountQuery;
 
-  const shopId = await getShopId(serviceClient, { supabaseUserId, orgId: orgId ?? null });
+  const shopId = await getShopId(serviceClient, scope);
 
   let firstDraftAt = null;
   if (shopId) {

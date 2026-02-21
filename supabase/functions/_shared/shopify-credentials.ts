@@ -101,24 +101,47 @@ export async function encryptShopifyToken(
 export async function getShopCredentialsForUser(options: {
   supabase: SupabaseClient;
   userId: string;
+  workspaceId?: string | null;
   encryptionKeyOverride?: string | null;
 }): Promise<{ shop_domain: string; access_token: string }> {
-  const { supabase, userId, encryptionKeyOverride } = options;
+  const { supabase, userId, workspaceId = null, encryptionKeyOverride } = options;
 
-  const { data, error } = await supabase
-    .from("shops")
-    .select("shop_domain, access_token_encrypted")
-    .eq("owner_user_id", userId)
-    .eq("platform", "shopify")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  let data: ShopifyCredentialRow | null = null;
+  let error: Error | null = null;
+
+  if (workspaceId) {
+    const { data: workspaceData, error: workspaceError } = await supabase
+      .from("shops")
+      .select("shop_domain, access_token_encrypted")
+      .eq("workspace_id", workspaceId)
+      .eq("platform", "shopify")
+      .is("uninstalled_at", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    data = workspaceData as ShopifyCredentialRow | null;
+    error = workspaceError as Error | null;
+  }
+
+  if (!data) {
+    const { data: userData, error: userError } = await supabase
+      .from("shops")
+      .select("shop_domain, access_token_encrypted")
+      .eq("owner_user_id", userId)
+      .eq("platform", "shopify")
+      .is("uninstalled_at", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    data = userData as ShopifyCredentialRow | null;
+    error = userError as Error | null;
+  }
 
   if (error) {
     throw new Error(`Kunne ikke hente Shopify credentials: ${error.message}`);
   }
 
-  const row = (data as ShopifyCredentialRow | null) ?? null;
+  const row = data ?? null;
 
   if (!row?.shop_domain) {
     throw new Error("Ingen Shopify butik forbundet.");

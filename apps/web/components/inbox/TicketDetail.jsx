@@ -57,7 +57,7 @@ export function TicketDetail({
     ? "denied"
     : "pending";
 
-  const pendingActionType = String(pendingOrderUpdate?.actionType || "update_shipping_address");
+  const pendingActionType = String(pendingOrderUpdate?.actionType || "");
   const pendingActionTitleByType = {
     update_shipping_address: "Update Address",
     cancel_order: "Cancel Order",

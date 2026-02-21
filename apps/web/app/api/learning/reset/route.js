@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
+import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -17,19 +18,9 @@ function createServiceClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
-async function resolveSupabaseUserId(serviceClient, clerkUserId) {
-  const { data, error } = await serviceClient
-    .from("profiles")
-    .select("user_id")
-    .eq("clerk_user_id", clerkUserId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  return data?.user_id ?? null;
-}
-
 export async function POST(request) {
-  const { userId } = await auth();
-  if (!userId) {
+  const { userId: clerkUserId, orgId } = await auth();
+  if (!clerkUserId) {
     return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
   }
 
@@ -45,26 +36,45 @@ export async function POST(request) {
   const mailboxId =
     typeof body?.mailbox_id === "string" ? body.mailbox_id.trim() : null;
 
-  let supabaseUserId = null;
+  let scope = null;
   try {
-    supabaseUserId = await resolveSupabaseUserId(serviceClient, userId);
+    scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  if (!scope?.supabaseUserId) {
+    return NextResponse.json({ error: "Supabase profile was not found." }, { status: 404 });
+  }
+
+  let mailboxQuery = applyScope(
+    serviceClient.from("mail_accounts").select("id"),
+    scope
+  );
+
+  if (mailboxId) {
+    mailboxQuery = mailboxQuery.eq("id", mailboxId);
+  }
+
+  const { data: mailboxes, error: mailboxError } = await mailboxQuery;
+  if (mailboxError) {
+    return NextResponse.json({ error: mailboxError.message }, { status: 500 });
+  }
+
+  const scopedMailboxIds = (mailboxes ?? []).map((row) => row.id).filter(Boolean);
+  if (!scopedMailboxIds.length) {
+    return NextResponse.json({ ok: true, updated: 0 });
   }
 
   let query = serviceClient
     .from("mail_learning_profiles")
     .update({ style_rules: null, updated_at: new Date().toISOString() })
-    .eq("user_id", supabaseUserId);
+    .eq("user_id", scope.supabaseUserId)
+    .in("mailbox_id", scopedMailboxIds);
 
-  if (mailboxId) {
-    query = query.eq("mailbox_id", mailboxId);
-  }
-
-  const { error } = await query;
+  const { error, data } = await query.select("mailbox_id");
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, updated: (data ?? []).length });
 }

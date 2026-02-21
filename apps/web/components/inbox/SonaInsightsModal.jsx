@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { ActionsTimeline } from "@/components/inbox/ActionsTimeline";
 import { CustomerTab } from "@/components/inbox/CustomerTab";
 import { X } from "lucide-react";
-import { useClerkSupabase } from "@/lib/useClerkSupabase";
 
 const asString = (value) => (typeof value === "string" ? value.trim() : "");
 
@@ -56,76 +55,28 @@ export function SonaInsightsModal({
   customerLookupError,
   onCustomerRefresh,
 }) {
-  const supabase = useClerkSupabase();
   const [logs, setLogs] = useState([]);
   const [logsLoading, setLogsLoading] = useState(false);
 
   useEffect(() => {
     let active = true;
     const fetchLogs = async () => {
-      if (!supabase || !open || (!draftId && !threadId)) {
+      if (!open || !threadId) {
         setLogs([]);
         setLogsLoading(false);
         return;
       }
       setLogsLoading(true);
-      let draftIds = [];
-      if (threadId) {
-        const { data: draftRows, error: draftError } = await supabase
-          .from("drafts")
-          .select("id")
-          .eq("thread_id", threadId)
-          .order("created_at", { ascending: true });
-        if (!draftError) {
-          draftIds = (draftRows || []).map((row) => row.id).filter(Boolean);
-        }
-      }
-
-      let query = supabase
-        .from("agent_logs")
-        .select("id, draft_id, step_name, step_detail, status, created_at")
-        .order("created_at", { ascending: false })
-        .limit(250);
-
-      if (threadId) {
-        if (draftIds.length) {
-          const list = draftIds.join(",");
-          query = query.or(
-            `draft_id.in.(${list}),step_name.eq.shopify_action,step_name.eq.shopify_action_failed,step_name.eq.shopify_action_applied,step_name.eq.shopify_action_declined`
-          );
-        } else if (draftId) {
-          query = query.or(
-            `draft_id.eq.${draftId},step_name.eq.shopify_action,step_name.eq.shopify_action_failed,step_name.eq.shopify_action_applied,step_name.eq.shopify_action_declined`
-          );
-        } else {
-          query = query.in("step_name", [
-            "shopify_action",
-            "shopify_action_failed",
-            "shopify_action_applied",
-            "shopify_action_declined",
-          ]);
-        }
-      } else if (draftId) {
-        query = query.eq("draft_id", draftId);
-      }
-
-      const { data, error } = await query;
+      const res = await fetch(
+        `/api/threads/${encodeURIComponent(threadId)}/insights`,
+        { method: "GET" }
+      ).catch(() => null);
       if (!active) return;
-      if (error) {
+      if (!res?.ok) {
         setLogs([]);
       } else {
-        const rawLogs = Array.isArray(data) ? data : [];
-        if (threadId) {
-          const normalizedThread = String(threadId);
-          const filtered = rawLogs.filter((log) => {
-            if (draftIds.length && draftIds.includes(log?.draft_id)) return true;
-            const parsed = parseLogDetail(log?.step_detail);
-            return parsed.threadId && String(parsed.threadId) === normalizedThread;
-          });
-          setLogs(filtered.reverse());
-        } else {
-          setLogs(rawLogs.reverse());
-        }
+        const payload = await res.json().catch(() => ({}));
+        setLogs(Array.isArray(payload?.logs) ? payload.logs : []);
       }
       setLogsLoading(false);
     };
@@ -133,7 +84,7 @@ export function SonaInsightsModal({
     return () => {
       active = false;
     };
-  }, [draftId, open, supabase, threadId]);
+  }, [draftId, open, threadId]);
 
   const timelineItems = useMemo(() => {
     const formatTitle = (value) => {
@@ -143,6 +94,10 @@ export function SonaInsightsModal({
       if (raw === "shopify_action") return "Shopify Action";
       if (raw === "shopify_action_applied") return "Shopify Action Applied";
       if (raw === "shopify_action_declined") return "Shopify Action Declined";
+      if (raw === "thread_action_pending") return "Approval Required";
+      if (raw === "thread_action_applied") return "Action Approved";
+      if (raw === "thread_action_declined") return "Action Declined";
+      if (raw === "thread_action_failed") return "Action Failed";
       if (raw === "context") return "Context";
       if (raw === "draft_created") return "Draft Created";
       if (raw === "postmark_inbound_draft_created") return "Draft Created";
@@ -171,6 +126,9 @@ export function SonaInsightsModal({
         step === "shopify_action_declined"
       ) {
         return parsed.detail || (parsed.orderId ? `Order ${parsed.orderId}` : "Shopify action executed.");
+      }
+      if (step.startsWith("thread_action_")) {
+        return parsed.detail || "Order action event.";
       }
       if (parsed.orderId && !parsed.detail) return `Order ${parsed.orderId}`;
       return parsed.detail || "";
@@ -219,7 +177,9 @@ export function SonaInsightsModal({
               ) : timelineItems.length ? (
                 <ActionsTimeline items={timelineItems} />
               ) : (
-                <div className="text-sm text-slate-500">No investigation data available.</div>
+                <div className="text-sm text-slate-500">
+                  Ingen handling nødvendig for denne henvendelse.
+                </div>
               )}
             </div>
           </TabsContent>
