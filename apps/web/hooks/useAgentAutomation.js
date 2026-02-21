@@ -171,7 +171,10 @@ export function useAgentAutomation(options = {}) {
     setError(null);
     try {
       const userId = await ensureUserId().catch(() => null);
-      const workspaceId = await ensureWorkspaceId().catch(() => null);
+      const workspaceId = await ensureWorkspaceId();
+      if (orgId && !workspaceId) {
+        throw new Error("Active org has no mapped workspace.");
+      }
       if (!userId && !workspaceId) {
         setSettings(DEFAULT_AUTOMATION);
         return DEFAULT_AUTOMATION;
@@ -194,7 +197,7 @@ export function useAgentAutomation(options = {}) {
     } finally {
       setLoading(false);
     }
-  }, [supabase, ensureUserId, ensureWorkspaceId, mapAutomation]);
+  }, [supabase, ensureUserId, ensureWorkspaceId, mapAutomation, orgId]);
 
   const saveAutomation = useCallback(
     async (updates) => {
@@ -202,7 +205,10 @@ export function useAgentAutomation(options = {}) {
       setError(null);
       try {
         const userId = await ensureUserId().catch(() => null);
-        const workspaceId = await ensureWorkspaceId().catch(() => null);
+        const workspaceId = await ensureWorkspaceId();
+        if (orgId && !workspaceId) {
+          throw new Error("Active org has no mapped workspace.");
+        }
         if (!isValidUuid(userId)) {
           throw new Error("Supabase user ID is not ready yet.");
         }
@@ -299,7 +305,7 @@ export function useAgentAutomation(options = {}) {
         setSaving(false);
       }
     },
-    [ensureUserId, ensureWorkspaceId, settings, supabase, mapAutomation]
+    [ensureUserId, ensureWorkspaceId, settings, supabase, mapAutomation, orgId]
   );
 
   useEffect(() => {
