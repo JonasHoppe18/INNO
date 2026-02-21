@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { getPostmarkDomain, isPostmarkDomainVerified } from "@/lib/server/postmark";
+import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -18,16 +19,6 @@ function createServiceClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
-async function resolveSupabaseUserId(serviceClient, clerkUserId) {
-  const { data, error } = await serviceClient
-    .from("profiles")
-    .select("user_id")
-    .eq("clerk_user_id", clerkUserId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  return data?.user_id ?? null;
-}
-
 async function logAgentStatus(serviceClient, stepName, status, detail) {
   await serviceClient.from("agent_logs").insert({
     draft_id: null,
@@ -39,8 +30,8 @@ async function logAgentStatus(serviceClient, stepName, status, detail) {
 }
 
 export async function GET(_request, { params }) {
-  const { userId } = await auth();
-  if (!userId) {
+  const { userId: clerkUserId, orgId } = await auth();
+  if (!clerkUserId) {
     return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
   }
 
@@ -57,22 +48,23 @@ export async function GET(_request, { params }) {
     );
   }
 
-  let supabaseUserId = null;
+  let scope = null;
   try {
-    supabaseUserId = await resolveSupabaseUserId(serviceClient, userId);
+    scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-  if (!supabaseUserId) {
-    return NextResponse.json({ error: "Supabase user not found." }, { status: 404 });
+  if (!scope?.workspaceId && !scope?.supabaseUserId) {
+    return NextResponse.json({ error: "No workspace or user scope found." }, { status: 403 });
   }
 
-  const { data: mailbox, error: mailboxError } = await serviceClient
+  let mailboxQuery = serviceClient
     .from("mail_accounts")
-    .select("id, user_id, postmark_domain_id, domain_status")
+    .select("id, user_id, workspace_id, postmark_domain_id, domain_status")
     .eq("id", mailboxId)
-    .eq("user_id", supabaseUserId)
     .maybeSingle();
+  mailboxQuery = applyScope(mailboxQuery, scope);
+  const { data: mailbox, error: mailboxError } = await mailboxQuery;
 
   if (mailboxError || !mailbox) {
     return NextResponse.json({ error: "Mailbox not found." }, { status: 404 });
@@ -89,14 +81,15 @@ export async function GET(_request, { params }) {
     const isVerified = isPostmarkDomainVerified(domainResponse);
     const domainStatus = isVerified ? "verified" : "pending";
 
-    await serviceClient
+    let updateQuery = serviceClient
       .from("mail_accounts")
       .update({
         domain_status: domainStatus,
         updated_at: new Date().toISOString(),
       })
-      .eq("id", mailboxId)
-      .eq("user_id", supabaseUserId);
+      .eq("id", mailboxId);
+    updateQuery = applyScope(updateQuery, scope);
+    await updateQuery;
 
     const rawFlags = {
       dkim_verified: Boolean(domainResponse?.DKIMVerified),
@@ -124,11 +117,12 @@ export async function GET(_request, { params }) {
     );
   } catch (error) {
     const safeError = String(error?.message || "Could not check domain status.").slice(0, 280);
-    await serviceClient
+    let errorUpdateQuery = serviceClient
       .from("mail_accounts")
       .update({ domain_status: "error", smtp_last_error: safeError, updated_at: new Date().toISOString() })
-      .eq("id", mailboxId)
-      .eq("user_id", supabaseUserId);
+      .eq("id", mailboxId);
+    errorUpdateQuery = applyScope(errorUpdateQuery, scope);
+    await errorUpdateQuery;
 
     await logAgentStatus(serviceClient, "postmark_domain_status_checked", "error", {
       mailbox_id: mailboxId,

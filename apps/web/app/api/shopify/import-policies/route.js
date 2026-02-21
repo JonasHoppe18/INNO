@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { decryptString } from "@/lib/server/shopify-oauth";
+import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 
 const SUPABASE_BASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -37,27 +38,17 @@ function createServiceSupabase() {
   return createClient(SUPABASE_BASE_URL, SUPABASE_SERVICE_KEY);
 }
 
-async function resolveSupabaseUserId(serviceClient, clerkUserId) {
-  if (!serviceClient || !clerkUserId) return null;
-  const { data, error } = await serviceClient
-    .from("profiles")
-    .select("user_id")
-    .eq("clerk_user_id", clerkUserId)
-    .maybeSingle();
-  if (error) throw new Error(`Could not look up Supabase user: ${error.message}`);
-  return data?.user_id ?? null;
-}
-
-async function fetchShopCredentials(serviceClient, supabaseUserId) {
-  if (!serviceClient || !supabaseUserId) return null;
-  const { data, error } = await serviceClient
+async function fetchShopCredentials(serviceClient, scope) {
+  if (!serviceClient || (!scope?.workspaceId && !scope?.supabaseUserId)) return null;
+  let query = serviceClient
     .from("shops")
     .select("shop_domain, access_token_encrypted")
-    .eq("owner_user_id", supabaseUserId)
     .eq("platform", "shopify")
+    .is("uninstalled_at", null)
     .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(1);
+  query = applyScope(query, scope, { workspaceColumn: "workspace_id", userColumn: "owner_user_id" });
+  const { data, error } = await query.maybeSingle();
   if (error) throw new Error(`Could not fetch Shopify credentials: ${error.message}`);
   if (!data) return null;
 
@@ -79,16 +70,17 @@ async function fetchShopCredentials(serviceClient, supabaseUserId) {
   }
 }
 
-async function fetchShopRowService(serviceClient, supabaseUserId) {
-  if (!serviceClient || !supabaseUserId) return { data: null, error: null };
-  const { data, error } = await serviceClient
+async function fetchShopRowService(serviceClient, scope) {
+  if (!serviceClient || (!scope?.workspaceId && !scope?.supabaseUserId)) return { data: null, error: null };
+  let query = serviceClient
     .from("shops")
     .select("id, shop_domain, policy_refund, policy_shipping, policy_terms, internal_tone")
-    .eq("owner_user_id", supabaseUserId)
     .eq("platform", "shopify")
+    .is("uninstalled_at", null)
     .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(1);
+  query = applyScope(query, scope, { workspaceColumn: "workspace_id", userColumn: "owner_user_id" });
+  const { data, error } = await query.maybeSingle();
   if (error) return { data: null, error };
   return { data, error: null };
 }
@@ -189,8 +181,8 @@ function mapPolicies(policies = []) {
 }
 
 export async function POST(request) {
-  const { userId, getToken } = auth();
-  if (!userId) {
+  const { userId: clerkUserId, orgId, getToken } = auth();
+  if (!clerkUserId) {
     return NextResponse.json(
       { error: "You must be signed in to fetch policies." },
       { status: 401 }
@@ -207,17 +199,18 @@ export async function POST(request) {
   let shop = null;
   let shopError = null;
   let decrypted = null;
+  let scope = null;
+  let serviceClient = null;
 
   // Forsøg at hente dekrypteret token via service role (samme som edge functions gør).
-  let supabaseUserId = null;
   if (SUPABASE_SERVICE_KEY) {
     try {
-      const serviceClient = createServiceSupabase();
-      supabaseUserId = await resolveSupabaseUserId(serviceClient, userId);
-      if (supabaseUserId) {
-        decrypted = await fetchShopCredentials(serviceClient, supabaseUserId);
+      serviceClient = createServiceSupabase();
+      scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
+      if (scope?.workspaceId || scope?.supabaseUserId) {
+        decrypted = await fetchShopCredentials(serviceClient, scope);
         if (!bodyDomain || !bodyToken) {
-          const { data: shopRow } = await fetchShopRowService(serviceClient, supabaseUserId);
+          const { data: shopRow } = await fetchShopRowService(serviceClient, scope);
           if (shopRow) {
             shop = shopRow;
           }
@@ -328,9 +321,29 @@ export async function POST(request) {
   const policies = Array.isArray(payload?.policies) ? payload.policies : [];
   const mapped = mapPolicies(policies);
 
+  let persisted = false;
+  if (serviceClient && (scope?.workspaceId || scope?.supabaseUserId) && shop?.id) {
+    let updateQuery = serviceClient
+      .from("shops")
+      .update({
+        policy_refund: mapped.refund || "",
+        policy_shipping: mapped.shipping || "",
+        policy_terms: mapped.terms || "",
+      })
+      .eq("id", shop.id);
+    updateQuery = applyScope(updateQuery, scope, { workspaceColumn: "workspace_id", userColumn: "owner_user_id" });
+    const { error: persistError } = await updateQuery;
+    if (!persistError) {
+      persisted = true;
+    } else {
+      console.warn("shopify/import-policies: failed to persist policies", persistError.message);
+    }
+  }
+
   const meta = {
     policyCount: policies.length,
     policyTypes: mapped.found,
+    persisted,
   };
 
   return NextResponse.json(

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { decryptString } from "@/lib/server/shopify-oauth";
+import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -25,16 +26,6 @@ function normalizeDomain(input = "") {
     .replace(/^https?:\/\//i, "")
     .replace(/\/+$/, "")
     .toLowerCase();
-}
-
-async function resolveSupabaseUserId(serviceClient, clerkUserId) {
-  const { data, error } = await serviceClient
-    .from("profiles")
-    .select("user_id")
-    .eq("clerk_user_id", clerkUserId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  return data?.user_id ?? null;
 }
 
 function extractOrderNumber(value = "") {
@@ -694,8 +685,8 @@ async function executeShopifyAction({ domain, token, actionType, orderId, payloa
 }
 
 export async function POST(request, { params }) {
-  const { userId } = await auth();
-  if (!userId) {
+  const { userId: clerkUserId, orgId } = await auth();
+  if (!clerkUserId) {
     return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
   }
 
@@ -725,37 +716,41 @@ export async function POST(request, { params }) {
     );
   }
 
-  let supabaseUserId = null;
+  let scope = null;
   try {
-    supabaseUserId = await resolveSupabaseUserId(serviceClient, userId);
+    scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  const supabaseUserId = scope?.supabaseUserId ?? null;
+  if (!scope?.workspaceId && !supabaseUserId) {
+    return NextResponse.json({ error: "Could not resolve user scope." }, { status: 401 });
   }
   if (!supabaseUserId) {
     return NextResponse.json({ error: "Could not resolve user." }, { status: 401 });
   }
 
-  const { data: thread, error: threadError } = await serviceClient
+  let threadQuery = serviceClient
     .from("mail_threads")
     .select("id, provider_thread_id, subject, snippet")
-    .eq("id", threadId)
-    .eq("user_id", supabaseUserId)
-    .maybeSingle();
+    .eq("id", threadId);
+  threadQuery = applyScope(threadQuery, scope);
+  const { data: thread, error: threadError } = await threadQuery.maybeSingle();
   if (threadError || !thread) {
     return NextResponse.json({ error: "Thread not found." }, { status: 404 });
   }
 
   let actionRecord = null;
   if (actionId) {
-    const { data: actionRow, error: actionError } = await serviceClient
+    let actionLookupQuery = serviceClient
       .from("thread_actions")
       .select(
         "id, user_id, thread_id, action_type, status, detail, payload, order_id, order_number, action_key"
       )
       .eq("id", actionId)
-      .eq("user_id", supabaseUserId)
-      .eq("thread_id", thread.id)
-      .maybeSingle();
+      .eq("thread_id", thread.id);
+    actionLookupQuery = applyScope(actionLookupQuery, scope);
+    const { data: actionRow, error: actionError } = await actionLookupQuery.maybeSingle();
     if (actionError) {
       return NextResponse.json({ error: actionError.message }, { status: 500 });
     }
@@ -764,17 +759,17 @@ export async function POST(request, { params }) {
     }
     actionRecord = actionRow;
   } else {
-    const { data: latestPending } = await serviceClient
+    let latestPendingQuery = serviceClient
       .from("thread_actions")
       .select(
         "id, user_id, thread_id, action_type, status, detail, payload, order_id, order_number, action_key"
       )
-      .eq("user_id", supabaseUserId)
       .eq("thread_id", thread.id)
       .eq("status", "pending")
       .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(1);
+    latestPendingQuery = applyScope(latestPendingQuery, scope);
+    const { data: latestPending } = await latestPendingQuery.maybeSingle();
     if (latestPending) {
       actionRecord = latestPending;
     }
@@ -1033,6 +1028,7 @@ export async function POST(request, { params }) {
   } else {
     await serviceClient.from("thread_actions").insert({
       user_id: supabaseUserId,
+      workspace_id: scope.workspaceId ?? null,
       thread_id: thread.id,
       action_type: normalizedActionType,
       action_key: actionKey,

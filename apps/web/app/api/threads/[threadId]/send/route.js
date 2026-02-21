@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 import { sendPostmarkEmail } from "@/lib/server/postmark";
+import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -25,16 +26,6 @@ const POSTMARK_FROM_NAME = process.env.POSTMARK_FROM_NAME || "Sona";
 function createServiceClient() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null;
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-}
-
-async function resolveSupabaseUserId(serviceClient, clerkUserId) {
-  const { data, error } = await serviceClient
-    .from("profiles")
-    .select("user_id")
-    .eq("clerk_user_id", clerkUserId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  return data?.user_id ?? null;
 }
 
 function normalizeEmailList(value) {
@@ -561,8 +552,8 @@ async function logAgentStatus(serviceClient, stepName, status, detail) {
 }
 
 export async function POST(request, { params }) {
-  const { userId } = await auth();
-  if (!userId) {
+  const { userId: clerkUserId, orgId } = await auth();
+  if (!clerkUserId) {
     return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
   }
 
@@ -589,64 +580,73 @@ export async function POST(request, { params }) {
     return NextResponse.json({ error: "body_text is required." }, { status: 400 });
   }
 
-  let supabaseUserId = null;
+  let scope = null;
   try {
-    supabaseUserId = await resolveSupabaseUserId(serviceClient, userId);
+    scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+  const supabaseUserId = scope?.supabaseUserId ?? null;
+  if (!scope?.workspaceId && !supabaseUserId) {
+    return NextResponse.json({ error: "Could not resolve user scope." }, { status: 401 });
+  }
 
-  const { data: thread, error: threadError } = await serviceClient
+  let threadQuery = serviceClient
     .from("mail_threads")
-    .select("id, user_id, mailbox_id, provider, provider_thread_id, subject, snippet")
-    .eq("id", threadId)
-    .eq("user_id", supabaseUserId)
-    .maybeSingle();
+    .select("id, user_id, workspace_id, mailbox_id, provider, provider_thread_id, subject, snippet")
+    .eq("id", threadId);
+  threadQuery = applyScope(threadQuery, scope);
+  const { data: thread, error: threadError } = await threadQuery.maybeSingle();
   if (threadError || !thread) {
     return NextResponse.json({ error: "Thread not found." }, { status: 404 });
   }
 
-  const { data: mailbox, error: mailboxError } = await serviceClient
+  let mailboxQuery = serviceClient
     .from("mail_accounts")
     .select(
-      "id, user_id, provider, provider_email, access_token_enc, refresh_token_enc, token_expires_at, status, smtp_host, smtp_port, smtp_secure, smtp_username_enc, smtp_password_enc, smtp_status, sending_type, sending_domain, domain_status, from_email, from_name"
+      "id, user_id, workspace_id, provider, provider_email, access_token_enc, refresh_token_enc, token_expires_at, status, smtp_host, smtp_port, smtp_secure, smtp_username_enc, smtp_password_enc, smtp_status, sending_type, sending_domain, domain_status, from_email, from_name"
     )
-    .eq("id", thread.mailbox_id)
-    .maybeSingle();
+    .eq("id", thread.mailbox_id);
+  mailboxQuery = applyScope(mailboxQuery, scope);
+  const { data: mailbox, error: mailboxError } = await mailboxQuery.maybeSingle();
   if (mailboxError || !mailbox) {
     return NextResponse.json({ error: "Mailbox not found." }, { status: 404 });
   }
 
-  const { data: automationSettings } = await serviceClient
+  let automationQuery = serviceClient
     .from("agent_automation")
     .select("learn_from_edits,draft_destination")
-    .eq("user_id", supabaseUserId)
-    .maybeSingle();
+    .order("updated_at", { ascending: false })
+    .limit(1);
+  automationQuery = applyScope(automationQuery, scope);
+  const { data: automationSettings } = await automationQuery.maybeSingle();
   const learnFromEdits = automationSettings?.learn_from_edits === true;
   const draftDestinationSetting =
     automationSettings?.draft_destination === "sona_inbox" ? "sona_inbox" : "email_provider";
 
   let aiDraftText = "";
-  if (learnFromEdits && draftDestinationSetting === "sona_inbox") {
-    const { data: aiRow } = await serviceClient
+  if (learnFromEdits && draftDestinationSetting === "sona_inbox" && (scope?.workspaceId || supabaseUserId)) {
+    let aiQuery = serviceClient
       .from("mail_messages")
       .select("ai_draft_text")
       .eq("thread_id", threadId)
-      .eq("user_id", supabaseUserId)
       .not("ai_draft_text", "is", null)
       .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(1);
+    aiQuery = applyScope(aiQuery, scope);
+    const { data: aiRow } = await aiQuery.maybeSingle();
     aiDraftText = aiRow?.ai_draft_text || "";
   }
 
-  const { data: inboundMessages } = await serviceClient
+  let inboundMessagesQuery = serviceClient
     .from("mail_messages")
     .select("id, from_email, provider_message_id, received_at, subject")
     .eq("thread_id", threadId)
     .not("received_at", "is", null)
     .order("received_at", { ascending: false })
     .limit(5);
+  inboundMessagesQuery = applyScope(inboundMessagesQuery, scope);
+  const { data: inboundMessages } = await inboundMessagesQuery;
   const inboundMessage = Array.isArray(inboundMessages) ? inboundMessages[0] : null;
 
   const fallbackTo = inboundMessage?.from_email ? [inboundMessage.from_email] : [];
@@ -796,7 +796,7 @@ export async function POST(request, { params }) {
   let insertedMessage = null;
   let insertError = null;
   if (draftMessageId) {
-    const result = await serviceClient
+    let updateDraftQuery = serviceClient
       .from("mail_messages")
       .update({
         provider: mailbox.provider,
@@ -819,10 +819,9 @@ export async function POST(request, { params }) {
         updated_at: nowIso,
       })
       .eq("id", draftMessageId)
-      .eq("thread_id", threadId)
-      .eq("user_id", supabaseUserId)
-      .select("id")
-      .maybeSingle();
+      .eq("thread_id", threadId);
+    updateDraftQuery = applyScope(updateDraftQuery, scope);
+    const result = await updateDraftQuery.select("id").maybeSingle();
     insertedMessage = result.data;
     insertError = result.error;
   } else {
@@ -830,6 +829,7 @@ export async function POST(request, { params }) {
       .from("mail_messages")
       .insert({
         user_id: supabaseUserId,
+        workspace_id: scope?.workspaceId ?? null,
         mailbox_id: mailbox.id,
         thread_id: threadId,
         provider: mailbox.provider,
@@ -861,6 +861,7 @@ export async function POST(request, { params }) {
       .from("mail_messages")
       .insert({
         user_id: supabaseUserId,
+        workspace_id: scope?.workspaceId ?? null,
         mailbox_id: mailbox.id,
         thread_id: threadId,
         provider: mailbox.provider,
@@ -904,32 +905,35 @@ export async function POST(request, { params }) {
 
   // Ensure stale unsent drafts are removed after successful send.
   if (insertedMessage?.id) {
-    await serviceClient
+    let staleDraftDeleteQuery = serviceClient
       .from("mail_messages")
       .delete()
       .eq("thread_id", threadId)
-      .eq("user_id", supabaseUserId)
       .eq("from_me", true)
       .eq("is_draft", true)
       .neq("id", insertedMessage.id);
+    staleDraftDeleteQuery = applyScope(staleDraftDeleteQuery, scope);
+    await staleDraftDeleteQuery;
   } else {
-    await serviceClient
+    let staleDraftDeleteQuery = serviceClient
       .from("mail_messages")
       .delete()
       .eq("thread_id", threadId)
-      .eq("user_id", supabaseUserId)
       .eq("from_me", true)
       .eq("is_draft", true);
+    staleDraftDeleteQuery = applyScope(staleDraftDeleteQuery, scope);
+    await staleDraftDeleteQuery;
   }
 
-  await serviceClient
+  let clearAiDraftQuery = serviceClient
     .from("mail_messages")
     .update({ ai_draft_text: null, updated_at: nowIso })
     .eq("thread_id", threadId)
-    .eq("user_id", supabaseUserId)
     .not("ai_draft_text", "is", null);
+  clearAiDraftQuery = applyScope(clearAiDraftQuery, scope);
+  await clearAiDraftQuery;
 
-  await serviceClient
+  let updateThreadQuery = serviceClient
     .from("mail_threads")
     .update({
       last_message_at: nowIso,
@@ -938,16 +942,22 @@ export async function POST(request, { params }) {
       updated_at: nowIso,
     })
     .eq("id", threadId);
+  updateThreadQuery = applyScope(updateThreadQuery, scope);
+  await updateThreadQuery;
 
   const draftThreadKeys = [thread.provider_thread_id, threadId].filter(Boolean);
   if (draftThreadKeys.length) {
-    const { data: pendingDraftRows, error: pendingDraftsLookupError } = await serviceClient
+    let pendingDraftsQuery = serviceClient
       .from("drafts")
       .select("id, created_at")
       .in("thread_id", draftThreadKeys)
       .eq("platform", mailbox.provider)
       .eq("status", "pending")
       .order("created_at", { ascending: false });
+    if (scope?.workspaceId) {
+      pendingDraftsQuery = pendingDraftsQuery.eq("workspace_id", scope.workspaceId);
+    }
+    const { data: pendingDraftRows, error: pendingDraftsLookupError } = await pendingDraftsQuery;
 
     if (pendingDraftsLookupError) {
       console.warn("[threads/send] failed to lookup pending drafts", pendingDraftsLookupError.message);
@@ -959,22 +969,30 @@ export async function POST(request, { params }) {
         .filter(Boolean);
 
       if (latestDraftId !== null) {
-        await serviceClient
+        let sentDraftQuery = serviceClient
           .from("drafts")
           .update({ status: "sent" })
           .eq("id", latestDraftId);
+        if (scope?.workspaceId) {
+          sentDraftQuery = sentDraftQuery.eq("workspace_id", scope.workspaceId);
+        }
+        await sentDraftQuery;
       }
 
       if (staleDraftIds.length) {
-        await serviceClient
+        let supersedeDraftsQuery = serviceClient
           .from("drafts")
           .update({ status: "superseded" })
           .in("id", staleDraftIds);
+        if (scope?.workspaceId) {
+          supersedeDraftsQuery = supersedeDraftsQuery.eq("workspace_id", scope.workspaceId);
+        }
+        await supersedeDraftsQuery;
       }
     }
   }
 
-  if (learnFromEdits && draftDestinationSetting === "sona_inbox" && aiDraftText) {
+  if (supabaseUserId && learnFromEdits && draftDestinationSetting === "sona_inbox" && aiDraftText) {
     const finalText = bodyText || stripHtml(bodyHtml);
     if (finalText.trim()) {
       const diffSummary = summarizeDraftDiff(aiDraftText, finalText);

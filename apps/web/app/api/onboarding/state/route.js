@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
+import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -15,16 +16,6 @@ const SUPABASE_SERVICE_ROLE_KEY =
 function createServiceClient() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null;
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-}
-
-async function resolveSupabaseUserId(serviceClient, clerkUserId) {
-  const { data, error } = await serviceClient
-    .from("profiles")
-    .select("user_id")
-    .eq("clerk_user_id", clerkUserId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  return data?.user_id ?? null;
 }
 
 async function getShopId(serviceClient, userId) {
@@ -64,23 +55,26 @@ export async function GET() {
     );
   }
 
-  let supabaseUserId = null;
+  let scope = null;
   try {
-    supabaseUserId = await resolveSupabaseUserId(serviceClient, clerkUserId);
+    scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+  const supabaseUserId = scope?.supabaseUserId ?? null;
 
   const nowIso = new Date().toISOString();
-  const { count: emailCount } = await serviceClient
-    .from("mail_accounts")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", supabaseUserId);
+  const emailCountQuery = applyScope(
+    serviceClient.from("mail_accounts").select("id", { count: "exact", head: true }),
+    scope
+  );
+  const { count: emailCount } = await emailCountQuery;
 
-  const { count: automationCount } = await serviceClient
-    .from("agent_automation")
-    .select("user_id", { count: "exact", head: true })
-    .eq("user_id", supabaseUserId);
+  const automationCountQuery = applyScope(
+    serviceClient.from("agent_automation").select("user_id", { count: "exact", head: true }),
+    scope
+  );
+  const { count: automationCount } = await automationCountQuery;
 
   const shopId = await getShopId(serviceClient, { supabaseUserId, orgId: orgId ?? null });
 

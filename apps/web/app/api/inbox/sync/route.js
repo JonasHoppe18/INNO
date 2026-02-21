@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
+import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -20,16 +21,6 @@ const INTERNAL_SECRET =
 function createServiceClient() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null;
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-}
-
-async function resolveSupabaseUserId(serviceClient, clerkUserId) {
-  const { data, error } = await serviceClient
-    .from("profiles")
-    .select("user_id")
-    .eq("clerk_user_id", clerkUserId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  return data?.user_id ?? null;
 }
 
 async function triggerFunction(functionName, supabaseUserId) {
@@ -56,8 +47,8 @@ async function triggerFunction(functionName, supabaseUserId) {
 }
 
 export async function POST() {
-  const { userId } = await auth();
-  if (!userId) {
+  const { userId: clerkUserId, orgId } = await auth();
+  if (!clerkUserId) {
     return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
   }
 
@@ -83,30 +74,54 @@ export async function POST() {
     );
   }
 
-  let supabaseUserId = null;
+  let scope = null;
   try {
-    supabaseUserId = await resolveSupabaseUserId(serviceClient, userId);
+    scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  if (!supabaseUserId) {
-    return NextResponse.json({ error: "Supabase user not found." }, { status: 404 });
+  let usersQuery = applyScope(
+    serviceClient.from("mail_accounts").select("user_id"),
+    scope
+  )
+    .not("user_id", "is", null)
+    .in("provider", ["gmail", "outlook"]);
+
+  const { data: accountRows, error: accountError } = await usersQuery;
+  if (accountError) {
+    return NextResponse.json({ error: accountError.message }, { status: 500 });
   }
 
-  const [gmailResult, outlookResult] = await Promise.all([
-    triggerFunction("gmail-poll", supabaseUserId),
-    triggerFunction("outlook-poll", supabaseUserId),
-  ]);
+  const userIds = Array.from(
+    new Set((Array.isArray(accountRows) ? accountRows : []).map((row) => row?.user_id).filter(Boolean))
+  );
+  if (!userIds.length && scope?.supabaseUserId) {
+    userIds.push(scope.supabaseUserId);
+  }
+  if (!userIds.length) {
+    return NextResponse.json({ error: "No eligible mailbox owners found to sync." }, { status: 404 });
+  }
 
-  const ok = gmailResult.ok || outlookResult.ok;
+  const syncResults = await Promise.all(
+    userIds.map(async (supabaseUserId) => {
+      const [gmailResult, outlookResult] = await Promise.all([
+        triggerFunction("gmail-poll", supabaseUserId),
+        triggerFunction("outlook-poll", supabaseUserId),
+      ]);
+      return {
+        user_id: supabaseUserId,
+        gmail: gmailResult,
+        outlook: outlookResult,
+      };
+    })
+  );
+
+  const ok = syncResults.some((row) => row.gmail?.ok || row.outlook?.ok);
   return NextResponse.json(
     {
       success: ok,
-      results: {
-        gmail: gmailResult,
-        outlook: outlookResult,
-      },
+      results: syncResults,
     },
     { status: ok ? 200 : 500 }
   );

@@ -89,14 +89,14 @@ export function NavMain({ items }) {
                     <div className="flex w-full items-center gap-2">
                       <Link
                         href={item.url}
-                        className="flex flex-1 items-center gap-2 text-foreground"
+                        className="flex flex-1 items-center gap-2 text-inherit no-underline"
                       >
                         {item.icon && <item.icon className="h-4 w-4" />}
                         <span>{item.title}</span>
                       </Link>
                     </div>
                   ) : (
-                     <Link href={item.url} className="flex w-full items-center gap-2">
+                     <Link href={item.url} className="flex w-full items-center gap-2 text-inherit no-underline">
                        {item.icon && <item.icon className="h-4 w-4" />}
                        <span>{item.title}</span>
                      </Link>
@@ -109,7 +109,7 @@ export function NavMain({ items }) {
                         key={child.title}
                         href={child.url}
                         className={cn(
-                          "flex items-center gap-2 rounded-lg px-2 py-1 text-sm text-muted-foreground hover:bg-muted hover:text-foreground",
+                          "flex items-center gap-2 rounded-lg px-2 py-1 text-sm text-muted-foreground no-underline hover:bg-muted hover:text-foreground",
                           pathname.startsWith(child.url) && "bg-muted text-foreground"
                         )}
                       >

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { decryptString } from "@/lib/server/shopify-oauth";
+import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -35,45 +36,23 @@ function createServiceClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
-async function resolveSupabaseUserId(serviceClient, clerkUserId) {
-  const { data, error } = await serviceClient
-    .from("profiles")
-    .select("user_id")
-    .eq("clerk_user_id", clerkUserId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  if (!data?.user_id) throw new Error("Supabase user not found for this Clerk user.");
-  return data.user_id;
-}
-
-async function fetchShop(serviceClient, ownerUserId) {
-  const { data, error } = await serviceClient
+async function fetchShopifyCredentials(serviceClient, scope) {
+  let query = serviceClient
     .from("shops")
-    .select("id, shop_domain, platform")
-    .eq("owner_user_id", ownerUserId)
+    .select("id, shop_domain, access_token_encrypted, platform")
     .eq("platform", "shopify")
+    .is("uninstalled_at", null)
     .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(1);
+  query = applyScope(query, scope, { workspaceColumn: "workspace_id", userColumn: "owner_user_id" });
+  const { data, error } = await query.maybeSingle();
   if (error) throw new Error(error.message);
-  if (!data) throw new Error("No shop found for this user.");
-  return data;
-}
-
-async function fetchShopifyCredentials(serviceClient, ownerUserId) {
-  const { data, error } = await serviceClient
-    .from("shops")
-    .select("shop_domain, access_token_encrypted")
-    .eq("owner_user_id", ownerUserId)
-    .eq("platform", "shopify")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  if (!data?.shop_domain || !data?.access_token_encrypted) {
+  if (!data?.id || !data?.shop_domain || !data?.access_token_encrypted) {
     throw new Error("Missing Shopify credentials.");
   }
   return {
+    shop_id: data.id,
+    platform: data.platform,
     shop_domain: data.shop_domain,
     access_token: decryptString(data.access_token_encrypted),
   };
@@ -149,8 +128,7 @@ async function embedText(text) {
   return vector;
 }
 
-async function syncShopify({ supabaseUserId, serviceClient }) {
-  const creds = await fetchShopifyCredentials(serviceClient, supabaseUserId);
+async function syncShopify({ serviceClient, creds }) {
   const domain = creds.shop_domain.replace(/^https?:\/\//, "");
   const products = await fetchShopifyProducts({ domain, accessToken: creds.access_token });
 
@@ -165,7 +143,7 @@ async function syncShopify({ supabaseUserId, serviceClient }) {
     const context = `Product: ${title}. Price: ${price || "N/A"}. Details: ${description || "No details."}`;
     const embedding = await embedText(context);
     rows.push({
-      shop_id: supabaseUserId,
+      shop_ref_id: creds.shop_id,
       external_id: String(product?.id ?? ""),
       platform: "shopify",
       title,
@@ -177,17 +155,52 @@ async function syncShopify({ supabaseUserId, serviceClient }) {
 
   if (rows.length) {
     const { error } = await serviceClient.from("shop_products").upsert(rows, {
-      onConflict: "shop_id,external_id,platform",
+      onConflict: "shop_ref_id,external_id,platform",
     });
-    if (error) throw new Error(error.message);
+    if (error) {
+      const noConstraint = /no unique|on conflict/i.test(String(error.message || ""));
+      if (!noConstraint) throw new Error(error.message);
+      for (const row of rows) {
+        const { data: existing, error: existingError } = await serviceClient
+          .from("shop_products")
+          .select("id")
+          .eq("shop_ref_id", row.shop_ref_id)
+          .eq("external_id", row.external_id)
+          .eq("platform", row.platform)
+          .maybeSingle();
+        if (existingError) throw new Error(existingError.message);
+        if (existing?.id) {
+          const { error: updateError } = await serviceClient
+            .from("shop_products")
+            .update(row)
+            .eq("id", existing.id);
+          if (updateError) throw new Error(updateError.message);
+        } else {
+          const { error: insertError } = await serviceClient.from("shop_products").insert(row);
+          if (insertError) throw new Error(insertError.message);
+        }
+      }
+    }
   }
 
   return { synced: rows.length };
 }
 
-export async function POST() {
-  const { userId } = auth();
-  if (!userId) {
+async function fetchActiveShopIds(serviceClient, scope) {
+  let query = serviceClient
+    .from("shops")
+    .select("id")
+    .eq("platform", "shopify")
+    .is("uninstalled_at", null);
+  query = applyScope(query, scope, { workspaceColumn: "workspace_id", userColumn: "owner_user_id" });
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  return (Array.isArray(data) ? data : []).map((row) => row?.id).filter(Boolean);
+}
+
+export async function GET() {
+  const { userId: clerkUserId, orgId } = auth();
+  if (!clerkUserId) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
@@ -196,14 +209,50 @@ export async function POST() {
 
   const serviceClient = createServiceClient();
   try {
-    const supabaseUserId = await resolveSupabaseUserId(serviceClient, userId);
-    const shop = await fetchShop(serviceClient, supabaseUserId);
+    const scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
+    if (!scope?.workspaceId && !scope?.supabaseUserId) {
+      throw new Error("Could not resolve workspace/user scope.");
+    }
 
+    const shopIds = await fetchActiveShopIds(serviceClient, scope);
+    if (!shopIds.length) {
+      return NextResponse.json({ success: true, count: 0 }, { status: 200 });
+    }
+
+    const { count, error } = await serviceClient
+      .from("shop_products")
+      .select("*", { count: "exact", head: true })
+      .in("shop_ref_id", shopIds);
+    if (error) throw new Error(error.message);
+
+    return NextResponse.json({ success: true, count: count ?? 0 }, { status: 200 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Count failed";
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
+}
+
+export async function POST() {
+  const { userId: clerkUserId, orgId } = auth();
+  if (!clerkUserId) {
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  }
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    return NextResponse.json({ error: "Supabase service key missing" }, { status: 500 });
+  }
+
+  const serviceClient = createServiceClient();
+  try {
+    const scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
+    if (!scope?.workspaceId && !scope?.supabaseUserId) {
+      throw new Error("Could not resolve workspace/user scope.");
+    }
+    const shop = await fetchShopifyCredentials(serviceClient, scope);
     if (shop.platform && shop.platform !== "shopify") {
       throw new Error("Platform not supported yet");
     }
 
-    const result = await syncShopify({ supabaseUserId, serviceClient });
+    const result = await syncShopify({ serviceClient, creds: shop });
     return NextResponse.json({ success: true, platform: "shopify", ...result }, { status: 200 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Sync failed";

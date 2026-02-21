@@ -164,6 +164,9 @@ export function KnowledgePageClient() {
           }).`
         );
       }
+      if (payload?.meta?.persisted) {
+        await loadData();
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Import failed.";
       toast.error(message);

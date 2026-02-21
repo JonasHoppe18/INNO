@@ -182,6 +182,7 @@ function InboxSection({ isInboxOpen, setIsInboxOpen, handleCreateInbox }) {
 
 export function AppSidebar({
   user,
+  className,
   ...props
 }) {
   const [isInboxOpen, setIsInboxOpen] = useState(true)
@@ -196,12 +197,16 @@ export function AppSidebar({
   }
 
   return (
-    <Sidebar collapsible="offcanvas" {...props}>
+    <Sidebar
+      collapsible="offcanvas"
+      className={cn("[&_a]:text-inherit [&_a]:no-underline", className)}
+      {...props}
+    >
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton asChild className="data-[slot=sidebar-menu-button]:!p-1.5">
-              <a href="#">
+              <a href="#" className="text-inherit no-underline">
                 <SonaLogo size={24} className="h-4 w-4" />
                 <span className="text-base font-semibold">Sona AI</span>
               </a>

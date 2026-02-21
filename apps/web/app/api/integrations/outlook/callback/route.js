@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
+import { resolveAuthScope } from "@/lib/server/workspace-auth";
 
 const MICROSOFT_CLIENT_ID = process.env.MICROSOFT_CLIENT_ID || "";
 const MICROSOFT_CLIENT_SECRET = process.env.MICROSOFT_CLIENT_SECRET || "";
@@ -29,20 +30,9 @@ function encodeToken(value) {
   return Buffer.from(value, "utf8").toString("base64");
 }
 
-async function resolveSupabaseUserId(serviceClient, clerkUserId) {
-  const { data, error } = await serviceClient
-    .from("profiles")
-    .select("user_id")
-    .eq("clerk_user_id", clerkUserId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  if (!data?.user_id) throw new Error("Supabase user not found for this Clerk user.");
-  return data.user_id;
-}
-
 export async function GET(request) {
-  const { userId } = auth();
-  if (!userId) {
+  const { userId: clerkUserId, orgId } = auth();
+  if (!clerkUserId) {
     return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
   }
 
@@ -106,15 +96,15 @@ export async function GET(request) {
     );
   }
 
-  let supabaseUserId = null;
+  let scope = null;
   try {
-    supabaseUserId = await resolveSupabaseUserId(serviceClient, userId);
+    scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
   } catch (error) {
     return NextResponse.json(
       {
         error: "Supabase user lookup failed.",
         debug: {
-          clerkUserId: userId,
+          clerkUserId,
           supabaseUrlHost: SUPABASE_BASE_URL ? new URL(SUPABASE_BASE_URL).host : null,
           supabaseProjectRef: SUPABASE_BASE_URL?.split(".")[0]?.replace("https://", ""),
           hadServiceClient: Boolean(serviceClient),
@@ -122,6 +112,9 @@ export async function GET(request) {
       },
       { status: 500 }
     );
+  }
+  if (!scope?.supabaseUserId) {
+    return NextResponse.json({ error: "Supabase user not found for this Clerk user." }, { status: 404 });
   }
 
   const expiresIn = Number(tokens?.expires_in ?? 0);
@@ -131,7 +124,8 @@ export async function GET(request) {
     .from("mail_accounts")
     .upsert(
       {
-        user_id: supabaseUserId,
+        user_id: scope.supabaseUserId,
+        workspace_id: scope.workspaceId ?? null,
         provider: "outlook",
         provider_email: email,
         access_token_enc: encodeToken(tokens.access_token),

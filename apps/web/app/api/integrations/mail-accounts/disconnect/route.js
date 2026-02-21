@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
+import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 
 const SUPABASE_BASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -17,20 +18,9 @@ function createServiceClient() {
   return createClient(SUPABASE_BASE_URL, SUPABASE_SERVICE_KEY);
 }
 
-async function resolveSupabaseUserId(serviceClient, clerkUserId) {
-  const { data, error } = await serviceClient
-    .from("profiles")
-    .select("user_id")
-    .eq("clerk_user_id", clerkUserId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  if (!data?.user_id) throw new Error("Supabase user not found for this Clerk user.");
-  return data.user_id;
-}
-
 export async function POST(request) {
-  const { userId } = await auth();
-  if (!userId) {
+  const { userId: clerkUserId, orgId } = await auth();
+  if (!clerkUserId) {
     return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
   }
 
@@ -52,23 +42,27 @@ export async function POST(request) {
     );
   }
 
-  let supabaseUserId = null;
+  let scope = null;
   try {
-    supabaseUserId = await resolveSupabaseUserId(serviceClient, userId);
+    scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
   } catch (error) {
     return NextResponse.json(
       {
-        error: "Supabase user lookup failed.",
+        error: "Auth scope lookup failed.",
         debug: {
-          clerkUserId: userId,
+          clerkUserId,
           supabaseUrlHost: SUPABASE_BASE_URL ? new URL(SUPABASE_BASE_URL).host : null,
         },
       },
       { status: 500 }
     );
   }
+  if (!scope?.workspaceId && !scope?.supabaseUserId) {
+    return NextResponse.json({ error: "No workspace or user scope found." }, { status: 403 });
+  }
 
-  const query = serviceClient.from("mail_accounts").delete().eq("user_id", supabaseUserId);
+  let query = serviceClient.from("mail_accounts").delete();
+  query = applyScope(query, scope);
   const { error } = mailboxId
     ? await query.eq("id", mailboxId)
     : await query.eq("provider", provider);
@@ -81,11 +75,11 @@ export async function POST(request) {
         .update({
           status: "disconnected",
           updated_at: new Date().toISOString(),
-        })
-        .eq("user_id", supabaseUserId);
+        });
+      const scopedUpdateQuery = applyScope(updateQuery, scope);
       const { error: updateError } = mailboxId
-        ? await updateQuery.eq("id", mailboxId)
-        : await updateQuery.eq("provider", provider);
+        ? await scopedUpdateQuery.eq("id", mailboxId)
+        : await scopedUpdateQuery.eq("provider", provider);
       if (updateError) {
         return NextResponse.json({ error: updateError.message }, { status: 500 });
       }

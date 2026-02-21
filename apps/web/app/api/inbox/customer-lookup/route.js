@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
+import { decryptString } from "@/lib/server/shopify-oauth";
+import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -11,25 +13,15 @@ const SUPABASE_SERVICE_ROLE_KEY =
   process.env.SERVICE_ROLE_KEY ||
   process.env.SUPABASE_SERVICE_KEY ||
   "";
-const SUPABASE_EDGE_BASE = SUPABASE_URL;
 
 const DEFAULT_TTL_MINUTES = Number(process.env.CUSTOMER_LOOKUP_TTL_MINUTES || 30);
 const NEGATIVE_TTL_MINUTES = Number(process.env.CUSTOMER_LOOKUP_NEGATIVE_TTL_MINUTES || 5);
 const SHOPIFY_LIMIT = 50;
+const SHOPIFY_API_VERSION = "2024-01";
 
 function createServiceClient() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null;
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-}
-
-async function resolveSupabaseUserId(serviceClient, clerkUserId) {
-  const { data, error } = await serviceClient
-    .from("profiles")
-    .select("user_id")
-    .eq("clerk_user_id", clerkUserId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  return data?.user_id ?? null;
 }
 
 function normalizeEmail(value) {
@@ -170,21 +162,14 @@ function mapCustomer(orders, fallbackEmail) {
 }
 
 export async function POST(request) {
-  const { getToken, userId } = auth();
-  if (!userId) {
+  const { userId: clerkUserId, orgId } = auth();
+  if (!clerkUserId) {
     return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
   }
 
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     return NextResponse.json(
       { error: "Supabase service configuration is missing." },
-      { status: 500 }
-    );
-  }
-
-  if (!SUPABASE_EDGE_BASE) {
-    return NextResponse.json(
-      { error: "Supabase edge URL is missing." },
       { status: 500 }
     );
   }
@@ -220,12 +205,13 @@ export async function POST(request) {
     );
   }
 
-  let supabaseUserId = null;
+  let scope = null;
   try {
-    supabaseUserId = await resolveSupabaseUserId(serviceClient, userId);
+    scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+  const supabaseUserId = scope?.supabaseUserId ?? null;
 
   if (!supabaseUserId) {
     return NextResponse.json({ error: "Supabase user not found." }, { status: 404 });
@@ -255,30 +241,47 @@ export async function POST(request) {
     }
   }
 
-  const token = await getToken();
-  if (!token) {
+  let shopQuery = serviceClient
+    .from("shops")
+    .select("shop_domain, access_token_encrypted")
+    .eq("platform", "shopify")
+    .is("uninstalled_at", null)
+    .order("created_at", { ascending: false })
+    .limit(1);
+  shopQuery = applyScope(shopQuery, scope, { workspaceColumn: "workspace_id", userColumn: "owner_user_id" });
+  const { data: shopCreds, error: shopCredsError } = await shopQuery.maybeSingle();
+  if (shopCredsError) {
+    return NextResponse.json({ error: shopCredsError.message }, { status: 500 });
+  }
+  if (!shopCreds?.shop_domain || !shopCreds?.access_token_encrypted) {
+    return NextResponse.json({ error: "No connected Shopify store found for this workspace." }, { status: 400 });
+  }
+  let shopAccessToken = null;
+  try {
+    shopAccessToken = decryptString(shopCreds.access_token_encrypted);
+  } catch (error) {
     return NextResponse.json(
-      { error: "Could not fetch Clerk session token." },
-      { status: 401 }
+      { error: error instanceof Error ? error.message : "Could not decrypt Shopify token." },
+      { status: 500 }
     );
   }
+  const shopDomain = String(shopCreds.shop_domain || "").replace(/^https?:\/\//, "").replace(/\/+$/, "");
 
   const fetchOrders = async (params) => {
-    const url = new URL(`${SUPABASE_EDGE_BASE}/functions/v1/shopify-orders`);
+    const url = new URL(`https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/orders.json`);
     url.searchParams.set("status", "any");
     url.searchParams.set("limit", String(SHOPIFY_LIMIT));
-    if (debug) {
-      url.searchParams.set("debug", "1");
-    }
     Object.entries(params || {}).forEach(([key, value]) => {
       if (value) url.searchParams.set(key, value);
     });
     const response = await fetch(url.toString(), {
       method: "GET",
       headers: {
-        Authorization: `Bearer ${token}`,
+        "X-Shopify-Access-Token": shopAccessToken,
         "Content-Type": "application/json",
+        Accept: "application/json",
       },
+      cache: "no-store",
     });
     const text = await response.text();
     let json = null;
@@ -357,20 +360,21 @@ export async function POST(request) {
     ? rawOrders.filter((order) => matchesOrderNumber(order, derivedOrderNumber))
     : rawOrders;
   const ordersToUse = filteredOrders.length ? filteredOrders : rawOrders;
-  let shopDomain = null;
   const { data: shopRow } = await serviceClient
     .from("shops")
     .select("shop_domain")
-    .eq("owner_user_id", supabaseUserId)
+    .eq("platform", "shopify")
+    .is("uninstalled_at", null)
+    .eq("shop_domain", shopDomain)
     .maybeSingle();
-  if (shopRow?.shop_domain) {
-    shopDomain = String(shopRow.shop_domain).replace(/^https?:\/\//, "").replace(/\/+$/, "");
-  }
+  const finalShopDomain = shopRow?.shop_domain
+    ? String(shopRow.shop_domain).replace(/^https?:\/\//, "").replace(/\/+$/, "")
+    : shopDomain;
 
   const mappedOrders = ordersToUse.map((order) => {
     const mapped = mapOrder(order);
-    if (shopDomain && mapped?.adminId) {
-      mapped.adminUrl = `https://${shopDomain}/admin/orders/${mapped.adminId}`;
+    if (finalShopDomain && mapped?.adminId) {
+      mapped.adminUrl = `https://${finalShopDomain}/admin/orders/${mapped.adminId}`;
     }
     return mapped;
   });
@@ -381,7 +385,7 @@ export async function POST(request) {
     orders: mappedOrders,
     matchedOrderNumber: derivedOrderNumber,
     source: platform,
-    shopDomain,
+    shopDomain: finalShopDomain,
     ...(debug && lookupDebug ? { debug: lookupDebug } : {}),
   };
 

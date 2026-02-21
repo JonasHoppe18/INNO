@@ -66,7 +66,7 @@ const SUPABASE_TEMPLATE =
 export function useAgentAutomation(options = {}) {
   const { lazy = false, userId: providedUserId } = options;
   const supabase = useClerkSupabase();
-  const { getToken } = useAuth();
+  const { getToken, orgId } = useAuth();
   const { user } = useUser();
 
   const [settings, setSettings] = useState(DEFAULT_AUTOMATION);
@@ -119,6 +119,34 @@ export function useAgentAutomation(options = {}) {
     throw new Error("Supabase user ID is not ready yet.");
   }, [providedUserId, user?.publicMetadata?.supabase_uuid, resolveUserIdFromToken, supabase, user?.id]);
 
+  const ensureWorkspaceId = useCallback(async () => {
+    if (!supabase || !user?.id) return null;
+
+    if (orgId) {
+      const { data: workspaceByOrg, error: orgError } = await supabase
+        .from("workspaces")
+        .select("id")
+        .eq("clerk_org_id", orgId)
+        .maybeSingle();
+      if (!orgError && workspaceByOrg?.id) {
+        return workspaceByOrg.id;
+      }
+    }
+
+    const { data: membership, error: membershipError } = await supabase
+      .from("workspace_members")
+      .select("workspace_id")
+      .eq("clerk_user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (membershipError) {
+      throw membershipError;
+    }
+    return membership?.workspace_id ?? null;
+  }, [supabase, user?.id, orgId]);
+
   const mapAutomation = useCallback((row) => {
     if (!row) return DEFAULT_AUTOMATION;
     return {
@@ -143,16 +171,19 @@ export function useAgentAutomation(options = {}) {
     setError(null);
     try {
       const userId = await ensureUserId().catch(() => null);
-      if (!userId) {
+      const workspaceId = await ensureWorkspaceId().catch(() => null);
+      if (!userId && !workspaceId) {
         setSettings(DEFAULT_AUTOMATION);
         return DEFAULT_AUTOMATION;
       }
 
-      const { data, error: queryError } = await supabase
-        .from("agent_automation")
-        .select("*")
-        .eq("user_id", userId)
-        .maybeSingle();
+      let query = supabase.from("agent_automation").select("*");
+      if (workspaceId) {
+        query = query.eq("workspace_id", workspaceId).order("updated_at", { ascending: false }).limit(1);
+      } else if (userId) {
+        query = query.eq("user_id", userId);
+      }
+      const { data, error: queryError } = await query.maybeSingle();
       if (queryError) throw queryError;
       const mapped = mapAutomation(data);
       setSettings(mapped);
@@ -163,7 +194,7 @@ export function useAgentAutomation(options = {}) {
     } finally {
       setLoading(false);
     }
-  }, [supabase, ensureUserId, mapAutomation]);
+  }, [supabase, ensureUserId, ensureWorkspaceId, mapAutomation]);
 
   const saveAutomation = useCallback(
     async (updates) => {
@@ -171,11 +202,11 @@ export function useAgentAutomation(options = {}) {
       setError(null);
       try {
         const userId = await ensureUserId().catch(() => null);
+        const workspaceId = await ensureWorkspaceId().catch(() => null);
         if (!isValidUuid(userId)) {
           throw new Error("Supabase user ID is not ready yet.");
         }
-        const payload = {
-          user_id: userId,
+        const basePayload = {
           order_updates: updates.orderUpdates ?? settings.orderUpdates,
           cancel_orders: updates.cancelOrders ?? settings.cancelOrders,
           automatic_refunds: updates.automaticRefunds ?? settings.automaticRefunds,
@@ -184,15 +215,66 @@ export function useAgentAutomation(options = {}) {
           auto_draft_enabled: updates.autoDraftEnabled ?? settings.autoDraftEnabled,
           draft_destination: updates.draftDestination ?? settings.draftDestination,
           min_confidence: updates.minConfidence ?? settings.minConfidence,
+          updated_at: new Date().toISOString(),
         };
 
-        const { data, error: upsertError } = await supabase
-          .from("agent_automation")
-          .upsert(payload, { onConflict: "user_id" })
-          .select()
-          .maybeSingle();
+        let persisted = null;
 
-        if (upsertError) throw upsertError;
+        // Workspace mode: keep one shared row per workspace.
+        if (workspaceId) {
+          const { data: existingWorkspaceRow, error: existingWorkspaceError } = await supabase
+            .from("agent_automation")
+            .select("user_id")
+            .eq("workspace_id", workspaceId)
+            .order("updated_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (existingWorkspaceError) throw existingWorkspaceError;
+
+          const { data: existingUserRow, error: existingUserError } = await supabase
+            .from("agent_automation")
+            .select("user_id")
+            .eq("user_id", userId)
+            .maybeSingle();
+          if (existingUserError) throw existingUserError;
+
+          if (existingWorkspaceRow?.user_id) {
+            const { data, error: updateError } = await supabase
+              .from("agent_automation")
+              .update({ ...basePayload, workspace_id: workspaceId })
+              .eq("user_id", existingWorkspaceRow.user_id)
+              .select()
+              .maybeSingle();
+            if (updateError) throw updateError;
+            persisted = data;
+          } else if (existingUserRow?.user_id) {
+            // Legacy row already exists for this user_id; convert it into the workspace row.
+            const { data, error: updateError } = await supabase
+              .from("agent_automation")
+              .update({ ...basePayload, workspace_id: workspaceId })
+              .eq("user_id", userId)
+              .select()
+              .maybeSingle();
+            if (updateError) throw updateError;
+            persisted = data;
+          } else {
+            const { data, error: insertError } = await supabase
+              .from("agent_automation")
+              .insert({ ...basePayload, user_id: userId, workspace_id: workspaceId })
+              .select()
+              .maybeSingle();
+            if (insertError) throw insertError;
+            persisted = data;
+          }
+        } else {
+          const { data, error: upsertError } = await supabase
+            .from("agent_automation")
+            .upsert({ ...basePayload, user_id: userId, workspace_id: null }, { onConflict: "user_id" })
+            .select()
+            .maybeSingle();
+          if (upsertError) throw upsertError;
+          persisted = data;
+        }
 
         if (Object.prototype.hasOwnProperty.call(updates, "autoDraftEnabled")) {
           const res = await fetch("/api/agent/auto-draft", {
@@ -206,8 +288,8 @@ export function useAgentAutomation(options = {}) {
           }
         }
 
-        setSettings(mapAutomation(data));
-        return data;
+        setSettings(mapAutomation(persisted));
+        return persisted;
       } catch (err) {
         setError(
           err instanceof Error ? err : new Error("Could not save automation settings.")
@@ -217,7 +299,7 @@ export function useAgentAutomation(options = {}) {
         setSaving(false);
       }
     },
-    [ensureUserId, settings, supabase, mapAutomation]
+    [ensureUserId, ensureWorkspaceId, settings, supabase, mapAutomation]
   );
 
   useEffect(() => {

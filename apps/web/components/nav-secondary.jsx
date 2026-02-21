@@ -38,7 +38,7 @@ export function NavSecondary({
                     "bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground"
                 )}
               >
-                <Link href={item.url} className="flex w-full items-center gap-2">
+                <Link href={item.url} className="flex w-full items-center gap-2 text-inherit no-underline">
                   <item.icon className="h-4 w-4" />
                   <span>{item.title}</span>
                 </Link>

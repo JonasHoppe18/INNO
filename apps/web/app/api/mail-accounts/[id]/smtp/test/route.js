@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 import nodemailer from "nodemailer";
+import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -18,16 +19,6 @@ const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || "";
 function createServiceClient() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null;
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-}
-
-async function resolveSupabaseUserId(serviceClient, clerkUserId) {
-  const { data, error } = await serviceClient
-    .from("profiles")
-    .select("user_id")
-    .eq("clerk_user_id", clerkUserId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  return data?.user_id ?? null;
 }
 
 function decodeHexToString(hexValue) {
@@ -91,8 +82,8 @@ async function logAgent(serviceClient, status, detail) {
 }
 
 export async function POST(request, { params }) {
-  const { userId } = await auth();
-  if (!userId) {
+  const { userId: clerkUserId, orgId } = await auth();
+  if (!clerkUserId) {
     return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
   }
 
@@ -109,24 +100,28 @@ export async function POST(request, { params }) {
     );
   }
 
-  let supabaseUserId = null;
+  let scope = null;
   try {
-    supabaseUserId = await resolveSupabaseUserId(serviceClient, userId);
+    scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  if (!scope?.workspaceId && !scope?.supabaseUserId) {
+    return NextResponse.json({ error: "No workspace or user scope found." }, { status: 403 });
   }
 
   const body = await request.json().catch(() => ({}));
   const recipient = String(body?.recipient || "").trim();
 
-  const { data: account, error: accountError } = await serviceClient
+  let accountQuery = serviceClient
     .from("mail_accounts")
     .select(
-      "id, user_id, provider, provider_email, smtp_host, smtp_port, smtp_secure, smtp_username_enc, smtp_password_enc"
+      "id, user_id, workspace_id, provider, provider_email, smtp_host, smtp_port, smtp_secure, smtp_username_enc, smtp_password_enc"
     )
     .eq("id", mailboxId)
-    .eq("user_id", supabaseUserId)
     .maybeSingle();
+  accountQuery = applyScope(accountQuery, scope);
+  const { data: account, error: accountError } = await accountQuery;
   if (accountError || !account) {
     return NextResponse.json({ error: "Mailbox not found." }, { status: 404 });
   }
@@ -162,15 +157,16 @@ export async function POST(request, { params }) {
       html: "<p>SMTP setup verified successfully.</p>",
     });
 
-    await serviceClient
+    let successUpdateQuery = serviceClient
       .from("mail_accounts")
       .update({
         smtp_status: "active",
         smtp_last_error: null,
         updated_at: nowIso,
       })
-      .eq("id", mailboxId)
-      .eq("user_id", supabaseUserId);
+      .eq("id", mailboxId);
+    successUpdateQuery = applyScope(successUpdateQuery, scope);
+    await successUpdateQuery;
 
     await logAgent(serviceClient, "success", {
       mailboxId,
@@ -181,15 +177,16 @@ export async function POST(request, { params }) {
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (error) {
     const safeError = String(error?.message || "SMTP test failed").slice(0, 280);
-    await serviceClient
+    let errorUpdateQuery = serviceClient
       .from("mail_accounts")
       .update({
         smtp_status: "error",
         smtp_last_error: safeError,
         updated_at: nowIso,
       })
-      .eq("id", mailboxId)
-      .eq("user_id", supabaseUserId);
+      .eq("id", mailboxId);
+    errorUpdateQuery = applyScope(errorUpdateQuery, scope);
+    await errorUpdateQuery;
 
     await logAgent(serviceClient, "error", {
       mailboxId,

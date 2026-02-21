@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
+import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 
 export const runtime = "nodejs";
 
@@ -19,20 +20,9 @@ function createServiceClient() {
   return createClient(SUPABASE_BASE_URL, SUPABASE_SERVICE_KEY);
 }
 
-async function resolveSupabaseUserId(serviceClient, clerkUserId) {
-  const { data, error } = await serviceClient
-    .from("profiles")
-    .select("user_id")
-    .eq("clerk_user_id", clerkUserId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  if (!data?.user_id) throw new Error("Supabase user not found for this Clerk user.");
-  return data.user_id;
-}
-
 export async function POST(request) {
-  const { userId } = auth();
-  if (!userId) {
+  const { userId: clerkUserId, orgId } = await auth();
+  if (!clerkUserId) {
     return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
   }
 
@@ -47,22 +37,27 @@ export async function POST(request) {
     );
   }
 
-  let supabaseUserId = null;
+  let scope = null;
   try {
-    supabaseUserId = await resolveSupabaseUserId(serviceClient, userId);
+    scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Supabase user lookup failed." },
+      { error: error instanceof Error ? error.message : "Workspace scope lookup failed." },
       { status: 500 }
     );
   }
 
+  if (!scope?.workspaceId && !scope?.supabaseUserId) {
+    return NextResponse.json({ error: "No workspace/user scope found." }, { status: 400 });
+  }
+
   const status = enabled ? "active" : "inactive";
-  const { error } = await serviceClient
+  let updateQuery = serviceClient
     .from("mail_accounts")
     .update({ status, updated_at: new Date().toISOString() })
-    .eq("user_id", supabaseUserId)
     .in("provider", ["gmail", "outlook", "imap"]);
+  updateQuery = applyScope(updateQuery, scope);
+  const { error } = await updateQuery;
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

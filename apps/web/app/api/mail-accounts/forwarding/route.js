@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
+import { resolveAuthScope } from "@/lib/server/workspace-auth";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -18,23 +19,13 @@ function createServiceClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
-async function resolveSupabaseUserId(serviceClient, clerkUserId) {
-  const { data, error } = await serviceClient
-    .from("profiles")
-    .select("user_id")
-    .eq("clerk_user_id", clerkUserId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  return data?.user_id ?? null;
-}
-
 function generateSlug() {
   return crypto.randomBytes(12).toString("base64url").toLowerCase();
 }
 
 export async function POST(request) {
-  const { userId } = await auth();
-  if (!userId) {
+  const { userId: clerkUserId, orgId } = await auth();
+  if (!clerkUserId) {
     return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
   }
 
@@ -71,14 +62,13 @@ export async function POST(request) {
     return NextResponse.json({ error: "provider_email is required." }, { status: 400 });
   }
 
-  let supabaseUserId = null;
+  let scope = null;
   try {
-    supabaseUserId = await resolveSupabaseUserId(serviceClient, userId);
+    scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-
-  if (!supabaseUserId) {
+  if (!scope?.supabaseUserId) {
     return NextResponse.json({ error: "Supabase user not found." }, { status: 404 });
   }
 
@@ -89,7 +79,8 @@ export async function POST(request) {
     const { data, error } = await serviceClient
       .from("mail_accounts")
       .insert({
-        user_id: supabaseUserId,
+        user_id: scope.supabaseUserId,
+        workspace_id: scope.workspaceId ?? null,
         provider: "smtp",
         provider_email: providerEmail,
         inbound_slug: inboundSlug,

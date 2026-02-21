@@ -41,6 +41,15 @@ const linkifyText = (value) => {
   return withLinks.replace(/\n\n/g, "<br/><br/>").replace(/\n/g, "<br/>");
 };
 
+const sanitizeEmailHtml = (value) => {
+  if (!value) return "";
+  return String(value)
+    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, "")
+    .replace(/<link[\s\S]*?>/gi, "")
+    .replace(/<\/?(html|head|body|meta|title)[^>]*>/gi, "");
+};
+
 export function MessageBubble({
   message,
   direction = "inbound",
@@ -64,6 +73,7 @@ export function MessageBubble({
   const ccList = message.cc_emails || [];
   const avatarStyle = pickAvatarStyle(senderLabel);
   const isDraft = Boolean(message?.is_draft);
+  const safeBodyHtml = sanitizeEmailHtml(message?.body_html || "");
 
   const initials = senderLabel
     .split(" ")
@@ -159,11 +169,10 @@ export function MessageBubble({
         </div>
       </div>
       <div className="p-4 text-gray-800 leading-relaxed">
-        {message.body_html ? (
+        {safeBodyHtml ? (
           <div
             className="prose prose-sm max-w-none w-full text-sm text-gray-800"
-            // Trusts email HTML from upstream providers; if needed, sanitize before render.
-            dangerouslySetInnerHTML={{ __html: message.body_html }}
+            dangerouslySetInnerHTML={{ __html: safeBodyHtml }}
           />
         ) : (
           <div

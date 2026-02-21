@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
+import { resolveAuthScope } from "@/lib/server/workspace-auth";
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
@@ -26,20 +27,9 @@ function createServiceClient() {
   return createClient(SUPABASE_BASE_URL, SUPABASE_SERVICE_KEY);
 }
 
-async function resolveSupabaseUserId(serviceClient, clerkUserId) {
-  const { data, error } = await serviceClient
-    .from("profiles")
-    .select("user_id")
-    .eq("clerk_user_id", clerkUserId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  if (!data?.user_id) throw new Error("Supabase user not found for this Clerk user.");
-  return data.user_id;
-}
-
 export async function GET(request) {
-  const { userId } = auth();
-  if (!userId) {
+  const { userId: clerkUserId, orgId } = auth();
+  if (!clerkUserId) {
     return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
   }
 
@@ -107,15 +97,15 @@ export async function GET(request) {
   const expiresIn = Number(tokens?.expires_in ?? 0);
   const tokenExpiresAt = new Date(Date.now() + Math.max(0, expiresIn) * 1000).toISOString();
 
-  let supabaseUserId = null;
+  let scope = null;
   try {
-    supabaseUserId = await resolveSupabaseUserId(serviceClient, userId);
+    scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
   } catch (error) {
     return NextResponse.json(
       {
         error: "Supabase user lookup failed.",
         debug: {
-          clerkUserId: userId,
+          clerkUserId,
           supabaseUrlHost: SUPABASE_BASE_URL ? new URL(SUPABASE_BASE_URL).host : null,
           supabaseProjectRef: SUPABASE_BASE_URL?.split(".")[0]?.replace("https://", ""),
           hadServiceClient: Boolean(serviceClient),
@@ -124,12 +114,16 @@ export async function GET(request) {
       { status: 500 }
     );
   }
+  if (!scope?.supabaseUserId) {
+    return NextResponse.json({ error: "Supabase user not found for this Clerk user." }, { status: 404 });
+  }
 
   const { error } = await serviceClient
     .from("mail_accounts")
     .upsert(
       {
-        user_id: supabaseUserId,
+        user_id: scope.supabaseUserId,
+        workspace_id: scope.workspaceId ?? null,
         provider: "gmail",
         provider_email: email,
         access_token_enc: encodeToken(tokens.access_token),

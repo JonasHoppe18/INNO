@@ -5,28 +5,22 @@ import { toast } from "sonner";
 import { Database } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { useClerkSupabase } from "@/lib/useClerkSupabase";
 
 export function ProductKnowledgeCard() {
-  const supabase = useClerkSupabase();
   const [count, setCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
 
   const loadCount = async () => {
-    if (!supabase) {
-      setLoading(false);
-      return;
-    }
     setLoading(true);
     try {
-      const { count: productCount, error } = await supabase
-        .from("shop_products")
-        .select("*", { count: "exact", head: true })
-        // RLS will scope to the current user; no manual filter to avoid mismatch on ids
-        ;
-      if (error) throw error;
-      setCount(productCount ?? 0);
+      const res = await fetch("/api/knowledge/sync-products", { method: "GET" });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const message = typeof payload?.error === "string" ? payload.error : "Could not load products.";
+        throw new Error(message);
+      }
+      setCount(Number(payload?.count ?? 0));
     } catch (error) {
       console.warn("ProductKnowledgeCard: load failed", error);
       toast.error("Could not load product knowledge.");

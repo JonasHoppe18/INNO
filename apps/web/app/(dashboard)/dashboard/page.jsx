@@ -28,6 +28,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -64,24 +65,14 @@ function formatTimeAgo(value) {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-async function resolveSupabaseUserId(serviceClient, clerkUserId) {
-  const { data, error } = await serviceClient
-    .from("profiles")
-    .select("user_id")
-    .eq("clerk_user_id", clerkUserId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  return data?.user_id ?? null;
-}
-
-async function resolveShopId(serviceClient, ownerUserId) {
-  const { data, error } = await serviceClient
+async function resolveShopId(serviceClient, scope) {
+  let query = serviceClient
     .from("shops")
     .select("id")
-    .eq("owner_user_id", ownerUserId)
     .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(1);
+  query = applyScope(query, scope, { workspaceColumn: "workspace_id", userColumn: "owner_user_id" });
+  const { data, error } = await query.maybeSingle();
   if (error) throw new Error(error.message);
   return data?.id ?? null;
 }
@@ -98,8 +89,8 @@ function getStatusBadgeStyles(status) {
 
 // Dashboardet viser en komplet TailArk demo med sidebar, kort og tabel.
 export default async function Page() {
-  const { userId } = await auth();
-  if (!userId) {
+  const { userId: clerkUserId, orgId } = await auth();
+  if (!clerkUserId) {
     redirect("/sign-in?redirect_url=/dashboard");
   }
 
@@ -109,38 +100,45 @@ export default async function Page() {
   let sentConversations = 0;
   if (serviceClient) {
     try {
-      const supabaseUserId = await resolveSupabaseUserId(serviceClient, userId);
-      const shopId = supabaseUserId
-        ? await resolveShopId(serviceClient, supabaseUserId)
-        : null;
-      if (shopId) {
-        const { data, error } = await serviceClient
+      const scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
+      const shopId = await resolveShopId(serviceClient, scope);
+
+      if (shopId || scope?.workspaceId || scope?.supabaseUserId) {
+        let draftQuery = serviceClient
           .from("drafts")
           .select("id, created_at, customer_email, subject, status")
-          .eq("shop_id", shopId)
           .order("created_at", { ascending: false });
+        if (shopId) {
+          draftQuery = draftQuery.eq("shop_id", shopId);
+        }
+        draftQuery = applyScope(draftQuery, scope);
+        const { data, error } = await draftQuery;
         if (error) {
           throw error;
         }
         drafts = Array.isArray(data) ? data : [];
       }
 
-      if (supabaseUserId) {
-        const { count: sentMailCountResult } = await serviceClient
+      if (scope?.workspaceId || scope?.supabaseUserId) {
+        const { count: sentMailCountResult } = await applyScope(
+          serviceClient
           .from("mail_messages")
           .select("id", { count: "exact", head: true })
-          .eq("user_id", supabaseUserId)
           .eq("from_me", true)
-          .not("sent_at", "is", null);
+          .not("sent_at", "is", null),
+          scope
+        );
         sentMailCount = sentMailCountResult ?? 0;
 
-        const { data: conversationRows } = await serviceClient
+        const { data: conversationRows } = await applyScope(
+          serviceClient
           .from("mail_messages")
           .select("thread_id")
-          .eq("user_id", supabaseUserId)
           .eq("from_me", true)
           .not("sent_at", "is", null)
-          .limit(2000);
+          .limit(2000),
+          scope
+        );
         sentConversations = new Set(
           (conversationRows || []).map((row) => row.thread_id).filter(Boolean)
         ).size;

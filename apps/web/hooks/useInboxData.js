@@ -59,6 +59,81 @@ const SUPABASE_TEMPLATE =
 const makeListKey = (list = [], key = "id") =>
   list.map((item) => item?.[key] ?? "").join("|");
 
+const resolveScope = async ({ supabase, user, getToken, logLabel }) => {
+  const metadataUuid = user?.publicMetadata?.supabase_uuid;
+  let supabaseUserId = isValidUuid(metadataUuid) ? metadataUuid : null;
+
+  if (!supabaseUserId && typeof getToken === "function") {
+    try {
+      const templateToken = await getToken({ template: SUPABASE_TEMPLATE });
+      const payload = decodeJwtPayload(templateToken);
+      const claimUuid =
+        typeof payload?.supabase_user_id === "string" ? payload.supabase_user_id : null;
+      const sub = typeof payload?.sub === "string" ? payload.sub : null;
+      const candidate = isValidUuid(claimUuid) ? claimUuid : sub;
+      if (isValidUuid(candidate)) {
+        supabaseUserId = candidate;
+      }
+    } catch (tokenError) {
+      console.warn(`${logLabel}: clerk token missing supabase uuid`, tokenError);
+    }
+  }
+
+  if (!supabase || !user?.id) {
+    throw new Error("Supabase user ID is not ready yet.");
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("user_id")
+    .eq("clerk_user_id", user.id)
+    .maybeSingle();
+  if (profileError) throw profileError;
+
+  if (!supabaseUserId) {
+    const candidate = profile?.user_id;
+    if (isValidUuid(candidate)) {
+      supabaseUserId = candidate;
+    }
+  }
+
+  if (!supabaseUserId) {
+    throw new Error("Supabase user ID is not ready yet.");
+  }
+
+  const { data: membership, error: membershipError } = await supabase
+    .from("workspace_members")
+    .select("workspace_id")
+    .eq("clerk_user_id", user.id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (membershipError) throw membershipError;
+
+  return {
+    supabaseUserId,
+    workspaceId: membership?.workspace_id ?? null,
+  };
+};
+
+const applyClientScope = (
+  query,
+  scope,
+  { workspaceColumn = "workspace_id", userColumn = "user_id" } = {}
+) => {
+  if (scope?.workspaceId && workspaceColumn) return query.eq(workspaceColumn, scope.workspaceId);
+  if (scope?.supabaseUserId && userColumn) return query.eq(userColumn, scope.supabaseUserId);
+  return query;
+};
+
+const resolveScopedMailboxIds = async (supabase, scope) => {
+  let query = supabase.from("mail_accounts").select("id");
+  query = applyClientScope(query, scope);
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data || []).map((row) => row.id).filter(Boolean);
+};
+
 export function deriveThreadsFromMessages(messages = []) {
   const groups = new Map();
   messages.forEach((message) => {
@@ -112,53 +187,25 @@ export function useThreads(options = {}) {
   const seededKey = useMemo(() => makeListKey(seededData), [seededData]);
   const seededKeyRef = useRef(seededKey);
 
-  const ensureUserId = useCallback(async () => {
-    const metadataUuid = user?.publicMetadata?.supabase_uuid;
-    if (isValidUuid(metadataUuid)) return metadataUuid;
-
-    if (typeof getToken === "function") {
-      try {
-        const templateToken = await getToken({ template: SUPABASE_TEMPLATE });
-        const payload = decodeJwtPayload(templateToken);
-        const claimUuid =
-          typeof payload?.supabase_user_id === "string" ? payload.supabase_user_id : null;
-        const sub = typeof payload?.sub === "string" ? payload.sub : null;
-        const candidate = isValidUuid(claimUuid) ? claimUuid : sub;
-        if (isValidUuid(candidate)) return candidate;
-      } catch (tokenError) {
-        console.warn("useThreads: clerk token missing supabase uuid", tokenError);
-      }
-    }
-
-    if (!supabase || !user?.id) {
-      throw new Error("Supabase user ID is not ready yet.");
-    }
-
-    const { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .select("user_id")
-      .eq("clerk_user_id", user.id)
-      .maybeSingle();
-
-    if (profileError) throw profileError;
-    const candidate = profile?.user_id;
-    if (isValidUuid(candidate)) return candidate;
-    throw new Error("Supabase user ID is not ready yet.");
-  }, [getToken, supabase, user?.id, user?.publicMetadata?.supabase_uuid]);
-
   const fetchThreads = useCallback(async () => {
     if (!supabase) return;
     setLoading(true);
     setError(null);
     try {
-      const userId = await ensureUserId();
-      const { data: rows, error: queryError } = await supabase
+      const scope = await resolveScope({
+        supabase,
+        user,
+        getToken,
+        logLabel: "useThreads",
+      });
+      let request = supabase
         .from("mail_threads")
         .select(
           "id, user_id, mailbox_id, provider, provider_thread_id, subject, snippet, last_message_at, unread_count, is_read, status, assignee_id, priority, tags, created_at, updated_at"
         )
-        .eq("user_id", userId)
         .order("last_message_at", { ascending: false, nullsLast: true });
+      request = applyClientScope(request, scope);
+      const { data: rows, error: queryError } = await request;
       if (queryError) throw queryError;
       setData(Array.isArray(rows) ? rows : []);
     } catch (err) {
@@ -166,7 +213,7 @@ export function useThreads(options = {}) {
     } finally {
       setLoading(false);
     }
-  }, [ensureUserId, supabase]);
+  }, [getToken, supabase, user]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -201,50 +248,26 @@ export function useThreadMessages(threadId, options = {}) {
   const seededKey = useMemo(() => makeListKey(seeded), [seeded]);
   const seededKeyRef = useRef(seededKey);
 
-  const ensureUserId = useCallback(async () => {
-    const metadataUuid = user?.publicMetadata?.supabase_uuid;
-    if (isValidUuid(metadataUuid)) return metadataUuid;
-    if (typeof getToken === "function") {
-      try {
-        const templateToken = await getToken({ template: SUPABASE_TEMPLATE });
-        const payload = decodeJwtPayload(templateToken);
-        const claimUuid =
-          typeof payload?.supabase_user_id === "string" ? payload.supabase_user_id : null;
-        const sub = typeof payload?.sub === "string" ? payload.sub : null;
-        const candidate = isValidUuid(claimUuid) ? claimUuid : sub;
-        if (isValidUuid(candidate)) return candidate;
-      } catch (tokenError) {
-        console.warn("useThreadMessages: clerk token missing supabase uuid", tokenError);
-      }
-    }
-    if (!supabase || !user?.id) {
-      throw new Error("Supabase user ID is not ready yet.");
-    }
-    const { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .select("user_id")
-      .eq("clerk_user_id", user.id)
-      .maybeSingle();
-    if (profileError) throw profileError;
-    const candidate = profile?.user_id;
-    if (isValidUuid(candidate)) return candidate;
-    throw new Error("Supabase user ID is not ready yet.");
-  }, [getToken, supabase, user?.id, user?.publicMetadata?.supabase_uuid]);
-
   const fetchMessages = useCallback(async () => {
     if (!supabase || !threadId) return;
     setLoading(true);
     setError(null);
     try {
-      const userId = await ensureUserId();
-      const { data: rows, error: queryError } = await supabase
+      const scope = await resolveScope({
+        supabase,
+        user,
+        getToken,
+        logLabel: "useThreadMessages",
+      });
+      let request = supabase
         .from("mail_messages")
         .select(
           "id, mailbox_id, thread_id, subject, snippet, body_text, body_html, from_name, from_email, to_emails, cc_emails, bcc_emails, is_read, received_at, sent_at, created_at, ai_draft_text"
         )
-        .eq("user_id", userId)
         .eq("thread_id", threadId)
         .order("received_at", { ascending: true, nullsLast: true });
+      request = applyClientScope(request, scope);
+      const { data: rows, error: queryError } = await request;
       if (queryError) throw queryError;
       setData(Array.isArray(rows) ? rows : []);
     } catch (err) {
@@ -252,7 +275,7 @@ export function useThreadMessages(threadId, options = {}) {
     } finally {
       setLoading(false);
     }
-  }, [ensureUserId, supabase, threadId]);
+  }, [getToken, supabase, threadId, user]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -290,49 +313,31 @@ export function useThreadAttachments(messageIds = [], options = {}) {
   const seededKey = useMemo(() => makeListKey(seeded), [seeded]);
   const seededKeyRef = useRef(seededKey);
 
-  const ensureUserId = useCallback(async () => {
-    const metadataUuid = user?.publicMetadata?.supabase_uuid;
-    if (isValidUuid(metadataUuid)) return metadataUuid;
-    if (typeof getToken === "function") {
-      try {
-        const templateToken = await getToken({ template: SUPABASE_TEMPLATE });
-        const payload = decodeJwtPayload(templateToken);
-        const claimUuid =
-          typeof payload?.supabase_user_id === "string" ? payload.supabase_user_id : null;
-        const sub = typeof payload?.sub === "string" ? payload.sub : null;
-        const candidate = isValidUuid(claimUuid) ? claimUuid : sub;
-        if (isValidUuid(candidate)) return candidate;
-      } catch (tokenError) {
-        console.warn("useThreadAttachments: clerk token missing supabase uuid", tokenError);
-      }
-    }
-    if (!supabase || !user?.id) {
-      throw new Error("Supabase user ID is not ready yet.");
-    }
-    const { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .select("user_id")
-      .eq("clerk_user_id", user.id)
-      .maybeSingle();
-    if (profileError) throw profileError;
-    const candidate = profile?.user_id;
-    if (isValidUuid(candidate)) return candidate;
-    throw new Error("Supabase user ID is not ready yet.");
-  }, [getToken, supabase, user?.id, user?.publicMetadata?.supabase_uuid]);
-
   const fetchAttachments = useCallback(async () => {
     if (!supabase || !messageIds?.length) return;
     setLoading(true);
     setError(null);
     try {
-      const userId = await ensureUserId();
-      const { data: rows, error: queryError } = await supabase
+      const scope = await resolveScope({
+        supabase,
+        user,
+        getToken,
+        logLabel: "useThreadAttachments",
+      });
+      const mailboxIds = await resolveScopedMailboxIds(supabase, scope);
+      if (!mailboxIds.length) {
+        setData([]);
+        return;
+      }
+      let request = supabase
         .from("mail_attachments")
         .select(
           "id, user_id, mailbox_id, message_id, provider, provider_attachment_id, filename, mime_type, size_bytes, storage_path, created_at"
         )
-        .eq("user_id", userId)
+        .in("mailbox_id", mailboxIds)
         .in("message_id", messageIds);
+      request = applyClientScope(request, scope, { workspaceColumn: null, userColumn: "user_id" });
+      const { data: rows, error: queryError } = await request;
       if (queryError) throw queryError;
       setData(Array.isArray(rows) ? rows : []);
     } catch (err) {
@@ -340,7 +345,7 @@ export function useThreadAttachments(messageIds = [], options = {}) {
     } finally {
       setLoading(false);
     }
-  }, [ensureUserId, messageIds, supabase]);
+  }, [getToken, messageIds, supabase, user]);
 
   useEffect(() => {
     if (!enabled) return;

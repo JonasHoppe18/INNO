@@ -109,3 +109,25 @@ using (
   )
   or owner_user_id::text = coalesce(auth.jwt() ->> 'supabase_user_id', '')
 );
+
+-- Agent automation should be shared per workspace (when workspace_id is set).
+-- Keep one newest row per workspace, then enforce uniqueness for non-null workspace_id.
+with ranked as (
+  select
+    user_id,
+    workspace_id,
+    row_number() over (
+      partition by workspace_id
+      order by updated_at desc nulls last, created_at desc nulls last
+    ) as rn
+  from public.agent_automation
+  where workspace_id is not null
+)
+delete from public.agent_automation a
+using ranked r
+where a.user_id = r.user_id
+  and r.rn > 1;
+
+create unique index if not exists agent_automation_workspace_unique_not_null
+  on public.agent_automation (workspace_id)
+  where workspace_id is not null;
