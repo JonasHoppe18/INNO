@@ -18,6 +18,31 @@ function createServiceClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
+function asString(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function toInboxTag(slug) {
+  return `inbox:${slug}`;
+}
+
+function normalizeInboxSlug(value = "") {
+  return asString(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9-_ ]+/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function nextTagsWithInbox(currentTags, inboxSlug) {
+  const list = Array.isArray(currentTags) ? currentTags : [];
+  const withoutInbox = list.filter((tag) => !String(tag || "").startsWith("inbox:"));
+  const normalized = normalizeInboxSlug(inboxSlug);
+  if (!normalized) return withoutInbox;
+  return [...withoutInbox, toInboxTag(normalized)];
+}
+
 export async function PATCH(request) {
   const { userId: clerkUserId, orgId } = await auth();
   if (!clerkUserId) {
@@ -78,6 +103,24 @@ export async function PATCH(request) {
   if (typeof body?.unreadCount === "number") {
     payload.unread_count = body.unreadCount;
   }
+  if (body?.inboxSlug !== undefined) {
+    const scopedThreadQuery = applyScope(
+      serviceClient
+        .from("mail_threads")
+        .select("id, tags")
+        .eq("id", threadId)
+        .maybeSingle(),
+      scope
+    );
+    const { data: threadRow, error: threadReadError } = await scopedThreadQuery;
+    if (threadReadError) {
+      return NextResponse.json({ error: threadReadError.message }, { status: 500 });
+    }
+    if (!threadRow?.id) {
+      return NextResponse.json({ error: "Thread not found in your scope." }, { status: 404 });
+    }
+    payload.tags = nextTagsWithInbox(threadRow?.tags, body.inboxSlug);
+  }
 
   if (!Object.keys(payload).length) {
     return NextResponse.json({ error: "No updates provided." }, { status: 400 });
@@ -96,6 +139,9 @@ export async function PATCH(request) {
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  if (!data?.id) {
+    return NextResponse.json({ error: "Thread not found in your scope." }, { status: 404 });
   }
 
   return NextResponse.json({ success: true, thread: data }, { status: 200 });

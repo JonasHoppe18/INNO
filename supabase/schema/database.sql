@@ -276,6 +276,23 @@ CREATE INDEX thread_actions_user_thread_idx ON public.thread_actions(user_id, th
 CREATE INDEX thread_actions_thread_status_idx ON public.thread_actions(thread_id, status, updated_at DESC);
 CREATE INDEX thread_actions_action_key_idx ON public.thread_actions(user_id, thread_id, action_key);
 
+CREATE TABLE public.workspace_inboxes (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  workspace_id uuid,
+  user_id uuid,
+  name text NOT NULL,
+  slug text NOT NULL,
+  created_by uuid,
+  updated_by uuid,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT workspace_inboxes_pkey PRIMARY KEY (id),
+  CONSTRAINT workspace_inboxes_slug_unique UNIQUE (workspace_id, slug)
+);
+
+CREATE INDEX workspace_inboxes_workspace_idx ON public.workspace_inboxes(workspace_id, created_at DESC);
+CREATE INDEX workspace_inboxes_user_idx ON public.workspace_inboxes(user_id, created_at DESC);
+
 -- Simpel venteliste / landing page signup
 CREATE TABLE public.landing_signups (
   id uuid NOT NULL DEFAULT gen_random_uuid(),

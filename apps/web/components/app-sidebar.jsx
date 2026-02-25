@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname, useSearchParams } from "next/navigation"
 import {
@@ -15,6 +15,7 @@ import {
   LayoutDashboardIcon,
   MailIcon,
   Plus,
+  Trash2,
   User,
   UserRoundPenIcon,
 } from "lucide-react"
@@ -24,6 +25,17 @@ import { NavMain } from "@/components/nav-main"
 import { NavSecondary } from "@/components/nav-secondary"
 import { NavUser } from "@/components/nav-user"
 import { cn } from "@/lib/utils"
+import { useClerkSupabase } from "@/lib/useClerkSupabase"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import {
   Sidebar,
   SidebarContent,
@@ -87,7 +99,13 @@ const baseData = {
   ],
 }
 
-function InboxSection({ isInboxOpen, setIsInboxOpen, handleCreateInbox }) {
+function InboxSection({
+  isInboxOpen,
+  setIsInboxOpen,
+  handleCreateInbox,
+  handleDeleteInbox,
+  customInboxes = [],
+}) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const view = searchParams.get("view")
@@ -172,6 +190,42 @@ function InboxSection({ isInboxOpen, setIsInboxOpen, handleCreateInbox }) {
                   <span>Resolved</span>
                 </Link>
               </SidebarMenuItem>
+              {customInboxes.map((inbox) => {
+                const slug = String(inbox?.slug || "")
+                if (!slug) return null
+                const isActive = pathname === "/inbox" && view === `inbox:${slug}`
+                return (
+                  <SidebarMenuItem key={slug}>
+                    <div
+                      className={cn(
+                        "group flex items-center gap-1 rounded-md px-2 py-1.5 pl-8 text-sm text-slate-600 hover:bg-slate-100",
+                        isActive && "bg-slate-100 text-slate-900"
+                      )}
+                    >
+                      <Link
+                        href={`/inbox?view=${encodeURIComponent(`inbox:${slug}`)}`}
+                        className="flex min-w-0 flex-1 items-center gap-2 text-inherit no-underline"
+                      >
+                        <Inbox className="h-4 w-4 shrink-0" />
+                        <span className="truncate">{inbox?.name || slug}</span>
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          handleDeleteInbox?.(inbox)
+                        }}
+                        className="opacity-0 transition-opacity group-hover:opacity-100 rounded p-0.5 text-slate-500 hover:bg-slate-200 hover:text-slate-700"
+                        aria-label={`Delete ${inbox?.name || slug}`}
+                        title="Delete inbox"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </SidebarMenuItem>
+                )
+              })}
             </>
           ) : null}
         </SidebarMenu>
@@ -186,9 +240,96 @@ export function AppSidebar({
   ...props
 }) {
   const [isInboxOpen, setIsInboxOpen] = useState(true)
+  const [customInboxes, setCustomInboxes] = useState([])
+  const [createInboxOpen, setCreateInboxOpen] = useState(false)
+  const [createInboxName, setCreateInboxName] = useState("")
+  const [createInboxError, setCreateInboxError] = useState("")
+  const [isCreatingInbox, setIsCreatingInbox] = useState(false)
+  const [deleteInboxOpen, setDeleteInboxOpen] = useState(false)
+  const [deleteInboxTarget, setDeleteInboxTarget] = useState(null)
+  const [deleteInboxError, setDeleteInboxError] = useState("")
+  const [isDeletingInbox, setIsDeletingInbox] = useState(false)
+  const supabase = useClerkSupabase()
 
-  const handleCreateInbox = () => {
-    console.log("Create inbox clicked")
+  const loadCustomInboxes = async () => {
+    const response = await fetch("/api/inboxes", {
+      method: "GET",
+      cache: "no-store",
+      credentials: "include",
+    }).catch(() => null)
+    if (!response?.ok) return
+    const payload = await response.json().catch(() => ({}))
+    const inboxes = Array.isArray(payload?.inboxes) ? payload.inboxes : []
+    setCustomInboxes(inboxes)
+  }
+
+  useEffect(() => {
+    if (!supabase) return
+    loadCustomInboxes().catch(() => null)
+  }, [supabase])
+
+  const handleOpenCreateInbox = () => {
+    setCreateInboxName("")
+    setCreateInboxError("")
+    setCreateInboxOpen(true)
+  }
+
+  const handleCreateInbox = async () => {
+    const name = createInboxName.trim()
+    if (!name) {
+      setCreateInboxError("Inbox name is required.")
+      return
+    }
+    setIsCreatingInbox(true)
+    setCreateInboxError("")
+    const response = await fetch("/api/inboxes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+      credentials: "include",
+    }).catch(() => null)
+    if (!response?.ok) {
+      const payload = await response?.json().catch(() => ({}))
+      setCreateInboxError(payload?.error || "Could not create inbox.")
+      setIsCreatingInbox(false)
+      return
+    }
+    await loadCustomInboxes().catch(() => null)
+    setIsCreatingInbox(false)
+    setCreateInboxOpen(false)
+    setCreateInboxName("")
+  }
+
+  const handleOpenDeleteInbox = (inbox) => {
+    setDeleteInboxTarget(inbox || null)
+    setDeleteInboxError("")
+    setDeleteInboxOpen(true)
+  }
+
+  const handleDeleteInbox = async () => {
+    const slug = String(deleteInboxTarget?.slug || "").trim()
+    if (!slug) {
+      setDeleteInboxError("Inbox slug is missing.")
+      return
+    }
+    setIsDeletingInbox(true)
+    setDeleteInboxError("")
+    const response = await fetch("/api/inboxes", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slug }),
+      credentials: "include",
+    }).catch(() => null)
+    if (!response?.ok) {
+      const payload = await response?.json().catch(() => ({}))
+      setDeleteInboxError(payload?.error || "Could not delete inbox.")
+      setIsDeletingInbox(false)
+      return
+    }
+    await loadCustomInboxes().catch(() => null)
+    setIsDeletingInbox(false)
+    setDeleteInboxOpen(false)
+    setDeleteInboxTarget(null)
   }
 
   const data = {
@@ -219,7 +360,9 @@ export function AppSidebar({
         <InboxSection
           isInboxOpen={isInboxOpen}
           setIsInboxOpen={setIsInboxOpen}
-          handleCreateInbox={handleCreateInbox}
+          handleCreateInbox={handleOpenCreateInbox}
+          customInboxes={customInboxes}
+          handleDeleteInbox={handleOpenDeleteInbox}
         />
         <NavAgent items={data.agent} />
         <NavSecondary items={data.navSecondary} className="mt-auto" />
@@ -227,6 +370,92 @@ export function AppSidebar({
       <SidebarFooter>
         <NavUser user={data.user} />
       </SidebarFooter>
+      <Dialog open={createInboxOpen} onOpenChange={setCreateInboxOpen}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>Create inbox</DialogTitle>
+            <DialogDescription>
+              Create a team inbox that tickets can be assigned to.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            className="space-y-3"
+            onSubmit={(event) => {
+              event.preventDefault()
+              handleCreateInbox().catch(() => null)
+            }}
+          >
+            <Input
+              value={createInboxName}
+              onChange={(event) => {
+                setCreateInboxName(event.target.value)
+                if (createInboxError) setCreateInboxError("")
+              }}
+              placeholder="Inbox name"
+              autoFocus
+            />
+            {createInboxError ? (
+              <p className="text-xs text-red-600">{createInboxError}</p>
+            ) : null}
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setCreateInboxOpen(false)}
+                disabled={isCreatingInbox}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isCreatingInbox}>
+                {isCreatingInbox ? "Creating..." : "Create inbox"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={deleteInboxOpen}
+        onOpenChange={(open) => {
+          setDeleteInboxOpen(open)
+          if (!open) {
+            setDeleteInboxTarget(null)
+            setDeleteInboxError("")
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>Delete inbox</DialogTitle>
+            <DialogDescription>
+              Delete &quot;{deleteInboxTarget?.name || deleteInboxTarget?.slug || "this inbox"}&quot;?
+              This only applies to custom teams/inboxes.
+            </DialogDescription>
+          </DialogHeader>
+          {deleteInboxError ? (
+            <p className="text-xs text-red-600">{deleteInboxError}</p>
+          ) : null}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setDeleteInboxOpen(false)}
+              disabled={isDeletingInbox}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => {
+                handleDeleteInbox().catch(() => null)
+              }}
+              disabled={isDeletingInbox}
+            >
+              {isDeletingInbox ? "Deleting..." : "Delete inbox"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Sidebar>
   )
 }

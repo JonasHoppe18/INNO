@@ -8,6 +8,7 @@ import { deriveThreadsFromMessages } from "@/hooks/useInboxData";
 import { getMessageTimestamp, getSenderLabel, isOutboundMessage } from "@/components/inbox/inbox-utils";
 import { useClerkSupabase } from "@/lib/useClerkSupabase";
 import { useUser } from "@clerk/nextjs";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { useCustomerLookup } from "@/hooks/useCustomerLookup";
 import { useSiteHeaderActions } from "@/components/site-header-actions";
@@ -50,11 +51,26 @@ const normalizeStatus = (value) => {
   return value;
 };
 
+const toInboxTag = (slug = "") => `inbox:${String(slug || "").trim()}`;
+
+const extractInboxSlugFromTags = (tags = []) => {
+  const list = Array.isArray(tags) ? tags : [];
+  const hit = list.find((tag) => String(tag || "").startsWith("inbox:"));
+  if (!hit) return null;
+  const slug = String(hit).slice("inbox:".length).trim();
+  return slug || null;
+};
+
 function InboxHeaderActions({
   ticketState,
-  assigneeOptions,
+  assignmentOptions,
+  selectedAssignmentValue,
+  inboxOptions,
+  selectedInboxSlug,
   tagLabel,
   onTicketStateChange,
+  onAssignmentChange,
+  onInboxChange,
   onOpenInsights,
 }) {
   if (!ticketState) return null;
@@ -94,19 +110,15 @@ function InboxHeaderActions({
         </SelectContent>
       </Select>
       <Select
-        value={ticketState.assignee || UNASSIGNED_ASSIGNEE_VALUE}
-        onValueChange={(value) =>
-          onTicketStateChange({
-            assignee: value === UNASSIGNED_ASSIGNEE_VALUE ? null : value,
-          })
-        }
+        value={selectedAssignmentValue || UNASSIGNED_ASSIGNEE_VALUE}
+        onValueChange={(value) => onAssignmentChange?.(value)}
       >
         <SelectTrigger className="h-auto w-auto cursor-pointer gap-1.5 rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100">
           <User className="h-3.5 w-3.5" />
           <SelectValue placeholder="Assignee" />
         </SelectTrigger>
         <SelectContent>
-          {assigneeOptions.map((option) => (
+          {assignmentOptions.map((option) => (
             <SelectItem key={option.value} value={option.value}>
               {option.label}
             </SelectItem>
@@ -119,13 +131,25 @@ function InboxHeaderActions({
       >
         {tagLabel || "General"}
       </button>
-      <button
-        type="button"
-        className="flex cursor-pointer items-center gap-1.5 rounded-md border border-dashed border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-500 hover:border-gray-400"
+      <Select
+        value={selectedInboxSlug || UNASSIGNED_ASSIGNEE_VALUE}
+        onValueChange={(value) =>
+          onInboxChange?.(value === UNASSIGNED_ASSIGNEE_VALUE ? null : value)
+        }
       >
-        <Plus className="h-3.5 w-3.5" />
-        Add tag
-      </button>
+        <SelectTrigger className="h-auto w-auto cursor-pointer gap-1.5 rounded-md border border-dashed border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-500 hover:border-gray-400">
+          <Plus className="h-3.5 w-3.5" />
+          <SelectValue placeholder="Inbox" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={UNASSIGNED_ASSIGNEE_VALUE}>No inbox</SelectItem>
+          {(inboxOptions || []).map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
       <button
         type="button"
         onClick={onOpenInsights}
@@ -476,14 +500,18 @@ export function InboxSplitView({ messages = [], threads = [] }) {
   const [orderUpdateSubmittingByThread, setOrderUpdateSubmittingByThread] = useState({});
   const [orderUpdateErrorByThread, setOrderUpdateErrorByThread] = useState({});
   const [assigneeProfilesById, setAssigneeProfilesById] = useState({});
+  const [currentSupabaseUserId, setCurrentSupabaseUserId] = useState(null);
+  const [workspaceInboxes, setWorkspaceInboxes] = useState([]);
   const headerActionsKeyRef = useRef("");
   const draftLastSavedRef = useRef("");
   const savingDraftRef = useRef(false);
   const draftValueRef = useRef("");
   const supabase = useClerkSupabase();
   const { user } = useUser();
+  const searchParams = useSearchParams();
   const { setActions: setHeaderActions } = useSiteHeaderActions();
   const currentUserName = [user?.firstName, user?.lastName].filter(Boolean).join(" ") || "You";
+  const activeView = searchParams?.get("view") || "";
 
   useEffect(() => {
     setLiveThreads(Array.isArray(threads) ? threads : []);
@@ -686,8 +714,35 @@ export function InboxSplitView({ messages = [], threads = [] }) {
   const filteredThreads = useMemo(() => {
     return derivedThreads
       .filter((thread) => {
-        const uiState = ticketStateByThread[thread.id] || DEFAULT_TICKET_STATE;
-        if (filters.status !== "All" && uiState.status !== filters.status) {
+        const hasLocalState = Object.prototype.hasOwnProperty.call(ticketStateByThread, thread.id);
+        const uiState = hasLocalState
+          ? ticketStateByThread[thread.id]
+          : DEFAULT_TICKET_STATE;
+        const effectiveAssignee = hasLocalState
+          ? uiState?.assignee ?? null
+          : thread.assignee_id ?? null;
+        const effectiveStatus = normalizeStatus(
+          (hasLocalState ? uiState?.status : null) || thread.status || DEFAULT_TICKET_STATE.status
+        );
+        const inboxSlug = extractInboxSlugFromTags(thread?.tags || []);
+        if (!activeView && (effectiveAssignee || inboxSlug)) {
+          return false;
+        }
+        if (activeView === "mine") {
+          const assignee = String(effectiveAssignee || "");
+          if (!assignee || assignee !== String(currentSupabaseUserId || "")) {
+            return false;
+          }
+          if (effectiveStatus === "Solved") return false;
+        }
+        if (activeView === "resolved") {
+          if (effectiveStatus !== "Solved") return false;
+        }
+        if (activeView.startsWith("inbox:")) {
+          const targetInbox = activeView.slice("inbox:".length);
+          if (!targetInbox || inboxSlug !== targetInbox) return false;
+        }
+        if (filters.status !== "All" && effectiveStatus !== filters.status) {
           return false;
         }
         const unreadCount = thread.unread_count ?? 0;
@@ -708,7 +763,14 @@ export function InboxSplitView({ messages = [], threads = [] }) {
         const bTs = Date.parse(b?.last_message_at || b?.updated_at || b?.created_at || 0);
         return (Number.isFinite(bTs) ? bTs : 0) - (Number.isFinite(aTs) ? aTs : 0);
       });
-  }, [customerByThread, derivedThreads, filters, ticketStateByThread]);
+  }, [
+    activeView,
+    currentSupabaseUserId,
+    customerByThread,
+    derivedThreads,
+    filters,
+    ticketStateByThread,
+  ]);
 
   useEffect(() => {
     if (!supabase) return;
@@ -760,6 +822,45 @@ export function InboxSplitView({ messages = [], threads = [] }) {
     };
   }, [derivedThreads, supabase, user?.id]);
 
+  useEffect(() => {
+    if (!supabase || !user?.id) return;
+    let active = true;
+    const loadCurrentSupabaseUserId = async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("user_id")
+        .eq("clerk_user_id", user.id)
+        .maybeSingle();
+      if (!active || error) return;
+      setCurrentSupabaseUserId(data?.user_id || null);
+    };
+    loadCurrentSupabaseUserId().catch(() => null);
+    return () => {
+      active = false;
+    };
+  }, [supabase, user?.id]);
+
+  useEffect(() => {
+    if (!supabase) return;
+    let active = true;
+    const loadWorkspaceInboxes = async () => {
+      const response = await fetch("/api/inboxes", {
+        method: "GET",
+        cache: "no-store",
+        credentials: "include",
+      }).catch(() => null);
+      if (!active || !response?.ok) return;
+      const payload = await response.json().catch(() => ({}));
+      if (!active) return;
+      const inboxes = Array.isArray(payload?.inboxes) ? payload.inboxes : [];
+      setWorkspaceInboxes(inboxes);
+    };
+    loadWorkspaceInboxes().catch(() => null);
+    return () => {
+      active = false;
+    };
+  }, [supabase]);
+
   const selectedThread = useMemo(
     () => derivedThreads.find((thread) => thread.id === selectedThreadId) || null,
     [derivedThreads, selectedThreadId]
@@ -797,6 +898,48 @@ export function InboxSplitView({ messages = [], threads = [] }) {
     Array.isArray(selectedThread?.tags) && selectedThread.tags.length
       ? selectedThread.tags[0]
       : "General";
+  const selectedInboxSlug = extractInboxSlugFromTags(selectedThread?.tags || []);
+  const inboxOptions = useMemo(
+    () =>
+      (workspaceInboxes || [])
+        .map((inbox) => {
+          const slug = String(inbox?.slug || "").trim();
+          if (!slug) return null;
+          return {
+            value: slug,
+            label: String(inbox?.name || slug),
+          };
+        })
+        .filter(Boolean),
+    [workspaceInboxes]
+  );
+  const assignmentOptions = useMemo(() => {
+    const combined = [{ value: UNASSIGNED_ASSIGNEE_VALUE, label: "Unassigned" }];
+    assigneeOptions
+      .filter((option) => option.value !== UNASSIGNED_ASSIGNEE_VALUE)
+      .forEach((option) => {
+        combined.push({
+          value: `user:${option.value}`,
+          label: option.label,
+        });
+      });
+    inboxOptions.forEach((option) => {
+      combined.push({
+        value: `inbox:${option.value}`,
+        label: `Team: ${option.label}`,
+      });
+    });
+    return combined;
+  }, [assigneeOptions, inboxOptions]);
+  const selectedAssignmentValue = useMemo(() => {
+    if (selectedTicketState?.assignee) {
+      return `user:${selectedTicketState.assignee}`;
+    }
+    if (selectedInboxSlug) {
+      return `inbox:${selectedInboxSlug}`;
+    }
+    return UNASSIGNED_ASSIGNEE_VALUE;
+  }, [selectedInboxSlug, selectedTicketState?.assignee]);
 
   useEffect(() => {
     if (!selectedThreadId || isLocalThreadId(selectedThreadId)) return;
@@ -887,7 +1030,14 @@ export function InboxSplitView({ messages = [], threads = [] }) {
         body: JSON.stringify({ threadId: selectedThreadId, status: "Open" }),
       }).catch(() => null);
     }
-  }, [derivedThreads, isLocalThreadId, selectedThreadId, supabase, ticketStateByThread]);
+  }, [
+    currentSupabaseUserId,
+    derivedThreads,
+    isLocalThreadId,
+    selectedThreadId,
+    supabase,
+    ticketStateByThread,
+  ]);
 
   const rawThreadMessages = useMemo(() => {
     if (!selectedThreadId) return [];
@@ -1200,6 +1350,73 @@ export function InboxSplitView({ messages = [], threads = [] }) {
       });
   }, [selectedThreadId]);
 
+  const handleInboxChange = useCallback(
+    (inboxSlug) => {
+      if (!selectedThreadId) return;
+      const normalized = typeof inboxSlug === "string" ? inboxSlug.trim() : "";
+      const previousTags =
+        derivedThreads.find((thread) => thread.id === selectedThreadId)?.tags || [];
+      setLiveThreads((prev) =>
+        (prev || []).map((thread) => {
+          if (thread.id !== selectedThreadId) return thread;
+          const tags = Array.isArray(thread.tags) ? thread.tags : [];
+          const withoutInbox = tags.filter((tag) => !String(tag || "").startsWith("inbox:"));
+          return {
+            ...thread,
+            tags: normalized ? [...withoutInbox, toInboxTag(normalized)] : withoutInbox,
+          };
+        })
+      );
+
+      fetch("/api/inbox/thread-status", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          threadId: selectedThreadId,
+          inboxSlug: normalized || null,
+        }),
+      })
+        .then(async (response) => {
+          const data = await response.json().catch(() => null);
+          if (response.ok && data?.thread?.id) return;
+          throw new Error(data?.error || "Could not update inbox.");
+        })
+        .catch((error) => {
+          setLiveThreads((prev) =>
+            (prev || []).map((thread) => {
+              if (thread.id !== selectedThreadId) return thread;
+              return {
+                ...thread,
+                tags: Array.isArray(previousTags) ? previousTags : [],
+              };
+            })
+          );
+          toast.error(error.message || "Could not update inbox.");
+        });
+    },
+    [derivedThreads, selectedThreadId]
+  );
+  const handleAssignmentChange = useCallback(
+    (value) => {
+      const selected = String(value || "");
+      if (!selected || selected === UNASSIGNED_ASSIGNEE_VALUE) {
+        handleTicketStateChange({ assignee: null });
+        handleInboxChange(null);
+        return;
+      }
+      if (selected.startsWith("user:")) {
+        handleTicketStateChange({ assignee: selected.slice("user:".length) || null });
+        handleInboxChange(null);
+        return;
+      }
+      if (selected.startsWith("inbox:")) {
+        handleTicketStateChange({ assignee: null });
+        handleInboxChange(selected.slice("inbox:".length) || null);
+      }
+    },
+    [handleInboxChange, handleTicketStateChange]
+  );
+
   useEffect(() => {
     if (!setHeaderActions) return;
     if (!selectedThreadId) {
@@ -1209,21 +1426,31 @@ export function InboxSplitView({ messages = [], threads = [] }) {
     }
     const key = `${selectedThreadId}:${selectedTicketState?.status || ""}:${
       selectedTicketState?.assignee || ""
-    }`;
+    }:${selectedInboxSlug || ""}`;
     if (headerActionsKeyRef.current === key) return;
     headerActionsKeyRef.current = key;
     setHeaderActions(
       <InboxHeaderActions
         ticketState={selectedTicketState}
-        assigneeOptions={assigneeOptions}
+        assignmentOptions={assignmentOptions}
+        selectedAssignmentValue={selectedAssignmentValue}
+        inboxOptions={inboxOptions}
+        selectedInboxSlug={selectedInboxSlug}
         tagLabel={selectedTagLabel}
         onTicketStateChange={handleTicketStateChange}
+        onAssignmentChange={handleAssignmentChange}
+        onInboxChange={handleInboxChange}
         onOpenInsights={() => setInsightsOpen(true)}
       />
     );
   }, [
+    assignmentOptions,
+    handleAssignmentChange,
     handleTicketStateChange,
-    assigneeOptions,
+    handleInboxChange,
+    inboxOptions,
+    selectedAssignmentValue,
+    selectedInboxSlug,
     selectedTicketState,
     selectedThreadId,
     selectedTagLabel,
