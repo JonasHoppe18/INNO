@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { getShopCredentialsForUser } from "./shopify-credentials.ts";
+import { decryptShopifyToken, getShopCredentialsForUser } from "./shopify-credentials.ts";
+import { cancelWebshipperOrder, updateWebshipperAddress } from "./webshipper.ts";
 
 type AutomationSettings = {
   order_updates: boolean;
@@ -13,6 +14,19 @@ type ShopCredentials = {
   access_token: string;
 };
 
+type ShopifyOrderState = {
+  id?: number;
+  fulfillment_status?: string | null;
+  cancelled_at?: string | null;
+  closed_at?: string | null;
+  fulfillments?: Array<unknown>;
+};
+
+type WebshipperIntegrationConfig = {
+  tenant: string;
+  token: string;
+};
+
 export type AutomationAction = {
   type: string;
   orderId?: number;
@@ -22,7 +36,7 @@ export type AutomationAction = {
 export type AutomationResult = {
   type: string;
   ok: boolean;
-  status?: "success" | "pending_approval" | "error";
+  status?: "success" | "pending_approval" | "partial_failure" | "error";
   orderId?: number;
   payload?: Record<string, unknown>;
   detail?: string;
@@ -82,6 +96,48 @@ function getApprovalRequirement(action: string, automation: AutomationSettings):
   return null;
 }
 
+function isMutationBlocked(
+  order: ShopifyOrderState | null,
+  actionType: string,
+): { blocked: boolean; reason: string } {
+  if (!order) {
+    return { blocked: false, reason: "" };
+  }
+  if (actionType !== "update_shipping_address" && actionType !== "cancel_order") {
+    return { blocked: false, reason: "" };
+  }
+  if (order.cancelled_at) {
+    return {
+      blocked: true,
+      reason: "Order is already cancelled and cannot be changed.",
+    };
+  }
+  if (order.closed_at) {
+    return {
+      blocked: true,
+      reason: "Order is closed and cannot be changed.",
+    };
+  }
+
+  const normalizedFulfillmentStatus = asString(order.fulfillment_status).toLowerCase();
+  const hasFulfillments = Array.isArray(order.fulfillments) && order.fulfillments.length > 0;
+  const shippedLikeStatuses = new Set([
+    "fulfilled",
+    "partial",
+    "partially_fulfilled",
+    "shipped",
+    "in_transit",
+    "delivered",
+  ]);
+  if (shippedLikeStatuses.has(normalizedFulfillmentStatus) || hasFulfillments) {
+    return {
+      blocked: true,
+      reason: "Order is already fulfilled/shipped and can no longer be modified.",
+    };
+  }
+  return { blocked: false, reason: "" };
+}
+
 const asString = (value: unknown) => (typeof value === "string" ? value.trim() : "");
 const asNumber = (value: unknown) => {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -91,6 +147,107 @@ const asNumber = (value: unknown) => {
   }
   return null;
 };
+
+function decodeByteaToText(value: unknown): string | null {
+  if (!value) return null;
+  if (typeof value === "string") {
+    if (!value.startsWith("\\x")) return value;
+    const hex = value.slice(2);
+    if (!hex) return null;
+    const bytes = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < hex.length; i += 2) {
+      bytes[i / 2] = Number.parseInt(hex.slice(i, i + 2), 16);
+    }
+    return new TextDecoder().decode(bytes);
+  }
+  if (value instanceof Uint8Array) {
+    return new TextDecoder().decode(value);
+  }
+  return null;
+}
+
+async function resolveWorkspaceIdForSupabaseUser(
+  supabase: SupabaseClient,
+  supabaseUserId: string,
+): Promise<string | null> {
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("clerk_user_id")
+    .eq("user_id", supabaseUserId)
+    .maybeSingle();
+
+  const clerkUserId =
+    typeof profile?.clerk_user_id === "string" ? profile.clerk_user_id : null;
+  if (!clerkUserId) return null;
+
+  const { data: membership } = await supabase
+    .from("workspace_members")
+    .select("workspace_id")
+    .eq("clerk_user_id", clerkUserId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  return typeof membership?.workspace_id === "string"
+    ? membership.workspace_id
+    : null;
+}
+
+async function resolveWebshipperIntegration(
+  supabase: SupabaseClient,
+  supabaseUserId: string,
+  tokenSecret?: string | null,
+): Promise<WebshipperIntegrationConfig | null> {
+  const workspaceId = await resolveWorkspaceIdForSupabaseUser(supabase, supabaseUserId);
+
+  let integration: {
+    config?: Record<string, unknown> | null;
+    credentials_enc?: unknown;
+    is_active?: boolean | null;
+  } | null = null;
+
+  if (workspaceId) {
+    const { data } = await supabase
+      .from("integrations")
+      .select("config,credentials_enc,is_active")
+      .eq("provider", "webshipper")
+      .eq("workspace_id", workspaceId)
+      .eq("is_active", true)
+      .maybeSingle();
+    integration = data;
+  }
+
+  if (!integration) {
+    const { data } = await supabase
+      .from("integrations")
+      .select("config,credentials_enc,is_active")
+      .eq("provider", "webshipper")
+      .eq("user_id", supabaseUserId)
+      .eq("is_active", true)
+      .maybeSingle();
+    integration = data;
+  }
+
+  if (!integration || integration.is_active !== true) {
+    return null;
+  }
+
+  const tenant = asString(integration?.config?.tenant);
+  if (!tenant) return null;
+
+  const encoded = decodeByteaToText(integration.credentials_enc);
+  if (!encoded) return null;
+
+  let token = "";
+  try {
+    token = await decryptShopifyToken(encoded, tokenSecret);
+  } catch {
+    token = encoded;
+  }
+  if (!token.trim()) return null;
+
+  return { tenant, token };
+}
 
 // Normaliserer Shopify URL med korrekt versionering
 function shopifyUrl(shop: ShopCredentials, path: string, apiVersion: string) {
@@ -695,6 +852,20 @@ async function refundOrder(
   );
 }
 
+async function fetchOrderState(
+  shop: ShopCredentials,
+  apiVersion: string,
+  orderId: number,
+): Promise<ShopifyOrderState | null> {
+  const payload = await shopifyRequest<{ order?: ShopifyOrderState }>(
+    shop,
+    apiVersion,
+    `orders/${orderId}.json?fields=id,fulfillment_status,cancelled_at,closed_at,fulfillments`,
+    { method: "GET" },
+  );
+  return payload?.order ?? null;
+}
+
 // Dispatcher der mapper action.type til korrekt Shopify-kald
 async function handleAction(
   shop: ShopCredentials,
@@ -752,6 +923,7 @@ export async function executeAutomationActions({
   orderIdMap = {},
 }: ExecuteOptions): Promise<AutomationResult[]> {
   const results: AutomationResult[] = [];
+  const seenActionKeys = new Set<string>();
   if (!actions?.length) return results;
   if (!supabase || !supabaseUserId) {
     return actions.map((action) => ({
@@ -762,9 +934,15 @@ export async function executeAutomationActions({
   }
 
   let shop: ShopCredentials | null = null;
+  let webshipper: WebshipperIntegrationConfig | null = null;
   try {
     void tokenSecret;
     shop = await getShopCredentials(supabase, supabaseUserId);
+    webshipper = await resolveWebshipperIntegration(
+      supabase,
+      supabaseUserId,
+      tokenSecret,
+    );
     console.log("automation: shop credentials resolved", {
       shop_domain: shop?.shop_domain,
       supabaseUserId,
@@ -803,6 +981,39 @@ export async function executeAutomationActions({
         orderId: orderIdToUse,
         shop_domain: shop?.shop_domain,
       });
+      const actionKey = `${String(action.type || "").trim().toLowerCase()}::${String(
+        Number(orderIdToUse),
+      )}::${JSON.stringify(action.payload ?? {})}`;
+      if (seenActionKeys.has(actionKey)) {
+        results.push({
+          type: action.type,
+          ok: true,
+          status: "success",
+          orderId: Number(orderIdToUse),
+          payload: action.payload ?? {},
+          detail: "Skipped duplicate action in same automation run.",
+        });
+        continue;
+      }
+      seenActionKeys.add(actionKey);
+
+      if (action.type === "update_shipping_address" || action.type === "cancel_order") {
+        const orderState = await fetchOrderState(shop, apiVersion, Number(orderIdToUse));
+        const blockCheck = isMutationBlocked(orderState, action.type);
+        if (blockCheck.blocked) {
+          results.push({
+            type: action.type,
+            ok: false,
+            status: "error",
+            orderId: Number(orderIdToUse),
+            payload: action.payload ?? {},
+            detail: blockCheck.reason,
+            error: `Order action blocked: ${blockCheck.reason}`,
+          });
+          continue;
+        }
+      }
+
       const approvalReason = getApprovalRequirement(action.type, automation);
       if (approvalReason) {
         let pendingDetail = "";
@@ -826,28 +1037,31 @@ export async function executeAutomationActions({
           const name =
             typeof address?.name === "string" && address.name.trim() ? `${address.name.trim()}, ` : "";
           pendingDetail = parts.length
-            ? `Updated shipping address to ${name}${parts.join(", ")}.`
-            : "Updated shipping address.";
+            ? `Requested shipping address change to ${name}${parts.join(", ")}.`
+            : "Requested shipping address change.";
         } else if (action.type === "cancel_order") {
-          pendingDetail = "Cancelled order.";
+          pendingDetail = "Requested order cancellation.";
         } else if (action.type === "refund_order") {
-          pendingDetail = "Refunded order.";
+          pendingDetail = "Requested refund.";
         } else if (action.type === "change_shipping_method") {
-          pendingDetail = "Changed shipping method.";
+          pendingDetail = "Requested shipping method change.";
         } else if (action.type === "hold_or_release_fulfillment") {
           const mode = asString(action.payload?.mode ?? action.payload?.operation).toLowerCase();
-          pendingDetail = mode === "release" ? "Released fulfillment hold." : "Placed fulfillment on hold.";
+          pendingDetail =
+            mode === "release"
+              ? "Requested release of fulfillment hold."
+              : "Requested fulfillment hold.";
         } else if (action.type === "edit_line_items") {
-          pendingDetail = "Edited order line items.";
+          pendingDetail = "Requested line item edits.";
         } else if (action.type === "update_customer_contact") {
-          pendingDetail = "Updated customer contact information.";
+          pendingDetail = "Requested customer contact update.";
         } else if (action.type === "resend_confirmation_or_invoice") {
-          pendingDetail = "Resent order confirmation/invoice.";
+          pendingDetail = "Requested resend of order confirmation/invoice.";
         } else if (action.type === "add_tag") {
           const tag = typeof action.payload?.tag === "string" ? action.payload.tag.trim() : "";
-          pendingDetail = tag ? `Added tag "${tag}".` : "Added tag.";
+          pendingDetail = tag ? `Requested tag "${tag}".` : "Requested tag update.";
         } else if (action.type === "add_note" || action.type === "add_internal_note_or_tag") {
-          pendingDetail = "Updated order note.";
+          pendingDetail = "Requested order note update.";
         }
 
         results.push({
@@ -861,10 +1075,60 @@ export async function executeAutomationActions({
         });
         continue;
       }
+
       await handleAction(shop, apiVersion, {
         ...action,
         orderId: Number(orderIdToUse),
       });
+      let webshipperError: string | null = null;
+      if (action.type === "update_shipping_address" && webshipper) {
+        const address = (action.payload?.shipping_address ??
+          action.payload?.shippingAddress) as Record<string, unknown>;
+        if (address && typeof address === "object") {
+          const fallbackCountry = asString(address.country_code || address.country);
+          const countryCode = fallbackCountry ? fallbackCountry.toUpperCase() : "";
+          const webshipperAddress = {
+            name: asString(address.name),
+            address1: asString(address.address1),
+            address2: asString(address.address2) || null,
+            zip: asString(address.zip || address.postal_code),
+            city: asString(address.city),
+            country_code: countryCode || "DK",
+            email: asString(address.email) || null,
+            phone: asString(address.phone) || null,
+          };
+
+          const webshipperOrderRef = String(action.orderId ?? orderIdToUse);
+          try {
+            const webshipperResult = await updateWebshipperAddress(
+              webshipper.tenant,
+              webshipper.token,
+              webshipperOrderRef,
+              webshipperAddress,
+            );
+            if (!webshipperResult.success) {
+              webshipperError = webshipperResult.reason;
+            }
+          } catch (error) {
+            webshipperError = error instanceof Error ? error.message : String(error);
+          }
+        }
+      }
+      if (action.type === "cancel_order" && webshipper) {
+        const webshipperOrderRef = String(action.orderId ?? orderIdToUse);
+        try {
+          const webshipperResult = await cancelWebshipperOrder(
+            webshipper.tenant,
+            webshipper.token,
+            webshipperOrderRef,
+          );
+          if (!webshipperResult.success) {
+            webshipperError = webshipperResult.reason;
+          }
+        } catch (error) {
+          webshipperError = error instanceof Error ? error.message : String(error);
+        }
+      }
       let detail = "";
       if (action.type === "update_shipping_address") {
         const address = (action.payload?.shipping_address ?? action.payload?.shippingAddress) as Record<
@@ -913,13 +1177,27 @@ export async function executeAutomationActions({
         detail = "Updated order note.";
       }
 
-      results.push({
-        type: action.type,
-        ok: true,
-        status: "success",
-        orderId: Number(orderIdToUse),
-        detail: detail || undefined,
-      });
+      if (webshipperError) {
+        results.push({
+          type: action.type,
+          ok: false,
+          status: "partial_failure",
+          orderId: Number(orderIdToUse),
+          payload: action.payload ?? {},
+          detail:
+            (detail ? `${detail} ` : "") +
+            `Shopify update succeeded, but downstream sync failed: ${webshipperError}`,
+          error: `Webshipper sync failed after Shopify success: ${webshipperError}`,
+        });
+      } else {
+        results.push({
+          type: action.type,
+          ok: true,
+          status: "success",
+          orderId: Number(orderIdToUse),
+          detail: detail || undefined,
+        });
+      }
     } catch (err) {
       results.push({
         type: action.type,

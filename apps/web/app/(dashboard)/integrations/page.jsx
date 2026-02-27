@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { ShopifyConnectCard } from "@/components/integrations/ShopifyConnectCard";
+import { WebshipperCard } from "@/components/integrations/WebshipperCard";
 import { FreshdeskConnectCard } from "@/components/integrations/FreshdeskConnectCard";
 import { GorgiasConnectCard } from "@/components/integrations/GorgiasConnectCard";
 import { DashboardPageShell } from "@/components/dashboard-page-shell";
@@ -27,7 +28,17 @@ export default async function IntegrationsPage() {
         </div>
       </section>
 
-    
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-2xl font-semibold">3PL</h2>
+          <p className="text-sm text-muted-foreground">
+            Connect your logistics providers to keep shipping operations in sync.
+          </p>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <WebshipperCard />
+        </div>
+      </section>
 
       <section className="space-y-4">
         <div>

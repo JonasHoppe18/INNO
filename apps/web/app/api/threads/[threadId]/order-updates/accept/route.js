@@ -13,6 +13,7 @@ const SUPABASE_SERVICE_ROLE_KEY =
   process.env.SERVICE_ROLE_KEY ||
   process.env.SUPABASE_SERVICE_KEY ||
   "";
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const SHOPIFY_API_VERSION = "2024-01";
 
 function createServiceClient() {
@@ -217,6 +218,184 @@ function buildActionKey(actionType, orderId, payload = {}) {
   ).trim()}::${stableStringify(payload || {})}`;
 }
 
+function isOrderMutationBlocked(order = {}, actionType = "") {
+  const type = String(actionType || "").trim().toLowerCase();
+  if (type !== "update_shipping_address" && type !== "cancel_order") {
+    return null;
+  }
+
+  if (order?.cancelled_at) {
+    return "Order is Fulfilled and cannot be changed";
+  }
+
+  if (order?.closed_at) {
+    return "Order is Fulfilled and cannot be changed";
+  }
+
+  const fulfillmentStatus = String(order?.fulfillment_status || "").trim().toLowerCase();
+  const hasFulfillmentRecords = Array.isArray(order?.fulfillments) && order.fulfillments.length > 0;
+  const shippedLikeStatus = new Set(["fulfilled", "partial", "partially_fulfilled"]);
+  if (shippedLikeStatus.has(fulfillmentStatus) || hasFulfillmentRecords) {
+    return "Order is Fulfilled and cannot be changed";
+  }
+
+  return null;
+}
+
+function buildBlockedActionDetail(actionType = "", blockedReason = "") {
+  return String(blockedReason || "Order is Fulfilled and cannot be changed").trim();
+}
+
+async function generateBlockedActionDraft({
+  actionType,
+  blockedReason,
+  customerFirstName,
+  customerMessage,
+  orderName,
+}) {
+  if (!OPENAI_API_KEY) return null;
+
+  const customerName = (customerFirstName || "there").trim() || "there";
+  const systemPrompt = [
+    "You are Sona, a customer support agent.",
+    "Write a short, empathetic email reply in the same language as the customer message.",
+    "The requested operation was NOT completed. State this clearly.",
+    "Do not invent actions and do not claim any update/cancellation was completed.",
+    "Never write phrases equivalent to 'I have updated' or 'I have cancelled' in this context.",
+    "Do not include any signature. Signature is added later by the app.",
+  ].join(" ");
+
+  const userPrompt = [
+    `Action type: ${actionType}`,
+    `Blocked reason: ${blockedReason}`,
+    orderName ? `Order reference: ${orderName}` : "",
+    `Customer first name: ${customerName}`,
+    "Customer message:",
+    customerMessage || "(empty)",
+    "Write only the reply body text.",
+    "Important: Explain that this request could not be completed.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      temperature: 0.2,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+    }),
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const message =
+      payload?.error?.message || `OpenAI returned ${response.status} while generating blocked draft.`;
+    throw new Error(message);
+  }
+  const text = String(payload?.choices?.[0]?.message?.content || "").trim();
+  return text || null;
+}
+
+function draftImpliesCompletedAction(text = "", actionType = "") {
+  const normalized = String(text || "").toLowerCase();
+  if (!normalized) return false;
+  if (actionType === "update_shipping_address") {
+    return (
+      normalized.includes("har opdateret leveringsadressen") ||
+      normalized.includes("har opdateret adressen") ||
+      normalized.includes("i have updated the shipping address") ||
+      normalized.includes("i have updated the address")
+    );
+  }
+  if (actionType === "cancel_order") {
+    return (
+      normalized.includes("har annulleret ordren") ||
+      normalized.includes("i have cancelled the order")
+    );
+  }
+  return false;
+}
+
+async function upsertThreadDraft({
+  serviceClient,
+  scope,
+  thread,
+  bodyText,
+  subject,
+}) {
+  const nowIso = new Date().toISOString();
+  const snippet = String(bodyText || "").replace(/\s+/g, " ").trim().slice(0, 240);
+
+  const { data: existingDraft } = await applyScope(
+    serviceClient
+      .from("mail_messages")
+      .select("id")
+      .eq("thread_id", thread.id)
+      .eq("from_me", true)
+      .eq("is_draft", true)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    scope
+  );
+
+  if (existingDraft?.id) {
+    const { data, error } = await applyScope(
+      serviceClient
+        .from("mail_messages")
+        .update({
+          subject,
+          snippet,
+          body_text: bodyText,
+          body_html: null,
+          ai_draft_text: bodyText,
+          updated_at: nowIso,
+        })
+        .eq("id", existingDraft.id)
+        .eq("thread_id", thread.id)
+        .select("id")
+        .maybeSingle(),
+      scope
+    );
+    if (error) throw new Error(error.message);
+    return data?.id || existingDraft.id;
+  }
+
+  const { data, error } = await applyScope(
+    serviceClient
+      .from("mail_messages")
+      .insert({
+        user_id: thread.user_id,
+        workspace_id: thread.workspace_id || null,
+        mailbox_id: thread.mailbox_id || null,
+        thread_id: thread.id,
+        provider: thread.provider || "smtp",
+        provider_message_id: `draft-${thread.id}-${Date.now()}`,
+        subject,
+        snippet,
+        body_text: bodyText,
+        body_html: null,
+        from_me: true,
+        is_draft: true,
+        ai_draft_text: bodyText,
+        created_at: nowIso,
+        updated_at: nowIso,
+      })
+      .select("id")
+      .maybeSingle(),
+    scope
+  );
+  if (error) throw new Error(error.message);
+  return data?.id || null;
+}
+
 function matchesOrderNumber(order = {}, orderNumber = "") {
   const candidate = String(orderNumber || "").replace(/\D/g, "");
   if (!candidate) return false;
@@ -352,7 +531,9 @@ async function resolveOrder({ domain, token, orderId, orderNumber }) {
     const result = await shopifyRequest({
       domain,
       token,
-      path: `/orders/${encodeURIComponent(String(orderId))}.json?fields=id,name,order_number,shipping_address`,
+      path: `/orders/${encodeURIComponent(
+        String(orderId)
+      )}.json?fields=id,name,order_number,shipping_address,fulfillment_status,cancelled_at,closed_at,fulfillments`,
     });
     if (result.response.ok && result.payload?.order) {
       return result.payload.order;
@@ -363,7 +544,7 @@ async function resolveOrder({ domain, token, orderId, orderNumber }) {
   const result = await shopifyRequest({
     domain,
     token,
-    path: `/orders.json?status=any&limit=25&fields=id,name,order_number,shipping_address&name=${encodeURIComponent(
+    path: `/orders.json?status=any&limit=25&fields=id,name,order_number,shipping_address,fulfillment_status,cancelled_at,closed_at,fulfillments&name=${encodeURIComponent(
       `#${orderNumber}`
     )}`,
   });
@@ -809,7 +990,7 @@ export async function POST(request, { params }) {
 
   let threadQuery = serviceClient
     .from("mail_threads")
-    .select("id, provider_thread_id, subject, snippet")
+    .select("id, provider_thread_id, subject, snippet, user_id, workspace_id, mailbox_id, provider")
     .eq("id", threadId);
   threadQuery = applyScope(threadQuery, scope);
   const { data: thread, error: threadError } = await threadQuery.maybeSingle();
@@ -958,7 +1139,8 @@ export async function POST(request, { params }) {
   const actionType =
     asString(parsed?.actionType) || asString(parsed?.payload?.actionType) || inferredActionFromText;
   const normalizedActionType = actionType.trim();
-  if (actionRecord?.status && normalizeActionStatus(actionRecord.status) === "applied") {
+  const normalizedExistingStatus = normalizeActionStatus(actionRecord?.status || "");
+  if (normalizedExistingStatus === "applied") {
     return NextResponse.json(
       {
         ok: true,
@@ -972,6 +1154,20 @@ export async function POST(request, { params }) {
       { status: 200 }
     );
   }
+  if (normalizedExistingStatus === "declined") {
+    return NextResponse.json(
+      {
+        ok: true,
+        action: normalizedActionType,
+        orderId: parsed?.orderId || actionRecord?.order_id || null,
+        orderNumber: parsed?.orderNumber || actionRecord?.order_number || null,
+        detail: detailText || null,
+        sourceStep: proposalStepName,
+        alreadyDeclined: true,
+      },
+      { status: 200 }
+    );
+  }
 
   const fallbackOrderNumber =
     extractOrderNumber(detailText) ||
@@ -981,7 +1177,7 @@ export async function POST(request, { params }) {
 
   const { data: shopRow, error: shopError } = await serviceClient
     .from("shops")
-    .select("shop_domain, access_token_encrypted")
+    .select("id, shop_domain, access_token_encrypted")
     .eq("owner_user_id", supabaseUserId)
     .eq("platform", "shopify")
     .order("created_at", { ascending: false })
@@ -1039,6 +1235,137 @@ export async function POST(request, { params }) {
         },
       };
     }
+  }
+
+  const blockedReason = isOrderMutationBlocked(order, normalizedActionType);
+  if (blockedReason) {
+    const nowIso = new Date().toISOString();
+    const actionKey = actionRecord?.action_key
+      ? String(actionRecord.action_key)
+      : buildActionKey(normalizedActionType, order.id, payloadForExecution);
+    const blockedActionDetail = buildBlockedActionDetail(
+      normalizedActionType,
+      blockedReason
+    );
+
+    let latestInboundText = "";
+    let latestInboundSubject = thread.subject || "";
+    let latestInboundName = "";
+    let messageQuery = serviceClient
+      .from("mail_messages")
+      .select("body_text, body_html, subject, from_name")
+      .eq("thread_id", thread.id)
+      .eq("from_me", false)
+      .order("received_at", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(1);
+    messageQuery = applyScope(messageQuery, scope);
+    const { data: inboundRow } = await messageQuery.maybeSingle();
+    latestInboundText = asString(inboundRow?.body_text) || asString(inboundRow?.body_html) || "";
+    latestInboundSubject = asString(inboundRow?.subject) || latestInboundSubject;
+    latestInboundName = asString(inboundRow?.from_name) || "";
+    const firstName = latestInboundName ? latestInboundName.split(/\s+/)[0] : "";
+
+    let generatedDraftText = null;
+    try {
+      generatedDraftText = await generateBlockedActionDraft({
+        actionType: normalizedActionType,
+        blockedReason,
+        customerFirstName: firstName,
+        customerMessage: latestInboundText,
+        orderName: asString(order?.name) || asString(order?.order_number),
+      });
+      if (draftImpliesCompletedAction(generatedDraftText, normalizedActionType)) {
+        generatedDraftText = await generateBlockedActionDraft({
+          actionType: normalizedActionType,
+          blockedReason,
+          customerFirstName: firstName,
+          customerMessage: `${latestInboundText}\n\nIMPORTANT: The requested operation was NOT completed. Reply must explicitly state this.`,
+          orderName: asString(order?.name) || asString(order?.order_number),
+        });
+      }
+    } catch (error) {
+      console.warn("order-updates/accept: blocked draft generation failed", error?.message || error);
+    }
+
+    if (generatedDraftText) {
+      try {
+        await upsertThreadDraft({
+          serviceClient,
+          scope,
+          thread,
+          bodyText: generatedDraftText,
+          subject: latestInboundSubject || thread.subject || "Re:",
+        });
+      } catch (error) {
+        console.warn("order-updates/accept: blocked draft upsert failed", error?.message || error);
+      }
+    }
+
+    if (actionRecord?.id) {
+      await serviceClient
+        .from("thread_actions")
+        .update({
+          status: "failed",
+          detail: blockedActionDetail,
+          payload: payloadForExecution,
+          action_type: normalizedActionType,
+          action_key: actionKey,
+          order_id: String(order.id),
+          order_number: order.order_number ? String(order.order_number) : null,
+          decided_at: nowIso,
+          updated_at: nowIso,
+          error: blockedReason,
+        })
+        .eq("id", actionRecord.id);
+    } else {
+      await serviceClient.from("thread_actions").insert({
+        user_id: supabaseUserId,
+        workspace_id: scope.workspaceId ?? null,
+        thread_id: thread.id,
+        action_type: normalizedActionType,
+        action_key: actionKey,
+        status: "failed",
+        detail: blockedActionDetail,
+        payload: payloadForExecution,
+        order_id: String(order.id),
+        order_number: order.order_number ? String(order.order_number) : null,
+        decided_at: nowIso,
+        updated_at: nowIso,
+        created_at: nowIso,
+        source: "manual_approval",
+        error: blockedReason,
+      });
+    }
+
+    await serviceClient.from("agent_logs").insert({
+      draft_id: null,
+      step_name: "shopify_action_blocked",
+      step_detail: JSON.stringify({
+        thread_id: threadId,
+        action: normalizedActionType,
+        order_id: String(order.id),
+        order_number: order.order_number ?? null,
+        detail: blockedActionDetail,
+        reason: blockedReason,
+      }),
+      status: "warning",
+      created_at: nowIso,
+    });
+
+    return NextResponse.json(
+      {
+        ok: true,
+        blocked: true,
+        applied: false,
+        action: normalizedActionType,
+        orderId: String(order.id),
+        orderNumber: order.order_number ?? null,
+        reason: blockedReason,
+        draftGenerated: Boolean(generatedDraftText),
+      },
+      { status: 200 }
+    );
   }
 
   const updateResult = await executeShopifyAction({

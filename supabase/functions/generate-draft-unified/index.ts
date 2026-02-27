@@ -270,7 +270,7 @@ async function persistThreadActions({
   results: Array<{
     type: string;
     ok: boolean;
-    status?: "success" | "pending_approval" | "error";
+    status?: "success" | "pending_approval" | "partial_failure" | "error";
     orderId?: number;
     payload?: Record<string, unknown>;
     detail?: string;
@@ -587,6 +587,47 @@ async function callOpenAI(prompt: string, system?: string): Promise<OpenAIResult
   } catch (_err) {
     return { reply: null, actions: [] };
   }
+}
+
+async function generateBlockedOrderActionReply(options: {
+  customerName: string;
+  emailBody: string;
+  reasons: string[];
+  personaInstructions?: string | null;
+}): Promise<string | null> {
+  const uniqueReasons = Array.from(
+    new Set(
+      (options.reasons || [])
+        .map((reason) => String(reason || "").trim())
+        .filter(Boolean),
+    ),
+  );
+  if (!uniqueReasons.length) return null;
+
+  const systemMsg = [
+    "Du er en kundeservice-assistent.",
+    "Skriv et kort, professionelt svar på samme sprog som kundens mail.",
+    `Start altid svaret med "Hej ${options.customerName || "kunden"},".`,
+    "Forklar tydeligt at ønsket ikke kan udføres, fordi ordren allerede er sendt/afsluttet.",
+    "Tilbyd et realistisk næste skridt uden at love noget du ikke kan gennemføre.",
+    "Returner JSON med felterne reply og actions.",
+    "actions SKAL være en tom liste.",
+    "Afslut ikke med signatur.",
+    `Persona-noter: ${options.personaInstructions?.trim() || "Hold tonen venlig og effektiv."}`,
+  ].join("\n");
+
+  const prompt = [
+    "KUNDENS BESKED:",
+    options.emailBody?.trim() || "(tom)",
+    "",
+    "BLOKERINGSÅRSAG(ER):",
+    uniqueReasons.map((reason) => `- ${reason}`).join("\n"),
+    "",
+    "Skriv nu et præcist svar til kunden.",
+  ].join("\n");
+
+  const ai = await callOpenAI(prompt, systemMsg);
+  return typeof ai.reply === "string" ? ai.reply.trim() : null;
 }
 
 // Gmail raw MIME kræver base64url.
@@ -955,10 +996,10 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       aiText = `Hej,\n\nTak for din besked. Vi vender tilbage hurtigst muligt med en opdatering.`;
     }
 
-    const finalText = enforceHejGreeting(aiText.trim(), customerFirstName);
+    let finalText = enforceHejGreeting(aiText.trim(), customerFirstName);
 
     // Render HTML med konsistent styling og line breaks.
-    const htmlBody = formatEmailBody(finalText);
+    let htmlBody = formatEmailBody(finalText);
 
     let draftDestination =
       context?.automation?.draft_destination === "sona_inbox"
@@ -994,7 +1035,7 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
   let automationResults: Array<{
     type: string;
     ok: boolean;
-    status?: "success" | "pending_approval" | "error";
+    status?: "success" | "pending_approval" | "partial_failure" | "error";
     orderId?: number;
     payload?: Record<string, unknown>;
     detail?: string;
@@ -1165,6 +1206,66 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       emitDebugLog("generate-draft-unified: automation results", automationResults);
     }
 
+    const blockedAutoResults = automationResults.filter((result) =>
+      (result.type === "update_shipping_address" || result.type === "cancel_order") &&
+      result.status === "error" &&
+      typeof result.error === "string" &&
+      result.error.startsWith("Order action blocked:")
+    );
+
+    if (blockedAutoResults.length) {
+      const blockedReply = await generateBlockedOrderActionReply({
+        customerName: customerFirstName || "kunden",
+        emailBody: emailData.body || "",
+        reasons: blockedAutoResults.map((item) => item.detail || item.error || ""),
+        personaInstructions: context.persona.instructions,
+      });
+
+      if (blockedReply) {
+        finalText = enforceHejGreeting(blockedReply, customerFirstName);
+        htmlBody = formatEmailBody(finalText);
+
+        if (supabase && internalDraft?.id) {
+          const { error: updateInternalDraftError } = await supabase
+            .from("mail_messages")
+            .update({
+              body_text: finalText,
+              body_html: htmlBody,
+              snippet: finalText.slice(0, 160),
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", internalDraft.id);
+          if (updateInternalDraftError) {
+            console.warn(
+              "generate-draft-unified: failed to update blocked internal draft",
+              updateInternalDraftError.message,
+            );
+          }
+        }
+
+        if (supabase && (ownerUserId || workspaceId) && emailData.messageId) {
+          let updateBlockedAiDraftQuery = supabase
+            .from("mail_messages")
+            .update({
+              ai_draft_text: finalText,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("provider", provider)
+            .eq("provider_message_id", emailData.messageId);
+          updateBlockedAiDraftQuery = workspaceId
+            ? updateBlockedAiDraftQuery.eq("workspace_id", workspaceId)
+            : updateBlockedAiDraftQuery.eq("user_id", ownerUserId);
+          const { error: updateBlockedAiDraftError } = await updateBlockedAiDraftQuery;
+          if (updateBlockedAiDraftError) {
+            console.warn(
+              "generate-draft-unified: failed to store blocked ai draft",
+              updateBlockedAiDraftError.message,
+            );
+          }
+        }
+      }
+    }
+
     if (supabase && loggedDraftId && automationResults.length) {
       const now = new Date().toISOString();
       const threadMarker = threadId ? ` |thread_id:${threadId}` : "";
@@ -1184,6 +1285,9 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
                   "Automation setting requires approval before execution.",
                 reason: result.error || null,
               })
+            : result.status === "partial_failure"
+            ? `${result.detail || `Partially applied ${result.type.replace(/_/g, " ")}.`}`.trim() +
+              threadMarker
             : result.ok
             ? `${result.detail || `Executed ${result.type.replace(/_/g, " ")}.`}`.trim() +
               threadMarker
@@ -1191,6 +1295,8 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
               threadMarker,
         status:
           result.status === "pending_approval"
+            ? "warning"
+            : result.status === "partial_failure"
             ? "warning"
             : result.ok
             ? "success"

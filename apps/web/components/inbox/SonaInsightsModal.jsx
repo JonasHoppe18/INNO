@@ -94,6 +94,7 @@ export function SonaInsightsModal({
       if (raw === "shopify_action") return "Shopify Action";
       if (raw === "shopify_action_applied") return "Shopify Action Applied";
       if (raw === "shopify_action_declined") return "Shopify Action Declined";
+      if (raw === "shopify_action_blocked") return "Shopify Action Blocked";
       if (raw === "thread_action_pending") return "Approval Required";
       if (raw === "thread_action_applied") return "Action Approved";
       if (raw === "thread_action_declined") return "Action Declined";
@@ -107,7 +108,7 @@ export function SonaInsightsModal({
         .replace(/\bai\b/gi, "AI")
         .replace(/\b\w/g, (char) => char.toUpperCase());
     };
-    const formatDetail = (value, name) => {
+    const formatDetail = (value, name, status) => {
       if (!value) return "";
       const parsed = parseLogDetail(value);
       const step = String(name || "").toLowerCase();
@@ -123,9 +124,21 @@ export function SonaInsightsModal({
       if (
         step === "shopify_action" ||
         step === "shopify_action_applied" ||
-        step === "shopify_action_declined"
+        step === "shopify_action_declined" ||
+        step === "shopify_action_blocked"
       ) {
-        return parsed.detail || (parsed.orderId ? `Order ${parsed.orderId}` : "Shopify action executed.");
+        let detail = parsed.detail || (parsed.orderId ? `Order ${parsed.orderId}` : "");
+        if (step === "shopify_action" && String(status || "").toLowerCase() === "warning") {
+          detail = detail
+            .replace(/^updated shipping address to\s*/i, "Requested shipping address change to ")
+            .replace(/^updated shipping address\b/i, "Requested shipping address change")
+            .replace(/^cancelled order\b/i, "Requested order cancellation")
+            .replace(/^refunded order\b/i, "Requested refund");
+        }
+        if (!detail && step === "shopify_action_blocked") {
+          return "Requested change was blocked and not applied.";
+        }
+        return detail || "Shopify action event.";
       }
       if (step.startsWith("thread_action_")) {
         return parsed.detail || "Order action event.";
@@ -136,7 +149,7 @@ export function SonaInsightsModal({
     return logs.map((log) => ({
       id: String(log.id),
       title: formatTitle(log.step_name),
-      statusLabel: formatDetail(log.step_detail, log.step_name),
+      statusLabel: formatDetail(log.step_detail, log.step_name, log.status),
       timestamp: new Date(log.created_at).toLocaleTimeString("da-DK", {
         hour: "2-digit",
         minute: "2-digit",

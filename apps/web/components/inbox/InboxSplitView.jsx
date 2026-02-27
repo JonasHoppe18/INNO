@@ -976,24 +976,59 @@ export function InboxSplitView({ messages = [], threads = [] }) {
       if (!active) return;
       const latestAction = payload?.action || null;
       if (latestAction) {
+        const normalizedStatus = String(latestAction.status || "").toLowerCase();
+        const isPendingStatus =
+          normalizedStatus === "pending" ||
+          normalizedStatus === "warning" ||
+          normalizedStatus === "awaiting_approval";
+        const isFailedStatus = normalizedStatus === "failed";
         const detail =
           asString(latestAction?.detail) ||
           "Sona wants to apply an order update for this customer.";
-        setPendingOrderUpdateByThread((prev) => ({
-          ...prev,
-          [selectedThreadId]: {
-            id: String(latestAction.id || ""),
-            detail,
-            actionType: asString(latestAction.action_type) || null,
-            payload:
-              latestAction?.payload && typeof latestAction.payload === "object"
-                ? latestAction.payload
-                : {},
-            createdAt: latestAction.createdAt || null,
-            status: asString(latestAction.status) || "pending",
-            error: asString(latestAction.error) || null,
-          },
-        }));
+        if (isPendingStatus) {
+          setPendingOrderUpdateByThread((prev) => ({
+            ...prev,
+            [selectedThreadId]: {
+              id: String(latestAction.id || ""),
+              detail,
+              actionType: asString(latestAction.action_type) || null,
+              payload:
+                latestAction?.payload && typeof latestAction.payload === "object"
+                  ? latestAction.payload
+                  : {},
+              createdAt: latestAction.createdAt || null,
+              status: asString(latestAction.status) || "pending",
+              error: asString(latestAction.error) || null,
+            },
+          }));
+        } else if (isFailedStatus) {
+          const failedDetail =
+            asString(latestAction?.error) ||
+            asString(latestAction?.detail) ||
+            "Order action could not be completed.";
+          setPendingOrderUpdateByThread((prev) => ({
+            ...prev,
+            [selectedThreadId]: {
+              id: String(latestAction.id || ""),
+              detail: failedDetail,
+              actionType: asString(latestAction.action_type) || null,
+              payload:
+                latestAction?.payload && typeof latestAction.payload === "object"
+                  ? latestAction.payload
+                  : {},
+              createdAt: latestAction.createdAt || null,
+              status: "failed",
+              error: asString(latestAction.error) || failedDetail,
+            },
+          }));
+        } else {
+          setPendingOrderUpdateByThread((prev) => {
+            if (!prev[selectedThreadId]) return prev;
+            const next = { ...prev };
+            delete next[selectedThreadId];
+            return next;
+          });
+        }
         const decisionFromAction = getDecisionFromActionStatus(latestAction.status);
         setOrderUpdateDecisionByThread((prev) => {
           const next = { ...prev };
@@ -1476,6 +1511,55 @@ export function InboxSplitView({ messages = [], threads = [] }) {
         const payload = await res.json().catch(() => ({}));
         if (!res.ok) {
           throw new Error(payload?.error || "Could not update action.");
+        }
+        if (payload?.blocked) {
+          const blockedReason = String(
+            payload?.reason || "Action could not be applied because the order cannot be changed."
+          );
+          setPendingOrderUpdateByThread((prev) => ({
+            ...prev,
+            [selectedThreadId]: {
+              id: String(pending.id || ""),
+              detail: blockedReason,
+              actionType: pending.actionType || null,
+              payload: pending.payload && typeof pending.payload === "object" ? pending.payload : {},
+              createdAt: pending.createdAt || null,
+              status: "failed",
+              error: blockedReason,
+            },
+          }));
+          setOrderUpdateErrorByThread((prev) => ({
+            ...prev,
+            [selectedThreadId]: blockedReason,
+          }));
+          setOrderUpdateDecisionByThread((prev) => {
+            const next = { ...prev };
+            delete next[selectedThreadId];
+            return next;
+          });
+
+          if (payload?.draftGenerated) {
+            const draftRes = await fetch(`/api/threads/${selectedThreadId}/draft`, {
+              method: "GET",
+            }).catch(() => null);
+            if (draftRes?.ok) {
+              const draftPayload = await draftRes.json().catch(() => ({}));
+              const draft = draftPayload?.draft || null;
+              const draftText = draft?.body_text || draft?.body_html || "";
+              if (draftText) {
+                setDraftValue(draftText);
+                draftLastSavedRef.current = draftText.trim();
+                setSystemDraftUneditedByThread((prev) => ({
+                  ...prev,
+                  [selectedThreadId]: true,
+                }));
+              }
+              if (draft?.id) setActiveDraftId(draft.id);
+            }
+          }
+
+          toast.error(blockedReason, { id: toastId });
+          return;
         }
         setOrderUpdateDecisionByThread((prev) => ({
           ...prev,
