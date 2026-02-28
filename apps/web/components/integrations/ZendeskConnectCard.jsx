@@ -2,22 +2,15 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { CheckCircle2 } from "lucide-react";
 import { useUser } from "@clerk/nextjs";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { useClerkSupabase } from "@/lib/useClerkSupabase";
-import { GorgiasSheet } from "./GorgiasSheet";
-import gorgiasLogo from "../../../../assets/gorgias-removebg-preview.png";
+import { ZendeskSheet } from "./ZendeskSheet";
+import zendeskLogo from "../../../../assets/Zendesk_logo.webp";
 
-export function GorgiasConnectCard() {
+export function ZendeskConnectCard() {
   const supabase = useClerkSupabase();
   const { user } = useUser();
   const [integration, setIntegration] = useState(null);
@@ -59,7 +52,7 @@ export function GorgiasConnectCard() {
       const response = await supabase
         .from("integrations")
         .select("*")
-        .eq("provider", "gorgias")
+        .eq("provider", "zendesk")
         .eq("workspace_id", workspaceId)
         .maybeSingle();
       data = response.data;
@@ -68,7 +61,7 @@ export function GorgiasConnectCard() {
       const response = await supabase
         .from("integrations")
         .select("*")
-        .eq("provider", "gorgias")
+        .eq("provider", "zendesk")
         .eq("user_id", userId)
         .maybeSingle();
       data = response.data;
@@ -106,27 +99,28 @@ export function GorgiasConnectCard() {
     return () => clearInterval(timer);
   }, [integration?.config?.import_status, loadIntegration]);
 
-  const isConnected = integration?.is_active;
+  const isConnected = Boolean(integration?.is_active);
   const domain = integration?.config?.domain;
-  const importStatus = integration?.config?.import_status;
-  const importedCount = integration?.config?.last_import_count;
+  const importedCount = integration?.config?.last_import_count ?? null;
+  const skippedCount = integration?.config?.last_import_skipped ?? null;
+  const importStatus = integration?.config?.import_status ?? null;
 
   return (
     <Card className="flex h-full flex-col border bg-card/60 shadow-sm">
       <CardHeader className="flex items-start gap-4">
         <div className="flex h-12 w-12 items-center justify-center rounded-xl border bg-muted/40">
           <Image
-            src={gorgiasLogo}
-            alt="Gorgias logo"
+            src={zendeskLogo}
+            alt="Zendesk logo"
             width={40}
             height={40}
             className="object-contain"
           />
         </div>
         <div className="space-y-1">
-          <CardTitle>Gorgias</CardTitle>
+          <CardTitle>Zendesk</CardTitle>
           <CardDescription>
-            Import your historic Gorgias tickets once, so Sona learns prior support tone.
+            Import your closed ticket history once, so Sona learns your historic tone.
           </CardDescription>
         </div>
       </CardHeader>
@@ -141,7 +135,9 @@ export function GorgiasConnectCard() {
             {typeof importedCount === "number" ? (
               <p className="text-xs text-muted-foreground">
                 {importStatus === "running"
-                  ? `Importing history... ${importedCount} imported.`
+                  ? `Importing... ${importedCount} imported${
+                      typeof skippedCount === "number" ? `, ${skippedCount} skipped` : ""
+                    }.`
                   : `Initial import complete: ${importedCount} tickets.`}
               </p>
             ) : null}
@@ -156,16 +152,14 @@ export function GorgiasConnectCard() {
             Active
           </div>
         ) : (
-          <span className="text-xs font-medium text-muted-foreground">
-            Not connected
-          </span>
+          <span className="text-xs font-medium text-muted-foreground">Not connected</span>
         )}
 
-        <GorgiasSheet initialData={integration} onConnected={loadIntegration}>
-          <Button size="sm" variant={isConnected ? "outline" : "default"}>
+        <ZendeskSheet initialData={integration} onConnected={loadIntegration}>
+          <Button size="sm" variant={isConnected ? "outline" : "default"} disabled={loading}>
             {isConnected ? "Manage" : "Connect"}
           </Button>
-        </GorgiasSheet>
+        </ZendeskSheet>
       </CardFooter>
     </Card>
   );

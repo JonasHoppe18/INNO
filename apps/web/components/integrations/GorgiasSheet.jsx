@@ -13,11 +13,9 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import { Check, Copy, AlertCircle } from "lucide-react";
 import { useClerkSupabase } from "@/lib/useClerkSupabase";
 import { useAuth, useUser } from "@clerk/nextjs";
 
-const BASE_WEBHOOK_URL = "https://api.sona.ai/webhooks/gorgias";
 const SUPABASE_TEMPLATE =
   process.env.NEXT_PUBLIC_CLERK_SUPABASE_TEMPLATE?.trim() || "supabase";
 const UUID_REGEX =
@@ -83,7 +81,6 @@ export function GorgiasSheet({ children, onConnected, initialData = null }) {
   const { user } = useUser();
 
   const [open, setOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [domain, setDomain] = useState("");
   const [email, setEmail] = useState("");
   const [apiKey, setApiKey] = useState("");
@@ -91,27 +88,6 @@ export function GorgiasSheet({ children, onConnected, initialData = null }) {
   const [disconnecting, setDisconnecting] = useState(false);
   const [error, setError] = useState("");
   const hasExistingConfig = Boolean(initialData);
-
-  const uniqueWebhookUrl = user
-    ? `${BASE_WEBHOOK_URL}?userId=${user.id}`
-    : "Loading URL...";
-
-  const handleCopy = async () => {
-    if (!user) return;
-    try {
-      await navigator.clipboard.writeText(uniqueWebhookUrl);
-      setCopied(true);
-    } catch (err) {
-      console.error("Copy failed", err);
-    }
-  };
-
-  useEffect(() => {
-    if (copied) {
-      const timer = setTimeout(() => setCopied(false), 2000);
-      return () => clearTimeout(timer);
-    }
-  }, [copied]);
 
   useEffect(() => {
     if (open) {
@@ -170,6 +146,22 @@ export function GorgiasSheet({ children, onConnected, initialData = null }) {
     return isValidUuid(data?.user_id) ? data.user_id : null;
   }, [supabase, user?.id]);
 
+  const resolveWorkspaceId = useCallback(async () => {
+    if (!supabase || !user?.id) return null;
+    const { data, error } = await supabase
+      .from("workspace_members")
+      .select("workspace_id")
+      .eq("clerk_user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) {
+      console.warn("GorgiasSheet: could not fetch workspace id", error);
+      return null;
+    }
+    return typeof data?.workspace_id === "string" ? data.workspace_id : null;
+  }, [supabase, user?.id]);
+
   const ensureUserId = useCallback(async () => {
     const metadataUuid = user?.publicMetadata?.supabase_uuid;
     if (isValidUuid(metadataUuid)) return metadataUuid;
@@ -225,27 +217,52 @@ export function GorgiasSheet({ children, onConnected, initialData = null }) {
       return;
     }
 
+    const workspaceId = await resolveWorkspaceId();
+
     const payload = {
       user_id: supabaseUserId,
+      workspace_id: workspaceId,
       provider: "gorgias",
       config: {
         domain: cleanDomain,
         email: email.trim(),
-        webhook_url: uniqueWebhookUrl,
+        import_status: "running",
+        import_completed: false,
       },
       credentials_enc: encodeToBytea(apiKey.trim()),
       is_active: true,
       updated_at: new Date().toISOString(),
     };
 
+    const onConflict = workspaceId ? "workspace_id,provider" : "user_id,provider";
     const { error: upsertError } = await supabase
       .from("integrations")
-      .upsert(payload, { onConflict: "user_id,provider" });
+      .upsert(payload, { onConflict });
 
     if (upsertError) {
       console.error("Error saving integration:", upsertError);
       setError("Could not save. Check the console for details.");
     } else {
+      const enqueueResponse = await fetch("/api/integrations/import-history/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: "gorgias",
+          max_tickets: 1000,
+          batch_size: 50,
+        }),
+      });
+      if (enqueueResponse.ok) {
+        const enqueuePayload = await enqueueResponse.json().catch(() => ({}));
+        await fetch("/api/integrations/import-history/worker", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            job_id: enqueuePayload?.job?.id || null,
+            max_batches: 2,
+          }),
+        }).catch(() => null);
+      }
       onConnected?.();
       setOpen(false);
       setDomain(cleanDomain);
@@ -289,11 +306,11 @@ export function GorgiasSheet({ children, onConnected, initialData = null }) {
 
   const primaryCtaLabel = submitting
     ? hasExistingConfig
-      ? "Updating..."
-      : "Connecting..."
+      ? "Updating & importing..."
+      : "Connecting & importing..."
     : hasExistingConfig
-    ? "Update Configuration"
-    : "Connect Gorgias";
+    ? "Update & Import Once"
+    : "Connect & Import Once";
 
   const disconnectLabel = disconnecting
     ? "Disconnecting..."
@@ -308,7 +325,7 @@ export function GorgiasSheet({ children, onConnected, initialData = null }) {
             {hasExistingConfig ? "Update Gorgias" : "Connect Gorgias"}
           </SheetTitle>
           <SheetDescription>
-            Enter an API key and set up the webhook to activate the agent.
+            We import your historic tickets once during onboarding. No ongoing sync.
           </SheetDescription>
         </SheetHeader>
 
@@ -356,47 +373,9 @@ export function GorgiasSheet({ children, onConnected, initialData = null }) {
 
           <div className="h-px bg-slate-100" />
 
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-                2. Setup
-              </h3>
-              <span className="bg-amber-100 text-amber-700 text-[10px] px-2 py-0.5 rounded-full font-bold">
-                Important
-              </span>
-            </div>
-
-            <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2">
-              <div className="flex items-center gap-2 text-xs text-slate-700">
-                <AlertCircle className="w-3 h-3" />
-                <span>Copy this URL into a Gorgias webhook:</span>
-              </div>
-              <div className="flex gap-2">
-                <Input
-                  readOnly
-                  value={uniqueWebhookUrl}
-                  className="bg-white font-mono text-xs h-9"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  className="shrink-0 h-9 w-9"
-                  onClick={handleCopy}
-                >
-                  {copied ? (
-                    <Check className="h-4 w-4 text-green-600" />
-                  ) : (
-                    <Copy className="h-4 w-4" />
-                  )}
-                </Button>
-              </div>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Create a new webhook in Gorgias that triggers on ticket creation or
-              updates, and use this URL as the destination.
-            </p>
-          </div>
+          <p className="text-xs text-muted-foreground">
+            Sona starts a background import job automatically right after connect.
+          </p>
 
           {error && <p className="text-sm text-red-500">{error}</p>}
 

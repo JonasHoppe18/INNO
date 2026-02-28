@@ -1,68 +1,67 @@
-
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
+import { createClient } from "@supabase/supabase-js";
+import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 
 const SUPABASE_BASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
     process.env.EXPO_PUBLIC_SUPABASE_URL ||
     ""
   ).replace(/\/$/, "");
-const SUPABASE_ANON_KEY =
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
+const SUPABASE_SERVICE_KEY =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.SERVICE_ROLE_KEY ||
+  process.env.SUPABASE_SERVICE_KEY ||
   "";
-const SUPABASE_TEMPLATE =
-  process.env.NEXT_PUBLIC_CLERK_SUPABASE_TEMPLATE?.trim() ||
-  process.env.EXPO_PUBLIC_CLERK_SUPABASE_TEMPLATE?.trim() ||
-  "supabase";
+
+function createServiceClient() {
+  if (!SUPABASE_BASE_URL || !SUPABASE_SERVICE_KEY) return null;
+  return createClient(SUPABASE_BASE_URL, SUPABASE_SERVICE_KEY);
+}
 
 export async function DELETE() {
-  const { userId, getToken } = auth();
-  if (!userId) {
+  const { userId: clerkUserId, orgId } = auth();
+  if (!clerkUserId) {
     return NextResponse.json(
       { error: "You must be signed in to disconnect Gorgias." },
       { status: 401 }
     );
   }
 
-  if (!SUPABASE_BASE_URL || !SUPABASE_ANON_KEY) {
+  const serviceClient = createServiceClient();
+  if (!serviceClient) {
     return NextResponse.json(
       { error: "Supabase configuration is missing." },
       { status: 500 }
     );
   }
 
-  const token = await getToken({ template: SUPABASE_TEMPLATE });
-  if (!token) {
+  let scope = null;
+  try {
+    scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
+  } catch (error) {
     return NextResponse.json(
-      { error: "Could not fetch Clerk token for Supabase." },
-      { status: 401 }
+      { error: error instanceof Error ? error.message : "Workspace scope lookup failed." },
+      { status: 500 }
     );
   }
 
-  const url = new URL("/rest/v1/integrations", SUPABASE_BASE_URL);
-  url.searchParams.set("provider", "eq.gorgias");
+  if (!scope?.workspaceId && !scope?.supabaseUserId) {
+    return NextResponse.json(
+      { error: "No workspace/user scope found." },
+      { status: 400 }
+    );
+  }
 
-  const response = await fetch(url.toString(), {
-    method: "DELETE",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      apikey: SUPABASE_ANON_KEY,
-      Prefer: "return=representation",
-      "Content-Type": "application/json",
-    },
-  });
+  let deleteQuery = serviceClient
+    .from("integrations")
+    .delete()
+    .eq("provider", "gorgias");
+  deleteQuery = applyScope(deleteQuery, scope);
+  const { data, error } = await deleteQuery.select("id");
 
-  const data = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    const message =
-      typeof data?.message === "string"
-        ? data.message
-        : typeof data?.error === "string"
-        ? data.error
-        : "Could not disconnect Gorgias.";
-    return NextResponse.json({ error: message }, { status: response.status });
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
   return NextResponse.json(

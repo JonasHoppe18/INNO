@@ -6,8 +6,7 @@ import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 const SUPABASE_BASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
     process.env.EXPO_PUBLIC_SUPABASE_URL ||
-    ""
-  ).replace(/\/$/, "");
+    "").replace(/\/$/, "");
 const SUPABASE_SERVICE_KEY =
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
   process.env.SERVICE_ROLE_KEY ||
@@ -23,7 +22,7 @@ export async function DELETE() {
   const { userId: clerkUserId, orgId } = auth();
   if (!clerkUserId) {
     return NextResponse.json(
-      { error: "You must be signed in to disconnect Freshdesk." },
+      { error: "You must be signed in to disconnect Zendesk." },
       { status: 401 }
     );
   }
@@ -56,7 +55,7 @@ export async function DELETE() {
   let deleteQuery = serviceClient
     .from("integrations")
     .delete()
-    .eq("provider", "freshdesk");
+    .eq("provider", "zendesk");
   deleteQuery = applyScope(deleteQuery, scope);
   const { data, error } = await deleteQuery.select("id");
 

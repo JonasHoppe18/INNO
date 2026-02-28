@@ -12,6 +12,13 @@ import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { useCustomerLookup } from "@/hooks/useCustomerLookup";
 import { useSiteHeaderActions } from "@/components/site-header-actions";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -19,7 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CheckCircle, CheckCircle2, Plus, User } from "lucide-react";
+import { CheckCircle, CheckCircle2, User } from "lucide-react";
 
 const DEFAULT_TICKET_STATE = {
   status: "New",
@@ -73,9 +80,24 @@ function InboxHeaderActions({
   onInboxChange,
   onOpenInsights,
 }) {
+  const [inboxPickerOpen, setInboxPickerOpen] = useState(false);
+  const [inboxFilter, setInboxFilter] = useState("");
+
   if (!ticketState) return null;
   const statusLabel =
     ticketState.status === "Solved" ? "Resolved" : ticketState.status;
+  const selectedInboxLabel = useMemo(() => {
+    if (!selectedInboxSlug) return "All tickets";
+    const hit = (inboxOptions || []).find((option) => option.value === selectedInboxSlug);
+    return hit?.label || selectedInboxSlug;
+  }, [inboxOptions, selectedInboxSlug]);
+  const filteredInboxOptions = useMemo(() => {
+    const query = String(inboxFilter || "").trim().toLowerCase();
+    if (!query) return inboxOptions || [];
+    return (inboxOptions || []).filter((option) =>
+      String(option?.label || "").toLowerCase().includes(query)
+    );
+  }, [inboxFilter, inboxOptions]);
   const statusStylesByStatus = {
     New: "bg-green-50 text-green-700 border-green-200",
     Open: "bg-blue-50 text-blue-700 border-blue-200",
@@ -131,25 +153,13 @@ function InboxHeaderActions({
       >
         {tagLabel || "General"}
       </button>
-      <Select
-        value={selectedInboxSlug || UNASSIGNED_ASSIGNEE_VALUE}
-        onValueChange={(value) =>
-          onInboxChange?.(value === UNASSIGNED_ASSIGNEE_VALUE ? null : value)
-        }
+      <button
+        type="button"
+        onClick={() => setInboxPickerOpen(true)}
+        className="cursor-pointer rounded-md border border-dashed border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:border-gray-300"
       >
-        <SelectTrigger className="h-auto w-auto cursor-pointer gap-1.5 rounded-md border border-dashed border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-500 hover:border-gray-400">
-          <Plus className="h-3.5 w-3.5" />
-          <SelectValue placeholder="Inbox" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={UNASSIGNED_ASSIGNEE_VALUE}>No inbox</SelectItem>
-          {(inboxOptions || []).map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+        Move to inbox
+      </button>
       <button
         type="button"
         onClick={onOpenInsights}
@@ -157,6 +167,59 @@ function InboxHeaderActions({
       >
         View actions
       </button>
+      <Dialog open={inboxPickerOpen} onOpenChange={setInboxPickerOpen}>
+        <DialogContent className="sm:max-w-[460px]">
+          <DialogHeader>
+            <DialogTitle>Move ticket to inbox</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Input
+              value={inboxFilter}
+              onChange={(event) => setInboxFilter(event.target.value)}
+              placeholder="Search inbox..."
+            />
+            <div className="max-h-80 space-y-1 overflow-y-auto rounded-md border border-gray-200 p-2">
+              <button
+                type="button"
+                onClick={() => {
+                  onInboxChange?.(null);
+                  setInboxPickerOpen(false);
+                }}
+                className={`w-full cursor-pointer rounded px-3 py-2 text-left text-sm ${
+                  !selectedInboxSlug
+                    ? "bg-gray-900 text-white"
+                    : "text-gray-700 hover:bg-gray-100"
+                }`}
+              >
+                All tickets
+              </button>
+              {filteredInboxOptions.map((option) => {
+                const isActive = selectedInboxSlug === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => {
+                      onInboxChange?.(option.value);
+                      setInboxPickerOpen(false);
+                    }}
+                    className={`w-full cursor-pointer rounded px-3 py-2 text-left text-sm ${
+                      isActive
+                        ? "bg-gray-900 text-white"
+                        : "text-gray-700 hover:bg-gray-100"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+              {!filteredInboxOptions.length ? (
+                <p className="px-3 py-2 text-sm text-muted-foreground">No inboxes found.</p>
+              ) : null}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -725,6 +788,16 @@ export function InboxSplitView({ messages = [], threads = [] }) {
           (hasLocalState ? uiState?.status : null) || thread.status || DEFAULT_TICKET_STATE.status
         );
         const inboxSlug = extractInboxSlugFromTags(thread?.tags || []);
+        const isResolved = effectiveStatus === "Solved";
+
+        // Resolved tickets live exclusively in the "Resolved" view.
+        if (isResolved && activeView !== "resolved") {
+          return false;
+        }
+        if (!isResolved && activeView === "resolved") {
+          return false;
+        }
+
         if (!activeView && (effectiveAssignee || inboxSlug)) {
           return false;
         }
@@ -733,10 +806,6 @@ export function InboxSplitView({ messages = [], threads = [] }) {
           if (!assignee || assignee !== String(currentSupabaseUserId || "")) {
             return false;
           }
-          if (effectiveStatus === "Solved") return false;
-        }
-        if (activeView === "resolved") {
-          if (effectiveStatus !== "Solved") return false;
         }
         if (activeView.startsWith("inbox:")) {
           const targetInbox = activeView.slice("inbox:".length);
@@ -841,7 +910,7 @@ export function InboxSplitView({ messages = [], threads = [] }) {
   }, [supabase, user?.id]);
 
   useEffect(() => {
-    if (!supabase) return;
+    if (!supabase || !user?.id) return;
     let active = true;
     const loadWorkspaceInboxes = async () => {
       const response = await fetch("/api/inboxes", {
@@ -859,7 +928,7 @@ export function InboxSplitView({ messages = [], threads = [] }) {
     return () => {
       active = false;
     };
-  }, [supabase]);
+  }, [supabase, user?.id]);
 
   const selectedThread = useMemo(
     () => derivedThreads.find((thread) => thread.id === selectedThreadId) || null,
@@ -896,7 +965,7 @@ export function InboxSplitView({ messages = [], threads = [] }) {
   }, [assigneeProfilesById, derivedThreads, selectedTicketState?.assignee]);
   const selectedTagLabel =
     Array.isArray(selectedThread?.tags) && selectedThread.tags.length
-      ? selectedThread.tags[0]
+      ? selectedThread.tags.find((tag) => !String(tag || "").startsWith("inbox:")) || "General"
       : "General";
   const selectedInboxSlug = extractInboxSlugFromTags(selectedThread?.tags || []);
   const inboxOptions = useMemo(
@@ -923,23 +992,14 @@ export function InboxSplitView({ messages = [], threads = [] }) {
           label: option.label,
         });
       });
-    inboxOptions.forEach((option) => {
-      combined.push({
-        value: `inbox:${option.value}`,
-        label: `Team: ${option.label}`,
-      });
-    });
     return combined;
-  }, [assigneeOptions, inboxOptions]);
+  }, [assigneeOptions]);
   const selectedAssignmentValue = useMemo(() => {
     if (selectedTicketState?.assignee) {
       return `user:${selectedTicketState.assignee}`;
     }
-    if (selectedInboxSlug) {
-      return `inbox:${selectedInboxSlug}`;
-    }
     return UNASSIGNED_ASSIGNEE_VALUE;
-  }, [selectedInboxSlug, selectedTicketState?.assignee]);
+  }, [selectedTicketState?.assignee]);
 
   useEffect(() => {
     if (!selectedThreadId || isLocalThreadId(selectedThreadId)) return;
@@ -1346,6 +1406,12 @@ export function InboxSplitView({ messages = [], threads = [] }) {
     setFilters((prev) => ({ ...prev, ...updates }));
   };
 
+  useEffect(() => {
+    if (activeView === "" && filters.status === "Solved") {
+      setFilters((prev) => ({ ...prev, status: "All" }));
+    }
+  }, [activeView, filters.status]);
+
   const handleTicketStateChange = useCallback((updates) => {
     if (!selectedThreadId) return;
     setTicketStateByThread((prev) => ({
@@ -1436,20 +1502,13 @@ export function InboxSplitView({ messages = [], threads = [] }) {
       const selected = String(value || "");
       if (!selected || selected === UNASSIGNED_ASSIGNEE_VALUE) {
         handleTicketStateChange({ assignee: null });
-        handleInboxChange(null);
         return;
       }
       if (selected.startsWith("user:")) {
         handleTicketStateChange({ assignee: selected.slice("user:".length) || null });
-        handleInboxChange(null);
-        return;
-      }
-      if (selected.startsWith("inbox:")) {
-        handleTicketStateChange({ assignee: null });
-        handleInboxChange(selected.slice("inbox:".length) || null);
       }
     },
-    [handleInboxChange, handleTicketStateChange]
+    [handleTicketStateChange]
   );
 
   useEffect(() => {
@@ -1864,6 +1923,7 @@ export function InboxSplitView({ messages = [], threads = [] }) {
         getTimestamp={getThreadTimestamp}
         getUnreadCount={getThreadUnreadCount}
         onCreateTicket={handleCreateTicket}
+        hideSolvedFilter={activeView === ""}
       />
 
       <TicketDetail

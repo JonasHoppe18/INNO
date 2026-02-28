@@ -28,6 +28,18 @@ export type OwnerProfile = {
   signature: string;
 };
 
+export type KnowledgeMatch = {
+  id: number;
+  content: string;
+  source_type: "ticket" | "document" | "snippet" | string;
+  source_provider: string;
+  metadata?: Record<string, unknown> | null;
+  similarity?: number;
+};
+
+const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+const OPENAI_EMBEDDING_MODEL = Deno.env.get("OPENAI_EMBEDDING_MODEL") ?? "text-embedding-3-small";
+
 export const DEFAULT_PERSONA: Persona = {
   signature: "",
   scenario: "",
@@ -276,4 +288,68 @@ export async function fetchOwnerProfile(
         ? data.signature
         : DEFAULT_OWNER_PROFILE.signature,
   };
+}
+
+async function embedKnowledgeQuery(input: string): Promise<number[] | null> {
+  const trimmed = String(input || "").trim();
+  if (!trimmed || !OPENAI_API_KEY) return null;
+  const res = await fetch("https://api.openai.com/v1/embeddings", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: OPENAI_EMBEDDING_MODEL,
+      input: trimmed.slice(0, 4000),
+    }),
+  });
+  const payload = await res.json().catch(() => null);
+  if (!res.ok) {
+    console.warn("agent-context: embedding failed", payload?.error?.message ?? res.status);
+    return null;
+  }
+  const embedding = payload?.data?.[0]?.embedding;
+  return Array.isArray(embedding) ? embedding : null;
+}
+
+export async function fetchRelevantKnowledge(
+  supabase: SupabaseClient | null,
+  shopId: string | null,
+  emailBody: string | null,
+  limit = 4,
+): Promise<KnowledgeMatch[]> {
+  if (!supabase || !shopId || !emailBody?.trim()) return [];
+
+  const queryEmbedding = await embedKnowledgeQuery(emailBody);
+  if (!queryEmbedding) return [];
+
+  const { data, error } = await supabase.rpc("match_agent_knowledge", {
+    query_embedding: queryEmbedding,
+    match_count: Math.max(1, Math.min(limit, 5)),
+    filter_shop_id: shopId,
+  });
+
+  if (error) {
+    console.warn("agent-context: could not fetch agent knowledge", error);
+    return [];
+  }
+
+  if (!Array.isArray(data)) return [];
+  return data as KnowledgeMatch[];
+}
+
+export function formatKnowledgeForPrompt(matches: KnowledgeMatch[]): string {
+  if (!Array.isArray(matches) || !matches.length) return "";
+
+  const lines = ["RELEVANT KNOWLEDGE & HISTORY:"];
+  matches.forEach((match, index) => {
+    const type = match?.source_type || "snippet";
+    const provider = match?.source_provider ? `, Provider: ${match.source_provider}` : "";
+    const content = String(match?.content || "").trim();
+    if (!content) return;
+    lines.push(`[${index + 1}] (Type: ${type}${provider}) ${content}`);
+  });
+
+  return lines.join("\n");
 }

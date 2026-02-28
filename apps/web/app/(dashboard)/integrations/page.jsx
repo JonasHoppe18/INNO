@@ -4,6 +4,7 @@ import { ShopifyConnectCard } from "@/components/integrations/ShopifyConnectCard
 import { WebshipperCard } from "@/components/integrations/WebshipperCard";
 import { FreshdeskConnectCard } from "@/components/integrations/FreshdeskConnectCard";
 import { GorgiasConnectCard } from "@/components/integrations/GorgiasConnectCard";
+import { ZendeskConnectCard } from "@/components/integrations/ZendeskConnectCard";
 import { DashboardPageShell } from "@/components/dashboard-page-shell";
 import { IntegrationsSuccessToast } from "@/components/integrations/IntegrationsSuccessToast";
 
@@ -48,6 +49,7 @@ export default async function IntegrationsPage() {
           </p>
         </div>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <ZendeskConnectCard />
           <FreshdeskConnectCard />
           <GorgiasConnectCard />
         </div>

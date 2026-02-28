@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
-import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
+import { resolveAuthScope } from "@/lib/server/workspace-auth";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -64,13 +64,11 @@ const isMissingTableError = (error) =>
   /relation .*workspace_inboxes.* does not exist/i.test(String(error?.message || ""));
 
 async function loadInboxesFromWorkspaceTable(serviceClient, scope) {
-  const query = applyScope(
-    serviceClient
-      .from("workspace_inboxes")
-      .select("id, name, slug, created_at")
-      .order("created_at", { ascending: true }),
-    scope
-  );
+  const query = serviceClient
+    .from("workspace_inboxes")
+    .select("id, name, slug, created_at")
+    .eq("workspace_id", scope.workspaceId)
+    .order("created_at", { ascending: true });
   const { data, error } = await query;
   if (error) throw error;
   return (data || []).map((row) => ({
@@ -94,7 +92,7 @@ export async function GET() {
 
   try {
     const scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
-    if (!scope.workspaceId && !scope.supabaseUserId) {
+    if (!scope.workspaceId) {
       return NextResponse.json({ inboxes: [] }, { status: 200 });
     }
 
@@ -106,13 +104,11 @@ export async function GET() {
         return NextResponse.json({ error: tableError.message }, { status: 500 });
       }
     }
-    const scoped = await applyScope(
-      serviceClient
-        .from("mail_threads")
-        .select("tags")
-        .limit(2000),
-      scope
-    );
+    const scoped = await serviceClient
+      .from("mail_threads")
+      .select("tags")
+      .eq("workspace_id", scope.workspaceId)
+      .limit(2000);
     if (scoped.error) {
       return NextResponse.json({ error: scoped.error.message }, { status: 500 });
     }
@@ -152,25 +148,25 @@ export async function POST(request) {
 
   try {
     const scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
-    if (!scope.workspaceId && !scope.supabaseUserId) {
-      return NextResponse.json({ error: "Auth scope not found." }, { status: 404 });
+    if (!scope.workspaceId) {
+      return NextResponse.json(
+        { error: "Workspace is required for custom inboxes." },
+        { status: 400 }
+      );
     }
 
-    const { error: insertError, data } = await applyScope(
-      serviceClient
-        .from("workspace_inboxes")
-        .insert({
-          name: inboxName,
-          slug,
-          workspace_id: scope.workspaceId ?? null,
-          user_id: scope.supabaseUserId ?? null,
-          created_by: scope.supabaseUserId ?? null,
-          updated_by: scope.supabaseUserId ?? null,
-        })
-        .select("id, name, slug")
-        .maybeSingle(),
-      scope
-    );
+    const { error: insertError, data } = await serviceClient
+      .from("workspace_inboxes")
+      .insert({
+        name: inboxName,
+        slug,
+        workspace_id: scope.workspaceId,
+        user_id: null,
+        created_by: scope.supabaseUserId ?? null,
+        updated_by: scope.supabaseUserId ?? null,
+      })
+      .select("id, name, slug")
+      .maybeSingle();
 
     if (insertError) {
       if (isMissingTableError(insertError)) {
@@ -229,19 +225,20 @@ export async function DELETE(request) {
 
   try {
     const scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
-    if (!scope.workspaceId && !scope.supabaseUserId) {
-      return NextResponse.json({ error: "Auth scope not found." }, { status: 404 });
+    if (!scope.workspaceId) {
+      return NextResponse.json(
+        { error: "Workspace is required for custom inboxes." },
+        { status: 400 }
+      );
     }
 
-    const deleteQuery = applyScope(
-      serviceClient
-        .from("workspace_inboxes")
-        .delete()
-        .eq("slug", slug)
-        .select("id, slug")
-        .maybeSingle(),
-      scope
-    );
+    const deleteQuery = serviceClient
+      .from("workspace_inboxes")
+      .delete()
+      .eq("workspace_id", scope.workspaceId)
+      .eq("slug", slug)
+      .select("id, slug")
+      .maybeSingle();
     const { data: deletedInbox, error: deleteError } = await deleteQuery;
 
     if (deleteError) {
@@ -261,13 +258,11 @@ export async function DELETE(request) {
     }
 
     const inboxTag = `inbox:${slug}`;
-    const scopedThreadsQuery = applyScope(
-      serviceClient
-        .from("mail_threads")
-        .select("id, tags")
-        .contains("tags", [inboxTag]),
-      scope
-    );
+    const scopedThreadsQuery = serviceClient
+      .from("mail_threads")
+      .select("id, tags")
+      .eq("workspace_id", scope.workspaceId)
+      .contains("tags", [inboxTag]);
     const { data: taggedThreads, error: threadsError } = await scopedThreadsQuery;
     if (threadsError) {
       return NextResponse.json({ error: threadsError.message }, { status: 500 });
@@ -278,13 +273,11 @@ export async function DELETE(request) {
       threadsToUpdate.map(async (thread) => {
         const tags = Array.isArray(thread?.tags) ? thread.tags : [];
         const nextTags = tags.filter((tag) => String(tag || "") !== inboxTag);
-        const updateQuery = applyScope(
-          serviceClient
-            .from("mail_threads")
-            .update({ tags: nextTags })
-            .eq("id", thread.id),
-          scope
-        );
+        const updateQuery = serviceClient
+          .from("mail_threads")
+          .update({ tags: nextTags })
+          .eq("workspace_id", scope.workspaceId)
+          .eq("id", thread.id);
         return updateQuery;
       })
     );

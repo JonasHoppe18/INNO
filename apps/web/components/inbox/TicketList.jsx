@@ -21,7 +21,12 @@ export function TicketList({
   getTimestamp,
   getUnreadCount,
   onCreateTicket,
+  hideSolvedFilter = false,
 }) {
+  const statusFilters = hideSolvedFilter
+    ? STATUS_FILTERS.filter((option) => option !== "Solved")
+    : STATUS_FILTERS;
+
   return (
     <aside className="flex w-full flex-col border-b bg-white lg:w-[20vw] lg:min-w-[20vw] lg:max-w-[20vw] lg:flex-none lg:border-b-0 lg:border-r lg:border-gray-200">
       <div className="border-b p-3">
@@ -41,7 +46,7 @@ export function TicketList({
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
-                {STATUS_FILTERS.map((option) => (
+                {statusFilters.map((option) => (
                   <SelectItem key={option} value={option}>
                     {option}
                   </SelectItem>

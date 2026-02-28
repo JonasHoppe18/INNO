@@ -3,6 +3,8 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import {
   buildAutomationGuidance,
   fetchAutomation,
+  fetchRelevantKnowledge,
+  formatKnowledgeForPrompt,
   fetchOwnerProfile,
   fetchPersona,
   fetchPolicies,
@@ -62,6 +64,7 @@ type AgentContext = {
   persona: Awaited<ReturnType<typeof fetchPersona>>;
   automation: Awaited<ReturnType<typeof fetchAutomation>>;
   policies: Awaited<ReturnType<typeof fetchPolicies>>;
+  relevantKnowledge: string;
   orderSummary: string;
   matchedSubjectNumber: string | null;
   orders: any[];
@@ -228,6 +231,45 @@ const enforceHejGreeting = (text: string, firstName: string) => {
     "",
   );
   return `${greeting}\n\n${withoutGreeting.trim()}`.trim();
+};
+
+const isSignoffLine = (value: string) => {
+  const normalized = String(value || "")
+    .toLowerCase()
+    .replace(/[.,:;!?]+$/g, "")
+    .trim();
+  if (!normalized) return false;
+  return [
+    "venlig hilsen",
+    "med venlig hilsen",
+    "mvh",
+    "hilsen",
+    "best regards",
+    "kind regards",
+    "regards",
+    "sincerely",
+  ].includes(normalized);
+};
+
+const stripTrailingSignoff = (text: string) => {
+  const lines = String(text || "").split("\n");
+  while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+  if (!lines.length) return "";
+
+  // Remove signoff line only when it appears at the end of the draft.
+  const tailWindowStart = Math.max(0, lines.length - 4);
+  let signoffIndex = -1;
+  for (let i = lines.length - 1; i >= tailWindowStart; i -= 1) {
+    if (isSignoffLine(lines[i])) {
+      signoffIndex = i;
+      break;
+    }
+  }
+  if (signoffIndex === -1) return lines.join("\n").trim();
+
+  const cleaned = lines.slice(0, signoffIndex);
+  while (cleaned.length && !cleaned[cleaned.length - 1].trim()) cleaned.pop();
+  return cleaned.join("\n").trim();
 };
 
 const stableStringify = (value: unknown): string => {
@@ -516,6 +558,7 @@ async function getAgentContext(
   shopId: string,
   email?: string,
   subject?: string,
+  emailBody?: string,
 ): Promise<AgentContext> {
   const scope = await resolveShopScope(shopId);
   const ownerUserId = scope.ownerUserId;
@@ -523,6 +566,13 @@ async function getAgentContext(
   const persona = await fetchPersona(supabase, ownerUserId);
   const automation = await fetchAutomation(supabase, ownerUserId, scope.workspaceId);
   const policies = await fetchPolicies(supabase, ownerUserId, scope.workspaceId);
+  const relevantKnowledgeMatches = await fetchRelevantKnowledge(
+    supabase,
+    shopId,
+    emailBody ?? "",
+    4,
+  );
+  const relevantKnowledge = formatKnowledgeForPrompt(relevantKnowledgeMatches);
   const { orders, matchedSubjectNumber } = await resolveOrderContext({
     supabase,
     userId: ownerUserId,
@@ -541,6 +591,7 @@ async function getAgentContext(
     persona,
     automation,
     policies,
+    relevantKnowledge,
     orderSummary,
     matchedSubjectNumber,
     orders,
@@ -839,7 +890,12 @@ Deno.serve(async (req) => {
       step_detail: string;
       status: string;
     }> = [];
-    const context = await getAgentContext(shopId, emailData.fromEmail, emailData.subject);
+    const context = await getAgentContext(
+      shopId,
+      emailData.fromEmail,
+      emailData.subject,
+      emailData.body,
+    );
     if (context?.orders?.length) {
       const order = context.orders[0];
       const orderLabel =
@@ -947,9 +1003,14 @@ Deno.serve(async (req) => {
       learnedStyle: learnedStyle || null,
       policies: context.policies,
     });
-    const prompt = productContext
-      ? `${promptBase}\n\nPRODUKTKONTEKST:\n${productContext}`
-      : promptBase;
+    const promptSections = [promptBase];
+    if (context.relevantKnowledge?.trim()) {
+      promptSections.push(context.relevantKnowledge);
+    }
+    if (productContext?.trim()) {
+      promptSections.push(`PRODUKTKONTEKST:\n${productContext}`);
+    }
+    const prompt = promptSections.join("\n\n");
 
     // Generer reply + actions med OpenAI JSON schema.
     let aiText: string | null = null;
@@ -996,7 +1057,7 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       aiText = `Hej,\n\nTak for din besked. Vi vender tilbage hurtigst muligt med en opdatering.`;
     }
 
-    let finalText = enforceHejGreeting(aiText.trim(), customerFirstName);
+    let finalText = stripTrailingSignoff(enforceHejGreeting(aiText.trim(), customerFirstName));
 
     // Render HTML med konsistent styling og line breaks.
     let htmlBody = formatEmailBody(finalText);
@@ -1222,7 +1283,7 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       });
 
       if (blockedReply) {
-        finalText = enforceHejGreeting(blockedReply, customerFirstName);
+        finalText = stripTrailingSignoff(enforceHejGreeting(blockedReply, customerFirstName));
         htmlBody = formatEmailBody(finalText);
 
         if (supabase && internalDraft?.id) {
