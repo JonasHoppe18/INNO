@@ -14,6 +14,23 @@ function formatAddressLines(detail = "") {
   return parts;
 }
 
+function normalizeFailedDetail(value = "") {
+  const raw = String(value || "").trim();
+  if (!raw) return "Order is Fulfilled and cannot be changed";
+  const lower = raw.toLowerCase();
+  const isBlockedOrderState =
+    lower.includes("order is closed and cannot be changed") ||
+    lower.includes("order action blocked") ||
+    lower.includes("ordren er allerede afsluttet") ||
+    lower.includes("ordren er allerede afsendt") ||
+    lower.includes("already shipped") ||
+    lower.includes("already fulfilled");
+  if (isBlockedOrderState) {
+    return "Order is Fulfilled and cannot be changed";
+  }
+  return raw;
+}
+
 export function ActionCard({
   status = "pending",
   actionName = "Update Address",
@@ -27,6 +44,7 @@ export function ActionCard({
   const isPending = status === "pending";
   const isApproved = status === "approved";
   const isDeclined = status === "declined";
+  const isFailed = status === "failed";
 
   const addressLines = useMemo(() => formatAddressLines(detail), [detail]);
   const canExpand = !isPending && (addressLines.length > 0 || Boolean(detail));
@@ -97,6 +115,20 @@ export function ActionCard({
             </div>
           </div>
         ) : null}
+      </div>
+    );
+  }
+
+  if (isFailed) {
+    const failedDetail = normalizeFailedDetail(
+      error || detail || "Order is Fulfilled and cannot be changed"
+    );
+    return (
+      <div className="rounded-lg border border-violet-100 bg-violet-50 px-4">
+        <div className="flex h-12 w-full items-center gap-3 text-left">
+          <XCircle className="h-4 w-4 text-violet-600" />
+          <span className="text-sm font-medium text-violet-900">{failedDetail}</span>
+        </div>
       </div>
     );
   }

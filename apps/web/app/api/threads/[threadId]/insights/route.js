@@ -115,6 +115,7 @@ export async function GET(_request, { params }) {
       "shopify_action_failed",
       "shopify_action_applied",
       "shopify_action_declined",
+      "shopify_action_blocked",
     ])
     .order("created_at", { ascending: false })
     .limit(400);

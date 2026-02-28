@@ -55,12 +55,14 @@ export function TicketDetail({
   const headerTitle = thread.subject || "Untitled ticket";
   const pendingUpdateState = orderUpdateSubmitting
     ? "applying"
-    : orderUpdateError
-    ? "failed"
     : orderUpdateDecision === "accepted"
     ? "accepted"
     : orderUpdateDecision === "denied"
     ? "denied"
+    : pendingOrderUpdate?.status === "failed"
+    ? "failed"
+    : orderUpdateError
+    ? "failed"
     : "pending";
 
   const pendingActionType = String(pendingOrderUpdate?.actionType || "");
@@ -80,7 +82,7 @@ export function TicketDetail({
   const pendingActionTitle =
     pendingActionTitleByType[pendingActionType] || "Review Action";
 
-  const isApprovalPending = Boolean(pendingOrderUpdate) && !Boolean(orderUpdateDecision);
+  const isApprovalPending = Boolean(pendingOrderUpdate) && pendingUpdateState === "pending";
   const shouldForceUnlocked =
     orderUpdateDecision === "denied" || orderUpdateDecision === "accepted";
   const isActionPending = (() => {
@@ -109,6 +111,8 @@ export function TicketDetail({
       ? "approved"
       : pendingUpdateState === "denied"
       ? "declined"
+      : pendingUpdateState === "failed"
+      ? "failed"
       : "pending";
   const shouldShowActionCard = Boolean(pendingOrderUpdate);
   let actionCardInserted = false;
@@ -139,6 +143,11 @@ export function TicketDetail({
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="w-full space-y-3 px-4 pb-3 pt-3">
+          {orderUpdateError && !shouldShowActionCard ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              {orderUpdateError}
+            </div>
+          ) : null}
           {messages.map((message) => {
             const direction = isOutboundMessage(message, mailboxEmails) ? "outbound" : "inbound";
             const messageAttachments = attachments.filter(
