@@ -222,6 +222,50 @@ async function extractPdfTextWithOpenAI(fileName: string, buffer: Buffer): Promi
   return normalizeWhitespace(parseResponsesText(payload));
 }
 
+async function extractImageTextWithOpenAI(fileName: string, mimeType: string, buffer: Buffer): Promise<string> {
+  if (!OPENAI_API_KEY) return "";
+  const base64 = buffer.toString("base64");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 45000);
+  let response: Response;
+  try {
+    response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: OPENAI_OCR_MODEL,
+        input: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text: "Extract all readable text from this image. Return plain text only, keep headings and bullet points when possible.",
+              },
+              {
+                type: "input_image",
+                image_url: `data:${mimeType || "image/png"};base64,${base64}`,
+              },
+            ],
+          },
+        ],
+      }),
+      signal: controller.signal,
+    });
+  } catch (error: any) {
+    if (error?.name === "AbortError") return "";
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) return "";
+  return normalizeWhitespace(parseResponsesText(payload));
+}
+
 async function resolveShopId(
   serviceClient: any,
   scope: { workspaceId: string | null; supabaseUserId: string | null },
@@ -320,30 +364,37 @@ export async function POST(request: Request) {
       const titleFromForm = String(formData.get("title") || "").trim();
       const file = formData.get("file");
       if (!(file instanceof File)) {
-        return NextResponse.json({ error: "Missing PDF file." }, { status: 400 });
+        return NextResponse.json({ error: "Missing file." }, { status: 400 });
       }
-      if (file.type !== "application/pdf") {
-        return NextResponse.json({ error: "Only PDF files are supported." }, { status: 400 });
+      const isPdf = file.type === "application/pdf";
+      const isImage = file.type.startsWith("image/");
+      if (!isPdf && !isImage) {
+        return NextResponse.json({ error: "Only PDF and image files are supported." }, { status: 400 });
       }
       if (file.size > 15 * 1024 * 1024) {
-        return NextResponse.json({ error: "PDF is too large. Max 15MB." }, { status: 400 });
+        return NextResponse.json({ error: "File is too large. Max 15MB." }, { status: 400 });
       }
 
       const shopId = await resolveShopId(serviceClient, scope, requestedShopId || undefined);
       const bytes = Buffer.from(await file.arrayBuffer());
-      let extractedText = extractPdfText(bytes);
-      if (!extractedText || extractedText.length < 120) {
-        extractedText = await extractPdfTextWithOpenAI(file.name, bytes);
+      let extractedText = "";
+      if (isPdf) {
+        extractedText = extractPdfText(bytes);
+        if (!extractedText || extractedText.length < 120) {
+          extractedText = await extractPdfTextWithOpenAI(file.name, bytes);
+        }
+      } else {
+        extractedText = await extractImageTextWithOpenAI(file.name, file.type, bytes);
       }
       if (!extractedText || extractedText.length < 120) {
         return NextResponse.json(
-          { error: "Could not extract enough text from this PDF. Try copy/paste text instead." },
+          { error: "Could not extract enough text from this file. Try copy/paste text instead." },
           { status: 400 }
         );
       }
       const normalizedPdfText = extractedText.slice(0, 7000);
 
-      const title = titleFromForm || file.name || "Uploaded PDF";
+      const title = titleFromForm || file.name || "Uploaded File";
       const snippetId = makeSnippetId();
 
       const insertedChunks = await insertKnowledgeChunks({
@@ -351,19 +402,21 @@ export async function POST(request: Request) {
         shopId,
         content: normalizedPdfText,
         sourceType: "document",
-        sourceProvider: "pdf_upload",
+        sourceProvider: isPdf ? "pdf_upload" : "image_upload",
         maxChunks: 2,
         metadata: {
           snippet_id: snippetId,
           title,
           file_name: file.name,
           file_size: file.size,
+          file_mime: file.type,
         },
       });
 
       return NextResponse.json({
         success: true,
         source_type: "document",
+        source_provider: isPdf ? "pdf_upload" : "image_upload",
         snippet_id: snippetId,
         chunks: insertedChunks,
       });
@@ -433,7 +486,7 @@ export async function DELETE(request: Request) {
       .from("agent_knowledge")
       .delete()
       .eq("shop_id", shopId)
-      .or("source_provider.eq.manual_text,source_provider.eq.pdf_upload")
+      .or("source_provider.eq.manual_text,source_provider.eq.pdf_upload,source_provider.eq.image_upload")
       .eq("metadata->>snippet_id", snippetId);
 
     return NextResponse.json({ success: true });

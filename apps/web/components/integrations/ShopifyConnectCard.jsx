@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { useUser } from "@clerk/nextjs";
+import { toast } from "sonner";
 import {
   Card,
   CardContent,
@@ -26,6 +27,7 @@ export function ShopifyConnectCard() {
   const [connection, setConnection] = useState(null);
   // Bruges til at vise "Henter..." badge og blokere knapper hvis Supabase klienten mangler.
   const [loading, setLoading] = useState(true);
+  const [autoSyncStartedFor, setAutoSyncStartedFor] = useState(null);
 
   // Henter butikkens domæne og ejer via Supabase RLS.
   const loadConnection = useCallback(async () => {
@@ -122,6 +124,34 @@ export function ShopifyConnectCard() {
 
   const isConnected = Boolean(connection) && !connection?.uninstalled_at;
   const connectedDomain = connection?.shop_domain || connection?.store_domain;
+
+  useEffect(() => {
+    const runAutoSync = async () => {
+      if (!isConnected || !connectedDomain) return;
+      if (autoSyncStartedFor === connectedDomain) return;
+      setAutoSyncStartedFor(connectedDomain);
+
+      try {
+        const countRes = await fetch("/api/knowledge/sync-products", { method: "GET" });
+        const countPayload = await countRes.json().catch(() => ({}));
+        if (!countRes.ok) return;
+        const currentCount = Number(countPayload?.count ?? 0);
+        if (currentCount > 0) return;
+
+        const syncRes = await fetch("/api/knowledge/sync-products", { method: "POST" });
+        const syncPayload = await syncRes.json().catch(() => ({}));
+        if (!syncRes.ok) {
+          throw new Error(syncPayload?.error || "Initial product sync failed.");
+        }
+        toast.success(
+          `Initial Shopify knowledge sync completed (${Number(syncPayload?.indexed ?? 0)} products indexed).`
+        );
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Initial product sync failed.");
+      }
+    };
+    runAutoSync().catch(() => null);
+  }, [autoSyncStartedFor, connectedDomain, isConnected]);
   // Status badges skal vise loading/aktiv/inaktiv baseret på Supabase record.
   const statusLabel = loading
     ? "Loading..."

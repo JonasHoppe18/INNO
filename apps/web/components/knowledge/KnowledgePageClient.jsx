@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import { toast } from "sonner";
-import { Cable, CheckCircle2, Circle, FileText, Plus, Shield, Trash2, Truck, Undo2 } from "lucide-react";
+import { Cable, CheckCircle2, Circle, Database, ExternalLink, FileText, Package, Plus, RefreshCw, Shield, Trash2, Truck, Undo2 } from "lucide-react";
 import { useClerkSupabase } from "@/lib/useClerkSupabase";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,12 +24,25 @@ function formatDate(value) {
   });
 }
 
+function formatPrice(value) {
+  if (value === null || value === undefined || value === "") return "-";
+  const num = Number(value);
+  if (Number.isFinite(num)) {
+    return new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(num);
+  }
+  return String(value);
+}
+
 export function KnowledgePageClient() {
   const supabase = useClerkSupabase();
   const { user } = useUser();
 
   const [loading, setLoading] = useState(true);
   const [shopId, setShopId] = useState(null);
+  const [shopDomain, setShopDomain] = useState("");
   const [policyRefund, setPolicyRefund] = useState("");
   const [policyShipping, setPolicyShipping] = useState("");
 
@@ -39,6 +52,7 @@ export function KnowledgePageClient() {
   const [deletingSnippetId, setDeletingSnippetId] = useState(null);
 
   const [policyModalOpen, setPolicyModalOpen] = useState(false);
+  const [activePolicyField, setActivePolicyField] = useState("refund");
   const [snippetModalOpen, setSnippetModalOpen] = useState(false);
   const [snippetTitle, setSnippetTitle] = useState("");
   const [snippetContent, setSnippetContent] = useState("");
@@ -48,6 +62,15 @@ export function KnowledgePageClient() {
   const [pdfFile, setPdfFile] = useState(null);
   const [pdfTitle, setPdfTitle] = useState("");
   const pdfFileInputRef = useRef(null);
+  const [productsModalOpen, setProductsModalOpen] = useState(false);
+  const [productsLoading, setProductsLoading] = useState(false);
+  const [products, setProducts] = useState([]);
+  const [productsSyncing, setProductsSyncing] = useState(false);
+  const [productCount, setProductCount] = useState(0);
+  const normalizedShopDomain = useMemo(
+    () => String(shopDomain || "").replace(/^https?:\/\//i, "").replace(/\/+$/, ""),
+    [shopDomain]
+  );
 
   const resolveScope = useCallback(async () => {
     if (!supabase || !user?.id) return { workspaceId: null, userId: null };
@@ -121,7 +144,7 @@ export function KnowledgePageClient() {
   const loadShop = useCallback(async () => {
     const { data, error } = await supabase
       .from("shops")
-      .select("id, policy_refund, policy_shipping")
+      .select("id, shop_domain, policy_refund, policy_shipping")
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -129,6 +152,7 @@ export function KnowledgePageClient() {
     if (error) throw error;
 
     setShopId(data?.id || null);
+    setShopDomain(typeof data?.shop_domain === "string" ? data.shop_domain : "");
     setPolicyRefund(data?.policy_refund || "");
     setPolicyShipping(data?.policy_shipping || "");
 
@@ -146,7 +170,7 @@ export function KnowledgePageClient() {
         .from("agent_knowledge")
         .select("id, metadata, created_at, source_provider, source_type")
         .eq("shop_id", currentShopId)
-        .in("source_provider", ["manual_text", "pdf_upload"])
+        .in("source_provider", ["manual_text", "pdf_upload", "image_upload"])
         .order("created_at", { ascending: false });
 
       if (error) throw error;
@@ -158,7 +182,7 @@ export function KnowledgePageClient() {
         if (!snippetId || deduped.has(snippetId)) continue;
         const title =
           String(metadata?.title || metadata?.file_name || "").trim() ||
-          (row?.source_provider === "pdf_upload" ? "Uploaded PDF" : "Untitled snippet");
+          (row?.source_provider === "manual_text" ? "Untitled snippet" : "Uploaded File");
         deduped.set(snippetId, {
           id: snippetId,
           title,
@@ -179,8 +203,12 @@ export function KnowledgePageClient() {
     setLoading(true);
     try {
       const currentShopId = await loadShop();
-      await loadSnippets(currentShopId);
-      await loadHistoryConnection();
+      await Promise.all([loadSnippets(currentShopId), loadHistoryConnection()]);
+      const countResponse = await fetch("/api/knowledge/sync-products", { method: "GET" });
+      const countPayload = await countResponse.json().catch(() => ({}));
+      if (countResponse.ok) {
+        setProductCount(Number(countPayload?.count ?? 0));
+      }
     } catch (error) {
       console.warn("KnowledgePageClient load failed", error);
       toast.error("Could not load knowledge data.");
@@ -275,15 +303,15 @@ export function KnowledgePageClient() {
     }
   };
 
-  const handleAddPdf = async () => {
+  const handleAddFile = async () => {
     const file = pdfFile;
     if (!file) return;
     if (!shopId) {
       toast.error("No shop found.");
       return;
     }
-    if (file.type !== "application/pdf") {
-      toast.error("Only PDF files are supported.");
+    if (file.type !== "application/pdf" && !file.type.startsWith("image/")) {
+      toast.error("Only PDF and image files are supported.");
       return;
     }
 
@@ -300,17 +328,17 @@ export function KnowledgePageClient() {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(payload?.error || "Could not upload PDF.");
+        throw new Error(payload?.error || "Could not upload file.");
       }
 
-      toast.success("PDF uploaded and indexed.");
+      toast.success("File uploaded and indexed.");
       setSnippetModalOpen(false);
       setPdfFile(null);
       setPdfTitle("");
       await loadSnippets(shopId);
     } catch (error) {
-      console.warn("PDF upload failed", error);
-      toast.error(error instanceof Error ? error.message : "Could not upload PDF.");
+      console.warn("File upload failed", error);
+      toast.error(error instanceof Error ? error.message : "Could not upload file.");
     } finally {
       setUploadingPdf(false);
     }
@@ -318,10 +346,48 @@ export function KnowledgePageClient() {
 
   const handleSaveSnippetModal = async () => {
     if (snippetMode === "pdf") {
-      await handleAddPdf();
+      await handleAddFile();
       return;
     }
     await handleAddSnippet();
+  };
+
+  const loadProductsPreview = async () => {
+    setProductsLoading(true);
+    try {
+      const response = await fetch("/api/knowledge/sync-products?include_products=1", { method: "GET" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || "Could not load products.");
+      }
+      setProducts(Array.isArray(payload?.products) ? payload.products : []);
+      setProductCount(Number(payload?.count ?? 0));
+      setProductsModalOpen(true);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not load products.");
+    } finally {
+      setProductsLoading(false);
+    }
+  };
+
+  const handleSyncProducts = async () => {
+    setProductsSyncing(true);
+    try {
+      const response = await fetch("/api/knowledge/sync-products", { method: "POST" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || "Could not sync products.");
+      }
+      toast.success(
+        `Synced ${Number(payload?.synced ?? 0)} products (${Number(payload?.indexed ?? 0)} indexed).`
+      );
+      setProductCount(Number(payload?.indexed ?? payload?.synced ?? 0));
+      await loadProductsPreview();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not sync products.");
+    } finally {
+      setProductsSyncing(false);
+    }
   };
 
   const handleDeleteSnippet = async (id) => {
@@ -415,30 +481,27 @@ export function KnowledgePageClient() {
             </CardContent>
           </Card>
 
-          <div className={`grid items-stretch gap-4 ${hasHistoryConnection ? "lg:grid-cols-2" : "lg:grid-cols-1"}`}>
+          <div className="grid items-stretch gap-4 lg:grid-cols-1">
             <Card className="h-full rounded-xl border border-gray-200/60 bg-white shadow-sm">
               <CardHeader className="flex flex-row items-start justify-between px-6 pb-3 pt-6">
                 <div className="space-y-1">
                   <CardTitle className="flex items-center gap-2 text-lg">
-                    <Shield className="h-4 w-4 text-slate-500" />
-                    Policies
+                    Shopify Data
                   </CardTitle>
-                  <CardDescription>Auto-synced from your store.</CardDescription>
+                  <CardDescription>Everything auto-fetched from your connected Shopify store.</CardDescription>
                 </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="border-gray-300 text-gray-700 hover:bg-gray-50"
-                  onClick={() => setPolicyModalOpen(true)}
-                  disabled={!shopId || loading}
-                >
-                  Edit
-                </Button>
               </CardHeader>
               <CardContent className="px-6 pb-6">
                 <div className="divide-y divide-gray-50 rounded-lg border border-gray-100 bg-white">
-                  <div className="flex items-center justify-between px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActivePolicyField("refund");
+                      setPolicyModalOpen(true);
+                    }}
+                    disabled={!shopId || loading}
+                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
                     <div className="flex items-center gap-2 text-sm text-gray-700">
                       <Undo2 className="h-4 w-4 text-gray-400" />
                       <span>Return Policy</span>
@@ -448,8 +511,16 @@ export function KnowledgePageClient() {
                     ) : (
                       <Circle className="h-4 w-4 text-gray-300" />
                     )}
-                  </div>
-                  <div className="flex items-center justify-between px-4 py-3">
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActivePolicyField("shipping");
+                      setPolicyModalOpen(true);
+                    }}
+                    disabled={!shopId || loading}
+                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
                     <div className="flex items-center gap-2 text-sm text-gray-700">
                       <Truck className="h-4 w-4 text-gray-400" />
                       <span>Shipping Policy</span>
@@ -459,7 +530,28 @@ export function KnowledgePageClient() {
                     ) : (
                       <Circle className="h-4 w-4 text-gray-300" />
                     )}
-                  </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={loadProductsPreview}
+                    disabled={productsLoading || loading || !shopId}
+                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <div className="flex items-center gap-2 text-sm text-gray-700">
+                      <Database className="h-4 w-4 text-gray-400" />
+                      <span>Product Catalog</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500">
+                        {productsLoading ? "Loading..." : `${productCount} products`}
+                      </span>
+                      {productCount > 0 ? (
+                        <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                      ) : (
+                        <Circle className="h-4 w-4 text-gray-300" />
+                      )}
+                    </div>
+                  </button>
                 </div>
               </CardContent>
             </Card>
@@ -501,37 +593,42 @@ export function KnowledgePageClient() {
       <Dialog open={policyModalOpen} onOpenChange={setPolicyModalOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit Policies</DialogTitle>
-            <DialogDescription>Update the core policies Sona should follow in replies.</DialogDescription>
+            <DialogTitle>
+              {activePolicyField === "shipping" ? "Edit Shipping Policy" : "Edit Return Policy"}
+            </DialogTitle>
+            <DialogDescription>Update this policy for AI replies.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="policy-refund">Returns policy</Label>
-              <Textarea
-                id="policy-refund"
-                value={policyRefund}
-                onChange={(event) => setPolicyRefund(event.target.value)}
-                rows={5}
-                placeholder="Paste your return policy..."
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="policy-shipping">Shipping policy</Label>
-              <Textarea
-                id="policy-shipping"
-                value={policyShipping}
-                onChange={(event) => setPolicyShipping(event.target.value)}
-                rows={5}
-                placeholder="Paste your shipping policy..."
-              />
-            </div>
+            {activePolicyField === "shipping" ? (
+              <div className="space-y-2">
+                <Label htmlFor="policy-shipping">Shipping policy</Label>
+                <Textarea
+                  id="policy-shipping"
+                  value={policyShipping}
+                  onChange={(event) => setPolicyShipping(event.target.value)}
+                  rows={8}
+                  placeholder="Paste your shipping policy..."
+                />
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label htmlFor="policy-refund">Returns policy</Label>
+                <Textarea
+                  id="policy-refund"
+                  value={policyRefund}
+                  onChange={(event) => setPolicyRefund(event.target.value)}
+                  rows={8}
+                  placeholder="Paste your return policy..."
+                />
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setPolicyModalOpen(false)}>
               Cancel
             </Button>
             <Button type="button" onClick={handleSavePolicies} disabled={savingPolicies || !shopId}>
-              {savingPolicies ? "Saving..." : "Save policies"}
+              {savingPolicies ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -541,7 +638,7 @@ export function KnowledgePageClient() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add Knowledge</DialogTitle>
-            <DialogDescription>Add text or upload a PDF to train the AI.</DialogDescription>
+            <DialogDescription>Add text or upload a file to train the AI.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 p-1">
@@ -557,7 +654,7 @@ export function KnowledgePageClient() {
                 className={`rounded-md px-3 py-1.5 text-sm ${snippetMode === "pdf" ? "bg-white font-medium text-gray-900 shadow-sm" : "text-gray-600"}`}
                 onClick={() => setSnippetMode("pdf")}
               >
-                PDF
+                File
               </button>
             </div>
 
@@ -573,12 +670,12 @@ export function KnowledgePageClient() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="pdf-file">PDF file</Label>
+                  <Label htmlFor="pdf-file">File</Label>
                   <input
                     ref={pdfFileInputRef}
                     id="pdf-file"
                     type="file"
-                    accept="application/pdf"
+                    accept="application/pdf,image/*"
                     className="hidden"
                     onChange={(event) => setPdfFile(event.target.files?.[0] || null)}
                   />
@@ -595,7 +692,7 @@ export function KnowledgePageClient() {
                       {pdfFile?.name || "No file selected"}
                     </span>
                   </div>
-                  <p className="text-xs text-gray-500">Only PDF is supported (max 15MB).</p>
+                  <p className="text-xs text-gray-500">PDF and image files are supported (max 15MB).</p>
                 </div>
               </>
             ) : (
@@ -637,9 +734,100 @@ export function KnowledgePageClient() {
                   : "Add snippet"
                 : uploadingPdf
                   ? "Uploading..."
-                  : "Upload PDF"}
+                  : "Upload file"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={productsModalOpen} onOpenChange={setProductsModalOpen}>
+        <DialogContent className="max-w-4xl overflow-hidden p-0">
+          <div className="flex max-h-[600px] flex-col">
+            <DialogHeader className="flex flex-row items-start justify-between gap-3 border-b border-gray-100 px-6 pb-4 pt-6 pr-14">
+              <div>
+                <DialogTitle>Product Catalog</DialogTitle>
+                <DialogDescription>View and manage the products currently synced from Shopify.</DialogDescription>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 gap-1.5 border border-gray-200 text-sm text-gray-700 hover:bg-gray-50"
+                onClick={handleSyncProducts}
+                disabled={productsSyncing}
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${productsSyncing ? "animate-spin" : ""}`} />
+                {productsSyncing ? "Syncing..." : "Sync Now"}
+              </Button>
+            </DialogHeader>
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              {products.length === 0 ? (
+                <div className="space-y-3 rounded-xl border border-gray-200 p-4">
+                  <p className="text-sm text-gray-500">No products found yet. Run product sync first.</p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="border-gray-300 text-gray-700 hover:bg-gray-50"
+                    onClick={handleSyncProducts}
+                    disabled={productsSyncing}
+                  >
+                    {productsSyncing ? "Syncing..." : "Sync products now"}
+                  </Button>
+                </div>
+              ) : (
+                <div className="overflow-hidden rounded-xl border border-gray-200">
+                  <div className="grid grid-cols-12 gap-3 border-b border-gray-100 bg-gray-50/50 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
+                    <div className="col-span-6">Product</div>
+                    <div className="col-span-3">Product ID</div>
+                    <div className="col-span-1 text-right">Price</div>
+                    <div className="col-span-2 text-right">Updated</div>
+                  </div>
+                  <div className="divide-y divide-gray-100">
+                    {products.map((product, index) => (
+                      <div
+                        key={`${product?.external_id || "p"}-${index}`}
+                        className="grid grid-cols-12 gap-3 px-4 py-3 text-sm transition-colors hover:bg-gray-50"
+                      >
+                        <div className="col-span-6 min-w-0">
+                          <div className="flex min-w-0 items-center gap-2.5">
+                            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-100">
+                              <Package className="h-3.5 w-3.5 text-gray-500" />
+                            </div>
+                            {product?.external_id && normalizedShopDomain ? (
+                              <a
+                                href={`https://${normalizedShopDomain}/admin/products/${product.external_id}`}
+                                target="_blank"
+                                rel="noreferrer noopener"
+                                className="group/link inline-flex min-w-0 items-center gap-1.5 text-gray-900 font-medium hover:text-blue-600 hover:underline transition-colors"
+                              >
+                                <span className="truncate">{product?.title || "Untitled product"}</span>
+                                <ExternalLink className="h-3 w-3 shrink-0 text-gray-400 transition-colors group-hover/link:text-blue-600" />
+                              </a>
+                            ) : (
+                              <p className="truncate font-medium text-gray-900">{product?.title || "Untitled product"}</p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="col-span-3 min-w-0">
+                          <p className="truncate font-mono text-xs text-gray-400">{product?.external_id || "-"}</p>
+                        </div>
+                        <div className="col-span-1 text-right font-semibold text-gray-900">{formatPrice(product?.price)}</div>
+                        <div className="col-span-2 text-right text-sm text-gray-500">{formatDate(product?.updated_at) || "-"}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center justify-between border-t border-gray-100 bg-gray-50 p-3 text-xs text-gray-500">
+              <span>Total products: {products.length}</span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                Auto-sync enabled
+              </span>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </>

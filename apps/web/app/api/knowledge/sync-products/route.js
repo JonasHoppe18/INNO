@@ -1,5 +1,6 @@
 
 import { NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { decryptString } from "@/lib/server/shopify-oauth";
@@ -39,7 +40,7 @@ function createServiceClient() {
 async function fetchShopifyCredentials(serviceClient, scope) {
   let query = serviceClient
     .from("shops")
-    .select("id, shop_domain, access_token_encrypted, platform")
+    .select("id, shop_domain, access_token_encrypted, platform, workspace_id")
     .eq("platform", "shopify")
     .is("uninstalled_at", null)
     .order("created_at", { ascending: false })
@@ -52,6 +53,7 @@ async function fetchShopifyCredentials(serviceClient, scope) {
   }
   return {
     shop_id: data.id,
+    workspace_id: data.workspace_id ?? null,
     platform: data.platform,
     shop_domain: data.shop_domain,
     access_token: decryptString(data.access_token_encrypted),
@@ -128,39 +130,187 @@ async function embedText(text) {
   return vector;
 }
 
+function buildProductContext(product) {
+  const title = String(product?.title || "Untitled product").trim();
+  const descriptionRaw =
+    product?.body_html || product?.body || product?.description || product?.body_text || "";
+  const description = stripHtml(descriptionRaw);
+  const vendor = String(product?.vendor || "").trim();
+  const productType = String(product?.product_type || "").trim();
+  const tags = Array.isArray(product?.tags)
+    ? product.tags.join(", ")
+    : String(product?.tags || "")
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean)
+        .join(", ");
+  const variants = Array.isArray(product?.variants) ? product.variants : [];
+  const variantLines = variants
+    .slice(0, 8)
+    .map((variant) => {
+      const name = String(variant?.title || "Default");
+      const sku = String(variant?.sku || "").trim();
+      const price = String(variant?.price ?? variant?.compare_at_price ?? "").trim();
+      const stock = variant?.inventory_quantity;
+      return `- Variant: ${name}${sku ? ` | SKU: ${sku}` : ""}${price ? ` | Price: ${price}` : ""}${
+        Number.isFinite(stock) ? ` | Inventory: ${stock}` : ""
+      }`;
+    })
+    .join("\n");
+
+  const parts = [
+    `Product: ${title}`,
+    vendor ? `Vendor: ${vendor}` : "",
+    productType ? `Type: ${productType}` : "",
+    tags ? `Tags: ${tags}` : "",
+    description ? `Description:\n${description}` : "",
+    variantLines ? `Variants:\n${variantLines}` : "",
+  ].filter(Boolean);
+
+  return parts.join("\n\n");
+}
+
+function chunkText(text, size = 1200, overlap = 200) {
+  const normalized = String(text || "").trim();
+  if (!normalized) return [];
+  const chunks = [];
+  let start = 0;
+  while (start < normalized.length) {
+    const end = Math.min(normalized.length, start + size);
+    chunks.push(normalized.slice(start, end).trim());
+    if (end >= normalized.length) break;
+    start = Math.max(0, end - overlap);
+  }
+  return chunks.filter(Boolean).slice(0, 6);
+}
+
+function buildKnowledgeHash(product, context) {
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        id: product?.id ?? null,
+        updated_at: product?.updated_at ?? null,
+        context,
+      })
+    )
+    .digest("hex");
+}
+
+async function loadExistingProductHashes(serviceClient, shopId) {
+  const { data, error } = await serviceClient
+    .from("agent_knowledge")
+    .select("metadata")
+    .eq("shop_id", shopId)
+    .eq("source_provider", "shopify_product");
+  if (error) throw new Error(error.message);
+
+  const byProduct = new Map();
+  for (const row of data || []) {
+    const metadata = row?.metadata && typeof row.metadata === "object" ? row.metadata : {};
+    const productId = String(metadata?.product_id || "").trim();
+    const hash = String(metadata?.content_hash || "").trim();
+    if (productId && hash && !byProduct.has(productId)) {
+      byProduct.set(productId, hash);
+    }
+  }
+  return byProduct;
+}
+
 async function syncShopify({ serviceClient, creds }) {
   const domain = creds.shop_domain.replace(/^https?:\/\//, "");
   const products = await fetchShopifyProducts({ domain, accessToken: creds.access_token });
+  const existingHashes = await loadExistingProductHashes(serviceClient, creds.shop_id);
 
   const rows = [];
+  let indexed = 0;
+  let unchanged = 0;
+
   for (const product of products) {
+    const productId = String(product?.id ?? "").trim();
+    if (!productId) continue;
     const title = product?.title ?? "Untitled product";
-    const descriptionRaw =
-      product?.body_html || product?.body || product?.description || product?.body_text || "";
-    const description = stripHtml(descriptionRaw);
+    const description = stripHtml(
+      product?.body_html || product?.body || product?.description || product?.body_text || ""
+    );
     const variant = Array.isArray(product?.variants) ? product.variants[0] : null;
     const price = variant?.price ?? variant?.compare_at_price ?? "";
-    const context = `Product: ${title}. Price: ${price || "N/A"}. Details: ${description || "No details."}`;
-    const embedding = await embedText(context);
+    const context = buildProductContext(product);
+    const contentHash = buildKnowledgeHash(product, context);
+
     rows.push({
       shop_ref_id: creds.shop_id,
-      external_id: String(product?.id ?? ""),
+      external_id: productId,
       platform: "shopify",
       title,
       description,
       price: price || null,
-      embedding,
     });
+
+    const previousHash = existingHashes.get(productId);
+    if (previousHash && previousHash === contentHash) {
+      unchanged += 1;
+      continue;
+    }
+
+    const chunks = chunkText(context);
+    if (!chunks.length) {
+      unchanged += 1;
+      continue;
+    }
+
+    // Replace prior product chunks to avoid duplicates across resyncs.
+    await serviceClient
+      .from("agent_knowledge")
+      .delete()
+      .eq("shop_id", creds.shop_id)
+      .eq("source_provider", "shopify_product")
+      .eq("metadata->>product_id", productId);
+
+    for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex += 1) {
+      const chunk = chunks[chunkIndex];
+      const embedding = await embedText(chunk);
+      const { error: insertError } = await serviceClient.from("agent_knowledge").insert({
+        workspace_id: creds.workspace_id,
+        shop_id: creds.shop_id,
+        content: chunk,
+        source_type: "document",
+        source_provider: "shopify_product",
+        metadata: {
+          product_id: productId,
+          title: String(title || "").trim(),
+          price: price || null,
+          handle: String(product?.handle || "").trim() || null,
+          product_updated_at: product?.updated_at || null,
+          url: product?.handle ? `https://${domain}/products/${product.handle}` : null,
+          content_hash: contentHash,
+          chunk_index: chunkIndex,
+          chunk_count: chunks.length,
+        },
+        embedding,
+      });
+      if (insertError) throw new Error(insertError.message);
+    }
+    indexed += 1;
   }
 
   if (rows.length) {
-    const { error } = await serviceClient.from("shop_products").upsert(rows, {
+    const rowsWithEmbedding = await Promise.all(
+      rows.map(async (row) => ({
+        ...row,
+        embedding: await embedText(
+          `Product: ${row.title}. Price: ${row.price || "N/A"}. Details: ${row.description || "No details."}`
+        ),
+      }))
+    );
+    const { error } = await serviceClient.from("shop_products").upsert(rowsWithEmbedding, {
       onConflict: "shop_ref_id,external_id,platform",
     });
     if (error) {
       const noConstraint = /no unique|on conflict/i.test(String(error.message || ""));
       if (!noConstraint) throw new Error(error.message);
-      for (const row of rows) {
+      for (let i = 0; i < rows.length; i += 1) {
+        const row = rows[i];
+        const rowWithEmbedding = rowsWithEmbedding[i];
         const { data: existing, error: existingError } = await serviceClient
           .from("shop_products")
           .select("id")
@@ -172,18 +322,22 @@ async function syncShopify({ serviceClient, creds }) {
         if (existing?.id) {
           const { error: updateError } = await serviceClient
             .from("shop_products")
-            .update(row)
+            .update(rowWithEmbedding)
             .eq("id", existing.id);
           if (updateError) throw new Error(updateError.message);
         } else {
-          const { error: insertError } = await serviceClient.from("shop_products").insert(row);
+          const { error: insertError } = await serviceClient.from("shop_products").insert(rowWithEmbedding);
           if (insertError) throw new Error(insertError.message);
         }
       }
     }
   }
 
-  return { synced: rows.length };
+  return {
+    synced: rows.length,
+    indexed,
+    unchanged,
+  };
 }
 
 async function fetchActiveShopIds(serviceClient, scope) {
@@ -198,7 +352,103 @@ async function fetchActiveShopIds(serviceClient, scope) {
   return (Array.isArray(data) ? data : []).map((row) => row?.id).filter(Boolean);
 }
 
-export async function GET() {
+async function countIndexedKnowledgeProducts(serviceClient, shopIds) {
+  if (!shopIds.length) return 0;
+  const { data, error } = await serviceClient
+    .from("agent_knowledge")
+    .select("metadata")
+    .in("shop_id", shopIds)
+    .eq("source_provider", "shopify_product");
+  if (error) throw new Error(error.message);
+
+  const productIds = new Set();
+  for (const row of data || []) {
+    const metadata = row?.metadata && typeof row.metadata === "object" ? row.metadata : {};
+    const productId = String(metadata?.product_id || "").trim();
+    if (productId) productIds.add(productId);
+  }
+  return productIds.size;
+}
+
+async function fetchProductsPreview(serviceClient, shopIds, limit = 100) {
+  if (!shopIds.length) return [];
+  const normalizedLimit = Math.max(1, Math.min(limit, 300));
+
+  // Primary source: structured shop_products table.
+  const { data, error } = await serviceClient
+    .from("shop_products")
+    .select("external_id, title, price")
+    .in("shop_ref_id", shopIds)
+    .limit(normalizedLimit);
+
+  if (!error && Array.isArray(data) && data.length) {
+    const productIds = data
+      .map((row) => String(row?.external_id || "").trim())
+      .filter(Boolean);
+
+    const { data: knowledgeRows } = await serviceClient
+      .from("agent_knowledge")
+      .select("metadata, created_at")
+      .in("shop_id", shopIds)
+      .eq("source_provider", "shopify_product")
+      .in("metadata->>product_id", productIds)
+      .order("created_at", { ascending: false })
+      .limit(normalizedLimit * 8);
+
+    const metaByProduct = new Map();
+    for (const row of knowledgeRows || []) {
+      const metadata = row?.metadata && typeof row.metadata === "object" ? row.metadata : {};
+      const productId = String(metadata?.product_id || "").trim();
+      if (!productId || metaByProduct.has(productId)) continue;
+      metaByProduct.set(productId, {
+        updated_at: metadata?.product_updated_at || row?.created_at || null,
+        price: metadata?.price ?? null,
+      });
+    }
+
+    return data.map((row) => {
+      const productId = String(row?.external_id || "").trim();
+      const meta = metaByProduct.get(productId);
+      return {
+        external_id: row?.external_id || productId,
+        title: row?.title || meta?.title || "Untitled product",
+        price: row?.price ?? meta?.price ?? null,
+        updated_at: meta?.updated_at || null,
+      };
+    });
+  }
+
+  // Fallback: derive preview from agent_knowledge metadata.
+  const { data: knowledgeRows, error: knowledgeError } = await serviceClient
+    .from("agent_knowledge")
+    .select("metadata, created_at")
+    .in("shop_id", shopIds)
+    .eq("source_provider", "shopify_product")
+    .order("created_at", { ascending: false })
+    .limit(normalizedLimit * 8);
+
+  if (knowledgeError) {
+    throw new Error(knowledgeError.message || error?.message || "Could not load products preview.");
+  }
+
+  const byProduct = new Map();
+  for (const row of knowledgeRows || []) {
+    const metadata = row?.metadata && typeof row.metadata === "object" ? row.metadata : {};
+    const productId = String(metadata?.product_id || "").trim();
+    if (!productId || byProduct.has(productId)) continue;
+    byProduct.set(productId, {
+      external_id: productId,
+      title: String(metadata?.title || "Untitled product"),
+      price: metadata?.price ?? null,
+      updated_at: metadata?.product_updated_at || row?.created_at || null,
+    });
+    if (byProduct.size >= normalizedLimit) break;
+  }
+
+  return Array.from(byProduct.values());
+}
+
+export async function GET(request) {
   const { userId: clerkUserId, orgId } = auth();
   if (!clerkUserId) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
@@ -219,13 +469,14 @@ export async function GET() {
       return NextResponse.json({ success: true, count: 0 }, { status: 200 });
     }
 
-    const { count, error } = await serviceClient
-      .from("shop_products")
-      .select("*", { count: "exact", head: true })
-      .in("shop_ref_id", shopIds);
-    if (error) throw new Error(error.message);
+    const count = await countIndexedKnowledgeProducts(serviceClient, shopIds);
+    const includeProducts = String(request?.nextUrl?.searchParams?.get("include_products") || "") === "1";
+    if (!includeProducts) {
+      return NextResponse.json({ success: true, count }, { status: 200 });
+    }
 
-    return NextResponse.json({ success: true, count: count ?? 0 }, { status: 200 });
+    const products = await fetchProductsPreview(serviceClient, shopIds, 150);
+    return NextResponse.json({ success: true, count, products }, { status: 200 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Count failed";
     return NextResponse.json({ error: message }, { status: 400 });
