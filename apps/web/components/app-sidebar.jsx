@@ -92,7 +92,7 @@ const baseData = {
       icon: BotIcon,
     },
     {
-      name: "Policies",
+      name: "Knowledge",
       url: "/knowledge",
       icon: BookOpenIcon,
     },

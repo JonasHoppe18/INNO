@@ -259,7 +259,24 @@ function MembersTab({
     });
   }, [invitations?.data]);
 
-  const rows = orgRows.length ? [...invitedRows, ...orgRows] : members;
+  const rows = useMemo(() => {
+    const byKey = new Map();
+
+    const put = (row) => {
+      const key =
+        String(row?.clerk_user_id || "").trim() ||
+        String(row?.email || "").trim().toLowerCase() ||
+        String(row?.user_id || "").trim();
+      if (!key) return;
+      byKey.set(key, { ...(byKey.get(key) || {}), ...row });
+    };
+
+    for (const row of members || []) put(row);
+    for (const row of orgRows || []) put(row);
+    for (const row of invitedRows || []) put(row);
+
+    return Array.from(byKey.values());
+  }, [invitedRows, members, orgRows]);
 
   const handleRoleChange = useCallback(
     async (member, nextRole) => {
@@ -971,9 +988,24 @@ export function SettingsPanel() {
           const roleByClerkId = new Map(
             (workspaceMembers || []).map((row) => [row.clerk_user_id, row.role || "member"])
           );
-          const merged = (profileRows || []).map((row) => ({
+          const profilesByClerkId = new Map(
+            (profileRows || []).map((row) => [String(row?.clerk_user_id || "").trim(), row])
+          );
+          const merged = clerkIds.map((clerkId) => {
+            const profile = profilesByClerkId.get(clerkId);
+            return {
+              user_id: profile?.user_id ?? null,
+              clerk_user_id: clerkId,
+              first_name: profile?.first_name ?? "",
+              last_name: profile?.last_name ?? "",
+              email: profile?.email ?? "",
+              image_url: profile?.image_url ?? "",
+              signature: profile?.signature ?? "",
+              workspace_role: roleByClerkId.get(clerkId) || "member",
+            };
+          }).map((row) => ({
             ...row,
-            workspace_role: roleByClerkId.get(row.clerk_user_id) || "member",
+            workspace_role: roleByClerkId.get(row.clerk_user_id) || row.workspace_role || "member",
           }));
           setMembers(merged);
         }
