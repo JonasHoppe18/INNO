@@ -666,7 +666,7 @@ function MembersTab({
                 disabled={inviteLoading}
               >
                 <option value="org:member">Member</option>
-                {currentIsOwner && <option value="org:admin">Admin</option>}
+                {canManageRoles && <option value="org:admin">Admin</option>}
               </select>
             </div>
           </div>

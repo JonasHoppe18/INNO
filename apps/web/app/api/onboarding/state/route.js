@@ -18,16 +18,16 @@ function createServiceClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
-async function getShopId(serviceClient, scope) {
+async function getLatestShop(serviceClient, scope) {
   let query = serviceClient
     .from("shops")
-    .select("id")
+    .select("id, shop_domain")
     .is("uninstalled_at", null)
     .order("created_at", { ascending: false })
     .limit(1);
   query = applyScope(query, scope, { workspaceColumn: "workspace_id", userColumn: "owner_user_id" });
   const { data } = await query.maybeSingle();
-  return data?.id ?? null;
+  return data || null;
 }
 
 export async function GET() {
@@ -59,13 +59,25 @@ export async function GET() {
   );
   const { count: emailCount } = await emailCountQuery;
 
+  const mailAccountQuery = applyScope(
+    serviceClient
+      .from("mail_accounts")
+      .select("provider, provider_email")
+      .order("created_at", { ascending: false })
+      .limit(1),
+    scope
+  );
+  const { data: latestMailAccount } = await mailAccountQuery.maybeSingle();
+
   const automationCountQuery = applyScope(
     serviceClient.from("agent_automation").select("user_id", { count: "exact", head: true }),
     scope
   );
   const { count: automationCount } = await automationCountQuery;
 
-  const shopId = await getShopId(serviceClient, scope);
+  const shop = await getLatestShop(serviceClient, scope);
+  const shopId = shop?.id ?? null;
+  const shopDomain = shop?.shop_domain ?? null;
 
   let firstDraftAt = null;
   if (shopId) {
@@ -117,6 +129,13 @@ export async function GET() {
       ai_configured: stepAiConfigured,
       first_draft_created: Boolean(firstDraftTimestamp),
     },
+    shop_domain: shopDomain,
+    connected_mail_account: latestMailAccount
+      ? {
+          provider: latestMailAccount.provider || null,
+          email: latestMailAccount.provider_email || null,
+        }
+      : null,
     first_draft_at: firstDraftTimestamp,
     completed: allComplete,
   });
