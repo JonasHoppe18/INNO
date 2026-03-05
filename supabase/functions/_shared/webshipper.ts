@@ -25,8 +25,19 @@ type JsonApiError = {
 };
 
 function buildBaseUrl(tenant: string) {
-  const normalized = String(tenant || "").trim().replace(/^https?:\/\//i, "");
-  return `https://${normalized}.api.webshipper.io/v2`;
+  const raw = String(tenant || "").trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+  if (!raw) return "https://api.webshipper.io/v2";
+
+  // Accept any of:
+  // - "team-name"
+  // - "team-name.webshipper.io"
+  // - "team-name.api.webshipper.io"
+  const withoutApiSuffix = raw.replace(/\.api\.webshipper\.io$/i, "");
+  const host = withoutApiSuffix.endsWith(".webshipper.io")
+    ? withoutApiSuffix.replace(/\.webshipper\.io$/i, ".api.webshipper.io")
+    : `${withoutApiSuffix}.api.webshipper.io`;
+
+  return `https://${host}/v2`;
 }
 
 function buildHeaders(token: string) {
@@ -63,20 +74,35 @@ async function findWebshipperOrderId(
   const visibleRef = String(orderNumber || "").trim();
   if (!visibleRef) return null;
 
-  const searchUrl = new URL(`${baseUrl}/orders`);
-  searchUrl.searchParams.set("filter[visible_ref]", visibleRef);
+  const plainRef = visibleRef.replace(/^#+/, "");
+  const candidates = Array.from(
+    new Set([
+      visibleRef,
+      plainRef,
+      `#${plainRef}`,
+      `##${plainRef}`,
+    ]),
+  ).filter(Boolean);
 
-  const searchResponse = await fetch(searchUrl.toString(), {
-    method: "GET",
-    headers,
-  });
-  if (!searchResponse.ok) {
-    const detail = await parseErrorBody(searchResponse);
-    throw new Error(`Webshipper order lookup failed. ${detail}`);
+  for (const candidate of candidates) {
+    const searchUrl = new URL(`${baseUrl}/orders`);
+    searchUrl.searchParams.set("filter[visible_ref]", candidate);
+
+    const searchResponse = await fetch(searchUrl.toString(), {
+      method: "GET",
+      headers,
+    });
+    if (!searchResponse.ok) {
+      const detail = await parseErrorBody(searchResponse);
+      throw new Error(`Webshipper order lookup failed. ${detail}`);
+    }
+
+    const searchPayload = await searchResponse.json().catch(() => null);
+    const found = searchPayload?.data?.[0]?.id ? String(searchPayload.data[0].id) : null;
+    if (found) return found;
   }
 
-  const searchPayload = await searchResponse.json().catch(() => null);
-  return searchPayload?.data?.[0]?.id ? String(searchPayload.data[0].id) : null;
+  return null;
 }
 
 export async function updateWebshipperAddress(

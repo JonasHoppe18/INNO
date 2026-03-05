@@ -247,6 +247,7 @@ export function TicketDetail({
           onModeChange={onComposerModeChange}
           toLabel={toLabel}
           onBlur={onDraftBlur}
+          isDraftLoading={showThinkingCard}
         />
       )}
     </section>

@@ -4,7 +4,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import { toast } from "sonner";
-import { Cable, CheckCircle2, Circle, Database, ExternalLink, FileText, Package, Plus, RefreshCw, Shield, Trash2, Truck, Undo2 } from "lucide-react";
+import {
+  Cable,
+  CheckCircle2,
+  Circle,
+  Database,
+  ExternalLink,
+  FileText,
+  Package,
+  Plus,
+  RefreshCw,
+  Shield,
+  Trash2,
+  Truck,
+  Undo2,
+} from "lucide-react";
 import { useClerkSupabase } from "@/lib/useClerkSupabase";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -67,6 +81,38 @@ export function KnowledgePageClient() {
   const [products, setProducts] = useState([]);
   const [productsSyncing, setProductsSyncing] = useState(false);
   const [productCount, setProductCount] = useState(0);
+  const [pagesModalOpen, setPagesModalOpen] = useState(false);
+  const [pagesLoading, setPagesLoading] = useState(false);
+  const [pages, setPages] = useState([]);
+  const [pagesSyncing, setPagesSyncing] = useState(false);
+  const [pageCount, setPageCount] = useState(0);
+  const [metafieldsModalOpen, setMetafieldsModalOpen] = useState(false);
+  const [metafieldsLoading, setMetafieldsLoading] = useState(false);
+  const [metafields, setMetafields] = useState([]);
+  const [metafieldsSyncing, setMetafieldsSyncing] = useState(false);
+  const [metafieldCount, setMetafieldCount] = useState(0);
+  const [blogsModalOpen, setBlogsModalOpen] = useState(false);
+  const [blogsLoading, setBlogsLoading] = useState(false);
+  const [blogs, setBlogs] = useState([]);
+  const [blogsSyncing, setBlogsSyncing] = useState(false);
+  const [blogCount, setBlogCount] = useState(0);
+  const [filesModalOpen, setFilesModalOpen] = useState(false);
+  const [filesLoading, setFilesLoading] = useState(false);
+  const [filesSyncing, setFilesSyncing] = useState(false);
+  const [shopFiles, setShopFiles] = useState([]);
+  const [fileCount, setFileCount] = useState(0);
+  const [collectionsLoading, setCollectionsLoading] = useState(false);
+  const [collectionsSyncing, setCollectionsSyncing] = useState(false);
+  const [collectionCount, setCollectionCount] = useState(0);
+  const [variantsLoading, setVariantsLoading] = useState(false);
+  const [variantsSyncing, setVariantsSyncing] = useState(false);
+  const [variantCount, setVariantCount] = useState(0);
+  const [metaobjectsLoading, setMetaobjectsLoading] = useState(false);
+  const [metaobjectsSyncing, setMetaobjectsSyncing] = useState(false);
+  const [metaobjectCount, setMetaobjectCount] = useState(0);
+  const [shopifyPoliciesLoading, setShopifyPoliciesLoading] = useState(false);
+  const [shopifyPoliciesSyncing, setShopifyPoliciesSyncing] = useState(false);
+  const [shopifyPolicyCount, setShopifyPolicyCount] = useState(0);
   const normalizedShopDomain = useMemo(
     () => String(shopDomain || "").replace(/^https?:\/\//i, "").replace(/\/+$/, ""),
     [shopDomain]
@@ -204,10 +250,62 @@ export function KnowledgePageClient() {
     try {
       const currentShopId = await loadShop();
       await Promise.all([loadSnippets(currentShopId), loadHistoryConnection()]);
-      const countResponse = await fetch("/api/knowledge/sync-products", { method: "GET" });
-      const countPayload = await countResponse.json().catch(() => ({}));
-      if (countResponse.ok) {
-        setProductCount(Number(countPayload?.count ?? 0));
+      const [
+        productsCountResponse,
+        pagesCountResponse,
+        metafieldsCountResponse,
+        blogsCountResponse,
+        filesCountResponse,
+        collectionsCountResponse,
+        variantsCountResponse,
+        metaobjectsCountResponse,
+        policiesCountResponse,
+      ] = await Promise.all([
+        fetch("/api/knowledge/sync-products", { method: "GET" }),
+        fetch("/api/knowledge/sync-pages", { method: "GET" }),
+        fetch("/api/knowledge/sync-metafields", { method: "GET" }),
+        fetch("/api/knowledge/sync-blogs", { method: "GET" }),
+        fetch("/api/knowledge/sync-files", { method: "GET" }),
+        fetch("/api/knowledge/sync-collections", { method: "GET" }),
+        fetch("/api/knowledge/sync-variants", { method: "GET" }),
+        fetch("/api/knowledge/sync-metaobjects", { method: "GET" }),
+        fetch("/api/knowledge/sync-policies", { method: "GET" }),
+      ]);
+      const productsCountPayload = await productsCountResponse.json().catch(() => ({}));
+      if (productsCountResponse.ok) {
+        setProductCount(Number(productsCountPayload?.count ?? 0));
+      }
+      const pagesCountPayload = await pagesCountResponse.json().catch(() => ({}));
+      if (pagesCountResponse.ok) {
+        setPageCount(Number(pagesCountPayload?.count ?? 0));
+      }
+      const metafieldsCountPayload = await metafieldsCountResponse.json().catch(() => ({}));
+      if (metafieldsCountResponse.ok) {
+        setMetafieldCount(Number(metafieldsCountPayload?.count ?? 0));
+      }
+      const blogsCountPayload = await blogsCountResponse.json().catch(() => ({}));
+      if (blogsCountResponse.ok) {
+        setBlogCount(Number(blogsCountPayload?.count ?? 0));
+      }
+      const filesCountPayload = await filesCountResponse.json().catch(() => ({}));
+      if (filesCountResponse.ok) {
+        setFileCount(Number(filesCountPayload?.count ?? 0));
+      }
+      const collectionsCountPayload = await collectionsCountResponse.json().catch(() => ({}));
+      if (collectionsCountResponse.ok) {
+        setCollectionCount(Number(collectionsCountPayload?.count ?? 0));
+      }
+      const variantsCountPayload = await variantsCountResponse.json().catch(() => ({}));
+      if (variantsCountResponse.ok) {
+        setVariantCount(Number(variantsCountPayload?.count ?? 0));
+      }
+      const metaobjectsCountPayload = await metaobjectsCountResponse.json().catch(() => ({}));
+      if (metaobjectsCountResponse.ok) {
+        setMetaobjectCount(Number(metaobjectsCountPayload?.count ?? 0));
+      }
+      const policiesCountPayload = await policiesCountResponse.json().catch(() => ({}));
+      if (policiesCountResponse.ok) {
+        setShopifyPolicyCount(Number(policiesCountPayload?.count ?? 0));
       }
     } catch (error) {
       console.warn("KnowledgePageClient load failed", error);
@@ -229,6 +327,16 @@ export function KnowledgePageClient() {
     [policyRefund, policyShipping]
   );
   const hasHistoryConnection = Boolean(historyProvider);
+  const renderStatusIcon = (isReady, isBusy) => {
+    if (isBusy) {
+      return <RefreshCw className="h-4 w-4 animate-spin text-gray-400" />;
+    }
+    return isReady ? (
+      <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+    ) : (
+      <Circle className="h-4 w-4 text-gray-300" />
+    );
+  };
 
   const handleSavePolicies = async () => {
     if (!supabase || !shopId) {
@@ -390,6 +498,240 @@ export function KnowledgePageClient() {
     }
   };
 
+  const loadPagesPreview = async () => {
+    setPagesLoading(true);
+    try {
+      const response = await fetch("/api/knowledge/sync-pages?include_pages=1", { method: "GET" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || "Could not load pages.");
+      }
+      setPages(Array.isArray(payload?.pages) ? payload.pages : []);
+      setPageCount(Number(payload?.count ?? 0));
+      setPagesModalOpen(true);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not load pages.");
+    } finally {
+      setPagesLoading(false);
+    }
+  };
+
+  const handleSyncPages = async () => {
+    setPagesSyncing(true);
+    try {
+      const response = await fetch("/api/knowledge/sync-pages", { method: "POST" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || "Could not sync pages.");
+      }
+      toast.success(
+        `Synced ${Number(payload?.synced ?? 0)} pages (${Number(payload?.indexed ?? 0)} indexed).`
+      );
+      setPageCount(Number(payload?.indexed ?? payload?.synced ?? 0));
+      await loadPagesPreview();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not sync pages.");
+    } finally {
+      setPagesSyncing(false);
+    }
+  };
+
+  const loadMetafieldsPreview = async () => {
+    setMetafieldsLoading(true);
+    try {
+      const response = await fetch("/api/knowledge/sync-metafields?include_metafields=1", {
+        method: "GET",
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || "Could not load metafields.");
+      }
+      setMetafields(Array.isArray(payload?.metafields) ? payload.metafields : []);
+      setMetafieldCount(Number(payload?.count ?? 0));
+      setMetafieldsModalOpen(true);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not load metafields.");
+    } finally {
+      setMetafieldsLoading(false);
+    }
+  };
+
+  const handleSyncMetafields = async () => {
+    setMetafieldsSyncing(true);
+    try {
+      const response = await fetch("/api/knowledge/sync-metafields", { method: "POST" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || "Could not sync metafields.");
+      }
+      toast.success(
+        `Synced ${Number(payload?.synced ?? 0)} metafields (${Number(payload?.updated_chunks ?? 0)} updated chunks).`
+      );
+      setMetafieldCount(Number(payload?.indexed ?? payload?.synced ?? 0));
+      await loadMetafieldsPreview();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not sync metafields.");
+    } finally {
+      setMetafieldsSyncing(false);
+    }
+  };
+
+  const loadBlogsPreview = async () => {
+    setBlogsLoading(true);
+    try {
+      const response = await fetch("/api/knowledge/sync-blogs?include_blogs=1", { method: "GET" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || "Could not load blog articles.");
+      }
+      setBlogs(Array.isArray(payload?.blogs) ? payload.blogs : []);
+      setBlogCount(Number(payload?.count ?? 0));
+      setBlogsModalOpen(true);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not load blog articles.");
+    } finally {
+      setBlogsLoading(false);
+    }
+  };
+
+  const handleSyncBlogs = async () => {
+    setBlogsSyncing(true);
+    try {
+      const response = await fetch("/api/knowledge/sync-blogs", { method: "POST" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || "Could not sync blog articles.");
+      }
+      toast.success(
+        `Synced ${Number(payload?.synced ?? 0)} articles (${Number(payload?.updated_chunks ?? 0)} updated chunks).`
+      );
+      setBlogCount(Number(payload?.indexed ?? payload?.synced ?? 0));
+      await loadBlogsPreview();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not sync blog articles.");
+    } finally {
+      setBlogsSyncing(false);
+    }
+  };
+
+  const loadFilesPreview = async () => {
+    setFilesLoading(true);
+    try {
+      const response = await fetch("/api/knowledge/sync-files?include_files=1", { method: "GET" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || "Could not load files.");
+      }
+      setShopFiles(Array.isArray(payload?.files) ? payload.files : []);
+      setFileCount(Number(payload?.count ?? 0));
+      setFilesModalOpen(true);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not load files.");
+    } finally {
+      setFilesLoading(false);
+    }
+  };
+
+  const handleSyncFiles = async () => {
+    setFilesSyncing(true);
+    setFilesLoading(true);
+    try {
+      const response = await fetch("/api/knowledge/sync-files?include_image_guides=1", { method: "POST" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error || "Could not sync files.");
+      setFileCount(Number(payload?.indexed ?? payload?.synced ?? 0));
+      toast.success(`Synced ${Number(payload?.synced ?? 0)} files.`);
+      await loadFilesPreview();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not sync files.");
+    } finally {
+      setFilesSyncing(false);
+      setFilesLoading(false);
+    }
+  };
+
+  const handleSyncCollections = async () => {
+    setCollectionsSyncing(true);
+    setCollectionsLoading(true);
+    try {
+      const response = await fetch("/api/knowledge/sync-collections", { method: "POST" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error || "Could not sync collections.");
+      setCollectionCount(Number(payload?.indexed ?? payload?.synced ?? 0));
+      toast.success(`Synced ${Number(payload?.synced ?? 0)} collections.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not sync collections.");
+    } finally {
+      setCollectionsSyncing(false);
+      setCollectionsLoading(false);
+    }
+  };
+
+  const handleSyncVariants = async () => {
+    setVariantsSyncing(true);
+    setVariantsLoading(true);
+    try {
+      const response = await fetch("/api/knowledge/sync-variants", { method: "POST" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error || "Could not sync variants.");
+      setVariantCount(Number(payload?.indexed ?? payload?.synced ?? 0));
+      toast.success(`Synced ${Number(payload?.synced ?? 0)} variants.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not sync variants.");
+    } finally {
+      setVariantsSyncing(false);
+      setVariantsLoading(false);
+    }
+  };
+
+  const handleSyncMetaobjects = async () => {
+    setMetaobjectsSyncing(true);
+    setMetaobjectsLoading(true);
+    try {
+      const response = await fetch("/api/knowledge/sync-metaobjects", { method: "POST" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error || "Could not sync metaobjects.");
+      setMetaobjectCount(Number(payload?.indexed ?? payload?.synced ?? 0));
+      toast.success(`Synced ${Number(payload?.synced ?? 0)} metaobjects.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not sync metaobjects.");
+    } finally {
+      setMetaobjectsSyncing(false);
+      setMetaobjectsLoading(false);
+    }
+  };
+
+  const handleSyncShopifyPolicies = async () => {
+    setShopifyPoliciesSyncing(true);
+    setShopifyPoliciesLoading(true);
+    try {
+      const response = await fetch("/api/knowledge/sync-policies", { method: "POST" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error || "Could not sync policies.");
+      setShopifyPolicyCount(Number(payload?.indexed ?? payload?.synced ?? 0));
+
+      // Keep editable policy fields in sync with latest Shopify legal policies.
+      const importResponse = await fetch("/api/shopify/import-policies", { method: "POST" });
+      const importPayload = await importResponse.json().catch(() => ({}));
+      if (importResponse.ok) {
+        setPolicyRefund(String(importPayload?.refund || ""));
+        setPolicyShipping(String(importPayload?.shipping || ""));
+      }
+
+      const syncCount = Number(payload?.synced ?? 0);
+      if (!importResponse.ok) {
+        toast.success(`Synced ${syncCount} policies. Could not refresh editable policy fields.`);
+      } else {
+        toast.success(`Synced ${syncCount} policies and refreshed policy fields.`);
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not sync policies.");
+    } finally {
+      setShopifyPoliciesSyncing(false);
+      setShopifyPoliciesLoading(false);
+    }
+  };
+
   const handleDeleteSnippet = async (id) => {
     if (!shopId) return;
 
@@ -533,6 +875,30 @@ export function KnowledgePageClient() {
                   </button>
                   <button
                     type="button"
+                    onClick={handleSyncShopifyPolicies}
+                    disabled={shopifyPoliciesLoading || loading || !shopId}
+                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <div className="flex items-center gap-2 text-sm text-gray-700">
+                      <Shield className="h-4 w-4 text-gray-400" />
+                      <span>Shopify Policies</span>
+                    </div>
+                    {renderStatusIcon(shopifyPolicyCount > 0, shopifyPoliciesLoading || shopifyPoliciesSyncing)}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={loadFilesPreview}
+                    disabled={filesLoading || loading || !shopId}
+                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <div className="flex items-center gap-2 text-sm text-gray-700">
+                      <FileText className="h-4 w-4 text-gray-400" />
+                      <span>Guide Files</span>
+                    </div>
+                    {renderStatusIcon(fileCount > 0, filesLoading || filesSyncing)}
+                  </button>
+                  <button
+                    type="button"
                     onClick={loadProductsPreview}
                     disabled={productsLoading || loading || !shopId}
                     className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
@@ -541,16 +907,79 @@ export function KnowledgePageClient() {
                       <Database className="h-4 w-4 text-gray-400" />
                       <span>Product Catalog</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-500">
-                        {productsLoading ? "Loading..." : `${productCount} products`}
-                      </span>
-                      {productCount > 0 ? (
-                        <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                      ) : (
-                        <Circle className="h-4 w-4 text-gray-300" />
-                      )}
+                    {renderStatusIcon(productCount > 0, productsLoading)}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSyncVariants}
+                    disabled={variantsLoading || loading || !shopId}
+                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <div className="flex items-center gap-2 text-sm text-gray-700">
+                      <Package className="h-4 w-4 text-gray-400" />
+                      <span>Variants</span>
                     </div>
+                    {renderStatusIcon(variantCount > 0, variantsLoading || variantsSyncing)}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={loadMetafieldsPreview}
+                    disabled={metafieldsLoading || loading || !shopId}
+                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <div className="flex items-center gap-2 text-sm text-gray-700">
+                      <Database className="h-4 w-4 text-gray-400" />
+                      <span>Product Metafields</span>
+                    </div>
+                    {renderStatusIcon(metafieldCount > 0, metafieldsLoading)}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSyncCollections}
+                    disabled={collectionsLoading || loading || !shopId}
+                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <div className="flex items-center gap-2 text-sm text-gray-700">
+                      <Database className="h-4 w-4 text-gray-400" />
+                      <span>Collections</span>
+                    </div>
+                    {renderStatusIcon(collectionCount > 0, collectionsLoading || collectionsSyncing)}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={loadPagesPreview}
+                    disabled={pagesLoading || loading || !shopId}
+                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <div className="flex items-center gap-2 text-sm text-gray-700">
+                      <FileText className="h-4 w-4 text-gray-400" />
+                      <span>Store Pages</span>
+                    </div>
+                    {renderStatusIcon(pageCount > 0, pagesLoading)}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={loadBlogsPreview}
+                    disabled={blogsLoading || loading || !shopId}
+                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <div className="flex items-center gap-2 text-sm text-gray-700">
+                      <FileText className="h-4 w-4 text-gray-400" />
+                      <span>Blog Articles</span>
+                    </div>
+                    {renderStatusIcon(blogCount > 0, blogsLoading || blogsSyncing)}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSyncMetaobjects}
+                    disabled={metaobjectsLoading || loading || !shopId}
+                    className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <div className="flex items-center gap-2 text-sm text-gray-700">
+                      <FileText className="h-4 w-4 text-gray-400" />
+                      <span>Metaobjects</span>
+                    </div>
+                    {renderStatusIcon(metaobjectCount > 0, metaobjectsLoading || metaobjectsSyncing)}
                   </button>
                 </div>
               </CardContent>
@@ -825,6 +1254,361 @@ export function KnowledgePageClient() {
               <span className="inline-flex items-center gap-1.5">
                 <span className="h-2 w-2 rounded-full bg-emerald-500" />
                 Auto-sync enabled
+              </span>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={pagesModalOpen} onOpenChange={setPagesModalOpen}>
+        <DialogContent className="max-w-5xl overflow-hidden p-0">
+          <div className="flex max-h-[600px] flex-col">
+            <DialogHeader className="flex flex-row items-start justify-between gap-3 border-b border-gray-100 px-6 pb-4 pt-6 pr-14">
+              <div>
+                <DialogTitle>Store Pages</DialogTitle>
+                <DialogDescription>View pages currently synced from Shopify.</DialogDescription>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 gap-1.5 border border-gray-200 text-sm text-gray-700 hover:bg-gray-50"
+                onClick={handleSyncPages}
+                disabled={pagesSyncing}
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${pagesSyncing ? "animate-spin" : ""}`} />
+                {pagesSyncing ? "Syncing..." : "Sync Now"}
+              </Button>
+            </DialogHeader>
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              {pages.length === 0 ? (
+                <div className="space-y-3 rounded-xl border border-gray-200 p-4">
+                  <p className="text-sm text-gray-500">No pages found yet. Run page sync first.</p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="border-gray-300 text-gray-700 hover:bg-gray-50"
+                    onClick={handleSyncPages}
+                    disabled={pagesSyncing}
+                  >
+                    {pagesSyncing ? "Syncing..." : "Sync pages now"}
+                  </Button>
+                </div>
+              ) : (
+                <div className="overflow-hidden rounded-xl border border-gray-200">
+                  <div className="grid grid-cols-12 gap-3 border-b border-gray-100 bg-gray-50/50 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
+                    <div className="col-span-6">Page</div>
+                    <div className="col-span-3">Page ID</div>
+                    <div className="col-span-3 text-right">Updated</div>
+                  </div>
+                  <div className="divide-y divide-gray-100">
+                    {pages.map((page, index) => (
+                      <div
+                        key={`${page?.external_id || "page"}-${index}`}
+                        className="grid grid-cols-12 gap-3 px-4 py-3 text-sm transition-colors hover:bg-gray-50"
+                      >
+                        <div className="col-span-6 min-w-0">
+                          <div className="flex min-w-0 items-center gap-2.5">
+                            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-100">
+                              <FileText className="h-3.5 w-3.5 text-gray-500" />
+                            </div>
+                            {page?.external_id && normalizedShopDomain ? (
+                              <a
+                                href={`https://${normalizedShopDomain}/admin/pages/${page.external_id}`}
+                                target="_blank"
+                                rel="noreferrer noopener"
+                                className="group/link inline-flex min-w-0 items-center gap-1.5 text-gray-900 font-medium hover:text-blue-600 hover:underline transition-colors"
+                              >
+                                <span className="truncate">{page?.title || "Untitled page"}</span>
+                                <ExternalLink className="h-3 w-3 shrink-0 text-gray-400 transition-colors group-hover/link:text-blue-600" />
+                              </a>
+                            ) : (
+                              <p className="truncate font-medium text-gray-900">{page?.title || "Untitled page"}</p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="col-span-3 min-w-0">
+                          <p className="truncate font-mono text-xs text-gray-400">{page?.external_id || "-"}</p>
+                        </div>
+                        <div className="col-span-3 text-right text-sm text-gray-500">{formatDate(page?.updated_at) || "-"}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center justify-between border-t border-gray-100 bg-gray-50 p-3 text-xs text-gray-500">
+              <span>Total pages: {pages.length}</span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                Auto-sync enabled
+              </span>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={metafieldsModalOpen} onOpenChange={setMetafieldsModalOpen}>
+        <DialogContent className="max-w-5xl overflow-hidden p-0">
+          <div className="flex max-h-[600px] flex-col">
+            <DialogHeader className="flex flex-row items-start justify-between gap-3 border-b border-gray-100 px-6 pb-4 pt-6 pr-14">
+              <div>
+                <DialogTitle>Product Metafields</DialogTitle>
+                <DialogDescription>Technical specs and compatibility fields synced from Shopify.</DialogDescription>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 gap-1.5 border border-gray-200 text-sm text-gray-700 hover:bg-gray-50"
+                onClick={handleSyncMetafields}
+                disabled={metafieldsSyncing}
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${metafieldsSyncing ? "animate-spin" : ""}`} />
+                {metafieldsSyncing ? "Syncing..." : "Sync Now"}
+              </Button>
+            </DialogHeader>
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              {metafields.length === 0 ? (
+                <div className="space-y-3 rounded-xl border border-gray-200 p-4">
+                  <p className="text-sm text-gray-500">No metafields found yet. Run metafield sync first.</p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="border-gray-300 text-gray-700 hover:bg-gray-50"
+                    onClick={handleSyncMetafields}
+                    disabled={metafieldsSyncing}
+                  >
+                    {metafieldsSyncing ? "Syncing..." : "Sync metafields now"}
+                  </Button>
+                </div>
+              ) : (
+                <div className="overflow-hidden rounded-xl border border-gray-200">
+                  <div className="grid grid-cols-12 gap-3 border-b border-gray-100 bg-gray-50/50 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
+                    <div className="col-span-3">Namespace</div>
+                    <div className="col-span-3">Key</div>
+                    <div className="col-span-3">Owner</div>
+                    <div className="col-span-3 text-right">Updated</div>
+                  </div>
+                  <div className="divide-y divide-gray-100">
+                    {metafields.map((field, index) => (
+                      <div
+                        key={`${field?.external_id || "metafield"}-${index}`}
+                        className="grid grid-cols-12 gap-3 px-4 py-3 text-sm transition-colors hover:bg-gray-50"
+                      >
+                        <div className="col-span-3 min-w-0">
+                          <p className="truncate font-mono text-xs text-gray-500">{field?.namespace || "-"}</p>
+                        </div>
+                        <div className="col-span-3 min-w-0">
+                          <p className="truncate font-medium text-gray-900">{field?.key || "-"}</p>
+                        </div>
+                        <div className="col-span-3 min-w-0">
+                          {field?.owner_admin_url ? (
+                            <a
+                              href={field.owner_admin_url}
+                              target="_blank"
+                              rel="noreferrer noopener"
+                              className="group/link inline-flex min-w-0 items-center gap-1.5 text-gray-900 hover:text-blue-600 hover:underline transition-colors"
+                            >
+                              <span className="truncate">{field?.owner_title || field?.owner_id || "Product"}</span>
+                              <ExternalLink className="h-3 w-3 shrink-0 text-gray-400 transition-colors group-hover/link:text-blue-600" />
+                            </a>
+                          ) : (
+                            <p className="truncate text-gray-700">{field?.owner_title || field?.owner_id || "-"}</p>
+                          )}
+                        </div>
+                        <div className="col-span-3 text-right text-sm text-gray-500">{formatDate(field?.updated_at) || "-"}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center justify-between border-t border-gray-100 bg-gray-50 p-3 text-xs text-gray-500">
+              <span>Total fields: {metafields.length}</span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                Auto-sync enabled
+              </span>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={blogsModalOpen} onOpenChange={setBlogsModalOpen}>
+        <DialogContent className="max-w-5xl overflow-hidden p-0">
+          <div className="flex max-h-[600px] flex-col">
+            <DialogHeader className="flex flex-row items-start justify-between gap-3 border-b border-gray-100 px-6 pb-4 pt-6 pr-14">
+              <div>
+                <DialogTitle>Blog Articles</DialogTitle>
+                <DialogDescription>Helpful guides and support posts synced from Shopify blogs.</DialogDescription>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 gap-1.5 border border-gray-200 text-sm text-gray-700 hover:bg-gray-50"
+                onClick={handleSyncBlogs}
+                disabled={blogsSyncing}
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${blogsSyncing ? "animate-spin" : ""}`} />
+                {blogsSyncing ? "Syncing..." : "Sync Now"}
+              </Button>
+            </DialogHeader>
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              {blogs.length === 0 ? (
+                <div className="space-y-3 rounded-xl border border-gray-200 p-4">
+                  <p className="text-sm text-gray-500">No blog articles found yet. Run blog sync first.</p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="border-gray-300 text-gray-700 hover:bg-gray-50"
+                    onClick={handleSyncBlogs}
+                    disabled={blogsSyncing}
+                  >
+                    {blogsSyncing ? "Syncing..." : "Sync blog articles now"}
+                  </Button>
+                </div>
+              ) : (
+                <div className="overflow-hidden rounded-xl border border-gray-200">
+                  <div className="grid grid-cols-12 gap-3 border-b border-gray-100 bg-gray-50/50 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
+                    <div className="col-span-5">Article</div>
+                    <div className="col-span-3">Blog</div>
+                    <div className="col-span-2">Article ID</div>
+                    <div className="col-span-2 text-right">Updated</div>
+                  </div>
+                  <div className="divide-y divide-gray-100">
+                    {blogs.map((article, index) => (
+                      <div
+                        key={`${article?.external_id || "blog"}-${index}`}
+                        className="grid grid-cols-12 gap-3 px-4 py-3 text-sm transition-colors hover:bg-gray-50"
+                      >
+                        <div className="col-span-5 min-w-0">
+                          {article?.external_id && normalizedShopDomain ? (
+                            <a
+                              href={`https://${normalizedShopDomain}/admin/articles/${article.external_id}`}
+                              target="_blank"
+                              rel="noreferrer noopener"
+                              className="group/link inline-flex min-w-0 items-center gap-1.5 text-gray-900 font-medium hover:text-blue-600 hover:underline transition-colors"
+                            >
+                              <span className="truncate">{article?.title || "Untitled article"}</span>
+                              <ExternalLink className="h-3 w-3 shrink-0 text-gray-400 transition-colors group-hover/link:text-blue-600" />
+                            </a>
+                          ) : (
+                            <p className="truncate font-medium text-gray-900">{article?.title || "Untitled article"}</p>
+                          )}
+                        </div>
+                        <div className="col-span-3 min-w-0">
+                          <p className="truncate text-gray-600">{article?.blog_title || "-"}</p>
+                        </div>
+                        <div className="col-span-2 min-w-0">
+                          <p className="truncate font-mono text-xs text-gray-400">{article?.external_id || "-"}</p>
+                        </div>
+                        <div className="col-span-2 text-right text-sm text-gray-500">{formatDate(article?.updated_at) || "-"}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center justify-between border-t border-gray-100 bg-gray-50 p-3 text-xs text-gray-500">
+              <span>Total articles: {blogs.length}</span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                Auto-sync enabled
+              </span>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={filesModalOpen} onOpenChange={setFilesModalOpen}>
+        <DialogContent className="max-w-5xl overflow-hidden p-0">
+          <div className="flex max-h-[600px] flex-col">
+            <DialogHeader className="flex flex-row items-start justify-between gap-3 border-b border-gray-100 px-6 pb-4 pt-6 pr-14">
+              <div>
+                <DialogTitle>Guide Files</DialogTitle>
+                <DialogDescription>
+                  Manuals and size guides synced from Shopify Files. Product images are excluded unless they match guide keywords.
+                </DialogDescription>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 gap-1.5 border border-gray-200 text-sm text-gray-700 hover:bg-gray-50"
+                onClick={handleSyncFiles}
+                disabled={filesSyncing}
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${filesSyncing ? "animate-spin" : ""}`} />
+                {filesSyncing ? "Syncing..." : "Sync Now"}
+              </Button>
+            </DialogHeader>
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              {shopFiles.length === 0 ? (
+                <div className="space-y-3 rounded-xl border border-gray-200 p-4">
+                  <p className="text-sm text-gray-500">No guide files found yet. Run file sync first.</p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="border-gray-300 text-gray-700 hover:bg-gray-50"
+                    onClick={handleSyncFiles}
+                    disabled={filesSyncing}
+                  >
+                    {filesSyncing ? "Syncing..." : "Sync files now"}
+                  </Button>
+                </div>
+              ) : (
+                <div className="overflow-hidden rounded-xl border border-gray-200">
+                  <div className="grid grid-cols-12 gap-3 border-b border-gray-100 bg-gray-50/50 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
+                    <div className="col-span-5">File</div>
+                    <div className="col-span-2">Type</div>
+                    <div className="col-span-3">File ID</div>
+                    <div className="col-span-2 text-right">Updated</div>
+                  </div>
+                  <div className="divide-y divide-gray-100">
+                    {shopFiles.map((file, index) => (
+                      <div
+                        key={`${file?.external_id || "file"}-${index}`}
+                        className="grid grid-cols-12 gap-3 px-4 py-3 text-sm transition-colors hover:bg-gray-50"
+                      >
+                        <div className="col-span-5 min-w-0">
+                          {file?.url ? (
+                            <a
+                              href={file.url}
+                              target="_blank"
+                              rel="noreferrer noopener"
+                              className="group/link inline-flex min-w-0 items-center gap-1.5 text-gray-900 font-medium hover:text-blue-600 hover:underline transition-colors"
+                            >
+                              <span className="truncate">{file?.title || file?.file_name || "Untitled file"}</span>
+                              <ExternalLink className="h-3 w-3 shrink-0 text-gray-400 transition-colors group-hover/link:text-blue-600" />
+                            </a>
+                          ) : (
+                            <p className="truncate font-medium text-gray-900">{file?.title || file?.file_name || "Untitled file"}</p>
+                          )}
+                        </div>
+                        <div className="col-span-2 min-w-0">
+                          <p className="truncate text-xs text-gray-500">{file?.mime_type || file?.file_kind || "-"}</p>
+                        </div>
+                        <div className="col-span-3 min-w-0">
+                          <p className="truncate font-mono text-xs text-gray-400">{file?.external_id || "-"}</p>
+                        </div>
+                        <div className="col-span-2 text-right text-sm text-gray-500">{formatDate(file?.updated_at) || "-"}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center justify-between border-t border-gray-100 bg-gray-50 p-3 text-xs text-gray-500">
+              <span>Total files: {shopFiles.length}</span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                Guide-image OCR enabled
               </span>
             </div>
           </div>

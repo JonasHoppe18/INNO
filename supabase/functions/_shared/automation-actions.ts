@@ -16,6 +16,8 @@ type ShopCredentials = {
 
 type ShopifyOrderState = {
   id?: number;
+  name?: string;
+  order_number?: number;
   fulfillment_status?: string | null;
   cancelled_at?: string | null;
   closed_at?: string | null;
@@ -53,6 +55,14 @@ type ExecuteOptions = {
   orderIdMap?: Record<string | number, number>;
 };
 
+const LOW_RISK_ACTIONS = new Set([
+  "add_note",
+  "add_tag",
+  "add_internal_note_or_tag",
+  "lookup_order_status",
+  "fetch_tracking",
+]);
+
 // Henter Shopify domæne og token fra shops-tabellen og dekrypterer via ENCRYPTION_KEY
 async function getShopCredentials(
   supabase: SupabaseClient,
@@ -66,16 +76,17 @@ async function getShopCredentials(
 
 // Returnerer begrundelse hvis handlingen kræver manuel godkendelse.
 function getApprovalRequirement(action: string, automation: AutomationSettings): string | null {
-  switch (action) {
+  const normalized = String(action || "").trim().toLowerCase();
+  if (LOW_RISK_ACTIONS.has(normalized)) {
+    return null;
+  }
+  switch (normalized) {
     case "update_shipping_address":
     case "change_shipping_method":
     case "hold_or_release_fulfillment":
     case "edit_line_items":
     case "update_customer_contact":
     case "resend_confirmation_or_invoice":
-    case "add_note":
-    case "add_tag":
-    case "add_internal_note_or_tag":
       if (!automation.order_updates) {
         return "ordreopdateringer er deaktiveret.";
       }
@@ -147,6 +158,48 @@ const asNumber = (value: unknown) => {
   }
   return null;
 };
+
+const normalizeRegionLookupToken = (value: string) =>
+  String(value || "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/[^a-z0-9]/gi, "")
+    .toUpperCase();
+
+const COUNTRY_NAME_TO_ISO2 = (() => {
+  const map = new Map<string, string>();
+  const locales = ["en", "da", "sv", "no", "de", "fr", "es", "it", "nl", "pt", "pl"];
+  const regionCodes: string[] = [];
+  for (let i = 65; i <= 90; i += 1) {
+    for (let j = 65; j <= 90; j += 1) {
+      regionCodes.push(String.fromCharCode(i, j));
+    }
+  }
+  for (const code of regionCodes) {
+    map.set(code, code);
+    for (const locale of locales) {
+      try {
+        const display = new Intl.DisplayNames([locale], { type: "region" });
+        const label = display.of(code);
+        if (label && label !== code) {
+          map.set(normalizeRegionLookupToken(label), code);
+        }
+      } catch {
+        // Ignore locale issues and continue.
+      }
+    }
+  }
+  return map;
+})();
+
+function normalizeCountryCode(value: unknown): string {
+  const raw = asString(value);
+  if (!raw) return "DK";
+  const upper = raw.toUpperCase();
+  if (/^[A-Z]{2}$/.test(upper)) return upper;
+  const token = normalizeRegionLookupToken(raw);
+  return COUNTRY_NAME_TO_ISO2.get(token) || "DK";
+}
 
 function decodeByteaToText(value: unknown): string | null {
   if (!value) return null;
@@ -860,10 +913,106 @@ async function fetchOrderState(
   const payload = await shopifyRequest<{ order?: ShopifyOrderState }>(
     shop,
     apiVersion,
-    `orders/${orderId}.json?fields=id,fulfillment_status,cancelled_at,closed_at,fulfillments`,
+    `orders/${orderId}.json?fields=id,name,order_number,fulfillment_status,cancelled_at,closed_at,fulfillments`,
     { method: "GET" },
   );
   return payload?.order ?? null;
+}
+
+async function lookupOrderStatus(
+  shop: ShopCredentials,
+  apiVersion: string,
+  orderId: number,
+) {
+  const payload = await shopifyRequest<{
+    order?: {
+      id?: number;
+      name?: string;
+      order_number?: number;
+      financial_status?: string | null;
+      fulfillment_status?: string | null;
+      cancelled_at?: string | null;
+      closed_at?: string | null;
+    };
+  }>(
+    shop,
+    apiVersion,
+    `orders/${orderId}.json?fields=id,name,order_number,financial_status,fulfillment_status,cancelled_at,closed_at`,
+    { method: "GET" },
+  );
+  const order = payload?.order || {};
+  const orderLabel =
+    asString(order?.name) || (order?.order_number ? `#${order.order_number}` : `#${orderId}`);
+  const statusParts = [
+    `Order ${orderLabel}`,
+    order?.financial_status ? `payment ${String(order.financial_status)}` : "",
+    order?.fulfillment_status ? `fulfillment ${String(order.fulfillment_status)}` : "fulfillment unfulfilled",
+    order?.cancelled_at ? "cancelled" : "",
+    order?.closed_at ? "closed" : "",
+  ].filter(Boolean);
+  return { summary: `${statusParts.join(" | ")}.` };
+}
+
+async function fetchTracking(
+  shop: ShopCredentials,
+  apiVersion: string,
+  orderId: number,
+) {
+  const payload = await shopifyRequest<{
+    order?: {
+      id?: number;
+      name?: string;
+      order_number?: number;
+      fulfillments?: Array<{
+        tracking_number?: string | null;
+        tracking_numbers?: string[] | null;
+        tracking_url?: string | null;
+        tracking_urls?: string[] | null;
+      }>;
+    };
+  }>(
+    shop,
+    apiVersion,
+    `orders/${orderId}.json?fields=id,name,order_number,fulfillments`,
+    { method: "GET" },
+  );
+  const order = payload?.order || {};
+  const orderLabel =
+    asString(order?.name) || (order?.order_number ? `#${order.order_number}` : `#${orderId}`);
+  const fulfillments = Array.isArray(order?.fulfillments) ? order.fulfillments : [];
+  const trackingNumbers = new Set<string>();
+  const trackingUrls = new Set<string>();
+
+  for (const fulfillment of fulfillments) {
+    const singleNumber = asString(fulfillment?.tracking_number);
+    if (singleNumber) trackingNumbers.add(singleNumber);
+    const multiNumbers = Array.isArray(fulfillment?.tracking_numbers) ? fulfillment.tracking_numbers : [];
+    for (const entry of multiNumbers) {
+      const value = asString(entry);
+      if (value) trackingNumbers.add(value);
+    }
+
+    const singleUrl = asString(fulfillment?.tracking_url);
+    if (singleUrl) trackingUrls.add(singleUrl);
+    const multiUrls = Array.isArray(fulfillment?.tracking_urls) ? fulfillment.tracking_urls : [];
+    for (const entry of multiUrls) {
+      const value = asString(entry);
+      if (value) trackingUrls.add(value);
+    }
+  }
+
+  if (!trackingNumbers.size && !trackingUrls.size) {
+    return { summary: `No tracking details yet for order ${orderLabel}.` };
+  }
+
+  const parts = [`Tracking lookup for order ${orderLabel}.`];
+  if (trackingNumbers.size) {
+    parts.push(`Tracking no: ${Array.from(trackingNumbers).join(", ")}.`);
+  }
+  if (trackingUrls.size) {
+    parts.push(`Tracking URL: ${Array.from(trackingUrls).join(", ")}.`);
+  }
+  return { summary: parts.join(" ") };
 }
 
 // Dispatcher der mapper action.type til korrekt Shopify-kald
@@ -880,6 +1029,10 @@ async function handleAction(
   }
   const orderId = Number(action.orderId);
   switch (action.type) {
+    case "lookup_order_status":
+      return lookupOrderStatus(shop, apiVersion, orderId);
+    case "fetch_tracking":
+      return fetchTracking(shop, apiVersion, orderId);
     case "update_shipping_address":
       return updateShippingAddress(shop, apiVersion, orderId, action.payload);
     case "change_shipping_method":
@@ -997,8 +1150,9 @@ export async function executeAutomationActions({
       }
       seenActionKeys.add(actionKey);
 
+      let orderState: ShopifyOrderState | null = null;
       if (action.type === "update_shipping_address" || action.type === "cancel_order") {
-        const orderState = await fetchOrderState(shop, apiVersion, Number(orderIdToUse));
+        orderState = await fetchOrderState(shop, apiVersion, Number(orderIdToUse));
         const blockCheck = isMutationBlocked(orderState, action.type);
         if (blockCheck.blocked) {
           results.push({
@@ -1076,7 +1230,7 @@ export async function executeAutomationActions({
         continue;
       }
 
-      await handleAction(shop, apiVersion, {
+      const actionResponse = await handleAction(shop, apiVersion, {
         ...action,
         orderId: Number(orderIdToUse),
       });
@@ -1085,20 +1239,21 @@ export async function executeAutomationActions({
         const address = (action.payload?.shipping_address ??
           action.payload?.shippingAddress) as Record<string, unknown>;
         if (address && typeof address === "object") {
-          const fallbackCountry = asString(address.country_code || address.country);
-          const countryCode = fallbackCountry ? fallbackCountry.toUpperCase() : "";
+          const countryCode = normalizeCountryCode(address.country_code || address.country);
           const webshipperAddress = {
             name: asString(address.name),
             address1: asString(address.address1),
             address2: asString(address.address2) || null,
             zip: asString(address.zip || address.postal_code),
             city: asString(address.city),
-            country_code: countryCode || "DK",
+            country_code: countryCode,
             email: asString(address.email) || null,
             phone: asString(address.phone) || null,
           };
 
-          const webshipperOrderRef = String(action.orderId ?? orderIdToUse);
+          const orderName = asString(orderState?.name);
+          const orderNumber = Number(orderState?.order_number ?? 0);
+          const webshipperOrderRef = orderName || (orderNumber ? `#${orderNumber}` : String(orderIdToUse));
           try {
             const webshipperResult = await updateWebshipperAddress(
               webshipper.tenant,
@@ -1115,7 +1270,9 @@ export async function executeAutomationActions({
         }
       }
       if (action.type === "cancel_order" && webshipper) {
-        const webshipperOrderRef = String(action.orderId ?? orderIdToUse);
+        const orderName = asString(orderState?.name);
+        const orderNumber = Number(orderState?.order_number ?? 0);
+        const webshipperOrderRef = orderName || (orderNumber ? `#${orderNumber}` : String(orderIdToUse));
         try {
           const webshipperResult = await cancelWebshipperOrder(
             webshipper.tenant,
@@ -1175,6 +1332,16 @@ export async function executeAutomationActions({
         detail = "Resent order confirmation/invoice.";
       } else if (action.type === "add_note" || action.type === "add_internal_note_or_tag") {
         detail = "Updated order note.";
+      } else if (action.type === "lookup_order_status") {
+        detail =
+          actionResponse && typeof actionResponse === "object" && "summary" in actionResponse
+            ? asString((actionResponse as Record<string, unknown>).summary)
+            : "Looked up order status.";
+      } else if (action.type === "fetch_tracking") {
+        detail =
+          actionResponse && typeof actionResponse === "object" && "summary" in actionResponse
+            ? asString((actionResponse as Record<string, unknown>).summary)
+            : "Fetched tracking details.";
       }
 
       if (webshipperError) {

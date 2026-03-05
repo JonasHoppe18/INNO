@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { getShopCredentialsForUser } from "./shopify-credentials.ts";
+import { decryptShopifyToken, getShopCredentialsForUser } from "./shopify-credentials.ts";
 
 export type ShopifyOrder = Record<string, any>;
 
@@ -14,6 +14,49 @@ type FetchOrdersOptions = {
   tokenSecret?: string | null;
   apiVersion: string;
   pageInfo?: string | null;
+};
+
+type WebshipperContext = {
+  baseUrl: string;
+  token: string;
+};
+
+type WebshipperTracking = {
+  source: "webshipper";
+  status?: string | null;
+  carrier?: string | null;
+  tracking_number?: string | null;
+  tracking_url?: string | null;
+  status_code?: string | null;
+  delivered_at?: string | null;
+  out_for_delivery_at?: string | null;
+  pickup_ready_at?: string | null;
+  pickup_point?: {
+    name?: string | null;
+    address?: string | null;
+    city?: string | null;
+    postal_code?: string | null;
+    country?: string | null;
+  } | null;
+  last_event?: {
+    code?: string | null;
+    description?: string | null;
+    occurred_at?: string | null;
+    location?: string | null;
+  } | null;
+  events?: Array<{
+    code?: string | null;
+    description?: string | null;
+    occurred_at?: string | null;
+    location?: string | null;
+    pickup_point?: {
+      name?: string | null;
+      address?: string | null;
+      city?: string | null;
+      postal_code?: string | null;
+      country?: string | null;
+    } | null;
+  }>;
 };
 
 async function fetchShopifyOrdersPage(options: FetchOrdersOptions): Promise<{
@@ -118,6 +161,344 @@ function buildTrackingKey(order: ShopifyOrder) {
   );
 }
 
+function asString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function asObject(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function normalizeIso(value: unknown): string | null {
+  const raw = asString(value);
+  if (!raw) return null;
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return raw;
+  return date.toISOString();
+}
+
+function decodeByteaToText(value: unknown): string | null {
+  if (!value) return null;
+  if (typeof value === "string") {
+    if (!value.startsWith("\\x")) return value;
+    const hex = value.slice(2);
+    if (!hex) return null;
+    const bytes = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < hex.length; i += 2) {
+      bytes[i / 2] = Number.parseInt(hex.slice(i, i + 2), 16);
+    }
+    return new TextDecoder().decode(bytes);
+  }
+  if (value instanceof Uint8Array) {
+    return new TextDecoder().decode(value);
+  }
+  return null;
+}
+
+function buildWebshipperApiBase(tenant: string): string | null {
+  const raw = String(tenant || "").trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+  if (!raw) return null;
+  const withoutApiSuffix = raw.replace(/\.api\.webshipper\.io$/i, "");
+  const host = withoutApiSuffix.endsWith(".webshipper.io")
+    ? withoutApiSuffix.replace(/\.webshipper\.io$/i, ".api.webshipper.io")
+    : `${withoutApiSuffix}.api.webshipper.io`;
+  return `https://${host}/v2`;
+}
+
+function webshipperHeaders(token: string) {
+  return {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/vnd.api+json",
+    "Content-Type": "application/vnd.api+json",
+  };
+}
+
+async function resolveWebshipperContext(options: {
+  supabase: SupabaseClient | null;
+  userId?: string | null;
+  workspaceId?: string | null;
+  tokenSecret?: string | null;
+}): Promise<WebshipperContext | null> {
+  const { supabase, userId, workspaceId, tokenSecret } = options;
+  if (!supabase || !userId) return null;
+
+  let integration:
+    | {
+        config?: Record<string, unknown> | null;
+        credentials_enc?: unknown;
+        is_active?: boolean | null;
+      }
+    | null = null;
+
+  if (workspaceId) {
+    const { data } = await supabase
+      .from("integrations")
+      .select("config,credentials_enc,is_active")
+      .eq("provider", "webshipper")
+      .eq("workspace_id", workspaceId)
+      .eq("is_active", true)
+      .maybeSingle();
+    integration = data;
+  }
+
+  if (!integration) {
+    const { data } = await supabase
+      .from("integrations")
+      .select("config,credentials_enc,is_active")
+      .eq("provider", "webshipper")
+      .eq("user_id", userId)
+      .eq("is_active", true)
+      .maybeSingle();
+    integration = data;
+  }
+
+  if (!integration || integration.is_active !== true) return null;
+  const tenant = asString(integration?.config?.tenant);
+  if (!tenant) return null;
+  const baseUrl = buildWebshipperApiBase(tenant);
+  if (!baseUrl) return null;
+
+  const encoded = decodeByteaToText(integration.credentials_enc);
+  if (!encoded) return null;
+
+  let token = "";
+  try {
+    token = await decryptShopifyToken(encoded, tokenSecret);
+  } catch {
+    token = encoded;
+  }
+  token = token.trim();
+  if (!token) return null;
+
+  return { baseUrl, token };
+}
+
+function parsePickupPoint(value: unknown): WebshipperTracking["pickup_point"] {
+  const obj = asObject(value);
+  if (!obj) return null;
+  const name = asString(obj.name || obj.title || obj.pickup_point_name) || null;
+  const address = asString(obj.address || obj.address1 || obj.street || obj.street_name) || null;
+  const city = asString(obj.city || obj.town) || null;
+  const postal_code = asString(obj.postal_code || obj.zip || obj.zip_code) || null;
+  const country = asString(obj.country || obj.country_code) || null;
+  if (!name && !address && !city && !postal_code && !country) return null;
+  return { name, address, city, postal_code, country };
+}
+
+function parseTrackingEvent(value: unknown): NonNullable<WebshipperTracking["events"]>[number] | null {
+  const obj = asObject(value);
+  if (!obj) return null;
+  const attrs = asObject(obj.attributes) || obj;
+  const code = asString(attrs.code || attrs.event_code || attrs.status_code || attrs.status) || null;
+  const description =
+    asString(attrs.description || attrs.label || attrs.status_text || attrs.message || attrs.title) ||
+    null;
+  const occurred_at =
+    normalizeIso(
+      attrs.occurred_at || attrs.created_at || attrs.updated_at || attrs.event_time || attrs.timestamp,
+    ) || null;
+  const location =
+    asString(
+      attrs.location ||
+        attrs.city ||
+        attrs.depot ||
+        attrs.location_name ||
+        attrs.hub ||
+        attrs.terminal,
+    ) || null;
+  const pickup_point =
+    parsePickupPoint(
+      attrs.pickup_point || attrs.pickup || attrs.parcel_shop || attrs.service_point || attrs.drop_point,
+    ) || null;
+  if (!code && !description && !occurred_at && !location && !pickup_point) return null;
+  return { code, description, occurred_at, location, pickup_point };
+}
+
+function collectTrackingEvents(record: any, included: unknown[]): NonNullable<WebshipperTracking["events"]> {
+  const events: NonNullable<WebshipperTracking["events"]> = [];
+  const attrs = asObject(record?.attributes) || asObject(record) || {};
+
+  const localCandidates = [
+    ...asArray((attrs as Record<string, unknown>)?.events),
+    ...asArray((attrs as Record<string, unknown>)?.tracking_events),
+    ...asArray((attrs as Record<string, unknown>)?.event_timeline),
+    ...asArray((attrs as Record<string, unknown>)?.timeline),
+    ...asArray((attrs as Record<string, unknown>)?.history),
+    ...asArray((attrs as Record<string, unknown>)?.tracking_history),
+  ];
+  for (const candidate of localCandidates) {
+    const parsed = parseTrackingEvent(candidate);
+    if (parsed) events.push(parsed);
+  }
+
+  for (const resource of included) {
+    const type = asString((resource as any)?.type).toLowerCase();
+    if (!type) continue;
+    if (!type.includes("event") && !type.includes("tracking")) continue;
+    const parsed = parseTrackingEvent(resource);
+    if (parsed) events.push(parsed);
+  }
+
+  const unique = new Map<string, NonNullable<WebshipperTracking["events"]>[number]>();
+  for (const event of events) {
+    const key = `${event.code || ""}|${event.description || ""}|${event.occurred_at || ""}|${
+      event.location || ""
+    }`;
+    if (!unique.has(key)) unique.set(key, event);
+  }
+  return Array.from(unique.values()).sort((a, b) =>
+    String(a.occurred_at || "").localeCompare(String(b.occurred_at || "")),
+  );
+}
+
+function extractTrackingFromObject(value: any, included: unknown[] = []): WebshipperTracking | null {
+  if (!value || typeof value !== "object") return null;
+  const attrs = value?.attributes && typeof value.attributes === "object" ? value.attributes : value;
+  const carrier =
+    asString(attrs?.carrier_name) ||
+    asString(attrs?.carrier) ||
+    asString(attrs?.shipping_company) ||
+    asString(attrs?.provider);
+  const trackingNumber =
+    asString(attrs?.tracking_number) ||
+    asString(attrs?.tracking_no) ||
+    asString(attrs?.tracking_code) ||
+    asString(attrs?.tracking);
+  const trackingUrl =
+    asString(attrs?.tracking_url) ||
+    asString(attrs?.tracking_link) ||
+    asString(attrs?.track_trace_url) ||
+    asString(attrs?.trackingUrl);
+  const status = asString(attrs?.status_text) || asString(attrs?.status);
+  const statusCode = asString(attrs?.status_code) || asString(attrs?.shipment_status) || "";
+  const deliveredAt =
+    normalizeIso(attrs?.delivered_at || attrs?.deliveredAt || attrs?.delivery_time) || null;
+  const outForDeliveryAt =
+    normalizeIso(
+      attrs?.out_for_delivery_at || attrs?.outForDeliveryAt || attrs?.out_for_delivery_time,
+    ) || null;
+  const pickupReadyAt =
+    normalizeIso(attrs?.pickup_ready_at || attrs?.pickupReadyAt || attrs?.ready_for_pickup_at) || null;
+  const pickupPoint =
+    parsePickupPoint(
+      attrs?.pickup_point || attrs?.pickup || attrs?.parcel_shop || attrs?.service_point || attrs?.drop_point,
+    ) || null;
+  const events = collectTrackingEvents(value, included);
+  const lastEvent = events.length ? events[events.length - 1] : null;
+
+  if (
+    !trackingNumber &&
+    !trackingUrl &&
+    !status &&
+    !statusCode &&
+    !deliveredAt &&
+    !outForDeliveryAt &&
+    !pickupReadyAt &&
+    !events.length
+  ) {
+    return null;
+  }
+  return {
+    source: "webshipper",
+    status: status || null,
+    carrier: carrier || null,
+    tracking_number: trackingNumber || null,
+    tracking_url: trackingUrl || null,
+    status_code: statusCode || null,
+    delivered_at: deliveredAt,
+    out_for_delivery_at: outForDeliveryAt,
+    pickup_ready_at: pickupReadyAt,
+    pickup_point: pickupPoint,
+    last_event: lastEvent
+      ? {
+          code: lastEvent.code || null,
+          description: lastEvent.description || null,
+          occurred_at: lastEvent.occurred_at || null,
+          location: lastEvent.location || null,
+        }
+      : null,
+    events,
+  };
+}
+
+function collectOrderRefs(order: ShopifyOrder): string[] {
+  const rawRefs = [
+    asString(order?.name),
+    order?.order_number != null ? String(order.order_number) : "",
+    asString(order?.legacy_order?.order_number),
+  ].filter(Boolean);
+  const refs = new Set<string>();
+  for (const raw of rawRefs) {
+    const plain = raw.replace(/^#+/, "").trim();
+    if (!plain) continue;
+    refs.add(raw.trim());
+    refs.add(plain);
+    refs.add(`#${plain}`);
+    refs.add(`##${plain}`);
+  }
+  return Array.from(refs);
+}
+
+async function fetchWebshipperTrackingForOrder(
+  context: WebshipperContext,
+  order: ShopifyOrder,
+): Promise<WebshipperTracking | null> {
+  const refs = collectOrderRefs(order);
+  if (!refs.length) return null;
+
+  for (const ref of refs) {
+    const searchUrl = new URL(`${context.baseUrl}/orders`);
+    searchUrl.searchParams.set("filter[visible_ref]", ref);
+    const response = await fetch(searchUrl.toString(), {
+      method: "GET",
+      headers: webshipperHeaders(context.token),
+    }).catch(() => null);
+    if (!response?.ok) continue;
+    const payload = await response.json().catch(() => null);
+    const record = Array.isArray(payload?.data) ? payload.data[0] : null;
+    const parsed = extractTrackingFromObject(record, asArray(payload?.included));
+    if (parsed) return parsed;
+  }
+
+  return null;
+}
+
+async function attachWebshipperTracking(options: {
+  supabase: SupabaseClient | null;
+  userId?: string | null;
+  workspaceId?: string | null;
+  tokenSecret?: string | null;
+  orders: ShopifyOrder[];
+}) {
+  const { supabase, userId, workspaceId, tokenSecret, orders } = options;
+  if (!orders.length) return;
+  const context = await resolveWebshipperContext({
+    supabase,
+    userId,
+    workspaceId,
+    tokenSecret,
+  });
+  if (!context) return;
+
+  const maxLookups = Math.min(orders.length, 8);
+  await Promise.all(
+    orders.slice(0, maxLookups).map(async (order) => {
+      try {
+        const tracking = await fetchWebshipperTrackingForOrder(context, order);
+        if (tracking) {
+          order.webshipper_tracking = tracking;
+        }
+      } catch {
+        // Best effort: fail silently and keep Shopify-only context.
+      }
+    }),
+  );
+}
+
 function extractNextPageInfo(linkHeader: string): string | null {
   if (!linkHeader) return null;
   const parts = linkHeader.split(",");
@@ -190,8 +571,65 @@ export function buildOrderSummary(orders: ShopifyOrder[]): string {
     if (fulfilText) {
       summary += `  Levering: ${fulfilText}\n`;
     }
+    const trackingText = formatTrackingStatus(order);
+    if (trackingText) {
+      summary += `  Tracking: ${trackingText}\n`;
+    }
   }
   return summary;
+}
+
+function formatTrackingStatus(order: ShopifyOrder): string {
+  const fulfillments = Array.isArray(order?.fulfillments) ? order.fulfillments : [];
+  const numbers = new Set<string>();
+  const urls = new Set<string>();
+  let carrier = "";
+
+  for (const fulfillment of fulfillments) {
+    const oneNumber = asString(fulfillment?.tracking_number);
+    if (oneNumber) numbers.add(oneNumber);
+    const manyNumbers = Array.isArray(fulfillment?.tracking_numbers) ? fulfillment.tracking_numbers : [];
+    for (const value of manyNumbers) {
+      const parsed = asString(value);
+      if (parsed) numbers.add(parsed);
+    }
+    const oneUrl = asString(fulfillment?.tracking_url);
+    if (oneUrl) urls.add(oneUrl);
+    const manyUrls = Array.isArray(fulfillment?.tracking_urls) ? fulfillment.tracking_urls : [];
+    for (const value of manyUrls) {
+      const parsed = asString(value);
+      if (parsed) urls.add(parsed);
+    }
+    if (!carrier) {
+      carrier = asString(fulfillment?.tracking_company) || asString(fulfillment?.shipment_status);
+    }
+  }
+
+  if (!numbers.size && !urls.size && order?.webshipper_tracking) {
+    const webshipper = order.webshipper_tracking as WebshipperTracking;
+    const wsNumber = asString(webshipper?.tracking_number);
+    const wsUrl = asString(webshipper?.tracking_url);
+    const wsCarrier = asString(webshipper?.carrier);
+    const wsStatus = asString(webshipper?.status);
+    if (wsNumber) numbers.add(wsNumber);
+    if (wsUrl) urls.add(wsUrl);
+    if (!carrier) carrier = wsCarrier;
+    const textParts = [
+      carrier || "ukendt carrier",
+      wsNumber || "",
+      wsStatus ? `(status: ${wsStatus})` : "",
+      wsUrl ? `- ${wsUrl}` : "",
+    ].filter(Boolean);
+    return textParts.join(" ");
+  }
+
+  if (!numbers.size && !urls.size) return "";
+  const textParts = [
+    carrier || "shopify",
+    numbers.size ? Array.from(numbers).join(", ") : "",
+    urls.size ? `- ${Array.from(urls).join(" | ")}` : "",
+  ].filter(Boolean);
+  return textParts.join(" ");
 }
 
 function formatFulfillmentStatus(order: ShopifyOrder) {
@@ -325,6 +763,14 @@ export async function resolveOrderContext(options: {
   if (hasSubjectNumber && orders.some((order) => matchesOrderNumber(order, subjectNumber!))) {
     matchedSubjectNumber = subjectNumber!;
   }
+
+  await attachWebshipperTracking({
+    supabase,
+    userId,
+    workspaceId,
+    tokenSecret,
+    orders,
+  });
 
   const orderIdMap: Record<string, number> = {};
   for (const order of orders) {

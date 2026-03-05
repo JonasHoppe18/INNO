@@ -29,6 +29,222 @@ function normalizeDomain(input = "") {
     .toLowerCase();
 }
 
+function buildWebshipperApiBase(tenant = "") {
+  const raw = String(tenant || "").trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+  if (!raw) return null;
+  const withoutApiSuffix = raw.replace(/\.api\.webshipper\.io$/i, "");
+  const host = withoutApiSuffix.endsWith(".webshipper.io")
+    ? withoutApiSuffix.replace(/\.webshipper\.io$/i, ".api.webshipper.io")
+    : `${withoutApiSuffix}.api.webshipper.io`;
+  return `https://${host}/v2`;
+}
+
+function webshipperHeaders(token = "") {
+  return {
+    Authorization: `Bearer ${String(token || "").trim()}`,
+    Accept: "application/vnd.api+json",
+    "Content-Type": "application/vnd.api+json",
+  };
+}
+
+function decodeByteaToText(value) {
+  if (!value) return null;
+  if (typeof value === "string") {
+    if (!value.startsWith("\\x")) return value;
+    const hex = value.slice(2);
+    if (!hex) return null;
+    const bytes = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < hex.length; i += 2) {
+      bytes[i / 2] = Number.parseInt(hex.slice(i, i + 2), 16);
+    }
+    return new TextDecoder().decode(bytes);
+  }
+  if (value instanceof Uint8Array) {
+    return new TextDecoder().decode(value);
+  }
+  return null;
+}
+
+async function parseWebshipperError(response) {
+  const raw = await response.text().catch(() => "");
+  if (!raw) return `HTTP ${response.status}`;
+  try {
+    const parsed = JSON.parse(raw);
+    const first = Array.isArray(parsed?.errors) ? parsed.errors[0] : null;
+    const detail =
+      (typeof first?.detail === "string" && first.detail) ||
+      (typeof first?.title === "string" && first.title) ||
+      raw;
+    return `HTTP ${response.status}: ${detail}`;
+  } catch {
+    return `HTTP ${response.status}: ${raw}`;
+  }
+}
+
+async function resolveWebshipperOrderId({ baseUrl, token, orderRef }) {
+  const rawRef = String(orderRef || "").trim();
+  if (!rawRef) return null;
+  const plainRef = rawRef.replace(/^#+/, "");
+  const candidates = Array.from(new Set([rawRef, plainRef, `#${plainRef}`, `##${plainRef}`])).filter(Boolean);
+
+  for (const ref of candidates) {
+    const url = new URL(`${baseUrl}/orders`);
+    url.searchParams.set("filter[visible_ref]", ref);
+    const response = await fetch(url.toString(), {
+      method: "GET",
+      headers: webshipperHeaders(token),
+    });
+    if (!response.ok) {
+      const detail = await parseWebshipperError(response);
+      throw new Error(`Webshipper order lookup failed. ${detail}`);
+    }
+    const payload = await response.json().catch(() => null);
+    const found = payload?.data?.[0]?.id ? String(payload.data[0].id) : null;
+    if (found) return found;
+  }
+
+  return null;
+}
+
+async function syncWebshipperAction({
+  serviceClient,
+  scope,
+  actionType,
+  shopifyOrder,
+  payload,
+}) {
+  if (!serviceClient || !shopifyOrder || !actionType) {
+    return { ok: false, reason: "Missing context for Webshipper sync." };
+  }
+
+  let query = serviceClient
+    .from("integrations")
+    .select("config, credentials_enc, is_active")
+    .eq("provider", "webshipper")
+    .eq("is_active", true)
+    .order("updated_at", { ascending: false })
+    .limit(1);
+  query = applyScope(query, scope, {
+    workspaceColumn: "workspace_id",
+    userColumn: "user_id",
+  });
+  const { data: integration, error: integrationError } = await query.maybeSingle();
+  if (integrationError || !integration?.credentials_enc) {
+    return { ok: false, reason: "Webshipper integration not found or inactive." };
+  }
+
+  const encodedToken = decodeByteaToText(integration.credentials_enc);
+  if (!encodedToken) {
+    return { ok: false, reason: "Webshipper token is missing or invalid." };
+  }
+
+  let token = "";
+  try {
+    token = decryptString(encodedToken);
+  } catch (error) {
+    // Legacy fallback: allow plain-text token rows while migrating.
+    token = encodedToken;
+  }
+
+  const tenant = integration?.config?.tenant || "";
+  const baseUrl = buildWebshipperApiBase(tenant);
+  if (!baseUrl) {
+    return { ok: false, reason: "Webshipper tenant is missing." };
+  }
+
+  const orderRef =
+    (typeof shopifyOrder?.name === "string" && shopifyOrder.name.trim()) ||
+    (shopifyOrder?.order_number ? `#${shopifyOrder.order_number}` : String(shopifyOrder?.id || ""));
+  if (!orderRef) {
+    return { ok: false, reason: "Shopify order reference missing." };
+  }
+
+  const orderId = await resolveWebshipperOrderId({
+    baseUrl,
+    token,
+    orderRef,
+  });
+  if (!orderId) {
+    return { ok: false, reason: `Order ${orderRef} not found in Webshipper.` };
+  }
+
+  const normalizedAction = String(actionType || "").trim().toLowerCase();
+
+  if (normalizedAction === "update_shipping_address") {
+    const shippingAddress =
+      payload?.shipping_address && typeof payload.shipping_address === "object"
+        ? payload.shipping_address
+        : payload?.shippingAddress && typeof payload.shippingAddress === "object"
+        ? payload.shippingAddress
+        : null;
+    if (!shippingAddress) {
+      return { ok: false, reason: "Missing shipping address payload for Webshipper sync." };
+    }
+
+    const countryCode = normalizeCountryCode(shippingAddress.country_code || shippingAddress.country || "DK");
+    const patchBody = {
+      data: {
+        id: String(orderId),
+        type: "orders",
+        attributes: {
+          delivery_address: {
+            att_contact: asString(shippingAddress.name),
+            address_1: asString(shippingAddress.address1),
+            address_2: asString(shippingAddress.address2) || null,
+            zip: asString(shippingAddress.zip || shippingAddress.postal_code),
+            city: asString(shippingAddress.city),
+            country_code: countryCode,
+            email: asString(shippingAddress.email) || null,
+            phone: asString(shippingAddress.phone) || null,
+          },
+        },
+      },
+    };
+
+    const response = await fetch(`${baseUrl}/orders/${orderId}`, {
+      method: "PATCH",
+      headers: webshipperHeaders(token),
+      body: JSON.stringify(patchBody),
+    });
+    if (!response.ok) {
+      const detail = await parseWebshipperError(response);
+      return { ok: false, reason: `Webshipper address update failed. ${detail}` };
+    }
+
+    return { ok: true, orderId: String(orderId), orderRef: String(orderRef), action: normalizedAction };
+  }
+
+  if (normalizedAction === "cancel_order") {
+    const statusCandidates = ["cancelled", "canceled"];
+    let lastError = "";
+    for (const status of statusCandidates) {
+      const patchBody = {
+        data: {
+          id: String(orderId),
+          type: "orders",
+          attributes: { status },
+        },
+      };
+      const response = await fetch(`${baseUrl}/orders/${orderId}`, {
+        method: "PATCH",
+        headers: webshipperHeaders(token),
+        body: JSON.stringify(patchBody),
+      });
+      if (response.ok) {
+        return { ok: true, orderId: String(orderId), orderRef: String(orderRef), action: normalizedAction };
+      }
+      lastError = await parseWebshipperError(response);
+    }
+    return { ok: false, reason: `Webshipper cancel failed. ${lastError}` };
+  }
+
+  return {
+    ok: false,
+    skipped: true,
+    reason: `No Webshipper sync mapping for action "${normalizedAction}".`,
+  };
+}
+
 function extractOrderNumber(value = "") {
   const text = String(value || "");
   const match =
@@ -37,6 +253,45 @@ function extractOrderNumber(value = "") {
 }
 
 const asString = (value) => (typeof value === "string" ? value.trim() : "");
+const normalizeRegionLookupToken = (value) =>
+  String(value || "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/[^a-z0-9]/gi, "")
+    .toUpperCase();
+const COUNTRY_NAME_TO_ISO2 = (() => {
+  const map = new Map();
+  const locales = ["en", "da", "sv", "no", "de", "fr", "es", "it", "nl", "pt", "pl"];
+  const regionCodes = [];
+  for (let i = 65; i <= 90; i += 1) {
+    for (let j = 65; j <= 90; j += 1) {
+      regionCodes.push(String.fromCharCode(i, j));
+    }
+  }
+  for (const code of regionCodes) {
+    map.set(code, code);
+    for (const locale of locales) {
+      try {
+        const display = new Intl.DisplayNames([locale], { type: "region" });
+        const label = display.of(code);
+        if (label && label !== code) {
+          map.set(normalizeRegionLookupToken(label), code);
+        }
+      } catch {
+        // Ignore locale issues and continue.
+      }
+    }
+  }
+  return map;
+})();
+const normalizeCountryCode = (value) => {
+  const raw = asString(value);
+  if (!raw) return "DK";
+  const upper = raw.toUpperCase();
+  if (/^[A-Z]{2}$/.test(upper)) return upper;
+  const token = normalizeRegionLookupToken(raw);
+  return COUNTRY_NAME_TO_ISO2.get(token) || "DK";
+};
 const asNumber = (value) => {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim()) {
@@ -1175,14 +1430,18 @@ export async function POST(request, { params }) {
     extractOrderNumber(thread.snippet);
   const orderNumber = parsed?.orderNumber || fallbackOrderNumber || null;
 
-  const { data: shopRow, error: shopError } = await serviceClient
+  let shopQuery = serviceClient
     .from("shops")
     .select("id, shop_domain, access_token_encrypted")
-    .eq("owner_user_id", supabaseUserId)
     .eq("platform", "shopify")
+    .is("uninstalled_at", null)
     .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(1);
+  shopQuery = applyScope(shopQuery, scope, {
+    workspaceColumn: "workspace_id",
+    userColumn: "owner_user_id",
+  });
+  const { data: shopRow, error: shopError } = await shopQuery.maybeSingle();
   if (shopError || !shopRow) {
     return NextResponse.json({ error: "Shopify is not connected." }, { status: 400 });
   }
@@ -1387,6 +1646,25 @@ export async function POST(request, { params }) {
     return NextResponse.json({ error: String(message) }, { status: updateResult.response.status });
   }
 
+  let webshipperSync = null;
+  const webshipperSyncedActions = new Set(["update_shipping_address", "cancel_order"]);
+  if (webshipperSyncedActions.has(normalizedActionType)) {
+    try {
+      webshipperSync = await syncWebshipperAction({
+        serviceClient,
+        scope,
+        actionType: normalizedActionType,
+        shopifyOrder: order,
+        payload: payloadForExecution,
+      });
+    } catch (error) {
+      webshipperSync = {
+        ok: false,
+        reason: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
   await serviceClient.from("agent_logs").insert({
     draft_id: null,
     step_name: "shopify_action_applied",
@@ -1396,6 +1674,7 @@ export async function POST(request, { params }) {
       order_id: String(order.id),
       order_number: order.order_number ?? null,
       detail: detailText || null,
+      webshipper_sync: webshipperSync,
     }),
     status: "success",
     created_at: new Date().toISOString(),
@@ -1459,6 +1738,7 @@ export async function POST(request, { params }) {
       orderNumber: order.order_number ?? null,
       detail: detailText || null,
       sourceStep: proposalStepName,
+      webshipperSync,
     },
     { status: 200 }
   );

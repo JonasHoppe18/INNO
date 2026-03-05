@@ -150,6 +150,81 @@ const GUIDE_CONTENT = {
       },
     ],
   },
+  "connect-webshipper": {
+    title: "Connect Webshipper",
+    intro: "Connect Webshipper to sync shipment data and automate shipping-related replies.",
+    overview: [
+      "Sync shipment and carrier data from Webshipper.",
+      "Enable automated responses based on shipment status.",
+      "Use shipment details for ticket handling and routing.",
+    ],
+    prerequisites: [
+      "Access to your Webshipper workspace.",
+      "Permission to create API tokens in Webshipper.",
+      "Your Webshipper domain and API token ready for Sona.",
+    ],
+    steps: [
+      {
+        title: "Step 1: Open Integrations in Sona",
+        items: [
+          "Go to Settings -> Integrations in Sona.",
+          "Find the Webshipper card.",
+          "Click Connect to open the setup dialog.",
+        ],
+      },
+      {
+        title: "Step 2: Create an API token in Webshipper",
+        items: [
+          "Open Webshipper and go to Settings -> Access and tokens.",
+          "Click Create API token.",
+          "Set Expires to Never.",
+          "Select all required scopes and click Save.",
+          "Copy the token immediately. You cannot view it again later.",
+        ],
+      },
+      {
+        title: "Step 3: Add credentials in Sona",
+        items: [
+          "Enter your Webshipper Domain (for example: team-name.webshipper.io).",
+          "Paste your API Access Token.",
+          "Click Connect.",
+          "Sona validates credentials and tests the integration connection.",
+        ],
+        fields: [
+          { label: "Webshipper Domain", value: "team-name.webshipper.io" },
+          { label: "API Access Token", value: "Paste token from Webshipper" },
+        ],
+      },
+    ],
+    troubleshooting: [
+      {
+        title: "Authentication fails",
+        items: [
+          "Confirm the domain format is correct (without https://).",
+          "Create a new token if you did not copy the previous one.",
+          "Verify token scopes include shipment and order read access.",
+        ],
+      },
+      {
+        title: "No shipment data appears",
+        items: [
+          "Recheck that the Webshipper account has active shipments.",
+          "Reconnect the integration to refresh credentials.",
+          "Contact support if sync remains empty after reconnecting.",
+        ],
+      },
+    ],
+    features: [
+      {
+        title: "Shipment Data",
+        items: ["Shipment status", "Carrier and service details", "Tracking references"],
+      },
+      {
+        title: "Automation",
+        items: ["Shipping-related auto replies", "Status-aware suggestions", "Faster ticket resolution"],
+      },
+    ],
+  },
   "custom-domain": {
     title: "Set up Custom Domain",
     intro: "Verify DNS and send from your own address.",

@@ -226,6 +226,8 @@ export default function OnboardingShopifyPage() {
             Need screenshots?{" "}
             <Link
               href="/guide/connect-shopify"
+              target="_blank"
+              rel="noreferrer"
               className="font-medium text-indigo-600 hover:text-indigo-700 hover:underline"
             >
               Open the Shopify setup guide

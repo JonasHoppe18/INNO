@@ -4,10 +4,10 @@ import {
   buildAutomationGuidance,
   fetchAutomation,
   fetchRelevantKnowledge,
-  formatKnowledgeForPrompt,
   fetchOwnerProfile,
   fetchPersona,
   fetchPolicies,
+  type KnowledgeMatch,
 } from "../_shared/agent-context.ts";
 import { AutomationAction, executeAutomationActions } from "../_shared/automation-actions.ts";
 import { classifyEmail } from "../_shared/classify-email.ts";
@@ -15,6 +15,13 @@ import { PERSONA_REPLY_JSON_SCHEMA } from "../_shared/openai-schema.ts";
 import { buildOrderSummary, resolveOrderContext } from "../_shared/shopify.ts";
 import { buildMailPrompt } from "../_shared/prompt.ts";
 import { formatEmailBody } from "../_shared/email.ts";
+import { fetchTrackingDetailsForOrders } from "../_shared/tracking.ts";
+import {
+  buildTrackingReplyFallback,
+  buildTrackingReplySameLanguage,
+  detectTrackingIntent,
+  pickOrderTrackingKey,
+} from "../_shared/tracking-reply.ts";
 
 const GMAIL_BASE = "https://gmail.googleapis.com/gmail/v1/users/me";
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
@@ -28,6 +35,52 @@ const OPENAI_EMBEDDING_MODEL = Deno.env.get("OPENAI_EMBEDDING_MODEL") ?? "text-e
 const ENCRYPTION_KEY = Deno.env.get("ENCRYPTION_KEY");
 const SHOPIFY_API_VERSION = Deno.env.get("SHOPIFY_API_VERSION") ?? "2024-07";
 const EDGE_DEBUG_LOGS = Deno.env.get("EDGE_DEBUG_LOGS") === "true";
+
+const readEnvNumber = (
+  key: string,
+  fallback: number,
+  options?: { min?: number; max?: number },
+) => {
+  const raw = Deno.env.get(key);
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return fallback;
+  let next = parsed;
+  if (Number.isFinite(options?.min)) next = Math.max(next, Number(options?.min));
+  if (Number.isFinite(options?.max)) next = Math.min(next, Number(options?.max));
+  return next;
+};
+
+const readEnvFlag = (key: string, fallback: boolean) => {
+  const raw = Deno.env.get(key);
+  if (raw == null) return fallback;
+  const normalized = raw.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  return fallback;
+};
+
+const KNOWLEDGE_MIN_SIMILARITY = readEnvNumber("KNOWLEDGE_MIN_SIMILARITY", 0.7, {
+  min: 0,
+  max: 1,
+});
+const PRODUCT_MIN_SIMILARITY = readEnvNumber("PRODUCT_MIN_SIMILARITY", 0.35, {
+  min: 0,
+  max: 1,
+});
+const MAX_RETRIEVAL_CHUNKS = readEnvNumber("MAX_RETRIEVAL_CHUNKS", 4, {
+  min: 1,
+  max: 10,
+});
+const MAX_CONTEXT_TOKENS = readEnvNumber("MAX_CONTEXT_TOKENS", 3500, {
+  min: 0,
+});
+const CLASSIFY_FIRST = readEnvFlag("CLASSIFY_FIRST", true);
+const RETRIEVAL_TRACE_ENABLED = readEnvFlag("RETRIEVAL_TRACE_ENABLED", false);
+const RETRIEVAL_TRACE_SAMPLE_RATE = readEnvNumber(
+  "RETRIEVAL_TRACE_SAMPLE_RATE",
+  Deno.env.get("DENO_DEPLOYMENT_ID") ? 0.1 : 1,
+  { min: 0, max: 1 },
+);
 
 if (!PROJECT_URL) console.warn("PROJECT_URL mangler – generate-draft-unified kan ikke kalde Supabase.");
 if (!SERVICE_ROLE_KEY)
@@ -64,7 +117,7 @@ type AgentContext = {
   persona: Awaited<ReturnType<typeof fetchPersona>>;
   automation: Awaited<ReturnType<typeof fetchAutomation>>;
   policies: Awaited<ReturnType<typeof fetchPolicies>>;
-  relevantKnowledge: string;
+  relevantKnowledgeMatches: KnowledgeMatch[];
   orderSummary: string;
   matchedSubjectNumber: string | null;
   orders: any[];
@@ -78,6 +131,17 @@ type ShopScope = {
 type OpenAIResult = {
   reply: string | null;
   actions: AutomationAction[];
+};
+
+type ProductMatch = {
+  id?: string | number;
+  external_id?: string | number;
+  title?: string;
+  handle?: string;
+  description?: string;
+  similarity?: number;
+  score?: number;
+  price?: string | number;
 };
 
 const PII_EMAIL_REGEX = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
@@ -101,6 +165,54 @@ const wordCount = (value: string) =>
   normalizeLine(value)
     .split(" ")
     .filter(Boolean).length;
+
+const estimateTokens = (value: string) => Math.ceil(String(value || "").length / 4);
+
+const truncateToApproxTokens = (value: string, maxTokens: number) => {
+  const text = String(value || "");
+  if (maxTokens <= 0) return "";
+  const approxChars = Math.max(0, Math.floor(maxTokens * 4));
+  if (!approxChars || text.length <= approxChars) return text;
+  return text.slice(0, approxChars).trim();
+};
+
+const normalizeForHash = (value: string) =>
+  String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+
+const shouldSample = (rate: number) => {
+  if (rate <= 0) return false;
+  if (rate >= 1) return true;
+  return Math.random() < rate;
+};
+
+const withThreadMeta = (detail: string, threadId?: string | null) => {
+  if (!threadId) return detail;
+  const raw = String(detail || "").trim();
+  if (!raw) return `thread_id:${threadId}`;
+  if (raw.startsWith("{") && raw.endsWith("}")) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return JSON.stringify({ ...parsed, thread_id: parsed.thread_id || threadId });
+      }
+    } catch {
+      // Fallback to text marker below.
+    }
+  }
+  return `${raw} |thread_id:${threadId}`;
+};
+
+async function sha256Hex(input: string): Promise<string> {
+  const bytes = new TextEncoder().encode(input);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  const arr = new Uint8Array(digest);
+  return Array.from(arr)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
 
 const detectLanguage = (samples: string[]) => {
   const danishHints = ["hej", "tak", "venlig", "hilsen", "mvh", "ordre", "pakke"];
@@ -141,6 +253,7 @@ const extractSignoff = (text: string) => {
   if (last.includes("cheers")) return "Cheers";
   return null;
 };
+
 
 const extractPhrasesToAvoid = (text: string) => {
   const phrases = [
@@ -220,6 +333,88 @@ const extractCustomerFirstName = (emailData: EmailData) => {
   const localToken = localPart.split(" ")[0] || "";
   const localName = normalizeCustomerFirstName(localToken);
   return localName.length >= 2 ? localName : "";
+};
+
+const extractOrderFirstName = (order: any) => {
+  if (!order || typeof order !== "object") return "";
+  const candidates = [
+    order?.customer?.first_name,
+    typeof order?.shipping_address?.name === "string"
+      ? String(order.shipping_address.name).split(/\s+/)[0]
+      : "",
+    typeof order?.billing_address?.name === "string"
+      ? String(order.billing_address.name).split(/\s+/)[0]
+      : "",
+  ];
+  for (const value of candidates) {
+    const normalized = normalizeCustomerFirstName(String(value || ""));
+    if (normalized) return normalized;
+  }
+  return "";
+};
+
+const inferLanguageHint = (subject: string, body: string): string => {
+  const text = `${subject || ""}\n${body || ""}`.toLowerCase();
+  const hasDanish = /(\b(hvor|hvornår|modtager|levering|pakke|ikke|med)\b|[æøå])/i.test(text);
+  const hasEnglish = /(\b(hi|hello|where|when|order|delivery|tracking|received)\b)/i.test(text);
+  const hasSpanish = /(\b(hola|dónde|donde|pedido|entrega|seguimiento|recibido)\b|[¡¿])/i.test(text);
+  if (hasSpanish) return "es";
+  if (hasEnglish && !hasDanish) return "en";
+  if (hasDanish && !hasEnglish) return "da";
+  if (hasEnglish) return "en";
+  return "same_as_customer";
+};
+
+const ensureFirstLineHasName = (text: string, firstName: string): string => {
+  const body = String(text || "").trim();
+  const name = String(firstName || "").trim();
+  if (!body || !name) return body;
+  const lines = body.split("\n");
+  const firstLineRaw = String(lines[0] || "").trim();
+  const firstLine = firstLineRaw.toLowerCase();
+  if (firstLine.includes(name.toLowerCase())) return body;
+
+  // If first line is just a greeting (e.g. "Hi," / "Hej"), inject the name there.
+  const greetingOnly = firstLineRaw.match(
+    /^(hi|hello|hey|hej|hola|bonjour|hallo|ciao)[!,.\s]*$/i,
+  );
+  if (greetingOnly) {
+    lines[0] = `${greetingOnly[1]} ${name},`;
+    return lines.join("\n").trim();
+  }
+
+  // If first line starts with a greeting but has no name, normalize it.
+  const greetingStart = firstLineRaw.match(
+    /^(hi|hello|hey|hej|hola|bonjour|hallo|ciao)\b/i,
+  );
+  if (greetingStart && !firstLine.includes(name.toLowerCase())) {
+    lines[0] = `${greetingStart[1]} ${name},`;
+    return lines.join("\n").trim();
+  }
+
+  return `${name},\n\n${body}`;
+};
+
+const applyTrackingClosingByLanguage = (text: string, languageHint: string): string => {
+  const body = String(text || "").trim();
+  if (!body) return body;
+
+  const hint = String(languageHint || "").toLowerCase();
+  const target = hint === "da" ? "God dag." : hint === "en" ? "Have a great day!" : "";
+  if (!target) return body;
+
+  const lines = body.split("\n");
+  let idx = lines.length - 1;
+  while (idx >= 0 && !String(lines[idx] || "").trim()) idx -= 1;
+  if (idx < 0) return body;
+
+  const current = String(lines[idx] || "").trim();
+  if (/^(god dag|have a great day|hav en god dag)[!.]?$/i.test(current)) {
+    lines[idx] = target;
+    return lines.join("\n").trim();
+  }
+
+  return `${body}\n\n${target}`.trim();
 };
 
 const enforceHejGreeting = (text: string, firstName: string) => {
@@ -529,27 +724,20 @@ async function fetchProductContext(
   shopId: string | null,
   text: string,
 ) {
-  if (!supabaseClient || !shopId || !text?.trim()) return "";
+  if (!supabaseClient || !shopId || !text?.trim()) return { hits: [] as ProductMatch[] };
   try {
     const embedding = await embedText(text.slice(0, 4000));
     const { data, error } = await supabaseClient.rpc("match_products", {
       query_embedding: embedding,
-      match_threshold: 0.2,
-      match_count: 5,
+      match_threshold: PRODUCT_MIN_SIMILARITY,
+      match_count: Math.max(1, Math.min(Math.round(MAX_RETRIEVAL_CHUNKS), 10)),
       filter_shop_id: shopId,
     });
-    if (error || !Array.isArray(data) || !data.length) return "";
-    return data
-      .map((item: any) => {
-        const price = item?.price ? `Price: ${item.price}.` : "";
-        return `Product: ${item?.title ?? "Unknown"}. ${price} Details: ${
-          item?.description ?? ""
-        }`;
-      })
-      .join("\n");
+    if (error || !Array.isArray(data) || !data.length) return { hits: [] as ProductMatch[] };
+    return { hits: data as ProductMatch[] };
   } catch (err) {
     console.warn("generate-draft-unified: product context failed", err);
-    return "";
+    return { hits: [] as ProductMatch[] };
   }
 }
 
@@ -570,9 +758,9 @@ async function getAgentContext(
     supabase,
     shopId,
     emailBody ?? "",
-    4,
+    Math.max(1, Math.min(Math.round(MAX_RETRIEVAL_CHUNKS), 10)),
+    KNOWLEDGE_MIN_SIMILARITY,
   );
-  const relevantKnowledge = formatKnowledgeForPrompt(relevantKnowledgeMatches);
   const { orders, matchedSubjectNumber } = await resolveOrderContext({
     supabase,
     userId: ownerUserId,
@@ -591,7 +779,7 @@ async function getAgentContext(
     persona,
     automation,
     policies,
-    relevantKnowledge,
+    relevantKnowledgeMatches,
     orderSummary,
     matchedSubjectNumber,
     orders,
@@ -679,6 +867,34 @@ async function generateBlockedOrderActionReply(options: {
 
   const ai = await callOpenAI(prompt, systemMsg);
   return typeof ai.reply === "string" ? ai.reply.trim() : null;
+}
+
+async function enforceReplyLanguage(
+  customerMessage: string,
+  reply: string,
+  languageHint?: string,
+): Promise<string> {
+  const source = String(customerMessage || "").trim();
+  const draft = String(reply || "").trim();
+  if (!source || !draft) return draft;
+  const system = [
+    "You rewrite customer support drafts.",
+    "Keep the meaning exactly the same.",
+    "Rewrite the draft in the exact same language as the customer message.",
+    languageHint ? `Preferred output language hint: ${languageHint}.` : "",
+    "Do not add signature or extra sections.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const prompt = [
+    "Customer message:",
+    source,
+    "",
+    "Draft to rewrite:",
+    draft,
+  ].join("\n");
+  const ai = await callOpenAI(prompt, system);
+  return ai.reply?.trim() || draft;
 }
 
 // Gmail raw MIME kræver base64url.
@@ -890,16 +1106,58 @@ Deno.serve(async (req) => {
       step_detail: string;
       status: string;
     }> = [];
+
+    let classification: Awaited<ReturnType<typeof classifyEmail>> | null = null;
+    if (CLASSIFY_FIRST) {
+      classification = await classifyEmail({
+        from: emailData.from ?? "",
+        subject: emailData.subject ?? "",
+        body: emailData.body ?? "",
+        headers: emailData.headers ?? [],
+      });
+      if (!classification.process) {
+        emitDebugLog("generate-draft-unified: gatekeeper skip", {
+          reason: classification.reason,
+          category: classification.category,
+        });
+        return new Response(
+          JSON.stringify({
+            success: true,
+            skipped: true,
+            reason: classification.reason,
+            category: classification.category ?? null,
+            explanation: classification.explanation ?? null,
+          }),
+          { status: 200 },
+        );
+      }
+    }
+
     const context = await getAgentContext(
       shopId,
       emailData.fromEmail,
       emailData.subject,
       emailData.body,
     );
-    if (context?.orders?.length) {
-      const order = context.orders[0];
+    const selectedOrder =
+      context?.orders?.length
+        ? (context.matchedSubjectNumber
+            ? context.orders.find((item) => {
+                const candidate = String(context.matchedSubjectNumber || "").replace(/\D/g, "");
+                if (!candidate) return false;
+                const orderNum = String(item?.order_number ?? "").replace(/\D/g, "");
+                const nameDigits = String(item?.name ?? "").replace(/\D/g, "");
+                return orderNum === candidate || nameDigits.endsWith(candidate);
+              })
+            : null) || context.orders[0]
+        : null;
+    if (selectedOrder) {
       const orderLabel =
-        order?.name ?? order?.order_number ?? order?.id ?? context.matchedSubjectNumber ?? "";
+        selectedOrder?.name ??
+        selectedOrder?.order_number ??
+        selectedOrder?.id ??
+        context.matchedSubjectNumber ??
+        "";
       reasoningLogs.push({
         step_name: "Shopify Lookup",
         step_detail: `Found Order ${orderLabel}`.trim(),
@@ -913,12 +1171,14 @@ Deno.serve(async (req) => {
       });
     }
     // Gatekeeper: spring over hvis mailen ikke skal behandles.
-    const classification = await classifyEmail({
-      from: emailData.from ?? "",
-      subject: emailData.subject ?? "",
-      body: emailData.body ?? "",
-      headers: emailData.headers ?? [],
-    });
+    if (!classification) {
+      classification = await classifyEmail({
+        from: emailData.from ?? "",
+        subject: emailData.subject ?? "",
+        body: emailData.body ?? "",
+        headers: emailData.headers ?? [],
+      });
+    }
     if (!classification.process) {
       emitDebugLog("generate-draft-unified: gatekeeper skip", {
         reason: classification.reason,
@@ -938,6 +1198,11 @@ Deno.serve(async (req) => {
 
     const ownerUserId = context.ownerUserId;
     const workspaceId = context.workspaceId;
+    const traceEnabledForRequest =
+      RETRIEVAL_TRACE_ENABLED &&
+      CLASSIFY_FIRST &&
+      classification.process &&
+      shouldSample(RETRIEVAL_TRACE_SAMPLE_RATE);
     const internalThread = await resolveInternalThread(
       ownerUserId,
       workspaceId,
@@ -965,17 +1230,45 @@ Deno.serve(async (req) => {
         );
       }
     }
-    const productContext = await fetchProductContext(
+    const productRetrieval = await fetchProductContext(
       supabase,
       shopId,
       emailData.body || emailData.subject || "",
     );
-    if (productContext?.trim()) {
+    if (productRetrieval.hits.length) {
       reasoningLogs.push({
         step_name: "Product Search",
         step_detail: "Found matching products",
         status: "success",
       });
+    }
+    const trackingIntent = detectTrackingIntent(emailData.subject || "", emailData.body || "");
+    const trackingDetailsByOrderKey = context?.orders?.length
+      ? await fetchTrackingDetailsForOrders(context.orders)
+      : {};
+    if (trackingIntent) {
+      const trackingKey = selectedOrder ? pickOrderTrackingKey(selectedOrder) : null;
+      const selectedTracking = trackingKey ? trackingDetailsByOrderKey[trackingKey] ?? null : null;
+      if (selectedTracking) {
+        reasoningLogs.push({
+          step_name: "carrier_tracking",
+          step_detail: JSON.stringify({
+            detail: `Loaded ${selectedTracking.carrier} tracking status.`,
+            carrier: selectedTracking.carrier,
+            status: selectedTracking.statusText,
+            tracking_number: selectedTracking.trackingNumber,
+            tracking_url: selectedTracking.trackingUrl,
+            source: selectedTracking.source || "shopify",
+          }),
+          status: "success",
+        });
+      } else {
+        reasoningLogs.push({
+          step_name: "carrier_tracking",
+          step_detail: "No live tracking status found.",
+          status: "warning",
+        });
+      }
     }
 
     let learnedStyle = "";
@@ -1003,14 +1296,148 @@ Deno.serve(async (req) => {
       learnedStyle: learnedStyle || null,
       policies: context.policies,
     });
-    const promptSections = [promptBase];
-    if (context.relevantKnowledge?.trim()) {
-      promptSections.push(context.relevantKnowledge);
+    const knowledgeTraceHits = (context.relevantKnowledgeMatches || []).map((match, index) => {
+      const rawMatch = match as Record<string, unknown>;
+      const type = match?.source_type || "snippet";
+      const provider = match?.source_provider ? `, Provider: ${match.source_provider}` : "";
+      const content = String(match?.content || "").trim();
+      const text = content ? `[${index + 1}] (Type: ${type}${provider}) ${content}` : "";
+      const metadata =
+        match?.metadata && typeof match.metadata === "object"
+          ? (match.metadata as Record<string, unknown>)
+          : {};
+      return {
+        knowledge_id: Number(match?.id ?? 0) || null,
+        source_type: type,
+        source_provider: match?.source_provider || "",
+        similarity:
+          Number.isFinite(Number(match?.similarity)) ? Number(match?.similarity) : null,
+        chunk_index:
+          Number.isInteger(Number(rawMatch?.chunk_index)) && Number(rawMatch?.chunk_index) >= 0
+            ? Number(rawMatch?.chunk_index)
+            : Number.isInteger(Number(metadata?.chunk_index)) && Number(metadata?.chunk_index) >= 0
+            ? Number(metadata?.chunk_index)
+            : null,
+        chunk_count:
+          Number.isInteger(Number(rawMatch?.chunk_count)) && Number(rawMatch?.chunk_count) > 0
+            ? Number(rawMatch?.chunk_count)
+            : Number.isInteger(Number(metadata?.chunk_count)) && Number(metadata?.chunk_count) > 0
+            ? Number(metadata?.chunk_count)
+            : null,
+        included: false,
+        approx_tokens: estimateTokens(text),
+        _text: text,
+      };
+    }).filter((hit) => hit._text);
+
+    const productTraceHits = (productRetrieval.hits || []).map((item) => {
+      const price = item?.price ? `Price: ${item.price}.` : "";
+      const text = `Product: ${item?.title ?? "Unknown"}. ${price} Details: ${
+        item?.description ?? ""
+      }`;
+      const similarityRaw = Number(item?.similarity ?? item?.score);
+      return {
+        product_id:
+          String(item?.external_id ?? item?.id ?? "").trim() || null,
+        title: String(item?.title || "").trim() || null,
+        handle: String(item?.handle || "").trim() || null,
+        similarity: Number.isFinite(similarityRaw) ? similarityRaw : null,
+        included: false,
+        approx_tokens: estimateTokens(text),
+        _text: text,
+      };
+    });
+    const trackingTraceHits = Object.entries(trackingDetailsByOrderKey).map(([, detail]) => {
+      const text =
+        `Carrier: ${detail.carrier}. Status: ${detail.statusText}. ` +
+        `Tracking: ${detail.trackingNumber}. Link: ${detail.trackingUrl}`;
+      return {
+        included: false,
+        approx_tokens: estimateTokens(text),
+        _text: text,
+      };
+    });
+
+    const extras: string[] = [];
+    const baseTokens = estimateTokens(promptBase);
+    let remaining = MAX_CONTEXT_TOKENS > 0 ? Math.max(0, MAX_CONTEXT_TOKENS - baseTokens) : Number.POSITIVE_INFINITY;
+    let droppedContextReason: string | null = null;
+
+    const appendSectionWithBudget = (
+      header: string,
+      hits: Array<{ _text: string; included: boolean; approx_tokens: number }>,
+    ) => {
+      if (!hits.length || remaining <= 0) return;
+      const headerTokens = estimateTokens(header);
+      if (headerTokens > remaining) {
+        droppedContextReason = "token_budget";
+        return;
+      }
+
+      const sectionLines: string[] = [header];
+      remaining -= headerTokens;
+      for (const hit of hits) {
+        if (remaining <= 0) {
+          droppedContextReason = "token_budget";
+          break;
+        }
+        const hitTokens = estimateTokens(hit._text);
+        if (hitTokens <= remaining) {
+          sectionLines.push(hit._text);
+          hit.included = true;
+          hit.approx_tokens = hitTokens;
+          remaining -= hitTokens;
+          continue;
+        }
+        const trimmed = truncateToApproxTokens(hit._text, remaining);
+        if (trimmed) {
+          sectionLines.push(trimmed);
+          hit.included = true;
+          hit.approx_tokens = estimateTokens(trimmed);
+          remaining = 0;
+        }
+        droppedContextReason = "token_budget";
+        break;
+      }
+      if (sectionLines.length > 1) {
+        extras.push(sectionLines.join("\n"));
+      }
+    };
+
+    if (MAX_CONTEXT_TOKENS <= 0 || baseTokens < MAX_CONTEXT_TOKENS) {
+      appendSectionWithBudget("LIVE TRACKING:", trackingTraceHits);
+      appendSectionWithBudget("RELEVANT KNOWLEDGE & HISTORY:", knowledgeTraceHits);
+      appendSectionWithBudget("PRODUKTKONTEKST:", productTraceHits);
+    } else {
+      droppedContextReason = "token_budget";
     }
-    if (productContext?.trim()) {
-      promptSections.push(`PRODUKTKONTEKST:\n${productContext}`);
-    }
-    const prompt = promptSections.join("\n\n");
+
+    const prompt = [promptBase, ...extras].join("\n\n");
+    const includedContextTokens = extras.length
+      ? extras.reduce((sum, section) => sum + estimateTokens(section), 0)
+      : 0;
+    const retrievalTracePayload = {
+      knowledge_hits: knowledgeTraceHits.map((hit) => ({
+        knowledge_id: hit.knowledge_id,
+        source_type: hit.source_type,
+        source_provider: hit.source_provider,
+        similarity: hit.similarity,
+        chunk_index: hit.chunk_index,
+        chunk_count: hit.chunk_count,
+        included: hit.included,
+        approx_tokens: hit.approx_tokens,
+      })),
+      product_hits: productTraceHits.map((hit) => ({
+        product_id: hit.product_id,
+        title: hit.title,
+        handle: hit.handle,
+        similarity: hit.similarity,
+        included: hit.included,
+        approx_tokens: hit.approx_tokens,
+      })),
+      included_context_tokens: includedContextTokens,
+      dropped_context_reason: droppedContextReason,
+    };
 
     // Generer reply + actions med OpenAI JSON schema.
     let aiText: string | null = null;
@@ -1032,7 +1459,8 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
           automationGuidance,
           "Ud over forventet svar skal du returnere JSON med 'reply' og 'actions'.",
           "Hvis en handling udføres (f.eks. opdater adresse, annuller ordre, refund, hold, line item edit, opdater kontakt, resend invoice, tilføj note/tag), skal actions-listen indeholde et objekt med type, orderId og payload.",
-          "Tilladte actions: update_shipping_address, cancel_order, refund_order, change_shipping_method, hold_or_release_fulfillment, edit_line_items, update_customer_contact, add_note, add_tag, add_internal_note_or_tag, resend_confirmation_or_invoice.",
+          "Tilladte actions: update_shipping_address, cancel_order, refund_order, change_shipping_method, hold_or_release_fulfillment, edit_line_items, update_customer_contact, add_note, add_tag, add_internal_note_or_tag, resend_confirmation_or_invoice, lookup_order_status, fetch_tracking.",
+          "Ved rene status/tracking-spørgsmål skal du foretrække read-only actions: lookup_order_status og fetch_tracking. Undgå add_note/add_tag medmindre kunden udtrykkeligt beder om en intern note/tag.",
           "For update_shipping_address skal payload.shipping_address mindst indeholde name, address1, city, zip/postal_code og country.",
           "For edit_line_items skal payload.operations bruges med type: set_quantity/remove_line_item/add_variant samt line_item_id/variant_id og quantity.",
           "Afslut ikke med signatur – signaturen tilføjes automatisk senere.",
@@ -1058,6 +1486,32 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
     }
 
     let finalText = stripTrailingSignoff(enforceHejGreeting(aiText.trim(), customerFirstName));
+    if (trackingIntent && selectedOrder) {
+      const trackingKey = pickOrderTrackingKey(selectedOrder);
+      const trackingDetail = trackingKey ? trackingDetailsByOrderKey[trackingKey] ?? null : null;
+      const trackingName =
+        extractOrderFirstName(selectedOrder) || customerFirstName || "there";
+      const customerMessage = `${emailData.subject || ""}\n\n${emailData.body || ""}`.trim();
+      const languageHint = inferLanguageHint(emailData.subject || "", emailData.body || "");
+      const trackingReplyAi = await buildTrackingReplySameLanguage({
+        customerMessage,
+        customerFirstName: trackingName,
+        threadKey: `${internalThread?.id || ""}|${emailData.messageId || ""}`,
+        order: selectedOrder,
+        tracking: trackingDetail,
+      });
+      const baseTrackingText =
+        trackingReplyAi ||
+        buildTrackingReplyFallback({
+          customerFirstName: trackingName,
+          order: selectedOrder,
+          tracking: trackingDetail,
+          threadKey: `${internalThread?.id || ""}|${emailData.messageId || ""}`,
+        });
+      finalText = await enforceReplyLanguage(customerMessage, baseTrackingText, languageHint);
+      finalText = ensureFirstLineHasName(finalText, trackingName);
+      finalText = applyTrackingClosingByLanguage(finalText, languageHint);
+    }
 
     // Render HTML med konsistent styling og line breaks.
     let htmlBody = formatEmailBody(finalText);
@@ -1221,13 +1675,45 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       }
     }
 
+    if (supabase && traceEnabledForRequest && classification.process) {
+      try {
+        const querySource = `${normalizeForHash(emailData.subject || "")}\n${normalizeForHash(
+          emailData.body || "",
+        )}`;
+        const queryHash = await sha256Hex(querySource);
+        const { error: traceError } = await supabase.from("retrieval_traces").insert({
+          workspace_id: workspaceId,
+          shop_id: shopId,
+          draft_id: loggedDraftId != null ? String(loggedDraftId) : (draftId ? String(draftId) : null),
+          thread_id: threadId ? String(threadId) : null,
+          message_id: emailData.messageId ? String(emailData.messageId) : null,
+          category: classification.category ?? null,
+          query_hash: queryHash,
+          context_budget_tokens: MAX_CONTEXT_TOKENS,
+          max_retrieval_chunks: Math.max(1, Math.min(Math.round(MAX_RETRIEVAL_CHUNKS), 10)),
+          knowledge_min_similarity: KNOWLEDGE_MIN_SIMILARITY,
+          product_min_similarity: PRODUCT_MIN_SIMILARITY,
+          included_context_tokens: retrievalTracePayload.included_context_tokens,
+          dropped_context_reason: retrievalTracePayload.dropped_context_reason,
+          data: {
+            knowledge_hits: retrievalTracePayload.knowledge_hits,
+            product_hits: retrievalTracePayload.product_hits,
+          },
+        });
+        if (traceError) {
+          console.warn("generate-draft-unified: retrieval trace insert failed", traceError.message);
+        }
+      } catch (traceErr) {
+        console.warn("generate-draft-unified: retrieval trace failed", traceErr);
+      }
+    }
+
     if (supabase && loggedDraftId && reasoningLogs.length) {
       const now = new Date().toISOString();
-      const threadMarker = threadId ? ` |thread_id:${threadId}` : "";
       const rows = reasoningLogs.map((log) => ({
         draft_id: loggedDraftId,
         step_name: log.step_name,
-        step_detail: `${log.step_detail}${threadMarker}`,
+        step_detail: withThreadMeta(log.step_detail, threadId),
         status: log.status,
         created_at: now,
       }));

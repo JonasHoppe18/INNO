@@ -988,7 +988,6 @@ export async function POST(request, { params }) {
   let updateThreadQuery = serviceClient
     .from("mail_threads")
     .update({
-      last_message_at: nowIso,
       snippet,
       subject: thread.subject ? thread.subject : subject,
       updated_at: nowIso,

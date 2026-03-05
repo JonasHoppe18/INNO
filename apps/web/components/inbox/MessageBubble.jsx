@@ -47,8 +47,14 @@ const sanitizeEmailHtml = (value) => {
     .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
     .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, "")
     .replace(/<link[\s\S]*?>/gi, "")
+    .replace(/<\/?font[^>]*>/gi, "")
+    .replace(/\sstyle=(['"])[\s\S]*?\1/gi, "")
+    .replace(/\sclass=(['"])[\s\S]*?\1/gi, "")
     .replace(/<\/?(html|head|body|meta|title)[^>]*>/gi, "");
 };
+
+const EMAIL_BODY_CLASS =
+  "max-w-none w-full text-[15px] leading-7 text-gray-800 font-[inherit] [&_*]:font-[inherit] [&_*]:text-[15px] [&_*]:leading-7";
 
 export function MessageBubble({
   message,
@@ -171,12 +177,12 @@ export function MessageBubble({
       <div className="p-4 text-gray-800 leading-relaxed">
         {safeBodyHtml ? (
           <div
-            className="prose prose-sm max-w-none w-full text-sm text-gray-800"
+            className={EMAIL_BODY_CLASS}
             dangerouslySetInnerHTML={{ __html: safeBodyHtml }}
           />
         ) : (
           <div
-            className="prose prose-sm max-w-none w-full text-sm text-gray-800"
+            className={EMAIL_BODY_CLASS}
             dangerouslySetInnerHTML={{
               __html: linkifyText(message.body_text || message.snippet || "No preview available."),
             }}

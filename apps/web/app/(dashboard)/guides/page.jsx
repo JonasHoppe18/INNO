@@ -5,6 +5,7 @@ import { DashboardPageShell } from "@/components/dashboard-page-shell";
 import { SonaLogo } from "@/components/ui/SonaLogo";
 import { ExternalLink } from "lucide-react";
 import shopifyLogo from "../../../../../assets/Shopify-Logo.png";
+import webshipperLogo from "../../../../../assets/Webshipper_logo.png";
 import gmailLogo from "../../../../../assets/Gmail-logo.webp";
 import outlookLogo from "../../../../../assets/Outlook-logo.png";
 
@@ -35,6 +36,13 @@ const GUIDES = [
     description: "Connect Shopify and sync orders, customers, and policies.",
     logoSrc: shopifyLogo,
     logoAlt: "Shopify",
+  },
+  {
+    slug: "connect-webshipper",
+    title: "Connect Webshipper",
+    description: "Connect Webshipper and sync shipment and carrier data.",
+    logoSrc: webshipperLogo,
+    logoAlt: "Webshipper",
   },
   {
     slug: "custom-domain",
@@ -84,9 +92,9 @@ export default async function GuidesPage() {
             </div>
             <p className="mt-1 text-sm text-gray-600">{guide.description}</p>
             <a
-              href={`/guide/${guide.slug}`}
+              href={`/guides/${guide.slug}`}
               target="_blank"
-              rel="noreferrer"
+              rel="noopener noreferrer"
               className="mt-auto inline-flex items-center justify-center gap-1.5 self-end rounded-md border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:border-indigo-300 hover:bg-indigo-50"
             >
               Read Guide

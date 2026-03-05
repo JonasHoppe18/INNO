@@ -27,6 +27,8 @@ export const PERSONA_REPLY_JSON_SCHEMA = {
                 "add_tag",
                 "add_internal_note_or_tag",
                 "resend_confirmation_or_invoice",
+                "lookup_order_status",
+                "fetch_tracking",
               ],
             },
             orderId: { type: "number" },

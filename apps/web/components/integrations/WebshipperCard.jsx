@@ -20,13 +20,21 @@ export function WebshipperCard() {
   const resolveScope = useCallback(async () => {
     if (!supabase || !user?.id) return { workspaceId: null, userId: null };
 
+    let authUserId = null;
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      authUserId = authData?.user?.id ?? null;
+    } catch (_error) {
+      authUserId = null;
+    }
+
     const { data: profile } = await supabase
       .from("profiles")
       .select("user_id")
       .eq("clerk_user_id", user.id)
       .maybeSingle();
 
-    const userId = profile?.user_id ?? null;
+    const userId = authUserId ?? profile?.user_id ?? null;
 
     const { data: membership } = await supabase
       .from("workspace_members")

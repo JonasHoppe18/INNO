@@ -318,15 +318,17 @@ export async function fetchRelevantKnowledge(
   shopId: string | null,
   emailBody: string | null,
   limit = 4,
+  minSimilarity = 0,
 ): Promise<KnowledgeMatch[]> {
   if (!supabase || !shopId || !emailBody?.trim()) return [];
 
   const queryEmbedding = await embedKnowledgeQuery(emailBody);
   if (!queryEmbedding) return [];
 
+  const safeLimit = Math.max(1, Math.min(limit, 5));
   const { data, error } = await supabase.rpc("match_agent_knowledge", {
     query_embedding: queryEmbedding,
-    match_count: Math.max(1, Math.min(limit, 5)),
+    match_count: safeLimit,
     filter_shop_id: shopId,
   });
 
@@ -336,7 +338,12 @@ export async function fetchRelevantKnowledge(
   }
 
   if (!Array.isArray(data)) return [];
-  return data as KnowledgeMatch[];
+  const threshold = Number.isFinite(minSimilarity) ? Number(minSimilarity) : 0;
+  const matches = data as KnowledgeMatch[];
+  if (threshold <= 0) return matches.slice(0, safeLimit);
+  return matches
+    .filter((match) => Number(match?.similarity ?? 0) >= threshold)
+    .slice(0, safeLimit);
 }
 
 export function formatKnowledgeForPrompt(matches: KnowledgeMatch[]): string {

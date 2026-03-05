@@ -39,13 +39,21 @@ export function WebshipperSheet({ children, onConnected, initialIntegration = nu
   const resolveScope = useCallback(async () => {
     if (!supabase || !user?.id) return { workspaceId: null, userId: null };
 
+    let authUserId = null;
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      authUserId = authData?.user?.id ?? null;
+    } catch (_error) {
+      authUserId = null;
+    }
+
     const { data: profile } = await supabase
       .from("profiles")
       .select("user_id")
       .eq("clerk_user_id", user.id)
       .maybeSingle();
 
-    const userId = profile?.user_id ?? null;
+    const userId = authUserId ?? profile?.user_id ?? initialIntegration?.user_id ?? null;
 
     const { data: membership } = await supabase
       .from("workspace_members")
@@ -86,8 +94,8 @@ export function WebshipperSheet({ children, onConnected, initialIntegration = nu
       }
 
       const { workspaceId, userId } = await resolveScope();
-      if (!workspaceId && !userId) {
-        throw new Error("Could not resolve workspace/user scope.");
+      if (!userId) {
+        throw new Error("Could not resolve Supabase user id for integration save.");
       }
 
       const payload = {
@@ -96,7 +104,8 @@ export function WebshipperSheet({ children, onConnected, initialIntegration = nu
         credentials_enc: encryptPayload.encryptedToken,
         is_active: true,
         updated_at: new Date().toISOString(),
-        ...(workspaceId ? { workspace_id: workspaceId } : { user_id: userId }),
+        user_id: userId,
+        ...(workspaceId ? { workspace_id: workspaceId } : {}),
       };
 
       const onConflict = workspaceId ? "workspace_id,provider" : "user_id,provider";

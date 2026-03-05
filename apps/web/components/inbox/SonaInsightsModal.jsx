@@ -16,7 +16,19 @@ const stripThreadMeta = (value) =>
 
 const parseLogDetail = (value) => {
   const raw = String(value || "").trim();
-  if (!raw) return { detail: "", threadId: null, orderId: null };
+  if (!raw) {
+    return {
+      detail: "",
+      threadId: null,
+      orderId: null,
+      action: null,
+      trackingStatus: null,
+      trackingCarrier: null,
+      trackingNumber: null,
+      trackingUrl: null,
+      trackingSource: null,
+    };
+  }
   if (raw.startsWith("{") && raw.endsWith("}")) {
     try {
       const parsed = JSON.parse(raw);
@@ -35,12 +47,49 @@ const parseLogDetail = (value) => {
         orderId:
           asString(parsed?.order_id || parsed?.orderId) ||
           (typeof parsed?.orderId === "number" ? String(parsed.orderId) : null),
+        action: asString(parsed?.action || parsed?.actionType) || null,
+        trackingStatus: asString(parsed?.status || parsed?.tracking_status) || null,
+        trackingCarrier: asString(parsed?.carrier) || null,
+        trackingNumber: asString(parsed?.tracking_number || parsed?.trackingNumber) || null,
+        trackingUrl: asString(parsed?.tracking_url || parsed?.trackingUrl) || null,
+        trackingSource: asString(parsed?.source) || null,
       };
     } catch {
-      return { detail: stripThreadMeta(raw), threadId: null, orderId: null };
+      return {
+        detail: stripThreadMeta(raw),
+        threadId: null,
+        orderId: null,
+        action: null,
+        trackingStatus: null,
+        trackingCarrier: null,
+        trackingNumber: null,
+        trackingUrl: null,
+        trackingSource: null,
+      };
     }
   }
-  return { detail: stripThreadMeta(raw), threadId: null, orderId: null };
+  return {
+    detail: stripThreadMeta(raw),
+    threadId: null,
+    orderId: null,
+    action: null,
+    trackingStatus: null,
+    trackingCarrier: null,
+    trackingNumber: null,
+    trackingUrl: null,
+    trackingSource: null,
+  };
+};
+
+const normalizeTrackingStatusLabel = (value) => {
+  const text = asString(value);
+  if (!text) return "";
+  const lower = text.toLowerCase();
+  if (lower.includes("afsendt - følg pakken via tracking-link")) {
+    return "Shipped - follow the parcel via tracking link";
+  }
+  if (lower === "afsendt") return "Shipped";
+  return text;
 };
 
 export function SonaInsightsModal({
@@ -87,16 +136,21 @@ export function SonaInsightsModal({
   }, [draftId, open, threadId]);
 
   const timelineItems = useMemo(() => {
-    const formatTitle = (value) => {
+    const formatTitle = (value, parsed) => {
       const raw = String(value || "").toLowerCase();
       if (!raw) return "Activity";
+      if (raw === "carrier_tracking" || raw === "carrier tracking") return "Carrier Tracking";
       if (raw === "shopify_lookup") return "Shopify Lookup";
       if (raw === "shopify_action") return "Shopify Action";
       if (raw === "shopify_action_applied") return "Shopify Action Applied";
       if (raw === "shopify_action_declined") return "Shopify Action Declined";
       if (raw === "shopify_action_blocked") return "Shopify Action Blocked";
       if (raw === "thread_action_pending") return "Approval Required";
-      if (raw === "thread_action_applied") return "Action Approved";
+      if (raw === "thread_action_applied") {
+        if (parsed?.action === "fetch_tracking") return "Tracking Action";
+        if (parsed?.action === "lookup_order_status") return "Order Status Action";
+        return "Action Approved";
+      }
       if (raw === "thread_action_declined") return "Action Declined";
       if (raw === "thread_action_failed") return "Action Failed";
       if (raw === "context") return "Context";
@@ -108,10 +162,21 @@ export function SonaInsightsModal({
         .replace(/\bai\b/gi, "AI")
         .replace(/\b\w/g, (char) => char.toUpperCase());
     };
-    const formatDetail = (value, name, status) => {
-      if (!value) return "";
-      const parsed = parseLogDetail(value);
+    const formatDetail = (parsed, name, status) => {
+      if (!parsed) return "";
       const step = String(name || "").toLowerCase();
+      if (step === "carrier_tracking" || step === "carrier tracking") {
+        const statusLabel = normalizeTrackingStatusLabel(parsed?.trackingStatus);
+        const chunks = [
+          parsed?.trackingCarrier ? `${parsed.trackingCarrier}` : "",
+          statusLabel || "",
+          parsed?.trackingNumber ? `#${parsed.trackingNumber}` : "",
+          parsed?.trackingUrl || "",
+          parsed?.trackingSource ? `(source: ${parsed.trackingSource})` : "",
+        ].filter(Boolean);
+        if (chunks.length) return chunks.join(" | ");
+        return parsed?.detail || "Loaded live tracking status.";
+      }
       if (step === "postmark_inbound_draft_created" || step === "draft_created") {
         return "Forwarded email draft created.";
       }
@@ -141,21 +206,52 @@ export function SonaInsightsModal({
         return detail || "Shopify action event.";
       }
       if (step.startsWith("thread_action_")) {
+        if (parsed?.action === "fetch_tracking") {
+          return "Tracking lookup executed.";
+        }
+        if (parsed?.action === "lookup_order_status") {
+          return "Order status lookup executed.";
+        }
         return parsed.detail || "Order action event.";
       }
       if (parsed.orderId && !parsed.detail) return `Order ${parsed.orderId}`;
       return parsed.detail || "";
     };
-    return logs.map((log) => ({
-      id: String(log.id),
-      title: formatTitle(log.step_name),
-      statusLabel: formatDetail(log.step_detail, log.step_name, log.status),
-      timestamp: new Date(log.created_at).toLocaleTimeString("da-DK", {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-      status: log.status,
+    const parsedLogs = logs.map((log) => ({
+      log,
+      parsed: parseLogDetail(log.step_detail),
     }));
+
+    const trackingFocused = parsedLogs.some(({ log, parsed }) => {
+      const step = String(log?.step_name || "").toLowerCase();
+      return (
+        step === "carrier_tracking" ||
+        parsed?.action === "fetch_tracking" ||
+        step === "order_status_action"
+      );
+    });
+
+    const visibleLogs = trackingFocused
+      ? parsedLogs.filter(({ log }) => {
+          const step = String(log?.step_name || "").toLowerCase();
+          if (step === "context") return false;
+          if (step.startsWith("shopify_action")) return false;
+          return true;
+        })
+      : parsedLogs;
+
+    return visibleLogs.map(({ log, parsed }) => {
+      return {
+        id: String(log.id),
+        title: formatTitle(log.step_name, parsed),
+        statusLabel: formatDetail(parsed, log.step_name, log.status),
+        timestamp: new Date(log.created_at).toLocaleTimeString("en-GB", {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+        status: log.status,
+      };
+    });
   }, [logs]);
 
   return (
@@ -191,7 +287,7 @@ export function SonaInsightsModal({
                 <ActionsTimeline items={timelineItems} />
               ) : (
                 <div className="text-sm text-slate-500">
-                  Ingen handling nødvendig for denne henvendelse.
+                  No actions required for this conversation.
                 </div>
               )}
             </div>
