@@ -22,6 +22,7 @@ type PostmarkAttachment = {
   ContentType?: string;
   ContentLength?: number;
   ContentID?: string | null;
+  Content?: string;
 };
 
 type MailboxLookup = {
@@ -603,6 +604,11 @@ Deno.serve(async (req) => {
       ? (payload.Attachments as PostmarkAttachment[])
       : [];
     if (attachments.length) {
+      const sanitizeBase64 = (value: unknown): string | null => {
+        const normalized = String(value || "").replace(/\s+/g, "").trim();
+        if (!normalized) return null;
+        return /^[A-Za-z0-9+/=]+$/.test(normalized) ? normalized : null;
+      };
       const rows = attachments.map((att) => ({
         user_id: mailbox!.user_id,
         mailbox_id: mailbox!.mailbox_id,
@@ -612,7 +618,11 @@ Deno.serve(async (req) => {
         filename: att?.Name ?? null,
         mime_type: att?.ContentType ?? null,
         size_bytes: att?.ContentLength ?? null,
-        storage_path: null,
+        storage_path: (() => {
+          const content = sanitizeBase64(att?.Content);
+          const mimeType = String(att?.ContentType || "application/octet-stream").trim();
+          return content ? `inline:${mimeType};base64,${content}` : null;
+        })(),
         created_at: new Date().toISOString(),
       }));
       await supabase.from("mail_attachments").insert(rows);

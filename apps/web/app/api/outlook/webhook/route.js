@@ -12,6 +12,7 @@ const SUPABASE_ANON_KEY =
   process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
   "";
 const INTERNAL_AGENT_SECRET = process.env.INTERNAL_AGENT_SECRET || "";
+const OUTLOOK_POLL_SECRET = process.env.OUTLOOK_POLL_SECRET || "";
 
 export const runtime = "nodejs";
 
@@ -50,27 +51,24 @@ export async function POST(request) {
       continue;
     }
 
-    if (!SUPABASE_BASE_URL || !SUPABASE_ANON_KEY || !INTERNAL_AGENT_SECRET) {
+    if (!SUPABASE_BASE_URL || !SUPABASE_ANON_KEY || !(OUTLOOK_POLL_SECRET || INTERNAL_AGENT_SECRET)) {
       rejected.push({ reason: "missing_supabase_config", userId, messageId });
       continue;
     }
 
     try {
-      const response = await fetch(
-        `${SUPABASE_BASE_URL}/functions/v1/outlook-create-draft-ai`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            apikey: SUPABASE_ANON_KEY,
-            "x-internal-secret": INTERNAL_AGENT_SECRET,
-          },
-          body: JSON.stringify({
-            userId,
-            messageId,
-          }),
-        }
-      );
+      const response = await fetch(`${SUPABASE_BASE_URL}/functions/v1/outlook-poll`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: SUPABASE_ANON_KEY,
+          "x-internal-secret": OUTLOOK_POLL_SECRET || INTERNAL_AGENT_SECRET,
+        },
+        body: JSON.stringify({
+          userId,
+          userLimit: 1,
+        }),
+      });
 
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -83,7 +81,8 @@ export async function POST(request) {
         userId,
         messageId,
         subscriptionId: notification?.subscriptionId,
-        draftId: data?.draftId,
+        polled: true,
+        result: data?.results?.[0] || null,
       });
     } catch (error) {
       console.error("Webhook handling failed:", error);

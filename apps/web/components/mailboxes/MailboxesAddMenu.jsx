@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { ChevronDown, Copy } from "lucide-react";
@@ -112,14 +111,8 @@ export function MailboxesAddMenu() {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
-          <DropdownMenuItem asChild>
-            <Link href="/api/integrations/gmail/auth">Connect Gmail</Link>
-          </DropdownMenuItem>
-          <DropdownMenuItem asChild>
-            <Link href="/api/integrations/outlook/auth">Connect Outlook</Link>
-          </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => setOpen(true)}>
-            Other email
+            Connect mail
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -127,9 +120,9 @@ export function MailboxesAddMenu() {
       <Dialog open={open} onOpenChange={handleClose}>
         <DialogContent className="sm:max-w-[520px]">
           <DialogHeader>
-            <DialogTitle>Connect other email (forwarding)</DialogTitle>
+            <DialogTitle>Connect email (forwarding)</DialogTitle>
             <DialogDescription>
-              Use this if your email provider is not Gmail or Outlook.
+              Use the same forwarding setup for Gmail, Outlook, one.com, Simply, and other providers.
             </DialogDescription>
           </DialogHeader>
 

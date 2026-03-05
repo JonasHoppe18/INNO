@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertDialog,
@@ -15,7 +14,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
@@ -46,21 +44,6 @@ const toggles = [
     label: "Automatic refunds",
     description: "Process small refunds automatically",
     status: "comingSoon",
-  },
-];
-
-const draftDestinations = [
-  {
-    id: "sona_inbox",
-    label: "Sona Inbox",
-    description: "Review and send from Sona.",
-    badge: "Recommended",
-  },
-  {
-    id: "provider_inbox",
-    label: "Your Inbox",
-    description: "Drafts appear in Gmail/Outlook.",
-    badge: "Gmail/Outlook",
   },
 ];
 
@@ -131,34 +114,6 @@ function ToggleRow({
   );
 }
 
-function RadioCard({ id, value, title, description, badge, disabled, active }) {
-  return (
-    <label
-      htmlFor={id}
-      className={cn(
-        "flex items-start gap-3 rounded-xl border p-4 text-sm transition",
-        active
-          ? "border-foreground/60 bg-muted/40"
-          : "border-border bg-background hover:border-foreground/30",
-        disabled && "pointer-events-none opacity-60"
-      )}
-    >
-      <RadioGroupItem id={id} value={value} className="mt-1" disabled={disabled} />
-      <div className="flex-1 space-y-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="font-medium text-foreground">{title}</span>
-          {badge ? (
-            <Badge variant="secondary" className="text-xs">
-              {badge}
-            </Badge>
-          ) : null}
-        </div>
-        <p className="text-sm text-muted-foreground">{description}</p>
-      </div>
-    </label>
-  );
-}
-
 function StickySaveBar({ isDirty, isSaving, onSave, onReset }) {
   if (!isDirty) return null;
   return (
@@ -206,9 +161,6 @@ export function AutomationPanel({ children = null }) {
     }
   }, [loading]);
 
-  const draftDestination =
-    local?.draftDestination ?? settings?.draftDestination ?? "provider_inbox";
-
   // Hver switch får sin egen change handler der opdaterer lokale state felter.
   const handleToggle = useCallback(
     (key) => (next) => {
@@ -233,10 +185,6 @@ export function AutomationPanel({ children = null }) {
         updates.autoDraftEnabled = Boolean(local?.autoDraftEnabled);
       }
 
-      if ((local?.draftDestination ?? settings?.draftDestination) !== settings?.draftDestination) {
-        updates.draftDestination = local?.draftDestination ?? settings?.draftDestination;
-      }
-
       if (Object.keys(updates).length === 0) {
         toast.success("Nothing to save.", { id: toastId });
         return;
@@ -256,10 +204,7 @@ export function AutomationPanel({ children = null }) {
     );
     const draftDirty =
       Boolean(local?.autoDraftEnabled) !== Boolean(settings?.autoDraftEnabled);
-    const destinationDirty =
-      (local?.draftDestination ?? settings?.draftDestination) !==
-      settings?.draftDestination;
-    return baseDirty || draftDirty || destinationDirty;
+    return baseDirty || draftDirty;
   }, [local, settings]);
 
   useEffect(() => {
@@ -319,14 +264,6 @@ export function AutomationPanel({ children = null }) {
   const handleToggleAutoDraft = useCallback((next) => {
     setLocal((s) => ({ ...(s || {}), autoDraftEnabled: Boolean(next) }));
   }, []);
-
-  const handleDestinationPick = useCallback(
-    (next) => {
-      if (!next || next === draftDestination) return;
-      setLocal((s) => ({ ...(s || {}), draftDestination: next }));
-    },
-    [draftDestination]
-  );
 
   const handleResetLearning = useCallback(async () => {
     const toastId = toast.loading("Resetting learning...");
@@ -419,52 +356,6 @@ export function AutomationPanel({ children = null }) {
                 </div>
               }
             />
-
-            <SettingsSection
-              title="Where drafts appear"
-              description="Choose where drafts appear after Sona writes them."
-              note={
-                !isAutoDraftEnabled
-                  ? "Enable Auto-draft to configure these settings."
-                  : "Inbox drafts require Gmail or Outlook connected."
-              }
-            >
-              <RadioGroup
-                value={draftDestination}
-                onValueChange={handleDestinationPick}
-                className="grid gap-3 md:grid-cols-2"
-                disabled={!canEditDependent}
-              >
-                {draftDestinations.map((destination) => {
-                  const isActive = destination.id === draftDestination;
-                  return (
-                    <RadioCard
-                      key={destination.id}
-                      id={`draft-destination-${destination.id}`}
-                      value={destination.id}
-                      title={destination.label}
-                      description={destination.description}
-                      badge={destination.badge}
-                      disabled={!canEditDependent}
-                      active={isActive}
-                    />
-                  );
-                })}
-              </RadioGroup>
-              {draftDestination === "provider_inbox" && (
-                <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <Badge variant="secondary" className="text-xs">
-                    Requires Gmail/Outlook connected
-                  </Badge>
-                  <Link
-                    href="/mailboxes"
-                    className="text-xs font-medium text-foreground underline underline-offset-4"
-                  >
-                    Manage mailboxes
-                  </Link>
-                </div>
-              )}
-            </SettingsSection>
 
             <SettingsSection
               title="What Sona is allowed to do"

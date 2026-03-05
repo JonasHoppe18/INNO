@@ -19,6 +19,7 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const OPENAI_EMBEDDING_MODEL = process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small";
 const SOURCE_PROVIDER = "shopify_variant";
 const MAX_VARIANT_CHUNKS = 8;
+const MAX_DESCRIPTION_CHARS = 2200;
 
 function createServiceClient() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null;
@@ -42,6 +43,21 @@ function chunkText(text, size = 900, overlap = 150) {
     if (chunks.length >= MAX_VARIANT_CHUNKS) break;
   }
   return chunks.filter(Boolean);
+}
+
+function stripHtml(input) {
+  const raw = String(input || "");
+  if (!raw) return "";
+  return raw
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 async function embedTexts(texts) {
@@ -105,7 +121,7 @@ async function fetchProductsWithVariants({ domain, accessToken }) {
     url.searchParams.set("limit", "100");
     url.searchParams.set(
       "fields",
-      "id,title,handle,vendor,product_type,tags,updated_at,variants,options"
+      "id,title,handle,body_html,vendor,product_type,tags,status,published_at,updated_at,variants,options"
     );
     if (sinceId) url.searchParams.set("since_id", String(sinceId));
     const res = await fetch(url.toString(), {
@@ -197,11 +213,22 @@ function buildVariantContext(product, variant) {
     .map((v) => String(v || "").trim())
     .filter(Boolean)
     .join(" / ");
+  const description = stripHtml(product?.body_html).slice(0, MAX_DESCRIPTION_CHARS);
+  const status = String(product?.status || "").trim();
+  const publishedAt = String(product?.published_at || "").trim();
+  const optionNames = Array.isArray(product?.options)
+    ? product.options
+        .map((option) => String(option?.name || "").trim())
+        .filter(Boolean)
+        .join(", ")
+    : "";
 
   const parts = [
     productTitle ? `Product: ${productTitle}` : "",
     variantTitle ? `Variant: ${variantTitle}` : "",
+    description ? `Description: ${description}` : "",
     options ? `Options: ${options}` : "",
+    optionNames ? `Option names: ${optionNames}` : "",
     sku ? `SKU: ${sku}` : "",
     barcode ? `Barcode: ${barcode}` : "",
     price ? `Price: ${price}` : "",
@@ -213,6 +240,8 @@ function buildVariantContext(product, variant) {
     vendor ? `Vendor: ${vendor}` : "",
     productType ? `Type: ${productType}` : "",
     tags ? `Tags: ${tags}` : "",
+    status ? `Status: ${status}` : "",
+    publishedAt ? `Published at: ${publishedAt}` : "",
     productHandle ? `Product URL: /products/${productHandle}` : "",
   ].filter(Boolean);
   return parts.join("\n");

@@ -150,9 +150,13 @@ export function TicketDetail({
           ) : null}
           {messages.map((message) => {
             const direction = isOutboundMessage(message, mailboxEmails) ? "outbound" : "inbound";
-            const messageAttachments = attachments.filter(
+            const persistedAttachments = attachments.filter(
               (attachment) => attachment.message_id === message.id
             );
+            const messageAttachments =
+              persistedAttachments.length || !Array.isArray(message?.attachments)
+                ? persistedAttachments
+                : message.attachments;
             const isDraft = Boolean(message.from_me && message.is_draft);
             const shouldInsertActionCardBeforeMessage =
               shouldShowActionCard &&
@@ -213,9 +217,6 @@ export function TicketDetail({
               onApprove={() => onOrderUpdateDecision?.("accepted")}
               onDecline={() => onOrderUpdateDecision?.("denied")}
             />
-          ) : null}
-          {showThinkingCard ? (
-            <ThinkingCard loading onClick={() => onOpenInsights?.(true)} />
           ) : null}
         </div>
       </div>

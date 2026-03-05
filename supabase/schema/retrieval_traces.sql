@@ -17,8 +17,24 @@ create table if not exists public.retrieval_traces (
   product_min_similarity double precision,
   included_context_tokens integer not null default 0,
   dropped_context_reason text,
+  dropped_context_reasons jsonb not null default '[]'::jsonb,
+  policy_summary_included boolean not null default false,
+  policy_excerpt_included boolean not null default false,
+  policy_summary_tokens integer not null default 0,
   data jsonb not null default '{}'::jsonb
 );
+
+alter table public.retrieval_traces
+  add column if not exists dropped_context_reasons jsonb not null default '[]'::jsonb;
+
+alter table public.retrieval_traces
+  add column if not exists policy_summary_included boolean not null default false;
+
+alter table public.retrieval_traces
+  add column if not exists policy_excerpt_included boolean not null default false;
+
+alter table public.retrieval_traces
+  add column if not exists policy_summary_tokens integer not null default 0;
 
 create index if not exists retrieval_traces_shop_created_idx
   on public.retrieval_traces (shop_id, created_at desc);

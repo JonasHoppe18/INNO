@@ -4,6 +4,7 @@ import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { decryptString } from "@/lib/server/shopify-oauth";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
+import { mapPoliciesFromShopify, summarizePolicies } from "@/lib/server/policy-summary";
 
 const SUPABASE_BASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -74,7 +75,9 @@ async function fetchShopRowService(serviceClient, scope) {
   if (!serviceClient || (!scope?.workspaceId && !scope?.supabaseUserId)) return { data: null, error: null };
   let query = serviceClient
     .from("shops")
-    .select("id, shop_domain, policy_refund, policy_shipping, policy_terms, internal_tone")
+    .select(
+      "id, shop_domain, policy_refund, policy_shipping, policy_terms, policy_privacy, policy_summary_json, policy_summary_version, policy_summary_updated_at, internal_tone"
+    )
     .eq("platform", "shopify")
     .is("uninstalled_at", null)
     .order("created_at", { ascending: false })
@@ -83,19 +86,6 @@ async function fetchShopRowService(serviceClient, scope) {
   const { data, error } = await query.maybeSingle();
   if (error) return { data: null, error };
   return { data, error: null };
-}
-
-function stripHtml(value = "") {
-  if (typeof value !== "string") return "";
-  return value
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/\s+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .replace(/\s{2,}/g, " ")
-    .trim();
 }
 
 async function getShopRecord({ token }) {
@@ -114,6 +104,10 @@ async function getShopRecord({ token }) {
       "policy_refund",
       "policy_shipping",
       "policy_terms",
+      "policy_privacy",
+      "policy_summary_json",
+      "policy_summary_version",
+      "policy_summary_updated_at",
       "internal_tone",
     ].join(",")
   );
@@ -145,39 +139,6 @@ async function getShopRecord({ token }) {
     return { data: null, error: "No Shopify store found. Connect in Integrations first." };
   }
   return { data: record, error: null };
-}
-
-function mapPolicies(policies = []) {
-  const result = {
-    refund: "",
-    shipping: "",
-    terms: "",
-    found: [],
-  };
-
-  policies.forEach((policy) => {
-    const rawType =
-      policy?.policy_type ||
-      policy?.handle ||
-      policy?.title ||
-      "";
-    const normalizedType = String(rawType).toLowerCase();
-    const body = stripHtml(policy?.body_html || policy?.body || "");
-    if (!body) return;
-
-    if (normalizedType.includes("refund")) {
-      result.refund = body;
-      result.found.push("refund");
-    } else if (normalizedType.includes("shipping")) {
-      result.shipping = body;
-      result.found.push("shipping");
-    } else if (normalizedType.includes("terms")) {
-      result.terms = body;
-      result.found.push("terms");
-    }
-  });
-
-  return result;
 }
 
 export async function POST(request) {
@@ -319,7 +280,13 @@ export async function POST(request) {
   }
 
   const policies = Array.isArray(payload?.policies) ? payload.policies : [];
-  const mapped = mapPolicies(policies);
+  const mapped = mapPoliciesFromShopify(policies);
+  const summaryPayload = await summarizePolicies({
+    refundPolicy: mapped.refund || "",
+    shippingPolicy: mapped.shipping || "",
+    termsPolicy: mapped.terms || "",
+    privacyPolicy: mapped.privacy || "",
+  });
 
   let persisted = false;
   if (serviceClient && (scope?.workspaceId || scope?.supabaseUserId) && shop?.id) {
@@ -329,6 +296,10 @@ export async function POST(request) {
         policy_refund: mapped.refund || "",
         policy_shipping: mapped.shipping || "",
         policy_terms: mapped.terms || "",
+        policy_privacy: mapped.privacy || "",
+        policy_summary_json: summaryPayload.summary,
+        policy_summary_version: summaryPayload.version,
+        policy_summary_updated_at: summaryPayload.updated_at,
       })
       .eq("id", shop.id);
     updateQuery = applyScope(updateQuery, scope, { workspaceColumn: "workspace_id", userColumn: "owner_user_id" });
@@ -344,10 +315,19 @@ export async function POST(request) {
     policyCount: policies.length,
     policyTypes: mapped.found,
     persisted,
+    policySummaryVersion: summaryPayload.version,
+    policySummaryFallback: summaryPayload.used_fallback,
   };
 
   return NextResponse.json(
-    { refund: mapped.refund, shipping: mapped.shipping, terms: mapped.terms, meta },
+    {
+      refund: mapped.refund,
+      shipping: mapped.shipping,
+      terms: mapped.terms,
+      privacy: mapped.privacy,
+      policy_summary: summaryPayload.summary,
+      meta,
+    },
     { status: 200 }
   );
 }

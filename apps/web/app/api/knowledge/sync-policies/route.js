@@ -4,6 +4,7 @@ import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { decryptString } from "@/lib/server/shopify-oauth";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
+import { mapPoliciesFromShopify, summarizePolicies } from "@/lib/server/policy-summary";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -225,6 +226,28 @@ async function deleteMissingSources(serviceClient, creds, staleSourceIds) {
 async function syncPolicies({ serviceClient, creds }) {
   const domain = creds.shop_domain.replace(/^https?:\/\//, "");
   const policies = await fetchPolicies({ domain, accessToken: creds.access_token });
+  const mapped = mapPoliciesFromShopify(policies);
+  const summaryPayload = await summarizePolicies({
+    refundPolicy: mapped.refund || "",
+    shippingPolicy: mapped.shipping || "",
+    termsPolicy: mapped.terms || "",
+    privacyPolicy: mapped.privacy || "",
+  });
+  const { error: policyPersistError } = await serviceClient
+    .from("shops")
+    .update({
+      policy_refund: mapped.refund || "",
+      policy_shipping: mapped.shipping || "",
+      policy_terms: mapped.terms || "",
+      policy_privacy: mapped.privacy || "",
+      policy_summary_json: summaryPayload.summary,
+      policy_summary_version: summaryPayload.version,
+      policy_summary_updated_at: summaryPayload.updated_at,
+    })
+    .eq("id", creds.shop_id);
+  if (policyPersistError) {
+    throw new Error(`Could not persist policy summary: ${policyPersistError.message}`);
+  }
   const existing = await loadExistingChunks(serviceClient, creds);
   const seenSourceIds = new Set();
 
@@ -335,6 +358,8 @@ async function syncPolicies({ serviceClient, creds }) {
     unchanged,
     updated_chunks: updatedChunks,
     skipped_chunks: skippedChunks,
+    policy_summary_version: summaryPayload.version,
+    policy_summary_fallback: summaryPayload.used_fallback,
   };
 }
 

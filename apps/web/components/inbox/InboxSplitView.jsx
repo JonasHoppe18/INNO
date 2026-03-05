@@ -531,9 +531,10 @@ const formatPendingOrderUpdateDetail = ({
   return "Sona wants to update the shipping address for this order.";
 };
 
-export function InboxSplitView({ messages = [], threads = [] }) {
+export function InboxSplitView({ messages = [], threads = [], attachments = [] }) {
   const [liveThreads, setLiveThreads] = useState(threads || []);
   const [liveMessages, setLiveMessages] = useState(messages || []);
+  const [liveAttachments, setLiveAttachments] = useState(attachments || []);
   const [selectedThreadId, setSelectedThreadId] = useState(null);
   const [localNewThread, setLocalNewThread] = useState(null);
   const [draftLogLoading, setDraftLogLoading] = useState(false);
@@ -585,6 +586,10 @@ export function InboxSplitView({ messages = [], threads = [] }) {
   }, [messages]);
 
   useEffect(() => {
+    setLiveAttachments(Array.isArray(attachments) ? attachments : []);
+  }, [attachments]);
+
+  useEffect(() => {
     let active = true;
     let polling = false;
     let timerId = null;
@@ -631,6 +636,7 @@ export function InboxSplitView({ messages = [], threads = [] }) {
         const payload = await response.json().catch(() => null);
         const threadRows = Array.isArray(payload?.threads) ? payload.threads : [];
         const messageRows = Array.isArray(payload?.messages) ? payload.messages : [];
+        const attachmentRows = Array.isArray(payload?.attachments) ? payload.attachments : [];
         if (!active) return;
         if (Array.isArray(threadRows)) {
           setLiveThreads((prev) => {
@@ -643,6 +649,9 @@ export function InboxSplitView({ messages = [], threads = [] }) {
             if (messageRows.length > 0) return messageRows;
             return prev.length > 0 ? prev : messageRows;
           });
+        }
+        if (Array.isArray(attachmentRows)) {
+          setLiveAttachments(attachmentRows);
         }
         consecutiveFailures = 0;
         scheduleNext(BASE_POLL_MS);
@@ -1125,7 +1134,14 @@ export function InboxSplitView({ messages = [], threads = [] }) {
     });
   }, [rawThreadMessages]);
 
-  const threadAttachments = useMemo(() => [], []);
+  const threadAttachments = useMemo(() => {
+    if (!selectedThreadId) return [];
+    const messageIdSet = new Set(rawThreadMessages.map((message) => message?.id).filter(Boolean));
+    if (!messageIdSet.size) return [];
+    return (liveAttachments || []).filter((attachment) =>
+      messageIdSet.has(attachment?.message_id)
+    );
+  }, [liveAttachments, rawThreadMessages, selectedThreadId]);
 
   const draftMessage = useMemo(() => {
     const reversed = [...rawThreadMessages].reverse();
@@ -1656,6 +1672,35 @@ export function InboxSplitView({ messages = [], threads = [] }) {
     setIsSending(true);
     const toastId = toast.loading("Sending draft...");
     try {
+      const rawAttachments = Array.isArray(payload?.attachments) ? payload.attachments : [];
+      const serializedAttachments = await Promise.all(
+        rawAttachments.map(async (file) => {
+          if (!file || typeof file.arrayBuffer !== "function") return null;
+          const name = String(file.name || "").trim() || "attachment";
+          const mimeType = String(file.type || "").trim() || "application/octet-stream";
+          const sizeBytes = Number(file.size || 0);
+          if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) return null;
+          if (sizeBytes > 15 * 1024 * 1024) {
+            throw new Error(`Attachment "${name}" is larger than 15 MB.`);
+          }
+          const bytes = new Uint8Array(await file.arrayBuffer());
+          const chunkSize = 0x8000;
+          let binary = "";
+          for (let index = 0; index < bytes.length; index += chunkSize) {
+            const chunk = bytes.subarray(index, Math.min(index + chunkSize, bytes.length));
+            binary += String.fromCharCode(...chunk);
+          }
+          const contentBase64 = btoa(binary);
+          return {
+            filename: name,
+            mime_type: mimeType,
+            size_bytes: sizeBytes,
+            content_base64: contentBase64,
+          };
+        })
+      );
+      const attachmentsPayload = serializedAttachments.filter(Boolean);
+
       const res = await fetch(`/api/threads/${selectedThreadId}/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1665,6 +1710,7 @@ export function InboxSplitView({ messages = [], threads = [] }) {
           to_emails: payload.toRecipients,
           cc_emails: payload.ccRecipients,
           bcc_emails: payload.bccRecipients,
+          attachments: attachmentsPayload,
           sender_name: currentUserName,
           draft_message_id: draftMessage?.id || activeDraftId || null,
         }),
@@ -1674,12 +1720,13 @@ export function InboxSplitView({ messages = [], threads = [] }) {
         throw new Error(data?.error || "Could not send reply.");
       }
       const nowIso = new Date().toISOString();
+      const localMessageId = data?.message_id || `local-sent-${Date.now()}`;
       setLocalSentMessagesByThread((prev) => ({
         ...prev,
         [selectedThreadId]: [
           ...(prev[selectedThreadId] || []),
           {
-            id: data?.message_id || `local-sent-${Date.now()}`,
+            id: localMessageId,
             thread_id: selectedThreadId,
             from_name: currentUserName,
             from_email: mailboxEmails[0] || "",
@@ -1695,6 +1742,13 @@ export function InboxSplitView({ messages = [], threads = [] }) {
             sent_at: nowIso,
             received_at: null,
             created_at: nowIso,
+            attachments: attachmentsPayload.map((attachment, index) => ({
+              id: `local-attachment-${Date.now()}-${index}`,
+              message_id: localMessageId,
+              filename: attachment.filename,
+              mime_type: attachment.mime_type,
+              size_bytes: attachment.size_bytes,
+            })),
           },
         ],
       }));
@@ -1910,6 +1964,23 @@ export function InboxSplitView({ messages = [], threads = [] }) {
     selectedThreadId,
   ]);
 
+  const latestThreadMessage = useMemo(
+    () => (threadMessages.length ? threadMessages[threadMessages.length - 1] : null),
+    [threadMessages]
+  );
+  const latestMessageIsInbound = latestThreadMessage
+    ? !isOutboundMessage(latestThreadMessage, mailboxEmails)
+    : false;
+
+  const isDraftGenerating =
+    Boolean(selectedThreadId) &&
+    !isLocalThreadId(selectedThreadId) &&
+    latestMessageIsInbound &&
+    !draftMessage &&
+    !aiDraft &&
+    !draftValue.trim() &&
+    !suppressAutoDraftByThread[selectedThreadId];
+
   return (
     <div className="flex h-full flex-1 flex-col overflow-hidden bg-background lg:flex-row">
       <TicketList
@@ -1934,16 +2005,7 @@ export function InboxSplitView({ messages = [], threads = [] }) {
         ticketState={ticketStateByThread[selectedThreadId] || DEFAULT_TICKET_STATE}
         onTicketStateChange={handleTicketStateChange}
         onOpenInsights={() => setInsightsOpen(true)}
-        showThinkingCard={
-          Boolean(selectedThreadId) &&
-          !isLocalThreadId(selectedThreadId) &&
-          threadMessages.some((message) => !isOutboundMessage(message, mailboxEmails)) &&
-          !draftReady &&
-          !draftMessage &&
-          !aiDraft &&
-          !draftValue.trim() &&
-          !suppressAutoDraftByThread[selectedThreadId]
-        }
+        showThinkingCard={isDraftGenerating}
         draftValue={draftValue}
         onDraftChange={handleDraftChange}
         signatureValue={selectedThreadId ? signatureByThread[selectedThreadId] || "" : ""}

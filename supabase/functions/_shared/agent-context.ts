@@ -19,6 +19,10 @@ export type Policies = {
   policy_refund: string;
   policy_shipping: string;
   policy_terms: string;
+  policy_privacy: string;
+  policy_summary_json: Record<string, unknown> | null;
+  policy_summary_version: number;
+  policy_summary_updated_at: string | null;
   internal_tone: string;
 };
 
@@ -52,13 +56,17 @@ export const DEFAULT_AUTOMATION: Automation = {
   automatic_refunds: false,
   historic_inbox_access: false,
   learn_from_edits: false,
-  draft_destination: "email_provider",
+  draft_destination: "sona_inbox",
 };
 
 export const DEFAULT_POLICIES: Policies = {
   policy_refund: "",
   policy_shipping: "",
   policy_terms: "",
+  policy_privacy: "",
+  policy_summary_json: null,
+  policy_summary_version: 0,
+  policy_summary_updated_at: null,
   internal_tone: "",
 };
 
@@ -230,7 +238,9 @@ export async function fetchPolicies(
   if (workspaceId) {
     const { data: workspaceData, error: workspaceError } = await supabase
       .from("shops")
-      .select("policy_refund,policy_shipping,policy_terms,internal_tone")
+      .select(
+        "policy_refund,policy_shipping,policy_terms,policy_privacy,policy_summary_json,policy_summary_version,policy_summary_updated_at,internal_tone",
+      )
       .eq("workspace_id", workspaceId)
       .is("uninstalled_at", null)
       .order("created_at", { ascending: false })
@@ -246,7 +256,9 @@ export async function fetchPolicies(
   if (!data && userId) {
     const { data: userData, error } = await supabase
       .from("shops")
-      .select("policy_refund,policy_shipping,policy_terms,internal_tone")
+      .select(
+        "policy_refund,policy_shipping,policy_terms,policy_privacy,policy_summary_json,policy_summary_version,policy_summary_updated_at,internal_tone",
+      )
       .eq("owner_user_id", userId)
       .order("created_at", { ascending: false })
       .limit(1)
@@ -262,6 +274,19 @@ export async function fetchPolicies(
     policy_refund: data?.policy_refund ?? DEFAULT_POLICIES.policy_refund,
     policy_shipping: data?.policy_shipping ?? DEFAULT_POLICIES.policy_shipping,
     policy_terms: data?.policy_terms ?? DEFAULT_POLICIES.policy_terms,
+    policy_privacy: data?.policy_privacy ?? DEFAULT_POLICIES.policy_privacy,
+    policy_summary_json:
+      data?.policy_summary_json && typeof data.policy_summary_json === "object"
+        ? data.policy_summary_json
+        : DEFAULT_POLICIES.policy_summary_json,
+    policy_summary_version:
+      Number.isInteger(Number(data?.policy_summary_version))
+        ? Number(data.policy_summary_version)
+        : DEFAULT_POLICIES.policy_summary_version,
+    policy_summary_updated_at:
+      typeof data?.policy_summary_updated_at === "string"
+        ? data.policy_summary_updated_at
+        : DEFAULT_POLICIES.policy_summary_updated_at,
     internal_tone: data?.internal_tone ?? DEFAULT_POLICIES.internal_tone,
   };
 }

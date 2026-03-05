@@ -15,6 +15,12 @@ type MailPromptOptions = {
     policy_terms?: string;
     internal_tone?: string;
   } | null;
+  policySummary?: string | null;
+  policyExcerpt?: string | null;
+  policyRules?: string | null;
+  policyIntent?: string | null;
+  returnDetailsFound?: string | null;
+  returnDetailsMissing?: string[] | null;
 
   /**
    * Optional: Bruges kun til at tillade tidskorrekte afslutninger som "God weekend".
@@ -58,12 +64,46 @@ export function buildMailPrompt({
   extraContext,
   learnedStyle,
   policies,
+  policySummary: policySummaryInput,
+  policyExcerpt: policyExcerptInput,
+  policyRules: policyRulesInput,
+  policyIntent,
+  returnDetailsFound,
+  returnDetailsMissing,
   nowIso,
 }: MailPromptOptions): string {
   const refundPolicy = policies?.policy_refund?.trim();
   const shippingPolicy = policies?.policy_shipping?.trim();
   const termsPolicy = policies?.policy_terms?.trim();
   const internalTone = policies?.internal_tone?.trim();
+  const policySummary = String(policySummaryInput || "").trim();
+  const policyExcerpt = String(policyExcerptInput || "").trim();
+  const policyRules = String(policyRulesInput || "").trim();
+  const returnDetailsFoundText = String(returnDetailsFound || "").trim();
+  const normalizedIntent = String(policyIntent || "").toUpperCase();
+  const isReturnIntent = normalizedIntent === "RETURN" || normalizedIntent === "REFUND";
+  const missingDetails = Array.isArray(returnDetailsMissing)
+    ? returnDetailsMissing.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+  const allReturnDetailsPresent = isReturnIntent && missingDetails.length === 0;
+  const returnMissingLabel = missingDetails.length
+    ? missingDetails.join(", ")
+    : "none";
+  const returnWorkflowBlock = isReturnIntent
+    ? [
+        "RETURNS WORKFLOW (PINNED):",
+        "- If policy references a support email/contact-us-by-email requirement, do NOT ask them to email again when they already contacted us in this thread.",
+        "- Never write 'email us' / 'contact us by email' instructions in this thread. This thread is already the contact channel.",
+        "- Use short natural paragraphs only. Do not use numbered steps or a 'follow these steps' guide format.",
+        "- Confirm return conditions from policy summary/excerpts (window, item condition, and who pays return shipping).",
+        "- Ask only for missing details: order_number, name_used_at_purchase, reason.",
+        "- If RETURN DETAILS FOUND contains an order_number, do not ask for order number again.",
+        allReturnDetailsPresent
+          ? "- All required details are already present. Do not ask for them again and do not add extra questions. Confirm next steps (packaging guidance, shipping payer, and return address if available in policy summary)."
+          : `- Missing details detected: ${returnMissingLabel}. Ask only for these missing items in one concise sentence.`,
+        "- Do not invent return portal URLs, labels, or process steps not present in policy context.",
+      ].join("\n")
+    : "";
 
   const customerFirstName = firstNameOrNull(customerName);
   const dayCtx = safeDayContext(nowIso);
@@ -90,11 +130,17 @@ ${matchedSubjectNumber ? `Note: Kunden har nævnt ordrenummer #${matchedSubjectN
 ${customerName ? `Kundens navn: ${customerName}` : "Kundens navn: ukendt"}
 ${timeContextLine}
 ${extraContext ? `Ekstra viden: ${extraContext}` : ""}
+${policyRules ? `${policyRules}` : ""}
 ${
-  refundPolicy || shippingPolicy || termsPolicy
+  policySummary
+    ? `${policySummary}`
+    : refundPolicy || shippingPolicy || termsPolicy
     ? `POLITIKKER:\n- Retur: ${refundPolicy || "ukendt"}\n- Fragt: ${shippingPolicy || "ukendt"}\n- Handelsbetingelser: ${termsPolicy || "ukendt"}`
     : "POLITIKKER: ingen angivet. Lav et standard svar uden at love noget konkret."
 }
+${policyExcerpt ? `${policyExcerpt}` : ""}
+${returnDetailsFoundText ? `${returnDetailsFoundText}` : ""}
+${returnWorkflowBlock ? `${returnWorkflowBlock}` : ""}
 ${internalTone ? `INTERNE REGLER (DEL IKKE ORDRET): ${internalTone}` : ""}
 
 --- TONEN (VIGTIGT) ---

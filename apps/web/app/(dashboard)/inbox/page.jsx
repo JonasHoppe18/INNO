@@ -103,6 +103,23 @@ async function loadThreads(serviceClient, scope, mailboxIds) {
   return Array.isArray(data) ? data : [];
 }
 
+async function loadAttachments(serviceClient, scope, mailboxIds, messageIds) {
+  if (!messageIds.length) return [];
+  const { data, error } = await applyScope(
+    serviceClient
+      .from("mail_attachments")
+      .select(
+        "id, user_id, mailbox_id, message_id, provider, provider_attachment_id, filename, mime_type, size_bytes, storage_path, created_at"
+      )
+      .in("mailbox_id", mailboxIds)
+      .in("message_id", messageIds),
+    scope,
+    { workspaceColumn: null, userColumn: "user_id" }
+  );
+  if (error) throw new Error(error.message);
+  return Array.isArray(data) ? data : [];
+}
+
 const NEWSLETTER_SUBJECT_PATTERNS = [
   /unsubscribe/i,
   /newsletter/i,
@@ -156,6 +173,7 @@ export default async function InboxPage({ searchParams }) {
   let mailboxes = [];
   let messages = [];
   let threads = [];
+  let attachments = [];
 
   if (serviceClient) {
     try {
@@ -169,6 +187,10 @@ export default async function InboxPage({ searchParams }) {
             query,
             unreadOnly,
           });
+          const messageIds = messages.map((message) => message.id).filter(Boolean);
+          if (messageIds.length) {
+            attachments = await loadAttachments(serviceClient, scope, mailboxIds, messageIds);
+          }
         }
       }
     } catch (error) {
@@ -194,5 +216,10 @@ export default async function InboxPage({ searchParams }) {
 
   const visibleMessages = messages.filter((message) => !shouldHideFromInbox(message));
 
-  return <InboxPageClient threads={threads} messages={visibleMessages} />;
+  const visibleMessageIds = visibleMessages.map((message) => message.id).filter(Boolean);
+  const visibleAttachments = attachments.filter((attachment) =>
+    visibleMessageIds.includes(attachment.message_id)
+  );
+
+  return <InboxPageClient threads={threads} messages={visibleMessages} attachments={visibleAttachments} />;
 }

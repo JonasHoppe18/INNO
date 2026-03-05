@@ -35,7 +35,7 @@ export async function resolveAuthScope(serviceClient, { clerkUserId, orgId }) {
 }
 
 export function applyScope(query, scope, { workspaceColumn = "workspace_id", userColumn = "user_id" } = {}) {
-  if (scope?.workspaceId) {
+  if (scope?.workspaceId && workspaceColumn) {
     return query.eq(workspaceColumn, scope.workspaceId);
   }
   if (scope?.supabaseUserId && userColumn) {

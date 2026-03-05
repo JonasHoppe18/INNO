@@ -11,31 +11,33 @@ import outlookLogo from "../../../../../assets/Outlook-logo.png";
 const GUIDE_CONTENT = {
   "connect-gmail": {
     title: "Connect Gmail",
-    intro: "Authorize Gmail with Google OAuth and start syncing inbox activity.",
+    intro: "Use forwarding in Gmail/Google Workspace so emails arrive in Sona Inbox.",
     logoSrc: gmailLogo,
     logoAlt: "Gmail",
     steps: [
       "Go to Mailboxes in Sona.",
-      "Click “Connect Gmail”.",
-      "Choose your Gmail account and approve permissions.",
-      "Return to Sona and wait for sync to finish.",
+      "Create a forwarding mailbox in Sona.",
+      "Copy your forwarding address from Sona.",
+      "Add a forwarding rule in Gmail or Google Workspace to send inbound support emails to that address.",
+      "Return to Sona and verify that new emails appear in Sona Inbox.",
     ],
   },
   "connect-outlook": {
     title: "Connect Outlook",
-    intro: "Authorize Outlook with Microsoft OAuth and start syncing inbox activity.",
+    intro: "Use forwarding in Outlook/Microsoft 365 so emails arrive in Sona Inbox.",
     logoSrc: outlookLogo,
     logoAlt: "Outlook",
     steps: [
       "Go to Mailboxes in Sona.",
-      "Click “Connect Outlook”.",
-      "Choose your Outlook account and approve permissions.",
-      "Return to Sona and wait for sync to finish.",
+      "Create a forwarding mailbox in Sona.",
+      "Copy your forwarding address from Sona.",
+      "Add a forwarding rule in Outlook or Microsoft 365 to send inbound support emails to that address.",
+      "Return to Sona and verify that new emails appear in Sona Inbox.",
     ],
   },
   "other-mail": {
     title: "Other mail",
-    intro: "Use forwarding when you are not connecting Gmail or Outlook directly.",
+    intro: "Use forwarding to connect any provider, including Gmail and Outlook.",
     steps: [
       "Create a forwarding address in your email provider.",
       "Forward inbound emails to your Sona address.",

@@ -56,7 +56,7 @@ const DEFAULT_AUTOMATION = {
   historicInboxAccess: false,
   learnFromEdits: false,
   autoDraftEnabled: false,
-  draftDestination: "provider_inbox",
+  draftDestination: "sona_inbox",
   minConfidence: 0.6,
 };
 
@@ -156,12 +156,7 @@ export function useAgentAutomation(options = {}) {
       historicInboxAccess: row.historic_inbox_access ?? DEFAULT_AUTOMATION.historicInboxAccess,
       learnFromEdits: row.learn_from_edits ?? DEFAULT_AUTOMATION.learnFromEdits,
       autoDraftEnabled: row.auto_draft_enabled ?? DEFAULT_AUTOMATION.autoDraftEnabled,
-      draftDestination:
-        row.draft_destination === "sona_inbox"
-          ? "sona_inbox"
-          : row.draft_destination === "provider_inbox" || row.draft_destination === "email_provider"
-            ? "provider_inbox"
-            : DEFAULT_AUTOMATION.draftDestination,
+      draftDestination: "sona_inbox",
       minConfidence: row.min_confidence ?? DEFAULT_AUTOMATION.minConfidence,
     };
   }, []);
@@ -219,7 +214,7 @@ export function useAgentAutomation(options = {}) {
           historic_inbox_access: updates.historicInboxAccess ?? settings.historicInboxAccess,
           learn_from_edits: updates.learnFromEdits ?? settings.learnFromEdits,
           auto_draft_enabled: updates.autoDraftEnabled ?? settings.autoDraftEnabled,
-          draft_destination: updates.draftDestination ?? settings.draftDestination,
+          draft_destination: "sona_inbox",
           min_confidence: updates.minConfidence ?? settings.minConfidence,
           updated_at: new Date().toISOString(),
         };

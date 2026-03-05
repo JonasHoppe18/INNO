@@ -386,18 +386,99 @@ function toBase64Url(input) {
     .replace(/=+$/g, "");
 }
 
-function buildRawEmail({ from, to, cc, bcc, subject, bodyText, inReplyTo }) {
+function chunkBase64(input, lineLength = 76) {
+  const value = String(input || "");
+  if (!value) return "";
+  const chunks = [];
+  for (let index = 0; index < value.length; index += lineLength) {
+    chunks.push(value.slice(index, index + lineLength));
+  }
+  return chunks.join("\r\n");
+}
+
+function sanitizeBase64(input) {
+  const value = String(input || "").replace(/\s+/g, "");
+  if (!value) return "";
+  if (!/^[A-Za-z0-9+/=]+$/.test(value)) {
+    throw new Error("Attachment content must be valid base64.");
+  }
+  return value;
+}
+
+function buildRawEmail({ from, to, cc, bcc, subject, bodyText, bodyHtml, inReplyTo, attachments }) {
+  const safeAttachments = Array.isArray(attachments) ? attachments : [];
+  const hasAttachments = safeAttachments.length > 0;
+  const hasHtml = Boolean(String(bodyHtml || "").trim());
   const headers = [];
   headers.push(`From: ${from}`);
   headers.push(`To: ${to.join(", ")}`);
   if (cc?.length) headers.push(`Cc: ${cc.join(", ")}`);
   if (bcc?.length) headers.push(`Bcc: ${bcc.join(", ")}`);
   headers.push(`Subject: ${subject}`);
-  headers.push(`MIME-Version: 1.0`);
-  headers.push(`Content-Type: text/plain; charset="UTF-8"`);
-  headers.push(`Content-Transfer-Encoding: 7bit`);
   if (inReplyTo) headers.push(`In-Reply-To: ${inReplyTo}`);
-  const raw = `${headers.join("\r\n")}\r\n\r\n${bodyText}`;
+  headers.push("MIME-Version: 1.0");
+
+  const plainBody = String(bodyText || "");
+  const htmlBody = String(bodyHtml || "");
+  const plainBodyBase64 = chunkBase64(Buffer.from(plainBody, "utf-8").toString("base64"));
+  const htmlBodyBase64 = chunkBase64(Buffer.from(htmlBody, "utf-8").toString("base64"));
+
+  if (!hasAttachments && !hasHtml) {
+    headers.push(`Content-Type: text/plain; charset="UTF-8"`);
+    headers.push(`Content-Transfer-Encoding: base64`);
+    const raw = `${headers.join("\r\n")}\r\n\r\n${plainBodyBase64}`;
+    return toBase64Url(raw);
+  }
+
+  const mixedBoundary = `mix_${crypto.randomBytes(12).toString("hex")}`;
+  const altBoundary = `alt_${crypto.randomBytes(12).toString("hex")}`;
+  const lines = [...headers];
+
+  if (hasAttachments) {
+    lines.push(`Content-Type: multipart/mixed; boundary="${mixedBoundary}"`);
+    lines.push("");
+    lines.push(`--${mixedBoundary}`);
+  } else {
+    lines.push(`Content-Type: multipart/alternative; boundary="${altBoundary}"`);
+    lines.push("");
+  }
+
+  lines.push(`Content-Type: multipart/alternative; boundary="${altBoundary}"`);
+  lines.push("");
+  lines.push(`--${altBoundary}`);
+  lines.push(`Content-Type: text/plain; charset="UTF-8"`);
+  lines.push(`Content-Transfer-Encoding: base64`);
+  lines.push("");
+  lines.push(plainBodyBase64);
+
+  if (hasHtml) {
+    lines.push(`--${altBoundary}`);
+    lines.push(`Content-Type: text/html; charset="UTF-8"`);
+    lines.push(`Content-Transfer-Encoding: base64`);
+    lines.push("");
+    lines.push(htmlBodyBase64);
+  }
+
+  lines.push(`--${altBoundary}--`);
+
+  if (hasAttachments) {
+    safeAttachments.forEach((attachment, index) => {
+      const filename = String(attachment?.filename || "").trim() || `attachment-${index + 1}`;
+      const mimeType =
+        String(attachment?.mime_type || "").trim() || "application/octet-stream";
+      const content = chunkBase64(sanitizeBase64(attachment?.content_base64));
+      lines.push("");
+      lines.push(`--${mixedBoundary}`);
+      lines.push(`Content-Type: ${mimeType}; name="${filename}"`);
+      lines.push(`Content-Disposition: attachment; filename="${filename}"`);
+      lines.push("Content-Transfer-Encoding: base64");
+      lines.push("");
+      lines.push(content);
+    });
+    lines.push(`--${mixedBoundary}--`);
+  }
+
+  const raw = lines.join("\r\n");
   return toBase64Url(raw);
 }
 
@@ -467,6 +548,7 @@ async function sendViaPostmark({
   references,
   replyTo,
   fromDisplay,
+  attachments,
 }) {
   const headers = [];
   if (inReplyTo) headers.push({ Name: "In-Reply-To", Value: inReplyTo });
@@ -482,6 +564,13 @@ async function sendViaPostmark({
     TextBody: textBody || undefined,
     HtmlBody: htmlBody || undefined,
     Headers: headers.length ? headers : undefined,
+    Attachments: Array.isArray(attachments) && attachments.length
+      ? attachments.map((attachment, index) => ({
+          Name: String(attachment?.filename || "").trim() || `attachment-${index + 1}`,
+          Content: sanitizeBase64(attachment?.content_base64),
+          ContentType: String(attachment?.mime_type || "").trim() || "application/octet-stream",
+        }))
+      : undefined,
   });
 }
 
@@ -617,6 +706,38 @@ export async function POST(request, { params }) {
   if (!bodyText && !bodyHtml) {
     return NextResponse.json({ error: "body_text is required." }, { status: 400 });
   }
+  const requestedAttachments = Array.isArray(body?.attachments) ? body.attachments : [];
+  if (requestedAttachments.length > 10) {
+    return NextResponse.json({ error: "Maximum 10 attachments per reply." }, { status: 400 });
+  }
+  const attachmentsPayload = [];
+  for (const attachment of requestedAttachments) {
+    const filename = String(attachment?.filename || "").trim();
+    const mimeType =
+      String(attachment?.mime_type || "").trim() || "application/octet-stream";
+    const sizeBytes = Number(attachment?.size_bytes || 0);
+    const contentBase64 = String(attachment?.content_base64 || "").trim();
+    if (!filename || !contentBase64 || !Number.isFinite(sizeBytes) || sizeBytes <= 0) {
+      return NextResponse.json({ error: "Invalid attachment payload." }, { status: 400 });
+    }
+    if (sizeBytes > 15 * 1024 * 1024) {
+      return NextResponse.json(
+        { error: `Attachment "${filename}" exceeds the 15 MB limit.` },
+        { status: 400 }
+      );
+    }
+    try {
+      sanitizeBase64(contentBase64);
+    } catch {
+      return NextResponse.json({ error: `Attachment "${filename}" has invalid content.` }, { status: 400 });
+    }
+    attachmentsPayload.push({
+      filename,
+      mime_type: mimeType,
+      size_bytes: sizeBytes,
+      content_base64: contentBase64,
+    });
+  }
 
   let scope = null;
   try {
@@ -664,8 +785,7 @@ export async function POST(request, { params }) {
   automationQuery = applyScope(automationQuery, scope);
   const { data: automationSettings } = await automationQuery.maybeSingle();
   const learnFromEdits = automationSettings?.learn_from_edits === true;
-  const draftDestinationSetting =
-    automationSettings?.draft_destination === "sona_inbox" ? "sona_inbox" : "email_provider";
+  const draftDestinationSetting = "sona_inbox";
 
   let aiDraftText = "";
   if (learnFromEdits && draftDestinationSetting === "sona_inbox" && (scope?.workspaceId || supabaseUserId)) {
@@ -746,6 +866,7 @@ export async function POST(request, { params }) {
         references,
         replyTo: mailbox.provider_email || undefined,
         fromDisplay: senderConfig.fromDisplay,
+        attachments: attachmentsPayload,
       });
       providerMessageId = postmarkResponse?.MessageID || null;
 
@@ -765,7 +886,9 @@ export async function POST(request, { params }) {
         bcc: bccEmails,
         subject,
         bodyText: finalBodyText,
+        bodyHtml: bodyHtml || null,
         inReplyTo: inboundMessage?.provider_message_id || null,
+        attachments: attachmentsPayload,
       });
       const payload = await sendGmail({
         token,
@@ -791,6 +914,12 @@ export async function POST(request, { params }) {
                 },
               ]
             : [],
+          attachments: attachmentsPayload.map((attachment) => ({
+            "@odata.type": "#microsoft.graph.fileAttachment",
+            name: attachment.filename,
+            contentType: attachment.mime_type,
+            contentBytes: attachment.content_base64,
+          })),
         };
         const useReply = Boolean(inboundMessage?.provider_message_id) && !toEmails.length;
         const payload = await sendOutlook({
@@ -955,6 +1084,51 @@ export async function POST(request, { params }) {
     );
   }
 
+  if (insertedMessage?.id) {
+    let clearExistingAttachmentsQuery = serviceClient
+      .from("mail_attachments")
+      .delete()
+      .eq("message_id", insertedMessage.id);
+    clearExistingAttachmentsQuery = applyScope(clearExistingAttachmentsQuery, scope, {
+      workspaceColumn: null,
+      userColumn: "user_id",
+    });
+    await clearExistingAttachmentsQuery;
+
+    if (attachmentsPayload.length) {
+      const attachmentRows = attachmentsPayload.map((attachment) => ({
+        user_id: supabaseUserId,
+        mailbox_id: mailbox.id,
+        message_id: insertedMessage.id,
+        provider: mailbox.provider,
+        provider_attachment_id: null,
+        filename: attachment.filename,
+        mime_type: attachment.mime_type,
+        size_bytes: attachment.size_bytes,
+        storage_path: `inline:${attachment.mime_type};base64,${sanitizeBase64(
+          attachment.content_base64
+        )}`,
+        created_at: nowIso,
+      }));
+      const { error: attachmentInsertError } = await serviceClient
+        .from("mail_attachments")
+        .insert(attachmentRows);
+      if (attachmentInsertError) {
+        await logAgent(serviceClient, {
+          provider: mailbox.provider,
+          threadId,
+          error: attachmentInsertError.message,
+        });
+        return NextResponse.json(
+          {
+            error: "Email was sent, but attachments could not be saved. Please try again.",
+          },
+          { status: 500 }
+        );
+      }
+    }
+  }
+
   // Ensure stale unsent drafts are removed after successful send.
   if (insertedMessage?.id) {
     let staleDraftDeleteQuery = serviceClient
@@ -1074,6 +1248,7 @@ export async function POST(request, { params }) {
       message_id: insertedMessage?.id ?? null,
       provider_message_id: persistedProviderMessageId,
       provider: mailbox.provider,
+      attachment_count: attachmentsPayload.length,
     },
     { status: 200 }
   );

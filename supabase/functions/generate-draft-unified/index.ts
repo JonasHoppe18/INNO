@@ -15,6 +15,14 @@ import { PERSONA_REPLY_JSON_SCHEMA } from "../_shared/openai-schema.ts";
 import { buildOrderSummary, resolveOrderContext } from "../_shared/shopify.ts";
 import { buildMailPrompt } from "../_shared/prompt.ts";
 import { formatEmailBody } from "../_shared/email.ts";
+import { buildPinnedPolicyContext } from "../_shared/policy-context.ts";
+import {
+  applyMatchedSubjectOrderNumber,
+  buildReturnDetailsFoundBlock,
+  extractReturnDetails,
+  isReturnReasonRequiredByPolicy,
+  missingReturnDetails,
+} from "../_shared/return-details.ts";
 import { fetchTrackingDetailsForOrders } from "../_shared/tracking.ts";
 import {
   buildTrackingReplyFallback,
@@ -23,8 +31,6 @@ import {
   pickOrderTrackingKey,
 } from "../_shared/tracking-reply.ts";
 
-const GMAIL_BASE = "https://gmail.googleapis.com/gmail/v1/users/me";
-const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 
 const PROJECT_URL = Deno.env.get("PROJECT_URL") ?? Deno.env.get("SUPABASE_URL");
 const SERVICE_ROLE_KEY =
@@ -74,6 +80,10 @@ const MAX_RETRIEVAL_CHUNKS = readEnvNumber("MAX_RETRIEVAL_CHUNKS", 4, {
 const MAX_CONTEXT_TOKENS = readEnvNumber("MAX_CONTEXT_TOKENS", 3500, {
   min: 0,
 });
+const POLICY_RESERVED_TOKENS = readEnvNumber("POLICY_RESERVED_TOKENS", 600, {
+  min: 400,
+  max: 800,
+});
 const CLASSIFY_FIRST = readEnvFlag("CLASSIFY_FIRST", true);
 const RETRIEVAL_TRACE_ENABLED = readEnvFlag("RETRIEVAL_TRACE_ENABLED", false);
 const RETRIEVAL_TRACE_SAMPLE_RATE = readEnvNumber(
@@ -81,6 +91,7 @@ const RETRIEVAL_TRACE_SAMPLE_RATE = readEnvNumber(
   Deno.env.get("DENO_DEPLOYMENT_ID") ? 0.1 : 1,
   { min: 0, max: 1 },
 );
+const POLICY_SOURCE_PROVIDER = "shopify_policy";
 
 if (!PROJECT_URL) console.warn("PROJECT_URL mangler – generate-draft-unified kan ikke kalde Supabase.");
 if (!SERVICE_ROLE_KEY)
@@ -417,10 +428,20 @@ const applyTrackingClosingByLanguage = (text: string, languageHint: string): str
   return `${body}\n\n${target}`.trim();
 };
 
-const enforceHejGreeting = (text: string, firstName: string) => {
+const resolveGreetingByLanguage = (languageHint: string, firstName: string) => {
+  const normalized = String(languageHint || "").toLowerCase();
+  const name = String(firstName || "").trim();
+  if (normalized === "da") return name ? `Hej ${name},` : "Hej,";
+  if (normalized === "es") return name ? `Hola ${name},` : "Hola,";
+  if (normalized === "fr") return name ? `Bonjour ${name},` : "Bonjour,";
+  if (normalized === "de") return name ? `Hallo ${name},` : "Hallo,";
+  return name ? `Hi ${name},` : "Hi,";
+};
+
+const enforceLocalizedGreeting = (text: string, firstName: string, languageHint: string) => {
   const body = String(text || "").trim();
   if (!body) return body;
-  const greeting = firstName ? `Hej ${firstName},` : "Hej,";
+  const greeting = resolveGreetingByLanguage(languageHint, firstName);
   const withoutGreeting = body.replace(
     /^(hej|hi|hello|dear)\s*[^\n,]*,?\s*\n*/i,
     "",
@@ -761,6 +782,9 @@ async function getAgentContext(
     Math.max(1, Math.min(Math.round(MAX_RETRIEVAL_CHUNKS), 10)),
     KNOWLEDGE_MIN_SIMILARITY,
   );
+  const filteredKnowledgeMatches = (relevantKnowledgeMatches || []).filter(
+    (match) => String(match?.source_provider || "").toLowerCase() !== POLICY_SOURCE_PROVIDER,
+  );
   const { orders, matchedSubjectNumber } = await resolveOrderContext({
     supabase,
     userId: ownerUserId,
@@ -779,7 +803,7 @@ async function getAgentContext(
     persona,
     automation,
     policies,
-    relevantKnowledgeMatches,
+    relevantKnowledgeMatches: filteredKnowledgeMatches,
     orderSummary,
     matchedSubjectNumber,
     orders,
@@ -881,6 +905,7 @@ async function enforceReplyLanguage(
     "You rewrite customer support drafts.",
     "Keep the meaning exactly the same.",
     "Rewrite the draft in the exact same language as the customer message.",
+    "Output must be entirely in one language and must not mix languages.",
     languageHint ? `Preferred output language hint: ${languageHint}.` : "",
     "Do not add signature or extra sections.",
   ]
@@ -897,95 +922,65 @@ async function enforceReplyLanguage(
   return ai.reply?.trim() || draft;
 }
 
-// Gmail raw MIME kræver base64url.
-function toBase64Url(input: string): string {
-  const b64 = btoa(unescape(encodeURIComponent(input)));
-  return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-// Opret Gmail draft med HTML body og tråd-reference.
-async function createGmailDraft(
-  accessToken: string,
-  emailData: EmailData,
-  htmlBody: string,
-) {
-  const subject = emailData.subject ? `Re: ${emailData.subject}` : "Re:";
-  const to = emailData.fromEmail || emailData.from || "";
-  const rawLines = [
-    `To: ${to}`,
-    `Subject: ${subject}`,
-  ];
-  if (emailData.messageId) {
-    rawLines.push(`In-Reply-To: ${emailData.messageId}`);
-    rawLines.push(`References: ${emailData.messageId}`);
-  }
-  rawLines.push("Content-Type: text/html; charset=utf-8");
-  rawLines.push("");
-  rawLines.push(htmlBody);
-
-  const payload: Record<string, unknown> = {
-    message: {
-      raw: toBase64Url(rawLines.join("\r\n")),
-    },
-  };
-  if (emailData.threadId) {
-    (payload.message as Record<string, unknown>).threadId = emailData.threadId;
-  }
-
-  const res = await fetch(`${GMAIL_BASE}/drafts`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
+function enforceReturnChannelGuard(options: {
+  text: string;
+  languageHint: string;
+  missingDetails: Array<"order_number" | "customer_name" | "return_reason">;
+}): string {
+  let next = String(options.text || "");
+  const lines = next.split("\n");
+  const filtered = lines.filter((line) => {
+    const lower = line.toLowerCase();
+    if (
+      /send us (an )?e-?mail/.test(lower) ||
+      /email us/.test(lower) ||
+      /contact us via e-?mail/.test(lower) ||
+      /contact us by e-?mail/.test(lower) ||
+      /send os en e-?mail/.test(lower) ||
+      /skriv .* e-?mail/.test(lower)
+    ) {
+      return false;
+    }
+    return true;
   });
-  const text = await res.text();
-  if (!res.ok) {
-    throw new Error(`Gmail draft failed: ${text || res.status}`);
-  }
-  return text ? JSON.parse(text) : null;
-}
 
-// Opret Outlook draft med HTML body.
-async function createOutlookDraft(
-  accessToken: string,
-  emailData: EmailData,
-  htmlBody: string,
-) {
-  const subject = emailData.subject ? `Re: ${emailData.subject}` : "Re:";
-  const to = emailData.fromEmail || emailData.from || "";
-  const payload = {
-    subject,
-    body: {
-      contentType: "HTML",
-      content: htmlBody,
-    },
-    toRecipients: to
-      ? [
-          {
-            emailAddress: {
-              address: to,
-            },
-          },
-        ]
-      : [],
-    isDraft: true,
-  };
+  next = filtered.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  next = next
+    .split("\n")
+    .filter((line) => {
+      const lower = line.toLowerCase();
+      if (/follow these steps/.test(lower)) return false;
+      if (/følg disse trin/.test(lower)) return false;
+      if (/^\s*\d+\.\s+/.test(line)) return false;
+      return true;
+    })
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 
-  const res = await fetch(`${GRAPH_BASE}/me/messages`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
-  const text = await res.text();
-  if (!res.ok) {
-    throw new Error(`Outlook draft failed: ${text || res.status}`);
+  if (!options.missingDetails.length) return next;
+
+  const missingLabelMap: Record<string, string> =
+    String(options.languageHint || "").toLowerCase() === "da"
+      ? {
+          order_number: "ordrenummer",
+          customer_name: "navn brugt ved køb",
+          return_reason: "årsag til returnering",
+        }
+      : {
+          order_number: "order number",
+          customer_name: "name used at purchase",
+          return_reason: "return reason",
+        };
+  const missingList = options.missingDetails.map((key) => missingLabelMap[key] || key);
+  const askLine =
+    String(options.languageHint || "").toLowerCase() === "da"
+      ? `Svar venligst her i tråden med: ${missingList.join(", ")}.`
+      : `Please reply in this thread with: ${missingList.join(", ")}.`;
+  if (!next.toLowerCase().includes(askLine.toLowerCase())) {
+    next = `${next}\n\n${askLine}`.trim();
   }
-  return text ? JSON.parse(text) : null;
+  return next;
 }
 
 async function resolveInternalThread(
@@ -1092,7 +1087,6 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const shopId = typeof body?.shop_id === "string" ? body.shop_id.trim() : "";
     const provider = typeof body?.provider === "string" ? body.provider.trim() : "";
-    const accessToken = typeof body?.access_token === "string" ? body.access_token : "";
     const emailData: EmailData = body?.email_data ?? {};
 
     if (!shopId || !provider) {
@@ -1282,6 +1276,30 @@ Deno.serve(async (req) => {
     }
 
     const customerFirstName = extractCustomerFirstName(emailData);
+    const policyContext = buildPinnedPolicyContext({
+      subject: emailData.subject || "",
+      body: emailData.body || "",
+      policies: context.policies,
+      reservedTokens: POLICY_RESERVED_TOKENS,
+    });
+    const policySummaryText = policyContext.policySummaryText;
+    const policyRulesText = policyContext.policyRulesText;
+    const policyExcerptText = policyContext.policyExcerptText;
+    const returnDetails = applyMatchedSubjectOrderNumber(
+      extractReturnDetails(emailData.subject || "", emailData.body || ""),
+      context.matchedSubjectNumber,
+    );
+    const isReturnIntent =
+      policyContext.intent === "RETURN" || policyContext.intent === "REFUND";
+    const returnDetailsFoundText = isReturnIntent
+      ? buildReturnDetailsFoundBlock(returnDetails)
+      : "";
+    const reasonRequired = isReturnReasonRequiredByPolicy(
+      `${context.policies?.policy_refund || ""}\n${context.policies?.policy_terms || ""}`,
+    );
+    const returnDetailsMissing = isReturnIntent
+      ? missingReturnDetails(returnDetails, { requireReason: reasonRequired })
+      : [];
 
     // Byg shared prompt med policies, automation-regler og ordre-kontekst.
     const promptBase = buildMailPrompt({
@@ -1295,6 +1313,12 @@ Deno.serve(async (req) => {
       signature: context.profile.signature?.trim() || "",
       learnedStyle: learnedStyle || null,
       policies: context.policies,
+      policySummary: policySummaryText,
+      policyExcerpt: policyExcerptText,
+      policyRules: policyRulesText,
+      policyIntent: policyContext.intent,
+      returnDetailsFound: returnDetailsFoundText,
+      returnDetailsMissing,
     });
     const knowledgeTraceHits = (context.relevantKnowledgeMatches || []).map((match, index) => {
       const rawMatch = match as Record<string, unknown>;
@@ -1361,16 +1385,21 @@ Deno.serve(async (req) => {
     const extras: string[] = [];
     const baseTokens = estimateTokens(promptBase);
     let remaining = MAX_CONTEXT_TOKENS > 0 ? Math.max(0, MAX_CONTEXT_TOKENS - baseTokens) : Number.POSITIVE_INFINITY;
-    let droppedContextReason: string | null = null;
+    const droppedContextReasons: string[] = [];
+    const addDropReason = (reason: string) => {
+      if (!reason || droppedContextReasons.includes(reason)) return;
+      droppedContextReasons.push(reason);
+    };
 
     const appendSectionWithBudget = (
+      sectionKey: string,
       header: string,
       hits: Array<{ _text: string; included: boolean; approx_tokens: number }>,
     ) => {
       if (!hits.length || remaining <= 0) return;
       const headerTokens = estimateTokens(header);
       if (headerTokens > remaining) {
-        droppedContextReason = "token_budget";
+        addDropReason(`${sectionKey}:token_budget`);
         return;
       }
 
@@ -1378,7 +1407,7 @@ Deno.serve(async (req) => {
       remaining -= headerTokens;
       for (const hit of hits) {
         if (remaining <= 0) {
-          droppedContextReason = "token_budget";
+          addDropReason(`${sectionKey}:token_budget`);
           break;
         }
         const hitTokens = estimateTokens(hit._text);
@@ -1396,7 +1425,7 @@ Deno.serve(async (req) => {
           hit.approx_tokens = estimateTokens(trimmed);
           remaining = 0;
         }
-        droppedContextReason = "token_budget";
+        addDropReason(`${sectionKey}:token_budget`);
         break;
       }
       if (sectionLines.length > 1) {
@@ -1405,17 +1434,19 @@ Deno.serve(async (req) => {
     };
 
     if (MAX_CONTEXT_TOKENS <= 0 || baseTokens < MAX_CONTEXT_TOKENS) {
-      appendSectionWithBudget("LIVE TRACKING:", trackingTraceHits);
-      appendSectionWithBudget("RELEVANT KNOWLEDGE & HISTORY:", knowledgeTraceHits);
-      appendSectionWithBudget("PRODUKTKONTEKST:", productTraceHits);
+      appendSectionWithBudget("tracking", "LIVE TRACKING:", trackingTraceHits);
+      appendSectionWithBudget("knowledge", "RELEVANT KNOWLEDGE & HISTORY:", knowledgeTraceHits);
+      appendSectionWithBudget("product", "PRODUKTKONTEKST:", productTraceHits);
     } else {
-      droppedContextReason = "token_budget";
+      addDropReason("base_prompt:token_budget");
     }
 
     const prompt = [promptBase, ...extras].join("\n\n");
-    const includedContextTokens = extras.length
+    const dynamicExtrasTokens = extras.length
       ? extras.reduce((sum, section) => sum + estimateTokens(section), 0)
       : 0;
+    const policyPinnedTokens = policyContext.policySummaryTokens + policyContext.policyExcerptTokens;
+    const includedContextTokens = Math.max(1, policyPinnedTokens + dynamicExtrasTokens);
     const retrievalTracePayload = {
       knowledge_hits: knowledgeTraceHits.map((hit) => ({
         knowledge_id: hit.knowledge_id,
@@ -1435,8 +1466,14 @@ Deno.serve(async (req) => {
         included: hit.included,
         approx_tokens: hit.approx_tokens,
       })),
+      policy_intent: policyContext.intent,
+      policy_summary_included: policyContext.policySummaryIncluded,
+      policy_excerpt_included: policyContext.policyExcerptIncluded,
+      policy_summary_tokens: policyContext.policySummaryTokens,
       included_context_tokens: includedContextTokens,
-      dropped_context_reason: droppedContextReason,
+      dropped_context_reason:
+        droppedContextReasons.length > 0 ? droppedContextReasons[0] : null,
+      dropped_context_reasons: droppedContextReasons,
     };
 
     // Generer reply + actions med OpenAI JSON schema.
@@ -1454,6 +1491,8 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
           "Hvis kunden skriver pa engelsk, svar pa engelsk selv om andre instruktioner er pa dansk.",
           `Start altid svaret med "Hej ${customerFirstName || "kunden"},".`,
           "Brug KONTEKST-sektionen til at finde relevante oplysninger og nævn dem eksplicit i svaret.",
+          "Ved returns/refunds/warranty/shipping: følg policy summary/excerpts strengt.",
+          "Opfind aldrig return-portal URL, labels eller processer som ikke står i kontekst.",
           personaGuidance,
           "Automationsregler:",
           automationGuidance,
@@ -1485,14 +1524,26 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       aiText = `Hej,\n\nTak for din besked. Vi vender tilbage hurtigst muligt med en opdatering.`;
     }
 
-    let finalText = stripTrailingSignoff(enforceHejGreeting(aiText.trim(), customerFirstName));
+    const customerMessage = `${emailData.subject || ""}\n\n${emailData.body || ""}`.trim();
+    const languageHint = inferLanguageHint(emailData.subject || "", emailData.body || "");
+    let finalText = stripTrailingSignoff(
+      enforceLocalizedGreeting(aiText.trim(), customerFirstName, languageHint),
+    );
+    finalText = await enforceReplyLanguage(customerMessage, finalText, languageHint);
+    finalText = ensureFirstLineHasName(finalText, customerFirstName);
+    if (isReturnIntent) {
+      finalText = enforceReturnChannelGuard({
+        text: finalText,
+        languageHint,
+        missingDetails: returnDetailsMissing,
+      });
+      finalText = await enforceReplyLanguage(customerMessage, finalText, languageHint);
+    }
     if (trackingIntent && selectedOrder) {
       const trackingKey = pickOrderTrackingKey(selectedOrder);
       const trackingDetail = trackingKey ? trackingDetailsByOrderKey[trackingKey] ?? null : null;
       const trackingName =
         extractOrderFirstName(selectedOrder) || customerFirstName || "there";
-      const customerMessage = `${emailData.subject || ""}\n\n${emailData.body || ""}`.trim();
-      const languageHint = inferLanguageHint(emailData.subject || "", emailData.body || "");
       const trackingReplyAi = await buildTrackingReplySameLanguage({
         customerMessage,
         customerFirstName: trackingName,
@@ -1516,84 +1567,38 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
     // Render HTML med konsistent styling og line breaks.
     let htmlBody = formatEmailBody(finalText);
 
-    let draftDestination =
-      context?.automation?.draft_destination === "sona_inbox"
-        ? "sona_inbox"
-        : "email_provider";
-    if (supabase && (ownerUserId || workspaceId)) {
-      let destinationQuery = supabase
-        .from("agent_automation")
-        .select("draft_destination");
-      destinationQuery = workspaceId
-        ? destinationQuery.eq("workspace_id", workspaceId).order("updated_at", { ascending: false }).limit(1)
-        : destinationQuery.eq("user_id", ownerUserId);
-      const { data, error } = await destinationQuery.maybeSingle();
-      if (error) {
-        console.warn("generate-draft-unified: draft destination lookup failed", error.message);
-      } else if (data?.draft_destination === "sona_inbox") {
-        draftDestination = "sona_inbox";
-      } else if (data?.draft_destination === "email_provider") {
-        draftDestination = "email_provider";
-      } else {
-        draftDestination = "sona_inbox";
-      }
-    }
+    let internalDraft: any = null;
+    let draftId: string | null = null;
+    let threadId: string | null = null;
+    let automationResults: Array<{
+      type: string;
+      ok: boolean;
+      status?: "success" | "pending_approval" | "partial_failure" | "error";
+      orderId?: number;
+      payload?: Record<string, unknown>;
+      detail?: string;
+      error?: string;
+    }> = [];
 
-    if (provider === "smtp") {
-      draftDestination = "sona_inbox";
+    const internal = internalThread;
+    if (!internal.threadId) {
+      console.warn("generate-draft-unified: missing internal thread for draft");
     }
-
-  let draftResponse: any = null;
-  let internalDraft: any = null;
-  let draftId: string | null = null;
-  let threadId: string | null = null;
-  let automationResults: Array<{
-    type: string;
-    ok: boolean;
-    status?: "success" | "pending_approval" | "partial_failure" | "error";
-    orderId?: number;
-    payload?: Record<string, unknown>;
-    detail?: string;
-    error?: string;
-  }> = [];
-
-    if (draftDestination === "email_provider") {
-      if (!accessToken) {
-        return new Response(
-          JSON.stringify({ error: "access_token er påkrævet for Gmail/Outlook." }),
-          { status: 400 },
-        );
-      }
-      if (provider === "gmail") {
-        draftResponse = await createGmailDraft(accessToken, emailData, htmlBody);
-      } else if (provider === "outlook") {
-        draftResponse = await createOutlookDraft(accessToken, emailData, htmlBody);
-      } else {
-        return new Response(JSON.stringify({ error: "Unsupported provider." }), { status: 400 });
-      }
-      draftId = draftResponse?.id ?? draftResponse?.message?.id ?? null;
-      threadId = draftResponse?.message?.threadId ?? emailData.threadId ?? null;
-    } else {
-      const internal = internalThread;
-      if (!internal.threadId) {
-        console.warn("generate-draft-unified: missing internal thread for draft");
-      }
-      internalDraft = await createInternalDraft({
-        userId: ownerUserId,
-        workspaceId,
-        mailboxId: internal.mailboxId,
-        threadId: internal.threadId,
-        provider,
-        subject: emailData.subject ? `Re: ${emailData.subject}` : "Re:",
-        htmlBody,
-        textBody: finalText,
-      }).catch((err) => {
-        console.warn("generate-draft-unified: internal draft failed", err?.message || err);
-        return null;
-      });
-      draftId = internalDraft?.id ?? null;
-      threadId = internal.threadId ?? emailData.threadId ?? null;
-    }
+    internalDraft = await createInternalDraft({
+      userId: ownerUserId,
+      workspaceId,
+      mailboxId: internal.mailboxId,
+      threadId: internal.threadId,
+      provider,
+      subject: emailData.subject ? `Re: ${emailData.subject}` : "Re:",
+      htmlBody,
+      textBody: finalText,
+    }).catch((err) => {
+      console.warn("generate-draft-unified: internal draft failed", err?.message || err);
+      return null;
+    });
+    draftId = internalDraft?.id ?? null;
+    threadId = internal.threadId ?? emailData.threadId ?? null;
     const customerEmail = emailData.fromEmail || emailData.from || null;
     const subject = emailData.subject || "";
 
@@ -1695,9 +1700,15 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
           product_min_similarity: PRODUCT_MIN_SIMILARITY,
           included_context_tokens: retrievalTracePayload.included_context_tokens,
           dropped_context_reason: retrievalTracePayload.dropped_context_reason,
+          dropped_context_reasons: retrievalTracePayload.dropped_context_reasons,
+          policy_summary_included: retrievalTracePayload.policy_summary_included,
+          policy_excerpt_included: retrievalTracePayload.policy_excerpt_included,
+          policy_summary_tokens: retrievalTracePayload.policy_summary_tokens,
           data: {
+            policy_intent: retrievalTracePayload.policy_intent,
             knowledge_hits: retrievalTracePayload.knowledge_hits,
             product_hits: retrievalTracePayload.product_hits,
+            dropped_context_reasons: retrievalTracePayload.dropped_context_reasons,
           },
         });
         if (traceError) {
@@ -1769,7 +1780,19 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       });
 
       if (blockedReply) {
-        finalText = stripTrailingSignoff(enforceHejGreeting(blockedReply, customerFirstName));
+        finalText = stripTrailingSignoff(
+          enforceLocalizedGreeting(blockedReply, customerFirstName, languageHint),
+        );
+        finalText = await enforceReplyLanguage(customerMessage, finalText, languageHint);
+        finalText = ensureFirstLineHasName(finalText, customerFirstName);
+        if (isReturnIntent) {
+          finalText = enforceReturnChannelGuard({
+            text: finalText,
+            languageHint,
+            missingDetails: returnDetailsMissing,
+          });
+          finalText = await enforceReplyLanguage(customerMessage, finalText, languageHint);
+        }
         htmlBody = formatEmailBody(finalText);
 
         if (supabase && internalDraft?.id) {

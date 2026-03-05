@@ -1,7 +1,9 @@
-import { Reply } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Download, Reply } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatBytes, getSenderLabel } from "@/components/inbox/inbox-utils";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const AVATAR_STYLES = [
   "bg-emerald-50 text-emerald-700",
@@ -56,12 +58,16 @@ const sanitizeEmailHtml = (value) => {
 const EMAIL_BODY_CLASS =
   "max-w-none w-full text-[15px] leading-7 text-gray-800 font-[inherit] [&_*]:font-[inherit] [&_*]:text-[15px] [&_*]:leading-7";
 
+const isImageAttachment = (mimeType = "") => String(mimeType || "").toLowerCase().startsWith("image/");
+const isPdfAttachment = (mimeType = "") => String(mimeType || "").toLowerCase() === "application/pdf";
+
 export function MessageBubble({
   message,
   direction = "inbound",
   attachments = [],
   outboundSenderName,
 }) {
+  const [selectedAttachment, setSelectedAttachment] = useState(null);
   const isOutbound = direction === "outbound";
   const senderLabel = isOutbound
     ? outboundSenderName || getSenderLabel(message)
@@ -80,6 +86,17 @@ export function MessageBubble({
   const avatarStyle = pickAvatarStyle(senderLabel);
   const isDraft = Boolean(message?.is_draft);
   const safeBodyHtml = sanitizeEmailHtml(message?.body_html || "");
+  const selectedAttachmentUrl = useMemo(() => {
+    if (!selectedAttachment?.id) return "";
+    return `/api/attachments/${selectedAttachment.id}/download`;
+  }, [selectedAttachment]);
+  const selectedAttachmentInlineUrl = useMemo(() => {
+    if (!selectedAttachment?.id) return "";
+    return `/api/attachments/${selectedAttachment.id}/download?disposition=inline`;
+  }, [selectedAttachment]);
+  const canPreviewImage = isImageAttachment(selectedAttachment?.mime_type);
+  const canPreviewPdf = isPdfAttachment(selectedAttachment?.mime_type);
+  const canDownload = Boolean(selectedAttachment?.storage_path);
 
   const initials = senderLabel
     .split(" ")
@@ -194,9 +211,13 @@ export function MessageBubble({
           <div className="flex flex-wrap gap-2">
             {attachments.map((attachment) => (
               <div key={attachment.id} className="text-xs text-gray-500">
-                <div className="font-medium text-gray-700">
+                <button
+                  type="button"
+                  onClick={() => setSelectedAttachment(attachment)}
+                  className="font-medium text-gray-700 underline decoration-gray-300 underline-offset-2 hover:text-gray-900"
+                >
                   {attachment.filename || "Attachment"}
-                </div>
+                </button>
                 <div className="text-[11px] opacity-70">
                   {attachment.size_bytes ? formatBytes(attachment.size_bytes) : ""}
                 </div>
@@ -205,6 +226,68 @@ export function MessageBubble({
           </div>
         </div>
       ) : null}
+      <Dialog open={Boolean(selectedAttachment)} onOpenChange={(open) => !open && setSelectedAttachment(null)}>
+        <DialogContent className="max-h-[85vh] max-w-4xl overflow-hidden p-0">
+          <DialogHeader className="border-b border-gray-100 px-5 py-4">
+            <DialogTitle className="pr-8 text-base">
+              {selectedAttachment?.filename || "Attachment"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[65vh] overflow-auto bg-gray-50 p-4">
+            {canPreviewImage && canDownload ? (
+              <img
+                src={selectedAttachmentUrl}
+                alt={selectedAttachment?.filename || "Attachment preview"}
+                className="mx-auto h-auto max-h-[60vh] max-w-full rounded border border-gray-200 bg-white object-contain"
+              />
+            ) : null}
+            {canPreviewPdf && canDownload ? (
+              <iframe
+                title={selectedAttachment?.filename || "Attachment preview"}
+                src={selectedAttachmentUrl}
+                className="h-[60vh] w-full rounded border border-gray-200 bg-white"
+              />
+            ) : null}
+            {!canPreviewImage && !canPreviewPdf ? (
+              <div className="rounded border border-dashed border-gray-300 bg-white p-6 text-sm text-gray-600">
+                Preview is not available for this file type.
+              </div>
+            ) : null}
+            {(canPreviewImage || canPreviewPdf) && !canDownload ? (
+              <div className="rounded border border-dashed border-gray-300 bg-white p-6 text-sm text-gray-600">
+                File content is currently unavailable.
+              </div>
+            ) : null}
+          </div>
+          <div className="flex items-center justify-between border-t border-gray-100 px-5 py-3">
+            <div className="text-xs text-gray-500">
+              {selectedAttachment?.mime_type || "Unknown type"}
+              {selectedAttachment?.size_bytes ? ` • ${formatBytes(selectedAttachment.size_bytes)}` : ""}
+            </div>
+            {canDownload ? (
+              <div className="flex items-center gap-2">
+                <a
+                  href={selectedAttachmentInlineUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Open in new tab
+                </a>
+                <a
+                  href={selectedAttachmentUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Download
+                </a>
+              </div>
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

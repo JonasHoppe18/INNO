@@ -74,6 +74,24 @@ async function loadMessages(serviceClient, scope, mailboxIds) {
   return Array.isArray(data) ? data : [];
 }
 
+async function loadAttachments(serviceClient, scope, mailboxIds, messageIds) {
+  if (!messageIds.length) return [];
+  const query = applyScope(
+    serviceClient
+      .from("mail_attachments")
+      .select(
+        "id, user_id, mailbox_id, message_id, provider, provider_attachment_id, filename, mime_type, size_bytes, storage_path, created_at"
+      )
+      .in("mailbox_id", mailboxIds)
+      .in("message_id", messageIds),
+    scope,
+    { workspaceColumn: null, userColumn: "user_id" }
+  );
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  return Array.isArray(data) ? data : [];
+}
+
 export async function GET() {
   try {
     const { userId: clerkUserId, orgId } = await auth();
@@ -87,20 +105,24 @@ export async function GET() {
 
     const scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
     if (!scope.workspaceId && !scope.supabaseUserId) {
-      return NextResponse.json({ threads: [], messages: [] }, { status: 200 });
+      return NextResponse.json({ threads: [], messages: [], attachments: [] }, { status: 200 });
     }
 
     const mailboxIds = await loadMailboxIds(serviceClient, scope);
     if (!mailboxIds.length) {
-      return NextResponse.json({ threads: [], messages: [] }, { status: 200 });
+      return NextResponse.json({ threads: [], messages: [], attachments: [] }, { status: 200 });
     }
 
     const [threads, messages] = await Promise.all([
       loadThreads(serviceClient, scope, mailboxIds),
       loadMessages(serviceClient, scope, mailboxIds),
     ]);
+    const messageIds = messages.map((message) => message.id).filter(Boolean);
+    const attachments = messageIds.length
+      ? await loadAttachments(serviceClient, scope, mailboxIds, messageIds)
+      : [];
 
-    return NextResponse.json({ threads, messages }, { status: 200 });
+    return NextResponse.json({ threads, messages, attachments }, { status: 200 });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to load inbox live data." },

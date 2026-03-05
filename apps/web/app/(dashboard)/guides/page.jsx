@@ -13,21 +13,21 @@ const GUIDES = [
   {
     slug: "connect-gmail",
     title: "Connect Gmail",
-    description: "Authorize Gmail and start syncing inbound mail.",
+    description: "Set up Gmail forwarding to your Sona inbox address.",
     logoSrc: gmailLogo,
     logoAlt: "Gmail",
   },
   {
     slug: "connect-outlook",
     title: "Connect Outlook",
-    description: "Link Outlook and enable unified drafting.",
+    description: "Set up Outlook forwarding to your Sona inbox address.",
     logoSrc: outlookLogo,
     logoAlt: "Outlook",
   },
   {
     slug: "other-mail",
     title: "Other mail",
-    description: "Forward emails to Sona if you use another provider.",
+    description: "Forward emails to Sona from any provider.",
     logoAlt: "Sona",
   },
   {

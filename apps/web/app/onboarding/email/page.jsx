@@ -73,9 +73,7 @@ export default function OnboardingEmailPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [connected, setConnected] = useState(false);
-  const [provider, setProvider] = useState(null);
   const [email, setEmail] = useState("");
-  const [error, setError] = useState("");
 
   const loadState = async () => {
     setLoading(true);
@@ -85,7 +83,6 @@ export default function OnboardingEmailPage() {
     const payload = response?.ok ? await response.json().catch(() => null) : null;
     const isConnected = Boolean(payload?.steps?.email_connected);
     setConnected(isConnected);
-    setProvider(payload?.connected_mail_account?.provider || null);
     setEmail(String(payload?.connected_mail_account?.email || ""));
     setLoading(false);
     return isConnected;
@@ -96,21 +93,7 @@ export default function OnboardingEmailPage() {
   }, []);
 
   const handleSkipCustom = async () => {
-    setError("");
-    const response = await fetch("/api/onboarding/mark", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ step: "email_connected" }),
-    }).catch(() => null);
-
-    if (!response?.ok) {
-      setError("Could not mark custom provider. Try again.");
-      return;
-    }
-
-    setProvider("custom");
-    setEmail("Custom provider");
-    setConnected(true);
+    router.push("/mailboxes/other");
   };
 
   return (
@@ -145,7 +128,9 @@ export default function OnboardingEmailPage() {
         <>
           <div className="mt-6 space-y-2 text-center">
             <h1 className="text-2xl font-bold text-slate-900">Connect your support email</h1>
-            <p className="mb-8 text-slate-500">Select your provider to let Sona draft replies.</p>
+            <p className="mb-8 text-slate-500">
+              All providers use forwarding, including Gmail and Outlook.
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -153,14 +138,14 @@ export default function OnboardingEmailPage() {
               label="Gmail / Workspace"
               logo={<GoogleLogo />}
               onClick={() => {
-                window.location.href = "/api/integrations/gmail/auth";
+                router.push("/mailboxes/other");
               }}
             />
             <ProviderCard
               label="Outlook / 365"
               logo={<MicrosoftLogo />}
               onClick={() => {
-                window.location.href = "/api/integrations/outlook/auth";
+                router.push("/mailboxes/other");
               }}
             />
           </div>
@@ -171,7 +156,7 @@ export default function OnboardingEmailPage() {
             onClick={handleSkipCustom}
             disabled={loading}
           >
-            I use another provider (One.com, Simply, etc.)
+            Set up forwarding (One.com, Simply, Gmail, Outlook, etc.)
           </button>
           <button
             type="button"
@@ -180,8 +165,6 @@ export default function OnboardingEmailPage() {
           >
             Skip for now
           </button>
-
-          {error ? <p className="mt-3 text-center text-sm text-red-600">{error}</p> : null}
         </>
       )}
 

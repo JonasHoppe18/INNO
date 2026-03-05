@@ -14,6 +14,14 @@ import { PERSONA_REPLY_JSON_SCHEMA } from "../_shared/openai-schema.ts";
 import { buildMailPrompt } from "../_shared/prompt.ts";
 import { classifyEmail } from "../_shared/classify-email.ts";
 import { formatEmailBody } from "../_shared/email.ts";
+import { detectPolicyIntent } from "../_shared/policy-context.ts";
+import {
+  applyMatchedSubjectOrderNumber,
+  buildReturnDetailsFoundBlock,
+  extractReturnDetails,
+  isReturnReasonRequiredByPolicy,
+  missingReturnDetails,
+} from "../_shared/return-details.ts";
 
 /**
  * Outlook Create Draft AI
@@ -478,6 +486,55 @@ async function callOpenAI(prompt: string, system?: string): Promise<OpenAIResult
   }
 }
 
+function inferLanguageHint(subject: string, body: string): string {
+  const text = `${subject || ""}\n${body || ""}`.toLowerCase();
+  const hasDanish = /(\b(hvor|hvornår|modtager|levering|pakke|ikke|med)\b|[æøå])/i.test(text);
+  const hasEnglish = /(\b(hi|hello|where|when|order|delivery|tracking|received)\b)/i.test(text);
+  const hasSpanish = /(\b(hola|dónde|donde|pedido|entrega|seguimiento|recibido)\b|[¡¿])/i.test(text);
+  if (hasSpanish) return "es";
+  if (hasEnglish && !hasDanish) return "en";
+  if (hasDanish && !hasEnglish) return "da";
+  if (hasEnglish) return "en";
+  return "same_as_customer";
+}
+
+function localizedGreeting(languageHint: string, name: string): string {
+  const first = String(name || "").trim() || "there";
+  const hint = String(languageHint || "").toLowerCase();
+  if (hint === "da") return `Hej ${first},`;
+  if (hint === "es") return `Hola ${first},`;
+  return `Hi ${first},`;
+}
+
+async function enforceReplyLanguage(
+  customerMessage: string,
+  reply: string,
+  languageHint?: string,
+): Promise<string> {
+  const source = String(customerMessage || "").trim();
+  const draft = String(reply || "").trim();
+  if (!source || !draft || !OPENAI_API_KEY) return draft;
+  const system = [
+    "You rewrite customer support drafts.",
+    "Keep the meaning exactly the same.",
+    "Rewrite the draft in the exact same language as the customer message.",
+    "Output must be entirely in one language and must not mix languages.",
+    languageHint ? `Preferred output language hint: ${languageHint}.` : "",
+    "Do not add signature or extra sections.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const prompt = [
+    "Customer message:",
+    source,
+    "",
+    "Draft to rewrite:",
+    draft,
+  ].join("\n");
+  const ai = await callOpenAI(prompt, system);
+  return ai.reply?.trim() || draft;
+}
+
 Deno.serve(async (req) => {
   if (req.method !== "POST") {
     return new Response("Method Not Allowed", { status: 405 });
@@ -559,6 +616,15 @@ Deno.serve(async (req) => {
 
     const orderSummary = buildOrderSummary(orders);
     const automationGuidance = buildAutomationGuidance(automation);
+    const policyIntent = detectPolicyIntent(subject || "", textContent || "");
+    const returnDetails = applyMatchedSubjectOrderNumber(
+      extractReturnDetails(subject || "", textContent || ""),
+      matchedSubjectNumber,
+    );
+    const isReturnIntent = policyIntent === "RETURN" || policyIntent === "REFUND";
+    const reasonRequired = isReturnReasonRequiredByPolicy(
+      `${policies?.policy_refund || ""}\n${policies?.policy_terms || ""}`,
+    );
 
     const prompt = buildMailPrompt({
       emailBody: textContent || "(tomt indhold)",
@@ -569,6 +635,11 @@ Deno.serve(async (req) => {
         "Returner altid JSON hvor 'actions' beskriver konkrete handlinger du udfører i Shopify. Brug orderId (det numeriske id i parentes) når du udfylder actions. For payload: udfyld kun de felter der er nødvendige for handlingen. Hvis kunden beder om adresseændring, udfyld shipping_address med alle felter du kender (name, address1, address2, zip, city, country, phone). Ved edit_line_items skal du bruge line_item_id/variant_id fra KONTEKST. Hvis en handling ikke er tilladt i automationsreglerne, må du stadig returnere handlingen i actions; systemet markerer den til manuel approval i tråden.",
       signature: persona.signature,
       policies,
+      policyIntent,
+      returnDetailsFound: isReturnIntent ? buildReturnDetailsFoundBlock(returnDetails) : "",
+      returnDetailsMissing: isReturnIntent
+        ? missingReturnDetails(returnDetails, { requireReason: reasonRequired })
+        : [],
     });
 
     let aiText: string | null = null;
@@ -609,12 +680,15 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       aiText = null;
     }
 
+    const customerMessage = `${subject || ""}\n\n${textContent || ""}`.trim();
+    const languageHint = inferLanguageHint(subject || "", textContent || "");
+    const customerLabel = fromAddress?.split("@")?.[0] || "customer";
     if (!aiText) {
-      aiText = `Hej ${fromAddress?.split("@")?.[0] || "kunde"},\n\nTak for din besked. Jeg har kigget på din sag${
+      aiText = `${localizedGreeting(languageHint, customerLabel)}\n\nTak for din besked. Jeg har kigget på din sag${
         orders.length ? ` og fandt ${orders.length} ordre(r) relateret til din e-mail.` : "."
       }\n\n${orderSummary}\nVi vender tilbage hurtigst muligt med en opdatering.`;
     }
-    let finalText = aiText.trim();
+    let finalText = await enforceReplyLanguage(customerMessage, aiText.trim(), languageHint);
     const signature = persona.signature?.trim();
     if (signature && signature.length && !finalText.includes(signature)) {
       finalText = stripTrailingSignoff(finalText);

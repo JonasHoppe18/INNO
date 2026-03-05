@@ -123,7 +123,7 @@ export function OnboardingWizard() {
   const handleSaveAi = async () => {
     await save({
       autoDraftEnabled: aiConfig.autoDraftEnabled,
-      draftDestination: aiConfig.draftDestination,
+      draftDestination: "sona_inbox",
       historicInboxAccess: aiConfig.historicInboxAccess,
       learnFromEdits: aiConfig.learnFromEdits,
       orderUpdates: aiConfig.orderUpdates,
@@ -165,7 +165,7 @@ export function OnboardingWizard() {
             <div>
               <p className="text-base font-semibold text-slate-900">Step 1: Connect email</p>
               <p className="text-sm text-slate-600">
-                Connect Gmail or Outlook, or use forwarding for other providers.
+                Use forwarding to connect Gmail, Outlook, one.com, Simply, or any other provider.
               </p>
             </div>
             <div className="grid gap-3 md:grid-cols-3">
@@ -182,10 +182,10 @@ export function OnboardingWizard() {
                   </div>
                   <p className="font-medium">Gmail</p>
                 </div>
-                <p className="text-xs text-slate-500">OAuth connection</p>
+                <p className="text-xs text-slate-500">Forwarding setup</p>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <Button asChild size="sm">
-                    <Link href="/api/integrations/gmail/auth">Connect Gmail</Link>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/mailboxes/other">Set up forwarding</Link>
                   </Button>
                   <Button asChild size="sm" variant="outline">
                     <Link href={GUIDE_LINKS.gmail} target="_blank" rel="noreferrer">
@@ -210,10 +210,10 @@ export function OnboardingWizard() {
                   </div>
                   <p className="font-medium">Outlook</p>
                 </div>
-                <p className="text-xs text-slate-500">OAuth connection</p>
+                <p className="text-xs text-slate-500">Forwarding setup</p>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <Button asChild size="sm">
-                    <Link href="/api/integrations/outlook/auth">Connect Outlook</Link>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/mailboxes/other">Set up forwarding</Link>
                   </Button>
                   <Button asChild size="sm" variant="outline">
                     <Link href={GUIDE_LINKS.outlook} target="_blank" rel="noreferrer">
@@ -235,7 +235,7 @@ export function OnboardingWizard() {
                 <p className="text-xs text-slate-500">Forwarding + custom domain</p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Button asChild size="sm" variant="outline">
-                    <Link href="/mailboxes/other">Other mail</Link>
+                    <Link href="/mailboxes/other">Set up forwarding</Link>
                   </Button>
                   <Button asChild size="sm" variant="outline">
                     <Link href={GUIDE_LINKS.other} target="_blank" rel="noreferrer">
@@ -335,16 +335,9 @@ export function OnboardingWizard() {
               </label>
               <label className="flex items-center justify-between rounded-lg border border-slate-200 p-3 text-sm">
                 Draft destination
-                <select
-                  value={aiConfig.draftDestination}
-                  onChange={(event) =>
-                    setAiConfig((prev) => ({ ...prev, draftDestination: event.target.value }))
-                  }
-                  className="rounded-md border border-slate-200 px-2 py-1 text-sm"
-                >
-                  <option value="sona_inbox">Sona inbox</option>
-                  <option value="provider_inbox">Gmail/Outlook</option>
-                </select>
+                <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700">
+                  Sona inbox (locked)
+                </span>
               </label>
               <label className="flex items-center justify-between rounded-lg border border-slate-200 p-3 text-sm">
                 Allow order updates
