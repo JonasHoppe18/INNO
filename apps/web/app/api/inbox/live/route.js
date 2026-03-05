@@ -46,7 +46,7 @@ async function loadMessages(serviceClient, scope, mailboxIds) {
     serviceClient
     .from("mail_messages")
     .select(
-      "id, mailbox_id, thread_id, subject, snippet, body_text, body_html, from_name, from_email, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at, ai_draft_text"
+      "id, mailbox_id, thread_id, provider_message_id, subject, snippet, body_text, body_html, from_name, from_email, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at, ai_draft_text"
     )
     .in("mailbox_id", mailboxIds)
     .order("received_at", { ascending: false, nullsLast: true })
@@ -60,7 +60,7 @@ async function loadMessages(serviceClient, scope, mailboxIds) {
       serviceClient
         .from("mail_messages")
         .select(
-          "id, mailbox_id, thread_id, subject, snippet, body_text, body_html, from_name, from_email, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at"
+          "id, mailbox_id, thread_id, provider_message_id, subject, snippet, body_text, body_html, from_name, from_email, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at"
         )
         .in("mailbox_id", mailboxIds)
         .order("received_at", { ascending: false, nullsLast: true })

@@ -144,6 +144,13 @@ type OpenAIResult = {
   actions: AutomationAction[];
 };
 
+type InlineImageAttachment = {
+  filename: string;
+  mimeType: string;
+  sizeBytes: number | null;
+  dataUrl: string;
+};
+
 type ProductMatch = {
   id?: string | number;
   external_id?: string | number;
@@ -852,6 +859,134 @@ async function callOpenAI(prompt: string, system?: string): Promise<OpenAIResult
   }
 }
 
+function parseInlineStoragePath(value: string | null | undefined): {
+  mimeType: string;
+  contentBase64: string;
+} | null {
+  const raw = String(value || "");
+  if (!raw.startsWith("inline:")) return null;
+  const payload = raw.slice("inline:".length);
+  const commaIndex = payload.indexOf(",");
+  if (commaIndex <= 0) return null;
+  const metadata = payload.slice(0, commaIndex);
+  const contentBase64 = payload.slice(commaIndex + 1).replace(/\s+/g, "");
+  const [mimeType] = metadata.split(";");
+  if (!contentBase64) return null;
+  return {
+    mimeType: String(mimeType || "application/octet-stream").trim() || "application/octet-stream",
+    contentBase64,
+  };
+}
+
+async function loadInlineImageAttachments(options: {
+  userId: string | null;
+  workspaceId: string | null;
+  provider: string;
+  providerMessageId: string | null;
+}): Promise<InlineImageAttachment[]> {
+  if (!supabase || !options.providerMessageId) return [];
+  let messageQuery = supabase
+    .from("mail_messages")
+    .select("id, user_id")
+    .eq("provider", options.provider)
+    .eq("provider_message_id", options.providerMessageId);
+  messageQuery = options.workspaceId
+    ? messageQuery.eq("workspace_id", options.workspaceId)
+    : messageQuery.eq("user_id", options.userId);
+  const { data: messageRow } = await messageQuery.maybeSingle();
+  const messageId = String(messageRow?.id || "").trim();
+  const messageUserId = String(messageRow?.user_id || "").trim();
+  if (!messageId || !messageUserId) return [];
+
+  const { data: rows, error } = await supabase
+    .from("mail_attachments")
+    .select("filename, mime_type, size_bytes, storage_path")
+    .eq("message_id", messageId)
+    .eq("user_id", messageUserId)
+    .order("created_at", { ascending: true })
+    .limit(8);
+  if (error || !Array.isArray(rows) || !rows.length) return [];
+
+  const accepted: InlineImageAttachment[] = [];
+  let totalBytes = 0;
+  const MAX_IMAGES = 3;
+  const MAX_TOTAL_BYTES = 4 * 1024 * 1024;
+  for (const row of rows) {
+    if (accepted.length >= MAX_IMAGES) break;
+    const mimeType = String(row?.mime_type || "").toLowerCase();
+    if (!mimeType.startsWith("image/")) continue;
+    const parsed = parseInlineStoragePath(row?.storage_path);
+    if (!parsed) continue;
+    const bytes = Math.floor((parsed.contentBase64.length * 3) / 4);
+    if (bytes <= 0) continue;
+    if (totalBytes + bytes > MAX_TOTAL_BYTES) break;
+    totalBytes += bytes;
+    accepted.push({
+      filename: String(row?.filename || "image").trim() || "image",
+      mimeType: parsed.mimeType,
+      sizeBytes: Number.isFinite(Number(row?.size_bytes)) ? Number(row?.size_bytes) : bytes,
+      dataUrl: `data:${parsed.mimeType};base64,${parsed.contentBase64}`,
+    });
+  }
+  return accepted;
+}
+
+async function callOpenAIWithImages(
+  prompt: string,
+  system: string | undefined,
+  images: InlineImageAttachment[],
+): Promise<OpenAIResult> {
+  if (!OPENAI_API_KEY) return { reply: null, actions: [] };
+  if (!Array.isArray(images) || !images.length) return callOpenAI(prompt, system);
+  const messages: any[] = [];
+  if (system) messages.push({ role: "system", content: system });
+  const content: any[] = [{ type: "text", text: prompt }];
+  images.forEach((image) => {
+    content.push({
+      type: "image_url",
+      image_url: {
+        url: image.dataUrl,
+        detail: "auto",
+      },
+    });
+  });
+  messages.push({ role: "user", content });
+  const body = {
+    model: OPENAI_MODEL,
+    temperature: 0.3,
+    messages,
+    response_format: {
+      type: "json_schema",
+      json_schema: PERSONA_REPLY_JSON_SCHEMA,
+    },
+    max_tokens: 900,
+  };
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(json?.error?.message || `OpenAI error ${res.status}`);
+  const responseContent = json?.choices?.[0]?.message?.content;
+  if (!responseContent || typeof responseContent !== "string") {
+    return { reply: null, actions: [] };
+  }
+  try {
+    const parsed = JSON.parse(responseContent);
+    const reply = typeof parsed?.reply === "string" ? parsed.reply : null;
+    const actions = Array.isArray(parsed?.actions)
+      ? parsed.actions.filter((action: any) => typeof action?.type === "string")
+      : [];
+    return { reply, actions };
+  } catch {
+    return { reply: null, actions: [] };
+  }
+}
+
 async function generateBlockedOrderActionReply(options: {
   customerName: string;
   emailBody: string;
@@ -1320,6 +1455,12 @@ Deno.serve(async (req) => {
       returnDetailsFound: returnDetailsFoundText,
       returnDetailsMissing,
     });
+    const inlineImageAttachments = await loadInlineImageAttachments({
+      userId: ownerUserId,
+      workspaceId,
+      provider,
+      providerMessageId: emailData.messageId || null,
+    });
     const knowledgeTraceHits = (context.relevantKnowledgeMatches || []).map((match, index) => {
       const rawMatch = match as Record<string, unknown>;
       const type = match?.source_type || "snippet";
@@ -1437,6 +1578,20 @@ Deno.serve(async (req) => {
       appendSectionWithBudget("tracking", "LIVE TRACKING:", trackingTraceHits);
       appendSectionWithBudget("knowledge", "RELEVANT KNOWLEDGE & HISTORY:", knowledgeTraceHits);
       appendSectionWithBudget("product", "PRODUKTKONTEKST:", productTraceHits);
+      if (inlineImageAttachments.length) {
+        const imageContextLines = inlineImageAttachments.map(
+          (image, index) =>
+            `- [${index + 1}] ${image.filename} (${image.mimeType}, ${image.sizeBytes ?? "ukendt"} bytes)`,
+        );
+        extras.push(
+          [
+            "CUSTOMER IMAGE ATTACHMENTS:",
+            "You also receive these images directly in the model input. Use them when relevant.",
+            ...imageContextLines,
+            "If image details are unclear, say so and ask a concise follow-up question.",
+          ].join("\n"),
+        );
+      }
     } else {
       addDropReason("base_prompt:token_budget");
     }
@@ -1508,7 +1663,11 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
           ? systemMsgBase +
             ` Hvis KONTEKST indeholder et ordrenummer (fx #${context.matchedSubjectNumber}), brug dette ordrenummer som reference i svaret og spørg IKKE efter ordrenummer igen.`
           : systemMsgBase;
-        const { reply, actions } = await callOpenAI(prompt, systemMsg);
+        const { reply, actions } = await callOpenAIWithImages(
+          prompt,
+          systemMsg,
+          inlineImageAttachments,
+        );
         aiText = reply;
         automationActions = actions ?? [];
       } else {

@@ -11,6 +11,7 @@ export function TicketDetail({
   thread,
   messages,
   attachments,
+  mentionUsers = [],
   currentUserName,
   ticketState,
   onTicketStateChange,
@@ -247,6 +248,7 @@ export function TicketDetail({
           mode={composerMode}
           onModeChange={onComposerModeChange}
           toLabel={toLabel}
+          mentionUsers={mentionUsers}
           onBlur={onDraftBlur}
           isDraftLoading={showThinkingCard}
         />

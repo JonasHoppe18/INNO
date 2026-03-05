@@ -7,7 +7,7 @@ import { SonaInsightsModal } from "@/components/inbox/SonaInsightsModal";
 import { deriveThreadsFromMessages } from "@/hooks/useInboxData";
 import { getMessageTimestamp, getSenderLabel, isOutboundMessage } from "@/components/inbox/inbox-utils";
 import { useClerkSupabase } from "@/lib/useClerkSupabase";
-import { useUser } from "@clerk/nextjs";
+import { useAuth, useUser } from "@clerk/nextjs";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { useCustomerLookup } from "@/hooks/useCustomerLookup";
@@ -262,6 +262,8 @@ const stripThreadSuffix = (value) =>
   String(value || "").replace(/\s*\|thread_id:[a-z0-9-]+\s*/i, "").trim();
 
 const asString = (value) => (typeof value === "string" ? value.trim() : "");
+const isInternalNoteMessage = (message) =>
+  String(message?.provider_message_id || "").startsWith("internal-note:");
 
 const parsePendingLogDetail = (value) => {
   const raw = stripThreadSuffix(value);
@@ -549,6 +551,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   });
   const [composerMode, setComposerMode] = useState("reply");
   const [draftValue, setDraftValue] = useState("");
+  const [noteValueByThread, setNoteValueByThread] = useState({});
   const [signatureByThread, setSignatureByThread] = useState({});
   const [activeDraftId, setActiveDraftId] = useState(null);
   const [isSending, setIsSending] = useState(false);
@@ -564,6 +567,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const [orderUpdateSubmittingByThread, setOrderUpdateSubmittingByThread] = useState({});
   const [orderUpdateErrorByThread, setOrderUpdateErrorByThread] = useState({});
   const [assigneeProfilesById, setAssigneeProfilesById] = useState({});
+  const [mentionUsers, setMentionUsers] = useState([]);
   const [currentSupabaseUserId, setCurrentSupabaseUserId] = useState(null);
   const [workspaceInboxes, setWorkspaceInboxes] = useState([]);
   const headerActionsKeyRef = useRef("");
@@ -571,6 +575,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const savingDraftRef = useRef(false);
   const draftValueRef = useRef("");
   const supabase = useClerkSupabase();
+  const { orgId } = useAuth();
   const { user } = useUser();
   const searchParams = useSearchParams();
   const { setActions: setHeaderActions } = useSiteHeaderActions();
@@ -688,6 +693,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   useEffect(() => {
     draftValueRef.current = draftValue;
   }, [draftValue]);
+
+  const activeNoteValue = selectedThreadId ? noteValueByThread[selectedThreadId] || "" : "";
+  const composerValue = composerMode === "note" ? activeNoteValue : draftValue;
 
   const isLocalThreadId = useCallback(
     (threadId) => String(threadId || "").startsWith("local-new-ticket-"),
@@ -903,6 +911,82 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   useEffect(() => {
     if (!supabase || !user?.id) return;
     let active = true;
+
+    const loadMentionUsers = async () => {
+      let workspaceId = null;
+      if (orgId) {
+        const { data: workspace } = await supabase
+          .from("workspaces")
+          .select("id")
+          .eq("clerk_org_id", orgId)
+          .maybeSingle();
+        workspaceId = workspace?.id || null;
+      }
+
+      if (!workspaceId) {
+        const { data: membership } = await supabase
+          .from("workspace_members")
+          .select("workspace_id")
+          .eq("clerk_user_id", user.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        workspaceId = membership?.workspace_id || null;
+      }
+
+      if (!workspaceId) {
+        if (active) setMentionUsers([]);
+        return;
+      }
+
+      const { data: memberRows, error: memberError } = await supabase
+        .from("workspace_members")
+        .select("clerk_user_id")
+        .eq("workspace_id", workspaceId);
+      if (!active || memberError) return;
+
+      const clerkIds = Array.from(
+        new Set((memberRows || []).map((row) => String(row?.clerk_user_id || "").trim()).filter(Boolean))
+      );
+      if (!clerkIds.length) {
+        if (active) setMentionUsers([]);
+        return;
+      }
+
+      const { data: profileRows, error: profileError } = await supabase
+        .from("profiles")
+        .select("user_id, clerk_user_id, first_name, last_name, email")
+        .in("clerk_user_id", clerkIds);
+      if (!active || profileError) return;
+
+      const next = (profileRows || [])
+        .map((profile) => {
+          const userId = String(profile?.user_id || "").trim();
+          if (!userId) return null;
+          const fullName = [profile?.first_name, profile?.last_name].filter(Boolean).join(" ").trim();
+          const email = String(profile?.email || "").trim();
+          const label = fullName || email || userId;
+          return {
+            id: userId,
+            label,
+            email,
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.label.localeCompare(b.label));
+
+      setMentionUsers(next);
+    };
+
+    loadMentionUsers().catch(() => null);
+    return () => {
+      active = false;
+    };
+  }, [orgId, supabase, user?.id]);
+
+  useEffect(() => {
+    if (!supabase || !user?.id) return;
+    let active = true;
     const loadCurrentSupabaseUserId = async () => {
       const { data, error } = await supabase
         .from("profiles")
@@ -972,6 +1056,30 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     rest.sort((a, b) => a.label.localeCompare(b.label));
     return [unassigned, ...rest];
   }, [assigneeProfilesById, derivedThreads, selectedTicketState?.assignee]);
+  const effectiveMentionUsers = useMemo(() => {
+    const byId = new Map();
+    (mentionUsers || []).forEach((entry) => {
+      const id = String(entry?.id || "").trim();
+      if (!id) return;
+      byId.set(id, {
+        id,
+        label: String(entry?.label || entry?.email || id).trim(),
+        email: String(entry?.email || "").trim(),
+      });
+    });
+    Object.entries(assigneeProfilesById || {}).forEach(([id, profile]) => {
+      const key = String(id || "").trim();
+      if (!key || byId.has(key)) return;
+      const fullName = [profile?.first_name, profile?.last_name].filter(Boolean).join(" ").trim();
+      const email = String(profile?.email || "").trim();
+      byId.set(key, {
+        id: key,
+        label: fullName || email || key,
+        email,
+      });
+    });
+    return Array.from(byId.values()).sort((a, b) => a.label.localeCompare(b.label));
+  }, [assigneeProfilesById, mentionUsers]);
   const selectedTagLabel =
     Array.isArray(selectedThread?.tags) && selectedThread.tags.length
       ? selectedThread.tags.find((tag) => !String(tag || "").startsWith("inbox:")) || "General"
@@ -1129,7 +1237,14 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     return rawThreadMessages.filter((message) => {
       if (message?.is_draft) return false;
       // Hide unsent local draft artifacts (old rows without is_draft flag).
-      if (message?.from_me && !message?.sent_at && !message?.received_at) return false;
+      if (
+        message?.from_me &&
+        !message?.sent_at &&
+        !message?.received_at &&
+        !isInternalNoteMessage(message)
+      ) {
+        return false;
+      }
       return true;
     });
   }, [rawThreadMessages]);
@@ -1394,7 +1509,15 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
 
   const handleDraftChange = useCallback(
     (nextValue) => {
-      setDraftValue(nextValue);
+      if (composerMode === "note") {
+        if (!selectedThreadId) return;
+        setNoteValueByThread((prev) => ({
+          ...prev,
+          [selectedThreadId]: String(nextValue || ""),
+        }));
+        return;
+      }
+      setDraftValue(String(nextValue || ""));
       if (!selectedThreadId) return;
       setSystemDraftUneditedByThread((prev) => {
         if (!prev[selectedThreadId]) return prev;
@@ -1404,7 +1527,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         };
       });
     },
-    [selectedThreadId]
+    [composerMode, selectedThreadId]
   );
 
   const handleSignatureChange = useCallback(
@@ -1574,6 +1697,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
 
   const saveThreadDraft = useCallback(async ({ immediate = false, valueOverride } = {}) => {
     if (isLocalThreadId(selectedThreadId)) return;
+    if (composerMode === "note") return;
     if (!selectedThreadId || !draftReady) return;
     const text = String(valueOverride ?? draftValueRef.current ?? "");
     const trimmed = text.trim();
@@ -1619,7 +1743,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     } finally {
       savingDraftRef.current = false;
     }
-  }, [draftReady, isLocalThreadId, selectedThread?.subject, selectedThreadId]);
+  }, [composerMode, draftReady, isLocalThreadId, selectedThread?.subject, selectedThreadId]);
 
   useEffect(() => {
     if (isLocalThreadId(selectedThreadId)) return;
@@ -1664,14 +1788,61 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       toast.error("Saving/sending brand new tickets is not ready yet.");
       return;
     }
-    if (!draftValue.trim()) {
+    const composeMode = payload?.mode === "note" || composerMode === "note" ? "note" : "reply";
+    const composeBody = String(composeMode === "note" ? activeNoteValue : draftValue || "");
+    if (!composeBody.trim()) {
       toast.error("Draft is empty.");
       return;
     }
     sendingStartedAtRef.current = Date.now();
     setIsSending(true);
-    const toastId = toast.loading("Sending draft...");
+    const toastId = toast.loading(composeMode === "note" ? "Saving note..." : "Sending draft...");
     try {
+      if (composeMode === "note") {
+        const res = await fetch(`/api/threads/${selectedThreadId}/notes`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            body_text: composeBody,
+            mention_user_ids: Array.isArray(payload?.mentionUserIds)
+              ? payload.mentionUserIds.filter((value) => isUuid(value))
+              : [],
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data?.error || "Could not save internal note.");
+        }
+        const nowIso = new Date().toISOString();
+        const noteMessage = data?.message
+          ? data.message
+          : {
+              id: `local-note-${Date.now()}`,
+              provider_message_id: `internal-note:local-${Date.now()}`,
+              thread_id: selectedThreadId,
+              from_name: currentUserName,
+              from_email: null,
+              from_me: true,
+              body_text: composeBody,
+              body_html: null,
+              is_read: true,
+              is_draft: false,
+              sent_at: null,
+              received_at: null,
+              created_at: nowIso,
+            };
+        setLocalSentMessagesByThread((prev) => ({
+          ...prev,
+          [selectedThreadId]: [...(prev[selectedThreadId] || []), noteMessage],
+        }));
+        toast.success("Internal note saved.", { id: toastId });
+        setNoteValueByThread((prev) => ({
+          ...prev,
+          [selectedThreadId]: "",
+        }));
+        return;
+      }
+
       const rawAttachments = Array.isArray(payload?.attachments) ? payload.attachments : [];
       const serializedAttachments = await Promise.all(
         rawAttachments.map(async (file) => {
@@ -1705,7 +1876,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          body_text: draftValue,
+          body_text: composeBody,
           signature: typeof payload?.signature === "string" ? payload.signature : "",
           to_emails: payload.toRecipients,
           cc_emails: payload.ccRecipients,
@@ -1735,8 +1906,8 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
             cc_emails: payload.ccRecipients || [],
             bcc_emails: payload.bccRecipients || [],
             body_text: String(payload?.signature || "").trim()
-              ? `${draftValue}\n\n${String(payload.signature).trim()}`
-              : draftValue,
+              ? `${composeBody}\n\n${String(payload.signature).trim()}`
+              : composeBody,
             body_html: null,
             is_read: true,
             sent_at: nowIso,
@@ -1975,6 +2146,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const isDraftGenerating =
     Boolean(selectedThreadId) &&
     !isLocalThreadId(selectedThreadId) &&
+    !draftReady &&
     latestMessageIsInbound &&
     !draftMessage &&
     !aiDraft &&
@@ -2001,18 +2173,20 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         thread={selectedThread}
         messages={threadMessages}
         attachments={threadAttachments}
+        mentionUsers={effectiveMentionUsers}
         currentUserName={currentUserName}
         ticketState={ticketStateByThread[selectedThreadId] || DEFAULT_TICKET_STATE}
         onTicketStateChange={handleTicketStateChange}
         onOpenInsights={() => setInsightsOpen(true)}
         showThinkingCard={isDraftGenerating}
-        draftValue={draftValue}
+        draftValue={composerValue}
         onDraftChange={handleDraftChange}
         signatureValue={selectedThreadId ? signatureByThread[selectedThreadId] || "" : ""}
         onSignatureChange={handleSignatureChange}
         onSignatureBlur={() => null}
         onDraftBlur={() => saveThreadDraft({ immediate: true })}
         draftLoaded={
+          composerMode !== "note" &&
           Boolean(selectedThreadId) &&
           Boolean(draftValue.trim()) &&
           Boolean(systemDraftUneditedByThread[selectedThreadId])

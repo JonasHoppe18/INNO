@@ -83,8 +83,18 @@ export function MessageBubble({
     : "";
   const toList = message.to_emails || [];
   const ccList = message.cc_emails || [];
+  const bccList = message.bcc_emails || [];
   const avatarStyle = pickAvatarStyle(senderLabel);
   const isDraft = Boolean(message?.is_draft);
+  const isInternalNote =
+    String(message?.provider_message_id || "").startsWith("internal-note:") ||
+    (Boolean(message?.from_me) &&
+      !isDraft &&
+      !message?.sent_at &&
+      !message?.received_at &&
+      toList.length === 0 &&
+      ccList.length === 0 &&
+      bccList.length === 0);
   const safeBodyHtml = sanitizeEmailHtml(message?.body_html || "");
   const selectedAttachmentUrl = useMemo(() => {
     if (!selectedAttachment?.id) return "";
@@ -97,6 +107,9 @@ export function MessageBubble({
   const canPreviewImage = isImageAttachment(selectedAttachment?.mime_type);
   const canPreviewPdf = isPdfAttachment(selectedAttachment?.mime_type);
   const canDownload = Boolean(selectedAttachment?.storage_path);
+  const inlineImageAttachments = (attachments || []).filter(
+    (attachment) => isImageAttachment(attachment?.mime_type) && attachment?.storage_path && attachment?.id
+  );
 
   const initials = senderLabel
     .split(" ")
@@ -109,7 +122,9 @@ export function MessageBubble({
     <div
       className={cn(
         "w-full overflow-hidden rounded-lg border text-xs",
-        isOutbound
+        isInternalNote
+          ? "bg-yellow-50 border-yellow-200"
+          : isOutbound
           ? "bg-slate-50 border-slate-200"
           : "bg-white border-gray-200 shadow-sm"
       )}
@@ -117,6 +132,7 @@ export function MessageBubble({
       <div
         className={cn(
           "flex flex-wrap items-start justify-between gap-2 border-b border-gray-100 px-4 py-2.5",
+          isInternalNote && "border-yellow-200",
           isOutbound && "border-slate-200"
         )}
       >
@@ -146,6 +162,11 @@ export function MessageBubble({
                 {isDraft ? (
                   <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
                     Draft
+                  </span>
+                ) : null}
+                {isInternalNote ? (
+                  <span className="rounded-full border border-yellow-200 bg-yellow-50 px-2 py-0.5 text-[11px] font-medium text-yellow-700">
+                    Internal note
                   </span>
                 ) : null}
             </div>
@@ -208,6 +229,24 @@ export function MessageBubble({
       </div>
       {attachments.length ? (
         <div className="px-4 pb-4">
+          {inlineImageAttachments.length ? (
+            <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {inlineImageAttachments.map((attachment) => (
+                <button
+                  key={`preview-${attachment.id}`}
+                  type="button"
+                  onClick={() => setSelectedAttachment(attachment)}
+                  className="group overflow-hidden rounded-md border border-gray-200 bg-white"
+                >
+                  <img
+                    src={`/api/attachments/${attachment.id}/download?disposition=inline`}
+                    alt={attachment?.filename || "Image attachment"}
+                    className="h-24 w-full object-cover transition-transform group-hover:scale-[1.02]"
+                  />
+                </button>
+              ))}
+            </div>
+          ) : null}
           <div className="flex flex-wrap gap-2">
             {attachments.map((attachment) => (
               <div key={attachment.id} className="text-xs text-gray-500">
