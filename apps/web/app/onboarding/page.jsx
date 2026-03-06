@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth, useOrganizationList } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
@@ -28,8 +28,51 @@ export default function OnboardingWelcomePage() {
   const [shopName, setShopName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [bootstrapping, setBootstrapping] = useState(true);
 
   const canContinue = useMemo(() => shopName.trim().length > 1, [shopName]);
+
+  useEffect(() => {
+    let active = true;
+
+    const routeExistingOrgToNextStep = async () => {
+      if (!orgId) {
+        if (active) setBootstrapping(false);
+        return;
+      }
+
+      const response = await fetch("/api/onboarding/state", { cache: "no-store" }).catch(
+        () => null
+      );
+      const payload = response?.ok ? await response.json().catch(() => null) : null;
+      const steps = payload?.steps || {};
+
+      if (!active) return;
+
+      if (!steps?.shopify_connected) {
+        router.replace("/onboarding/shopify");
+        return;
+      }
+      if (!steps?.email_connected) {
+        router.replace("/onboarding/email");
+        return;
+      }
+      router.replace("/inbox");
+    };
+
+    routeExistingOrgToNextStep().catch(() => {
+      if (!active) return;
+      if (orgId) {
+        router.replace("/onboarding/shopify");
+        return;
+      }
+      setBootstrapping(false);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [orgId, router]);
 
   const handleContinue = async () => {
     const trimmed = shopName.trim();
@@ -62,6 +105,14 @@ export default function OnboardingWelcomePage() {
     }
     router.push("/onboarding/shopify");
   };
+
+  if (bootstrapping) {
+    return (
+      <div className="mx-auto flex w-full max-w-md items-center justify-center py-20 text-sm text-slate-500">
+        Loading onboarding...
+      </div>
+    );
+  }
 
   return (
     <div className="sona-onboarding-shell mx-auto w-full max-w-md">

@@ -4,7 +4,6 @@ import { createClient } from "@supabase/supabase-js";
 import { DashboardPageShell } from "@/components/dashboard-page-shell";
 import { MailboxRow } from "@/components/mailboxes/MailboxRow";
 import { MailboxesAddMenu } from "@/components/mailboxes/MailboxesAddMenu";
-import { MailboxesHelpCard } from "@/components/mailboxes/MailboxesHelpCard";
 import { MailboxesOnboardingTracker } from "@/components/onboarding/MailboxesOnboardingTracker";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 
@@ -134,11 +133,6 @@ export default async function MailboxesPage() {
         </div>
       </section>
 
-      {mailboxes.length ? null : (
-        <section>
-          <MailboxesHelpCard />
-        </section>
-      )}
     </DashboardPageShell>
   );
 }
