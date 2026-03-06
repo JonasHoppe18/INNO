@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -19,7 +20,7 @@ import { useAgentAutomation } from "@/hooks/useAgentAutomation";
 
 const INBOUND_DOMAIN = "inbound.sona-ai.dk";
 
-export function MailboxesAddMenu() {
+export function MailboxesAddMenu({ buttonClassName = "" }) {
   const router = useRouter();
   const { settings: automationSettings, loading: automationLoading, refresh, save } =
     useAgentAutomation();
@@ -97,7 +98,10 @@ export function MailboxesAddMenu() {
 
   return (
     <>
-      <Button className="w-full lg:w-auto" onClick={() => setOpen(true)}>
+      <Button
+        className={cn("w-full lg:w-auto", buttonClassName)}
+        onClick={() => setOpen(true)}
+      >
         Connect mail
       </Button>
 

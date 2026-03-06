@@ -81,8 +81,10 @@ export default function OnboardingEmailPage() {
             </p>
           </div>
 
-          <MailboxesAddMenu />
-          <p className="mt-3 text-center text-xs text-slate-500">
+          <div className="mx-auto w-full max-w-sm">
+            <MailboxesAddMenu buttonClassName="h-12 w-full rounded-xl bg-indigo-700 font-semibold text-white shadow-lg shadow-indigo-700/30 transition-all hover:bg-indigo-800 active:scale-95 lg:w-full" />
+          </div>
+          <p className="mt-4 text-center text-xs text-slate-500">
             Need help setting up forwarding?{" "}
             <a
               href="/guide/other-mail"
@@ -95,7 +97,7 @@ export default function OnboardingEmailPage() {
           </p>
           <button
             type="button"
-            className="mt-2 w-full text-center text-sm text-slate-500 underline-offset-4 transition-colors hover:text-slate-800 hover:underline"
+            className="mt-3 w-full text-center text-sm text-slate-500 underline-offset-4 transition-colors hover:text-slate-800 hover:underline"
             onClick={() => router.push("/inbox")}
           >
             Skip for now
