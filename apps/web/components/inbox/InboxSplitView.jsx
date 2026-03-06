@@ -565,8 +565,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const [orderUpdateDecisionByThread, setOrderUpdateDecisionByThread] = useState({});
   const [orderUpdateSubmittingByThread, setOrderUpdateSubmittingByThread] = useState({});
   const [orderUpdateErrorByThread, setOrderUpdateErrorByThread] = useState({});
-  const [assigneeProfilesById, setAssigneeProfilesById] = useState({});
-  const [mentionUsers, setMentionUsers] = useState([]);
+  const [workspaceMembers, setWorkspaceMembers] = useState([]);
   const [currentSupabaseUserId, setCurrentSupabaseUserId] = useState(null);
   const [workspaceInboxes, setWorkspaceInboxes] = useState([]);
   const headerActionsKeyRef = useRef("");
@@ -862,132 +861,26 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   ]);
 
   useEffect(() => {
-    if (!supabase) return;
-    let active = true;
-
-    const loadAssigneeProfiles = async () => {
-      const response = await fetch("/api/settings/members", {
-        method: "GET",
-        cache: "no-store",
-        credentials: "include",
-      }).catch(() => null);
-      const workspaceMembers = response?.ok
-        ? await response.json().catch(() => ({}))
-        : {};
-      const workspaceMemberRows = Array.isArray(workspaceMembers?.members)
-        ? workspaceMembers.members
-        : [];
-
-      const seededProfiles = {};
-      workspaceMemberRows.forEach((member) => {
-        const userId = String(member?.user_id || "").trim();
-        const clerkUserId = String(member?.clerk_user_id || "").trim();
-        const profileRecord = {
-          user_id: isUuid(userId) ? userId : null,
-          clerk_user_id: clerkUserId || null,
-          first_name: member?.first_name || "",
-          last_name: member?.last_name || "",
-          email: member?.email || "",
-        };
-        if (isUuid(userId)) {
-          seededProfiles[userId] = profileRecord;
-        }
-        if (clerkUserId) {
-          seededProfiles[clerkUserId] = profileRecord;
-        }
-      });
-
-      const candidateUserIds = Array.from(
-        new Set(
-          derivedThreads
-            .flatMap((thread) => [thread?.user_id, thread?.assignee_id])
-            .filter(isUuid)
-        )
-      );
-      workspaceMemberRows.forEach((member) => {
-        const userId = String(member?.user_id || "").trim();
-        if (isUuid(userId)) candidateUserIds.push(userId);
-      });
-
-      if (user?.id) {
-        const { data: ownProfile } = await supabase
-          .from("profiles")
-          .select("user_id")
-          .eq("clerk_user_id", user.id)
-          .maybeSingle();
-        if (isUuid(ownProfile?.user_id)) {
-          candidateUserIds.push(ownProfile.user_id);
-        }
-      }
-
-      const uniqueUserIds = Array.from(new Set(candidateUserIds)).filter(isUuid);
-      if (!uniqueUserIds.length) {
-        if (active) setAssigneeProfilesById(seededProfiles);
-        return;
-      }
-
-      const { data: profileRows, error } = await supabase
-        .from("profiles")
-        .select("user_id, first_name, last_name, email")
-        .in("user_id", uniqueUserIds);
-      if (!active || error) return;
-
-      const next = {};
-      (profileRows || []).forEach((profile) => {
-        if (!isUuid(profile?.user_id)) return;
-        next[profile.user_id] = profile;
-      });
-      setAssigneeProfilesById({ ...seededProfiles, ...next });
-    };
-
-    loadAssigneeProfiles().catch(() => null);
-    return () => {
-      active = false;
-    };
-  }, [derivedThreads, supabase, user?.id]);
-
-  useEffect(() => {
     if (!supabase || !user?.id) return;
     let active = true;
 
-    const loadMentionUsers = async () => {
+    const loadWorkspaceMembers = async () => {
       const response = await fetch("/api/settings/members", {
         method: "GET",
         cache: "no-store",
         credentials: "include",
       }).catch(() => null);
-      if (!response?.ok) {
-        if (active) setMentionUsers([]);
+      if (!active || !response?.ok) {
+        if (active) setWorkspaceMembers([]);
         return;
       }
       const payload = await response.json().catch(() => ({}));
       if (!active) return;
-      const memberRows = Array.isArray(payload?.members) ? payload.members : [];
-      if (!memberRows.length) {
-        if (active) setMentionUsers([]);
-        return;
-      }
-
-      const next = memberRows
-        .map((profile) => {
-          const userId = String(profile?.user_id || "").trim();
-          if (!userId) return null;
-          const fullName = [profile?.first_name, profile?.last_name].filter(Boolean).join(" ").trim();
-          const email = String(profile?.email || "").trim();
-          const label = fullName || email || userId;
-          return {
-            id: userId,
-            label,
-            email,
-          };
-        })
-        .filter(Boolean)
-        .sort((a, b) => a.label.localeCompare(b.label));
-
-      setMentionUsers(next);
+      const rows = Array.isArray(payload?.members) ? payload.members : [];
+      setWorkspaceMembers(rows);
     };
 
-    loadMentionUsers().catch(() => null);
+    loadWorkspaceMembers().catch(() => null);
     return () => {
       active = false;
     };
@@ -1037,10 +930,23 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     [derivedThreads, selectedThreadId]
   );
   const selectedTicketState = ticketStateByThread[selectedThreadId] || DEFAULT_TICKET_STATE;
+  const memberLookupById = useMemo(() => {
+    const map = new Map();
+    (workspaceMembers || []).forEach((member) => {
+      const userId = String(member?.user_id || "").trim();
+      const clerkUserId = String(member?.clerk_user_id || "").trim();
+      if (userId) map.set(userId, member);
+      if (clerkUserId) map.set(clerkUserId, member);
+    });
+    return map;
+  }, [workspaceMembers]);
   const assigneeOptions = useMemo(() => {
     const values = new Set();
     values.add(UNASSIGNED_ASSIGNEE_VALUE);
-    Object.keys(assigneeProfilesById).forEach((userId) => values.add(String(userId)));
+    (workspaceMembers || []).forEach((member) => {
+      const userId = String(member?.user_id || "").trim();
+      if (userId) values.add(userId);
+    });
     derivedThreads.forEach((thread) => {
       if (thread?.assignee_id) values.add(String(thread.assignee_id));
     });
@@ -1054,7 +960,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         if (value === UNASSIGNED_ASSIGNEE_VALUE) {
           return { value, label: "Unassigned" };
         }
-        const profile = assigneeProfilesById[value];
+        const profile = memberLookupById.get(String(value));
         return {
           value,
           label: profile ? getAssigneeLabel(profile, value) : "Unknown member",
@@ -1064,31 +970,23 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     const [unassigned, ...rest] = resolved;
     rest.sort((a, b) => a.label.localeCompare(b.label));
     return [unassigned, ...rest];
-  }, [assigneeProfilesById, derivedThreads, selectedTicketState?.assignee]);
+  }, [derivedThreads, memberLookupById, selectedTicketState?.assignee, workspaceMembers]);
   const effectiveMentionUsers = useMemo(() => {
-    const byId = new Map();
-    (mentionUsers || []).forEach((entry) => {
-      const id = String(entry?.id || "").trim();
-      if (!id) return;
-      byId.set(id, {
-        id,
-        label: String(entry?.label || entry?.email || id).trim(),
-        email: String(entry?.email || "").trim(),
-      });
-    });
-    Object.entries(assigneeProfilesById || {}).forEach(([id, profile]) => {
-      const key = String(id || "").trim();
-      if (!key || byId.has(key)) return;
-      const fullName = [profile?.first_name, profile?.last_name].filter(Boolean).join(" ").trim();
-      const email = String(profile?.email || "").trim();
-      byId.set(key, {
-        id: key,
-        label: fullName || email || key,
-        email,
-      });
-    });
-    return Array.from(byId.values()).sort((a, b) => a.label.localeCompare(b.label));
-  }, [assigneeProfilesById, mentionUsers]);
+    return (workspaceMembers || [])
+      .map((member) => {
+        const userId = String(member?.user_id || "").trim();
+        if (!userId) return null;
+        const fullName = [member?.first_name, member?.last_name].filter(Boolean).join(" ").trim();
+        const email = String(member?.email || "").trim();
+        return {
+          id: userId,
+          label: fullName || email || userId,
+          email,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [workspaceMembers]);
   const selectedTagLabel =
     Array.isArray(selectedThread?.tags) && selectedThread.tags.length
       ? selectedThread.tags.find((tag) => !String(tag || "").startsWith("inbox:")) || "General"
