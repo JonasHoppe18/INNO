@@ -1019,12 +1019,41 @@ async function generateBlockedOrderActionReply(options: {
     ),
   );
   if (!uniqueReasons.length) return null;
+  const reasonsLower = uniqueReasons.join(" ").toLowerCase();
+  const lang = inferLanguageHint("", options.emailBody || "");
+  const isDanish = lang === "da" || lang === "same_as_customer";
+  const customer = String(options.customerName || "").trim() || (isDanish ? "kunden" : "there");
+
+  // Hard guard: if order is cancelled, never phrase as shipped/fulfilled and never mention tracking.
+  if (reasonsLower.includes("cancelled") || reasonsLower.includes("canceled")) {
+    if (isDanish) {
+      return [
+        `Hej ${customer},`,
+        "",
+        "Ordren er allerede annulleret, så vi kan desværre ikke ændre leveringsadressen.",
+        "",
+        "Hvis du stadig ønsker varen, kan du lægge en ny ordre.",
+        "",
+        "God dag.",
+      ].join("\n");
+    }
+    return [
+      `Hi ${customer},`,
+      "",
+      "The order is already canceled, so we unfortunately cannot update the shipping address.",
+      "",
+      "If you still want the item, please place a new order.",
+      "",
+      "Have a great day.",
+    ].join("\n");
+  }
 
   const systemMsg = [
     "Du er en kundeservice-assistent.",
     "Skriv et kort, professionelt svar på samme sprog som kundens mail.",
     `Start altid svaret med "Hej ${options.customerName || "kunden"},".`,
-    "Forklar tydeligt at ønsket ikke kan udføres, fordi ordren allerede er sendt/afsluttet.",
+    "Forklar tydeligt at ønsket ikke kan udføres, baseret på den konkrete blokeringsårsag.",
+    "Nævn aldrig trackingnummer, trackinglink eller forsendelsesstatus medmindre det fremgår eksplicit af årsagen.",
     "Tilbyd et realistisk næste skridt uden at love noget du ikke kan gennemføre.",
     "Returner JSON med felterne reply og actions.",
     "actions SKAL være en tom liste.",

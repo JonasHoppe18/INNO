@@ -56,6 +56,10 @@ const GUIDE_CONTENT = {
     ],
     prerequisites: [
       "A Shopify Partner account.",
+      {
+        label: "Create a Shopify Partner account",
+        href: "https://www.shopify.com/dk/partnere",
+      },
       "Access to the store admin you want to connect.",
       "Client ID and Client Secret from your Shopify app.",
     ],
@@ -311,10 +315,30 @@ export default function GuideDetailPage({ params }) {
           <section className="mt-10">
             <h2 className="text-lg font-semibold">Before you start</h2>
             <ul className="mt-3 space-y-2 text-sm text-slate-700">
-              {guide.prerequisites.map((item) => (
-                <li key={item} className="flex gap-2">
+              {guide.prerequisites.map((item, index) => (
+                <li
+                  key={
+                    typeof item === "string"
+                      ? item
+                      : `${item?.label || "prerequisite"}-${item?.href || index}`
+                  }
+                  className="flex gap-2"
+                >
                   <span className="mt-1 h-1.5 w-1.5 rounded-full bg-slate-400" />
-                  <span>{item}</span>
+                  <span>
+                    {typeof item === "string" ? (
+                      item
+                    ) : (
+                      <Link
+                        href={item?.href || "#"}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-medium text-indigo-600 hover:text-indigo-700 hover:underline"
+                      >
+                        {item?.label || item?.href}
+                      </Link>
+                    )}
+                  </span>
                 </li>
               ))}
             </ul>

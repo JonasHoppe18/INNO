@@ -544,6 +544,7 @@ const formatPendingOrderUpdateDetail = ({
 };
 
 export function InboxSplitView({ messages = [], threads = [], attachments = [] }) {
+  const DRAFT_WAIT_TIMEOUT_MS = 12_000;
   const [liveThreads, setLiveThreads] = useState(threads || []);
   const [liveMessages, setLiveMessages] = useState(messages || []);
   const [liveAttachments, setLiveAttachments] = useState(attachments || []);
@@ -567,6 +568,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const [isSending, setIsSending] = useState(false);
   const [suppressAutoDraftByThread, setSuppressAutoDraftByThread] = useState({});
   const [draftReady, setDraftReady] = useState(false);
+  const [draftWaitTimedOutByThread, setDraftWaitTimedOutByThread] = useState({});
   const [systemDraftUneditedByThread, setSystemDraftUneditedByThread] = useState({});
   const [insightsOpen, setInsightsOpen] = useState(false);
   const [draftLogId, setDraftLogId] = useState(null);
@@ -1479,6 +1481,13 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     setActiveDraftId(null);
     setDraftReady(false);
     draftLastSavedRef.current = "";
+    if (!selectedThreadId) return;
+    setDraftWaitTimedOutByThread((prev) => {
+      if (prev[selectedThreadId] === false || !(selectedThreadId in prev)) return prev;
+      const next = { ...prev };
+      next[selectedThreadId] = false;
+      return next;
+    });
   }, [selectedThreadId]);
 
   useEffect(() => {
@@ -2218,7 +2227,36 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     latestMessageIsInbound &&
     !hasDraftContentReady &&
     !isWaitingForApproval &&
+    !draftWaitTimedOutByThread[selectedThreadId] &&
     !suppressAutoDraftByThread[selectedThreadId];
+
+  useEffect(() => {
+    if (!selectedThreadId) return;
+    if (isLocalThreadId(selectedThreadId)) return;
+    if (suppressAutoDraftByThread[selectedThreadId]) return;
+    if (draftWaitTimedOutByThread[selectedThreadId]) return;
+    if (!latestMessageIsInbound) return;
+    if (hasDraftContentReady) return;
+    if (isWaitingForApproval) return;
+
+    const timerId = setTimeout(() => {
+      setDraftWaitTimedOutByThread((prev) => ({
+        ...prev,
+        [selectedThreadId]: true,
+      }));
+    }, DRAFT_WAIT_TIMEOUT_MS);
+
+    return () => clearTimeout(timerId);
+  }, [
+    DRAFT_WAIT_TIMEOUT_MS,
+    draftWaitTimedOutByThread,
+    hasDraftContentReady,
+    isLocalThreadId,
+    isWaitingForApproval,
+    latestMessageIsInbound,
+    selectedThreadId,
+    suppressAutoDraftByThread,
+  ]);
 
   return (
     <div className="flex h-full flex-1 flex-col overflow-hidden bg-background lg:flex-row">

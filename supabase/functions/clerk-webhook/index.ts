@@ -235,6 +235,23 @@ const collectEmailCandidates = (user: any): Set<string> => {
   return emails;
 };
 
+const extractMembershipUserId = (payload: any): string => {
+  if (!payload || typeof payload !== "object") return "";
+  if (typeof payload?.public_user_data?.user_id === "string") {
+    return payload.public_user_data.user_id;
+  }
+  if (typeof payload?.public_user_data?.userId === "string") {
+    return payload.public_user_data.userId;
+  }
+  if (typeof payload?.user?.id === "string") {
+    return payload.user.id;
+  }
+  if (typeof payload?.user_id === "string") {
+    return payload.user_id;
+  }
+  return "";
+};
+
 const ensureSupabaseUser = async (
   supabase: any,
   clerkUser: any,
@@ -498,6 +515,10 @@ serve(async (req) => {
           { onConflict: "user_id", ignoreDuplicates: true }
         );
     } else if (type === "user.deleted") {
+      if (!data?.id || typeof data.id !== "string") {
+        return new Response("user.deleted mangler user id", { status: 400 });
+      }
+
       const candidateIds = new Set<string>();
 
       const metadataCandidates = [
@@ -554,30 +575,14 @@ serve(async (req) => {
         );
       }
 
-      let authDeleteError: string | null = null;
-
-      for (const candidate of candidateIds) {
-        const resolved = await resolveAuthUserId(supabase, candidate, data.id);
-        if (!resolved) continue;
-
-        const { error: deleteAuthError } = await supabase.auth.admin.deleteUser(
-          resolved,
-        );
-
-        if (deleteAuthError) {
-          authDeleteError = deleteAuthError.message ?? String(deleteAuthError);
-          console.warn(
-            `Kunne ikke slette Supabase-auth-bruger ${resolved}: ${authDeleteError}`,
-          );
-        } else {
-          authDeleteError = null;
-          break;
-        }
-      }
-
-      if (authDeleteError) {
+      // Cleanup relation rows first so auth deletion is not blocked by foreign keys.
+      const { error: deleteWorkspaceMembersError } = await supabase
+        .from("workspace_members")
+        .delete()
+        .eq("clerk_user_id", data.id);
+      if (deleteWorkspaceMembersError) {
         return new Response(
-          `Kunne ikke slette Supabase-auth-bruger: ${authDeleteError}`,
+          `Kunne ikke slette workspace member ved user delete: ${deleteWorkspaceMembersError.message}`,
           { status: 500 },
         );
       }
@@ -592,6 +597,27 @@ serve(async (req) => {
           `Kunne ikke slette profil: ${deleteProfileError.message}`,
           { status: 500 },
         );
+      }
+
+      // Best-effort auth cleanup. Do not fail webhook if auth row is already gone.
+      for (const candidate of candidateIds) {
+        const resolved = await resolveAuthUserId(supabase, candidate, data.id);
+        if (!resolved) continue;
+        const { error: deleteAuthError } = await supabase.auth.admin.deleteUser(
+          resolved,
+        );
+
+        if (deleteAuthError) {
+          const message = String(deleteAuthError.message ?? deleteAuthError).toLowerCase();
+          const alreadyMissing =
+            message.includes("not found") ||
+            message.includes("does not exist") ||
+            message.includes("user not found");
+          if (alreadyMissing) continue;
+          console.warn(
+            `Kunne ikke slette Supabase-auth-bruger ${resolved}: ${deleteAuthError.message ?? deleteAuthError}`,
+          );
+        }
       }
     } else if (type === "organization.created") {
       const orgId = typeof data?.id === "string" ? data.id : "";
@@ -621,12 +647,7 @@ serve(async (req) => {
           : typeof data?.organization_id === "string"
           ? data.organization_id
           : "";
-      const clerkUserId =
-        typeof data?.public_user_data?.user_id === "string"
-          ? data.public_user_data.user_id
-          : typeof data?.public_user_data?.userId === "string"
-          ? data.public_user_data.userId
-          : "";
+      const clerkUserId = extractMembershipUserId(data);
       const role =
         typeof data?.role === "string" && data.role.trim().length
           ? data.role.trim()
@@ -664,12 +685,7 @@ serve(async (req) => {
           : typeof data?.organization_id === "string"
           ? data.organization_id
           : "";
-      const clerkUserId =
-        typeof data?.public_user_data?.user_id === "string"
-          ? data.public_user_data.user_id
-          : typeof data?.public_user_data?.userId === "string"
-          ? data.public_user_data.userId
-          : "";
+      const clerkUserId = extractMembershipUserId(data);
 
       if (!orgId || !clerkUserId) {
         console.error("organizationMembership.deleted mangler org/user", {
