@@ -178,6 +178,60 @@ CREATE TABLE public.mail_attachments (
   CONSTRAINT mail_attachments_mailbox_id_fkey FOREIGN KEY (mailbox_id) REFERENCES public.mail_accounts(id),
   CONSTRAINT mail_attachments_message_id_fkey FOREIGN KEY (message_id) REFERENCES public.mail_messages(id)
 );
+CREATE TABLE public.mail_auto_reply_templates (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  workspace_id uuid,
+  name text NOT NULL,
+  html_layout text NOT NULL,
+  plain_text_fallback text,
+  is_default boolean NOT NULL DEFAULT false,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT mail_auto_reply_templates_pkey PRIMARY KEY (id),
+  CONSTRAINT mail_auto_reply_templates_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.mail_auto_reply_settings (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  workspace_id uuid,
+  mailbox_id uuid,
+  enabled boolean NOT NULL DEFAULT false,
+  trigger_mode text NOT NULL DEFAULT 'first_inbound_per_thread'::text CHECK (
+    trigger_mode = ANY (ARRAY['first_inbound_per_thread'::text, 'every_inbound'::text])
+  ),
+  cooldown_minutes integer NOT NULL DEFAULT 1440,
+  subject_template text NOT NULL DEFAULT 'Tak for din henvendelse'::text,
+  body_text_template text NOT NULL DEFAULT 'Hej,\n\nTak for din henvendelse. Vi har modtaget din besked og vender tilbage hurtigst muligt.\n\nMed venlig hilsen\nSona Team'::text,
+  body_html_template text,
+  template_id uuid,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT mail_auto_reply_settings_pkey PRIMARY KEY (id),
+  CONSTRAINT mail_auto_reply_settings_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT mail_auto_reply_settings_mailbox_id_fkey FOREIGN KEY (mailbox_id) REFERENCES public.mail_accounts(id),
+  CONSTRAINT mail_auto_reply_settings_template_id_fkey FOREIGN KEY (template_id) REFERENCES public.mail_auto_reply_templates(id)
+);
+CREATE TABLE public.mail_auto_reply_events (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  workspace_id uuid,
+  mailbox_id uuid NOT NULL,
+  thread_id uuid,
+  inbound_message_id uuid NOT NULL,
+  rule_id uuid,
+  provider text,
+  recipient_email text,
+  sent_message_id text,
+  sent_at timestamp with time zone NOT NULL DEFAULT now(),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT mail_auto_reply_events_pkey PRIMARY KEY (id),
+  CONSTRAINT mail_auto_reply_events_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT mail_auto_reply_events_mailbox_id_fkey FOREIGN KEY (mailbox_id) REFERENCES public.mail_accounts(id),
+  CONSTRAINT mail_auto_reply_events_thread_id_fkey FOREIGN KEY (thread_id) REFERENCES public.mail_threads(id),
+  CONSTRAINT mail_auto_reply_events_inbound_message_id_fkey FOREIGN KEY (inbound_message_id) REFERENCES public.mail_messages(id),
+  CONSTRAINT mail_auto_reply_events_rule_id_fkey FOREIGN KEY (rule_id) REFERENCES public.mail_auto_reply_settings(id)
+);
 -- Gemmer historik så gmail-poll ikke laver duplikerede drafts
 CREATE TABLE public.gmail_poll_state (
   clerk_user_id text NOT NULL,

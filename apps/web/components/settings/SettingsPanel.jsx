@@ -47,6 +47,7 @@ const MENU_SECTIONS = [
     items: [
       { key: "general", label: "General", icon: Building2 },
       { key: "members", label: "Members", icon: Users2 },
+      { key: "email", label: "Email", icon: Mail },
       { key: "billing", label: "Billing", icon: CreditCard },
     ],
   },
@@ -725,6 +726,214 @@ function BillingTab() {
   );
 }
 
+function renderAutoReplyPreviewHtml(templateHtml, bodyHtml, bodyText) {
+  const layout = String(templateHtml || "").trim() || "<div>{{content}}</div>";
+  const content =
+    String(bodyHtml || "").trim() ||
+    `<div style="white-space:pre-wrap;">${String(bodyText || "").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>`;
+  if (layout.includes("{{content}}")) return layout.replace("{{content}}", content);
+  return `${layout}\n${content}`;
+}
+
+function EmailSettings({
+  enabled,
+  onEnabledChange,
+  subjectTemplate,
+  onSubjectTemplateChange,
+  bodyTextTemplate,
+  onBodyTextTemplateChange,
+  templateHtml,
+  onTemplateHtmlChange,
+  saving,
+  onSave,
+}) {
+  const [innerTab, setInnerTab] = useState("auto-reply");
+  const bodyPreviewHtml = useMemo(
+    () =>
+      `<div style="white-space:pre-wrap;">${String(bodyTextTemplate || "")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")}</div>`,
+    [bodyTextTemplate]
+  );
+  const previewHtml = useMemo(
+    () => renderAutoReplyPreviewHtml(templateHtml, "", bodyTextTemplate),
+    [templateHtml, bodyTextTemplate]
+  );
+
+  return (
+    <section className="max-w-4xl rounded-lg bg-white p-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="inline-flex w-fit rounded-lg bg-slate-100 p-1">
+          <button
+            type="button"
+            onClick={() => setInnerTab("auto-reply")}
+            className={cn(
+              "rounded-md px-4 py-2 text-sm font-medium transition",
+              innerTab === "auto-reply"
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-600 hover:text-slate-900"
+            )}
+          >
+            Auto-Reply
+          </button>
+          <button
+            type="button"
+            onClick={() => setInnerTab("branding")}
+            className={cn(
+              "rounded-md px-4 py-2 text-sm font-medium transition",
+              innerTab === "branding"
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-600 hover:text-slate-900"
+            )}
+          >
+            Branding &amp; Template
+          </button>
+        </div>
+        <Button onClick={onSave} disabled={saving} className="bg-slate-900 text-white hover:bg-slate-800">
+          {saving ? "Saving..." : "Save Changes"}
+        </Button>
+      </div>
+
+      {innerTab === "auto-reply" ? (
+        <div className="mt-6 rounded-lg border border-slate-200 bg-white">
+          <div className="border-b border-slate-200 px-6 py-5">
+            <h2 className="text-2xl font-semibold text-slate-900">Automated Response</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Configure the automatic confirmation sent after customer inquiries.
+            </p>
+          </div>
+
+          <div className="divide-y divide-gray-100 px-6">
+            <div className="grid grid-cols-1 gap-6 py-6 md:grid-cols-3">
+              <div>
+                <h3 className="font-medium text-gray-900">Enable Auto-Reply</h3>
+                <p className="mt-1 text-sm text-gray-500">
+                  Turn on automatic acknowledgement for incoming emails.
+                </p>
+              </div>
+              <div className="md:col-span-2">
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={enabled}
+                    onClick={() => onEnabledChange(!enabled)}
+                    className={cn(
+                      "relative inline-flex h-7 w-12 items-center rounded-full transition",
+                      enabled ? "bg-emerald-500" : "bg-slate-300"
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "inline-block h-5 w-5 transform rounded-full bg-white transition",
+                        enabled ? "translate-x-6" : "translate-x-1"
+                      )}
+                    />
+                  </button>
+                  <span className="text-sm font-medium text-slate-700">
+                    {enabled ? "Enabled" : "Disabled"}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-6 py-6 md:grid-cols-3">
+              <div>
+                <h3 className="font-medium text-gray-900">Message Content</h3>
+                <p className="mt-1 text-sm text-gray-500">
+                  Define the subject and body text customers receive automatically.
+                </p>
+              </div>
+              <div className="space-y-3 md:col-span-2">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Subject
+                  </label>
+                  <Input
+                    value={subjectTemplate}
+                    onChange={(event) => onSubjectTemplateChange(event.target.value)}
+                    placeholder="Tak for din henvendelse"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Body
+                  </label>
+                  <textarea
+                    value={bodyTextTemplate}
+                    onChange={(event) => onBodyTextTemplateChange(event.target.value)}
+                    rows={8}
+                    className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div className="rounded-md border border-slate-200">
+                  <div className="border-b border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600">
+                    <div>From: Support Team &lt;support@yourcompany.com&gt;</div>
+                    <div>To: customer@example.com</div>
+                    <div>Subject: {subjectTemplate || "Tak for din henvendelse"}</div>
+                  </div>
+                  <div
+                    className="p-4 text-sm text-slate-900"
+                    dangerouslySetInnerHTML={{ __html: bodyPreviewHtml }}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-6 rounded-lg border border-slate-200 bg-white">
+          <div className="border-b border-slate-200 px-6 py-5">
+            <h2 className="text-2xl font-semibold text-slate-900">Email Design</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Build a reusable wrapper template for your auto-reply preview.
+            </p>
+          </div>
+          <div className="divide-y divide-gray-100 px-6">
+            <div className="grid grid-cols-1 gap-6 py-6 md:grid-cols-3">
+              <div>
+                <h3 className="font-medium text-gray-900">HTML Wrapper</h3>
+                <p className="mt-1 text-sm text-gray-500">
+                  Include <code>{"{{content}}"}</code> where the auto-reply message should render.
+                </p>
+              </div>
+              <div className="md:col-span-2">
+                <textarea
+                  value={templateHtml}
+                  onChange={(event) => onTemplateHtmlChange(event.target.value)}
+                  rows={12}
+                  className="w-full rounded-md border border-slate-200 px-3 py-2 font-mono text-xs"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-6 py-6 md:grid-cols-3">
+              <div>
+                <h3 className="font-medium text-gray-900">Preview</h3>
+                <p className="mt-1 text-sm text-gray-500">
+                  Shows the auto-reply content from the first tab inside this template.
+                </p>
+              </div>
+              <div className="md:col-span-2">
+                <div className="rounded-md border border-slate-200">
+                  <div className="border-b border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600">
+                    <div>From: Support Team &lt;support@yourcompany.com&gt;</div>
+                    <div>To: customer@example.com</div>
+                    <div>Subject: {subjectTemplate || "Tak for din henvendelse"}</div>
+                  </div>
+                  <div
+                    className="bg-white p-4"
+                    dangerouslySetInnerHTML={{ __html: previewHtml }}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function ProfileTab({ user, isLoaded }) {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -857,6 +1066,20 @@ export function SettingsPanel() {
   const [teamName, setTeamName] = useState("Sona Team");
   const [initialTeamName, setInitialTeamName] = useState("Sona Team");
   const [members, setMembers] = useState([]);
+  const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
+  const [autoReplyTriggerMode, setAutoReplyTriggerMode] = useState("first_inbound_per_thread");
+  const [autoReplyCooldownMinutes, setAutoReplyCooldownMinutes] = useState("1440");
+  const [autoReplySubjectTemplate, setAutoReplySubjectTemplate] = useState("Tak for din henvendelse");
+  const [autoReplyBodyTextTemplate, setAutoReplyBodyTextTemplate] = useState(
+    "Hej,\n\nTak for din henvendelse. Vi har modtaget din besked og vender tilbage hurtigst muligt.\n\nMed venlig hilsen\nSona Team"
+  );
+  const [autoReplyBodyHtmlTemplate, setAutoReplyBodyHtmlTemplate] = useState("");
+  const [autoReplyTemplateId, setAutoReplyTemplateId] = useState(null);
+  const [autoReplyTemplateName, setAutoReplyTemplateName] = useState("Default template");
+  const [autoReplyTemplateHtml, setAutoReplyTemplateHtml] = useState(
+    "<div style=\"font-family:Arial,sans-serif;line-height:1.6;color:#111\">{{content}}</div>"
+  );
+  const [savingAutoReply, setSavingAutoReply] = useState(false);
 
   const loadData = useCallback(async () => {
     if (!supabase) {
@@ -1018,6 +1241,40 @@ export function SettingsPanel() {
         if (membersError) throw membersError;
         setMembers(Array.isArray(profileRows) ? profileRows : []);
       }
+
+      const autoReplyResponse = await fetch("/api/settings/auto-reply", {
+        method: "GET",
+        cache: "no-store",
+        credentials: "include",
+      }).catch(() => null);
+      if (autoReplyResponse?.ok) {
+        const payload = await autoReplyResponse.json().catch(() => ({}));
+        const setting = payload?.setting || {};
+        const template = payload?.template || {};
+        setAutoReplyEnabled(Boolean(setting?.enabled));
+        setAutoReplyTriggerMode(
+          String(setting?.trigger_mode || "first_inbound_per_thread")
+        );
+        setAutoReplyCooldownMinutes(String(setting?.cooldown_minutes ?? 1440));
+        setAutoReplySubjectTemplate(
+          String(setting?.subject_template || "Tak for din henvendelse")
+        );
+        setAutoReplyBodyTextTemplate(
+          String(
+            setting?.body_text_template ||
+              "Hej,\n\nTak for din henvendelse. Vi har modtaget din besked og vender tilbage hurtigst muligt.\n\nMed venlig hilsen\nSona Team"
+          )
+        );
+        setAutoReplyBodyHtmlTemplate(String(setting?.body_html_template || ""));
+        setAutoReplyTemplateId(template?.id || setting?.template_id || null);
+        setAutoReplyTemplateName(String(template?.name || "Default template"));
+        setAutoReplyTemplateHtml(
+          String(
+            template?.html_layout ||
+              "<div style=\"font-family:Arial,sans-serif;line-height:1.6;color:#111\">{{content}}</div>"
+          )
+        );
+      }
     } catch (error) {
       console.error("Settings load failed:", error);
       toast.error("Could not load settings.");
@@ -1064,6 +1321,48 @@ export function SettingsPanel() {
     }
   }, [canSave, saving, shopId, supabase, teamName, workspaceId]);
 
+  const handleSaveAutoReply = useCallback(async () => {
+    if (savingAutoReply) return;
+    setSavingAutoReply(true);
+    try {
+      const response = await fetch("/api/settings/auto-reply", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          enabled: autoReplyEnabled,
+          trigger_mode: autoReplyTriggerMode,
+          cooldown_minutes: Number(autoReplyCooldownMinutes || 1440),
+          subject_template: autoReplySubjectTemplate,
+          body_text_template: autoReplyBodyTextTemplate,
+          body_html_template: autoReplyBodyHtmlTemplate,
+          template_id: autoReplyTemplateId,
+          template_name: autoReplyTemplateName,
+          template_html: autoReplyTemplateHtml,
+          template_text_fallback: autoReplyBodyTextTemplate,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error || "Could not save auto reply settings.");
+      setAutoReplyTemplateId(payload?.template?.id || payload?.setting?.template_id || autoReplyTemplateId);
+      toast.success("Auto reply settings saved.");
+    } catch (error) {
+      toast.error(error?.message || "Could not save auto reply settings.");
+    } finally {
+      setSavingAutoReply(false);
+    }
+  }, [
+    autoReplyBodyHtmlTemplate,
+    autoReplyBodyTextTemplate,
+    autoReplyCooldownMinutes,
+    autoReplyEnabled,
+    autoReplySubjectTemplate,
+    autoReplyTemplateHtml,
+    autoReplyTemplateId,
+    autoReplyTemplateName,
+    autoReplyTriggerMode,
+    savingAutoReply,
+  ]);
+
   const renderContent = () => {
     if (loading) {
       return <TabSkeleton />;
@@ -1096,6 +1395,21 @@ export function SettingsPanel() {
         );
       case "billing":
         return <BillingTab />;
+      case "email":
+        return (
+          <EmailSettings
+            enabled={autoReplyEnabled}
+            onEnabledChange={setAutoReplyEnabled}
+            subjectTemplate={autoReplySubjectTemplate}
+            onSubjectTemplateChange={setAutoReplySubjectTemplate}
+            bodyTextTemplate={autoReplyBodyTextTemplate}
+            onBodyTextTemplateChange={setAutoReplyBodyTextTemplate}
+            templateHtml={autoReplyTemplateHtml}
+            onTemplateHtmlChange={setAutoReplyTemplateHtml}
+            saving={savingAutoReply}
+            onSave={handleSaveAutoReply}
+          />
+        );
       case "general":
       default:
         return (

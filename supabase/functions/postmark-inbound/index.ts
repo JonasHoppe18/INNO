@@ -10,6 +10,10 @@ const SERVICE_ROLE_KEY =
 const WEBHOOK_SECRET = Deno.env.get("SONA_WEBHOOK_SECRET") ?? "";
 const INTERNAL_AGENT_SECRET = Deno.env.get("INTERNAL_AGENT_SECRET") ?? "";
 const IGNORE_SPAM_FILTER = Deno.env.get("POSTMARK_IGNORE_SPAM") === "true";
+const POSTMARK_SERVER_TOKEN = Deno.env.get("POSTMARK_SERVER_TOKEN") ?? "";
+const POSTMARK_MESSAGE_STREAM = Deno.env.get("POSTMARK_MESSAGE_STREAM") ?? "outbound";
+const POSTMARK_FROM_EMAIL = Deno.env.get("POSTMARK_FROM_EMAIL") ?? "support@sona-ai.dk";
+const POSTMARK_FROM_NAME = Deno.env.get("POSTMARK_FROM_NAME") ?? "Sona";
 
 const supabase =
   PROJECT_URL && SERVICE_ROLE_KEY ? createClient(PROJECT_URL, SERVICE_ROLE_KEY) : null;
@@ -29,7 +33,20 @@ type MailboxLookup = {
   mailbox_id: string;
   user_id: string;
   workspace_id: string | null;
+  provider_email: string | null;
+  from_name: string | null;
   status?: string | null;
+};
+
+type AutoReplySettings = {
+  id: string;
+  enabled: boolean;
+  trigger_mode: "first_inbound_per_thread" | "every_inbound";
+  cooldown_minutes: number;
+  subject_template: string;
+  body_text_template: string;
+  body_html_template: string | null;
+  template_id: string | null;
 };
 
 const corsHeaders = {
@@ -162,7 +179,7 @@ async function lookupMailbox(slug: string): Promise<MailboxLookup | null> {
   if (!supabase) return null;
   const { data, error } = await supabase
     .from("mail_accounts")
-    .select("id, user_id, workspace_id, inbound_slug, status")
+    .select("id, user_id, workspace_id, provider_email, from_name, inbound_slug, status")
     .ilike("inbound_slug", slug)
     .maybeSingle();
   if (error) throw new Error(error.message);
@@ -171,8 +188,248 @@ async function lookupMailbox(slug: string): Promise<MailboxLookup | null> {
     mailbox_id: data.id,
     user_id: data.user_id,
     workspace_id: data.workspace_id ?? null,
+    provider_email: data.provider_email ?? null,
+    from_name: data.from_name ?? null,
     status: data.status,
   };
+}
+
+function asString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function firstName(value: string | null | undefined): string {
+  const next = asString(value);
+  if (!next) return "";
+  return next.split(/\s+/)[0] || "";
+}
+
+function isLikelyAutoSender(fromEmail: string | null, headers: PostmarkHeader[]): boolean {
+  const sender = String(fromEmail || "").toLowerCase();
+  if (/no[-_.]?reply|donotreply|mailer-daemon|postmaster|noreply/.test(sender)) return true;
+  const autoSubmitted = String(findHeader(headers, "Auto-Submitted") || "").toLowerCase();
+  const precedence = String(findHeader(headers, "Precedence") || "").toLowerCase();
+  const xAutoResponseSuppress = String(findHeader(headers, "X-Auto-Response-Suppress") || "").toLowerCase();
+  if (autoSubmitted && autoSubmitted !== "no") return true;
+  if (/bulk|list|junk/.test(precedence)) return true;
+  if (xAutoResponseSuppress.includes("all")) return true;
+  return false;
+}
+
+function fillTemplateTokens(template: string, values: Record<string, string>): string {
+  let result = String(template || "");
+  Object.entries(values).forEach(([key, value]) => {
+    result = result.replaceAll(`{{${key}}}`, String(value ?? ""));
+  });
+  return result;
+}
+
+function toPlainText(value: string): string {
+  return String(value || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+async function loadAutoReplySettings(mailbox: MailboxLookup): Promise<AutoReplySettings | null> {
+  if (!supabase) return null;
+  if (!mailbox.workspace_id) return null;
+  const query = supabase
+    .from("mail_auto_reply_settings")
+    .select(
+      "id, enabled, trigger_mode, cooldown_minutes, subject_template, body_text_template, body_html_template, template_id, mailbox_id"
+    )
+    .eq("enabled", true)
+    .eq("workspace_id", mailbox.workspace_id)
+    .order("updated_at", { ascending: false })
+    .limit(20);
+  const { data, error } = await query;
+  if (error) {
+    console.warn("postmark-inbound: failed to load auto reply settings", error.message);
+    return null;
+  }
+  const rows = Array.isArray(data) ? data : [];
+  const selected =
+    rows.find((row) => row?.mailbox_id && row.mailbox_id === mailbox.mailbox_id) ||
+    rows.find((row) => !row?.mailbox_id) ||
+    null;
+  if (!selected?.id) return null;
+  return {
+    id: selected.id,
+    enabled: Boolean(selected.enabled),
+    trigger_mode:
+      selected.trigger_mode === "every_inbound" ? "every_inbound" : "first_inbound_per_thread",
+    cooldown_minutes: Math.max(1, Number(selected.cooldown_minutes ?? 1440)),
+    subject_template: asString(selected.subject_template) || "Tak for din henvendelse",
+    body_text_template:
+      asString(selected.body_text_template) ||
+      "Hej,\n\nTak for din henvendelse. Vi har modtaget din besked og vender tilbage hurtigst muligt.",
+    body_html_template: asString(selected.body_html_template) || null,
+    template_id: asString(selected.template_id) || null,
+  };
+}
+
+async function loadAutoReplyTemplateHtml(
+  mailbox: MailboxLookup,
+  templateId: string | null,
+): Promise<string> {
+  if (!supabase || !templateId || !mailbox.workspace_id) return "{{content}}";
+  const query = supabase
+    .from("mail_auto_reply_templates")
+    .select("html_layout")
+    .eq("workspace_id", mailbox.workspace_id)
+    .eq("id", templateId)
+    .maybeSingle();
+  const { data } = await query;
+  return asString((data as any)?.html_layout) || "{{content}}";
+}
+
+async function sendPostmarkAutoReply(payload: {
+  from: string;
+  fromName: string;
+  to: string;
+  subject: string;
+  textBody: string;
+  htmlBody: string;
+  replyTo?: string | null;
+}): Promise<string | null> {
+  if (!POSTMARK_SERVER_TOKEN) {
+    console.warn("postmark-inbound: POSTMARK_SERVER_TOKEN missing, auto-reply skipped");
+    return null;
+  }
+  const response = await fetch("https://api.postmarkapp.com/email", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "X-Postmark-Server-Token": POSTMARK_SERVER_TOKEN,
+    },
+    body: JSON.stringify({
+      MessageStream: POSTMARK_MESSAGE_STREAM,
+      From: `${payload.fromName} <${payload.from}>`,
+      To: payload.to,
+      Subject: payload.subject,
+      TextBody: payload.textBody,
+      HtmlBody: payload.htmlBody,
+      ReplyTo: payload.replyTo || undefined,
+    }),
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(
+      `Postmark auto-reply failed ${response.status}: ${data?.Message || response.statusText}`,
+    );
+  }
+  return asString(data?.MessageID) || null;
+}
+
+async function maybeSendAutoReply(options: {
+  mailbox: MailboxLookup;
+  threadId: string;
+  inboundMessageId: string | null;
+  fromEmail: string | null;
+  fromName: string | null;
+  subject: string;
+  headers: PostmarkHeader[];
+}): Promise<{ sent: boolean; providerMessageId: string | null }> {
+  if (!supabase) return { sent: false, providerMessageId: null };
+  if (!options.inboundMessageId || !options.fromEmail) return { sent: false, providerMessageId: null };
+  if (isLikelyAutoSender(options.fromEmail, options.headers)) return { sent: false, providerMessageId: null };
+
+  const setting = await loadAutoReplySettings(options.mailbox);
+  if (!setting?.enabled) return { sent: false, providerMessageId: null };
+
+  if (setting.trigger_mode === "first_inbound_per_thread") {
+    const { count } = await supabase
+      .from("mail_messages")
+      .select("id", { count: "exact", head: true })
+      .eq("thread_id", options.threadId)
+      .eq("from_me", false);
+    if (Number(count || 0) > 1) return { sent: false, providerMessageId: null };
+  }
+
+  const recipient = String(options.fromEmail || "").trim().toLowerCase();
+  const { data: previousEvents } = await supabase
+    .from("mail_auto_reply_events")
+    .select("sent_at")
+    .eq("rule_id", setting.id)
+    .eq("thread_id", options.threadId)
+    .eq("recipient_email", recipient)
+    .order("sent_at", { ascending: false })
+    .limit(1);
+  const lastSentAt = asString(previousEvents?.[0]?.sent_at);
+  if (lastSentAt) {
+    const elapsedMinutes = (Date.now() - new Date(lastSentAt).getTime()) / 60000;
+    if (Number.isFinite(elapsedMinutes) && elapsedMinutes < setting.cooldown_minutes) {
+      return { sent: false, providerMessageId: null };
+    }
+  }
+
+  const customerFirstName = firstName(options.fromName || options.fromEmail);
+  const tokenValues = {
+    customer_name: asString(options.fromName),
+    customer_first_name: customerFirstName || "der",
+    team_name: asString(options.mailbox.from_name) || POSTMARK_FROM_NAME,
+    subject: asString(options.subject),
+  };
+  const renderedSubject = fillTemplateTokens(setting.subject_template, tokenValues);
+  const renderedText = fillTemplateTokens(setting.body_text_template, tokenValues);
+  const renderedBodyHtml =
+    fillTemplateTokens(setting.body_html_template || "", tokenValues) ||
+    `<p style="white-space:pre-wrap">${renderedText.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`;
+  const templateHtml = await loadAutoReplyTemplateHtml(options.mailbox, setting.template_id);
+  const mergedHtml = templateHtml.includes("{{content}}")
+    ? templateHtml.replace("{{content}}", renderedBodyHtml)
+    : `${templateHtml}\n${renderedBodyHtml}`;
+  const outgoingFrom = asString(options.mailbox.provider_email) || POSTMARK_FROM_EMAIL;
+  const outgoingName = asString(options.mailbox.from_name) || POSTMARK_FROM_NAME;
+  const providerMessageId = await sendPostmarkAutoReply({
+    from: outgoingFrom,
+    fromName: outgoingName,
+    to: recipient,
+    subject: renderedSubject,
+    textBody: toPlainText(renderedText),
+    htmlBody: mergedHtml,
+    replyTo: options.mailbox.provider_email,
+  });
+  if (!providerMessageId) return { sent: false, providerMessageId: null };
+
+  const nowIso = new Date().toISOString();
+  await supabase.from("mail_messages").insert({
+    user_id: options.mailbox.user_id,
+    workspace_id: options.mailbox.workspace_id,
+    mailbox_id: options.mailbox.mailbox_id,
+    thread_id: options.threadId,
+    provider: "smtp",
+    provider_message_id: providerMessageId,
+    subject: renderedSubject,
+    snippet: toPlainText(renderedText).slice(0, 240),
+    body_text: renderedText,
+    body_html: mergedHtml,
+    from_name: outgoingName,
+    from_email: outgoingFrom,
+    to_emails: [recipient],
+    cc_emails: [],
+    bcc_emails: [],
+    from_me: true,
+    is_read: true,
+    sent_at: nowIso,
+    received_at: null,
+    created_at: nowIso,
+    updated_at: nowIso,
+  });
+  await supabase.from("mail_auto_reply_events").insert({
+    user_id: options.mailbox.user_id,
+    workspace_id: options.mailbox.workspace_id,
+    mailbox_id: options.mailbox.mailbox_id,
+    thread_id: options.threadId,
+    inbound_message_id: options.inboundMessageId,
+    rule_id: setting.id,
+    provider: "smtp",
+    recipient_email: recipient,
+    sent_message_id: providerMessageId,
+    sent_at: nowIso,
+    created_at: nowIso,
+  });
+
+  return { sent: true, providerMessageId };
 }
 
 async function logAgent(step: string, detail: Record<string, unknown>, status: string) {
@@ -634,6 +891,36 @@ Deno.serve(async (req) => {
     { messageId: storedMessageId, slug, subject, from: fromRaw, to: toList },
     "success",
   );
+
+  try {
+    const autoReplyResult = await maybeSendAutoReply({
+      mailbox,
+      threadId,
+      inboundMessageId: messageDbId,
+      fromEmail,
+      fromName,
+      subject,
+      headers,
+    });
+    if (autoReplyResult.sent) {
+      await logAgent(
+        "postmark_inbound_auto_reply_sent",
+        {
+          messageId: storedMessageId,
+          threadId,
+          recipient: fromEmail,
+          sentMessageId: autoReplyResult.providerMessageId,
+        },
+        "success",
+      );
+    }
+  } catch (error) {
+    await logAgent(
+      "postmark_inbound_auto_reply_failed",
+      { messageId: storedMessageId, threadId, error: (error as Error).message },
+      "error",
+    );
+  }
 
   try {
     const autoDraftEnabled = await isAutoDraftEnabled({
