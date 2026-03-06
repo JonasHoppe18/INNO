@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import Image from "next/image";
 import { Download, Reply } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatBytes, getSenderLabel } from "@/components/inbox/inbox-utils";
@@ -238,10 +239,13 @@ export function MessageBubble({
                   onClick={() => setSelectedAttachment(attachment)}
                   className="group overflow-hidden rounded-md border border-gray-200 bg-white"
                 >
-                  <img
+                  <Image
                     src={`/api/attachments/${attachment.id}/download?disposition=inline`}
                     alt={attachment?.filename || "Image attachment"}
+                    width={640}
+                    height={384}
                     className="h-24 w-full object-cover transition-transform group-hover:scale-[1.02]"
+                    unoptimized
                   />
                 </button>
               ))}
@@ -274,10 +278,13 @@ export function MessageBubble({
           </DialogHeader>
           <div className="max-h-[65vh] overflow-auto bg-gray-50 p-4">
             {canPreviewImage && canDownload ? (
-              <img
+              <Image
                 src={selectedAttachmentUrl}
                 alt={selectedAttachment?.filename || "Attachment preview"}
+                width={1600}
+                height={1200}
                 className="mx-auto h-auto max-h-[60vh] max-w-full rounded border border-gray-200 bg-white object-contain"
+                unoptimized
               />
             ) : null}
             {canPreviewPdf && canDownload ? (
