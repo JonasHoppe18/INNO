@@ -11,23 +11,18 @@ const DISMISS_KEY = "sona_setup_banner_dismissed";
 const stepConfig = [
   {
     key: "email_connected",
-    label: "Connect email",
-    href: "/onboarding",
+    label: "Connect mail",
+    href: "/onboarding/email",
   },
   {
     key: "shopify_connected",
     label: "Connect Shopify",
-    href: "/onboarding",
+    href: "/onboarding/shopify",
   },
   {
     key: "ai_configured",
     label: "Configure AI",
-    href: "/onboarding",
-  },
-  {
-    key: "first_draft_created",
-    label: "Get first draft",
-    href: "/onboarding",
+    href: "/onboarding/email",
   },
 ];
 
@@ -60,19 +55,21 @@ export function SetupBanner() {
     };
   }, []);
 
-  const shouldHide =
-    dismissed ||
-    !state ||
-    state.completed ||
-    pathname?.startsWith("/onboarding") ||
-    pathname?.startsWith("/guides");
-
   const progress = useMemo(() => {
     if (!state?.steps) return 0;
     const total = stepConfig.length;
     const done = stepConfig.filter((step) => state.steps[step.key]).length;
     return { done, total };
   }, [state]);
+
+  const setupComplete = Boolean(progress?.total) && progress.done >= progress.total;
+
+  const shouldHide =
+    dismissed ||
+    !state ||
+    setupComplete ||
+    pathname?.startsWith("/onboarding") ||
+    pathname?.startsWith("/guides");
 
   if (shouldHide) return null;
 
