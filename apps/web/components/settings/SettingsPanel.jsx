@@ -6,7 +6,6 @@ import {
   Building2,
   ChevronDown,
   CreditCard,
-  Crown,
   Mail,
   Lock,
   PenLine,
@@ -583,10 +582,9 @@ function MembersTab({
                         </Button>
                         {canEditRole ? (
                           <div className="relative">
-                            <Crown className="pointer-events-none absolute left-2 top-1/2 h-[14px] w-[14px] -translate-y-1/2 text-gray-600" />
                             <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-[14px] w-[14px] -translate-y-1/2 text-gray-600" />
                             <select
-                              className="h-8 appearance-none rounded-md border border-gray-200 bg-white pl-7 pr-7 text-xs font-medium text-gray-700"
+                              className="h-8 appearance-none rounded-md border border-gray-200 bg-white pl-3 pr-7 text-xs font-medium text-gray-700"
                               value={rawRole.includes("admin") ? "org:admin" : "org:member"}
                               onChange={(event) => handleRoleChange(member, event.target.value)}
                               disabled={Boolean(isRoleUpdating)}

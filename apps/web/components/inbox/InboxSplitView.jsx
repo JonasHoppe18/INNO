@@ -7,7 +7,7 @@ import { SonaInsightsModal } from "@/components/inbox/SonaInsightsModal";
 import { deriveThreadsFromMessages } from "@/hooks/useInboxData";
 import { getMessageTimestamp, getSenderLabel, isOutboundMessage } from "@/components/inbox/inbox-utils";
 import { useClerkSupabase } from "@/lib/useClerkSupabase";
-import { useAuth, useUser } from "@clerk/nextjs";
+import { useUser } from "@clerk/nextjs";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { useCustomerLookup } from "@/hooks/useCustomerLookup";
@@ -574,7 +574,6 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const savingDraftRef = useRef(false);
   const draftValueRef = useRef("");
   const supabase = useClerkSupabase();
-  const { orgId } = useAuth();
   const { user } = useUser();
   const searchParams = useSearchParams();
   const { setActions: setHeaderActions } = useSiteHeaderActions();
@@ -862,6 +861,30 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     let active = true;
 
     const loadAssigneeProfiles = async () => {
+      const response = await fetch("/api/settings/members", {
+        method: "GET",
+        cache: "no-store",
+        credentials: "include",
+      }).catch(() => null);
+      const workspaceMembers = response?.ok
+        ? await response.json().catch(() => ({}))
+        : {};
+      const workspaceMemberRows = Array.isArray(workspaceMembers?.members)
+        ? workspaceMembers.members
+        : [];
+
+      const seededProfiles = {};
+      workspaceMemberRows.forEach((member) => {
+        const userId = String(member?.user_id || "").trim();
+        if (!isUuid(userId)) return;
+        seededProfiles[userId] = {
+          user_id: userId,
+          first_name: member?.first_name || "",
+          last_name: member?.last_name || "",
+          email: member?.email || "",
+        };
+      });
+
       const candidateUserIds = Array.from(
         new Set(
           derivedThreads
@@ -869,6 +892,10 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
             .filter(isUuid)
         )
       );
+      workspaceMemberRows.forEach((member) => {
+        const userId = String(member?.user_id || "").trim();
+        if (isUuid(userId)) candidateUserIds.push(userId);
+      });
 
       if (user?.id) {
         const { data: ownProfile } = await supabase
@@ -883,7 +910,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
 
       const uniqueUserIds = Array.from(new Set(candidateUserIds)).filter(isUuid);
       if (!uniqueUserIds.length) {
-        if (active) setAssigneeProfilesById({});
+        if (active) setAssigneeProfilesById(seededProfiles);
         return;
       }
 
@@ -898,7 +925,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         if (!isUuid(profile?.user_id)) return;
         next[profile.user_id] = profile;
       });
-      setAssigneeProfilesById(next);
+      setAssigneeProfilesById({ ...seededProfiles, ...next });
     };
 
     loadAssigneeProfiles().catch(() => null);
@@ -912,53 +939,24 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     let active = true;
 
     const loadMentionUsers = async () => {
-      let workspaceId = null;
-      if (orgId) {
-        const { data: workspace } = await supabase
-          .from("workspaces")
-          .select("id")
-          .eq("clerk_org_id", orgId)
-          .maybeSingle();
-        workspaceId = workspace?.id || null;
+      const response = await fetch("/api/settings/members", {
+        method: "GET",
+        cache: "no-store",
+        credentials: "include",
+      }).catch(() => null);
+      if (!response?.ok) {
+        if (active) setMentionUsers([]);
+        return;
       }
-
-      if (!workspaceId) {
-        const { data: membership } = await supabase
-          .from("workspace_members")
-          .select("workspace_id")
-          .eq("clerk_user_id", user.id)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        workspaceId = membership?.workspace_id || null;
-      }
-
-      if (!workspaceId) {
+      const payload = await response.json().catch(() => ({}));
+      if (!active) return;
+      const memberRows = Array.isArray(payload?.members) ? payload.members : [];
+      if (!memberRows.length) {
         if (active) setMentionUsers([]);
         return;
       }
 
-      const { data: memberRows, error: memberError } = await supabase
-        .from("workspace_members")
-        .select("clerk_user_id")
-        .eq("workspace_id", workspaceId);
-      if (!active || memberError) return;
-
-      const clerkIds = Array.from(
-        new Set((memberRows || []).map((row) => String(row?.clerk_user_id || "").trim()).filter(Boolean))
-      );
-      if (!clerkIds.length) {
-        if (active) setMentionUsers([]);
-        return;
-      }
-
-      const { data: profileRows, error: profileError } = await supabase
-        .from("profiles")
-        .select("user_id, clerk_user_id, first_name, last_name, email")
-        .in("clerk_user_id", clerkIds);
-      if (!active || profileError) return;
-
-      const next = (profileRows || [])
+      const next = memberRows
         .map((profile) => {
           const userId = String(profile?.user_id || "").trim();
           if (!userId) return null;
@@ -981,7 +979,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     return () => {
       active = false;
     };
-  }, [orgId, supabase, user?.id]);
+  }, [supabase, user?.id]);
 
   useEffect(() => {
     if (!supabase || !user?.id) return;
