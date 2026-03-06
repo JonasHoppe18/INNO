@@ -2201,15 +2201,23 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const latestMessageIsInbound = latestThreadMessage
     ? !isOutboundMessage(latestThreadMessage, mailboxEmails)
     : false;
+  const hasDraftContentReady =
+    Boolean(draftMessage) || Boolean(aiDraft) || Boolean(String(draftValue || "").trim());
+  const pendingDecisionForSelectedThread = selectedThreadId
+    ? pendingOrderUpdateByThread[selectedThreadId]
+    : null;
+  const isWaitingForApproval =
+    Boolean(pendingDecisionForSelectedThread) &&
+    !["accepted", "denied"].includes(
+      String(orderUpdateDecisionByThread[selectedThreadId] || "").toLowerCase()
+    );
 
   const isDraftGenerating =
     Boolean(selectedThreadId) &&
     !isLocalThreadId(selectedThreadId) &&
-    !draftReady &&
     latestMessageIsInbound &&
-    !draftMessage &&
-    !aiDraft &&
-    !draftValue.trim() &&
+    !hasDraftContentReady &&
+    !isWaitingForApproval &&
     !suppressAutoDraftByThread[selectedThreadId];
 
   return (

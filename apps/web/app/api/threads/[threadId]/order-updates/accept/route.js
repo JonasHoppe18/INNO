@@ -483,11 +483,11 @@ function isOrderMutationBlocked(order = {}, actionType = "") {
   }
 
   if (order?.cancelled_at) {
-    return "Order is Fulfilled and cannot be changed";
+    return "Order is canceled and cannot be changed";
   }
 
   if (order?.closed_at) {
-    return "Order is Fulfilled and cannot be changed";
+    return "Order is closed and cannot be changed";
   }
 
   const fulfillmentStatus = String(order?.fulfillment_status || "").trim().toLowerCase();
@@ -511,15 +511,58 @@ async function generateBlockedActionDraft({
   customerMessage,
   orderName,
 }) {
+  const customerName = (customerFirstName || "there").trim() || "there";
+  const orderRef = String(orderName || "").trim();
+  const isDanish = /[æøå]|\b(hej|ordren|adresse|ændre|kan|ikke|venlig|hilsen)\b/i.test(
+    String(customerMessage || "")
+  );
+  const reasonLower = String(blockedReason || "").toLowerCase();
+
+  // Deterministic fallback for canceled orders so we never hallucinate shipment/tracking details.
+  if (reasonLower.includes("canceled") || reasonLower.includes("cancelled")) {
+    const blockedActionLineDa =
+      actionType === "cancel_order"
+        ? "Ordren er allerede annulleret."
+        : "Ordren er annulleret, så vi kan desværre ikke ændre leveringsadressen.";
+    const blockedActionLineEn =
+      actionType === "cancel_order"
+        ? "This order is already canceled."
+        : "This order is canceled, so we unfortunately cannot update the shipping address.";
+    if (isDanish) {
+      return [
+        `Hej ${customerName},`,
+        "",
+        orderRef ? `${orderRef}: ${blockedActionLineDa}` : blockedActionLineDa,
+        "",
+        actionType === "cancel_order"
+          ? "Hvis du har andre spørgsmål til ordren, hjælper vi gerne."
+          : "Hvis du stadig ønsker varen, kan du lægge en ny ordre.",
+        "",
+        "God dag.",
+      ].join("\n");
+    }
+    return [
+      `Hi ${customerName},`,
+      "",
+      orderRef ? `${orderRef}: ${blockedActionLineEn}` : blockedActionLineEn,
+      "",
+      actionType === "cancel_order"
+        ? "If you have any other questions about the order, we are happy to help."
+        : "If you still want the item, please place a new order.",
+      "",
+      "Have a great day.",
+    ].join("\n");
+  }
+
   if (!OPENAI_API_KEY) return null;
 
-  const customerName = (customerFirstName || "there").trim() || "there";
   const systemPrompt = [
     "You are Sona, a customer support agent.",
     "Write a short, empathetic email reply in the same language as the customer message.",
     "The requested operation was NOT completed. State this clearly.",
     "Do not invent actions and do not claim any update/cancellation was completed.",
     "Never write phrases equivalent to 'I have updated' or 'I have cancelled' in this context.",
+    "Never mention tracking number, tracking link, or shipment status unless explicitly provided in the prompt.",
     "Do not include any signature. Signature is added later by the app.",
   ].join(" ");
 

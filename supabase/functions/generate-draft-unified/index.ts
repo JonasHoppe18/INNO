@@ -1286,17 +1286,17 @@ Deno.serve(async (req) => {
       emailData.subject,
       emailData.body,
     );
+    const explicitOrderNumber = String(context?.matchedSubjectNumber || "").replace(/\D/g, "");
     const selectedOrder =
       context?.orders?.length
-        ? (context.matchedSubjectNumber
-            ? context.orders.find((item) => {
-                const candidate = String(context.matchedSubjectNumber || "").replace(/\D/g, "");
-                if (!candidate) return false;
-                const orderNum = String(item?.order_number ?? "").replace(/\D/g, "");
-                const nameDigits = String(item?.name ?? "").replace(/\D/g, "");
-                return orderNum === candidate || nameDigits.endsWith(candidate);
-              })
-            : null) || context.orders[0]
+        ? explicitOrderNumber
+          ? context.orders.find((item) => {
+              const orderNum = String(item?.order_number ?? "").replace(/\D/g, "");
+              if (orderNum && orderNum === explicitOrderNumber) return true;
+              const orderName = String(item?.name || "").trim();
+              return new RegExp(`#\\s*${explicitOrderNumber}(?:\\b|\\D)`, "i").test(orderName);
+            }) || null
+          : context.orders[0]
         : null;
     if (selectedOrder) {
       const orderLabel =
@@ -1390,9 +1390,11 @@ Deno.serve(async (req) => {
       });
     }
     const trackingIntent = detectTrackingIntent(emailData.subject || "", emailData.body || "");
-    const trackingDetailsByOrderKey = context?.orders?.length
-      ? await fetchTrackingDetailsForOrders(context.orders)
-      : {};
+    const trackingOrders = selectedOrder ? [selectedOrder] : [];
+    const trackingDetailsByOrderKey =
+      trackingIntent && trackingOrders.length
+        ? await fetchTrackingDetailsForOrders(trackingOrders)
+        : {};
     if (trackingIntent) {
       const trackingKey = selectedOrder ? pickOrderTrackingKey(selectedOrder) : null;
       const selectedTracking = trackingKey ? trackingDetailsByOrderKey[trackingKey] ?? null : null;
@@ -1530,16 +1532,19 @@ Deno.serve(async (req) => {
         _text: text,
       };
     });
-    const trackingTraceHits = Object.entries(trackingDetailsByOrderKey).map(([, detail]) => {
-      const text =
-        `Carrier: ${detail.carrier}. Status: ${detail.statusText}. ` +
-        `Tracking: ${detail.trackingNumber}. Link: ${detail.trackingUrl}`;
-      return {
-        included: false,
-        approx_tokens: estimateTokens(text),
-        _text: text,
-      };
-    });
+    const trackingTraceHits =
+      trackingIntent && selectedOrder
+        ? Object.entries(trackingDetailsByOrderKey).map(([, detail]) => {
+            const text =
+              `Carrier: ${detail.carrier}. Status: ${detail.statusText}. ` +
+              `Tracking: ${detail.trackingNumber}. Link: ${detail.trackingUrl}`;
+            return {
+              included: false,
+              approx_tokens: estimateTokens(text),
+              _text: text,
+            };
+          })
+        : [];
 
     const extras: string[] = [];
     const baseTokens = estimateTokens(promptBase);
@@ -1593,7 +1598,9 @@ Deno.serve(async (req) => {
     };
 
     if (MAX_CONTEXT_TOKENS <= 0 || baseTokens < MAX_CONTEXT_TOKENS) {
-      appendSectionWithBudget("tracking", "LIVE TRACKING:", trackingTraceHits);
+      if (trackingTraceHits.length) {
+        appendSectionWithBudget("tracking", "LIVE TRACKING:", trackingTraceHits);
+      }
       appendSectionWithBudget("knowledge", "RELEVANT KNOWLEDGE & HISTORY:", knowledgeTraceHits);
       appendSectionWithBudget("product", "PRODUKTKONTEKST:", productTraceHits);
       if (inlineImageAttachments.length) {
@@ -1673,6 +1680,7 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
           "Hvis en handling udføres (f.eks. opdater adresse, annuller ordre, refund, hold, line item edit, opdater kontakt, resend invoice, tilføj note/tag), skal actions-listen indeholde et objekt med type, orderId og payload.",
           "Tilladte actions: update_shipping_address, cancel_order, refund_order, change_shipping_method, hold_or_release_fulfillment, edit_line_items, update_customer_contact, add_note, add_tag, add_internal_note_or_tag, resend_confirmation_or_invoice, lookup_order_status, fetch_tracking.",
           "Ved rene status/tracking-spørgsmål skal du foretrække read-only actions: lookup_order_status og fetch_tracking. Undgå add_note/add_tag medmindre kunden udtrykkeligt beder om en intern note/tag.",
+          "Nævn aldrig trackingnummer eller trackinglink, medmindre KONTEKST for den valgte ordre indeholder trackingdata.",
           "For update_shipping_address skal payload.shipping_address mindst indeholde name, address1, city, zip/postal_code og country.",
           "For edit_line_items skal payload.operations bruges med type: set_quantity/remove_line_item/add_variant samt line_item_id/variant_id og quantity.",
           "Afslut ikke med signatur – signaturen tilføjes automatisk senere.",
