@@ -306,10 +306,6 @@ function MembersTab({
   );
 
   const handleInvite = useCallback(async () => {
-    if (!organizationLoaded || !organization) {
-      toast.error("No active organization found.");
-      return;
-    }
     if (!canManageRoles) {
       toast.error("Only admins can invite members.");
       return;
@@ -322,12 +318,15 @@ function MembersTab({
 
     setInviteLoading(true);
     try {
-      if (typeof organization.inviteMember === "function") {
-        await organization.inviteMember({ emailAddress: email, role: inviteRole });
-      } else if (typeof organization.createInvitation === "function") {
-        await organization.createInvitation({ emailAddress: email, role: inviteRole });
-      } else {
-        throw new Error("Organization invites are not available in this environment.");
+      const response = await fetch("/api/settings/members/invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ email, role: inviteRole }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || "Could not send invitation.");
       }
       toast.success("Invitation sent.");
       setInviteOpen(false);
@@ -339,14 +338,10 @@ function MembersTab({
     } finally {
       setInviteLoading(false);
     }
-  }, [canManageRoles, inviteEmail, inviteRole, onInviteCreated, organization, organizationLoaded]);
+  }, [canManageRoles, inviteEmail, inviteRole, onInviteCreated]);
 
   const handleResendInvite = useCallback(
     async (member) => {
-      if (!organizationLoaded || !organization) {
-        toast.error("No active organization found.");
-        return;
-      }
       const email = String(member?.email || "").trim();
       const role = String(member?.workspace_role || "org:member");
       if (!email) {
@@ -354,12 +349,15 @@ function MembersTab({
         return;
       }
       try {
-        if (typeof organization.inviteMember === "function") {
-          await organization.inviteMember({ emailAddress: email, role });
-        } else if (typeof organization.createInvitation === "function") {
-          await organization.createInvitation({ emailAddress: email, role });
-        } else {
-          throw new Error("Invite API not available.");
+        const response = await fetch("/api/settings/members/invite", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ email, role }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload?.error || "Could not resend invite.");
         }
         toast.success("Invitation resent.");
         onInviteCreated?.();
@@ -369,7 +367,7 @@ function MembersTab({
         );
       }
     },
-    [onInviteCreated, organization, organizationLoaded]
+    [onInviteCreated]
   );
 
   const handleRemoveMember = useCallback(
