@@ -1118,8 +1118,11 @@ function enforceReturnChannelGuard(options: {
       /email us/.test(lower) ||
       /contact us via e-?mail/.test(lower) ||
       /contact us by e-?mail/.test(lower) ||
+      /contact us at\s+\S+@\S+/.test(lower) ||
       /send os en e-?mail/.test(lower) ||
-      /skriv .* e-?mail/.test(lower)
+      /skriv .* e-?mail/.test(lower) ||
+      /kontakt os på\s+\S+@\S+/.test(lower) ||
+      /skriv til\s+\S+@\S+/.test(lower)
     ) {
       return false;
     }
@@ -1163,6 +1166,136 @@ function enforceReturnChannelGuard(options: {
     next = `${next}\n\n${askLine}`.trim();
   }
   return next;
+}
+
+function toLineItemGid(value: unknown): string {
+  if (typeof value === "string" && value.startsWith("gid://shopify/LineItem/")) return value;
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return "";
+  return `gid://shopify/LineItem/${Math.trunc(num)}`;
+}
+
+function toVariantGid(value: unknown): string {
+  if (typeof value === "string" && value.startsWith("gid://shopify/ProductVariant/")) return value;
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return "";
+  return `gid://shopify/ProductVariant/${Math.trunc(num)}`;
+}
+
+function inferExchangeReason(subject: string, body: string): string {
+  const text = `${subject || ""}\n${body || ""}`.toLowerCase();
+  if (/\b(defekt|ødelagt|skadet|broken|defective|damaged|faulty)\b/.test(text)) {
+    return "DEFECTIVE";
+  }
+  if (
+    /\b(mangler|missing|kun en|only one|forkert vare|wrong item|not as described|ikke som beskrevet)\b/.test(
+      text,
+    )
+  ) {
+    return "WRONG_ITEM";
+  }
+  return "UNKNOWN";
+}
+
+function hasExchangeSignals(subject: string, body: string): boolean {
+  const text = `${subject || ""}\n${body || ""}`.toLowerCase();
+  return (
+    /\b(ombyt|exchange|replacement|replace|erstatning)\b/.test(text) ||
+    /\b(mangler|missing|kun en|only one|forkert vare|wrong item)\b/.test(text)
+  );
+}
+
+function isInternalAnnotationAction(type: string): boolean {
+  const normalized = String(type || "").trim().toLowerCase();
+  return (
+    normalized === "add_note" ||
+    normalized === "add_tag" ||
+    normalized === "add_internal_note_or_tag"
+  );
+}
+
+function maybeBuildExchangeFallbackAction(options: {
+  selectedOrder: any;
+  orderSummary: string;
+  subject: string;
+  body: string;
+  existingActions: AutomationAction[];
+}): AutomationAction | null {
+  if (!options.selectedOrder) return null;
+  const text = `${options.subject || ""}\n${options.body || ""}`.toLowerCase();
+  const hasExchangeSignal = hasExchangeSignals(options.subject, options.body);
+  const refundOnlySignal =
+    /\b(refund|tilbagebetaling|pengene tilbage)\b/.test(text) &&
+    !/\b(ombyt|exchange|replacement|replace|erstatning)\b/.test(text);
+  if (!hasExchangeSignal || refundOnlySignal) return null;
+  const existingTypes = new Set(
+    (options.existingActions || []).map((item) => String(item?.type || "").trim().toLowerCase()),
+  );
+  if (existingTypes.has("create_exchange_request")) return null;
+  const hasBlockingMutation = Array.from(existingTypes).some(
+    (type) =>
+      ![
+        "lookup_order_status",
+        "fetch_tracking",
+        "add_note",
+        "add_tag",
+        "add_internal_note_or_tag",
+      ].includes(type),
+  );
+  if (hasBlockingMutation) return null;
+
+  const lineItems = Array.isArray(options.selectedOrder?.line_items)
+    ? options.selectedOrder.line_items
+    : [];
+  const chosen = lineItems.find((item: any) => {
+    const lineItemId = toLineItemGid(item?.admin_graphql_api_id || item?.id);
+    const variantId = toVariantGid(item?.variant_admin_graphql_api_id || item?.variant_id);
+    return Boolean(lineItemId && variantId);
+  }) || null;
+  if (!chosen) return null;
+
+  const orderId = Number(options.selectedOrder?.id);
+  if (!Number.isFinite(orderId) || orderId <= 0) return null;
+  let lineItemId = toLineItemGid(chosen?.admin_graphql_api_id || chosen?.id);
+  let variantId = toVariantGid(chosen?.variant_admin_graphql_api_id || chosen?.variant_id);
+  if (!lineItemId || !variantId) {
+    const summary = String(options.orderSummary || "");
+    const lineMatch = summary.match(/line_item_id=(gid:\/\/shopify\/LineItem\/\d+)/i);
+    const variantMatch = summary.match(/variant_id=(gid:\/\/shopify\/ProductVariant\/\d+)/i);
+    lineItemId = lineItemId || (lineMatch?.[1] ? String(lineMatch[1]).trim() : "");
+    variantId = variantId || (variantMatch?.[1] ? String(variantMatch[1]).trim() : "");
+  }
+  if (!lineItemId || !variantId) return null;
+
+  return {
+    type: "create_exchange_request",
+    orderId: Math.trunc(orderId),
+    payload: {
+      return_line_item_id: lineItemId,
+      exchange_variant_id: variantId,
+      return_quantity: 1,
+      exchange_quantity: 1,
+      return_reason: inferExchangeReason(options.subject, options.body),
+    },
+  };
+}
+
+function stripSupportEscalationLines(text: string): string {
+  const lines = String(text || "").split("\n");
+  const filtered = lines.filter((line) => {
+    const lower = line.toLowerCase();
+    if (
+      /support@\S+/.test(lower) ||
+      /kontakt os på\s+\S+@\S+/.test(lower) ||
+      /contact us at\s+\S+@\S+/.test(lower) ||
+      /send us (an )?e-?mail/.test(lower) ||
+      /email us/.test(lower)
+    ) {
+      return false;
+    }
+    return true;
+  });
+  return filtered.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 async function resolveInternalThread(
@@ -1707,10 +1840,11 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
           automationGuidance,
           "Ud over forventet svar skal du returnere JSON med 'reply' og 'actions'.",
           "Hvis en handling udføres (f.eks. opdater adresse, annuller ordre, refund, hold, line item edit, opdater kontakt, resend invoice, tilføj note/tag), skal actions-listen indeholde et objekt med type, orderId og payload.",
-          "Tilladte actions: update_shipping_address, cancel_order, refund_order, change_shipping_method, hold_or_release_fulfillment, edit_line_items, update_customer_contact, add_note, add_tag, add_internal_note_or_tag, resend_confirmation_or_invoice, lookup_order_status, fetch_tracking.",
+          "Tilladte actions: update_shipping_address, cancel_order, refund_order, create_exchange_request, change_shipping_method, hold_or_release_fulfillment, edit_line_items, update_customer_contact, add_note, add_tag, add_internal_note_or_tag, resend_confirmation_or_invoice, lookup_order_status, fetch_tracking.",
           "Ved rene status/tracking-spørgsmål skal du foretrække read-only actions: lookup_order_status og fetch_tracking. Undgå add_note/add_tag medmindre kunden udtrykkeligt beder om en intern note/tag.",
           "Nævn aldrig trackingnummer eller trackinglink, medmindre KONTEKST for den valgte ordre indeholder trackingdata.",
           "For update_shipping_address skal payload.shipping_address mindst indeholde name, address1, city, zip/postal_code og country.",
+          "For create_exchange_request skal payload mindst indeholde return_line_item_id og exchange_variant_id. Brug return_quantity/exchange_quantity hvis kunden har angivet antal.",
           "For edit_line_items skal payload.operations bruges med type: set_quantity/remove_line_item/add_variant samt line_item_id/variant_id og quantity.",
           "Afslut ikke med signatur – signaturen tilføjes automatisk senere.",
         ].join("\n");
@@ -1725,12 +1859,76 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         );
         aiText = reply;
         automationActions = actions ?? [];
+        if (hasExchangeSignals(emailData.subject || "", emailData.body || "")) {
+          automationActions = automationActions.filter(
+            (action) => !isInternalAnnotationAction(String(action?.type || "")),
+          );
+        }
+        const exchangeFallbackAction = maybeBuildExchangeFallbackAction({
+          selectedOrder,
+          orderSummary: context.orderSummary || "",
+          subject: emailData.subject || "",
+          body: emailData.body || "",
+          existingActions: automationActions,
+        });
+        if (exchangeFallbackAction) {
+          automationActions = [...automationActions, exchangeFallbackAction];
+          reasoningLogs.push({
+            step_name: "Shopify Action",
+            step_detail: "Fallback exchange action inferred from return request.",
+            status: "warning",
+          });
+        }
       } else {
         aiText = null;
       }
     } catch (e) {
       console.warn("OpenAI fejl", e?.message || e);
       aiText = null;
+    }
+
+    if (!automationActions.length) {
+      const exchangeFallbackAction = maybeBuildExchangeFallbackAction({
+        selectedOrder,
+        orderSummary: context.orderSummary || "",
+        subject: emailData.subject || "",
+        body: emailData.body || "",
+        existingActions: automationActions,
+      });
+      if (exchangeFallbackAction) {
+        automationActions = [...automationActions, exchangeFallbackAction];
+        reasoningLogs.push({
+          step_name: "Shopify Action",
+          step_detail: "Fallback exchange action inferred after empty AI action set.",
+          status: "warning",
+        });
+      }
+    }
+
+    if (
+      hasExchangeSignals(emailData.subject || "", emailData.body || "") &&
+      !automationActions.some(
+        (action) => String(action?.type || "").trim().toLowerCase() === "create_exchange_request",
+      )
+    ) {
+      const forcedExchangeAction = maybeBuildExchangeFallbackAction({
+        selectedOrder,
+        orderSummary: context.orderSummary || "",
+        subject: emailData.subject || "",
+        body: emailData.body || "",
+        existingActions: automationActions,
+      });
+      if (forcedExchangeAction) {
+        automationActions = [
+          ...automationActions.filter((action) => !isInternalAnnotationAction(String(action?.type || ""))),
+          forcedExchangeAction,
+        ];
+        reasoningLogs.push({
+          step_name: "Shopify Action",
+          step_detail: "Forced exchange action replaced internal note/tag action.",
+          status: "warning",
+        });
+      }
     }
 
     // Fallback hvis AI fejler eller er slået fra.
@@ -1745,6 +1943,9 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
     );
     finalText = await enforceReplyLanguage(customerMessage, finalText, languageHint);
     finalText = ensureFirstLineHasName(finalText, customerFirstName);
+    if (hasExchangeSignals(emailData.subject || "", emailData.body || "")) {
+      finalText = stripSupportEscalationLines(finalText);
+    }
     if (isReturnIntent) {
       finalText = enforceReturnChannelGuard({
         text: finalText,

@@ -465,6 +465,12 @@ const formatPendingOrderUpdateDetail = ({
     }
     return base || "Sona wants to refund this order.";
   }
+  if (action === "create_exchange_request") {
+    return base || "Sona wants to create an exchange request.";
+  }
+  if (action === "process_exchange_return") {
+    return base || "Sona wants to process the created return in Shopify.";
+  }
   if (action === "change_shipping_method") {
     const title = String(payload?.title || payload?.shipping_title || "").trim();
     return title
@@ -1391,7 +1397,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
             [selectedThreadId]: {
               id: String(latestAction.id || ""),
               detail,
-              actionType: asString(latestAction.action_type) || null,
+              actionType: asString(latestAction.actionType || latestAction.action_type) || null,
               payload:
                 latestAction?.payload && typeof latestAction.payload === "object"
                   ? latestAction.payload
@@ -1411,7 +1417,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
             [selectedThreadId]: {
               id: String(latestAction.id || ""),
               detail: failedDetail,
-              actionType: asString(latestAction.action_type) || null,
+              actionType: asString(latestAction.actionType || latestAction.action_type) || null,
               payload:
                 latestAction?.payload && typeof latestAction.payload === "object"
                   ? latestAction.payload
@@ -2052,7 +2058,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   };
 
   const handleOrderUpdateDecision = useCallback(
-    async (decision) => {
+    async (decision, options = undefined) => {
       if (!selectedThreadId) return;
       const normalized = decision === "accepted" ? "accepted" : "denied";
       const pending = pendingOrderUpdateByThread[selectedThreadId];
@@ -2085,6 +2091,10 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
             actionId: pendingLooksLikeUuid ? pendingId : null,
             proposalLogId: pendingLooksLikeUuid ? null : pending.id || null,
             proposalText: pending.detail || "",
+            payloadOverride:
+              options && typeof options === "object" && Object.keys(options).length
+                ? options
+                : null,
           }),
         });
         const payload = await res.json().catch(() => ({}));
@@ -2140,10 +2150,36 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           toast.error(blockedReason, { id: toastId });
           return;
         }
-        setOrderUpdateDecisionByThread((prev) => ({
-          ...prev,
-          [selectedThreadId]: normalized,
-        }));
+        const followUp = payload?.followUpAction || null;
+        if (
+          followUp &&
+          typeof followUp === "object" &&
+          String(followUp?.status || "").toLowerCase() === "pending"
+        ) {
+          setPendingOrderUpdateByThread((prev) => ({
+            ...prev,
+            [selectedThreadId]: {
+              id: String(followUp.id || ""),
+              detail: asString(followUp.detail) || "Process return in Shopify.",
+              actionType: asString(followUp.actionType || followUp.action_type) || null,
+              payload:
+                followUp?.payload && typeof followUp.payload === "object" ? followUp.payload : {},
+              createdAt: followUp.createdAt || null,
+              status: "pending",
+              error: null,
+            },
+          }));
+          setOrderUpdateDecisionByThread((prev) => {
+            const next = { ...prev };
+            delete next[selectedThreadId];
+            return next;
+          });
+        } else {
+          setOrderUpdateDecisionByThread((prev) => ({
+            ...prev,
+            [selectedThreadId]: normalized,
+          }));
+        }
         setOrderUpdateErrorByThread((prev) => {
           const next = { ...prev };
           delete next[selectedThreadId];

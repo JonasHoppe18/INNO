@@ -4,6 +4,7 @@ import FAQsTwo from "@/components/faqs-2";
 import ContentSection from "@/components/content-three";
 import TrustLogos from "@/components/trust-logos";
 import FeaturesGrid from "@/components/features-grid";
+import Pricing from "@/components/pricing";
 import FinalCta from "@/components/final-cta";
 import FooterSection from "@/components/footer-four";
 
@@ -18,6 +19,7 @@ export default function HomePage() {
         <TrustLogos />
         <ContentSection />
         <FeaturesGrid />
+        <Pricing />
         <IntegrationsSection />
         <FAQsTwo />
         <FinalCta />

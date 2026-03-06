@@ -44,12 +44,66 @@ const linkifyText = (value) => {
   return withLinks.replace(/\n\n/g, "<br/><br/>").replace(/\n/g, "<br/>");
 };
 
-const sanitizeEmailHtml = (value) => {
+const normalizeCid = (value = "") =>
+  String(value || "")
+    .trim()
+    .replace(/^cid:/i, "")
+    .replace(/^<|>$/g, "")
+    .toLowerCase();
+
+const buildCidAttachmentUrlMap = (attachments = []) => {
+  const map = new Map();
+  for (const attachment of attachments || []) {
+    const attachmentId = String(attachment?.id || "").trim();
+    if (!attachmentId || !attachment?.storage_path) continue;
+    const candidates = [
+      attachment?.provider_attachment_id,
+      attachment?.providerAttachmentId,
+      attachment?.content_id,
+      attachment?.contentId,
+    ];
+    for (const candidate of candidates) {
+      const key = normalizeCid(candidate);
+      if (!key) continue;
+      if (!map.has(key)) {
+        map.set(key, `/api/attachments/${attachmentId}/download?disposition=inline`);
+      }
+    }
+  }
+  return map;
+};
+
+const resolveInlineCidImages = (html, attachments = []) => {
+  const cidMap = buildCidAttachmentUrlMap(attachments);
+  const removeUnresolvedCidImages = (value) =>
+    String(value || "").replace(/<img\b[^>]*\bsrc=(['"])cid:[^'"]+\1[^>]*>/gi, "");
+  if (!cidMap.size) {
+    // Avoid browser cid: fetch errors when we cannot resolve inline references.
+    return removeUnresolvedCidImages(html);
+  }
+  const replaced = String(html || "").replace(
+    /<img\b[^>]*\bsrc=(['"])cid:([^'"]+)\1[^>]*>/gi,
+    (imgTag, quote, cidValue) => {
+      const key = normalizeCid(cidValue);
+      const mapped = key ? cidMap.get(key) : "";
+      if (!mapped) return "";
+      return String(imgTag).replace(
+        /\bsrc=(['"])cid:[^'"]+\1/i,
+        `src=${quote}${mapped}${quote}`
+      );
+    }
+  );
+  return removeUnresolvedCidImages(replaced);
+};
+
+const sanitizeEmailHtml = (value, attachments = []) => {
   if (!value) return "";
-  return String(value)
+  const htmlWithResolvedInlineCids = resolveInlineCidImages(value, attachments);
+  return String(htmlWithResolvedInlineCids)
     .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
     .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, "")
     .replace(/<link[\s\S]*?>/gi, "")
+    .replace(/<img\b[^>]*>/gi, "")
     .replace(/<\/?font[^>]*>/gi, "")
     .replace(/\sstyle=(['"])[\s\S]*?\1/gi, "")
     .replace(/\sclass=(['"])[\s\S]*?\1/gi, "")
@@ -99,7 +153,7 @@ export function MessageBubble({
       toList.length === 0 &&
       ccList.length === 0 &&
       bccList.length === 0);
-  const safeBodyHtml = sanitizeEmailHtml(message?.body_html || "");
+  const safeBodyHtml = sanitizeEmailHtml(message?.body_html || "", attachments);
   const selectedAttachmentUrl = useMemo(() => {
     if (!selectedAttachment?.id) return "";
     return `/api/attachments/${selectedAttachment.id}/download`;
@@ -111,9 +165,7 @@ export function MessageBubble({
   const canPreviewImage = isImageAttachment(selectedAttachment?.mime_type);
   const canPreviewPdf = isPdfAttachment(selectedAttachment?.mime_type);
   const canDownload = Boolean(selectedAttachment?.storage_path);
-  const inlineImageAttachments = (attachments || []).filter(
-    (attachment) => isImageAttachment(attachment?.mime_type) && attachment?.storage_path && attachment?.id
-  );
+  const attachmentCards = (attachments || []).filter((attachment) => Boolean(attachment?.id));
 
   const initials = senderLabel
     .split(" ")
@@ -231,44 +283,48 @@ export function MessageBubble({
           />
         )}
       </div>
-      {attachments.length ? (
-        <div className="px-4 pb-4">
-          {inlineImageAttachments.length ? (
-            <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {inlineImageAttachments.map((attachment) => (
+      {attachmentCards.length ? (
+        <div className="border-t border-gray-100 px-4 pb-3 pt-2">
+          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400">Files</p>
+          <div className="flex flex-wrap gap-1.5">
+            {attachmentCards.map((attachment) => {
+              const isImage = isImageAttachment(attachment?.mime_type);
+              const canPreview = Boolean(attachment?.storage_path);
+              return (
                 <button
-                  key={`preview-${attachment.id}`}
+                  key={attachment.id}
                   type="button"
                   onClick={() => setSelectedAttachment(attachment)}
-                  className="group overflow-hidden rounded-md border border-gray-200 bg-white"
+                  className="w-[260px] overflow-hidden rounded-md border border-gray-200 bg-white text-left hover:border-gray-300"
                 >
-                  <Image
-                    src={`/api/attachments/${attachment.id}/download?disposition=inline`}
-                    alt={attachment?.filename || "Image attachment"}
-                    width={640}
-                    height={384}
-                    className="h-24 w-full object-cover transition-transform group-hover:scale-[1.02]"
-                    unoptimized
-                  />
+                  <div className="flex items-center gap-2 px-2 py-1.5">
+                    {isImage && canPreview ? (
+                      <Image
+                        src={`/api/attachments/${attachment.id}/download?disposition=inline`}
+                        alt={attachment?.filename || "Image attachment"}
+                        width={56}
+                        height={56}
+                        className="h-12 w-12 shrink-0 rounded object-cover"
+                        unoptimized
+                      />
+                    ) : (
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded bg-gray-100 text-[10px] text-gray-500">
+                        File
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-medium text-gray-800">
+                        {attachment?.filename || "Attachment"}
+                      </p>
+                      <p className="text-[11px] text-gray-500">
+                        {attachment?.mime_type || "Unknown type"}
+                        {attachment?.size_bytes ? ` • ${formatBytes(attachment.size_bytes)}` : ""}
+                      </p>
+                    </div>
+                  </div>
                 </button>
-              ))}
-            </div>
-          ) : null}
-          <div className="flex flex-wrap gap-2">
-            {attachments.map((attachment) => (
-              <div key={attachment.id} className="text-xs text-gray-500">
-                <button
-                  type="button"
-                  onClick={() => setSelectedAttachment(attachment)}
-                  className="font-medium text-gray-700 underline decoration-gray-300 underline-offset-2 hover:text-gray-900"
-                >
-                  {attachment.filename || "Attachment"}
-                </button>
-                <div className="text-[11px] opacity-70">
-                  {attachment.size_bytes ? formatBytes(attachment.size_bytes) : ""}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       ) : null}

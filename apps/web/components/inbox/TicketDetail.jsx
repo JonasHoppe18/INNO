@@ -5,7 +5,7 @@ import { Composer } from "@/components/inbox/Composer";
 import { ThinkingCard } from "@/components/inbox/ThinkingCard";
 import { ActionCard } from "@/components/inbox/ActionCard";
 import { formatMessageTime, getSenderLabel, isOutboundMessage } from "@/components/inbox/inbox-utils";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export function TicketDetail({
   thread,
@@ -40,21 +40,7 @@ export function TicketDetail({
   isSending = false,
 }) {
   const [composerCollapsed, setComposerCollapsed] = useState(false);
-
-  if (!thread) {
-    return (
-      <section className="flex min-h-0 flex-1 flex-col items-center justify-center text-sm text-muted-foreground">
-        Select a ticket to view the conversation.
-      </section>
-    );
-  }
-
-  const lastUpdated = formatMessageTime(thread.last_message_at);
-  const firstMessage = messages[0] || {};
-  const toEmail = firstMessage?.from_email || "";
-  const senderLabel = getSenderLabel(firstMessage) || "";
-  const toLabel = toEmail ? `${senderLabel || "Unknown"} <${toEmail}>` : "";
-  const headerTitle = thread.subject || "Untitled ticket";
+  const [processReturnRestock, setProcessReturnRestock] = useState(true);
   const pendingUpdateState = orderUpdateSubmitting
     ? "applying"
     : orderUpdateDecision === "accepted"
@@ -72,6 +58,8 @@ export function TicketDetail({
     update_shipping_address: "Update Address",
     cancel_order: "Cancel Order",
     refund_order: "Refund Order",
+    create_exchange_request: "Create Exchange",
+    process_exchange_return: "Process Return",
     change_shipping_method: "Change Shipping Method",
     hold_or_release_fulfillment: "Fulfillment Hold/Release",
     edit_line_items: "Edit Line Items",
@@ -83,6 +71,28 @@ export function TicketDetail({
   };
   const pendingActionTitle =
     pendingActionTitleByType[pendingActionType] || "Review Action";
+  const isProcessReturnAction = pendingActionType === "process_exchange_return";
+
+  useEffect(() => {
+    if (!isProcessReturnAction) return;
+    const payloadRestock = pendingOrderUpdate?.payload?.restock;
+    if (typeof payloadRestock === "boolean") {
+      setProcessReturnRestock(payloadRestock);
+      return;
+    }
+    setProcessReturnRestock(true);
+  }, [isProcessReturnAction, pendingOrderUpdate?.id, pendingOrderUpdate?.payload?.restock]);
+
+  const processReturnMeta = useMemo(() => {
+    if (!isProcessReturnAction) return null;
+    const reason = String(pendingOrderUpdate?.payload?.restock_reason || "").trim();
+    const confidence = String(pendingOrderUpdate?.payload?.restock_confidence || "").trim();
+    return { reason, confidence };
+  }, [
+    isProcessReturnAction,
+    pendingOrderUpdate?.payload?.restock_reason,
+    pendingOrderUpdate?.payload?.restock_confidence,
+  ]);
 
   const isApprovalPending = Boolean(pendingOrderUpdate) && pendingUpdateState === "pending";
   const shouldForceUnlocked =
@@ -118,6 +128,42 @@ export function TicketDetail({
       : "pending";
   const shouldShowActionCard = Boolean(pendingOrderUpdate);
   let actionCardInserted = false;
+  const processReturnExtraContent =
+    isProcessReturnAction && actionCardStatus === "pending" ? (
+      <div className="rounded-lg border border-violet-100 bg-white p-3">
+        <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Return options</div>
+        <label className="mt-2 flex items-center gap-2 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            className="h-4 w-4 rounded border-gray-300"
+            checked={processReturnRestock}
+            onChange={(event) => setProcessReturnRestock(Boolean(event.target.checked))}
+          />
+          Restock returned item
+        </label>
+        {processReturnMeta?.reason ? (
+          <div className="mt-2 text-xs text-slate-500">
+            AI: {processReturnMeta.reason}
+            {processReturnMeta?.confidence ? ` (${processReturnMeta.confidence})` : ""}
+          </div>
+        ) : null}
+      </div>
+    ) : null;
+
+  if (!thread) {
+    return (
+      <section className="flex min-h-0 flex-1 flex-col items-center justify-center text-sm text-muted-foreground">
+        Select a ticket to view the conversation.
+      </section>
+    );
+  }
+
+  const lastUpdated = formatMessageTime(thread.last_message_at);
+  const firstMessage = messages[0] || {};
+  const toEmail = firstMessage?.from_email || "";
+  const senderLabel = getSenderLabel(firstMessage) || "";
+  const toLabel = toEmail ? `${senderLabel || "Unknown"} <${toEmail}>` : "";
+  const headerTitle = thread.subject || "Untitled ticket";
 
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white lg:min-w-0">
@@ -190,7 +236,13 @@ export function TicketDetail({
                     detail={pendingOrderUpdate?.detail || ""}
                     error={orderUpdateError || ""}
                     loading={Boolean(orderUpdateSubmitting)}
-                    onApprove={() => onOrderUpdateDecision?.("accepted")}
+                    extraContent={processReturnExtraContent}
+                    onApprove={() =>
+                      onOrderUpdateDecision?.(
+                        "accepted",
+                        isProcessReturnAction ? { restock: processReturnRestock } : undefined
+                      )
+                    }
                     onDecline={() => onOrderUpdateDecision?.("denied")}
                   />
                 ) : null}
@@ -217,7 +269,13 @@ export function TicketDetail({
               detail={pendingOrderUpdate.detail || ""}
               error={orderUpdateError || ""}
               loading={Boolean(orderUpdateSubmitting)}
-              onApprove={() => onOrderUpdateDecision?.("accepted")}
+              extraContent={processReturnExtraContent}
+              onApprove={() =>
+                onOrderUpdateDecision?.(
+                  "accepted",
+                  isProcessReturnAction ? { restock: processReturnRestock } : undefined
+                )
+              }
               onDecline={() => onOrderUpdateDecision?.("denied")}
             />
           ) : null}

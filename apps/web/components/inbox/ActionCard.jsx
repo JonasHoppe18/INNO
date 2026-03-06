@@ -39,6 +39,7 @@ export function ActionCard({
   loading = false,
   onApprove,
   onDecline,
+  extraContent = null,
 }) {
   const [expanded, setExpanded] = useState(false);
   const isPending = status === "pending";
@@ -160,6 +161,7 @@ export function ActionCard({
           </div>
 
           {error ? <div className="mt-2 text-xs text-red-700">{error}</div> : null}
+          {extraContent ? <div className="mt-3">{extraContent}</div> : null}
 
           <div className="mt-3 flex items-center gap-2">
             <button

@@ -862,8 +862,17 @@ Deno.serve(async (req) => {
       : [];
     if (attachments.length) {
       const sanitizeBase64 = (value: unknown): string | null => {
-        const normalized = String(value || "").replace(/\s+/g, "").trim();
+        const raw = String(value || "").trim();
+        if (!raw) return null;
+        const withoutPrefix = raw.includes(",") && /^data:[^,]+,/.test(raw)
+          ? raw.slice(raw.indexOf(",") + 1)
+          : raw;
+        let normalized = withoutPrefix.replace(/\s+/g, "").trim();
         if (!normalized) return null;
+        // Accept URL-safe base64 variants used by some providers.
+        normalized = normalized.replace(/-/g, "+").replace(/_/g, "/");
+        const remainder = normalized.length % 4;
+        if (remainder) normalized = normalized.padEnd(normalized.length + (4 - remainder), "=");
         return /^[A-Za-z0-9+/=]+$/.test(normalized) ? normalized : null;
       };
       const rows = attachments.map((att) => ({

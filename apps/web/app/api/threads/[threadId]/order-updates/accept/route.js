@@ -14,7 +14,7 @@ const SUPABASE_SERVICE_ROLE_KEY =
   process.env.SUPABASE_SERVICE_KEY ||
   "";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
-const SHOPIFY_API_VERSION = "2024-01";
+const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || "2024-07";
 
 function createServiceClient() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null;
@@ -478,7 +478,11 @@ function buildActionKey(actionType, orderId, payload = {}) {
 
 function isOrderMutationBlocked(order = {}, actionType = "") {
   const type = String(actionType || "").trim().toLowerCase();
-  if (type !== "update_shipping_address" && type !== "cancel_order") {
+  if (
+    type !== "update_shipping_address" &&
+    type !== "cancel_order" &&
+    type !== "create_exchange_request"
+  ) {
     return null;
   }
 
@@ -486,15 +490,17 @@ function isOrderMutationBlocked(order = {}, actionType = "") {
     return "Order is canceled and cannot be changed";
   }
 
-  if (order?.closed_at) {
+  if (order?.closed_at && type !== "create_exchange_request") {
     return "Order is closed and cannot be changed";
   }
 
-  const fulfillmentStatus = String(order?.fulfillment_status || "").trim().toLowerCase();
-  const hasFulfillmentRecords = Array.isArray(order?.fulfillments) && order.fulfillments.length > 0;
-  const shippedLikeStatus = new Set(["fulfilled", "partial", "partially_fulfilled"]);
-  if (shippedLikeStatus.has(fulfillmentStatus) || hasFulfillmentRecords) {
-    return "Order is Fulfilled and cannot be changed";
+  if (type !== "create_exchange_request") {
+    const fulfillmentStatus = String(order?.fulfillment_status || "").trim().toLowerCase();
+    const hasFulfillmentRecords = Array.isArray(order?.fulfillments) && order.fulfillments.length > 0;
+    const shippedLikeStatus = new Set(["fulfilled", "partial", "partially_fulfilled"]);
+    if (shippedLikeStatus.has(fulfillmentStatus) || hasFulfillmentRecords) {
+      return "Order is Fulfilled and cannot be changed";
+    }
   }
 
   return null;
@@ -754,6 +760,12 @@ const toShopifyGid = (type, value) => {
   return `gid://shopify/${type}/${Math.trunc(numeric)}`;
 };
 
+const toShopifyReturnGid = (value) => {
+  const direct = asString(value);
+  if (direct.startsWith("gid://shopify/Return/")) return direct;
+  return toShopifyGid("Return", value);
+};
+
 function parseLineItemOperations(payload = {}) {
   const opsRaw = Array.isArray(payload?.operations) ? payload.operations : [];
   const ops = opsRaw
@@ -828,6 +840,780 @@ function assertMutationUserErrors(scope, fallback = "Shopify mutation failed.") 
     .filter(Boolean)
     .join("; ");
   throw Object.assign(new Error(message || fallback), { status: 400 });
+}
+
+function normalizeExchangePayload(payload = {}) {
+  const ALLOWED_RETURN_REASONS = new Set([
+    "COLOR",
+    "DEFECTIVE",
+    "NOT_AS_DESCRIBED",
+    "OTHER",
+    "SIZE_TOO_LARGE",
+    "SIZE_TOO_SMALL",
+    "STYLE",
+    "UNKNOWN",
+    "UNWANTED",
+    "WRONG_ITEM",
+  ]);
+  const normalizeReturnReasonToken = (value = "") => {
+    const token = String(value || "")
+      .trim()
+      .toUpperCase()
+      .replace(/[\s-]+/g, "_");
+    return ALLOWED_RETURN_REASONS.has(token) ? token : "";
+  };
+  const inferReturnReasonFromText = (value = "") => {
+    const text = String(value || "").toLowerCase();
+    if (!text) return "UNKNOWN";
+    if (
+      /\b(defekt|ødelagt|skadet|broken|defective|damaged|faulty)\b/.test(text)
+    ) {
+      return "DEFECTIVE";
+    }
+    if (
+      /\b(forkert vare|forkert produkt|mangler|missing|only one|kun en|kun 1|wrong item)\b/.test(
+        text
+      )
+    ) {
+      return "WRONG_ITEM";
+    }
+    if (/\b(not as described|ikke som beskrevet)\b/.test(text)) {
+      return "NOT_AS_DESCRIBED";
+    }
+    if (/\b(fortrudt|changed my mind|unwanted)\b/.test(text)) {
+      return "UNWANTED";
+    }
+    if (/\b(too small|for lille|size too small)\b/.test(text)) {
+      return "SIZE_TOO_SMALL";
+    }
+    if (/\b(too large|for stor|size too large)\b/.test(text)) {
+      return "SIZE_TOO_LARGE";
+    }
+    return "UNKNOWN";
+  };
+
+  const returnLineItemId = toShopifyGid(
+    "LineItem",
+    payload?.return_line_item_id ?? payload?.returnLineItemId ?? payload?.line_item_id ?? payload?.lineItemId
+  );
+  const returnFulfillmentLineItemId = toShopifyGid(
+    "FulfillmentLineItem",
+    payload?.return_fulfillment_line_item_id ??
+      payload?.returnFulfillmentLineItemId ??
+      payload?.fulfillment_line_item_id ??
+      payload?.fulfillmentLineItemId
+  );
+  const exchangeVariantId = toShopifyGid(
+    "ProductVariant",
+    payload?.exchange_variant_id ?? payload?.exchangeVariantId ?? payload?.variant_id ?? payload?.variantId
+  );
+  const returnQuantity = Math.max(
+    1,
+    Math.trunc(asNumber(payload?.return_quantity ?? payload?.returnQuantity ?? payload?.quantity) ?? 1)
+  );
+  const exchangeQuantity = Math.max(
+    1,
+    Math.trunc(asNumber(payload?.exchange_quantity ?? payload?.exchangeQuantity ?? payload?.quantity) ?? 1)
+  );
+  const rawReason =
+    asString(payload?.return_reason) ||
+    asString(payload?.reason) ||
+    asString(payload?.reason_notes) ||
+    asString(payload?.requested_changes) ||
+    asString(payload?.reason_code) ||
+    "";
+  const normalizedReason = normalizeReturnReasonToken(rawReason);
+  const returnReason = normalizedReason || inferReturnReasonFromText(rawReason);
+  const returnReasonNote =
+    rawReason && !normalizedReason && returnReason !== "UNKNOWN" ? rawReason : "";
+  return {
+    returnLineItemId,
+    returnFulfillmentLineItemId,
+    exchangeVariantId,
+    returnQuantity,
+    exchangeQuantity,
+    returnReason,
+    returnReasonNote,
+  };
+}
+
+function inferRestockRecommendation({ payload = {}, detailText = "" }) {
+  const reasonToken = String(
+    payload?.return_reason ||
+      payload?.returnReason ||
+      payload?.reason_code ||
+      payload?.reason ||
+      ""
+  )
+    .trim()
+    .toUpperCase()
+    .replace(/[\s-]+/g, "_");
+  const text = String(detailText || "").toLowerCase();
+  const combined = `${reasonToken} ${text}`.trim();
+
+  const notRestockSignals = [
+    "DEFECTIVE",
+    "DAMAGED",
+    "BROKEN",
+    "FAULTY",
+    "NOT_AS_DESCRIBED",
+    "MISSING_PARTS",
+    "HYGIENE",
+  ];
+  const restockSignals = [
+    "WRONG_ITEM",
+    "SIZE_TOO_SMALL",
+    "SIZE_TOO_LARGE",
+    "UNWANTED",
+    "STYLE",
+    "COLOR",
+  ];
+  const containsAny = (signals) =>
+    signals.some((signal) => combined.includes(String(signal).toLowerCase()));
+
+  if (
+    containsAny(notRestockSignals) ||
+    /\b(defekt|ødelagt|skadet|broken|defective|damaged|faulty|hygiejne)\b/.test(text)
+  ) {
+    return {
+      restock: false,
+      confidence: "high",
+      reason: "AI vurderer at varen ikke bør restockes pga. fejl/skade/hygiejne.",
+    };
+  }
+  if (
+    containsAny(restockSignals) ||
+    /\b(forkert vare|wrong item|fortrudt|unwanted|forkert størrelse|too small|too large)\b/.test(
+      text
+    )
+  ) {
+    return {
+      restock: true,
+      confidence: "medium",
+      reason: "AI vurderer at varen typisk kan restockes for denne returgrund.",
+    };
+  }
+  return {
+    restock: true,
+    confidence: "low",
+    reason: "AI er usikker og bruger sikker standard: restock = true.",
+  };
+}
+
+function connectionNodes(connection) {
+  if (!connection || typeof connection !== "object") return [];
+  if (Array.isArray(connection?.nodes)) return connection.nodes;
+  if (Array.isArray(connection?.edges)) {
+    return connection.edges
+      .map((edge) => edge?.node)
+      .filter(Boolean);
+  }
+  return [];
+}
+
+async function resolveFulfillmentLineItemId({ domain, token, orderGid, lineItemGid }) {
+  if (!orderGid || !lineItemGid) return "";
+  let fulfillments = [];
+  try {
+    const data = await shopifyGraphql({
+      domain,
+      token,
+      query: `query ResolveFulfillmentLineItemConnection($orderId: ID!) {
+        order(id: $orderId) {
+          fulfillments(first: 50) {
+            nodes {
+              fulfillmentLineItems(first: 250) {
+                nodes {
+                  id
+                  lineItem { id }
+                }
+                edges {
+                  node {
+                    id
+                    lineItem { id }
+                  }
+                }
+              }
+            }
+            edges {
+              node {
+                fulfillmentLineItems(first: 250) {
+                  nodes {
+                    id
+                    lineItem { id }
+                  }
+                  edges {
+                    node {
+                      id
+                      lineItem { id }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }`,
+      variables: { orderId: orderGid },
+    });
+    fulfillments = connectionNodes(data?.order?.fulfillments);
+  } catch {
+    const data = await shopifyGraphql({
+      domain,
+      token,
+      query: `query ResolveFulfillmentLineItemList($orderId: ID!) {
+        order(id: $orderId) {
+          fulfillments {
+            fulfillmentLineItems(first: 250) {
+              nodes {
+                id
+                lineItem { id }
+              }
+              edges {
+                node {
+                  id
+                  lineItem { id }
+                }
+              }
+            }
+          }
+        }
+      }`,
+      variables: { orderId: orderGid },
+    });
+    fulfillments = Array.isArray(data?.order?.fulfillments) ? data.order.fulfillments : [];
+  }
+  for (const fulfillment of fulfillments) {
+    const nodes = connectionNodes(fulfillment?.fulfillmentLineItems);
+    for (const node of nodes) {
+      const currentLineItemId = asString(node?.lineItem?.id);
+      const currentFulfillmentLineItemId = asString(node?.id);
+      if (
+        currentLineItemId &&
+        currentFulfillmentLineItemId &&
+        currentLineItemId === lineItemGid &&
+        currentFulfillmentLineItemId.startsWith("gid://shopify/FulfillmentLineItem/")
+      ) {
+        return currentFulfillmentLineItemId;
+      }
+    }
+  }
+  return "";
+}
+
+async function resolveAnyFulfillmentLineItemId({
+  domain,
+  token,
+  orderGid,
+  preferredVariantGid = "",
+}) {
+  if (!orderGid) return "";
+  let fulfillments = [];
+  try {
+    const data = await shopifyGraphql({
+      domain,
+      token,
+      query: `query ResolveAnyFulfillmentLineItemConnection($orderId: ID!) {
+        order(id: $orderId) {
+          fulfillments(first: 50) {
+            nodes {
+              fulfillmentLineItems(first: 250) {
+                nodes {
+                  id
+                  lineItem {
+                    variant { id }
+                  }
+                }
+                edges {
+                  node {
+                    id
+                    lineItem {
+                      variant { id }
+                    }
+                  }
+                }
+              }
+            }
+            edges {
+              node {
+                fulfillmentLineItems(first: 250) {
+                  nodes {
+                    id
+                    lineItem {
+                      variant { id }
+                    }
+                  }
+                  edges {
+                    node {
+                      id
+                      lineItem {
+                        variant { id }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }`,
+      variables: { orderId: orderGid },
+    });
+    fulfillments = connectionNodes(data?.order?.fulfillments);
+  } catch {
+    const data = await shopifyGraphql({
+      domain,
+      token,
+      query: `query ResolveAnyFulfillmentLineItemList($orderId: ID!) {
+        order(id: $orderId) {
+          fulfillments {
+            fulfillmentLineItems(first: 250) {
+              nodes {
+                id
+                lineItem {
+                  variant { id }
+                }
+              }
+              edges {
+                node {
+                  id
+                  lineItem {
+                    variant { id }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }`,
+      variables: { orderId: orderGid },
+    });
+    fulfillments = Array.isArray(data?.order?.fulfillments) ? data.order.fulfillments : [];
+  }
+  const allItems = [];
+  for (const fulfillment of fulfillments) {
+    const nodes = connectionNodes(fulfillment?.fulfillmentLineItems);
+    for (const node of nodes) {
+      const id = asString(node?.id);
+      const variantId = asString(node?.lineItem?.variant?.id);
+      if (id) allItems.push({ id, variantId });
+    }
+  }
+  if (preferredVariantGid) {
+    const byVariant = allItems.find((item) => item.variantId && item.variantId === preferredVariantGid);
+    if (byVariant?.id) return byVariant.id;
+  }
+  const uniqueIds = Array.from(new Set(allItems.map((item) => item.id).filter(Boolean)));
+  if (uniqueIds.length === 1) return uniqueIds[0];
+  if (uniqueIds.length > 1) return uniqueIds[0];
+  return "";
+}
+
+async function resolveFromReturnableFulfillments({
+  domain,
+  token,
+  orderGid,
+  preferredLineItemGid = "",
+  preferredVariantGid = "",
+}) {
+  if (!orderGid) return "";
+  const data = await shopifyGraphql({
+    domain,
+    token,
+    query: `query ResolveReturnableFulfillmentLineItem($orderId: ID!) {
+      order(id: $orderId) {
+        returnableFulfillments(first: 50) {
+          nodes {
+            returnableFulfillmentLineItems(first: 250) {
+              nodes {
+                fulfillmentLineItem {
+                  id
+                  lineItem {
+                    id
+                    variant {
+                      id
+                    }
+                  }
+                }
+              }
+              edges {
+                node {
+                  fulfillmentLineItem {
+                    id
+                    lineItem {
+                      id
+                      variant {
+                        id
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+          edges {
+            node {
+              returnableFulfillmentLineItems(first: 250) {
+                nodes {
+                  fulfillmentLineItem {
+                    id
+                    lineItem {
+                      id
+                      variant {
+                        id
+                      }
+                    }
+                  }
+                }
+                edges {
+                  node {
+                    fulfillmentLineItem {
+                      id
+                      lineItem {
+                        id
+                        variant {
+                          id
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }`,
+    variables: { orderId: orderGid },
+  });
+
+  const returnableFulfillments = connectionNodes(data?.order?.returnableFulfillments);
+  const candidates = [];
+  for (const returnable of returnableFulfillments) {
+    const items = connectionNodes(returnable?.returnableFulfillmentLineItems);
+    for (const item of items) {
+      const fulfillmentLineItemId = asString(item?.fulfillmentLineItem?.id);
+      const lineItemId = asString(item?.fulfillmentLineItem?.lineItem?.id);
+      const variantId = asString(item?.fulfillmentLineItem?.lineItem?.variant?.id);
+      if (
+        fulfillmentLineItemId &&
+        fulfillmentLineItemId.startsWith("gid://shopify/FulfillmentLineItem/")
+      ) {
+        candidates.push({
+          id: fulfillmentLineItemId,
+          lineItemId,
+          variantId,
+        });
+      }
+    }
+  }
+
+  if (!candidates.length) return "";
+  if (preferredLineItemGid) {
+    const byLineItem = candidates.find((item) => item.lineItemId === preferredLineItemGid);
+    if (byLineItem?.id) return byLineItem.id;
+  }
+  if (preferredVariantGid) {
+    const byVariant = candidates.find((item) => item.variantId === preferredVariantGid);
+    if (byVariant?.id) return byVariant.id;
+  }
+  return candidates[0]?.id || "";
+}
+
+async function diagnoseExchangeEligibility({ domain, token, orderGid }) {
+  if (!orderGid) return "missing_order_gid";
+  try {
+    let status = "unknown";
+    let fulfillmentCount = 0;
+    let returnableCount = -1;
+    try {
+      const data = await shopifyGraphql({
+        domain,
+        token,
+        query: `query DiagnoseExchangeEligibilityConnection($orderId: ID!) {
+          order(id: $orderId) {
+            displayFulfillmentStatus
+            fulfillments(first: 50) { nodes { id } edges { node { id } } }
+            returnableFulfillments(first: 50) { nodes { id } edges { node { id } } }
+          }
+        }`,
+        variables: { orderId: orderGid },
+      });
+      status = asString(data?.order?.displayFulfillmentStatus) || status;
+      fulfillmentCount = connectionNodes(data?.order?.fulfillments).length;
+      returnableCount = connectionNodes(data?.order?.returnableFulfillments).length;
+    } catch {
+      const data = await shopifyGraphql({
+        domain,
+        token,
+        query: `query DiagnoseExchangeEligibilityList($orderId: ID!) {
+          order(id: $orderId) {
+            displayFulfillmentStatus
+            fulfillments { id }
+          }
+        }`,
+        variables: { orderId: orderGid },
+      });
+      status = asString(data?.order?.displayFulfillmentStatus) || status;
+      fulfillmentCount = Array.isArray(data?.order?.fulfillments) ? data.order.fulfillments.length : 0;
+      returnableCount = -1;
+    }
+    return `fulfillment_status=${status}; fulfillments=${fulfillmentCount}; returnable_fulfillments=${returnableCount}`;
+  } catch (error) {
+    return `diagnose_failed=${error instanceof Error ? error.message : String(error)}`;
+  }
+}
+
+async function createExchangeRequest({ domain, token, orderId, payload = {} }) {
+  const orderGid = toShopifyGid("Order", orderId);
+  const normalized = normalizeExchangePayload(payload);
+  if (!orderGid) {
+    throw Object.assign(new Error("Could not resolve order ID for exchange."), { status: 400 });
+  }
+  if (!normalized.exchangeVariantId) {
+    throw Object.assign(new Error("Exchange requires exchange_variant_id (variant to send out)."), {
+      status: 400,
+    });
+  }
+  if (!normalized.exchangeVariantId.startsWith("gid://shopify/ProductVariant/")) {
+    throw Object.assign(new Error("exchange_variant_id must be a ProductVariant gid."), {
+      status: 400,
+    });
+  }
+
+  let fulfillmentLineItemId = normalized.returnFulfillmentLineItemId;
+  if (!fulfillmentLineItemId && normalized.returnLineItemId) {
+    try {
+      fulfillmentLineItemId = await resolveFulfillmentLineItemId({
+        domain,
+        token,
+        orderGid,
+        lineItemGid: normalized.returnLineItemId,
+      });
+    } catch {
+      fulfillmentLineItemId = "";
+    }
+  }
+  if (!fulfillmentLineItemId) {
+    try {
+      fulfillmentLineItemId = await resolveAnyFulfillmentLineItemId({
+        domain,
+        token,
+        orderGid,
+        preferredVariantGid: normalized.exchangeVariantId,
+      });
+    } catch {
+      fulfillmentLineItemId = "";
+    }
+  }
+  if (!fulfillmentLineItemId) {
+    try {
+      fulfillmentLineItemId = await resolveFromReturnableFulfillments({
+        domain,
+        token,
+        orderGid,
+        preferredLineItemGid: normalized.returnLineItemId,
+        preferredVariantGid: normalized.exchangeVariantId,
+      });
+    } catch {
+      fulfillmentLineItemId = "";
+    }
+  }
+  if (!fulfillmentLineItemId) {
+    const diag = await diagnoseExchangeEligibility({
+      domain,
+      token,
+      orderGid,
+    });
+    throw Object.assign(
+      new Error(
+        `Exchange requires return_fulfillment_line_item_id (or a return_line_item_id that maps to a fulfilled line item). ${diag}`
+      ),
+      { status: 400 }
+    );
+  }
+
+  const linePayload = {
+    quantity: normalized.returnQuantity,
+    fulfillmentLineItemId,
+    returnReason: normalized.returnReason || "UNKNOWN",
+    ...(normalized.returnReasonNote ? { returnReasonNote: normalized.returnReasonNote } : {}),
+  };
+  const exchangePayload = {
+    quantity: normalized.exchangeQuantity,
+    variantId: normalized.exchangeVariantId,
+  };
+
+  const createAttempts = [
+    {
+      query: `mutation ReturnCreate($input: ReturnInput!) {
+        returnCreate(returnInput: $input) {
+          return { id status }
+          userErrors { field message }
+        }
+      }`,
+      variables: {
+        input: {
+          orderId: orderGid,
+          returnLineItems: [linePayload],
+          exchangeLineItems: [exchangePayload],
+        },
+      },
+      pick: (data) => data?.returnCreate,
+    },
+  ];
+
+  let returnId = "";
+  let createResult = null;
+  let lastCreateError = null;
+
+  for (const attempt of createAttempts) {
+    try {
+      const data = await shopifyGraphql({
+        domain,
+        token,
+        query: attempt.query,
+        variables: attempt.variables,
+      });
+      const scope = attempt.pick(data) || null;
+      assertMutationUserErrors(scope, "Could not create exchange return.");
+      returnId = asString(scope?.return?.id);
+      createResult = scope?.return || null;
+      if (returnId) break;
+    } catch (error) {
+      lastCreateError = error;
+    }
+  }
+
+  if (!returnId) {
+    const message =
+      lastCreateError instanceof Error
+        ? lastCreateError.message
+        : "Could not create exchange request in Shopify.";
+    throw Object.assign(new Error(message), { status: 400 });
+  }
+
+  return {
+    response: { ok: true, status: 200 },
+    payload: {
+      return_id: returnId,
+      return: createResult,
+      return_reason: normalized.returnReason || "UNKNOWN",
+      process_error: null,
+      auto_processed: false,
+    },
+  };
+}
+
+async function processExchangeReturn({ domain, token, payload = {} }) {
+  const returnId = toShopifyReturnGid(payload?.return_id ?? payload?.returnId);
+  if (!returnId) {
+    throw Object.assign(new Error("Process return requires return_id."), { status: 400 });
+  }
+
+  let returnLineItems = [];
+  let exchangeLineItems = [];
+  try {
+    const data = await shopifyGraphql({
+      domain,
+      token,
+      query: `query ReturnForProcess($id: ID!) {
+        return(id: $id) {
+          id
+          returnLineItems(first: 50) {
+            nodes { id quantity }
+            edges { node { id quantity } }
+          }
+          exchangeLineItems(first: 50) {
+            nodes { id quantity }
+            edges { node { id quantity } }
+          }
+        }
+      }`,
+      variables: { id: returnId },
+    });
+    returnLineItems = connectionNodes(data?.return?.returnLineItems)
+      .map((item) => ({
+        id: asString(item?.id),
+        quantity: Math.max(1, Math.trunc(asNumber(item?.quantity) ?? 1)),
+      }))
+      .filter((item) => item.id);
+    exchangeLineItems = connectionNodes(data?.return?.exchangeLineItems)
+      .map((item) => ({
+        id: asString(item?.id),
+        quantity: Math.max(1, Math.trunc(asNumber(item?.quantity) ?? 1)),
+      }))
+      .filter((item) => item.id);
+  } catch {
+    returnLineItems = [];
+    exchangeLineItems = [];
+  }
+
+  const enrichedInput = {
+    returnId,
+    returnLineItems: returnLineItems.map((item) => ({
+      id: item.id,
+      quantity: item.quantity,
+    })),
+    exchangeLineItems: exchangeLineItems.map((item) => ({
+      id: item.id,
+      quantity: item.quantity,
+    })),
+  };
+
+  // This schema only supports input-based returnProcess. restock behavior may be handled in Shopify UI.
+  const attempts = [
+    {
+      query: `mutation ReturnProcess($input: ReturnProcessInput!) {
+        returnProcess(input: $input) {
+          return { id status }
+          userErrors { field message }
+        }
+      }`,
+      variables: { input: enrichedInput },
+      pick: (data) => data?.returnProcess,
+    },
+    // Fallback if returnLineItems/exchangeLineItems should be omitted by schema.
+    {
+      query: `mutation ReturnProcess($input: ReturnProcessInput!) {
+        returnProcess(input: $input) {
+          return { id status }
+          userErrors { field message }
+        }
+      }`,
+      variables: { input: { returnId } },
+      pick: (data) => data?.returnProcess,
+    },
+  ];
+
+  const processErrors = [];
+  for (const attempt of attempts) {
+    try {
+      const data = await shopifyGraphql({
+        domain,
+        token,
+        query: attempt.query,
+        variables: attempt.variables,
+      });
+      const scope = attempt.pick(data) || null;
+      assertMutationUserErrors(scope, "Could not process return.");
+      return {
+        response: { ok: true, status: 200 },
+        payload: {
+          return_id: returnId,
+          processed: true,
+          process_error: null,
+        },
+      };
+    } catch (error) {
+      processErrors.push(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  const uniqueErrors = Array.from(new Set(processErrors.filter(Boolean)));
+  throw Object.assign(new Error(`Could not process return ${returnId}. ${uniqueErrors.join("; ")}`), {
+    status: 400,
+  });
 }
 
 async function resolveOrder({ domain, token, orderId, orderNumber }) {
@@ -937,6 +1723,19 @@ async function executeShopifyAction({ domain, token, actionType, orderId, payloa
         },
       });
     }
+    case "create_exchange_request":
+      return await createExchangeRequest({
+        domain,
+        token,
+        orderId,
+        payload,
+      });
+    case "process_exchange_return":
+      return await processExchangeReturn({
+        domain,
+        token,
+        payload,
+      });
     case "change_shipping_method": {
       const title = asString(payload?.title ?? payload?.shipping_title);
       const price = asString(payload?.price);
@@ -1271,6 +2070,8 @@ export async function POST(request, { params }) {
   const actionId = body?.actionId ? String(body.actionId).trim() : "";
   const proposalLogId = body?.proposalLogId ? String(body.proposalLogId) : "";
   const proposalText = body?.proposalText ? String(body.proposalText) : "";
+  const payloadOverride =
+    body?.payloadOverride && typeof body.payloadOverride === "object" ? body.payloadOverride : null;
   if (!actionId && !proposalLogId && !proposalText) {
     return NextResponse.json(
       { error: "actionId, proposalLogId or proposalText is required." },
@@ -1427,6 +2228,11 @@ export async function POST(request, { params }) {
     ? "cancel_order"
     : detailText.toLowerCase().startsWith("refund")
     ? "refund_order"
+    : detailText.toLowerCase().includes("process return")
+    ? "process_exchange_return"
+    : detailText.toLowerCase().includes("exchange") ||
+      detailText.toLowerCase().includes("ombyt")
+    ? "create_exchange_request"
     : detailText.toLowerCase().includes("tag")
     ? "add_tag"
     : detailText.toLowerCase().includes("invoice")
@@ -1528,6 +2334,12 @@ export async function POST(request, { params }) {
 
   let payloadForExecution =
     parsed?.payload && typeof parsed.payload === "object" ? { ...parsed.payload } : {};
+  if (payloadOverride && Object.keys(payloadOverride).length) {
+    payloadForExecution = {
+      ...payloadForExecution,
+      ...payloadOverride,
+    };
+  }
   if (
     normalizedActionType === "update_shipping_address" &&
     !payloadForExecution?.shipping_address &&
@@ -1676,14 +2488,23 @@ export async function POST(request, { params }) {
     );
   }
 
-  const updateResult = await executeShopifyAction({
-    domain,
-    token: accessToken,
-    actionType: normalizedActionType,
-    orderId: Number(order.id),
-    payload: payloadForExecution,
-    order,
-  });
+  let updateResult = null;
+  try {
+    updateResult = await executeShopifyAction({
+      domain,
+      token: accessToken,
+      actionType: normalizedActionType,
+      orderId: Number(order.id),
+      payload: payloadForExecution,
+      order,
+    });
+  } catch (error) {
+    const statusCode = Number(error?.status || 400);
+    const message =
+      (error instanceof Error ? error.message : String(error || "")) ||
+      "Could not execute Shopify action.";
+    return NextResponse.json({ error: message }, { status: statusCode });
+  }
 
   if (!updateResult.response.ok) {
     const payload = updateResult.payload || {};
@@ -1856,11 +2677,31 @@ export async function POST(request, { params }) {
   const actionKey = actionRecord?.action_key
     ? String(actionRecord.action_key)
     : buildActionKey(normalizedActionType, order.id, payloadForExecution);
+  const executionPayload =
+    updateResult?.payload && typeof updateResult.payload === "object" ? updateResult.payload : {};
   const actionRowPayload =
     payloadForExecution && typeof payloadForExecution === "object"
-      ? payloadForExecution
+      ? {
+          ...payloadForExecution,
+          ...(Object.keys(executionPayload).length ? { execution_result: executionPayload } : {}),
+          ...(asString(executionPayload?.return_id)
+            ? { return_id: asString(executionPayload.return_id) }
+            : {}),
+          ...(typeof executionPayload?.auto_processed === "boolean"
+            ? { auto_processed: executionPayload.auto_processed }
+            : {}),
+        }
       : parsed?.payload && typeof parsed.payload === "object"
-      ? parsed.payload
+      ? {
+          ...parsed.payload,
+          ...(Object.keys(executionPayload).length ? { execution_result: executionPayload } : {}),
+          ...(asString(executionPayload?.return_id)
+            ? { return_id: asString(executionPayload.return_id) }
+            : {}),
+          ...(typeof executionPayload?.auto_processed === "boolean"
+            ? { auto_processed: executionPayload.auto_processed }
+            : {}),
+        }
       : {};
 
   if (actionRecord?.id) {
@@ -1901,6 +2742,89 @@ export async function POST(request, { params }) {
     });
   }
 
+  let followUpAction = null;
+  if (normalizedActionType === "create_exchange_request") {
+    const returnId = asString(actionRowPayload?.return_id);
+    const autoProcessed = actionRowPayload?.auto_processed === true;
+    if (returnId && !autoProcessed) {
+      const recommendation = inferRestockRecommendation({
+        payload: actionRowPayload,
+        detailText,
+      });
+      const processPayload = {
+        return_id: returnId,
+        restock: recommendation.restock,
+        restock_reason: recommendation.reason,
+        restock_confidence: recommendation.confidence,
+        ai_suggested_restock: recommendation.restock,
+      };
+      const processActionType = "process_exchange_return";
+      const processActionKey = buildActionKey(processActionType, order.id, { return_id: returnId });
+      let existingProcessActionQuery = serviceClient
+        .from("thread_actions")
+        .select("id, status, action_type, detail, payload, created_at")
+        .eq("thread_id", thread.id)
+        .eq("action_key", processActionKey)
+        .order("updated_at", { ascending: false })
+        .limit(1);
+      existingProcessActionQuery = applyScope(existingProcessActionQuery, scope);
+      const { data: existingProcessAction } = await existingProcessActionQuery.maybeSingle();
+      const existingProcessStatus = normalizeActionStatus(existingProcessAction?.status || "");
+      if (existingProcessAction?.id && existingProcessStatus === "pending") {
+        followUpAction = {
+          id: String(existingProcessAction.id),
+          actionType: asString(existingProcessAction.action_type),
+          detail: asString(existingProcessAction.detail),
+          status: asString(existingProcessAction.status),
+          payload:
+            existingProcessAction.payload && typeof existingProcessAction.payload === "object"
+              ? existingProcessAction.payload
+              : {},
+          createdAt: existingProcessAction.created_at || nowIso,
+        };
+      } else {
+        const processDetail = `Process return in Shopify for ${returnId}. AI foreslår restock: ${
+          recommendation.restock ? "Ja" : "Nej"
+        } (${recommendation.confidence}).`;
+        const { data: insertedProcessAction } = await serviceClient
+          .from("thread_actions")
+          .insert({
+            user_id: supabaseUserId,
+            workspace_id: scope.workspaceId ?? null,
+            thread_id: thread.id,
+            action_type: processActionType,
+            action_key: processActionKey,
+            status: "pending",
+            detail: processDetail,
+            payload: processPayload,
+            order_id: String(order.id),
+            order_number: order.order_number ? String(order.order_number) : null,
+            decided_at: null,
+            applied_at: null,
+            updated_at: nowIso,
+            created_at: nowIso,
+            source: "manual_approval",
+            error: null,
+          })
+          .select("id, action_type, detail, status, payload, created_at")
+          .maybeSingle();
+        if (insertedProcessAction?.id) {
+          followUpAction = {
+            id: String(insertedProcessAction.id),
+            actionType: asString(insertedProcessAction.action_type),
+            detail: asString(insertedProcessAction.detail),
+            status: asString(insertedProcessAction.status),
+            payload:
+              insertedProcessAction.payload && typeof insertedProcessAction.payload === "object"
+                ? insertedProcessAction.payload
+                : {},
+            createdAt: insertedProcessAction.created_at || nowIso,
+          };
+        }
+      }
+    }
+  }
+
   return NextResponse.json(
     {
       ok: true,
@@ -1911,6 +2835,7 @@ export async function POST(request, { params }) {
       detail: detailText || null,
       sourceStep: proposalStepName,
       webshipperSync,
+      followUpAction,
     },
     { status: 200 }
   );

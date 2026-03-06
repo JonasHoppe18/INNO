@@ -101,6 +101,8 @@ function getApprovalRequirement(action: string, automation: AutomationSettings):
         return "automatiske refunds er deaktiveret.";
       }
       break;
+    case "create_exchange_request":
+      return "ombytninger kræver manuel godkendelse.";
     default:
       break;
   }
@@ -1041,6 +1043,11 @@ async function handleAction(
       return cancelOrder(shop, apiVersion, orderId, action.payload);
     case "refund_order":
       return refundOrder(shop, apiVersion, orderId, action.payload);
+    case "create_exchange_request":
+      throw Object.assign(
+        new Error("create_exchange_request skal godkendes og udføres manuelt i approve-flow."),
+        { status: 400 },
+      );
     case "hold_or_release_fulfillment":
       return holdOrReleaseFulfillment(shop, apiVersion, orderId, action.payload);
     case "edit_line_items":
@@ -1199,6 +1206,8 @@ export async function executeAutomationActions({
           pendingDetail = "Requested refund.";
         } else if (action.type === "change_shipping_method") {
           pendingDetail = "Requested shipping method change.";
+        } else if (action.type === "create_exchange_request") {
+          pendingDetail = "Requested exchange creation.";
         } else if (action.type === "hold_or_release_fulfillment") {
           const mode = asString(action.payload?.mode ?? action.payload?.operation).toLowerCase();
           pendingDetail =
