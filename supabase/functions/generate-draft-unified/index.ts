@@ -308,6 +308,23 @@ const extractNameFromFromField = (value: string) => {
 const extractNameFromBody = (value: string) => {
   const lines = splitLines(String(value || ""));
   if (!lines.length) return "";
+  const blockedTokens = new Set([
+    "hej",
+    "hi",
+    "hello",
+    "hey",
+    "dear",
+    "hola",
+    "bonjour",
+    "hallo",
+    "goddag",
+    "mvh",
+    "venlig",
+    "hilsen",
+    "regards",
+    "best",
+    "kind",
+  ]);
   for (let idx = lines.length - 1; idx >= 0; idx -= 1) {
     const line = lines[idx];
     if (!line) continue;
@@ -326,6 +343,7 @@ const extractNameFromBody = (value: string) => {
     const cleaned = token.replace(/[^A-Za-zÆØÅæøåÀ-ÿ'-]/g, "").trim();
     if (cleaned.length < 2) continue;
     if (!/[A-Za-zÆØÅæøåÀ-ÿ]/.test(cleaned)) continue;
+    if (blockedTokens.has(cleaned.toLowerCase())) continue;
     return cleaned;
   }
   return "";
@@ -797,7 +815,7 @@ async function getAgentContext(
     userId: ownerUserId,
     workspaceId: scope.workspaceId,
     email,
-    subject,
+    subject: [subject, emailBody].filter(Boolean).join("\n"),
     tokenSecret: ENCRYPTION_KEY,
     apiVersion: SHOPIFY_API_VERSION,
   });

@@ -247,9 +247,12 @@ async function syncWebshipperAction({
 
 function extractOrderNumber(value = "") {
   const text = String(value || "");
-  const match =
-    text.match(/(?:ordre|order)?\s*#?\s*(\d{3,})/i) ?? text.match(/(\d{3,})/);
-  return match ? match[1] : null;
+  const explicitMatch = text.match(
+    /\b(?:ordre|order)\s*(?:nr\.?|number)?\s*#?\s*(\d{3,})\b/i
+  );
+  if (explicitMatch?.[1]) return explicitMatch[1];
+  const hashMatch = text.match(/#\s*(\d{3,})\b/);
+  return hashMatch?.[1] || null;
 }
 
 const asString = (value) => (typeof value === "string" ? value.trim() : "");
@@ -655,8 +658,11 @@ function matchesOrderNumber(order = {}, orderNumber = "") {
   const candidate = String(orderNumber || "").replace(/\D/g, "");
   if (!candidate) return false;
   const orderNum = String(order?.order_number ?? "").replace(/\D/g, "");
-  const nameDigits = String(order?.name ?? "").replace(/\D/g, "");
-  return orderNum === candidate || nameDigits.endsWith(candidate);
+  if (orderNum && orderNum === candidate) return true;
+  const name = String(order?.name || "");
+  if (new RegExp(`#\\s*${candidate}(?:\\b|\\D)`, "i").test(name)) return true;
+  const nameDigits = name.replace(/\D/g, "");
+  return Boolean(nameDigits) && nameDigits === candidate;
 }
 
 async function shopifyRequest({ domain, token, path, method = "GET", body }) {
@@ -806,7 +812,7 @@ async function resolveOrder({ domain, token, orderId, orderNumber }) {
   if (!result.response.ok) return null;
   const orders = Array.isArray(result.payload?.orders) ? result.payload.orders : [];
   if (!orders.length) return null;
-  return orders.find((order) => matchesOrderNumber(order, orderNumber)) || orders[0];
+  return orders.find((order) => matchesOrderNumber(order, orderNumber)) || null;
 }
 
 async function getPrimaryFulfillmentOrderId({ domain, token, orderId }) {
@@ -1638,12 +1644,135 @@ export async function POST(request, { params }) {
 
   if (!updateResult.response.ok) {
     const payload = updateResult.payload || {};
-    const message =
+    const rawMessage =
       payload?.errors ||
       payload?.error ||
       payload?.message ||
       `Shopify returned ${updateResult.response.status}.`;
-    return NextResponse.json({ error: String(message) }, { status: updateResult.response.status });
+    const statusCode = Number(updateResult?.response?.status || 500);
+
+    if (normalizedActionType === "resend_confirmation_or_invoice" && statusCode === 406) {
+      const friendlyReason =
+        "Shopify accepterede ikke automatisk gensendelse af faktura/kvittering for denne ordre. Send den manuelt fra Shopify admin.";
+      const nowIso = new Date().toISOString();
+      const actionKey = actionRecord?.action_key
+        ? String(actionRecord.action_key)
+        : buildActionKey(normalizedActionType, order.id, payloadForExecution);
+      const failedActionDetail = "Could not resend confirmation/invoice automatically.";
+
+      let latestInboundText = "";
+      let latestInboundSubject = thread.subject || "";
+      let latestInboundName = "";
+      let messageQuery = serviceClient
+        .from("mail_messages")
+        .select("body_text, body_html, subject, from_name")
+        .eq("thread_id", thread.id)
+        .eq("from_me", false)
+        .order("received_at", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(1);
+      messageQuery = applyScope(messageQuery, scope);
+      const { data: inboundRow } = await messageQuery.maybeSingle();
+      latestInboundText = asString(inboundRow?.body_text) || asString(inboundRow?.body_html) || "";
+      latestInboundSubject = asString(inboundRow?.subject) || latestInboundSubject;
+      latestInboundName = asString(inboundRow?.from_name) || "";
+      const firstName = latestInboundName ? latestInboundName.split(/\s+/)[0] : "";
+
+      let generatedDraftText = null;
+      try {
+        generatedDraftText = await generateBlockedActionDraft({
+          actionType: normalizedActionType,
+          blockedReason: friendlyReason,
+          customerFirstName: firstName,
+          customerMessage: latestInboundText,
+          orderName: asString(order?.name) || asString(order?.order_number),
+        });
+        if (generatedDraftText) {
+          await upsertThreadDraft({
+            serviceClient,
+            scope,
+            thread,
+            bodyText: generatedDraftText,
+            subject: latestInboundSubject || thread.subject || "Order support",
+          });
+        }
+      } catch (error) {
+        console.warn(
+          "order-updates/accept: failed to generate fallback draft after Shopify 406",
+          error?.message || error
+        );
+      }
+
+      if (actionRecord?.id) {
+        await serviceClient
+          .from("thread_actions")
+          .update({
+            status: "failed",
+            detail: failedActionDetail,
+            payload: payloadForExecution,
+            action_type: normalizedActionType,
+            action_key: actionKey,
+            order_id: String(order.id),
+            order_number: order.order_number ? String(order.order_number) : null,
+            decided_at: nowIso,
+            updated_at: nowIso,
+            error: friendlyReason,
+          })
+          .eq("id", actionRecord.id);
+      } else {
+        await serviceClient.from("thread_actions").insert({
+          user_id: supabaseUserId,
+          workspace_id: scope.workspaceId ?? null,
+          thread_id: thread.id,
+          action_type: normalizedActionType,
+          action_key: actionKey,
+          status: "failed",
+          detail: failedActionDetail,
+          payload: payloadForExecution,
+          order_id: String(order.id),
+          order_number: order.order_number ? String(order.order_number) : null,
+          decided_at: nowIso,
+          updated_at: nowIso,
+          created_at: nowIso,
+          source: "manual_approval",
+          error: friendlyReason,
+        });
+      }
+
+      await serviceClient.from("agent_logs").insert({
+        draft_id: null,
+        step_name: "shopify_action_failed",
+        step_detail: JSON.stringify({
+          thread_id: threadId,
+          action: normalizedActionType,
+          order_id: String(order.id),
+          order_number: order.order_number ?? null,
+          detail: failedActionDetail,
+          status_code: statusCode,
+          reason: friendlyReason,
+          raw: String(rawMessage || ""),
+        }),
+        status: "warning",
+        created_at: nowIso,
+      });
+
+      return NextResponse.json(
+        {
+          ok: true,
+          blocked: true,
+          applied: false,
+          action: normalizedActionType,
+          orderId: String(order.id),
+          orderNumber: order.order_number ?? null,
+          reason: friendlyReason,
+          detail: failedActionDetail,
+          draftGenerated: Boolean(generatedDraftText),
+        },
+        { status: 200 }
+      );
+    }
+
+    return NextResponse.json({ error: String(rawMessage) }, { status: statusCode });
   }
 
   let webshipperSync = null;

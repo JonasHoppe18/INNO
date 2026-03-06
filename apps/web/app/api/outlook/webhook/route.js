@@ -2,18 +2,6 @@
 import { NextResponse } from "next/server";
 import { parseAndVerifyClientState } from "@/lib/outlook";
 
-const SUPABASE_BASE_URL =
-  (process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    process.env.EXPO_PUBLIC_SUPABASE_URL ||
-    ""
-  ).replace(/\/$/, "");
-const SUPABASE_ANON_KEY =
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
-  "";
-const INTERNAL_AGENT_SECRET = process.env.INTERNAL_AGENT_SECRET || "";
-const OUTLOOK_POLL_SECRET = process.env.OUTLOOK_POLL_SECRET || "";
-
 export const runtime = "nodejs";
 
 export async function GET(request) {
@@ -32,7 +20,7 @@ export async function POST(request) {
   const payload = await request.json().catch(() => ({}));
   const notifications = Array.isArray(payload?.value) ? payload.value : [];
 
-  const processed = [];
+  const accepted = [];
   const rejected = [];
 
   for (const notification of notifications) {
@@ -51,56 +39,22 @@ export async function POST(request) {
       continue;
     }
 
-    if (!SUPABASE_BASE_URL || !SUPABASE_ANON_KEY || !(OUTLOOK_POLL_SECRET || INTERNAL_AGENT_SECRET)) {
-      rejected.push({ reason: "missing_supabase_config", userId, messageId });
-      continue;
-    }
-
-    try {
-      const response = await fetch(`${SUPABASE_BASE_URL}/functions/v1/outlook-poll`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: SUPABASE_ANON_KEY,
-          "x-internal-secret": OUTLOOK_POLL_SECRET || INTERNAL_AGENT_SECRET,
-        },
-        body: JSON.stringify({
-          userId,
-          userLimit: 1,
-        }),
-      });
-
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        const errorMessage =
-          typeof data?.error === "string" ? data.error : `HTTP ${response.status}`;
-        throw new Error(errorMessage);
-      }
-
-      processed.push({
-        userId,
-        messageId,
-        subscriptionId: notification?.subscriptionId,
-        polled: true,
-        result: data?.results?.[0] || null,
-      });
-    } catch (error) {
-      console.error("Webhook handling failed:", error);
-      rejected.push({
-        reason: "processing_failed",
-        error: error?.message,
-        userId,
-        messageId,
-      });
-    }
+    accepted.push({
+      userId,
+      messageId,
+      subscriptionId: notification?.subscriptionId || null,
+      ignored: true,
+      reason: "forwarding_postmark_only",
+    });
   }
 
   return NextResponse.json(
     {
       received: notifications.length,
-      drafted: processed.length,
-      processed,
+      accepted: accepted.length,
+      acceptedEvents: accepted,
       rejected,
+      mode: "forwarding_postmark_only",
     },
     { status: 202 }
   );

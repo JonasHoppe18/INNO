@@ -232,9 +232,13 @@ function InboxHeaderActions({
 
 const extractOrderNumber = (value = "") => {
   if (!value) return null;
-  const match =
-    value.match(/(?:ordre|order)?\s*#?\s*(\d{3,})/i) ?? value.match(/(\d{3,})/);
-  return match ? match[1] : null;
+  const text = String(value || "");
+  const explicitMatch = text.match(
+    /\b(?:ordre|order)\s*(?:nr\.?|number)?\s*#?\s*(\d{3,})\b/i
+  );
+  if (explicitMatch?.[1]) return explicitMatch[1];
+  const hashMatch = text.match(/#\s*(\d{3,})\b/);
+  return hashMatch?.[1] || null;
 };
 
 const MOCK_ACTIONS = [
@@ -604,7 +608,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     let timerId = null;
     let consecutiveFailures = 0;
 
-    const BASE_POLL_MS = 10_000;
+    const BASE_POLL_MS = 5_000;
     const HIDDEN_POLL_MS = 30_000;
     const MAX_BACKOFF_MS = 60_000;
 
@@ -717,6 +721,73 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
               };
             });
             return found ? updated : prev;
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      try {
+        channel.unsubscribe();
+      } catch {
+        // noop
+      }
+      supabase?.removeChannel?.(channel);
+    };
+  }, [supabase, user?.id]);
+
+  useEffect(() => {
+    if (!supabase || !user?.id) return;
+    const channel = supabase
+      .channel(`inbox-message-updates:${user.id}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "mail_messages" },
+        (payload) => {
+          const nextMessage = payload?.new;
+          const nextMessageId = String(nextMessage?.id || "").trim();
+          if (!nextMessageId) return;
+          setLiveMessages((prev) => {
+            const existing = Array.isArray(prev) ? prev : [];
+            if (existing.some((message) => String(message?.id || "") === nextMessageId)) {
+              return existing;
+            }
+            return [...existing, nextMessage];
+          });
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "mail_messages" },
+        (payload) => {
+          const nextMessage = payload?.new;
+          const nextMessageId = String(nextMessage?.id || "").trim();
+          if (!nextMessageId) return;
+          setLiveMessages((prev) => {
+            const existing = Array.isArray(prev) ? prev : [];
+            let found = false;
+            const updated = existing.map((message) => {
+              if (String(message?.id || "") !== nextMessageId) return message;
+              found = true;
+              return { ...message, ...nextMessage };
+            });
+            return found ? updated : [...existing, nextMessage];
+          });
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "mail_attachments" },
+        (payload) => {
+          const nextAttachment = payload?.new;
+          const nextAttachmentId = String(nextAttachment?.id || "").trim();
+          if (!nextAttachmentId) return;
+          setLiveAttachments((prev) => {
+            const existing = Array.isArray(prev) ? prev : [];
+            if (existing.some((attachment) => String(attachment?.id || "") === nextAttachmentId)) {
+              return existing;
+            }
+            return [...existing, nextAttachment];
           });
         }
       )

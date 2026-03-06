@@ -45,9 +45,13 @@ function normalizeOrderNumber(value) {
 
 function extractOrderNumber(subject) {
   if (!subject) return null;
-  const match =
-    subject.match(/(?:ordre|order)?\s*#?\s*(\d{3,})/i) ?? subject.match(/(\d{3,})/);
-  return match ? match[1] : null;
+  const text = String(subject || "");
+  const explicitMatch = text.match(
+    /\b(?:ordre|order)\s*(?:nr\.?|number)?\s*#?\s*(\d{3,})\b/i
+  );
+  if (explicitMatch?.[1]) return explicitMatch[1];
+  const hashMatch = text.match(/#\s*(\d{3,})\b/);
+  return hashMatch?.[1] || null;
 }
 
 function buildCacheKey({ platform, email, orderNumber }) {
@@ -70,20 +74,17 @@ function buildEmailVariants(email) {
 
 function matchesOrderNumber(order, candidate) {
   if (!candidate) return false;
-  const values = [
-    order?.name,
-    order?.order_number,
-    order?.id,
-    order?.number,
-    order?.legacy_order?.order_number,
-  ];
-  return values.some((value) => {
-    if (!value && value !== 0) return false;
-    const str = String(value);
-    if (str.includes(candidate)) return true;
-    const digits = str.replace(/\D/g, "");
-    return digits ? digits.includes(candidate) : false;
-  });
+  const normalizedCandidate = String(candidate).replace(/\D/g, "");
+  if (!normalizedCandidate) return false;
+  const orderNumber = String(order?.order_number ?? "").replace(/\D/g, "");
+  if (orderNumber && orderNumber === normalizedCandidate) return true;
+  const legacyOrderNumber = String(order?.legacy_order?.order_number ?? "").replace(/\D/g, "");
+  if (legacyOrderNumber && legacyOrderNumber === normalizedCandidate) return true;
+  const name = String(order?.name || "");
+  if (!name) return false;
+  if (new RegExp(`#\\s*${normalizedCandidate}(?:\\b|\\D)`, "i").test(name)) return true;
+  const nameDigits = name.replace(/\D/g, "");
+  return Boolean(nameDigits) && nameDigits === normalizedCandidate;
 }
 
 function matchesCustomerEmail(order, candidateEmail) {

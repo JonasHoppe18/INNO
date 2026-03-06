@@ -609,7 +609,7 @@ Deno.serve(async (req) => {
       supabase,
       userId: supabaseUserId,
       email: fromAddress,
-      subject,
+      subject: [subject, textContent].filter(Boolean).join("\n"),
       tokenSecret: ENCRYPTION_KEY,
       apiVersion: SHOPIFY_API_VERSION,
     });

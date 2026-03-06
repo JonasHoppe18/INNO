@@ -264,20 +264,17 @@ function extractNextPageInfo(linkHeader: string | null): string | null {
 }
 
 function matchesOrderNumber(order: any, candidate: string): boolean {
-  const values = [
-    order?.name,
-    order?.order_number,
-    order?.id,
-    order?.number,
-    order?.legacy_order?.order_number,
-  ];
-  return values.some((value) => {
-    if (!value && value !== 0) return false;
-    const str = String(value);
-    if (str.includes(candidate)) return true;
-    const digits = str.replace(/\D/g, "");
-    return digits ? digits.includes(candidate) : false;
-  });
+  const normalizedCandidate = String(candidate || "").replace(/\D/g, "");
+  if (!normalizedCandidate) return false;
+  const orderNumber = String(order?.order_number ?? "").replace(/\D/g, "");
+  if (orderNumber && orderNumber === normalizedCandidate) return true;
+  const legacyOrderNumber = String(order?.legacy_order?.order_number ?? "").replace(/\D/g, "");
+  if (legacyOrderNumber && legacyOrderNumber === normalizedCandidate) return true;
+  const name = String(order?.name || "");
+  if (!name) return false;
+  if (new RegExp(`#\\s*${normalizedCandidate}(?:\\b|\\D)`, "i").test(name)) return true;
+  const nameDigits = name.replace(/\D/g, "");
+  return Boolean(nameDigits) && nameDigits === normalizedCandidate;
 }
 
 async function fetchOrdersPage(

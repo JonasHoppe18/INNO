@@ -648,7 +648,7 @@ Deno.serve(async (req) => {
       supabase,
       userId: supabaseUserId,
       email: fromEmail,
-      subject,
+      subject: [subject, plain].filter(Boolean).join("\n"),
       tokenSecret: ENCRYPTION_KEY,
       apiVersion: SHOPIFY_API_VERSION,
       fetcher: fetchOrdersWithFrontendToken ?? undefined,

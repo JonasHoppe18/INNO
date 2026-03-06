@@ -92,7 +92,7 @@ export default async function GuidesPage() {
             </div>
             <p className="mt-1 text-sm text-gray-600">{guide.description}</p>
             <a
-              href={`/guides/${guide.slug}`}
+              href={`/guide/${guide.slug}`}
               target="_blank"
               rel="noopener noreferrer"
               className="mt-auto inline-flex items-center justify-center gap-1.5 self-end rounded-md border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 transition hover:border-indigo-300 hover:bg-indigo-50"
