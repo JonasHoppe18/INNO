@@ -12,6 +12,7 @@ export function TicketDetail({
   messages,
   attachments,
   mentionUsers = [],
+  currentUserId,
   currentUserName,
   ticketState,
   onTicketStateChange,
@@ -204,6 +205,7 @@ export function TicketDetail({
                   direction={direction}
                   attachments={messageAttachments}
                   outboundSenderName={currentUserName}
+                  currentUserId={currentUserId}
                 />
               </div>
             );

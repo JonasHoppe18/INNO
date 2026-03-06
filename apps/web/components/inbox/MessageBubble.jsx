@@ -67,10 +67,13 @@ export function MessageBubble({
   direction = "inbound",
   attachments = [],
   outboundSenderName,
+  currentUserId,
 }) {
   const [selectedAttachment, setSelectedAttachment] = useState(null);
   const isOutbound = direction === "outbound";
-  const senderLabel = isOutbound
+  const isAuthoredByCurrentUser =
+    Boolean(currentUserId) && String(message?.user_id || "") === String(currentUserId);
+  const senderLabel = isAuthoredByCurrentUser
     ? outboundSenderName || getSenderLabel(message)
     : getSenderLabel(message);
   const timestampValue = message.received_at || message.sent_at || message.created_at;
@@ -155,7 +158,7 @@ export function MessageBubble({
               <span className="text-xs font-semibold text-gray-900">
                 {senderLabel}
               </span>
-                {isOutbound ? (
+                {isAuthoredByCurrentUser ? (
                   <span className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600">
                     You
                   </span>

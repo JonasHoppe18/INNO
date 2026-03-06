@@ -48,6 +48,13 @@ const getAssigneeLabel = (profile, fallbackValue) => {
   return String(fallbackValue || "Unknown user");
 };
 
+const shortUserId = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "Unknown member";
+  if (raw.length <= 12) return raw;
+  return `${raw.slice(0, 8)}...`;
+};
+
 const normalizeStatus = (value) => {
   if (!value) return null;
   const normalized = String(value).trim().toLowerCase();
@@ -861,7 +868,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   ]);
 
   useEffect(() => {
-    if (!supabase || !user?.id) return;
+    if (!user?.id) return;
     let active = true;
 
     const loadWorkspaceMembers = async () => {
@@ -884,7 +891,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     return () => {
       active = false;
     };
-  }, [supabase, user?.id]);
+  }, [user?.id]);
 
   useEffect(() => {
     if (!supabase || !user?.id) return;
@@ -905,7 +912,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   }, [supabase, user?.id]);
 
   useEffect(() => {
-    if (!supabase || !user?.id) return;
+    if (!user?.id) return;
     let active = true;
     const loadWorkspaceInboxes = async () => {
       const response = await fetch("/api/inboxes", {
@@ -923,7 +930,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     return () => {
       active = false;
     };
-  }, [supabase, user?.id]);
+  }, [user?.id]);
 
   const selectedThread = useMemo(
     () => derivedThreads.find((thread) => thread.id === selectedThreadId) || null,
@@ -940,6 +947,22 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     });
     return map;
   }, [workspaceMembers]);
+  const knownUserLabelById = useMemo(() => {
+    const map = new Map();
+    (liveMessages || []).forEach((message) => {
+      const userId = String(message?.user_id || "").trim();
+      if (!userId || map.has(userId)) return;
+      const label = String(getSenderLabel(message) || "").trim();
+      if (label) map.set(userId, label);
+    });
+    (workspaceMembers || []).forEach((member) => {
+      const userId = String(member?.user_id || "").trim();
+      if (!userId) return;
+      const label = getAssigneeLabel(member, userId);
+      if (label) map.set(userId, label);
+    });
+    return map;
+  }, [liveMessages, workspaceMembers]);
   const assigneeOptions = useMemo(() => {
     const values = new Set();
     values.add(UNASSIGNED_ASSIGNEE_VALUE);
@@ -961,16 +984,23 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           return { value, label: "Unassigned" };
         }
         const profile = memberLookupById.get(String(value));
+        const knownLabel = knownUserLabelById.get(String(value));
         return {
           value,
-          label: profile ? getAssigneeLabel(profile, value) : "Unknown member",
+          label: profile ? getAssigneeLabel(profile, value) : knownLabel || shortUserId(value),
         };
       });
 
     const [unassigned, ...rest] = resolved;
     rest.sort((a, b) => a.label.localeCompare(b.label));
     return [unassigned, ...rest];
-  }, [derivedThreads, memberLookupById, selectedTicketState?.assignee, workspaceMembers]);
+  }, [
+    derivedThreads,
+    knownUserLabelById,
+    memberLookupById,
+    selectedTicketState?.assignee,
+    workspaceMembers,
+  ]);
   const effectiveMentionUsers = useMemo(() => {
     return (workspaceMembers || [])
       .map((member) => {
@@ -1727,6 +1757,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
               id: `local-note-${Date.now()}`,
               provider_message_id: `internal-note:local-${Date.now()}`,
               thread_id: selectedThreadId,
+              user_id: currentSupabaseUserId || null,
               from_name: currentUserName,
               from_email: null,
               from_me: true,
@@ -1806,6 +1837,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           {
             id: localMessageId,
             thread_id: selectedThreadId,
+            user_id: currentSupabaseUserId || null,
             from_name: currentUserName,
             from_email: mailboxEmails[0] || "",
             from_me: true,
@@ -2081,6 +2113,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         messages={threadMessages}
         attachments={threadAttachments}
         mentionUsers={effectiveMentionUsers}
+        currentUserId={currentSupabaseUserId || null}
         currentUserName={currentUserName}
         ticketState={ticketStateByThread[selectedThreadId] || DEFAULT_TICKET_STATE}
         onTicketStateChange={handleTicketStateChange}
