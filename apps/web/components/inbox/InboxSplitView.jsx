@@ -695,6 +695,44 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   }, []);
 
   useEffect(() => {
+    if (!supabase || !user?.id) return;
+    const channel = supabase
+      .channel(`inbox-thread-updates:${user.id}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "mail_threads" },
+        (payload) => {
+          const nextThread = payload?.new;
+          const nextThreadId = String(nextThread?.id || "").trim();
+          if (!nextThreadId) return;
+          setLiveThreads((prev) => {
+            if (!Array.isArray(prev) || !prev.length) return prev;
+            let found = false;
+            const updated = prev.map((thread) => {
+              if (String(thread?.id || "") !== nextThreadId) return thread;
+              found = true;
+              return {
+                ...thread,
+                ...nextThread,
+              };
+            });
+            return found ? updated : prev;
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      try {
+        channel.unsubscribe();
+      } catch {
+        // noop
+      }
+      supabase?.removeChannel?.(channel);
+    };
+  }, [supabase, user?.id]);
+
+  useEffect(() => {
     draftValueRef.current = draftValue;
   }, [draftValue]);
 
@@ -714,19 +752,6 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   }, [liveMessages, liveThreads, localNewThread]);
 
   useEffect(() => {
-    if (!derivedThreads.length) {
-      setSelectedThreadId((prev) => (prev === null ? prev : null));
-      return;
-    }
-    setSelectedThreadId((prev) => {
-      if (prev && derivedThreads.some((thread) => thread.id === prev)) {
-        return prev;
-      }
-      return derivedThreads[0].id;
-    });
-  }, [derivedThreads]);
-
-  useEffect(() => {
     if (!localNewThread) return;
     if (selectedThreadId === localNewThread.id) return;
     setLocalNewThread(null);
@@ -738,19 +763,30 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       let changed = false;
       const next = { ...prev };
       derivedThreads.forEach((thread) => {
-        if (next[thread.id]) return;
-        const unread = thread.unread_count ?? 0;
+        if (!thread?.id || isLocalThreadId(thread.id)) return;
+        const normalizedStatus = normalizeStatus(thread.status) || "New";
+        const normalizedPriority = thread.priority ?? DEFAULT_TICKET_STATE.priority;
+        const normalizedAssignee = thread.assignee_id ?? DEFAULT_TICKET_STATE.assignee;
+        const existing = next[thread.id];
+        if (
+          existing &&
+          existing.status === normalizedStatus &&
+          existing.priority === normalizedPriority &&
+          existing.assignee === normalizedAssignee
+        ) {
+          return;
+        }
         next[thread.id] = {
-          ...DEFAULT_TICKET_STATE,
-          status: normalizeStatus(thread.status) || "New",
-          priority: thread.priority ?? DEFAULT_TICKET_STATE.priority,
-          assignee: thread.assignee_id ?? DEFAULT_TICKET_STATE.assignee,
+          ...(existing || DEFAULT_TICKET_STATE),
+          status: normalizedStatus,
+          priority: normalizedPriority,
+          assignee: normalizedAssignee,
         };
         changed = true;
       });
       return changed ? next : prev;
     });
-  }, [derivedThreads]);
+  }, [derivedThreads, isLocalThreadId]);
 
   const messagesByThread = useMemo(() => {
     const map = new Map();
@@ -868,6 +904,19 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   ]);
 
   useEffect(() => {
+    if (!filteredThreads.length) {
+      setSelectedThreadId((prev) => (prev === null ? prev : null));
+      return;
+    }
+    setSelectedThreadId((prev) => {
+      if (prev && filteredThreads.some((thread) => thread.id === prev)) {
+        return prev;
+      }
+      return filteredThreads[0].id;
+    });
+  }, [filteredThreads]);
+
+  useEffect(() => {
     if (!user?.id) return;
     let active = true;
 
@@ -933,8 +982,8 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   }, [user?.id]);
 
   const selectedThread = useMemo(
-    () => derivedThreads.find((thread) => thread.id === selectedThreadId) || null,
-    [derivedThreads, selectedThreadId]
+    () => filteredThreads.find((thread) => thread.id === selectedThreadId) || null,
+    [filteredThreads, selectedThreadId]
   );
   const selectedTicketState = ticketStateByThread[selectedThreadId] || DEFAULT_TICKET_STATE;
   const memberLookupById = useMemo(() => {
