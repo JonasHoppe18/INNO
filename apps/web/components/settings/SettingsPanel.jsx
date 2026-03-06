@@ -1066,6 +1066,8 @@ export function SettingsPanel() {
   const [teamName, setTeamName] = useState("Sona Team");
   const [initialTeamName, setInitialTeamName] = useState("Sona Team");
   const [members, setMembers] = useState([]);
+  const [workspaceCurrentRole, setWorkspaceCurrentRole] = useState("");
+  const [canManageWorkspaceMembers, setCanManageWorkspaceMembers] = useState(false);
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
   const [autoReplyTriggerMode, setAutoReplyTriggerMode] = useState("first_inbound_per_thread");
   const [autoReplyCooldownMinutes, setAutoReplyCooldownMinutes] = useState("1440");
@@ -1175,6 +1177,8 @@ export function SettingsPanel() {
         setTeamName("Sona Team");
         setInitialTeamName("Sona Team");
         setMembers([]);
+        setWorkspaceCurrentRole("");
+        setCanManageWorkspaceMembers(false);
         return;
       }
 
@@ -1191,47 +1195,16 @@ export function SettingsPanel() {
 
       const memberOwnerId = shopRow?.owner_user_id ?? supabaseUserId;
       if (workspaceId) {
-        const { data: workspaceMembers, error: workspaceMembersError } = await supabase
-          .from("workspace_members")
-          .select("clerk_user_id, role")
-          .eq("workspace_id", workspaceId);
-        if (workspaceMembersError) throw workspaceMembersError;
-        const clerkIds = (workspaceMembers || [])
-          .map((row) => String(row?.clerk_user_id || "").trim())
-          .filter(Boolean);
-        if (!clerkIds.length) {
-          setMembers([]);
-        } else {
-          const { data: profileRows, error: membersError } = await supabase
-            .from("profiles")
-            .select("user_id, clerk_user_id, first_name, last_name, email, image_url, signature")
-            .in("clerk_user_id", clerkIds)
-            .order("created_at", { ascending: true });
-          if (membersError) throw membersError;
-          const roleByClerkId = new Map(
-            (workspaceMembers || []).map((row) => [row.clerk_user_id, row.role || "member"])
-          );
-          const profilesByClerkId = new Map(
-            (profileRows || []).map((row) => [String(row?.clerk_user_id || "").trim(), row])
-          );
-          const merged = clerkIds.map((clerkId) => {
-            const profile = profilesByClerkId.get(clerkId);
-            return {
-              user_id: profile?.user_id ?? null,
-              clerk_user_id: clerkId,
-              first_name: profile?.first_name ?? "",
-              last_name: profile?.last_name ?? "",
-              email: profile?.email ?? "",
-              image_url: profile?.image_url ?? "",
-              signature: profile?.signature ?? "",
-              workspace_role: roleByClerkId.get(clerkId) || "member",
-            };
-          }).map((row) => ({
-            ...row,
-            workspace_role: roleByClerkId.get(row.clerk_user_id) || row.workspace_role || "member",
-          }));
-          setMembers(merged);
-        }
+        const membersResponse = await fetch("/api/settings/members", {
+          method: "GET",
+          cache: "no-store",
+          credentials: "include",
+        }).catch(() => null);
+        if (!membersResponse?.ok) throw new Error("Could not load workspace members.");
+        const membersPayload = await membersResponse.json().catch(() => ({}));
+        setMembers(Array.isArray(membersPayload?.members) ? membersPayload.members : []);
+        setWorkspaceCurrentRole(String(membersPayload?.current_role || ""));
+        setCanManageWorkspaceMembers(Boolean(membersPayload?.can_manage_members));
       } else {
         const { data: profileRows, error: membersError } = await supabase
           .from("profiles")
@@ -1240,6 +1213,8 @@ export function SettingsPanel() {
           .order("created_at", { ascending: true });
         if (membersError) throw membersError;
         setMembers(Array.isArray(profileRows) ? profileRows : []);
+        setWorkspaceCurrentRole("");
+        setCanManageWorkspaceMembers(false);
       }
 
       const autoReplyResponse = await fetch("/api/settings/auto-reply", {
@@ -1375,12 +1350,12 @@ export function SettingsPanel() {
         return (
           <MembersTab
             members={members}
-            currentOrgRole={orgRole}
+            currentOrgRole={workspaceCurrentRole || orgRole}
             currentClerkUserId={user?.id ?? null}
             canManageRoles={
-              Boolean(orgId) &&
-              (String(orgRole || "").toLowerCase().includes("admin") ||
-                String(orgRole || "").toLowerCase().includes("owner"))
+              canManageWorkspaceMembers ||
+              String(orgRole || "").toLowerCase().includes("admin") ||
+              String(orgRole || "").toLowerCase().includes("owner")
             }
             onInviteCreated={loadData}
             onMembersChanged={loadData}
