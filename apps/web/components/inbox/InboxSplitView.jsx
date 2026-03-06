@@ -82,10 +82,6 @@ function InboxHeaderActions({
 }) {
   const [inboxPickerOpen, setInboxPickerOpen] = useState(false);
   const [inboxFilter, setInboxFilter] = useState("");
-
-  if (!ticketState) return null;
-  const statusLabel =
-    ticketState.status === "Solved" ? "Resolved" : ticketState.status;
   const selectedInboxLabel = useMemo(() => {
     if (!selectedInboxSlug) return "All tickets";
     const hit = (inboxOptions || []).find((option) => option.value === selectedInboxSlug);
@@ -104,6 +100,9 @@ function InboxHeaderActions({
     Waiting: "bg-orange-50 text-orange-700 border-orange-200",
     Solved: "bg-red-50 text-red-700 border-red-200",
   };
+  if (!ticketState) return null;
+  const statusLabel =
+    ticketState.status === "Solved" ? "Resolved" : ticketState.status;
   const statusStyles =
     statusStylesByStatus[ticketState.status] ||
     statusStylesByStatus.Open;

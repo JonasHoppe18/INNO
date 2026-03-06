@@ -67,7 +67,7 @@ export function WebshipperSheet({ children, onConnected, initialIntegration = nu
       workspaceId: membership?.workspace_id ?? null,
       userId,
     };
-  }, [supabase, user?.id]);
+  }, [initialIntegration?.user_id, supabase, user?.id]);
 
   const handleSave = async (event) => {
     event.preventDefault();
