@@ -818,7 +818,11 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         }
         if (activeView === "mine") {
           const assignee = String(effectiveAssignee || "");
-          if (!assignee || assignee !== String(currentSupabaseUserId || "")) {
+          const mineIds = new Set([
+            String(currentSupabaseUserId || ""),
+            String(user?.id || ""),
+          ]);
+          if (!assignee || !mineIds.has(assignee)) {
             return false;
           }
         }
@@ -854,6 +858,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     derivedThreads,
     filters,
     ticketStateByThread,
+    user?.id,
   ]);
 
   useEffect(() => {
@@ -876,13 +881,20 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       const seededProfiles = {};
       workspaceMemberRows.forEach((member) => {
         const userId = String(member?.user_id || "").trim();
-        if (!isUuid(userId)) return;
-        seededProfiles[userId] = {
-          user_id: userId,
+        const clerkUserId = String(member?.clerk_user_id || "").trim();
+        const profileRecord = {
+          user_id: isUuid(userId) ? userId : null,
+          clerk_user_id: clerkUserId || null,
           first_name: member?.first_name || "",
           last_name: member?.last_name || "",
           email: member?.email || "",
         };
+        if (isUuid(userId)) {
+          seededProfiles[userId] = profileRecord;
+        }
+        if (clerkUserId) {
+          seededProfiles[clerkUserId] = profileRecord;
+        }
       });
 
       const candidateUserIds = Array.from(
@@ -1045,7 +1057,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         const profile = assigneeProfilesById[value];
         return {
           value,
-          label: getAssigneeLabel(profile, value),
+          label: profile ? getAssigneeLabel(profile, value) : "Unknown member",
         };
       });
 
