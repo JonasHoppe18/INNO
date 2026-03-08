@@ -27,6 +27,8 @@ const parseLogDetail = (value) => {
       trackingNumber: null,
       trackingUrl: null,
       trackingSource: null,
+      trackingLookupSource: null,
+      trackingLookupDetail: null,
     };
   }
   if (raw.startsWith("{") && raw.endsWith("}")) {
@@ -53,6 +55,10 @@ const parseLogDetail = (value) => {
         trackingNumber: asString(parsed?.tracking_number || parsed?.trackingNumber) || null,
         trackingUrl: asString(parsed?.tracking_url || parsed?.trackingUrl) || null,
         trackingSource: asString(parsed?.source) || null,
+        trackingLookupSource:
+          asString(parsed?.lookup_source || parsed?.lookupSource) || null,
+        trackingLookupDetail:
+          asString(parsed?.lookup_detail || parsed?.lookupDetail) || null,
       };
     } catch {
       return {
@@ -65,6 +71,8 @@ const parseLogDetail = (value) => {
         trackingNumber: null,
         trackingUrl: null,
         trackingSource: null,
+        trackingLookupSource: null,
+        trackingLookupDetail: null,
       };
     }
   }
@@ -78,6 +86,8 @@ const parseLogDetail = (value) => {
     trackingNumber: null,
     trackingUrl: null,
     trackingSource: null,
+    trackingLookupSource: null,
+    trackingLookupDetail: null,
   };
 };
 
@@ -173,6 +183,12 @@ export function SonaInsightsModal({
           parsed?.trackingNumber ? `#${parsed.trackingNumber}` : "",
           parsed?.trackingUrl || "",
           parsed?.trackingSource ? `(source: ${parsed.trackingSource})` : "",
+          parsed?.trackingLookupSource
+            ? `(lookup: ${parsed.trackingLookupSource})`
+            : "",
+          parsed?.trackingLookupDetail
+            ? `(lookup_detail: ${parsed.trackingLookupDetail})`
+            : "",
         ].filter(Boolean);
         if (chunks.length) return chunks.join(" | ");
         return parsed?.detail || "Loaded live tracking status.";

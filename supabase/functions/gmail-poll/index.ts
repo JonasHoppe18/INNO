@@ -1,7 +1,13 @@
 // supabase/functions/gmail-poll/index.ts
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { shouldSkipInboxMessage } from "../_shared/inbox-filter.ts";
-import { categorizeEmail, EmailCategory } from "../_shared/email-category.ts";
+import {
+  categorizeEmail,
+  EmailCategory,
+  EMAIL_CATEGORIES,
+  LEGACY_EMAIL_CATEGORY_MAP,
+  normalizeEmailCategory,
+} from "../_shared/email-category.ts";
 
 const GMAIL_BASE = "https://gmail.googleapis.com/gmail/v1/users/me";
 const PROJECT_URL = Deno.env.get("PROJECT_URL") ?? Deno.env.get("SUPABASE_URL");
@@ -74,6 +80,28 @@ function buildSnippet(input = "", maxLength = 180) {
   return cleaned.length > maxLength ? `${cleaned.slice(0, maxLength).trim()}…` : cleaned;
 }
 
+const EMAIL_CATEGORY_SET = new Set<string>(EMAIL_CATEGORIES);
+const LEGACY_CATEGORY_TAGS = new Set<string>(Object.keys(LEGACY_EMAIL_CATEGORY_MAP));
+
+function splitThreadTags(tags: unknown): { category: EmailCategory | null; other: string[] } {
+  const list = Array.isArray(tags) ? tags.map((tag) => String(tag || "").trim()).filter(Boolean) : [];
+  let category: EmailCategory | null = null;
+  const other: string[] = [];
+  for (const tag of list) {
+    if (!category && (EMAIL_CATEGORY_SET.has(tag) || LEGACY_CATEGORY_TAGS.has(tag))) {
+      category = normalizeEmailCategory(tag);
+      continue;
+    }
+    other.push(tag);
+  }
+  return { category, other };
+}
+
+function buildThreadTags(existingTags: unknown, category: EmailCategory): string[] {
+  const { other } = splitThreadTags(existingTags);
+  return [category, ...other];
+}
+
 async function upsertThread({
   mailboxId,
   userId,
@@ -110,10 +138,9 @@ async function upsertThread({
       last_message_at: lastMessageAt,
       updated_at: new Date().toISOString(),
     };
-    const existingTags = Array.isArray(data?.tags) ? data.tags : [];
-    const hasTags = existingTags.length > 0;
-    if (!hasTags || (existingTags[0] === "General" && category !== "General")) {
-      updates.tags = [category];
+    const current = splitThreadTags(data?.tags).category;
+    if (!current || (current === "General" && category !== "General")) {
+      updates.tags = buildThreadTags(data?.tags, category);
     }
     await supabase.from("mail_threads").update(updates).eq("id", data.id);
     return data.id as string;
@@ -132,7 +159,7 @@ async function upsertThread({
       snippet,
       last_message_at: lastMessageAt,
       unread_count: unreadCount,
-      tags: [category],
+      tags: buildThreadTags([], category),
     })
     .select("id")
     .maybeSingle();

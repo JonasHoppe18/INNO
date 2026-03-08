@@ -30,6 +30,9 @@ import {
   detectTrackingIntent,
   pickOrderTrackingKey,
 } from "../_shared/tracking-reply.ts";
+import { applyWorkflowActionPolicy } from "./workflows/action-policy.ts";
+import { BASE_ACTION_CONTEXT } from "./workflows/prompt-parts.ts";
+import { buildWorkflowRoute, extractThreadCategoryFromTags } from "./workflows/routes.ts";
 
 
 const PROJECT_URL = Deno.env.get("PROJECT_URL") ?? Deno.env.get("SUPABASE_URL");
@@ -92,6 +95,7 @@ const RETRIEVAL_TRACE_SAMPLE_RATE = readEnvNumber(
   { min: 0, max: 1 },
 );
 const POLICY_SOURCE_PROVIDER = "shopify_policy";
+const TRACKING_CARRIERS_PROVIDER = "tracking_carriers";
 
 if (!PROJECT_URL) console.warn("PROJECT_URL mangler – generate-draft-unified kan ikke kalde Supabase.");
 if (!SERVICE_ROLE_KEY)
@@ -682,6 +686,32 @@ async function fetchMailboxHistory(mailboxId: string | null, userId: string | nu
     return [];
   }
   return Array.isArray(data) ? data : [];
+}
+
+async function fetchSelectedTrackingCarriers(
+  workspaceId: string | null,
+  userId: string | null,
+): Promise<string[]> {
+  if (!supabase || (!workspaceId && !userId)) return [];
+  let query = supabase
+    .from("integrations")
+    .select("config")
+    .eq("provider", TRACKING_CARRIERS_PROVIDER)
+    .eq("is_active", true)
+    .order("updated_at", { ascending: false })
+    .limit(1);
+  query = workspaceId ? query.eq("workspace_id", workspaceId) : query.eq("user_id", userId);
+  const { data, error } = await query.maybeSingle();
+  if (error) {
+    console.warn("generate-draft-unified: tracking carrier settings fetch failed", error.message);
+    return [];
+  }
+  const carriers = Array.isArray((data as any)?.config?.selected_carriers)
+    ? (data as any).config.selected_carriers
+    : [];
+  return carriers
+    .map((carrier: unknown) => String(carrier || "").trim().toLowerCase())
+    .filter(Boolean);
 }
 
 function buildStyleHeuristics(history: Array<any>): string[] {
@@ -1304,22 +1334,31 @@ async function resolveInternalThread(
   provider: string,
   emailData: EmailData,
 ) {
-  if (!supabase || (!userId && !workspaceId)) return { threadId: null, mailboxId: null };
+  if (!supabase || (!userId && !workspaceId)) {
+    return { threadId: null, mailboxId: null, tags: [] as string[] };
+  }
   if (provider === "smtp" && emailData.threadId) {
-    let query = supabase.from("mail_threads").select("id, mailbox_id").eq("id", emailData.threadId);
+    let query = supabase
+      .from("mail_threads")
+      .select("id, mailbox_id, tags")
+      .eq("id", emailData.threadId);
     query = workspaceId ? query.eq("workspace_id", workspaceId) : query.eq("user_id", userId);
     const { data } = await query.maybeSingle();
-    if (data?.id) return { threadId: data.id, mailboxId: data.mailbox_id ?? null };
+    if (data?.id) {
+      return { threadId: data.id, mailboxId: data.mailbox_id ?? null, tags: data.tags ?? [] };
+    }
   }
   if (emailData.threadId) {
     let query = supabase
       .from("mail_threads")
-      .select("id, mailbox_id")
+      .select("id, mailbox_id, tags")
       .eq("provider", provider)
       .eq("provider_thread_id", emailData.threadId);
     query = workspaceId ? query.eq("workspace_id", workspaceId) : query.eq("user_id", userId);
     const { data } = await query.maybeSingle();
-    if (data?.id) return { threadId: data.id, mailboxId: data.mailbox_id ?? null };
+    if (data?.id) {
+      return { threadId: data.id, mailboxId: data.mailbox_id ?? null, tags: data.tags ?? [] };
+    }
   }
   if (emailData.messageId) {
     let query = supabase
@@ -1329,9 +1368,26 @@ async function resolveInternalThread(
       .eq("provider_message_id", emailData.messageId);
     query = workspaceId ? query.eq("workspace_id", workspaceId) : query.eq("user_id", userId);
     const { data } = await query.maybeSingle();
-    if (data?.thread_id) return { threadId: data.thread_id, mailboxId: data.mailbox_id ?? null };
+    if (data?.thread_id) {
+      let threadQuery = supabase
+        .from("mail_threads")
+        .select("id, mailbox_id, tags")
+        .eq("id", data.thread_id);
+      threadQuery = workspaceId
+        ? threadQuery.eq("workspace_id", workspaceId)
+        : threadQuery.eq("user_id", userId);
+      const { data: threadData } = await threadQuery.maybeSingle();
+      if (threadData?.id) {
+        return {
+          threadId: threadData.id,
+          mailboxId: threadData.mailbox_id ?? data.mailbox_id ?? null,
+          tags: threadData.tags ?? [],
+        };
+      }
+      return { threadId: data.thread_id, mailboxId: data.mailbox_id ?? null, tags: [] as string[] };
+    }
   }
-  return { threadId: null, mailboxId: null };
+  return { threadId: null, mailboxId: null, tags: [] as string[] };
 }
 
 async function createInternalDraft(options: {
@@ -1518,6 +1574,14 @@ Deno.serve(async (req) => {
       provider,
       emailData,
     );
+    const selectedTrackingCarriers = await fetchSelectedTrackingCarriers(workspaceId, ownerUserId);
+    const ticketCategory = extractThreadCategoryFromTags(internalThread.tags);
+    const workflowRoute = buildWorkflowRoute(ticketCategory);
+    reasoningLogs.push({
+      step_name: "workflow_routing",
+      step_detail: `Routed by ticket category: ${workflowRoute.category} -> ${workflowRoute.workflow}`,
+      status: "success",
+    });
     const providerMessageId =
       typeof emailData.messageId === "string" ? emailData.messageId.trim() : "";
     if (supabase && (ownerUserId || workspaceId) && providerMessageId) {
@@ -1551,11 +1615,22 @@ Deno.serve(async (req) => {
         status: "success",
       });
     }
-    const trackingIntent = detectTrackingIntent(emailData.subject || "", emailData.body || "");
+    const trackingIntent =
+      Boolean(workflowRoute.forceTrackingIntent) ||
+      detectTrackingIntent(emailData.subject || "", emailData.body || "");
+    if (trackingIntent && selectedTrackingCarriers.length) {
+      reasoningLogs.push({
+        step_name: "carrier_preferences",
+        step_detail: `Configured carriers: ${selectedTrackingCarriers.join(", ")}`,
+        status: "success",
+      });
+    }
     const trackingOrders = selectedOrder ? [selectedOrder] : [];
     const trackingDetailsByOrderKey =
       trackingIntent && trackingOrders.length
-        ? await fetchTrackingDetailsForOrders(trackingOrders)
+        ? await fetchTrackingDetailsForOrders(trackingOrders, {
+          preferredCarriers: selectedTrackingCarriers,
+        })
         : {};
     if (trackingIntent) {
       const trackingKey = selectedOrder ? pickOrderTrackingKey(selectedOrder) : null;
@@ -1570,13 +1645,15 @@ Deno.serve(async (req) => {
             tracking_number: selectedTracking.trackingNumber,
             tracking_url: selectedTracking.trackingUrl,
             source: selectedTracking.source || "shopify",
+            lookup_source: selectedTracking.lookupSource || "unknown",
+            lookup_detail: selectedTracking.lookupDetail || "",
           }),
           status: "success",
         });
       } else {
         reasoningLogs.push({
           step_name: "carrier_tracking",
-          step_detail: "No live tracking status found.",
+          step_detail: "No carrier event found - using Shopify tracking fallback.",
           status: "warning",
         });
       }
@@ -1607,7 +1684,9 @@ Deno.serve(async (req) => {
       context.matchedSubjectNumber,
     );
     const isReturnIntent =
-      policyContext.intent === "RETURN" || policyContext.intent === "REFUND";
+      Boolean(workflowRoute.forceReturnDetailsFlow) ||
+      policyContext.intent === "RETURN" ||
+      policyContext.intent === "REFUND";
     const returnDetailsFoundText = isReturnIntent
       ? buildReturnDetailsFoundBlock(returnDetails)
       : "";
@@ -1625,8 +1704,17 @@ Deno.serve(async (req) => {
       personaInstructions: context.persona.instructions,
       matchedSubjectNumber: context.matchedSubjectNumber,
       customerName: customerFirstName || null,
-      extraContext:
-        "Returner altid JSON hvor 'actions' beskriver konkrete handlinger du udfører i Shopify. Brug orderId (det numeriske id i parentes) når du udfylder actions. For payload: udfyld kun de felter der er nødvendige for handlingen. Hvis kunden beder om adresseændring, udfyld shipping_address med alle felter du kender (name, address1, address2, zip, city, country, phone). Ved edit_line_items skal du bruge line_item_id/variant_id fra KONTEKST. Hvis en handling ikke er tilladt i automationsreglerne, må du stadig returnere handlingen i actions; systemet markerer den til manuel approval i tråden.",
+      extraContext: [
+        BASE_ACTION_CONTEXT,
+        `Workflow category: ${workflowRoute.category}`,
+        workflowRoute.workflow === "tracking" && selectedTrackingCarriers.length
+          ? `Configured carriers for this workspace: ${selectedTrackingCarriers.join(", ")}.`
+          : "",
+        workflowRoute.promptHint,
+        ...(workflowRoute.promptBlocks || []),
+      ]
+        .filter(Boolean)
+        .join("\n"),
       signature: context.profile.signature?.trim() || "",
       learnedStyle: learnedStyle || null,
       policies: context.policies,
@@ -1835,6 +1923,9 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
           "Brug KONTEKST-sektionen til at finde relevante oplysninger og nævn dem eksplicit i svaret.",
           "Ved returns/refunds/warranty/shipping: følg policy summary/excerpts strengt.",
           "Opfind aldrig return-portal URL, labels eller processer som ikke står i kontekst.",
+          `Ticket category: ${workflowRoute.category}.`,
+          workflowRoute.systemHint,
+          ...(workflowRoute.systemRules || []),
           personaGuidance,
           "Automationsregler:",
           automationGuidance,
@@ -1859,6 +1950,18 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         );
         aiText = reply;
         automationActions = actions ?? [];
+        const policyResult = applyWorkflowActionPolicy(automationActions, workflowRoute);
+        automationActions = policyResult.actions;
+        if (policyResult.removed.length) {
+          reasoningLogs.push({
+            step_name: "workflow_action_policy",
+            step_detail: JSON.stringify({
+              workflow: workflowRoute.workflow,
+              removed_actions: policyResult.removed,
+            }),
+            status: "warning",
+          });
+        }
         if (hasExchangeSignals(emailData.subject || "", emailData.body || "")) {
           automationActions = automationActions.filter(
             (action) => !isInternalAnnotationAction(String(action?.type || "")),
@@ -1926,6 +2029,21 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         reasoningLogs.push({
           step_name: "Shopify Action",
           step_detail: "Forced exchange action replaced internal note/tag action.",
+          status: "warning",
+        });
+      }
+    }
+
+    if (automationActions.length) {
+      const finalPolicy = applyWorkflowActionPolicy(automationActions, workflowRoute);
+      automationActions = finalPolicy.actions;
+      if (finalPolicy.removed.length) {
+        reasoningLogs.push({
+          step_name: "workflow_action_policy_final",
+          step_detail: JSON.stringify({
+            workflow: workflowRoute.workflow,
+            removed_actions: finalPolicy.removed,
+          }),
           status: "warning",
         });
       }

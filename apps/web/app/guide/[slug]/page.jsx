@@ -1,43 +1,19 @@
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { Mail } from "lucide-react";
 import { SonaLogo } from "@/components/ui/SonaLogo";
 import { CopyField } from "@/components/guides/CopyField";
 import shopifyLogo from "../../../../../assets/Shopify-Logo.png";
 import webshipperLogo from "../../../../../assets/Webshipper_logo.png";
-import gmailLogo from "../../../../../assets/Gmail-logo.webp";
-import outlookLogo from "../../../../../assets/Outlook-logo.png";
+import glsLogo from "../../../../../assets/GLS logo.png";
 
 const GUIDE_CONTENT = {
-  "connect-gmail": {
-    title: "Connect Gmail",
-    intro: "Use forwarding in Gmail/Google Workspace so emails arrive in Sona Inbox.",
-    logoSrc: gmailLogo,
-    logoAlt: "Gmail",
-    steps: [
-      "Go to Mailboxes in Sona.",
-      "Create a forwarding mailbox in Sona.",
-      "Copy your forwarding address from Sona.",
-      "Add a forwarding rule in Gmail or Google Workspace to send inbound support emails to that address.",
-      "Return to Sona and verify that new emails appear in Sona Inbox.",
-    ],
-  },
-  "connect-outlook": {
-    title: "Connect Outlook",
-    intro: "Use forwarding in Outlook/Microsoft 365 so emails arrive in Sona Inbox.",
-    logoSrc: outlookLogo,
-    logoAlt: "Outlook",
-    steps: [
-      "Go to Mailboxes in Sona.",
-      "Create a forwarding mailbox in Sona.",
-      "Copy your forwarding address from Sona.",
-      "Add a forwarding rule in Outlook or Microsoft 365 to send inbound support emails to that address.",
-      "Return to Sona and verify that new emails appear in Sona Inbox.",
-    ],
-  },
-  "other-mail": {
-    title: "Other mail",
+  "connect-mail": {
+    title: "Connect Mail",
     intro: "Use forwarding to connect any provider, including Gmail and Outlook.",
+    icon: "mail",
+    videoEmbedUrl: "https://www.loom.com/embed/c7e7434554ad4f92b92a728d360e6810",
     steps: [
       "Create a forwarding address in your email provider.",
       "Forward inbound emails to your Sona address.",
@@ -49,6 +25,7 @@ const GUIDE_CONTENT = {
     intro: "Connect Shopify to sync orders, customers, and policies.",
     logoSrc: shopifyLogo,
     logoAlt: "Shopify",
+    videoEmbedUrl: "https://www.loom.com/embed/25b94ef8ec4c4dc4899c466a208f09f2",
     overview: [
       "Connect Shopify so Sona can read orders, customers, and policies.",
       "Works with custom distribution and read all orders access.",
@@ -172,6 +149,7 @@ const GUIDE_CONTENT = {
     intro: "Connect Webshipper to sync shipment data and automate shipping-related replies.",
     logoSrc: webshipperLogo,
     logoAlt: "Webshipper",
+    videoEmbedUrl: "https://www.loom.com/embed/a879bc12da8d44aea5281f526b3e07dd",
     overview: [
       "Sync shipment and carrier data from Webshipper.",
       "Enable automated responses based on shipment status.",
@@ -244,19 +222,87 @@ const GUIDE_CONTENT = {
       },
     ],
   },
-  "custom-domain": {
-    title: "Set up Custom Domain",
-    intro: "Verify DNS and send from your own address.",
+  "connect-gls": {
+    title: "Connect GLS Tracking",
+    intro: "Enable GLS tracking so Sona can fetch live shipment updates.",
+    logoSrc: glsLogo,
+    logoAlt: "GLS",
+    overview: [
+      "Use GLS tracking for shipment status lookups directly in Sona.",
+      "Improves shipping-related draft quality with fresher tracking signals.",
+      "Can be enabled/disabled from Integrations at any time.",
+    ],
+    prerequisites: [
+      "At least one order with a GLS tracking number or GLS tracking link.",
+      "A connected storefront (for example Shopify) so tracking data reaches Sona.",
+      "GLS selected under Integrations -> Carrier tracking.",
+    ],
     steps: [
-      "Open Sending Identity in Mailboxes.",
-      "Add DKIM TXT and Return-Path CNAME records.",
-      "Click “Check status” to verify.",
+      {
+        title: "Step 1: Open Carrier tracking",
+        items: [
+          "Go to Integrations in Sona.",
+          "Scroll to Carrier tracking.",
+          "Find the GLS card.",
+        ],
+      },
+      {
+        title: "Step 2: Enable GLS",
+        items: [
+          "Click Connect on the GLS card.",
+          "Wait until status changes to Active.",
+          "If needed, click Disconnect to disable again.",
+        ],
+      },
+      {
+        title: "Step 3: Validate on an order",
+        items: [
+          "Open an order or ticket with a GLS tracking number.",
+          "Confirm tracking status appears in Sona-generated context.",
+          "Use the tracking link when you need full carrier details.",
+        ],
+      },
+    ],
+    troubleshooting: [
+      {
+        title: "GLS card does not show Active",
+        items: [
+          "Refresh Integrations and try Connect again.",
+          "Verify your workspace has permissions to edit integrations.",
+          "If issue persists, check API logs for /api/settings/carriers.",
+        ],
+      },
+      {
+        title: "No tracking status in replies",
+        items: [
+          "Confirm the shipment uses a GLS tracking number/link.",
+          "Ensure the order data includes fulfillments with tracking fields.",
+          "Retry after a minute in case tracking data is still propagating.",
+        ],
+      },
+    ],
+    features: [
+      {
+        title: "Shipment visibility",
+        items: ["Current GLS status", "Latest tracking event", "Direct link to tracking page"],
+      },
+      {
+        title: "Support automation",
+        items: ["Better shipping replies", "Faster agent triage", "More consistent status messaging"],
+      },
     ],
   },
 };
 
 export default function GuideDetailPage({ params }) {
-  const guide = GUIDE_CONTENT[params.slug];
+  const resolvedSlug =
+    params.slug === "connect-gmail" ||
+    params.slug === "connect-outlook" ||
+    params.slug === "other-mail" ||
+    params.slug === "custom-domain"
+      ? "connect-mail"
+      : params.slug;
+  const guide = GUIDE_CONTENT[resolvedSlug];
   if (!guide) {
     notFound();
   }
@@ -281,6 +327,8 @@ export default function GuideDetailPage({ params }) {
                 height={48}
                 className="h-10 w-10 object-contain"
               />
+            ) : guide.icon === "mail" ? (
+              <Mail className="h-6 w-6 text-slate-600" />
             ) : (
               <SonaLogo size={34} />
             )}
@@ -292,9 +340,21 @@ export default function GuideDetailPage({ params }) {
         </header>
 
         <section className="mt-10">
-          <div className="rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-10 text-center text-sm text-slate-500">
-            Video guide
-          </div>
+          {guide.videoEmbedUrl ? (
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+              <iframe
+                src={guide.videoEmbedUrl}
+                title={`${guide.title} video guide`}
+                className="aspect-video w-full"
+                allow="fullscreen; picture-in-picture"
+                allowFullScreen
+              />
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-10 text-center text-sm text-slate-500">
+              Video guide
+            </div>
+          )}
         </section>
 
         {guide.overview ? (

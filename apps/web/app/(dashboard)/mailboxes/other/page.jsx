@@ -27,7 +27,7 @@ export default async function OtherMailPage() {
 
         <div className="mt-4 flex flex-wrap gap-2">
           <a
-            href="/guide/other-mail"
+            href="/guide/connect-mail"
             target="_blank"
             rel="noreferrer"
             className="inline-flex items-center rounded-md border border-indigo-200 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"

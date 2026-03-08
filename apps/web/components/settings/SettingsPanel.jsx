@@ -54,7 +54,6 @@ const MENU_SECTIONS = [
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
 function TabSkeleton() {
   return (
     <section className="max-w-2xl rounded-lg bg-white p-6">
@@ -69,7 +68,14 @@ function TabSkeleton() {
   );
 }
 
-function GeneralTab({ shopDomain, teamName, onTeamNameChange, onSave, saving, canSave }) {
+function GeneralTab({
+  shopDomain,
+  teamName,
+  onTeamNameChange,
+  onSave,
+  saving,
+  canSave,
+}) {
   const hasShop = Boolean(shopDomain);
 
   return (
@@ -1237,6 +1243,7 @@ export function SettingsPanel() {
           )
         );
       }
+
     } catch (error) {
       console.error("Settings load failed:", error);
       toast.error("Could not load settings.");

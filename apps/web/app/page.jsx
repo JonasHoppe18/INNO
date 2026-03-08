@@ -19,7 +19,7 @@ export default function HomePage() {
         <TrustLogos />
         <ContentSection />
         <FeaturesGrid />
-        <Pricing />
+       {/*<Pricing /> */}
         <IntegrationsSection />
         <FAQsTwo />
         <FinalCta />

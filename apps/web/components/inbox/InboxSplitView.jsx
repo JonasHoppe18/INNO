@@ -36,6 +36,22 @@ const DEFAULT_TICKET_STATE = {
 
 const STATUS_OPTIONS = ["New", "Open", "Waiting", "Solved"];
 const UNASSIGNED_ASSIGNEE_VALUE = "__unassigned__";
+const EMAIL_CATEGORY_LABELS = [
+  "Tracking",
+  "Return",
+  "Exchange",
+  "Product question",
+  "Payment",
+  "Cancellation",
+  "Refund",
+  "Address change",
+  "General",
+];
+const LEGACY_CATEGORY_LABEL_MAP = {
+  "Order Tracking": "Tracking",
+  "Address Change": "Address change",
+  Cancel: "Cancellation",
+};
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -73,6 +89,17 @@ const extractInboxSlugFromTags = (tags = []) => {
   if (!hit) return null;
   const slug = String(hit).slice("inbox:".length).trim();
   return slug || null;
+};
+
+const extractCategoryFromTags = (tags = []) => {
+  const list = Array.isArray(tags) ? tags : [];
+  for (const rawTag of list) {
+    const tag = String(rawTag || "").trim();
+    if (!tag || tag.startsWith("inbox:")) continue;
+    if (EMAIL_CATEGORY_LABELS.includes(tag)) return tag;
+    if (LEGACY_CATEGORY_LABEL_MAP[tag]) return LEGACY_CATEGORY_LABEL_MAP[tag];
+  }
+  return "General";
 };
 
 function InboxHeaderActions({
@@ -1145,10 +1172,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       .filter(Boolean)
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [workspaceMembers]);
-  const selectedTagLabel =
-    Array.isArray(selectedThread?.tags) && selectedThread.tags.length
-      ? selectedThread.tags.find((tag) => !String(tag || "").startsWith("inbox:")) || "General"
-      : "General";
+  const selectedTagLabel = extractCategoryFromTags(selectedThread?.tags || []);
   const selectedInboxSlug = extractInboxSlugFromTags(selectedThread?.tags || []);
   const inboxOptions = useMemo(
     () =>

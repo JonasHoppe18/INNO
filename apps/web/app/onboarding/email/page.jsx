@@ -87,7 +87,7 @@ export default function OnboardingEmailPage() {
           <p className="mt-4 text-center text-xs text-slate-500">
             Need help setting up forwarding?{" "}
             <a
-              href="/guide/other-mail"
+              href="/guide/connect-mail"
               target="_blank"
               rel="noreferrer"
               className="font-medium text-indigo-600 hover:text-indigo-700 hover:underline"

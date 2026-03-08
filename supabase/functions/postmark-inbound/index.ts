@@ -3,6 +3,13 @@
 // SQL: create unique index if not exists uniq_mail_messages_provider_msg on public.mail_messages(provider, provider_message_id);
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { shouldSkipInboxMessage } from "../_shared/inbox-filter.ts";
+import {
+  categorizeEmail,
+  EmailCategory,
+  EMAIL_CATEGORIES,
+  LEGACY_EMAIL_CATEGORY_MAP,
+  normalizeEmailCategory,
+} from "../_shared/email-category.ts";
 
 const PROJECT_URL = Deno.env.get("SUPABASE_URL") ?? Deno.env.get("PROJECT_URL");
 const SERVICE_ROLE_KEY =
@@ -19,6 +26,8 @@ const supabase =
   PROJECT_URL && SERVICE_ROLE_KEY ? createClient(PROJECT_URL, SERVICE_ROLE_KEY) : null;
 
 const INBOUND_DOMAIN = "inbound.sona-ai.dk";
+const EMAIL_CATEGORY_SET = new Set<string>(EMAIL_CATEGORIES);
+const LEGACY_CATEGORY_TAGS = new Set<string>(Object.keys(LEGACY_EMAIL_CATEGORY_MAP));
 
 type PostmarkHeader = { Name?: string; Value?: string };
 type PostmarkAttachment = {
@@ -173,6 +182,27 @@ function parseSlugFromAddress(address: string | null): string | null {
   const [local, domain] = email.split("@");
   if (!local || !domain || domain.toLowerCase() !== INBOUND_DOMAIN) return null;
   return local.trim().toLowerCase() || null;
+}
+
+function splitThreadTags(tags: unknown): { category: EmailCategory | null; other: string[] } {
+  const list = Array.isArray(tags)
+    ? tags.map((tag) => String(tag || "").trim()).filter(Boolean)
+    : [];
+  let category: EmailCategory | null = null;
+  const other: string[] = [];
+  for (const tag of list) {
+    if (!category && (EMAIL_CATEGORY_SET.has(tag) || LEGACY_CATEGORY_TAGS.has(tag))) {
+      category = normalizeEmailCategory(tag);
+      continue;
+    }
+    other.push(tag);
+  }
+  return { category, other };
+}
+
+function buildThreadTags(existingTags: unknown, category: EmailCategory): string[] {
+  const { other } = splitThreadTags(existingTags);
+  return [category, ...other];
 }
 
 async function lookupMailbox(slug: string): Promise<MailboxLookup | null> {
@@ -752,6 +782,18 @@ Deno.serve(async (req) => {
     });
   }
 
+  let inboundCategory: EmailCategory = "General";
+  try {
+    inboundCategory = await categorizeEmail({
+      subject,
+      body: textBody,
+      from: fromEmail || fromRaw || "",
+    });
+  } catch (error) {
+    console.warn("postmark-inbound: category classification failed", (error as Error)?.message || error);
+    inboundCategory = "General";
+  }
+
   let threadId: string | null = null;
   for (const ref of referenceIds) {
     if (!ref) continue;
@@ -779,7 +821,7 @@ Deno.serve(async (req) => {
         is_read: false,
         status: "new",
         priority: "normal",
-        tags: [],
+        tags: buildThreadTags([], inboundCategory),
         updated_at: new Date().toISOString(),
       })
       .select("id, subject, unread_count")
@@ -839,21 +881,27 @@ Deno.serve(async (req) => {
   const messageDbId = (messageInsert as any)?.id ?? null;
   const { data: existingThread } = await supabase
     .from("mail_threads")
-    .select("subject, unread_count")
+    .select("subject, unread_count, tags")
     .eq("id", threadId)
     .maybeSingle();
   const currentUnread = Number(existingThread?.unread_count ?? 0);
   const nextUnreadCount = createdNewThread ? 1 : Math.max(0, currentUnread + 1);
+  const existingCategory = splitThreadTags(existingThread?.tags).category;
+  const shouldUpdateCategory = !existingCategory || (existingCategory === "General" && inboundCategory !== "General");
+  const updatePayload: Record<string, unknown> = {
+    last_message_at: receivedAt,
+    snippet,
+    subject: existingThread?.subject ? existingThread.subject : subject,
+    unread_count: nextUnreadCount,
+    is_read: false,
+    updated_at: new Date().toISOString(),
+  };
+  if (shouldUpdateCategory) {
+    updatePayload.tags = buildThreadTags(existingThread?.tags, inboundCategory);
+  }
   await supabase
     .from("mail_threads")
-    .update({
-      last_message_at: receivedAt,
-      snippet,
-      subject: existingThread?.subject ? existingThread.subject : subject,
-      unread_count: nextUnreadCount,
-      is_read: false,
-      updated_at: new Date().toISOString(),
-    })
+    .update(updatePayload)
     .eq("id", threadId);
 
   if (messageDbId) {

@@ -13,9 +13,9 @@ import outlookLogo from "../../../../assets/Outlook-logo.png";
 import shopifyLogo from "../../../../assets/Shopify-Logo.png";
 
 const GUIDE_LINKS = {
-  gmail: "/guide/connect-gmail",
-  outlook: "/guide/connect-outlook",
-  other: "/guide/other-mail",
+  gmail: "/guide/connect-mail",
+  outlook: "/guide/connect-mail",
+  other: "/guide/connect-mail",
   shopify: "/guide/connect-shopify",
   ai: "/guide/ai-settings",
   self: "/guide/self-learning",

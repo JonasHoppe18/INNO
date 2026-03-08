@@ -3,31 +3,17 @@ import { redirect } from "next/navigation";
 import Image from "next/image";
 import { DashboardPageShell } from "@/components/dashboard-page-shell";
 import { SonaLogo } from "@/components/ui/SonaLogo";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, Mail } from "lucide-react";
 import shopifyLogo from "../../../../../assets/Shopify-Logo.png";
 import webshipperLogo from "../../../../../assets/Webshipper_logo.png";
-import gmailLogo from "../../../../../assets/Gmail-logo.webp";
-import outlookLogo from "../../../../../assets/Outlook-logo.png";
+import glsLogo from "../../../../../assets/GLS logo.png";
 
 const GUIDES = [
   {
-    slug: "connect-gmail",
-    title: "Connect Gmail",
-    description: "Set up Gmail forwarding to your Sona inbox address.",
-    logoSrc: gmailLogo,
-    logoAlt: "Gmail",
-  },
-  {
-    slug: "connect-outlook",
-    title: "Connect Outlook",
-    description: "Set up Outlook forwarding to your Sona inbox address.",
-    logoSrc: outlookLogo,
-    logoAlt: "Outlook",
-  },
-  {
-    slug: "other-mail",
-    title: "Other mail",
+    slug: "connect-mail",
+    title: "Connect Mail",
     description: "Forward emails to Sona from any provider.",
+    icon: "mail",
     logoAlt: "Sona",
   },
   {
@@ -45,10 +31,11 @@ const GUIDES = [
     logoAlt: "Webshipper",
   },
   {
-    slug: "custom-domain",
-    title: "Set up Custom Domain",
-    description: "Verify your domain in DNS and send from your own address.",
-    logoAlt: "Sona",
+    slug: "connect-gls",
+    title: "Connect GLS Tracking",
+    description: "Enable GLS tracking lookups for shipment status updates.",
+    logoSrc: glsLogo,
+    logoAlt: "GLS",
   },
 ];
 
@@ -84,6 +71,8 @@ export default async function GuidesPage() {
                     height={42}
                     className="h-8 w-8 object-contain"
                   />
+                ) : guide.icon === "mail" ? (
+                  <Mail className="h-5 w-5 text-slate-600" />
                 ) : (
                   <SonaLogo size={28} />
                 )}
