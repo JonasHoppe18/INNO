@@ -66,6 +66,43 @@ const MENU_SECTIONS = [
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const normalizeRoutingRows = (rows = []) =>
+  (Array.isArray(rows) ? rows : [])
+    .map((row, index) => {
+      const id = String(row?.id || "").trim();
+      const categoryKey = String(row?.category_key || "").trim().toLowerCase();
+      if (!id || !categoryKey || categoryKey === "support") return null;
+      return {
+        id,
+        category_key: categoryKey,
+        label: String(row?.label || categoryKey).trim(),
+        is_active: Boolean(row?.is_active),
+        mode: String(row?.mode || "manual_approval") === "auto_forward" ? "auto_forward" : "manual_approval",
+        forward_to_email: String(row?.forward_to_email || "").trim(),
+        is_default: Boolean(row?.is_default),
+        sort_order: Number.isFinite(Number(row?.sort_order)) ? Number(row.sort_order) : index * 10 + 10,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => {
+      const orderDiff = Number(a.sort_order || 0) - Number(b.sort_order || 0);
+      if (orderDiff !== 0) return orderDiff;
+      return String(a.label || "").localeCompare(String(b.label || ""), "en", { sensitivity: "base" });
+    });
+
+const routingSnapshot = (rows = []) =>
+  JSON.stringify(
+    normalizeRoutingRows(rows).map((row) => ({
+      id: row.id,
+      category_key: row.category_key,
+      label: String(row.label || "").trim(),
+      is_active: Boolean(row.is_active),
+      mode: String(row.mode || "manual_approval"),
+      forward_to_email: String(row.forward_to_email || "").trim().toLowerCase(),
+      sort_order: Number(row.sort_order || 0),
+    }))
+  );
 function TabSkeleton() {
   return (
     <section className="max-w-2xl rounded-lg bg-white p-6">
@@ -845,12 +882,21 @@ function EmailSettings({
   onSubjectTemplateChange,
   bodyTextTemplate,
   onBodyTextTemplateChange,
+  routingRows = [],
+  onUpdateRoutingRow,
+  onAddRoutingCategory,
+  onDeleteRoutingCategory,
+  canSave = false,
+  onSaveChanges,
+  onDiscardChanges,
+  savingRouting = false,
   saving,
-  onSave,
 }) {
   const [messageModalOpen, setMessageModalOpen] = useState(false);
   const [draftSubject, setDraftSubject] = useState(subjectTemplate || "");
   const [draftBody, setDraftBody] = useState(bodyTextTemplate || "");
+  const [addCategoryModalOpen, setAddCategoryModalOpen] = useState(false);
+  const [newCategoryLabel, setNewCategoryLabel] = useState("");
 
   useEffect(() => {
     setDraftSubject(subjectTemplate || "");
@@ -861,22 +907,31 @@ function EmailSettings({
   }, [bodyTextTemplate]);
 
   const handleToggleEnabled = useCallback(
-    async (nextValue) => {
+    (nextValue) => {
       onEnabledChange(nextValue);
-      await onSave({ enabled: nextValue });
     },
-    [onEnabledChange, onSave]
+    [onEnabledChange]
   );
 
-  const handleSaveMessage = useCallback(async () => {
+  const handleSaveMessage = useCallback(() => {
     onSubjectTemplateChange(draftSubject);
     onBodyTextTemplateChange(draftBody);
-    await onSave({
-      subject_template: draftSubject,
-      body_text_template: draftBody,
-    });
     setMessageModalOpen(false);
-  }, [draftBody, draftSubject, onBodyTextTemplateChange, onSave, onSubjectTemplateChange]);
+  }, [draftBody, draftSubject, onBodyTextTemplateChange, onSubjectTemplateChange]);
+
+  const handleCreateCategory = useCallback(() => {
+    const label = String(newCategoryLabel || "").trim();
+    if (!label) return;
+    onAddRoutingCategory?.(label);
+    setNewCategoryLabel("");
+    setAddCategoryModalOpen(false);
+  }, [newCategoryLabel, onAddRoutingCategory]);
+
+  const previewLines = String(bodyTextTemplate || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 3);
 
   return (
     <section className="max-w-4xl rounded-lg bg-white">
@@ -887,15 +942,15 @@ function EmailSettings({
         </p>
       </div>
 
-      <div className="divide-y divide-gray-100 px-6">
-        <div className="grid grid-cols-1 gap-6 py-6 md:grid-cols-3">
-          <div>
-            <h3 className="font-medium text-gray-900">Enable Auto-Reply</h3>
-            <p className="mt-1 text-sm text-gray-500">
-              Automatically send a response when new customers contact you via email.
-            </p>
-          </div>
-          <div className="md:col-span-2">
+      <div className="space-y-10 px-6 py-8">
+        <div className="rounded-xl border border-[#E5E7EB] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(260px,40%)_1fr] md:items-center">
+            <div>
+              <h3 className="font-medium text-gray-900">Enable Auto-Reply</h3>
+              <p className="mt-1 text-sm text-gray-500">
+                Automatically send a response when new customers contact you via email.
+              </p>
+            </div>
             <div className="flex items-center justify-end">
               <button
                 type="button"
@@ -920,43 +975,185 @@ function EmailSettings({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 py-6 md:grid-cols-3">
-          <div>
-            <h3 className="font-medium text-gray-900">Auto-Reply Message</h3>
-            <p className="mt-1 text-sm text-gray-500">
-              Message sent to new customers. Click edit to update text and preview.
-            </p>
-          </div>
-          <div className="md:col-span-2">
-            <div className="flex justify-end">
-              <Button
-                type="button"
-                variant="outline"
-                className="border border-gray-200 bg-white"
-                onClick={() => setMessageModalOpen(true)}
-                disabled={saving}
-              >
-                <PenLine className="mr-2 h-4 w-4" />
-                Edit
-              </Button>
+        <div className="rounded-xl border border-[#E5E7EB] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(260px,40%)_1fr]">
+            <div className="min-w-0">
+              <h3 className="font-medium text-gray-900">Auto-Reply Message</h3>
+              <p className="mt-1 text-sm text-gray-500">
+                Message sent to new customers. Click edit to update text and preview.
+              </p>
+            </div>
+            <div className="min-w-0 space-y-3">
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="border border-gray-200 bg-white"
+                  onClick={() => setMessageModalOpen(true)}
+                  disabled={saving}
+                >
+                  <PenLine className="mr-2 h-4 w-4" />
+                  Edit
+                </Button>
+              </div>
+              <div className="min-w-0 rounded-xl border border-[#E5E7EB] bg-white p-4">
+                <p className="text-xs font-medium tracking-wide text-slate-500">Preview</p>
+                <p className="mt-2 text-sm font-medium text-slate-900">
+                  {subjectTemplate || "Tak for din henvendelse"}
+                </p>
+                <div className="mt-2 space-y-1 text-sm text-slate-600">
+                  {previewLines.length ? (
+                    previewLines.map((line, index) => (
+                      <p key={`${line}-${index}`} className="break-words">
+                        {line}
+                      </p>
+                    ))
+                  ) : (
+                    <p className="text-slate-400">No message set yet.</p>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 py-6 md:grid-cols-3">
-          <div>
-            <h3 className="font-medium text-gray-900">Template</h3>
-            <p className="mt-1 text-sm text-gray-500">
-              Shared email template for layout and branding across replies.
-            </p>
-          </div>
-          <div className="md:col-span-2">
-            <div className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
-              Coming soon
+        <div className="rounded-xl border border-[#E5E7EB] bg-white p-6 opacity-50 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(260px,40%)_1fr] md:items-start">
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-medium text-gray-900">Template</h3>
+                <div className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                  Coming soon
+                </div>
+              </div>
+              <p className="mt-1 text-sm text-gray-500">
+                Shared email template for layout and branding across replies.
+              </p>
             </div>
-            <p className="mt-2 text-sm text-slate-500">
-              Template editor and live wrapper preview will be available here.
-            </p>
+            <div>
+              <p className="text-sm text-slate-500">
+                Template editor and live wrapper preview will be available here.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-[#E5E7EB] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+          <div className="space-y-5">
+            <div className="max-w-3xl">
+              <h3 className="font-medium text-gray-900">Email Routing</h3>
+              <p className="mt-1 text-sm text-gray-500">
+                Automatically detect non-support emails and route them to the right team.
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Emails that don&apos;t match an active category stay in your Sona inbox.
+              </p>
+              <p className="mt-1 text-xs text-slate-500">Support emails are always handled in Sona.</p>
+            </div>
+            <div className="space-y-3">
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={savingRouting}
+                  onClick={() => setAddCategoryModalOpen(true)}
+                >
+                  + Add email category
+                </Button>
+              </div>
+              <div className="overflow-x-auto rounded-xl border border-[#F3F4F6]">
+                <div>
+                  <div className="grid grid-cols-[1.1fr_2fr_1.2fr_90px_44px] items-center gap-3 border-b border-[#F3F4F6] px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                    <span>Category</span>
+                    <span>Forward to</span>
+                    <span>Mode</span>
+                    <span className="text-right">Status</span>
+                    <span />
+                  </div>
+                  {routingRows.map((row) => (
+                    <div
+                      key={row.id}
+                      className="grid grid-cols-[1.1fr_2fr_1.2fr_90px_44px] items-center gap-3 border-b border-[#F3F4F6] px-4 py-3 last:border-b-0"
+                    >
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-slate-900">{row.label}</span>
+                    </div>
+                    <Input
+                      type="email"
+                      placeholder="forward@company.com"
+                      value={row.forward_to_email || ""}
+                      onChange={(event) =>
+                        onUpdateRoutingRow?.({
+                          ...row,
+                          forward_to_email: event.target.value,
+                        })
+                      }
+                      className="h-9 w-full border-transparent bg-transparent text-sm hover:border-[#E5E7EB] focus:border-[#E5E7EB] focus-visible:ring-0"
+                      disabled={savingRouting}
+                    />
+                    <Select
+                      value={row.mode || "manual_approval"}
+                      onValueChange={(value) =>
+                        onUpdateRoutingRow?.({
+                          ...row,
+                          mode: value,
+                        })
+                      }
+                      disabled={savingRouting}
+                    >
+                      <SelectTrigger className="h-9 border-transparent bg-transparent text-sm hover:border-[#E5E7EB] focus:border-[#E5E7EB] focus:ring-0">
+                        <SelectValue placeholder="Mode" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="manual_approval">Manual approval</SelectItem>
+                        <SelectItem value="auto_forward">Auto forward</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={Boolean(row.is_active)}
+                        onClick={() =>
+                          onUpdateRoutingRow?.({
+                            ...row,
+                            is_active: !Boolean(row.is_active),
+                          })
+                        }
+                        disabled={savingRouting}
+                        className={cn(
+                          "relative inline-flex h-7 w-12 items-center rounded-full transition",
+                          row.is_active ? "bg-emerald-500" : "bg-slate-300",
+                          savingRouting && "cursor-not-allowed opacity-70"
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "inline-block h-5 w-5 transform rounded-full bg-white transition",
+                            row.is_active ? "translate-x-6" : "translate-x-1"
+                          )}
+                        />
+                      </button>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="text-slate-500 hover:text-red-600"
+                      disabled={savingRouting}
+                      onClick={() => onDeleteRoutingCategory?.(row)}
+                      title="Delete category"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <p className="text-xs text-slate-500">
+                If a category is inactive, deleted, or has no forwarding email, messages remain in the normal inbox.
+              </p>
+            </div>
           </div>
         </div>
       </div>
@@ -1033,6 +1230,65 @@ function EmailSettings({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <Dialog
+        open={addCategoryModalOpen}
+        onOpenChange={(next) => {
+          setAddCategoryModalOpen(next);
+          if (!next) setNewCategoryLabel("");
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add category</DialogTitle>
+            <DialogDescription>
+              Create a custom inbound routing category.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-slate-700">Category name</label>
+            <Input
+              value={newCategoryLabel}
+              onChange={(event) => setNewCategoryLabel(event.target.value)}
+              placeholder="e.g. Press"
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setAddCategoryModalOpen(false);
+                setNewCategoryLabel("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleCreateCategory}
+              disabled={!String(newCategoryLabel || "").trim()}
+            >
+              Create category
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {canSave ? (
+        <div className="fixed bottom-4 left-1/2 z-20 w-[calc(100%-2rem)] max-w-3xl -translate-x-1/2 rounded-2xl border border-slate-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span className="text-sm font-medium text-slate-600">Unsaved changes</span>
+            <div className="flex items-center gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={onDiscardChanges}>
+                Discard
+              </Button>
+              <Button type="button" size="sm" onClick={onSaveChanges} disabled={saving || savingRouting}>
+                {saving || savingRouting ? "Saving..." : "Save changes"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -1191,6 +1447,24 @@ export function SettingsPanel() {
     "<div style=\"font-family:Arial,sans-serif;line-height:1.6;color:#111\">{{content}}</div>"
   );
   const [savingAutoReply, setSavingAutoReply] = useState(false);
+  const [emailRoutingRows, setEmailRoutingRows] = useState([]);
+  const [savingEmailRouting, setSavingEmailRouting] = useState(false);
+  const [initialAutoReplyEnabled, setInitialAutoReplyEnabled] = useState(false);
+  const [initialAutoReplyTriggerMode, setInitialAutoReplyTriggerMode] = useState("first_inbound_per_thread");
+  const [initialAutoReplyCooldownMinutes, setInitialAutoReplyCooldownMinutes] = useState("1440");
+  const [initialAutoReplySubjectTemplate, setInitialAutoReplySubjectTemplate] = useState(
+    "Tak for din henvendelse"
+  );
+  const [initialAutoReplyBodyTextTemplate, setInitialAutoReplyBodyTextTemplate] = useState(
+    "Hej,\n\nTak for din henvendelse. Vi har modtaget din besked og vender tilbage hurtigst muligt.\n\nMed venlig hilsen\nSona Team"
+  );
+  const [initialAutoReplyBodyHtmlTemplate, setInitialAutoReplyBodyHtmlTemplate] = useState("");
+  const [initialAutoReplyTemplateId, setInitialAutoReplyTemplateId] = useState(null);
+  const [initialAutoReplyTemplateName, setInitialAutoReplyTemplateName] = useState("Default template");
+  const [initialAutoReplyTemplateHtml, setInitialAutoReplyTemplateHtml] = useState(
+    "<div style=\"font-family:Arial,sans-serif;line-height:1.6;color:#111\">{{content}}</div>"
+  );
+  const [initialEmailRoutingRows, setInitialEmailRoutingRows] = useState([]);
 
   const loadData = useCallback(async () => {
     if (!supabase) {
@@ -1394,11 +1668,19 @@ export function SettingsPanel() {
         const setting = payload?.setting || {};
         const template = payload?.template || {};
         setAutoReplyEnabled(Boolean(setting?.enabled));
+        setInitialAutoReplyEnabled(Boolean(setting?.enabled));
         setAutoReplyTriggerMode(
           String(setting?.trigger_mode || "first_inbound_per_thread")
         );
+        setInitialAutoReplyTriggerMode(
+          String(setting?.trigger_mode || "first_inbound_per_thread")
+        );
         setAutoReplyCooldownMinutes(String(setting?.cooldown_minutes ?? 1440));
+        setInitialAutoReplyCooldownMinutes(String(setting?.cooldown_minutes ?? 1440));
         setAutoReplySubjectTemplate(
+          String(setting?.subject_template || "Tak for din henvendelse")
+        );
+        setInitialAutoReplySubjectTemplate(
           String(setting?.subject_template || "Tak for din henvendelse")
         );
         setAutoReplyBodyTextTemplate(
@@ -1407,15 +1689,47 @@ export function SettingsPanel() {
               "Hej,\n\nTak for din henvendelse. Vi har modtaget din besked og vender tilbage hurtigst muligt.\n\nMed venlig hilsen\nSona Team"
           )
         );
+        setInitialAutoReplyBodyTextTemplate(
+          String(
+            setting?.body_text_template ||
+              "Hej,\n\nTak for din henvendelse. Vi har modtaget din besked og vender tilbage hurtigst muligt.\n\nMed venlig hilsen\nSona Team"
+          )
+        );
         setAutoReplyBodyHtmlTemplate(String(setting?.body_html_template || ""));
+        setInitialAutoReplyBodyHtmlTemplate(String(setting?.body_html_template || ""));
         setAutoReplyTemplateId(template?.id || setting?.template_id || null);
+        setInitialAutoReplyTemplateId(template?.id || setting?.template_id || null);
         setAutoReplyTemplateName(String(template?.name || "Default template"));
+        setInitialAutoReplyTemplateName(String(template?.name || "Default template"));
         setAutoReplyTemplateHtml(
           String(
             template?.html_layout ||
               "<div style=\"font-family:Arial,sans-serif;line-height:1.6;color:#111\">{{content}}</div>"
           )
         );
+        setInitialAutoReplyTemplateHtml(
+          String(
+            template?.html_layout ||
+              "<div style=\"font-family:Arial,sans-serif;line-height:1.6;color:#111\">{{content}}</div>"
+          )
+        );
+      }
+
+      const emailRoutingResponse = await fetch("/api/settings/email-routing", {
+        method: "GET",
+        cache: "no-store",
+        credentials: "include",
+      }).catch(() => null);
+      if (emailRoutingResponse?.ok) {
+        const payload = await emailRoutingResponse.json().catch(() => ({}));
+        const rows = Array.isArray(payload?.routes) ? payload.routes : [];
+        const normalized = normalizeRoutingRows(rows);
+        setEmailRoutingRows(normalized);
+        setInitialEmailRoutingRows(normalized);
+      } else {
+        const fallbackRoutes = normalizeRoutingRows([]);
+        setEmailRoutingRows(fallbackRoutes);
+        setInitialEmailRoutingRows(fallbackRoutes);
       }
 
     } catch (error) {
@@ -1518,7 +1832,8 @@ export function SettingsPanel() {
     setSupportLanguage(normalizeSupportLanguage(initialSupportLanguage, "en"));
   }, [initialSupportLanguage, initialTeamName, initialTestEmail, initialTestMode]);
 
-  const handleSaveAutoReply = useCallback(async (overrides = {}) => {
+  const handleSaveAutoReply = useCallback(async (overrides = {}, options = {}) => {
+    const showToast = options?.showToast !== false;
     if (savingAutoReply) return;
     setSavingAutoReply(true);
     try {
@@ -1578,9 +1893,16 @@ export function SettingsPanel() {
       setAutoReplyTemplateId(
         payload?.template?.id || payload?.setting?.template_id || nextTemplateId
       );
-      toast.success("Auto reply settings saved.");
+      if (showToast) {
+        toast.success("Auto reply settings saved.");
+      }
+      return { ok: true };
     } catch (error) {
-      toast.error(error?.message || "Could not save auto reply settings.");
+      const message = error?.message || "Could not save auto reply settings.";
+      if (showToast) {
+        toast.error(message);
+      }
+      return { ok: false, error: message };
     } finally {
       setSavingAutoReply(false);
     }
@@ -1595,6 +1917,254 @@ export function SettingsPanel() {
     autoReplyTemplateName,
     autoReplyTriggerMode,
     savingAutoReply,
+  ]);
+
+  const handleUpdateEmailRoutingRow = useCallback((row) => {
+    const rowId = String(row?.id || "").trim();
+    if (!rowId) return;
+    setEmailRoutingRows((prev) =>
+      prev.map((existing) =>
+        existing.id === rowId
+          ? {
+              ...existing,
+              label: String(row?.label || existing.label || "").trim(),
+              is_active: Boolean(row?.is_active),
+              mode: String(row?.mode || "manual_approval") === "auto_forward" ? "auto_forward" : "manual_approval",
+              forward_to_email: String(row?.forward_to_email || ""),
+              sort_order: Number.isFinite(Number(row?.sort_order))
+                ? Number(row?.sort_order)
+                : Number(existing.sort_order || 0),
+            }
+          : existing
+      )
+    );
+  }, []);
+
+  const handleAddEmailRoutingCategory = useCallback((label) => {
+    const cleanLabel = String(label || "").trim();
+    if (!cleanLabel) return;
+    const tempId = `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const maxSortOrder = normalizeRoutingRows(emailRoutingRows).reduce(
+      (max, row) => Math.max(max, Number(row.sort_order || 0)),
+      0
+    );
+    setEmailRoutingRows((prev) =>
+      normalizeRoutingRows([
+        ...prev,
+        {
+          id: tempId,
+          category_key: tempId,
+          label: cleanLabel,
+          is_active: false,
+          mode: "manual_approval",
+          forward_to_email: "",
+          is_default: false,
+          sort_order: maxSortOrder + 10,
+        },
+      ])
+    );
+  }, [emailRoutingRows]);
+
+  const handleDeleteEmailRoutingCategory = useCallback((row) => {
+    const id = String(row?.id || "").trim();
+    if (!id) return;
+    if (!window.confirm(`Delete routing category "${row?.label || row?.category_key}"?`)) return;
+    setEmailRoutingRows((prev) => prev.filter((entry) => String(entry?.id || "") !== id));
+  }, []);
+
+  const hasAutoReplyChanges = useMemo(() => {
+    if (Boolean(autoReplyEnabled) !== Boolean(initialAutoReplyEnabled)) return true;
+    if (String(autoReplyTriggerMode || "") !== String(initialAutoReplyTriggerMode || "")) return true;
+    if (String(autoReplyCooldownMinutes || "") !== String(initialAutoReplyCooldownMinutes || "")) return true;
+    if (String(autoReplySubjectTemplate || "") !== String(initialAutoReplySubjectTemplate || "")) return true;
+    if (String(autoReplyBodyTextTemplate || "") !== String(initialAutoReplyBodyTextTemplate || "")) return true;
+    if (String(autoReplyBodyHtmlTemplate || "") !== String(initialAutoReplyBodyHtmlTemplate || "")) return true;
+    if (String(autoReplyTemplateId || "") !== String(initialAutoReplyTemplateId || "")) return true;
+    if (String(autoReplyTemplateName || "") !== String(initialAutoReplyTemplateName || "")) return true;
+    if (String(autoReplyTemplateHtml || "") !== String(initialAutoReplyTemplateHtml || "")) return true;
+    return false;
+  }, [
+    autoReplyBodyHtmlTemplate,
+    autoReplyBodyTextTemplate,
+    autoReplyCooldownMinutes,
+    autoReplyEnabled,
+    autoReplySubjectTemplate,
+    autoReplyTemplateHtml,
+    autoReplyTemplateId,
+    autoReplyTemplateName,
+    autoReplyTriggerMode,
+    initialAutoReplyBodyHtmlTemplate,
+    initialAutoReplyBodyTextTemplate,
+    initialAutoReplyCooldownMinutes,
+    initialAutoReplyEnabled,
+    initialAutoReplySubjectTemplate,
+    initialAutoReplyTemplateHtml,
+    initialAutoReplyTemplateId,
+    initialAutoReplyTemplateName,
+    initialAutoReplyTriggerMode,
+  ]);
+
+  const hasRoutingChanges = useMemo(
+    () => routingSnapshot(emailRoutingRows) !== routingSnapshot(initialEmailRoutingRows),
+    [emailRoutingRows, initialEmailRoutingRows]
+  );
+
+  const canSaveEmailSettings = useMemo(() => {
+    return hasAutoReplyChanges || hasRoutingChanges;
+  }, [hasAutoReplyChanges, hasRoutingChanges]);
+
+  const handleDiscardEmailSettings = useCallback(() => {
+    setAutoReplyEnabled(Boolean(initialAutoReplyEnabled));
+    setAutoReplyTriggerMode(String(initialAutoReplyTriggerMode || "first_inbound_per_thread"));
+    setAutoReplyCooldownMinutes(String(initialAutoReplyCooldownMinutes || "1440"));
+    setAutoReplySubjectTemplate(String(initialAutoReplySubjectTemplate || "Tak for din henvendelse"));
+    setAutoReplyBodyTextTemplate(String(initialAutoReplyBodyTextTemplate || ""));
+    setAutoReplyBodyHtmlTemplate(String(initialAutoReplyBodyHtmlTemplate || ""));
+    setAutoReplyTemplateId(initialAutoReplyTemplateId || null);
+    setAutoReplyTemplateName(String(initialAutoReplyTemplateName || "Default template"));
+    setAutoReplyTemplateHtml(String(initialAutoReplyTemplateHtml || ""));
+    setEmailRoutingRows(normalizeRoutingRows(initialEmailRoutingRows));
+  }, [
+    initialAutoReplyBodyHtmlTemplate,
+    initialAutoReplyBodyTextTemplate,
+    initialAutoReplyCooldownMinutes,
+    initialAutoReplyEnabled,
+    initialAutoReplySubjectTemplate,
+    initialAutoReplyTemplateHtml,
+    initialAutoReplyTemplateId,
+    initialAutoReplyTemplateName,
+    initialAutoReplyTriggerMode,
+    initialEmailRoutingRows,
+  ]);
+
+  const handleSaveEmailSettings = useCallback(async () => {
+    if (!canSaveEmailSettings || savingEmailRouting || savingAutoReply) return;
+    setSavingEmailRouting(true);
+    try {
+      if (hasAutoReplyChanges) {
+        const autoReplyResult = await handleSaveAutoReply(
+          {
+            enabled: autoReplyEnabled,
+            trigger_mode: autoReplyTriggerMode,
+            cooldown_minutes: autoReplyCooldownMinutes,
+            subject_template: autoReplySubjectTemplate,
+            body_text_template: autoReplyBodyTextTemplate,
+            body_html_template: autoReplyBodyHtmlTemplate,
+            template_id: autoReplyTemplateId,
+            template_name: autoReplyTemplateName,
+            template_html: autoReplyTemplateHtml,
+            template_text_fallback: autoReplyBodyTextTemplate,
+          },
+          { showToast: false }
+        );
+        if (!autoReplyResult?.ok) {
+          throw new Error(autoReplyResult?.error || "Could not save auto reply settings.");
+        }
+      }
+
+      if (hasRoutingChanges) {
+        const routingRows = normalizeRoutingRows(emailRoutingRows);
+        const initialRows = normalizeRoutingRows(initialEmailRoutingRows);
+        const currentIds = new Set(routingRows.map((row) => String(row.id)));
+        const deletedRows = initialRows.filter((row) => !currentIds.has(String(row.id)));
+
+        for (const row of deletedRows) {
+          const response = await fetch("/api/settings/email-routing", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ id: row.id }),
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(payload?.error || "Could not delete email route.");
+          }
+        }
+
+        for (const row of routingRows) {
+          const label = String(row.label || "").trim();
+          if (!label) {
+            throw new Error("Category label is required.");
+          }
+          const isTemporary = String(row.id).startsWith("tmp_");
+          const method = isTemporary ? "POST" : "PUT";
+          const requestBody = isTemporary
+            ? {
+                label,
+                is_active: Boolean(row.is_active),
+                mode: String(row.mode || "manual_approval"),
+                forward_to_email: String(row.forward_to_email || "").trim(),
+                sort_order: Number(row.sort_order || 0),
+              }
+            : {
+                id: row.id,
+                label,
+                is_active: Boolean(row.is_active),
+                mode: String(row.mode || "manual_approval"),
+                forward_to_email: String(row.forward_to_email || "").trim(),
+                sort_order: Number(row.sort_order || 0),
+              };
+          const response = await fetch("/api/settings/email-routing", {
+            method,
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify(requestBody),
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(payload?.error || "Could not save email route.");
+          }
+        }
+
+        const refreshResponse = await fetch("/api/settings/email-routing", {
+          method: "GET",
+          cache: "no-store",
+          credentials: "include",
+        });
+        const refreshPayload = await refreshResponse.json().catch(() => ({}));
+        if (!refreshResponse.ok) {
+          throw new Error(refreshPayload?.error || "Could not reload email routes.");
+        }
+        const persistedRows = normalizeRoutingRows(refreshPayload?.routes || []);
+        setInitialEmailRoutingRows(persistedRows);
+        setEmailRoutingRows(persistedRows);
+      }
+
+      if (hasAutoReplyChanges) {
+        setInitialAutoReplyEnabled(Boolean(autoReplyEnabled));
+        setInitialAutoReplyTriggerMode(String(autoReplyTriggerMode || "first_inbound_per_thread"));
+        setInitialAutoReplyCooldownMinutes(String(autoReplyCooldownMinutes || "1440"));
+        setInitialAutoReplySubjectTemplate(String(autoReplySubjectTemplate || ""));
+        setInitialAutoReplyBodyTextTemplate(String(autoReplyBodyTextTemplate || ""));
+        setInitialAutoReplyBodyHtmlTemplate(String(autoReplyBodyHtmlTemplate || ""));
+        setInitialAutoReplyTemplateId(autoReplyTemplateId || null);
+        setInitialAutoReplyTemplateName(String(autoReplyTemplateName || "Default template"));
+        setInitialAutoReplyTemplateHtml(String(autoReplyTemplateHtml || ""));
+      }
+      toast.success("Email settings saved.");
+    } catch (error) {
+      toast.error(error?.message || "Could not save email settings.");
+    } finally {
+      setSavingEmailRouting(false);
+    }
+  }, [
+    autoReplyBodyHtmlTemplate,
+    autoReplyBodyTextTemplate,
+    autoReplyCooldownMinutes,
+    autoReplyEnabled,
+    autoReplySubjectTemplate,
+    autoReplyTemplateHtml,
+    autoReplyTemplateId,
+    autoReplyTemplateName,
+    autoReplyTriggerMode,
+    canSaveEmailSettings,
+    emailRoutingRows,
+    hasAutoReplyChanges,
+    hasRoutingChanges,
+    handleSaveAutoReply,
+    initialEmailRoutingRows,
+    savingAutoReply,
+    savingEmailRouting,
   ]);
 
   const renderContent = () => {
@@ -1638,8 +2208,15 @@ export function SettingsPanel() {
             onSubjectTemplateChange={setAutoReplySubjectTemplate}
             bodyTextTemplate={autoReplyBodyTextTemplate}
             onBodyTextTemplateChange={setAutoReplyBodyTextTemplate}
-            saving={savingAutoReply}
-            onSave={handleSaveAutoReply}
+            routingRows={emailRoutingRows}
+            onUpdateRoutingRow={handleUpdateEmailRoutingRow}
+            onAddRoutingCategory={handleAddEmailRoutingCategory}
+            onDeleteRoutingCategory={handleDeleteEmailRoutingCategory}
+            canSave={canSaveEmailSettings}
+            onSaveChanges={handleSaveEmailSettings}
+            onDiscardChanges={handleDiscardEmailSettings}
+            savingRouting={savingEmailRouting}
+            saving={savingAutoReply || savingEmailRouting}
           />
         );
       case "general":

@@ -201,7 +201,7 @@ export function useThreads(options = {}) {
       let request = supabase
         .from("mail_threads")
         .select(
-          "id, user_id, mailbox_id, provider, provider_thread_id, subject, snippet, last_message_at, unread_count, is_read, status, assignee_id, priority, tags, created_at, updated_at"
+          "id, user_id, mailbox_id, provider, provider_thread_id, subject, snippet, last_message_at, unread_count, is_read, status, assignee_id, priority, tags, classification_key, classification_confidence, classification_reason, created_at, updated_at"
         )
         .order("last_message_at", { ascending: false, nullsLast: true });
       request = applyClientScope(request, scope);

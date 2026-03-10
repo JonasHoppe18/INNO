@@ -17,6 +17,7 @@ const APPROVAL_ACTION_TYPES = new Set([
   "hold_or_release_fulfillment",
   "edit_line_items",
   "update_customer_contact",
+  "forward_email",
 ]);
 
 export function TicketDetail({
@@ -80,6 +81,7 @@ export function TicketDetail({
     hold_or_release_fulfillment: "Fulfillment Hold/Release",
     edit_line_items: "Edit Line Items",
     update_customer_contact: "Update Contact Details",
+    forward_email: "Forward Email",
     add_note: "Add Internal Note",
     add_tag: "Add Internal Tag",
     add_internal_note_or_tag: "Add Internal Note/Tag",

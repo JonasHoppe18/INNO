@@ -63,6 +63,7 @@ const APPROVAL_ACTION_TYPES = new Set([
   "hold_or_release_fulfillment",
   "edit_line_items",
   "update_customer_contact",
+  "forward_email",
 ]);
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

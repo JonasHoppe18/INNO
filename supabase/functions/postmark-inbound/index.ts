@@ -10,6 +10,12 @@ import {
   LEGACY_EMAIL_CATEGORY_MAP,
   normalizeEmailCategory,
 } from "../_shared/email-category.ts";
+import {
+  classifyInboundRouting,
+  type RoutingCategory,
+  type RoutingTargetCategory,
+  type RoutingClassification,
+} from "../_shared/email-routing-classifier.ts";
 
 const PROJECT_URL = Deno.env.get("SUPABASE_URL") ?? Deno.env.get("PROJECT_URL");
 const SERVICE_ROLE_KEY =
@@ -56,6 +62,25 @@ type AutoReplySettings = {
   body_text_template: string;
   body_html_template: string | null;
   template_id: string | null;
+};
+
+type WorkspaceEmailRoute = {
+  id: string;
+  workspace_id: string;
+  category_key: string;
+  label: string;
+  forward_to_email: string | null;
+  mode: "manual_approval" | "auto_forward";
+  is_active: boolean;
+};
+
+type RouteDecision = {
+  category: string;
+  mode: "manual_approval" | "auto_forward" | null;
+  forwardToEmail: string | null;
+  shouldCreateApprovalAction: boolean;
+  shouldAutoForward: boolean;
+  isEffectiveSupport: boolean;
 };
 
 const corsHeaders = {
@@ -228,6 +253,101 @@ function asString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function normalizeRouteCategory(value: unknown): string {
+  const normalized = asString(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  if (!normalized) return "support";
+  return normalized;
+}
+
+function normalizeRouteMode(value: unknown): "manual_approval" | "auto_forward" {
+  return asString(value).toLowerCase() === "auto_forward" ? "auto_forward" : "manual_approval";
+}
+
+function buildForwardActionKey(messageId: string | null, targetEmail: string): string {
+  return `forward_email::${String(messageId || "unknown")}::${targetEmail.toLowerCase()}`;
+}
+
+async function ensureWorkspaceRoutes(workspaceId: string | null): Promise<WorkspaceEmailRoute[]> {
+  if (!supabase || !workspaceId) return [];
+
+  const { data, error } = await supabase
+    .from("workspace_email_routes")
+    .select("id, workspace_id, category_key, label, forward_to_email, mode, is_active, sort_order")
+    .eq("workspace_id", workspaceId)
+    .order("sort_order", { ascending: true });
+  if (error) throw new Error(error.message);
+
+  return (Array.isArray(data) ? data : [])
+    .map((row) => {
+      const category = normalizeRouteCategory(row?.category_key);
+      if (category === "support") return null;
+      return {
+        id: String(row?.id || ""),
+        workspace_id: String(row?.workspace_id || workspaceId),
+        category_key: category,
+        label: asString(row?.label) || category,
+        forward_to_email: asString(row?.forward_to_email) || null,
+        mode: normalizeRouteMode(row?.mode),
+        is_active: Boolean(row?.is_active),
+      } as WorkspaceEmailRoute;
+    })
+    .filter((row): row is WorkspaceEmailRoute => Boolean(row?.id));
+}
+
+function decideRouteForClassification(
+  classification: RoutingClassification,
+  routes: WorkspaceEmailRoute[],
+): RouteDecision {
+  const category = normalizeRouteCategory(classification.category);
+  if (category === "support") {
+    return {
+      category,
+      mode: null,
+      forwardToEmail: null,
+      shouldCreateApprovalAction: false,
+      shouldAutoForward: false,
+      isEffectiveSupport: true,
+    };
+  }
+
+  const route = routes.find((row) => row.category_key === category);
+  if (!route || !route.is_active) {
+    return {
+      category,
+      mode: null,
+      forwardToEmail: null,
+      shouldCreateApprovalAction: false,
+      shouldAutoForward: false,
+      isEffectiveSupport: true,
+    };
+  }
+
+  const forwardToEmail = asString(route.forward_to_email).toLowerCase() || null;
+  const mode = route.mode;
+  if (!forwardToEmail) {
+    return {
+      category,
+      mode,
+      forwardToEmail: null,
+      shouldCreateApprovalAction: false,
+      shouldAutoForward: false,
+      isEffectiveSupport: true,
+    };
+  }
+  return {
+    category,
+    mode,
+    forwardToEmail,
+    shouldCreateApprovalAction: mode === "manual_approval",
+    shouldAutoForward: mode === "auto_forward",
+    isEffectiveSupport: false,
+  };
+}
+
 function firstName(value: string | null | undefined): string {
   const next = asString(value);
   if (!next) return "";
@@ -371,6 +491,216 @@ async function sendPostmarkAutoReply(payload: {
     );
   }
   return asString(data?.MessageID) || null;
+}
+
+async function sendForwardedEmail(options: {
+  mailbox: MailboxLookup;
+  to: string;
+  originalSubject: string;
+  originalFrom: string;
+  originalBodyText: string;
+}): Promise<string | null> {
+  if (!POSTMARK_SERVER_TOKEN) {
+    throw new Error("POSTMARK_SERVER_TOKEN missing");
+  }
+  const fromEmail = asString(options.mailbox.provider_email) || POSTMARK_FROM_EMAIL;
+  const fromName = asString(options.mailbox.from_name) || POSTMARK_FROM_NAME;
+  const subject = `Fwd: ${options.originalSubject || "Inbound message"}`.slice(0, 250);
+  const textBody = [
+    "Forwarded inbound email",
+    "",
+    `From: ${options.originalFrom || "Unknown sender"}`,
+    `Subject: ${options.originalSubject || "(no subject)"}`,
+    "",
+    options.originalBodyText || "(empty body)",
+  ].join("\n");
+  const safeBody = String(options.originalBodyText || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\n/g, "<br/>");
+  const htmlBody =
+    `<p><strong>Forwarded inbound email</strong></p>` +
+    `<p><strong>From:</strong> ${options.originalFrom || "Unknown sender"}<br/>` +
+    `<strong>Subject:</strong> ${options.originalSubject || "(no subject)"}</p>` +
+    `<hr/><p style=\"white-space:pre-wrap\">${safeBody}</p>`;
+
+  const response = await fetch("https://api.postmarkapp.com/email", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "X-Postmark-Server-Token": POSTMARK_SERVER_TOKEN,
+    },
+    body: JSON.stringify({
+      MessageStream: POSTMARK_MESSAGE_STREAM,
+      From: `${fromName} <${fromEmail}>`,
+      To: options.to,
+      Subject: subject,
+      TextBody: textBody,
+      HtmlBody: htmlBody,
+      ReplyTo: fromEmail,
+    }),
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(
+      `Postmark forward failed ${response.status}: ${data?.Message || response.statusText}`,
+    );
+  }
+  return asString(data?.MessageID) || null;
+}
+
+async function createPendingForwardAction(options: {
+  threadId: string;
+  mailbox: MailboxLookup;
+  targetEmail: string;
+  messageDbId: string | null;
+  providerMessageId: string;
+  subject: string;
+  fromRaw: string;
+  category: RoutingCategory;
+  classification: RoutingClassification;
+}) {
+  if (!supabase) return;
+  const actionKey = buildForwardActionKey(options.messageDbId, options.targetEmail);
+  const nowIso = new Date().toISOString();
+  const { data: existing } = await supabase
+    .from("thread_actions")
+    .select("id")
+    .eq("thread_id", options.threadId)
+    .eq("action_key", actionKey)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (existing?.id) return;
+
+  const payload = {
+    target_email: options.targetEmail,
+    subject: options.subject || "",
+    original_message_id: options.messageDbId,
+    provider_message_id: options.providerMessageId,
+    category_key: options.category,
+    reason: options.classification.reason,
+    confidence: options.classification.confidence,
+    source: options.classification.source,
+    from: options.fromRaw,
+  };
+  await supabase.from("thread_actions").insert({
+    user_id: options.mailbox.user_id,
+    workspace_id: options.mailbox.workspace_id,
+    thread_id: options.threadId,
+    action_type: "forward_email",
+    action_key: actionKey,
+    status: "pending",
+    detail: `Forward this ${options.category} email to ${options.targetEmail}.`,
+    payload,
+    source: "routing",
+    created_at: nowIso,
+    updated_at: nowIso,
+    error: null,
+  });
+}
+
+async function runAutoForwardAction(options: {
+  threadId: string;
+  mailbox: MailboxLookup;
+  targetEmail: string;
+  messageDbId: string | null;
+  providerMessageId: string;
+  subject: string;
+  fromRaw: string;
+  textBody: string;
+  category: RoutingCategory;
+  classification: RoutingClassification;
+}) {
+  if (!supabase) return;
+  const actionKey = buildForwardActionKey(options.messageDbId, options.targetEmail);
+  const nowIso = new Date().toISOString();
+  const actionPayload = {
+    target_email: options.targetEmail,
+    subject: options.subject || "",
+    original_message_id: options.messageDbId,
+    provider_message_id: options.providerMessageId,
+    category_key: options.category,
+    reason: options.classification.reason,
+    confidence: options.classification.confidence,
+    source: options.classification.source,
+    from: options.fromRaw,
+  } as Record<string, unknown>;
+  const workspaceTest = await loadWorkspaceTestSettings(options.mailbox.workspace_id);
+  const effectiveTarget =
+    workspaceTest.testMode && workspaceTest.testEmail
+      ? workspaceTest.testEmail
+      : options.targetEmail;
+
+  if (workspaceTest.testMode && !workspaceTest.testEmail) {
+    await supabase.from("thread_actions").insert({
+      user_id: options.mailbox.user_id,
+      workspace_id: options.mailbox.workspace_id,
+      thread_id: options.threadId,
+      action_type: "forward_email",
+      action_key: actionKey,
+      status: "approved_test_mode",
+      detail: "Forwarding simulated in Test Mode; no test email configured.",
+      payload: { ...actionPayload, simulated: true, test_mode: true },
+      source: "routing",
+      created_at: nowIso,
+      updated_at: nowIso,
+      decided_at: nowIso,
+      error: "Forwarding simulated in Test Mode; no test email configured.",
+    });
+    return;
+  }
+
+  try {
+    const providerMessageId = await sendForwardedEmail({
+      mailbox: options.mailbox,
+      to: effectiveTarget,
+      originalSubject: options.subject,
+      originalFrom: options.fromRaw,
+      originalBodyText: options.textBody,
+    });
+    await supabase.from("thread_actions").insert({
+      user_id: options.mailbox.user_id,
+      workspace_id: options.mailbox.workspace_id,
+      thread_id: options.threadId,
+      action_type: "forward_email",
+      action_key: actionKey,
+      status: workspaceTest.testMode ? "approved_test_mode" : "applied",
+      detail: workspaceTest.testMode
+        ? `Forwarded to ${effectiveTarget} (Test Mode).`
+        : `Auto-forwarded to ${effectiveTarget}.`,
+      payload: {
+        ...actionPayload,
+        sent_message_id: providerMessageId,
+        target_email_effective: effectiveTarget,
+        ...(workspaceTest.testMode ? { simulated: true, test_mode: true } : {}),
+      },
+      source: "routing",
+      created_at: nowIso,
+      updated_at: nowIso,
+      decided_at: nowIso,
+      applied_at: workspaceTest.testMode ? null : nowIso,
+      error: null,
+    });
+  } catch (error) {
+    await supabase.from("thread_actions").insert({
+      user_id: options.mailbox.user_id,
+      workspace_id: options.mailbox.workspace_id,
+      thread_id: options.threadId,
+      action_type: "forward_email",
+      action_key: actionKey,
+      status: "failed",
+      detail: `Auto-forward failed for ${options.targetEmail}.`,
+      payload: actionPayload,
+      source: "routing",
+      created_at: nowIso,
+      updated_at: nowIso,
+      decided_at: nowIso,
+      error: (error as Error).message || "Forwarding failed.",
+    });
+  }
 }
 
 async function maybeSendAutoReply(options: {
@@ -839,16 +1169,78 @@ Deno.serve(async (req) => {
     });
   }
 
-  let inboundCategory: EmailCategory = "General";
+  let routingClassification: RoutingClassification = {
+    category: "support",
+    confidence: 0.4,
+    reason: "fallback_default",
+    source: "fallback",
+    subject,
+    excerpt: textBody.slice(0, 700),
+  };
+  let workspaceRoutes: WorkspaceEmailRoute[] = [];
   try {
-    inboundCategory = await categorizeEmail({
-      subject,
-      body: textBody,
-      from: fromEmail || fromRaw || "",
-    });
+    workspaceRoutes = await ensureWorkspaceRoutes(mailbox.workspace_id);
   } catch (error) {
-    console.warn("postmark-inbound: category classification failed", (error as Error)?.message || error);
-    inboundCategory = "General";
+    console.warn("postmark-inbound: failed to load email routes", (error as Error)?.message || error);
+    workspaceRoutes = [];
+  }
+  const activeRoutingCategories: RoutingTargetCategory[] = workspaceRoutes
+    .filter((route) => route.is_active)
+    .map((route) => ({
+      key: route.category_key,
+      label: route.label || route.category_key,
+    }));
+
+  if (activeRoutingCategories.length > 0) {
+    try {
+      routingClassification = await classifyInboundRouting(
+        {
+          subject,
+          body: textBody,
+        },
+        { activeCategories: activeRoutingCategories },
+      );
+    } catch (error) {
+      console.warn(
+        "postmark-inbound: routing classification failed",
+        (error as Error)?.message || error,
+      );
+      routingClassification = {
+        category: "support",
+        confidence: 0.35,
+        reason: "fallback:classifier_error",
+        source: "fallback",
+        subject,
+        excerpt: textBody.slice(0, 420),
+      };
+    }
+  } else {
+    routingClassification = {
+      category: "support",
+      confidence: 1,
+      reason: "fallback:no_active_categories",
+      source: "fallback",
+      subject,
+      excerpt: textBody.slice(0, 420),
+    };
+  }
+
+  const routeDecision = decideRouteForClassification(routingClassification, workspaceRoutes);
+  let inboundCategory: EmailCategory = "General";
+  if (routeDecision.isEffectiveSupport) {
+    try {
+      inboundCategory = await categorizeEmail({
+        subject,
+        body: textBody,
+        from: fromEmail || fromRaw || "",
+      });
+    } catch (error) {
+      console.warn(
+        "postmark-inbound: category classification failed",
+        (error as Error)?.message || error,
+      );
+      inboundCategory = "General";
+    }
   }
 
   let threadId: string | null = null;
@@ -879,6 +1271,9 @@ Deno.serve(async (req) => {
         status: "new",
         priority: "normal",
         tags: buildThreadTags([], inboundCategory),
+        classification_key: normalizeRouteCategory(routingClassification.category),
+        classification_confidence: routingClassification.confidence,
+        classification_reason: routingClassification.reason,
         updated_at: new Date().toISOString(),
       })
       .select("id, subject, unread_count")
@@ -938,7 +1333,7 @@ Deno.serve(async (req) => {
   const messageDbId = (messageInsert as any)?.id ?? null;
   const { data: existingThread } = await supabase
     .from("mail_threads")
-    .select("subject, unread_count, tags")
+    .select("subject, unread_count, tags, classification_key, classification_confidence, classification_reason")
     .eq("id", threadId)
     .maybeSingle();
   const currentUnread = Number(existingThread?.unread_count ?? 0);
@@ -951,6 +1346,9 @@ Deno.serve(async (req) => {
     subject: existingThread?.subject ? existingThread.subject : subject,
     unread_count: nextUnreadCount,
     is_read: false,
+    classification_key: normalizeRouteCategory(routingClassification.category),
+    classification_confidence: routingClassification.confidence,
+    classification_reason: routingClassification.reason,
     updated_at: new Date().toISOString(),
   };
   if (shouldUpdateCategory) {
@@ -1002,9 +1400,70 @@ Deno.serve(async (req) => {
 
   await logAgent(
     "postmark_inbound_received",
-    { messageId: storedMessageId, slug, subject, from: fromRaw, to: toList },
+    {
+      messageId: storedMessageId,
+      slug,
+      subject,
+      from: fromRaw,
+      to: toList,
+      routing_category: routingClassification.category,
+      routing_confidence: routingClassification.confidence,
+      routing_source: routingClassification.source,
+      route_mode: routeDecision.mode,
+      route_target: routeDecision.forwardToEmail,
+    },
     "success",
   );
+
+  if (!routeDecision.isEffectiveSupport) {
+    if (routeDecision.shouldCreateApprovalAction && routeDecision.forwardToEmail) {
+      await createPendingForwardAction({
+        threadId,
+        mailbox,
+        targetEmail: routeDecision.forwardToEmail,
+        messageDbId,
+        providerMessageId: storedMessageId,
+        subject,
+        fromRaw,
+        category: routeDecision.category,
+        classification: routingClassification,
+      });
+      await logAgent(
+        "postmark_inbound_forward_pending",
+        {
+          messageId: storedMessageId,
+          threadId,
+          category: routeDecision.category,
+          target: routeDecision.forwardToEmail,
+        },
+        "info",
+      );
+    }
+    if (routeDecision.shouldAutoForward && routeDecision.forwardToEmail) {
+      await runAutoForwardAction({
+        threadId,
+        mailbox,
+        targetEmail: routeDecision.forwardToEmail,
+        messageDbId,
+        providerMessageId: storedMessageId,
+        subject,
+        fromRaw,
+        textBody,
+        category: routeDecision.category,
+        classification: routingClassification,
+      });
+      await logAgent(
+        "postmark_inbound_auto_forward_attempted",
+        {
+          messageId: storedMessageId,
+          threadId,
+          category: routeDecision.category,
+          target: routeDecision.forwardToEmail,
+        },
+        "info",
+      );
+    }
+  }
 
   try {
     const autoReplyResult = await maybeSendAutoReply({
@@ -1041,7 +1500,7 @@ Deno.serve(async (req) => {
       userId: mailbox.user_id,
       workspaceId: mailbox.workspace_id,
     });
-    if (autoDraftEnabled) {
+    if (autoDraftEnabled && routeDecision.isEffectiveSupport) {
       const shopId = await resolveShopId({
         ownerUserId: mailbox.user_id,
         workspaceId: mailbox.workspace_id,

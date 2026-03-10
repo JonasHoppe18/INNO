@@ -10,6 +10,13 @@ const STATUS_STYLES = {
   Solved: "bg-red-50 text-red-700 border-red-200",
 };
 
+const CLASSIFICATION_LABELS = {
+  support: "Support",
+  partnership: "Partnership",
+  job: "Job",
+  invoice: "Invoice",
+};
+
 export function TicketListItem({
   thread,
   isActive,
@@ -34,6 +41,11 @@ export function TicketListItem({
     ) : (
       <Clock className="h-3.5 w-3.5" />
     );
+  const classificationKey = String(thread?.classification_key || "").toLowerCase();
+  const classificationLabel =
+    classificationKey && classificationKey !== "support"
+      ? CLASSIFICATION_LABELS[classificationKey] || null
+      : null;
 
   return (
     <button
@@ -56,6 +68,11 @@ export function TicketListItem({
         </div>
         <span className="text-[11px] text-gray-400">{formatMessageTime(timestamp)}</span>
       </div>
+      {classificationLabel ? (
+        <div className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+          {classificationLabel}
+        </div>
+      ) : null}
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-1.5 text-xs text-slate-700">
             <span className={cn("truncate", isUnread && "font-semibold text-slate-900")}>

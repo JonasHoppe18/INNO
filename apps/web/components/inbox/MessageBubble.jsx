@@ -37,10 +37,12 @@ const linkifyText = (value) => {
     .replace(/<[^>]+>/g, "")
     .replace(/([^\s])((?:https?:\/\/))/gi, "$1 $2");
   const escaped = escapeHtml(normalized);
-  const withLinks = escaped.replace(
-    /https?:\/\/[a-z0-9.-]+\.[a-z]{2,}(?:\/[^\s>]*)?/gi,
-    (url) => `<a href="${url}" target="_blank" rel="noreferrer">${url}</a>`
-  );
+  const withLinks = escaped.replace(/https?:\/\/[a-z0-9.-]+\.[a-z]{2,}(?:\/[^\s>]*)?/gi, (rawUrl) => {
+    const match = String(rawUrl).match(/^(.*?)([)\].,!?;:]*)$/);
+    const url = match?.[1] || rawUrl;
+    const trailing = match?.[2] || "";
+    return `<a href="${url}" target="_blank" rel="noreferrer">${url}</a>${trailing}`;
+  });
   return withLinks.replace(/\n\n/g, "<br/><br/>").replace(/\n/g, "<br/>");
 };
 

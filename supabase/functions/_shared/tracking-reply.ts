@@ -52,6 +52,7 @@ type ReplyCopy = {
 
 const OPENAI_API_KEY = (Deno.env.get("OPENAI_API_KEY") ?? "").trim();
 const OPENAI_MODEL = (Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini").trim();
+const TRACKING_REPLY_USE_OPENAI = (Deno.env.get("TRACKING_REPLY_USE_OPENAI") ?? "").trim() === "true";
 
 export const detectTrackingIntent = (subject: string, body: string) => {
   const input = `${subject || ""}\n${body || ""}`.toLowerCase();
@@ -551,8 +552,16 @@ async function buildTrackingReplyWithOpenAI(options: {
 function normalizeReplyLinks(text: string): string {
   const input = String(text || "");
   if (!input) return "";
-  // Replace markdown links with plain URL so we avoid "[Tracking link](...)" output.
-  return input.replace(/\[[^\]]+\]\((https?:\/\/[^\s)]+)\)/gi, "$1");
+  return input
+    // Replace markdown links with plain URL so we avoid "[Tracking link](...)" output.
+    .replace(/\[[^\]]+\]\s*\((https?:\/\/[^\s)]+)\)/gi, "$1")
+    // Normalize "(https://...)" to plain URL to keep link parsing reliable.
+    .replace(/\((https?:\/\/[^\s)]+)\)/gi, "$1")
+    // Remove leftover placeholder labels when models output "[tracking link]" without URL.
+    .replace(/\[(tracking\s*link|sporingslink|spårningslänk|sendungsverfolgung)\]/gi, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function buildTrackingReplyInput(options: {
@@ -734,11 +743,15 @@ export async function buildTrackingReplySameLanguage(options: {
     order: options.order,
     tracking: options.tracking,
   });
-  const aiReply = await buildTrackingReplyWithOpenAI({
-    customerMessage: options.customerMessage || "",
-    input,
-    seed,
-  });
-  if (aiReply) return normalizeReplyLinks(aiReply);
-  return composeTrackingReply(input, seed);
+  // Prefer deterministic tracking copy so replies stay precise and stable.
+  // Optional AI phrasing can be enabled with TRACKING_REPLY_USE_OPENAI=true.
+  if (TRACKING_REPLY_USE_OPENAI) {
+    const aiReply = await buildTrackingReplyWithOpenAI({
+      customerMessage: options.customerMessage || "",
+      input,
+      seed,
+    });
+    if (aiReply) return normalizeReplyLinks(aiReply);
+  }
+  return normalizeReplyLinks(composeTrackingReply(input, seed));
 }

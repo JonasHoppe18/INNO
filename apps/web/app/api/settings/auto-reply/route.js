@@ -176,7 +176,6 @@ export async function PUT(request) {
         .from("mail_auto_reply_templates")
         .insert({
           workspace_id: scope.workspaceId,
-          user_id: scope.supabaseUserId || null,
           name: templateName,
           html_layout: templateHtml,
           plain_text_fallback: templateTextFallback,
@@ -210,7 +209,6 @@ export async function PUT(request) {
         .from("mail_auto_reply_settings")
         .update({
           ...payload,
-          user_id: scope.supabaseUserId || null,
         })
         .eq("workspace_id", scope.workspaceId)
         .eq("id", existing.id)
@@ -225,7 +223,6 @@ export async function PUT(request) {
         .from("mail_auto_reply_settings")
         .insert({
           workspace_id: scope.workspaceId,
-          user_id: scope.supabaseUserId || null,
           mailbox_id: null,
           ...payload,
           created_at: nowIso,

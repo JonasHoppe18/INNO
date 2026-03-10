@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { decryptString } from "@/lib/server/shopify-oauth";
+import { sendPostmarkEmail } from "@/lib/server/postmark";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 
 const SUPABASE_URL =
@@ -15,6 +16,8 @@ const SUPABASE_SERVICE_ROLE_KEY =
   "";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || "2024-07";
+const POSTMARK_FROM_EMAIL = process.env.POSTMARK_FROM_EMAIL || "support@sona-ai.dk";
+const POSTMARK_FROM_NAME = process.env.POSTMARK_FROM_NAME || "Sona";
 
 function createServiceClient() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null;
@@ -475,6 +478,81 @@ async function loadWorkspaceTestSettings(serviceClient, workspaceId) {
     testMode: Boolean(data?.test_mode),
     testEmail: testEmail || null,
   };
+}
+
+async function loadForwardingContext(serviceClient, scope, thread, payload) {
+  const messageId = asString(payload?.original_message_id || payload?.message_id || "");
+  let messageQuery = serviceClient
+    .from("mail_messages")
+    .select("id, subject, body_text, body_html, from_name, from_email, provider_message_id")
+    .eq("thread_id", thread.id)
+    .eq("from_me", false)
+    .order("received_at", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(1);
+  if (messageId) {
+    messageQuery = serviceClient
+      .from("mail_messages")
+      .select("id, subject, body_text, body_html, from_name, from_email, provider_message_id")
+      .eq("id", messageId)
+      .limit(1);
+  }
+  messageQuery = applyScope(messageQuery, scope);
+  const { data: inboundMessage } = await messageQuery.maybeSingle();
+
+  let mailboxQuery = serviceClient
+    .from("mail_accounts")
+    .select("id, provider_email, from_email, from_name")
+    .eq("id", thread.mailbox_id)
+    .limit(1);
+  mailboxQuery = applyScope(mailboxQuery, scope);
+  const { data: mailbox } = await mailboxQuery.maybeSingle();
+
+  const sourceSubject = asString(inboundMessage?.subject || thread.subject || "Inbound message");
+  const sourceBody = asString(inboundMessage?.body_text || inboundMessage?.body_html || "");
+  const sourceFromName = asString(inboundMessage?.from_name || "");
+  const sourceFromEmail = asString(inboundMessage?.from_email || "");
+  const sourceFrom = sourceFromEmail
+    ? sourceFromName
+      ? `${sourceFromName} <${sourceFromEmail}>`
+      : sourceFromEmail
+    : "Unknown sender";
+
+  const fromEmail =
+    asString(mailbox?.from_email || "").toLowerCase() ||
+    asString(mailbox?.provider_email || "").toLowerCase() ||
+    POSTMARK_FROM_EMAIL;
+  const fromName = asString(mailbox?.from_name || "") || POSTMARK_FROM_NAME;
+  return {
+    sourceSubject,
+    sourceBody,
+    sourceFrom,
+    fromEmail,
+    fromName,
+    providerMessageId: asString(inboundMessage?.provider_message_id || ""),
+  };
+}
+
+function buildForwardBodies(context) {
+  const textBody = [
+    "Forwarded inbound email",
+    "",
+    `From: ${context.sourceFrom || "Unknown sender"}`,
+    `Subject: ${context.sourceSubject || "(no subject)"}`,
+    "",
+    context.sourceBody || "(empty body)",
+  ].join("\n");
+  const safeBody = String(context.sourceBody || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\n/g, "<br/>");
+  const htmlBody =
+    `<p><strong>Forwarded inbound email</strong></p>` +
+    `<p><strong>From:</strong> ${context.sourceFrom || "Unknown sender"}<br/>` +
+    `<strong>Subject:</strong> ${context.sourceSubject || "(no subject)"}</p>` +
+    `<hr/><p style=\"white-space:pre-wrap\">${safeBody}</p>`;
+  return { textBody, htmlBody };
 }
 
 const stableStringify = (value) => {
@@ -2322,6 +2400,186 @@ export async function POST(request, { params }) {
       },
       { status: 200 }
     );
+  }
+
+  if (normalizedActionType === "forward_email") {
+    const nowIso = new Date().toISOString();
+    const targetEmail = asString(
+      payloadOverride?.target_email ||
+        parsed?.payload?.target_email ||
+        parsed?.payload?.forward_to_email ||
+        actionRecord?.payload?.target_email ||
+        ""
+    ).toLowerCase();
+    if (!targetEmail) {
+      return NextResponse.json(
+        { error: "Forward target email is missing for forward_email action." },
+        { status: 400 }
+      );
+    }
+
+    const actionKey =
+      actionRecord?.action_key ||
+      buildActionKey("forward_email", thread.id, {
+        target_email: targetEmail,
+        original_message_id:
+          asString(parsed?.payload?.original_message_id || actionRecord?.payload?.original_message_id) ||
+          null,
+      });
+    const payloadForForward = {
+      ...(actionRecord?.payload && typeof actionRecord.payload === "object" ? actionRecord.payload : {}),
+      ...(parsed?.payload && typeof parsed.payload === "object" ? parsed.payload : {}),
+      ...(payloadOverride && typeof payloadOverride === "object" ? payloadOverride : {}),
+      target_email: targetEmail,
+    };
+
+    if (workspaceTestSettings.testMode) {
+      const simulatedMessage =
+        "Action approved, but no changes were made because Test Mode is enabled.";
+      if (actionRecord?.id) {
+        await serviceClient
+          .from("thread_actions")
+          .update({
+            status: "approved_test_mode",
+            detail: simulatedMessage,
+            payload: { ...payloadForForward, simulated: true, test_mode: true },
+            action_type: "forward_email",
+            action_key: actionKey,
+            decided_at: nowIso,
+            updated_at: nowIso,
+            error: simulatedMessage,
+          })
+          .eq("id", actionRecord.id);
+      } else {
+        await serviceClient.from("thread_actions").insert({
+          user_id: supabaseUserId,
+          workspace_id: scope.workspaceId ?? null,
+          thread_id: thread.id,
+          action_type: "forward_email",
+          action_key: actionKey,
+          status: "approved_test_mode",
+          detail: simulatedMessage,
+          payload: { ...payloadForForward, simulated: true, test_mode: true },
+          source: "manual_approval",
+          error: simulatedMessage,
+          decided_at: nowIso,
+          created_at: nowIso,
+          updated_at: nowIso,
+        });
+      }
+      return NextResponse.json(
+        {
+          ok: true,
+          decision: "accepted",
+          action: "forward_email",
+          simulated: true,
+          testMode: true,
+          message: simulatedMessage,
+          sourceStep: proposalStepName,
+        },
+        { status: 200 }
+      );
+    }
+
+    const forwardContext = await loadForwardingContext(serviceClient, scope, thread, payloadForForward);
+    const { textBody, htmlBody } = buildForwardBodies(forwardContext);
+
+    try {
+      const forwardResponse = await sendPostmarkEmail({
+        From: `${forwardContext.fromName} <${forwardContext.fromEmail}>`,
+        To: targetEmail,
+        Subject: `Fwd: ${forwardContext.sourceSubject || thread.subject || "Inbound message"}`.slice(0, 250),
+        TextBody: textBody,
+        HtmlBody: htmlBody,
+        ReplyTo: forwardContext.fromEmail,
+      });
+      const sentMessageId = asString(forwardResponse?.MessageID || "");
+      if (actionRecord?.id) {
+        await serviceClient
+          .from("thread_actions")
+          .update({
+            status: "applied",
+            detail: `Forwarded to ${targetEmail}.`,
+            payload: { ...payloadForForward, sent_message_id: sentMessageId || null },
+            action_type: "forward_email",
+            action_key: actionKey,
+            decided_at: nowIso,
+            applied_at: nowIso,
+            updated_at: nowIso,
+            error: null,
+          })
+          .eq("id", actionRecord.id);
+      } else {
+        await serviceClient.from("thread_actions").insert({
+          user_id: supabaseUserId,
+          workspace_id: scope.workspaceId ?? null,
+          thread_id: thread.id,
+          action_type: "forward_email",
+          action_key: actionKey,
+          status: "applied",
+          detail: `Forwarded to ${targetEmail}.`,
+          payload: { ...payloadForForward, sent_message_id: sentMessageId || null },
+          source: "manual_approval",
+          error: null,
+          decided_at: nowIso,
+          applied_at: nowIso,
+          created_at: nowIso,
+          updated_at: nowIso,
+        });
+      }
+      await serviceClient.from("agent_logs").insert({
+        draft_id: null,
+        step_name: "forward_email_applied",
+        step_detail: JSON.stringify({
+          thread_id: threadId,
+          target_email: targetEmail,
+          provider_message_id: sentMessageId || null,
+          source_message_id: forwardContext.providerMessageId || null,
+        }),
+        status: "success",
+        created_at: nowIso,
+      });
+      return NextResponse.json(
+        {
+          ok: true,
+          decision: "accepted",
+          action: "forward_email",
+          forwarded_to: targetEmail,
+          provider_message_id: sentMessageId || null,
+          sourceStep: proposalStepName,
+        },
+        { status: 200 }
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Forwarding failed.";
+      if (actionRecord?.id) {
+        await serviceClient
+          .from("thread_actions")
+          .update({
+            status: "failed",
+            detail: `Forwarding to ${targetEmail} failed.`,
+            payload: payloadForForward,
+            action_type: "forward_email",
+            action_key: actionKey,
+            decided_at: nowIso,
+            updated_at: nowIso,
+            error: message,
+          })
+          .eq("id", actionRecord.id);
+      }
+      await serviceClient.from("agent_logs").insert({
+        draft_id: null,
+        step_name: "forward_email_failed",
+        step_detail: JSON.stringify({
+          thread_id: threadId,
+          target_email: targetEmail,
+          reason: message,
+        }),
+        status: "error",
+        created_at: nowIso,
+      });
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
   }
 
   const fallbackOrderNumber =

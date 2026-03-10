@@ -8,8 +8,11 @@ function escapeHtml(input: string): string {
 }
 
 function linkifyUrls(input: string): string {
-  return String(input || "").replace(/(https?:\/\/[^\s<]+)/gi, (url) => {
-    return `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`;
+  return String(input || "").replace(/https?:\/\/[^\s<]+/gi, (rawUrl) => {
+    const match = String(rawUrl).match(/^(.*?)([)\].,!?;:]*)$/);
+    const url = match?.[1] || rawUrl;
+    const trailing = match?.[2] || "";
+    return `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>${trailing}`;
   });
 }
 
