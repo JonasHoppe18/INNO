@@ -12,12 +12,20 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { SonaLogo } from "@/components/ui/SonaLogo";
+import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 const escapeHtml = (input = "") =>
   String(input || "")
@@ -141,6 +149,10 @@ export function Composer({
     top: 24,
     placement: "up",
   });
+  const [savedRepliesOpen, setSavedRepliesOpen] = useState(false);
+  const [savedRepliesLoading, setSavedRepliesLoading] = useState(false);
+  const [savedReplies, setSavedReplies] = useState([]);
+  const [savedRepliesQuery, setSavedRepliesQuery] = useState("");
   const mentionCandidates = useMemo(() => {
     const base = Array.isArray(mentionUsers) ? mentionUsers : [];
     const query = String(mentionState.query || "").trim().toLowerCase();
@@ -153,6 +165,17 @@ export function Composer({
         });
     return list.slice(0, 8);
   }, [mentionState.query, mentionUsers]);
+  const filteredSavedReplies = useMemo(() => {
+    const rows = Array.isArray(savedReplies) ? savedReplies : [];
+    const query = String(savedRepliesQuery || "").trim().toLowerCase();
+    if (!query) return rows;
+    return rows.filter((reply) => {
+      const title = String(reply?.title || "").toLowerCase();
+      const category = String(reply?.category || "").toLowerCase();
+      const content = String(reply?.content || "").toLowerCase();
+      return title.includes(query) || category.includes(query) || content.includes(query);
+    });
+  }, [savedReplies, savedRepliesQuery]);
 
   const resizeTextarea = () => {
     const el = textareaRef.current;
@@ -204,6 +227,36 @@ export function Composer({
       setAttachments([]);
     }
   }, [isNote]);
+
+  useEffect(() => {
+    if (!savedRepliesOpen || isNote) return;
+    let active = true;
+    const loadSavedReplies = async () => {
+      setSavedRepliesLoading(true);
+      try {
+        const response = await fetch("/api/settings/saved-replies?active_only=1", {
+          method: "GET",
+          cache: "no-store",
+          credentials: "include",
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!active) return;
+        if (!response.ok) {
+          throw new Error(payload?.error || "Could not load saved replies.");
+        }
+        setSavedReplies(Array.isArray(payload?.replies) ? payload.replies : []);
+      } catch {
+        if (!active) return;
+        setSavedReplies([]);
+      } finally {
+        if (active) setSavedRepliesLoading(false);
+      }
+    };
+    loadSavedReplies();
+    return () => {
+      active = false;
+    };
+  }, [isNote, savedRepliesOpen]);
 
   useEffect(() => {
     if (!isNote) return;
@@ -377,6 +430,29 @@ export function Composer({
       input.focus();
       input.setSelectionRange(nextCaret, nextCaret);
     });
+  };
+
+  const applySavedReplyReplace = (reply) => {
+    const content = String(reply?.content || "").trim();
+    if (!content) return;
+    const current = String(value || "");
+    const hasCurrentText = Boolean(current.trim());
+    const sameContent = current.trim() === content;
+    if (hasCurrentText && !sameContent) {
+      const confirmed = window.confirm("Replace current draft with this saved reply?");
+      if (!confirmed) return;
+    }
+    onChange(content);
+    setSavedRepliesOpen(false);
+  };
+
+  const applySavedReplyInsert = (reply) => {
+    const content = String(reply?.content || "").trim();
+    if (!content) return;
+    const current = String(value || "");
+    const nextValue = current.trim() ? `${current.replace(/\s+$/, "")}\n\n${content}` : content;
+    onChange(nextValue);
+    setSavedRepliesOpen(false);
   };
 
   const normalizeMentionKey = (value) =>
@@ -804,6 +880,17 @@ export function Composer({
             </button>
             {!isNote ? (
               <>
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => {
+                    setSavedRepliesQuery("");
+                    setSavedRepliesOpen(true);
+                  }}
+                  className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                >
+                  Saved Replies
+                </button>
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -860,6 +947,83 @@ export function Composer({
           </div>
         </div>
       </div>
+      <Dialog open={savedRepliesOpen} onOpenChange={setSavedRepliesOpen}>
+        <DialogContent className="sm:max-w-[680px]">
+          <DialogHeader>
+            <DialogTitle>Saved Replies</DialogTitle>
+            <DialogDescription>
+              Choose an approved reply and apply it to your draft.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Input
+              value={savedRepliesQuery}
+              onChange={(event) => setSavedRepliesQuery(event.target.value)}
+              placeholder="Search saved replies..."
+            />
+            <div className="max-h-[360px] space-y-2 overflow-y-auto rounded-md border border-gray-200 p-2">
+              {savedRepliesLoading ? (
+                <p className="px-2 py-6 text-center text-sm text-muted-foreground">
+                  Loading saved replies...
+                </p>
+              ) : filteredSavedReplies.length ? (
+                filteredSavedReplies.map((reply) => {
+                  const title = String(reply?.title || "Untitled reply");
+                  const category = String(reply?.category || "").trim();
+                  const content = String(reply?.content || "").trim();
+                  const preview =
+                    content.length > 180 ? `${content.slice(0, 180).trim()}...` : content;
+                  return (
+                    <div
+                      key={reply?.id || `${title}-${preview}`}
+                      className="rounded-lg border border-gray-200 bg-white p-3"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="truncate text-sm font-semibold text-gray-900">{title}</p>
+                            {category ? (
+                              <span className="rounded-full border border-gray-200 px-2 py-0.5 text-[11px] text-gray-500">
+                                {category}
+                              </span>
+                            ) : null}
+                          </div>
+                          <p className="mt-1 whitespace-pre-wrap text-xs text-gray-600">{preview}</p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => applySavedReplyInsert(reply)}
+                          >
+                            Insert
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => applySavedReplyReplace(reply)}
+                            className="bg-black text-white hover:bg-slate-900"
+                          >
+                            Replace draft
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="px-2 py-8 text-center">
+                  <p className="text-sm font-medium text-gray-700">No saved replies yet.</p>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Create your first saved reply in Settings.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

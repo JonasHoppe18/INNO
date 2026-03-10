@@ -11,6 +11,7 @@ import {
   Database,
   ExternalLink,
   FileText,
+  MessageSquareText,
   Package,
   Plus,
   RefreshCw,
@@ -61,6 +62,15 @@ export function KnowledgePageClient() {
   const [policyShipping, setPolicyShipping] = useState("");
 
   const [snippets, setSnippets] = useState([]);
+  const [savedReplies, setSavedReplies] = useState([]);
+  const [savedRepliesLoading, setSavedRepliesLoading] = useState(false);
+  const [savedReplyModalOpen, setSavedReplyModalOpen] = useState(false);
+  const [savedReplyTitle, setSavedReplyTitle] = useState("");
+  const [savedReplyContent, setSavedReplyContent] = useState("");
+  const [savedReplyCategory, setSavedReplyCategory] = useState("");
+  const [editingSavedReplyId, setEditingSavedReplyId] = useState(null);
+  const [savingSavedReply, setSavingSavedReply] = useState(false);
+  const [deletingSavedReplyId, setDeletingSavedReplyId] = useState(null);
   const [savingPolicies, setSavingPolicies] = useState(false);
   const [savingSnippet, setSavingSnippet] = useState(false);
   const [deletingSnippetId, setDeletingSnippetId] = useState(null);
@@ -240,6 +250,31 @@ export function KnowledgePageClient() {
     [supabase]
   );
 
+  const loadSavedReplies = useCallback(async () => {
+    setSavedRepliesLoading(true);
+    try {
+      const response = await fetch("/api/settings/saved-replies", {
+        method: "GET",
+        cache: "no-store",
+        credentials: "include",
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (response.status === 404) {
+          setSavedReplies([]);
+          return;
+        }
+        throw new Error(payload?.error || "Could not load saved replies.");
+      }
+      setSavedReplies(Array.isArray(payload?.replies) ? payload.replies : []);
+    } catch (error) {
+      console.warn("Saved replies load failed", error);
+      setSavedReplies([]);
+    } finally {
+      setSavedRepliesLoading(false);
+    }
+  }, []);
+
   const loadData = useCallback(async () => {
     if (!supabase) {
       setLoading(false);
@@ -249,7 +284,7 @@ export function KnowledgePageClient() {
     setLoading(true);
     try {
       const currentShopId = await loadShop();
-      await Promise.all([loadSnippets(currentShopId), loadHistoryConnection()]);
+      await Promise.all([loadSnippets(currentShopId), loadHistoryConnection(), loadSavedReplies()]);
       const [
         productsCountResponse,
         pagesCountResponse,
@@ -313,7 +348,7 @@ export function KnowledgePageClient() {
     } finally {
       setLoading(false);
     }
-  }, [loadHistoryConnection, loadShop, loadSnippets, supabase]);
+  }, [loadHistoryConnection, loadSavedReplies, loadShop, loadSnippets, supabase]);
 
   useEffect(() => {
     loadData().catch(() => null);
@@ -758,6 +793,120 @@ export function KnowledgePageClient() {
     }
   };
 
+  const resetSavedReplyForm = () => {
+    setEditingSavedReplyId(null);
+    setSavedReplyTitle("");
+    setSavedReplyContent("");
+    setSavedReplyCategory("");
+  };
+
+  const openCreateSavedReplyModal = () => {
+    resetSavedReplyForm();
+    setSavedReplyModalOpen(true);
+  };
+
+  const openEditSavedReplyModal = (reply) => {
+    setEditingSavedReplyId(String(reply?.id || "").trim() || null);
+    setSavedReplyTitle(String(reply?.title || ""));
+    setSavedReplyContent(String(reply?.content || ""));
+    setSavedReplyCategory(String(reply?.category || ""));
+    setSavedReplyModalOpen(true);
+  };
+
+  const handleSaveSavedReply = async () => {
+    const title = String(savedReplyTitle || "").trim();
+    const content = String(savedReplyContent || "").trim();
+    const category = String(savedReplyCategory || "").trim();
+    if (!title || !content) {
+      toast.error("Title and content are required.");
+      return;
+    }
+
+    setSavingSavedReply(true);
+    try {
+      const method = editingSavedReplyId ? "PUT" : "POST";
+      const response = await fetch("/api/settings/saved-replies", {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          id: editingSavedReplyId || undefined,
+          title,
+          content,
+          category: category || null,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || "Could not save saved reply.");
+      }
+      toast.success(editingSavedReplyId ? "Saved reply updated." : "Saved reply created.");
+      setSavedReplyModalOpen(false);
+      resetSavedReplyForm();
+      await loadSavedReplies();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not save saved reply.");
+    } finally {
+      setSavingSavedReply(false);
+    }
+  };
+
+  const handleDeleteSavedReply = async (id) => {
+    const nextId = String(id || "").trim();
+    if (!nextId) return;
+    if (!window.confirm("Delete this saved reply?")) return;
+
+    setDeletingSavedReplyId(nextId);
+    try {
+      const response = await fetch("/api/settings/saved-replies", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({ id: nextId }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || "Could not delete saved reply.");
+      }
+      toast.success("Saved reply deleted.");
+      await loadSavedReplies();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not delete saved reply.");
+    } finally {
+      setDeletingSavedReplyId(null);
+    }
+  };
+
+  const handleToggleSavedReply = async (reply) => {
+    const id = String(reply?.id || "").trim();
+    if (!id) return;
+    try {
+      const response = await fetch("/api/settings/saved-replies", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          id,
+          is_active: !Boolean(reply?.is_active),
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || "Could not update saved reply.");
+      }
+      await loadSavedReplies();
+      toast.success(Boolean(reply?.is_active) ? "Saved reply deactivated." : "Saved reply activated.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not update saved reply.");
+    }
+  };
+
   return (
     <>
       <div className="space-y-6">
@@ -816,6 +965,96 @@ export function KnowledgePageClient() {
                         <Trash2 className="h-4 w-4 text-gray-500" />
                         <span className="sr-only">Delete snippet</span>
                       </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="h-full rounded-xl border border-gray-300/70 bg-white shadow-sm">
+            <CardHeader className="flex flex-row items-start justify-between px-6 pb-3 pt-6">
+              <div className="space-y-1">
+                <CardTitle className="text-lg">Saved Replies</CardTitle>
+                <CardDescription>Approved replies your team can insert into drafts with one click.</CardDescription>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={openCreateSavedReplyModal}
+                  disabled={loading}
+                  className="gap-1.5 bg-black text-white hover:bg-black/90"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add Saved Reply
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="px-6 pb-6">
+              {loading || savedRepliesLoading ? (
+                <p className="text-sm text-muted-foreground">Loading saved replies...</p>
+              ) : savedReplies.length === 0 ? (
+                <div className="flex min-h-[240px] flex-col items-center justify-center gap-2 text-center">
+                  <MessageSquareText className="h-12 w-12 text-gray-300" />
+                  <p className="text-sm font-medium text-gray-600">No saved replies yet.</p>
+                  <p className="text-xs text-gray-400">Create your first saved reply.</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-50 rounded-lg border border-gray-100">
+                  {savedReplies.map((reply) => (
+                    <div key={reply.id} className="group flex items-center gap-3 px-4 py-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="truncate text-sm font-medium text-foreground">{reply.title || "Untitled reply"}</p>
+                          {reply?.category ? (
+                            <span className="rounded-full border border-gray-200 px-2 py-0.5 text-[11px] text-gray-500">
+                              {reply.category}
+                            </span>
+                          ) : null}
+                          <span
+                            className={`rounded-full border px-2 py-0.5 text-[11px] ${
+                              reply?.is_active
+                                ? "border-emerald-200 text-emerald-700"
+                                : "border-gray-200 text-gray-500"
+                            }`}
+                          >
+                            {reply?.is_active ? "Active" : "Inactive"}
+                          </span>
+                        </div>
+                        <p className="mt-1 truncate text-xs text-muted-foreground">
+                          {String(reply?.content || "").trim() || "(empty content)"}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openEditSavedReplyModal(reply)}
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleToggleSavedReply(reply)}
+                        >
+                          {reply?.is_active ? "Deactivate" : "Activate"}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => handleDeleteSavedReply(reply.id)}
+                          disabled={deletingSavedReplyId === reply.id}
+                        >
+                          <Trash2 className="h-4 w-4 text-gray-500" />
+                          <span className="sr-only">Delete saved reply</span>
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1164,6 +1403,63 @@ export function KnowledgePageClient() {
                 : uploadingPdf
                   ? "Uploading..."
                   : "Upload file"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={savedReplyModalOpen}
+        onOpenChange={(open) => {
+          setSavedReplyModalOpen(open);
+          if (!open) resetSavedReplyForm();
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingSavedReplyId ? "Edit Saved Reply" : "Add Saved Reply"}</DialogTitle>
+            <DialogDescription>Create fixed, approved wording for your support team.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="saved-reply-title">Title</Label>
+              <Input
+                id="saved-reply-title"
+                value={savedReplyTitle}
+                onChange={(event) => setSavedReplyTitle(event.target.value)}
+                placeholder="Bluetooth setup instructions"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="saved-reply-category">Category (optional)</Label>
+              <Input
+                id="saved-reply-category"
+                value={savedReplyCategory}
+                onChange={(event) => setSavedReplyCategory(event.target.value)}
+                placeholder="Troubleshooting"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="saved-reply-content">Content</Label>
+              <Textarea
+                id="saved-reply-content"
+                value={savedReplyContent}
+                onChange={(event) => setSavedReplyContent(event.target.value)}
+                rows={10}
+                placeholder="Write the approved reply..."
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setSavedReplyModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={handleSaveSavedReply} disabled={savingSavedReply}>
+              {savingSavedReply
+                ? "Saving..."
+                : editingSavedReplyId
+                  ? "Save changes"
+                  : "Create saved reply"}
             </Button>
           </DialogFooter>
         </DialogContent>

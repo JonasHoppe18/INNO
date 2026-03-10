@@ -1465,7 +1465,6 @@ export function SettingsPanel() {
     "<div style=\"font-family:Arial,sans-serif;line-height:1.6;color:#111\">{{content}}</div>"
   );
   const [initialEmailRoutingRows, setInitialEmailRoutingRows] = useState([]);
-
   const loadData = useCallback(async () => {
     if (!supabase) {
       setLoading(false);
