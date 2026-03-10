@@ -19,6 +19,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EditSignatureModal } from "@/components/settings/EditSignatureModal";
 import { useClerkSupabase } from "@/lib/useClerkSupabase";
+import {
+  SUPPORTED_SUPPORT_LANGUAGE_CODES,
+  SUPPORT_LANGUAGE_LABELS,
+  normalizeSupportLanguage,
+} from "@/lib/translation/languages";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
@@ -35,6 +40,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const MENU_SECTIONS = [
   {
@@ -76,6 +88,8 @@ function GeneralTab({
   onTestModeChange,
   testEmail,
   onTestEmailChange,
+  supportLanguage,
+  onSupportLanguageChange,
   hasWorkspaceScope,
   onSave,
   onReset,
@@ -119,6 +133,38 @@ function GeneralTab({
             />
             <p className="text-xs text-slate-500">
               This is your team&apos;s visible name within Sona.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <label
+              htmlFor="support-language"
+              className="text-xs font-semibold tracking-wide text-slate-500"
+            >
+              SUPPORT LANGUAGE
+            </label>
+            <Select
+              value={supportLanguage}
+              onValueChange={onSupportLanguageChange}
+              disabled={!hasWorkspaceScope}
+            >
+              <SelectTrigger
+                id="support-language"
+                className="h-11 w-full max-w-xl text-sm text-slate-700 focus-visible:ring-2 focus-visible:ring-sky-500/40"
+              >
+                <SelectValue placeholder="Select language" />
+              </SelectTrigger>
+              <SelectContent>
+                {SUPPORTED_SUPPORT_LANGUAGE_CODES.map((code) => (
+                  <SelectItem key={code} value={code}>
+                    {SUPPORT_LANGUAGE_LABELS[code]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-slate-500">
+              This is the language your team prefers to read messages in. Translation views in
+              the inbox will use this language.
             </p>
           </div>
         </div>
@@ -1126,6 +1172,8 @@ export function SettingsPanel() {
   const [initialTestMode, setInitialTestMode] = useState(false);
   const [testEmail, setTestEmail] = useState("");
   const [initialTestEmail, setInitialTestEmail] = useState("");
+  const [supportLanguage, setSupportLanguage] = useState("en");
+  const [initialSupportLanguage, setInitialSupportLanguage] = useState("en");
   const [members, setMembers] = useState([]);
   const [workspaceCurrentRole, setWorkspaceCurrentRole] = useState("");
   const [canManageWorkspaceMembers, setCanManageWorkspaceMembers] = useState(false);
@@ -1171,14 +1219,25 @@ export function SettingsPanel() {
       let workspaceId = null;
       let workspaceName = null;
       if (orgId) {
-        const { data: workspaceRow, error: workspaceError } = await supabase
+        let workspaceLookup = await supabase
           .from("workspaces")
-          .select("id, name")
+          .select("id, name, support_language")
           .eq("clerk_org_id", orgId)
           .maybeSingle();
+        if (workspaceLookup.error?.code === "42703") {
+          workspaceLookup = await supabase
+            .from("workspaces")
+            .select("id, name")
+            .eq("clerk_org_id", orgId)
+            .maybeSingle();
+        }
+        const workspaceRow = workspaceLookup.data;
+        const workspaceError = workspaceLookup.error;
         if (workspaceError) throw workspaceError;
         workspaceId = workspaceRow?.id ?? null;
         workspaceName = workspaceRow?.name ?? null;
+        setSupportLanguage(normalizeSupportLanguage(workspaceRow?.support_language || "en"));
+        setInitialSupportLanguage(normalizeSupportLanguage(workspaceRow?.support_language || "en"));
       }
       if (!workspaceId && user?.id) {
         const { data: membership, error: membershipError } = await supabase
@@ -1192,13 +1251,24 @@ export function SettingsPanel() {
           workspaceId = membership?.workspace_id ?? null;
         }
         if (workspaceId) {
-          const { data: workspaceRow, error: workspaceError } = await supabase
+          let workspaceLookup = await supabase
             .from("workspaces")
-            .select("id, name")
+            .select("id, name, support_language")
             .eq("id", workspaceId)
             .maybeSingle();
+          if (workspaceLookup.error?.code === "42703") {
+            workspaceLookup = await supabase
+              .from("workspaces")
+              .select("id, name")
+              .eq("id", workspaceId)
+              .maybeSingle();
+          }
+          const workspaceRow = workspaceLookup.data;
+          const workspaceError = workspaceLookup.error;
           if (!workspaceError) {
             workspaceName = workspaceRow?.name ?? null;
+            setSupportLanguage(normalizeSupportLanguage(workspaceRow?.support_language || "en"));
+            setInitialSupportLanguage(normalizeSupportLanguage(workspaceRow?.support_language || "en"));
           }
         }
       }
@@ -1241,6 +1311,8 @@ export function SettingsPanel() {
         setInitialTestMode(false);
         setTestEmail("");
         setInitialTestEmail("");
+        setSupportLanguage("en");
+        setInitialSupportLanguage("en");
         setMembers([]);
         setWorkspaceCurrentRole("");
         setCanManageWorkspaceMembers(false);
@@ -1261,6 +1333,10 @@ export function SettingsPanel() {
       setInitialTestMode(false);
       setTestEmail("");
       setInitialTestEmail("");
+      if (!workspaceId) {
+        setSupportLanguage("en");
+        setInitialSupportLanguage("en");
+      }
 
       const memberOwnerId = shopRow?.owner_user_id ?? supabaseUserId;
       if (workspaceId) {
@@ -1296,10 +1372,15 @@ export function SettingsPanel() {
           const testModePayload = await testModeResponse.json().catch(() => ({}));
           const resolvedTestMode = Boolean(testModePayload?.test_mode);
           const resolvedTestEmail = String(testModePayload?.test_email || "").trim();
+          const resolvedSupportLanguage = normalizeSupportLanguage(
+            testModePayload?.support_language || "en"
+          );
           setTestMode(resolvedTestMode);
           setInitialTestMode(resolvedTestMode);
           setTestEmail(resolvedTestEmail);
           setInitialTestEmail(resolvedTestEmail);
+          setSupportLanguage(resolvedSupportLanguage);
+          setInitialSupportLanguage(resolvedSupportLanguage);
         }
       }
 
@@ -1353,8 +1434,18 @@ export function SettingsPanel() {
     () =>
       String(teamName || "").trim() !== String(initialTeamName || "").trim() ||
       Boolean(testMode) !== Boolean(initialTestMode) ||
-      String(testEmail || "").trim() !== String(initialTestEmail || "").trim(),
-    [initialTeamName, teamName, initialTestMode, testMode, initialTestEmail, testEmail]
+      String(testEmail || "").trim() !== String(initialTestEmail || "").trim() ||
+      normalizeSupportLanguage(supportLanguage) !== normalizeSupportLanguage(initialSupportLanguage),
+    [
+      initialSupportLanguage,
+      initialTeamName,
+      teamName,
+      initialTestMode,
+      testMode,
+      initialTestEmail,
+      testEmail,
+      supportLanguage,
+    ]
   );
 
   const handleSaveGeneral = useCallback(async () => {
@@ -1365,6 +1456,7 @@ export function SettingsPanel() {
       const nextTeamName = String(teamName || "").trim() || "Sona Team";
       const nextTestMode = Boolean(testMode);
       const nextTestEmail = String(testEmail || "").trim() || null;
+      const nextSupportLanguage = normalizeSupportLanguage(supportLanguage, "en");
       if (workspaceId) {
         const { error: workspaceNameError } = await supabase
           .from("workspaces")
@@ -1379,12 +1471,18 @@ export function SettingsPanel() {
           body: JSON.stringify({
             test_mode: nextTestMode,
             test_email: nextTestEmail,
+            support_language: nextSupportLanguage,
           }),
         });
         const testModePayload = await testModeResponse.json().catch(() => ({}));
         if (!testModeResponse.ok) {
           throw new Error(testModePayload?.error || "Could not save test mode settings.");
         }
+        const persistedSupportLanguage = normalizeSupportLanguage(
+          testModePayload?.support_language || nextSupportLanguage
+        );
+        setSupportLanguage(persistedSupportLanguage);
+        setInitialSupportLanguage(persistedSupportLanguage);
       } else if (shopId) {
         const { error } = await supabase.from("shops").update({ team_name: nextTeamName }).eq("id", shopId);
         if (error) throw error;
@@ -1397,23 +1495,28 @@ export function SettingsPanel() {
       setInitialTestMode(nextTestMode);
       setTestEmail(nextTestEmail || "");
       setInitialTestEmail(nextTestEmail || "");
+      if (!workspaceId) {
+        setSupportLanguage(nextSupportLanguage);
+        setInitialSupportLanguage(nextSupportLanguage);
+      }
       toast.success("Settings saved.");
     } catch (error) {
       if (error?.code === "42703") {
-        toast.error("team_name column is missing in shops. Add it before saving.");
+        toast.error("A required settings column is missing. Run the latest SQL schema updates.");
       } else {
         toast.error(error?.message || "Could not save settings.");
       }
     } finally {
       setSaving(false);
     }
-  }, [canSave, saving, shopId, supabase, teamName, testEmail, testMode, workspaceId]);
+  }, [canSave, saving, shopId, supabase, supportLanguage, teamName, testEmail, testMode, workspaceId]);
 
   const handleResetGeneral = useCallback(() => {
     setTeamName(String(initialTeamName || "Sona Team"));
     setTestMode(Boolean(initialTestMode));
     setTestEmail(String(initialTestEmail || ""));
-  }, [initialTeamName, initialTestEmail, initialTestMode]);
+    setSupportLanguage(normalizeSupportLanguage(initialSupportLanguage, "en"));
+  }, [initialSupportLanguage, initialTeamName, initialTestEmail, initialTestMode]);
 
   const handleSaveAutoReply = useCallback(async (overrides = {}) => {
     if (savingAutoReply) return;
@@ -1550,6 +1653,8 @@ export function SettingsPanel() {
             onTestModeChange={setTestMode}
             testEmail={testEmail}
             onTestEmailChange={setTestEmail}
+            supportLanguage={supportLanguage}
+            onSupportLanguageChange={setSupportLanguage}
             hasWorkspaceScope={Boolean(workspaceId)}
             onSave={handleSaveGeneral}
             onReset={handleResetGeneral}

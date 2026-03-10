@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { resolveAuthScope } from "@/lib/server/workspace-auth";
+import { normalizeSupportLanguage } from "@/lib/translation/languages";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -35,13 +36,14 @@ function parseTestMode(value) {
 async function getWorkspaceSettings(serviceClient, workspaceId) {
   const { data, error } = await serviceClient
     .from("workspaces")
-    .select("id, test_mode, test_email")
+    .select("id, test_mode, test_email, support_language")
     .eq("id", workspaceId)
     .maybeSingle();
   if (error) throw new Error(error.message);
   return {
     test_mode: Boolean(data?.test_mode),
     test_email: normalizeEmail(data?.test_email),
+    support_language: normalizeSupportLanguage(data?.support_language || "en"),
   };
 }
 
@@ -63,6 +65,7 @@ export async function GET() {
         {
           test_mode: false,
           test_email: null,
+          support_language: "en",
           workspace_found: false,
         },
         { status: 200 }
@@ -109,12 +112,14 @@ export async function PUT(request) {
     const nowIso = new Date().toISOString();
     const testMode = parseTestMode(body?.test_mode);
     const testEmail = normalizeEmail(body?.test_email);
+    const supportLanguage = normalizeSupportLanguage(body?.support_language || "en");
 
     const { error: updateError } = await serviceClient
       .from("workspaces")
       .update({
         test_mode: testMode,
         test_email: testEmail,
+        support_language: supportLanguage,
         updated_at: nowIso,
       })
       .eq("id", scope.workspaceId);
@@ -127,6 +132,7 @@ export async function PUT(request) {
           .update({
             test_mode: testMode,
             test_email: testEmail,
+            support_language: supportLanguage,
           })
           .eq("id", scope.workspaceId);
         if (fallback.error) {

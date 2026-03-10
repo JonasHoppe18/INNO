@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TicketList } from "@/components/inbox/TicketList";
 import { TicketDetail } from "@/components/inbox/TicketDetail";
 import { SonaInsightsModal } from "@/components/inbox/SonaInsightsModal";
+import { TranslationModal } from "@/components/inbox/TranslationModal";
 import { deriveThreadsFromMessages } from "@/hooks/useInboxData";
 import { getMessageTimestamp, getSenderLabel, isOutboundMessage } from "@/components/inbox/inbox-utils";
 import { useClerkSupabase } from "@/lib/useClerkSupabase";
@@ -123,6 +124,7 @@ function InboxHeaderActions({
   onTicketStateChange,
   onAssignmentChange,
   onInboxChange,
+  onOpenTranslation,
   onOpenInsights,
 }) {
   const [inboxPickerOpen, setInboxPickerOpen] = useState(false);
@@ -203,6 +205,13 @@ function InboxHeaderActions({
         className="cursor-pointer rounded-md border border-dashed border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:border-gray-300"
       >
         Move to inbox
+      </button>
+      <button
+        type="button"
+        onClick={onOpenTranslation}
+        className="cursor-pointer rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:border-gray-300"
+      >
+        Translation
       </button>
       <button
         type="button"
@@ -620,6 +629,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const [draftWaitTimedOutByThread, setDraftWaitTimedOutByThread] = useState({});
   const [systemDraftUneditedByThread, setSystemDraftUneditedByThread] = useState({});
   const [insightsOpen, setInsightsOpen] = useState(false);
+  const [translationModalOpen, setTranslationModalOpen] = useState(false);
   const [draftLogId, setDraftLogId] = useState(null);
   const sendingStartedAtRef = useRef(0);
   const [deletingThread, setDeletingThread] = useState(false);
@@ -1792,6 +1802,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         onTicketStateChange={handleTicketStateChange}
         onAssignmentChange={handleAssignmentChange}
         onInboxChange={handleInboxChange}
+        onOpenTranslation={() => setTranslationModalOpen(true)}
         onOpenInsights={() => setInsightsOpen(true)}
       />
     );
@@ -2486,6 +2497,12 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         customerLookupLoading={customerLookupLoading}
         customerLookupError={customerLookupError}
         onCustomerRefresh={refreshCustomerLookup}
+      />
+
+      <TranslationModal
+        open={translationModalOpen}
+        onOpenChange={setTranslationModalOpen}
+        threadId={selectedThread?.id || null}
       />
     </div>
   );

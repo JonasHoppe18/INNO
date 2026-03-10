@@ -7,6 +7,7 @@ create table if not exists public.workspaces (
   name text,
   test_mode boolean not null default false,
   test_email text,
+  support_language text not null default 'en',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -19,6 +20,23 @@ alter table public.workspaces
 
 alter table public.workspaces
   add column if not exists updated_at timestamptz not null default now();
+
+alter table public.workspaces
+  add column if not exists support_language text not null default 'en';
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'workspaces_support_language_check'
+      and conrelid = 'public.workspaces'::regclass
+  ) then
+    alter table public.workspaces
+      add constraint workspaces_support_language_check
+      check (support_language in ('en', 'da', 'de', 'es', 'fr', 'sv', 'no'));
+  end if;
+end $$;
 
 -- clerk_org_id must stay nullable for legacy users.
 alter table public.workspaces
