@@ -19,6 +19,7 @@ export type TrackingReplyInput = {
   status?: string | null;
   statusDateTime?: string | null;
   latestEventDescription?: string | null;
+  latestEventLocation?: string | null;
   latestEventCode?: string | null;
   deliveredToParcelShop?: boolean;
   parcelShopName?: string | null;
@@ -186,7 +187,6 @@ export function formatParcelShopDescription(
   input: TrackingReplyInput,
   locale: string,
 ): string | null {
-  const normalizedLocale = normalizeLocale(locale);
   const name = String(input.parcelShopName || "").trim();
   const addressLine = String(input.parcelShopAddressLine || "").trim();
   const cityPart = [input.parcelShopPostalCode, input.parcelShopCity]
@@ -195,12 +195,8 @@ export function formatParcelShopDescription(
     .join(" ");
   const address = [addressLine, cityPart].filter(Boolean).join(", ").trim();
 
-  if (!name && !address) {
-    if (normalizedLocale === "da") return "leveret i en GLS pakkeshop";
-    if (normalizedLocale === "sv") return "levererat till ett GLS paketombud";
-    if (normalizedLocale === "de") return "in einem GLS Paketshop zugestellt";
-    return "delivered to a GLS parcel shop";
-  }
+  // Only mention parcel shop location when exact pickup point data exists.
+  if (!name && !address) return null;
   if (name && address) return `${name} (${address})`;
   return name || address;
 }
@@ -219,44 +215,44 @@ function buildReplyCopy(locale: SupportedLocale): ReplyCopy {
     return {
       greeting: (name) => (String(name || "").trim() ? `Hej ${name},` : "Hej,"),
       fallbackNoTracking: [
-        "Jeg har tjekket ordren, men der er ingen ny tracking-opdatering endnu.",
-        "Jeg kan ikke se en ny tracking-scanning endnu.",
+        "Jeg har tjekket din ordre, men der er endnu ingen ny opdatering.",
+        "Jeg har tjekket din ordre, men den har ikke fået en ny scanning endnu.",
       ],
       statusLead: {
         DELIVERED: [
-          "Vi kan se i tracking, at din ordre {order} er blevet leveret.",
-          "Ifølge tracking blev din ordre {order} leveret.",
-          "Tracking viser, at din ordre {order} blev leveret.",
+          "Din ordre {order} er leveret.",
+          "Din ordre {order} blev leveret.",
+          "Godt nyt, din ordre {order} er leveret.",
         ],
         DELIVEREDPS: [
-          "Vi kan se i tracking, at din ordre {order} er leveret i en GLS pakkeshop.",
-          "Ifølge tracking blev din ordre {order} leveret i en GLS pakkeshop.",
-          "Tracking viser, at din ordre {order} er afleveret i en GLS pakkeshop.",
+          "Din ordre {order} er leveret.",
+          "Din ordre {order} blev leveret.",
+          "Godt nyt, din ordre {order} er leveret.",
         ],
         INDELIVERY: [
           "Din ordre {order} er ude til levering i dag.",
           "Godt nyt, din ordre {order} er ude til levering.",
-          "Tracking viser, at din ordre {order} er på vej ud til levering i dag.",
+          "Din ordre {order} kommer efter planen i dag.",
         ],
         INTRANSIT: [
           "Din ordre {order} er på vej.",
-          "Vi kan se i tracking, at din ordre {order} er i transit.",
-          "Tracking viser, at din ordre {order} er under transport.",
+          "Din ordre {order} er stadig undervejs.",
+          "Din ordre {order} er i transit.",
         ],
         NOTDELIVERED: [
-          "Der ser ud til at have været et mislykket leveringsforsøg på din ordre {order}.",
-          "Tracking viser, at leveringen af din ordre {order} ikke lykkedes i første forsøg.",
-          "Din ordre {order} er ikke leveret endnu på grund af et leveringsproblem.",
+          "Der var et mislykket leveringsforsøg på din ordre {order}.",
+          "Din ordre {order} blev ikke leveret ved første forsøg.",
+          "Der er opstået et leveringsproblem på din ordre {order}.",
         ],
         PREADVICE: [
           "GLS har modtaget forsendelsesoplysningerne for din ordre {order}, men pakken er endnu ikke registreret som indleveret.",
           "Din ordre {order} er oprettet hos GLS, men den er ikke scannet ind endnu.",
-          "Tracking viser for nu kun forsendelsesoplysninger for din ordre {order}.",
+          "Der er kun oprettet forsendelsesoplysninger på din ordre {order} lige nu.",
         ],
         UNKNOWN: [
-          "Jeg har tjekket tracking på din ordre {order}.",
-          "Jeg har slået din ordre {order} op i tracking.",
-          "Vi har tjekket trackingstatus på din ordre {order}.",
+          "Jeg har tjekket din ordre {order}.",
+          "Jeg har slået din ordre {order} op.",
+          "Jeg har lige tjekket status på din ordre {order}.",
         ],
       },
       statusDetail: {
@@ -268,47 +264,47 @@ function buildReplyCopy(locale: SupportedLocale): ReplyCopy {
         preAdviceLatest: "Seneste opdatering: {event}.",
       },
       parcelShopLine: {
-        generic: "Pakken er leveret i en GLS pakkeshop.",
-        withName: "Pakken er leveret i pakkeshoppen: {shop}.",
-        withAddress: "Pakken er leveret i pakkeshoppen: {shop}.",
+        generic: "",
+        withName: "Leveret til: {shop}.",
+        withAddress: "Leveret til: {shop}.",
       },
       trackingLine: "Trackingnummer: {trackingNumber}.",
       linkLine: "Du kan følge pakken her: {trackingUrl}",
       reassuranceByStatus: {
         DELIVERED: [
-          "Hvis du mod forventning ikke har modtaget pakken, så skriv endelig tilbage, så starter vi en undersøgelse med det samme.",
-          "Hvis du ikke kan finde pakken, så skriv gerne tilbage, så hjælper vi videre med det samme.",
-          "Hvis pakken mod forventning mangler, så sig endelig til, så starter vi en undersøgelse med det samme.",
+          "Hvis du ikke kan finde pakken, så skriv bare her, så hjælper vi med det samme.",
+          "Hvis pakken mangler, så svar her, så hjælper vi med det samme.",
+          "Kan du ikke finde pakken, så skriv tilbage, så hjælper vi.",
         ],
         DELIVEREDPS: [
-          "Hvis du ikke kan finde pakken i pakkeshoppen, så skriv tilbage til os, så undersøger vi det med det samme.",
-          "Hvis pakken ikke ligger klar i pakkeshoppen, så sig endelig til, så hjælper vi videre med det samme.",
-          "Hvis du mod forventning ikke kan hente pakken, så skriv gerne tilbage, så starter vi en undersøgelse.",
+          "Hvis du ikke kan finde pakken, så skriv bare her, så hjælper vi med det samme.",
+          "Kan du ikke hente pakken, så skriv tilbage, så hjælper vi.",
+          "Hvis pakken ikke er der, så svar her, så hjælper vi med det samme.",
         ],
         INDELIVERY: [
-          "Hvis den ikke bliver leveret i dag, så skriv endelig tilbage, så undersøger vi det med det samme.",
-          "Hvis den ikke kommer i dag, så sig til, så hjælper vi videre med det samme.",
-          "Hvis leveringen trækker ud, så skriv gerne tilbage, så følger vi op med transportøren.",
+          "Bliver den ikke leveret i dag, så skriv tilbage, så følger vi op.",
+          "Hvis den ikke kommer i dag, så hjælper vi dig videre med det samme.",
+          "Trækker leveringen ud, så skriv bare her.",
         ],
         INTRANSIT: [
-          "Hvis den ikke bevæger sig de næste hverdage, så skriv tilbage, så undersøger vi det.",
-          "Hvis der ikke kommer nye scans snart, så sig til, så følger vi op med transportøren.",
-          "Hvis du ikke ser fremdrift i tracking, så skriv gerne tilbage, så hjælper vi videre.",
+          "Hvis der ikke kommer ny bevægelse snart, så skriv tilbage, så følger vi op.",
+          "Hvis pakken står stille, så hjælper vi dig videre.",
+          "Skriv tilbage, hvis du vil have os til at følge op med transportøren.",
         ],
         NOTDELIVERED: [
-          "Skriv gerne tilbage, hvis du vil have os til at hjælpe med næste skridt med det samme.",
-          "Hvis du ønsker, at vi tager fat i transportøren med det samme, så svar blot på denne mail.",
-          "Giv gerne besked, så hjælper vi dig videre med det samme.",
+          "Svar her, så hjælper vi med næste skridt med det samme.",
+          "Hvis du vil, tager vi fat i transportøren med det samme.",
+          "Skriv tilbage, så hjælper vi dig videre.",
         ],
         PREADVICE: [
-          "Skriv gerne tilbage, hvis du ønsker en ny status senere i dag.",
-          "Hvis du vil, følger vi op så snart der kommer første scanning.",
-          "Sig endelig til, hvis du vil have os til at holde ekstra øje med forsendelsen.",
+          "Skriv tilbage, hvis du vil have en ny status senere i dag.",
+          "Vi kan følge op, så snart første scanning kommer.",
+          "Sig til, hvis du vil have os til at holde øje med forsendelsen.",
         ],
         UNKNOWN: [
-          "Skriv gerne tilbage, hvis du vil have os til at undersøge den nærmere.",
+          "Skriv tilbage, så undersøger vi den nærmere.",
           "Hvis du vil, følger vi op manuelt med transportøren.",
-          "Svar endelig på denne mail, hvis du ønsker, at vi undersøger den med det samme.",
+          "Svar her, hvis du vil have os til at undersøge den med det samme.",
         ],
       },
       signoff: "God dag.",
@@ -320,13 +316,13 @@ function buildReplyCopy(locale: SupportedLocale): ReplyCopy {
       greeting: (name) => (String(name || "").trim() ? `Hej ${name},` : "Hej,"),
       fallbackNoTracking: ["Jag har kollat ordern, men ser ingen ny spårningsuppdatering ännu."],
       statusLead: {
-        DELIVERED: ["Vi kan se i spårningen att din order {order} har levererats."],
-        DELIVEREDPS: ["Vi kan se i spårningen att din order {order} har levererats till ett GLS paketombud."],
+        DELIVERED: ["Din order {order} har levererats."],
+        DELIVEREDPS: ["Din order {order} har levererats."],
         INDELIVERY: ["Din order {order} är ute för leverans i dag."],
         INTRANSIT: ["Din order {order} är på väg."],
-        NOTDELIVERED: ["Spårningen visar att leveransförsöket för order {order} inte lyckades."],
+        NOTDELIVERED: ["Leveransförsöket för order {order} lyckades inte."],
         PREADVICE: ["GLS har fått försändelseinformationen för order {order}, men paketet är ännu inte inskannat."],
-        UNKNOWN: ["Jag har kontrollerat spårningen för order {order}."],
+        UNKNOWN: ["Jag har kontrollerat din order {order}."],
       },
       statusDetail: {
         deliveredAt: "Levererad: {datetime}.",
@@ -361,13 +357,13 @@ function buildReplyCopy(locale: SupportedLocale): ReplyCopy {
       greeting: (name) => (String(name || "").trim() ? `Hallo ${name},` : "Hallo,"),
       fallbackNoTracking: ["Ich habe die Sendung geprüft, sehe aber noch kein neues Tracking-Update."],
       statusLead: {
-        DELIVERED: ["Laut Tracking wurde Ihre Bestellung {order} zugestellt."],
-        DELIVEREDPS: ["Laut Tracking wurde Ihre Bestellung {order} in einem GLS Paketshop zugestellt."],
+        DELIVERED: ["Ihre Bestellung {order} wurde zugestellt."],
+        DELIVEREDPS: ["Ihre Bestellung {order} wurde zugestellt."],
         INDELIVERY: ["Ihre Bestellung {order} ist heute in Zustellung."],
         INTRANSIT: ["Ihre Bestellung {order} ist auf dem Weg."],
-        NOTDELIVERED: ["Das Tracking zeigt einen fehlgeschlagenen Zustellversuch für Bestellung {order}."],
+        NOTDELIVERED: ["Es gab einen fehlgeschlagenen Zustellversuch für Bestellung {order}."],
         PREADVICE: ["GLS hat die Sendungsdaten für Bestellung {order} erhalten, das Paket wurde aber noch nicht übergeben."],
-        UNKNOWN: ["Ich habe das Tracking Ihrer Bestellung {order} geprüft."],
+        UNKNOWN: ["Ich habe Ihre Bestellung {order} geprüft."],
       },
       statusDetail: {
         deliveredAt: "Zugestellt am {datetime}.",
@@ -402,39 +398,39 @@ function buildReplyCopy(locale: SupportedLocale): ReplyCopy {
     fallbackNoTracking: ["I checked your order, but I can't see a new tracking update yet."],
     statusLead: {
       DELIVERED: [
-        "We can see in tracking that your order {order} has been delivered.",
-        "According to tracking, your order {order} was delivered.",
-        "Tracking shows that your order {order} has been delivered.",
+        "Your order {order} has been delivered.",
+        "Your order {order} was delivered.",
+        "Great news, your order {order} has been delivered.",
       ],
       DELIVEREDPS: [
-        "We can see in tracking that your order {order} was delivered to a GLS parcel shop.",
-        "According to tracking, your order {order} was delivered to a GLS parcel shop.",
-        "Tracking shows that your order {order} was handed in at a GLS parcel shop.",
+        "Your order {order} has been delivered.",
+        "Your order {order} was delivered.",
+        "Great news, your order {order} has been delivered.",
       ],
       INDELIVERY: [
         "Your order {order} is out for delivery today.",
         "Good news, your order {order} is currently out for delivery.",
-        "Tracking shows your order {order} is on the vehicle for delivery today.",
+        "Your order {order} is on its way today.",
       ],
       INTRANSIT: [
         "Your order {order} is on the way.",
-        "We can see in tracking that your order {order} is in transit.",
-        "Tracking shows your order {order} is moving through the network.",
+        "Your order {order} is still in transit.",
+        "Your order {order} is moving through the carrier network.",
       ],
       NOTDELIVERED: [
-        "Tracking indicates that delivery of your order {order} was not successful.",
+        "Delivery of your order {order} was not successful.",
         "It looks like there was an unsuccessful delivery attempt for your order {order}.",
         "Your order {order} was not delivered due to a delivery issue.",
       ],
       PREADVICE: [
         "GLS has received shipment data for your order {order}, but the parcel has not been handed over yet.",
         "Your order {order} is pre-advised with GLS, but not scanned in as handed over yet.",
-        "Tracking currently only shows shipment pre-advice for your order {order}.",
+        "Right now your order {order} only has pre-advice from GLS.",
       ],
       UNKNOWN: [
-        "I checked tracking for your order {order}.",
-        "I've looked up your order {order} in tracking.",
-        "We've reviewed tracking for your order {order}.",
+        "I checked your order {order}.",
+        "I just looked up your order {order}.",
+        "I checked the latest status for your order {order}.",
       ],
     },
     statusDetail: {
@@ -446,9 +442,9 @@ function buildReplyCopy(locale: SupportedLocale): ReplyCopy {
       preAdviceLatest: "Latest update: {event}.",
     },
     parcelShopLine: {
-      generic: "The parcel was delivered to a GLS parcel shop.",
-      withName: "The parcel was delivered to parcel shop: {shop}.",
-      withAddress: "The parcel was delivered to parcel shop: {shop}.",
+      generic: "",
+      withName: "Delivered to: {shop}.",
+      withAddress: "Delivered to: {shop}.",
     },
     trackingLine: "Tracking number: {trackingNumber}.",
     linkLine: "You can follow the parcel here: {trackingUrl}",
@@ -521,8 +517,15 @@ async function buildTrackingReplyWithOpenAI(options: {
         {
           role: "system",
           content:
-            "You write short ecommerce tracking replies. Reply in the same language as the customer message. " +
-            "Never invent facts. Use only provided tracking facts. Keep tone professional, natural, concise. " +
+            "You write customer support tracking replies for ecommerce. Reply in the same language as the customer message. " +
+            "Keep replies short, clear, friendly, human, and confident. Lead with the direct answer first. " +
+            "Use simple customer-friendly wording and avoid robotic phrasing. " +
+            "Never invent facts and use only the provided tracking facts. " +
+            "Do not use phrases like 'Tracking shows', 'According to the tracking information', or 'The tracking status indicates'. " +
+            "Only mention delivery location (parcel shop/address) if exact location data is provided. Never guess location. " +
+            "Always include tracking link when available. " +
+            "If delivered, include one short fallback line like: if you can't find it, reply and we'll help. " +
+            "Keep it compact unless extra detail is necessary. " +
             "Do not output JSON or markdown.",
         },
         {
@@ -533,10 +536,13 @@ async function buildTrackingReplyWithOpenAI(options: {
             `Variation seed: ${options.seed}\n\n` +
             "Write a short customer-support reply with:\n" +
             "- Greeting\n" +
-            "- status summary\n" +
-            "- tracking number and link if available\n" +
-            "- parcel shop mention only when deliveredToParcelShop is true\n" +
-            "- a short next-step line when relevant.\n" +
+            "- key answer first\n" +
+            "- natural status summary\n" +
+            "- tracking link when available\n" +
+            "- tracking number when available\n" +
+            "- parcel shop/location only when exact location exists in facts\n" +
+            "- short helpful fallback line if status is delivered\n" +
+            "- compact length.\n" +
             "If language is unclear, default to English.",
         },
       ],
@@ -594,6 +600,7 @@ function buildTrackingReplyInput(options: {
     status: options.tracking.carrierStatus || snapshot?.statusCode || null,
     statusDateTime,
     latestEventDescription: latest?.description || options.tracking.statusText || null,
+    latestEventLocation: latest?.location || null,
     latestEventCode: latest?.code || null,
     deliveredToParcelShop: options.tracking.deliveredToParcelShop || false,
     parcelShopName: pickup?.name || null,
@@ -615,7 +622,7 @@ function composeTrackingReply(input: TrackingReplyInput, seed: number): string {
   const parcelShopDelivery = isParcelShopDelivery(input);
 
   const leadVariants = copy.statusLead[status] || copy.statusLead.UNKNOWN;
-  const lead = applyTemplate(
+  let lead = applyTemplate(
     pickVariant(seed + 1, leadVariants),
     { order: orderLabel },
   );
@@ -637,22 +644,29 @@ function composeTrackingReply(input: TrackingReplyInput, seed: number): string {
     detailLine = applyTemplate(copy.statusDetail.preAdviceLatest, { event: eventText });
   }
 
+  // Danish delivered replies read more naturally as one compact sentence.
+  if (locale === "da" && (status === "DELIVERED" || status === "DELIVEREDPS") && statusDate) {
+    lead = `Din ordre ${orderLabel} blev leveret den ${statusDate}.`;
+    detailLine = "";
+  }
+
   let parcelShopLine = "";
   if (parcelShopDelivery) {
-    if (parcelShopText) {
-      const template =
-        input.parcelShopName || input.parcelShopAddressLine
-          ? copy.parcelShopLine.withAddress
-          : copy.parcelShopLine.generic;
-      parcelShopLine = applyTemplate(template, { shop: parcelShopText });
-    } else {
-      parcelShopLine = copy.parcelShopLine.generic;
+    const hasExactParcelShopLocation = Boolean(
+      input.parcelShopName ||
+        input.parcelShopAddressLine ||
+        input.parcelShopPostalCode ||
+        input.parcelShopCity,
+    );
+    if (hasExactParcelShopLocation && parcelShopText) {
+      parcelShopLine = applyTemplate(copy.parcelShopLine.withAddress, { shop: parcelShopText || "" });
     }
   }
 
-  const trackingLine = input.trackingNumber
-    ? applyTemplate(copy.trackingLine, { trackingNumber: input.trackingNumber })
-    : "";
+  const trackingLine =
+    input.trackingNumber && !input.trackingUrl
+      ? applyTemplate(copy.trackingLine, { trackingNumber: input.trackingNumber })
+      : "";
   const linkLine = input.trackingUrl
     ? applyTemplate(copy.linkLine, { trackingUrl: input.trackingUrl })
     : "";

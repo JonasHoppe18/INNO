@@ -19,6 +19,73 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+const escapeHtml = (input = "") =>
+  String(input || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+const linkifyHtml = (html = "") =>
+  String(html || "").replace(/https?:\/\/[^\s<]+/gi, (rawUrl) => {
+    const match = String(rawUrl).match(/^(.*?)([)\].,!?;:]*)$/);
+    const url = match?.[1] || rawUrl;
+    const trailing = match?.[2] || "";
+    return `<a href="${url}" target="_blank" rel="noreferrer">${url}</a>${trailing}`;
+  });
+
+const plainTextToReplyHtml = (text = "") =>
+  linkifyHtml(escapeHtml(String(text || "").replace(/\r\n/g, "\n"))).replace(/\n/g, "<br/>");
+
+const extractPlainTextFromReplyHtml = (html = "") => {
+  if (typeof document === "undefined") return String(html || "");
+  const div = document.createElement("div");
+  div.innerHTML = String(html || "");
+
+  const BLOCK_TAGS = new Set([
+    "DIV",
+    "P",
+    "LI",
+    "UL",
+    "OL",
+    "SECTION",
+    "ARTICLE",
+    "HEADER",
+    "FOOTER",
+    "MAIN",
+    "TABLE",
+    "TR",
+  ]);
+
+  const chunks = [];
+  const walk = (node) => {
+    if (!node) return;
+    if (node.nodeType === Node.TEXT_NODE) {
+      chunks.push(String(node.nodeValue || ""));
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    const el = node;
+    const tag = String(el.tagName || "").toUpperCase();
+    if (tag === "BR") {
+      chunks.push("\n");
+      return;
+    }
+    if (tag === "LI") chunks.push("- ");
+    for (const child of Array.from(el.childNodes || [])) walk(child);
+    if (BLOCK_TAGS.has(tag)) chunks.push("\n");
+  };
+
+  for (const child of Array.from(div.childNodes || [])) walk(child);
+
+  return chunks
+    .join("")
+    .replace(/\u00a0/g, " ")
+    .replace(/\r\n/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+};
+
 export function Composer({
   value,
   onChange,
@@ -56,6 +123,9 @@ export function Composer({
   const [ccInput, setCcInput] = useState("");
   const [bccInput, setBccInput] = useState("");
   const textareaRef = useRef(null);
+  const replyEditorRef = useRef(null);
+  const syncingReplyHtmlRef = useRef(false);
+  const replyEditorFocusedRef = useRef(false);
   const fileInputRef = useRef(null);
   const [attachments, setAttachments] = useState([]);
   const [selectedMentionIds, setSelectedMentionIds] = useState([]);
@@ -71,7 +141,6 @@ export function Composer({
     top: 24,
     placement: "up",
   });
-
   const mentionCandidates = useMemo(() => {
     const base = Array.isArray(mentionUsers) ? mentionUsers : [];
     const query = String(mentionState.query || "").trim().toLowerCase();
@@ -106,8 +175,19 @@ export function Composer({
   }, [initialTo]);
 
   useEffect(() => {
-    resizeTextarea();
-  }, [value]);
+    if (isNote) {
+      resizeTextarea();
+      return;
+    }
+    // While user is actively editing, avoid forcing innerHTML from external state.
+    // Doing so resets caret/focus and makes typing/backspace feel broken.
+    if (replyEditorFocusedRef.current) return;
+    if (syncingReplyHtmlRef.current) return;
+    const nextHtml = plainTextToReplyHtml(value || "");
+    if (replyEditorRef.current && replyEditorRef.current.innerHTML !== nextHtml) {
+      replyEditorRef.current.innerHTML = nextHtml;
+    }
+  }, [isNote, value]);
 
   useEffect(() => {
     if (!isSending && !String(value || "").trim()) {
@@ -335,6 +415,23 @@ export function Composer({
     return Array.from(resolved);
   };
 
+  const handleReplyEditorInput = (event) => {
+    const html = String(event?.currentTarget?.innerHTML || "");
+    syncingReplyHtmlRef.current = true;
+    onChange(extractPlainTextFromReplyHtml(html));
+    syncingReplyHtmlRef.current = false;
+  };
+
+  const handleReplyEditorBlur = (event) => {
+    replyEditorFocusedRef.current = false;
+    const plain = extractPlainTextFromReplyHtml(String(event?.currentTarget?.innerHTML || ""));
+    const formatted = plainTextToReplyHtml(plain);
+    if (replyEditorRef.current && replyEditorRef.current.innerHTML !== formatted) {
+      replyEditorRef.current.innerHTML = formatted;
+    }
+    onBlur?.();
+  };
+
   if (collapsed) {
     return (
       <div className="flex-none border-t border-gray-100 bg-white px-4 py-2.5">
@@ -542,69 +639,95 @@ export function Composer({
           </div>
         ) : null}
         <div className="relative rounded-md border border-gray-200 bg-white p-2.5">
-          <Textarea
-            ref={textareaRef}
-            value={value}
-            onChange={(event) => {
-              onChange(event.target.value);
-              updateMentionStateFromInput(
-                event.target.value,
-                event.target.selectionStart,
-                event.currentTarget
-              );
-            }}
-            onClick={(event) =>
-              updateMentionStateFromInput(
-                event.currentTarget.value,
-                event.currentTarget.selectionStart,
-                event.currentTarget
-              )
-            }
-            onKeyUp={(event) =>
-              updateMentionStateFromInput(
-                event.currentTarget.value,
-                event.currentTarget.selectionStart,
-                event.currentTarget
-              )
-            }
-            onKeyDown={(event) => {
-              if (!isNote || !mentionState.open || !mentionCandidates.length) return;
-              if (event.key === "ArrowDown") {
-                event.preventDefault();
-                setMentionState((prev) => ({
-                  ...prev,
-                  activeIndex: (prev.activeIndex + 1) % mentionCandidates.length,
-                }));
-              } else if (event.key === "ArrowUp") {
-                event.preventDefault();
-                setMentionState((prev) => ({
-                  ...prev,
-                  activeIndex:
-                    (prev.activeIndex - 1 + mentionCandidates.length) % mentionCandidates.length,
-                }));
-              } else if (event.key === "Enter" || event.key === "Tab") {
-                event.preventDefault();
-                insertMention(mentionCandidates[mentionState.activeIndex] || mentionCandidates[0]);
-              } else if (event.key === "Escape") {
-                event.preventDefault();
-                setMentionState((prev) => ({ ...prev, open: false }));
+          {isNote ? (
+            <Textarea
+              ref={textareaRef}
+              value={value}
+              onChange={(event) => {
+                onChange(event.target.value);
+                updateMentionStateFromInput(
+                  event.target.value,
+                  event.target.selectionStart,
+                  event.currentTarget
+                );
+              }}
+              onClick={(event) =>
+                updateMentionStateFromInput(
+                  event.currentTarget.value,
+                  event.currentTarget.selectionStart,
+                  event.currentTarget
+                )
               }
-            }}
-            onInput={resizeTextarea}
-            onBlur={onBlur}
-            placeholder={
-              disabled
-                ? disabledPlaceholder
-                : mode === "reply"
-                ? "Write your reply..."
-                : "Leave an internal note..."
-            }
-            rows={2}
-            disabled={disabled}
-            className={`min-h-[56px] resize-y !border-0 !shadow-none !bg-transparent !p-0 text-sm leading-relaxed focus-visible:!ring-0 ${
-              isNote ? "bg-yellow-50/40" : ""
-            }`}
-          />
+              onKeyUp={(event) =>
+                updateMentionStateFromInput(
+                  event.currentTarget.value,
+                  event.currentTarget.selectionStart,
+                  event.currentTarget
+                )
+              }
+              onKeyDown={(event) => {
+                if (!mentionState.open || !mentionCandidates.length) return;
+                if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  setMentionState((prev) => ({
+                    ...prev,
+                    activeIndex: (prev.activeIndex + 1) % mentionCandidates.length,
+                  }));
+                } else if (event.key === "ArrowUp") {
+                  event.preventDefault();
+                  setMentionState((prev) => ({
+                    ...prev,
+                    activeIndex:
+                      (prev.activeIndex - 1 + mentionCandidates.length) % mentionCandidates.length,
+                  }));
+                } else if (event.key === "Enter" || event.key === "Tab") {
+                  event.preventDefault();
+                  insertMention(mentionCandidates[mentionState.activeIndex] || mentionCandidates[0]);
+                } else if (event.key === "Escape") {
+                  event.preventDefault();
+                  setMentionState((prev) => ({ ...prev, open: false }));
+                }
+              }}
+              onInput={resizeTextarea}
+              onBlur={onBlur}
+              placeholder={disabled ? disabledPlaceholder : "Leave an internal note..."}
+              rows={2}
+              disabled={disabled}
+              className="min-h-[56px] resize-y !border-0 !shadow-none !bg-transparent !p-0 text-sm leading-relaxed focus-visible:!ring-0 bg-yellow-50/40"
+            />
+          ) : (
+            <>
+              {!String(value || "").trim() ? (
+                <div className="pointer-events-none absolute left-2.5 top-2.5 text-sm text-gray-400">
+                  {disabled ? disabledPlaceholder : "Write your reply..."}
+                </div>
+              ) : null}
+              <div
+                ref={replyEditorRef}
+                contentEditable={!disabled}
+                suppressContentEditableWarning
+                onFocus={() => {
+                  replyEditorFocusedRef.current = true;
+                }}
+                onInput={handleReplyEditorInput}
+                onBlur={handleReplyEditorBlur}
+                onPaste={(event) => {
+                  event.preventDefault();
+                  const pasted = event.clipboardData?.getData("text/plain") || "";
+                  document.execCommand("insertText", false, pasted);
+                }}
+                onClick={(event) => {
+                  const target = event.target;
+                  if (!(target instanceof HTMLAnchorElement)) return;
+                  event.preventDefault();
+                  const href = String(target.getAttribute("href") || "").trim();
+                  if (!href) return;
+                  window.open(href, "_blank", "noopener,noreferrer");
+                }}
+                className="min-h-[56px] whitespace-pre-wrap break-words p-0 text-sm leading-relaxed text-gray-900 outline-none [&_a]:cursor-pointer [&_a]:text-blue-600 [&_a]:underline [&_a:hover]:text-blue-700"
+              />
+            </>
+          )}
           {isNote && mentionState.open && mentionCandidates.length ? (
             <div
               className="absolute z-20 w-[320px] rounded-xl border border-gray-200 bg-white/95 p-1.5 shadow-xl backdrop-blur-[2px]"
