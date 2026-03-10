@@ -7,6 +7,18 @@ import { ActionCard } from "@/components/inbox/ActionCard";
 import { formatMessageTime, getSenderLabel, isOutboundMessage } from "@/components/inbox/inbox-utils";
 import { useEffect, useMemo, useState } from "react";
 
+const APPROVAL_ACTION_TYPES = new Set([
+  "update_shipping_address",
+  "cancel_order",
+  "refund_order",
+  "create_exchange_request",
+  "process_exchange_return",
+  "change_shipping_method",
+  "hold_or_release_fulfillment",
+  "edit_line_items",
+  "update_customer_contact",
+]);
+
 export function TicketDetail({
   thread,
   messages,
@@ -38,16 +50,20 @@ export function TicketDetail({
   onComposerModeChange,
   mailboxEmails,
   isSending = false,
+  isWorkspaceTestMode = false,
 }) {
   const [composerCollapsed, setComposerCollapsed] = useState(false);
   const [processReturnRestock, setProcessReturnRestock] = useState(true);
+  const normalizedPendingStatus = String(pendingOrderUpdate?.status || "").toLowerCase();
   const pendingUpdateState = orderUpdateSubmitting
     ? "applying"
     : orderUpdateDecision === "accepted"
     ? "accepted"
     : orderUpdateDecision === "denied"
     ? "denied"
-    : pendingOrderUpdate?.status === "failed"
+    : normalizedPendingStatus === "approved_test_mode"
+    ? "accepted"
+    : normalizedPendingStatus === "failed"
     ? "failed"
     : orderUpdateError
     ? "failed"
@@ -72,6 +88,9 @@ export function TicketDetail({
   const pendingActionTitle =
     pendingActionTitleByType[pendingActionType] || "Review Action";
   const isProcessReturnAction = pendingActionType === "process_exchange_return";
+  const isApprovalManagedActionType = APPROVAL_ACTION_TYPES.has(
+    String(pendingActionType || "").trim().toLowerCase()
+  );
 
   useEffect(() => {
     if (!isProcessReturnAction) return;
@@ -126,7 +145,22 @@ export function TicketDetail({
       : pendingUpdateState === "failed"
       ? "failed"
       : "pending";
-  const shouldShowActionCard = Boolean(pendingOrderUpdate);
+  const detailSuggestsTestMode = (() => {
+    const detailText = String(pendingOrderUpdate?.detail || "").toLowerCase();
+    return detailText.includes("test mode") || detailText.includes("simulated");
+  })();
+  const payloadSuggestsTestMode =
+    pendingOrderUpdate?.payload?.test_mode === true ||
+    pendingOrderUpdate?.payload?.simulated === true;
+  const isApprovedInTestMode =
+    normalizedPendingStatus === "approved_test_mode" ||
+    pendingOrderUpdate?.testMode === true ||
+    payloadSuggestsTestMode ||
+    detailSuggestsTestMode ||
+    (Boolean(isWorkspaceTestMode) && actionCardStatus === "approved");
+  const shouldShowActionCard =
+    Boolean(pendingOrderUpdate) &&
+    (isApprovalManagedActionType || pendingUpdateState === "pending");
   let actionCardInserted = false;
   const processReturnExtraContent =
     isProcessReturnAction && actionCardStatus === "pending" ? (
@@ -232,6 +266,7 @@ export function TicketDetail({
                 {shouldInsertActionCardBeforeMessage ? (
                   <ActionCard
                     status={actionCardStatus}
+                    testMode={isApprovedInTestMode}
                     actionName={pendingActionTitle}
                     detail={pendingOrderUpdate?.detail || ""}
                     error={orderUpdateError || ""}

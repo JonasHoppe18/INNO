@@ -451,10 +451,30 @@ function parseLogDetail(raw = "") {
 
 function normalizeActionStatus(value = "") {
   const status = String(value || "").trim().toLowerCase();
+  if (status === "approved_test_mode") return "applied";
   if (status === "applied" || status === "approved") return "applied";
   if (status === "declined" || status === "denied") return "declined";
   if (status === "failed" || status === "error") return "failed";
   return "pending";
+}
+
+async function loadWorkspaceTestSettings(serviceClient, workspaceId) {
+  if (!workspaceId) {
+    return { testMode: false, testEmail: null };
+  }
+  const { data, error } = await serviceClient
+    .from("workspaces")
+    .select("test_mode, test_email")
+    .eq("id", workspaceId)
+    .maybeSingle();
+  if (error) {
+    throw new Error(error.message);
+  }
+  const testEmail = asString(data?.test_email).toLowerCase();
+  return {
+    testMode: Boolean(data?.test_mode),
+    testEmail: testEmail || null,
+  };
 }
 
 const stableStringify = (value) => {
@@ -2023,7 +2043,17 @@ export async function GET(_request, { params }) {
     return NextResponse.json({ action: null }, { status: 200 });
   }
 
-  const status = normalizeActionStatus(latestAction.status);
+  const normalizedStatus = normalizeActionStatus(latestAction.status);
+  const rawStatus = asString(latestAction.status) || normalizedStatus;
+  const actionPayload =
+    latestAction?.payload && typeof latestAction.payload === "object"
+      ? latestAction.payload
+      : {};
+  const testModeAction =
+    rawStatus.toLowerCase() === "approved_test_mode" ||
+    normalizedStatus === "approved_test_mode" ||
+    actionPayload?.test_mode === true ||
+    actionPayload?.simulated === true;
   return NextResponse.json(
     {
       action: {
@@ -2033,12 +2063,16 @@ export async function GET(_request, { params }) {
           "Sona wants to apply an order update for this customer.",
         actionType: asString(latestAction.action_type) || null,
         payload:
-          latestAction?.payload && typeof latestAction.payload === "object"
-            ? latestAction.payload
-            : {},
+          actionPayload,
         createdAt: latestAction.created_at || null,
-        status,
-        error: asString(latestAction.error) || null,
+        status: rawStatus,
+        normalizedStatus: normalizedStatus,
+        testMode: testModeAction,
+        error:
+          asString(latestAction.error) ||
+          (testModeAction
+            ? "Action approved, but no changes were made because Test Mode is enabled."
+            : null),
       },
     },
     { status: 200 }
@@ -2091,6 +2125,17 @@ export async function POST(request, { params }) {
   }
   if (!supabaseUserId) {
     return NextResponse.json({ error: "Could not resolve user." }, { status: 401 });
+  }
+  let workspaceTestSettings = { testMode: false, testEmail: null };
+  if (scope?.workspaceId) {
+    try {
+      workspaceTestSettings = await loadWorkspaceTestSettings(serviceClient, scope.workspaceId);
+    } catch (error) {
+      return NextResponse.json(
+        { error: error?.message || "Could not resolve workspace test settings." },
+        { status: 500 }
+      );
+    }
   }
 
   let threadQuery = serviceClient
@@ -2355,6 +2400,87 @@ export async function POST(request, { params }) {
         },
       };
     }
+  }
+
+  if (workspaceTestSettings.testMode) {
+    const nowIso = new Date().toISOString();
+    const actionKey = actionRecord?.action_key
+      ? String(actionRecord.action_key)
+      : buildActionKey(normalizedActionType, order.id, payloadForExecution);
+    const testModeMessage =
+      "Action approved, but no changes were made because Test Mode is enabled.";
+    const actionRowPayload =
+      payloadForExecution && typeof payloadForExecution === "object"
+        ? { ...payloadForExecution, simulated: true, test_mode: true }
+        : { simulated: true, test_mode: true };
+
+    if (actionRecord?.id) {
+      await serviceClient
+        .from("thread_actions")
+        .update({
+          status: "approved_test_mode",
+          detail: detailText || actionRecord?.detail || null,
+          payload: actionRowPayload,
+          action_type: normalizedActionType,
+          action_key: actionKey,
+          order_id: String(order.id),
+          order_number: order.order_number ? String(order.order_number) : null,
+          decided_at: nowIso,
+          updated_at: nowIso,
+          error: testModeMessage,
+        })
+        .eq("id", actionRecord.id);
+    } else {
+      await serviceClient.from("thread_actions").insert({
+        user_id: supabaseUserId,
+        workspace_id: scope.workspaceId ?? null,
+        thread_id: thread.id,
+        action_type: normalizedActionType,
+        action_key: actionKey,
+        status: "approved_test_mode",
+        detail: detailText || null,
+        payload: actionRowPayload,
+        order_id: String(order.id),
+        order_number: order.order_number ? String(order.order_number) : null,
+        decided_at: nowIso,
+        applied_at: null,
+        updated_at: nowIso,
+        created_at: nowIso,
+        source: "manual_approval",
+        error: testModeMessage,
+      });
+    }
+
+    await serviceClient.from("agent_logs").insert({
+      draft_id: null,
+      step_name: "shopify_action_approved_test_mode",
+      step_detail: JSON.stringify({
+        thread_id: threadId,
+        action: normalizedActionType,
+        order_id: String(order.id),
+        order_number: order.order_number ?? null,
+        detail: detailText || null,
+        message: testModeMessage,
+      }),
+      status: "info",
+      created_at: nowIso,
+    });
+
+    return NextResponse.json(
+      {
+        ok: true,
+        decision: "accepted",
+        simulated: true,
+        testMode: true,
+        message: testModeMessage,
+        action: normalizedActionType,
+        orderId: String(order.id),
+        orderNumber: order.order_number ?? null,
+        detail: detailText || null,
+        sourceStep: proposalStepName,
+      },
+      { status: 200 }
+    );
   }
 
   const blockedReason = isOrderMutationBlocked(order, normalizedActionType);

@@ -52,6 +52,17 @@ const LEGACY_CATEGORY_LABEL_MAP = {
   "Address Change": "Address change",
   Cancel: "Cancellation",
 };
+const APPROVAL_ACTION_TYPES = new Set([
+  "update_shipping_address",
+  "cancel_order",
+  "refund_order",
+  "create_exchange_request",
+  "process_exchange_return",
+  "change_shipping_method",
+  "hold_or_release_fulfillment",
+  "edit_line_items",
+  "update_customer_contact",
+]);
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -330,6 +341,9 @@ const parsePendingLogDetail = (value) => {
   return { detail: raw, actionType: null, payload: {}, threadId: null };
 };
 
+const isApprovalManagedActionType = (value = "") =>
+  APPROVAL_ACTION_TYPES.has(String(value || "").trim().toLowerCase());
+
 const isOrderUpdateAction = (log) => {
   const stepName = String(log?.step_name || "").toLowerCase();
   const status = String(log?.status || "").toLowerCase();
@@ -374,7 +388,9 @@ const getDecisionFromLog = (log) => {
 
 const getDecisionFromActionStatus = (status = "") => {
   const normalized = String(status || "").toLowerCase();
-  if (normalized === "applied" || normalized === "approved") return "accepted";
+  if (normalized === "applied" || normalized === "approved" || normalized === "approved_test_mode") {
+    return "accepted";
+  }
   if (normalized === "declined" || normalized === "denied") return "denied";
   return null;
 };
@@ -614,6 +630,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const [workspaceMembers, setWorkspaceMembers] = useState([]);
   const [currentSupabaseUserId, setCurrentSupabaseUserId] = useState(null);
   const [workspaceInboxes, setWorkspaceInboxes] = useState([]);
+  const [isWorkspaceTestMode, setIsWorkspaceTestMode] = useState(false);
   const headerActionsKeyRef = useRef("");
   const draftLastSavedRef = useRef("");
   const savingDraftRef = useRef(false);
@@ -1406,59 +1423,65 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       if (!active) return;
       const latestAction = payload?.action || null;
       if (latestAction) {
-        const normalizedStatus = String(latestAction.status || "").toLowerCase();
-        const isPendingStatus =
+        const normalizedStatus = String(
+          latestAction.normalizedStatus || latestAction.status || ""
+        ).toLowerCase();
+        const actionType = asString(latestAction.actionType || latestAction.action_type).toLowerCase();
+        const actionPayload =
+          latestAction?.payload && typeof latestAction.payload === "object"
+            ? latestAction.payload
+            : {};
+        const shouldShowActionCardForType =
+          isApprovalManagedActionType(actionType) ||
           normalizedStatus === "pending" ||
-          normalizedStatus === "warning" ||
-          normalizedStatus === "awaiting_approval";
-        const isFailedStatus = normalizedStatus === "failed";
-        const detail =
-          asString(latestAction?.detail) ||
-          "Sona wants to apply an order update for this customer.";
-        if (isPendingStatus) {
-          setPendingOrderUpdateByThread((prev) => ({
-            ...prev,
-            [selectedThreadId]: {
-              id: String(latestAction.id || ""),
-              detail,
-              actionType: asString(latestAction.actionType || latestAction.action_type) || null,
-              payload:
-                latestAction?.payload && typeof latestAction.payload === "object"
-                  ? latestAction.payload
-                  : {},
-              createdAt: latestAction.createdAt || null,
-              status: asString(latestAction.status) || "pending",
-              error: asString(latestAction.error) || null,
-            },
-          }));
-        } else if (isFailedStatus) {
-          const failedDetail =
-            asString(latestAction?.error) ||
-            asString(latestAction?.detail) ||
-            "Order action could not be completed.";
-          setPendingOrderUpdateByThread((prev) => ({
-            ...prev,
-            [selectedThreadId]: {
-              id: String(latestAction.id || ""),
-              detail: failedDetail,
-              actionType: asString(latestAction.actionType || latestAction.action_type) || null,
-              payload:
-                latestAction?.payload && typeof latestAction.payload === "object"
-                  ? latestAction.payload
-                  : {},
-              createdAt: latestAction.createdAt || null,
-              status: "failed",
-              error: asString(latestAction.error) || failedDetail,
-            },
-          }));
-        } else {
+          normalizedStatus === "awaiting_approval" ||
+          normalizedStatus === "requires_approval";
+        if (!shouldShowActionCardForType) {
           setPendingOrderUpdateByThread((prev) => {
             if (!prev[selectedThreadId]) return prev;
             const next = { ...prev };
             delete next[selectedThreadId];
             return next;
           });
+          setOrderUpdateDecisionByThread((prev) => {
+            if (!prev[selectedThreadId]) return prev;
+            const next = { ...prev };
+            delete next[selectedThreadId];
+            return next;
+          });
+          setOrderUpdateErrorByThread((prev) => {
+            if (!prev[selectedThreadId]) return prev;
+            const next = { ...prev };
+            delete next[selectedThreadId];
+            return next;
+          });
+          return;
         }
+        const isTestModeAction =
+          latestAction?.testMode === true ||
+          normalizedStatus === "approved_test_mode" ||
+          actionPayload?.test_mode === true ||
+          actionPayload?.simulated === true;
+        const isFailedStatus = normalizedStatus === "failed";
+        const actionDetail = isFailedStatus
+          ? asString(latestAction?.error) ||
+            asString(latestAction?.detail) ||
+            "Order action could not be completed."
+          : asString(latestAction?.detail) ||
+            "Sona wants to apply an order update for this customer.";
+        setPendingOrderUpdateByThread((prev) => ({
+          ...prev,
+          [selectedThreadId]: {
+            id: String(latestAction.id || ""),
+            detail: actionDetail,
+            actionType: actionType || null,
+            payload: actionPayload,
+            createdAt: latestAction.createdAt || null,
+            status: asString(latestAction.status || latestAction.normalizedStatus) || "pending",
+            testMode: isTestModeAction,
+            error: isFailedStatus ? asString(latestAction.error) || actionDetail : null,
+          },
+        }));
         const decisionFromAction = getDecisionFromActionStatus(latestAction.status);
         setOrderUpdateDecisionByThread((prev) => {
           const next = { ...prev };
@@ -1874,6 +1897,25 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     setComposerMode("reply");
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    const loadTestMode = async () => {
+      const res = await fetch("/api/settings/test-mode", {
+        method: "GET",
+        cache: "no-store",
+        credentials: "include",
+      }).catch(() => null);
+      if (!active || !res?.ok) return;
+      const payload = await res.json().catch(() => ({}));
+      if (!active) return;
+      setIsWorkspaceTestMode(Boolean(payload?.test_mode));
+    };
+    loadTestMode().catch(() => null);
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const handleSendDraft = async (payload = {}) => {
     if (isSending) return;
     if (!selectedThreadId) {
@@ -1989,6 +2031,13 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       }
       const nowIso = new Date().toISOString();
       const localMessageId = data?.message_id || `local-sent-${Date.now()}`;
+      const redirectedTo =
+        data?.redirected_to && typeof data.redirected_to === "string"
+          ? [String(data.redirected_to)]
+          : null;
+      const localTo = redirectedTo || payload.toRecipients || [];
+      const localCc = redirectedTo ? [] : payload.ccRecipients || [];
+      const localBcc = redirectedTo ? [] : payload.bccRecipients || [];
       setLocalSentMessagesByThread((prev) => ({
         ...prev,
         [selectedThreadId]: [
@@ -2000,9 +2049,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
             from_name: currentUserName,
             from_email: mailboxEmails[0] || "",
             from_me: true,
-            to_emails: payload.toRecipients || [],
-            cc_emails: payload.ccRecipients || [],
-            bcc_emails: payload.bccRecipients || [],
+            to_emails: localTo,
+            cc_emails: localCc,
+            bcc_emails: localBcc,
             body_text: String(payload?.signature || "").trim()
               ? `${composeBody}\n\n${String(payload.signature).trim()}`
               : composeBody,
@@ -2022,7 +2071,19 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         ],
       }));
       const providerId = data?.provider_message_id ? ` (${data.provider_message_id})` : "";
-      toast.success(`Reply sent${providerId}.`, { id: toastId });
+      if (data?.simulated) {
+        toast.success(
+          data?.message ||
+            "Email simulated: Test Mode is enabled and no Test Email Address is configured.",
+          { id: toastId }
+        );
+      } else if (data?.test_mode && data?.redirected_to) {
+        toast.success(`Reply sent to ${data.redirected_to} (Test Mode).${providerId}`, {
+          id: toastId,
+        });
+      } else {
+        toast.success(`Reply sent${providerId}.`, { id: toastId });
+      }
       setDraftValue("");
       setActiveDraftId(null);
       draftLastSavedRef.current = "";
@@ -2125,6 +2186,26 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         if (!res.ok) {
           throw new Error(payload?.error || "Could not update action.");
         }
+        if (normalized === "accepted" && (payload?.testMode || payload?.simulated)) {
+          const testModeMessage = String(
+            payload?.message ||
+              "Action approved, but no changes were made because Test Mode is enabled."
+          );
+          setPendingOrderUpdateByThread((prev) => ({
+            ...prev,
+            [selectedThreadId]: {
+              id: String(pending.id || ""),
+              detail: testModeMessage,
+              actionType: pending.actionType || null,
+              payload:
+                pending.payload && typeof pending.payload === "object" ? pending.payload : {},
+              createdAt: pending.createdAt || null,
+              status: "approved_test_mode",
+              testMode: true,
+              error: null,
+            },
+          }));
+        }
         if (payload?.blocked) {
           const blockedReason = String(
             payload?.reason || "Action could not be applied because the order cannot be changed."
@@ -2138,6 +2219,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
               payload: pending.payload && typeof pending.payload === "object" ? pending.payload : {},
               createdAt: pending.createdAt || null,
               status: "failed",
+              testMode: false,
               error: blockedReason,
             },
           }));
@@ -2190,6 +2272,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
                 followUp?.payload && typeof followUp.payload === "object" ? followUp.payload : {},
               createdAt: followUp.createdAt || null,
               status: "pending",
+              testMode: false,
               error: null,
             },
           }));
@@ -2209,10 +2292,19 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           delete next[selectedThreadId];
           return next;
         });
-        toast.success(
-          normalized === "accepted" ? "Action approved and applied." : "Order update denied.",
-          { id: toastId }
-        );
+        if (normalized === "accepted") {
+          if (payload?.testMode || payload?.simulated) {
+            toast.success(
+              payload?.message ||
+                "Action approved, but no changes were made because Test Mode is enabled.",
+              { id: toastId }
+            );
+          } else {
+            toast.success("Action approved and applied.", { id: toastId });
+          }
+        } else {
+          toast.success("Order update denied.", { id: toastId });
+        }
       } catch (error) {
         const message = error?.message || "Could not update action.";
         setOrderUpdateErrorByThread((prev) => ({
@@ -2334,51 +2426,54 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         hideSolvedFilter={activeView === ""}
       />
 
-      <TicketDetail
-        thread={selectedThread}
-        messages={threadMessages}
-        attachments={threadAttachments}
-        mentionUsers={effectiveMentionUsers}
-        currentUserId={currentSupabaseUserId || null}
-        currentUserName={currentUserName}
-        ticketState={ticketStateByThread[selectedThreadId] || DEFAULT_TICKET_STATE}
-        onTicketStateChange={handleTicketStateChange}
-        onOpenInsights={() => setInsightsOpen(true)}
-        showThinkingCard={isDraftGenerating}
-        draftValue={composerValue}
-        onDraftChange={handleDraftChange}
-        signatureValue={selectedThreadId ? signatureByThread[selectedThreadId] || "" : ""}
-        onSignatureChange={handleSignatureChange}
-        onSignatureBlur={() => null}
-        onDraftBlur={() => saveThreadDraft({ immediate: true })}
-        draftLoaded={
-          composerMode !== "note" &&
-          Boolean(selectedThreadId) &&
-          Boolean(draftValue.trim()) &&
-          Boolean(systemDraftUneditedByThread[selectedThreadId])
-        }
-        canSend={Boolean(selectedThreadId) && !isLocalThreadId(selectedThreadId)}
-        onSend={handleSendDraft}
-        onDeleteThread={handleDeleteThread}
-        deletingThread={deletingThread}
-        pendingOrderUpdate={
-          selectedPendingOrderUpdate
-        }
-        orderUpdateDecision={
-          selectedThreadId ? orderUpdateDecisionByThread[selectedThreadId] || null : null
-        }
-        onOrderUpdateDecision={handleOrderUpdateDecision}
-        orderUpdateSubmitting={
-          selectedThreadId ? Boolean(orderUpdateSubmittingByThread[selectedThreadId]) : false
-        }
-        orderUpdateError={
-          selectedThreadId ? orderUpdateErrorByThread[selectedThreadId] || null : null
-        }
-        isSending={isSending}
-        composerMode={composerMode}
-        onComposerModeChange={setComposerMode}
-        mailboxEmails={mailboxEmails}
-      />
+      <div className="flex min-h-0 flex-1 flex-col">
+        <TicketDetail
+          thread={selectedThread}
+          messages={threadMessages}
+          attachments={threadAttachments}
+          mentionUsers={effectiveMentionUsers}
+          currentUserId={currentSupabaseUserId || null}
+          currentUserName={currentUserName}
+          ticketState={ticketStateByThread[selectedThreadId] || DEFAULT_TICKET_STATE}
+          onTicketStateChange={handleTicketStateChange}
+          onOpenInsights={() => setInsightsOpen(true)}
+          showThinkingCard={isDraftGenerating}
+          draftValue={composerValue}
+          onDraftChange={handleDraftChange}
+          signatureValue={selectedThreadId ? signatureByThread[selectedThreadId] || "" : ""}
+          onSignatureChange={handleSignatureChange}
+          onSignatureBlur={() => null}
+          onDraftBlur={() => saveThreadDraft({ immediate: true })}
+          draftLoaded={
+            composerMode !== "note" &&
+            Boolean(selectedThreadId) &&
+            Boolean(draftValue.trim()) &&
+            Boolean(systemDraftUneditedByThread[selectedThreadId])
+          }
+          canSend={Boolean(selectedThreadId) && !isLocalThreadId(selectedThreadId)}
+          onSend={handleSendDraft}
+          onDeleteThread={handleDeleteThread}
+          deletingThread={deletingThread}
+          pendingOrderUpdate={
+            selectedPendingOrderUpdate
+          }
+          orderUpdateDecision={
+            selectedThreadId ? orderUpdateDecisionByThread[selectedThreadId] || null : null
+          }
+          onOrderUpdateDecision={handleOrderUpdateDecision}
+          orderUpdateSubmitting={
+            selectedThreadId ? Boolean(orderUpdateSubmittingByThread[selectedThreadId]) : false
+          }
+          orderUpdateError={
+            selectedThreadId ? orderUpdateErrorByThread[selectedThreadId] || null : null
+          }
+          isSending={isSending}
+          composerMode={composerMode}
+          onComposerModeChange={setComposerMode}
+          mailboxEmails={mailboxEmails}
+          isWorkspaceTestMode={isWorkspaceTestMode}
+        />
+      </div>
 
       <SonaInsightsModal
         open={insightsOpen}

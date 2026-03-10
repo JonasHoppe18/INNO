@@ -5,8 +5,20 @@ create table if not exists public.workspaces (
   id uuid primary key default gen_random_uuid(),
   clerk_org_id text,
   name text,
-  created_at timestamptz not null default now()
+  test_mode boolean not null default false,
+  test_email text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
+
+alter table public.workspaces
+  add column if not exists test_mode boolean not null default false;
+
+alter table public.workspaces
+  add column if not exists test_email text;
+
+alter table public.workspaces
+  add column if not exists updated_at timestamptz not null default now();
 
 -- clerk_org_id must stay nullable for legacy users.
 alter table public.workspaces

@@ -5,6 +5,7 @@ import { SidebarInset } from "@/components/ui/sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { SiteHeaderActionsProvider } from "@/components/site-header-actions";
 import { SetupBanner } from "@/components/onboarding/SetupBanner";
+import { GlobalTestModeBanner } from "@/components/GlobalTestModeBanner";
 import { cn } from "@/lib/utils";
 
 export function DashboardShell({ children }) {
@@ -16,6 +17,7 @@ export function DashboardShell({ children }) {
       <SiteHeaderActionsProvider>
         <SiteHeader />
         <SetupBanner />
+        <GlobalTestModeBanner />
         <div
           className={cn(
             "flex min-h-0 flex-1 flex-col",

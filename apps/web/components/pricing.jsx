@@ -5,33 +5,33 @@ import { Check } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
+const plans = [
+  {
+    name: "Starter",
+    tickets: "1,000 tickets",
+    priceDkk: 1999,
+  },
+  {
+    name: "Growth",
+    tickets: "5,000 tickets",
+    priceDkk: 2999,
+    featured: true,
+  },
+  {
+    name: "Scale",
+    tickets: "10,000 tickets",
+    priceDkk: 4999,
+  },
+];
+
+const currencies = {
+  DKK: { code: "DKK", rate: 1, locale: "da-DK", symbol: "kr." },
+  EUR: { code: "EUR", rate: 0.134, locale: "de-DE", symbol: "EUR" },
+  USD: { code: "USD", rate: 0.145, locale: "en-US", symbol: "USD" },
+};
+
 export default function Pricing() {
   const [currency, setCurrency] = useState("DKK");
-
-  const plans = [
-    {
-      name: "Starter",
-      tickets: "1,000 tickets",
-      priceDkk: 1999,
-    },
-    {
-      name: "Growth",
-      tickets: "5,000 tickets",
-      priceDkk: 2999,
-      featured: true,
-    },
-    {
-      name: "Scale",
-      tickets: "10,000 tickets",
-      priceDkk: 4999,
-    },
-  ];
-
-  const currencies = {
-    DKK: { code: "DKK", rate: 1, locale: "da-DK", symbol: "kr." },
-    EUR: { code: "EUR", rate: 0.134, locale: "de-DE", symbol: "EUR" },
-    USD: { code: "USD", rate: 0.145, locale: "en-US", symbol: "USD" },
-  };
 
   const priceFormatter = useMemo(() => {
     const active = currencies[currency];
@@ -40,7 +40,7 @@ export default function Pricing() {
       currency: active.code,
       maximumFractionDigits: 0,
     });
-  }, [currency]);
+  }, [currency, currencies]);
 
   const formatPrice = (priceDkk) => {
     const active = currencies[currency];

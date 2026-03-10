@@ -40,6 +40,7 @@ export function ActionCard({
   onApprove,
   onDecline,
   extraContent = null,
+  testMode = false,
 }) {
   const [expanded, setExpanded] = useState(false);
   const isPending = status === "pending";
@@ -52,6 +53,12 @@ export function ActionCard({
   const shouldShowDetails = isPending || (canExpand && expanded);
 
   if (isApproved) {
+    const approvedTitle = testMode
+      ? "Action approved (Test Mode)"
+      : `${actionName} approved successfully.`;
+    const approvedDetail = testMode
+      ? "This action was simulated. No changes were sent to Shopify."
+      : detail;
     return (
       <div className="rounded-lg border border-violet-100 bg-violet-50 px-4">
         <button
@@ -61,7 +68,9 @@ export function ActionCard({
           disabled={!canExpand}
         >
           <CheckCircle2 className="h-4 w-4 text-violet-600" />
-          <span className="text-sm font-medium text-violet-900">{actionName} approved successfully.</span>
+          <span className="text-sm font-medium text-violet-900">
+            {approvedTitle}
+          </span>
           <span className="ml-auto text-xs text-violet-400">Approved just now</span>
           {canExpand ? (
             expanded ? (
@@ -77,7 +86,7 @@ export function ActionCard({
               {addressLines.length ? (
                 addressLines.map((line, index) => <div key={`approved-line-${index}`}>{line}</div>)
               ) : (
-                <div>{detail}</div>
+                <div>{approvedDetail}</div>
               )}
             </div>
           </div>

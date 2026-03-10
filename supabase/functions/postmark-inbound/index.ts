@@ -296,6 +296,29 @@ async function loadAutoReplySettings(mailbox: MailboxLookup): Promise<AutoReplyS
   };
 }
 
+async function loadWorkspaceTestSettings(workspaceId: string | null): Promise<{
+  testMode: boolean;
+  testEmail: string | null;
+}> {
+  if (!supabase || !workspaceId) {
+    return { testMode: false, testEmail: null };
+  }
+  const { data, error } = await supabase
+    .from("workspaces")
+    .select("test_mode, test_email")
+    .eq("id", workspaceId)
+    .maybeSingle();
+  if (error) {
+    console.warn("postmark-inbound: failed to load workspace test mode", error.message);
+    return { testMode: false, testEmail: null };
+  }
+  const testEmail = asString((data as any)?.test_email).toLowerCase() || null;
+  return {
+    testMode: Boolean((data as any)?.test_mode),
+    testEmail,
+  };
+}
+
 async function loadAutoReplyTemplateHtml(
   mailbox: MailboxLookup,
   templateId: string | null,
@@ -365,6 +388,7 @@ async function maybeSendAutoReply(options: {
 
   const setting = await loadAutoReplySettings(options.mailbox);
   if (!setting?.enabled) return { sent: false, providerMessageId: null };
+  const workspaceTest = await loadWorkspaceTestSettings(options.mailbox.workspace_id);
 
   if (setting.trigger_mode === "first_inbound_per_thread") {
     const { count } = await supabase
@@ -376,6 +400,25 @@ async function maybeSendAutoReply(options: {
   }
 
   const recipient = String(options.fromEmail || "").trim().toLowerCase();
+  const effectiveRecipient =
+    workspaceTest.testMode && workspaceTest.testEmail
+      ? workspaceTest.testEmail
+      : recipient;
+  if (workspaceTest.testMode && !workspaceTest.testEmail) {
+    await supabase.from("agent_logs").insert({
+      draft_id: null,
+      step_name: "email_simulated_test_mode",
+      step_detail: JSON.stringify({
+        thread_id: options.threadId,
+        mailbox_id: options.mailbox.mailbox_id,
+        reason: "test_mode_enabled_without_test_email",
+        intended_recipient: recipient,
+      }),
+      status: "info",
+      created_at: new Date().toISOString(),
+    });
+    return { sent: false, providerMessageId: null };
+  }
   const { data: previousEvents } = await supabase
     .from("mail_auto_reply_events")
     .select("sent_at")
@@ -413,7 +456,7 @@ async function maybeSendAutoReply(options: {
   const providerMessageId = await sendPostmarkAutoReply({
     from: outgoingFrom,
     fromName: outgoingName,
-    to: recipient,
+    to: effectiveRecipient,
     subject: renderedSubject,
     textBody: toPlainText(renderedText),
     htmlBody: mergedHtml,
@@ -435,7 +478,7 @@ async function maybeSendAutoReply(options: {
     body_html: mergedHtml,
     from_name: outgoingName,
     from_email: outgoingFrom,
-    to_emails: [recipient],
+    to_emails: [effectiveRecipient],
     cc_emails: [],
     bcc_emails: [],
     from_me: true,
@@ -453,11 +496,25 @@ async function maybeSendAutoReply(options: {
     inbound_message_id: options.inboundMessageId,
     rule_id: setting.id,
     provider: "smtp",
-    recipient_email: recipient,
+    recipient_email: effectiveRecipient,
     sent_message_id: providerMessageId,
     sent_at: nowIso,
     created_at: nowIso,
   });
+  if (workspaceTest.testMode && workspaceTest.testEmail) {
+    await supabase.from("agent_logs").insert({
+      draft_id: null,
+      step_name: "email_simulated_test_mode",
+      step_detail: JSON.stringify({
+        thread_id: options.threadId,
+        mailbox_id: options.mailbox.mailbox_id,
+        intended_recipient: recipient,
+        redirected_to: workspaceTest.testEmail,
+      }),
+      status: "info",
+      created_at: new Date().toISOString(),
+    });
+  }
 
   return { sent: true, providerMessageId };
 }

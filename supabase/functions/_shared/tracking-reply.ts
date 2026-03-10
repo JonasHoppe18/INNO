@@ -548,6 +548,13 @@ async function buildTrackingReplyWithOpenAI(options: {
   return text || null;
 }
 
+function normalizeReplyLinks(text: string): string {
+  const input = String(text || "");
+  if (!input) return "";
+  // Replace markdown links with plain URL so we avoid "[Tracking link](...)" output.
+  return input.replace(/\[[^\]]+\]\((https?:\/\/[^\s)]+)\)/gi, "$1");
+}
+
 function buildTrackingReplyInput(options: {
   locale: SupportedLocale;
   customerFirstName?: string | null;
@@ -732,6 +739,6 @@ export async function buildTrackingReplySameLanguage(options: {
     input,
     seed,
   });
-  if (aiReply) return aiReply;
+  if (aiReply) return normalizeReplyLinks(aiReply);
   return composeTrackingReply(input, seed);
 }

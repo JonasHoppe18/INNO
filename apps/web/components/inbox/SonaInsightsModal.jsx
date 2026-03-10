@@ -182,13 +182,6 @@ export function SonaInsightsModal({
           statusLabel || "",
           parsed?.trackingNumber ? `#${parsed.trackingNumber}` : "",
           parsed?.trackingUrl || "",
-          parsed?.trackingSource ? `(source: ${parsed.trackingSource})` : "",
-          parsed?.trackingLookupSource
-            ? `(lookup: ${parsed.trackingLookupSource})`
-            : "",
-          parsed?.trackingLookupDetail
-            ? `(lookup_detail: ${parsed.trackingLookupDetail})`
-            : "",
         ].filter(Boolean);
         if (chunks.length) return chunks.join(" | ");
         return parsed?.detail || "Loaded live tracking status.";
@@ -252,6 +245,7 @@ export function SonaInsightsModal({
           const step = String(log?.step_name || "").toLowerCase();
           if (step === "context") return false;
           if (step.startsWith("shopify_action")) return false;
+          if (step === "carrier_preferences") return false;
           return true;
         })
       : parsedLogs;

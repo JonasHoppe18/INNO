@@ -72,81 +72,145 @@ function GeneralTab({
   shopDomain,
   teamName,
   onTeamNameChange,
+  testMode,
+  onTestModeChange,
+  testEmail,
+  onTestEmailChange,
+  hasWorkspaceScope,
   onSave,
+  onReset,
   saving,
   canSave,
 }) {
-  const hasShop = Boolean(shopDomain);
-
   return (
-    <section className="max-w-2xl">
+    <section className="max-w-5xl space-y-4">
       <div className="px-1">
-        <h2 className="text-2xl font-semibold text-slate-900">General</h2>
+        <p className="text-xs font-medium tracking-[0.08em] text-slate-500">SETTINGS / GENERAL</p>
+        <h2 className="mt-1 text-3xl font-semibold text-slate-900">General</h2>
         <p className="mt-1 text-sm text-slate-600">Configure shared team settings.</p>
       </div>
 
-      <div className="mt-6 divide-y divide-gray-100">
-        <div className="grid grid-cols-1 gap-6 py-6 md:grid-cols-3">
-          <div>
-            <h3 className="font-medium text-gray-900">Shop URL</h3>
-            <p className="mt-1 text-sm text-gray-500">The connected Shopify store.</p>
-          </div>
-          <div className="md:col-span-2">
-            <Input
-              id="shop-url"
-              value={shopDomain || "No shop connected"}
-              readOnly
-              className="max-w-md bg-slate-100 text-slate-600"
-            />
-          </div>
-        </div>
+      <div className="rounded-xl border border-gray-200 bg-white p-6">
+        <h3 className="text-base font-semibold text-slate-900">Store Information</h3>
+        <p className="mt-1 text-sm text-slate-500">Store connection and team profile details.</p>
 
-        <div className="grid grid-cols-1 gap-6 py-6 md:grid-cols-3">
-          <div>
-            <h3 className="font-medium text-gray-900">Team Name</h3>
-            <p className="mt-1 text-sm text-gray-500">
-              This is your team&apos;s visible name within Sona.
-            </p>
+        <div className="mt-5 grid grid-cols-1 gap-5">
+          <div className="space-y-1.5">
+            <label htmlFor="shop-url" className="text-xs font-semibold tracking-wide text-slate-500">
+              SHOP URL
+            </label>
+            <div className="flex h-11 w-full max-w-xl items-center gap-2 rounded-md bg-slate-100 px-3 text-slate-700">
+              <Lock className="h-4 w-4 text-slate-400" />
+              <span className="truncate text-sm">{shopDomain || "No shop connected"}</span>
+            </div>
+            <p className="text-xs text-slate-500">Connected Shopify store (read-only).</p>
           </div>
-          <div className="space-y-3 md:col-span-2">
+
+          <div className="space-y-1.5">
+            <label htmlFor="team-name" className="text-xs font-semibold tracking-wide text-slate-500">
+              TEAM NAME
+            </label>
             <Input
               id="team-name"
               value={teamName}
               onChange={(event) => onTeamNameChange(event.target.value)}
               placeholder="Enter your team name"
-              className="max-w-md"
+              className="h-11 w-full max-w-xl focus-visible:ring-2 focus-visible:ring-sky-500/40"
             />
-            <div className="max-w-md">
-              <Button
-                onClick={onSave}
-                disabled={!hasShop || !canSave || saving}
-                className="ml-auto block bg-slate-900 text-white hover:bg-slate-800"
-              >
-                {saving ? "Saving..." : "Save"}
-              </Button>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 gap-6 py-6 md:grid-cols-3">
-          <div>
-            <h3 className="font-medium text-red-700">Delete Workspace</h3>
-            <p className="mt-1 text-sm text-gray-500">
-              Permanently delete this team and all data.
+            <p className="text-xs text-slate-500">
+              This is your team&apos;s visible name within Sona.
             </p>
-          </div>
-          <div className="md:col-span-2">
-            <div className="max-w-md">
-              <Button
-                type="button"
-                className="ml-auto block bg-red-600 text-white hover:bg-red-700"
-              >
-                Delete Team
-              </Button>
-            </div>
           </div>
         </div>
       </div>
+
+      <div className="rounded-xl border border-gray-200 bg-white p-6">
+        <h3 className="text-base font-semibold text-slate-900">Test Mode</h3>
+        <p className="mt-1 text-sm text-slate-500">
+          Simulate actions without writing to Shopify, shipping providers, or other integrations.
+        </p>
+
+        <div className="mt-5 grid grid-cols-1 gap-4">
+          <div className="flex items-center justify-between rounded-lg px-1 py-1">
+            <span className="text-sm text-slate-500">
+              Enable Test Mode
+            </span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={Boolean(testMode)}
+              onClick={() => onTestModeChange(!Boolean(testMode))}
+              disabled={!hasWorkspaceScope}
+              className={cn(
+                "relative inline-flex h-7 w-12 items-center rounded-full transition",
+                testMode ? "bg-emerald-500" : "bg-slate-300",
+                !hasWorkspaceScope && "cursor-not-allowed opacity-70"
+              )}
+            >
+              <span
+                className={cn(
+                  "inline-block h-5 w-5 transform rounded-full bg-white transition",
+                  testMode ? "translate-x-6" : "translate-x-1"
+                )}
+              />
+            </button>
+          </div>
+
+          <div className="space-y-1.5">
+            <label htmlFor="test-email" className="text-xs font-semibold tracking-wide text-slate-500">
+              TEST EMAIL ADDRESS
+            </label>
+            <Input
+              id="test-email"
+              type="email"
+              value={testEmail}
+              onChange={(event) => onTestEmailChange(event.target.value)}
+              placeholder="qa@company.com"
+              className="h-11 w-full max-w-xl focus-visible:ring-2 focus-visible:ring-sky-500/40"
+              disabled={!hasWorkspaceScope}
+            />
+            <p className="text-xs text-slate-500">
+              When set, all outgoing emails are redirected to this address while Test Mode is active.
+            </p>
+          </div>
+        </div>
+        {!hasWorkspaceScope ? (
+          <p className="mt-3 text-xs text-amber-700">
+            Test Mode settings require an organization workspace.
+          </p>
+        ) : null}
+      </div>
+
+      <div className="rounded-xl border border-red-200 bg-white p-6">
+        <h3 className="text-base font-semibold text-red-700">Danger Zone</h3>
+        <p className="mt-1 text-sm text-slate-500">
+          Permanently delete this team and all data.
+        </p>
+        <div className="mt-4">
+          <Button
+            type="button"
+            className="bg-red-600 text-white hover:bg-red-700"
+          >
+            Delete Team
+          </Button>
+        </div>
+      </div>
+
+      {canSave ? (
+        <div className="fixed bottom-4 left-1/2 z-20 w-[calc(100%-2rem)] max-w-3xl -translate-x-1/2 rounded-2xl border border-slate-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span className="text-sm font-medium text-slate-600">Unsaved changes</span>
+            <div className="flex items-center gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={onReset}>
+                Discard
+              </Button>
+              <Button type="button" size="sm" onClick={onSave} disabled={saving}>
+                {saving ? "Saving..." : "Save changes"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -1058,6 +1122,10 @@ export function SettingsPanel() {
   const [shopDomain, setShopDomain] = useState("");
   const [teamName, setTeamName] = useState("Sona Team");
   const [initialTeamName, setInitialTeamName] = useState("Sona Team");
+  const [testMode, setTestMode] = useState(false);
+  const [initialTestMode, setInitialTestMode] = useState(false);
+  const [testEmail, setTestEmail] = useState("");
+  const [initialTestEmail, setInitialTestEmail] = useState("");
   const [members, setMembers] = useState([]);
   const [workspaceCurrentRole, setWorkspaceCurrentRole] = useState("");
   const [canManageWorkspaceMembers, setCanManageWorkspaceMembers] = useState(false);
@@ -1169,6 +1237,10 @@ export function SettingsPanel() {
         setShopDomain("");
         setTeamName("Sona Team");
         setInitialTeamName("Sona Team");
+        setTestMode(false);
+        setInitialTestMode(false);
+        setTestEmail("");
+        setInitialTestEmail("");
         setMembers([]);
         setWorkspaceCurrentRole("");
         setCanManageWorkspaceMembers(false);
@@ -1185,6 +1257,10 @@ export function SettingsPanel() {
       setShopDomain(shopRow?.shop_domain ?? "");
       setTeamName(resolvedTeamName);
       setInitialTeamName(resolvedTeamName);
+      setTestMode(false);
+      setInitialTestMode(false);
+      setTestEmail("");
+      setInitialTestEmail("");
 
       const memberOwnerId = shopRow?.owner_user_id ?? supabaseUserId;
       if (workspaceId) {
@@ -1208,6 +1284,23 @@ export function SettingsPanel() {
         setMembers(Array.isArray(profileRows) ? profileRows : []);
         setWorkspaceCurrentRole("");
         setCanManageWorkspaceMembers(false);
+      }
+
+      if (workspaceId) {
+        const testModeResponse = await fetch("/api/settings/test-mode", {
+          method: "GET",
+          cache: "no-store",
+          credentials: "include",
+        }).catch(() => null);
+        if (testModeResponse?.ok) {
+          const testModePayload = await testModeResponse.json().catch(() => ({}));
+          const resolvedTestMode = Boolean(testModePayload?.test_mode);
+          const resolvedTestEmail = String(testModePayload?.test_email || "").trim();
+          setTestMode(resolvedTestMode);
+          setInitialTestMode(resolvedTestMode);
+          setTestEmail(resolvedTestEmail);
+          setInitialTestEmail(resolvedTestEmail);
+        }
       }
 
       const autoReplyResponse = await fetch("/api/settings/auto-reply", {
@@ -1257,8 +1350,11 @@ export function SettingsPanel() {
   }, [loadData]);
 
   const canSave = useMemo(
-    () => String(teamName || "").trim() !== String(initialTeamName || "").trim(),
-    [initialTeamName, teamName]
+    () =>
+      String(teamName || "").trim() !== String(initialTeamName || "").trim() ||
+      Boolean(testMode) !== Boolean(initialTestMode) ||
+      String(testEmail || "").trim() !== String(initialTestEmail || "").trim(),
+    [initialTeamName, teamName, initialTestMode, testMode, initialTestEmail, testEmail]
   );
 
   const handleSaveGeneral = useCallback(async () => {
@@ -1267,9 +1363,28 @@ export function SettingsPanel() {
     setSaving(true);
     try {
       const nextTeamName = String(teamName || "").trim() || "Sona Team";
+      const nextTestMode = Boolean(testMode);
+      const nextTestEmail = String(testEmail || "").trim() || null;
       if (workspaceId) {
-        const { error } = await supabase.from("workspaces").update({ name: nextTeamName }).eq("id", workspaceId);
-        if (error) throw error;
+        const { error: workspaceNameError } = await supabase
+          .from("workspaces")
+          .update({ name: nextTeamName })
+          .eq("id", workspaceId);
+        if (workspaceNameError) throw workspaceNameError;
+
+        const testModeResponse = await fetch("/api/settings/test-mode", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            test_mode: nextTestMode,
+            test_email: nextTestEmail,
+          }),
+        });
+        const testModePayload = await testModeResponse.json().catch(() => ({}));
+        if (!testModeResponse.ok) {
+          throw new Error(testModePayload?.error || "Could not save test mode settings.");
+        }
       } else if (shopId) {
         const { error } = await supabase.from("shops").update({ team_name: nextTeamName }).eq("id", shopId);
         if (error) throw error;
@@ -1278,6 +1393,10 @@ export function SettingsPanel() {
       }
       setTeamName(nextTeamName);
       setInitialTeamName(nextTeamName);
+      setTestMode(nextTestMode);
+      setInitialTestMode(nextTestMode);
+      setTestEmail(nextTestEmail || "");
+      setInitialTestEmail(nextTestEmail || "");
       toast.success("Settings saved.");
     } catch (error) {
       if (error?.code === "42703") {
@@ -1288,7 +1407,13 @@ export function SettingsPanel() {
     } finally {
       setSaving(false);
     }
-  }, [canSave, saving, shopId, supabase, teamName, workspaceId]);
+  }, [canSave, saving, shopId, supabase, teamName, testEmail, testMode, workspaceId]);
+
+  const handleResetGeneral = useCallback(() => {
+    setTeamName(String(initialTeamName || "Sona Team"));
+    setTestMode(Boolean(initialTestMode));
+    setTestEmail(String(initialTestEmail || ""));
+  }, [initialTeamName, initialTestEmail, initialTestMode]);
 
   const handleSaveAutoReply = useCallback(async (overrides = {}) => {
     if (savingAutoReply) return;
@@ -1421,7 +1546,13 @@ export function SettingsPanel() {
             shopDomain={shopDomain}
             teamName={teamName}
             onTeamNameChange={setTeamName}
+            testMode={testMode}
+            onTestModeChange={setTestMode}
+            testEmail={testEmail}
+            onTestEmailChange={setTestEmail}
+            hasWorkspaceScope={Boolean(workspaceId)}
             onSave={handleSaveGeneral}
+            onReset={handleResetGeneral}
             saving={saving}
             canSave={canSave}
           />

@@ -678,6 +678,25 @@ async function logAgentStatus(serviceClient, stepName, status, detail) {
   });
 }
 
+async function loadWorkspaceTestSettings(serviceClient, workspaceId) {
+  if (!workspaceId) {
+    return { testMode: false, testEmail: null };
+  }
+  const { data, error } = await serviceClient
+    .from("workspaces")
+    .select("test_mode, test_email")
+    .eq("id", workspaceId)
+    .maybeSingle();
+  if (error) {
+    throw new Error(error.message);
+  }
+  const testEmail = String(data?.test_email || "").trim().toLowerCase();
+  return {
+    testMode: Boolean(data?.test_mode),
+    testEmail: testEmail || null,
+  };
+}
+
 export async function POST(request, { params }) {
   const { userId: clerkUserId, orgId } = await auth();
   if (!clerkUserId) {
@@ -748,6 +767,17 @@ export async function POST(request, { params }) {
   const supabaseUserId = scope?.supabaseUserId ?? null;
   if (!scope?.workspaceId && !supabaseUserId) {
     return NextResponse.json({ error: "Could not resolve user scope." }, { status: 401 });
+  }
+  let testSettings = { testMode: false, testEmail: null };
+  if (scope?.workspaceId) {
+    try {
+      testSettings = await loadWorkspaceTestSettings(serviceClient, scope.workspaceId);
+    } catch (error) {
+      return NextResponse.json(
+        { error: error?.message || "Could not load workspace test settings." },
+        { status: 500 }
+      );
+    }
   }
   const userSignature = await loadUserSignature(serviceClient, supabaseUserId);
   const hasSignatureOverride = Object.prototype.hasOwnProperty.call(body || {}, "signature");
@@ -822,9 +852,19 @@ export async function POST(request, { params }) {
     : hasExplicitTo || mailbox.provider === "smtp"
     ? []
     : fallbackTo;
-  if (!finalTo.length) {
+  const isTestModeActive = Boolean(testSettings?.testMode);
+  const testEmailAddress = String(testSettings?.testEmail || "").trim().toLowerCase() || null;
+  const shouldSimulateEmailOnly = isTestModeActive && !testEmailAddress;
+  if (!finalTo.length && !shouldSimulateEmailOnly) {
     return NextResponse.json({ error: "Missing recipient." }, { status: 400 });
   }
+  const deliveryTo = isTestModeActive
+    ? testEmailAddress
+      ? [testEmailAddress]
+      : []
+    : finalTo;
+  const deliveryCc = isTestModeActive ? [] : ccEmails;
+  const deliveryBcc = isTestModeActive ? [] : bccEmails;
 
   const subjectRaw = String(body?.subject || thread.subject || "").trim();
   const subject = subjectRaw.toLowerCase().startsWith("re:")
@@ -847,7 +887,18 @@ export async function POST(request, { params }) {
   let sentFromName = senderName || null;
   const nowIso = new Date().toISOString();
   try {
-    if (mailbox.provider === "smtp") {
+    if (shouldSimulateEmailOnly) {
+      providerMessageId = `email-simulated-test-mode-${threadId}-${Date.now()}`;
+      await logAgentStatus(serviceClient, "email_simulated_test_mode", "info", {
+        provider: mailbox.provider,
+        threadId,
+        simulated: true,
+        reason: "test_mode_enabled_without_test_email",
+        intended_to: finalTo,
+        intended_cc: ccEmails,
+        intended_bcc: bccEmails,
+      });
+    } else if (mailbox.provider === "smtp") {
       const senderConfig = resolvePostmarkSender(mailbox, senderName);
       sentFromEmail = senderConfig.fromEmail;
       sentFromName = senderConfig.fromName;
@@ -856,9 +907,9 @@ export async function POST(request, { params }) {
         .filter(Boolean);
       const inReplyTo = normalizeMessageId(inboundMessage?.provider_message_id);
       const postmarkResponse = await sendViaPostmark({
-        to: finalTo,
-        cc: ccEmails,
-        bcc: bccEmails,
+        to: deliveryTo,
+        cc: deliveryCc,
+        bcc: deliveryBcc,
         subject,
         textBody: finalBodyText,
         htmlBody: bodyHtml || undefined,
@@ -875,15 +926,22 @@ export async function POST(request, { params }) {
         threadId,
         transport: "postmark",
         from_mode: senderConfig.mode,
+        ...(isTestModeActive
+          ? {
+              test_mode: true,
+              redirected_to: testEmailAddress,
+              intended_to: finalTo,
+            }
+          : {}),
       });
     } else {
       const token = await getAccessToken(serviceClient, mailbox);
       if (mailbox.provider === "gmail") {
       const raw = buildRawEmail({
         from: mailbox.provider_email,
-        to: finalTo,
-        cc: ccEmails,
-        bcc: bccEmails,
+        to: deliveryTo,
+        cc: deliveryCc,
+        bcc: deliveryBcc,
         subject,
         bodyText: finalBodyText,
         bodyHtml: bodyHtml || null,
@@ -903,9 +961,9 @@ export async function POST(request, { params }) {
             contentType: bodyHtml ? "HTML" : "Text",
             content: bodyHtml || finalBodyText,
           },
-          toRecipients: finalTo.map((email) => ({ emailAddress: { address: email } })),
-          ccRecipients: ccEmails.map((email) => ({ emailAddress: { address: email } })),
-          bccRecipients: bccEmails.map((email) => ({ emailAddress: { address: email } })),
+          toRecipients: deliveryTo.map((email) => ({ emailAddress: { address: email } })),
+          ccRecipients: deliveryCc.map((email) => ({ emailAddress: { address: email } })),
+          bccRecipients: deliveryBcc.map((email) => ({ emailAddress: { address: email } })),
           internetMessageHeaders: inboundMessage?.provider_message_id
             ? [
                 {
@@ -921,7 +979,10 @@ export async function POST(request, { params }) {
             contentBytes: attachment.content_base64,
           })),
         };
-        const useReply = Boolean(inboundMessage?.provider_message_id) && !toEmails.length;
+        const useReply =
+          Boolean(inboundMessage?.provider_message_id) &&
+          !toEmails.length &&
+          !isTestModeActive;
         const payload = await sendOutlook({
           token,
           message,
@@ -952,7 +1013,7 @@ export async function POST(request, { params }) {
     const message = error?.message || `Send failed (${mailbox.provider}).`;
     const lowerMessage = String(message).toLowerCase();
     if (lowerMessage.includes("pending approval") && lowerMessage.includes("domain")) {
-      const recipientDomains = [...finalTo, ...ccEmails, ...bccEmails]
+      const recipientDomains = [...deliveryTo, ...deliveryCc, ...deliveryBcc]
         .map((email) => String(email || "").trim().toLowerCase())
         .filter(Boolean)
         .map((email) => email.split("@")[1] || "")
@@ -989,9 +1050,9 @@ export async function POST(request, { params }) {
         from_name: sentFromName,
         from_email: sentFromEmail,
         from_me: true,
-        to_emails: finalTo,
-        cc_emails: ccEmails,
-        bcc_emails: bccEmails,
+        to_emails: deliveryTo,
+        cc_emails: deliveryCc,
+        bcc_emails: deliveryBcc,
         is_read: true,
         sent_at: nowIso,
         received_at: null,
@@ -1022,9 +1083,9 @@ export async function POST(request, { params }) {
         from_name: sentFromName,
         from_email: sentFromEmail,
         from_me: true,
-        to_emails: finalTo,
-        cc_emails: ccEmails,
-        bcc_emails: bccEmails,
+        to_emails: deliveryTo,
+        cc_emails: deliveryCc,
+        bcc_emails: deliveryBcc,
         is_read: true,
         sent_at: nowIso,
         received_at: null,
@@ -1054,9 +1115,9 @@ export async function POST(request, { params }) {
         from_name: sentFromName,
         from_email: sentFromEmail,
         from_me: true,
-        to_emails: finalTo,
-        cc_emails: ccEmails,
-        bcc_emails: bccEmails,
+        to_emails: deliveryTo,
+        cc_emails: deliveryCc,
+        bcc_emails: deliveryBcc,
         is_read: true,
         sent_at: nowIso,
         received_at: null,
@@ -1249,6 +1310,15 @@ export async function POST(request, { params }) {
       provider_message_id: persistedProviderMessageId,
       provider: mailbox.provider,
       attachment_count: attachmentsPayload.length,
+      test_mode: isTestModeActive,
+      simulated: shouldSimulateEmailOnly,
+      redirected_to: testEmailAddress,
+      message:
+        shouldSimulateEmailOnly
+          ? "Email simulated: Test Mode is enabled and no Test Email Address is configured."
+          : isTestModeActive
+          ? `Email sent to ${testEmailAddress} because Test Mode is enabled.`
+          : null,
     },
     { status: 200 }
   );

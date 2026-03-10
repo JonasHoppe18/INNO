@@ -156,6 +156,42 @@ async function fetchAutomationSettings(supabaseUserId: string) {
   };
 }
 
+async function loadWorkspaceTestMode(clerkUserId: string) {
+  if (!supabase) {
+    return { testMode: false, testEmail: null as string | null };
+  }
+
+  const { data: membership, error: membershipError } = await supabase
+    .from("workspace_members")
+    .select("workspace_id")
+    .eq("clerk_user_id", clerkUserId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (membershipError || !membership?.workspace_id) {
+    return { testMode: false, testEmail: null as string | null };
+  }
+
+  const { data: workspace, error: workspaceError } = await supabase
+    .from("workspaces")
+    .select("test_mode, test_email")
+    .eq("id", membership.workspace_id)
+    .maybeSingle();
+  if (workspaceError) {
+    console.warn("shopify-order-update: kunne ikke hente workspace test mode", workspaceError.message);
+    return { testMode: false, testEmail: null as string | null };
+  }
+
+  return {
+    testMode: Boolean((workspace as any)?.test_mode),
+    testEmail:
+      typeof (workspace as any)?.test_email === "string" &&
+      (workspace as any).test_email.trim().length
+        ? (workspace as any).test_email.trim().toLowerCase()
+        : null,
+  };
+}
+
 function shopifyUrl(shop: ShopRecord, path: string): string {
   // Bygger fuld URL til Shopify Admin API
   const domain = shop.shop_domain.replace(/^https?:\/\//, "");
@@ -791,6 +827,15 @@ Deno.serve(async (req) => {
     const automation = await fetchAutomationSettings(supabaseUserId);
 
     ensureActionAllowed(payload.action, automation);
+    const workspaceTest = await loadWorkspaceTestMode(targetClerkUserId);
+    if (workspaceTest.testMode) {
+      return Response.json({
+        ok: true,
+        simulated: true,
+        testMode: true,
+        message: "Action approved, but no changes were made because Test Mode is enabled.",
+      });
+    }
     const result = await handleAction(shop, payload);
     return Response.json({ ok: true, result });
   } catch (error) {

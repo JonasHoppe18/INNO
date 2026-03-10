@@ -309,7 +309,7 @@ CREATE TABLE public.thread_actions (
   thread_id uuid NOT NULL,
   action_type text NOT NULL,
   action_key text NOT NULL,
-  status text NOT NULL DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'approved'::text, 'applied'::text, 'declined'::text, 'failed'::text, 'superseded'::text])),
+  status text NOT NULL DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'approved'::text, 'approved_test_mode'::text, 'applied'::text, 'declined'::text, 'failed'::text, 'superseded'::text])),
   detail text,
   payload jsonb NOT NULL DEFAULT '{}'::jsonb,
   order_id text,
