@@ -107,6 +107,7 @@ export function MessageBubble({
   currentUserId,
 }) {
   const [selectedAttachment, setSelectedAttachment] = useState(null);
+  const [viewEmailOpen, setViewEmailOpen] = useState(false);
   const isOutbound = direction === "outbound";
   const isAuthoredByCurrentUser =
     Boolean(currentUserId) &&
@@ -161,6 +162,7 @@ export function MessageBubble({
   const canPreviewPdf = isPdfAttachment(selectedAttachment?.mime_type);
   const canDownload = Boolean(selectedAttachment?.storage_path);
   const attachmentCards = (attachments || []).filter((attachment) => Boolean(attachment?.id));
+  const subjectLine = String(message?.subject || "").trim() || "Email";
 
   return (
     <>
@@ -275,52 +277,78 @@ export function MessageBubble({
               </div>
             ) : null}
 
-            {toList.length || ccList.length || !isInternalNote ? (
+            {!isInternalNote ? (
               <div
                 className={cn(
                   "flex flex-wrap items-center gap-3 px-1 text-sm font-medium text-gray-600",
                   isOutbound ? "justify-end" : "justify-start"
                 )}
               >
-                {toList.length || ccList.length ? (
-                  <details className="text-xs text-gray-500">
-                    <summary className="cursor-pointer select-none font-medium">Details</summary>
-                    <div className="mt-2 space-y-1.5 rounded-md border border-gray-200 bg-white px-3 py-2 shadow-sm">
-                      {toList.length ? (
-                        <div className="flex flex-wrap gap-2">
-                          <span className="text-[11px] uppercase tracking-wide text-gray-400">To</span>
-                          {toList.map((email) => (
-                            <span key={email} className="rounded-full bg-gray-100 px-2 py-0.5">
-                              {email}
-                            </span>
-                          ))}
-                        </div>
-                      ) : null}
-                      {ccList.length ? (
-                        <div className="flex flex-wrap gap-2">
-                          <span className="text-[11px] uppercase tracking-wide text-gray-400">Cc</span>
-                          {ccList.map((email) => (
-                            <span key={email} className="rounded-full bg-gray-100 px-2 py-0.5">
-                              {email}
-                            </span>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
-                  </details>
-                ) : null}
-
-                {!isInternalNote ? (
-                  <div className="flex items-center gap-2">
-                    <Mail className="h-4 w-4" />
-                    <span>View email</span>
-                  </div>
-                ) : null}
+                <button
+                  type="button"
+                  onClick={() => setViewEmailOpen(true)}
+                  className="inline-flex items-center gap-2 rounded-md px-1 py-0.5 hover:bg-gray-100"
+                >
+                  <Mail className="h-4 w-4" />
+                  <span>View email</span>
+                </button>
               </div>
             ) : null}
           </div>
         </div>
       </div>
+      <Dialog open={viewEmailOpen} onOpenChange={setViewEmailOpen}>
+        <DialogContent className="max-h-[85vh] max-w-3xl overflow-hidden p-0">
+          <DialogHeader className="border-b border-gray-100 px-5 py-4">
+            <DialogTitle className="pr-8 text-base">{subjectLine}</DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[65vh] overflow-auto bg-white px-5 py-4">
+            <div className="space-y-2 text-sm">
+              <div className="flex flex-wrap gap-2">
+                <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-gray-400">From</span>
+                <span className="text-gray-700">{[senderDisplayName, senderEmail].filter(Boolean).join(" <")}{senderEmail ? ">" : ""}</span>
+              </div>
+              {toList.length ? (
+                <div className="flex flex-wrap gap-2">
+                  <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-gray-400">To</span>
+                  <span className="text-gray-700">{toList.join(", ")}</span>
+                </div>
+              ) : null}
+              {ccList.length ? (
+                <div className="flex flex-wrap gap-2">
+                  <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-gray-400">Cc</span>
+                  <span className="text-gray-700">{ccList.join(", ")}</span>
+                </div>
+              ) : null}
+              {bccList.length ? (
+                <div className="flex flex-wrap gap-2">
+                  <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-gray-400">Bcc</span>
+                  <span className="text-gray-700">{bccList.join(", ")}</span>
+                </div>
+              ) : null}
+              <div className="flex flex-wrap gap-2">
+                <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-gray-400">Date</span>
+                <span className="text-gray-700">{timestamp || "-"}</span>
+              </div>
+            </div>
+            <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50/40 p-4">
+              {safeBodyHtml ? (
+                <div
+                  className={EMAIL_BODY_CLASS}
+                  dangerouslySetInnerHTML={{ __html: safeBodyHtml }}
+                />
+              ) : (
+                <div
+                  className={EMAIL_BODY_CLASS}
+                  dangerouslySetInnerHTML={{
+                    __html: linkifyText(message.body_text || message.snippet || "No preview available."),
+                  }}
+                />
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog open={Boolean(selectedAttachment)} onOpenChange={(open) => !open && setSelectedAttachment(null)}>
         <DialogContent className="max-h-[85vh] max-w-4xl overflow-hidden p-0">
           <DialogHeader className="border-b border-gray-100 px-5 py-4">
