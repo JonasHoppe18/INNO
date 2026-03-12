@@ -75,6 +75,45 @@ function normalizeText(value: unknown) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function parseRetryAfterMs(value: string | null) {
+  if (!value) return null;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds > 0) {
+    return Math.round(seconds * 1000);
+  }
+  const asDate = Date.parse(value);
+  if (Number.isFinite(asDate)) {
+    const diff = asDate - Date.now();
+    if (diff > 0) return diff;
+  }
+  return null;
+}
+
+async function fetchZendeskWithRetry(
+  input: string,
+  init: RequestInit,
+  context: string,
+  maxRetries = 4
+) {
+  let attempt = 0;
+  while (true) {
+    const response = await fetch(input, init);
+    if (response.status !== 429) return response;
+    if (attempt >= maxRetries) return response;
+
+    const retryAfterMs = parseRetryAfterMs(response.headers.get("retry-after"));
+    const backoffMs = Math.min(12000, 1000 * 2 ** attempt);
+    const waitMs = Math.max(800, retryAfterMs ?? backoffMs);
+    console.warn(`[knowledge-import] Zendesk rate limit in ${context}; retrying in ${waitMs}ms`);
+    await sleep(waitMs);
+    attempt += 1;
+  }
+}
+
 function isLowQualityContent(content: string) {
   const lower = normalizeText(content).toLowerCase();
   if (!lower) return true;
@@ -154,13 +193,17 @@ async function fetchZendeskBatch(options: {
     ? String(cursor.next_page)
     : buildZendeskSearchUrl(options.baseUrl, status, page, options.batchSize);
 
-  const response = await fetch(searchUrl, {
-    headers: {
-      Authorization: options.authorization,
-      "Content-Type": "application/json",
+  const response = await fetchZendeskWithRetry(
+    searchUrl,
+    {
+      headers: {
+        Authorization: options.authorization,
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
     },
-    cache: "no-store",
-  });
+    "ticket-search"
+  );
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
     throw new Error(
@@ -211,13 +254,17 @@ async function fetchTicketConversation(
   const ticketId = ticket?.id;
   if (!ticketId) return null;
   const commentsUrl = `${baseUrl}/api/v2/tickets/${ticketId}/comments.json?sort_order=asc`;
-  const commentsResponse = await fetch(commentsUrl, {
-    headers: {
-      Authorization: authorization,
-      "Content-Type": "application/json",
+  const commentsResponse = await fetchZendeskWithRetry(
+    commentsUrl,
+    {
+      headers: {
+        Authorization: authorization,
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
     },
-    cache: "no-store",
-  });
+    "ticket-comments"
+  );
   const commentsPayload = await commentsResponse.json().catch(() => null);
   if (!commentsResponse.ok) return null;
 
@@ -487,7 +534,11 @@ export async function processImportJobBatch(serviceClient: any, job: KnowledgeIm
     throw new Error(`${job.provider} integration is missing domain/token.`);
   }
 
-  const batchSize = Math.max(1, Math.min(job.batch_size || 50, 100));
+  let batchSize = Math.max(1, Math.min(job.batch_size || 50, 100));
+  // Zendesk rate limits aggressively on search + comments endpoints.
+  if (job.provider === "zendesk") {
+    batchSize = Math.min(batchSize, 20);
+  }
   let tickets: any[] = [];
   let nextCursor: Record<string, unknown> | null = null;
   let authorization = "";

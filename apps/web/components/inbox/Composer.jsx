@@ -134,6 +134,8 @@ export function Composer({
   const replyEditorRef = useRef(null);
   const syncingReplyHtmlRef = useRef(false);
   const replyEditorFocusedRef = useRef(false);
+  const noteCaretIndexRef = useRef(null);
+  const replyCaretIndexRef = useRef(null);
   const fileInputRef = useRef(null);
   const [attachments, setAttachments] = useState([]);
   const [selectedMentionIds, setSelectedMentionIds] = useState([]);
@@ -450,9 +452,38 @@ export function Composer({
     const content = String(reply?.content || "").trim();
     if (!content) return;
     const current = String(value || "");
-    const nextValue = current.trim() ? `${current.replace(/\s+$/, "")}\n\n${content}` : content;
+    let caretIndex = null;
+    if (isNote) {
+      const input = textareaRef.current;
+      if (input && typeof input.selectionStart === "number") {
+        caretIndex = input.selectionStart;
+      } else if (typeof noteCaretIndexRef.current === "number") {
+        caretIndex = noteCaretIndexRef.current;
+      }
+    } else if (typeof replyCaretIndexRef.current === "number") {
+      caretIndex = replyCaretIndexRef.current;
+    }
+
+    const hasExplicitCaret = typeof caretIndex === "number" && Number.isFinite(caretIndex);
+    const safeCaret = hasExplicitCaret
+      ? Math.max(0, Math.min(Number(caretIndex), current.length))
+      : current.length;
+    const nextValue = hasExplicitCaret
+      ? `${current.slice(0, safeCaret)}${content}${current.slice(safeCaret)}`
+      : current.trim()
+        ? `${current.replace(/\s+$/, "")}\n\n${content}`
+        : content;
     onChange(nextValue);
     setSavedRepliesOpen(false);
+    if (isNote) {
+      requestAnimationFrame(() => {
+        const input = textareaRef.current;
+        if (!input) return;
+        const nextCaret = safeCaret + content.length;
+        input.focus();
+        input.setSelectionRange(nextCaret, nextCaret);
+      });
+    }
   };
 
   const normalizeMentionKey = (value) =>
@@ -493,6 +524,16 @@ export function Composer({
 
   const handleReplyEditorInput = (event) => {
     const html = String(event?.currentTarget?.innerHTML || "");
+    const selection = typeof window !== "undefined" ? window.getSelection() : null;
+    if (selection && selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      if (replyEditorRef.current?.contains(range.startContainer)) {
+        const beforeRange = range.cloneRange();
+        beforeRange.selectNodeContents(replyEditorRef.current);
+        beforeRange.setEnd(range.startContainer, range.startOffset);
+        replyCaretIndexRef.current = String(beforeRange.toString() || "").replace(/\r\n/g, "\n").length;
+      }
+    }
     syncingReplyHtmlRef.current = true;
     onChange(extractPlainTextFromReplyHtml(html));
     syncingReplyHtmlRef.current = false;
@@ -720,6 +761,7 @@ export function Composer({
               ref={textareaRef}
               value={value}
               onChange={(event) => {
+                noteCaretIndexRef.current = event.target.selectionStart;
                 onChange(event.target.value);
                 updateMentionStateFromInput(
                   event.target.value,
@@ -728,18 +770,24 @@ export function Composer({
                 );
               }}
               onClick={(event) =>
-                updateMentionStateFromInput(
-                  event.currentTarget.value,
-                  event.currentTarget.selectionStart,
-                  event.currentTarget
-                )
+                {
+                  noteCaretIndexRef.current = event.currentTarget.selectionStart;
+                  updateMentionStateFromInput(
+                    event.currentTarget.value,
+                    event.currentTarget.selectionStart,
+                    event.currentTarget
+                  );
+                }
               }
               onKeyUp={(event) =>
-                updateMentionStateFromInput(
-                  event.currentTarget.value,
-                  event.currentTarget.selectionStart,
-                  event.currentTarget
-                )
+                {
+                  noteCaretIndexRef.current = event.currentTarget.selectionStart;
+                  updateMentionStateFromInput(
+                    event.currentTarget.value,
+                    event.currentTarget.selectionStart,
+                    event.currentTarget
+                  );
+                }
               }
               onKeyDown={(event) => {
                 if (!mentionState.open || !mentionCandidates.length) return;
@@ -784,9 +832,42 @@ export function Composer({
                 suppressContentEditableWarning
                 onFocus={() => {
                   replyEditorFocusedRef.current = true;
+                  const selection = typeof window !== "undefined" ? window.getSelection() : null;
+                  if (selection && selection.rangeCount > 0) {
+                    const range = selection.getRangeAt(0);
+                    if (replyEditorRef.current?.contains(range.startContainer)) {
+                      const beforeRange = range.cloneRange();
+                      beforeRange.selectNodeContents(replyEditorRef.current);
+                      beforeRange.setEnd(range.startContainer, range.startOffset);
+                      replyCaretIndexRef.current = String(beforeRange.toString() || "")
+                        .replace(/\r\n/g, "\n").length;
+                    }
+                  }
                 }}
                 onInput={handleReplyEditorInput}
                 onBlur={handleReplyEditorBlur}
+                onKeyUp={() => {
+                  const selection = typeof window !== "undefined" ? window.getSelection() : null;
+                  if (!selection || selection.rangeCount === 0) return;
+                  const range = selection.getRangeAt(0);
+                  if (!replyEditorRef.current?.contains(range.startContainer)) return;
+                  const beforeRange = range.cloneRange();
+                  beforeRange.selectNodeContents(replyEditorRef.current);
+                  beforeRange.setEnd(range.startContainer, range.startOffset);
+                  replyCaretIndexRef.current = String(beforeRange.toString() || "")
+                    .replace(/\r\n/g, "\n").length;
+                }}
+                onMouseUp={() => {
+                  const selection = typeof window !== "undefined" ? window.getSelection() : null;
+                  if (!selection || selection.rangeCount === 0) return;
+                  const range = selection.getRangeAt(0);
+                  if (!replyEditorRef.current?.contains(range.startContainer)) return;
+                  const beforeRange = range.cloneRange();
+                  beforeRange.selectNodeContents(replyEditorRef.current);
+                  beforeRange.setEnd(range.startContainer, range.startOffset);
+                  replyCaretIndexRef.current = String(beforeRange.toString() || "")
+                    .replace(/\r\n/g, "\n").length;
+                }}
                 onPaste={(event) => {
                   event.preventDefault();
                   const pasted = event.clipboardData?.getData("text/plain") || "";
