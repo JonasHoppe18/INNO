@@ -243,6 +243,7 @@ export function KnowledgePageClient() {
   const [pdfFile, setPdfFile] = useState(null);
   const [pdfTitle, setPdfTitle] = useState("");
   const pdfFileInputRef = useRef(null);
+  const snippetEditorRef = useRef(null);
   const savedReplyEditorRef = useRef(null);
   const [productsModalOpen, setProductsModalOpen] = useState(false);
   const [productsLoading, setProductsLoading] = useState(false);
@@ -650,32 +651,175 @@ export function KnowledgePageClient() {
     setPdfTitle("");
   };
 
+  const buildSnippetDraftKey = useCallback(
+    (snippetId) => {
+      const scopeShop = String(shopId || "no-shop");
+      const scopeUser = String(user?.id || "anon");
+      const scopeSnippet = String(snippetId || "new");
+      return `knowledge:snippet-draft:${scopeShop}:${scopeUser}:${scopeSnippet}`;
+    },
+    [shopId, user?.id],
+  );
+
+  const readSnippetDraft = useCallback(
+    (snippetId) => {
+      if (typeof window === "undefined") return null;
+      try {
+        const raw = window.localStorage.getItem(buildSnippetDraftKey(snippetId));
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object") return null;
+        return {
+          mode: String(parsed?.mode || "text") === "pdf" ? "pdf" : "text",
+          title: String(parsed?.title || ""),
+          content: String(parsed?.content || ""),
+          pdfTitle: String(parsed?.pdfTitle || ""),
+        };
+      } catch (_error) {
+        return null;
+      }
+    },
+    [buildSnippetDraftKey],
+  );
+
+  const clearSnippetDraft = useCallback(
+    (snippetId) => {
+      if (typeof window === "undefined") return;
+      try {
+        window.localStorage.removeItem(buildSnippetDraftKey(snippetId));
+      } catch (_error) {
+        // no-op
+      }
+    },
+    [buildSnippetDraftKey],
+  );
+
+  const hydrateSnippetEditor = (value) => {
+    requestAnimationFrame(() => {
+      const editor = snippetEditorRef.current;
+      if (!editor) return;
+      editor.innerHTML = toSavedReplyEditorHtml(value);
+    });
+  };
+
+  const syncSnippetEditorToState = () => {
+    const editor = snippetEditorRef.current;
+    if (!editor) return;
+    const sanitized = sanitizeSavedReplyHtmlClient(editor.innerHTML);
+    if (editor.innerHTML !== sanitized) {
+      editor.innerHTML = sanitized;
+    }
+    setSnippetContent(sanitized);
+  };
+
+  const handleSnippetEditorInput = () => {
+    syncSnippetEditorToState();
+  };
+
+  const handleSnippetEditorPaste = (event) => {
+    event.preventDefault();
+    const clipboard = event?.clipboardData;
+    const html = String(clipboard?.getData("text/html") || "");
+    const text = String(clipboard?.getData("text/plain") || "");
+    const editor = snippetEditorRef.current;
+    if (!editor) return;
+    editor.focus();
+    if (html.trim()) {
+      document.execCommand("insertHTML", false, sanitizeSavedReplyHtmlClient(html));
+    } else if (text.trim()) {
+      document.execCommand("insertText", false, text);
+    }
+    syncSnippetEditorToState();
+  };
+
+  const applySnippetFormatting = (command) => {
+    const editor = snippetEditorRef.current;
+    if (!editor) return;
+    editor.focus();
+    document.execCommand(command, false);
+    syncSnippetEditorToState();
+  };
+
   const openCreateSnippetModal = () => {
+    const draft = readSnippetDraft(null);
     resetSnippetForm();
+    if (draft) {
+      setSnippetMode(draft.mode);
+      setSnippetTitle(draft.title);
+      setSnippetContent(draft.content);
+      setPdfTitle(draft.pdfTitle);
+    }
     setSnippetModalOpen(true);
+    hydrateSnippetEditor(draft?.content || "");
   };
 
   const openEditSnippetModal = (snippet) => {
     if (String(snippet?.source_provider || "") !== "manual_text") return;
-    setEditingSnippetId(String(snippet?.id || "").trim() || null);
+    const nextSnippetId = String(snippet?.id || "").trim() || null;
+    const draft = readSnippetDraft(nextSnippetId);
+    setEditingSnippetId(nextSnippetId);
     setSnippetMode("text");
-    setSnippetTitle(String(snippet?.title || ""));
-    setSnippetContent(String(snippet?.content || ""));
+    setSnippetTitle(draft?.title || String(snippet?.title || ""));
+    setSnippetContent(draft?.content || String(snippet?.content || ""));
     setPdfFile(null);
     setPdfTitle("");
     setSnippetModalOpen(true);
+    hydrateSnippetEditor(draft?.content || String(snippet?.content || ""));
   };
 
+  useEffect(() => {
+    if (!snippetModalOpen) return undefined;
+    const hasContent = Boolean(stripHtmlToPlainText(snippetContent));
+    const hasAny = Boolean(
+      snippetTitle.trim() || pdfTitle.trim() || hasContent || snippetMode === "pdf",
+    );
+    const draftKey = buildSnippetDraftKey(editingSnippetId);
+
+    const timer = window.setTimeout(() => {
+      if (typeof window === "undefined") return;
+      try {
+        if (!hasAny) {
+          window.localStorage.removeItem(draftKey);
+          return;
+        }
+        window.localStorage.setItem(
+          draftKey,
+          JSON.stringify({
+            mode: snippetMode,
+            title: snippetTitle,
+            content: snippetContent,
+            pdfTitle,
+            updated_at: new Date().toISOString(),
+          }),
+        );
+      } catch (_error) {
+        // no-op
+      }
+    }, 350);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    buildSnippetDraftKey,
+    editingSnippetId,
+    pdfTitle,
+    snippetContent,
+    snippetModalOpen,
+    snippetMode,
+    snippetTitle,
+  ]);
+
   const handleAddSnippet = async () => {
+    const draftSnippetId = editingSnippetId;
     if (!shopId) {
       toast.error("No shop found.");
       return;
     }
 
     const title = snippetTitle.trim();
-    const content = snippetContent.trim();
+    const content = sanitizeSavedReplyHtmlClient(snippetContent);
+    const contentPlain = stripHtmlToPlainText(content);
 
-    if (!title || !content) {
+    if (!title || !contentPlain) {
       toast.error("Title and content are required.");
       return;
     }
@@ -701,6 +845,7 @@ export function KnowledgePageClient() {
       }
 
       toast.success(isEditing ? "Knowledge snippet updated." : "Knowledge snippet added.");
+      clearSnippetDraft(draftSnippetId);
       setSnippetModalOpen(false);
       resetSnippetForm();
       await loadSnippets(shopId);
@@ -713,6 +858,7 @@ export function KnowledgePageClient() {
   };
 
   const handleAddFile = async () => {
+    const draftSnippetId = editingSnippetId;
     const file = pdfFile;
     if (!file) return;
     if (!shopId) {
@@ -753,6 +899,7 @@ export function KnowledgePageClient() {
       }
 
       toast.success("File uploaded and indexed.");
+      clearSnippetDraft(draftSnippetId);
       setSnippetModalOpen(false);
       resetSnippetForm();
       await loadSnippets(shopId);
@@ -1184,22 +1331,110 @@ export function KnowledgePageClient() {
     syncSavedReplyEditorToState();
   };
 
+  const buildSavedReplyDraftKey = useCallback(
+    (replyId) => {
+      const scopeShop = String(shopId || "no-shop");
+      const scopeUser = String(user?.id || "anon");
+      const scopeReply = String(replyId || "new");
+      return `knowledge:saved-reply-draft:${scopeShop}:${scopeUser}:${scopeReply}`;
+    },
+    [shopId, user?.id],
+  );
+
+  const readSavedReplyDraft = useCallback(
+    (replyId) => {
+      if (typeof window === "undefined") return null;
+      try {
+        const raw = window.localStorage.getItem(buildSavedReplyDraftKey(replyId));
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object") return null;
+        return {
+          title: String(parsed?.title || ""),
+          category: String(parsed?.category || ""),
+          content: String(parsed?.content || ""),
+        };
+      } catch (_error) {
+        return null;
+      }
+    },
+    [buildSavedReplyDraftKey],
+  );
+
+  const clearSavedReplyDraft = useCallback(
+    (replyId) => {
+      if (typeof window === "undefined") return;
+      try {
+        window.localStorage.removeItem(buildSavedReplyDraftKey(replyId));
+      } catch (_error) {
+        // no-op
+      }
+    },
+    [buildSavedReplyDraftKey],
+  );
+
   const openCreateSavedReplyModal = () => {
+    const draft = readSavedReplyDraft(null);
     resetSavedReplyForm();
+    if (draft) {
+      setSavedReplyTitle(draft.title);
+      setSavedReplyCategory(draft.category);
+      setSavedReplyContent(draft.content);
+    }
     setSavedReplyModalOpen(true);
-    hydrateSavedReplyEditor("");
+    hydrateSavedReplyEditor(draft?.content || "");
   };
 
   const openEditSavedReplyModal = (reply) => {
-    setEditingSavedReplyId(String(reply?.id || "").trim() || null);
-    setSavedReplyTitle(String(reply?.title || ""));
-    setSavedReplyContent(String(reply?.content || ""));
-    setSavedReplyCategory(String(reply?.category || ""));
+    const nextReplyId = String(reply?.id || "").trim() || null;
+    const draft = readSavedReplyDraft(nextReplyId);
+    setEditingSavedReplyId(nextReplyId);
+    setSavedReplyTitle(draft?.title || String(reply?.title || ""));
+    setSavedReplyContent(draft?.content || String(reply?.content || ""));
+    setSavedReplyCategory(draft?.category || String(reply?.category || ""));
     setSavedReplyModalOpen(true);
-    hydrateSavedReplyEditor(String(reply?.content || ""));
+    hydrateSavedReplyEditor(draft?.content || String(reply?.content || ""));
   };
 
+  useEffect(() => {
+    if (!savedReplyModalOpen) return undefined;
+    const hasContent = Boolean(stripHtmlToPlainText(savedReplyContent));
+    const hasAny = Boolean(savedReplyTitle.trim() || savedReplyCategory.trim() || hasContent);
+    const draftKey = buildSavedReplyDraftKey(editingSavedReplyId);
+
+    const timer = window.setTimeout(() => {
+      if (typeof window === "undefined") return;
+      try {
+        if (!hasAny) {
+          window.localStorage.removeItem(draftKey);
+          return;
+        }
+        window.localStorage.setItem(
+          draftKey,
+          JSON.stringify({
+            title: savedReplyTitle,
+            category: savedReplyCategory,
+            content: savedReplyContent,
+            updated_at: new Date().toISOString(),
+          }),
+        );
+      } catch (_error) {
+        // no-op
+      }
+    }, 350);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    buildSavedReplyDraftKey,
+    editingSavedReplyId,
+    savedReplyCategory,
+    savedReplyContent,
+    savedReplyModalOpen,
+    savedReplyTitle,
+  ]);
+
   const handleSaveSavedReply = async () => {
+    const draftReplyId = editingSavedReplyId;
     const title = String(savedReplyTitle || "").trim();
     const content = String(savedReplyContent || "").trim();
     const contentPlain = stripHtmlToPlainText(content);
@@ -1230,6 +1465,7 @@ export function KnowledgePageClient() {
         throw new Error(payload?.error || "Could not save saved reply.");
       }
       toast.success(editingSavedReplyId ? "Saved reply updated." : "Saved reply created.");
+      clearSavedReplyDraft(draftReplyId);
       setSavedReplyModalOpen(false);
       resetSavedReplyForm();
       await loadSavedReplies();
@@ -1306,12 +1542,12 @@ export function KnowledgePageClient() {
 
         <div className="space-y-4">
           <Card className="h-full rounded-xl border border-gray-300/70 bg-white shadow-sm">
-            <CardHeader className="flex flex-row items-start justify-between px-6 pb-3 pt-6">
-              <div className="space-y-1">
+            <CardHeader className="flex flex-col gap-3 px-6 pb-3 pt-6 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0 space-y-1">
                 <CardTitle className="text-lg">Knowledge Snippets</CardTitle>
                 <CardDescription>Primary source for product facts, manuals, and troubleshooting guides.</CardDescription>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex shrink-0 items-center gap-2">
                 <Button
                   type="button"
                   size="sm"
@@ -1407,12 +1643,12 @@ export function KnowledgePageClient() {
           </Card>
 
           <Card className="h-full rounded-xl border border-gray-300/70 bg-white shadow-sm">
-            <CardHeader className="flex flex-row items-start justify-between px-6 pb-3 pt-6">
-              <div className="space-y-1">
+            <CardHeader className="flex flex-col gap-3 px-6 pb-3 pt-6 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0 space-y-1">
                 <CardTitle className="text-lg">Saved Replies</CardTitle>
                 <CardDescription>Approved replies your team can insert into drafts with one click.</CardDescription>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex shrink-0 items-center gap-2">
                 <Button
                   type="button"
                   size="sm"
@@ -1498,8 +1734,8 @@ export function KnowledgePageClient() {
 
           <div className="grid items-stretch gap-4 lg:grid-cols-1">
             <Card className="h-full rounded-xl border border-gray-200/60 bg-white shadow-sm">
-              <CardHeader className="flex flex-row items-start justify-between px-6 pb-3 pt-6">
-                <div className="space-y-1">
+              <CardHeader className="flex flex-col gap-3 px-6 pb-3 pt-6 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0 space-y-1">
                   <CardTitle className="flex items-center gap-2 text-lg">
                     Shopify Data
                   </CardTitle>
@@ -1660,8 +1896,8 @@ export function KnowledgePageClient() {
 
             {hasHistoryConnection ? (
               <Card className="h-full rounded-xl border border-gray-200/60 bg-white shadow-sm">
-                <CardHeader className="flex flex-row items-start justify-between px-6 pb-3 pt-6">
-                  <div className="space-y-1">
+                <CardHeader className="flex flex-col gap-3 px-6 pb-3 pt-6 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0 space-y-1">
                     <CardTitle className="text-lg">History</CardTitle>
                     <CardDescription>One-time import from integrations.</CardDescription>
                   </div>
@@ -1743,7 +1979,12 @@ export function KnowledgePageClient() {
           if (!open) resetSnippetForm();
         }}
       >
-        <DialogContent>
+        <DialogContent
+          className="max-w-5xl"
+          onInteractOutside={(event) => {
+            event.preventDefault();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>{editingSnippetId ? "Edit Knowledge Snippet" : "Add Knowledge"}</DialogTitle>
             <DialogDescription>
@@ -1822,13 +2063,77 @@ export function KnowledgePageClient() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="snippet-content">Content</Label>
-                  <Textarea
-                    id="snippet-content"
-                    value={snippetContent}
-                    onChange={(event) => setSnippetContent(event.target.value)}
-                    rows={7}
-                    placeholder="Explain the issue and the exact troubleshooting steps..."
-                  />
+                  <div className="overflow-hidden rounded-md border border-gray-200">
+                    <div className="flex items-center gap-1 border-b border-gray-200 bg-gray-50 px-2 py-1.5">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => applySnippetFormatting("bold")}
+                        title="Bold"
+                      >
+                        <BoldIcon className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => applySnippetFormatting("italic")}
+                        title="Italic"
+                      >
+                        <ItalicIcon className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => applySnippetFormatting("underline")}
+                        title="Underline"
+                      >
+                        <UnderlineIcon className="h-3.5 w-3.5" />
+                      </Button>
+                      <div className="mx-1 h-4 w-px bg-gray-300" />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => applySnippetFormatting("insertUnorderedList")}
+                        title="Bulleted list"
+                      >
+                        <ListIcon className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => applySnippetFormatting("insertOrderedList")}
+                        title="Numbered list"
+                      >
+                        <ListOrderedIcon className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                    <div className="relative">
+                      {!stripHtmlToPlainText(snippetContent) ? (
+                        <p className="pointer-events-none absolute left-3 top-3 text-sm text-gray-400">
+                          Explain the issue and the exact troubleshooting steps...
+                        </p>
+                      ) : null}
+                      <div
+                        id="snippet-content"
+                        ref={snippetEditorRef}
+                        contentEditable
+                        suppressContentEditableWarning
+                        onInput={handleSnippetEditorInput}
+                        onPaste={handleSnippetEditorPaste}
+                        className="min-h-[320px] max-h-[520px] overflow-y-auto px-3 py-2 text-sm leading-6 outline-none"
+                      />
+                    </div>
+                  </div>
                 </div>
               </>
             )}
@@ -1865,7 +2170,11 @@ export function KnowledgePageClient() {
           if (!open) resetSavedReplyForm();
         }}
       >
-        <DialogContent>
+        <DialogContent
+          onInteractOutside={(event) => {
+            event.preventDefault();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>{editingSavedReplyId ? "Edit Saved Reply" : "Add Saved Reply"}</DialogTitle>
             <DialogDescription>Create fixed, approved wording for your support team.</DialogDescription>
