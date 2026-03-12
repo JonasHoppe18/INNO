@@ -7,6 +7,7 @@ import { CopyField } from "@/components/guides/CopyField";
 import shopifyLogo from "../../../../../assets/Shopify-Logo.png";
 import webshipperLogo from "../../../../../assets/Webshipper_logo.png";
 import glsLogo from "../../../../../assets/GLS logo.png";
+import zendeskLogo from "../../../../../assets/Zendesk_logo.webp";
 
 const GUIDE_CONTENT = {
   "connect-mail": {
@@ -289,6 +290,96 @@ const GUIDE_CONTENT = {
       {
         title: "Support automation",
         items: ["Better shipping replies", "Faster agent triage", "More consistent status messaging"],
+      },
+    ],
+  },
+  "connect-zendesk": {
+    title: "Connect Zendesk",
+    intro: "Connect Zendesk and run a one-time import of solved/closed ticket history.",
+    logoSrc: zendeskLogo,
+    logoAlt: "Zendesk",
+    overview: [
+      "Sona imports historical solved/closed tickets once during setup.",
+      "The domain can be entered with or without https://.",
+      "Import runs in background batches and can skip duplicates or low-quality auto-replies.",
+    ],
+    prerequisites: [
+      "Zendesk admin access.",
+      "An agent email address in Zendesk.",
+      "A Zendesk API token generated under Admin Center -> Apps and integrations -> APIs.",
+    ],
+    steps: [
+      {
+        title: "Step 1: Open Zendesk integration in Sona",
+        items: [
+          "Go to Integrations in Sona.",
+          "Open Zendesk and click Connect.",
+          "Keep this page open while entering credentials.",
+        ],
+      },
+      {
+        title: "Step 2: Enter credentials",
+        items: [
+          "Paste your Zendesk domain (example: company.zendesk.com).",
+          "Enter your Zendesk agent email.",
+          "Paste API token from Zendesk.",
+          "Click Connect & Import Once.",
+        ],
+      },
+      {
+        title: "How to get Zendesk API token",
+        items: [
+          "Open Zendesk Admin Center.",
+          "Go to Apps and integrations -> APIs -> Zendesk API.",
+          "Enable Token access if it is not already enabled.",
+          "Under API tokens, click Add API token.",
+          "Give it a clear label (for example: Sona Import).",
+          "Copy the token immediately and store it securely.",
+          "Use your Zendesk agent email + this token in Sona.",
+        ],
+      },
+      {
+        title: "Step 3: Confirm import progress",
+        items: [
+          "The card will show Importing with imported/skipped counters.",
+          "When finished, status changes to Initial import complete.",
+          "If import fails, open Manage, verify credentials, then reconnect.",
+        ],
+      },
+    ],
+    troubleshooting: [
+      {
+        title: "Importing stays at 0",
+        items: [
+          "Most common cause is failed Zendesk auth or missing permissions.",
+          "Check domain, agent email, and API token carefully.",
+          "Try reconnecting Zendesk to start a clean import job.",
+        ],
+      },
+      {
+        title: "Do I need https:// in the domain?",
+        items: [
+          "No. Both company.zendesk.com and https://company.zendesk.com are accepted.",
+          "Sona normalizes the URL automatically before calling Zendesk APIs.",
+        ],
+      },
+      {
+        title: "Why are some tickets skipped?",
+        items: [
+          "Already imported tickets are skipped to avoid duplicates.",
+          "Very short or auto-reply style content is filtered out.",
+          "This is expected and helps keep training data high quality.",
+        ],
+      },
+    ],
+    features: [
+      {
+        title: "Historical tone learning",
+        items: ["Learns from real historical ticket conversations", "Improves draft style consistency"],
+      },
+      {
+        title: "Safe one-time import",
+        items: ["No continuous ticket sync", "Background processing with progress counters"],
       },
     ],
   },

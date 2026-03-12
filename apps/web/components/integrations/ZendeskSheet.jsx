@@ -88,7 +88,6 @@ export function ZendeskSheet({ children, onConnected, initialData = null }) {
   const [domain, setDomain] = useState("");
   const [email, setEmail] = useState("");
   const [apiToken, setApiToken] = useState("");
-  const [limit, setLimit] = useState("50");
   const [submitting, setSubmitting] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [error, setError] = useState("");
@@ -185,7 +184,6 @@ export function ZendeskSheet({ children, onConnected, initialData = null }) {
     setStatus("Saving integration...");
 
     const normalizedUrl = normalizeZendeskUrl(domain);
-    const importLimit = Math.max(1, Math.min(Number(limit) || 50, 100));
 
     let supabaseUserId;
     try {
@@ -244,7 +242,7 @@ export function ZendeskSheet({ children, onConnected, initialData = null }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         provider: "zendesk",
-        max_tickets: Math.max(200, importLimit * 10),
+        max_tickets: 1000,
         batch_size: 50,
       }),
     });
@@ -274,10 +272,11 @@ export function ZendeskSheet({ children, onConnected, initialData = null }) {
           ...baseConfig,
           import_completed: false,
           import_status: "running",
-          import_limit: Math.max(200, importLimit * 10),
+          import_limit: 1000,
           last_import_count: Number(initialData?.config?.last_import_count || 0),
           last_import_skipped: Number(initialData?.config?.last_import_skipped || 0),
           last_import_at: null,
+          import_error: null,
         },
         updated_at: new Date().toISOString(),
       })
@@ -375,18 +374,10 @@ export function ZendeskSheet({ children, onConnected, initialData = null }) {
               disabled={submitting || importCompleted}
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="zendesk-limit">Import limit</Label>
-            <Input
-              id="zendesk-limit"
-              type="number"
-              min={1}
-              max={100}
-              value={limit}
-              onChange={(event) => setLimit(event.target.value)}
-              disabled={submitting || importCompleted}
-            />
-          </div>
+          <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+            Domain can be entered with or without <code>https://</code>. Sona runs a one-time
+            history import (up to 1000 tickets) in background batches.
+          </p>
 
           {importCompleted ? (
             <p className="text-xs text-emerald-700">

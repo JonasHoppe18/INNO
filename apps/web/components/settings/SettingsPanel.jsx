@@ -47,6 +47,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { StickySaveBar } from "@/components/ui/sticky-save-bar";
 
 const MENU_SECTIONS = [
   {
@@ -103,6 +104,7 @@ const routingSnapshot = (rows = []) =>
       sort_order: Number(row.sort_order || 0),
     }))
   );
+
 function TabSkeleton() {
   return (
     <section className="max-w-2xl rounded-lg bg-white p-6">
@@ -279,21 +281,12 @@ function GeneralTab({
         </div>
       </div>
 
-      {canSave ? (
-        <div className="fixed bottom-4 left-1/2 z-20 w-[calc(100%-2rem)] max-w-3xl -translate-x-1/2 rounded-2xl border border-slate-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <span className="text-sm font-medium text-slate-600">Unsaved changes</span>
-            <div className="flex items-center gap-2">
-              <Button type="button" variant="outline" size="sm" onClick={onReset}>
-                Discard
-              </Button>
-              <Button type="button" size="sm" onClick={onSave} disabled={saving}>
-                {saving ? "Saving..." : "Save changes"}
-              </Button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <StickySaveBar
+        isVisible={canSave}
+        isSaving={saving}
+        onSave={onSave}
+        onDiscard={onReset}
+      />
     </section>
   );
 }
@@ -1274,21 +1267,12 @@ function EmailSettings({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      {canSave ? (
-        <div className="fixed bottom-4 left-1/2 z-20 w-[calc(100%-2rem)] max-w-3xl -translate-x-1/2 rounded-2xl border border-slate-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <span className="text-sm font-medium text-slate-600">Unsaved changes</span>
-            <div className="flex items-center gap-2">
-              <Button type="button" variant="outline" size="sm" onClick={onDiscardChanges}>
-                Discard
-              </Button>
-              <Button type="button" size="sm" onClick={onSaveChanges} disabled={saving || savingRouting}>
-                {saving || savingRouting ? "Saving..." : "Save changes"}
-              </Button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <StickySaveBar
+        isVisible={canSave}
+        isSaving={saving || savingRouting}
+        onSave={onSaveChanges}
+        onDiscard={onDiscardChanges}
+      />
     </section>
   );
 }
@@ -1822,14 +1806,29 @@ export function SettingsPanel() {
     } finally {
       setSaving(false);
     }
-  }, [canSave, saving, shopId, supabase, supportLanguage, teamName, testEmail, testMode, workspaceId]);
+  }, [
+    canSave,
+    saving,
+    shopId,
+    supabase,
+    supportLanguage,
+    teamName,
+    testEmail,
+    testMode,
+    workspaceId,
+  ]);
 
   const handleResetGeneral = useCallback(() => {
     setTeamName(String(initialTeamName || "Sona Team"));
     setTestMode(Boolean(initialTestMode));
     setTestEmail(String(initialTestEmail || ""));
     setSupportLanguage(normalizeSupportLanguage(initialSupportLanguage, "en"));
-  }, [initialSupportLanguage, initialTeamName, initialTestEmail, initialTestMode]);
+  }, [
+    initialSupportLanguage,
+    initialTeamName,
+    initialTestEmail,
+    initialTestMode,
+  ]);
 
   const handleSaveAutoReply = useCallback(async (overrides = {}, options = {}) => {
     const showToast = options?.showToast !== false;

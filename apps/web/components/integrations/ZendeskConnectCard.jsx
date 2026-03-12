@@ -104,6 +104,7 @@ export function ZendeskConnectCard() {
   const importedCount = integration?.config?.last_import_count ?? null;
   const skippedCount = integration?.config?.last_import_skipped ?? null;
   const importStatus = integration?.config?.import_status ?? null;
+  const importError = String(integration?.config?.import_error || "").trim();
 
   return (
     <Card className="flex h-full flex-col border bg-card/60 shadow-sm">
@@ -138,7 +139,9 @@ export function ZendeskConnectCard() {
                   ? `Importing... ${importedCount} imported${
                       typeof skippedCount === "number" ? `, ${skippedCount} skipped` : ""
                     }.`
-                  : `Initial import complete: ${importedCount} tickets.`}
+                  : importStatus === "failed"
+                    ? `Import failed: ${importError || "Check Zendesk domain/email/token and try reconnecting."}`
+                    : `Initial import complete: ${importedCount} tickets.`}
               </p>
             ) : null}
           </div>

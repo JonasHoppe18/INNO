@@ -18,6 +18,63 @@ create table if not exists public.workspace_email_routes (
 create index if not exists workspace_email_routes_workspace_idx
   on public.workspace_email_routes (workspace_id, sort_order asc, created_at desc);
 
+-- Ensure each workspace has baseline routing categories.
+create or replace function public.seed_default_workspace_email_routes()
+returns trigger
+language plpgsql
+as $$
+begin
+  insert into public.workspace_email_routes (
+    workspace_id,
+    category_key,
+    label,
+    mode,
+    is_active,
+    is_default,
+    sort_order
+  )
+  values
+    (new.id, 'invoice', 'Invoice', 'manual_approval', false, true, 10),
+    (new.id, 'job', 'Job', 'manual_approval', false, true, 20),
+    (new.id, 'partnership', 'Partnership', 'manual_approval', false, true, 30)
+  on conflict (workspace_id, category_key) do nothing;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_seed_default_workspace_email_routes on public.workspaces;
+create trigger trg_seed_default_workspace_email_routes
+after insert on public.workspaces
+for each row
+execute function public.seed_default_workspace_email_routes();
+
+insert into public.workspace_email_routes (
+  workspace_id,
+  category_key,
+  label,
+  mode,
+  is_active,
+  is_default,
+  sort_order
+)
+select
+  w.id as workspace_id,
+  defaults.category_key,
+  defaults.label,
+  'manual_approval' as mode,
+  false as is_active,
+  true as is_default,
+  defaults.sort_order
+from public.workspaces w
+cross join (
+  values
+    ('invoice', 'Invoice', 10),
+    ('job', 'Job', 20),
+    ('partnership', 'Partnership', 30)
+) as defaults(category_key, label, sort_order)
+on conflict (workspace_id, category_key) do nothing;
+
 alter table public.mail_threads
   add column if not exists classification_key text,
   add column if not exists classification_confidence numeric,

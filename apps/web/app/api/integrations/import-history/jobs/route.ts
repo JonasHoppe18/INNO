@@ -4,6 +4,36 @@ import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 import { createServiceClient } from "@/lib/server/knowledge-import";
 
 export const runtime = "nodejs";
+const IMPORT_WORKER_SECRET =
+  process.env.IMPORT_HISTORY_WORKER_SECRET ||
+  process.env.CRON_SECRET ||
+  "";
+
+function resolveAppBaseUrl(request: Request) {
+  const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "";
+  if (!host) return "";
+  const proto = request.headers.get("x-forwarded-proto") || "https";
+  return `${proto}://${host}`;
+}
+
+function kickImportWorkerInBackground(request: Request, jobId: string) {
+  if (!IMPORT_WORKER_SECRET || !jobId) return;
+  const baseUrl = resolveAppBaseUrl(request);
+  if (!baseUrl) return;
+  const workerUrl = `${baseUrl}/api/integrations/import-history/worker`;
+  void fetch(workerUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-import-history-worker-secret": IMPORT_WORKER_SECRET,
+    },
+    body: JSON.stringify({
+      job_id: jobId,
+      max_batches: 3,
+      chain: true,
+    }),
+  }).catch(() => null);
+}
 
 async function resolveShopId(
   serviceClient: any,
@@ -107,6 +137,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: activeJobError.message }, { status: 500 });
   }
   if (activeJob?.id) {
+    kickImportWorkerInBackground(request, activeJob.id);
     return NextResponse.json({
       success: true,
       queued: false,
@@ -135,6 +166,9 @@ export async function POST(request: Request) {
 
   if (insertError) {
     return NextResponse.json({ error: insertError.message }, { status: 500 });
+  }
+  if (insertedJob?.id) {
+    kickImportWorkerInBackground(request, insertedJob.id);
   }
 
   return NextResponse.json({

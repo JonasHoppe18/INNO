@@ -64,6 +64,8 @@ const APPROVAL_ACTION_TYPES = new Set([
   "edit_line_items",
   "update_customer_contact",
   "forward_email",
+  "create_return_case",
+  "send_return_instructions",
 ]);
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -635,6 +637,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const sendingStartedAtRef = useRef(0);
   const [deletingThread, setDeletingThread] = useState(false);
   const [pendingOrderUpdateByThread, setPendingOrderUpdateByThread] = useState({});
+  const [returnCaseByThread, setReturnCaseByThread] = useState({});
   const [orderUpdateDecisionByThread, setOrderUpdateDecisionByThread] = useState({});
   const [orderUpdateSubmittingByThread, setOrderUpdateSubmittingByThread] = useState({});
   const [orderUpdateErrorByThread, setOrderUpdateErrorByThread] = useState({});
@@ -1433,6 +1436,22 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       const payload = await res.json().catch(() => ({}));
       if (!active) return;
       const latestAction = payload?.action || null;
+      const latestReturnCase = payload?.returnCase && typeof payload.returnCase === "object"
+        ? payload.returnCase
+        : null;
+      if (latestReturnCase) {
+        setReturnCaseByThread((prev) => ({
+          ...prev,
+          [selectedThreadId]: latestReturnCase,
+        }));
+      } else {
+        setReturnCaseByThread((prev) => {
+          if (!prev[selectedThreadId]) return prev;
+          const next = { ...prev };
+          delete next[selectedThreadId];
+          return next;
+        });
+      }
       if (latestAction) {
         const normalizedStatus = String(
           latestAction.normalizedStatus || latestAction.status || ""
@@ -2268,6 +2287,12 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           toast.error(blockedReason, { id: toastId });
           return;
         }
+        if (payload?.returnCase && typeof payload.returnCase === "object") {
+          setReturnCaseByThread((prev) => ({
+            ...prev,
+            [selectedThreadId]: payload.returnCase,
+          }));
+        }
         const followUp = payload?.followUpAction || null;
         if (
           followUp &&
@@ -2469,6 +2494,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           pendingOrderUpdate={
             selectedPendingOrderUpdate
           }
+          returnCase={selectedThreadId ? returnCaseByThread[selectedThreadId] || null : null}
           orderUpdateDecision={
             selectedThreadId ? orderUpdateDecisionByThread[selectedThreadId] || null : null
           }

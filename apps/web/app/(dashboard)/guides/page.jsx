@@ -7,6 +7,7 @@ import { ExternalLink, Mail } from "lucide-react";
 import shopifyLogo from "../../../../../assets/Shopify-Logo.png";
 import webshipperLogo from "../../../../../assets/Webshipper_logo.png";
 import glsLogo from "../../../../../assets/GLS logo.png";
+import zendeskLogo from "../../../../../assets/Zendesk_logo.webp";
 
 const GUIDES = [
   {
@@ -36,6 +37,13 @@ const GUIDES = [
     description: "Enable GLS tracking lookups for shipment status updates.",
     logoSrc: glsLogo,
     logoAlt: "GLS",
+  },
+  {
+    slug: "connect-zendesk",
+    title: "Connect Zendesk",
+    description: "Import closed Zendesk tickets once to train Sona on historic replies.",
+    logoSrc: zendeskLogo,
+    logoAlt: "Zendesk",
   },
 ];
 

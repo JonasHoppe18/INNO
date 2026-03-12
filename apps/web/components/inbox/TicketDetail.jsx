@@ -18,6 +18,8 @@ const APPROVAL_ACTION_TYPES = new Set([
   "edit_line_items",
   "update_customer_contact",
   "forward_email",
+  "create_return_case",
+  "send_return_instructions",
 ]);
 
 export function TicketDetail({
@@ -43,6 +45,7 @@ export function TicketDetail({
   onDeleteThread,
   deletingThread,
   pendingOrderUpdate,
+  returnCase,
   orderUpdateDecision,
   orderUpdateSubmitting,
   orderUpdateError,
@@ -82,6 +85,8 @@ export function TicketDetail({
     edit_line_items: "Edit Line Items",
     update_customer_contact: "Update Contact Details",
     forward_email: "Forward Email",
+    create_return_case: "Create Return Case",
+    send_return_instructions: "Send Return Instructions",
     add_note: "Add Internal Note",
     add_tag: "Add Internal Tag",
     add_internal_note_or_tag: "Add Internal Note/Tag",
@@ -227,6 +232,33 @@ export function TicketDetail({
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="w-full space-y-3 px-4 pb-3 pt-3">
+          {returnCase ? (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+              <div className="font-medium text-slate-800">Return Case</div>
+              <div className="mt-1 text-slate-600">
+                Status: <span className="font-medium">{String(returnCase?.status || "requested")}</span>
+              </div>
+              <div className="text-slate-600">
+                Eligibility:{" "}
+                <span className="font-medium">
+                  {typeof returnCase?.is_eligible === "boolean"
+                    ? returnCase.is_eligible
+                      ? "Eligible"
+                      : "Not eligible"
+                    : "Manual review"}
+                </span>
+              </div>
+              <div className="text-slate-600">
+                Shipping mode:{" "}
+                <span className="font-medium">
+                  {String(returnCase?.return_shipping_mode || "customer_paid")}
+                </span>
+              </div>
+              {returnCase?.reason ? (
+                <div className="text-slate-600">Reason: {String(returnCase.reason)}</div>
+              ) : null}
+            </div>
+          ) : null}
           {orderUpdateError && !shouldShowActionCard ? (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
               {orderUpdateError}

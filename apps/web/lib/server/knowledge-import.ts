@@ -608,6 +608,7 @@ export async function processImportJobBatch(serviceClient: any, job: KnowledgeIm
     last_import_count: totalImported,
     last_import_skipped: totalSkipped,
     last_import_at: completed ? new Date().toISOString() : null,
+    import_error: null,
   });
 
   return {

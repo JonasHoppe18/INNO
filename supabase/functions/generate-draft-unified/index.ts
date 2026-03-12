@@ -17,6 +17,11 @@ import { buildMailPrompt } from "../_shared/prompt.ts";
 import { formatEmailBody } from "../_shared/email.ts";
 import { buildPinnedPolicyContext } from "../_shared/policy-context.ts";
 import {
+  ensureWorkspaceReturnSettings,
+  type WorkspaceReturnSettings,
+} from "../_shared/return-settings.ts";
+import { evaluateReturnEligibility, type ReturnEligibilityResult } from "../_shared/return-eligibility.ts";
+import {
   applyMatchedSubjectOrderNumber,
   buildReturnDetailsFoundBlock,
   extractReturnDetails,
@@ -545,6 +550,61 @@ const buildThreadActionKey = ({
     payload || {},
   )}`;
 
+const asTextOrNull = (value: unknown) => {
+  const text = typeof value === "string" ? value.trim() : "";
+  return text || null;
+};
+
+function buildReturnSettingsPromptBlock(
+  settings: WorkspaceReturnSettings | null,
+  eligibility: ReturnEligibilityResult | null,
+) {
+  if (!settings) return "";
+  const lines = [
+    "STRUCTURED RETURN SETTINGS:",
+    `- Return window (days): ${settings.return_window_days}`,
+    `- Return shipping mode: ${settings.return_shipping_mode}`,
+    `- Return address: ${settings.return_address || "missing"}`,
+    `- Require original packaging: ${settings.require_original_packaging ? "yes" : "no"}`,
+    `- Require unused item: ${settings.require_unused ? "yes" : "no"}`,
+    `- Exchange allowed: ${settings.exchange_allowed ? "yes" : "no"}`,
+  ];
+  if (eligibility) {
+    lines.push(
+      `- Eligibility: ${
+        eligibility.eligible === true ? "eligible" : eligibility.eligible === false ? "not_eligible" : "manual_review"
+      } (${eligibility.reason})`,
+    );
+  }
+  return lines.join("\n");
+}
+
+function buildOutsideWindowReply(options: {
+  languageHint: string;
+  customerName: string;
+  returnWindowDays: number;
+}): string {
+  const { languageHint, customerName, returnWindowDays } = options;
+  if (String(languageHint || "").toLowerCase() === "da") {
+    return [
+      `Hej ${customerName || "der"},`,
+      "",
+      `Tak for din besked. Vi har gennemgået ordren, og returneringen ser ud til at ligge uden for vores returfrist på ${returnWindowDays} dage.`,
+      "Hvis du ønsker, kan vores supportteam stadig lave en manuel vurdering af sagen.",
+      "",
+      "God dag.",
+    ].join("\n");
+  }
+  return [
+    `Hi ${customerName || "there"},`,
+    "",
+    `Thanks for your message. We reviewed the order, and this return appears to be outside our ${returnWindowDays}-day return window.`,
+    "If needed, our support team can still perform a manual review.",
+    "",
+    "Have a great day.",
+  ].join("\n");
+}
+
 async function persistThreadActions({
   ownerUserId,
   workspaceId,
@@ -647,6 +707,49 @@ async function persistThreadActions({
       console.warn("generate-draft-unified: thread_actions insert failed", insertError.message);
     }
   }
+}
+
+async function upsertRejectedReturnCase(options: {
+  workspaceId: string | null;
+  threadId: string | null;
+  selectedOrder: any;
+  customerEmail: string | null;
+  reason: string;
+  eligibilityReason: string;
+  returnShippingMode: string;
+}) {
+  const { workspaceId, threadId, selectedOrder, customerEmail, reason, eligibilityReason, returnShippingMode } = options;
+  if (!supabase || !workspaceId || !threadId) return;
+  const nowIso = new Date().toISOString();
+  const orderIdText = asTextOrNull(selectedOrder?.id ? String(selectedOrder.id) : selectedOrder?.order_number);
+  let query = supabase
+    .from("return_cases")
+    .select("id")
+    .eq("workspace_id", workspaceId)
+    .eq("thread_id", threadId)
+    .order("updated_at", { ascending: false })
+    .limit(1);
+  const { data: existing } = await query.maybeSingle();
+  const payload = {
+    workspace_id: workspaceId,
+    thread_id: threadId,
+    shopify_order_id: orderIdText,
+    customer_email: customerEmail,
+    reason,
+    status: "rejected",
+    return_shipping_mode: returnShippingMode || "customer_paid",
+    is_eligible: false,
+    eligibility_reason: eligibilityReason || "outside_return_window",
+    updated_at: nowIso,
+  };
+  if (existing?.id) {
+    await supabase.from("return_cases").update(payload).eq("id", existing.id);
+    return;
+  }
+  await supabase.from("return_cases").insert({
+    ...payload,
+    created_at: nowIso,
+  });
 }
 
 async function fetchLearningProfile(
@@ -1696,6 +1799,22 @@ Deno.serve(async (req) => {
     const returnDetailsMissing = isReturnIntent
       ? missingReturnDetails(returnDetails, { requireReason: reasonRequired })
       : [];
+    const returnSettings = isReturnIntent
+      ? await ensureWorkspaceReturnSettings({
+        supabase,
+        workspaceId,
+      })
+      : null;
+    const returnEligibility =
+      isReturnIntent && selectedOrder
+        ? evaluateReturnEligibility({
+          settings: returnSettings,
+          order: selectedOrder,
+        })
+        : null;
+    const returnPromptBlock = isReturnIntent
+      ? buildReturnSettingsPromptBlock(returnSettings, returnEligibility)
+      : "";
 
     // Byg shared prompt med policies, automation-regler og ordre-kontekst.
     const promptBase = buildMailPrompt({
@@ -1710,6 +1829,7 @@ Deno.serve(async (req) => {
         workflowRoute.workflow === "tracking" && selectedTrackingCarriers.length
           ? `Configured carriers for this workspace: ${selectedTrackingCarriers.join(", ")}.`
           : "",
+        returnPromptBlock,
         workflowRoute.promptHint,
         ...(workflowRoute.promptBlocks || []),
       ]
@@ -1909,6 +2029,17 @@ Deno.serve(async (req) => {
     // Generer reply + actions med OpenAI JSON schema.
     let aiText: string | null = null;
     let automationActions: AutomationAction[] = [];
+    let returnActionResult:
+      | {
+        type: string;
+        ok: boolean;
+        status: "pending_approval";
+        orderId?: number;
+        payload?: Record<string, unknown>;
+        detail?: string;
+        error?: string;
+      }
+      | null = null;
     try {
       if (OPENAI_API_KEY) {
         const automationGuidance = buildAutomationGuidance(context.automation);
@@ -1923,6 +2054,8 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
           "Brug KONTEKST-sektionen til at finde relevante oplysninger og nævn dem eksplicit i svaret.",
           "Ved returns/refunds/warranty/shipping: følg policy summary/excerpts strengt.",
           "Opfind aldrig return-portal URL, labels eller processer som ikke står i kontekst.",
+          "Når return shipping mode er customer_paid: nævn aldrig returlabel eller parcel shop.",
+          "Hvis du giver returinstruktioner, brug kun den konfigurerede return_address fra konteksten.",
           `Ticket category: ${workflowRoute.category}.`,
           workflowRoute.systemHint,
           ...(workflowRoute.systemRules || []),
@@ -2045,6 +2178,68 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
             removed_actions: finalPolicy.removed,
           }),
           status: "warning",
+        });
+      }
+    }
+
+    if (isReturnIntent && returnSettings && selectedOrder) {
+      const orderIdNumeric = Number(selectedOrder?.id ?? 0);
+      const customerEmail = asTextOrNull(emailData.fromEmail || emailData.from);
+      const returnReason = asTextOrNull(returnDetails.return_reason) || "customer_requested_return";
+      if (returnEligibility?.eligible === true) {
+        returnActionResult = {
+          type: "send_return_instructions",
+          ok: false,
+          status: "pending_approval",
+          orderId: Number.isFinite(orderIdNumeric) && orderIdNumeric > 0 ? orderIdNumeric : undefined,
+          payload: {
+            actionType: "send_return_instructions",
+            reason: returnReason,
+            return_window_days: returnSettings.return_window_days,
+            return_shipping_mode: returnSettings.return_shipping_mode,
+            return_address: returnSettings.return_address || null,
+            require_original_packaging: returnSettings.require_original_packaging,
+            require_unused: returnSettings.require_unused,
+            exchange_allowed: returnSettings.exchange_allowed,
+            eligibility: returnEligibility,
+            customer_email: customerEmail,
+          },
+          detail: `Send return instructions (${returnSettings.return_shipping_mode}).`,
+          error: "Return instructions require manual approval.",
+        };
+      } else if (returnEligibility?.eligible == null) {
+        returnActionResult = {
+          type: "create_return_case",
+          ok: false,
+          status: "pending_approval",
+          orderId: Number.isFinite(orderIdNumeric) && orderIdNumeric > 0 ? orderIdNumeric : undefined,
+          payload: {
+            actionType: "create_return_case",
+            reason: returnReason,
+            return_shipping_mode: returnSettings.return_shipping_mode,
+            customer_email: customerEmail,
+            shopify_order_id:
+              Number.isFinite(orderIdNumeric) && orderIdNumeric > 0 ? String(orderIdNumeric) : null,
+            eligibility: returnEligibility,
+            eligibility_reason: returnEligibility.reason,
+          },
+          detail: "Create return case for manual review.",
+          error: "Return data is incomplete and requires manual review.",
+        };
+      } else if (returnEligibility?.reason === "outside_return_window") {
+        aiText = buildOutsideWindowReply({
+          languageHint: inferLanguageHint(emailData.subject || "", emailData.body || ""),
+          customerName: customerFirstName || "there",
+          returnWindowDays: returnSettings.return_window_days,
+        });
+        await upsertRejectedReturnCase({
+          workspaceId,
+          threadId: internalThread.threadId || null,
+          selectedOrder,
+          customerEmail,
+          reason: returnReason,
+          eligibilityReason: "outside_return_window",
+          returnShippingMode: returnSettings.return_shipping_mode,
         });
       }
     }
@@ -2295,6 +2490,9 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         orderIdMap,
       });
       emitDebugLog("generate-draft-unified: automation results", automationResults);
+    }
+    if (returnActionResult) {
+      automationResults = [...automationResults, returnActionResult];
     }
 
     const blockedAutoResults = automationResults.filter((result) =>

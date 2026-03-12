@@ -555,6 +555,130 @@ function buildForwardBodies(context) {
   return { textBody, htmlBody };
 }
 
+async function loadLatestInboundMessage(serviceClient, scope, threadId) {
+  let query = serviceClient
+    .from("mail_messages")
+    .select("id, subject, body_text, body_html, from_name, from_email, provider_message_id")
+    .eq("thread_id", threadId)
+    .eq("from_me", false)
+    .order("received_at", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(1);
+  query = applyScope(query, scope);
+  const { data } = await query.maybeSingle();
+  return data || null;
+}
+
+async function loadMailboxSender(serviceClient, scope, mailboxId) {
+  if (!mailboxId) {
+    return {
+      fromEmail: POSTMARK_FROM_EMAIL,
+      fromName: POSTMARK_FROM_NAME,
+    };
+  }
+  let query = serviceClient
+    .from("mail_accounts")
+    .select("id, provider_email, from_email, from_name")
+    .eq("id", mailboxId)
+    .limit(1);
+  query = applyScope(query, scope);
+  const { data } = await query.maybeSingle();
+  const fromEmail =
+    asString(data?.from_email || "").toLowerCase() ||
+    asString(data?.provider_email || "").toLowerCase() ||
+    POSTMARK_FROM_EMAIL;
+  const fromName = asString(data?.from_name || "") || POSTMARK_FROM_NAME;
+  return { fromEmail, fromName };
+}
+
+function buildReturnInstructionsBody({
+  customerName = "",
+  returnWindowDays = 30,
+  returnAddress = "",
+  requireUnused = true,
+  requireOriginalPackaging = true,
+  returnShippingMode = "customer_paid",
+}) {
+  const normalizedName = String(customerName || "").trim();
+  const greeting = normalizedName ? `Hi ${normalizedName},` : "Hi,";
+  const requirementParts = [];
+  if (requireUnused) requirementParts.push("unused");
+  if (requireOriginalPackaging) requirementParts.push("in its original packaging");
+  const requirementLine = requirementParts.length
+    ? `as long as the item is ${requirementParts.join(" and ")}`
+    : "according to our return requirements";
+  const shippingLine =
+    returnShippingMode === "customer_paid"
+      ? "Please note that return shipping costs are paid by the customer."
+      : "Return shipping is handled according to your store return settings.";
+  return [
+    greeting,
+    "",
+    `You can return your order within ${returnWindowDays} days of receiving it ${requirementLine}.`,
+    "",
+    "Please send the return to:",
+    returnAddress || "Return address is currently not configured. Reply here and we will provide it.",
+    "",
+    shippingLine,
+  ].join("\n");
+}
+
+async function upsertReturnCase({
+  serviceClient,
+  workspaceId,
+  threadId,
+  payload = {},
+  status = "requested",
+  isEligible = null,
+  eligibilityReason = null,
+}) {
+  if (!workspaceId || !threadId) return null;
+  const nowIso = new Date().toISOString();
+  let lookup = serviceClient
+    .from("return_cases")
+    .select("id")
+    .eq("workspace_id", workspaceId)
+    .eq("thread_id", threadId)
+    .order("updated_at", { ascending: false })
+    .limit(1);
+  const { data: existing } = await lookup.maybeSingle();
+
+  const upsertPayload = {
+    workspace_id: workspaceId,
+    thread_id: threadId,
+    shopify_order_id: asString(payload?.shopify_order_id || payload?.order_id || ""),
+    customer_email: asString(payload?.customer_email || ""),
+    reason: asString(payload?.reason || payload?.return_reason || ""),
+    status,
+    return_shipping_mode: asString(payload?.return_shipping_mode || "customer_paid") || "customer_paid",
+    is_eligible: typeof isEligible === "boolean" ? isEligible : null,
+    eligibility_reason: asString(eligibilityReason || payload?.eligibility?.reason || "") || null,
+    updated_at: nowIso,
+  };
+  if (existing?.id) {
+    const { data } = await serviceClient
+      .from("return_cases")
+      .update(upsertPayload)
+      .eq("id", existing.id)
+      .select(
+        "id, status, is_eligible, eligibility_reason, return_shipping_mode, reason, shopify_order_id, customer_email, created_at, updated_at",
+      )
+      .maybeSingle();
+    return data || null;
+  }
+  const { data } = await serviceClient
+    .from("return_cases")
+    .insert({
+      ...upsertPayload,
+      created_at: nowIso,
+    })
+    .select(
+      "id, status, is_eligible, eligibility_reason, return_shipping_mode, reason, shopify_order_id, customer_email, created_at, updated_at",
+    )
+    .maybeSingle();
+  return data || null;
+}
+
 const stableStringify = (value) => {
   if (Array.isArray(value)) {
     return `[${value.map((item) => stableStringify(item)).join(",")}]`;
@@ -2117,8 +2241,22 @@ export async function GET(_request, { params }) {
   if (latestActionError) {
     return NextResponse.json({ error: latestActionError.message }, { status: 500 });
   }
+  let latestReturnCase = null;
+  if (scope?.workspaceId) {
+    const { data } = await serviceClient
+      .from("return_cases")
+      .select(
+        "id, status, is_eligible, eligibility_reason, return_shipping_mode, reason, shopify_order_id, customer_email, created_at, updated_at",
+      )
+      .eq("thread_id", thread.id)
+      .eq("workspace_id", scope.workspaceId)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    latestReturnCase = data || null;
+  }
   if (!latestAction) {
-    return NextResponse.json({ action: null }, { status: 200 });
+    return NextResponse.json({ action: null, returnCase: latestReturnCase || null }, { status: 200 });
   }
 
   const normalizedStatus = normalizeActionStatus(latestAction.status);
@@ -2152,6 +2290,7 @@ export async function GET(_request, { params }) {
             ? "Action approved, but no changes were made because Test Mode is enabled."
             : null),
       },
+      returnCase: latestReturnCase,
     },
     { status: 200 }
   );
@@ -2351,6 +2490,10 @@ export async function POST(request, { params }) {
     ? "cancel_order"
     : detailText.toLowerCase().startsWith("refund")
     ? "refund_order"
+    : detailText.toLowerCase().includes("return instructions")
+    ? "send_return_instructions"
+    : detailText.toLowerCase().includes("create return case")
+    ? "create_return_case"
     : detailText.toLowerCase().includes("process return")
     ? "process_exchange_return"
     : detailText.toLowerCase().includes("exchange") ||
@@ -2397,6 +2540,279 @@ export async function POST(request, { params }) {
         detail: detailText || null,
         sourceStep: proposalStepName,
         alreadyDeclined: true,
+      },
+      { status: 200 }
+    );
+  }
+
+  if (normalizedActionType === "create_return_case" || normalizedActionType === "send_return_instructions") {
+    const nowIso = new Date().toISOString();
+    if (!scope?.workspaceId) {
+      return NextResponse.json({ error: "Return actions require workspace scope." }, { status: 400 });
+    }
+
+    const mergedPayload = {
+      ...(actionRecord?.payload && typeof actionRecord.payload === "object" ? actionRecord.payload : {}),
+      ...(parsed?.payload && typeof parsed.payload === "object" ? parsed.payload : {}),
+      ...(payloadOverride && typeof payloadOverride === "object" ? payloadOverride : {}),
+    };
+    const inferredOrderId = asString(parsed?.orderId || actionRecord?.order_id || mergedPayload?.order_id || "");
+    const actionKey =
+      actionRecord?.action_key ||
+      buildActionKey(normalizedActionType, inferredOrderId || "return", mergedPayload);
+
+    if (normalizedActionType === "create_return_case") {
+      const eligibility = mergedPayload?.eligibility && typeof mergedPayload.eligibility === "object"
+        ? mergedPayload.eligibility
+        : {};
+      const returnCase = await upsertReturnCase({
+        serviceClient,
+        workspaceId: scope.workspaceId,
+        threadId: thread.id,
+        payload: {
+          ...mergedPayload,
+          shopify_order_id: inferredOrderId || asString(mergedPayload?.shopify_order_id || ""),
+        },
+        status:
+          mergedPayload?.is_eligible === false || eligibility?.eligible === false ? "rejected" : "requested",
+        isEligible:
+          typeof mergedPayload?.is_eligible === "boolean"
+            ? mergedPayload.is_eligible
+            : typeof eligibility?.eligible === "boolean"
+            ? eligibility.eligible
+            : null,
+        eligibilityReason:
+          asString(mergedPayload?.eligibility_reason || eligibility?.reason || "") || null,
+      });
+
+      if (actionRecord?.id) {
+        await serviceClient
+          .from("thread_actions")
+          .update({
+            status: "applied",
+            detail: detailText || "Return case created.",
+            payload: { ...mergedPayload, return_case_id: returnCase?.id || null },
+            action_type: normalizedActionType,
+            action_key: actionKey,
+            decided_at: nowIso,
+            applied_at: nowIso,
+            updated_at: nowIso,
+            error: null,
+          })
+          .eq("id", actionRecord.id);
+      } else {
+        await serviceClient.from("thread_actions").insert({
+          user_id: supabaseUserId,
+          workspace_id: scope.workspaceId ?? null,
+          thread_id: thread.id,
+          action_type: normalizedActionType,
+          action_key: actionKey,
+          status: "applied",
+          detail: detailText || "Return case created.",
+          payload: { ...mergedPayload, return_case_id: returnCase?.id || null },
+          source: "manual_approval",
+          decided_at: nowIso,
+          applied_at: nowIso,
+          created_at: nowIso,
+          updated_at: nowIso,
+          error: null,
+        });
+      }
+      return NextResponse.json(
+        {
+          ok: true,
+          decision: "accepted",
+          action: normalizedActionType,
+          returnCase: returnCase || null,
+          sourceStep: proposalStepName,
+        },
+        { status: 200 }
+      );
+    }
+
+    const inboundMessage = await loadLatestInboundMessage(serviceClient, scope, thread.id);
+    const mailboxSender = await loadMailboxSender(serviceClient, scope, thread.mailbox_id || null);
+    const customerEmail = asString(
+      mergedPayload?.customer_email || inboundMessage?.from_email || ""
+    ).toLowerCase();
+    if (!customerEmail) {
+      return NextResponse.json({ error: "Customer email is missing for return instructions." }, { status: 400 });
+    }
+    const customerName = asString(inboundMessage?.from_name || "").split(/\s+/)[0] || "";
+    const eligibility = mergedPayload?.eligibility && typeof mergedPayload.eligibility === "object"
+      ? mergedPayload.eligibility
+      : {};
+    const returnWindowDays = Math.max(
+      1,
+      Math.trunc(asNumber(mergedPayload?.return_window_days) || 30)
+    );
+    const returnShippingMode = asString(mergedPayload?.return_shipping_mode || "customer_paid") || "customer_paid";
+    const returnAddress = asString(mergedPayload?.return_address || "");
+    const requireUnused =
+      typeof mergedPayload?.require_unused === "boolean" ? mergedPayload.require_unused : true;
+    const requireOriginalPackaging =
+      typeof mergedPayload?.require_original_packaging === "boolean"
+        ? mergedPayload.require_original_packaging
+        : true;
+    const instructionsText = buildReturnInstructionsBody({
+      customerName,
+      returnWindowDays,
+      returnAddress,
+      requireUnused,
+      requireOriginalPackaging,
+      returnShippingMode,
+    });
+
+    if (workspaceTestSettings.testMode) {
+      const testMessage = "Action approved, but no changes were made because Test Mode is enabled.";
+      const returnCase = await upsertReturnCase({
+        serviceClient,
+        workspaceId: scope.workspaceId,
+        threadId: thread.id,
+        payload: {
+          ...mergedPayload,
+          customer_email: customerEmail,
+          shopify_order_id: inferredOrderId || asString(mergedPayload?.shopify_order_id || ""),
+          return_shipping_mode: returnShippingMode,
+        },
+        status: "requested",
+        isEligible:
+          typeof eligibility?.eligible === "boolean" ? eligibility.eligible : null,
+        eligibilityReason: asString(eligibility?.reason || "") || null,
+      });
+      if (actionRecord?.id) {
+        await serviceClient
+          .from("thread_actions")
+          .update({
+            status: "approved_test_mode",
+            detail: testMessage,
+            payload: {
+              ...mergedPayload,
+              simulated: true,
+              test_mode: true,
+              customer_email: customerEmail,
+              return_case_id: returnCase?.id || null,
+              instructions_text: instructionsText,
+            },
+            action_type: normalizedActionType,
+            action_key: actionKey,
+            decided_at: nowIso,
+            updated_at: nowIso,
+            error: testMessage,
+          })
+          .eq("id", actionRecord.id);
+      } else {
+        await serviceClient.from("thread_actions").insert({
+          user_id: supabaseUserId,
+          workspace_id: scope.workspaceId ?? null,
+          thread_id: thread.id,
+          action_type: normalizedActionType,
+          action_key: actionKey,
+          status: "approved_test_mode",
+          detail: testMessage,
+          payload: {
+            ...mergedPayload,
+            simulated: true,
+            test_mode: true,
+            customer_email: customerEmail,
+            return_case_id: returnCase?.id || null,
+            instructions_text: instructionsText,
+          },
+          source: "manual_approval",
+          decided_at: nowIso,
+          created_at: nowIso,
+          updated_at: nowIso,
+          error: testMessage,
+        });
+      }
+      return NextResponse.json(
+        {
+          ok: true,
+          decision: "accepted",
+          action: normalizedActionType,
+          simulated: true,
+          testMode: true,
+          message: testMessage,
+          returnCase: returnCase || null,
+        },
+        { status: 200 }
+      );
+    }
+
+    const subjectLine = `Re: ${asString(inboundMessage?.subject || thread.subject || "Return request")}`;
+    const sent = await sendPostmarkEmail({
+      From: `${mailboxSender.fromName} <${mailboxSender.fromEmail}>`,
+      To: customerEmail,
+      Subject: subjectLine.slice(0, 250),
+      TextBody: instructionsText,
+      ReplyTo: mailboxSender.fromEmail,
+    });
+
+    const returnCase = await upsertReturnCase({
+      serviceClient,
+      workspaceId: scope.workspaceId,
+      threadId: thread.id,
+      payload: {
+        ...mergedPayload,
+        customer_email: customerEmail,
+        shopify_order_id: inferredOrderId || asString(mergedPayload?.shopify_order_id || ""),
+        return_shipping_mode: returnShippingMode,
+      },
+      status: "instructions_sent",
+      isEligible:
+        typeof eligibility?.eligible === "boolean" ? eligibility.eligible : null,
+      eligibilityReason: asString(eligibility?.reason || "") || null,
+    });
+
+    const actionPayload = {
+      ...mergedPayload,
+      customer_email: customerEmail,
+      return_case_id: returnCase?.id || null,
+      postmark_message_id: asString(sent?.MessageID || "") || null,
+      instructions_text: instructionsText,
+    };
+    if (actionRecord?.id) {
+      await serviceClient
+        .from("thread_actions")
+        .update({
+          status: "applied",
+          detail: "Return instructions sent to customer.",
+          payload: actionPayload,
+          action_type: normalizedActionType,
+          action_key: actionKey,
+          decided_at: nowIso,
+          applied_at: nowIso,
+          updated_at: nowIso,
+          error: null,
+        })
+        .eq("id", actionRecord.id);
+    } else {
+      await serviceClient.from("thread_actions").insert({
+        user_id: supabaseUserId,
+        workspace_id: scope.workspaceId ?? null,
+        thread_id: thread.id,
+        action_type: normalizedActionType,
+        action_key: actionKey,
+        status: "applied",
+        detail: "Return instructions sent to customer.",
+        payload: actionPayload,
+        source: "manual_approval",
+        decided_at: nowIso,
+        applied_at: nowIso,
+        created_at: nowIso,
+        updated_at: nowIso,
+        error: null,
+      });
+    }
+    return NextResponse.json(
+      {
+        ok: true,
+        decision: "accepted",
+        action: normalizedActionType,
+        detail: "Return instructions sent to customer.",
+        returnCase: returnCase || null,
+        provider_message_id: asString(sent?.MessageID || "") || null,
+        sourceStep: proposalStepName,
       },
       { status: 200 }
     );
