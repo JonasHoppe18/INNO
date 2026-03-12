@@ -28,7 +28,7 @@ export function TicketList({
     : STATUS_FILTERS;
 
   return (
-    <aside className="flex w-full flex-col border-b bg-white lg:w-[20vw] lg:min-w-[20vw] lg:max-w-[20vw] lg:flex-none lg:border-b-0 lg:border-r lg:border-gray-200">
+    <aside className="flex w-full flex-col border-b bg-white lg:w-[18vw] lg:min-w-[18vw] lg:max-w-[18vw] lg:flex-none lg:border-b-0 lg:border-r lg:border-gray-200">
       <div className="border-b p-3">
         <div className="grid gap-2">
           <Input

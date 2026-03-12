@@ -1957,7 +1957,12 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       toast.error("Saving/sending brand new tickets is not ready yet.");
       return;
     }
-    const composeMode = payload?.mode === "note" || composerMode === "note" ? "note" : "reply";
+    const composeMode =
+      payload?.mode === "note" || composerMode === "note"
+        ? "note"
+        : payload?.mode === "forward" || composerMode === "forward"
+        ? "forward"
+        : "reply";
     const composeBody = String(composeMode === "note" ? activeNoteValue : draftValue || "");
     if (!composeBody.trim()) {
       toast.error("Draft is empty.");
@@ -1965,7 +1970,13 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     }
     sendingStartedAtRef.current = Date.now();
     setIsSending(true);
-    const toastId = toast.loading(composeMode === "note" ? "Saving note..." : "Sending draft...");
+    const toastId = toast.loading(
+      composeMode === "note"
+        ? "Saving note..."
+        : composeMode === "forward"
+        ? "Forwarding email..."
+        : "Sending draft..."
+    );
     try {
       if (composeMode === "note") {
         const res = await fetch(`/api/threads/${selectedThreadId}/notes`, {
@@ -2113,7 +2124,12 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           id: toastId,
         });
       } else {
-        toast.success(`Reply sent${providerId}.`, { id: toastId });
+        toast.success(
+          composeMode === "forward"
+            ? `Forward sent${providerId}.`
+            : `Reply sent${providerId}.`,
+          { id: toastId }
+        );
       }
       setDraftValue("");
       setActiveDraftId(null);

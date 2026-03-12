@@ -3,11 +3,11 @@ import {
   ChevronDown,
   X,
   Loader2,
-  Mail,
   Maximize2,
   Paperclip,
   Send,
-  Sparkles,
+  PenLine,
+  Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -127,12 +127,14 @@ export function Composer({
   isDraftLoading = false,
 }) {
   const isNote = mode === "note";
+  const isForward = mode === "forward";
   const initialTo = useMemo(() => {
+    if (isForward) return [];
     if (!toLabel) return [];
     const match = String(toLabel).match(/<([^>]+)>/);
     const email = match?.[1] ? match[1].trim() : String(toLabel).trim();
     return email ? [email] : [];
-  }, [toLabel]);
+  }, [isForward, toLabel]);
   const [toRecipients, setToRecipients] = useState(initialTo);
   const [ccRecipients, setCcRecipients] = useState([]);
   const [bccRecipients, setBccRecipients] = useState([]);
@@ -166,6 +168,7 @@ export function Composer({
   const [savedRepliesLoading, setSavedRepliesLoading] = useState(false);
   const [savedReplies, setSavedReplies] = useState([]);
   const [savedRepliesQuery, setSavedRepliesQuery] = useState("");
+  const [showSignatureEditor, setShowSignatureEditor] = useState(false);
   const mentionCandidates = useMemo(() => {
     const base = Array.isArray(mentionUsers) ? mentionUsers : [];
     const query = String(mentionState.query || "").trim().toLowerCase();
@@ -579,17 +582,20 @@ export function Composer({
   }
 
   return (
-    <div className="flex-none border-t border-gray-100 bg-white px-4 py-2.5">
-      <div className={`flex flex-col gap-2 ${disabled ? "opacity-60" : ""}`}>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-1 items-start justify-between gap-2 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-700">
+    <div className="flex-none bg-transparent px-3 py-2">
+      <div
+        className={`mx-auto w-full max-w-[900px] rounded-3xl border border-gray-200/80 bg-white shadow-sm ${
+          disabled ? "opacity-60" : ""
+        }`}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200/80 px-3 py-1.5">
+          <div className="flex flex-1 items-start justify-between gap-2 text-xs text-gray-700">
             <div className="flex flex-1 flex-wrap items-center gap-2">
-              <Mail className="h-3.5 w-3.5 text-gray-400" />
               <span className="font-medium text-gray-500">To:</span>
               {toRecipients.map((recipient) => (
                 <span
                   key={recipient}
-                  className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600"
+                  className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-100 px-2 py-0.5 text-xs text-gray-600"
                 >
                   {recipient}
                   <button
@@ -612,52 +618,37 @@ export function Composer({
                 className="min-w-[120px] flex-1 bg-transparent text-xs text-gray-700 outline-none"
               />
             </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  disabled={disabled}
-                  className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-500 hover:text-gray-700"
-                >
-                  <ChevronDown className="h-3.5 w-3.5" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => setShowCC(true)}>Add CC</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setShowBCC(true)}>Add BCC</DropdownMenuItem>
-                <DropdownMenuItem>Edit Subject</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
           </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                disabled={disabled}
-                className="inline-flex h-8 items-center gap-2 rounded-md border border-gray-200 bg-white px-2.5 text-[11px] font-medium text-gray-600 hover:bg-gray-50"
-              >
-                Reply
-                <ChevronDown className="h-3.5 w-3.5" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem>Reply</DropdownMenuItem>
-              <DropdownMenuItem>Reply all</DropdownMenuItem>
-              <DropdownMenuItem>Forward</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <button
-            type="button"
-            onClick={onToggleCollapse}
-            aria-label="Hide reply box"
-            title="Hide reply box"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-white text-gray-600 hover:bg-gray-50"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
+          <div className="flex items-center gap-3 pr-2 text-xs">
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => setShowCC((prev) => !prev)}
+              className="font-medium text-gray-500 hover:text-gray-700"
+            >
+              Cc
+            </button>
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => setShowBCC((prev) => !prev)}
+              className="font-medium text-gray-500 hover:text-gray-700"
+            >
+              Bcc
+            </button>
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              aria-label="Hide reply box"
+              title="Hide reply box"
+              className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </div>
         {showCC ? (
-          <div className="flex items-start gap-2 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-700">
+          <div className="flex items-start gap-2 border-b border-gray-200/80 px-3 py-2 text-xs text-gray-700">
             <span className="font-medium text-gray-500">Cc:</span>
             {ccRecipients.map((recipient) => (
               <span
@@ -699,7 +690,7 @@ export function Composer({
           </div>
         ) : null}
         {showBCC ? (
-          <div className="flex items-start gap-2 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-700">
+          <div className="flex items-start gap-2 border-b border-gray-200/80 px-3 py-2 text-xs text-gray-700">
             <span className="font-medium text-gray-500">Bcc:</span>
             {bccRecipients.map((recipient) => (
               <span
@@ -740,14 +731,8 @@ export function Composer({
             </button>
           </div>
         ) : null}
-        {draftLoaded ? (
-          <div className="mb-2 flex items-center gap-1.5 pl-1">
-            <Sparkles className="h-3.5 w-3.5 animate-pulse text-indigo-600" />
-            <span className="text-xs font-medium text-indigo-600">Generated by Sona</span>
-          </div>
-        ) : null}
         {attachments.length ? (
-          <div className="mb-2 flex flex-wrap items-center gap-2 pl-1 text-xs">
+          <div className="mb-1 flex flex-wrap items-center gap-2 px-3 text-xs">
             {attachments.map((file) => (
               <span
                 key={`${file.name}:${file.size}:${file.lastModified}`}
@@ -766,7 +751,7 @@ export function Composer({
             ))}
           </div>
         ) : null}
-        <div className="relative rounded-md border border-gray-200 bg-white p-2.5">
+        <div className="relative bg-white px-3 py-2">
           {isNote ? (
             <Textarea
               ref={textareaRef}
@@ -833,7 +818,7 @@ export function Composer({
           ) : (
             <>
               {!String(value || "").trim() ? (
-                <div className="pointer-events-none absolute left-2.5 top-2.5 text-sm text-gray-400">
+                <div className="pointer-events-none absolute left-3 top-2 text-sm text-gray-400">
                   {disabled ? disabledPlaceholder : "Write your reply..."}
                 </div>
               ) : null}
@@ -892,7 +877,7 @@ export function Composer({
                   if (!href) return;
                   window.open(href, "_blank", "noopener,noreferrer");
                 }}
-                className="min-h-[56px] whitespace-pre-wrap break-words p-0 text-sm leading-relaxed text-gray-900 outline-none [&_a]:cursor-pointer [&_a]:text-blue-600 [&_a]:underline [&_a:hover]:text-blue-700"
+                className="min-h-[72px] whitespace-pre-wrap break-words p-0 text-sm leading-relaxed text-gray-900 outline-none [&_a]:cursor-pointer [&_a]:text-blue-600 [&_a]:underline [&_a:hover]:text-blue-700"
               />
             </>
           )}
@@ -929,20 +914,25 @@ export function Composer({
           ) : null}
           {!isNote ? (
             <>
-              <div className="mt-2 border-t border-gray-200 pt-2" />
-              <textarea
-                value={signatureValue}
-                onChange={(event) => onSignatureChange?.(event.target.value)}
-                onBlur={onSignatureBlur}
-                placeholder="Your signature..."
-                rows={3}
-                disabled={disabled}
-                className="w-full resize-none border-0 bg-transparent p-0 text-sm leading-relaxed text-gray-700 outline-none"
-              />
+              {showSignatureEditor ? (
+                <>
+                  <div className="mt-2 border-t border-gray-200 pt-2" />
+                  <div className="mb-1.5 text-xs font-medium text-gray-500">Signature</div>
+                  <textarea
+                    value={signatureValue}
+                    onChange={(event) => onSignatureChange?.(event.target.value)}
+                    onBlur={onSignatureBlur}
+                    placeholder="Your signature..."
+                    rows={3}
+                    disabled={disabled}
+                    className="w-full resize-none border-0 bg-transparent p-0 text-sm leading-relaxed text-gray-700 outline-none"
+                  />
+                </>
+              ) : null}
             </>
           ) : null}
           {isDraftLoading ? (
-            <div className="absolute inset-0 z-10 flex items-center justify-center rounded-md bg-white backdrop-blur-md">
+            <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-white/80 backdrop-blur-md">
               <div className="flex flex-col items-center gap-2 px-6 text-center">
                 <SonaLogo size={28} speed="working" />
                 <div className="text-sm font-semibold text-gray-900">Sona is drafting your reply</div>
@@ -956,33 +946,10 @@ export function Composer({
             </div>
           ) : null}
         </div>
-        <div className="flex items-center justify-between text-xs text-gray-400">
+        <div className="flex items-center justify-between border-t border-gray-200/80 px-3 py-1.5 text-xs text-gray-500">
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={() => onModeChange(isNote ? "reply" : "note")}
-              className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium ${
-                isNote
-                  ? "border-yellow-200 bg-yellow-50 text-yellow-700"
-                  : "border-gray-200 bg-white text-gray-500"
-              }`}
-            >
-              Internal note
-            </button>
             {!isNote ? (
               <>
-                <button
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => {
-                    setSavedRepliesQuery("");
-                    setSavedRepliesOpen(true);
-                  }}
-                  className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
-                >
-                  Saved Replies
-                </button>
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -995,50 +962,95 @@ export function Composer({
                   type="button"
                   disabled={disabled}
                   onClick={() => fileInputRef.current?.click()}
-                  className="text-gray-400 hover:text-gray-600"
+                  aria-label="Attach file"
+                  title="Attach file"
+                  className="rounded-md p-1.5 text-gray-500 hover:bg-white hover:text-gray-700"
                 >
-                  <Paperclip className="h-3.5 w-3.5" />
+                  <Paperclip className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => {
+                    setSavedRepliesQuery("");
+                    setSavedRepliesOpen(true);
+                  }}
+                  aria-label="Open saved replies"
+                  title="Saved Replies"
+                  className="rounded-md p-1.5 text-gray-500 hover:bg-white hover:text-gray-700"
+                >
+                  <Zap className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => setShowSignatureEditor((prev) => !prev)}
+                  aria-label={showSignatureEditor ? "Hide signature" : "Show signature"}
+                  title={showSignatureEditor ? "Hide signature" : "Show signature"}
+                  className={showSignatureEditor
+                    ? "rounded-md bg-indigo-50 p-1.5 text-indigo-600 hover:bg-indigo-100"
+                    : "rounded-md p-1.5 text-gray-500 hover:bg-white hover:text-gray-700"}
+                >
+                  <PenLine className="h-4 w-4" />
                 </button>
               </>
             ) : null}
           </div>
-        <div className="flex items-center">
-          <Button
-            type="button"
-            disabled={disabled || !canSend || !value.trim() || isSending}
-            onClick={() => {
-              const parsedMentionIds = isNote ? resolveMentionIdsFromText(value) : [];
-              const mentionUserIds = Array.from(
-                new Set([...(selectedMentionIds || []), ...parsedMentionIds])
-              );
-              onSend?.({
-                mode: isNote ? "note" : "reply",
-                bodyText: value,
-                signature: signatureValue,
-                toRecipients: buildRecipients(toRecipients, toInput),
-                ccRecipients: buildRecipients(ccRecipients, ccInput),
-                bccRecipients: buildRecipients(bccRecipients, bccInput),
-                attachments,
-                mentionUserIds,
-              });
-            }}
-            className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-slate-900"
-          >
+          <div className="flex items-center gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  disabled={disabled}
+                  className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium ${
+                    isNote
+                      ? "bg-yellow-50 text-yellow-700"
+                      : "bg-white text-gray-600"
+                  }`}
+                >
+                  {isNote ? "Internal note" : isForward ? "Forward email" : "Reply to customer"}
+                  <ChevronDown className="h-3 w-3" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => onModeChange("reply")}>Reply to customer</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onModeChange("forward")}>Forward email</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onModeChange("note")}>Internal note</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button
+              type="button"
+              disabled={disabled || !canSend || !value.trim() || isSending}
+              onClick={() => {
+                const parsedMentionIds = isNote ? resolveMentionIdsFromText(value) : [];
+                const mentionUserIds = Array.from(
+                  new Set([...(selectedMentionIds || []), ...parsedMentionIds])
+                );
+                onSend?.({
+                  mode: isNote ? "note" : isForward ? "forward" : "reply",
+                  bodyText: value,
+                  signature: signatureValue,
+                  toRecipients: buildRecipients(toRecipients, toInput),
+                  ccRecipients: buildRecipients(ccRecipients, ccInput),
+                  bccRecipients: buildRecipients(bccRecipients, bccInput),
+                  attachments,
+                  mentionUserIds,
+                });
+              }}
+              className="h-8 w-8 rounded-full bg-black p-0 text-white shadow-sm hover:bg-slate-900"
+            >
               {isSending ? (
-                <>
-                  <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-                  Sending...
-                </>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
-                <>
-                  <Send className="mr-2 h-3.5 w-3.5" />
-                  {isNote ? "Save note" : "Send Reply"}
-                </>
+                <Send className="h-3.5 w-3.5" />
               )}
-          </Button>
+            </Button>
           </div>
         </div>
       </div>
+      <p className="mx-auto mt-2 w-full max-w-[900px] text-center text-xs text-gray-500">
+        Sona can make mistakes. Please verify important information.
+      </p>
       <Dialog open={savedRepliesOpen} onOpenChange={setSavedRepliesOpen}>
         <DialogContent className="sm:max-w-[680px]">
           <DialogHeader>

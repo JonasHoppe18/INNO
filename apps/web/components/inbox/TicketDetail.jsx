@@ -207,7 +207,7 @@ export function TicketDetail({
   const headerTitle = thread.subject || "Untitled ticket";
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-white lg:min-w-0">
+    <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-slate-50/40 lg:min-w-0">
       <header className="flex h-14 items-center justify-between border-b border-gray-100 bg-white px-4">
         <div className="min-w-0">
           <div className="text-sm font-semibold text-gray-900">{headerTitle}</div>
@@ -231,7 +231,7 @@ export function TicketDetail({
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="w-full space-y-3 px-4 pb-3 pt-3">
+        <div className="mx-auto w-full max-w-[900px] space-y-5 px-4 pb-4 pt-3">
           {returnCase ? (
             <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
               <div className="font-medium text-slate-800">Return Case</div>
@@ -296,30 +296,34 @@ export function TicketDetail({
                   }
               : null;
             return (
-              <div key={message.id} className="space-y-2">
+              <div key={message.id} className="space-y-3">
                 {shouldInsertActionCardBeforeMessage ? (
-                  <ActionCard
-                    status={actionCardStatus}
-                    testMode={isApprovedInTestMode}
-                    actionName={pendingActionTitle}
-                    detail={pendingOrderUpdate?.detail || ""}
-                    error={orderUpdateError || ""}
-                    loading={Boolean(orderUpdateSubmitting)}
-                    extraContent={processReturnExtraContent}
-                    onApprove={() =>
-                      onOrderUpdateDecision?.(
-                        "accepted",
-                        isProcessReturnAction ? { restock: processReturnRestock } : undefined
-                      )
-                    }
-                    onDecline={() => onOrderUpdateDecision?.("denied")}
-                  />
+                  <div className="ml-auto w-full max-w-[520px]">
+                    <ActionCard
+                      status={actionCardStatus}
+                      testMode={isApprovedInTestMode}
+                      actionName={pendingActionTitle}
+                      detail={pendingOrderUpdate?.detail || ""}
+                      error={orderUpdateError || ""}
+                      loading={Boolean(orderUpdateSubmitting)}
+                      extraContent={processReturnExtraContent}
+                      onApprove={() =>
+                        onOrderUpdateDecision?.(
+                          "accepted",
+                          isProcessReturnAction ? { restock: processReturnRestock } : undefined
+                        )
+                      }
+                      onDecline={() => onOrderUpdateDecision?.("denied")}
+                    />
+                  </div>
                 ) : null}
                 {isDraft ? (
-                  <ThinkingCard
-                    data={thinkingData}
-                    onClick={() => onOpenInsights?.(true)}
-                  />
+                  <div className="ml-auto w-full max-w-[520px]">
+                    <ThinkingCard
+                      data={thinkingData}
+                      onClick={() => onOpenInsights?.(true)}
+                    />
+                  </div>
                 ) : null}
                 <MessageBubble
                   message={message}
@@ -332,33 +336,37 @@ export function TicketDetail({
             );
           })}
           {shouldShowActionCard && !actionCardInserted ? (
-            <ActionCard
-              status={actionCardStatus}
-              actionName={pendingActionTitle}
-              detail={pendingOrderUpdate.detail || ""}
-              error={orderUpdateError || ""}
-              loading={Boolean(orderUpdateSubmitting)}
-              extraContent={processReturnExtraContent}
-              onApprove={() =>
-                onOrderUpdateDecision?.(
-                  "accepted",
-                  isProcessReturnAction ? { restock: processReturnRestock } : undefined
-                )
-              }
-              onDecline={() => onOrderUpdateDecision?.("denied")}
-            />
+            <div className="ml-auto w-full max-w-[520px]">
+              <ActionCard
+                status={actionCardStatus}
+                actionName={pendingActionTitle}
+                detail={pendingOrderUpdate.detail || ""}
+                error={orderUpdateError || ""}
+                loading={Boolean(orderUpdateSubmitting)}
+                extraContent={processReturnExtraContent}
+                onApprove={() =>
+                  onOrderUpdateDecision?.(
+                    "accepted",
+                    isProcessReturnAction ? { restock: processReturnRestock } : undefined
+                  )
+                }
+                onDecline={() => onOrderUpdateDecision?.("denied")}
+              />
+            </div>
           ) : null}
         </div>
       </div>
 
       {isActionPending ? (
-        <div className="sticky bottom-0 flex-none border-t border-violet-100 bg-violet-50/30 p-8 text-center">
-          <div className="flex flex-col items-center justify-center">
-            <Sparkles className="mb-2 h-6 w-6 animate-pulse text-violet-500" />
-            <div className="text-sm font-medium text-violet-900">Sona is waiting for your decision</div>
-            <p className="mt-1 max-w-xl text-xs text-violet-500">
-              Review the action above to generate the reply draft.
-            </p>
+        <div className="sticky bottom-0 flex-none bg-transparent px-3 py-2">
+          <div className="mx-auto w-full max-w-[900px] rounded-3xl border border-violet-100 bg-violet-50/40 px-4 py-5 text-center">
+            <div className="flex flex-col items-center justify-center">
+              <Sparkles className="mb-2 h-5 w-5 animate-pulse text-violet-500" />
+              <div className="text-sm font-medium text-violet-900">Sona is waiting for your decision</div>
+              <p className="mt-1 max-w-xl text-xs text-violet-500">
+                Review the action above to generate the reply draft.
+              </p>
+            </div>
           </div>
         </div>
       ) : (

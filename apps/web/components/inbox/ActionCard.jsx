@@ -144,52 +144,60 @@ export function ActionCard({
   }
 
   return (
-    <div className="rounded-xl border border-violet-100 bg-violet-50/30 p-5">
-      <div className="flex items-start gap-3">
-        <div className="rounded-full bg-violet-100 p-2">
-          {actionName.toLowerCase().includes("address") ? (
-            <ShieldAlert className="h-4 w-4 text-violet-600" />
-          ) : (
-            <Bot className="h-4 w-4 text-violet-600" />
-          )}
+    <div className="w-full max-w-[520px] overflow-hidden rounded-lg border border-indigo-100 bg-white">
+      <div className="p-3">
+        <div className="flex items-start gap-3">
+          <div className="rounded-full bg-indigo-50 p-1.5">
+            {actionName.toLowerCase().includes("address") ? (
+              <ShieldAlert className="h-3.5 w-3.5 text-indigo-600" />
+            ) : (
+              <Bot className="h-3.5 w-3.5 text-indigo-600" />
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-base font-semibold text-slate-900">{actionName}</div>
+            <div className="mt-0.5 text-xs font-medium text-amber-600">Awaiting approval</div>
+          </div>
         </div>
-        <div className="min-w-0 flex-1">
-          <div className="font-medium text-gray-900">Permission Required: {actionName}</div>
 
-          <div className="mt-3 rounded-lg border border-violet-100 bg-white p-3">
-            <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-              Requested Change
-            </div>
-            <div className="mt-1 space-y-0.5 text-sm text-slate-700">
-              {addressLines.length ? (
-                addressLines.map((line, index) => <div key={`pending-line-${index}`}>{line}</div>)
-              ) : (
-                <div>{detail || `Sona wants to ${actionName.toLowerCase()}.`}</div>
-              )}
-            </div>
+        <div className="mt-2 rounded-md border border-indigo-100 bg-slate-50/40 p-2.5">
+          <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Requested Change
           </div>
-
-          {error ? <div className="mt-2 text-xs text-red-700">{error}</div> : null}
-          {extraContent ? <div className="mt-3">{extraContent}</div> : null}
-
-          <div className="mt-3 flex items-center gap-2">
-            <button
-              type="button"
-              className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
-              onClick={onApprove}
-              disabled={loading}
-            >
-              {loading ? "Applying..." : "Approve"}
-            </button>
-            <button
-              type="button"
-              className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
-              onClick={onDecline}
-              disabled={loading}
-            >
-              Decline
-            </button>
+          <div className="mt-1 space-y-0.5 text-sm text-slate-700">
+            {addressLines.length ? (
+              addressLines.map((line, index) => <div key={`pending-line-${index}`}>{line}</div>)
+            ) : (
+              <div>{detail || `Sona wants to ${actionName.toLowerCase()}.`}</div>
+            )}
           </div>
+        </div>
+
+        {error ? <div className="mt-2 text-xs text-red-700">{error}</div> : null}
+        {extraContent ? <div className="mt-2">{extraContent}</div> : null}
+      </div>
+
+      <div className="flex items-center justify-between gap-2 border-t border-indigo-100 bg-indigo-50/30 px-3 py-2">
+        <div className="text-xs text-slate-600">Requires approval</div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={onDecline}
+            disabled={loading}
+          >
+            <XCircle className="h-3.5 w-3.5" />
+            Reject
+          </button>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 rounded-md bg-indigo-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={onApprove}
+            disabled={loading}
+          >
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            {loading ? "Applying..." : "Approve"}
+          </button>
         </div>
       </div>
     </div>

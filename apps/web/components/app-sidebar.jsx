@@ -364,7 +364,7 @@ export function AppSidebar({
               className="data-[slot=sidebar-menu-button]:!p-1.5 group-data-[collapsible=icon]:justify-center"
             >
               <a href="#" className="flex items-center gap-2 text-inherit no-underline">
-                <SonaLogo size={18} className="h-[18px] w-[18px] shrink-0" />
+                <SonaLogo size={22} className="h-[22px] w-[22px] shrink-0" />
                 <span className="text-base font-semibold group-data-[collapsible=icon]:hidden">Sona AI</span>
               </a>
             </SidebarMenuButton>

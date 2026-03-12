@@ -61,6 +61,23 @@ const SidebarProvider = React.forwardRef((
   // We use openProp and setOpenProp for control from outside the component.
   const [_open, _setOpen] = React.useState(defaultOpen)
   const open = openProp ?? _open
+
+  // Hydrate initial desktop sidebar state from cookie to persist across refreshes.
+  React.useEffect(() => {
+    if (openProp !== undefined) return
+    if (typeof document === "undefined") return
+    const raw = document.cookie
+      .split(";")
+      .map((entry) => entry.trim())
+      .find((entry) => entry.startsWith(`${SIDEBAR_COOKIE_NAME}=`))
+      ?.split("=")[1]
+    if (raw === "true") {
+      _setOpen(true)
+    } else if (raw === "false") {
+      _setOpen(false)
+    }
+  }, [openProp])
+
   const setOpen = React.useCallback((value) => {
     const openState = typeof value === "function" ? value(open) : value
     if (setOpenProp) {

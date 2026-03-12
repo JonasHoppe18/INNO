@@ -5,6 +5,7 @@ import { auth, clerkClient } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
+import { cookies } from "next/headers";
 
 function mapClerkUser(user) {
   if (!user) return null;
@@ -76,9 +77,12 @@ export default async function DashboardLayout({ children }) {
   const client = await clerkClient();
   const user = await client.users.getUser(userId);
   sidebarUser = mapClerkUser(user);
+  const cookieStore = await cookies();
+  const sidebarCookie = cookieStore.get("sidebar_state")?.value;
+  const defaultSidebarOpen = sidebarCookie === "false" ? false : true;
 
   return (
-    <SidebarProvider>
+    <SidebarProvider defaultOpen={defaultSidebarOpen}>
       <AppSidebar variant="inset" user={sidebarUser} />
       <DashboardShell>{children}</DashboardShell>
     </SidebarProvider>
