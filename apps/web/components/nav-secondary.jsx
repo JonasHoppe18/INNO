@@ -32,6 +32,7 @@ export function NavSecondary({
             <SidebarMenuItem key={item.title}>
               <SidebarMenuButton
                 asChild
+                tooltip={item.title}
                 className={cn(
                   "justify-start",
                   linkActive(item.url) &&

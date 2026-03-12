@@ -333,28 +333,77 @@ const extractNameFromBody = (value: string) => {
     "regards",
     "best",
     "kind",
+    "team",
+    "support",
+    "service",
+    "customer",
+    "kundeservice",
+    "teamet",
   ]);
-  for (let idx = lines.length - 1; idx >= 0; idx -= 1) {
-    const line = lines[idx];
+  const cleanNameToken = (raw: string) =>
+    String(raw || "").replace(/[^A-Za-zÆØÅæøåÀ-ÿ'-]/g, "").trim();
+  const isValidNameToken = (token: string) => {
+    if (token.length < 2) return false;
+    if (!/[A-Za-zÆØÅæøåÀ-ÿ]/.test(token)) return false;
+    if (blockedTokens.has(token.toLowerCase())) return false;
+    return true;
+  };
+
+  const extractFirstCandidateToken = (raw: string) => {
+    const firstToken = String(raw || "").split(/\s+/)[0] || "";
+    const cleaned = cleanNameToken(firstToken);
+    return isValidNameToken(cleaned) ? cleaned : "";
+  };
+
+  // Priority 0: structured form fields ("Name: Albert" / "Name:" + next line).
+  for (let idx = 0; idx < lines.length; idx += 1) {
+    const line = String(lines[idx] || "").trim();
     if (!line) continue;
-    if (line.length > 28) continue;
-    const lower = line.toLowerCase();
-    if (
-      lower === "mvh" ||
-      lower === "venlig hilsen" ||
-      lower === "best regards" ||
-      lower === "kind regards" ||
-      lower === "regards"
-    ) {
-      continue;
+    const inlineMatch = line.match(/^(name|full name|customer name)\s*[:\-]\s*(.+)$/i);
+    if (inlineMatch) {
+      const candidate = extractFirstCandidateToken(inlineMatch[2] || "");
+      if (candidate) return candidate;
     }
-    const token = line.split(" ")[0] || "";
-    const cleaned = token.replace(/[^A-Za-zÆØÅæøåÀ-ÿ'-]/g, "").trim();
-    if (cleaned.length < 2) continue;
-    if (!/[A-Za-zÆØÅæøåÀ-ÿ]/.test(cleaned)) continue;
-    if (blockedTokens.has(cleaned.toLowerCase())) continue;
-    return cleaned;
+
+    const labelOnlyMatch = line.match(/^(name|full name|customer name)\s*[:\-]?\s*$/i);
+    if (labelOnlyMatch) {
+      for (let lookahead = idx + 1; lookahead < Math.min(lines.length, idx + 4); lookahead += 1) {
+        const nextLine = String(lines[lookahead] || "").trim();
+        if (!nextLine) continue;
+        if (/^(email|e-mail|mail|company|team|country|phone)\b/i.test(nextLine)) break;
+        const candidate = extractFirstCandidateToken(nextLine);
+        if (candidate) return candidate;
+      }
+    }
   }
+
+  // Priority 1: greeting near top of customer message ("Hi Maria,", "Hej Jonas,")
+  const greetingNameRegex =
+    /^(hej|hi|hello|hey|dear|hola|bonjour|hallo)\s+([A-Za-zÆØÅæøåÀ-ÿ'-]{2,})(?=[\s,!.:;]|$)/i;
+  const greetingWindow = Math.min(lines.length, 8);
+  for (let idx = 0; idx < greetingWindow; idx += 1) {
+    const line = lines[idx];
+    if (!line || line.length > 64) continue;
+    const match = line.match(greetingNameRegex);
+    if (!match) continue;
+    const candidate = cleanNameToken(match[2] || "");
+    if (isValidNameToken(candidate)) return candidate;
+  }
+
+  // Priority 2: signoff + explicit name line at the very end.
+  const signoffRegex = /^(mvh|venlig hilsen|med venlig hilsen|best regards|kind regards|regards|hilsen)$/i;
+  for (let idx = lines.length - 1; idx >= 1; idx -= 1) {
+    const current = String(lines[idx] || "");
+    const previous = String(lines[idx - 1] || "").toLowerCase();
+    if (!current || current.length > 40) continue;
+    if (/^sent from my (iphone|ipad|android|mobile)/i.test(current)) continue;
+    if (!signoffRegex.test(previous)) continue;
+    if (current.includes("@")) continue;
+    const candidate = extractFirstCandidateToken(current);
+    if (candidate) return candidate;
+  }
+
+  // No reliable name found in message body.
   return "";
 };
 
@@ -1772,7 +1821,7 @@ Deno.serve(async (req) => {
       learnedStyle = mergeBullets([], learningProfile.styleRules).join("\n");
     }
 
-    const customerFirstName = extractCustomerFirstName(emailData);
+    const customerFirstName = extractOrderFirstName(selectedOrder) || extractCustomerFirstName(emailData);
     const policyContext = buildPinnedPolicyContext({
       subject: emailData.subject || "",
       body: emailData.body || "",

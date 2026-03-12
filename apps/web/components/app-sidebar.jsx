@@ -46,6 +46,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  useSidebar,
 } from "@/components/ui/sidebar"
 
 import { SonaLogo } from "@/components/ui/SonaLogo"
@@ -108,15 +109,17 @@ function InboxSection({
 }) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const { state } = useSidebar()
   const view = searchParams.get("view")
+  const isCollapsed = state === "collapsed"
 
   const isAllTicketsActive = pathname === "/inbox" && !view
   const isAssignedActive = pathname === "/inbox" && view === "mine"
   const isResolvedActive = pathname === "/inbox" && view === "resolved"
 
   return (
-    <SidebarGroup className="group-data-[collapsible=icon]:hidden pt-0">
-      <div className="mb-1 flex items-center justify-between px-2">
+    <SidebarGroup className="pt-0">
+      <div className="mb-1 flex items-center justify-between px-2 group-data-[collapsible=icon]:hidden">
         <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
           INBOXES
         </span>
@@ -136,59 +139,68 @@ function InboxSection({
       <SidebarGroupContent>
         <SidebarMenu>
           <SidebarMenuItem>
-            <Link
-              href="/inbox"
+            <SidebarMenuButton
+              asChild
+              tooltip="All Tickets"
               className={cn(
-                "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100",
-                isAllTicketsActive && "bg-slate-100 text-slate-900"
+                "justify-start",
+                isAllTicketsActive && "bg-slate-100 text-slate-900 hover:bg-slate-100 hover:text-slate-900"
               )}
             >
-              <Inbox className="h-4 w-4 shrink-0" />
-              <span>All Tickets</span>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  setIsInboxOpen((prev) => !prev)
-                }}
-                className="ml-auto rounded p-0.5 hover:bg-slate-200"
-              >
-                {isInboxOpen ? (
-                  <ChevronDown className="h-3.5 w-3.5" />
-                ) : (
-                  <ChevronRight className="h-3.5 w-3.5" />
-                )}
-                <span className="sr-only">Toggle inbox filters</span>
-              </button>
-            </Link>
+              <Link href="/inbox" className="flex w-full items-center gap-2 text-inherit no-underline">
+                <Inbox className="h-4 w-4 shrink-0" />
+                <span>All Tickets</span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    setIsInboxOpen((prev) => !prev)
+                  }}
+                  className="ml-auto rounded p-0.5 hover:bg-slate-200 group-data-[collapsible=icon]:hidden"
+                >
+                  {isInboxOpen ? (
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  ) : (
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  )}
+                  <span className="sr-only">Toggle inbox filters</span>
+                </button>
+              </Link>
+            </SidebarMenuButton>
           </SidebarMenuItem>
 
-          {isInboxOpen ? (
+          {isInboxOpen && !isCollapsed ? (
             <>
               <SidebarMenuItem>
-                <Link
-                  href="/inbox?view=mine"
+                <SidebarMenuButton
+                  asChild
+                  tooltip="Assigned to me"
                   className={cn(
-                    "flex items-center gap-2 rounded-md px-2 py-1.5 pl-8 text-sm text-slate-600 hover:bg-slate-100",
-                    isAssignedActive && "bg-slate-100 text-slate-900"
+                    "justify-start pl-8",
+                    isAssignedActive && "bg-slate-100 text-slate-900 hover:bg-slate-100 hover:text-slate-900"
                   )}
                 >
-                  <User className="h-4 w-4 shrink-0" />
-                  <span>Assigned to me</span>
-                </Link>
+                  <Link href="/inbox?view=mine" className="flex w-full items-center gap-2 text-inherit no-underline">
+                    <User className="h-4 w-4 shrink-0" />
+                    <span>Assigned to me</span>
+                  </Link>
+                </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <Link
-                  href="/inbox?view=resolved"
+                <SidebarMenuButton
+                  asChild
+                  tooltip="Resolved"
                   className={cn(
-                    "flex items-center gap-2 rounded-md px-2 py-1.5 pl-8 text-sm text-slate-600 hover:bg-slate-100",
-                    isResolvedActive && "bg-slate-100 text-slate-900"
+                    "justify-start pl-8",
+                    isResolvedActive && "bg-slate-100 text-slate-900 hover:bg-slate-100 hover:text-slate-900"
                   )}
                 >
-                  <CheckCircle2 className="h-4 w-4 shrink-0" />
-                  <span>Resolved</span>
-                </Link>
+                  <Link href="/inbox?view=resolved" className="flex w-full items-center gap-2 text-inherit no-underline">
+                    <CheckCircle2 className="h-4 w-4 shrink-0" />
+                    <span>Resolved</span>
+                  </Link>
+                </SidebarMenuButton>
               </SidebarMenuItem>
               {customInboxes.map((inbox) => {
                 const slug = String(inbox?.slug || "")
@@ -339,17 +351,21 @@ export function AppSidebar({
 
   return (
     <Sidebar
-      collapsible="offcanvas"
+      collapsible="icon"
       className={cn("[&_a]:text-inherit [&_a]:no-underline", className)}
       {...props}
     >
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton asChild className="data-[slot=sidebar-menu-button]:!p-1.5">
-              <a href="#" className="text-inherit no-underline">
-                <SonaLogo size={24} className="h-4 w-4" />
-                <span className="text-base font-semibold">Sona AI</span>
+            <SidebarMenuButton
+              asChild
+              tooltip="Sona AI"
+              className="data-[slot=sidebar-menu-button]:!p-1.5 group-data-[collapsible=icon]:justify-center"
+            >
+              <a href="#" className="flex items-center gap-2 text-inherit no-underline">
+                <SonaLogo size={18} className="h-[18px] w-[18px] shrink-0" />
+                <span className="text-base font-semibold group-data-[collapsible=icon]:hidden">Sona AI</span>
               </a>
             </SidebarMenuButton>
           </SidebarMenuItem>

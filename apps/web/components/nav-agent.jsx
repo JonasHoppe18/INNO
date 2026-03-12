@@ -21,13 +21,14 @@ export function NavAgent({
     pathname === url || pathname.startsWith(`${url}/`);
 
   return (
-    <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+    <SidebarGroup>
       <SidebarGroupLabel>Configuration</SidebarGroupLabel>
       <SidebarMenu>
         {items.map((item) => (
           <SidebarMenuItem key={item.name}>
             <SidebarMenuButton
               asChild
+              tooltip={item.name}
               className={cn(
                 "justify-start",
                 linkActive(item.url) &&
