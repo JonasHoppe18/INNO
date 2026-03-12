@@ -40,7 +40,7 @@ export default function Pricing() {
       currency: active.code,
       maximumFractionDigits: 0,
     });
-  }, [currency, currencies]);
+  }, [currency]);
 
   const formatPrice = (priceDkk) => {
     const active = currencies[currency];
