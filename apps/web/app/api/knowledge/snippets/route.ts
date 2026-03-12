@@ -457,6 +457,87 @@ export async function POST(request: Request) {
   }
 }
 
+export async function PUT(request: Request) {
+  const { userId: clerkUserId, orgId } = await auth();
+  if (!clerkUserId) {
+    return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
+  }
+
+  const serviceClient = createServiceClient();
+  if (!serviceClient) {
+    return NextResponse.json({ error: "Supabase configuration is missing." }, { status: 500 });
+  }
+
+  let scope: { workspaceId: string | null; supabaseUserId: string | null };
+  try {
+    scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
+  } catch (error: any) {
+    return NextResponse.json({ error: error?.message || "Could not resolve workspace scope." }, { status: 500 });
+  }
+
+  try {
+    const payload = await request.json().catch(() => null);
+    const snippetId = String(payload?.id || "").trim();
+    const requestedShopId = String(payload?.shop_id || "").trim();
+    const title = String(payload?.title || "").trim();
+    const content = normalizeWhitespace(String(payload?.content || ""));
+
+    if (!snippetId || !title || !content) {
+      return NextResponse.json({ error: "id, title and content are required." }, { status: 400 });
+    }
+
+    const shopId = await resolveShopId(serviceClient, scope, requestedShopId || undefined);
+
+    const { data: existingRows, error: existingError } = await serviceClient
+      .from("agent_knowledge")
+      .select("id")
+      .eq("shop_id", shopId)
+      .eq("source_provider", "manual_text")
+      .eq("metadata->>snippet_id", snippetId)
+      .limit(1);
+    if (existingError) {
+      throw new Error(existingError.message);
+    }
+    if (!Array.isArray(existingRows) || !existingRows.length) {
+      return NextResponse.json({ error: "Manual snippet not found." }, { status: 404 });
+    }
+
+    const { error: deleteError } = await serviceClient
+      .from("agent_knowledge")
+      .delete()
+      .eq("shop_id", shopId)
+      .eq("source_provider", "manual_text")
+      .eq("metadata->>snippet_id", snippetId);
+    if (deleteError) {
+      throw new Error(`Could not replace snippet: ${deleteError.message}`);
+    }
+
+    const insertedChunks = await insertKnowledgeChunks({
+      serviceClient,
+      shopId,
+      content,
+      sourceType: "snippet",
+      sourceProvider: "manual_text",
+      maxChunks: 12,
+      metadata: {
+        snippet_id: snippetId,
+        title,
+      },
+    });
+
+    return NextResponse.json({
+      success: true,
+      source_type: "snippet",
+      source_provider: "manual_text",
+      snippet_id: snippetId,
+      chunks: insertedChunks,
+      updated: true,
+    });
+  } catch (error: any) {
+    return NextResponse.json({ error: error?.message || "Could not update knowledge snippet." }, { status: 500 });
+  }
+}
+
 export async function DELETE(request: Request) {
   const { userId: clerkUserId, orgId } = await auth();
   if (!clerkUserId) {

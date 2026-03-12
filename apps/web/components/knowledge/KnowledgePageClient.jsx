@@ -6,11 +6,15 @@ import { useUser } from "@clerk/nextjs";
 import { toast } from "sonner";
 import {
   Cable,
+  Bold as BoldIcon,
   CheckCircle2,
   Circle,
   Database,
   ExternalLink,
   FileText,
+  Italic as ItalicIcon,
+  List as ListIcon,
+  ListOrdered as ListOrderedIcon,
   MessageSquareText,
   Package,
   Plus,
@@ -18,6 +22,7 @@ import {
   Shield,
   Trash2,
   Truck,
+  Underline as UnderlineIcon,
   Undo2,
 } from "lucide-react";
 import { useClerkSupabase } from "@/lib/useClerkSupabase";
@@ -27,6 +32,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { CsvSupportKnowledgeImportModal } from "@/components/knowledge/CsvSupportKnowledgeImportModal";
 
 function formatDate(value) {
   if (!value) return "";
@@ -49,6 +55,148 @@ function formatPrice(value) {
     }).format(num);
   }
   return String(value);
+}
+
+function escapeHtml(input = "") {
+  return String(input || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function hasHtmlTag(value = "") {
+  return /<[^>]+>/.test(String(value || ""));
+}
+
+function stripHtmlToPlainText(value = "") {
+  const raw = String(value || "");
+  if (!raw) return "";
+  const withLineHints = raw
+    .replace(/<\s*li[^>]*>/gi, "\n- ")
+    .replace(/<\s*br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|ul|ol|section|article|header|footer|main|tr)>/gi, "\n");
+
+  if (typeof document === "undefined") {
+    return withLineHints
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\r\n/g, "\n")
+      .replace(/[ \t]+\n/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  const container = document.createElement("div");
+  container.innerHTML = withLineHints;
+  return String(container.textContent || "")
+    .replace(/\u00a0/g, " ")
+    .replace(/\r\n/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function sanitizeSavedReplyHtmlClient(value = "") {
+  const source = String(value || "");
+  if (!source.trim()) return "";
+
+  if (typeof document === "undefined") {
+    return source
+      .replace(/<\s*(script|style)[^>]*>[\s\S]*?<\s*\/\1>/gi, "")
+      .replace(/\son[a-z]+\s*=\s*(".*?"|'.*?'|[^\s>]+)/gi, "")
+      .trim();
+  }
+
+  const allowedTags = new Set([
+    "B",
+    "STRONG",
+    "I",
+    "EM",
+    "U",
+    "BR",
+    "P",
+    "DIV",
+    "UL",
+    "OL",
+    "LI",
+    "A",
+  ]);
+  const sourceContainer = document.createElement("div");
+  sourceContainer.innerHTML = source;
+
+  const sanitizeNode = (node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      return document.createTextNode(String(node.nodeValue || ""));
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) {
+      return document.createDocumentFragment();
+    }
+
+    const element = node;
+    const tag = String(element.tagName || "").toUpperCase();
+    const fragment = document.createDocumentFragment();
+    const sanitizedChildren = Array.from(element.childNodes || []).map(sanitizeNode);
+
+    if (!allowedTags.has(tag)) {
+      sanitizedChildren.forEach((child) => fragment.appendChild(child));
+      return fragment;
+    }
+
+    const cleanElement = document.createElement(tag.toLowerCase());
+    if (tag === "A") {
+      const hrefRaw = String(element.getAttribute("href") || "").trim();
+      const isSafeHref = /^https?:\/\//i.test(hrefRaw) || /^mailto:/i.test(hrefRaw);
+      if (isSafeHref) {
+        cleanElement.setAttribute("href", hrefRaw);
+        cleanElement.setAttribute("target", "_blank");
+        cleanElement.setAttribute("rel", "noreferrer noopener");
+      }
+    }
+    sanitizedChildren.forEach((child) => cleanElement.appendChild(child));
+    return cleanElement;
+  };
+
+  const targetContainer = document.createElement("div");
+  Array.from(sourceContainer.childNodes || []).forEach((node) => {
+    targetContainer.appendChild(sanitizeNode(node));
+  });
+
+  return targetContainer.innerHTML
+    .replace(/\r\n/g, "\n")
+    .replace(/\u0000/g, "")
+    .trim();
+}
+
+function toSavedReplyEditorHtml(value = "") {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (hasHtmlTag(raw)) return sanitizeSavedReplyHtmlClient(raw);
+  return escapeHtml(raw).replace(/\r\n/g, "\n").replace(/\n/g, "<br>");
+}
+
+function getChunkIndex(row) {
+  const metadata = row?.metadata && typeof row.metadata === "object" ? row.metadata : {};
+  const index = Number(metadata?.chunk_index);
+  if (Number.isInteger(index) && index >= 0) return index;
+  return 0;
+}
+
+function stitchChunkedText(chunks) {
+  const ordered = Array.isArray(chunks) ? chunks.map((c) => String(c || "")).filter(Boolean) : [];
+  if (!ordered.length) return "";
+  let merged = ordered[0];
+  for (let i = 1; i < ordered.length; i += 1) {
+    const next = ordered[i];
+    const maxOverlap = Math.min(220, merged.length, next.length);
+    let overlap = 0;
+    for (let candidate = maxOverlap; candidate >= 20; candidate -= 1) {
+      if (merged.slice(-candidate) === next.slice(0, candidate)) {
+        overlap = candidate;
+        break;
+      }
+    }
+    merged += next.slice(overlap);
+  }
+  return merged.trim();
 }
 
 export function KnowledgePageClient() {
@@ -74,6 +222,15 @@ export function KnowledgePageClient() {
   const [savingPolicies, setSavingPolicies] = useState(false);
   const [savingSnippet, setSavingSnippet] = useState(false);
   const [deletingSnippetId, setDeletingSnippetId] = useState(null);
+  const [editingSnippetId, setEditingSnippetId] = useState(null);
+  const [csvImportModalOpen, setCsvImportModalOpen] = useState(false);
+  const [csvImportSeedFile, setCsvImportSeedFile] = useState(null);
+  const [csvImportBatches, setCsvImportBatches] = useState([]);
+  const [deletingCsvImportId, setDeletingCsvImportId] = useState("");
+  const [csvPreviewOpen, setCsvPreviewOpen] = useState(false);
+  const [csvPreviewLoading, setCsvPreviewLoading] = useState(false);
+  const [csvPreviewTitle, setCsvPreviewTitle] = useState("CSV import");
+  const [csvPreviewRows, setCsvPreviewRows] = useState([]);
 
   const [policyModalOpen, setPolicyModalOpen] = useState(false);
   const [activePolicyField, setActivePolicyField] = useState("refund");
@@ -86,6 +243,7 @@ export function KnowledgePageClient() {
   const [pdfFile, setPdfFile] = useState(null);
   const [pdfTitle, setPdfTitle] = useState("");
   const pdfFileInputRef = useRef(null);
+  const savedReplyEditorRef = useRef(null);
   const [productsModalOpen, setProductsModalOpen] = useState(false);
   const [productsLoading, setProductsLoading] = useState(false);
   const [products, setProducts] = useState([]);
@@ -224,31 +382,81 @@ export function KnowledgePageClient() {
 
       const { data, error } = await supabase
         .from("agent_knowledge")
-        .select("id, metadata, created_at, source_provider, source_type")
+        .select("id, content, metadata, created_at, source_provider, source_type")
         .eq("shop_id", currentShopId)
         .in("source_provider", ["manual_text", "pdf_upload", "image_upload"])
         .order("created_at", { ascending: false });
 
       if (error) throw error;
       const rows = Array.isArray(data) ? data : [];
-      const deduped = new Map();
+      const grouped = new Map();
       for (const row of rows) {
         const metadata = row?.metadata && typeof row.metadata === "object" ? row.metadata : {};
         const snippetId = String(metadata?.snippet_id || row?.id || "").trim();
-        if (!snippetId || deduped.has(snippetId)) continue;
-        const title =
-          String(metadata?.title || metadata?.file_name || "").trim() ||
-          (row?.source_provider === "manual_text" ? "Untitled snippet" : "Uploaded File");
-        deduped.set(snippetId, {
+        if (!snippetId) continue;
+        const existing = grouped.get(snippetId) || {
           id: snippetId,
-          title,
-          created_at: row?.created_at || null,
+          title: "",
+          created_at: null,
+          source_provider: String(row?.source_provider || ""),
+          chunks: [],
+        };
+        if (!existing.title) {
+          existing.title =
+            String(metadata?.title || metadata?.file_name || "").trim() ||
+            (row?.source_provider === "manual_text" ? "Untitled snippet" : "Uploaded File");
+        }
+        if (!existing.created_at || String(row?.created_at || "") > String(existing.created_at || "")) {
+          existing.created_at = row?.created_at || null;
+        }
+        existing.chunks.push({
+          index: getChunkIndex(row),
+          content: String(row?.content || ""),
         });
+        grouped.set(snippetId, existing);
       }
-      setSnippets(Array.from(deduped.values()));
+      const prepared = Array.from(grouped.values()).map((snippet) => {
+        const sortedChunks = (snippet.chunks || [])
+          .slice()
+          .sort((a, b) => Number(a?.index || 0) - Number(b?.index || 0))
+          .map((item) => String(item?.content || ""));
+        const stitchedContent = stitchChunkedText(sortedChunks);
+        return {
+          id: snippet.id,
+          title: snippet.title,
+          created_at: snippet.created_at,
+          source_provider: snippet.source_provider,
+          content: snippet.source_provider === "manual_text" ? stitchedContent : "",
+        };
+      });
+      setSnippets(prepared);
     },
     [supabase]
   );
+
+  const loadCsvImportBatches = useCallback(async (currentShopId) => {
+    if (!currentShopId) {
+      setCsvImportBatches([]);
+      return;
+    }
+    try {
+      const response = await fetch(
+        `/api/knowledge/import-csv?shop_id=${encodeURIComponent(String(currentShopId))}`,
+        {
+          method: "GET",
+          cache: "no-store",
+        }
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || "Could not load CSV imports.");
+      }
+      setCsvImportBatches(Array.isArray(payload?.batches) ? payload.batches : []);
+    } catch (error) {
+      console.warn("CSV import batches load failed", error);
+      setCsvImportBatches([]);
+    }
+  }, []);
 
   const loadSavedReplies = useCallback(async () => {
     setSavedRepliesLoading(true);
@@ -284,7 +492,12 @@ export function KnowledgePageClient() {
     setLoading(true);
     try {
       const currentShopId = await loadShop();
-      await Promise.all([loadSnippets(currentShopId), loadHistoryConnection(), loadSavedReplies()]);
+      await Promise.all([
+        loadSnippets(currentShopId),
+        loadCsvImportBatches(currentShopId),
+        loadHistoryConnection(),
+        loadSavedReplies(),
+      ]);
       const [
         productsCountResponse,
         pagesCountResponse,
@@ -348,7 +561,7 @@ export function KnowledgePageClient() {
     } finally {
       setLoading(false);
     }
-  }, [loadHistoryConnection, loadSavedReplies, loadShop, loadSnippets, supabase]);
+  }, [loadCsvImportBatches, loadHistoryConnection, loadSavedReplies, loadShop, loadSnippets, supabase]);
 
   useEffect(() => {
     loadData().catch(() => null);
@@ -362,6 +575,33 @@ export function KnowledgePageClient() {
     [policyRefund, policyShipping]
   );
   const hasHistoryConnection = Boolean(historyProvider);
+  const knowledgeItems = useMemo(() => {
+    const snippetItems = (snippets || []).map((snippet) => ({
+      kind: "snippet",
+      key: `snippet:${String(snippet?.id || "")}`,
+      id: String(snippet?.id || ""),
+      title: String(snippet?.title || "Untitled snippet"),
+      created_at: snippet?.created_at || null,
+      source_provider: String(snippet?.source_provider || ""),
+      row_count: null,
+    }));
+    const csvItems = (csvImportBatches || []).map((batch) => ({
+      kind: "csv_import",
+      key: `csv:${String(batch?.import_id || "")}`,
+      id: String(batch?.import_id || ""),
+      title: String(batch?.source_file_name || "CSV import"),
+      created_at: batch?.created_at || null,
+      source_provider: "csv_support_knowledge",
+      row_count: Number(batch?.imported_count || 0),
+    }));
+
+    return [...snippetItems, ...csvItems].sort((a, b) => {
+      const aTime = a?.created_at ? new Date(a.created_at).getTime() : 0;
+      const bTime = b?.created_at ? new Date(b.created_at).getTime() : 0;
+      return bTime - aTime;
+    });
+  }, [csvImportBatches, snippets]);
+
   const renderStatusIcon = (isReady, isBusy) => {
     if (isBusy) {
       return <RefreshCw className="h-4 w-4 animate-spin text-gray-400" />;
@@ -401,6 +641,31 @@ export function KnowledgePageClient() {
     }
   };
 
+  const resetSnippetForm = () => {
+    setEditingSnippetId(null);
+    setSnippetMode("text");
+    setSnippetTitle("");
+    setSnippetContent("");
+    setPdfFile(null);
+    setPdfTitle("");
+  };
+
+  const openCreateSnippetModal = () => {
+    resetSnippetForm();
+    setSnippetModalOpen(true);
+  };
+
+  const openEditSnippetModal = (snippet) => {
+    if (String(snippet?.source_provider || "") !== "manual_text") return;
+    setEditingSnippetId(String(snippet?.id || "").trim() || null);
+    setSnippetMode("text");
+    setSnippetTitle(String(snippet?.title || ""));
+    setSnippetContent(String(snippet?.content || ""));
+    setPdfFile(null);
+    setPdfTitle("");
+    setSnippetModalOpen(true);
+  };
+
   const handleAddSnippet = async () => {
     if (!shopId) {
       toast.error("No shop found.");
@@ -417,12 +682,14 @@ export function KnowledgePageClient() {
 
     setSavingSnippet(true);
     try {
+      const isEditing = Boolean(editingSnippetId);
       const response = await fetch("/api/knowledge/snippets", {
-        method: "POST",
+        method: isEditing ? "PUT" : "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          id: editingSnippetId || undefined,
           shop_id: shopId,
           title,
           content,
@@ -430,17 +697,16 @@ export function KnowledgePageClient() {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(payload?.error || "Could not add snippet.");
+        throw new Error(payload?.error || (isEditing ? "Could not update snippet." : "Could not add snippet."));
       }
 
-      toast.success("Knowledge snippet added.");
+      toast.success(isEditing ? "Knowledge snippet updated." : "Knowledge snippet added.");
       setSnippetModalOpen(false);
-      setSnippetTitle("");
-      setSnippetContent("");
+      resetSnippetForm();
       await loadSnippets(shopId);
     } catch (error) {
       console.warn("Add snippet failed", error);
-      toast.error("Could not add snippet.");
+      toast.error(error instanceof Error ? error.message : "Could not save snippet.");
     } finally {
       setSavingSnippet(false);
     }
@@ -453,8 +719,20 @@ export function KnowledgePageClient() {
       toast.error("No shop found.");
       return;
     }
+    const isCsvFile =
+      file.name.toLowerCase().endsWith(".csv") ||
+      file.type === "text/csv" ||
+      file.type === "application/csv" ||
+      file.type === "text/plain" ||
+      file.type === "application/vnd.ms-excel";
+    if (isCsvFile) {
+      setCsvImportSeedFile(file);
+      setSnippetModalOpen(false);
+      setCsvImportModalOpen(true);
+      return;
+    }
     if (file.type !== "application/pdf" && !file.type.startsWith("image/")) {
-      toast.error("Only PDF and image files are supported.");
+      toast.error("Only PDF, image, and CSV files are supported.");
       return;
     }
 
@@ -476,8 +754,7 @@ export function KnowledgePageClient() {
 
       toast.success("File uploaded and indexed.");
       setSnippetModalOpen(false);
-      setPdfFile(null);
-      setPdfTitle("");
+      resetSnippetForm();
       await loadSnippets(shopId);
     } catch (error) {
       console.warn("File upload failed", error);
@@ -793,6 +1070,75 @@ export function KnowledgePageClient() {
     }
   };
 
+  const handleDeleteCsvImport = async (importId) => {
+    const targetId = String(importId || "").trim();
+    if (!targetId || !shopId) return;
+    if (!window.confirm("Delete this CSV support knowledge import?")) return;
+
+    setDeletingCsvImportId(targetId);
+    try {
+      const response = await fetch("/api/knowledge/import-csv", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          import_id: targetId,
+          shop_id: shopId,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || "Could not delete CSV import.");
+      }
+      toast.success(`Deleted ${Number(payload?.deleted || 0)} knowledge rows.`);
+      await loadCsvImportBatches(shopId);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not delete CSV import.");
+    } finally {
+      setDeletingCsvImportId("");
+    }
+  };
+
+  const handlePreviewCsvImport = async (item) => {
+    const targetImportId = String(item?.id || "").trim();
+    if (!targetImportId || !shopId) return;
+
+    setCsvPreviewTitle(String(item?.title || "CSV import"));
+    setCsvPreviewRows([]);
+    setCsvPreviewOpen(true);
+    setCsvPreviewLoading(true);
+    try {
+      const response = await fetch(
+        `/api/knowledge/import-csv?shop_id=${encodeURIComponent(String(shopId))}&import_id=${encodeURIComponent(
+          targetImportId,
+        )}&limit=120`,
+        {
+          method: "GET",
+          cache: "no-store",
+        },
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || "Could not load CSV import preview.");
+      }
+      setCsvPreviewRows(Array.isArray(payload?.rows) ? payload.rows : []);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not load CSV import preview.");
+      setCsvPreviewRows([]);
+    } finally {
+      setCsvPreviewLoading(false);
+    }
+  };
+
+  const hydrateSavedReplyEditor = (value) => {
+    requestAnimationFrame(() => {
+      const editor = savedReplyEditorRef.current;
+      if (!editor) return;
+      editor.innerHTML = toSavedReplyEditorHtml(value);
+    });
+  };
+
   const resetSavedReplyForm = () => {
     setEditingSavedReplyId(null);
     setSavedReplyTitle("");
@@ -800,9 +1146,48 @@ export function KnowledgePageClient() {
     setSavedReplyCategory("");
   };
 
+  const syncSavedReplyEditorToState = () => {
+    const editor = savedReplyEditorRef.current;
+    if (!editor) return;
+    const sanitized = sanitizeSavedReplyHtmlClient(editor.innerHTML);
+    if (editor.innerHTML !== sanitized) {
+      editor.innerHTML = sanitized;
+    }
+    setSavedReplyContent(sanitized);
+  };
+
+  const handleSavedReplyEditorInput = () => {
+    syncSavedReplyEditorToState();
+  };
+
+  const handleSavedReplyEditorPaste = (event) => {
+    event.preventDefault();
+    const clipboard = event?.clipboardData;
+    const html = String(clipboard?.getData("text/html") || "");
+    const text = String(clipboard?.getData("text/plain") || "");
+    const editor = savedReplyEditorRef.current;
+    if (!editor) return;
+    editor.focus();
+    if (html.trim()) {
+      document.execCommand("insertHTML", false, sanitizeSavedReplyHtmlClient(html));
+    } else if (text.trim()) {
+      document.execCommand("insertText", false, text);
+    }
+    syncSavedReplyEditorToState();
+  };
+
+  const applySavedReplyFormatting = (command) => {
+    const editor = savedReplyEditorRef.current;
+    if (!editor) return;
+    editor.focus();
+    document.execCommand(command, false);
+    syncSavedReplyEditorToState();
+  };
+
   const openCreateSavedReplyModal = () => {
     resetSavedReplyForm();
     setSavedReplyModalOpen(true);
+    hydrateSavedReplyEditor("");
   };
 
   const openEditSavedReplyModal = (reply) => {
@@ -811,13 +1196,15 @@ export function KnowledgePageClient() {
     setSavedReplyContent(String(reply?.content || ""));
     setSavedReplyCategory(String(reply?.category || ""));
     setSavedReplyModalOpen(true);
+    hydrateSavedReplyEditor(String(reply?.content || ""));
   };
 
   const handleSaveSavedReply = async () => {
     const title = String(savedReplyTitle || "").trim();
     const content = String(savedReplyContent || "").trim();
+    const contentPlain = stripHtmlToPlainText(content);
     const category = String(savedReplyCategory || "").trim();
-    if (!title || !content) {
+    if (!title || !contentPlain) {
       toast.error("Title and content are required.");
       return;
     }
@@ -928,7 +1315,7 @@ export function KnowledgePageClient() {
                 <Button
                   type="button"
                   size="sm"
-                  onClick={() => setSnippetModalOpen(true)}
+                  onClick={openCreateSnippetModal}
                   disabled={!shopId || loading}
                   className="gap-1.5 bg-black text-white hover:bg-black/90"
                 >
@@ -940,33 +1327,80 @@ export function KnowledgePageClient() {
             <CardContent className="px-6 pb-6">
               {loading ? (
                 <p className="text-sm text-muted-foreground">Loading snippets...</p>
-              ) : snippets.length === 0 ? (
+              ) : knowledgeItems.length === 0 ? (
                 <div className="flex min-h-[320px] flex-col items-center justify-center gap-2 text-center">
                   <FileText className="h-12 w-12 text-gray-300" />
                   <p className="text-sm font-medium text-gray-600">No custom knowledge yet.</p>
                   <p className="text-xs text-gray-400">Add product manuals or guides to train the AI.</p>
                 </div>
               ) : (
-                <div className="divide-y divide-gray-50 rounded-lg border border-gray-100">
-                  {snippets.map((snippet) => (
-                    <div key={snippet.id} className="group flex items-center gap-3 px-4 py-3">
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-foreground">{snippet.title || "Untitled snippet"}</p>
-                        <p className="text-xs text-muted-foreground">{formatDate(snippet.created_at)}</p>
-                      </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-                        onClick={() => handleDeleteSnippet(snippet.id)}
-                        disabled={deletingSnippetId === snippet.id}
-                      >
-                        <Trash2 className="h-4 w-4 text-gray-500" />
-                        <span className="sr-only">Delete snippet</span>
-                      </Button>
+                <div className="space-y-4">
+                  <div className="overflow-hidden rounded-lg border border-gray-100">
+                    <div className="border-b border-gray-100 bg-gray-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      Snippets & Uploaded Files
                     </div>
-                  ))}
+                    <div className="divide-y divide-gray-50">
+                      {knowledgeItems.map((item) => (
+                        <div key={item.key} className="group flex items-center gap-3 px-4 py-3">
+                          <div className="min-w-0 flex-1">
+                            {item.kind === "csv_import" ? (
+                              <button
+                                type="button"
+                                className="truncate text-left text-sm font-medium text-foreground underline-offset-2 hover:underline"
+                                onClick={() => handlePreviewCsvImport(item)}
+                              >
+                                {item.title}
+                              </button>
+                            ) : (
+                              <p className="truncate text-sm font-medium text-foreground">{item.title}</p>
+                            )}
+                            <p className="text-xs text-muted-foreground">
+                              {item.kind === "csv_import"
+                                ? `${Number(item.row_count || 0)} rows · ${formatDate(item.created_at)}`
+                                : formatDate(item.created_at)}
+                            </p>
+                          </div>
+                          {item.kind === "snippet" && item.source_provider === "manual_text" ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                              onClick={() => {
+                                const snippet = snippets.find((entry) => String(entry?.id || "") === item.id);
+                                if (snippet) openEditSnippetModal(snippet);
+                              }}
+                            >
+                              Edit
+                            </Button>
+                          ) : null}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                            onClick={() => {
+                              if (item.kind === "csv_import") {
+                                handleDeleteCsvImport(item.id);
+                                return;
+                              }
+                              handleDeleteSnippet(item.id);
+                            }}
+                            disabled={
+                              item.kind === "csv_import"
+                                ? deletingCsvImportId === item.id
+                                : deletingSnippetId === item.id
+                            }
+                          >
+                            <Trash2 className="h-4 w-4 text-gray-500" />
+                            <span className="sr-only">
+                              {item.kind === "csv_import" ? "Delete CSV import" : "Delete snippet"}
+                            </span>
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               )}
             </CardContent>
@@ -1023,7 +1457,7 @@ export function KnowledgePageClient() {
                           </span>
                         </div>
                         <p className="mt-1 truncate text-xs text-muted-foreground">
-                          {String(reply?.content || "").trim() || "(empty content)"}
+                          {stripHtmlToPlainText(reply?.content || "") || "(empty content)"}
                         </p>
                       </div>
                       <div className="flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
@@ -1302,11 +1736,21 @@ export function KnowledgePageClient() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={snippetModalOpen} onOpenChange={setSnippetModalOpen}>
+      <Dialog
+        open={snippetModalOpen}
+        onOpenChange={(open) => {
+          setSnippetModalOpen(open);
+          if (!open) resetSnippetForm();
+        }}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add Knowledge</DialogTitle>
-            <DialogDescription>Add text or upload a file to train the AI.</DialogDescription>
+            <DialogTitle>{editingSnippetId ? "Edit Knowledge Snippet" : "Add Knowledge"}</DialogTitle>
+            <DialogDescription>
+              {editingSnippetId
+                ? "Update your manual snippet content."
+                : "Add text or upload a file to train the AI."}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 p-1">
@@ -1321,6 +1765,7 @@ export function KnowledgePageClient() {
                 type="button"
                 className={`rounded-md px-3 py-1.5 text-sm ${snippetMode === "pdf" ? "bg-white font-medium text-gray-900 shadow-sm" : "text-gray-600"}`}
                 onClick={() => setSnippetMode("pdf")}
+                disabled={Boolean(editingSnippetId)}
               >
                 File
               </button>
@@ -1343,7 +1788,7 @@ export function KnowledgePageClient() {
                     ref={pdfFileInputRef}
                     id="pdf-file"
                     type="file"
-                    accept="application/pdf,image/*"
+                    accept="application/pdf,image/*,.csv,text/csv"
                     className="hidden"
                     onChange={(event) => setPdfFile(event.target.files?.[0] || null)}
                   />
@@ -1361,6 +1806,7 @@ export function KnowledgePageClient() {
                     </span>
                   </div>
                   <p className="text-xs text-gray-500">PDF and image files are supported (max 15MB).</p>
+                  <p className="text-xs text-gray-500">CSV is also supported for structured support knowledge.</p>
                 </div>
               </>
             ) : (
@@ -1398,8 +1844,12 @@ export function KnowledgePageClient() {
             >
               {snippetMode === "text"
                 ? savingSnippet
-                  ? "Adding..."
-                  : "Add snippet"
+                  ? editingSnippetId
+                    ? "Saving..."
+                    : "Adding..."
+                  : editingSnippetId
+                    ? "Save changes"
+                    : "Add snippet"
                 : uploadingPdf
                   ? "Uploading..."
                   : "Upload file"}
@@ -1441,13 +1891,77 @@ export function KnowledgePageClient() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="saved-reply-content">Content</Label>
-              <Textarea
-                id="saved-reply-content"
-                value={savedReplyContent}
-                onChange={(event) => setSavedReplyContent(event.target.value)}
-                rows={10}
-                placeholder="Write the approved reply..."
-              />
+              <div className="overflow-hidden rounded-md border border-gray-200">
+                <div className="flex items-center gap-1 border-b border-gray-200 bg-gray-50 px-2 py-1.5">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => applySavedReplyFormatting("bold")}
+                    title="Bold"
+                  >
+                    <BoldIcon className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => applySavedReplyFormatting("italic")}
+                    title="Italic"
+                  >
+                    <ItalicIcon className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => applySavedReplyFormatting("underline")}
+                    title="Underline"
+                  >
+                    <UnderlineIcon className="h-3.5 w-3.5" />
+                  </Button>
+                  <div className="mx-1 h-4 w-px bg-gray-300" />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => applySavedReplyFormatting("insertUnorderedList")}
+                    title="Bulleted list"
+                  >
+                    <ListIcon className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => applySavedReplyFormatting("insertOrderedList")}
+                    title="Numbered list"
+                  >
+                    <ListOrderedIcon className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+                <div className="relative">
+                  {!stripHtmlToPlainText(savedReplyContent) ? (
+                    <p className="pointer-events-none absolute left-3 top-3 text-sm text-gray-400">
+                      Write the approved reply...
+                    </p>
+                  ) : null}
+                  <div
+                    id="saved-reply-content"
+                    ref={savedReplyEditorRef}
+                    contentEditable
+                    suppressContentEditableWarning
+                    onInput={handleSavedReplyEditorInput}
+                    onPaste={handleSavedReplyEditorPaste}
+                    className="min-h-[240px] max-h-[420px] overflow-y-auto px-3 py-2 text-sm leading-6 outline-none"
+                  />
+                </div>
+              </div>
             </div>
           </div>
           <DialogFooter>
@@ -1462,6 +1976,60 @@ export function KnowledgePageClient() {
                   : "Create saved reply"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <CsvSupportKnowledgeImportModal
+        open={csvImportModalOpen}
+        onOpenChange={(open) => {
+          setCsvImportModalOpen(open);
+          if (!open) {
+            setCsvImportSeedFile(null);
+          }
+        }}
+        shopId={shopId}
+        initialFile={csvImportSeedFile}
+        onImported={async () => {
+          await loadCsvImportBatches(shopId);
+        }}
+      />
+
+      <Dialog open={csvPreviewOpen} onOpenChange={setCsvPreviewOpen}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>{csvPreviewTitle}</DialogTitle>
+            <DialogDescription>Preview of imported support knowledge rows.</DialogDescription>
+          </DialogHeader>
+          {csvPreviewLoading ? (
+            <p className="text-sm text-muted-foreground">Loading imported rows...</p>
+          ) : csvPreviewRows.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No rows found in this import.</p>
+          ) : (
+            <div className="overflow-hidden rounded-md border border-gray-200 bg-white">
+              <div className="grid grid-cols-12 gap-2 border-b border-gray-100 bg-gray-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                <div className="col-span-1">Row</div>
+                <div className="col-span-4">Input</div>
+                <div className="col-span-5">Answer</div>
+                <div className="col-span-2">Topic</div>
+              </div>
+              <div className="max-h-[420px] divide-y divide-gray-100 overflow-y-auto">
+                {csvPreviewRows.map((row, index) => (
+                  <div key={`csv-preview-${index}`} className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-gray-700">
+                    <div className="col-span-1">{Number(row?.row_index || 0) || "-"}</div>
+                    <div className="col-span-4 whitespace-pre-wrap break-words">
+                      {String(row?.input_text || "-")}
+                    </div>
+                    <div className="col-span-5 whitespace-pre-wrap break-words">
+                      {String(row?.answer_text || "-")}
+                    </div>
+                    <div className="col-span-2 whitespace-pre-wrap break-words">
+                      {String(row?.topic || "-")}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

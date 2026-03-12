@@ -94,6 +94,17 @@ const extractPlainTextFromReplyHtml = (html = "") => {
     .trim();
 };
 
+const hasHtmlTag = (value = "") => /<[^>]+>/.test(String(value || ""));
+
+const normalizeSavedReplyToPlainText = (value = "") => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (hasHtmlTag(raw)) {
+    return extractPlainTextFromReplyHtml(raw);
+  }
+  return raw;
+};
+
 export function Composer({
   value,
   onChange,
@@ -174,7 +185,7 @@ export function Composer({
     return rows.filter((reply) => {
       const title = String(reply?.title || "").toLowerCase();
       const category = String(reply?.category || "").toLowerCase();
-      const content = String(reply?.content || "").toLowerCase();
+      const content = normalizeSavedReplyToPlainText(reply?.content || "").toLowerCase();
       return title.includes(query) || category.includes(query) || content.includes(query);
     });
   }, [savedReplies, savedRepliesQuery]);
@@ -435,7 +446,7 @@ export function Composer({
   };
 
   const applySavedReplyReplace = (reply) => {
-    const content = String(reply?.content || "").trim();
+    const content = normalizeSavedReplyToPlainText(reply?.content || "");
     if (!content) return;
     const current = String(value || "");
     const hasCurrentText = Boolean(current.trim());
@@ -449,7 +460,7 @@ export function Composer({
   };
 
   const applySavedReplyInsert = (reply) => {
-    const content = String(reply?.content || "").trim();
+    const content = normalizeSavedReplyToPlainText(reply?.content || "");
     if (!content) return;
     const current = String(value || "");
     let caretIndex = null;
@@ -1051,7 +1062,7 @@ export function Composer({
                 filteredSavedReplies.map((reply) => {
                   const title = String(reply?.title || "Untitled reply");
                   const category = String(reply?.category || "").trim();
-                  const content = String(reply?.content || "").trim();
+                  const content = normalizeSavedReplyToPlainText(reply?.content || "");
                   const preview =
                     content.length > 180 ? `${content.slice(0, 180).trim()}...` : content;
                   return (

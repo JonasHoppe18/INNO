@@ -45,6 +45,79 @@ function normalizeSortOrder(value, fallback = 0) {
   return Number(fallback || 0);
 }
 
+function escapeHtml(input = "") {
+  return String(input || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function hasHtmlTag(value = "") {
+  return /<[^>]+>/.test(String(value || ""));
+}
+
+function sanitizeSavedReplyHtml(value = "") {
+  const allowedTags = new Set([
+    "b",
+    "strong",
+    "i",
+    "em",
+    "u",
+    "br",
+    "p",
+    "div",
+    "ul",
+    "ol",
+    "li",
+    "a",
+  ]);
+
+  const withoutDangerousBlocks = String(value || "").replace(
+    /<\s*(script|style)[^>]*>[\s\S]*?<\s*\/\1>/gi,
+    ""
+  );
+
+  const sanitized = withoutDangerousBlocks.replace(
+    /<\/?([a-z0-9-]+)([^>]*)>/gi,
+    (match, rawTag, rawAttrs = "") => {
+      const tag = String(rawTag || "").toLowerCase();
+      const isClosing = /^<\s*\//.test(match);
+      if (!allowedTags.has(tag)) return "";
+      if (isClosing) return `</${tag}>`;
+      if (tag === "br") return "<br>";
+
+      if (tag === "a") {
+        const hrefMatch = String(rawAttrs || "").match(
+          /\shref\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i
+        );
+        const hrefRaw = hrefMatch?.[2] || hrefMatch?.[3] || hrefMatch?.[4] || "";
+        const href = String(hrefRaw || "").trim();
+        const safeHref =
+          /^https?:\/\//i.test(href) || /^mailto:/i.test(href) ? href : "";
+        if (!safeHref) return "<a>";
+        return `<a href="${escapeHtml(safeHref)}" target="_blank" rel="noreferrer noopener">`;
+      }
+
+      return `<${tag}>`;
+    }
+  );
+
+  return sanitized
+    .replace(/\r\n/g, "\n")
+    .replace(/\u0000/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function toStoredContent(value) {
+  const raw = asString(value);
+  if (!raw) return "";
+  if (hasHtmlTag(raw)) {
+    return sanitizeSavedReplyHtml(raw);
+  }
+  return escapeHtml(raw).replace(/\r\n/g, "\n").replace(/\n/g, "<br>");
+}
+
 function formatSavedReply(row) {
   return {
     id: row.id,
@@ -145,7 +218,7 @@ export async function POST(request) {
     if (error) return error;
 
     const title = asString(body?.title);
-    const content = asString(body?.content);
+    const content = toStoredContent(body?.content);
     if (!title) {
       return NextResponse.json({ error: "title is required." }, { status: 400 });
     }
@@ -232,7 +305,10 @@ export async function PUT(request) {
     }
 
     const nextTitle = asString(body?.title, asString(existing.title));
-    const nextContent = asString(body?.content, asString(existing.content));
+    const nextContent =
+      body?.content !== undefined
+        ? toStoredContent(body?.content)
+        : asString(existing.content);
     if (!nextTitle) {
       return NextResponse.json({ error: "title is required." }, { status: 400 });
     }
