@@ -1,10 +1,9 @@
 import { useMemo, useState } from "react";
 import Image from "next/image";
-import { ChevronDown, Download, Mail } from "lucide-react";
+import { Download, Mail } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatBytes, getSenderLabel } from "@/components/inbox/inbox-utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { deriveMessageBodies } from "@/components/inbox/message-body";
 
 const escapeHtml = (value) =>
@@ -27,6 +26,45 @@ const linkifyText = (value) => {
   });
   return withLinks.replace(/\n\n/g, "<br/><br/>").replace(/\n/g, "<br/>");
 };
+
+const formatQuotedText = (value) => {
+  const lines = String(value || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+  return lines
+    .map((line) => {
+      const trimmed = String(line || "");
+      const quoteMatch = trimmed.match(/^(\s*>+)\s?(.*)$/);
+      if (!quoteMatch) {
+        if (!trimmed.trim()) return '<div class="h-3"></div>';
+        return `<div>${linkifyText(trimmed)}</div>`;
+      }
+      const depth = Math.min(4, quoteMatch[1].replace(/\s/g, "").length);
+      const content = quoteMatch[2] || "";
+      const padding = 10 + (depth - 1) * 10;
+      return [
+        `<div style="margin:6px 0 0 ${Math.max(0, (depth - 1) * 10)}px;`,
+        `padding-left:${padding}px;`,
+        'border-left:3px solid #d1d5db;',
+        'color:#6b7280;',
+        'font-size:14px;',
+        'line-height:1.7;">',
+        content.trim() ? linkifyText(content) : '<span style="opacity:.5;">&nbsp;</span>',
+        "</div>",
+      ].join("");
+    })
+    .join("");
+};
+
+const formatAddressLabel = (name, email) => {
+  const displayName = String(name || "").trim();
+  const displayEmail = String(email || "").trim();
+  if (!displayName) return displayEmail || "-";
+  if (!displayEmail) return displayName;
+  if (displayName.toLowerCase() === displayEmail.toLowerCase()) return displayEmail;
+  return `${displayName} <${displayEmail}>`;
+};
+
+const hasQuotedPlainText = (value) =>
+  /(^|\n)\s*>+/.test(String(value || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n"));
 
 const normalizeCid = (value = "") =>
   String(value || "")
@@ -110,7 +148,6 @@ export function MessageBubble({
 }) {
   const [selectedAttachment, setSelectedAttachment] = useState(null);
   const [viewEmailOpen, setViewEmailOpen] = useState(false);
-  const [quotedOpen, setQuotedOpen] = useState(false);
   const isOutbound = direction === "outbound";
   const isAuthoredByCurrentUser =
     Boolean(currentUserId) &&
@@ -156,7 +193,6 @@ export function MessageBubble({
   const { cleanBodyText, quotedBodyText, cleanBodyHtml, quotedBodyHtml } = deriveMessageBodies(message);
   const safeCleanBodyHtml = sanitizeEmailHtml(cleanBodyHtml || "", attachments);
   const safeQuotedBodyHtml = sanitizeEmailHtml(quotedBodyHtml || "", attachments);
-  const hasQuotedBody = Boolean((quotedBodyText || "").trim() || (safeQuotedBodyHtml || "").trim());
   const selectedAttachmentUrl = useMemo(() => {
     if (!selectedAttachment?.id) return "";
     return `/api/attachments/${selectedAttachment.id}/download`;
@@ -170,6 +206,11 @@ export function MessageBubble({
   const canDownload = Boolean(selectedAttachment?.storage_path);
   const attachmentCards = (attachments || []).filter((attachment) => Boolean(attachment?.id));
   const subjectLine = String(message?.subject || "").trim() || "Email";
+  const senderDetails = formatAddressLabel(senderDisplayName, senderEmail);
+  const rawPlainBody = message.body_text || message.snippet || "No preview available.";
+  const shouldFormatRawPlainBody =
+    Boolean((quotedBodyText || "").trim()) || hasQuotedPlainText(rawPlainBody);
+  const shouldShowBcc = isOutbound && bccList.length > 0;
 
   return (
     <>
@@ -230,34 +271,6 @@ export function MessageBubble({
                     }}
                   />
                 )}
-                {hasQuotedBody ? (
-                  <Collapsible open={quotedOpen} onOpenChange={setQuotedOpen}>
-                    <CollapsibleTrigger asChild>
-                      <button
-                        type="button"
-                        className="mt-3 inline-flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100"
-                      >
-                        <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", quotedOpen && "rotate-180")} />
-                        {quotedOpen ? "Hide quoted text" : "Show quoted text"}
-                      </button>
-                    </CollapsibleTrigger>
-                    <CollapsibleContent className="pt-3">
-                      <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-gray-600">
-                        {safeQuotedBodyHtml ? (
-                          <div
-                            className={EMAIL_BODY_CLASS}
-                            dangerouslySetInnerHTML={{ __html: safeQuotedBodyHtml }}
-                          />
-                        ) : (
-                          <div
-                            className={EMAIL_BODY_CLASS}
-                            dangerouslySetInnerHTML={{ __html: linkifyText(quotedBodyText || "") }}
-                          />
-                        )}
-                      </div>
-                    </CollapsibleContent>
-                  </Collapsible>
-                ) : null}
               </div>
             </div>
 
@@ -336,7 +349,7 @@ export function MessageBubble({
             <div className="space-y-2 text-sm">
               <div className="flex flex-wrap gap-2">
                 <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-gray-400">From</span>
-                <span className="text-gray-700">{[senderDisplayName, senderEmail].filter(Boolean).join(" <")}{senderEmail ? ">" : ""}</span>
+                <span className="text-gray-700">{senderDetails}</span>
               </div>
               {toList.length ? (
                 <div className="flex flex-wrap gap-2">
@@ -350,7 +363,7 @@ export function MessageBubble({
                   <span className="text-gray-700">{ccList.join(", ")}</span>
                 </div>
               ) : null}
-              {bccList.length ? (
+              {shouldShowBcc ? (
                 <div className="flex flex-wrap gap-2">
                   <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-gray-400">Bcc</span>
                   <span className="text-gray-700">{bccList.join(", ")}</span>
@@ -369,9 +382,15 @@ export function MessageBubble({
                 />
               ) : (
                 <div
-                  className={EMAIL_BODY_CLASS}
+                  className={cn(
+                    EMAIL_BODY_CLASS,
+                    shouldFormatRawPlainBody &&
+                      "text-[14px] leading-6 text-gray-700 [&_*]:text-[14px] [&_*]:leading-6"
+                  )}
                   dangerouslySetInnerHTML={{
-                    __html: linkifyText(message.body_text || message.snippet || "No preview available."),
+                    __html: shouldFormatRawPlainBody
+                      ? formatQuotedText(rawPlainBody)
+                      : linkifyText(rawPlainBody),
                   }}
                 />
               )}
