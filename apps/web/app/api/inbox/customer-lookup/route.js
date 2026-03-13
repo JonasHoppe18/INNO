@@ -377,11 +377,16 @@ export async function POST(request) {
 
   const fetchOrders = async (params, label = "lookup") => {
     const url = new URL(`https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/orders.json`);
-    url.searchParams.set("status", "any");
-    url.searchParams.set("limit", String(params?.page_info ? SHOPIFY_PAGINATED_LIMIT : SHOPIFY_LIMIT));
-    Object.entries(params || {}).forEach(([key, value]) => {
-      if (value) url.searchParams.set(key, value);
-    });
+    if (params?.page_info) {
+      url.searchParams.set("page_info", String(params.page_info));
+      url.searchParams.set("limit", String(SHOPIFY_PAGINATED_LIMIT));
+    } else {
+      url.searchParams.set("status", "any");
+      url.searchParams.set("limit", String(SHOPIFY_LIMIT));
+      Object.entries(params || {}).forEach(([key, value]) => {
+        if (value) url.searchParams.set(key, value);
+      });
+    }
     const response = await fetch(url.toString(), {
       method: "GET",
       headers: {

@@ -2614,6 +2614,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         customerLookupLoading={customerLookupLoading}
         customerLookupError={customerLookupError}
         onCustomerRefresh={refreshCustomerLookup}
+        customerLookupParams={customerLookupParams}
       />
 
       <TranslationModal
