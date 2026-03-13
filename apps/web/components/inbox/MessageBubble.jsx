@@ -183,7 +183,7 @@ export function MessageBubble({
                 <div className="text-sm font-semibold text-gray-800">
                   {senderDisplayName}{" "}
                   <span className="text-xs font-medium text-gray-400">
-                    {[senderEmail, timestamp].filter(Boolean).join(" • ")}
+                    {timestamp}
                   </span>
                 </div>
               </div>
@@ -195,11 +195,6 @@ export function MessageBubble({
               {isDraft ? (
                 <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
                   Draft
-                </span>
-              ) : null}
-              {isInternalNote ? (
-                <span className="rounded-full border border-yellow-200 bg-yellow-50 px-2 py-0.5 text-[11px] font-medium text-yellow-700">
-                  Internal note
                 </span>
               ) : null}
             </div>

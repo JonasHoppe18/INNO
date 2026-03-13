@@ -1507,8 +1507,10 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
             actionType: actionType || null,
             payload: actionPayload,
             createdAt: latestAction.createdAt || null,
+            updatedAt: latestAction.updatedAt || latestAction.createdAt || null,
             status: asString(latestAction.status || latestAction.normalizedStatus) || "pending",
             testMode: isTestModeAction,
+            approvedBy: asString(latestAction.approvedBy) || "",
             error: isFailedStatus ? asString(latestAction.error) || actionDetail : null,
           },
         }));
@@ -2211,6 +2213,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       });
       const toastId = toast.loading("Applying action...");
       try {
+        const nowIso = new Date().toISOString();
         const pendingId = String(pending.id || "").trim();
         const pendingLooksLikeUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
           pendingId
@@ -2247,8 +2250,10 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
               payload:
                 pending.payload && typeof pending.payload === "object" ? pending.payload : {},
               createdAt: pending.createdAt || null,
+              updatedAt: payload?.approvedAt || nowIso,
               status: "approved_test_mode",
               testMode: true,
+              approvedBy: currentUserName,
               error: null,
             },
           }));
@@ -2265,6 +2270,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
               actionType: pending.actionType || null,
               payload: pending.payload && typeof pending.payload === "object" ? pending.payload : {},
               createdAt: pending.createdAt || null,
+              updatedAt: payload?.approvedAt || nowIso,
               status: "failed",
               testMode: false,
               error: blockedReason,
@@ -2324,6 +2330,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
               payload:
                 followUp?.payload && typeof followUp.payload === "object" ? followUp.payload : {},
               createdAt: followUp.createdAt || null,
+              updatedAt: followUp.updatedAt || followUp.createdAt || null,
               status: "pending",
               testMode: false,
               error: null,
@@ -2335,6 +2342,20 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
             return next;
           });
         } else {
+          if (normalized === "accepted") {
+            setPendingOrderUpdateByThread((prev) => ({
+              ...prev,
+              [selectedThreadId]: {
+                ...pending,
+                status: payload?.testMode || payload?.simulated ? "approved_test_mode" : "applied",
+                detail: asString(payload?.detail) || pending.detail || "",
+                updatedAt: payload?.approvedAt || nowIso,
+                approvedBy: currentUserName,
+                testMode: Boolean(payload?.testMode || payload?.simulated),
+                error: null,
+              },
+            }));
+          }
           setOrderUpdateDecisionByThread((prev) => ({
             ...prev,
             [selectedThreadId]: normalized,
@@ -2372,7 +2393,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         }));
       }
     },
-    [orderUpdateSubmittingByThread, pendingOrderUpdateByThread, selectedThreadId]
+    [currentUserName, orderUpdateSubmittingByThread, pendingOrderUpdateByThread, selectedThreadId]
   );
 
 
@@ -2484,6 +2505,8 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           thread={selectedThread}
           messages={threadMessages}
           attachments={threadAttachments}
+          customerLookup={customerLookup}
+          threadOrderNumber={customerLookupParams.orderNumber || ""}
           mentionUsers={effectiveMentionUsers}
           currentUserId={currentSupabaseUserId || null}
           currentUserName={currentUserName}

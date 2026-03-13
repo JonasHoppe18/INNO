@@ -26,6 +26,8 @@ export function TicketDetail({
   thread,
   messages,
   attachments,
+  customerLookup,
+  threadOrderNumber = "",
   mentionUsers = [],
   currentUserId,
   currentUserName,
@@ -60,18 +62,22 @@ export function TicketDetail({
   const [processReturnRestock, setProcessReturnRestock] = useState(true);
   const normalizedPendingStatus = String(pendingOrderUpdate?.status || "").toLowerCase();
   const pendingUpdateState = orderUpdateSubmitting
-    ? "applying"
+    ? "executing"
     : orderUpdateDecision === "accepted"
-    ? "accepted"
+    ? isWorkspaceTestMode || normalizedPendingStatus === "approved_test_mode"
+      ? "simulated"
+      : "completed"
     : orderUpdateDecision === "denied"
-    ? "denied"
+    ? "declined"
     : normalizedPendingStatus === "approved_test_mode"
-    ? "accepted"
+    ? "simulated"
+    : normalizedPendingStatus === "applied" || normalizedPendingStatus === "approved"
+    ? "completed"
     : normalizedPendingStatus === "failed"
     ? "failed"
     : orderUpdateError
     ? "failed"
-    : "pending";
+    : "proposed";
 
   const pendingActionType = String(pendingOrderUpdate?.actionType || "");
   const pendingActionTitleByType = {
@@ -120,7 +126,7 @@ export function TicketDetail({
     pendingOrderUpdate?.payload?.restock_confidence,
   ]);
 
-  const isApprovalPending = Boolean(pendingOrderUpdate) && pendingUpdateState === "pending";
+  const isApprovalPending = Boolean(pendingOrderUpdate) && pendingUpdateState === "proposed";
   const shouldForceUnlocked =
     orderUpdateDecision === "denied" || orderUpdateDecision === "accepted";
   const isActionPending = (() => {
@@ -144,14 +150,6 @@ export function TicketDetail({
       });
     return Boolean(lowered) || isApprovalPending;
   })();
-  const actionCardStatus =
-    pendingUpdateState === "accepted"
-      ? "approved"
-      : pendingUpdateState === "denied"
-      ? "declined"
-      : pendingUpdateState === "failed"
-      ? "failed"
-      : "pending";
   const detailSuggestsTestMode = (() => {
     const detailText = String(pendingOrderUpdate?.detail || "").toLowerCase();
     return detailText.includes("test mode") || detailText.includes("simulated");
@@ -164,13 +162,19 @@ export function TicketDetail({
     pendingOrderUpdate?.testMode === true ||
     payloadSuggestsTestMode ||
     detailSuggestsTestMode ||
-    (Boolean(isWorkspaceTestMode) && actionCardStatus === "approved");
+    (Boolean(isWorkspaceTestMode) &&
+      (pendingUpdateState === "completed" || pendingUpdateState === "simulated"));
   const shouldShowActionCard =
     Boolean(pendingOrderUpdate) &&
-    (isApprovalManagedActionType || pendingUpdateState === "pending");
+    (isApprovalManagedActionType || pendingUpdateState === "proposed");
+  const selectedOrderSummary = useMemo(() => {
+    const orders = Array.isArray(customerLookup?.orders) ? customerLookup.orders : [];
+    return orders[0] || null;
+  }, [customerLookup?.orders]);
+  const selectedCustomerEmail = String(customerLookup?.customer?.email || "").trim();
   let actionCardInserted = false;
   const processReturnExtraContent =
-    isProcessReturnAction && actionCardStatus === "pending" ? (
+    isProcessReturnAction && pendingUpdateState === "proposed" ? (
       <div className="rounded-lg border border-violet-100 bg-white p-3">
         <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Return options</div>
         <label className="mt-2 flex items-center gap-2 text-sm text-slate-700">
@@ -298,16 +302,23 @@ export function TicketDetail({
             return (
               <div key={message.id} className="space-y-3">
                 {shouldInsertActionCardBeforeMessage ? (
-                  <div className="ml-auto w-full max-w-[520px]">
-                    <ActionCard
-                      status={actionCardStatus}
-                      testMode={isApprovedInTestMode}
-                      actionName={pendingActionTitle}
-                      detail={pendingOrderUpdate?.detail || ""}
-                      error={orderUpdateError || ""}
-                      loading={Boolean(orderUpdateSubmitting)}
-                      extraContent={processReturnExtraContent}
-                      onApprove={() =>
+                  <div className="ml-auto flex w-full max-w-[520px] justify-end">
+                  <ActionCard
+                  status={pendingUpdateState}
+                  testMode={isApprovedInTestMode}
+                  actionName={pendingActionTitle}
+                  actionType={pendingOrderUpdate?.actionType || ""}
+                  detail={pendingOrderUpdate?.detail || ""}
+                  payload={pendingOrderUpdate?.payload || {}}
+                  orderSummary={selectedOrderSummary}
+                  fallbackOrderNumber={threadOrderNumber}
+                  customerEmail={selectedCustomerEmail}
+                  approvedAt={pendingOrderUpdate?.updatedAt || pendingOrderUpdate?.createdAt || ""}
+                  approvedBy={pendingOrderUpdate?.approvedBy || ""}
+                  error={orderUpdateError || ""}
+                  loading={Boolean(orderUpdateSubmitting)}
+                  extraContent={processReturnExtraContent}
+                  onApprove={() =>
                         onOrderUpdateDecision?.(
                           "accepted",
                           isProcessReturnAction ? { restock: processReturnRestock } : undefined
@@ -336,11 +347,19 @@ export function TicketDetail({
             );
           })}
           {shouldShowActionCard && !actionCardInserted ? (
-            <div className="ml-auto w-full max-w-[520px]">
+            <div className="ml-auto flex w-full max-w-[520px] justify-end">
               <ActionCard
-                status={actionCardStatus}
+                status={pendingUpdateState}
+                testMode={isApprovedInTestMode}
                 actionName={pendingActionTitle}
+                actionType={pendingOrderUpdate?.actionType || ""}
                 detail={pendingOrderUpdate.detail || ""}
+                payload={pendingOrderUpdate?.payload || {}}
+                orderSummary={selectedOrderSummary}
+                fallbackOrderNumber={threadOrderNumber}
+                customerEmail={selectedCustomerEmail}
+                approvedAt={pendingOrderUpdate?.updatedAt || pendingOrderUpdate?.createdAt || ""}
+                approvedBy={pendingOrderUpdate?.approvedBy || ""}
                 error={orderUpdateError || ""}
                 loading={Boolean(orderUpdateSubmitting)}
                 extraContent={processReturnExtraContent}

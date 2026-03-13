@@ -2281,6 +2281,7 @@ export async function GET(_request, { params }) {
         payload:
           actionPayload,
         createdAt: latestAction.created_at || null,
+        updatedAt: latestAction.updated_at || latestAction.created_at || null,
         status: rawStatus,
         normalizedStatus: normalizedStatus,
         testMode: testModeAction,
@@ -3147,6 +3148,7 @@ export async function POST(request, { params }) {
         simulated: true,
         testMode: true,
         message: testModeMessage,
+        approvedAt: nowIso,
         action: normalizedActionType,
         orderId: String(order.id),
         orderNumber: order.order_number ?? null,
@@ -3629,6 +3631,7 @@ export async function POST(request, { params }) {
     {
       ok: true,
       decision: "accepted",
+      approvedAt: nowIso,
       action: normalizedActionType,
       orderId: String(order.id),
       orderNumber: order.order_number ?? null,
