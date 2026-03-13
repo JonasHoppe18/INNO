@@ -280,13 +280,23 @@ function InboxHeaderActions({
   );
 }
 
+const normalizeLookupText = (value = "") =>
+  String(value || "")
+    .replace(/\[[^\]]+\]/g, " ")
+    .replace(/\b(?:re|fw|fwd)\s*:\s*/gi, " ")
+    .replace(/\bnew customer message on\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
 const extractOrderNumber = (value = "") => {
   if (!value) return null;
-  const text = String(value || "");
+  const text = normalizeLookupText(value);
   const explicitMatch = text.match(
-    /\b(?:ordre|order)\s*(?:nr\.?|number)?\s*#?\s*(\d{3,})\b/i
+    /\b(?:ordre|ordrenummer|order)\s*(?:nr\.?|number|no\.?)?\s*#?\s*(\d{3,})\b/i
   );
   if (explicitMatch?.[1]) return explicitMatch[1];
+  const compactMatch = text.match(/\b(?:order|ordre)\s*#(\d{3,})\b/i);
+  if (compactMatch?.[1]) return compactMatch[1];
   const hashMatch = text.match(/#\s*(\d{3,})\b/);
   return hashMatch?.[1] || null;
 };

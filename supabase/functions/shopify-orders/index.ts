@@ -324,12 +324,14 @@ async function fetchShopifyOrdersByNumberViaRest(
   let lastOrders: any[] = [];
   for (let page = 0; page < 10; page++) {
     const params = new URLSearchParams();
-    params.set("limit", String(limit));
-    params.set("status", "any");
     if (pageInfo) {
       params.set("page_info", pageInfo);
-    } else if (email) {
-      params.set("email", email);
+    } else {
+      params.set("limit", String(limit));
+      params.set("status", "any");
+      if (email) {
+        params.set("email", email);
+      }
     }
     const { orders, nextPageInfo } = await fetchOrdersPage(shop, params);
     lastOrders = orders;

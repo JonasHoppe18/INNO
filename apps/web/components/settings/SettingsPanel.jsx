@@ -228,7 +228,7 @@ function GeneralTab({
               disabled={!hasWorkspaceScope}
               className={cn(
                 "relative inline-flex h-7 w-12 items-center rounded-full transition",
-                testMode ? "bg-emerald-500" : "bg-slate-300",
+                testMode ? "bg-[#F59E0B]" : "bg-slate-300",
                 !hasWorkspaceScope && "cursor-not-allowed opacity-70"
               )}
             >

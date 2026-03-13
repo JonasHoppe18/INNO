@@ -86,12 +86,14 @@ async function fetchShopifyOrdersPage(options: FetchOrdersOptions): Promise<{
 
     const domain = data.shop_domain.replace(/^https?:\/\//, "");
     const url = new URL(`https://${domain}/admin/api/${apiVersion}/orders.json`);
-    url.searchParams.set("limit", String(limit));
-    url.searchParams.set("status", "any");
     if (pageInfo) {
       url.searchParams.set("page_info", pageInfo);
-    } else if (email?.trim()) {
-      url.searchParams.set("email", email.trim());
+    } else {
+      url.searchParams.set("limit", String(limit));
+      url.searchParams.set("status", "any");
+      if (email?.trim()) {
+        url.searchParams.set("email", email.trim());
+      }
     }
 
     const response = await fetch(url.toString(), {

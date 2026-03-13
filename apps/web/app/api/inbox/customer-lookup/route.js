@@ -43,13 +43,25 @@ function normalizeOrderNumber(value) {
   return digits || trimmed;
 }
 
+function normalizeLookupText(value) {
+  if (!value) return "";
+  return String(value || "")
+    .replace(/\[[^\]]+\]/g, " ")
+    .replace(/\b(?:re|fw|fwd)\s*:\s*/gi, " ")
+    .replace(/\bnew customer message on\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function extractOrderNumber(subject) {
   if (!subject) return null;
-  const text = String(subject || "");
+  const text = normalizeLookupText(subject);
   const explicitMatch = text.match(
-    /\b(?:ordre|order)\s*(?:nr\.?|number)?\s*#?\s*(\d{3,})\b/i
+    /\b(?:ordre|ordrenummer|order)\s*(?:nr\.?|number|no\.?)?\s*#?\s*(\d{3,})\b/i
   );
   if (explicitMatch?.[1]) return explicitMatch[1];
+  const compactMatch = text.match(/\b(?:order|ordre)\s*#(\d{3,})\b/i);
+  if (compactMatch?.[1]) return compactMatch[1];
   const hashMatch = text.match(/#\s*(\d{3,})\b/);
   return hashMatch?.[1] || null;
 }
@@ -227,14 +239,15 @@ export async function POST(request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
   const supabaseUserId = scope?.supabaseUserId ?? null;
+  const workspaceId = scope?.workspaceId ?? null;
 
-  if (!supabaseUserId) {
-    return NextResponse.json({ error: "Supabase user not found." }, { status: 404 });
+  if (!workspaceId && !supabaseUserId) {
+    return NextResponse.json({ error: "Could not resolve workspace scope." }, { status: 404 });
   }
 
-  const scopedCacheKey = `${scope?.workspaceId ? `ws:${scope.workspaceId}` : `u:${supabaseUserId}`}|${cacheKey}`;
+  const scopedCacheKey = `${workspaceId ? `ws:${workspaceId}` : `u:${supabaseUserId}`}|${cacheKey}`;
 
-  if (!forceRefresh) {
+  if (!forceRefresh && supabaseUserId) {
     const { data: cached, error: cacheError } = await serviceClient
       .from("customer_lookup_cache")
       .select("data, fetched_at, expires_at, source")
@@ -413,21 +426,23 @@ export async function POST(request) {
   const now = new Date();
   const expiresAt = new Date(now.getTime() + ttlMinutes * 60 * 1000);
 
-  await serviceClient.from("customer_lookup_cache").upsert(
-    {
-      user_id: supabaseUserId,
-      platform,
-      cache_key: scopedCacheKey,
-      email: inputEmail,
-      order_number: derivedOrderNumber,
-      data,
-      source: platform,
-      fetched_at: now.toISOString(),
-      expires_at: expiresAt.toISOString(),
-      updated_at: now.toISOString(),
-    },
-    { onConflict: "user_id,cache_key" }
-  );
+  if (supabaseUserId) {
+    await serviceClient.from("customer_lookup_cache").upsert(
+      {
+        user_id: supabaseUserId,
+        platform,
+        cache_key: scopedCacheKey,
+        email: inputEmail,
+        order_number: derivedOrderNumber,
+        data,
+        source: platform,
+        fetched_at: now.toISOString(),
+        expires_at: expiresAt.toISOString(),
+        updated_at: now.toISOString(),
+      },
+      { onConflict: "user_id,cache_key" }
+    );
+  }
 
   return NextResponse.json(
     {
