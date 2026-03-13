@@ -10,22 +10,31 @@ const normalizeOrderNumber = (value) => {
   return digits || trimmed;
 };
 
-const buildKey = ({ email, orderNumber }) => {
+const buildKey = ({ email, orderNumber, threadId, sourceMessageId }) => {
   const parts = [];
   const normalizedEmail = normalizeEmail(email);
   const normalizedOrder = normalizeOrderNumber(orderNumber);
   if (normalizedOrder) parts.push(`order:${normalizedOrder}`);
   if (normalizedEmail) parts.push(`email:${normalizedEmail}`);
+  if (threadId) parts.push(`thread:${threadId}`);
+  if (sourceMessageId) parts.push(`message:${sourceMessageId}`);
   return parts.join("|");
 };
 
-export function useCustomerLookup({ email, orderNumber, subject, enabled = false }) {
+export function useCustomerLookup({
+  email,
+  orderNumber,
+  subject,
+  threadId,
+  sourceMessageId,
+  enabled = false,
+}) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const key = useMemo(
-    () => buildKey({ email, orderNumber }),
-    [email, orderNumber]
+    () => buildKey({ email, orderNumber, threadId, sourceMessageId }),
+    [email, orderNumber, sourceMessageId, threadId]
   );
   const lastKeyRef = useRef("");
 
@@ -46,7 +55,14 @@ export function useCustomerLookup({ email, orderNumber, subject, enabled = false
         const response = await fetch("/api/inbox/customer-lookup", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, orderNumber, subject, forceRefresh }),
+          body: JSON.stringify({
+            email,
+            orderNumber,
+            subject,
+            threadId,
+            sourceMessageId,
+            forceRefresh,
+          }),
         });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
@@ -60,7 +76,7 @@ export function useCustomerLookup({ email, orderNumber, subject, enabled = false
         setLoading(false);
       }
     },
-    [email, enabled, key, orderNumber, subject]
+    [email, enabled, key, orderNumber, sourceMessageId, subject, threadId]
   );
 
   useEffect(() => {

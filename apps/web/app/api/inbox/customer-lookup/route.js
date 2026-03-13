@@ -24,6 +24,26 @@ function createServiceClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
+async function logCustomerLookup(serviceClient, { status = "info", detail = {} }) {
+  try {
+    await serviceClient.from("agent_logs").insert({
+      draft_id: null,
+      step_name: status === "error" ? "customer_lookup_failed" : "customer_lookup",
+      step_detail: JSON.stringify(detail),
+      status,
+      created_at: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.warn("customer-lookup: failed to write agent log", error);
+  }
+}
+
+function preview(value, maxLength = 160) {
+  const normalized = String(value || "").replace(/\s+/g, " ").trim();
+  if (!normalized) return "";
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 1)}…` : normalized;
+}
+
 function normalizeEmail(value) {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
@@ -205,6 +225,9 @@ export async function POST(request) {
   const inputEmail = normalizeEmail(body?.email);
   const inputOrder = normalizeOrderNumber(body?.orderNumber);
   const subject = typeof body?.subject === "string" ? body.subject : "";
+  const threadId = typeof body?.threadId === "string" ? body.threadId.trim() : "";
+  const sourceMessageId =
+    typeof body?.sourceMessageId === "string" ? body.sourceMessageId.trim() : "";
   const forceRefresh = Boolean(body?.forceRefresh);
   const debug = Boolean(body?.debug);
 
@@ -246,6 +269,15 @@ export async function POST(request) {
   }
 
   const scopedCacheKey = `${workspaceId ? `ws:${workspaceId}` : `u:${supabaseUserId}`}|${cacheKey}`;
+  const logContext = {
+    thread_id: threadId || null,
+    source_message_id: sourceMessageId || null,
+    input_email: inputEmail,
+    input_order_number: inputOrder,
+    derived_order_number: derivedOrderNumber,
+    raw_subject: subject || null,
+    normalized_subject: normalizeLookupText(subject) || null,
+  };
 
   if (!forceRefresh && supabaseUserId) {
     const { data: cached, error: cacheError } = await serviceClient
@@ -255,9 +287,21 @@ export async function POST(request) {
       .eq("cache_key", scopedCacheKey)
       .maybeSingle();
     if (cacheError) {
+      await logCustomerLookup(serviceClient, {
+        status: "error",
+        detail: { ...logContext, stage: "cache_read_failed", error: cacheError.message },
+      });
       return NextResponse.json({ error: cacheError.message }, { status: 500 });
     }
     if (cached?.expires_at && new Date(cached.expires_at) > new Date()) {
+      await logCustomerLookup(serviceClient, {
+        detail: {
+          ...logContext,
+          stage: "cache_hit",
+          cached: true,
+          expires_at: cached.expires_at,
+        },
+      });
       return NextResponse.json(
         {
           ...(cached?.data || {}),
@@ -281,9 +325,17 @@ export async function POST(request) {
   shopQuery = applyScope(shopQuery, scope, { workspaceColumn: "workspace_id", userColumn: "owner_user_id" });
   const { data: shopCreds, error: shopCredsError } = await shopQuery.maybeSingle();
   if (shopCredsError) {
+    await logCustomerLookup(serviceClient, {
+      status: "error",
+      detail: { ...logContext, stage: "shop_credentials_failed", error: shopCredsError.message },
+    });
     return NextResponse.json({ error: shopCredsError.message }, { status: 500 });
   }
   if (!shopCreds?.shop_domain || !shopCreds?.access_token_encrypted) {
+    await logCustomerLookup(serviceClient, {
+      status: "error",
+      detail: { ...logContext, stage: "shop_missing_credentials" },
+    });
     return NextResponse.json({ error: "No connected Shopify store found for this workspace." }, { status: 400 });
   }
   let shopAccessToken = null;
@@ -331,6 +383,16 @@ export async function POST(request) {
   if (!primaryResult.response.ok) {
     const message =
       primaryResult.json?.error || primaryResult.text || "Shopify lookup failed.";
+    await logCustomerLookup(serviceClient, {
+      status: "error",
+      detail: {
+        ...logContext,
+        stage: "primary_lookup_failed",
+        request_params: primaryParams,
+        status_code: primaryResult.response.status,
+        error: message,
+      },
+    });
     return NextResponse.json({ error: message }, { status: primaryResult.response.status });
   }
 
@@ -425,6 +487,21 @@ export async function POST(request) {
   const ttlMinutes = ordersToUse.length ? DEFAULT_TTL_MINUTES : NEGATIVE_TTL_MINUTES;
   const now = new Date();
   const expiresAt = new Date(now.getTime() + ttlMinutes * 60 * 1000);
+
+  await logCustomerLookup(serviceClient, {
+    detail: {
+      ...logContext,
+      stage: ordersToUse.length ? "lookup_succeeded" : "lookup_no_match",
+      request_params: primaryParams,
+      raw_orders_count: rawOrders.length,
+      email_filtered_count: emailFilteredOrders.length,
+      final_orders_count: ordersToUse.length,
+      matched_order_ids: mappedOrders.map((order) => order?.id).filter(Boolean),
+      customer_email: customer?.email || null,
+      customer_name: customer?.name || null,
+      subject_preview: preview(subject),
+    },
+  });
 
   if (supabaseUserId) {
     await serviceClient.from("customer_lookup_cache").upsert(

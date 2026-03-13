@@ -77,7 +77,7 @@ export function CustomerTab({ data, loading, error, onRefresh }) {
     return (
       <div className="space-y-4 text-sm text-slate-500">
         <div className="flex items-center justify-between">
-          <span>{`Vi fandt ingen kunde i ${source} for denne henvendelse.`}</span>
+          <span>{`We couldn't find a customer in ${source} for this conversation.`}</span>
           <Button variant="outline" size="sm" onClick={onRefresh}>
             Refresh
           </Button>

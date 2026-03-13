@@ -1426,15 +1426,31 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   }, [draftMessage, rawThreadMessages]);
 
   const customerLookupParams = useMemo(() => {
-    const inbound = threadMessages.find(
-      (message) => !isOutboundMessage(message, mailboxEmails)
-    );
+    const inboundCandidates = [...threadMessages]
+      .filter((message) => !isOutboundMessage(message, mailboxEmails))
+      .reverse();
+    const pickMessageBody = (message) =>
+      message?.clean_body_text || message?.body_text || "";
+    const inboundWithOrder = inboundCandidates.find((message) => {
+      const body = pickMessageBody(message);
+      return (
+        extractOrderNumber(message?.subject || "") ||
+        extractOrderNumber(body)
+      );
+    });
+    const inbound = inboundWithOrder || inboundCandidates[0] || null;
     const email = inbound?.from_email || null;
     const subject = inbound?.subject || selectedThread?.subject || "";
-    const body = inbound?.body_text || "";
+    const body = pickMessageBody(inbound);
     const orderNumber = extractOrderNumber(subject) || extractOrderNumber(body);
-    return { email, subject, orderNumber };
-  }, [mailboxEmails, selectedThread?.subject, threadMessages]);
+    return {
+      email,
+      subject,
+      orderNumber,
+      threadId: selectedThreadId || null,
+      sourceMessageId: inbound?.id || null,
+    };
+  }, [mailboxEmails, selectedThread?.subject, selectedThreadId, threadMessages]);
 
   const {
     data: customerLookup,

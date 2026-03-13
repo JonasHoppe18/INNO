@@ -1532,7 +1532,7 @@ export function KnowledgePageClient() {
 
   return (
     <>
-      <div className="space-y-6">
+      <div className="mx-auto w-full max-w-6xl space-y-6">
         <div className="space-y-2">
           <h1 className="text-3xl font-semibold text-foreground">Brain Center</h1>
           <p className="text-sm text-muted-foreground">

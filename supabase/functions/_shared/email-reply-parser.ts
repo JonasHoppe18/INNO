@@ -2,11 +2,14 @@ type ReplyParserStrategy =
   | "empty"
   | "raw_fallback"
   | "zendesk_marker"
-  | "quoted_intro"
+  | "on_wrote"
   | "forwarded_separator"
   | "header_block"
+  | "header_block_scandinavian"
+  | "outlook_ios_signature"
   | "angle_quote"
-  | "html_quote";
+  | "gmail_quote"
+  | "blockquote";
 
 type ParsedEmailBodies = {
   cleanBodyText: string;
@@ -16,6 +19,8 @@ type ParsedEmailBodies = {
   parserStrategy: ReplyParserStrategy;
   quotedHistoryDetected: boolean;
   cleanExtractionSucceeded: boolean;
+  matchedBoundaryLine: string | null;
+  cleanBodyPreview: string;
 };
 
 const QUOTED_INTRO_RE =
@@ -37,13 +42,49 @@ const LEADING_NOISE_RE = [
 const HTML_MARKERS: Array<{ strategy: ReplyParserStrategy; pattern: RegExp }> = [
   { strategy: "zendesk_marker", pattern: /##-\s*please type your reply above this line\s*-##/i },
   { strategy: "zendesk_marker", pattern: /reply above this line/i },
-  { strategy: "html_quote", pattern: /<div\b[^>]*class=(["'])gmail_quote\1/i },
-  { strategy: "html_quote", pattern: /<blockquote\b/i },
-  { strategy: "html_quote", pattern: /<hr\b[^>]*id=(["'])replySplit\1/i },
-  { strategy: "html_quote", pattern: /<!--\s*OriginalMessageHeader\s*-->/i },
+  { strategy: "gmail_quote", pattern: /<div\b[^>]*class=(["'])gmail_quote\1/i },
+  { strategy: "blockquote", pattern: /<blockquote\b/i },
+  { strategy: "blockquote", pattern: /<hr\b[^>]*id=(["'])replySplit\1/i },
+  { strategy: "blockquote", pattern: /<!--\s*OriginalMessageHeader\s*-->/i },
   { strategy: "forwarded_separator", pattern: /-{2,}\s*(?:Original Message|Forwarded message|Forwarded by Zendesk)\s*-{2,}/i },
-  { strategy: "quoted_intro", pattern: /(?:^|>|\s)(?:On|Den|Fra|From)[\s\S]{0,240}?(?:wrote:|skrev:|schrieb:)/i },
+  { strategy: "on_wrote", pattern: /(?:^|>|\s)(?:On|Den|Fra|From)[\s\S]{0,240}?(?:wrote:|skrev:|schrieb:)/i },
 ];
+
+const CANONICAL_HEADER_PREFIXES = [
+  "from",
+  "sent",
+  "date",
+  "to",
+  "subject",
+  "cc",
+  "bcc",
+  "fra",
+  "sendt",
+  "dato",
+  "til",
+  "emne",
+  "kopi",
+  "fran",
+  "skickat",
+  "till",
+  "amne",
+];
+
+const SCANDINAVIAN_HEADER_PREFIXES = [
+  "fra",
+  "sendt",
+  "dato",
+  "til",
+  "emne",
+  "kopi",
+  "fran",
+  "skickat",
+  "till",
+  "amne",
+];
+
+const OUTLOOK_IOS_SIGNATURE_RE =
+  /^(?:sent from outlook for ios|sendt fra outlook til ios|sendt fra outlook for ios|get outlook for ios)$/i;
 
 function normalizeNewlines(value: string) {
   return String(value || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
@@ -73,24 +114,99 @@ function stripLeadingNoise(text: string) {
   return cleaned || normalizeWhitespace(text);
 }
 
-function isHeaderCluster(lines: string[], startIndex: number) {
-  const window = lines.slice(startIndex, startIndex + 7);
-  const headerMatches = window.filter((line) => HEADER_LINE_RE.test(line.trim()));
-  if (headerMatches.length >= 3) return true;
-  if (headerMatches.length >= 2 && /^(?:from|fra|från)\s*:/i.test(lines[startIndex]?.trim() || "")) {
-    return true;
+function canonicalizeLine(value: string) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\u00a0/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function getHeaderPrefix(line: string) {
+  const canonical = canonicalizeLine(line);
+  const match = canonical.match(/^([a-z]+)\s*:/);
+  const prefix = match?.[1] || "";
+  return CANONICAL_HEADER_PREFIXES.includes(prefix) ? prefix : null;
+}
+
+function detectHeaderBlock(lines: string[], startIndex: number) {
+  let headerCount = 0;
+  let scandinavianCount = 0;
+  let firstHeaderPrefix: string | null = null;
+  let subjectLikeCount = 0;
+  let consumedNonEmpty = 0;
+
+  for (let index = startIndex; index < lines.length && index < startIndex + 10; index += 1) {
+    const line = String(lines[index] || "");
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    consumedNonEmpty += 1;
+    const prefix = getHeaderPrefix(trimmed);
+    if (!prefix) {
+      break;
+    }
+    if (!firstHeaderPrefix) firstHeaderPrefix = prefix;
+    headerCount += 1;
+    if (SCANDINAVIAN_HEADER_PREFIXES.includes(prefix)) scandinavianCount += 1;
+    if (["subject", "emne", "amne"].includes(prefix)) subjectLikeCount += 1;
+  }
+
+  if (!headerCount) {
+    return null;
+  }
+
+  const beginsLikeReplyHeader = ["from", "fra", "fran", "sent", "sendt", "skickat"].includes(
+    firstHeaderPrefix || "",
+  );
+  const isValidCluster =
+    headerCount >= 3 ||
+    (headerCount >= 2 && beginsLikeReplyHeader) ||
+    (headerCount >= 2 && subjectLikeCount >= 1);
+
+  if (!isValidCluster) return null;
+
+  return {
+    strategy:
+      scandinavianCount > 0 ? ("header_block_scandinavian" as const) : ("header_block" as const),
+    consumedNonEmpty,
+  };
+}
+
+function hasHeaderBlockAfterSignature(lines: string[], startIndex: number) {
+  for (let index = startIndex + 1; index < lines.length && index <= startIndex + 7; index += 1) {
+    const trimmed = String(lines[index] || "").trim();
+    if (!trimmed) continue;
+    const headerBlock = detectHeaderBlock(lines, index);
+    return Boolean(headerBlock);
   }
   return false;
 }
 
-function classifyQuotedLine(lines: string[], index: number): ReplyParserStrategy | null {
+function classifyQuotedLine(lines: string[], index: number) {
   const trimmed = lines[index]?.trim() || "";
   if (!trimmed) return null;
-  if (ZENDESK_MARKER_RE.test(trimmed)) return "zendesk_marker";
-  if (trimmed.startsWith(">")) return "angle_quote";
-  if (QUOTED_INTRO_RE.test(trimmed)) return "quoted_intro";
-  if (FORWARDED_SEPARATOR_RE.test(trimmed)) return "forwarded_separator";
-  if (isHeaderCluster(lines, index)) return "header_block";
+  const canonical = canonicalizeLine(trimmed);
+  if (ZENDESK_MARKER_RE.test(trimmed)) {
+    return { strategy: "zendesk_marker" as const, boundaryLine: trimmed };
+  }
+  if (OUTLOOK_IOS_SIGNATURE_RE.test(canonical) && hasHeaderBlockAfterSignature(lines, index)) {
+    return { strategy: "outlook_ios_signature" as const, boundaryLine: trimmed };
+  }
+  if (trimmed.startsWith(">")) {
+    return { strategy: "angle_quote" as const, boundaryLine: trimmed };
+  }
+  if (QUOTED_INTRO_RE.test(trimmed)) {
+    return { strategy: "on_wrote" as const, boundaryLine: trimmed };
+  }
+  if (FORWARDED_SEPARATOR_RE.test(trimmed)) {
+    return { strategy: "forwarded_separator" as const, boundaryLine: trimmed };
+  }
+  const headerBlock = detectHeaderBlock(lines, index);
+  if (headerBlock) {
+    return { strategy: headerBlock.strategy, boundaryLine: trimmed };
+  }
   return null;
 }
 
@@ -108,14 +224,18 @@ function findTextQuotedSplit(text: string) {
       offset += line.length + 1;
       continue;
     }
-    const strategy = classifyQuotedLine(lines, index);
-    if (strategy) {
-      return { index: offset, strategy };
+    const match = classifyQuotedLine(lines, index);
+    if (match) {
+      return { index: offset, strategy: match.strategy, boundaryLine: match.boundaryLine };
     }
     offset += line.length + 1;
   }
 
-  return { index: -1, strategy: null as ReplyParserStrategy | null };
+  return {
+    index: -1,
+    strategy: null as ReplyParserStrategy | null,
+    boundaryLine: null as string | null,
+  };
 }
 
 function trimHtmlBoundary(html: string, fromStart: boolean) {
@@ -143,9 +263,21 @@ function findHtmlQuotedSplit(html: string) {
     })
     .filter(Boolean) as Array<{ index: number; strategy: ReplyParserStrategy }>;
 
-  if (!matches.length) return { index: -1, strategy: null as ReplyParserStrategy | null };
+  if (!matches.length) {
+    return {
+      index: -1,
+      strategy: null as ReplyParserStrategy | null,
+      boundaryLine: null as string | null,
+    };
+  }
   matches.sort((a, b) => a.index - b.index);
-  return matches[0];
+  return { ...matches[0], boundaryLine: null as string | null };
+}
+
+function buildPreview(value: string, maxLength = 160) {
+  const normalized = normalizeWhitespace(value);
+  if (!normalized) return "";
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 1)}…` : normalized;
 }
 
 export function parseEmailReplyBodies(input: {
@@ -164,11 +296,17 @@ export function parseEmailReplyBodies(input: {
       parserStrategy: "empty",
       quotedHistoryDetected: false,
       cleanExtractionSucceeded: false,
+      matchedBoundaryLine: null,
+      cleanBodyPreview: "",
     };
   }
 
-  const textResult = rawText ? findTextQuotedSplit(rawText) : { index: -1, strategy: null };
-  const htmlResult = rawHtml ? findHtmlQuotedSplit(rawHtml) : { index: -1, strategy: null };
+  const textResult = rawText
+    ? findTextQuotedSplit(rawText)
+    : { index: -1, strategy: null as ReplyParserStrategy | null, boundaryLine: null as string | null };
+  const htmlResult = rawHtml
+    ? findHtmlQuotedSplit(rawHtml)
+    : { index: -1, strategy: null as ReplyParserStrategy | null, boundaryLine: null as string | null };
 
   const quotedBodyText =
     textResult.index >= 0 ? rawText.slice(textResult.index).trim() || null : null;
@@ -198,6 +336,8 @@ export function parseEmailReplyBodies(input: {
       normalizeWhitespace(cleanBodyText) !== normalizeWhitespace(rawText || "") &&
       quotedHistoryDetected,
   );
+  const matchedBoundaryLine = textResult.boundaryLine || htmlResult.boundaryLine || null;
+  const cleanBodyPreview = buildPreview(cleanBodyText || rawText);
 
   return {
     cleanBodyText: cleanBodyText || rawText,
@@ -207,5 +347,7 @@ export function parseEmailReplyBodies(input: {
     parserStrategy,
     quotedHistoryDetected,
     cleanExtractionSucceeded,
+    matchedBoundaryLine,
+    cleanBodyPreview,
   };
 }

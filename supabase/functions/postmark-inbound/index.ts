@@ -1173,6 +1173,8 @@ Deno.serve(async (req) => {
       parser_strategy: parsedBodies.parserStrategy,
       quoted_history_detected: parsedBodies.quotedHistoryDetected,
       clean_body_extraction_succeeded: parsedBodies.cleanExtractionSucceeded,
+      matched_boundary_line: parsedBodies.matchedBoundaryLine,
+      clean_body_preview: parsedBodies.cleanBodyPreview,
     },
     "info",
   );
