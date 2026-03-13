@@ -17,6 +17,8 @@ const SUPABASE_SERVICE_ROLE_KEY =
 const DEFAULT_TTL_MINUTES = Number(process.env.CUSTOMER_LOOKUP_TTL_MINUTES || 30);
 const NEGATIVE_TTL_MINUTES = Number(process.env.CUSTOMER_LOOKUP_NEGATIVE_TTL_MINUTES || 5);
 const SHOPIFY_LIMIT = 50;
+const SHOPIFY_PAGINATED_LIMIT = 250;
+const SHOPIFY_MAX_PAGES = 40;
 const SHOPIFY_API_VERSION = "2024-01";
 
 function createServiceClient() {
@@ -76,6 +78,24 @@ function normalizeLookupText(value) {
 function toShopifyOrderName(value) {
   const digits = String(value || "").replace(/\D/g, "");
   return digits ? `#${digits}` : "";
+}
+
+function extractNextPageInfo(linkHeader) {
+  const raw = String(linkHeader || "");
+  if (!raw) return null;
+  const parts = raw.split(",");
+  for (const part of parts) {
+    if (!/rel="?next"?/i.test(part)) continue;
+    const match = part.match(/<([^>]+)>/);
+    if (!match?.[1]) continue;
+    try {
+      const url = new URL(match[1]);
+      return url.searchParams.get("page_info");
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 function extractOrderNumber(subject) {
@@ -358,7 +378,7 @@ export async function POST(request) {
   const fetchOrders = async (params, label = "lookup") => {
     const url = new URL(`https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/orders.json`);
     url.searchParams.set("status", "any");
-    url.searchParams.set("limit", String(SHOPIFY_LIMIT));
+    url.searchParams.set("limit", String(params?.page_info ? SHOPIFY_PAGINATED_LIMIT : SHOPIFY_LIMIT));
     Object.entries(params || {}).forEach(([key, value]) => {
       if (value) url.searchParams.set(key, value);
     });
@@ -388,6 +408,27 @@ export async function POST(request) {
       error: response.ok ? null : json?.error || text || "Shopify lookup failed.",
     });
     return { response, text, json };
+  };
+
+  const fetchAcrossPages = async (predicate, label = "pagination_fallback") => {
+    let pageInfo = null;
+    const matched = [];
+    for (let page = 0; page < SHOPIFY_MAX_PAGES; page += 1) {
+      const pageResult = await fetchOrders(
+        pageInfo ? { page_info: pageInfo } : { limit: SHOPIFY_PAGINATED_LIMIT },
+        `${label}:page_${page + 1}`
+      );
+      if (!pageResult.response.ok) break;
+      const pageOrders = Array.isArray(pageResult.json?.orders) ? pageResult.json.orders : [];
+      const pageMatches = pageOrders.filter(predicate);
+      if (pageMatches.length) {
+        matched.push(...pageMatches);
+        break;
+      }
+      pageInfo = extractNextPageInfo(pageResult.response.headers.get("link"));
+      if (!pageInfo) break;
+    }
+    return matched;
   };
 
   const primaryParams = {
@@ -452,17 +493,12 @@ export async function POST(request) {
 
   // Ekstra fallback: hvis ordrenummer-lookup fejler, hent uden filtre og match lokalt.
   if (!rawOrders.length && derivedOrderNumber) {
-    const broadResult = await fetchOrders({}, "broad_unfiltered_fallback");
-    if (broadResult.response.ok) {
-      const broadPayload = broadResult.json || {};
-      const broadOrders = Array.isArray(broadPayload?.orders) ? broadPayload.orders : [];
-      const matchedByNumber = broadOrders.filter((order) =>
-        matchesOrderNumber(order, derivedOrderNumber)
-      );
-      if (matchedByNumber.length) {
-        payload = broadPayload;
-        rawOrders = matchedByNumber;
-      }
+    const matchedByNumber = await fetchAcrossPages(
+      (order) => matchesOrderNumber(order, derivedOrderNumber),
+      "broad_unfiltered_fallback"
+    );
+    if (matchedByNumber.length) {
+      rawOrders = matchedByNumber;
     }
   }
 
