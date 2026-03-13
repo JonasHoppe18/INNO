@@ -1,4 +1,5 @@
 import { AppSidebar } from "@/components/app-sidebar";
+import { GlobalTestModeBanner } from "@/components/GlobalTestModeBanner";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { auth, clerkClient } from "@clerk/nextjs/server";
@@ -82,9 +83,14 @@ export default async function DashboardLayout({ children }) {
   const defaultSidebarOpen = sidebarCookie === "false" ? false : true;
 
   return (
-    <SidebarProvider defaultOpen={defaultSidebarOpen}>
-      <AppSidebar variant="inset" user={sidebarUser} />
-      <DashboardShell>{children}</DashboardShell>
-    </SidebarProvider>
+    <div className="flex min-h-svh flex-col">
+      <GlobalTestModeBanner />
+      <div className="flex min-h-0 flex-1">
+        <SidebarProvider defaultOpen={defaultSidebarOpen}>
+          <AppSidebar variant="inset" user={sidebarUser} />
+          <DashboardShell>{children}</DashboardShell>
+        </SidebarProvider>
+      </div>
+    </div>
   );
 }

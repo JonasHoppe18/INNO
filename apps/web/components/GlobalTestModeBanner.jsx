@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Button } from "@/components/ui/button";
 
 export function GlobalTestModeBanner() {
   const pathname = usePathname();
   const [testModeEnabled, setTestModeEnabled] = useState(false);
+  const bannerRef = useRef(null);
 
   useEffect(() => {
     let active = true;
@@ -32,26 +32,40 @@ export function GlobalTestModeBanner() {
     };
   }, [pathname]);
 
+  useEffect(() => {
+    const root = document.documentElement;
+    if (!testModeEnabled || !bannerRef.current) {
+      root.style.setProperty("--app-top-offset", "0px");
+      return;
+    }
+
+    const updateOffset = () => {
+      const height = bannerRef.current?.offsetHeight || 0;
+      root.style.setProperty("--app-top-offset", `${height}px`);
+    };
+
+    updateOffset();
+    const observer = new ResizeObserver(() => updateOffset());
+    observer.observe(bannerRef.current);
+
+    return () => {
+      observer.disconnect();
+      root.style.setProperty("--app-top-offset", "0px");
+    };
+  }, [testModeEnabled]);
+
   if (!testModeEnabled) return null;
 
   return (
-    <div className="border-b border-slate-200 bg-indigo-50/60">
-      <div className="flex flex-col gap-2 px-4 py-2.5 lg:flex-row lg:items-center lg:justify-between lg:px-6">
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-slate-900">Test Mode is enabled</p>
-          <p className="text-xs text-slate-600">
-            Actions and emails are being simulated. No changes will be sent to Shopify or other integrations.
-          </p>
-        </div>
-        <Button
-          asChild
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-8 self-start text-slate-700 hover:bg-indigo-100 hover:text-slate-900 lg:self-auto"
+    <div ref={bannerRef}>
+      <div className="flex h-9 items-center justify-center gap-2 bg-indigo-800 px-4">
+        <p className="text-[13px] font-medium tracking-[0.05em] text-white">Test mode is enabled.</p>
+        <Link
+          href="/settings"
+          className="text-[13px] font-medium tracking-[0.05em] text-indigo-100 underline underline-offset-2 hover:text-white"
         >
-          <Link href="/settings">Manage in Settings</Link>
-        </Button>
+          Manage settings
+        </Link>
       </div>
     </div>
   );
