@@ -63,6 +63,37 @@ const LOW_RISK_ACTIONS = new Set([
   "fetch_tracking",
 ]);
 
+function resolveOrderIdFromContext(
+  action: AutomationAction,
+  orderIdMap: Record<string | number, number>,
+): number | null {
+  const directCandidates = [
+    action.orderId,
+    asNumber(action.payload?.order_id ?? action.payload?.orderId),
+  ];
+
+  for (const candidate of directCandidates) {
+    if (candidate && Number.isFinite(Number(candidate))) {
+      return Number(candidate);
+    }
+  }
+
+  const mappedValues = Array.from(
+    new Set(
+      Object.values(orderIdMap || {})
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value) && value > 0),
+    ),
+  );
+
+  const normalizedType = String(action?.type || "").trim().toLowerCase();
+  if (LOW_RISK_ACTIONS.has(normalizedType) && mappedValues.length === 1) {
+    return mappedValues[0];
+  }
+
+  return null;
+}
+
 // Henter Shopify domæne og token fra shops-tabellen og dekrypterer via ENCRYPTION_KEY
 async function getShopCredentials(
   supabase: SupabaseClient,
@@ -1123,7 +1154,8 @@ export async function executeAutomationActions({
       const normalizedKey = String(action.orderId ?? "").replace("#", "");
       const resolvedId =
         orderIdMap[normalizedKey] ?? orderIdMap[String(action.orderId ?? "")];
-      const orderIdToUse = resolvedId ?? action.orderId;
+      const fallbackOrderId = resolveOrderIdFromContext(action, orderIdMap);
+      const orderIdToUse = resolvedId ?? fallbackOrderId ?? action.orderId;
 
       if (!orderIdToUse || Number.isNaN(Number(orderIdToUse))) {
         console.warn("automation: missing order id mapping", {
