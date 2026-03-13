@@ -108,6 +108,11 @@ function ShopifyRawDebug({ result, loading, error }) {
       <div className="mt-1">{`Shop: ${formatDebugValue(result?.shopDomain)}`}</div>
       <div>{`API: ${formatDebugValue(result?.apiVersion)}`}</div>
       <div>{`Query: ${formatDebugValue(result?.query)}`}</div>
+      <div>{`Scope status: ${formatDebugValue(result?.accessScopes?.status)}`}</div>
+      <div>{`Scopes: ${formatDebugValue(result?.accessScopes?.scopes)}`}</div>
+      {result?.accessScopes?.errors ? (
+        <div>{`Scope errors: ${formatDebugValue(result.accessScopes.errors)}`}</div>
+      ) : null}
       <div className="mt-3 space-y-2">
         {(Array.isArray(result?.results) ? result.results : []).map((entry, index) => (
           <div key={`${entry?.label || "result"}-${index}`} className="rounded-lg border border-sky-100 bg-white/70 p-2">

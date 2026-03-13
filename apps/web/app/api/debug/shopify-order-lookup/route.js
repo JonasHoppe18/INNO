@@ -57,6 +57,35 @@ function sampleOrders(orders) {
   }));
 }
 
+async function callShopifyAccessScopes({ shopDomain, accessToken }) {
+  const url = new URL(`https://${shopDomain}/admin/oauth/access_scopes.json`);
+  const response = await fetch(url.toString(), {
+    method: "GET",
+    headers: {
+      "X-Shopify-Access-Token": accessToken,
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    cache: "no-store",
+  });
+  const text = await response.text();
+  let json = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    json = null;
+  }
+  const scopes = Array.isArray(json?.access_scopes)
+    ? json.access_scopes.map((entry) => String(entry?.handle || "").trim()).filter(Boolean)
+    : [];
+  return {
+    status: response.status,
+    ok: response.ok,
+    scopes,
+    errors: json?.errors || null,
+  };
+}
+
 export async function POST(request) {
   const { userId: clerkUserId, orgId } = auth();
   if (!clerkUserId) {
@@ -147,6 +176,7 @@ export async function POST(request) {
   if (unfiltered.next_page_info) {
     results.push(await callShopifyOrders({ page_info: unfiltered.next_page_info, limit: 10 }, "unfiltered_page_2"));
   }
+  const scopeResult = await callShopifyAccessScopes({ shopDomain, accessToken });
 
   return NextResponse.json(
     {
@@ -157,6 +187,7 @@ export async function POST(request) {
         orderNumber: orderNumber || null,
         name: orderName || null,
       },
+      accessScopes: scopeResult,
       results,
     },
     { status: 200 },
