@@ -1,6 +1,7 @@
 // supabase/functions/outlook-poll/index.ts
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { shouldSkipInboxMessage } from "../_shared/inbox-filter.ts";
+import { parseEmailReplyBodies } from "../_shared/email-reply-parser.ts";
 import {
   categorizeEmail,
   EmailCategory,
@@ -121,24 +122,22 @@ async function upsertThread({
   if (!supabase || !providerThreadId) return null;
   const { data } = await supabase
     .from("mail_threads")
-    .select("id, unread_count, tags")
+    .select("id, unread_count, is_read, tags, subject, snippet, last_message_at")
     .eq("mailbox_id", mailboxId)
     .eq("provider_thread_id", providerThreadId)
     .maybeSingle();
 
   if (data?.id) {
-    const updates: Record<string, unknown> = {
-      subject,
-      snippet,
-      last_message_at: lastMessageAt,
-      updated_at: new Date().toISOString(),
-    };
+    const updates: Record<string, unknown> = {};
     const current = splitThreadTags(data?.tags).category;
     if (!current || (current === "General" && category !== "General")) {
       updates.tags = buildThreadTags(data?.tags, category);
     }
-    await supabase.from("mail_threads").update(updates).eq("id", data.id);
-    return data.id as string;
+    if (Object.keys(updates).length > 0) {
+      updates.updated_at = new Date().toISOString();
+      await supabase.from("mail_threads").update(updates).eq("id", data.id);
+    }
+    return { id: data.id as string, created: false };
   }
 
   const unreadCount = isRead ? 0 : 1;
@@ -158,7 +157,53 @@ async function upsertThread({
     })
     .select("id")
     .maybeSingle();
-  return (inserted as any)?.id ?? null;
+  return inserted?.id ? { id: inserted.id as string, created: true } : null;
+}
+
+function toTimestamp(value: string | null | undefined) {
+  const ts = value ? Date.parse(value) : NaN;
+  return Number.isFinite(ts) ? ts : null;
+}
+
+async function applyInboundThreadActivity(options: {
+  threadId: string;
+  subject: string;
+  snippet: string;
+  lastMessageAt: string | null;
+  markUnread: boolean;
+}) {
+  if (!supabase || !options.threadId) return;
+  const { data } = await supabase
+    .from("mail_threads")
+    .select("subject, snippet, last_message_at, unread_count, is_read")
+    .eq("id", options.threadId)
+    .maybeSingle();
+  if (!data) return;
+
+  const currentTs = toTimestamp(data.last_message_at);
+  const nextTs = toTimestamp(options.lastMessageAt);
+  const shouldBumpActivity =
+    nextTs !== null && (currentTs === null || nextTs >= currentTs);
+
+  const updates: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+  };
+
+  if (shouldBumpActivity) {
+    updates.last_message_at = options.lastMessageAt;
+    updates.snippet = options.snippet;
+    updates.subject = data.subject || options.subject;
+  }
+
+  if (options.markUnread) {
+    const currentUnread = Number(data.unread_count ?? 0);
+    updates.unread_count = Math.max(0, currentUnread + 1);
+    updates.is_read = false;
+  }
+
+  if (Object.keys(updates).length > 1) {
+    await supabase.from("mail_threads").update(updates).eq("id", options.threadId);
+  }
 }
 
 async function upsertMessage({
@@ -191,9 +236,10 @@ async function upsertMessage({
   receivedAt: string | null;
 }) {
   if (!supabase) return;
+  const parsedBodies = parseEmailReplyBodies({ text: bodyText, html: bodyHtml });
   const { data } = await supabase
     .from("mail_messages")
-    .select("id")
+    .select("id, is_read")
     .eq("mailbox_id", mailboxId)
     .eq("provider_message_id", providerMessageId)
     .maybeSingle();
@@ -206,9 +252,15 @@ async function upsertMessage({
     provider: "outlook",
     provider_message_id: providerMessageId,
     subject,
-    snippet,
+    snippet: parsedBodies.cleanBodyText
+      ? parsedBodies.cleanBodyText.replace(/\s+/g, " ").trim().slice(0, 240)
+      : snippet,
     body_text: bodyText,
     body_html: bodyHtml,
+    clean_body_text: parsedBodies.cleanBodyText || bodyText,
+    clean_body_html: parsedBodies.cleanBodyHtml,
+    quoted_body_text: parsedBodies.quotedBodyText,
+    quoted_body_html: parsedBodies.quotedBodyHtml,
     from_name: fromName,
     from_email: fromEmail,
     is_read: isRead,
@@ -218,8 +270,18 @@ async function upsertMessage({
 
   if (data?.id) {
     await supabase.from("mail_messages").update(payload).eq("id", data.id);
+    return {
+      inserted: false,
+      becameUnread: Boolean(data?.is_read) && !isRead,
+      snippet: String(payload.snippet || snippet),
+    };
   } else {
     await supabase.from("mail_messages").insert(payload);
+    return {
+      inserted: true,
+      becameUnread: !isRead,
+      snippet: String(payload.snippet || snippet),
+    };
   }
 }
 
@@ -325,7 +387,7 @@ async function pollSingleMailbox(target: MailboxTarget, shouldDraft: boolean) {
         body: bodyText,
         from,
       });
-      const threadRecordId = await upsertThread({
+      const threadRecord = await upsertThread({
         mailboxId: target.mailbox_id,
         userId: target.user_id,
         workspaceId: target.workspace_id,
@@ -336,11 +398,11 @@ async function pollSingleMailbox(target: MailboxTarget, shouldDraft: boolean) {
         isRead,
         category,
       });
-      await upsertMessage({
+      const messageResult = await upsertMessage({
         mailboxId: target.mailbox_id,
         userId: target.user_id,
         workspaceId: target.workspace_id,
-        threadId: threadRecordId,
+        threadId: threadRecord?.id ?? null,
         providerMessageId,
         subject,
         snippet,
@@ -351,6 +413,15 @@ async function pollSingleMailbox(target: MailboxTarget, shouldDraft: boolean) {
         isRead,
         receivedAt,
       });
+      if (threadRecord?.id) {
+        await applyInboundThreadActivity({
+          threadId: threadRecord.id,
+          subject,
+          snippet: messageResult?.snippet || snippet,
+          lastMessageAt: receivedAt,
+          markUnread: Boolean(messageResult?.inserted || messageResult?.becameUnread),
+        });
+      }
 
       if (!shopId || !shouldDraft) {
         handled += 1;

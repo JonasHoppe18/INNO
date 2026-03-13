@@ -1,9 +1,11 @@
 import { useMemo, useState } from "react";
 import Image from "next/image";
-import { Download, Mail } from "lucide-react";
+import { ChevronDown, Download, Mail } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatBytes, getSenderLabel } from "@/components/inbox/inbox-utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { deriveMessageBodies } from "@/components/inbox/message-body";
 
 const escapeHtml = (value) =>
   value
@@ -108,6 +110,7 @@ export function MessageBubble({
 }) {
   const [selectedAttachment, setSelectedAttachment] = useState(null);
   const [viewEmailOpen, setViewEmailOpen] = useState(false);
+  const [quotedOpen, setQuotedOpen] = useState(false);
   const isOutbound = direction === "outbound";
   const isAuthoredByCurrentUser =
     Boolean(currentUserId) &&
@@ -149,7 +152,10 @@ export function MessageBubble({
       toList.length === 0 &&
       ccList.length === 0 &&
       bccList.length === 0);
-  const safeBodyHtml = sanitizeEmailHtml(message?.body_html || "", attachments);
+  const { cleanBodyText, quotedBodyText, cleanBodyHtml, quotedBodyHtml } = deriveMessageBodies(message);
+  const safeCleanBodyHtml = sanitizeEmailHtml(cleanBodyHtml || "", attachments);
+  const safeQuotedBodyHtml = sanitizeEmailHtml(quotedBodyHtml || "", attachments);
+  const hasQuotedBody = Boolean((quotedBodyText || "").trim() || (safeQuotedBodyHtml || "").trim());
   const selectedAttachmentUrl = useMemo(() => {
     if (!selectedAttachment?.id) return "";
     return `/api/attachments/${selectedAttachment.id}/download`;
@@ -210,19 +216,47 @@ export function MessageBubble({
               )}
             >
               <div className={cn("p-3.5 text-gray-800 leading-relaxed", isOutbound && "text-[15px]")}>
-                {safeBodyHtml ? (
+                {safeCleanBodyHtml ? (
                   <div
                     className={EMAIL_BODY_CLASS}
-                    dangerouslySetInnerHTML={{ __html: safeBodyHtml }}
+                    dangerouslySetInnerHTML={{ __html: safeCleanBodyHtml }}
                   />
                 ) : (
                   <div
                     className={EMAIL_BODY_CLASS}
                     dangerouslySetInnerHTML={{
-                      __html: linkifyText(message.body_text || message.snippet || "No preview available."),
+                      __html: linkifyText(cleanBodyText || message.body_text || message.snippet || "No preview available."),
                     }}
                   />
                 )}
+                {hasQuotedBody ? (
+                  <Collapsible open={quotedOpen} onOpenChange={setQuotedOpen}>
+                    <CollapsibleTrigger asChild>
+                      <button
+                        type="button"
+                        className="mt-3 inline-flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100"
+                      >
+                        <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", quotedOpen && "rotate-180")} />
+                        {quotedOpen ? "Hide quoted text" : "Show quoted text"}
+                      </button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="pt-3">
+                      <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-gray-600">
+                        {safeQuotedBodyHtml ? (
+                          <div
+                            className={EMAIL_BODY_CLASS}
+                            dangerouslySetInnerHTML={{ __html: safeQuotedBodyHtml }}
+                          />
+                        ) : (
+                          <div
+                            className={EMAIL_BODY_CLASS}
+                            dangerouslySetInnerHTML={{ __html: linkifyText(quotedBodyText || "") }}
+                          />
+                        )}
+                      </div>
+                    </CollapsibleContent>
+                  </Collapsible>
+                ) : null}
               </div>
             </div>
 

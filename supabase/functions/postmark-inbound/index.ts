@@ -16,6 +16,7 @@ import {
   type RoutingTargetCategory,
   type RoutingClassification,
 } from "../_shared/email-routing-classifier.ts";
+import { parseEmailReplyBodies } from "../_shared/email-reply-parser.ts";
 
 const PROJECT_URL = Deno.env.get("SUPABASE_URL") ?? Deno.env.get("PROJECT_URL");
 const SERVICE_ROLE_KEY =
@@ -376,6 +377,21 @@ function fillTemplateTokens(template: string, values: Record<string, string>): s
 
 function toPlainText(value: string): string {
   return String(value || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function normalizeSubjectForDiagnostics(value: string | null | undefined): string {
+  let subject = asString(value);
+  if (!subject) return "";
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const next = subject.replace(/^(?:(?:re|fw|fwd|sv)\s*:\s*)+/i, "").trim();
+    if (next !== subject) {
+      subject = next;
+      changed = true;
+    }
+  }
+  return subject.replace(/\s+/g, " ").trim();
 }
 
 async function loadAutoReplySettings(mailbox: MailboxLookup): Promise<AutoReplySettings | null> {
@@ -806,6 +822,10 @@ async function maybeSendAutoReply(options: {
     snippet: toPlainText(renderedText).slice(0, 240),
     body_text: renderedText,
     body_html: mergedHtml,
+    clean_body_text: renderedText,
+    clean_body_html: mergedHtml,
+    quoted_body_text: null,
+    quoted_body_html: null,
     from_name: outgoingName,
     from_email: outgoingFrom,
     to_emails: [effectiveRecipient],
@@ -1114,7 +1134,8 @@ Deno.serve(async (req) => {
   const htmlBody = String(payload?.HtmlBody ?? "").trim();
   const textBodyRaw = String(payload?.TextBody ?? "").trim();
   const textBody = textBodyRaw || (htmlBody ? stripHtml(htmlBody) : "");
-  const snippet = buildSnippet(textBody);
+  const parsedBodies = parseEmailReplyBodies({ text: textBody, html: htmlBody });
+  const snippet = buildSnippet(parsedBodies.cleanBodyText || textBody);
   const shouldSkipAsSpam =
     !IGNORE_SPAM_FILTER &&
     shouldSkipInboxMessage({
@@ -1140,6 +1161,21 @@ Deno.serve(async (req) => {
   ]
     .map((value) => normalizeMessageId(value))
     .filter(Boolean) as string[];
+  await logAgent(
+    "postmark_inbound_diagnostics",
+    {
+      raw_subject: subject,
+      normalized_subject: normalizeSubjectForDiagnostics(subject),
+      sender: fromEmail || fromRaw || null,
+      message_id: storedMessageId || null,
+      in_reply_to: inReplyTo || null,
+      references: referenceIds,
+      parser_strategy: parsedBodies.parserStrategy,
+      quoted_history_detected: parsedBodies.quotedHistoryDetected,
+      clean_body_extraction_succeeded: parsedBodies.cleanExtractionSucceeded,
+    },
+    "info",
+  );
 
   const { data: existingMessage } = await supabase
     .from("mail_messages")
@@ -1308,6 +1344,10 @@ Deno.serve(async (req) => {
       snippet,
       body_text: textBody,
       body_html: htmlBody,
+      clean_body_text: parsedBodies.cleanBodyText || textBody,
+      clean_body_html: parsedBodies.cleanBodyHtml,
+      quoted_body_text: parsedBodies.quotedBodyText,
+      quoted_body_html: parsedBodies.quotedBodyHtml,
       from_name: fromName,
       from_email: fromEmail,
       to_emails: toList,

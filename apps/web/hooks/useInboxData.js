@@ -262,12 +262,26 @@ export function useThreadMessages(threadId, options = {}) {
       let request = supabase
         .from("mail_messages")
         .select(
-          "id, mailbox_id, thread_id, subject, snippet, body_text, body_html, from_name, from_email, to_emails, cc_emails, bcc_emails, is_read, received_at, sent_at, created_at, ai_draft_text"
+          "id, user_id, mailbox_id, thread_id, provider_message_id, subject, snippet, body_text, body_html, clean_body_text, clean_body_html, quoted_body_text, quoted_body_html, from_name, from_email, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at, ai_draft_text"
         )
         .eq("thread_id", threadId)
         .order("received_at", { ascending: true, nullsLast: true });
       request = applyClientScope(request, scope);
-      const { data: rows, error: queryError } = await request;
+      let { data: rows, error: queryError } = await request;
+      if (queryError && /clean_body_text|quoted_body_text/i.test(queryError.message || "")) {
+        const fallback = await applyClientScope(
+          supabase
+            .from("mail_messages")
+            .select(
+              "id, user_id, mailbox_id, thread_id, provider_message_id, subject, snippet, body_text, body_html, from_name, from_email, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at, ai_draft_text"
+            )
+            .eq("thread_id", threadId)
+            .order("received_at", { ascending: true, nullsLast: true }),
+          scope
+        );
+        rows = fallback.data;
+        queryError = fallback.error;
+      }
       if (queryError) throw queryError;
       setData(Array.isArray(rows) ? rows : []);
     } catch (err) {

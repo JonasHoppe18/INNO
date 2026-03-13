@@ -646,6 +646,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const [workspaceInboxes, setWorkspaceInboxes] = useState([]);
   const [isWorkspaceTestMode, setIsWorkspaceTestMode] = useState(false);
   const headerActionsKeyRef = useRef("");
+  const lastAutoReadThreadIdRef = useRef(null);
   const draftLastSavedRef = useRef("");
   const savingDraftRef = useRef(false);
   const draftValueRef = useRef("");
@@ -889,10 +890,32 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   }, [liveMessages, liveThreads, localNewThread]);
 
   useEffect(() => {
+    setReadOverrides((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      derivedThreads.forEach((thread) => {
+        const threadId = String(thread?.id || "").trim();
+        if (!threadId || !next[threadId]) return;
+        const hasUnreadActivity =
+          thread?.is_read === false || Number(thread?.unread_count ?? 0) > 0;
+        if (!hasUnreadActivity) return;
+        delete next[threadId];
+        changed = true;
+      });
+      return changed ? next : prev;
+    });
+  }, [derivedThreads]);
+
+  useEffect(() => {
     if (!localNewThread) return;
     if (selectedThreadId === localNewThread.id) return;
     setLocalNewThread(null);
   }, [localNewThread, selectedThreadId]);
+
+  useEffect(() => {
+    if (selectedThreadId) return;
+    lastAutoReadThreadIdRef.current = null;
+  }, [selectedThreadId]);
 
   useEffect(() => {
     if (!derivedThreads.length) return;
@@ -1298,8 +1321,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     if (!supabase || !selectedThreadId) return;
     const thread = derivedThreads.find((item) => item.id === selectedThreadId);
     if (!thread) return;
+    const isNewSelection = lastAutoReadThreadIdRef.current !== selectedThreadId;
 
-    if (!thread.is_read) {
+    if (isNewSelection && !thread.is_read) {
       setReadOverrides((prev) => ({ ...prev, [selectedThreadId]: true }));
       fetch("/api/inbox/thread-status", {
         method: "PATCH",
@@ -1313,7 +1337,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     }
 
     const currentState = ticketStateByThread[selectedThreadId];
-    if (!thread.is_read && currentState?.status === "New") {
+    if (isNewSelection && !thread.is_read && currentState?.status === "New") {
       setTicketStateByThread((prev) => ({
         ...prev,
         [selectedThreadId]: {
@@ -1327,6 +1351,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         body: JSON.stringify({ threadId: selectedThreadId, status: "Open" }),
       }).catch(() => null);
     }
+    lastAutoReadThreadIdRef.current = selectedThreadId;
   }, [
     currentSupabaseUserId,
     derivedThreads,

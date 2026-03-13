@@ -932,14 +932,16 @@ export function Composer({
             </>
           ) : null}
           {isDraftLoading ? (
-            <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-white/80 backdrop-blur-md">
-              <div className="flex flex-col items-center gap-2 px-6 text-center">
-                <SonaLogo size={28} speed="working" />
-                <div className="text-sm font-semibold text-gray-900">Sona is drafting your reply</div>
-                <div className="text-xs text-gray-600">
+            <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-white/72 backdrop-blur-[2px]">
+              <div className="flex max-w-md flex-col items-center px-8 text-center">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-indigo-50">
+                  <SonaLogo size={24} speed="working" />
+                </div>
+                <div className="mt-4 text-sm font-semibold text-slate-900">Sona is drafting your reply</div>
+                <div className="mt-1 max-w-[30rem] text-xs leading-relaxed text-slate-600">
                   Analyzing policy context and building a precise response.
                 </div>
-                <div className="mt-0.5 h-1.5 w-40 overflow-hidden rounded-full bg-indigo-100">
+                <div className="mt-4 h-1.5 w-44 overflow-hidden rounded-full bg-indigo-100">
                   <div className="h-full w-1/2 animate-pulse rounded-full bg-indigo-500" />
                 </div>
               </div>

@@ -25,6 +25,10 @@
  * @property {string | null} snippet
  * @property {string | null} body_text
  * @property {string | null} body_html
+ * @property {string | null} clean_body_text
+ * @property {string | null} clean_body_html
+ * @property {string | null} quoted_body_text
+ * @property {string | null} quoted_body_html
  * @property {string | null} from_name
  * @property {string | null} from_email
  * @property {string[] | null} to_emails

@@ -1587,6 +1587,10 @@ async function createInternalDraft(options: {
     snippet: options.textBody.slice(0, 160),
     body_text: options.textBody,
     body_html: options.htmlBody,
+    clean_body_text: options.textBody,
+    clean_body_html: options.htmlBody,
+    quoted_body_text: null,
+    quoted_body_html: null,
     is_draft: true,
     from_me: true,
     created_at: new Date().toISOString(),
@@ -2581,6 +2585,10 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
             .update({
               body_text: finalText,
               body_html: htmlBody,
+              clean_body_text: finalText,
+              clean_body_html: htmlBody,
+              quoted_body_text: null,
+              quoted_body_html: null,
               snippet: finalText.slice(0, 160),
               updated_at: new Date().toISOString(),
             })
