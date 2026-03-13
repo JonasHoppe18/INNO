@@ -152,6 +152,7 @@ export function MessageBubble({
       toList.length === 0 &&
       ccList.length === 0 &&
       bccList.length === 0);
+  const safeBodyHtml = sanitizeEmailHtml(message?.body_html || "", attachments);
   const { cleanBodyText, quotedBodyText, cleanBodyHtml, quotedBodyHtml } = deriveMessageBodies(message);
   const safeCleanBodyHtml = sanitizeEmailHtml(cleanBodyHtml || "", attachments);
   const safeQuotedBodyHtml = sanitizeEmailHtml(quotedBodyHtml || "", attachments);
