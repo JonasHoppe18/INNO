@@ -348,8 +348,9 @@ export async function POST(request) {
     );
   }
   const shopDomain = String(shopCreds.shop_domain || "").replace(/^https?:\/\//, "").replace(/\/+$/, "");
+  const lookupAttempts = [];
 
-  const fetchOrders = async (params) => {
+  const fetchOrders = async (params, label = "lookup") => {
     const url = new URL(`https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/orders.json`);
     url.searchParams.set("status", "any");
     url.searchParams.set("limit", String(SHOPIFY_LIMIT));
@@ -372,6 +373,15 @@ export async function POST(request) {
     } catch {
       json = null;
     }
+    const orders = Array.isArray(json?.orders) ? json.orders : [];
+    lookupAttempts.push({
+      label,
+      request_params: params,
+      status_code: response.status,
+      ok: response.ok,
+      orders_count: orders.length,
+      error: response.ok ? null : json?.error || text || "Shopify lookup failed.",
+    });
     return { response, text, json };
   };
 
@@ -379,7 +389,7 @@ export async function POST(request) {
     email: inputEmail || "",
     order_number: derivedOrderNumber || "",
   };
-  const primaryResult = await fetchOrders(primaryParams);
+  const primaryResult = await fetchOrders(primaryParams, "primary_email_order_lookup");
   if (!primaryResult.response.ok) {
     const message =
       primaryResult.json?.error || primaryResult.text || "Shopify lookup failed.";
@@ -407,7 +417,7 @@ export async function POST(request) {
       const variantResult = await fetchOrders({
         email: candidateEmail,
         order_number: derivedOrderNumber || "",
-      });
+      }, `email_variant_lookup:${candidateEmail}`);
       if (variantResult.response.ok) {
         payload = variantResult.json || payload;
         rawOrders = Array.isArray(payload?.orders) ? payload.orders : [];
@@ -417,7 +427,7 @@ export async function POST(request) {
   }
 
   if (!rawOrders.length && derivedOrderNumber && inputEmail) {
-    const fallbackResult = await fetchOrders({ email: inputEmail });
+    const fallbackResult = await fetchOrders({ email: inputEmail }, "email_only_fallback");
     if (fallbackResult.response.ok) {
       payload = fallbackResult.json || {};
       rawOrders = Array.isArray(payload?.orders) ? payload.orders : [];
@@ -425,7 +435,10 @@ export async function POST(request) {
   }
 
   if (!rawOrders.length && inputEmail && derivedOrderNumber) {
-    const fallbackWithoutEmail = await fetchOrders({ order_number: derivedOrderNumber });
+    const fallbackWithoutEmail = await fetchOrders(
+      { order_number: derivedOrderNumber },
+      "order_number_only_fallback"
+    );
     if (fallbackWithoutEmail.response.ok) {
       payload = fallbackWithoutEmail.json || payload;
       rawOrders = Array.isArray(payload?.orders) ? payload.orders : [];
@@ -434,7 +447,7 @@ export async function POST(request) {
 
   // Ekstra fallback: hvis ordrenummer-lookup fejler, hent uden filtre og match lokalt.
   if (!rawOrders.length && derivedOrderNumber) {
-    const broadResult = await fetchOrders({});
+    const broadResult = await fetchOrders({}, "broad_unfiltered_fallback");
     if (broadResult.response.ok) {
       const broadPayload = broadResult.json || {};
       const broadOrders = Array.isArray(broadPayload?.orders) ? broadPayload.orders : [];
@@ -451,10 +464,17 @@ export async function POST(request) {
   const emailFilteredOrders = inputEmail
     ? rawOrders.filter((order) => matchesCustomerEmail(order, inputEmail))
     : rawOrders;
-  const orderFilteredOrders = derivedOrderNumber
-    ? emailFilteredOrders.filter((order) => matchesOrderNumber(order, derivedOrderNumber))
+  const orderMatches = derivedOrderNumber
+    ? rawOrders.filter((order) => matchesOrderNumber(order, derivedOrderNumber))
+    : [];
+  const orderMatchesWithEmail = inputEmail
+    ? orderMatches.filter((order) => matchesCustomerEmail(order, inputEmail))
+    : orderMatches;
+  const ordersToUse = derivedOrderNumber
+    ? orderMatchesWithEmail.length
+      ? orderMatchesWithEmail
+      : orderMatches
     : emailFilteredOrders;
-  const ordersToUse = orderFilteredOrders;
   const { data: shopRow } = await serviceClient
     .from("shops")
     .select("shop_domain")
@@ -481,7 +501,21 @@ export async function POST(request) {
     matchedOrderNumber: derivedOrderNumber,
     source: platform,
     shopDomain: finalShopDomain,
-    ...(debug && lookupDebug ? { debug: lookupDebug } : {}),
+    ...(debug
+      ? {
+          debug: {
+            lookup_attempts: lookupAttempts,
+            filter_summary: {
+              raw_orders_count: rawOrders.length,
+              email_filtered_count: emailFilteredOrders.length,
+              order_filtered_count: orderMatches.length,
+              order_email_filtered_count: orderMatchesWithEmail.length,
+              final_orders_count: ordersToUse.length,
+            },
+            shopify_debug: lookupDebug || null,
+          },
+        }
+      : {}),
   };
 
   const ttlMinutes = ordersToUse.length ? DEFAULT_TTL_MINUTES : NEGATIVE_TTL_MINUTES;
@@ -493,8 +527,11 @@ export async function POST(request) {
       ...logContext,
       stage: ordersToUse.length ? "lookup_succeeded" : "lookup_no_match",
       request_params: primaryParams,
+      lookup_attempts: lookupAttempts,
       raw_orders_count: rawOrders.length,
       email_filtered_count: emailFilteredOrders.length,
+      order_filtered_count: orderMatches.length,
+      order_email_filtered_count: orderMatchesWithEmail.length,
       final_orders_count: ordersToUse.length,
       matched_order_ids: mappedOrders.map((order) => order?.id).filter(Boolean),
       customer_email: customer?.email || null,

@@ -1396,6 +1396,44 @@ function isInternalAnnotationAction(type: string): boolean {
   );
 }
 
+function normalizeAutomationActionsForOrderContext(
+  actions: AutomationAction[],
+  selectedOrder: any,
+): { actions: AutomationAction[]; removed: Array<{ type: string; reason: string }> } {
+  const selectedOrderId = Number(selectedOrder?.id ?? 0);
+  const hasSelectedOrderId = Number.isFinite(selectedOrderId) && selectedOrderId > 0;
+  const kept: AutomationAction[] = [];
+  const removed: Array<{ type: string; reason: string }> = [];
+
+  for (const action of actions || []) {
+    const type = String(action?.type || "").trim().toLowerCase();
+    if (!type) continue;
+
+    const payloadOrderId = Number(action?.payload?.order_id ?? action?.payload?.orderId ?? 0);
+    const actionOrderId = Number(action?.orderId ?? 0);
+    const resolvedOrderId =
+      Number.isFinite(actionOrderId) && actionOrderId > 0
+        ? actionOrderId
+        : Number.isFinite(payloadOrderId) && payloadOrderId > 0
+        ? payloadOrderId
+        : hasSelectedOrderId
+        ? selectedOrderId
+        : 0;
+
+    if (!Number.isFinite(resolvedOrderId) || resolvedOrderId <= 0) {
+      removed.push({ type, reason: "missing_order_context" });
+      continue;
+    }
+
+    kept.push({
+      ...action,
+      orderId: resolvedOrderId,
+    });
+  }
+
+  return { actions: kept, removed };
+}
+
 function maybeBuildExchangeFallbackAction(options: {
   selectedOrder: any;
   orderSummary: string;
@@ -2229,6 +2267,24 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
           step_detail: JSON.stringify({
             workflow: workflowRoute.workflow,
             removed_actions: finalPolicy.removed,
+          }),
+          status: "warning",
+        });
+      }
+    }
+
+    if (automationActions.length) {
+      const normalizedActionResult = normalizeAutomationActionsForOrderContext(
+        automationActions,
+        selectedOrder,
+      );
+      automationActions = normalizedActionResult.actions;
+      if (normalizedActionResult.removed.length) {
+        reasoningLogs.push({
+          step_name: "workflow_action_order_context",
+          step_detail: JSON.stringify({
+            selected_order_id: Number(selectedOrder?.id ?? 0) || null,
+            removed_actions: normalizedActionResult.removed,
           }),
           status: "warning",
         });

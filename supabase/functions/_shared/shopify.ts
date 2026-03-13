@@ -10,6 +10,7 @@ type FetchOrdersOptions = {
   userId?: string | null;
   workspaceId?: string | null;
   email?: string | null;
+  orderNumber?: string | null;
   limit?: number;
   tokenSecret?: string | null;
   apiVersion: string;
@@ -68,6 +69,7 @@ async function fetchShopifyOrdersPage(options: FetchOrdersOptions): Promise<{
     userId,
     workspaceId,
     email,
+    orderNumber,
     limit = 50,
     apiVersion,
     pageInfo = null,
@@ -93,6 +95,9 @@ async function fetchShopifyOrdersPage(options: FetchOrdersOptions): Promise<{
       url.searchParams.set("status", "any");
       if (email?.trim()) {
         url.searchParams.set("email", email.trim());
+      }
+      if (orderNumber?.trim()) {
+        url.searchParams.set("order_number", orderNumber.trim());
       }
     }
 
@@ -704,51 +709,80 @@ export async function resolveOrderContext(options: {
   } = options;
 
   const subjectNumber = extractSubjectNumber(subject);
+  const lookupTrace: Array<Record<string, unknown>> = [];
 
-  const fetchOrders = async (candidateEmail?: string | null) => {
+  const fetchOrders = async (
+    candidateEmail?: string | null,
+    candidateOrderNumber?: string | null,
+    label = "lookup",
+  ) => {
     if (typeof fetcher === "function") {
       try {
         const result = await fetcher(candidateEmail);
         if (Array.isArray(result)) {
-          return result;
+          const filtered = candidateOrderNumber
+            ? result.filter((order) => matchesOrderNumber(order, candidateOrderNumber))
+            : result;
+          lookupTrace.push({
+            label,
+            source: "custom_fetcher",
+            email: candidateEmail || null,
+            order_number: candidateOrderNumber || null,
+            orders_count: filtered.length,
+          });
+          return filtered;
         }
       } catch (err) {
         console.warn("shopify-shared: custom fetcher fejlede", err);
+        lookupTrace.push({
+          label,
+          source: "custom_fetcher",
+          email: candidateEmail || null,
+          order_number: candidateOrderNumber || null,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }
-    return await fetchShopifyOrders({
+    const fetched = await fetchShopifyOrders({
       supabase,
       userId,
       workspaceId,
       email: candidateEmail,
+      orderNumber: candidateOrderNumber,
       tokenSecret,
       apiVersion,
       limit,
     });
+    lookupTrace.push({
+      label,
+      source: "shopify_orders_api",
+      email: candidateEmail || null,
+      order_number: candidateOrderNumber || null,
+      orders_count: fetched.length,
+    });
+    return fetched;
   };
 
-  let orders = await fetchOrders(email);
+  let orders = subjectNumber
+    ? await fetchOrders(email, subjectNumber, "initial_email_and_subject_lookup")
+    : await fetchOrders(email, null, "initial_email_lookup");
   let matchedSubjectNumber: string | null = null;
-
-  const hasEmail = !!email;
-  const emailMatchFound = hasEmail ? orders.some((order) => matchesOrderEmail(order, email)) : false;
-  if (hasEmail && !emailMatchFound) {
-    orders = await fetchAcrossPages({
-      supabase,
-      userId,
-      workspaceId,
-      tokenSecret,
-      apiVersion,
-      predicate: (order) => matchesOrderEmail(order, email),
-      limit,
-    });
-  }
 
   const hasSubjectNumber = !!subjectNumber;
   const subjectMatchFound =
     hasSubjectNumber && orders.some((order) => matchesOrderNumber(order, subjectNumber!));
 
   if (hasSubjectNumber && !subjectMatchFound) {
+    const directOrderMatches = await fetchOrders(null, subjectNumber, "subject_only_lookup");
+    if (directOrderMatches.length) {
+      orders = directOrderMatches;
+    }
+  }
+
+  const subjectMatchFoundAfterDirectLookup =
+    hasSubjectNumber && orders.some((order) => matchesOrderNumber(order, subjectNumber!));
+
+  if (hasSubjectNumber && !subjectMatchFoundAfterDirectLookup) {
     const matched = await fetchAcrossPages({
       supabase,
       userId,
@@ -766,6 +800,37 @@ export async function resolveOrderContext(options: {
   if (hasSubjectNumber && orders.some((order) => matchesOrderNumber(order, subjectNumber!))) {
     matchedSubjectNumber = subjectNumber!;
   }
+
+  const hasEmail = !!email;
+  const hasMatchedSubjectOrder =
+    hasSubjectNumber && orders.some((order) => matchesOrderNumber(order, subjectNumber!));
+  const emailMatchFound = hasEmail ? orders.some((order) => matchesOrderEmail(order, email)) : false;
+  if (hasEmail && !emailMatchFound && !hasMatchedSubjectOrder) {
+    orders = await fetchAcrossPages({
+      supabase,
+      userId,
+      workspaceId,
+      tokenSecret,
+      apiVersion,
+      predicate: (order) => matchesOrderEmail(order, email),
+      limit,
+    });
+    lookupTrace.push({
+      label: "email_pagination_fallback",
+      source: "shopify_orders_api",
+      email: email || null,
+      order_number: null,
+      orders_count: orders.length,
+    });
+  }
+
+  console.log("shopify-shared: resolveOrderContext trace", {
+    email: email || null,
+    subject_number: subjectNumber || null,
+    matched_subject_number: matchedSubjectNumber || null,
+    final_orders_count: orders.length,
+    lookup_trace: lookupTrace,
+  });
 
   await attachWebshipperTracking({
     supabase,
