@@ -45,6 +45,46 @@ const getInitials = (name, email) => {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 };
 
+const formatDebugValue = (value) => {
+  if (value === null || value === undefined || value === "") return "—";
+  if (typeof value === "string") return value;
+  return JSON.stringify(value);
+};
+
+function CustomerLookupDebug({ debug }) {
+  if (!debug) return null;
+  const attempts = Array.isArray(debug?.lookup_attempts) ? debug.lookup_attempts : [];
+  const summary = debug?.filter_summary || null;
+
+  return (
+    <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-3 text-xs text-slate-700">
+      <div className="font-semibold text-slate-900">Lookup debug</div>
+      {summary ? (
+        <div className="mt-2 space-y-1">
+          <div>{`Raw orders: ${summary.raw_orders_count ?? 0}`}</div>
+          <div>{`Email filtered: ${summary.email_filtered_count ?? 0}`}</div>
+          <div>{`Order filtered: ${summary.order_filtered_count ?? 0}`}</div>
+          <div>{`Order+email filtered: ${summary.order_email_filtered_count ?? 0}`}</div>
+          <div>{`Final orders: ${summary.final_orders_count ?? 0}`}</div>
+        </div>
+      ) : null}
+      {attempts.length ? (
+        <div className="mt-3 space-y-2">
+          {attempts.map((attempt, index) => (
+            <div key={`${attempt?.label || "attempt"}-${index}`} className="rounded-lg border border-amber-100 bg-white/70 p-2">
+              <div className="font-medium text-slate-900">{attempt?.label || `Attempt ${index + 1}`}</div>
+              <div>{`Status: ${formatDebugValue(attempt?.status_code)}${attempt?.ok === false ? " (failed)" : ""}`}</div>
+              <div>{`Params: ${formatDebugValue(attempt?.request_params)}`}</div>
+              <div>{`Orders: ${formatDebugValue(attempt?.orders_count)}`}</div>
+              {attempt?.error ? <div>{`Error: ${formatDebugValue(attempt.error)}`}</div> : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function CustomerTab({ data, loading, error, onRefresh }) {
   if (loading) {
     return (
@@ -82,6 +122,7 @@ export function CustomerTab({ data, loading, error, onRefresh }) {
             Refresh
           </Button>
         </div>
+        <CustomerLookupDebug debug={data?.debug} />
       </div>
     );
   }
@@ -236,6 +277,7 @@ export function CustomerTab({ data, loading, error, onRefresh }) {
           </div>
         )}
       </div>
+      <CustomerLookupDebug debug={data?.debug} />
     </div>
   );
 }

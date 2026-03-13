@@ -97,7 +97,7 @@ async function fetchShopifyOrdersPage(options: FetchOrdersOptions): Promise<{
         url.searchParams.set("email", email.trim());
       }
       if (orderNumber?.trim()) {
-        url.searchParams.set("order_number", orderNumber.trim());
+        url.searchParams.set("name", `#${orderNumber.trim().replace(/^#/, "")}`);
       }
     }
 

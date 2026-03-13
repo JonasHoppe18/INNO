@@ -73,6 +73,11 @@ function normalizeLookupText(value) {
     .trim();
 }
 
+function toShopifyOrderName(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  return digits ? `#${digits}` : "";
+}
+
 function extractOrderNumber(subject) {
   if (!subject) return null;
   const text = normalizeLookupText(subject);
@@ -387,7 +392,7 @@ export async function POST(request) {
 
   const primaryParams = {
     email: inputEmail || "",
-    order_number: derivedOrderNumber || "",
+    name: toShopifyOrderName(derivedOrderNumber),
   };
   const primaryResult = await fetchOrders(primaryParams, "primary_email_order_lookup");
   if (!primaryResult.response.ok) {
@@ -416,7 +421,7 @@ export async function POST(request) {
       if (candidateEmail === primaryParams.email) continue;
       const variantResult = await fetchOrders({
         email: candidateEmail,
-        order_number: derivedOrderNumber || "",
+        name: toShopifyOrderName(derivedOrderNumber),
       }, `email_variant_lookup:${candidateEmail}`);
       if (variantResult.response.ok) {
         payload = variantResult.json || payload;
@@ -436,8 +441,8 @@ export async function POST(request) {
 
   if (!rawOrders.length && inputEmail && derivedOrderNumber) {
     const fallbackWithoutEmail = await fetchOrders(
-      { order_number: derivedOrderNumber },
-      "order_number_only_fallback"
+      { name: toShopifyOrderName(derivedOrderNumber) },
+      "name_only_fallback"
     );
     if (fallbackWithoutEmail.response.ok) {
       payload = fallbackWithoutEmail.json || payload;
