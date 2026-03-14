@@ -120,47 +120,6 @@ async function loadAttachments(serviceClient, scope, mailboxIds, messageIds) {
   return Array.isArray(data) ? data : [];
 }
 
-const NEWSLETTER_SUBJECT_PATTERNS = [
-  /unsubscribe/i,
-  /newsletter/i,
-  /\bpromo\b/i,
-  /\bpromotion\b/i,
-  /\bmarketing\b/i,
-  /\bdiscount\b/i,
-  /\bsale\b/i,
-  /\bdo not reply\b/i,
-  /\bno-?reply\b/i,
-  /\bemail preferences\b/i,
-];
-
-const NEWSLETTER_SENDER_PATTERNS = [
-  /mailchimp/i,
-  /sendgrid/i,
-  /klaviyo/i,
-  /campaign-?monitor/i,
-  /constantcontact/i,
-  /mailerlite/i,
-  /mailgun/i,
-  /sparkpost/i,
-  /postmarkapp/i,
-];
-
-function shouldHideFromInbox(message) {
-  const subject = message?.subject || "";
-  const snippet = message?.snippet || "";
-  const fromEmail = message?.from_email || "";
-  const fromName = message?.from_name || "";
-  const combined = `${subject}\n${snippet}\n${fromName}`.toLowerCase();
-
-  if (NEWSLETTER_SUBJECT_PATTERNS.some((pattern) => pattern.test(combined))) {
-    return true;
-  }
-  if (NEWSLETTER_SENDER_PATTERNS.some((pattern) => pattern.test(fromEmail))) {
-    return true;
-  }
-  return false;
-}
-
 export default async function InboxPage({ searchParams }) {
   const { userId: clerkUserId, orgId } = await auth();
   if (!clerkUserId) {
@@ -214,12 +173,5 @@ export default async function InboxPage({ searchParams }) {
     );
   }
 
-  const visibleMessages = messages.filter((message) => !shouldHideFromInbox(message));
-
-  const visibleMessageIds = visibleMessages.map((message) => message.id).filter(Boolean);
-  const visibleAttachments = attachments.filter((attachment) =>
-    visibleMessageIds.includes(attachment.message_id)
-  );
-
-  return <InboxPageClient threads={threads} messages={visibleMessages} attachments={visibleAttachments} />;
+  return <InboxPageClient threads={threads} messages={messages} attachments={attachments} />;
 }

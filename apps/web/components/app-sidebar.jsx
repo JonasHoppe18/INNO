@@ -14,6 +14,7 @@ import {
   Inbox,
   LayoutDashboardIcon,
   MailIcon,
+  Bell,
   Plus,
   Trash2,
   User,
@@ -114,6 +115,7 @@ function InboxSection({
   const isCollapsed = state === "collapsed"
 
   const isAllTicketsActive = pathname === "/inbox" && !view
+  const isNotificationsActive = pathname === "/inbox" && view === "notifications"
   const isAssignedActive = pathname === "/inbox" && view === "mine"
   const isResolvedActive = pathname === "/inbox" && view === "resolved"
 
@@ -172,6 +174,21 @@ function InboxSection({
 
           {isInboxOpen && !isCollapsed ? (
             <>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  tooltip="Notifications"
+                  className={cn(
+                    "justify-start pl-8",
+                    isNotificationsActive && "bg-slate-100 text-slate-900 hover:bg-slate-100 hover:text-slate-900"
+                  )}
+                >
+                  <Link href="/inbox?view=notifications" className="flex w-full items-center gap-2 text-inherit no-underline">
+                    <Bell className="h-4 w-4 shrink-0" />
+                    <span>Notifications</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild

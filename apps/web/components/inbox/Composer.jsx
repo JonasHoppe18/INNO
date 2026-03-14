@@ -565,13 +565,13 @@ export function Composer({
 
   if (collapsed) {
     return (
-      <div className="flex-none border-t border-gray-100 bg-white px-4 py-2.5">
+      <div className="flex-none border-t border-gray-100 bg-white px-4 py-2">
         <div className="flex items-center justify-between rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
-          <span className="text-xs font-medium text-gray-600">Reply box hidden</span>
+          <span className="text-[12px] font-medium text-gray-600">Reply box hidden</span>
           <button
             type="button"
             onClick={onToggleCollapse}
-            className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
+            className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-[12px] font-medium text-gray-600 hover:bg-gray-50"
           >
             <Maximize2 className="h-3.5 w-3.5" />
             Expand
@@ -582,20 +582,20 @@ export function Composer({
   }
 
   return (
-    <div className="flex-none bg-transparent px-3 py-2">
+    <div className="flex-none bg-transparent px-3 py-1.5">
       <div
         className={`mx-auto w-full max-w-[900px] rounded-3xl border border-gray-200/80 bg-white shadow-sm ${
           disabled ? "opacity-60" : ""
         }`}
       >
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200/80 px-3 py-1.5">
-          <div className="flex flex-1 items-start justify-between gap-2 text-xs text-gray-700">
+          <div className="flex flex-1 items-start justify-between gap-2 text-[12px] text-gray-700">
             <div className="flex flex-1 flex-wrap items-center gap-2">
               <span className="font-medium text-gray-500">To:</span>
               {toRecipients.map((recipient) => (
                 <span
                   key={recipient}
-                  className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-100 px-2 py-0.5 text-xs text-gray-600"
+                  className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-100 px-2 py-0.5 text-[12px] text-gray-600"
                 >
                   {recipient}
                   <button
@@ -615,11 +615,11 @@ export function Composer({
                 }
                 placeholder={toRecipients.length ? "" : "Add recipient"}
                 disabled={disabled}
-                className="min-w-[120px] flex-1 bg-transparent text-xs text-gray-700 outline-none"
+                className="min-w-[120px] flex-1 bg-transparent text-[13px] text-gray-700 outline-none"
               />
             </div>
           </div>
-          <div className="flex items-center gap-3 pr-2 text-xs">
+          <div className="flex items-center gap-3 pr-2 text-[12px]">
             <button
               type="button"
               disabled={disabled}
@@ -648,12 +648,12 @@ export function Composer({
           </div>
         </div>
         {showCC ? (
-          <div className="flex items-start gap-2 border-b border-gray-200/80 px-3 py-2 text-xs text-gray-700">
+          <div className="flex items-start gap-2 border-b border-gray-200/80 px-3 py-1.5 text-[12px] text-gray-700">
             <span className="font-medium text-gray-500">Cc:</span>
             {ccRecipients.map((recipient) => (
               <span
                 key={recipient}
-                className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600"
+                className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[12px] text-gray-600"
               >
                 {recipient}
                 <button
@@ -673,7 +673,7 @@ export function Composer({
               }
               placeholder="Add CC"
               disabled={disabled}
-              className="min-w-[120px] flex-1 bg-transparent text-xs text-gray-700 outline-none"
+              className="min-w-[120px] flex-1 bg-transparent text-[13px] text-gray-700 outline-none"
             />
             <button
               type="button"
@@ -683,19 +683,19 @@ export function Composer({
                 setCcRecipients([]);
                 setCcInput("");
               }}
-              className="text-xs text-gray-400 hover:text-gray-600"
+              className="text-[12px] text-gray-400 hover:text-gray-600"
             >
               Remove
             </button>
           </div>
         ) : null}
         {showBCC ? (
-          <div className="flex items-start gap-2 border-b border-gray-200/80 px-3 py-2 text-xs text-gray-700">
+          <div className="flex items-start gap-2 border-b border-gray-200/80 px-3 py-1.5 text-[12px] text-gray-700">
             <span className="font-medium text-gray-500">Bcc:</span>
             {bccRecipients.map((recipient) => (
               <span
                 key={`bcc-${recipient}`}
-                className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600"
+                className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[12px] text-gray-600"
               >
                 {recipient}
                 <button
@@ -715,7 +715,7 @@ export function Composer({
               }
               placeholder="Add BCC"
               disabled={disabled}
-              className="min-w-[120px] flex-1 bg-transparent text-xs text-gray-700 outline-none"
+              className="min-w-[120px] flex-1 bg-transparent text-[13px] text-gray-700 outline-none"
             />
             <button
               type="button"
@@ -725,14 +725,14 @@ export function Composer({
                 setBccRecipients([]);
                 setBccInput("");
               }}
-              className="text-xs text-gray-400 hover:text-gray-600"
+              className="text-[12px] text-gray-400 hover:text-gray-600"
             >
               Remove
             </button>
           </div>
         ) : null}
         {attachments.length ? (
-          <div className="mb-1 flex flex-wrap items-center gap-2 px-3 text-xs">
+          <div className="mb-1 flex flex-wrap items-center gap-2 px-3 text-[12px]">
             {attachments.map((file) => (
               <span
                 key={`${file.name}:${file.size}:${file.lastModified}`}
@@ -813,12 +813,12 @@ export function Composer({
               placeholder={disabled ? disabledPlaceholder : "Leave an internal note..."}
               rows={2}
               disabled={disabled}
-              className="min-h-[56px] resize-y !border-0 !shadow-none !bg-transparent !p-0 text-sm leading-relaxed focus-visible:!ring-0 bg-yellow-50/40"
+              className="min-h-[52px] resize-y !border-0 !shadow-none !bg-transparent !p-0 text-[14px] leading-[1.55] focus-visible:!ring-0 bg-yellow-50/40"
             />
           ) : (
             <>
               {!String(value || "").trim() ? (
-                <div className="pointer-events-none absolute left-3 top-2 text-sm text-gray-400">
+                <div className="pointer-events-none absolute left-3 top-2 text-[14px] text-gray-400">
                   {disabled ? disabledPlaceholder : "Write your reply..."}
                 </div>
               ) : null}
@@ -877,7 +877,7 @@ export function Composer({
                   if (!href) return;
                   window.open(href, "_blank", "noopener,noreferrer");
                 }}
-                className="min-h-[72px] whitespace-pre-wrap break-words p-0 text-sm leading-relaxed text-gray-900 outline-none [&_a]:cursor-pointer [&_a]:text-blue-600 [&_a]:underline [&_a:hover]:text-blue-700"
+                className="min-h-[64px] whitespace-pre-wrap break-words p-0 text-[14px] leading-[1.55] text-gray-900 outline-none [&_a]:cursor-pointer [&_a]:text-blue-600 [&_a]:underline [&_a:hover]:text-blue-700"
               />
             </>
           )}
@@ -901,7 +901,7 @@ export function Composer({
                     type="button"
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() => insertMention(candidate)}
-                    className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs ${
+                    className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[12px] ${
                       isActive ? "bg-gray-100 text-gray-900" : "text-gray-700 hover:bg-gray-50"
                     }`}
                   >
@@ -917,7 +917,7 @@ export function Composer({
               {showSignatureEditor ? (
                 <>
                   <div className="mt-2 border-t border-gray-200 pt-2" />
-                  <div className="mb-1.5 text-xs font-medium text-gray-500">Signature</div>
+                  <div className="mb-1.5 text-[12px] font-medium text-gray-500">Signature</div>
                   <textarea
                     value={signatureValue}
                     onChange={(event) => onSignatureChange?.(event.target.value)}
@@ -925,7 +925,7 @@ export function Composer({
                     placeholder="Your signature..."
                     rows={3}
                     disabled={disabled}
-                    className="w-full resize-none border-0 bg-transparent p-0 text-sm leading-relaxed text-gray-700 outline-none"
+                    className="w-full resize-none border-0 bg-transparent p-0 text-[14px] leading-[1.55] text-gray-700 outline-none"
                   />
                 </>
               ) : null}
@@ -948,7 +948,7 @@ export function Composer({
             </div>
           ) : null}
         </div>
-        <div className="flex items-center justify-between border-t border-gray-200/80 px-3 py-1.5 text-xs text-gray-500">
+        <div className="flex items-center justify-between border-t border-gray-200/80 px-3 py-1.5 text-[12px] text-gray-500">
           <div className="flex items-center gap-2">
             {!isNote ? (
               <>
@@ -1004,7 +1004,7 @@ export function Composer({
                 <button
                   type="button"
                   disabled={disabled}
-                  className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium ${
+                  className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[12px] font-medium ${
                     isNote
                       ? "bg-yellow-50 text-yellow-700"
                       : "bg-white text-gray-600"
@@ -1050,7 +1050,7 @@ export function Composer({
           </div>
         </div>
       </div>
-      <p className="mx-auto mt-2 w-full max-w-[900px] text-center text-xs text-gray-500">
+      <p className="mx-auto mt-2 w-full max-w-[900px] text-center text-[12px] text-gray-500">
         Sona can make mistakes. Please verify important information.
       </p>
       <Dialog open={savedRepliesOpen} onOpenChange={setSavedRepliesOpen}>

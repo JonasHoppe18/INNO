@@ -1,6 +1,7 @@
 // supabase/functions/gmail-poll/index.ts
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { shouldSkipInboxMessage } from "../_shared/inbox-filter.ts";
+import { classifyInboxBucket } from "../_shared/inbox-classification.ts";
 import { parseEmailReplyBodies } from "../_shared/email-reply-parser.ts";
 import {
   categorizeEmail,
@@ -113,6 +114,8 @@ async function upsertThread({
   lastMessageAt,
   isRead,
   category,
+  inboxBucket,
+  classificationReason,
 }: {
   mailboxId: string;
   userId: string;
@@ -123,11 +126,13 @@ async function upsertThread({
   lastMessageAt: string | null;
   isRead: boolean;
   category: EmailCategory;
+  inboxBucket: "ticket" | "notification";
+  classificationReason: string;
 }) {
   if (!supabase || !providerThreadId) return null;
   const { data } = await supabase
     .from("mail_threads")
-    .select("id, unread_count, is_read, tags, subject, snippet, last_message_at")
+    .select("id, unread_count, is_read, tags, subject, snippet, last_message_at, classification_key")
     .eq("mailbox_id", mailboxId)
     .eq("provider_thread_id", providerThreadId)
     .maybeSingle();
@@ -137,6 +142,12 @@ async function upsertThread({
     const current = splitThreadTags(data?.tags).category;
     if (!current || (current === "General" && category !== "General")) {
       updates.tags = buildThreadTags(data?.tags, category);
+    }
+    const nextClassificationKey = inboxBucket === "notification" ? "notification" : "support";
+    if (String(data?.classification_key || "") !== nextClassificationKey) {
+      updates.classification_key = nextClassificationKey;
+      updates.classification_reason = classificationReason;
+      updates.classification_confidence = inboxBucket === "notification" ? 0.9 : 0.7;
     }
     if (Object.keys(updates).length > 0) {
       updates.updated_at = new Date().toISOString();
@@ -158,6 +169,9 @@ async function upsertThread({
       snippet,
       last_message_at: lastMessageAt,
       unread_count: unreadCount,
+      classification_key: inboxBucket === "notification" ? "notification" : "support",
+      classification_reason: classificationReason,
+      classification_confidence: inboxBucket === "notification" ? 0.9 : 0.7,
       tags: buildThreadTags([], category),
     })
     .select("id")
@@ -727,6 +741,12 @@ Deno.serve(async (req) => {
             body: plain,
             from: from || "",
           });
+          const inboxClassification = classifyInboxBucket({
+            from: from || "",
+            subject,
+            body: plain,
+            headers,
+          });
           const threadRecord = await upsertThread({
             mailboxId: account.id,
             userId,
@@ -737,6 +757,8 @@ Deno.serve(async (req) => {
             lastMessageAt: receivedAt,
             isRead,
             category,
+            inboxBucket: inboxClassification.bucket,
+            classificationReason: inboxClassification.reason,
           });
           if (messageId) {
             const messageResult = await upsertMessage({

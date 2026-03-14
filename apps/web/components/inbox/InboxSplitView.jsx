@@ -6,10 +6,15 @@ import { TicketDetail } from "@/components/inbox/TicketDetail";
 import { SonaInsightsModal } from "@/components/inbox/SonaInsightsModal";
 import { TranslationModal } from "@/components/inbox/TranslationModal";
 import { deriveThreadsFromMessages } from "@/hooks/useInboxData";
-import { getMessageTimestamp, getSenderLabel, isOutboundMessage } from "@/components/inbox/inbox-utils";
+import {
+  getInboxBucket,
+  getMessageTimestamp,
+  getSenderLabel,
+  isOutboundMessage,
+} from "@/components/inbox/inbox-utils";
 import { useClerkSupabase } from "@/lib/useClerkSupabase";
 import { useUser } from "@clerk/nextjs";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { useCustomerLookup } from "@/hooks/useCustomerLookup";
 import { useSiteHeaderActions } from "@/components/site-header-actions";
@@ -27,12 +32,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CheckCircle, CheckCircle2, User } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ArrowUpRight, CheckCircle, CheckCircle2, ChevronDown, Plus, User, X } from "lucide-react";
 
 const DEFAULT_TICKET_STATE = {
   status: "New",
   assignee: null,
   priority: null,
+};
+
+const DEFAULT_FILTERS = {
+  query: "",
+  status: "All",
+  unreadsOnly: false,
 };
 
 const STATUS_OPTIONS = ["New", "Open", "Waiting", "Solved"];
@@ -128,7 +145,6 @@ function InboxHeaderActions({
   onAssignmentChange,
   onInboxChange,
   onOpenTranslation,
-  onOpenInsights,
 }) {
   const [inboxPickerOpen, setInboxPickerOpen] = useState(false);
   const [inboxFilter, setInboxFilter] = useState("");
@@ -163,7 +179,7 @@ function InboxHeaderActions({
         onValueChange={(value) => onTicketStateChange({ status: value })}
       >
         <SelectTrigger
-          className={`h-auto w-auto cursor-pointer gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium ${statusStyles}`}
+          className={`h-auto w-auto cursor-pointer gap-1.5 rounded-md border px-3 py-1 text-xs font-medium ${statusStyles}`}
         >
           {ticketState.status === "Solved" ? (
             <CheckCircle2 className="h-3.5 w-3.5" />
@@ -184,7 +200,7 @@ function InboxHeaderActions({
         value={selectedAssignmentValue || UNASSIGNED_ASSIGNEE_VALUE}
         onValueChange={(value) => onAssignmentChange?.(value)}
       >
-        <SelectTrigger className="h-auto w-auto cursor-pointer gap-1.5 rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100">
+        <SelectTrigger className="h-auto w-auto cursor-pointer gap-1.5 rounded-md border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100">
           <User className="h-3.5 w-3.5" />
           <SelectValue placeholder="Assignee" />
         </SelectTrigger>
@@ -198,31 +214,29 @@ function InboxHeaderActions({
       </Select>
       <button
         type="button"
-        className="cursor-pointer rounded-md border border-orange-200 bg-orange-50 px-3 py-1.5 text-xs font-medium text-orange-700"
+        className="cursor-pointer rounded-md border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-medium text-orange-700"
       >
         {tagLabel || "General"}
       </button>
-      <button
-        type="button"
-        onClick={() => setInboxPickerOpen(true)}
-        className="cursor-pointer rounded-md border border-dashed border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:border-gray-300"
-      >
-        Move to inbox
-      </button>
-      <button
-        type="button"
-        onClick={onOpenTranslation}
-        className="cursor-pointer rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:border-gray-300"
-      >
-        Translation
-      </button>
-      <button
-        type="button"
-        onClick={onOpenInsights}
-        className="cursor-pointer rounded-md border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:border-gray-300"
-      >
-        View actions
-      </button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:border-gray-300"
+          >
+            More
+            <ChevronDown className="h-3.5 w-3.5" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-44">
+          <DropdownMenuItem onClick={() => setInboxPickerOpen(true)}>
+            Move to inbox
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onOpenTranslation}>
+            Translation
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
       <Dialog open={inboxPickerOpen} onOpenChange={setInboxPickerOpen}>
         <DialogContent className="sm:max-w-[460px]">
           <DialogHeader>
@@ -276,6 +290,82 @@ function InboxHeaderActions({
           </div>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function WorkspaceTabsRow({
+  tabs,
+  activeThreadId,
+  unreadByThread,
+  onSelectTab,
+  onCloseTab,
+  onAddTab,
+  inline = false,
+}) {
+  return (
+    <div
+      className={
+        inline
+          ? "min-w-0 flex-1 border-b border-slate-200 bg-slate-100/80"
+          : "border-b border-gray-100 bg-white"
+      }
+    >
+      <div
+        className={
+          inline
+            ? "flex min-w-0 items-end gap-px overflow-x-auto pl-1 pr-3 pt-1"
+            : "mx-auto flex w-full max-w-[900px] items-center gap-1 overflow-x-auto px-4 py-1"
+        }
+      >
+        {tabs.map((thread) => {
+          const threadId = String(thread?.id || "").trim();
+          if (!threadId) return null;
+          const isActive = threadId === activeThreadId;
+          const subject = String(thread?.subject || "").trim() || "Untitled ticket";
+          const unreadCount = Number(unreadByThread?.[threadId] || 0);
+          return (
+            <div
+              key={threadId}
+              className={`group relative flex min-w-0 ${inline ? "max-w-[260px]" : "max-w-[240px]"} shrink-0 items-center gap-2 border px-4 py-1.5 transition ${
+                isActive
+                  ? "-mb-px rounded-t-lg rounded-b-none border-slate-200 border-b-transparent bg-white text-slate-900 shadow-sm"
+                  : "rounded-t-lg rounded-b-none border-slate-200/80 bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+              }`}
+            >
+              {isActive ? <span className="absolute inset-x-0 top-0 h-[3px] rounded-t-lg bg-indigo-500" /> : null}
+              <button
+                type="button"
+                onClick={() => onSelectTab?.(threadId)}
+                className="flex min-w-0 flex-1 items-center gap-2 text-left"
+              >
+                {unreadCount > 0 ? <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-500" /> : null}
+                <span className="min-w-0 truncate pr-1 text-[12px] font-semibold leading-[18px]">
+                  {subject}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onCloseTab?.(threadId)}
+                className={`rounded p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 ${
+                  isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                }`}
+                aria-label={`Close ${subject}`}
+              >
+                <X className="h-2.5 w-2.5" />
+              </button>
+            </div>
+          );
+        })}
+        <button
+          type="button"
+          onClick={() => onAddTab?.()}
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-transparent bg-transparent text-slate-400 transition hover:bg-white/80 hover:text-slate-700"
+          aria-label="Open new tab"
+        >
+          <Plus className="h-4 w-4" />
+        </button>
+      </div>
     </div>
   );
 }
@@ -620,20 +710,19 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const [liveMessages, setLiveMessages] = useState(messages || []);
   const [liveAttachments, setLiveAttachments] = useState(attachments || []);
   const [selectedThreadId, setSelectedThreadId] = useState(null);
+  const [openThreadIds, setOpenThreadIds] = useState([]);
   const [localNewThread, setLocalNewThread] = useState(null);
   const [draftLogLoading, setDraftLogLoading] = useState(false);
   const [draftLogIdByThread, setDraftLogIdByThread] = useState({});
   const [ticketStateByThread, setTicketStateByThread] = useState({});
   const [readOverrides, setReadOverrides] = useState({});
   const [localSentMessagesByThread, setLocalSentMessagesByThread] = useState({});
-  const [filters, setFilters] = useState({
-    query: "",
-    status: "All",
-    unreadsOnly: false,
-  });
+  const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [composerMode, setComposerMode] = useState("reply");
   const [draftValue, setDraftValue] = useState("");
+  const [draftValueByThread, setDraftValueByThread] = useState({});
   const [noteValueByThread, setNoteValueByThread] = useState({});
+  const [scrollPositionByThread, setScrollPositionByThread] = useState({});
   const [signatureByThread, setSignatureByThread] = useState({});
   const [activeDraftId, setActiveDraftId] = useState(null);
   const [isSending, setIsSending] = useState(false);
@@ -655,15 +744,15 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const [currentSupabaseUserId, setCurrentSupabaseUserId] = useState(null);
   const [workspaceInboxes, setWorkspaceInboxes] = useState([]);
   const [isWorkspaceTestMode, setIsWorkspaceTestMode] = useState(false);
-  const headerActionsKeyRef = useRef("");
   const lastAutoReadThreadIdRef = useRef(null);
   const draftLastSavedRef = useRef("");
   const savingDraftRef = useRef(false);
   const draftValueRef = useRef("");
   const supabase = useClerkSupabase();
   const { user } = useUser();
+  const router = useRouter();
   const searchParams = useSearchParams();
-  const { setActions: setHeaderActions } = useSiteHeaderActions();
+  const { setTitleContent } = useSiteHeaderActions();
   const currentUserName = [user?.firstName, user?.lastName].filter(Boolean).join(" ") || "You";
   const activeView = searchParams?.get("view") || "";
 
@@ -1016,6 +1105,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         );
         const inboxSlug = extractInboxSlugFromTags(thread?.tags || []);
         const isResolved = effectiveStatus === "Solved";
+        const inboxBucket = getInboxBucket(thread);
 
         // Resolved tickets live exclusively in the "Resolved" view.
         if (isResolved && activeView !== "resolved") {
@@ -1025,7 +1115,10 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           return false;
         }
 
-        if (!activeView && (effectiveAssignee || inboxSlug)) {
+        if (!activeView && inboxBucket === "notification") {
+          return false;
+        }
+        if (activeView === "notifications" && inboxBucket !== "notification") {
           return false;
         }
         if (activeView === "mine") {
@@ -1074,17 +1167,28 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   ]);
 
   useEffect(() => {
-    if (!filteredThreads.length) {
-      setSelectedThreadId((prev) => (prev === null ? prev : null));
+    setOpenThreadIds((prev) => {
+      if (!prev.length) return prev;
+      const validIds = new Set(derivedThreads.map((thread) => String(thread?.id || "").trim()).filter(Boolean));
+      const next = prev.filter((threadId) => validIds.has(String(threadId || "").trim()));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [derivedThreads]);
+
+  useEffect(() => {
+    if (openThreadIds.length) {
+      if (selectedThreadId && openThreadIds.includes(selectedThreadId)) return;
+      setSelectedThreadId(openThreadIds[0] || null);
       return;
     }
-    setSelectedThreadId((prev) => {
-      if (prev && filteredThreads.some((thread) => thread.id === prev)) {
-        return prev;
-      }
-      return filteredThreads[0].id;
-    });
-  }, [filteredThreads]);
+    const fallbackThreadId = filteredThreads[0]?.id || derivedThreads[0]?.id || null;
+    if (!fallbackThreadId) {
+      setSelectedThreadId(null);
+      return;
+    }
+    setOpenThreadIds([fallbackThreadId]);
+    setSelectedThreadId(fallbackThreadId);
+  }, [derivedThreads, filteredThreads, openThreadIds, selectedThreadId]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -1152,9 +1256,14 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   }, [user?.id]);
 
   const selectedThread = useMemo(
-    () => filteredThreads.find((thread) => thread.id === selectedThreadId) || null,
-    [filteredThreads, selectedThreadId]
+    () => derivedThreads.find((thread) => thread.id === selectedThreadId) || null,
+    [derivedThreads, selectedThreadId]
   );
+  const openThreads = useMemo(() => {
+    return openThreadIds
+      .map((threadId) => derivedThreads.find((thread) => thread.id === threadId) || null)
+      .filter(Boolean);
+  }, [derivedThreads, openThreadIds]);
   const selectedTicketState = ticketStateByThread[selectedThreadId] || DEFAULT_TICKET_STATE;
   const memberLookupById = useMemo(() => {
     const map = new Map();
@@ -1270,6 +1379,16 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     }
     return UNASSIGNED_ASSIGNEE_VALUE;
   }, [selectedTicketState?.assignee]);
+  const unreadThreadCount = useMemo(() => {
+    return filteredThreads.filter((thread) => Number(thread?.unread_count ?? 0) > 0).length;
+  }, [filteredThreads]);
+  const unreadByThread = useMemo(() => {
+    const map = {};
+    derivedThreads.forEach((thread) => {
+      map[thread.id] = Number(thread?.unread_count ?? 0);
+    });
+    return map;
+  }, [derivedThreads]);
 
   useEffect(() => {
     if (!selectedThreadId || isLocalThreadId(selectedThreadId)) return;
@@ -1618,13 +1737,17 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     setDraftReady(false);
     draftLastSavedRef.current = "";
     if (!selectedThreadId) return;
+    setDraftValue(String(draftValueByThread[selectedThreadId] || ""));
+    if (Object.prototype.hasOwnProperty.call(draftValueByThread, selectedThreadId)) {
+      setDraftReady(true);
+    }
     setDraftWaitTimedOutByThread((prev) => {
       if (prev[selectedThreadId] === false || !(selectedThreadId in prev)) return prev;
       const next = { ...prev };
       next[selectedThreadId] = false;
       return next;
     });
-  }, [selectedThreadId]);
+  }, [draftValueByThread, selectedThreadId]);
 
   useEffect(() => {
     let active = true;
@@ -1634,6 +1757,10 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         return;
       }
       if (!selectedThreadId) return;
+      if (Object.prototype.hasOwnProperty.call(draftValueByThread, selectedThreadId)) {
+        setDraftReady(true);
+        return;
+      }
       const res = await fetch(`/api/threads/${selectedThreadId}/draft`, {
         method: "GET",
       }).catch(() => null);
@@ -1652,12 +1779,20 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       const draftText = draft?.body_text || draft?.body_html || "";
       if (draftText) {
         setDraftValue(draftText);
+        setDraftValueByThread((prev) => ({
+          ...prev,
+          [selectedThreadId]: draftText,
+        }));
         draftLastSavedRef.current = draftText.trim();
         setSystemDraftUneditedByThread((prev) => ({
           ...prev,
           [selectedThreadId]: true,
         }));
       } else {
+        setDraftValueByThread((prev) => ({
+          ...prev,
+          [selectedThreadId]: "",
+        }));
         setSystemDraftUneditedByThread((prev) => ({
           ...prev,
           [selectedThreadId]: false,
@@ -1672,13 +1807,17 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     return () => {
       active = false;
     };
-  }, [isLocalThreadId, selectedThreadId]);
+  }, [draftValueByThread, isLocalThreadId, selectedThreadId]);
 
   useEffect(() => {
     if (!selectedThreadId || !draftReady || !aiDraft) return;
     if (suppressAutoDraftByThread[selectedThreadId]) return;
     if (draftValueRef.current) return;
     setDraftValue(aiDraft);
+    setDraftValueByThread((prev) => ({
+      ...prev,
+      [selectedThreadId]: aiDraft,
+    }));
     setSystemDraftUneditedByThread((prev) => ({
       ...prev,
       [selectedThreadId]: true,
@@ -1703,6 +1842,10 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     const draftBody = draftMessage.body_text || draftMessage.body_html || "";
     if (draftValueRef.current) return;
     setDraftValue(draftBody);
+    setDraftValueByThread((prev) => ({
+      ...prev,
+      [selectedThreadId]: draftBody,
+    }));
     setSystemDraftUneditedByThread((prev) => ({
       ...prev,
       [selectedThreadId]: true,
@@ -1721,6 +1864,10 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       }
       setDraftValue(String(nextValue || ""));
       if (!selectedThreadId) return;
+      setDraftValueByThread((prev) => ({
+        ...prev,
+        [selectedThreadId]: String(nextValue || ""),
+      }));
       setSystemDraftUneditedByThread((prev) => {
         if (!prev[selectedThreadId]) return prev;
         return {
@@ -1746,6 +1893,127 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const handleFiltersChange = (updates) => {
     setFilters((prev) => ({ ...prev, ...updates }));
   };
+
+  const handleViewAllTickets = useCallback(() => {
+    setFilters(DEFAULT_FILTERS);
+    router.replace("/inbox");
+  }, [router]);
+
+  const openThreadInWorkspace = useCallback(
+    (threadId, options = {}) => {
+      const nextThreadId = String(threadId || "").trim();
+      if (!nextThreadId) return;
+      const shouldOpenInNewTab = Boolean(options?.newTab);
+
+      setOpenThreadIds((prev) => {
+        if (prev.includes(nextThreadId)) return prev;
+        if (!prev.length) return [nextThreadId];
+
+        const currentIndex = prev.indexOf(selectedThreadId);
+        if (shouldOpenInNewTab || currentIndex === -1 || !selectedThreadId) {
+          const next = [...prev];
+          const insertAt = currentIndex === -1 ? next.length : currentIndex + 1;
+          next.splice(insertAt, 0, nextThreadId);
+          return next;
+        }
+
+        const next = [...prev];
+        next[currentIndex] = nextThreadId;
+        return Array.from(new Set(next));
+      });
+
+      setSelectedThreadId(nextThreadId);
+    },
+    [selectedThreadId]
+  );
+
+  const closeThreadTab = useCallback(
+    (threadId) => {
+      const closingThreadId = String(threadId || "").trim();
+      if (!closingThreadId) return;
+      if (isLocalThreadId(closingThreadId)) {
+        setLocalNewThread((prev) => (prev?.id === closingThreadId ? null : prev));
+      }
+      setOpenThreadIds((prev) => {
+        const currentIndex = prev.indexOf(closingThreadId);
+        if (currentIndex === -1) return prev;
+        const next = prev.filter((id) => id !== closingThreadId);
+        if (selectedThreadId === closingThreadId) {
+          const replacement = next[currentIndex] || next[currentIndex - 1] || null;
+          setSelectedThreadId(replacement);
+        }
+        return next;
+      });
+    },
+    [isLocalThreadId, selectedThreadId]
+  );
+
+  const handleCreateTicket = useCallback(() => {
+    const nowIso = new Date().toISOString();
+    const id = `local-new-ticket-${Date.now()}`;
+    const nextThread = {
+      id,
+      subject: "New ticket",
+      snippet: "",
+      status: "New",
+      unread_count: 0,
+      is_read: true,
+      last_message_at: nowIso,
+      updated_at: nowIso,
+      created_at: nowIso,
+      tags: [],
+      is_local: true,
+    };
+    setLocalNewThread(nextThread);
+    setOpenThreadIds((prev) => [...prev, id]);
+    setSelectedThreadId(id);
+    setDraftValue("");
+    setDraftValueByThread((prev) => ({ ...prev, [id]: "" }));
+    setActiveDraftId(null);
+    setDraftReady(true);
+    setComposerMode("reply");
+  }, []);
+
+  useEffect(() => {
+    setTitleContent(
+      <div className="flex min-w-0 flex-1 items-center">
+        <div className="hidden h-12 shrink-0 items-center justify-end gap-3 border-r border-slate-200 px-3 lg:flex lg:w-[20vw] lg:min-w-[20vw] lg:max-w-[20vw]">
+          <button
+            type="button"
+            onClick={handleViewAllTickets}
+            className="inline-flex items-center gap-1 text-[13px] font-medium text-slate-500 transition hover:text-slate-800"
+          >
+            View all
+            <ArrowUpRight className="h-3.5 w-3.5" />
+          </button>
+          {unreadThreadCount > 0 ? (
+            <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-sm bg-slate-100 px-1.5 text-[11px] font-semibold text-slate-500">
+              {unreadThreadCount}
+            </span>
+          ) : null}
+        </div>
+        <WorkspaceTabsRow
+          tabs={openThreads}
+          activeThreadId={selectedThreadId}
+          unreadByThread={unreadByThread}
+          onSelectTab={setSelectedThreadId}
+          onCloseTab={closeThreadTab}
+          onAddTab={handleCreateTicket}
+          inline
+        />
+      </div>
+    );
+    return () => setTitleContent(null);
+  }, [
+    closeThreadTab,
+    handleViewAllTickets,
+    handleCreateTicket,
+    openThreads,
+    selectedThreadId,
+    setTitleContent,
+    unreadByThread,
+    unreadThreadCount,
+  ]);
 
   useEffect(() => {
     if (activeView === "" && filters.status === "Solved") {
@@ -1852,52 +2120,6 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     [handleTicketStateChange]
   );
 
-  useEffect(() => {
-    if (!setHeaderActions) return;
-    if (!selectedThreadId) {
-      headerActionsKeyRef.current = "";
-      setHeaderActions(null);
-      return;
-    }
-    const key = `${selectedThreadId}:${selectedTicketState?.status || ""}:${
-      selectedTicketState?.assignee || ""
-    }:${selectedInboxSlug || ""}`;
-    if (headerActionsKeyRef.current === key) return;
-    headerActionsKeyRef.current = key;
-    setHeaderActions(
-      <InboxHeaderActions
-        ticketState={selectedTicketState}
-        assignmentOptions={assignmentOptions}
-        selectedAssignmentValue={selectedAssignmentValue}
-        inboxOptions={inboxOptions}
-        selectedInboxSlug={selectedInboxSlug}
-        tagLabel={selectedTagLabel}
-        onTicketStateChange={handleTicketStateChange}
-        onAssignmentChange={handleAssignmentChange}
-        onInboxChange={handleInboxChange}
-        onOpenTranslation={() => setTranslationModalOpen(true)}
-        onOpenInsights={() => setInsightsOpen(true)}
-      />
-    );
-  }, [
-    assignmentOptions,
-    handleAssignmentChange,
-    handleTicketStateChange,
-    handleInboxChange,
-    inboxOptions,
-    selectedAssignmentValue,
-    selectedInboxSlug,
-    selectedTicketState,
-    selectedThreadId,
-    selectedTagLabel,
-    setHeaderActions,
-  ]);
-
-  useEffect(() => {
-    if (!setHeaderActions) return;
-    return () => setHeaderActions(null);
-  }, [setHeaderActions]);
-
   const saveThreadDraft = useCallback(async ({ immediate = false, valueOverride } = {}) => {
     if (isLocalThreadId(selectedThreadId)) return;
     if (composerMode === "note") return;
@@ -1956,30 +2178,6 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     }, 4000);
     return () => clearInterval(timer);
   }, [draftReady, isLocalThreadId, saveThreadDraft, selectedThreadId]);
-
-  const handleCreateTicket = useCallback(() => {
-    const nowIso = new Date().toISOString();
-    const id = `local-new-ticket-${Date.now()}`;
-    const nextThread = {
-      id,
-      subject: "New ticket",
-      snippet: "",
-      status: "New",
-      unread_count: 0,
-      is_read: true,
-      last_message_at: nowIso,
-      updated_at: nowIso,
-      created_at: nowIso,
-      tags: [],
-      is_local: true,
-    };
-    setLocalNewThread(nextThread);
-    setSelectedThreadId(id);
-    setDraftValue("");
-    setActiveDraftId(null);
-    setDraftReady(true);
-    setComposerMode("reply");
-  }, []);
 
   useEffect(() => {
     let active = true;
@@ -2185,6 +2383,10 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         );
       }
       setDraftValue("");
+      setDraftValueByThread((prev) => ({
+        ...prev,
+        [selectedThreadId]: "",
+      }));
       setActiveDraftId(null);
       draftLastSavedRef.current = "";
       setSystemDraftUneditedByThread((prev) => ({
@@ -2212,8 +2414,14 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     if (!selectedThreadId || deletingThread) return;
     if (isLocalThreadId(selectedThreadId)) {
       setLocalNewThread(null);
+      setOpenThreadIds((prev) => prev.filter((threadId) => threadId !== selectedThreadId));
       setSelectedThreadId(null);
       setDraftValue("");
+      setDraftValueByThread((prev) => {
+        const next = { ...prev };
+        delete next[selectedThreadId];
+        return next;
+      });
       setActiveDraftId(null);
       return;
     }
@@ -2229,8 +2437,14 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         throw new Error(payload?.error || "Could not delete ticket.");
       }
       toast.success("Ticket deleted.");
+      setOpenThreadIds((prev) => prev.filter((threadId) => threadId !== selectedThreadId));
       setSelectedThreadId(null);
       setDraftValue("");
+      setDraftValueByThread((prev) => {
+        const next = { ...prev };
+        delete next[selectedThreadId];
+        return next;
+      });
       setActiveDraftId(null);
       if (typeof window !== "undefined") {
         window.location.reload();
@@ -2536,13 +2750,13 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   ]);
 
   return (
-    <div className="flex h-full flex-1 flex-col overflow-hidden bg-background lg:flex-row">
+    <div className="flex h-full flex-1 flex-col overflow-hidden bg-slate-50 lg:flex-row">
       <TicketList
         threads={filteredThreads}
         selectedThreadId={selectedThreadId}
         ticketStateByThread={ticketStateByThread}
         customerByThread={customerByThread}
-        onSelectThread={setSelectedThreadId}
+        onSelectThread={openThreadInWorkspace}
         filters={filters}
         onFiltersChange={handleFiltersChange}
         getTimestamp={getThreadTimestamp}
@@ -2551,7 +2765,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         hideSolvedFilter={activeView === ""}
       />
 
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 flex-1 flex-col bg-slate-50">
         <TicketDetail
           thread={selectedThread}
           messages={threadMessages}
@@ -2600,6 +2814,41 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           onComposerModeChange={setComposerMode}
           mailboxEmails={mailboxEmails}
           isWorkspaceTestMode={isWorkspaceTestMode}
+          conversationScrollTop={selectedThreadId ? scrollPositionByThread[selectedThreadId] || 0 : 0}
+          onConversationScroll={(scrollTop) => {
+            if (!selectedThreadId) return;
+            setScrollPositionByThread((prev) => ({
+              ...prev,
+              [selectedThreadId]: scrollTop,
+            }));
+          }}
+          headerActions={
+            selectedThreadId ? (
+              <InboxHeaderActions
+                ticketState={selectedTicketState}
+                assignmentOptions={assignmentOptions}
+                selectedAssignmentValue={selectedAssignmentValue}
+                inboxOptions={inboxOptions}
+                selectedInboxSlug={selectedInboxSlug}
+                tagLabel={selectedTagLabel}
+                onTicketStateChange={handleTicketStateChange}
+                onAssignmentChange={handleAssignmentChange}
+                onInboxChange={handleInboxChange}
+                onOpenTranslation={() => setTranslationModalOpen(true)}
+              />
+            ) : null
+          }
+          rightHeaderActions={
+            selectedThreadId ? (
+              <button
+                type="button"
+                onClick={() => setInsightsOpen(true)}
+                className="cursor-pointer rounded-md border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:border-gray-300"
+              >
+                View actions
+              </button>
+            ) : null
+          }
         />
       </div>
 

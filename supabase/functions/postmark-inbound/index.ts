@@ -3,6 +3,7 @@
 // SQL: create unique index if not exists uniq_mail_messages_provider_msg on public.mail_messages(provider, provider_message_id);
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { shouldSkipInboxMessage } from "../_shared/inbox-filter.ts";
+import { classifyInboxBucket } from "../_shared/inbox-classification.ts";
 import {
   categorizeEmail,
   EmailCategory,
@@ -1264,8 +1265,17 @@ Deno.serve(async (req) => {
   }
 
   const routeDecision = decideRouteForClassification(routingClassification, workspaceRoutes);
+  const inboxClassification = classifyInboxBucket({
+    from: fromRaw,
+    subject,
+    body: textBody,
+    headers: headers.map((header) => ({
+      name: header?.Name ?? "",
+      value: header?.Value ?? "",
+    })),
+  });
   let inboundCategory: EmailCategory = "General";
-  if (routeDecision.isEffectiveSupport) {
+  if (routeDecision.isEffectiveSupport && inboxClassification.bucket !== "notification") {
     try {
       inboundCategory = await categorizeEmail({
         subject,
@@ -1309,9 +1319,18 @@ Deno.serve(async (req) => {
         status: "new",
         priority: "normal",
         tags: buildThreadTags([], inboundCategory),
-        classification_key: normalizeRouteCategory(routingClassification.category),
-        classification_confidence: routingClassification.confidence,
-        classification_reason: routingClassification.reason,
+        classification_key:
+          inboxClassification.bucket === "notification"
+            ? "notification"
+            : normalizeRouteCategory(routingClassification.category),
+        classification_confidence:
+          inboxClassification.bucket === "notification"
+            ? Math.min(1, Math.max(0.8, inboxClassification.score / 8))
+            : routingClassification.confidence,
+        classification_reason:
+          inboxClassification.bucket === "notification"
+            ? inboxClassification.reason
+            : routingClassification.reason,
         updated_at: new Date().toISOString(),
       })
       .select("id, subject, unread_count")
@@ -1388,9 +1407,18 @@ Deno.serve(async (req) => {
     subject: existingThread?.subject ? existingThread.subject : subject,
     unread_count: nextUnreadCount,
     is_read: false,
-    classification_key: normalizeRouteCategory(routingClassification.category),
-    classification_confidence: routingClassification.confidence,
-    classification_reason: routingClassification.reason,
+    classification_key:
+      inboxClassification.bucket === "notification"
+        ? "notification"
+        : normalizeRouteCategory(routingClassification.category),
+    classification_confidence:
+      inboxClassification.bucket === "notification"
+        ? Math.min(1, Math.max(0.8, inboxClassification.score / 8))
+        : routingClassification.confidence,
+    classification_reason:
+      inboxClassification.bucket === "notification"
+        ? inboxClassification.reason
+        : routingClassification.reason,
     updated_at: new Date().toISOString(),
   };
   if (shouldUpdateCategory) {

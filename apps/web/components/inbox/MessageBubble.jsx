@@ -133,7 +133,7 @@ const sanitizeEmailHtml = (value, attachments = []) => {
 };
 
 const EMAIL_BODY_CLASS =
-  "max-w-none w-full text-[15px] leading-7 text-gray-800 font-[inherit] [&_*]:font-[inherit] [&_*]:text-[15px] [&_*]:leading-7";
+  "max-w-none w-full text-[14px] leading-[1.55] text-gray-800 font-[inherit] [&_*]:font-[inherit] [&_*]:text-[14px] [&_*]:leading-[1.55]";
 
 const isImageAttachment = (mimeType = "") => String(mimeType || "").toLowerCase().startsWith("image/");
 const isPdfAttachment = (mimeType = "") => String(mimeType || "").toLowerCase() === "application/pdf";
@@ -228,20 +228,20 @@ export function MessageBubble({
               )}
             >
               <div className={cn("leading-tight", isOutbound ? "text-right" : "text-left")}>
-                <div className="text-sm font-semibold text-gray-800">
+                <div className="text-[13px] font-semibold text-gray-800">
                   {senderDisplayName}{" "}
-                  <span className="text-xs font-medium text-gray-400">
+                  <span className="text-[12px] font-medium text-gray-400">
                     {timestamp}
                   </span>
                 </div>
               </div>
               {isAuthoredByCurrentUser ? (
-                <span className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                <span className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[12px] font-medium text-slate-600">
                   You
                 </span>
               ) : null}
               {isDraft ? (
-                <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
+                <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[12px] font-medium text-blue-700">
                   Draft
                 </span>
               ) : null}
@@ -257,7 +257,7 @@ export function MessageBubble({
                   : "border-gray-200 bg-white"
               )}
             >
-              <div className={cn("p-3.5 text-gray-800 leading-relaxed", isOutbound && "text-[15px]")}>
+              <div className={cn("px-4 py-3 text-[14px] leading-[1.55] text-gray-800", isOutbound && "text-[14px]")}>
                 {safeCleanBodyHtml ? (
                   <div
                     className={EMAIL_BODY_CLASS}
@@ -276,7 +276,7 @@ export function MessageBubble({
 
             {attachmentCards.length ? (
               <div className="rounded-xl border border-gray-200 bg-white px-4 pb-3 pt-2">
-                <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400">Files</p>
+                <p className="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-gray-400">Files</p>
                 <div className="flex flex-wrap gap-1.5">
                   {attachmentCards.map((attachment) => {
                     const isImage = isImageAttachment(attachment?.mime_type);
@@ -299,15 +299,15 @@ export function MessageBubble({
                               unoptimized
                             />
                           ) : (
-                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded bg-gray-100 text-[10px] text-gray-500">
+                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded bg-gray-100 text-[12px] text-gray-500">
                               File
                             </div>
                           )}
                           <div className="min-w-0">
-                            <p className="truncate text-xs font-medium text-gray-800">
+                            <p className="truncate text-[12px] font-medium text-gray-800">
                               {attachment?.filename || "Attachment"}
                             </p>
-                            <p className="text-[11px] text-gray-500">
+                            <p className="text-[12px] text-gray-500">
                               {attachment?.mime_type || "Unknown type"}
                               {attachment?.size_bytes ? ` • ${formatBytes(attachment.size_bytes)}` : ""}
                             </p>
@@ -348,30 +348,30 @@ export function MessageBubble({
           <div className="max-h-[65vh] overflow-auto bg-white px-5 py-4">
             <div className="space-y-2 text-sm">
               <div className="flex flex-wrap gap-2">
-                <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-gray-400">From</span>
-                <span className="text-gray-700">{senderDetails}</span>
+                <span className="w-12 shrink-0 text-[12px] font-semibold uppercase tracking-wide text-gray-400">From</span>
+                <span className="text-[13px] text-gray-700">{senderDetails}</span>
               </div>
               {toList.length ? (
                 <div className="flex flex-wrap gap-2">
-                  <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-gray-400">To</span>
-                  <span className="text-gray-700">{toList.join(", ")}</span>
+                  <span className="w-12 shrink-0 text-[12px] font-semibold uppercase tracking-wide text-gray-400">To</span>
+                  <span className="text-[13px] text-gray-700">{toList.join(", ")}</span>
                 </div>
               ) : null}
               {ccList.length ? (
                 <div className="flex flex-wrap gap-2">
-                  <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-gray-400">Cc</span>
-                  <span className="text-gray-700">{ccList.join(", ")}</span>
+                  <span className="w-12 shrink-0 text-[12px] font-semibold uppercase tracking-wide text-gray-400">Cc</span>
+                  <span className="text-[13px] text-gray-700">{ccList.join(", ")}</span>
                 </div>
               ) : null}
               {shouldShowBcc ? (
                 <div className="flex flex-wrap gap-2">
-                  <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-gray-400">Bcc</span>
-                  <span className="text-gray-700">{bccList.join(", ")}</span>
+                  <span className="w-12 shrink-0 text-[12px] font-semibold uppercase tracking-wide text-gray-400">Bcc</span>
+                  <span className="text-[13px] text-gray-700">{bccList.join(", ")}</span>
                 </div>
               ) : null}
               <div className="flex flex-wrap gap-2">
-                <span className="w-12 shrink-0 text-xs font-semibold uppercase tracking-wide text-gray-400">Date</span>
-                <span className="text-gray-700">{timestamp || "-"}</span>
+                <span className="w-12 shrink-0 text-[12px] font-semibold uppercase tracking-wide text-gray-400">Date</span>
+                <span className="text-[13px] text-gray-700">{timestamp || "-"}</span>
               </div>
             </div>
             <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50/40 p-4">

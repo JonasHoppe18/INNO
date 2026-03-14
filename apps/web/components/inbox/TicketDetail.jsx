@@ -4,8 +4,8 @@ import { MessageBubble } from "@/components/inbox/MessageBubble";
 import { Composer } from "@/components/inbox/Composer";
 import { ThinkingCard } from "@/components/inbox/ThinkingCard";
 import { ActionCard } from "@/components/inbox/ActionCard";
-import { formatMessageTime, getSenderLabel, isOutboundMessage } from "@/components/inbox/inbox-utils";
-import { useEffect, useMemo, useState } from "react";
+import { isOutboundMessage } from "@/components/inbox/inbox-utils";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 const APPROVAL_ACTION_TYPES = new Set([
   "update_shipping_address",
@@ -57,9 +57,14 @@ export function TicketDetail({
   mailboxEmails,
   isSending = false,
   isWorkspaceTestMode = false,
+  headerActions = null,
+  rightHeaderActions = null,
+  conversationScrollTop = 0,
+  onConversationScroll = null,
 }) {
   const [composerCollapsed, setComposerCollapsed] = useState(false);
   const [processReturnRestock, setProcessReturnRestock] = useState(true);
+  const conversationRef = useRef(null);
   const normalizedPendingStatus = String(pendingOrderUpdate?.status || "").toLowerCase();
   const pendingUpdateState = orderUpdateSubmitting
     ? "executing"
@@ -195,6 +200,12 @@ export function TicketDetail({
       </div>
     ) : null;
 
+  useEffect(() => {
+    const node = conversationRef.current;
+    if (!node) return;
+    node.scrollTop = Number.isFinite(Number(conversationScrollTop)) ? Number(conversationScrollTop) : 0;
+  }, [conversationScrollTop, thread?.id]);
+
   if (!thread) {
     return (
       <section className="flex min-h-0 flex-1 flex-col items-center justify-center text-sm text-muted-foreground">
@@ -203,23 +214,23 @@ export function TicketDetail({
     );
   }
 
-  const lastUpdated = formatMessageTime(thread.last_message_at);
   const firstMessage = messages[0] || {};
-  const toEmail = firstMessage?.from_email || "";
-  const senderLabel = getSenderLabel(firstMessage) || "";
-  const toLabel = toEmail ? `${senderLabel || "Unknown"} <${toEmail}>` : "";
   const headerTitle = thread.subject || "Untitled ticket";
+  const toEmail = String(firstMessage?.from_email || "").trim();
+  const senderLabel = String(firstMessage?.from_name || "").trim() || toEmail || "Unknown";
+  const toLabel = toEmail ? `${senderLabel} <${toEmail}>` : senderLabel;
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-slate-50/40 lg:min-w-0">
-      <header className="flex h-14 items-center justify-between border-b border-gray-100 bg-white px-4">
-        <div className="min-w-0">
-          <div className="text-sm font-semibold text-gray-900">{headerTitle}</div>
-          <div className="text-[11px] text-muted-foreground">
-            {getSenderLabel(firstMessage)} • {firstMessage?.from_email} • Last update {lastUpdated}
+    <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-slate-50 lg:min-w-0">
+      <header className="flex min-h-[58px] items-center justify-between border-b border-gray-100 bg-white px-4 py-1.5">
+        <div className="flex min-w-0 items-center gap-3">
+          {headerActions ? <div className="flex shrink-0 items-center gap-2">{headerActions}</div> : null}
+          <div className="min-w-0">
+            <div className="truncate text-[16px] font-semibold leading-tight text-gray-900">{headerTitle}</div>
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {rightHeaderActions}
           <Button
             type="button"
             variant="ghost"
@@ -234,8 +245,12 @@ export function TicketDetail({
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-[900px] space-y-5 px-4 pb-4 pt-3">
+      <div
+        ref={conversationRef}
+        className="min-h-0 flex-1 overflow-y-auto"
+        onScroll={(event) => onConversationScroll?.(event.currentTarget.scrollTop)}
+      >
+        <div className="mx-auto w-full max-w-[900px] space-y-4 px-4 pb-4 pt-3">
           {returnCase ? (
             <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
               <div className="font-medium text-slate-800">Return Case</div>
@@ -377,7 +392,7 @@ export function TicketDetail({
       </div>
 
       {isActionPending ? (
-        <div className="sticky bottom-0 flex-none bg-transparent px-3 py-2">
+        <div className="sticky bottom-0 flex-none bg-transparent px-3 py-1.5">
           <div className="mx-auto w-full max-w-[900px] rounded-3xl border border-violet-100 bg-violet-50/40 px-4 py-5 text-center">
             <div className="flex flex-col items-center justify-center">
               <Sparkles className="mb-2 h-5 w-5 animate-pulse text-violet-500" />

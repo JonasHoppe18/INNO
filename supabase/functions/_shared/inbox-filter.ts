@@ -8,8 +8,6 @@ const SUBJECT_PATTERNS = [
   /\bmarketing\b/i,
   /\bdiscount\b/i,
   /\bsale\b/i,
-  /\bdo not reply\b/i,
-  /\bno-?reply\b/i,
   /\bemail preferences\b/i,
 ];
 

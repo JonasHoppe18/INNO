@@ -9,6 +9,9 @@
  * @property {string | null} snippet
  * @property {string | null} last_message_at
  * @property {number | null} unread_count
+ * @property {string | null} classification_key
+ * @property {number | null} classification_confidence
+ * @property {string | null} classification_reason
  * @property {string | null} created_at
  * @property {string | null} updated_at
  */

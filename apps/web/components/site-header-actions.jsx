@@ -6,7 +6,11 @@ const SiteHeaderActionsContext = createContext(null);
 
 export function SiteHeaderActionsProvider({ children }) {
   const [actions, setActions] = useState(null);
-  const value = useMemo(() => ({ actions, setActions }), [actions]);
+  const [titleContent, setTitleContent] = useState(null);
+  const value = useMemo(
+    () => ({ actions, setActions, titleContent, setTitleContent }),
+    [actions, titleContent]
+  );
   return (
     <SiteHeaderActionsContext.Provider value={value}>
       {children}

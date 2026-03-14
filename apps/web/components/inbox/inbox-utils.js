@@ -50,3 +50,8 @@ export function isOutboundMessage(message, mailboxEmails = []) {
   }
   return sender.includes("sona") || sender.includes("support") || sender.includes("hello");
 }
+
+export function getInboxBucket(thread) {
+  const key = String(thread?.classification_key || "").trim().toLowerCase();
+  return key === "notification" ? "notification" : "ticket";
+}
