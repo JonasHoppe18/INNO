@@ -249,7 +249,7 @@ export function MessageBubble({
 
             <div
               className={cn(
-                "overflow-hidden rounded-xl border text-xs",
+                "overflow-hidden rounded-xl border text-xs shadow-[0_1px_2px_0_rgba(0,0,0,0.05),0_4px_6px_-1px_rgba(0,0,0,0.02)]",
                 isInternalNote
                   ? "border-yellow-200 bg-yellow-50"
                   : isOutbound

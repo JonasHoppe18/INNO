@@ -2,38 +2,32 @@ import Link from "next/link";
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { InboxPageClient } from "@/components/inbox/InboxPageClient";
+import { InboxTicketsTable } from "@/components/inbox/InboxTicketsTable";
 import { loadInboxData } from "@/lib/server/inbox-data";
 
-export default async function InboxPage({ searchParams }) {
+export default async function InboxTicketsPage() {
   const { userId: clerkUserId, orgId } = await auth();
   if (!clerkUserId) {
-    redirect("/sign-in?redirect_url=/inbox");
+    redirect("/sign-in?redirect_url=/inbox/tickets");
   }
 
-  const query = typeof searchParams?.q === "string" ? searchParams.q.trim() : "";
-  const unreadOnly = searchParams?.unread === "1";
-
   let mailboxes = [];
-  let messages = [];
   let threads = [];
-  let attachments = [];
+  let members = [];
 
   try {
     const data = await loadInboxData({
       clerkUserId,
       orgId,
-      query,
-      unreadOnly,
-      includeMessages: true,
-      includeAttachments: true,
+      includeMessages: false,
+      includeAttachments: false,
+      includeMembers: true,
     });
     mailboxes = data.mailboxes;
-    messages = data.messages;
     threads = data.threads;
-    attachments = data.attachments;
+    members = data.members;
   } catch (error) {
-    console.error("Inbox mail lookup failed:", error);
+    console.error("Inbox tickets lookup failed:", error);
   }
 
   if (!mailboxes.length) {
@@ -52,5 +46,5 @@ export default async function InboxPage({ searchParams }) {
     );
   }
 
-  return <InboxPageClient threads={threads} messages={messages} attachments={attachments} />;
+  return <InboxTicketsTable threads={threads} members={members} />;
 }

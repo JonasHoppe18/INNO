@@ -1039,7 +1039,7 @@ export function Composer({
                   mentionUserIds,
                 });
               }}
-              className="h-8 w-8 rounded-full bg-black p-0 text-white shadow-sm hover:bg-slate-900"
+              className="h-8 w-8 rounded-full bg-violet-600 p-0 text-white shadow-sm hover:bg-violet-700"
             >
               {isSending ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />

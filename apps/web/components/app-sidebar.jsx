@@ -114,7 +114,8 @@ function InboxSection({
   const view = searchParams.get("view")
   const isCollapsed = state === "collapsed"
 
-  const isAllTicketsActive = pathname === "/inbox" && !view
+  const isInboxPath = pathname === "/inbox" || pathname === "/inbox/tickets"
+  const isAllTicketsActive = isInboxPath && !view
   const isNotificationsActive = pathname === "/inbox" && view === "notifications"
   const isAssignedActive = pathname === "/inbox" && view === "mine"
   const isResolvedActive = pathname === "/inbox" && view === "resolved"

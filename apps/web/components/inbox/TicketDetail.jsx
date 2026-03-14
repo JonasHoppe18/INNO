@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { Sparkles, Trash2 } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import { MessageBubble } from "@/components/inbox/MessageBubble";
 import { Composer } from "@/components/inbox/Composer";
 import { ThinkingCard } from "@/components/inbox/ThinkingCard";
@@ -44,8 +44,6 @@ export function TicketDetail({
   draftLoaded,
   canSend,
   onSend,
-  onDeleteThread,
-  deletingThread,
   pendingOrderUpdate,
   returnCase,
   orderUpdateDecision,
@@ -215,33 +213,18 @@ export function TicketDetail({
   }
 
   const firstMessage = messages[0] || {};
-  const headerTitle = thread.subject || "Untitled ticket";
   const toEmail = String(firstMessage?.from_email || "").trim();
   const senderLabel = String(firstMessage?.from_name || "").trim() || toEmail || "Unknown";
   const toLabel = toEmail ? `${senderLabel} <${toEmail}>` : senderLabel;
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-slate-50 lg:min-w-0">
-      <header className="flex min-h-[58px] items-center justify-between border-b border-gray-100 bg-white px-4 py-1.5">
+    <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-sidebar lg:min-w-0">
+      <header className="flex min-h-[58px] items-center justify-between border-b border-gray-100 bg-sidebar px-4 py-1.5">
         <div className="flex min-w-0 items-center gap-3">
           {headerActions ? <div className="flex shrink-0 items-center gap-2">{headerActions}</div> : null}
-          <div className="min-w-0">
-            <div className="truncate text-[16px] font-semibold leading-tight text-gray-900">{headerTitle}</div>
-          </div>
         </div>
         <div className="flex items-center gap-2">
           {rightHeaderActions}
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={onDeleteThread}
-            disabled={deletingThread}
-            aria-label="Delete ticket"
-            className="text-gray-400 hover:text-red-600"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
         </div>
       </header>
 

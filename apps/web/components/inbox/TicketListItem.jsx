@@ -28,6 +28,7 @@ export function TicketListItem({
   assignee,
   priority,
   onSelect,
+  onContextMenu,
 }) {
   const isUnread = (unreadCount ?? 0) > 0;
   const hasAiDraft = Boolean(
@@ -56,6 +57,7 @@ export function TicketListItem({
           newTab: Boolean(event.metaKey || event.ctrlKey),
         })
       }
+      onContextMenu={(event) => onContextMenu?.(event)}
       className={cn(
         "relative mx-2 my-1 flex w-[calc(100%-1rem)] flex-col gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left transition-colors hover:bg-gray-50",
         isActive && "z-10 border-slate-800 ring-1 ring-inset ring-slate-800",

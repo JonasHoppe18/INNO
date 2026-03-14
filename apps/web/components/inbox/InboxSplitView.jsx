@@ -38,7 +38,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ArrowUpRight, CheckCircle, CheckCircle2, ChevronDown, Plus, User, X } from "lucide-react";
+import { ArrowUpRight, Bell, CheckCircle, CheckCircle2, ChevronDown, Inbox, Plus, User, X } from "lucide-react";
 
 const DEFAULT_TICKET_STATE = {
   status: "New",
@@ -139,6 +139,7 @@ function InboxHeaderActions({
   assignmentOptions,
   selectedAssignmentValue,
   inboxOptions,
+  selectedInboxBucket,
   selectedInboxSlug,
   tagLabel,
   onTicketStateChange,
@@ -148,18 +149,29 @@ function InboxHeaderActions({
 }) {
   const [inboxPickerOpen, setInboxPickerOpen] = useState(false);
   const [inboxFilter, setInboxFilter] = useState("");
-  const selectedInboxLabel = useMemo(() => {
-    if (!selectedInboxSlug) return "All tickets";
-    const hit = (inboxOptions || []).find((option) => option.value === selectedInboxSlug);
-    return hit?.label || selectedInboxSlug;
-  }, [inboxOptions, selectedInboxSlug]);
+  const destinationOptions = useMemo(
+    () => [
+      { value: "__all__", label: "All tickets", icon: Inbox },
+      { value: "__notifications__", label: "Notifications", icon: Bell },
+      ...((inboxOptions || []).map((option) => ({
+        ...option,
+        icon: Inbox,
+      }))),
+    ],
+    [inboxOptions]
+  );
+  const selectedDestinationValue = useMemo(() => {
+    if (selectedInboxBucket === "notification") return "__notifications__";
+    if (!selectedInboxSlug) return "__all__";
+    return selectedInboxSlug;
+  }, [selectedInboxBucket, selectedInboxSlug]);
   const filteredInboxOptions = useMemo(() => {
     const query = String(inboxFilter || "").trim().toLowerCase();
-    if (!query) return inboxOptions || [];
-    return (inboxOptions || []).filter((option) =>
+    if (!query) return destinationOptions;
+    return destinationOptions.filter((option) =>
       String(option?.label || "").toLowerCase().includes(query)
     );
-  }, [inboxFilter, inboxOptions]);
+  }, [destinationOptions, inboxFilter]);
   const statusStylesByStatus = {
     New: "bg-green-50 text-green-700 border-green-200",
     Open: "bg-blue-50 text-blue-700 border-blue-200",
@@ -230,7 +242,7 @@ function InboxHeaderActions({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-44">
           <DropdownMenuItem onClick={() => setInboxPickerOpen(true)}>
-            Move to inbox
+            Move
           </DropdownMenuItem>
           <DropdownMenuItem onClick={onOpenTranslation}>
             Translation
@@ -240,45 +252,39 @@ function InboxHeaderActions({
       <Dialog open={inboxPickerOpen} onOpenChange={setInboxPickerOpen}>
         <DialogContent className="sm:max-w-[460px]">
           <DialogHeader>
-            <DialogTitle>Move ticket to inbox</DialogTitle>
+            <DialogTitle>Move conversation</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <Input
               value={inboxFilter}
               onChange={(event) => setInboxFilter(event.target.value)}
-              placeholder="Search inbox..."
+              placeholder="Search destination..."
             />
             <div className="max-h-80 space-y-1 overflow-y-auto rounded-md border border-gray-200 p-2">
-              <button
-                type="button"
-                onClick={() => {
-                  onInboxChange?.(null);
-                  setInboxPickerOpen(false);
-                }}
-                className={`w-full cursor-pointer rounded px-3 py-2 text-left text-sm ${
-                  !selectedInboxSlug
-                    ? "bg-gray-900 text-white"
-                    : "text-gray-700 hover:bg-gray-100"
-                }`}
-              >
-                All tickets
-              </button>
               {filteredInboxOptions.map((option) => {
-                const isActive = selectedInboxSlug === option.value;
+                const isActive = selectedDestinationValue === option.value;
+                const OptionIcon = option.icon || Inbox;
                 return (
                   <button
                     key={option.value}
                     type="button"
                     onClick={() => {
-                      onInboxChange?.(option.value);
+                      if (option.value === "__all__") {
+                        onInboxChange?.({ inboxSlug: null, classificationKey: "support" });
+                      } else if (option.value === "__notifications__") {
+                        onInboxChange?.({ inboxSlug: null, classificationKey: "notification" });
+                      } else {
+                        onInboxChange?.({ inboxSlug: option.value, classificationKey: "support" });
+                      }
                       setInboxPickerOpen(false);
                     }}
-                    className={`w-full cursor-pointer rounded px-3 py-2 text-left text-sm ${
+                    className={`flex w-full cursor-pointer items-center gap-2 rounded px-3 py-2 text-left text-sm ${
                       isActive
                         ? "bg-gray-900 text-white"
                         : "text-gray-700 hover:bg-gray-100"
                     }`}
                   >
+                    <OptionIcon className="h-4 w-4 shrink-0" />
                     {option.label}
                   </button>
                 );
@@ -307,14 +313,15 @@ function WorkspaceTabsRow({
     <div
       className={
         inline
-          ? "min-w-0 flex-1 border-b border-slate-200 bg-slate-100/80"
-          : "border-b border-gray-100 bg-white"
+          ? "relative min-w-0 flex-1 bg-white"
+          : "border-b border-slate-200 bg-white"
       }
     >
+      {inline ? <div className="absolute inset-y-0 left-0 z-10 w-2 bg-white" /> : null}
       <div
         className={
           inline
-            ? "flex min-w-0 items-end gap-px overflow-x-auto pl-1 pr-3 pt-1"
+            ? "flex min-w-0 items-end overflow-x-auto pr-3 pt-0.5"
             : "mx-auto flex w-full max-w-[900px] items-center gap-1 overflow-x-auto px-4 py-1"
         }
       >
@@ -327,13 +334,21 @@ function WorkspaceTabsRow({
           return (
             <div
               key={threadId}
-              className={`group relative flex min-w-0 ${inline ? "max-w-[260px]" : "max-w-[240px]"} shrink-0 items-center gap-2 border px-4 py-1.5 transition ${
-                isActive
-                  ? "-mb-px rounded-t-lg rounded-b-none border-slate-200 border-b-transparent bg-white text-slate-900 shadow-sm"
-                  : "rounded-t-lg rounded-b-none border-slate-200/80 bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+              className={`group relative flex min-w-0 ${inline ? "max-w-[260px]" : "max-w-[240px]"} shrink-0 items-center gap-2 px-4 py-1.5 transition ${
+                inline
+                  ? isActive
+                    ? "-mb-px ml-2 rounded-t-[12px] rounded-b-none bg-white text-slate-900"
+                    : "rounded-t-[12px] rounded-b-none bg-white/65 text-slate-500 hover:bg-white/80 hover:text-slate-700"
+                  : isActive
+                  ? "-mb-px rounded-t-lg rounded-b-none border border-slate-200 border-b-0 bg-white text-slate-900 shadow-sm"
+                  : "rounded-t-lg rounded-b-none border border-slate-200/80 bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
               }`}
             >
-              {isActive ? <span className="absolute inset-x-0 top-0 h-[3px] rounded-t-lg bg-indigo-500" /> : null}
+              {isActive ? (
+                <span
+                  className={`absolute inset-x-0 bottom-0 h-[3px] ${inline ? "rounded-b-[12px]" : "rounded-b-lg"} bg-indigo-500`}
+                />
+              ) : null}
               <button
                 type="button"
                 onClick={() => onSelectTab?.(threadId)}
@@ -706,6 +721,7 @@ const formatPendingOrderUpdateDetail = ({
 
 export function InboxSplitView({ messages = [], threads = [], attachments = [] }) {
   const DRAFT_WAIT_TIMEOUT_MS = 12_000;
+  const TAB_STATE_STORAGE_PREFIX = "inbox-open-tabs";
   const [liveThreads, setLiveThreads] = useState(threads || []);
   const [liveMessages, setLiveMessages] = useState(messages || []);
   const [liveAttachments, setLiveAttachments] = useState(attachments || []);
@@ -744,7 +760,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const [currentSupabaseUserId, setCurrentSupabaseUserId] = useState(null);
   const [workspaceInboxes, setWorkspaceInboxes] = useState([]);
   const [isWorkspaceTestMode, setIsWorkspaceTestMode] = useState(false);
+  const [tabStateReady, setTabStateReady] = useState(false);
   const lastAutoReadThreadIdRef = useRef(null);
+  const tabStateHydratedRef = useRef(false);
   const draftLastSavedRef = useRef("");
   const savingDraftRef = useRef(false);
   const draftValueRef = useRef("");
@@ -755,6 +773,11 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const { setTitleContent } = useSiteHeaderActions();
   const currentUserName = [user?.firstName, user?.lastName].filter(Boolean).join(" ") || "You";
   const activeView = searchParams?.get("view") || "";
+  const requestedThreadId = String(searchParams?.get("thread") || "").trim();
+  const tabStateStorageKey = useMemo(() => {
+    const viewerId = String(currentSupabaseUserId || user?.id || "anonymous").trim();
+    return `${TAB_STATE_STORAGE_PREFIX}:${viewerId}`;
+  }, [currentSupabaseUserId, user?.id]);
 
   useEffect(() => {
     setLiveThreads(Array.isArray(threads) ? threads : []);
@@ -1012,6 +1035,45 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   }, [localNewThread, selectedThreadId]);
 
   useEffect(() => {
+    if (tabStateHydratedRef.current) return;
+    if (typeof window === "undefined") return;
+    if (!derivedThreads.length) return;
+
+    const raw = window.localStorage.getItem(tabStateStorageKey);
+    tabStateHydratedRef.current = true;
+    if (!raw) {
+      setTabStateReady(true);
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(raw);
+      const validIds = new Set(
+        derivedThreads
+          .map((thread) => String(thread?.id || "").trim())
+          .filter((threadId) => threadId && !isLocalThreadId(threadId))
+      );
+      const savedOpenIds = Array.isArray(parsed?.openThreadIds)
+        ? parsed.openThreadIds
+            .map((threadId) => String(threadId || "").trim())
+            .filter((threadId) => validIds.has(threadId))
+        : [];
+      const savedSelectedId = String(parsed?.selectedThreadId || "").trim();
+
+      if (savedOpenIds.length) {
+        setOpenThreadIds(savedOpenIds);
+        setSelectedThreadId(
+          savedSelectedId && savedOpenIds.includes(savedSelectedId) ? savedSelectedId : savedOpenIds[0]
+        );
+      }
+    } catch {
+      // noop
+    } finally {
+      setTabStateReady(true);
+    }
+  }, [derivedThreads, isLocalThreadId, tabStateStorageKey]);
+
+  useEffect(() => {
     if (selectedThreadId) return;
     lastAutoReadThreadIdRef.current = null;
   }, [selectedThreadId]);
@@ -1176,6 +1238,17 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   }, [derivedThreads]);
 
   useEffect(() => {
+    if (!requestedThreadId) return;
+    const validIds = new Set(
+      derivedThreads.map((thread) => String(thread?.id || "").trim()).filter(Boolean)
+    );
+    if (!validIds.has(requestedThreadId)) return;
+    setOpenThreadIds((prev) => (prev.includes(requestedThreadId) ? prev : [requestedThreadId, ...prev]));
+    setSelectedThreadId(requestedThreadId);
+  }, [derivedThreads, requestedThreadId]);
+
+  useEffect(() => {
+    if (!tabStateReady) return;
     if (openThreadIds.length) {
       if (selectedThreadId && openThreadIds.includes(selectedThreadId)) return;
       setSelectedThreadId(openThreadIds[0] || null);
@@ -1188,7 +1261,25 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     }
     setOpenThreadIds([fallbackThreadId]);
     setSelectedThreadId(fallbackThreadId);
-  }, [derivedThreads, filteredThreads, openThreadIds, selectedThreadId]);
+  }, [derivedThreads, filteredThreads, openThreadIds, selectedThreadId, tabStateReady]);
+
+  useEffect(() => {
+    if (!tabStateReady) return;
+    if (typeof window === "undefined") return;
+
+    const persistedOpenIds = openThreadIds
+      .map((threadId) => String(threadId || "").trim())
+      .filter((threadId) => threadId && !isLocalThreadId(threadId));
+    const persistedSelectedId = String(selectedThreadId || "").trim();
+    const payload = {
+      openThreadIds: persistedOpenIds,
+      selectedThreadId:
+        persistedSelectedId && persistedOpenIds.includes(persistedSelectedId)
+          ? persistedSelectedId
+          : persistedOpenIds[0] || null,
+      };
+    window.localStorage.setItem(tabStateStorageKey, JSON.stringify(payload));
+  }, [isLocalThreadId, openThreadIds, selectedThreadId, tabStateReady, tabStateStorageKey]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -1347,6 +1438,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   }, [workspaceMembers]);
   const selectedTagLabel = extractCategoryFromTags(selectedThread?.tags || []);
   const selectedInboxSlug = extractInboxSlugFromTags(selectedThread?.tags || []);
+  const selectedInboxBucket = getInboxBucket(selectedThread);
   const inboxOptions = useMemo(
     () =>
       (workspaceInboxes || [])
@@ -1896,7 +1988,11 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
 
   const handleViewAllTickets = useCallback(() => {
     setFilters(DEFAULT_FILTERS);
-    router.replace("/inbox");
+    if (typeof window !== "undefined") {
+      window.open("/inbox/tickets", "_blank", "noopener,noreferrer");
+      return;
+    }
+    router.push("/inbox/tickets");
   }, [router]);
 
   const openThreadInWorkspace = useCallback(
@@ -1977,7 +2073,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   useEffect(() => {
     setTitleContent(
       <div className="flex min-w-0 flex-1 items-center">
-        <div className="hidden h-12 shrink-0 items-center justify-end gap-3 border-r border-slate-200 px-3 lg:flex lg:w-[20vw] lg:min-w-[20vw] lg:max-w-[20vw]">
+        <div className="hidden h-10 shrink-0 items-center justify-end gap-3 bg-white px-3 lg:flex lg:w-[20vw] lg:min-w-[20vw] lg:max-w-[20vw]">
           <button
             type="button"
             onClick={handleViewAllTickets}
@@ -2061,11 +2157,21 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   }, [selectedThreadId]);
 
   const handleInboxChange = useCallback(
-    (inboxSlug) => {
+    (destination) => {
       if (!selectedThreadId) return;
-      const normalized = typeof inboxSlug === "string" ? inboxSlug.trim() : "";
-      const previousTags =
-        derivedThreads.find((thread) => thread.id === selectedThreadId)?.tags || [];
+      const normalized =
+        typeof destination?.inboxSlug === "string" ? destination.inboxSlug.trim() : "";
+      const nextClassificationKey =
+        String(destination?.classificationKey || "support").trim().toLowerCase() ===
+        "notification"
+          ? "notification"
+          : "support";
+      const previousThread =
+        derivedThreads.find((thread) => thread.id === selectedThreadId) || null;
+      const previousTags = previousThread?.tags || [];
+      const previousClassificationKey = previousThread?.classification_key || null;
+      const previousClassificationConfidence = previousThread?.classification_confidence ?? null;
+      const previousClassificationReason = previousThread?.classification_reason || null;
       setLiveThreads((prev) =>
         (prev || []).map((thread) => {
           if (thread.id !== selectedThreadId) return thread;
@@ -2074,6 +2180,12 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           return {
             ...thread,
             tags: normalized ? [...withoutInbox, toInboxTag(normalized)] : withoutInbox,
+            classification_key: nextClassificationKey,
+            classification_confidence: 1,
+            classification_reason:
+              nextClassificationKey === "notification"
+                ? "manual_move_to_notifications"
+                : "manual_move_to_tickets",
           };
         })
       );
@@ -2084,6 +2196,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         body: JSON.stringify({
           threadId: selectedThreadId,
           inboxSlug: normalized || null,
+          classificationKey: nextClassificationKey,
         }),
       })
         .then(async (response) => {
@@ -2098,6 +2211,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
               return {
                 ...thread,
                 tags: Array.isArray(previousTags) ? previousTags : [],
+                classification_key: previousClassificationKey,
+                classification_confidence: previousClassificationConfidence,
+                classification_reason: previousClassificationReason,
               };
             })
           );
@@ -2410,16 +2526,18 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     }
   };
 
-  const handleDeleteThread = async () => {
-    if (!selectedThreadId || deletingThread) return;
-    if (isLocalThreadId(selectedThreadId)) {
+  const deleteThreadById = useCallback(async (threadId) => {
+    if (!threadId || deletingThread) return;
+    if (isLocalThreadId(threadId)) {
       setLocalNewThread(null);
-      setOpenThreadIds((prev) => prev.filter((threadId) => threadId !== selectedThreadId));
-      setSelectedThreadId(null);
+      setOpenThreadIds((prev) => prev.filter((openThreadId) => openThreadId !== threadId));
+      if (selectedThreadId === threadId) {
+        setSelectedThreadId(null);
+      }
       setDraftValue("");
       setDraftValueByThread((prev) => {
         const next = { ...prev };
-        delete next[selectedThreadId];
+        delete next[threadId];
         return next;
       });
       setActiveDraftId(null);
@@ -2429,7 +2547,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     if (!confirmed) return;
     setDeletingThread(true);
     try {
-      const res = await fetch(`/api/threads/${selectedThreadId}/delete`, {
+      const res = await fetch(`/api/threads/${threadId}/delete`, {
         method: "DELETE",
       });
       const payload = await res.json().catch(() => ({}));
@@ -2437,12 +2555,14 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         throw new Error(payload?.error || "Could not delete ticket.");
       }
       toast.success("Ticket deleted.");
-      setOpenThreadIds((prev) => prev.filter((threadId) => threadId !== selectedThreadId));
-      setSelectedThreadId(null);
+      setOpenThreadIds((prev) => prev.filter((openThreadId) => openThreadId !== threadId));
+      if (selectedThreadId === threadId) {
+        setSelectedThreadId(null);
+      }
       setDraftValue("");
       setDraftValueByThread((prev) => {
         const next = { ...prev };
-        delete next[selectedThreadId];
+        delete next[threadId];
         return next;
       });
       setActiveDraftId(null);
@@ -2454,7 +2574,12 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     } finally {
       setDeletingThread(false);
     }
-  };
+  }, [deletingThread, selectedThreadId]);
+
+  const handleDeleteThread = useCallback(() => {
+    if (!selectedThreadId) return;
+    deleteThreadById(selectedThreadId);
+  }, [deleteThreadById, selectedThreadId]);
 
   const handleOrderUpdateDecision = useCallback(
     async (decision, options = undefined) => {
@@ -2750,7 +2875,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   ]);
 
   return (
-    <div className="flex h-full flex-1 flex-col overflow-hidden bg-slate-50 lg:flex-row">
+    <div className="flex h-full flex-1 flex-col overflow-hidden bg-sidebar lg:flex-row">
       <TicketList
         threads={filteredThreads}
         selectedThreadId={selectedThreadId}
@@ -2762,10 +2887,12 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         getTimestamp={getThreadTimestamp}
         getUnreadCount={getThreadUnreadCount}
         onCreateTicket={handleCreateTicket}
+        onOpenInNewTab={(threadId) => openThreadInWorkspace(threadId, { newTab: true })}
+        onDeleteThread={deleteThreadById}
         hideSolvedFilter={activeView === ""}
       />
 
-      <div className="flex min-h-0 flex-1 flex-col bg-slate-50">
+      <div className="flex min-h-0 flex-1 flex-col bg-sidebar">
         <TicketDetail
           thread={selectedThread}
           messages={threadMessages}
@@ -2793,8 +2920,6 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           }
           canSend={Boolean(selectedThreadId) && !isLocalThreadId(selectedThreadId)}
           onSend={handleSendDraft}
-          onDeleteThread={handleDeleteThread}
-          deletingThread={deletingThread}
           pendingOrderUpdate={
             selectedPendingOrderUpdate
           }
@@ -2829,6 +2954,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
                 assignmentOptions={assignmentOptions}
                 selectedAssignmentValue={selectedAssignmentValue}
                 inboxOptions={inboxOptions}
+                selectedInboxBucket={selectedInboxBucket}
                 selectedInboxSlug={selectedInboxSlug}
                 tagLabel={selectedTagLabel}
                 onTicketStateChange={handleTicketStateChange}

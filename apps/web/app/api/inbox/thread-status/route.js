@@ -43,6 +43,13 @@ function nextTagsWithInbox(currentTags, inboxSlug) {
   return [...withoutInbox, toInboxTag(normalized)];
 }
 
+function normalizeClassificationKey(value) {
+  const normalized = asString(value).toLowerCase();
+  if (normalized === "notification") return "notification";
+  if (normalized === "support" || normalized === "ticket") return "support";
+  return null;
+}
+
 export async function PATCH(request) {
   const { userId: clerkUserId, orgId } = await auth();
   if (!clerkUserId) {
@@ -121,6 +128,18 @@ export async function PATCH(request) {
     }
     payload.tags = nextTagsWithInbox(threadRow?.tags, body.inboxSlug);
   }
+  if (body?.classificationKey !== undefined) {
+    const normalizedClassificationKey = normalizeClassificationKey(body.classificationKey);
+    if (!normalizedClassificationKey) {
+      return NextResponse.json({ error: "Invalid classificationKey." }, { status: 400 });
+    }
+    payload.classification_key = normalizedClassificationKey;
+    payload.classification_reason =
+      normalizedClassificationKey === "notification"
+        ? "manual_move_to_notifications"
+        : "manual_move_to_tickets";
+    payload.classification_confidence = 1;
+  }
 
   if (!Object.keys(payload).length) {
     return NextResponse.json({ error: "No updates provided." }, { status: 400 });
@@ -131,7 +150,7 @@ export async function PATCH(request) {
       .from("mail_threads")
       .update(payload)
       .eq("id", threadId)
-      .select("id, status, priority, assignee_id")
+      .select("id, status, priority, assignee_id, tags, classification_key, classification_confidence, classification_reason")
       .maybeSingle(),
     scope
   );

@@ -8,6 +8,7 @@ import { useSiteHeaderActions } from "@/components/site-header-actions";
 const TITLE_MAP = {
   "/dashboard": "Dashboard",
   "/inbox": "Inbox",
+  "/inbox/tickets": "Tickets",
   "/automation": "Automation",
   "/knowledge-hub": "Knowledge",
   "/knowledge": "Knowledge Base",
@@ -24,7 +25,9 @@ export function SiteHeader() {
 
   return (
     <header
-      className="group-has-data-[collapsible=icon]/sidebar-wrapper:h-12 flex h-12 shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear">
+      className={`group-has-data-[collapsible=icon]/sidebar-wrapper:h-10 flex h-10 shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear ${
+        hasCustomTitle ? "bg-white" : "bg-white"
+      }`}>
       <div
         className={
           hasCustomTitle
