@@ -2575,7 +2575,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     } finally {
       setDeletingThread(false);
     }
-  }, [deletingThread, selectedThreadId]);
+  }, [deletingThread, isLocalThreadId, selectedThreadId]);
 
   const handleDeleteThread = useCallback(() => {
     if (!selectedThreadId) return;
