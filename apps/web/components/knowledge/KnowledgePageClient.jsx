@@ -1619,27 +1619,6 @@ export function KnowledgePageClient() {
           </p>
         </div>
 
-        <div className="max-w-sm">
-          <Label htmlFor="knowledge-shop-selector" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Active Shop
-          </Label>
-          <Select value={shopId || ""} onValueChange={(value) => setShopId(value || null)}>
-            <SelectTrigger id="knowledge-shop-selector" className="mt-2 h-11">
-              <SelectValue placeholder={shops.length > 1 ? "Select shop" : "No shop connected"} />
-            </SelectTrigger>
-            <SelectContent>
-              {shops.map((shop) => (
-                <SelectItem key={shop.id} value={shop.id}>
-                  {String(shop.shop_domain || "Unnamed shop")}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {!shopId && shops.length > 1 ? (
-            <p className="mt-2 text-xs text-slate-500">Choose the exact shop to write and sync knowledge for.</p>
-          ) : null}
-        </div>
-
         <div className="space-y-4">
           <Card className="h-full rounded-xl border border-gray-300/70 bg-white shadow-sm">
             <CardHeader className="flex flex-col gap-3 px-6 pb-3 pt-6 sm:flex-row sm:items-start sm:justify-between">

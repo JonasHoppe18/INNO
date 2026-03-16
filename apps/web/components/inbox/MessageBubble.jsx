@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import Image from "next/image";
 import { Download, Mail } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatBytes, getSenderLabel } from "@/components/inbox/inbox-utils";
+import { formatBytes, getEffectiveSenderEmail, getSenderLabel } from "@/components/inbox/inbox-utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { deriveMessageBodies } from "@/components/inbox/message-body";
 
@@ -166,7 +166,7 @@ export function MessageBubble({
     senderLower === "sona" ||
     senderLower === "sona ai";
   const senderDisplayName = isAiMessage ? "Sona" : senderLabel || "Unknown sender";
-  const senderEmail = String(message?.from_email || "").trim();
+  const senderEmail = getEffectiveSenderEmail(message);
   const timestampValue = message.received_at || message.sent_at || message.created_at;
   const timestamp = timestampValue
     ? new Date(timestampValue).toLocaleString("da-DK", {

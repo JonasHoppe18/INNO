@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { shouldSkipInboxMessage } from "../_shared/inbox-filter.ts";
 import { classifyInboxBucket } from "../_shared/inbox-classification.ts";
 import { parseEmailReplyBodies } from "../_shared/email-reply-parser.ts";
+import { parseShopifyContactIdentity } from "../_shared/shopify-contact-form.ts";
 import {
   categorizeEmail,
   EmailCategory,
@@ -237,6 +238,7 @@ async function upsertMessage({
   bodyText,
   fromName,
   fromEmail,
+  replyToEmail,
   isRead,
   receivedAt,
 }: {
@@ -250,11 +252,33 @@ async function upsertMessage({
   bodyText: string;
   fromName: string | null;
   fromEmail: string | null;
+  replyToEmail: string | null;
   isRead: boolean;
   receivedAt: string | null;
 }) {
   if (!supabase) return;
   const parsedBodies = parseEmailReplyBodies({ text: bodyText });
+  const shopifyContact = parseShopifyContactIdentity({
+    fromEmail,
+    fromName,
+    replyToEmail,
+    subject,
+    bodyText: parsedBodies.cleanBodyText || bodyText,
+  });
+  if (shopifyContact.detected) {
+    console.log("gmail-poll: detected Shopify contact form", {
+      providerMessageId,
+      extractedCustomerEmail: shopifyContact.customerEmail,
+      extractedCustomerName: shopifyContact.customerName,
+      reasons: shopifyContact.reasons,
+    });
+  } else if ((fromEmail || replyToEmail || "").toLowerCase().includes("shopify.com")) {
+    console.log("gmail-poll: Shopify sender fallback", {
+      providerMessageId,
+      fromEmail,
+      replyToEmail,
+    });
+  }
   const { data } = await supabase
     .from("mail_messages")
     .select("id, is_read")
@@ -280,6 +304,13 @@ async function upsertMessage({
     quoted_body_html: parsedBodies.quotedBodyHtml,
     from_name: fromName,
     from_email: fromEmail,
+    extracted_customer_name: shopifyContact.customerName,
+    extracted_customer_email: shopifyContact.customerEmail,
+    extracted_customer_fields:
+      shopifyContact.detected && Object.keys(shopifyContact.fields).length
+        ? shopifyContact.fields
+        : null,
+    sender_identity_source: shopifyContact.detected ? "shopify_contact_form" : null,
     is_read: isRead,
     received_at: receivedAt,
     updated_at: new Date().toISOString(),
@@ -677,6 +708,20 @@ Deno.serve(async (req) => {
           const messageId = full?.id ?? meta.id ?? null;
           const plain = extractPlainTextFromPayload(full?.payload);
           const parsedFrom = parseFromHeader(from);
+          const replyTo = findHeader(headers, "Reply-To");
+          const shopifyContact = parseShopifyContactIdentity({
+            fromEmail: parsedFrom.email,
+            fromName: parsedFrom.name,
+            replyToEmail: replyTo,
+            subject,
+            bodyText: plain,
+          });
+          const effectiveFromEmail = shopifyContact.customerEmail || parsedFrom.email;
+          const effectiveFromName = shopifyContact.customerName || parsedFrom.name;
+          const effectiveFrom =
+            effectiveFromName && effectiveFromEmail
+              ? `${effectiveFromName} <${effectiveFromEmail}>`
+              : effectiveFromEmail || from;
           const labelIds = Array.isArray(full?.labelIds) ? full.labelIds : [];
           const isRead = !labelIds.includes("UNREAD");
           const internalDate = full?.internalDate ? Number(full.internalDate) : NaN;
@@ -732,6 +777,7 @@ Deno.serve(async (req) => {
               bodyText: plain,
               fromName: parsedFrom.name,
               fromEmail: parsedFrom.email,
+              replyToEmail: replyTo,
               isRead,
               receivedAt,
             });
@@ -751,8 +797,8 @@ Deno.serve(async (req) => {
               messageId,
               threadId,
               subject,
-              from,
-              fromEmail: parsedFrom.email,
+              from: effectiveFrom,
+              fromEmail: effectiveFromEmail,
               body: plain,
             });
             draftsCreated += 1;

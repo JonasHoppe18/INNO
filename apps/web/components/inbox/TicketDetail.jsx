@@ -4,7 +4,7 @@ import { MessageBubble } from "@/components/inbox/MessageBubble";
 import { Composer } from "@/components/inbox/Composer";
 import { ThinkingCard } from "@/components/inbox/ThinkingCard";
 import { ActionCard } from "@/components/inbox/ActionCard";
-import { isOutboundMessage } from "@/components/inbox/inbox-utils";
+import { getReplyTargetEmail, getSenderLabel, isOutboundMessage } from "@/components/inbox/inbox-utils";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 const APPROVAL_ACTION_TYPES = new Set([
@@ -213,8 +213,8 @@ export function TicketDetail({
   }
 
   const firstMessage = messages[0] || {};
-  const toEmail = String(firstMessage?.from_email || "").trim();
-  const senderLabel = String(firstMessage?.from_name || "").trim() || toEmail || "Unknown";
+  const toEmail = getReplyTargetEmail(firstMessage);
+  const senderLabel = getSenderLabel(firstMessage);
   const toLabel = toEmail ? `${senderLabel} <${toEmail}>` : senderLabel;
 
   return (

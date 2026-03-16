@@ -9,6 +9,7 @@ import { deriveThreadsFromMessages } from "@/hooks/useInboxData";
 import {
   getInboxBucket,
   getMessageTimestamp,
+  getReplyTargetEmail,
   getSenderLabel,
   isOutboundMessage,
 } from "@/components/inbox/inbox-utils";
@@ -1650,7 +1651,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       );
     });
     const inbound = inboundWithOrder || inboundCandidates[0] || null;
-    const email = inbound?.from_email || null;
+    const email = getReplyTargetEmail(inbound) || null;
     const subject = inbound?.subject || selectedThread?.subject || "";
     const body = pickMessageBody(inbound);
     const orderNumber = extractOrderNumber(subject) || extractOrderNumber(body);

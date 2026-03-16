@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { shouldSkipInboxMessage } from "../_shared/inbox-filter.ts";
 import { classifyInboxBucket } from "../_shared/inbox-classification.ts";
 import { parseEmailReplyBodies } from "../_shared/email-reply-parser.ts";
+import { parseShopifyContactIdentity } from "../_shared/shopify-contact-form.ts";
 import {
   categorizeEmail,
   EmailCategory,
@@ -233,6 +234,7 @@ async function upsertMessage({
   bodyHtml,
   fromName,
   fromEmail,
+  replyToEmail,
   isRead,
   receivedAt,
 }: {
@@ -247,11 +249,33 @@ async function upsertMessage({
   bodyHtml: string;
   fromName: string | null;
   fromEmail: string | null;
+  replyToEmail: string | null;
   isRead: boolean;
   receivedAt: string | null;
 }) {
   if (!supabase) return;
   const parsedBodies = parseEmailReplyBodies({ text: bodyText, html: bodyHtml });
+  const shopifyContact = parseShopifyContactIdentity({
+    fromEmail,
+    fromName,
+    replyToEmail,
+    subject,
+    bodyText: parsedBodies.cleanBodyText || bodyText,
+  });
+  if (shopifyContact.detected) {
+    console.log("outlook-poll: detected Shopify contact form", {
+      providerMessageId,
+      extractedCustomerEmail: shopifyContact.customerEmail,
+      extractedCustomerName: shopifyContact.customerName,
+      reasons: shopifyContact.reasons,
+    });
+  } else if ((fromEmail || replyToEmail || "").toLowerCase().includes("shopify.com")) {
+    console.log("outlook-poll: Shopify sender fallback", {
+      providerMessageId,
+      fromEmail,
+      replyToEmail,
+    });
+  }
   const { data } = await supabase
     .from("mail_messages")
     .select("id, is_read")
@@ -278,6 +302,13 @@ async function upsertMessage({
     quoted_body_html: parsedBodies.quotedBodyHtml,
     from_name: fromName,
     from_email: fromEmail,
+    extracted_customer_name: shopifyContact.customerName,
+    extracted_customer_email: shopifyContact.customerEmail,
+    extracted_customer_fields:
+      shopifyContact.detected && Object.keys(shopifyContact.fields).length
+        ? shopifyContact.fields
+        : null,
+    sender_identity_source: shopifyContact.detected ? "shopify_contact_form" : null,
     is_read: isRead,
     received_at: receivedAt,
     updated_at: new Date().toISOString(),
@@ -430,6 +461,7 @@ async function pollSingleMailbox(target: MailboxTarget, shouldDraft: boolean) {
         bodyHtml,
         fromName,
         fromEmail: fromAddress,
+        replyToEmail: message?.replyTo?.[0]?.emailAddress?.address ?? null,
         isRead,
         receivedAt,
       });
@@ -540,7 +572,7 @@ async function fetchGraphMessageDetail(token: string, messageId: string) {
   const url = new URL(`${GRAPH_BASE}/me/messages/${encodeURIComponent(messageId)}`);
   url.searchParams.set(
     "$select",
-    "id,subject,from,body,bodyPreview,conversationId,internetMessageId,receivedDateTime",
+    "id,subject,from,replyTo,body,bodyPreview,conversationId,internetMessageId,receivedDateTime",
   );
   return await fetchJson<any>(url.toString(), token);
 }
@@ -557,12 +589,24 @@ async function triggerDraft(
   const subject = message?.subject ?? "";
   const fromAddress = message?.from?.emailAddress?.address ?? "";
   const fromName = message?.from?.emailAddress?.name ?? "";
-  const from = fromName ? `${fromName} <${fromAddress}>` : fromAddress;
+  const replyToAddress = message?.replyTo?.[0]?.emailAddress?.address ?? "";
   const rawBody = message?.body?.content ?? message?.bodyPreview ?? "";
   const body =
     (message?.body?.contentType ?? "").toLowerCase() === "html"
       ? stripHtml(rawBody)
       : String(rawBody ?? "");
+  const shopifyContact = parseShopifyContactIdentity({
+    fromEmail: fromAddress,
+    fromName,
+    replyToEmail: replyToAddress,
+    subject,
+    bodyText: body,
+  });
+  const effectiveFromEmail = shopifyContact.customerEmail || fromAddress;
+  const effectiveFromName = shopifyContact.customerName || fromName;
+  const from = effectiveFromName && effectiveFromEmail
+    ? `${effectiveFromName} <${effectiveFromEmail}>`
+    : effectiveFromEmail || fromAddress;
 
   const res = await fetch(endpoint, {
     method: "POST",
@@ -579,7 +623,7 @@ async function triggerDraft(
         threadId: message?.conversationId ?? null,
         subject,
         from,
-        fromEmail: fromAddress,
+        fromEmail: effectiveFromEmail,
         body,
         headers: [],
       },

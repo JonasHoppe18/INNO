@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { decryptString } from "@/lib/server/shopify-oauth";
+import { getEffectiveSenderEmail } from "@/lib/inbox/sender";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 
 const SUPABASE_URL =
@@ -259,19 +260,6 @@ export async function POST(request) {
   const derivedOrderNumber = inputOrder || extractOrderNumber(subject);
   const platform = "shopify";
 
-  if (!inputEmail && !derivedOrderNumber) {
-    return NextResponse.json(
-      { error: "Missing email or order number." },
-      { status: 400 }
-    );
-  }
-
-  const cacheKey = buildCacheKey({
-    platform,
-    email: inputEmail ?? "",
-    orderNumber: derivedOrderNumber ?? "",
-  });
-
   const serviceClient = createServiceClient();
   if (!serviceClient) {
     return NextResponse.json(
@@ -293,11 +281,36 @@ export async function POST(request) {
     return NextResponse.json({ error: "Could not resolve workspace scope." }, { status: 404 });
   }
 
+  let effectiveInputEmail = inputEmail;
+  if (!effectiveInputEmail && sourceMessageId) {
+    let sourceMessageQuery = serviceClient
+      .from("mail_messages")
+      .select("id, from_email, extracted_customer_email")
+      .eq("id", sourceMessageId)
+      .limit(1);
+    sourceMessageQuery = applyScope(sourceMessageQuery, scope);
+    const { data: sourceMessage } = await sourceMessageQuery.maybeSingle();
+    effectiveInputEmail = normalizeEmail(getEffectiveSenderEmail(sourceMessage));
+  }
+
+  if (!effectiveInputEmail && !derivedOrderNumber) {
+    return NextResponse.json(
+      { error: "Missing email or order number." },
+      { status: 400 }
+    );
+  }
+
+  const cacheKey = buildCacheKey({
+    platform,
+    email: effectiveInputEmail ?? "",
+    orderNumber: derivedOrderNumber ?? "",
+  });
+
   const scopedCacheKey = `${workspaceId ? `ws:${workspaceId}` : `u:${supabaseUserId}`}|${cacheKey}`;
   const logContext = {
     thread_id: threadId || null,
     source_message_id: sourceMessageId || null,
-    input_email: inputEmail,
+    input_email: effectiveInputEmail,
     input_order_number: inputOrder,
     derived_order_number: derivedOrderNumber,
     raw_subject: subject || null,
@@ -437,7 +450,7 @@ export async function POST(request) {
   };
 
   const primaryParams = {
-    email: inputEmail || "",
+    email: effectiveInputEmail || "",
     name: toShopifyOrderName(derivedOrderNumber),
   };
   const primaryResult = await fetchOrders(primaryParams, "primary_email_order_lookup");
@@ -461,8 +474,8 @@ export async function POST(request) {
   let rawOrders = Array.isArray(payload?.orders) ? payload.orders : [];
   const lookupDebug = payload?.debug || null;
 
-  if (!rawOrders.length && inputEmail) {
-    const emailVariants = buildEmailVariants(inputEmail);
+  if (!rawOrders.length && effectiveInputEmail) {
+    const emailVariants = buildEmailVariants(effectiveInputEmail);
     for (const candidateEmail of emailVariants) {
       if (candidateEmail === primaryParams.email) continue;
       const variantResult = await fetchOrders({
@@ -477,15 +490,15 @@ export async function POST(request) {
     }
   }
 
-  if (!rawOrders.length && derivedOrderNumber && inputEmail) {
-    const fallbackResult = await fetchOrders({ email: inputEmail }, "email_only_fallback");
+  if (!rawOrders.length && derivedOrderNumber && effectiveInputEmail) {
+    const fallbackResult = await fetchOrders({ email: effectiveInputEmail }, "email_only_fallback");
     if (fallbackResult.response.ok) {
       payload = fallbackResult.json || {};
       rawOrders = Array.isArray(payload?.orders) ? payload.orders : [];
     }
   }
 
-  if (!rawOrders.length && inputEmail && derivedOrderNumber) {
+  if (!rawOrders.length && effectiveInputEmail && derivedOrderNumber) {
     const fallbackWithoutEmail = await fetchOrders(
       { name: toShopifyOrderName(derivedOrderNumber) },
       "name_only_fallback"
@@ -507,14 +520,14 @@ export async function POST(request) {
     }
   }
 
-  const emailFilteredOrders = inputEmail
-    ? rawOrders.filter((order) => matchesCustomerEmail(order, inputEmail))
+  const emailFilteredOrders = effectiveInputEmail
+    ? rawOrders.filter((order) => matchesCustomerEmail(order, effectiveInputEmail))
     : rawOrders;
   const orderMatches = derivedOrderNumber
     ? rawOrders.filter((order) => matchesOrderNumber(order, derivedOrderNumber))
     : [];
-  const orderMatchesWithEmail = inputEmail
-    ? orderMatches.filter((order) => matchesCustomerEmail(order, inputEmail))
+  const orderMatchesWithEmail = effectiveInputEmail
+    ? orderMatches.filter((order) => matchesCustomerEmail(order, effectiveInputEmail))
     : orderMatches;
   const ordersToUse = derivedOrderNumber
     ? orderMatchesWithEmail.length
@@ -539,7 +552,7 @@ export async function POST(request) {
     }
     return mapped;
   });
-  const customer = ordersToUse.length ? mapCustomer(ordersToUse, inputEmail) : null;
+  const customer = ordersToUse.length ? mapCustomer(ordersToUse, effectiveInputEmail) : null;
 
   const data = {
     customer,
@@ -592,7 +605,7 @@ export async function POST(request) {
         user_id: supabaseUserId,
         platform,
         cache_key: scopedCacheKey,
-        email: inputEmail,
+        email: effectiveInputEmail,
         order_number: derivedOrderNumber,
         data,
         source: platform,

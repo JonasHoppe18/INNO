@@ -1,3 +1,10 @@
+import {
+  getEffectiveSenderEmail,
+  getEffectiveSenderName,
+  getReplyTargetEmail,
+  getSenderLabel,
+} from "@/lib/inbox/sender";
+
 export function formatMessageTime(value) {
   if (!value) return "";
   const date = new Date(value);
@@ -32,18 +39,12 @@ export function getMessageTimestamp(message) {
   return message?.received_at || message?.sent_at || message?.created_at || "";
 }
 
-export function getSenderLabel(message) {
-  if (message?.from_name) return message.from_name;
-  if (message?.from_email) return message.from_email;
-  return "Unknown sender";
-}
-
 export function isOutboundMessage(message, mailboxEmails = []) {
   if (message?.from_me === true) return true;
   // Any received message is inbound unless explicitly marked as sent by us.
   if (message?.received_at && message?.from_me !== true) return false;
   if (message?.sent_at && !message?.received_at) return true;
-  const sender = (message?.from_email || "").toLowerCase();
+  const sender = getReplyTargetEmail(message).toLowerCase();
   if (!sender) return false;
   if (mailboxEmails.length) {
     return mailboxEmails.some((email) => email.toLowerCase() === sender);
@@ -55,3 +56,5 @@ export function getInboxBucket(thread) {
   const key = String(thread?.classification_key || "").trim().toLowerCase();
   return key === "notification" ? "notification" : "ticket";
 }
+
+export { getEffectiveSenderEmail, getEffectiveSenderName, getReplyTargetEmail, getSenderLabel };

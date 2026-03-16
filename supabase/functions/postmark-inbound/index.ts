@@ -18,6 +18,7 @@ import {
   type RoutingClassification,
 } from "../_shared/email-routing-classifier.ts";
 import { parseEmailReplyBodies } from "../_shared/email-reply-parser.ts";
+import { parseShopifyContactIdentity } from "../_shared/shopify-contact-form.ts";
 
 const PROJECT_URL = Deno.env.get("SUPABASE_URL") ?? Deno.env.get("PROJECT_URL");
 const SERVICE_ROLE_KEY =
@@ -975,6 +976,7 @@ async function triggerDraftForInbound(params: {
   subject: string;
   fromRaw: string;
   fromEmail: string | null;
+  fromName: string | null;
   body: string;
   headers: PostmarkHeader[];
 }) {
@@ -995,7 +997,7 @@ async function triggerDraftForInbound(params: {
         messageId: params.messageId,
         threadId: params.threadId,
         subject: params.subject,
-        from: params.fromRaw,
+        from: params.fromName && params.fromEmail ? `${params.fromName} <${params.fromEmail}>` : params.fromRaw,
         fromEmail: params.fromEmail ?? "",
         body: params.body,
         headers: params.headers.map((header) => ({
@@ -1138,6 +1140,29 @@ Deno.serve(async (req) => {
   const textBodyRaw = String(payload?.TextBody ?? "").trim();
   const textBody = textBodyRaw || (htmlBody ? stripHtml(htmlBody) : "");
   const parsedBodies = parseEmailReplyBodies({ text: textBody, html: htmlBody });
+  const replyToEmail =
+    extractEmail(findHeader(headers, "Reply-To") || "") || extractEmail(asString(payload?.ReplyTo));
+  const shopifyContact = parseShopifyContactIdentity({
+    fromEmail,
+    fromName,
+    replyToEmail,
+    subject,
+    bodyText: parsedBodies.cleanBodyText || textBody,
+  });
+  if (shopifyContact.detected) {
+    console.log("postmark-inbound: detected Shopify contact form", {
+      storedMessageId: messageId,
+      extractedCustomerEmail: shopifyContact.customerEmail,
+      extractedCustomerName: shopifyContact.customerName,
+      reasons: shopifyContact.reasons,
+    });
+  } else if ((fromEmail || replyToEmail || "").toLowerCase().includes("shopify.com")) {
+    console.log("postmark-inbound: Shopify sender fallback", {
+      storedMessageId: messageId,
+      fromEmail,
+      replyToEmail,
+    });
+  }
   const snippet = buildSnippet(parsedBodies.cleanBodyText || textBody);
   const shouldSkipAsSpam =
     !IGNORE_SPAM_FILTER &&
@@ -1373,6 +1398,13 @@ Deno.serve(async (req) => {
       quoted_body_html: parsedBodies.quotedBodyHtml,
       from_name: fromName,
       from_email: fromEmail,
+      extracted_customer_name: shopifyContact.customerName,
+      extracted_customer_email: shopifyContact.customerEmail,
+      extracted_customer_fields:
+        shopifyContact.detected && Object.keys(shopifyContact.fields).length
+          ? shopifyContact.fields
+          : null,
+      sender_identity_source: shopifyContact.detected ? "shopify_contact_form" : null,
       to_emails: toList,
       cc_emails: ccList,
       bcc_emails: bccList,
@@ -1542,8 +1574,8 @@ Deno.serve(async (req) => {
       mailbox,
       threadId,
       inboundMessageId: messageDbId,
-      fromEmail,
-      fromName,
+      fromEmail: shopifyContact.customerEmail || fromEmail,
+      fromName: shopifyContact.customerName || fromName,
       subject,
       headers,
     });
@@ -1553,7 +1585,7 @@ Deno.serve(async (req) => {
         {
           messageId: storedMessageId,
           threadId,
-          recipient: fromEmail,
+          recipient: shopifyContact.customerEmail || fromEmail,
           sentMessageId: autoReplyResult.providerMessageId,
         },
         "success",
@@ -1581,7 +1613,8 @@ Deno.serve(async (req) => {
           threadId,
           subject,
           fromRaw,
-          fromEmail,
+          fromEmail: shopifyContact.customerEmail || fromEmail,
+          fromName: shopifyContact.customerName || fromName,
           body: textBody,
           headers,
         });
@@ -1590,7 +1623,7 @@ Deno.serve(async (req) => {
           shopId,
           workspaceId: mailbox.workspace_id,
           subject,
-          customerEmail: fromEmail,
+          customerEmail: shopifyContact.customerEmail || fromEmail,
           draftMessageId: draftOutcome?.draftId ? String(draftOutcome.draftId) : null,
         });
         await supabase.from("agent_logs").insert({

@@ -34,6 +34,10 @@
  * @property {string | null} quoted_body_html
  * @property {string | null} from_name
  * @property {string | null} from_email
+ * @property {string | null} extracted_customer_name
+ * @property {string | null} extracted_customer_email
+ * @property {Record<string, string> | null} extracted_customer_fields
+ * @property {string | null} sender_identity_source
  * @property {string[] | null} to_emails
  * @property {string[] | null} cc_emails
  * @property {string[] | null} bcc_emails

@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 import { sendPostmarkEmail } from "@/lib/server/postmark";
+import { getReplyTargetEmail } from "@/lib/inbox/sender";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 
 const SUPABASE_URL =
@@ -833,7 +834,7 @@ export async function POST(request, { params }) {
 
   let inboundMessagesQuery = serviceClient
     .from("mail_messages")
-    .select("id, from_email, provider_message_id, received_at, subject")
+    .select("id, from_email, extracted_customer_email, provider_message_id, received_at, subject")
     .eq("thread_id", threadId)
     .not("received_at", "is", null)
     .order("received_at", { ascending: false })
@@ -842,7 +843,8 @@ export async function POST(request, { params }) {
   const { data: inboundMessages } = await inboundMessagesQuery;
   const inboundMessage = Array.isArray(inboundMessages) ? inboundMessages[0] : null;
 
-  const fallbackTo = inboundMessage?.from_email ? [inboundMessage.from_email] : [];
+  const fallbackReplyTarget = getReplyTargetEmail(inboundMessage);
+  const fallbackTo = fallbackReplyTarget ? [fallbackReplyTarget] : [];
   const toEmails = normalizeEmailList(body?.to_emails);
   const ccEmails = normalizeEmailList(body?.cc_emails);
   const bccEmails = normalizeEmailList(body?.bcc_emails);

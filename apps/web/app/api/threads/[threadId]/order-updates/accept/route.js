@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { decryptString } from "@/lib/server/shopify-oauth";
 import { sendPostmarkEmail } from "@/lib/server/postmark";
+import { getEffectiveSenderEmail, getEffectiveSenderName, getReplyTargetEmail } from "@/lib/inbox/sender";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 
 const SUPABASE_URL =
@@ -484,7 +485,7 @@ async function loadForwardingContext(serviceClient, scope, thread, payload) {
   const messageId = asString(payload?.original_message_id || payload?.message_id || "");
   let messageQuery = serviceClient
     .from("mail_messages")
-    .select("id, subject, body_text, body_html, from_name, from_email, provider_message_id")
+    .select("id, subject, body_text, body_html, from_name, from_email, extracted_customer_name, extracted_customer_email, provider_message_id")
     .eq("thread_id", thread.id)
     .eq("from_me", false)
     .order("received_at", { ascending: false })
@@ -493,7 +494,7 @@ async function loadForwardingContext(serviceClient, scope, thread, payload) {
   if (messageId) {
     messageQuery = serviceClient
       .from("mail_messages")
-      .select("id, subject, body_text, body_html, from_name, from_email, provider_message_id")
+      .select("id, subject, body_text, body_html, from_name, from_email, extracted_customer_name, extracted_customer_email, provider_message_id")
       .eq("id", messageId)
       .limit(1);
   }
@@ -510,8 +511,8 @@ async function loadForwardingContext(serviceClient, scope, thread, payload) {
 
   const sourceSubject = asString(inboundMessage?.subject || thread.subject || "Inbound message");
   const sourceBody = asString(inboundMessage?.body_text || inboundMessage?.body_html || "");
-  const sourceFromName = asString(inboundMessage?.from_name || "");
-  const sourceFromEmail = asString(inboundMessage?.from_email || "");
+  const sourceFromName = asString(getEffectiveSenderName(inboundMessage));
+  const sourceFromEmail = asString(getEffectiveSenderEmail(inboundMessage));
   const sourceFrom = sourceFromEmail
     ? sourceFromName
       ? `${sourceFromName} <${sourceFromEmail}>`
@@ -558,7 +559,7 @@ function buildForwardBodies(context) {
 async function loadLatestInboundMessage(serviceClient, scope, threadId) {
   let query = serviceClient
     .from("mail_messages")
-    .select("id, subject, body_text, body_html, from_name, from_email, provider_message_id")
+    .select("id, subject, body_text, body_html, from_name, from_email, extracted_customer_name, extracted_customer_email, provider_message_id")
     .eq("thread_id", threadId)
     .eq("from_me", false)
     .order("received_at", { ascending: false })
@@ -2634,12 +2635,12 @@ export async function POST(request, { params }) {
     const inboundMessage = await loadLatestInboundMessage(serviceClient, scope, thread.id);
     const mailboxSender = await loadMailboxSender(serviceClient, scope, thread.mailbox_id || null);
     const customerEmail = asString(
-      mergedPayload?.customer_email || inboundMessage?.from_email || ""
+      mergedPayload?.customer_email || getReplyTargetEmail(inboundMessage) || ""
     ).toLowerCase();
     if (!customerEmail) {
       return NextResponse.json({ error: "Customer email is missing for return instructions." }, { status: 400 });
     }
-    const customerName = asString(inboundMessage?.from_name || "").split(/\s+/)[0] || "";
+    const customerName = asString(getEffectiveSenderName(inboundMessage)).split(/\s+/)[0] || "";
     const eligibility = mergedPayload?.eligibility && typeof mergedPayload.eligibility === "object"
       ? mergedPayload.eligibility
       : {};
@@ -3175,7 +3176,7 @@ export async function POST(request, { params }) {
     let latestInboundName = "";
     let messageQuery = serviceClient
       .from("mail_messages")
-      .select("body_text, body_html, subject, from_name")
+      .select("body_text, body_html, subject, from_name, extracted_customer_name")
       .eq("thread_id", thread.id)
       .eq("from_me", false)
       .order("received_at", { ascending: false })
@@ -3185,7 +3186,7 @@ export async function POST(request, { params }) {
     const { data: inboundRow } = await messageQuery.maybeSingle();
     latestInboundText = asString(inboundRow?.body_text) || asString(inboundRow?.body_html) || "";
     latestInboundSubject = asString(inboundRow?.subject) || latestInboundSubject;
-    latestInboundName = asString(inboundRow?.from_name) || "";
+    latestInboundName = asString(getEffectiveSenderName(inboundRow)) || "";
     const firstName = latestInboundName ? latestInboundName.split(/\s+/)[0] : "";
 
     let generatedDraftText = null;
@@ -3331,7 +3332,7 @@ export async function POST(request, { params }) {
       let latestInboundName = "";
       let messageQuery = serviceClient
         .from("mail_messages")
-        .select("body_text, body_html, subject, from_name")
+        .select("body_text, body_html, subject, from_name, extracted_customer_name")
         .eq("thread_id", thread.id)
         .eq("from_me", false)
         .order("received_at", { ascending: false })
@@ -3341,7 +3342,7 @@ export async function POST(request, { params }) {
       const { data: inboundRow } = await messageQuery.maybeSingle();
       latestInboundText = asString(inboundRow?.body_text) || asString(inboundRow?.body_html) || "";
       latestInboundSubject = asString(inboundRow?.subject) || latestInboundSubject;
-      latestInboundName = asString(inboundRow?.from_name) || "";
+      latestInboundName = asString(getEffectiveSenderName(inboundRow)) || "";
       const firstName = latestInboundName ? latestInboundName.split(/\s+/)[0] : "";
 
       let generatedDraftText = null;
