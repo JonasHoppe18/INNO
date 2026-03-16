@@ -69,6 +69,7 @@ type MailboxTarget = {
   user_id: string;
   mailbox_id: string;
   workspace_id: string | null;
+  shop_id: string | null;
 };
 
 function buildSnippet(input = "", maxLength = 180) {
@@ -348,10 +349,7 @@ async function pollSingleMailbox(target: MailboxTarget, shouldDraft: boolean) {
   if (!supabase) throw new Error("Supabase klient ikke konfigureret");
   try {
     const token = await getFreshOutlookAccessToken(target.mailbox_id);
-    const shopId = await resolveShopId({
-      ownerUserId: target.user_id,
-      workspaceId: target.workspace_id,
-    });
+    const shopId = target.shop_id;
     if (shopId) {
       await syncDraftStatuses(shopId, token);
     }
@@ -727,7 +725,7 @@ async function loadActiveOutlookMailboxes(limit: number): Promise<MailboxTarget[
   if (!supabase) return [];
   const { data, error } = await supabase
     .from("mail_accounts")
-    .select("id,user_id,workspace_id")
+    .select("id,user_id,workspace_id,shop_id")
     .eq("provider", "outlook")
     .eq("status", "active")
     .limit(limit);
@@ -738,6 +736,7 @@ async function loadActiveOutlookMailboxes(limit: number): Promise<MailboxTarget[
       mailbox_id: row.id as string,
       user_id: row.user_id as string,
       workspace_id: (row.workspace_id as string | null) ?? null,
+      shop_id: (row.shop_id as string | null) ?? null,
     }));
 }
 
@@ -745,7 +744,7 @@ async function loadOutlookMailboxesByUsers(userIds: string[]): Promise<MailboxTa
   if (!supabase || !userIds.length) return [];
   const { data, error } = await supabase
     .from("mail_accounts")
-    .select("id,user_id,workspace_id")
+    .select("id,user_id,workspace_id,shop_id")
     .eq("provider", "outlook")
     .eq("status", "active")
     .in("user_id", userIds);
@@ -756,6 +755,7 @@ async function loadOutlookMailboxesByUsers(userIds: string[]): Promise<MailboxTa
       mailbox_id: row.id as string,
       user_id: row.user_id as string,
       workspace_id: (row.workspace_id as string | null) ?? null,
+      shop_id: (row.shop_id as string | null) ?? null,
     }));
 }
 

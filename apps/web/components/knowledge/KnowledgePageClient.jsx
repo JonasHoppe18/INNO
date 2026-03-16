@@ -31,6 +31,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { CsvSupportKnowledgeImportModal } from "@/components/knowledge/CsvSupportKnowledgeImportModal";
 
@@ -204,6 +205,7 @@ export function KnowledgePageClient() {
   const { user } = useUser();
 
   const [loading, setLoading] = useState(true);
+  const [shops, setShops] = useState([]);
   const [shopId, setShopId] = useState(null);
   const [shopDomain, setShopDomain] = useState("");
   const [policyRefund, setPolicyRefund] = useState("");
@@ -356,23 +358,32 @@ export function KnowledgePageClient() {
     setHistoryProvider(typeof data?.provider === "string" ? data.provider : null);
   }, [resolveScope, supabase, user?.id]);
 
-  const loadShop = useCallback(async () => {
+  const loadShops = useCallback(async () => {
     const { data, error } = await supabase
       .from("shops")
-      .select("id, shop_domain, policy_refund, policy_shipping")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .select("id, shop_domain, policy_refund, policy_shipping, created_at")
+      .is("uninstalled_at", null)
+      .order("created_at", { ascending: false });
 
     if (error) throw error;
 
-    setShopId(data?.id || null);
-    setShopDomain(typeof data?.shop_domain === "string" ? data.shop_domain : "");
-    setPolicyRefund(data?.policy_refund || "");
-    setPolicyShipping(data?.policy_shipping || "");
+    const rows = Array.isArray(data) ? data : [];
+    setShops(rows);
+    setShopId((current) => {
+      if (current && rows.some((row) => row?.id === current)) return current;
+      if (rows.length === 1) return rows[0]?.id || null;
+      return null;
+    });
 
-    return data?.id || null;
+    return rows;
   }, [supabase]);
+
+  useEffect(() => {
+    const selected = shops.find((row) => row?.id === shopId) || null;
+    setShopDomain(typeof selected?.shop_domain === "string" ? selected.shop_domain : "");
+    setPolicyRefund(selected?.policy_refund || "");
+    setPolicyShipping(selected?.policy_shipping || "");
+  }, [shops, shopId]);
 
   const loadSnippets = useCallback(
     async (currentShopId) => {
@@ -492,13 +503,29 @@ export function KnowledgePageClient() {
 
     setLoading(true);
     try {
-      const currentShopId = await loadShop();
-      await Promise.all([
-        loadSnippets(currentShopId),
-        loadCsvImportBatches(currentShopId),
-        loadHistoryConnection(),
-        loadSavedReplies(),
-      ]);
+      const shopRows = await loadShops();
+      const currentShopId =
+        shopId && shopRows.some((row) => row?.id === shopId)
+          ? shopId
+          : shopRows.length === 1
+          ? shopRows[0]?.id || null
+          : null;
+      await Promise.all([loadHistoryConnection(), loadSavedReplies()]);
+      if (!currentShopId) {
+        setSnippets([]);
+        setCsvImportBatches([]);
+        setProductCount(0);
+        setPageCount(0);
+        setMetafieldCount(0);
+        setBlogCount(0);
+        setFileCount(0);
+        setCollectionCount(0);
+        setVariantCount(0);
+        setMetaobjectCount(0);
+        setShopifyPolicyCount(0);
+        return;
+      }
+      await Promise.all([loadSnippets(currentShopId), loadCsvImportBatches(currentShopId)]);
       const [
         productsCountResponse,
         pagesCountResponse,
@@ -510,15 +537,15 @@ export function KnowledgePageClient() {
         metaobjectsCountResponse,
         policiesCountResponse,
       ] = await Promise.all([
-        fetch("/api/knowledge/sync-products", { method: "GET" }),
-        fetch("/api/knowledge/sync-pages", { method: "GET" }),
-        fetch("/api/knowledge/sync-metafields", { method: "GET" }),
-        fetch("/api/knowledge/sync-blogs", { method: "GET" }),
-        fetch("/api/knowledge/sync-files", { method: "GET" }),
-        fetch("/api/knowledge/sync-collections", { method: "GET" }),
-        fetch("/api/knowledge/sync-variants", { method: "GET" }),
-        fetch("/api/knowledge/sync-metaobjects", { method: "GET" }),
-        fetch("/api/knowledge/sync-policies", { method: "GET" }),
+        fetch(`/api/knowledge/sync-products?shop_id=${encodeURIComponent(String(currentShopId))}`, { method: "GET" }),
+        fetch(`/api/knowledge/sync-pages?shop_id=${encodeURIComponent(String(currentShopId))}`, { method: "GET" }),
+        fetch(`/api/knowledge/sync-metafields?shop_id=${encodeURIComponent(String(currentShopId))}`, { method: "GET" }),
+        fetch(`/api/knowledge/sync-blogs?shop_id=${encodeURIComponent(String(currentShopId))}`, { method: "GET" }),
+        fetch(`/api/knowledge/sync-files?shop_id=${encodeURIComponent(String(currentShopId))}`, { method: "GET" }),
+        fetch(`/api/knowledge/sync-collections?shop_id=${encodeURIComponent(String(currentShopId))}`, { method: "GET" }),
+        fetch(`/api/knowledge/sync-variants?shop_id=${encodeURIComponent(String(currentShopId))}`, { method: "GET" }),
+        fetch(`/api/knowledge/sync-metaobjects?shop_id=${encodeURIComponent(String(currentShopId))}`, { method: "GET" }),
+        fetch(`/api/knowledge/sync-policies?shop_id=${encodeURIComponent(String(currentShopId))}`, { method: "GET" }),
       ]);
       const productsCountPayload = await productsCountResponse.json().catch(() => ({}));
       if (productsCountResponse.ok) {
@@ -562,7 +589,7 @@ export function KnowledgePageClient() {
     } finally {
       setLoading(false);
     }
-  }, [loadCsvImportBatches, loadHistoryConnection, loadSavedReplies, loadShop, loadSnippets, supabase]);
+  }, [loadCsvImportBatches, loadHistoryConnection, loadSavedReplies, loadShops, loadSnippets, shopId, supabase]);
 
   useEffect(() => {
     loadData().catch(() => null);
@@ -922,7 +949,10 @@ export function KnowledgePageClient() {
   const loadProductsPreview = async () => {
     setProductsLoading(true);
     try {
-      const response = await fetch("/api/knowledge/sync-products?include_products=1", { method: "GET" });
+      const response = await fetch(
+        `/api/knowledge/sync-products?shop_id=${encodeURIComponent(String(shopId))}&include_products=1`,
+        { method: "GET" }
+      );
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(payload?.error || "Could not load products.");
@@ -940,7 +970,11 @@ export function KnowledgePageClient() {
   const handleSyncProducts = async () => {
     setProductsSyncing(true);
     try {
-      const response = await fetch("/api/knowledge/sync-products", { method: "POST" });
+      const response = await fetch("/api/knowledge/sync-products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shop_id: shopId }),
+      });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(payload?.error || "Could not sync products.");
@@ -960,7 +994,10 @@ export function KnowledgePageClient() {
   const loadPagesPreview = async () => {
     setPagesLoading(true);
     try {
-      const response = await fetch("/api/knowledge/sync-pages?include_pages=1", { method: "GET" });
+      const response = await fetch(
+        `/api/knowledge/sync-pages?shop_id=${encodeURIComponent(String(shopId))}&include_pages=1`,
+        { method: "GET" }
+      );
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(payload?.error || "Could not load pages.");
@@ -978,7 +1015,11 @@ export function KnowledgePageClient() {
   const handleSyncPages = async () => {
     setPagesSyncing(true);
     try {
-      const response = await fetch("/api/knowledge/sync-pages", { method: "POST" });
+      const response = await fetch("/api/knowledge/sync-pages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shop_id: shopId }),
+      });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(payload?.error || "Could not sync pages.");
@@ -998,7 +1039,7 @@ export function KnowledgePageClient() {
   const loadMetafieldsPreview = async () => {
     setMetafieldsLoading(true);
     try {
-      const response = await fetch("/api/knowledge/sync-metafields?include_metafields=1", {
+      const response = await fetch(`/api/knowledge/sync-metafields?shop_id=${encodeURIComponent(String(shopId))}&include_metafields=1`, {
         method: "GET",
       });
       const payload = await response.json().catch(() => ({}));
@@ -1018,7 +1059,11 @@ export function KnowledgePageClient() {
   const handleSyncMetafields = async () => {
     setMetafieldsSyncing(true);
     try {
-      const response = await fetch("/api/knowledge/sync-metafields", { method: "POST" });
+      const response = await fetch("/api/knowledge/sync-metafields", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shop_id: shopId }),
+      });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(payload?.error || "Could not sync metafields.");
@@ -1038,7 +1083,10 @@ export function KnowledgePageClient() {
   const loadBlogsPreview = async () => {
     setBlogsLoading(true);
     try {
-      const response = await fetch("/api/knowledge/sync-blogs?include_blogs=1", { method: "GET" });
+      const response = await fetch(
+        `/api/knowledge/sync-blogs?shop_id=${encodeURIComponent(String(shopId))}&include_blogs=1`,
+        { method: "GET" }
+      );
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(payload?.error || "Could not load blog articles.");
@@ -1056,7 +1104,11 @@ export function KnowledgePageClient() {
   const handleSyncBlogs = async () => {
     setBlogsSyncing(true);
     try {
-      const response = await fetch("/api/knowledge/sync-blogs", { method: "POST" });
+      const response = await fetch("/api/knowledge/sync-blogs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shop_id: shopId }),
+      });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(payload?.error || "Could not sync blog articles.");
@@ -1076,7 +1128,10 @@ export function KnowledgePageClient() {
   const loadFilesPreview = async () => {
     setFilesLoading(true);
     try {
-      const response = await fetch("/api/knowledge/sync-files?include_files=1", { method: "GET" });
+      const response = await fetch(
+        `/api/knowledge/sync-files?shop_id=${encodeURIComponent(String(shopId))}&include_files=1`,
+        { method: "GET" }
+      );
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(payload?.error || "Could not load files.");
@@ -1095,7 +1150,11 @@ export function KnowledgePageClient() {
     setFilesSyncing(true);
     setFilesLoading(true);
     try {
-      const response = await fetch("/api/knowledge/sync-files?include_image_guides=1", { method: "POST" });
+      const response = await fetch("/api/knowledge/sync-files?include_image_guides=1", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shop_id: shopId }),
+      });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload?.error || "Could not sync files.");
       setFileCount(Number(payload?.indexed ?? payload?.synced ?? 0));
@@ -1113,7 +1172,11 @@ export function KnowledgePageClient() {
     setCollectionsSyncing(true);
     setCollectionsLoading(true);
     try {
-      const response = await fetch("/api/knowledge/sync-collections", { method: "POST" });
+      const response = await fetch("/api/knowledge/sync-collections", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shop_id: shopId }),
+      });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload?.error || "Could not sync collections.");
       setCollectionCount(Number(payload?.indexed ?? payload?.synced ?? 0));
@@ -1130,7 +1193,11 @@ export function KnowledgePageClient() {
     setVariantsSyncing(true);
     setVariantsLoading(true);
     try {
-      const response = await fetch("/api/knowledge/sync-variants", { method: "POST" });
+      const response = await fetch("/api/knowledge/sync-variants", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shop_id: shopId }),
+      });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload?.error || "Could not sync variants.");
       setVariantCount(Number(payload?.indexed ?? payload?.synced ?? 0));
@@ -1147,7 +1214,11 @@ export function KnowledgePageClient() {
     setMetaobjectsSyncing(true);
     setMetaobjectsLoading(true);
     try {
-      const response = await fetch("/api/knowledge/sync-metaobjects", { method: "POST" });
+      const response = await fetch("/api/knowledge/sync-metaobjects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shop_id: shopId }),
+      });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload?.error || "Could not sync metaobjects.");
       setMetaobjectCount(Number(payload?.indexed ?? payload?.synced ?? 0));
@@ -1164,13 +1235,21 @@ export function KnowledgePageClient() {
     setShopifyPoliciesSyncing(true);
     setShopifyPoliciesLoading(true);
     try {
-      const response = await fetch("/api/knowledge/sync-policies", { method: "POST" });
+      const response = await fetch("/api/knowledge/sync-policies", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shop_id: shopId }),
+      });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload?.error || "Could not sync policies.");
       setShopifyPolicyCount(Number(payload?.indexed ?? payload?.synced ?? 0));
 
       // Keep editable policy fields in sync with latest Shopify legal policies.
-      const importResponse = await fetch("/api/shopify/import-policies", { method: "POST" });
+      const importResponse = await fetch("/api/shopify/import-policies", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shop_id: shopId }),
+      });
       const importPayload = await importResponse.json().catch(() => ({}));
       if (importResponse.ok) {
         setPolicyRefund(String(importPayload?.refund || ""));
@@ -1538,6 +1617,27 @@ export function KnowledgePageClient() {
           <p className="text-sm text-muted-foreground">
             Combine rules, facts, and historical context so Sona responds with accurate answers and the right tone.
           </p>
+        </div>
+
+        <div className="max-w-sm">
+          <Label htmlFor="knowledge-shop-selector" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Active Shop
+          </Label>
+          <Select value={shopId || ""} onValueChange={(value) => setShopId(value || null)}>
+            <SelectTrigger id="knowledge-shop-selector" className="mt-2 h-11">
+              <SelectValue placeholder={shops.length > 1 ? "Select shop" : "No shop connected"} />
+            </SelectTrigger>
+            <SelectContent>
+              {shops.map((shop) => (
+                <SelectItem key={shop.id} value={shop.id}>
+                  {String(shop.shop_domain || "Unnamed shop")}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {!shopId && shops.length > 1 ? (
+            <p className="mt-2 text-xs text-slate-500">Choose the exact shop to write and sync knowledge for.</p>
+          ) : null}
         </div>
 
         <div className="space-y-4">

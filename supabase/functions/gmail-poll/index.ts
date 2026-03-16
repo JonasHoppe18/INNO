@@ -45,6 +45,7 @@ type MailAccount = {
   id: string;
   user_id: string;
   workspace_id: string | null;
+  shop_id: string | null;
   access_token_enc: string | null;
   refresh_token_enc: string | null;
   token_expires_at: string | null;
@@ -420,48 +421,6 @@ function decodeBase64Url(data: string): string {
   }
 }
 
-const shopIdCache = new Map<string, string | null>();
-
-async function resolveShopId(options: {
-  userId: string;
-  workspaceId: string | null;
-}): Promise<string | null> {
-  if (!supabase) return null;
-  const cacheKey = options.workspaceId
-    ? `ws:${options.workspaceId}`
-    : `u:${options.userId}`;
-  if (shopIdCache.has(cacheKey)) return shopIdCache.get(cacheKey) ?? null;
-
-  if (options.workspaceId) {
-    const { data, error } = await supabase
-      .from("shops")
-      .select("id")
-      .eq("workspace_id", options.workspaceId)
-      .is("uninstalled_at", null)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (!error && data?.id) {
-      shopIdCache.set(cacheKey, data.id);
-      return data.id as string;
-    }
-    if (error) throw new Error(error.message);
-  }
-
-  const { data, error } = await supabase
-    .from("shops")
-    .select("id")
-    .eq("owner_user_id", options.userId)
-    .is("uninstalled_at", null)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  const shopId = data?.id ?? null;
-  shopIdCache.set(cacheKey, shopId);
-  return shopId;
-}
-
 function extractPlainTextFromPayload(payload: any): string {
   if (!payload) return "";
   if (payload.body?.data) return decodeBase64Url(payload.body.data);
@@ -636,7 +595,7 @@ Deno.serve(async (req) => {
 
     const { data: accounts, error } = await supabase
       .from("mail_accounts")
-      .select("id, user_id, workspace_id, access_token_enc, refresh_token_enc, token_expires_at, metadata")
+      .select("id, user_id, workspace_id, shop_id, access_token_enc, refresh_token_enc, token_expires_at, metadata")
       .eq("provider", "gmail")
       .limit(limit);
     if (error) {
@@ -651,10 +610,11 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      const shopId = await resolveShopId({
-        userId,
-        workspaceId: account.workspace_id ?? null,
-      });
+      const shopId = typeof account.shop_id === "string" ? account.shop_id : null;
+      if (!shopId) {
+        results.push({ error: "Missing shop_id on mail account", mailboxId: account.id });
+        continue;
+      }
 
       try {
         const accessToken = await decryptToken(account.access_token_enc);

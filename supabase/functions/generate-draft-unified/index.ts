@@ -73,7 +73,7 @@ const readEnvFlag = (key: string, fallback: boolean) => {
   return fallback;
 };
 
-const KNOWLEDGE_MIN_SIMILARITY = readEnvNumber("KNOWLEDGE_MIN_SIMILARITY", 0.7, {
+const KNOWLEDGE_MIN_SIMILARITY = readEnvNumber("KNOWLEDGE_MIN_SIMILARITY", 0.62, {
   min: 0,
   max: 1,
 });
@@ -88,6 +88,10 @@ const MAX_RETRIEVAL_CHUNKS = readEnvNumber("MAX_RETRIEVAL_CHUNKS", 4, {
 const MAX_CONTEXT_TOKENS = readEnvNumber("MAX_CONTEXT_TOKENS", 3500, {
   min: 0,
 });
+const KNOWLEDGE_SECTION_MIN_TOKENS = readEnvNumber("KNOWLEDGE_SECTION_MIN_TOKENS", 450, {
+  min: 150,
+  max: 900,
+});
 const POLICY_RESERVED_TOKENS = readEnvNumber("POLICY_RESERVED_TOKENS", 600, {
   min: 400,
   max: 800,
@@ -101,6 +105,7 @@ const RETRIEVAL_TRACE_SAMPLE_RATE = readEnvNumber(
 );
 const POLICY_SOURCE_PROVIDER = "shopify_policy";
 const TRACKING_CARRIERS_PROVIDER = "tracking_carriers";
+const ZENDESK_SOURCE_PROVIDER = "zendesk";
 
 if (!PROJECT_URL) console.warn("PROJECT_URL mangler – generate-draft-unified kan ikke kalde Supabase.");
 if (!SERVICE_ROLE_KEY)
@@ -201,6 +206,35 @@ const truncateToApproxTokens = (value: string, maxTokens: number) => {
   const approxChars = Math.max(0, Math.floor(maxTokens * 4));
   if (!approxChars || text.length <= approxChars) return text;
   return text.slice(0, approxChars).trim();
+};
+
+const getKnowledgePromptPriority = (provider: string) => {
+  const normalized = String(provider || "").trim().toLowerCase();
+  switch (normalized) {
+    case "manual_text":
+      return 600;
+    case "pdf_upload":
+    case "image_upload":
+      return 560;
+    case "shopify_file":
+      return 520;
+    case "shopify_page":
+      return 500;
+    case "shopify_product":
+    case "shopify_variant":
+      return 490;
+    case "shopify_policy":
+      return 470;
+    case "shopify_collection":
+    case "shopify_metaobject":
+    case "shopify_metafield":
+    case "shopify_blog_article":
+      return 460;
+    case ZENDESK_SOURCE_PROVIDER:
+      return 100;
+    default:
+      return 220;
+  }
 };
 
 const normalizeForHash = (value: string) =>
@@ -977,6 +1011,14 @@ async function getAgentContext(
   emailBody?: string,
 ): Promise<AgentContext> {
   const scope = await resolveShopScope(shopId);
+  console.info(
+    JSON.stringify({
+      event: "knowledge.retrieve.start",
+      shop_id: shopId,
+      workspace_id: scope.workspaceId ?? null,
+      message_id: null,
+    }),
+  );
   const ownerUserId = scope.ownerUserId;
   const profile = await fetchOwnerProfile(supabase, ownerUserId);
   const persona = await fetchPersona(supabase, ownerUserId);
@@ -988,6 +1030,16 @@ async function getAgentContext(
     emailBody ?? "",
     Math.max(1, Math.min(Math.round(MAX_RETRIEVAL_CHUNKS), 10)),
     KNOWLEDGE_MIN_SIMILARITY,
+  );
+  console.info(
+    JSON.stringify({
+      event: "knowledge.retrieve.result",
+      shop_id: shopId,
+      workspace_id: scope.workspaceId ?? null,
+      knowledge_hits_count: Array.isArray(relevantKnowledgeMatches)
+        ? relevantKnowledgeMatches.length
+        : 0,
+    }),
   );
   const filteredKnowledgeMatches = (relevantKnowledgeMatches || []).filter(
     (match) => String(match?.source_provider || "").toLowerCase() !== POLICY_SOURCE_PROVIDER,
@@ -1802,6 +1854,20 @@ Deno.serve(async (req) => {
       shopId,
       emailData.body || emailData.subject || "",
     );
+    console.info(
+      JSON.stringify({
+        event: "knowledge.retrieve.result",
+        shop_id: shopId,
+        workspace_id: context.workspaceId ?? null,
+        message_id: internalThread.messageId ?? null,
+        knowledge_hits_count: Array.isArray(context.relevantKnowledgeMatches)
+          ? context.relevantKnowledgeMatches.length
+          : 0,
+        product_hits_count: Array.isArray(productRetrieval.hits)
+          ? productRetrieval.hits.length
+          : 0,
+      }),
+    );
     if (productRetrieval.hits.length) {
       reasoningLogs.push({
         step_name: "Product Search",
@@ -1972,9 +2038,16 @@ Deno.serve(async (req) => {
             : null,
         included: false,
         approx_tokens: estimateTokens(text),
+        prompt_priority: getKnowledgePromptPriority(String(match?.source_provider || "")),
         _text: text,
       };
-    }).filter((hit) => hit._text);
+    }).filter((hit) => hit._text)
+      .sort((left, right) => {
+        if (right.prompt_priority !== left.prompt_priority) {
+          return right.prompt_priority - left.prompt_priority;
+        }
+        return (Number(right.similarity ?? 0) - Number(left.similarity ?? 0));
+      });
 
     const productTraceHits = (productRetrieval.hits || []).map((item) => {
       const price = item?.price ? `Price: ${item.price}.` : "";
@@ -2020,49 +2093,64 @@ Deno.serve(async (req) => {
       sectionKey: string,
       header: string,
       hits: Array<{ _text: string; included: boolean; approx_tokens: number }>,
+      options?: { allowOverflow?: boolean; minimumTokens?: number },
     ) => {
-      if (!hits.length || remaining <= 0) return;
+      if (!hits.length) return;
+      const allowOverflow = options?.allowOverflow === true;
+      const sectionBudget = remaining > 0
+        ? remaining
+        : allowOverflow
+        ? Math.max(0, Number(options?.minimumTokens ?? 0))
+        : 0;
+      if (sectionBudget <= 0) {
+        addDropReason(`${sectionKey}:token_budget`);
+        return;
+      }
       const headerTokens = estimateTokens(header);
-      if (headerTokens > remaining) {
+      if (headerTokens > sectionBudget) {
         addDropReason(`${sectionKey}:token_budget`);
         return;
       }
 
       const sectionLines: string[] = [header];
-      remaining -= headerTokens;
+      let sectionRemaining = sectionBudget - headerTokens;
       for (const hit of hits) {
-        if (remaining <= 0) {
+        if (sectionRemaining <= 0) {
           addDropReason(`${sectionKey}:token_budget`);
           break;
         }
         const hitTokens = estimateTokens(hit._text);
-        if (hitTokens <= remaining) {
+        if (hitTokens <= sectionRemaining) {
           sectionLines.push(hit._text);
           hit.included = true;
           hit.approx_tokens = hitTokens;
-          remaining -= hitTokens;
+          sectionRemaining -= hitTokens;
           continue;
         }
-        const trimmed = truncateToApproxTokens(hit._text, remaining);
+        const trimmed = truncateToApproxTokens(hit._text, sectionRemaining);
         if (trimmed) {
           sectionLines.push(trimmed);
           hit.included = true;
           hit.approx_tokens = estimateTokens(trimmed);
-          remaining = 0;
+          sectionRemaining = 0;
         }
         addDropReason(`${sectionKey}:token_budget`);
         break;
       }
       if (sectionLines.length > 1) {
         extras.push(sectionLines.join("\n"));
+        remaining = Math.max(0, remaining - (sectionBudget - sectionRemaining));
       }
     };
 
     if (MAX_CONTEXT_TOKENS <= 0 || baseTokens < MAX_CONTEXT_TOKENS) {
+      appendSectionWithBudget("knowledge", "RELEVANT KNOWLEDGE & HISTORY:", knowledgeTraceHits, {
+        allowOverflow: true,
+        minimumTokens: KNOWLEDGE_SECTION_MIN_TOKENS,
+      });
       if (trackingTraceHits.length) {
         appendSectionWithBudget("tracking", "LIVE TRACKING:", trackingTraceHits);
       }
-      appendSectionWithBudget("knowledge", "RELEVANT KNOWLEDGE & HISTORY:", knowledgeTraceHits);
       appendSectionWithBudget("product", "PRODUKTKONTEKST:", productTraceHits);
       if (inlineImageAttachments.length) {
         const imageContextLines = inlineImageAttachments.map(
@@ -2080,6 +2168,10 @@ Deno.serve(async (req) => {
       }
     } else {
       addDropReason("base_prompt:token_budget");
+      appendSectionWithBudget("knowledge", "RELEVANT KNOWLEDGE & HISTORY:", knowledgeTraceHits, {
+        allowOverflow: true,
+        minimumTokens: KNOWLEDGE_SECTION_MIN_TOKENS,
+      });
     }
 
     const prompt = [promptBase, ...extras].join("\n\n");
@@ -2094,6 +2186,7 @@ Deno.serve(async (req) => {
         source_type: hit.source_type,
         source_provider: hit.source_provider,
         similarity: hit.similarity,
+        prompt_priority: hit.prompt_priority,
         chunk_index: hit.chunk_index,
         chunk_count: hit.chunk_count,
         included: hit.included,

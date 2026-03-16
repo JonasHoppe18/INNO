@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { decryptString } from "@/lib/server/shopify-oauth";
-import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
+import { applyScope, resolveAuthScope, resolveScopedShop } from "@/lib/server/workspace-auth";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -127,17 +127,12 @@ function extractNextCursor(payload) {
   return hasNextPage && endCursor ? endCursor : null;
 }
 
-async function fetchShopifyCredentials(serviceClient, scope) {
-  let query = serviceClient
-    .from("shops")
-    .select("id, shop_domain, access_token_encrypted, platform, workspace_id")
-    .eq("platform", "shopify")
-    .is("uninstalled_at", null)
-    .order("created_at", { ascending: false })
-    .limit(1);
-  query = applyScope(query, scope, { workspaceColumn: "workspace_id", userColumn: "owner_user_id" });
-  const { data, error } = await query.maybeSingle();
-  if (error) throw new Error(error.message);
+async function fetchShopifyCredentials(serviceClient, scope, requestedShopId) {
+  const data = await resolveScopedShop(serviceClient, scope, requestedShopId, {
+    platform: "shopify",
+    fields: "id, shop_domain, access_token_encrypted, platform, workspace_id",
+    missingShopMessage: "shop_id is required for Shopify knowledge sync.",
+  });
   if (!data?.id || !data?.shop_domain || !data?.access_token_encrypted) {
     throw new Error("Missing Shopify credentials.");
   }
@@ -847,15 +842,14 @@ export async function GET(request) {
 
   const serviceClient = createServiceClient();
   try {
-    const scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
+    const scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId }, { requireExplicitWorkspace: true });
     if (!scope?.workspaceId && !scope?.supabaseUserId) {
       throw new Error("Could not resolve workspace/user scope.");
     }
 
-    const shopIds = await fetchActiveShopIds(serviceClient, scope);
-    if (!shopIds.length) {
-      return NextResponse.json({ success: true, count: 0, files: [] }, { status: 200 });
-    }
+    const requestedShopId = String(request?.nextUrl?.searchParams?.get("shop_id") || "").trim();
+    const shop = await fetchShopifyCredentials(serviceClient, scope, requestedShopId);
+    const shopIds = [shop.shop_id];
 
     const count = await countIndexedFiles(serviceClient, shopIds);
     const includeFiles = String(request?.nextUrl?.searchParams?.get("include_files") || "") === "1";
@@ -882,12 +876,14 @@ export async function POST(request) {
 
   const serviceClient = createServiceClient();
   try {
-    const scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
+    const scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId }, { requireExplicitWorkspace: true });
     if (!scope?.workspaceId && !scope?.supabaseUserId) {
       throw new Error("Could not resolve workspace/user scope.");
     }
 
-    const shop = await fetchShopifyCredentials(serviceClient, scope);
+    const body = await request.json().catch(() => ({}));
+    const requestedShopId = String(body?.shop_id || "").trim();
+    const shop = await fetchShopifyCredentials(serviceClient, scope, requestedShopId);
     if (shop.platform && shop.platform !== "shopify") {
       throw new Error("Platform not supported yet");
     }
@@ -895,11 +891,13 @@ export async function POST(request) {
     const url = new URL(request.url);
     const includeImageGuides = String(url.searchParams.get("include_image_guides") || "1") === "1";
 
+    console.info(JSON.stringify({ event: "knowledge.sync.start", provider: "shopify_file", requested_shop_id: requestedShopId || null, resolved_shop_id: shop.shop_id, workspace_id: shop.workspace_id ?? null }));
     const result = await syncShopifyFiles({
       serviceClient,
       creds: shop,
       includeImageGuides,
     });
+    console.info(JSON.stringify({ event: "knowledge.sync.wrote", provider: "shopify_file", source_provider: "shopify_file", resolved_shop_id: shop.shop_id, workspace_id: shop.workspace_id ?? null, fetched_count: Number(result?.synced ?? 0), rows_written: Number(result?.updated_chunks ?? result?.indexed ?? 0), rows_updated: Number(result?.updated_chunks ?? result?.indexed ?? 0), rows_deleted: 0 }));
 
     return NextResponse.json({
       success: true,
@@ -909,6 +907,7 @@ export async function POST(request) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Sync failed";
+    console.error(JSON.stringify({ event: "knowledge.sync.error", provider: "shopify_file", error: message }));
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

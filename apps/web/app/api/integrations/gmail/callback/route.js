@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
-import { resolveAuthScope } from "@/lib/server/workspace-auth";
+import { resolveAuthScope, resolveScopedShop } from "@/lib/server/workspace-auth";
 
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
@@ -27,6 +27,18 @@ function createServiceClient() {
   return createClient(SUPABASE_BASE_URL, SUPABASE_SERVICE_KEY);
 }
 
+function parseStateShopId(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    const decoded = Buffer.from(raw, "base64url").toString("utf8");
+    const parsed = JSON.parse(decoded);
+    return String(parsed?.shop_id || "").trim();
+  } catch {
+    return "";
+  }
+}
+
 export async function GET(request) {
   const { userId: clerkUserId, orgId } = auth();
   if (!clerkUserId) {
@@ -50,6 +62,7 @@ export async function GET(request) {
 
   const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
+  const requestedShopId = parseStateShopId(searchParams.get("state"));
   if (!code) {
     return NextResponse.json({ error: "Missing OAuth code." }, { status: 400 });
   }
@@ -99,7 +112,7 @@ export async function GET(request) {
 
   let scope = null;
   try {
-    scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
+    scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId }, { requireExplicitWorkspace: true });
   } catch (error) {
     return NextResponse.json(
       {
@@ -117,6 +130,11 @@ export async function GET(request) {
   if (!scope?.supabaseUserId) {
     return NextResponse.json({ error: "Supabase user not found for this Clerk user." }, { status: 404 });
   }
+  const shop = await resolveScopedShop(serviceClient, scope, requestedShopId, {
+    fields: "id",
+    allowSingleScopedFallback: true,
+    missingShopMessage: "shop_id is required to bind a mailbox in a multi-shop workspace.",
+  });
 
   const { error } = await serviceClient
     .from("mail_accounts")
@@ -124,6 +142,7 @@ export async function GET(request) {
       {
         user_id: scope.supabaseUserId,
         workspace_id: scope.workspaceId ?? null,
+        shop_id: shop.id,
         provider: "gmail",
         provider_email: email,
         access_token_enc: encodeToken(tokens.access_token),

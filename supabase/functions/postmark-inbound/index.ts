@@ -50,6 +50,7 @@ type MailboxLookup = {
   mailbox_id: string;
   user_id: string;
   workspace_id: string | null;
+  shop_id: string | null;
   provider_email: string | null;
   from_name: string | null;
   status?: string | null;
@@ -236,7 +237,7 @@ async function lookupMailbox(slug: string): Promise<MailboxLookup | null> {
   if (!supabase) return null;
   const { data, error } = await supabase
     .from("mail_accounts")
-    .select("id, user_id, workspace_id, provider_email, from_name, inbound_slug, status")
+    .select("id, user_id, workspace_id, shop_id, provider_email, from_name, inbound_slug, status")
     .ilike("inbound_slug", slug)
     .maybeSingle();
   if (error) throw new Error(error.message);
@@ -245,6 +246,7 @@ async function lookupMailbox(slug: string): Promise<MailboxLookup | null> {
     mailbox_id: data.id,
     user_id: data.user_id,
     workspace_id: data.workspace_id ?? null,
+    shop_id: data.shop_id ?? null,
     provider_email: data.provider_email ?? null,
     from_name: data.from_name ?? null,
     status: data.status,
@@ -1571,10 +1573,7 @@ Deno.serve(async (req) => {
       workspaceId: mailbox.workspace_id,
     });
     if (autoDraftEnabled && routeDecision.isEffectiveSupport) {
-      const shopId = await resolveShopId({
-        ownerUserId: mailbox.user_id,
-        workspaceId: mailbox.workspace_id,
-      });
+      const shopId = mailbox.shop_id;
       if (shopId) {
         const draftOutcome = await triggerDraftForInbound({
           shopId,

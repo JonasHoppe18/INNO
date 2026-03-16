@@ -5,7 +5,7 @@ const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
 const GOOGLE_REDIRECT_URI =
   process.env.GOOGLE_REDIRECT_URI || process.env.GOOGLE_OAUTH_REDIRECT_URI || "";
 
-export async function GET() {
+export async function GET(request) {
   const { userId } = auth();
   if (!userId) {
     return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
@@ -32,6 +32,11 @@ export async function GET() {
   );
   authUrl.searchParams.set("access_type", "offline");
   authUrl.searchParams.set("prompt", "consent");
+  const requestedShopId = String(new URL(request.url).searchParams.get("shop_id") || "").trim();
+  if (requestedShopId) {
+    const state = Buffer.from(JSON.stringify({ shop_id: requestedShopId }), "utf8").toString("base64url");
+    authUrl.searchParams.set("state", state);
+  }
 
   return NextResponse.redirect(authUrl.toString());
 }

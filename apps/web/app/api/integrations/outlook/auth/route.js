@@ -8,7 +8,7 @@ const MICROSOFT_REDIRECT_URI =
   "";
 const MICROSOFT_TENANT_ID = process.env.MICROSOFT_TENANT_ID || "common";
 
-export async function GET() {
+export async function GET(request) {
   const { userId } = auth();
   if (!userId) {
     return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
@@ -33,6 +33,11 @@ export async function GET() {
     ["offline_access", "Mail.ReadWrite", "Mail.Send", "User.Read"].join(" ")
   );
   authUrl.searchParams.set("prompt", "consent");
+  const requestedShopId = String(new URL(request.url).searchParams.get("shop_id") || "").trim();
+  if (requestedShopId) {
+    const state = Buffer.from(JSON.stringify({ shop_id: requestedShopId }), "utf8").toString("base64url");
+    authUrl.searchParams.set("state", state);
+  }
 
   return NextResponse.redirect(authUrl.toString());
 }

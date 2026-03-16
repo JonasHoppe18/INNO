@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
-import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
+import { resolveAuthScope, resolveScopedShop } from "@/lib/server/workspace-auth";
 
 export const runtime = "nodejs";
 
@@ -271,39 +271,12 @@ async function resolveShopId(
   scope: { workspaceId: string | null; supabaseUserId: string | null },
   requestedShopId?: string
 ) {
-  if (requestedShopId?.trim()) {
-    let scopedQuery = serviceClient
-      .from("shops")
-      .select("id")
-      .eq("id", requestedShopId.trim())
-      .limit(1);
-    scopedQuery = applyScope(scopedQuery, scope, {
-      workspaceColumn: "workspace_id",
-      userColumn: "owner_user_id",
-    });
-    const { data, error } = await scopedQuery.maybeSingle();
-    const row = (data || null) as { id?: string } | null;
-    if (error) throw new Error(`Could not verify shop scope: ${error.message}`);
-    if (!row?.id) throw new Error("Shop not found in your workspace scope.");
-    return row.id;
-  }
-
-  let latestQuery = serviceClient
-    .from("shops")
-    .select("id")
-    .is("uninstalled_at", null)
-    .order("created_at", { ascending: false })
-    .limit(1);
-  latestQuery = applyScope(latestQuery, scope, {
-    workspaceColumn: "workspace_id",
-    userColumn: "owner_user_id",
-  });
-
-  const { data, error } = await latestQuery.maybeSingle();
-  const row = (data || null) as { id?: string } | null;
-  if (error) throw new Error(`Could not resolve active shop: ${error.message}`);
-  if (!row?.id) throw new Error("No active shop found for this workspace/user.");
-  return row.id;
+  const shop = (await resolveScopedShop(serviceClient, scope, requestedShopId, {
+    fields: "id, workspace_id",
+    missingShopMessage: "shop_id is required for knowledge writes.",
+  })) as { id?: string } | null;
+  if (!shop?.id) throw new Error("Shop not found in your workspace scope.");
+  return shop.id;
 }
 
 async function insertKnowledgeChunks(options: {
@@ -317,6 +290,15 @@ async function insertKnowledgeChunks(options: {
 }) {
   const limit = Number(options.maxChunks || 10);
   const chunks = splitIntoChunks(options.content, 1200, 200).slice(0, Math.max(1, limit));
+  console.info(
+    JSON.stringify({
+      event: "knowledge.snippet.embedded",
+      shop_id: options.shopId,
+      chunk_count: chunks.length,
+      source_provider: options.sourceProvider,
+      workspace_id: options.metadata?.workspace_id ?? null,
+    })
+  );
   for (let index = 0; index < chunks.length; index += 1) {
     const chunk = chunks[index];
     const embedding = await embedText(chunk);
@@ -350,7 +332,7 @@ export async function POST(request: Request) {
 
   let scope: { workspaceId: string | null; supabaseUserId: string | null };
   try {
-    scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
+    scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId }, { requireExplicitWorkspace: true });
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || "Could not resolve workspace scope." }, { status: 500 });
   }
@@ -376,8 +358,27 @@ export async function POST(request: Request) {
       }
 
       const shopId = await resolveShopId(serviceClient, scope, requestedShopId || undefined);
+      console.info(
+        JSON.stringify({
+          event: "knowledge.snippet.request",
+          requested_shop_id: requestedShopId || null,
+          resolved_shop_id: shopId,
+          workspace_id: scope.workspaceId,
+          filename: file.name,
+        })
+      );
       const bytes = Buffer.from(await file.arrayBuffer());
       let extractedText = "";
+      console.info(
+        JSON.stringify({
+          event: "file.parse.started",
+          requested_shop_id: requestedShopId || null,
+          resolved_shop_id: shopId,
+          workspace_id: scope.workspaceId,
+          filename: file.name,
+          mime_type: file.type,
+        })
+      );
       if (isPdf) {
         extractedText = extractPdfText(bytes);
         if (!extractedText || extractedText.length < 120) {
@@ -387,12 +388,30 @@ export async function POST(request: Request) {
         extractedText = await extractImageTextWithOpenAI(file.name, file.type, bytes);
       }
       if (!extractedText || extractedText.length < 120) {
+        console.warn(
+          JSON.stringify({
+            event: "file.parse.failed",
+            resolved_shop_id: shopId,
+            workspace_id: scope.workspaceId,
+            filename: file.name,
+            reason: "insufficient_text",
+          })
+        );
         return NextResponse.json(
           { error: "Could not extract enough text from this file. Try copy/paste text instead." },
           { status: 400 }
         );
       }
       const normalizedPdfText = extractedText.slice(0, 7000);
+      console.info(
+        JSON.stringify({
+          event: "file.parse.succeeded",
+          resolved_shop_id: shopId,
+          workspace_id: scope.workspaceId,
+          filename: file.name,
+          extracted_chars: normalizedPdfText.length,
+        })
+      );
 
       const title = titleFromForm || file.name || "Uploaded File";
       const snippetId = makeSnippetId();
@@ -405,6 +424,7 @@ export async function POST(request: Request) {
         sourceProvider: isPdf ? "pdf_upload" : "image_upload",
         maxChunks: 2,
         metadata: {
+          workspace_id: scope.workspaceId,
           snippet_id: snippetId,
           title,
           file_name: file.name,
@@ -412,6 +432,16 @@ export async function POST(request: Request) {
           file_mime: file.type,
         },
       });
+      console.info(
+        JSON.stringify({
+          event: "knowledge.snippet.inserted",
+          resolved_shop_id: shopId,
+          workspace_id: scope.workspaceId,
+          inserted_rows: insertedChunks,
+          source_provider: isPdf ? "pdf_upload" : "image_upload",
+          snippet_id: snippetId,
+        })
+      );
 
       return NextResponse.json({
         success: true,
@@ -431,6 +461,15 @@ export async function POST(request: Request) {
     }
 
     const shopId = await resolveShopId(serviceClient, scope, requestedShopId || undefined);
+    console.info(
+      JSON.stringify({
+        event: "knowledge.snippet.request",
+        requested_shop_id: requestedShopId || null,
+        resolved_shop_id: shopId,
+        workspace_id: scope.workspaceId,
+        title,
+      })
+    );
     const snippetId = makeSnippetId();
 
     const insertedChunks = await insertKnowledgeChunks({
@@ -441,10 +480,21 @@ export async function POST(request: Request) {
       sourceProvider: "manual_text",
       maxChunks: 12,
       metadata: {
+        workspace_id: scope.workspaceId,
         snippet_id: snippetId,
         title,
       },
     });
+    console.info(
+      JSON.stringify({
+        event: "knowledge.snippet.inserted",
+        resolved_shop_id: shopId,
+        workspace_id: scope.workspaceId,
+        inserted_rows: insertedChunks,
+        source_provider: "manual_text",
+        snippet_id: snippetId,
+      })
+    );
 
     return NextResponse.json({
       success: true,
@@ -453,6 +503,13 @@ export async function POST(request: Request) {
       chunks: insertedChunks,
     });
   } catch (error: any) {
+    console.error(
+      JSON.stringify({
+        event: "knowledge.snippet.error",
+        workspace_id: scope?.workspaceId ?? null,
+        error: error?.message || "Could not save knowledge snippet.",
+      })
+    );
     return NextResponse.json({ error: error?.message || "Could not save knowledge snippet." }, { status: 500 });
   }
 }
@@ -470,7 +527,7 @@ export async function PUT(request: Request) {
 
   let scope: { workspaceId: string | null; supabaseUserId: string | null };
   try {
-    scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
+    scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId }, { requireExplicitWorkspace: true });
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || "Could not resolve workspace scope." }, { status: 500 });
   }
@@ -551,7 +608,7 @@ export async function DELETE(request: Request) {
 
   let scope: { workspaceId: string | null; supabaseUserId: string | null };
   try {
-    scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
+    scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId }, { requireExplicitWorkspace: true });
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || "Could not resolve workspace scope." }, { status: 500 });
   }

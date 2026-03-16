@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createHash } from "node:crypto";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
-import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
+import { resolveAuthScope, resolveScopedShop } from "@/lib/server/workspace-auth";
 
 export const runtime = "nodejs";
 
@@ -211,42 +211,13 @@ async function resolveShop(
   scope: Scope,
   requestedShopId?: string,
 ) {
-  if (requestedShopId?.trim()) {
-    let query = serviceClient
-      .from("shops")
-      .select("id, workspace_id")
-      .eq("id", requestedShopId.trim())
-      .limit(1);
-    query = applyScope(query, scope, {
-      workspaceColumn: "workspace_id",
-      userColumn: "owner_user_id",
-    });
-    const { data, error } = await query.maybeSingle();
-    if (error) throw new Error(`Could not verify shop scope: ${error.message}`);
-    if (!data?.id) throw new Error("Shop not found in your workspace scope.");
-    return {
-      shopId: String(data.id),
-      workspaceId: data.workspace_id ? String(data.workspace_id) : null,
-    };
-  }
-
-  let query = serviceClient
-    .from("shops")
-    .select("id, workspace_id")
-    .is("uninstalled_at", null)
-    .order("created_at", { ascending: false })
-    .limit(1);
-  query = applyScope(query, scope, {
-    workspaceColumn: "workspace_id",
-    userColumn: "owner_user_id",
+  const shop = await resolveScopedShop(serviceClient, scope, requestedShopId, {
+    fields: "id, workspace_id",
+    missingShopMessage: "shop_id is required for CSV knowledge import.",
   });
-
-  const { data, error } = await query.maybeSingle();
-  if (error) throw new Error(`Could not resolve active shop: ${error.message}`);
-  if (!data?.id) throw new Error("No active shop found for this workspace/user.");
   return {
-    shopId: String(data.id),
-    workspaceId: data.workspace_id ? String(data.workspace_id) : null,
+    shopId: String(shop.id),
+    workspaceId: shop.workspace_id ? String(shop.workspace_id) : null,
   };
 }
 
@@ -255,7 +226,7 @@ async function resolveScope(serviceClient: any) {
   if (!clerkUserId) {
     throw Object.assign(new Error("You must be signed in."), { status: 401 });
   }
-  const scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
+  const scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId }, { requireExplicitWorkspace: true });
   if (!scope?.workspaceId && !scope?.supabaseUserId) {
     throw Object.assign(new Error("No workspace/user scope found."), { status: 400 });
   }

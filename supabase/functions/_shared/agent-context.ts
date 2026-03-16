@@ -41,6 +41,37 @@ export type KnowledgeMatch = {
   similarity?: number;
 };
 
+const KNOWLEDGE_PROVIDER_PRIORITY: Record<string, number> = {
+  manual_text: 500,
+  pdf_upload: 460,
+  image_upload: 450,
+  shopify_file: 430,
+  shopify_page: 390,
+  shopify_product: 380,
+  shopify_variant: 370,
+  shopify_policy: 360,
+  shopify_collection: 340,
+  shopify_metaobject: 330,
+  shopify_metafield: 320,
+  shopify_blog_article: 310,
+  csv_support_knowledge: 300,
+  zendesk: 50,
+};
+
+const KNOWLEDGE_PROVIDER_LIMITS: Record<string, number> = {
+  zendesk: 1,
+};
+
+function getKnowledgeProviderPriority(provider: string | null | undefined) {
+  const normalized = String(provider || "").trim().toLowerCase();
+  return KNOWLEDGE_PROVIDER_PRIORITY[normalized] ?? 100;
+}
+
+function getKnowledgeProviderLimit(provider: string | null | undefined) {
+  const normalized = String(provider || "").trim().toLowerCase();
+  return KNOWLEDGE_PROVIDER_LIMITS[normalized] ?? 2;
+}
+
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
 const OPENAI_EMBEDDING_MODEL = Deno.env.get("OPENAI_EMBEDDING_MODEL") ?? "text-embedding-3-small";
 
@@ -351,9 +382,10 @@ export async function fetchRelevantKnowledge(
   if (!queryEmbedding) return [];
 
   const safeLimit = Math.max(1, Math.min(limit, 5));
+  const retrievalLimit = Math.max(safeLimit * 4, 12);
   const { data, error } = await supabase.rpc("match_agent_knowledge", {
     query_embedding: queryEmbedding,
-    match_count: safeLimit,
+    match_count: retrievalLimit,
     filter_shop_id: shopId,
   });
 
@@ -365,10 +397,41 @@ export async function fetchRelevantKnowledge(
   if (!Array.isArray(data)) return [];
   const threshold = Number.isFinite(minSimilarity) ? Number(minSimilarity) : 0;
   const matches = data as KnowledgeMatch[];
-  if (threshold <= 0) return matches.slice(0, safeLimit);
-  return matches
-    .filter((match) => Number(match?.similarity ?? 0) >= threshold)
-    .slice(0, safeLimit);
+  const filtered = threshold <= 0
+    ? matches
+    : matches.filter((match) => Number(match?.similarity ?? 0) >= threshold);
+  const reranked = filtered
+    .map((match, index) => {
+      const provider = String(match?.source_provider || "").trim().toLowerCase();
+      const similarity = Number(match?.similarity ?? 0);
+      const providerPriority = getKnowledgeProviderPriority(provider);
+      const contentLength = String(match?.content || "").trim().length;
+      const lengthPenalty = contentLength > 1200 ? 0.03 : contentLength > 800 ? 0.015 : 0;
+      const adjustedScore = similarity + providerPriority / 1000 - lengthPenalty - index / 100000;
+      return {
+        match,
+        provider,
+        adjustedScore,
+        similarity,
+      };
+    })
+    .sort((left, right) => {
+      if (right.adjustedScore !== left.adjustedScore) {
+        return right.adjustedScore - left.adjustedScore;
+      }
+      return right.similarity - left.similarity;
+    });
+
+  const selected: KnowledgeMatch[] = [];
+  const providerCounts = new Map<string, number>();
+  for (const entry of reranked) {
+    const count = providerCounts.get(entry.provider) ?? 0;
+    if (count >= getKnowledgeProviderLimit(entry.provider)) continue;
+    selected.push(entry.match);
+    providerCounts.set(entry.provider, count + 1);
+    if (selected.length >= safeLimit) break;
+  }
+  return selected;
 }
 
 export function formatKnowledgeForPrompt(matches: KnowledgeMatch[]): string {

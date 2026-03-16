@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
-import { resolveAuthScope } from "@/lib/server/workspace-auth";
+import { resolveAuthScope, resolveScopedShop } from "@/lib/server/workspace-auth";
 
 const MICROSOFT_CLIENT_ID = process.env.MICROSOFT_CLIENT_ID || "";
 const MICROSOFT_CLIENT_SECRET = process.env.MICROSOFT_CLIENT_SECRET || "";
@@ -30,6 +30,18 @@ function encodeToken(value) {
   return Buffer.from(value, "utf8").toString("base64");
 }
 
+function parseStateShopId(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    const decoded = Buffer.from(raw, "base64url").toString("utf8");
+    const parsed = JSON.parse(decoded);
+    return String(parsed?.shop_id || "").trim();
+  } catch {
+    return "";
+  }
+}
+
 export async function GET(request) {
   const { userId: clerkUserId, orgId } = auth();
   if (!clerkUserId) {
@@ -53,6 +65,7 @@ export async function GET(request) {
 
   const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
+  const requestedShopId = parseStateShopId(searchParams.get("state"));
   if (!code) {
     return NextResponse.json({ error: "Missing OAuth code." }, { status: 400 });
   }
@@ -98,7 +111,7 @@ export async function GET(request) {
 
   let scope = null;
   try {
-    scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
+    scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId }, { requireExplicitWorkspace: true });
   } catch (error) {
     return NextResponse.json(
       {
@@ -116,6 +129,11 @@ export async function GET(request) {
   if (!scope?.supabaseUserId) {
     return NextResponse.json({ error: "Supabase user not found for this Clerk user." }, { status: 404 });
   }
+  const shop = await resolveScopedShop(serviceClient, scope, requestedShopId, {
+    fields: "id",
+    allowSingleScopedFallback: true,
+    missingShopMessage: "shop_id is required to bind a mailbox in a multi-shop workspace.",
+  });
 
   const expiresIn = Number(tokens?.expires_in ?? 0);
   const tokenExpiresAt = new Date(Date.now() + Math.max(0, expiresIn) * 1000).toISOString();
@@ -126,6 +144,7 @@ export async function GET(request) {
       {
         user_id: scope.supabaseUserId,
         workspace_id: scope.workspaceId ?? null,
+        shop_id: shop.id,
         provider: "outlook",
         provider_email: email,
         access_token_enc: encodeToken(tokens.access_token),

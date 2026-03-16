@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
-import { resolveAuthScope } from "@/lib/server/workspace-auth";
+import { resolveAuthScope, resolveScopedShop } from "@/lib/server/workspace-auth";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -58,18 +58,29 @@ export async function POST(request) {
   }
 
   const providerEmail = String(body?.provider_email || "").trim();
+  const requestedShopId = String(body?.shop_id || "").trim();
   if (!providerEmail) {
     return NextResponse.json({ error: "provider_email is required." }, { status: 400 });
   }
 
   let scope = null;
   try {
-    scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
+    scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId }, { requireExplicitWorkspace: true });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
   if (!scope?.supabaseUserId) {
     return NextResponse.json({ error: "Supabase user not found." }, { status: 404 });
+  }
+  let shop = null;
+  try {
+    shop = await resolveScopedShop(serviceClient, scope, requestedShopId, {
+      fields: "id",
+      allowSingleScopedFallback: true,
+      missingShopMessage: "shop_id is required to bind a forwarding mailbox in a multi-shop workspace.",
+    });
+  } catch (error) {
+    return NextResponse.json({ error: error.message }, { status: 400 });
   }
 
   let lastError = null;
@@ -81,6 +92,7 @@ export async function POST(request) {
       .insert({
         user_id: scope.supabaseUserId,
         workspace_id: scope.workspaceId ?? null,
+        shop_id: shop.id,
         provider: "smtp",
         provider_email: providerEmail,
         inbound_slug: inboundSlug,

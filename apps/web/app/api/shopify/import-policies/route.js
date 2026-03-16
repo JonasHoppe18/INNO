@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { decryptString } from "@/lib/server/shopify-oauth";
-import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
+import { applyScope, resolveAuthScope, resolveScopedShop } from "@/lib/server/workspace-auth";
 import { mapPoliciesFromShopify, summarizePolicies } from "@/lib/server/policy-summary";
 
 const SUPABASE_BASE_URL =
@@ -39,18 +39,13 @@ function createServiceSupabase() {
   return createClient(SUPABASE_BASE_URL, SUPABASE_SERVICE_KEY);
 }
 
-async function fetchShopCredentials(serviceClient, scope) {
+async function fetchShopCredentials(serviceClient, scope, requestedShopId) {
   if (!serviceClient || (!scope?.workspaceId && !scope?.supabaseUserId)) return null;
-  let query = serviceClient
-    .from("shops")
-    .select("shop_domain, access_token_encrypted")
-    .eq("platform", "shopify")
-    .is("uninstalled_at", null)
-    .order("created_at", { ascending: false })
-    .limit(1);
-  query = applyScope(query, scope, { workspaceColumn: "workspace_id", userColumn: "owner_user_id" });
-  const { data, error } = await query.maybeSingle();
-  if (error) throw new Error(`Could not fetch Shopify credentials: ${error.message}`);
+  const data = await resolveScopedShop(serviceClient, scope, requestedShopId, {
+    platform: "shopify",
+    fields: "shop_domain, access_token_encrypted",
+    missingShopMessage: "shop_id is required for Shopify policy import.",
+  });
   if (!data) return null;
 
   if (!data.access_token_encrypted) {
@@ -71,25 +66,26 @@ async function fetchShopCredentials(serviceClient, scope) {
   }
 }
 
-async function fetchShopRowService(serviceClient, scope) {
+async function fetchShopRowService(serviceClient, scope, requestedShopId) {
   if (!serviceClient || (!scope?.workspaceId && !scope?.supabaseUserId)) return { data: null, error: null };
-  let query = serviceClient
-    .from("shops")
-    .select(
-      "id, shop_domain, policy_refund, policy_shipping, policy_terms, policy_privacy, policy_summary_json, policy_summary_version, policy_summary_updated_at, internal_tone"
-    )
-    .eq("platform", "shopify")
-    .is("uninstalled_at", null)
-    .order("created_at", { ascending: false })
-    .limit(1);
-  query = applyScope(query, scope, { workspaceColumn: "workspace_id", userColumn: "owner_user_id" });
-  const { data, error } = await query.maybeSingle();
-  if (error) return { data: null, error };
-  return { data, error: null };
+  try {
+    const data = await resolveScopedShop(serviceClient, scope, requestedShopId, {
+      platform: "shopify",
+      fields:
+        "id, shop_domain, policy_refund, policy_shipping, policy_terms, policy_privacy, policy_summary_json, policy_summary_version, policy_summary_updated_at, internal_tone",
+      missingShopMessage: "shop_id is required for Shopify policy import.",
+    });
+    return { data, error: null };
+  } catch (error) {
+    return { data: null, error };
+  }
 }
 
-async function getShopRecord({ token }) {
+async function getShopRecord({ token, requestedShopId }) {
   if (!token) return { data: null, error: "auth_missing" };
+  if (!requestedShopId) {
+    return { data: null, error: "shop_id_missing" };
+  }
 
   if (!SUPABASE_BASE_URL || !SUPABASE_ANON_KEY) {
     return { data: null, error: "supabase_config_missing" };
@@ -111,8 +107,7 @@ async function getShopRecord({ token }) {
       "internal_tone",
     ].join(",")
   );
-  url.searchParams.set("order", "created_at.desc");
-  url.searchParams.set("limit", "1");
+  url.searchParams.set("id", `eq.${requestedShopId}`);
   url.searchParams.set("platform", "eq.shopify");
 
   const response = await fetch(url.toString(), {
@@ -151,6 +146,7 @@ export async function POST(request) {
   }
 
   const body = await request.json().catch(() => ({}));
+  const requestedShopId = String(body?.shop_id || "").trim();
   const bodyDomain = body?.shop_domain || body?.shopDomain || body?.domain || null;
   const bodyToken = body?.access_token || body?.accessToken || body?.token || null;
 
@@ -167,11 +163,11 @@ export async function POST(request) {
   if (SUPABASE_SERVICE_KEY) {
     try {
       serviceClient = createServiceSupabase();
-      scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
+      scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId }, { requireExplicitWorkspace: true });
       if (scope?.workspaceId || scope?.supabaseUserId) {
-        decrypted = await fetchShopCredentials(serviceClient, scope);
+        decrypted = await fetchShopCredentials(serviceClient, scope, requestedShopId);
         if (!bodyDomain || !bodyToken) {
-          const { data: shopRow } = await fetchShopRowService(serviceClient, scope);
+          const { data: shopRow } = await fetchShopRowService(serviceClient, scope, requestedShopId);
           if (shopRow) {
             shop = shopRow;
           }
@@ -183,9 +179,10 @@ export async function POST(request) {
   }
   // Kun slå Supabase op hvis vi ikke fik domæne/token i requesten.
   if ((!bodyDomain || !bodyToken) && !shop) {
-    const result = await getShopRecord({
-      token: supabaseToken,
-    });
+  const result = await getShopRecord({
+    token: supabaseToken,
+    requestedShopId,
+  });
     shop = result.data;
     shopError = result.error;
   }
@@ -194,6 +191,8 @@ export async function POST(request) {
     const message =
       shopError === "auth_missing"
         ? "No access to Supabase token. Please sign in again."
+        : shopError === "shop_id_missing"
+        ? "shop_id is required for Shopify policy import."
         : shopError === "supabase_config_missing"
         ? "Supabase configuration is missing on the server."
         : shopError;
