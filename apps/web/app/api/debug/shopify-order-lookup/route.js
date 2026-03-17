@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
-import { decryptString } from "@/lib/server/shopify-oauth";
-import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
+import { resolveAuthScope } from "@/lib/server/workspace-auth";
+import { resolveShopifyCredentialsWithDiagnostics } from "@/lib/server/shopify-credentials";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -97,34 +97,31 @@ export async function POST(request) {
     return NextResponse.json({ error: "Supabase service client could not be created." }, { status: 500 });
   }
 
-  const scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
+  const scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId }, { requireExplicitWorkspace: true });
   if (!scope?.workspaceId && !scope?.supabaseUserId) {
     return NextResponse.json({ error: "Could not resolve workspace scope." }, { status: 404 });
   }
 
   const body = (await request.json().catch(() => ({}))) ?? {};
+  const requestedShopId = String(body?.shop_id || "").trim();
   const email = String(body?.email || "").trim();
   const orderNumber = normalizeOrderNumber(body?.orderNumber);
   const orderName = toShopifyOrderName(orderNumber);
 
-  let query = serviceClient
-    .from("shops")
-    .select("shop_domain, access_token_encrypted")
-    .eq("platform", "shopify")
-    .is("uninstalled_at", null)
-    .order("created_at", { ascending: false })
-    .limit(1);
-  query = applyScope(query, scope, { workspaceColumn: "workspace_id", userColumn: "owner_user_id" });
-  const { data: shop, error: shopError } = await query.maybeSingle();
-  if (shopError) {
-    return NextResponse.json({ error: shopError.message }, { status: 500 });
-  }
-  if (!shop?.shop_domain || !shop?.access_token_encrypted) {
-    return NextResponse.json({ error: "No connected Shopify store found for this workspace." }, { status: 400 });
-  }
-
-  const shopDomain = String(shop.shop_domain).replace(/^https?:\/\//, "").replace(/\/+$/, "");
-  const accessToken = decryptString(shop.access_token_encrypted);
+  const shop = await resolveShopifyCredentialsWithDiagnostics(serviceClient, scope, {
+    requestedShopId,
+    reason: "debug_shopify_order_lookup",
+    log: console.info,
+  });
+  const shopDomain = shop.shop_domain;
+  const accessToken = shop.access_token;
+  console.info(JSON.stringify({
+    event: "shopify.order_lookup.request",
+    selected_row_id: shop.shop_id,
+    selected_shop_domain: shop.shop_domain,
+    selected_shopify_client_id: shop.shopify_client_id,
+    token_fingerprint: shop.token_fingerprint,
+  }));
 
   const callShopifyOrders = async (params, label) => {
     const url = new URL(`https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}/orders.json`);
@@ -188,6 +185,9 @@ export async function POST(request) {
         name: orderName || null,
       },
       accessScopes: scopeResult,
+      selected_row: shop.selected_row,
+      candidate_rows: shop.candidates,
+      token_fingerprint: shop.token_fingerprint,
       results,
     },
     { status: 200 },

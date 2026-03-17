@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
-import { decryptString } from "@/lib/server/shopify-oauth";
-import { resolveAuthScope, resolveScopedShop } from "@/lib/server/workspace-auth";
+import { resolveAuthScope } from "@/lib/server/workspace-auth";
+import { resolveShopifyCredentialsWithDiagnostics } from "@/lib/server/shopify-credentials";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -29,25 +29,6 @@ const ACCESS_SCOPES_QUERY = `
 function createServiceClient() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null;
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-}
-
-async function fetchShopifyCredentials(serviceClient, scope, requestedShopId) {
-  const shop = await resolveScopedShop(serviceClient, scope, requestedShopId, {
-    platform: "shopify",
-    fields: "id, shop_domain, access_token_encrypted",
-    missingShopMessage: "shop_id is required.",
-  });
-  if (!shop?.id || !shop?.shop_domain) {
-    throw new Error("Shop not found in your current scope.");
-  }
-  if (!shop?.access_token_encrypted) {
-    throw new Error("Missing Shopify access token for this shop.");
-  }
-  return {
-    shop_id: shop.id,
-    shop_domain: String(shop.shop_domain).replace(/^https?:\/\//i, "").replace(/\/+$/, ""),
-    access_token: decryptString(shop.access_token_encrypted),
-  };
 }
 
 async function fetchGrantedScopes({ shopDomain, accessToken }) {
@@ -114,17 +95,41 @@ export async function GET(request) {
     }
 
     const requestedShopId = String(new URL(request.url).searchParams.get("shop_id") || "").trim();
-    const shop = await fetchShopifyCredentials(serviceClient, scope, requestedShopId);
+    const shop = await resolveShopifyCredentialsWithDiagnostics(serviceClient, scope, {
+      requestedShopId,
+      reason: "debug_shopify_scopes",
+      log: console.info,
+    });
+    console.info(JSON.stringify({
+      event: "shopify.scope_check.request",
+      selected_row_id: shop.shop_id,
+      selected_shop_domain: shop.shop_domain,
+      selected_shopify_client_id: shop.shopify_client_id,
+      graphql_endpoint: `https://${shop.shop_domain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
+    }));
     const granted = await fetchGrantedScopes({
       shopDomain: shop.shop_domain,
       accessToken: shop.access_token,
     });
     const grantedScopeHandles = granted.scopes.map((entry) => entry.handle);
+    console.info(JSON.stringify({
+      event: "shopify.scope_check.result",
+      selected_row_id: shop.shop_id,
+      selected_shop_domain: shop.shop_domain,
+      selected_shopify_client_id: shop.shopify_client_id,
+      token_fingerprint: shop.token_fingerprint,
+      granted_scopes: grantedScopeHandles,
+      has_read_all_orders: grantedScopeHandles.includes("read_all_orders"),
+    }));
 
     return NextResponse.json(
       {
         shop_id: shop.shop_id,
         shop_domain: shop.shop_domain,
+        shopify_client_id: shop.shopify_client_id,
+        selected_row: shop.selected_row,
+        candidate_rows: shop.candidates,
+        token_fingerprint: shop.token_fingerprint,
         has_read_all_orders: grantedScopeHandles.includes("read_all_orders"),
         granted_scopes: grantedScopeHandles,
         current_app_installation: granted.current_app_installation,

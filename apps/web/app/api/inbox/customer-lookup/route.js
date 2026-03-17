@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
-import { decryptString } from "@/lib/server/shopify-oauth";
 import { getEffectiveSenderEmail } from "@/lib/inbox/sender";
-import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
+import { resolveAuthScope } from "@/lib/server/workspace-auth";
+import { resolveShopifyCredentialsWithDiagnostics } from "@/lib/server/shopify-credentials";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -353,39 +353,42 @@ export async function POST(request) {
     }
   }
 
-  let shopQuery = serviceClient
-    .from("shops")
-    .select("shop_domain, access_token_encrypted")
-    .eq("platform", "shopify")
-    .is("uninstalled_at", null)
-    .order("created_at", { ascending: false })
-    .limit(1);
-  shopQuery = applyScope(shopQuery, scope, { workspaceColumn: "workspace_id", userColumn: "owner_user_id" });
-  const { data: shopCreds, error: shopCredsError } = await shopQuery.maybeSingle();
-  if (shopCredsError) {
-    await logCustomerLookup(serviceClient, {
-      status: "error",
-      detail: { ...logContext, stage: "shop_credentials_failed", error: shopCredsError.message },
-    });
-    return NextResponse.json({ error: shopCredsError.message }, { status: 500 });
-  }
-  if (!shopCreds?.shop_domain || !shopCreds?.access_token_encrypted) {
-    await logCustomerLookup(serviceClient, {
-      status: "error",
-      detail: { ...logContext, stage: "shop_missing_credentials" },
-    });
-    return NextResponse.json({ error: "No connected Shopify store found for this workspace." }, { status: 400 });
-  }
   let shopAccessToken = null;
+  let shopCreds = null;
   try {
-    shopAccessToken = decryptString(shopCreds.access_token_encrypted);
+    shopCreds = await resolveShopifyCredentialsWithDiagnostics(serviceClient, scope, {
+      reason: "customer_lookup",
+      log: (message) => logCustomerLookup(serviceClient, {
+        detail: { ...logContext, stage: "shop_credentials_debug", message },
+      }),
+    });
+    shopAccessToken = shopCreds.access_token;
   } catch (error) {
+    await logCustomerLookup(serviceClient, {
+      status: "error",
+      detail: {
+        ...logContext,
+        stage: "shop_credentials_failed",
+        error: error instanceof Error ? error.message : "Could not resolve Shopify credentials.",
+      },
+    });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Could not decrypt Shopify token." },
       { status: 500 }
     );
   }
-  const shopDomain = String(shopCreds.shop_domain || "").replace(/^https?:\/\//, "").replace(/\/+$/, "");
+  const shopDomain = shopCreds.shop_domain;
+  await logCustomerLookup(serviceClient, {
+    detail: {
+      ...logContext,
+      stage: "shop_credentials_resolved",
+      selected_row_id: shopCreds.shop_id,
+      selected_shop_domain: shopCreds.shop_domain,
+      selected_shopify_client_id: shopCreds.shopify_client_id,
+      token_fingerprint: shopCreds.token_fingerprint,
+      candidate_rows: shopCreds.candidates,
+    },
+  });
   const lookupAttempts = [];
 
   const fetchOrders = async (params, label = "lookup") => {

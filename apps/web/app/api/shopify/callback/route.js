@@ -45,21 +45,38 @@ export async function GET(request) {
     }
 
     const supabase = createServiceSupabase();
-    const { data: integration, error: lookupError } = await supabase
+    const { data: candidateRows, error: lookupError } = await supabase
       .from("shops")
       .select(
-        "id, shopify_client_id, shopify_client_secret_encrypted, oauth_state_expires_at, created_at"
+        "id, workspace_id, shop_domain, shopify_client_id, shopify_client_secret_encrypted, oauth_state_expires_at, installed_at, updated_at, created_at, uninstalled_at"
       )
       .eq("platform", "shopify")
       .eq("shop_domain", shop)
       .eq("oauth_state", state)
       .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(5);
 
     if (lookupError) {
       return NextResponse.json({ error: lookupError.message }, { status: 500 });
     }
+
+    const candidates = Array.isArray(candidateRows) ? candidateRows : [];
+    console.info(JSON.stringify({
+      event: "shopify.callback.candidates",
+      shop_domain: shop,
+      oauth_state: state,
+      candidate_rows: candidates.map((row) => ({
+        id: row.id ?? null,
+        workspace_id: row.workspace_id ?? null,
+        shop_domain: row.shop_domain ?? null,
+        shopify_client_id: row.shopify_client_id ?? null,
+        installed_at: row.installed_at ?? null,
+        updated_at: row.updated_at ?? null,
+        created_at: row.created_at ?? null,
+        uninstalled_at: row.uninstalled_at ?? null,
+      })),
+    }));
+    const integration = candidates[0] ?? null;
 
     if (!integration) {
       return NextResponse.json({ error: "Invalid OAuth state." }, { status: 400 });
@@ -121,6 +138,16 @@ export async function GET(request) {
     }
 
     const encryptedAccessToken = encryptString(tokenPayload.access_token);
+    console.info(JSON.stringify({
+      event: "shopify.callback.selected",
+      selected_row_id: integration.id,
+      selected_shop_domain: integration.shop_domain ?? shop,
+      selected_workspace_id: integration.workspace_id ?? null,
+      selected_shopify_client_id: integration.shopify_client_id ?? null,
+      installed_at_before: integration.installed_at ?? null,
+      updated_at_before: integration.updated_at ?? null,
+      created_at_before: integration.created_at ?? null,
+    }));
 
     const { error: updateError } = await supabase
       .from("shops")
