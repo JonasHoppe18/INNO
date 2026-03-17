@@ -371,7 +371,7 @@ export function KnowledgePageClient() {
     setShops(rows);
     setShopId((current) => {
       if (current && rows.some((row) => row?.id === current)) return current;
-      if (rows.length === 1) return rows[0]?.id || null;
+      if (rows.length > 0) return rows[0]?.id || null;
       return null;
     });
 
@@ -507,7 +507,7 @@ export function KnowledgePageClient() {
       const currentShopId =
         shopId && shopRows.some((row) => row?.id === shopId)
           ? shopId
-          : shopRows.length === 1
+          : shopRows.length > 0
           ? shopRows[0]?.id || null
           : null;
       await Promise.all([loadHistoryConnection(), loadSavedReplies()]);
