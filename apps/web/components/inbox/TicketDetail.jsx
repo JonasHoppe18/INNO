@@ -4,6 +4,7 @@ import { MessageBubble } from "@/components/inbox/MessageBubble";
 import { Composer } from "@/components/inbox/Composer";
 import { ThinkingCard } from "@/components/inbox/ThinkingCard";
 import { ActionCard } from "@/components/inbox/ActionCard";
+import { TrackingCard } from "@/components/inbox/TrackingCard";
 import { getReplyTargetEmail, getSenderLabel, isOutboundMessage } from "@/components/inbox/inbox-utils";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -21,6 +22,29 @@ const APPROVAL_ACTION_TYPES = new Set([
   "create_return_case",
   "send_return_instructions",
 ]);
+
+const TRACKING_INTENT_PATTERN =
+  /\b(track|tracking|trace|shipment|shipped|shipping status|delivery|delivered|out for delivery|parcel|package|pakke|pakken|forsendelse|forsendt|levering|leveret|spor|sporing|track and trace|track&trace)\b/i;
+
+function getLatestInboundCustomerMessage(messages = [], mailboxEmails = []) {
+  const rows = Array.isArray(messages) ? messages : [];
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    const message = rows[index];
+    if (!message || isOutboundMessage(message, mailboxEmails)) continue;
+    return message;
+  }
+  return null;
+}
+
+function messageLooksLikeTrackingQuestion(message = null) {
+  if (!message) return false;
+  const haystack = [message?.subject, message?.body_text, message?.snippet]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .join("\n");
+  if (!haystack) return false;
+  return TRACKING_INTENT_PATTERN.test(haystack);
+}
 
 export function TicketDetail({
   thread,
@@ -174,6 +198,21 @@ export function TicketDetail({
     const orders = Array.isArray(customerLookup?.orders) ? customerLookup.orders : [];
     return orders[0] || null;
   }, [customerLookup?.orders]);
+  const latestInboundCustomerMessage = useMemo(
+    () => getLatestInboundCustomerMessage(messages, mailboxEmails),
+    [mailboxEmails, messages]
+  );
+  const shouldShowTrackingCard = useMemo(() => {
+    const hasTrackingData = Boolean(
+      selectedOrderSummary?.tracking?.number || selectedOrderSummary?.tracking?.url
+    );
+    if (!hasTrackingData) return false;
+    return messageLooksLikeTrackingQuestion(latestInboundCustomerMessage);
+  }, [
+    latestInboundCustomerMessage,
+    selectedOrderSummary?.tracking?.number,
+    selectedOrderSummary?.tracking?.url,
+  ]);
   const selectedCustomerEmail = String(customerLookup?.customer?.email || "").trim();
   let actionCardInserted = false;
   const processReturnExtraContent =
@@ -371,6 +410,11 @@ export function TicketDetail({
               />
             </div>
           ) : null}
+          {shouldShowTrackingCard ? (
+            <div className="ml-auto flex w-full max-w-[520px] justify-end">
+              <TrackingCard order={selectedOrderSummary} threadId={thread?.id || null} />
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -387,25 +431,27 @@ export function TicketDetail({
           </div>
         </div>
       ) : (
-        <Composer
-          value={draftValue}
-          onChange={onDraftChange}
-          signatureValue={signatureValue}
-          onSignatureChange={onSignatureChange}
-          onSignatureBlur={onSignatureBlur}
-          collapsed={composerCollapsed}
-          onToggleCollapse={() => setComposerCollapsed((prev) => !prev)}
-          draftLoaded={draftLoaded}
-          canSend={canSend}
-          onSend={onSend}
-          isSending={isSending}
-          mode={composerMode}
-          onModeChange={onComposerModeChange}
-          toLabel={toLabel}
-          mentionUsers={mentionUsers}
-          onBlur={onDraftBlur}
-          isDraftLoading={showThinkingCard}
-        />
+        <div className="px-3 pb-1.5">
+          <Composer
+            value={draftValue}
+            onChange={onDraftChange}
+            signatureValue={signatureValue}
+            onSignatureChange={onSignatureChange}
+            onSignatureBlur={onSignatureBlur}
+            collapsed={composerCollapsed}
+            onToggleCollapse={() => setComposerCollapsed((prev) => !prev)}
+            draftLoaded={draftLoaded}
+            canSend={canSend}
+            onSend={onSend}
+            isSending={isSending}
+            mode={composerMode}
+            onModeChange={onComposerModeChange}
+            toLabel={toLabel}
+            mentionUsers={mentionUsers}
+            onBlur={onDraftBlur}
+            isDraftLoading={showThinkingCard}
+          />
+        </div>
       )}
     </section>
   );

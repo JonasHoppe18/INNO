@@ -267,11 +267,11 @@ export function ActionCard({
   if (isResultState) {
     return (
       <>
-        <div className="inline-flex min-w-[320px] max-w-full flex-col items-end">
+        <div className="inline-flex w-[360px] max-w-full flex-col items-end">
           {resultMeta ? (
             <div className="mb-1 px-1 text-right text-xs text-slate-500">{resultMeta}</div>
           ) : null}
-          <div className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
+          <div className="inline-flex w-full items-center rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
             <div className="flex min-w-0 flex-1 items-center gap-3">
               <div className="flex h-12 w-12 flex-none items-center justify-center">
                 <Image src={shopifyLogo} alt="" className="h-24 w-24 object-contain" />

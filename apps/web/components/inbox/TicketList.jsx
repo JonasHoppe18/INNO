@@ -45,7 +45,7 @@ export function TicketList({
   }, [contextMenu]);
 
   return (
-    <aside className="flex w-full flex-col border-r border-gray-200 bg-white lg:w-[20vw] lg:min-w-[20vw] lg:max-w-[20vw] lg:flex-none">
+    <aside className="flex w-full flex-col border-r border-gray-200 bg-white lg:w-[clamp(18rem,20vw,24rem)] lg:min-w-[clamp(18rem,20vw,24rem)] lg:max-w-[clamp(18rem,20vw,24rem)] lg:flex-none">
       <div className="px-3 pb-3 pt-2.5">
         <div className="grid gap-2">
           <Input

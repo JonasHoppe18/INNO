@@ -69,11 +69,11 @@ export function TicketListItem({
         <span className="absolute left-0 top-0 h-full w-[2px] bg-indigo-500" />
       ) : null}
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 truncate text-[13px] font-semibold text-slate-900">
+        <div className="flex min-w-0 flex-1 items-center gap-2 truncate text-[13px] font-semibold text-slate-900">
           {isUnread ? <span className="h-2 w-2 rounded-full bg-indigo-500" /> : null}
-          {customerLabel}
+          <span className="truncate">{customerLabel}</span>
         </div>
-        <span className="text-[12px] text-gray-400">{formatMessageTime(timestamp)}</span>
+        <span className="shrink-0 text-[12px] text-gray-400">{formatMessageTime(timestamp)}</span>
       </div>
       {classificationLabel ? (
         <div className="text-[12px] font-medium uppercase tracking-wide text-slate-500">
@@ -81,7 +81,7 @@ export function TicketListItem({
         </div>
       ) : null}
       <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-1.5 text-[13px] text-slate-700">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px] text-slate-700">
           <span className={cn("truncate", isUnread && "font-semibold text-slate-900")}>
               {thread.subject || "Untitled ticket"}
           </span>
@@ -90,7 +90,7 @@ export function TicketListItem({
         <Badge
           variant="secondary"
           className={cn(
-            "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[12px] font-bold",
+            "shrink-0 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[12px] font-bold",
             STATUS_STYLES[status]
           )}
         >

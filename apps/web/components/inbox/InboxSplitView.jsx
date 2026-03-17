@@ -2074,7 +2074,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   useEffect(() => {
     setTitleContent(
       <div className="flex min-w-0 flex-1 items-center">
-        <div className="hidden h-10 shrink-0 items-center justify-end gap-3 bg-white px-3 lg:flex lg:w-[20vw] lg:min-w-[20vw] lg:max-w-[20vw]">
+        <div className="hidden h-10 shrink-0 items-center justify-end gap-3 bg-white px-3 lg:flex lg:w-[clamp(18rem,20vw,24rem)] lg:min-w-[clamp(18rem,20vw,24rem)] lg:max-w-[clamp(18rem,20vw,24rem)]">
           <button
             type="button"
             onClick={handleViewAllTickets}

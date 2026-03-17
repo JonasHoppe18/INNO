@@ -128,6 +128,10 @@ export function Composer({
 }) {
   const isNote = mode === "note";
   const isForward = mode === "forward";
+  const showDraftLoadingState = !isNote && isDraftLoading;
+  const replyEditorMinHeightClassName = "min-h-[72px]";
+  const loadingStateMinHeightClassName = "min-h-[120px]";
+  const editorBodyMinHeightClassName = isNote ? "min-h-[96px]" : "min-h-[112px]";
   const initialTo = useMemo(() => {
     if (isForward) return [];
     if (!toLabel) return [];
@@ -218,6 +222,12 @@ export function Composer({
       resizeTextarea();
       return;
     }
+    if (isDraftLoading) {
+      if (replyEditorRef.current) {
+        replyEditorRef.current.innerHTML = "";
+      }
+      return;
+    }
     // While user is actively editing, avoid forcing innerHTML from external state.
     // Doing so resets caret/focus and makes typing/backspace feel broken.
     if (replyEditorFocusedRef.current) return;
@@ -226,7 +236,7 @@ export function Composer({
     if (replyEditorRef.current && replyEditorRef.current.innerHTML !== nextHtml) {
       replyEditorRef.current.innerHTML = nextHtml;
     }
-  }, [isNote, value]);
+  }, [isDraftLoading, isNote, value]);
 
   useEffect(() => {
     if (!isSending && !String(value || "").trim()) {
@@ -751,303 +761,315 @@ export function Composer({
             ))}
           </div>
         ) : null}
-        <div className="relative bg-white px-3 py-2">
-          {isNote ? (
-            <Textarea
-              ref={textareaRef}
-              value={value}
-              onChange={(event) => {
-                noteCaretIndexRef.current = event.target.selectionStart;
-                onChange(event.target.value);
-                updateMentionStateFromInput(
-                  event.target.value,
-                  event.target.selectionStart,
-                  event.currentTarget
-                );
-              }}
-              onClick={(event) =>
-                {
-                  noteCaretIndexRef.current = event.currentTarget.selectionStart;
+        <div className="relative">
+          <div className="bg-white px-3 py-2">
+            {isNote ? (
+              <Textarea
+                ref={textareaRef}
+                value={value}
+                onChange={(event) => {
+                  noteCaretIndexRef.current = event.target.selectionStart;
+                  onChange(event.target.value);
                   updateMentionStateFromInput(
-                    event.currentTarget.value,
-                    event.currentTarget.selectionStart,
+                    event.target.value,
+                    event.target.selectionStart,
                     event.currentTarget
                   );
+                }}
+                onClick={(event) =>
+                  {
+                    noteCaretIndexRef.current = event.currentTarget.selectionStart;
+                    updateMentionStateFromInput(
+                      event.currentTarget.value,
+                      event.currentTarget.selectionStart,
+                      event.currentTarget
+                    );
+                  }
                 }
-              }
-              onKeyUp={(event) =>
-                {
-                  noteCaretIndexRef.current = event.currentTarget.selectionStart;
-                  updateMentionStateFromInput(
-                    event.currentTarget.value,
-                    event.currentTarget.selectionStart,
-                    event.currentTarget
-                  );
+                onKeyUp={(event) =>
+                  {
+                    noteCaretIndexRef.current = event.currentTarget.selectionStart;
+                    updateMentionStateFromInput(
+                      event.currentTarget.value,
+                      event.currentTarget.selectionStart,
+                      event.currentTarget
+                    );
+                  }
                 }
-              }
-              onKeyDown={(event) => {
-                if (!mentionState.open || !mentionCandidates.length) return;
-                if (event.key === "ArrowDown") {
-                  event.preventDefault();
-                  setMentionState((prev) => ({
-                    ...prev,
-                    activeIndex: (prev.activeIndex + 1) % mentionCandidates.length,
-                  }));
-                } else if (event.key === "ArrowUp") {
-                  event.preventDefault();
-                  setMentionState((prev) => ({
-                    ...prev,
-                    activeIndex:
-                      (prev.activeIndex - 1 + mentionCandidates.length) % mentionCandidates.length,
-                  }));
-                } else if (event.key === "Enter" || event.key === "Tab") {
-                  event.preventDefault();
-                  insertMention(mentionCandidates[mentionState.activeIndex] || mentionCandidates[0]);
-                } else if (event.key === "Escape") {
-                  event.preventDefault();
-                  setMentionState((prev) => ({ ...prev, open: false }));
-                }
-              }}
-              onInput={resizeTextarea}
-              onBlur={onBlur}
-              placeholder={disabled ? disabledPlaceholder : "Leave an internal note..."}
-              rows={2}
-              disabled={disabled}
-              className="min-h-[52px] resize-y !border-0 !shadow-none !bg-transparent !p-0 text-[14px] leading-[1.55] focus-visible:!ring-0 bg-yellow-50/40"
-            />
-          ) : (
-            <>
-              {!String(value || "").trim() ? (
-                <div className="pointer-events-none absolute left-3 top-2 text-[14px] text-gray-400">
-                  {disabled ? disabledPlaceholder : "Write your reply..."}
-                </div>
-              ) : null}
-              <div
-                ref={replyEditorRef}
-                contentEditable={!disabled}
-                suppressContentEditableWarning
-                onFocus={() => {
-                  replyEditorFocusedRef.current = true;
-                  const selection = typeof window !== "undefined" ? window.getSelection() : null;
-                  if (selection && selection.rangeCount > 0) {
-                    const range = selection.getRangeAt(0);
-                    if (replyEditorRef.current?.contains(range.startContainer)) {
+                onKeyDown={(event) => {
+                  if (!mentionState.open || !mentionCandidates.length) return;
+                  if (event.key === "ArrowDown") {
+                    event.preventDefault();
+                    setMentionState((prev) => ({
+                      ...prev,
+                      activeIndex: (prev.activeIndex + 1) % mentionCandidates.length,
+                    }));
+                  } else if (event.key === "ArrowUp") {
+                    event.preventDefault();
+                    setMentionState((prev) => ({
+                      ...prev,
+                      activeIndex:
+                        (prev.activeIndex - 1 + mentionCandidates.length) % mentionCandidates.length,
+                    }));
+                  } else if (event.key === "Enter" || event.key === "Tab") {
+                    event.preventDefault();
+                    insertMention(mentionCandidates[mentionState.activeIndex] || mentionCandidates[0]);
+                  } else if (event.key === "Escape") {
+                    event.preventDefault();
+                    setMentionState((prev) => ({ ...prev, open: false }));
+                  }
+                }}
+                onInput={resizeTextarea}
+                onBlur={onBlur}
+                placeholder={disabled ? disabledPlaceholder : "Leave an internal note..."}
+                rows={2}
+                disabled={disabled}
+                className="min-h-[52px] resize-y !border-0 !shadow-none !bg-transparent !p-0 text-[14px] leading-[1.55] focus-visible:!ring-0 bg-yellow-50/40"
+              />
+            ) : (
+              <div className={`flex flex-col ${editorBodyMinHeightClassName}`}>
+                <div
+                  key="reply-editor-body"
+                  className={`relative flex flex-1 flex-col ${replyEditorMinHeightClassName}`}
+                >
+                  {!showDraftLoadingState && !String(value || "").trim() ? (
+                    <div className="pointer-events-none absolute left-0 top-0 text-[14px] text-gray-400">
+                      {disabled ? disabledPlaceholder : "Write your reply..."}
+                    </div>
+                  ) : null}
+                  <div
+                    ref={replyEditorRef}
+                    contentEditable={!disabled && !showDraftLoadingState}
+                    suppressContentEditableWarning
+                    onFocus={() => {
+                      replyEditorFocusedRef.current = true;
+                      const selection = typeof window !== "undefined" ? window.getSelection() : null;
+                      if (selection && selection.rangeCount > 0) {
+                        const range = selection.getRangeAt(0);
+                        if (replyEditorRef.current?.contains(range.startContainer)) {
+                          const beforeRange = range.cloneRange();
+                          beforeRange.selectNodeContents(replyEditorRef.current);
+                          beforeRange.setEnd(range.startContainer, range.startOffset);
+                          replyCaretIndexRef.current = String(beforeRange.toString() || "")
+                            .replace(/\r\n/g, "\n").length;
+                        }
+                      }
+                    }}
+                    onInput={handleReplyEditorInput}
+                    onBlur={handleReplyEditorBlur}
+                    onKeyUp={() => {
+                      const selection = typeof window !== "undefined" ? window.getSelection() : null;
+                      if (!selection || selection.rangeCount === 0) return;
+                      const range = selection.getRangeAt(0);
+                      if (!replyEditorRef.current?.contains(range.startContainer)) return;
                       const beforeRange = range.cloneRange();
                       beforeRange.selectNodeContents(replyEditorRef.current);
                       beforeRange.setEnd(range.startContainer, range.startOffset);
                       replyCaretIndexRef.current = String(beforeRange.toString() || "")
                         .replace(/\r\n/g, "\n").length;
-                    }
-                  }
-                }}
-                onInput={handleReplyEditorInput}
-                onBlur={handleReplyEditorBlur}
-                onKeyUp={() => {
-                  const selection = typeof window !== "undefined" ? window.getSelection() : null;
-                  if (!selection || selection.rangeCount === 0) return;
-                  const range = selection.getRangeAt(0);
-                  if (!replyEditorRef.current?.contains(range.startContainer)) return;
-                  const beforeRange = range.cloneRange();
-                  beforeRange.selectNodeContents(replyEditorRef.current);
-                  beforeRange.setEnd(range.startContainer, range.startOffset);
-                  replyCaretIndexRef.current = String(beforeRange.toString() || "")
-                    .replace(/\r\n/g, "\n").length;
-                }}
-                onMouseUp={() => {
-                  const selection = typeof window !== "undefined" ? window.getSelection() : null;
-                  if (!selection || selection.rangeCount === 0) return;
-                  const range = selection.getRangeAt(0);
-                  if (!replyEditorRef.current?.contains(range.startContainer)) return;
-                  const beforeRange = range.cloneRange();
-                  beforeRange.selectNodeContents(replyEditorRef.current);
-                  beforeRange.setEnd(range.startContainer, range.startOffset);
-                  replyCaretIndexRef.current = String(beforeRange.toString() || "")
-                    .replace(/\r\n/g, "\n").length;
-                }}
-                onPaste={(event) => {
-                  event.preventDefault();
-                  const pasted = event.clipboardData?.getData("text/plain") || "";
-                  document.execCommand("insertText", false, pasted);
-                }}
-                onClick={(event) => {
-                  const target = event.target;
-                  if (!(target instanceof HTMLAnchorElement)) return;
-                  event.preventDefault();
-                  const href = String(target.getAttribute("href") || "").trim();
-                  if (!href) return;
-                  window.open(href, "_blank", "noopener,noreferrer");
-                }}
-                className="min-h-[64px] whitespace-pre-wrap break-words p-0 text-[14px] leading-[1.55] text-gray-900 outline-none [&_a]:cursor-pointer [&_a]:text-blue-600 [&_a]:underline [&_a:hover]:text-blue-700"
-              />
-            </>
-          )}
-          {isNote && mentionState.open && mentionCandidates.length ? (
-            <div
-              className="absolute z-20 w-[320px] rounded-xl border border-gray-200 bg-white/95 p-1.5 shadow-xl backdrop-blur-[2px]"
-              style={{
-                left: `${mentionPopupPosition.left}px`,
-                top: `${mentionPopupPosition.top}px`,
-                transform:
-                  mentionPopupPosition.placement === "up"
-                    ? "translateY(calc(-100% - 10px))"
-                    : "translateY(10px)",
-              }}
-            >
-              {mentionCandidates.map((candidate, index) => {
-                const isActive = index === mentionState.activeIndex;
-                return (
-                  <button
-                    key={candidate.id || candidate.email || candidate.label}
-                    type="button"
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => insertMention(candidate)}
-                    className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[12px] ${
-                      isActive ? "bg-gray-100 text-gray-900" : "text-gray-700 hover:bg-gray-50"
-                    }`}
-                  >
-                    <span className="truncate text-[13px] font-medium">{candidate.label}</span>
-                    <span className="ml-2 truncate text-[12px] text-gray-400">{candidate.email}</span>
-                  </button>
-                );
-              })}
-            </div>
-          ) : null}
-          {!isNote ? (
-            <>
-              {showSignatureEditor ? (
-                <>
-                  <div className="mt-2 border-t border-gray-200 pt-2" />
-                  <div className="mb-1.5 text-[12px] font-medium text-gray-500">Signature</div>
-                  <textarea
-                    value={signatureValue}
-                    onChange={(event) => onSignatureChange?.(event.target.value)}
-                    onBlur={onSignatureBlur}
-                    placeholder="Your signature..."
-                    rows={3}
-                    disabled={disabled}
-                    className="w-full resize-none border-0 bg-transparent p-0 text-[14px] leading-[1.55] text-gray-700 outline-none"
+                    }}
+                    onMouseUp={() => {
+                      const selection = typeof window !== "undefined" ? window.getSelection() : null;
+                      if (!selection || selection.rangeCount === 0) return;
+                      const range = selection.getRangeAt(0);
+                      if (!replyEditorRef.current?.contains(range.startContainer)) return;
+                      const beforeRange = range.cloneRange();
+                      beforeRange.selectNodeContents(replyEditorRef.current);
+                      beforeRange.setEnd(range.startContainer, range.startOffset);
+                      replyCaretIndexRef.current = String(beforeRange.toString() || "")
+                        .replace(/\r\n/g, "\n").length;
+                    }}
+                    onPaste={(event) => {
+                      event.preventDefault();
+                      const pasted = event.clipboardData?.getData("text/plain") || "";
+                      document.execCommand("insertText", false, pasted);
+                    }}
+                    onClick={(event) => {
+                      const target = event.target;
+                      if (!(target instanceof HTMLAnchorElement)) return;
+                      event.preventDefault();
+                      const href = String(target.getAttribute("href") || "").trim();
+                      if (!href) return;
+                      window.open(href, "_blank", "noopener,noreferrer");
+                    }}
+                    className={`flex-1 whitespace-pre-wrap break-words p-0 text-[14px] leading-[1.55] text-gray-900 outline-none [&_a]:cursor-pointer [&_a]:text-blue-600 [&_a]:underline [&_a:hover]:text-blue-700 ${replyEditorMinHeightClassName}`}
                   />
+                </div>
+              </div>
+            )}
+            {isNote && mentionState.open && mentionCandidates.length ? (
+              <div
+                className="absolute z-20 w-[320px] rounded-xl border border-gray-200 bg-white/95 p-1.5 shadow-xl backdrop-blur-[2px]"
+                style={{
+                  left: `${mentionPopupPosition.left}px`,
+                  top: `${mentionPopupPosition.top}px`,
+                  transform:
+                    mentionPopupPosition.placement === "up"
+                      ? "translateY(calc(-100% - 10px))"
+                      : "translateY(10px)",
+                }}
+              >
+                {mentionCandidates.map((candidate, index) => {
+                  const isActive = index === mentionState.activeIndex;
+                  return (
+                    <button
+                      key={candidate.id || candidate.email || candidate.label}
+                      type="button"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => insertMention(candidate)}
+                      className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[12px] ${
+                        isActive ? "bg-gray-100 text-gray-900" : "text-gray-700 hover:bg-gray-50"
+                      }`}
+                    >
+                      <span className="truncate text-[13px] font-medium">{candidate.label}</span>
+                      <span className="ml-2 truncate text-[12px] text-gray-400">{candidate.email}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+            {!isNote ? (
+              <>
+                {showSignatureEditor ? (
+                  <>
+                    <div className="mt-2 border-t border-gray-200 pt-2" />
+                    <div className="mb-1.5 text-[12px] font-medium text-gray-500">Signature</div>
+                    <textarea
+                      value={signatureValue}
+                      onChange={(event) => onSignatureChange?.(event.target.value)}
+                      onBlur={onSignatureBlur}
+                      placeholder="Your signature..."
+                      rows={3}
+                      disabled={disabled}
+                      className="w-full resize-none border-0 bg-transparent p-0 text-[14px] leading-[1.55] text-gray-700 outline-none"
+                    />
+                  </>
+                ) : null}
+              </>
+            ) : null}
+          </div>
+          <div className="flex items-center justify-between border-t border-gray-200/80 px-3 py-1.5 text-[12px] text-gray-500">
+            <div className="flex items-center gap-2">
+              {!isNote ? (
+                <>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    className="hidden"
+                    onChange={handleAddAttachments}
+                    disabled={disabled || showDraftLoadingState}
+                  />
+                  <button
+                    type="button"
+                    disabled={disabled || showDraftLoadingState}
+                    onClick={() => fileInputRef.current?.click()}
+                    aria-label="Attach file"
+                    title="Attach file"
+                    className="rounded-md p-1.5 text-gray-500 hover:bg-white hover:text-gray-700"
+                  >
+                    <Paperclip className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={disabled || showDraftLoadingState}
+                    onClick={() => {
+                      setSavedRepliesQuery("");
+                      setSavedRepliesOpen(true);
+                    }}
+                    aria-label="Open saved replies"
+                    title="Saved Replies"
+                    className="rounded-md p-1.5 text-gray-500 hover:bg-white hover:text-gray-700"
+                  >
+                    <Zap className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={disabled || showDraftLoadingState}
+                    onClick={() => setShowSignatureEditor((prev) => !prev)}
+                    aria-label={showSignatureEditor ? "Hide signature" : "Show signature"}
+                    title={showSignatureEditor ? "Hide signature" : "Show signature"}
+                    className={showSignatureEditor
+                      ? "rounded-md bg-indigo-50 p-1.5 text-indigo-600 hover:bg-indigo-100"
+                      : "rounded-md p-1.5 text-gray-500 hover:bg-white hover:text-gray-700"}
+                  >
+                    <PenLine className="h-4 w-4" />
+                  </button>
                 </>
               ) : null}
-            </>
-          ) : null}
-          {isDraftLoading ? (
-            <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-white/72 backdrop-blur-[2px]">
-              <div className="flex max-w-md flex-col items-center px-8 text-center">
-                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-indigo-50">
+            </div>
+            <div className="flex items-center gap-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    disabled={disabled || showDraftLoadingState}
+                    className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[12px] font-medium ${
+                      isNote
+                        ? "bg-yellow-50 text-yellow-700"
+                        : "bg-white text-gray-600"
+                    }`}
+                  >
+                    {isNote ? "Internal note" : isForward ? "Forward email" : "Reply to customer"}
+                    <ChevronDown className="h-3 w-3" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => onModeChange("reply")}>Reply to customer</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onModeChange("forward")}>Forward email</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onModeChange("note")}>Internal note</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Button
+                type="button"
+                disabled={disabled || showDraftLoadingState || !canSend || !value.trim() || isSending}
+                onClick={() => {
+                  const parsedMentionIds = isNote ? resolveMentionIdsFromText(value) : [];
+                  const mentionUserIds = Array.from(
+                    new Set([...(selectedMentionIds || []), ...parsedMentionIds])
+                  );
+                  onSend?.({
+                    mode: isNote ? "note" : isForward ? "forward" : "reply",
+                    bodyText: value,
+                    signature: signatureValue,
+                    toRecipients: buildRecipients(toRecipients, toInput),
+                    ccRecipients: buildRecipients(ccRecipients, ccInput),
+                    bccRecipients: buildRecipients(bccRecipients, bccInput),
+                    attachments,
+                    mentionUserIds,
+                  });
+                }}
+                className="h-8 w-8 rounded-full bg-violet-600 p-0 text-white shadow-sm hover:bg-violet-700"
+              >
+                {isSending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Send className="h-3.5 w-3.5" />
+                )}
+              </Button>
+            </div>
+          </div>
+          {showDraftLoadingState ? (
+            <div className="absolute inset-0 z-20 flex items-center justify-center rounded-b-[28px] bg-white/86 backdrop-blur-[3px]">
+              <div
+                key="draft-loading-state"
+                className={`flex h-full w-full flex-col items-center justify-center rounded-b-[28px] bg-gradient-to-b from-slate-50 to-white px-6 py-7 ${loadingStateMinHeightClassName}`}
+              >
+                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-indigo-50 ring-1 ring-indigo-100">
                   <SonaLogo size={24} speed="working" />
                 </div>
-                <div className="mt-4 text-sm font-semibold text-slate-900">Sona is drafting your reply</div>
-                <div className="mt-1 max-w-[30rem] text-xs leading-relaxed text-slate-600">
-                  Analyzing policy context and building a precise response.
+                <div className="mt-3 text-center">
+                  <div className="text-sm font-semibold text-slate-900">Sona is drafting your reply</div>
+                  <div className="mt-1 text-xs leading-relaxed text-slate-600">
+                    Analyzing policy context and building a precise response.
+                  </div>
                 </div>
-                <div className="mt-4 h-1.5 w-44 overflow-hidden rounded-full bg-indigo-100">
+                <div className="mt-4 h-1.5 w-32 overflow-hidden rounded-full bg-indigo-100">
                   <div className="h-full w-1/2 animate-pulse rounded-full bg-indigo-500" />
                 </div>
               </div>
             </div>
           ) : null}
-        </div>
-        <div className="flex items-center justify-between border-t border-gray-200/80 px-3 py-1.5 text-[12px] text-gray-500">
-          <div className="flex items-center gap-2">
-            {!isNote ? (
-              <>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  className="hidden"
-                  onChange={handleAddAttachments}
-                  disabled={disabled}
-                />
-                <button
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => fileInputRef.current?.click()}
-                  aria-label="Attach file"
-                  title="Attach file"
-                  className="rounded-md p-1.5 text-gray-500 hover:bg-white hover:text-gray-700"
-                >
-                  <Paperclip className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => {
-                    setSavedRepliesQuery("");
-                    setSavedRepliesOpen(true);
-                  }}
-                  aria-label="Open saved replies"
-                  title="Saved Replies"
-                  className="rounded-md p-1.5 text-gray-500 hover:bg-white hover:text-gray-700"
-                >
-                  <Zap className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => setShowSignatureEditor((prev) => !prev)}
-                  aria-label={showSignatureEditor ? "Hide signature" : "Show signature"}
-                  title={showSignatureEditor ? "Hide signature" : "Show signature"}
-                  className={showSignatureEditor
-                    ? "rounded-md bg-indigo-50 p-1.5 text-indigo-600 hover:bg-indigo-100"
-                    : "rounded-md p-1.5 text-gray-500 hover:bg-white hover:text-gray-700"}
-                >
-                  <PenLine className="h-4 w-4" />
-                </button>
-              </>
-            ) : null}
-          </div>
-          <div className="flex items-center gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  disabled={disabled}
-                  className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[12px] font-medium ${
-                    isNote
-                      ? "bg-yellow-50 text-yellow-700"
-                      : "bg-white text-gray-600"
-                  }`}
-                >
-                  {isNote ? "Internal note" : isForward ? "Forward email" : "Reply to customer"}
-                  <ChevronDown className="h-3 w-3" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => onModeChange("reply")}>Reply to customer</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => onModeChange("forward")}>Forward email</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => onModeChange("note")}>Internal note</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <Button
-              type="button"
-              disabled={disabled || !canSend || !value.trim() || isSending}
-              onClick={() => {
-                const parsedMentionIds = isNote ? resolveMentionIdsFromText(value) : [];
-                const mentionUserIds = Array.from(
-                  new Set([...(selectedMentionIds || []), ...parsedMentionIds])
-                );
-                onSend?.({
-                  mode: isNote ? "note" : isForward ? "forward" : "reply",
-                  bodyText: value,
-                  signature: signatureValue,
-                  toRecipients: buildRecipients(toRecipients, toInput),
-                  ccRecipients: buildRecipients(ccRecipients, ccInput),
-                  bccRecipients: buildRecipients(bccRecipients, bccInput),
-                  attachments,
-                  mentionUserIds,
-                });
-              }}
-              className="h-8 w-8 rounded-full bg-violet-600 p-0 text-white shadow-sm hover:bg-violet-700"
-            >
-              {isSending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Send className="h-3.5 w-3.5" />
-              )}
-            </Button>
-          </div>
         </div>
       </div>
       <p className="mx-auto mt-2 w-full max-w-[900px] text-center text-[12px] text-gray-500">
