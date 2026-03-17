@@ -1,4 +1,3 @@
-import { useState } from "react";
 import Image from "next/image";
 import shopifyLogo from "../../../../assets/Shopify-Logo.png";
 import { ExternalLink } from "lucide-react";
@@ -46,124 +45,12 @@ const getInitials = (name, email) => {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 };
 
-const formatDebugValue = (value) => {
-  if (value === null || value === undefined || value === "") return "—";
-  if (typeof value === "string") return value;
-  return JSON.stringify(value);
-};
-
-function CustomerLookupDebug({ debug }) {
-  if (!debug) return null;
-  const attempts = Array.isArray(debug?.lookup_attempts) ? debug.lookup_attempts : [];
-  const summary = debug?.filter_summary || null;
-
-  return (
-    <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-3 text-xs text-slate-700">
-      <div className="font-semibold text-slate-900">Lookup debug</div>
-      {summary ? (
-        <div className="mt-2 space-y-1">
-          <div>{`Raw orders: ${summary.raw_orders_count ?? 0}`}</div>
-          <div>{`Email filtered: ${summary.email_filtered_count ?? 0}`}</div>
-          <div>{`Order filtered: ${summary.order_filtered_count ?? 0}`}</div>
-          <div>{`Order+email filtered: ${summary.order_email_filtered_count ?? 0}`}</div>
-          <div>{`Final orders: ${summary.final_orders_count ?? 0}`}</div>
-        </div>
-      ) : null}
-      {attempts.length ? (
-        <div className="mt-3 space-y-2">
-          {attempts.map((attempt, index) => (
-            <div key={`${attempt?.label || "attempt"}-${index}`} className="rounded-lg border border-amber-100 bg-white/70 p-2">
-              <div className="font-medium text-slate-900">{attempt?.label || `Attempt ${index + 1}`}</div>
-              <div>{`Status: ${formatDebugValue(attempt?.status_code)}${attempt?.ok === false ? " (failed)" : ""}`}</div>
-              <div>{`Params: ${formatDebugValue(attempt?.request_params)}`}</div>
-              <div>{`Orders: ${formatDebugValue(attempt?.orders_count)}`}</div>
-              {attempt?.error ? <div>{`Error: ${formatDebugValue(attempt.error)}`}</div> : null}
-            </div>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function ShopifyRawDebug({ result, loading, error }) {
-  if (loading) {
-    return (
-      <div className="rounded-2xl border border-sky-200 bg-sky-50/60 p-3 text-xs text-slate-700">
-        Running direct Shopify lookup…
-      </div>
-    );
-  }
-  if (error) {
-    return (
-      <div className="rounded-2xl border border-rose-200 bg-rose-50/60 p-3 text-xs text-rose-700">
-        {error}
-      </div>
-    );
-  }
-  if (!result) return null;
-  return (
-    <div className="rounded-2xl border border-sky-200 bg-sky-50/60 p-3 text-xs text-slate-700">
-      <div className="font-semibold text-slate-900">Direct Shopify debug</div>
-      <div className="mt-1">{`Shop: ${formatDebugValue(result?.shopDomain)}`}</div>
-      <div>{`API: ${formatDebugValue(result?.apiVersion)}`}</div>
-      <div>{`Query: ${formatDebugValue(result?.query)}`}</div>
-      <div>{`Scope status: ${formatDebugValue(result?.accessScopes?.status)}`}</div>
-      <div>{`Scopes: ${formatDebugValue(result?.accessScopes?.scopes)}`}</div>
-      {result?.accessScopes?.errors ? (
-        <div>{`Scope errors: ${formatDebugValue(result.accessScopes.errors)}`}</div>
-      ) : null}
-      <div className="mt-3 space-y-2">
-        {(Array.isArray(result?.results) ? result.results : []).map((entry, index) => (
-          <div key={`${entry?.label || "result"}-${index}`} className="rounded-lg border border-sky-100 bg-white/70 p-2">
-            <div className="font-medium text-slate-900">{entry?.label || `Call ${index + 1}`}</div>
-            <div>{`Status: ${formatDebugValue(entry?.status)}`}</div>
-            <div>{`Params: ${formatDebugValue(entry?.params)}`}</div>
-            <div>{`Orders: ${formatDebugValue(entry?.orders_count)}`}</div>
-            <div>{`Sample: ${formatDebugValue(entry?.sample_orders)}`}</div>
-            {entry?.next_page_info ? <div>{`Next page: ${formatDebugValue(entry.next_page_info)}`}</div> : null}
-            {entry?.errors ? <div>{`Errors: ${formatDebugValue(entry.errors)}`}</div> : null}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 export function CustomerTab({ data, loading, error, onRefresh, lookupParams }) {
-  const [shopifyDebug, setShopifyDebug] = useState(null);
-  const [shopifyDebugLoading, setShopifyDebugLoading] = useState(false);
-  const [shopifyDebugError, setShopifyDebugError] = useState("");
-
-  const runShopifyDebug = async () => {
-    setShopifyDebugLoading(true);
-    setShopifyDebugError("");
-    try {
-      const response = await fetch("/api/debug/shopify-order-lookup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: lookupParams?.email || "",
-          orderNumber: lookupParams?.orderNumber || "",
-        }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload?.error || "Direct Shopify debug failed.");
-      }
-      setShopifyDebug(payload);
-    } catch (nextError) {
-      setShopifyDebugError(nextError instanceof Error ? nextError.message : "Direct Shopify debug failed.");
-    } finally {
-      setShopifyDebugLoading(false);
-    }
-  };
-
   if (loading) {
     return (
       <div className="space-y-4 text-sm text-slate-500">
         <div className="flex items-center justify-between">
-          <span>Henter kundeoplysninger…</span>
+          <span>Loading customer details...</span>
           <Button variant="outline" size="sm" disabled>
             Refresh
           </Button>
@@ -195,15 +82,6 @@ export function CustomerTab({ data, loading, error, onRefresh, lookupParams }) {
             Refresh
           </Button>
         </div>
-        <Button variant="outline" size="sm" onClick={runShopifyDebug} disabled={shopifyDebugLoading}>
-          Direct Shopify debug
-        </Button>
-        <CustomerLookupDebug debug={data?.debug} />
-        <ShopifyRawDebug
-          result={shopifyDebug}
-          loading={shopifyDebugLoading}
-          error={shopifyDebugError}
-        />
       </div>
     );
   }
@@ -232,9 +110,6 @@ export function CustomerTab({ data, loading, error, onRefresh, lookupParams }) {
           Customer
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={runShopifyDebug} disabled={shopifyDebugLoading}>
-            Direct Shopify debug
-          </Button>
           <Button variant="outline" size="sm" onClick={onRefresh}>
             Refresh
           </Button>
@@ -363,12 +238,6 @@ export function CustomerTab({ data, loading, error, onRefresh, lookupParams }) {
           </div>
         )}
       </div>
-      <CustomerLookupDebug debug={data?.debug} />
-      <ShopifyRawDebug
-        result={shopifyDebug}
-        loading={shopifyDebugLoading}
-        error={shopifyDebugError}
-      />
     </div>
   );
 }

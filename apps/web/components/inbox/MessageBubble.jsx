@@ -133,7 +133,7 @@ const sanitizeEmailHtml = (value, attachments = []) => {
 };
 
 const EMAIL_BODY_CLASS =
-  "max-w-none w-full text-[14px] leading-[1.55] text-gray-800 font-[inherit] [&_*]:font-[inherit] [&_*]:text-[14px] [&_*]:leading-[1.55]";
+  "max-w-none w-full min-w-0 break-words [overflow-wrap:anywhere] text-[14px] leading-[1.55] text-gray-800 font-[inherit] [&_*]:max-w-full [&_*]:min-w-0 [&_*]:break-words [&_*]:[overflow-wrap:anywhere] [&_*]:font-[inherit] [&_*]:text-[14px] [&_*]:leading-[1.55]";
 
 const isImageAttachment = (mimeType = "") => String(mimeType || "").toLowerCase().startsWith("image/");
 const isPdfAttachment = (mimeType = "") => String(mimeType || "").toLowerCase() === "application/pdf";

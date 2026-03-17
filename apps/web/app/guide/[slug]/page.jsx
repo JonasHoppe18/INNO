@@ -93,7 +93,11 @@ const GUIDE_CONTENT = {
       },
       {
         title: "Step 7: Create a new app version",
-        items: ["Create a new version and Release it again (e.g., “2”)."],
+        items: [
+          "Create a new app version in Shopify.",
+          "Make sure the `read_all_orders` scope is selected for the new version.",
+          "Release the new version again (e.g., “2”).",
+        ],
       },
       {
         title: "Step 8: Connect in Sona",
