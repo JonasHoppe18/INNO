@@ -18,7 +18,6 @@ function sanitizeShopRow(row) {
     workspace_id: row.workspace_id ?? null,
     shopify_client_id: row.shopify_client_id ?? null,
     installed_at: row.installed_at ?? null,
-    updated_at: row.updated_at ?? null,
     created_at: row.created_at ?? null,
     uninstalled_at: row.uninstalled_at ?? null,
     has_access_token: Boolean(row.access_token_encrypted),
@@ -37,10 +36,9 @@ export async function resolveShopifyCredentialsWithDiagnostics(serviceClient, sc
   let candidateQuery = serviceClient
     .from("shops")
     .select(
-      "id, shop_domain, workspace_id, shopify_client_id, access_token_encrypted, installed_at, updated_at, created_at, uninstalled_at, platform",
+      "id, shop_domain, workspace_id, shopify_client_id, access_token_encrypted, installed_at, created_at, uninstalled_at, platform",
     )
     .eq("platform", "shopify")
-    .order("updated_at", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(10);
   candidateQuery = applyScope(candidateQuery, scope, {

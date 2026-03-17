@@ -48,7 +48,7 @@ export async function GET(request) {
     const { data: candidateRows, error: lookupError } = await supabase
       .from("shops")
       .select(
-        "id, workspace_id, shop_domain, shopify_client_id, shopify_client_secret_encrypted, oauth_state_expires_at, installed_at, updated_at, created_at, uninstalled_at"
+        "id, workspace_id, shop_domain, shopify_client_id, shopify_client_secret_encrypted, oauth_state_expires_at, installed_at, created_at, uninstalled_at"
       )
       .eq("platform", "shopify")
       .eq("shop_domain", shop)
@@ -71,7 +71,6 @@ export async function GET(request) {
         shop_domain: row.shop_domain ?? null,
         shopify_client_id: row.shopify_client_id ?? null,
         installed_at: row.installed_at ?? null,
-        updated_at: row.updated_at ?? null,
         created_at: row.created_at ?? null,
         uninstalled_at: row.uninstalled_at ?? null,
       })),
@@ -145,7 +144,6 @@ export async function GET(request) {
       selected_workspace_id: integration.workspace_id ?? null,
       selected_shopify_client_id: integration.shopify_client_id ?? null,
       installed_at_before: integration.installed_at ?? null,
-      updated_at_before: integration.updated_at ?? null,
       created_at_before: integration.created_at ?? null,
     }));
 
