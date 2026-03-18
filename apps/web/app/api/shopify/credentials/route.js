@@ -42,21 +42,28 @@ export async function POST(request) {
     const encryptedSecret = encryptString(clientSecret);
 
     if (workspaceId) {
-      const { data: existing, error: existingError } = await supabase
+      const { data: existingRows, error: existingError } = await supabase
         .from("shops")
-        .select("id")
+        .select("id, shop_domain, uninstalled_at, created_at")
         .eq("workspace_id", workspaceId)
         .eq("platform", "shopify")
-        .is("uninstalled_at", null)
         .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .limit(20);
 
       if (existingError) {
         return NextResponse.json({ error: existingError.message }, { status: 500 });
       }
 
-      if (existing?.id) {
+      const existingList = Array.isArray(existingRows) ? existingRows : [];
+      const exactDomainMatch =
+        existingList.find(
+          (row) => String(row?.shop_domain || "").trim().toLowerCase() === shopDomain.toLowerCase()
+        ) || null;
+      const activeWorkspaceShop =
+        existingList.find((row) => row?.uninstalled_at === null) || null;
+      const reusableRow = exactDomainMatch || activeWorkspaceShop || null;
+
+      if (reusableRow?.id) {
         const { error } = await supabase
           .from("shops")
           .update({
@@ -66,8 +73,9 @@ export async function POST(request) {
             oauth_state: null,
             oauth_state_expires_at: null,
             workspace_id: workspaceId,
+            uninstalled_at: null,
           })
-          .eq("id", existing.id);
+          .eq("id", reusableRow.id);
         if (error) {
           return NextResponse.json({ error: error.message }, { status: 500 });
         }
