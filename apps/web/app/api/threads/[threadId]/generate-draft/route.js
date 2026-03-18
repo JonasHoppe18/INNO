@@ -52,6 +52,50 @@ async function loadUserSignature(serviceClient, supabaseUserId) {
   return normalizeSignature(profile?.signature);
 }
 
+async function ensureMailboxShopBinding(serviceClient, mailbox) {
+  if (!mailbox?.id) return mailbox;
+  if (mailbox?.shop_id) return mailbox;
+
+  let shopsQuery = serviceClient
+    .from("shops")
+    .select("id")
+    .is("uninstalled_at", null)
+    .eq("platform", "shopify")
+    .order("created_at", { ascending: false })
+    .limit(2);
+  shopsQuery = mailbox.workspace_id
+    ? shopsQuery.eq("workspace_id", mailbox.workspace_id)
+    : shopsQuery.eq("owner_user_id", mailbox.user_id);
+
+  const { data: shopRows, error: shopsError } = await shopsQuery;
+  if (shopsError) {
+    throw new Error(shopsError.message);
+  }
+  const activeShops = Array.isArray(shopRows) ? shopRows : [];
+  if (activeShops.length !== 1 || !activeShops[0]?.id) {
+    return mailbox;
+  }
+
+  const reboundShopId = activeShops[0].id;
+  const { error: repairError } = await serviceClient
+    .from("mail_accounts")
+    .update({
+      shop_id: reboundShopId,
+      status: mailbox.status === "disconnected" ? mailbox.status : "active",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", mailbox.id);
+  if (repairError) {
+    throw new Error(repairError.message);
+  }
+
+  return {
+    ...mailbox,
+    shop_id: reboundShopId,
+    status: mailbox.status === "disconnected" ? mailbox.status : "active",
+  };
+}
+
 export async function POST(_request, { params }) {
   const { userId: clerkUserId, orgId } = await auth();
   if (!clerkUserId) {
@@ -100,7 +144,7 @@ export async function POST(_request, { params }) {
   const { data: mailbox, error: mailboxError } = await applyScope(
     serviceClient
       .from("mail_accounts")
-      .select("id, user_id, workspace_id, shop_id")
+      .select("id, user_id, workspace_id, shop_id, status")
       .eq("id", thread.mailbox_id)
       .maybeSingle(),
     scope
@@ -108,7 +152,8 @@ export async function POST(_request, { params }) {
   if (mailboxError || !mailbox) {
     return NextResponse.json({ error: "Mailbox not found." }, { status: 404 });
   }
-  if (!mailbox.shop_id) {
+  const effectiveMailbox = await ensureMailboxShopBinding(serviceClient, mailbox);
+  if (!effectiveMailbox.shop_id) {
     return NextResponse.json({ error: "This mailbox is not connected to a Shopify shop." }, { status: 400 });
   }
 
@@ -150,7 +195,7 @@ export async function POST(_request, { params }) {
       Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
     },
     body: JSON.stringify({
-      shop_id: mailbox.shop_id,
+      shop_id: effectiveMailbox.shop_id,
       provider,
       force_process: true,
       email_data: {

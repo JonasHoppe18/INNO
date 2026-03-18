@@ -243,14 +243,44 @@ async function lookupMailbox(slug: string): Promise<MailboxLookup | null> {
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!data?.id || !data?.user_id) return null;
+  let shopId = data.shop_id ?? null;
+  if (!shopId) {
+    let shopsQuery = supabase
+      .from("shops")
+      .select("id")
+      .is("uninstalled_at", null)
+      .eq("platform", "shopify")
+      .order("created_at", { ascending: false })
+      .limit(2);
+    shopsQuery = data.workspace_id
+      ? shopsQuery.eq("workspace_id", data.workspace_id)
+      : shopsQuery.eq("owner_user_id", data.user_id);
+    const { data: shopRows, error: shopsError } = await shopsQuery;
+    if (shopsError) throw new Error(shopsError.message);
+    const activeShops = Array.isArray(shopRows) ? shopRows : [];
+    if (activeShops.length === 1 && activeShops[0]?.id) {
+      shopId = activeShops[0].id as string;
+      const { error: repairError } = await supabase
+        .from("mail_accounts")
+        .update({
+          shop_id: shopId,
+          status: data.status === "disconnected" ? data.status : "active",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", data.id);
+      if (repairError) {
+        console.warn("postmark-inbound: failed to auto-rebind mailbox shop", repairError.message);
+      }
+    }
+  }
   return {
     mailbox_id: data.id,
     user_id: data.user_id,
     workspace_id: data.workspace_id ?? null,
-    shop_id: data.shop_id ?? null,
+    shop_id: shopId,
     provider_email: data.provider_email ?? null,
     from_name: data.from_name ?? null,
-    status: data.status,
+    status: shopId && data.status !== "disconnected" ? "active" : data.status,
   };
 }
 
