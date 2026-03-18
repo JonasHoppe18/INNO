@@ -267,12 +267,14 @@ export function SonaInsightsModal({
 
   return (
     <aside
-      className={`flex h-full min-w-0 flex-none flex-col border-l border-gray-200 bg-background transition-[width] duration-200 ease-linear ${
-        open ? "w-[clamp(24rem,26vw,30rem)]" : "w-0"
+      className={`flex h-full min-w-0 flex-none flex-col overflow-hidden border-l border-gray-200 bg-background transition-[width] duration-200 ease-linear ${
+        open ? "w-[clamp(20rem,24vw,28rem)]" : "w-0"
       }`}
       aria-hidden={!open}
     >
-      <div className={`flex h-full min-w-0 flex-col gap-4 overflow-hidden ${open ? "p-4" : "p-0"}`}>
+      <div
+        className={`flex h-full min-w-0 flex-col gap-4 overflow-hidden ${open ? "p-3 lg:p-4" : "p-0"}`}
+      >
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Sona Insights</h2>
           <Button

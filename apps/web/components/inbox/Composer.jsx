@@ -125,6 +125,8 @@ export function Composer({
   disabled = false,
   disabledPlaceholder = "Waiting for action approval...",
   isDraftLoading = false,
+  onGenerateDraft = null,
+  isGeneratingDraft = false,
 }) {
   const isNote = mode === "note";
   const isForward = mode === "forward";
@@ -995,6 +997,16 @@ export function Composer({
                   >
                     <PenLine className="h-4 w-4" />
                   </button>
+                  {typeof onGenerateDraft === "function" ? (
+                    <button
+                      type="button"
+                      disabled={disabled || showDraftLoadingState || isGeneratingDraft}
+                      onClick={onGenerateDraft}
+                      className="rounded-md border border-gray-200 bg-white px-2.5 py-1 text-[12px] font-medium text-gray-600 hover:border-gray-300 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isGeneratingDraft ? "Generating..." : "Generate draft"}
+                    </button>
+                  ) : null}
                 </>
               ) : null}
             </div>

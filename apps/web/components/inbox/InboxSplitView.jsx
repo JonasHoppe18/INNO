@@ -747,6 +747,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const [draftReady, setDraftReady] = useState(false);
   const [draftWaitTimedOutByThread, setDraftWaitTimedOutByThread] = useState({});
   const [systemDraftUneditedByThread, setSystemDraftUneditedByThread] = useState({});
+  const [manualDraftGeneratingByThread, setManualDraftGeneratingByThread] = useState({});
   const [insightsOpen, setInsightsOpen] = useState(false);
   const [translationModalOpen, setTranslationModalOpen] = useState(false);
   const [draftLogId, setDraftLogId] = useState(null);
@@ -1945,6 +1946,78 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     }));
   }, [draftMessage, draftReady, selectedThreadId, suppressAutoDraftByThread]);
 
+  const handleGenerateDraft = useCallback(async () => {
+    if (!selectedThreadId || isLocalThreadId(selectedThreadId)) return;
+    if (manualDraftGeneratingByThread[selectedThreadId]) return;
+    const threadId = selectedThreadId;
+
+    setManualDraftGeneratingByThread((prev) => ({
+      ...prev,
+      [threadId]: true,
+    }));
+    setDraftWaitTimedOutByThread((prev) => ({
+      ...prev,
+      [threadId]: false,
+    }));
+    setSuppressAutoDraftByThread((prev) => {
+      if (!prev[threadId]) return prev;
+      const next = { ...prev };
+      delete next[threadId];
+      return next;
+    });
+
+    try {
+      const res = await fetch(`/api/threads/${threadId}/generate-draft`, {
+        method: "POST",
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload?.error || "Could not generate draft.");
+      }
+
+      const signature = String(payload?.signature || "");
+      if (signature) {
+        setSignatureByThread((prev) => ({
+          ...prev,
+          [threadId]: signature,
+        }));
+      }
+
+      const draft = payload?.draft || null;
+      const draftText = draft?.body_text || draft?.body_html || "";
+      if (draftText) {
+        setDraftValue(draftText);
+        setDraftValueByThread((prev) => ({
+          ...prev,
+          [threadId]: draftText,
+        }));
+        draftValueRef.current = draftText;
+        draftLastSavedRef.current = draftText.trim();
+        setSystemDraftUneditedByThread((prev) => ({
+          ...prev,
+          [threadId]: true,
+        }));
+        if (draft?.id) {
+          setActiveDraftId(draft.id);
+        }
+        toast.success("Draft generated.");
+      } else if (payload?.skipped) {
+        throw new Error(payload?.explanation || payload?.reason || "Draft generation was skipped.");
+      } else {
+        throw new Error("Draft generation returned no content.");
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not generate draft.");
+    } finally {
+      setManualDraftGeneratingByThread((prev) => {
+        if (!prev[threadId]) return prev;
+        const next = { ...prev };
+        delete next[threadId];
+        return next;
+      });
+    }
+  }, [isLocalThreadId, manualDraftGeneratingByThread, selectedThreadId]);
+
   const handleDraftChange = useCallback(
     (nextValue) => {
       if (composerMode === "note") {
@@ -2841,11 +2914,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const isDraftGenerating =
     Boolean(selectedThreadId) &&
     !isLocalThreadId(selectedThreadId) &&
-    latestMessageIsInbound &&
-    !hasDraftContentReady &&
-    !isWaitingForApproval &&
-    !draftWaitTimedOutByThread[selectedThreadId] &&
-    !suppressAutoDraftByThread[selectedThreadId];
+    Boolean(manualDraftGeneratingByThread[selectedThreadId]);
 
   useEffect(() => {
     if (!selectedThreadId) return;
@@ -2893,7 +2962,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         hideSolvedFilter={activeView === ""}
       />
 
-      <div className="flex min-h-0 flex-1 flex-col bg-sidebar">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-sidebar">
         <TicketDetail
           thread={selectedThread}
           messages={threadMessages}
@@ -2976,6 +3045,10 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
               </button>
             ) : null
           }
+          onGenerateDraft={handleGenerateDraft}
+          isGeneratingDraft={Boolean(
+            selectedThreadId && manualDraftGeneratingByThread[selectedThreadId]
+          )}
         />
       </div>
 

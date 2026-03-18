@@ -1704,6 +1704,7 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const shopId = typeof body?.shop_id === "string" ? body.shop_id.trim() : "";
     const provider = typeof body?.provider === "string" ? body.provider.trim() : "";
+    const forceProcess = body?.force_process === true;
     const emailData: EmailData = body?.email_data ?? {};
 
     if (!shopId || !provider) {
@@ -1726,7 +1727,7 @@ Deno.serve(async (req) => {
         body: emailData.body ?? "",
         headers: emailData.headers ?? [],
       });
-      if (!classification.process) {
+      if (!forceProcess && !classification.process) {
         emitDebugLog("generate-draft-unified: gatekeeper skip", {
           reason: classification.reason,
           category: classification.category,
@@ -1790,7 +1791,7 @@ Deno.serve(async (req) => {
         headers: emailData.headers ?? [],
       });
     }
-    if (!classification.process) {
+    if (!forceProcess && !classification.process) {
       emitDebugLog("generate-draft-unified: gatekeeper skip", {
         reason: classification.reason,
         category: classification.category,

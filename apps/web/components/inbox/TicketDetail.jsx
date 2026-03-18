@@ -83,6 +83,8 @@ export function TicketDetail({
   rightHeaderActions = null,
   conversationScrollTop = 0,
   onConversationScroll = null,
+  onGenerateDraft = null,
+  isGeneratingDraft = false,
 }) {
   const [composerCollapsed, setComposerCollapsed] = useState(false);
   const [processReturnRestock, setProcessReturnRestock] = useState(true);
@@ -450,6 +452,8 @@ export function TicketDetail({
             mentionUsers={mentionUsers}
             onBlur={onDraftBlur}
             isDraftLoading={showThinkingCard}
+            onGenerateDraft={onGenerateDraft}
+            isGeneratingDraft={isGeneratingDraft}
           />
         </div>
       )}
