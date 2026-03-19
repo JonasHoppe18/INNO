@@ -178,7 +178,7 @@ export function guardSameChannelEscalation(options: {
       const isDanish = String(options.languageHint || "").toLowerCase() === "da" ||
         String(options.languageHint || "").toLowerCase() === "same_as_customer";
       const addition = isDanish
-        ? "Hvis du har flere spoergsmaal, er du velkommen til bare at svare her."
+        ? "Hvis du har flere spørgsmål, er du velkommen til bare at svare her."
         : "If you have any questions, just reply here.";
       next = next ? `${next}\n\n${addition}` : addition;
     }

@@ -341,6 +341,15 @@ const deriveExecutionState = (options: {
   return "no_action";
 };
 
+const isApprovalRequiredProposalFlow = (options: {
+  validation: ActionDecisionValidation | null;
+  hasPendingApproval?: boolean;
+  executionState: ExecutionState;
+}) =>
+  options.hasPendingApproval ||
+  options.executionState === "pending_approval" ||
+  options.validation?.decision === "approval_required";
+
 const routeCategoryFromIntent = (intent: CaseAssessment["latest_message_primary_intent"]): EmailCategory | null => {
   switch (intent) {
     case "technical_issue":
@@ -420,7 +429,17 @@ const buildCompactTroubleshootingQuery = (
   customerMessage?: string | null,
 ) => {
   if (!assessment) return "";
-  const normalizedMessage = String(customerMessage || "").replace(/\s+/g, " ").trim();
+  const normalizedMessage = String(customerMessage || "")
+    .split("\n")
+    .map((line) => String(line || "").trim())
+    .filter((line) =>
+      line &&
+      !/^(?:(?:den|on|mon\.?|tue\.?|tues\.?|wed\.?|thu\.?|thur\.?|thurs\.?|fri\.?|sat\.?|sun\.?|man\.?|tir\.?|tirs\.?|ons\.?|tor\.?|tors\.?|fre\.?|lør\.?|loer\.?|søn\.?|soen\.?)\b.*\b(?:wrote|skrev)\b.*|(?:fra|from|til|to|subject|emne|cc|bcc|date|dato|sent|sendt)\s*:.*|.*<[^>]+@[^>]+>:\s*$)/i
+        .test(line)
+    )
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
   const symptomPhrases = (assessment.entities.symptom_phrases || [])
     .map((value) => String(value || "").replace(/\s+/g, " ").trim())
     .filter(Boolean);
@@ -1719,6 +1738,8 @@ function enforceReturnChannelGuard(options: {
   text: string;
   languageHint: string;
   missingDetails: Array<"order_number" | "customer_name" | "return_reason">;
+  hasKnownOrderContext?: boolean;
+  ongoingReturnContinuation?: boolean;
 }): string {
   let next = String(options.text || "");
   const lines = next.split("\n");
@@ -1754,7 +1775,13 @@ function enforceReturnChannelGuard(options: {
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 
-  if (!options.missingDetails.length) return next;
+  const effectiveMissingDetails = options.missingDetails.filter((key) => {
+    if (!options.hasKnownOrderContext) return true;
+    if (key === "return_reason" && options.ongoingReturnContinuation) return false;
+    return key !== "order_number" && key !== "customer_name";
+  });
+
+  if (!effectiveMissingDetails.length) return next;
 
   const missingLabelMap: Record<string, string> =
     String(options.languageHint || "").toLowerCase() === "da"
@@ -1768,7 +1795,7 @@ function enforceReturnChannelGuard(options: {
           customer_name: "name used at purchase",
           return_reason: "return reason",
         };
-  const missingList = options.missingDetails.map((key) => missingLabelMap[key] || key);
+  const missingList = effectiveMissingDetails.map((key) => missingLabelMap[key] || key);
   const askLine =
     String(options.languageHint || "").toLowerCase() === "da"
       ? `Svar venligst her i tråden med: ${missingList.join(", ")}.`
@@ -2329,6 +2356,7 @@ Deno.serve(async (req) => {
         {
           artifact_type: "case_assessment",
           version: caseAssessment.version,
+          debug_marker: caseAssessment.debug_marker,
           workflow: workflowRoute.workflow,
           case_assessment: caseAssessment,
         },
@@ -2339,6 +2367,8 @@ Deno.serve(async (req) => {
         "v2_case_assessment_v2",
         {
           artifact_type: "case_assessment_v2",
+          version: caseAssessment.version,
+          debug_marker: caseAssessment.debug_marker,
           primary_case_type: caseAssessment.primary_case_type,
           secondary_case_types: caseAssessment.secondary_case_types,
           latest_message_primary_intent: caseAssessment.latest_message_primary_intent,
@@ -2357,6 +2387,7 @@ Deno.serve(async (req) => {
             old_device_works: caseAssessment.entities.old_device_works,
             tried_fixes: caseAssessment.entities.tried_fixes,
           },
+          cleanup_debug: caseAssessment.cleanup_debug || null,
         },
         internalThread.threadId,
       );
@@ -2412,15 +2443,16 @@ Deno.serve(async (req) => {
         internalThread.threadId,
       );
     }
-    const productQueryText =
-      caseAssessment?.entities?.product_queries?.length
-        ? caseAssessment.entities.product_queries.join("\n")
-        : emailData.body || emailData.subject || "";
-    const productRetrieval = await fetchProductContext(
-      supabase,
-      shopId,
-      productQueryText,
-    );
+    const productQueryText = caseAssessment?.entities?.product_queries?.length
+      ? caseAssessment.entities.product_queries.join("\n")
+      : "";
+    const productRetrieval = productQueryText.trim()
+      ? await fetchProductContext(
+        supabase,
+        shopId,
+        productQueryText,
+      )
+      : { hits: [] as ProductMatch[] };
     let supplementalKnowledgeMatches: typeof prioritizedKnowledgeMatches = [];
     const shouldTryTechnicalFallbackKnowledge =
       Boolean(caseAssessment) &&
@@ -2432,7 +2464,7 @@ Deno.serve(async (req) => {
       (!caseAssessment?.entities?.product_queries?.length || !(productRetrieval.hits || []).length);
     const troubleshootingQueryText = buildCompactTroubleshootingQuery(
       caseAssessment,
-      `${emailData.subject || ""}\n${emailData.body || ""}`,
+      null,
     );
     let supplementalKnowledgeDebug:
       | Awaited<ReturnType<typeof fetchRelevantKnowledgeDetailed>>["debug"]
@@ -3452,6 +3484,13 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
     );
     finalText = await enforceReplyLanguage(customerMessage, finalText, languageHint);
     finalText = ensureFirstLineHasName(finalText, customerFirstName);
+    const ongoingReturnContinuation = Boolean(selectedOrder) &&
+      (
+        /\b(?:replacement|exchange|old headset|faulty headset|new headset|received the new|got the new)\b/i
+          .test(`${emailData.subject || ""}\n${emailData.body || ""}`) ||
+        /\b(?:erstatning|ombytning|gamle headset|defekt headset|nyt headset|modtaget det nye|fået det nye)\b/i
+          .test(`${emailData.subject || ""}\n${emailData.body || ""}`)
+      );
     if (hasExchangeSignals(emailData.subject || "", emailData.body || "")) {
       finalText = stripSupportEscalationLines(finalText);
     }
@@ -3460,6 +3499,8 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         text: finalText,
         languageHint,
         missingDetails: returnDetailsMissing,
+        hasKnownOrderContext: Boolean(selectedOrder),
+        ongoingReturnContinuation,
       });
       finalText = await enforceReplyLanguage(customerMessage, finalText, languageHint);
     }
@@ -3566,6 +3607,11 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
     threadId = internal.threadId ?? emailData.threadId ?? null;
     const customerEmail = emailData.fromEmail || emailData.from || null;
     const subject = emailData.subject || "";
+    const approvalRequiredProposalFlow = isApprovalRequiredProposalFlow({
+      validation: actionValidation,
+      hasPendingApproval: Boolean(returnActionResult?.status === "pending_approval"),
+      executionState: replyStrategyArtifact?.execution_state || executionState,
+    });
 
     if (supabase && (ownerUserId || workspaceId) && threadId) {
       let clearThreadDraftsQuery = supabase
@@ -3587,7 +3633,7 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       }
     }
 
-    if (supabase && (ownerUserId || workspaceId) && emailData.messageId) {
+    if (!approvalRequiredProposalFlow && supabase && (ownerUserId || workspaceId) && emailData.messageId) {
       let updateMessageQuery = supabase
         .from("mail_messages")
         .update({
@@ -3633,6 +3679,9 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
           subject,
           platform: provider,
           status: "pending",
+          kind: approvalRequiredProposalFlow ? "internal_recommendation" : "final_customer_reply",
+          execution_state: replyStrategyArtifact?.execution_state || executionState,
+          final_reply_generated_at: approvalRequiredProposalFlow ? null : new Date().toISOString(),
           draft_id: draftId,
           thread_id: threadId,
           created_at: new Date().toISOString(),
@@ -3758,6 +3807,8 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
             text: finalText,
             languageHint,
             missingDetails: returnDetailsMissing,
+            hasKnownOrderContext: Boolean(selectedOrder),
+            ongoingReturnContinuation: Boolean(selectedOrder),
           });
           finalText = await enforceReplyLanguage(customerMessage, finalText, languageHint);
         }
@@ -3858,6 +3909,37 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         threadId,
         results: automationResults,
       });
+    }
+
+    if (supabase && loggedDraftId && approvalRequiredProposalFlow && threadId) {
+      let pendingActionQuery = supabase
+        .from("thread_actions")
+        .select("id")
+        .eq("thread_id", threadId)
+        .eq("status", "pending")
+        .order("updated_at", { ascending: false })
+        .limit(1);
+      pendingActionQuery = workspaceId
+        ? pendingActionQuery.eq("workspace_id", workspaceId)
+        : pendingActionQuery.eq("user_id", ownerUserId);
+      const { data: pendingAction, error: pendingActionError } = await pendingActionQuery.maybeSingle();
+      if (pendingActionError) {
+        console.warn(
+          "generate-draft-unified: failed to link pending proposal draft to thread action",
+          pendingActionError.message,
+        );
+      } else if (pendingAction?.id) {
+        const { error: updateDraftLinkError } = await supabase
+          .from("drafts")
+          .update({ source_action_id: String(pendingAction.id) })
+          .eq("id", loggedDraftId);
+        if (updateDraftLinkError) {
+          console.warn(
+            "generate-draft-unified: failed to update proposal draft source action",
+            updateDraftLinkError.message,
+          );
+        }
+      }
     }
 
     const finalExecutionState: ExecutionState = blockedAutoResults.length

@@ -35,7 +35,8 @@ export type RetrievalNeeds = {
 };
 
 export type CaseAssessment = {
-  version: 2;
+  version: 3;
+  debug_marker: "return_logistics_v3";
   primary_case_type: GeneralCaseType;
   secondary_case_types: GeneralCaseType[];
   latest_message_primary_intent: GeneralCaseType;
@@ -76,6 +77,13 @@ export type CaseAssessment = {
   risk_flags: string[];
   confidence: number;
   summary: string;
+  cleanup_debug?: {
+    parser_strategy: string;
+    quoted_history_detected: boolean;
+    raw_body_preview: string;
+    parsed_clean_body_preview: string;
+    final_clean_body_preview: string;
+  };
 };
 
 type AssessCaseInput = {
@@ -106,9 +114,15 @@ const EMAIL_REGEX = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
 const ORDER_NUMBER_REGEX = /#?\b(\d{3,})\b/g;
 const INVOICE_REGEX = /\b(?:invoice|receipt|faktura|kvittering)(?:\s*(?:no|number|nr))?[:#]?\s*([A-Z0-9-]{3,})\b/gi;
 const SUPPORT_HEADER_TAIL_RE =
-  /^(?:den|on)\b.*\b(?:wrote|skrev|schrieb|a écrit)\b.*$|^(?:fra|from|från|sent|sendt|date|dato|to|til|subject|emne|cc|bcc)\s*:.*$/i;
+  /^(?:(?:den|on|mon\.?|tue\.?|tues\.?|wed\.?|thu\.?|thur\.?|thurs\.?|fri\.?|sat\.?|sun\.?|man\.?|tir\.?|tirs\.?|ons\.?|tor\.?|tors\.?|fre\.?|lør\.?|loer\.?|søn\.?|soen\.?)\b.*\b(?:wrote|skrev|schrieb|a écrit)\b.*|(?:fra|from|från|sent|sendt|date|dato|to|til|subject|emne|cc|bcc)\s*:.*)$/i;
 const SUPPORT_SIGNATURE_TAIL_RE =
   /^(?:support|customer support|kundeservice|helpdesk)\b.*<[^>]+@[^>]+>$/i;
+const SUPPORT_INLINE_SIGNATURE_RE =
+  /\b(?:support|customer support|kundeservice|helpdesk)\b.*<[^>]+@[^>]+>$/i;
+const QUOTED_HEADER_EMAIL_RE =
+  /^(?:>|-|\s)*(?:(?:from|fra|til|to|subject|emne|cc|bcc|date|dato|sent|sendt).*(?:support@|kundeservice@|help@)|(?:mon\.?|tue\.?|tues\.?|wed\.?|thu\.?|thur\.?|thurs\.?|fri\.?|sat\.?|sun\.?|man\.?|tir\.?|tirs\.?|ons\.?|tor\.?|tors\.?|fre\.?|lør\.?|loer\.?|søn\.?|soen\.?).*<[^>]+@[^>]+>:\s*$)/i;
+const DATED_REPLY_HEADER_RE =
+  /^(?:(?:den\s+)?(?:mon\.?|tue\.?|tues\.?|wed\.?|thu\.?|thur\.?|thurs\.?|fri\.?|sat\.?|sun\.?|man\.?|tir\.?|tirs\.?|ons\.?|tor\.?|tors\.?|fre\.?|lør\.?|loer\.?|søn\.?|soen\.?)\s+)?\d{1,2}\.\s+\p{L}+\.?\s+\d{4}\s+(?:kl\.?|at)\s+\d{1,2}[.:]\d{2}\s+(?:wrote|skrev|schrieb|a écrit)\b.*$/iu;
 const SUBJECT_REPLY_PREFIX_RE = /^(?:(?:re|fw|fwd|sv|vs|aw)\s*:\s*)+/i;
 const SUBJECT_NOISE_RE =
   /^(?:\[[^\]]+\]\s*)*(?:new customer message on|customer message on|new message on|message on)\b.*$/i;
@@ -116,6 +130,14 @@ const SUBJECT_DATE_TITLE_RE =
   /^(?:(?:13|14|15|16|17|18|19|20)\s+\w+\s+(?:19|20)\d{2}|\w+\s+\d{1,2},?\s+(?:19|20)\d{2})(?:.*)$/i;
 const SUBJECT_RELAY_WORD_SALAD_RE =
   /^(?:(?:new|customer|message|march|april|may|june|july|august|september|october|november|december|\d{1,2}|\d{4}|at|kl\.?|on)\s+){4,}.*$/i;
+const DIRECT_RETURN_LOGISTICS_RE =
+  /\b(?:(?:how|where)\s+(?:do|can)\s+i\s+(?:send|return)|how\s+to\s+(?:send|return)|hvordan\s+(?:(?:skal|kan)\s+jeg\s+)?(?:sende|sender|returnerer|får\s+jeg\s+sendt))\b.*\b(?:old|faulty|replacement|new|gamle|defekt|erstatning|nye?)\b.*\b(?:back|return|retur|tilbage)\b/i;
+const SEND_BACK_OLD_ITEM_RE =
+  /\b(?:send|sent|return|sende|sendt|returnere)\b.*\b(?:old|old one|old headset|faulty headset|gamle|det gamle|det gamle headset|defekt headset)\b.*\b(?:back|return|retur|tilbage)\b/i;
+const REPLACEMENT_CONTINUATION_RE =
+  /\b(?:replacement|exchange|new headset|old headset|received the new one|got the new one|erstatning|ombytning|nyt headset|gamle headset|fået det nye|modtaget det nye)\b/i;
+const ADDRESS_FIELD_CONTEXT_RE =
+  /\b(?:zip|zip code|postal code|post code|postcode|city|state|province|country|address|shipping address|billing address|ship to|apo|fpo|dpo|ap)\b/i;
 
 const CASE_TYPES: GeneralCaseType[] = [
   "technical_issue",
@@ -185,6 +207,12 @@ const SIGNAL_RULES: SignalRule[] = [
     type: "return_refund",
     score: 4,
     patterns: [
+      DIRECT_RETURN_LOGISTICS_RE,
+      SEND_BACK_OLD_ITEM_RE,
+      /\b(?:how do i send (?:it|this|that|the old one|the old headset) back|how do i return (?:it|this|the old one|the old headset)|how can i send (?:it|the old one) back|where do i send (?:it|the old one) back)\b/i,
+      /\b(?:send the old (?:one|headset) back|return the old (?:one|headset)|send it back now that i (?:got|received) the new one)\b/i,
+      /\b(?:hvordan sender jeg den tilbage|hvordan sender jeg det tilbage|hvordan sender jeg det gamle headset tilbage|hvordan returnerer jeg det gamle|hvordan får jeg sendt det gamle retur)\b/i,
+      /\b(?:sende den gamle tilbage|returnere det gamle headset|sende det tilbage nu hvor jeg har fået det nye)\b/i,
       /\b(?:drop off|drop it off|come by|stop by|bring (?:it|the package)|deliver it in person|hand(?:ing)? in)\b.*\b(?:package|parcel|return|item|headset)\b/i,
       /\b(?:komme forbi|forbi med|aflevere|indlevere|komme ind med)\b.*\b(?:pakke|retur|vare|headset)\b/i,
       /\b(?:opening hours|opening times|business hours)\b.*\b(?:return|package|drop off|come by|shipping)\b/i,
@@ -206,12 +234,20 @@ const SIGNAL_RULES: SignalRule[] = [
   {
     type: "order_change",
     score: 4,
-    patterns: [/\b(change address|update address|cancel order|change shipping method)\b/i],
+    patterns: [
+      /\b(change address|update address|cancel order|change shipping method)\b/i,
+      /\b(?:what is wrong with the address|address is wrong|wrong with the shipping address|address clarification|different address for shipment|billing address instead)\b/i,
+      /\b(?:the details i provided are correct|details i provided are correct|city\s*:|state\s*:|zip(?: code)?\s*:|postal code\s*:)\b/i,
+      /\b(?:hvad er der galt med adressen|der er noget galt med adressen|leveringsadressen|anden adresse til forsendelse|faktureringsadresse i stedet)\b/i,
+    ],
   },
   {
     type: "order_change",
     score: 2,
-    patterns: [/\b(update order|change email|change phone|edit order)\b/i],
+    patterns: [
+      /\b(update order|change email|change phone|edit order)\b/i,
+      /\b(?:apo|fpo|dpo)\b.*\b(?:zip|postal|state|city)\b/i,
+    ],
   },
   {
     type: "billing_payment",
@@ -239,9 +275,8 @@ function uniq(values: string[]) {
   return Array.from(new Set(values.filter(Boolean)));
 }
 
-function cleanLatestMessageBody(body: string) {
-  const parsed = parseEmailReplyBodies({ text: body });
-  const lines = String(parsed.cleanBodyText || body)
+function applyLatestMessageTailBreaks(text: string) {
+  const lines = String(text || "")
     .split("\n")
     .map((line) => line.replace(/\u00a0/g, " ").trimEnd());
   const kept: string[] = [];
@@ -253,15 +288,33 @@ function cleanLatestMessageBody(body: string) {
       continue;
     }
     if (SUPPORT_HEADER_TAIL_RE.test(line)) break;
+    if (DATED_REPLY_HEADER_RE.test(line)) break;
     if (SUPPORT_SIGNATURE_TAIL_RE.test(line)) break;
+    if (SUPPORT_INLINE_SIGNATURE_RE.test(line)) break;
+    if (QUOTED_HEADER_EMAIL_RE.test(line)) break;
     kept.push(line);
   }
 
-  const cleaned = kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  return kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function cleanLatestMessageBody(body: string) {
+  const parsed = parseEmailReplyBodies({ text: body });
+  const parsedCandidate = applyLatestMessageTailBreaks(String(parsed.cleanBodyText || ""));
+  const rawCandidate = applyLatestMessageTailBreaks(String(body || ""));
+  const parsedScore = parsedCandidate.replace(/\s+/g, "").length;
+  const rawScore = rawCandidate.replace(/\s+/g, "").length;
+  const cleaned = rawScore > parsedScore ? rawCandidate : parsedCandidate;
   return {
-    cleanBodyText: cleaned || String(parsed.cleanBodyText || body || "").trim(),
+    cleanBodyText: cleaned || rawCandidate || String(parsed.cleanBodyText || body || "").trim(),
     parserStrategy: parsed.parserStrategy,
     quotedHistoryDetected: parsed.quotedHistoryDetected,
+    rawBodyPreview: String(body || "").replace(/\s+/g, " ").trim().slice(0, 220),
+    parsedCleanBodyPreview: String(parsed.cleanBodyText || "").replace(/\s+/g, " ").trim().slice(0, 220),
+    finalCleanBodyPreview: String(cleaned || rawCandidate || parsed.cleanBodyText || body || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 220),
   };
 }
 
@@ -321,18 +374,61 @@ function extractAddressCandidate(body: string) {
     .map((line) => line.trim())
     .filter(Boolean);
   const joined = lines.join(" ");
-  if (!/\b(address|ship to|street|road|avenue|ave|city|zip|postal)\b/i.test(joined)) {
+  if (!/\b(address|ship to|street|road|avenue|ave|city|zip|postal|state|province|country|apo|fpo|dpo)\b/i.test(joined)) {
     return null;
   }
+  const addressLikeLines = lines.filter((line) =>
+    !/^(?:hello|hi|hej|dear)\b[,!.\s]*$/i.test(line) &&
+    (
+      /^(?:city|state|zip(?: code)?|postal code|country|address|street|road|avenue|ave|apo|fpo|dpo)\s*:/i
+        .test(line) ||
+      /\b(?:street|road|avenue|ave|boulevard|blvd|drive|dr|lane|ln|apartment|apt|suite|unit|floor|sal|city|zip|postal|state|country|apo|fpo|dpo)\b/i
+        .test(line)
+    )
+  );
+  if (!addressLikeLines.length) return null;
   return {
     name: "",
-    address1: lines[0] || "",
-    address2: "",
+    address1: addressLikeLines[0] || "",
+    address2: addressLikeLines[1] || "",
     city: "",
     zip: "",
     country: "",
     phone: "",
   };
+}
+
+function extractOrderNumbers(body: string, subject: string, matchedSubjectNumber: string, subjectIsMeaningful: boolean) {
+  const lines = String(body || "").split("\n");
+  const bodyMatches: string[] = [];
+  for (const match of body.matchAll(ORDER_NUMBER_REGEX)) {
+    const value = String(match[1] || "").trim();
+    const index = typeof match.index === "number" ? match.index : -1;
+    const line = index >= 0
+      ? lines.find((candidate) => {
+        const start = body.indexOf(candidate);
+        return start >= 0 && index >= start && index <= start + candidate.length;
+      }) || ""
+      : "";
+    const lineLower = String(line || "").toLowerCase();
+    const localStart = index >= 0 ? Math.max(0, index - 24) : 0;
+    const localEnd = index >= 0 ? Math.min(body.length, index + value.length + 24) : body.length;
+    const localContext = String(body.slice(localStart, localEnd) || "").toLowerCase();
+    if (ADDRESS_FIELD_CONTEXT_RE.test(lineLower) || ADDRESS_FIELD_CONTEXT_RE.test(localContext)) {
+      continue;
+    }
+    bodyMatches.push(value);
+  }
+
+  return uniq(
+    bodyMatches
+      .concat(
+        subjectIsMeaningful
+          ? Array.from(subject.matchAll(ORDER_NUMBER_REGEX)).map((match) => String(match[1] || "").trim())
+          : [],
+      )
+      .concat(subjectIsMeaningful && matchedSubjectNumber ? [matchedSubjectNumber] : []),
+  );
 }
 
 type IssueFacts = {
@@ -474,6 +570,8 @@ function extractIssueFacts(subject: string, body: string): IssueFacts {
     /\b(?:cs2|cs|counter[- ]?strike|fortnite|call of duty|discord|teams|zoom|playstation|xbox|pc|mac)\b/i,
     /\b(?:voice chat|chat|microphone test|in game|the game|game)\b/i,
     /\b(?:dongle|receiver|wireless|same frequency|same channel|trådløs|samme frekvens|frekvens)\b/i,
+    /\b(?:replacement|exchange|send it back|send the old one back|return the old|old headset|faulty headset)\b/i,
+    /\b(?:erstatning|ombytning|sende den gamle tilbage|sende det gamle headset tilbage|gamle headset)\b/i,
   ];
   const symptom_phrases = uniq([
     ...structuredIssueValues,
@@ -713,6 +811,26 @@ function applyProcessLogisticsSignals(text: string, scores: Record<GeneralCaseTy
   ) {
     scores.general_support += 2;
   }
+
+  const returnLogisticsFollowUp =
+    DIRECT_RETURN_LOGISTICS_RE.test(text) ||
+    SEND_BACK_OLD_ITEM_RE.test(text) ||
+    /\b(?:how do i send (?:it|this|that|the old one|the old headset) back|how do i return (?:it|this|the old one|the old headset)|how can i send (?:it|the old one) back|send the old (?:one|headset) back|return the old (?:one|headset)|where do i send (?:it|the old one) back|send it back now that i (?:got|received) the new one)\b/i
+      .test(text) ||
+    /\b(?:hvordan sender jeg den tilbage|hvordan sender jeg det tilbage|hvordan sender jeg det gamle headset tilbage|hvordan returnerer jeg det|hvordan returnerer jeg det gamle|hvordan får jeg sendt det gamle retur|sende den gamle tilbage|sende det gamle headset tilbage|sende det tilbage nu hvor jeg har fået det nye)\b/i
+      .test(text);
+  const activeReplacementContext = REPLACEMENT_CONTINUATION_RE.test(text);
+
+  if (returnLogisticsFollowUp) {
+    scores.return_refund += 6;
+    scores.general_support += 2;
+    scores.tracking_shipping = Math.max(0, scores.tracking_shipping - 5);
+  }
+  if (returnLogisticsFollowUp && activeReplacementContext) {
+    scores.return_refund += 4;
+    scores.order_change += 1;
+    scores.tracking_shipping = Math.max(0, scores.tracking_shipping - 4);
+  }
 }
 
 function applyLegacyHints(
@@ -777,6 +895,15 @@ function inferHistoricalContextIntents(input: AssessCaseInput): GeneralCaseType[
 function chooseLatestMessagePrimaryIntent(
   scores: Record<GeneralCaseType, number>,
 ): { primary: GeneralCaseType; confidence: number } {
+  if (
+    scores.return_refund >= 5 &&
+    scores.return_refund >= (scores.tracking_shipping + 2)
+  ) {
+    const total = CASE_TYPES.filter((type) => type !== "mixed_case")
+      .reduce((sum, type) => sum + scores[type], 0);
+    const confidence = total > 0 ? Math.min(0.98, Math.max(0.55, scores.return_refund / total)) : 0.55;
+    return { primary: "return_refund", confidence };
+  }
   const ranked = CASE_TYPES.filter((type) => type !== "mixed_case")
     .map((type) => ({ type, score: scores[type] }))
     .sort((left, right) => right.score - left.score);
@@ -837,6 +964,22 @@ function extractMetadataOnlySignals(subject: string, body: string): MetadataOnly
 function choosePrimaryAndSecondary(
   scores: Record<GeneralCaseType, number>,
 ): { primary: GeneralCaseType; secondary: GeneralCaseType[]; confidence: number } {
+  if (
+    scores.return_refund >= 5 &&
+    scores.return_refund >= (scores.tracking_shipping + 2)
+  ) {
+    const rankedSecondary = CASE_TYPES.filter((type) => type !== "mixed_case" && type !== "return_refund")
+      .map((type) => ({ type, score: scores[type] }))
+      .filter((item) => item.score >= 3)
+      .sort((left, right) => right.score - left.score)
+      .slice(0, 2)
+      .map((item) => item.type);
+    const total = CASE_TYPES.filter((type) => type !== "mixed_case")
+      .reduce((sum, type) => sum + scores[type], 0);
+    const confidence = total > 0 ? Math.min(0.98, Math.max(0.55, scores.return_refund / total)) : 0.55;
+    scores.mixed_case = 0;
+    return { primary: "return_refund", secondary: rankedSecondary, confidence };
+  }
   const ranked = CASE_TYPES.filter((type) => type !== "mixed_case")
     .map((type) => ({ type, score: scores[type] }))
     .sort((left, right) => right.score - left.score);
@@ -879,6 +1022,14 @@ function inferLikelyActionFamily(text: string): string | null {
   if (/\b(exchange|replacement)\b/i.test(text)) {
     return "create_exchange_request";
   }
+  if (
+    /\b(?:how do i send (?:it|this|the old one) back|how do i return it|send the old (?:one|headset) back|return the old (?:one|headset)|where do i send it back)\b/i
+      .test(text) ||
+    /\b(?:hvordan sender jeg den tilbage|hvordan sender jeg det gamle headset tilbage|hvordan returnerer jeg det|sende den gamle tilbage|sende det gamle headset tilbage)\b/i
+      .test(text)
+  ) {
+    return "send_return_instructions";
+  }
   return null;
 }
 
@@ -892,16 +1043,7 @@ export function assessCase(input: AssessCaseInput): CaseAssessment {
   const text = `${subject}\n${body}`;
   const lower = text.toLowerCase();
   const matchedSubjectNumber = String(input.matchedSubjectNumber || "").replace(/\D/g, "");
-  const orderNumbers = uniq(
-    Array.from(body.matchAll(ORDER_NUMBER_REGEX))
-      .map((match) => String(match[1] || "").trim())
-      .concat(
-        subjectIsMeaningful
-          ? Array.from(subject.matchAll(ORDER_NUMBER_REGEX)).map((match) => String(match[1] || "").trim())
-          : [],
-      )
-      .concat(subjectIsMeaningful && matchedSubjectNumber ? [matchedSubjectNumber] : []),
-  );
+  const orderNumbers = extractOrderNumbers(body, subject, matchedSubjectNumber, subjectIsMeaningful);
   const emails = uniq([
     ...(subjectIsMeaningful ? subject.match(EMAIL_REGEX) || [] : []),
     ...(body.match(EMAIL_REGEX) || []),
@@ -914,6 +1056,16 @@ export function assessCase(input: AssessCaseInput): CaseAssessment {
   applyRules(lower, latestMessageScores);
   applyTechnicalConnectivitySignals(text, latestMessageScores);
   applyProcessLogisticsSignals(text, latestMessageScores);
+  if (
+    /\b(?:what is wrong with the address|the details i provided are correct|city\s*:|state\s*:|zip(?: code)?\s*:|postal code\s*:|different address for shipment|billing address instead)\b/i
+      .test(text) ||
+    /\b(?:hvad er der galt med adressen|adressen er korrekt|by\s*:|stat\s*:|postnummer\s*:|anden adresse til forsendelse|faktureringsadresse i stedet)\b/i
+      .test(text)
+  ) {
+    latestMessageScores.order_change += 5;
+    latestMessageScores.general_support += 2;
+    latestMessageScores.tracking_shipping = Math.max(0, latestMessageScores.tracking_shipping - 4);
+  }
   if (input.hasSelectedOrder) {
     latestMessageScores.order_change += 1;
     latestMessageScores.tracking_shipping += 1;
@@ -944,6 +1096,16 @@ export function assessCase(input: AssessCaseInput): CaseAssessment {
   applyRules(lower, scores);
   applyTechnicalConnectivitySignals(text, scores);
   applyProcessLogisticsSignals(text, scores);
+  if (
+    /\b(?:what is wrong with the address|the details i provided are correct|city\s*:|state\s*:|zip(?: code)?\s*:|postal code\s*:|different address for shipment|billing address instead)\b/i
+      .test(text) ||
+    /\b(?:hvad er der galt med adressen|adressen er korrekt|by\s*:|stat\s*:|postnummer\s*:|anden adresse til forsendelse|faktureringsadresse i stedet)\b/i
+      .test(text)
+  ) {
+    scores.order_change += 5;
+    scores.general_support += 2;
+    scores.tracking_shipping = Math.max(0, scores.tracking_shipping - 4);
+  }
   applyLegacyHints(input, scores);
 
   if (input.hasSelectedOrder) {
@@ -978,7 +1140,8 @@ export function assessCase(input: AssessCaseInput): CaseAssessment {
     ].filter(Boolean),
   );
   return {
-    version: 2,
+    version: 3,
+    debug_marker: "return_logistics_v3",
     primary_case_type: primary,
     secondary_case_types: secondary,
     latest_message_primary_intent: latestMessagePrimaryIntent,
@@ -1015,5 +1178,12 @@ export function assessCase(input: AssessCaseInput): CaseAssessment {
       primary === "mixed_case"
         ? `Mixed case: ${secondary.join(", ")}`
         : `Primary issue is ${primary}${metadataOnlySignals.length ? " with metadata-only purchase identifiers present" : ""}.`,
+    cleanup_debug: {
+      parser_strategy: cleanedLatestMessage.parserStrategy,
+      quoted_history_detected: cleanedLatestMessage.quotedHistoryDetected,
+      raw_body_preview: cleanedLatestMessage.rawBodyPreview,
+      parsed_clean_body_preview: cleanedLatestMessage.parsedCleanBodyPreview,
+      final_clean_body_preview: cleanedLatestMessage.finalCleanBodyPreview,
+    },
   };
 }

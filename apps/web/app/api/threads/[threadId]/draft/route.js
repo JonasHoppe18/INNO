@@ -18,6 +18,20 @@ function createServiceClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
+async function loadLatestPendingDraftMeta(serviceClient, scope, threadKey) {
+  if (!threadKey) return null;
+  let query = serviceClient
+    .from("drafts")
+    .select("id, kind, execution_state, source_action_id, status, created_at")
+    .eq("thread_id", threadKey)
+    .eq("status", "pending")
+    .order("created_at", { ascending: false })
+    .limit(1);
+  query = scope?.workspaceId ? query.eq("workspace_id", scope.workspaceId) : query;
+  const { data } = await query.maybeSingle();
+  return data || null;
+}
+
 function buildSnippet(text, maxLength = 240) {
   const cleaned = String(text || "").replace(/\s+/g, " ").trim();
   if (!cleaned) return "";
@@ -91,6 +105,24 @@ export async function GET(_request, { params }) {
     return NextResponse.json({ error: "Auth scope not found." }, { status: 404 });
   }
   const userSignature = await loadUserSignature(serviceClient, scope.supabaseUserId);
+  const { data: thread, error: threadError } = await applyScope(
+    serviceClient
+      .from("mail_threads")
+      .select("id, provider_thread_id")
+      .eq("id", threadId)
+      .maybeSingle(),
+    scope
+  );
+  if (threadError || !thread) {
+    return NextResponse.json({ error: "Thread not found." }, { status: 404 });
+  }
+  const latestPendingDraftMeta = await loadLatestPendingDraftMeta(
+    serviceClient,
+    scope,
+    thread.provider_thread_id || threadId
+  );
+  const proposalOnly =
+    Boolean(latestPendingDraftMeta) && String(latestPendingDraftMeta?.kind || "") !== "final_customer_reply";
 
   const { data: draft, error } = await applyScope(
     serviceClient
@@ -112,7 +144,9 @@ export async function GET(_request, { params }) {
   return NextResponse.json(
     {
       signature: userSignature,
-      draft: draft
+      proposal_only: proposalOnly,
+      draft_kind: latestPendingDraftMeta?.kind || null,
+      draft: !proposalOnly && draft
         ? {
             id: draft.id,
             body_text: draft.body_text || "",
@@ -279,6 +313,10 @@ export async function POST(request, { params }) {
     customer_email: null,
     subject: nextSubject,
     status: "pending",
+    kind: "final_customer_reply",
+    execution_state: "no_action",
+    source_action_id: null,
+    final_reply_generated_at: nowIso,
     platform: thread.provider || "smtp",
     draft_id: draftId ? String(draftId) : null,
     message_id: draftId ? String(draftId) : null,

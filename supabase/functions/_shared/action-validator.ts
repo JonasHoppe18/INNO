@@ -95,6 +95,11 @@ export function validateActionDecision(
       : approvalActions.length > 0
       ? "approval_required"
       : "auto_action";
+  const hasKnownOrderContext = Number.isFinite(selectedOrderId) && selectedOrderId > 0;
+  const summarySuffix =
+    hasKnownOrderContext && decision !== "approval_required"
+      ? " Known order context is already available; do not request basic identity details again."
+      : "";
 
   return {
     version: 1,
@@ -104,9 +109,9 @@ export function validateActionDecision(
     decision,
     summary:
       decision === "reply_only"
-        ? "No executable actions remain after validation."
+        ? `No executable actions remain after validation.${summarySuffix}`
         : decision === "approval_required"
         ? "Validated actions require approval or automation is disabled."
-        : "Validated actions can continue to automation execution.",
+        : `Validated actions can continue to automation execution.${summarySuffix}`,
   };
 }

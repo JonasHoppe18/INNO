@@ -833,6 +833,251 @@ async function generateBlockedActionDraft({
   return text || null;
 }
 
+async function loadLatestInboundContext({ serviceClient, scope, thread }) {
+  let messageQuery = serviceClient
+    .from("mail_messages")
+    .select(
+      "body_text, body_html, subject, from_name, from_email, extracted_customer_name, extracted_customer_email"
+    )
+    .eq("thread_id", thread.id)
+    .eq("from_me", false)
+    .order("received_at", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(1);
+  messageQuery = applyScope(messageQuery, scope);
+  const { data: inboundRow } = await messageQuery.maybeSingle();
+  const bodyText = asString(inboundRow?.body_text) || asString(inboundRow?.body_html) || "";
+  const subject = asString(inboundRow?.subject) || asString(thread?.subject) || "Order support";
+  const fullName = asString(getEffectiveSenderName(inboundRow)) || "";
+  return {
+    bodyText,
+    subject,
+    customerFirstName: fullName ? fullName.split(/\s+/)[0] : "",
+    customerEmail: asString(getEffectiveSenderEmail(inboundRow)) || "",
+  };
+}
+
+async function generateActionOutcomeDraft({
+  actionType,
+  outcome,
+  outcomeDetail,
+  customerFirstName,
+  customerMessage,
+  orderName,
+  decisionReason,
+}) {
+  const customerName = (customerFirstName || "there").trim() || "there";
+  const orderRef = String(orderName || "").trim();
+  const detail = String(outcomeDetail || "").trim();
+  const note = String(decisionReason || "").trim();
+  const isDanish = /[æøå]|\b(hej|ordren|adresse|ændre|kan|ikke|venlig|hilsen|opdateret)\b/i.test(
+    String(customerMessage || "")
+  );
+
+  if (!OPENAI_API_KEY) {
+    if (outcome === "executed") {
+      return isDanish
+        ? [
+            `Hej ${customerName},`,
+            "",
+            orderRef ? `${orderRef}: ${detail || "Vi har behandlet din anmodning."}` : detail || "Vi har behandlet din anmodning.",
+            "",
+            "Skriv gerne her, hvis der er andet, vi skal hjælpe med.",
+          ].join("\n")
+        : [
+            `Hi ${customerName},`,
+            "",
+            orderRef ? `${orderRef}: ${detail || "We have processed your request."}` : detail || "We have processed your request.",
+            "",
+            "Please reply here if there is anything else we can help with.",
+          ].join("\n");
+    }
+    return isDanish
+      ? [
+          `Hej ${customerName},`,
+          "",
+          detail || "Vi kunne ikke gennemføre den ønskede handling.",
+          note ? `Bemærkning: ${note}` : "",
+          "",
+          "Skriv gerne her, hvis du vil have, at vi hjælper dig videre manuelt.",
+        ]
+          .filter(Boolean)
+          .join("\n")
+      : [
+          `Hi ${customerName},`,
+          "",
+          detail || "We could not complete the requested action.",
+          note ? `Note: ${note}` : "",
+          "",
+          "Please reply here if you would like us to help further manually.",
+        ]
+          .filter(Boolean)
+          .join("\n");
+  }
+
+  const systemPrompt = [
+    "You are Sona, a customer support agent.",
+    "Write a short, clear customer-facing reply in the same language as the customer message.",
+    outcome === "executed"
+      ? "The action has already been completed. You may confirm only the completed outcome stated in the prompt."
+      : "The action was not completed. Do not claim that it was completed.",
+    "Do not invent actions, policies, or outcome details.",
+    "Do not include a signature.",
+  ].join(" ");
+
+  const userPrompt = [
+    `Action type: ${actionType}`,
+    `Outcome: ${outcome}`,
+    orderRef ? `Order reference: ${orderRef}` : "",
+    `Customer first name: ${customerName}`,
+    detail ? `Outcome detail: ${detail}` : "",
+    note ? `Decision note: ${note}` : "",
+    "Customer message:",
+    customerMessage || "(empty)",
+    "Write only the reply body text.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      temperature: 0.2,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+    }),
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const message =
+      payload?.error?.message || `OpenAI returned ${response.status} while generating action outcome draft.`;
+    throw new Error(message);
+  }
+  const text = String(payload?.choices?.[0]?.message?.content || "").trim();
+  return text || null;
+}
+
+async function supersedeInternalRecommendationDrafts({
+  serviceClient,
+  scope,
+  thread,
+  sourceActionId,
+}) {
+  let query = serviceClient
+    .from("drafts")
+    .update({ status: "superseded" })
+    .eq("thread_id", thread.provider_thread_id || thread.id)
+    .eq("status", "pending")
+    .eq("kind", "internal_recommendation");
+  if (sourceActionId) query = query.eq("source_action_id", String(sourceActionId));
+  query = scope?.workspaceId ? query.eq("workspace_id", scope.workspaceId) : query;
+  await query;
+}
+
+async function insertFinalReplyDraftRow({
+  serviceClient,
+  scope,
+  thread,
+  subject,
+  customerEmail,
+  draftMessageId,
+  executionState,
+  sourceActionId,
+}) {
+  const nowIso = new Date().toISOString();
+  await serviceClient.from("drafts").insert({
+    shop_id: null,
+    workspace_id: scope?.workspaceId || null,
+    customer_email: customerEmail || null,
+    subject,
+    status: "pending",
+    kind: "final_customer_reply",
+    execution_state: executionState,
+    source_action_id: sourceActionId ? String(sourceActionId) : null,
+    final_reply_generated_at: nowIso,
+    platform: thread.provider || "smtp",
+    draft_id: draftMessageId ? String(draftMessageId) : null,
+    message_id: draftMessageId ? String(draftMessageId) : null,
+    thread_id: thread.provider_thread_id || thread.id,
+    created_at: nowIso,
+  });
+}
+
+async function supersedePendingFinalReplyDrafts({ serviceClient, scope, thread }) {
+  let query = serviceClient
+    .from("drafts")
+    .update({ status: "superseded" })
+    .eq("thread_id", thread.provider_thread_id || thread.id)
+    .eq("status", "pending")
+    .eq("kind", "final_customer_reply");
+  query = scope?.workspaceId ? query.eq("workspace_id", scope.workspaceId) : query;
+  await query;
+}
+
+async function finalizeActionDecisionDraft({
+  serviceClient,
+  scope,
+  thread,
+  actionRecord,
+  actionType,
+  outcome,
+  outcomeDetail,
+  executionState,
+  orderName,
+  preferredText,
+  decisionReason,
+}) {
+  const inbound = await loadLatestInboundContext({ serviceClient, scope, thread });
+  const bodyText =
+    preferredText ||
+    (await generateActionOutcomeDraft({
+      actionType,
+      outcome,
+      outcomeDetail,
+      customerFirstName: inbound.customerFirstName,
+      customerMessage: inbound.bodyText,
+      orderName,
+      decisionReason,
+    }));
+  if (!bodyText) return null;
+  const draftMessageId = await upsertThreadDraft({
+    serviceClient,
+    scope,
+    thread,
+    bodyText,
+    subject: inbound.subject || thread.subject || "Order support",
+  });
+  await supersedeInternalRecommendationDrafts({
+    serviceClient,
+    scope,
+    thread,
+    sourceActionId: actionRecord?.id || null,
+  });
+  await supersedePendingFinalReplyDrafts({
+    serviceClient,
+    scope,
+    thread,
+  });
+  await insertFinalReplyDraftRow({
+    serviceClient,
+    scope,
+    thread,
+    subject: inbound.subject || thread.subject || "Order support",
+    customerEmail: inbound.customerEmail,
+    draftMessageId,
+    executionState,
+    sourceActionId: actionRecord?.id || null,
+  });
+  return bodyText;
+}
+
 function draftImpliesCompletedAction(text = "", actionType = "") {
   const normalized = String(text || "").toLowerCase();
   if (!normalized) return false;
@@ -2323,6 +2568,7 @@ export async function POST(request, { params }) {
   const actionId = body?.actionId ? String(body.actionId).trim() : "";
   const proposalLogId = body?.proposalLogId ? String(body.proposalLogId) : "";
   const proposalText = body?.proposalText ? String(body.proposalText) : "";
+  const decisionReason = String(body?.decisionReason || body?.reason || body?.note || "").trim();
   const payloadOverride =
     body?.payloadOverride && typeof body.payloadOverride === "object" ? body.payloadOverride : null;
   if (!actionId && !proposalLogId && !proposalText) {
@@ -2411,6 +2657,8 @@ export async function POST(request, { params }) {
           status: "declined",
           declined_at: nowIso,
           decided_at: nowIso,
+          decided_by: clerkUserId,
+          decision_reason: decisionReason || null,
           updated_at: nowIso,
           error: null,
         })
@@ -2432,11 +2680,28 @@ export async function POST(request, { params }) {
       created_at: nowIso,
     });
 
+    const declinedDraftText = await finalizeActionDecisionDraft({
+      serviceClient,
+      scope,
+      thread,
+      actionRecord,
+      actionType: asString(actionRecord?.action_type || ""),
+      outcome: "declined",
+      outcomeDetail: actionRecord?.detail || proposalText || "The proposed action was not approved.",
+      executionState: "no_action",
+      orderName: asString(actionRecord?.order_number || ""),
+      decisionReason,
+    }).catch((error) => {
+      console.warn("order-updates/accept: failed to generate declined draft", error?.message || error);
+      return null;
+    });
+
     return NextResponse.json(
       {
         ok: true,
         decision: "declined",
         actionId: actionRecord?.id || null,
+        draftGenerated: Boolean(declinedDraftText),
       },
       { status: 200 }
     );
@@ -3102,6 +3367,8 @@ export async function POST(request, { params }) {
           order_id: String(order.id),
           order_number: order.order_number ? String(order.order_number) : null,
           decided_at: nowIso,
+          decided_by: clerkUserId,
+          decision_reason: decisionReason || null,
           updated_at: nowIso,
           error: testModeMessage,
         })
@@ -3119,6 +3386,8 @@ export async function POST(request, { params }) {
         order_id: String(order.id),
         order_number: order.order_number ? String(order.order_number) : null,
         decided_at: nowIso,
+        decided_by: clerkUserId,
+        decision_reason: decisionReason || null,
         applied_at: null,
         updated_at: nowIso,
         created_at: nowIso,
@@ -3142,6 +3411,22 @@ export async function POST(request, { params }) {
       created_at: nowIso,
     });
 
+    const testModeDraftText = await finalizeActionDecisionDraft({
+      serviceClient,
+      scope,
+      thread,
+      actionRecord,
+      actionType: normalizedActionType,
+      outcome: "approved_test_mode",
+      outcomeDetail: detailText || testModeMessage,
+      executionState: "validated_not_executed",
+      orderName: asString(order?.name) || asString(order?.order_number),
+      decisionReason,
+    }).catch((error) => {
+      console.warn("order-updates/accept: failed to generate approved_test_mode draft", error?.message || error);
+      return null;
+    });
+
     return NextResponse.json(
       {
         ok: true,
@@ -3154,6 +3439,7 @@ export async function POST(request, { params }) {
         orderId: String(order.id),
         orderNumber: order.order_number ?? null,
         detail: detailText || null,
+        draftGenerated: Boolean(testModeDraftText),
         sourceStep: proposalStepName,
       },
       { status: 200 }
@@ -3211,9 +3497,10 @@ export async function POST(request, { params }) {
       console.warn("order-updates/accept: blocked draft generation failed", error?.message || error);
     }
 
+    let generatedDraftId = null;
     if (generatedDraftText) {
       try {
-        await upsertThreadDraft({
+        generatedDraftId = await upsertThreadDraft({
           serviceClient,
           scope,
           thread,
@@ -3237,6 +3524,8 @@ export async function POST(request, { params }) {
           order_id: String(order.id),
           order_number: order.order_number ? String(order.order_number) : null,
           decided_at: nowIso,
+          decided_by: clerkUserId,
+          decision_reason: decisionReason || null,
           updated_at: nowIso,
           error: blockedReason,
         })
@@ -3254,6 +3543,8 @@ export async function POST(request, { params }) {
         order_id: String(order.id),
         order_number: order.order_number ? String(order.order_number) : null,
         decided_at: nowIso,
+        decided_by: clerkUserId,
+        decision_reason: decisionReason || null,
         updated_at: nowIso,
         created_at: nowIso,
         source: "manual_approval",
@@ -3275,6 +3566,25 @@ export async function POST(request, { params }) {
       status: "warning",
       created_at: nowIso,
     });
+
+    if (generatedDraftId) {
+      await supersedeInternalRecommendationDrafts({
+        serviceClient,
+        scope,
+        thread,
+        sourceActionId: actionRecord?.id || null,
+      });
+      await insertFinalReplyDraftRow({
+        serviceClient,
+        scope,
+        thread,
+        subject: latestInboundSubject || thread.subject || "Re:",
+        customerEmail: "",
+        draftMessageId: generatedDraftId,
+        executionState: "blocked",
+        sourceActionId: actionRecord?.id || null,
+      });
+    }
 
     return NextResponse.json(
       {
@@ -3346,6 +3656,7 @@ export async function POST(request, { params }) {
       const firstName = latestInboundName ? latestInboundName.split(/\s+/)[0] : "";
 
       let generatedDraftText = null;
+      let generatedDraftId = null;
       try {
         generatedDraftText = await generateBlockedActionDraft({
           actionType: normalizedActionType,
@@ -3355,7 +3666,7 @@ export async function POST(request, { params }) {
           orderName: asString(order?.name) || asString(order?.order_number),
         });
         if (generatedDraftText) {
-          await upsertThreadDraft({
+          generatedDraftId = await upsertThreadDraft({
             serviceClient,
             scope,
             thread,
@@ -3382,6 +3693,8 @@ export async function POST(request, { params }) {
             order_id: String(order.id),
             order_number: order.order_number ? String(order.order_number) : null,
             decided_at: nowIso,
+            decided_by: clerkUserId,
+            decision_reason: decisionReason || null,
             updated_at: nowIso,
             error: friendlyReason,
           })
@@ -3399,6 +3712,8 @@ export async function POST(request, { params }) {
           order_id: String(order.id),
           order_number: order.order_number ? String(order.order_number) : null,
           decided_at: nowIso,
+          decided_by: clerkUserId,
+          decision_reason: decisionReason || null,
           updated_at: nowIso,
           created_at: nowIso,
           source: "manual_approval",
@@ -3422,6 +3737,25 @@ export async function POST(request, { params }) {
         status: "warning",
         created_at: nowIso,
       });
+
+      if (generatedDraftId) {
+        await supersedeInternalRecommendationDrafts({
+          serviceClient,
+          scope,
+          thread,
+          sourceActionId: actionRecord?.id || null,
+        });
+        await insertFinalReplyDraftRow({
+          serviceClient,
+          scope,
+          thread,
+          subject: latestInboundSubject || thread.subject || "Order support",
+          customerEmail: "",
+          draftMessageId: generatedDraftId,
+          executionState: "blocked",
+          sourceActionId: actionRecord?.id || null,
+        });
+      }
 
       return NextResponse.json(
         {
@@ -3519,6 +3853,8 @@ export async function POST(request, { params }) {
         order_id: String(order.id),
         order_number: order.order_number ? String(order.order_number) : null,
         decided_at: nowIso,
+        decided_by: clerkUserId,
+        decision_reason: decisionReason || null,
         applied_at: nowIso,
         updated_at: nowIso,
         error: null,
@@ -3537,6 +3873,8 @@ export async function POST(request, { params }) {
       order_id: String(order.id),
       order_number: order.order_number ? String(order.order_number) : null,
       decided_at: nowIso,
+      decided_by: clerkUserId,
+      decision_reason: decisionReason || null,
       applied_at: nowIso,
       updated_at: nowIso,
       created_at: nowIso,
@@ -3628,6 +3966,22 @@ export async function POST(request, { params }) {
     }
   }
 
+  const appliedDraftText = await finalizeActionDecisionDraft({
+    serviceClient,
+    scope,
+    thread,
+    actionRecord,
+    actionType: normalizedActionType,
+    outcome: "executed",
+    outcomeDetail: detailText || `The ${normalizedActionType.replace(/_/g, " ")} action has been completed.`,
+    executionState: "executed",
+    orderName: asString(order?.name) || asString(order?.order_number),
+    decisionReason,
+  }).catch((error) => {
+    console.warn("order-updates/accept: failed to generate applied draft", error?.message || error);
+    return null;
+  });
+
   return NextResponse.json(
     {
       ok: true,
@@ -3640,6 +3994,7 @@ export async function POST(request, { params }) {
       sourceStep: proposalStepName,
       webshipperSync,
       followUpAction,
+      draftGenerated: Boolean(appliedDraftText),
     },
     { status: 200 }
   );

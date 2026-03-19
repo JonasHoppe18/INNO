@@ -175,11 +175,13 @@ function policyRulesBlock(intent: PolicyIntent) {
     "- If policy is unclear or missing, ask exactly ONE clarifying question instead of guessing.",
     "- If a return portal URL exists in settings/context, use it. Otherwise do not guess a portal URL.",
     "- For return flows that require support contact, ask briefly for order number, full name, and return reason if missing.",
+    "- If this is an ongoing replacement, defect, or exchange follow-up and the order is already known, do not restart the case as a fresh return intake.",
   ];
 
   if (intent === "RETURN" || intent === "REFUND") {
     lines.push(
       "- RETURNS - CHANNEL RULE: If store policy says 'contact us via email' or shows an email address, do NOT tell the customer to email that address if the customer is already emailing us in this thread/inbox. Treat it as a requirement: ask for the required return details (order number, name used at purchase, reason) and confirm return conditions (return window, sealed/unused requirements, who pays return shipping). Only direct the customer to a specific email address if they are using the wrong channel or if the store explicitly requires a different dedicated return email than this inbox.",
+      "- RETURNS - CONTINUATION RULE: If the customer says they already received the replacement/new item and asks how to send the old item back, answer with practical return logistics directly. Do not ask again for order number or name when the order is already known. Do not mention who pays return shipping unless the customer asks about shipping cost or the approved context explicitly requires it for this continuation.",
     );
   }
 

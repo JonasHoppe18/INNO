@@ -30,6 +30,25 @@ export async function generateReplyFromStrategy(
   );
   const hasTechnicalDiagnosticFacts = Array.isArray(input.technicalDiagnosticFacts) &&
     input.technicalDiagnosticFacts.length > 0;
+  const knownOrderReference = (input.replyStrategy.approved_facts || []).some((fact) =>
+    String(fact?.key || "") === "order_reference" && String(fact?.value || "").trim()
+  );
+  const ongoingReturnFlow = (input.replyStrategy.approved_facts || []).some((fact) =>
+    String(fact?.key || "") === "ongoing_return_or_replacement_flow" && String(fact?.value || "") === "true"
+  );
+  const addressClarificationIssue = (input.replyStrategy.approved_facts || []).some((fact) =>
+    String(fact?.key || "") === "address_clarification_issue" && String(fact?.value || "") === "true"
+  );
+  const addressResolutionPreferred = (input.replyStrategy.approved_facts || []).some((fact) =>
+    String(fact?.key || "") === "address_resolution_preferred" && String(fact?.value || "") === "true"
+  );
+  const directReturnContinuationQuestion = knownOrderReference &&
+    (
+      /\b(?:how do i send .* back|how do i return .*|send the old .* back|return the old .*|how do i send it back now that i (?:got|received) the new one)\b/i
+        .test(input.customerMessage || "") ||
+      /\b(?:hvordan får jeg sendt det gamle retur|hvordan sender jeg det tilbage|hvordan sender jeg det gamle headset tilbage|hvordan returnerer jeg det gamle|sende den gamle tilbage)\b/i
+        .test(input.customerMessage || "")
+    );
 
   const system = [
     "You are a customer support reply generator.",
@@ -49,6 +68,33 @@ export async function generateReplyFromStrategy(
     "If continued contact is needed in this same thread, say things like 'reply here' or 'let us know here' instead.",
     "Do not ask the customer to notify, inform, or contact us again about the same return, request, or support issue they are already raising in this thread.",
     "You may ask for a missing detail such as order number, serial number, preferred date, or timing, but do not ask them to simply notify us again.",
+    knownOrderReference
+      ? "An order is already matched in approved context. Do not ask again for order number, purchase name, or other basic identity details unless a narrower missing detail is explicitly required."
+      : "",
+    ongoingReturnFlow
+      ? "This is an ongoing return or replacement thread. Answer the practical logistics question directly instead of treating it like a fresh return-policy request."
+      : "",
+    ongoingReturnFlow
+      ? "Prefer short practical return instructions early in the reply. Do not default to generic return-policy wording."
+      : "",
+    directReturnContinuationQuestion
+      ? "The customer is asking a direct practical send-back question in an ongoing order-linked thread. Answer with practical return instructions directly and do not ask again for order number, purchase name, or generic return intake details."
+      : "",
+    directReturnContinuationQuestion || ongoingReturnFlow
+      ? "Do not mention who pays return shipping unless the customer asks about shipping cost or the approved context explicitly requires that detail for this reply."
+      : "",
+    addressClarificationIssue
+      ? "This is an address or shipping-address clarification case, not a tracking-status request. Do not use tracking-update fallback wording like 'there is no new tracking update'."
+      : "",
+    addressClarificationIssue
+      ? "Do not invent the exact address field that is wrong unless it is explicitly grounded in APPROVED FACTS, FACT SUMMARY, or CUSTOMER MESSAGE."
+      : "",
+    addressResolutionPreferred
+      ? "Do not reply with vague wording like 'I will check' or 'we will check'. If the current address is already known to be unusable from the thread context, move directly to the practical next step by asking for an alternative usable shipping address."
+      : "",
+    addressResolutionPreferred
+      ? "Use grounded operational wording for address-resolution cases. Prefer phrasing like 'our shipping broker is unable to accept the address as entered' or 'we're unable to proceed with the shipment using the address in its current form'. Do not say 'this address cannot be used for shipping' unless that stronger claim is explicitly grounded."
+      : "",
     hasTechnicalDiagnosticFacts
       ? "When APPROVED TROUBLESHOOTING FACTS are present, prioritize them over broader technical knowledge and use them to make the reply more concrete."
       : "",
@@ -88,6 +134,15 @@ export async function generateReplyFromStrategy(
     `Mode: ${input.replyStrategy.mode}`,
     `Execution state: ${input.executionState}`,
     `Goal: ${input.replyStrategy.goal}`,
+    ongoingReturnFlow
+      ? "Reply structure: 1) answer the practical send-back/return question directly, 2) use the known order context if helpful, 3) only ask for a detail if something is genuinely still missing."
+      : "",
+    directReturnContinuationQuestion && !ongoingReturnFlow
+      ? "Reply structure: 1) answer the practical send-back question directly, 2) use the known order context if helpful, 3) do not ask again for order number or purchase name."
+      : "",
+    addressClarificationIssue
+      ? "Reply structure: 1) acknowledge the clarification, 2) restate the address details already provided, 3) explain in grounded operational terms that we cannot proceed with the shipment using the address as currently entered, 4) ask directly for an alternative usable shipping address, 5) do not say 'I will check'."
+      : "",
     hasTechnicalDiagnosticFacts && input.replyStrategy.mode === "ask_for_missing_info"
       ? "Reply structure: 1) acknowledge the reported issue briefly, 2) give one concrete troubleshooting step from APPROVED TROUBLESHOOTING FACTS, 3) ask only 1-2 genuinely missing diagnostic questions if needed."
       : "",

@@ -744,6 +744,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const [activeDraftId, setActiveDraftId] = useState(null);
   const [isSending, setIsSending] = useState(false);
   const [suppressAutoDraftByThread, setSuppressAutoDraftByThread] = useState({});
+  const [proposalOnlyByThread, setProposalOnlyByThread] = useState({});
   const [draftReady, setDraftReady] = useState(false);
   const [draftWaitTimedOutByThread, setDraftWaitTimedOutByThread] = useState({});
   const [systemDraftUneditedByThread, setSystemDraftUneditedByThread] = useState({});
@@ -1865,11 +1866,30 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       }
       const payload = await res.json().catch(() => ({}));
       const draft = payload?.draft || null;
+      const proposalOnly = payload?.proposal_only === true;
       const signature = String(payload?.signature || "");
       setSignatureByThread((prev) => ({
         ...prev,
         [selectedThreadId]: signature,
       }));
+      setProposalOnlyByThread((prev) => ({
+        ...prev,
+        [selectedThreadId]: proposalOnly,
+      }));
+      if (proposalOnly) {
+        setDraftValue("");
+        setDraftValueByThread((prev) => ({
+          ...prev,
+          [selectedThreadId]: "",
+        }));
+        setSystemDraftUneditedByThread((prev) => ({
+          ...prev,
+          [selectedThreadId]: false,
+        }));
+        setActiveDraftId(null);
+        setDraftReady(true);
+        return;
+      }
       const draftText = draft?.body_text || draft?.body_html || "";
       if (draftText) {
         setDraftValue(draftText);
@@ -1905,6 +1925,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
 
   useEffect(() => {
     if (!selectedThreadId || !draftReady || !aiDraft) return;
+    if (proposalOnlyByThread[selectedThreadId]) return;
     if (suppressAutoDraftByThread[selectedThreadId]) return;
     if (draftValueRef.current) return;
     setDraftValue(aiDraft);
@@ -1916,7 +1937,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       ...prev,
       [selectedThreadId]: true,
     }));
-  }, [aiDraft, draftReady, selectedThreadId, suppressAutoDraftByThread]);
+  }, [aiDraft, draftReady, proposalOnlyByThread, selectedThreadId, suppressAutoDraftByThread]);
 
   useEffect(() => {
     if (!selectedThreadId) return;
@@ -1932,6 +1953,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
 
   useEffect(() => {
     if (!selectedThreadId || !draftReady || !draftMessage) return;
+    if (proposalOnlyByThread[selectedThreadId]) return;
     if (suppressAutoDraftByThread[selectedThreadId]) return;
     const draftBody = draftMessage.body_text || draftMessage.body_html || "";
     if (draftValueRef.current) return;
@@ -1944,7 +1966,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       ...prev,
       [selectedThreadId]: true,
     }));
-  }, [draftMessage, draftReady, selectedThreadId, suppressAutoDraftByThread]);
+  }, [draftMessage, draftReady, proposalOnlyByThread, selectedThreadId, suppressAutoDraftByThread]);
 
   const handleGenerateDraft = useCallback(async () => {
     if (!selectedThreadId || isLocalThreadId(selectedThreadId)) return;
@@ -1984,6 +2006,27 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       }
 
       const draft = payload?.draft || null;
+      const proposalOnly = payload?.proposal_only === true;
+      setProposalOnlyByThread((prev) => ({
+        ...prev,
+        [threadId]: proposalOnly,
+      }));
+      if (proposalOnly) {
+        setDraftValue("");
+        setDraftValueByThread((prev) => ({
+          ...prev,
+          [threadId]: "",
+        }));
+        draftValueRef.current = "";
+        draftLastSavedRef.current = "";
+        setSystemDraftUneditedByThread((prev) => ({
+          ...prev,
+          [threadId]: false,
+        }));
+        setActiveDraftId(null);
+        toast.success("Action proposal created and is awaiting approval.");
+        return;
+      }
       const draftText = draft?.body_text || draft?.body_html || "";
       if (draftText) {
         setDraftValue(draftText);

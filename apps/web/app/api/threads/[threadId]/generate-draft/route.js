@@ -22,6 +22,20 @@ function createServiceClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
+async function loadLatestPendingDraftMeta(serviceClient, scope, threadKey) {
+  if (!threadKey) return null;
+  let query = serviceClient
+    .from("drafts")
+    .select("id, kind, execution_state, source_action_id, status, created_at")
+    .eq("thread_id", threadKey)
+    .eq("status", "pending")
+    .order("created_at", { ascending: false })
+    .limit(1);
+  query = scope?.workspaceId ? query.eq("workspace_id", scope.workspaceId) : query;
+  const { data } = await query.maybeSingle();
+  return data || null;
+}
+
 function stripHtml(html) {
   return String(html || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
@@ -220,6 +234,13 @@ export async function POST(_request, { params }) {
   }
 
   const userSignature = await loadUserSignature(serviceClient, scope.supabaseUserId);
+  const latestPendingDraftMeta = await loadLatestPendingDraftMeta(
+    serviceClient,
+    scope,
+    thread.provider_thread_id || threadId
+  );
+  const proposalOnly =
+    Boolean(latestPendingDraftMeta) && String(latestPendingDraftMeta?.kind || "") !== "final_customer_reply";
   const { data: draft } = await applyScope(
     serviceClient
       .from("mail_messages")
@@ -234,8 +255,10 @@ export async function POST(_request, { params }) {
   );
 
   const aiDraftText =
-    draft?.body_text ||
-    draft?.body_html ||
+    proposalOnly
+      ? ""
+      : draft?.body_text ||
+        draft?.body_html ||
     (String(payload?.reply || "").trim() ? String(payload.reply).trim() : "");
 
   return NextResponse.json(
@@ -245,7 +268,11 @@ export async function POST(_request, { params }) {
       reason: payload?.reason || null,
       explanation: payload?.explanation || null,
       signature: userSignature,
-      draft: draft
+      proposal_only: proposalOnly,
+      draft_kind: latestPendingDraftMeta?.kind || null,
+      draft: proposalOnly
+        ? null
+        : draft
         ? {
             id: draft.id,
             body_text: draft.body_text || "",

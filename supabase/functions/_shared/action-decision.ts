@@ -44,6 +44,9 @@ export async function decideActions(input: DecideActionsInput): Promise<ActionDe
     "Allowed actions: update_shipping_address, cancel_order, refund_order, create_exchange_request, change_shipping_method, hold_or_release_fulfillment, edit_line_items, update_customer_contact, add_note, add_tag, add_internal_note_or_tag, resend_confirmation_or_invoice, lookup_order_status, fetch_tracking.",
     "Prefer read-only actions for status and tracking cases.",
     "Respect automation guidance when deciding whether a mutation should be proposed.",
+    "If ORDER SUMMARY or FACT CONTEXT already identifies the order, do not say the customer needs to provide order number, full name, or basic identity again unless identity is still genuinely ambiguous.",
+    "If the customer asks how to send back an old or faulty item after a replacement or exchange flow, treat it as a practical continuation question, not a fresh return-request intake.",
+    "For ongoing replacement or defect threads with a known order, do not say 'contact support for return instructions' as if the customer is starting over in a new channel.",
   ].join("\n");
 
   const prompt = [

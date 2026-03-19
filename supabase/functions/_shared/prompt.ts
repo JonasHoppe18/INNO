@@ -85,6 +85,11 @@ export function buildMailPrompt({
   const missingDetails = Array.isArray(returnDetailsMissing)
     ? returnDetailsMissing.map((item) => String(item || "").trim()).filter(Boolean)
     : [];
+  const ongoingReturnContinuation =
+    /\b(?:replacement|exchange|new headset|old headset|received the new|got the new)\b/i
+      .test(emailBody || "") ||
+    /\b(?:erstatning|ombytning|nyt headset|gamle headset|modtaget det nye|fået det nye)\b/i
+      .test(emailBody || "");
   const allReturnDetailsPresent = isReturnIntent && missingDetails.length === 0;
   const returnMissingLabel = missingDetails.length
     ? missingDetails.join(", ")
@@ -95,13 +100,24 @@ export function buildMailPrompt({
         "- If policy references a support email/contact-us-by-email requirement, do NOT ask them to email again when they already contacted us in this thread.",
         "- Never write 'email us' / 'contact us by email' instructions in this thread. This thread is already the contact channel.",
         "- Use short natural paragraphs only. Do not use numbered steps or a 'follow these steps' guide format.",
-        "- Confirm return conditions from policy summary/excerpts (window, item condition, and who pays return shipping).",
-        "- Ask only for missing details: order_number, name_used_at_purchase, reason.",
+        ongoingReturnContinuation
+          ? "- This is an ongoing replacement/defect return follow-up. Answer the practical send-back question directly."
+          : "- Confirm return conditions from policy summary/excerpts (window, item condition, and who pays return shipping).",
+        ongoingReturnContinuation
+          ? "- Do not ask again for order_number or name_used_at_purchase when the order is already known in the thread context."
+          : "- Ask only for missing details: order_number, name_used_at_purchase, reason.",
         "- If RETURN DETAILS FOUND contains an order_number, do not ask for order number again.",
         allReturnDetailsPresent
-          ? "- All required details are already present. Do not ask for them again and do not add extra questions. Confirm next steps (packaging guidance, shipping payer, and return address if available in policy summary)."
+          ? ongoingReturnContinuation
+            ? "- The required context is already present. Give direct practical next steps and return address if available. Do not add generic policy filler."
+            : "- All required details are already present. Do not ask for them again and do not add extra questions. Confirm next steps (packaging guidance, shipping payer, and return address if available in policy summary)."
+          : ongoingReturnContinuation
+          ? "- Ask only for a genuinely missing practical detail if one is still required."
           : `- Missing details detected: ${returnMissingLabel}. Ask only for these missing items in one concise sentence.`,
         "- Do not invent return portal URLs, labels, or process steps not present in policy context.",
+        ongoingReturnContinuation
+          ? "- Do not mention who pays return shipping unless the customer asks about cost or policy context explicitly requires it for this continuation."
+          : "",
       ].join("\n")
     : "";
 

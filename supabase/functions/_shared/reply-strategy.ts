@@ -73,6 +73,41 @@ function isInternalSupportOnlyAction(type: string) {
   ].includes(normalized);
 }
 
+function isPracticalReturnLogisticsFollowUp(assessment: CaseAssessment, selectedOrder?: Record<string, unknown> | null) {
+  const types = new Set([assessment.primary_case_type, ...assessment.secondary_case_types]);
+  const strongReturnLogisticsScore =
+    Number(assessment.intent_scores.return_refund ?? 0) >= 5 &&
+    Number(assessment.intent_scores.return_refund ?? 0) >= Number(assessment.intent_scores.tracking_shipping ?? 0);
+  if (!types.has("return_refund") && !types.has("general_support") && !strongReturnLogisticsScore) return false;
+  if (!selectedOrder) return false;
+  const facts = [
+    ...(assessment.entities.symptom_phrases || []),
+    ...(assessment.entities.context_phrases || []),
+  ]
+    .map((value) => String(value || "").toLowerCase())
+    .join("\n");
+  return strongReturnLogisticsScore ||
+    /\b(?:send (?:it|the old one|the old headset) back|return the old|old headset|replacement|exchange)\b/i
+      .test(facts) ||
+    /\b(?:sende den gamle tilbage|sende det gamle headset tilbage|returnere det|gamle headset|erstatning|ombytning)\b/i
+      .test(facts);
+}
+
+function isAddressClarificationCase(assessment: CaseAssessment, selectedOrder?: Record<string, unknown> | null) {
+  if (!selectedOrder) return false;
+  const strongOrderChangeScore =
+    Number(assessment.intent_scores.order_change ?? 0) >= 5 &&
+    Number(assessment.intent_scores.order_change ?? 0) >= Number(assessment.intent_scores.tracking_shipping ?? 0);
+  const facts = [
+    ...(assessment.entities.context_phrases || []),
+    ...(assessment.entities.symptom_phrases || []),
+  ]
+    .map((value) => String(value || "").toLowerCase())
+    .join("\n");
+  return strongOrderChangeScore ||
+    /\b(?:address|city|state|zip|postal|apo|fpo|dpo|billing address|shipping address)\b/i.test(facts);
+}
+
 export function buildReplyStrategy(input: BuildReplyStrategyInput): ReplyStrategy {
   const missingInputs = input.assessment.actionability.missing_required_inputs;
   const executionState = input.executionState ?? "no_action";
@@ -114,6 +149,14 @@ export function buildReplyStrategy(input: BuildReplyStrategyInput): ReplyStrateg
       /\bforsøgt\b/,
       /\balready tried\b/,
     ]);
+  const practicalReturnLogisticsFollowUp = isPracticalReturnLogisticsFollowUp(
+    input.assessment,
+    input.selectedOrder,
+  );
+  const addressClarificationCase = isAddressClarificationCase(
+    input.assessment,
+    input.selectedOrder,
+  );
   const diagnosticQuestions: string[] = [];
   if (strongTechnicalIssue && customerFacingExecutionState === "no_action") {
     if ((input.assessment.entities.context_phrases || []).length === 0) {
@@ -146,6 +189,10 @@ export function buildReplyStrategy(input: BuildReplyStrategyInput): ReplyStrateg
       ? "state_action_pending"
       : customerFacingExecutionState === "executed"
       ? "confirm_completed_action"
+      : practicalReturnLogisticsFollowUp
+      ? "answer_question"
+      : addressClarificationCase
+      ? "answer_question"
       : strongTechnicalIssue
       ? "ask_for_missing_info"
       : input.assessment.intent_labels.length > 1
@@ -154,6 +201,13 @@ export function buildReplyStrategy(input: BuildReplyStrategyInput): ReplyStrateg
   const approvedFacts: Array<{ key: string; value: string }> = [];
   const orderName = String(input.selectedOrder?.name || input.selectedOrder?.order_number || "").trim();
   if (orderName) approvedFacts.push({ key: "order_reference", value: orderName });
+  if (practicalReturnLogisticsFollowUp) {
+    approvedFacts.push({ key: "ongoing_return_or_replacement_flow", value: "true" });
+  }
+  if (addressClarificationCase) {
+    approvedFacts.push({ key: "address_clarification_issue", value: "true" });
+    approvedFacts.push({ key: "address_resolution_preferred", value: "true" });
+  }
   if (input.trackingIntent) approvedFacts.push({ key: "tracking_intent", value: "true" });
   if (input.hasPolicyContext) approvedFacts.push({ key: "policy_context_loaded", value: "true" });
   approvedFacts.push({ key: "execution_state", value: executionState });
@@ -214,6 +268,10 @@ export function buildReplyStrategy(input: BuildReplyStrategyInput): ReplyStrateg
         ? "Acknowledge the reported technical issue, reflect the concrete symptoms already provided, and ask 2-4 targeted troubleshooting follow-up questions."
         : mode === "ask_for_missing_info"
         ? "Collect the missing details needed before taking action."
+        : practicalReturnLogisticsFollowUp
+        ? "Answer the customer's practical return or send-back question directly using the known order context and continue the existing thread naturally."
+        : addressClarificationCase
+        ? "Answer the shipping or address clarification question directly using the known order context. Do not use tracking-status wording or vague 'we will check' phrasing. Prefer an immediate practical next step."
         : mode === "decline_or_block_action"
         ? "Explain clearly that the requested action cannot be completed."
         : mode === "state_action_pending"
@@ -231,6 +289,15 @@ export function buildReplyStrategy(input: BuildReplyStrategyInput): ReplyStrateg
           ...missingInputs.map((item) => `ask_for_${item}`),
           ...diagnosticQuestions,
         ]
+        : practicalReturnLogisticsFollowUp
+        ? ["answer_the_practical_return_logistics_question_directly", "continue_the_existing_thread", "use_known_order_context"]
+        : addressClarificationCase
+        ? [
+          "answer_the_address_or_shipping_issue_directly",
+          "use_known_order_context",
+          "avoid_tracking_status_language",
+          "prefer_immediate_address_resolution_over_we_will_check_wording",
+        ]
         : mode === "state_action_pending"
         ? ["state_manual_review_or_approval"]
         : mode === "decline_or_block_action"
@@ -246,7 +313,12 @@ export function buildReplyStrategy(input: BuildReplyStrategyInput): ReplyStrateg
         ? ["may_confirm_review_or_pending_state"]
         : ["may_answer_using_approved_facts_only"],
     forbidden_claims: forbiddenClaims,
-    open_questions: mode === "ask_for_missing_info" ? combinedOpenQuestions : missingInputs,
+    open_questions:
+      practicalReturnLogisticsFollowUp
+        ? []
+        : mode === "ask_for_missing_info"
+        ? combinedOpenQuestions
+        : missingInputs,
     approved_facts: approvedFacts,
     tone: {
       style: "concise_support",
