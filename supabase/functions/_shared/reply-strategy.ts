@@ -52,21 +52,83 @@ function hasStrongTechnicalIssue(assessment: CaseAssessment) {
     assessment.secondary_case_types.includes("technical_issue");
 }
 
+function hasAssessmentFact(assessment: CaseAssessment, patterns: RegExp[]) {
+  const values = [
+    ...(assessment.entities.symptom_phrases || []),
+    ...(assessment.entities.context_phrases || []),
+    ...(assessment.entities.product_queries || []),
+  ]
+    .map((value) => String(value || "").trim().toLowerCase())
+    .filter(Boolean);
+  return values.some((value) => patterns.some((pattern) => pattern.test(value)));
+}
+
+function isInternalSupportOnlyAction(type: string) {
+  const normalized = String(type || "").trim().toLowerCase();
+  return [
+    "add_note",
+    "add_tag",
+    "add_internal_note_or_tag",
+    "lookup_order_status",
+  ].includes(normalized);
+}
+
 export function buildReplyStrategy(input: BuildReplyStrategyInput): ReplyStrategy {
   const missingInputs = input.assessment.actionability.missing_required_inputs;
   const executionState = input.executionState ?? "no_action";
   const technicalOrProductCase = isTechnicalOrProductCase(input.assessment);
   const strongTechnicalIssue = hasStrongTechnicalIssue(input.assessment);
+  const onlyInternalSupportActions =
+    Array.isArray(input.validation.allowed_actions) &&
+    input.validation.allowed_actions.length > 0 &&
+    input.validation.allowed_actions.every((action) =>
+      isInternalSupportOnlyAction(String(action?.type || ""))
+    );
+  const customerFacingExecutionState =
+    onlyInternalSupportActions &&
+      (executionState === "validated_not_executed" || executionState === "pending_approval")
+      ? "no_action"
+      : executionState;
   const hasReturnRefundIntent =
     input.assessment.primary_case_type === "return_refund" ||
     input.assessment.secondary_case_types.includes("return_refund");
+  const alreadyKnownUpdatedState = hasAssessmentFact(input.assessment, [
+    /\bupdated\b/,
+    /\bup to date\b/,
+    /\bopdateret\b/,
+    /\bajour\b/,
+    /\bfirmware updated\b/,
+    /\bsoftware updated\b/,
+  ]);
+  const alreadyKnownFrequencyState = hasAssessmentFact(input.assessment, [
+    /\bsame frequency\b/,
+    /\bsamme frekvens\b/,
+    /\bfrequency\b/,
+    /\bfrekvens\b/,
+  ]);
+  const alreadyKnownTriedFixes = Boolean(input.assessment.entities.tried_fixes) ||
+    hasAssessmentFact(input.assessment, [
+      /\btried\b/,
+      /\bretried\b/,
+      /\bforsoegt\b/,
+      /\bforsøgt\b/,
+      /\balready tried\b/,
+    ]);
   const diagnosticQuestions: string[] = [];
-  if (strongTechnicalIssue && executionState === "no_action") {
+  if (strongTechnicalIssue && customerFacingExecutionState === "no_action") {
     if ((input.assessment.entities.context_phrases || []).length === 0) {
       diagnosticQuestions.push("ask_which_platform_or_device_the_customer_is_using");
     }
     diagnosticQuestions.push("ask_if_the_issue_only_happens_in_one_game_or_app");
-    diagnosticQuestions.push("ask_if_firmware_or_software_is_fully_up_to_date");
+    if (!alreadyKnownUpdatedState) {
+      diagnosticQuestions.push("ask_if_firmware_or_software_is_fully_up_to_date");
+    }
+    if (!alreadyKnownFrequencyState) {
+      diagnosticQuestions.push("ask_if_the_device_and_dongle_are_on_the_same_frequency_or_pairing_setup");
+    }
+    if (!alreadyKnownTriedFixes) {
+      diagnosticQuestions.push("ask_which_troubleshooting_steps_the_customer_has_already_tried");
+    }
     if (input.assessment.entities.product_queries?.length) {
       diagnosticQuestions.push("ask_for_serial_number_if_relevant_for_troubleshooting_or_warranty");
     }
@@ -78,11 +140,11 @@ export function buildReplyStrategy(input: BuildReplyStrategyInput): ReplyStrateg
   const mode =
     missingInputs.length > 0
       ? "ask_for_missing_info"
-      : executionState === "blocked"
+      : customerFacingExecutionState === "blocked"
       ? "decline_or_block_action"
-      : executionState === "pending_approval" || executionState === "validated_not_executed"
+      : customerFacingExecutionState === "pending_approval" || customerFacingExecutionState === "validated_not_executed"
       ? "state_action_pending"
-      : executionState === "executed"
+      : customerFacingExecutionState === "executed"
       ? "confirm_completed_action"
       : strongTechnicalIssue
       ? "ask_for_missing_info"
@@ -95,6 +157,9 @@ export function buildReplyStrategy(input: BuildReplyStrategyInput): ReplyStrateg
   if (input.trackingIntent) approvedFacts.push({ key: "tracking_intent", value: "true" });
   if (input.hasPolicyContext) approvedFacts.push({ key: "policy_context_loaded", value: "true" });
   approvedFacts.push({ key: "execution_state", value: executionState });
+  if (customerFacingExecutionState !== executionState) {
+    approvedFacts.push({ key: "customer_facing_execution_state", value: customerFacingExecutionState });
+  }
   const primaryProduct = String(input.assessment.entities.product_queries?.[0] || "").trim();
   if (primaryProduct) approvedFacts.push({ key: "product_name", value: primaryProduct });
   for (const symptom of input.assessment.entities.symptom_phrases || []) {
@@ -114,20 +179,24 @@ export function buildReplyStrategy(input: BuildReplyStrategyInput): ReplyStrateg
     "invented_policy",
     "unapproved_action_confirmation",
     "unsupported_tracking_details",
+    "same_thread_email_escalation",
+    "redundant_same_thread_notification_request",
   ];
   const forbiddenClaims =
-    executionState === "executed"
+    customerFacingExecutionState === "executed"
       ? []
       : [
           "claim_action_completed",
           "claim_order_changed",
           "claim_refund_processed",
           "claim_cancellation_completed",
+          "tell_customer_to_email_support_again",
+          "tell_customer_to_notify_or_contact_us_again_about_the_same_request",
         ];
 
   if (
     technicalOrProductCase &&
-    executionState === "no_action" &&
+    customerFacingExecutionState === "no_action" &&
     String(input.policyIntent || "OTHER").toUpperCase() === "OTHER" &&
     !hasReturnRefundIntent
   ) {
@@ -138,7 +207,7 @@ export function buildReplyStrategy(input: BuildReplyStrategyInput): ReplyStrateg
   return {
     version: 1,
     mode,
-    execution_state: executionState,
+    execution_state: customerFacingExecutionState,
     language: input.assessment.language,
     goal:
       mode === "ask_for_missing_info" && strongTechnicalIssue
@@ -171,9 +240,9 @@ export function buildReplyStrategy(input: BuildReplyStrategyInput): ReplyStrateg
         : [],
     must_not_include: mustNotInclude,
     allowed_claims:
-      executionState === "executed"
+      customerFacingExecutionState === "executed"
         ? ["may_confirm_completed_action"]
-        : executionState === "pending_approval" || executionState === "validated_not_executed"
+        : customerFacingExecutionState === "pending_approval" || customerFacingExecutionState === "validated_not_executed"
         ? ["may_confirm_review_or_pending_state"]
         : ["may_answer_using_approved_facts_only"],
     forbidden_claims: forbiddenClaims,

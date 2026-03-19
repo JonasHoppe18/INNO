@@ -44,8 +44,31 @@ export async function generateReplyFromStrategy(
     forbidReturnOrRefundSuggestions
       ? "Do not suggest returns, refunds, exchanges, replacements, or warranty claims unless they are explicitly supported by the approved facts or requested by the reply strategy."
       : "",
+    "The customer is already writing in the active support thread.",
+    "Do not tell the customer to email support again, contact the same support email address, write to us by email, or reach out via email.",
+    "If continued contact is needed in this same thread, say things like 'reply here' or 'let us know here' instead.",
+    "Do not ask the customer to notify, inform, or contact us again about the same return, request, or support issue they are already raising in this thread.",
+    "You may ask for a missing detail such as order number, serial number, preferred date, or timing, but do not ask them to simply notify us again.",
     hasTechnicalDiagnosticFacts
       ? "When APPROVED TROUBLESHOOTING FACTS are present, prioritize them over broader technical knowledge and use them to make the reply more concrete."
+      : "",
+    hasTechnicalDiagnosticFacts && input.replyStrategy.mode === "ask_for_missing_info"
+      ? "For technical support replies, if APPROVED TROUBLESHOOTING FACTS contain relevant next steps, use 1-2 of those concrete troubleshooting steps before asking broader follow-up questions."
+      : "",
+    hasTechnicalDiagnosticFacts
+      ? "Do not ignore a relevant troubleshooting step in APPROVED TROUBLESHOOTING FACTS and fall back to generic advice."
+      : "",
+    hasTechnicalDiagnosticFacts
+      ? "Place the first concrete troubleshooting step early in the reply, immediately after briefly acknowledging the issue."
+      : "",
+    "Do not ask the customer to repeat or reconfirm facts they already clearly stated in CUSTOMER MESSAGE or APPROVED FACTS.",
+    "If the customer already said things are updated, already retried steps, or already described the current setup or symptom pattern, do not ask those same questions again unless you need a narrower missing detail.",
+    "If CUSTOMER MESSAGE or APPROVED FACTS already indicate updated/opdateret firmware or software, do not ask whether firmware or software is updated again.",
+    "If CUSTOMER MESSAGE or APPROVED FACTS already indicate same frequency/samme frekvens or equivalent pairing/setup status, do not ask about frequency or basic setup confirmation again.",
+    "If CUSTOMER MESSAGE or APPROVED FACTS already indicate the customer tried many things or already retried steps, do not ask whether they tried basic troubleshooting again.",
+    "When follow-up questions are still needed, ask only for genuinely missing diagnostic details.",
+    hasTechnicalDiagnosticFacts
+      ? "If APPROVED TROUBLESHOOTING FACTS already provide a useful next step, do not lead with generic diagnostic questions."
       : "",
     "Do not add a signature.",
   ].join("\n");
@@ -65,6 +88,10 @@ export async function generateReplyFromStrategy(
     `Mode: ${input.replyStrategy.mode}`,
     `Execution state: ${input.executionState}`,
     `Goal: ${input.replyStrategy.goal}`,
+    hasTechnicalDiagnosticFacts && input.replyStrategy.mode === "ask_for_missing_info"
+      ? "Reply structure: 1) acknowledge the reported issue briefly, 2) give one concrete troubleshooting step from APPROVED TROUBLESHOOTING FACTS, 3) ask only 1-2 genuinely missing diagnostic questions if needed."
+      : "",
+    "Known customer facts from CUSTOMER MESSAGE and APPROVED FACTS are already established. Do not ask the customer to reconfirm them.",
     input.replyStrategy.must_include.length
       ? `Must include:\n${input.replyStrategy.must_include.map((item) => `- ${item}`).join("\n")}`
       : "",
@@ -83,8 +110,8 @@ export async function generateReplyFromStrategy(
     "",
     "APPROVED FACTS:",
     approvedFactsText || "- none",
-    input.factSummary ? `FACT SUMMARY:\n${input.factSummary}` : "",
     technicalDiagnosticFactsText ? `APPROVED TROUBLESHOOTING FACTS:\n${technicalDiagnosticFactsText}` : "",
+    input.factSummary ? `FACT SUMMARY:\n${input.factSummary}` : "",
     input.technicalKnowledgeSummary ? `TECHNICAL SUPPORT FACTS:\n${input.technicalKnowledgeSummary}` : "",
     input.policySummary ? `POLICY SUMMARY:\n${input.policySummary}` : "",
     input.policyExcerpt ? `POLICY EXCERPT:\n${input.policyExcerpt}` : "",

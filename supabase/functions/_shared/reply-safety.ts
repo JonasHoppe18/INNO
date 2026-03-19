@@ -36,6 +36,41 @@ const COMPLETION_LANGUAGE_PATTERNS = [
   /\bordren er ændret\b/i,
 ];
 
+const SAME_CHANNEL_ESCALATION_LINE_PATTERNS = [
+  /support@\S+/i,
+  /\bcontact us at\s+\S+@\S+/i,
+  /\bwrite to us at\s+\S+@\S+/i,
+  /\bsend (?:us|an) (?:an )?e-?mail\b/i,
+  /\bemail us\b/i,
+  /\breply by e-?mail\b/i,
+  /\breach out to us via e-?mail\b/i,
+  /\bnotify us by e-?mail\b/i,
+  /\bwrite to us by e-?mail\b/i,
+  /\bcontact us via e-?mail\b/i,
+  /\bcontact us by e-?mail\b/i,
+  /\bskriv til\s+\S+@\S+/i,
+  /\bkontakt os på\s+\S+@\S+/i,
+  /\bsend os en e-?mail\b/i,
+  /\bskriv til os på e-?mail\b/i,
+  /\bskriv til os via e-?mail\b/i,
+  /\bkontakt os via e-?mail\b/i,
+];
+
+const REDUNDANT_IN_THREAD_NOTIFICATION_LINE_PATTERNS = [
+  /\b(?:the return|your return|returneringen|returen)\b.*\b(?:must|skal)\b.*\b(?:be )?(?:notified|reported|meddeles|oplyses)\b/i,
+  /\bplease\s+(?:notify|inform)\s+us\b.*\b(?:here|about|of)\b/i,
+  /\bcontact\s+us\s+here\b.*\b(?:inform|notify|let us know)\b/i,
+  /\blet us know here about (?:the return|your return|this return)\b/i,
+  /\b(?:giv|lad)\s+os\b.*\b(?:besked|vide)\b.*\b(?:om returen|om din retur|om returneringen)\b/i,
+  /\bkontakt os her\b.*\b(?:for at informere|for at give besked)\b/i,
+  /\bskriv(?: gerne)? her\b.*\b(?:om returen|om din retur|om returneringen)\b/i,
+];
+
+const DETAIL_FOLLOWUP_ALLOWLIST_PATTERNS = [
+  /\b(?:order number|ordrenummer|serial number|serienummer|rma|preferred date|dato|day|dag|time|tidspunkt|timing|hvornår)\b/i,
+  /\b(?:reply here|let us know here|svar her|skriv her)\b.*\b(?:which|what|when|hvilken|hvilket|hvornår)\b/i,
+];
+
 export function isActionSensitiveReplyCase(options: {
   actionTypes?: string[];
   isReturnIntent?: boolean;
@@ -98,5 +133,60 @@ export function guardReplyForExecutionState(options: {
     }),
     downgraded: true,
     containsConfirmationLanguage,
+  };
+}
+
+export function guardSameChannelEscalation(options: {
+  text: string;
+  languageHint: string;
+}) {
+  const original = String(options.text || "").trim();
+  if (!original) {
+    return {
+      text: original,
+      changed: false,
+      removedSameChannelEscalation: false,
+    };
+  }
+
+  const lines = original.split("\n");
+  let removed = false;
+  const filtered = lines.filter((line) => {
+    const body = String(line || "").trim();
+    if (!body) return true;
+    const allowDetailFollowup = DETAIL_FOLLOWUP_ALLOWLIST_PATTERNS.some((pattern) => pattern.test(body));
+    const match =
+      !allowDetailFollowup &&
+      (
+        SAME_CHANNEL_ESCALATION_LINE_PATTERNS.some((pattern) => pattern.test(body)) ||
+        REDUNDANT_IN_THREAD_NOTIFICATION_LINE_PATTERNS.some((pattern) => pattern.test(body))
+      );
+    if (match) removed = true;
+    return !match;
+  });
+
+  let next = filtered.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  if (removed) {
+    const hasInThreadPhrase =
+      /\breply here\b/i.test(next) ||
+      /\blet us know here\b/i.test(next) ||
+      /\bjust reply here\b/i.test(next) ||
+      /\bsvar her\b/i.test(next) ||
+      /\bskriv her\b/i.test(next) ||
+      /\bgiv os gerne besked her\b/i.test(next);
+    if (!hasInThreadPhrase) {
+      const isDanish = String(options.languageHint || "").toLowerCase() === "da" ||
+        String(options.languageHint || "").toLowerCase() === "same_as_customer";
+      const addition = isDanish
+        ? "Hvis du har flere spoergsmaal, er du velkommen til bare at svare her."
+        : "If you have any questions, just reply here.";
+      next = next ? `${next}\n\n${addition}` : addition;
+    }
+  }
+
+  return {
+    text: next,
+    changed: next !== original,
+    removedSameChannelEscalation: removed,
   };
 }

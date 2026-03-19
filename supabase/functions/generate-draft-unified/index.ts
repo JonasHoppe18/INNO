@@ -26,6 +26,7 @@ import { buildReplyStrategy, type ReplyStrategy } from "../_shared/reply-strateg
 import { generateReplyFromStrategy } from "../_shared/reply-generator.ts";
 import {
   containsCompletionLanguage,
+  guardSameChannelEscalation,
   guardReplyForExecutionState,
   isActionSensitiveReplyCase,
   type ExecutionState,
@@ -340,34 +341,60 @@ const deriveExecutionState = (options: {
   return "no_action";
 };
 
-const routeCategoryFromAssessment = (assessment: CaseAssessment): EmailCategory | null => {
-  const types = new Set([assessment.primary_case_type, ...assessment.secondary_case_types]);
-  if (types.has("technical_issue") || types.has("product_question")) return "Product question";
-  if (types.has("tracking_shipping")) return "Tracking";
-  if (types.has("return_refund")) return "Return";
-  if (types.has("billing_payment")) return "Payment";
-  return null;
+const routeCategoryFromIntent = (intent: CaseAssessment["latest_message_primary_intent"]): EmailCategory | null => {
+  switch (intent) {
+    case "technical_issue":
+    case "product_question":
+    case "warranty_complaint":
+      return "Product question";
+    case "tracking_shipping":
+      return "Tracking";
+    case "return_refund":
+      return "Return";
+    case "billing_payment":
+      return "Payment";
+    case "order_change":
+      return "General";
+    case "general_support":
+      return "General";
+    default:
+      return null;
+  }
 };
 
-const shouldOverrideLegacyRouting = (
-  assessment: CaseAssessment,
-  legacyWorkflow: string,
-  legacyCategory: string,
-) => {
-  const types = new Set([assessment.primary_case_type, ...assessment.secondary_case_types]);
-  const strongTechOrProduct =
-    (assessment.intent_scores.technical_issue ?? 0) >= 4 ||
-    (assessment.intent_scores.product_question ?? 0) >= 4 ||
-    types.has("technical_issue") ||
-    types.has("product_question");
-  const legacyLooksPayment =
-    String(legacyWorkflow || "").toLowerCase() === "payment" ||
-    String(legacyCategory || "").toLowerCase() === "payment";
-  return (
-    assessment.confidence >= 0.55 &&
-    strongTechOrProduct &&
-    (legacyLooksPayment || assessment.primary_case_type === "mixed_case")
-  );
+const shouldUseLatestMessageRoute = (assessment: CaseAssessment) =>
+  (
+    assessment.latest_message_confidence >= 0.55 ||
+    (
+      assessment.latest_message_confidence >= 0.42 &&
+      assessment.historical_context_intents.includes("tracking_shipping") &&
+      assessment.latest_message_primary_intent !== "tracking_shipping" &&
+      (
+        assessment.latest_message_primary_intent === "general_support" ||
+        assessment.latest_message_primary_intent === "return_refund" ||
+        assessment.latest_message_primary_intent === "order_change"
+      )
+    )
+  ) &&
+  assessment.intent_conflict_detected &&
+  assessment.current_message_should_override_thread_route;
+
+const shouldSuppressTrackingEnrichment = (options: {
+  assessment: CaseAssessment | null;
+  currentMessageTrackingIntent: boolean;
+}) => {
+  if (options.currentMessageTrackingIntent) return false;
+  const assessment = options.assessment;
+  if (!assessment) return false;
+  const staleTrackingHistory = assessment.historical_context_intents.includes("tracking_shipping");
+  const nonTrackingCurrentAsk =
+    assessment.latest_message_primary_intent !== "tracking_shipping" &&
+    (
+      assessment.latest_message_primary_intent === "general_support" ||
+      assessment.latest_message_primary_intent === "return_refund" ||
+      assessment.latest_message_primary_intent === "order_change"
+    );
+  return staleTrackingHistory && nonTrackingCurrentAsk;
 };
 
 const shouldSuppressPolicyForTechnicalReply = (options: {
@@ -388,16 +415,86 @@ const shouldSuppressPolicyForTechnicalReply = (options: {
   );
 };
 
-const buildCompactTroubleshootingQuery = (assessment: CaseAssessment | null) => {
+const buildCompactTroubleshootingQuery = (
+  assessment: CaseAssessment | null,
+  customerMessage?: string | null,
+) => {
   if (!assessment) return "";
-  const tokens = [
-    ...(assessment.entities.product_queries || []).slice(0, 1),
-    ...(assessment.entities.symptom_phrases || []).slice(0, 2),
-    ...(assessment.entities.context_phrases || []).slice(0, 1),
-  ]
+  const normalizedMessage = String(customerMessage || "").replace(/\s+/g, " ").trim();
+  const symptomPhrases = (assessment.entities.symptom_phrases || [])
     .map((value) => String(value || "").replace(/\s+/g, " ").trim())
     .filter(Boolean);
-  return Array.from(new Set(tokens)).join(" ");
+  const contextPhrases = (assessment.entities.context_phrases || [])
+    .map((value) => String(value || "").replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const productPhrases = (assessment.entities.product_queries || [])
+    .map((value) => String(value || "").replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+
+  const issuePriorityPatterns: Array<{ pattern: RegExp; value: string }> = [
+    {
+      pattern:
+        /\b(?:dongle|receiver|usb dongle|wireless receiver|trådløs forbindelse|same frequency|samme frekvens)\b/i,
+      value: "dongle",
+    },
+    {
+      pattern:
+        /\b(?:disconnects again|disconnects|disconnecting|loses connection|drops connection|can't stay connected|cannot stay connected|hopper af|hopper fra|mister forbindelsen|forbindelsen ryger)\b/i,
+      value: "disconnects",
+    },
+    {
+      pattern:
+        /\b(?:10\s*seconds?|ten seconds?|few seconds?|10\s*sekunder|sekunder|sek)\b/i,
+      value: "10 seconds",
+    },
+    {
+      pattern: /\b(?:no sound|audio drops|sound cuts out|ingen lyd|lyden forsvinder)\b/i,
+      value: "no sound",
+    },
+    {
+      pattern:
+        /\b(?:everything updated|fully updated|all updated|already updated|updated|opdateret|alt er opdateret)\b/i,
+      value: "updated",
+    },
+    {
+      pattern:
+        /\b(?:pairing problem|connection issue|wireless connection|forbindelsesproblem|parringsproblem)\b/i,
+      value: "connectivity",
+    },
+  ];
+
+  const prioritizedTokens: string[] = [];
+  const pushUnique = (value: string) => {
+    const normalized = String(value || "").replace(/\s+/g, " ").trim();
+    if (!normalized) return;
+    if (prioritizedTokens.includes(normalized)) return;
+    prioritizedTokens.push(normalized);
+  };
+
+  if (productPhrases.length) {
+    pushUnique(productPhrases[0]);
+  }
+
+  for (const entry of issuePriorityPatterns) {
+    const matchedAssessment =
+      symptomPhrases.some((value) => entry.pattern.test(value)) ||
+      contextPhrases.some((value) => entry.pattern.test(value));
+    const matchedMessage = normalizedMessage && entry.pattern.test(normalizedMessage);
+    if (matchedAssessment || matchedMessage) {
+      pushUnique(entry.value);
+    }
+  }
+
+  for (const value of symptomPhrases) {
+    if (prioritizedTokens.length >= 5) break;
+    if (value.length <= 40) pushUnique(value);
+  }
+  for (const value of contextPhrases) {
+    if (prioritizedTokens.length >= 6) break;
+    if (value.length <= 24) pushUnique(value);
+  }
+
+  return prioritizedTokens.slice(0, 6).join(" ");
 };
 
 const buildTechnicalKnowledgeSummary = (
@@ -460,6 +557,10 @@ const extractTechnicalDiagnosticFacts = (
   const contextTerms = (assessment.entities.context_phrases || [])
     .flatMap((item) => String(item || "").toLowerCase().split(/\s+/))
     .filter(Boolean);
+  const issuePriorityPattern =
+    /\b(?:microphone|mic|freeze|freezes|freezing|crash|shutdown|shut down|game|app|firmware|update|serial|platform|device)\b/i;
+  const issueCriticalPattern =
+    /\b(?:freeze|freezes|freezing|crash|shutdown|shut down|game|app|microphone|mic)\b/i;
   const genericAudioSettingPenalty =
     /\b(?:sidetone|microphone level|sound control panel|volume slider|windows sound settings|sound settings)\b/i;
   const selectedFacts: Array<{ text: string; score: number }> = [];
@@ -503,17 +604,34 @@ const extractTechnicalDiagnosticFacts = (
       const normalized = candidate.toLowerCase();
       let score = Number(hit.similarity ?? 0);
       if (productName && normalized.includes(productName)) score += 2.5;
+      let symptomOverlap = 0;
       for (const term of symptomTerms) {
-        if (term.length >= 3 && normalized.includes(term)) score += 0.45;
+        if (term.length >= 3 && normalized.includes(term)) {
+          score += 0.75;
+          symptomOverlap += 1;
+        }
       }
+      let contextOverlap = 0;
       for (const term of contextTerms) {
-        if (term.length >= 2 && normalized.includes(term)) score += 0.6;
+        if (term.length >= 2 && normalized.includes(term)) {
+          score += 0.8;
+          contextOverlap += 1;
+        }
       }
-      if (/\b(?:freeze|freezes|freezing|shut(?:s)? down|shutdown|crash|game|app|firmware|update|serial|diagnostic|troubleshoot)\b/i.test(candidate)) {
-        score += 1.2;
+      if (issuePriorityPattern.test(candidate)) {
+        score += 1.8;
       }
-      if (genericAudioSettingPenalty.test(candidate)) {
-        score -= 1.4;
+      if (issueCriticalPattern.test(candidate)) {
+        score += 1.6;
+      }
+      if (symptomOverlap > 0 && contextOverlap > 0) {
+        score += 1.4;
+      }
+      if (symptomOverlap === 0 && contextOverlap === 0) {
+        score -= 0.8;
+      }
+      if (genericAudioSettingPenalty.test(candidate) && symptomOverlap === 0) {
+        score -= 3.4;
       }
       addFact(candidate, score);
     }
@@ -2115,9 +2233,10 @@ Deno.serve(async (req) => {
       }
     }
     let prioritizedKnowledgeMatches = context.relevantKnowledgeMatches || [];
-    const initialTrackingIntent =
-      Boolean(workflowRoute.forceTrackingIntent) ||
-      detectTrackingIntent(emailData.subject || "", emailData.body || "");
+    const currentMessageTrackingIntent = detectTrackingIntent(
+      emailData.subject || "",
+      emailData.body || "",
+    );
     if (V2_STAGED_ORCHESTRATOR_ENABLED && V2_CASE_ASSESSMENT_ENABLED) {
       caseAssessment = assessCase({
         subject: emailData.subject,
@@ -2126,22 +2245,74 @@ Deno.serve(async (req) => {
         fromEmail: emailData.fromEmail,
         ticketCategory,
         workflow: workflowRoute.workflow,
-        trackingIntent: initialTrackingIntent,
+        trackingIntent: currentMessageTrackingIntent,
         matchedSubjectNumber: context.matchedSubjectNumber,
         hasSelectedOrder: Boolean(selectedOrder),
         styleLearningEnabled: Boolean(context.automation?.historic_inbox_access),
       });
-      if (shouldOverrideLegacyRouting(caseAssessment, workflowRoute.workflow, ticketCategory)) {
-        const assessmentCategory = routeCategoryFromAssessment(caseAssessment);
+      appendStructuredArtifactLog(
+        reasoningLogs,
+        "v2_latest_message_intent",
+        {
+          artifact_type: "latest_message_intent",
+          latest_message_primary_intent: caseAssessment.latest_message_primary_intent,
+          latest_message_confidence: caseAssessment.latest_message_confidence,
+          latest_message_entities: {
+            emails: caseAssessment.entities.emails,
+            order_numbers: caseAssessment.entities.order_numbers,
+            product_queries: caseAssessment.entities.product_queries,
+          },
+          legacy_category: legacyTicketCategory,
+          legacy_workflow: buildWorkflowRoute(legacyTicketCategory).workflow,
+        },
+        internalThread.threadId,
+      );
+      appendStructuredArtifactLog(
+        reasoningLogs,
+        "v2_historical_context_hints",
+        {
+          artifact_type: "historical_context_hints",
+          historical_context_intents: caseAssessment.historical_context_intents,
+          legacy_category: legacyTicketCategory,
+          legacy_workflow: buildWorkflowRoute(legacyTicketCategory).workflow,
+        },
+        internalThread.threadId,
+      );
+      appendStructuredArtifactLog(
+        reasoningLogs,
+        "v2_intent_conflict",
+        {
+          artifact_type: "intent_conflict",
+          latest_message_primary_intent: caseAssessment.latest_message_primary_intent,
+          latest_message_confidence: caseAssessment.latest_message_confidence,
+          historical_context_intents: caseAssessment.historical_context_intents,
+          intent_conflict_detected: caseAssessment.intent_conflict_detected,
+          current_message_should_override_thread_route:
+            caseAssessment.current_message_should_override_thread_route,
+        },
+        internalThread.threadId,
+      );
+      if (shouldUseLatestMessageRoute(caseAssessment)) {
+        const assessmentCategory = routeCategoryFromIntent(
+          caseAssessment.latest_message_primary_intent,
+        );
         if (assessmentCategory && assessmentCategory !== ticketCategory) {
+          const legacyCategoryBeforeOverride = ticketCategory;
+          const legacyWorkflowBeforeOverride = workflowRoute.workflow;
           ticketCategory = assessmentCategory;
           workflowRoute = buildWorkflowRoute(ticketCategory);
           reasoningLogs.push({
             step_name: "workflow_routing_override",
             step_detail: JSON.stringify({
-              reason: "assessment_override",
-              legacy_category: legacyTicketCategory,
-              legacy_workflow: buildWorkflowRoute(legacyTicketCategory).workflow,
+              reason: "current_message_first_override",
+              legacy_category: legacyCategoryBeforeOverride,
+              legacy_workflow: legacyWorkflowBeforeOverride,
+              latest_message_primary_intent: caseAssessment.latest_message_primary_intent,
+              latest_message_confidence: caseAssessment.latest_message_confidence,
+              historical_context_intents: caseAssessment.historical_context_intents,
+              intent_conflict_detected: caseAssessment.intent_conflict_detected,
+              current_message_should_override_thread_route:
+                caseAssessment.current_message_should_override_thread_route,
               primary_case_type: caseAssessment.primary_case_type,
               secondary_case_types: caseAssessment.secondary_case_types,
               confidence: caseAssessment.confidence,
@@ -2170,6 +2341,12 @@ Deno.serve(async (req) => {
           artifact_type: "case_assessment_v2",
           primary_case_type: caseAssessment.primary_case_type,
           secondary_case_types: caseAssessment.secondary_case_types,
+          latest_message_primary_intent: caseAssessment.latest_message_primary_intent,
+          latest_message_confidence: caseAssessment.latest_message_confidence,
+          historical_context_intents: caseAssessment.historical_context_intents,
+          intent_conflict_detected: caseAssessment.intent_conflict_detected,
+          current_message_should_override_thread_route:
+            caseAssessment.current_message_should_override_thread_route,
           intent_scores: caseAssessment.intent_scores,
           metadata_only_signals: caseAssessment.metadata_only_signals,
           retrieval_needs: caseAssessment.retrieval_needs,
@@ -2253,7 +2430,10 @@ Deno.serve(async (req) => {
         caseAssessment?.primary_case_type === "product_question"
       ) &&
       (!caseAssessment?.entities?.product_queries?.length || !(productRetrieval.hits || []).length);
-    const troubleshootingQueryText = buildCompactTroubleshootingQuery(caseAssessment);
+    const troubleshootingQueryText = buildCompactTroubleshootingQuery(
+      caseAssessment,
+      `${emailData.subject || ""}\n${emailData.body || ""}`,
+    );
     let supplementalKnowledgeDebug:
       | Awaited<ReturnType<typeof fetchRelevantKnowledgeDetailed>>["debug"]
       | null = null;
@@ -2337,9 +2517,30 @@ Deno.serve(async (req) => {
         status: "success",
       });
     }
+    const trackingIntentSuppressed = shouldSuppressTrackingEnrichment({
+      assessment: caseAssessment,
+      currentMessageTrackingIntent,
+    });
     const trackingIntent =
-      Boolean(workflowRoute.forceTrackingIntent) ||
-      detectTrackingIntent(emailData.subject || "", emailData.body || "");
+      !trackingIntentSuppressed &&
+      (
+        Boolean(workflowRoute.forceTrackingIntent) ||
+        currentMessageTrackingIntent
+      );
+    appendStructuredArtifactLog(
+      reasoningLogs,
+      "v2_tracking_intent",
+      {
+        artifact_type: "tracking_intent",
+        current_message_tracking_intent: currentMessageTrackingIntent,
+        workflow_forces_tracking: Boolean(workflowRoute.forceTrackingIntent),
+        tracking_intent_suppressed: trackingIntentSuppressed,
+        effective_tracking_intent: trackingIntent,
+        latest_message_primary_intent: caseAssessment?.latest_message_primary_intent ?? null,
+        historical_context_intents: caseAssessment?.historical_context_intents ?? [],
+      },
+      internalThread.threadId,
+    );
     if (trackingIntent && selectedTrackingCarriers.length) {
       reasoningLogs.push({
         step_name: "carrier_preferences",
@@ -3285,6 +3486,23 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       finalText = await enforceReplyLanguage(customerMessage, baseTrackingText, languageHint);
       finalText = ensureFirstLineHasName(finalText, trackingName);
       finalText = applyTrackingClosingByLanguage(finalText, languageHint);
+    }
+
+    const sameChannelGuardResult = guardSameChannelEscalation({
+      text: finalText,
+      languageHint,
+    });
+    if (sameChannelGuardResult.changed) {
+      finalText = sameChannelGuardResult.text;
+      appendStructuredArtifactLog(
+        reasoningLogs,
+        "v2_same_channel_guard",
+        {
+          artifact_type: "same_channel_guard",
+          removed_same_channel_escalation: sameChannelGuardResult.removedSameChannelEscalation,
+        },
+        internalThread.threadId,
+      );
     }
 
     const replyGuardResult = guardReplyForExecutionState({

@@ -1,4 +1,5 @@
 import type { EmailCategory } from "./email-category.ts";
+import { parseEmailReplyBodies } from "./email-reply-parser.ts";
 
 export type GeneralCaseType =
   | "technical_issue"
@@ -37,6 +38,11 @@ export type CaseAssessment = {
   version: 2;
   primary_case_type: GeneralCaseType;
   secondary_case_types: GeneralCaseType[];
+  latest_message_primary_intent: GeneralCaseType;
+  latest_message_confidence: number;
+  historical_context_intents: GeneralCaseType[];
+  intent_conflict_detected: boolean;
+  current_message_should_override_thread_route: boolean;
   intent_scores: Record<GeneralCaseType, number>;
   metadata_only_signals: MetadataOnlySignal[];
   retrieval_needs: RetrievalNeeds;
@@ -99,6 +105,17 @@ const DATE_LIKE_PRODUCT_REGEXES = [
 const EMAIL_REGEX = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
 const ORDER_NUMBER_REGEX = /#?\b(\d{3,})\b/g;
 const INVOICE_REGEX = /\b(?:invoice|receipt|faktura|kvittering)(?:\s*(?:no|number|nr))?[:#]?\s*([A-Z0-9-]{3,})\b/gi;
+const SUPPORT_HEADER_TAIL_RE =
+  /^(?:den|on)\b.*\b(?:wrote|skrev|schrieb|a écrit)\b.*$|^(?:fra|from|från|sent|sendt|date|dato|to|til|subject|emne|cc|bcc)\s*:.*$/i;
+const SUPPORT_SIGNATURE_TAIL_RE =
+  /^(?:support|customer support|kundeservice|helpdesk)\b.*<[^>]+@[^>]+>$/i;
+const SUBJECT_REPLY_PREFIX_RE = /^(?:(?:re|fw|fwd|sv|vs|aw)\s*:\s*)+/i;
+const SUBJECT_NOISE_RE =
+  /^(?:\[[^\]]+\]\s*)*(?:new customer message on|customer message on|new message on|message on)\b.*$/i;
+const SUBJECT_DATE_TITLE_RE =
+  /^(?:(?:13|14|15|16|17|18|19|20)\s+\w+\s+(?:19|20)\d{2}|\w+\s+\d{1,2},?\s+(?:19|20)\d{2})(?:.*)$/i;
+const SUBJECT_RELAY_WORD_SALAD_RE =
+  /^(?:(?:new|customer|message|march|april|may|june|july|august|september|october|november|december|\d{1,2}|\d{4}|at|kl\.?|on)\s+){4,}.*$/i;
 
 const CASE_TYPES: GeneralCaseType[] = [
   "technical_issue",
@@ -125,13 +142,24 @@ const SIGNAL_RULES: SignalRule[] = [
     patterns: [
       /\b(not working|doesn'?t work|won'?t work|broken|defective|faulty|damaged)\b/i,
       /\b(won'?t connect|not connecting|disconnects|cuts out|no sound|mic not working)\b/i,
-      /\b(battery issue|pairing problem|technical issue|hardware issue)\b/i,
+      /\b(?:hopper af|hopper fra|afbryder|mister forbindelsen|kan ikke holde forbindelsen)\b/i,
+      /\b(?:ingen lyd|lyden forsvinder|ingen forbindelse)\b/i,
+      /\b(can'?t stay connected|cannot stay connected|loses connection|keeps disconnecting|disconnects again)\b/i,
+      /\b(?:forbundet|forbinder) .* \b(?:dongle|receiver)\b.*\b(?:sekunder|sek)\b/i,
+      /\b(?:connected|connects?) to (?:the )?dongle\b.*\b(?:seconds?|sec)\b/i,
+      /\b(?:no sound|sound cuts out|audio drops)\b/i,
+      /\b(battery issue|pairing problem|technical issue|hardware issue|parringsproblem|forbindelsesproblem)\b/i,
     ],
   },
   {
     type: "technical_issue",
     score: 2,
-    patterns: [/\b(problem|issue|bug|error|repair|replace because defective)\b/i],
+    patterns: [
+      /\b(problem|issue|bug|error|repair|replace because defective)\b/i,
+      /\b(?:opdateret|alt er opdateret|jeg har opdateret|prøvet trinene igen|prøvet igen|samme frekvens)\b/i,
+      /\b(everything updated|fully updated|same frequency|same channel|retried the steps|tried the steps again)\b/i,
+      /\b(dongle|wireless connection|frequency|receiver|frekvens|trådløs forbindelse)\b/i,
+    ],
   },
   {
     type: "product_question",
@@ -152,6 +180,18 @@ const SIGNAL_RULES: SignalRule[] = [
     type: "tracking_shipping",
     score: 2,
     patterns: [/\b(tracking|shipping|delivery|carrier|dispatch|package)\b/i],
+  },
+  {
+    type: "return_refund",
+    score: 4,
+    patterns: [
+      /\b(?:drop off|drop it off|come by|stop by|bring (?:it|the package)|deliver it in person|hand(?:ing)? in)\b.*\b(?:package|parcel|return|item|headset)\b/i,
+      /\b(?:komme forbi|forbi med|aflevere|indlevere|komme ind med)\b.*\b(?:pakke|retur|vare|headset)\b/i,
+      /\b(?:opening hours|opening times|business hours)\b.*\b(?:return|package|drop off|come by|shipping)\b/i,
+      /\b(?:åbningstider|åbningstid)\b.*\b(?:retur|pakke|aflevere|sende)\b/i,
+      /\b(?:avoid sending|instead of shipping|rather than shipping|easier than shipping)\b/i,
+      /\b(?:slippe for at sende|undgå at sende)\b.*\b(?:pakke|retur)\b/i,
+    ],
   },
   {
     type: "return_refund",
@@ -197,6 +237,65 @@ const SIGNAL_RULES: SignalRule[] = [
 
 function uniq(values: string[]) {
   return Array.from(new Set(values.filter(Boolean)));
+}
+
+function cleanLatestMessageBody(body: string) {
+  const parsed = parseEmailReplyBodies({ text: body });
+  const lines = String(parsed.cleanBodyText || body)
+    .split("\n")
+    .map((line) => line.replace(/\u00a0/g, " ").trimEnd());
+  const kept: string[] = [];
+
+  for (const rawLine of lines) {
+    const line = String(rawLine || "").trim();
+    if (!line) {
+      kept.push("");
+      continue;
+    }
+    if (SUPPORT_HEADER_TAIL_RE.test(line)) break;
+    if (SUPPORT_SIGNATURE_TAIL_RE.test(line)) break;
+    kept.push(line);
+  }
+
+  const cleaned = kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  return {
+    cleanBodyText: cleaned || String(parsed.cleanBodyText || body || "").trim(),
+    parserStrategy: parsed.parserStrategy,
+    quotedHistoryDetected: parsed.quotedHistoryDetected,
+  };
+}
+
+function cleanLatestMessageSubject(subject: string) {
+  const raw = String(subject || "").trim();
+  if (!raw) return "";
+  let next = raw;
+  let previous = "";
+  while (next && next !== previous) {
+    previous = next;
+    next = next.replace(SUBJECT_REPLY_PREFIX_RE, "").trim();
+    next = next.replace(/^(?:\[[^\]]+\]\s*)+/, "").trim();
+  }
+  if (!next) return "";
+  if (SUBJECT_NOISE_RE.test(next)) return "";
+  if (SUBJECT_DATE_TITLE_RE.test(next) && !/[?!]/.test(next)) return "";
+  if (SUBJECT_RELAY_WORD_SALAD_RE.test(next)) return "";
+  if (
+    /^(?:new|customer|message|march|april|may|june|july|august|september|october|november|december|\d{1,2}|\d{4}|at|kl\.?|on)\b/i
+      .test(next) &&
+    next.split(/\s+/).length >= 5
+  ) {
+    return "";
+  }
+  return next;
+}
+
+function isMeaningfulLatestMessageSubject(subject: string) {
+  const normalized = cleanLatestMessageSubject(subject);
+  if (!normalized) return false;
+  if (SUBJECT_NOISE_RE.test(normalized)) return false;
+  if (SUBJECT_DATE_TITLE_RE.test(normalized) && !/[?!]/.test(normalized)) return false;
+  if (SUBJECT_RELAY_WORD_SALAD_RE.test(normalized)) return false;
+  return true;
 }
 
 function detectLanguage(subject: string, body: string) {
@@ -296,13 +395,26 @@ function cleanProductCandidate(value: string) {
   return normalized;
 }
 
+function isCompactProductLikeValue(value: string) {
+  const normalized = normalizeCandidate(value);
+  if (!normalized) return false;
+  if (/[.!?]/.test(normalized)) return false;
+  if (/^(?:hej|hello|hi|dear|thanks|tak)\b/i.test(normalized)) return false;
+  const words = normalized.split(/\s+/).filter(Boolean);
+  if (words.length > 4) return false;
+  return true;
+}
+
 function cleanSymptomCandidate(value: string) {
   const normalized = stripLeadingFieldNoise(value);
   if (!normalized) return "";
   if (isFieldLabelNoise(value)) return "";
   if (/^(?:with my old|my old|with the old|the old)\b/i.test(normalized)) return "";
   if (normalized.length > 80) return "";
-  if (!/(?:issue|issues|mic|microphone|speaker|audio|sound|freeze|freezes|freezing|shut(?:s)? down|shutdown|connect|disconnect|pairing|battery|charge|crash)/i.test(normalized)) {
+  if (
+    !/(?:issue|issues|mic|microphone|speaker|audio|sound|freeze|freezes|freezing|shut(?:s)? down|shutdown|connect|disconnect|pairing|battery|charge|crash|dongle|receiver|frequency|wireless|updated|seconds?|sekunder|ingen lyd|hopper af|mister forbindelsen|frekvens|opdateret|forbindelse|parring)/i
+      .test(normalized)
+  ) {
     return "";
   }
   return normalized;
@@ -334,6 +446,7 @@ function extractStructuredFieldValues(text: string, labels: string[]) {
 
 function extractIssueFacts(subject: string, body: string): IssueFacts {
   const text = `${subject}\n${body}`;
+  const compactText = normalizeCandidate(text).toLowerCase();
   const structuredIssueValues = extractStructuredFieldValues(text, [
     "issue type",
     "issue",
@@ -345,13 +458,22 @@ function extractIssueFacts(subject: string, body: string): IssueFacts {
     /\b(?:speaker\s*\/\s*microphone issues?|speaker microphone issues?)\b/i,
     /\b(?:microphone issues?|mic issues?|mic not working|microphone not working)\b/i,
     /\b(?:speaker issues?|no sound|sound not working|audio issue)\b/i,
+    /\b(?:ingen lyd|lyden forsvinder|ingen forbindelse)\b/i,
     /\b(?:freez(?:e|ing)|shut(?:s)? down|shutdown|crash(?:es|ing)?)\b/i,
     /\b(?:won'?t connect|not connecting|disconnects|pairing problem|connection issue)\b/i,
+    /\b(?:hopper af|hopper fra|afbryder|mister forbindelsen|kan ikke holde forbindelsen|forbindelsen ryger)\b/i,
+    /\b(?:disconnects again|keeps disconnecting|loses connection|drops connection|can'?t stay connected|cannot stay connected)\b/i,
+    /\b(?:forbundet|forbinder) .* \b(?:dongle|receiver)\b.*\b(?:10\s*sekunder|sekunder|sek)\b/i,
+    /\b(?:connected|connects?) to (?:the )?dongle\b.*\b(?:10\s*seconds?|ten seconds?|few seconds?|seconds?)\b/i,
+    /\b(?:dongle|receiver|wireless connection|same frequency|same channel|trådløs forbindelse|samme frekvens)\b/i,
+    /\b(?:alt er opdateret|opdateret|prøvet trinene igen|prøvet igen)\b/i,
+    /\b(?:everything updated|fully updated|all updated|already updated|updated everything)\b/i,
     /\b(?:battery issue|battery problem|won'?t charge)\b/i,
   ];
   const contextPatterns: RegExp[] = [
     /\b(?:cs2|cs|counter[- ]?strike|fortnite|call of duty|discord|teams|zoom|playstation|xbox|pc|mac)\b/i,
     /\b(?:voice chat|chat|microphone test|in game|the game|game)\b/i,
+    /\b(?:dongle|receiver|wireless|same frequency|same channel|trådløs|samme frekvens|frekvens)\b/i,
   ];
   const symptom_phrases = uniq([
     ...structuredIssueValues,
@@ -369,27 +491,26 @@ function extractIssueFacts(subject: string, body: string): IssueFacts {
       .map((value) => normalizeCandidate(value)),
   );
   const old_device_works =
-    /\b(?:old|previous|other)\s+(?:headset|device|one)\b.*\b(?:works|working|fine|okay|ok)\b/i.test(text) ||
-    /\bworks fine with (?:my )?(?:old|other)\s+(?:headset|device)\b/i.test(text) ||
-    /\bmy old headset works fine\b/i.test(text) ||
-    /\bthe old headset works fine\b/i.test(text) ||
-    /\bi haven'?t experienced the problem with my old\b/i.test(text) ||
-    /\bthe only thing that solves it is if i change to my old (?:headset|device)\b/i.test(text) ||
-    /\b(?:changing|switching|swapping) to my old (?:headset|device) solves (?:it|the issue|the problem)\b/i.test(text) ||
-    /\bthe only thing that solves it is if i (?:change|switch|swap) to my old (?:headset|device)\b/i.test(text) ||
-    /\bswitching back to (?:my )?old (?:headset|device) (?:solves|fixes) (?:it|the issue|the problem)\b/i.test(text);
+    /\b(?:old|previous|other)\s+(?:headset|device|one)\b.*\b(?:works|working|fine|okay|ok)\b/i.test(compactText) ||
+    /\bworks fine with (?:my )?(?:old|other)\s+(?:headset|device)\b/i.test(compactText) ||
+    /\bmy old headset works fine\b/i.test(compactText) ||
+    /\bthe old headset works fine\b/i.test(compactText) ||
+    /\bi haven'?t experienced the problem with my old\b/i.test(compactText) ||
+    /\bthe only thing that solves it is if i (?:change|switch|swap)(?: back)? to my old (?:headset|device)\b/i.test(compactText) ||
+    /\b(?:changing|switching|swapping) (?:back )?to my old (?:headset|device) (?:solves|fixes) (?:it|the issue|the problem)\b/i.test(compactText) ||
+    /\bwith my old (?:headset|device) i haven'?t experienced (?:this )?(?:problem|issue)\b/i.test(compactText);
   const tried_fixes =
     /\b(?:tried|already tried|tested|attempted)\b.*\b(?:many|multiple|all|several)\b.*\b(?:fixes|steps|things|solutions)\b/i
-      .test(text) ||
-    /\b(?:tried a lot of things|tried many things|tried so many things|already tried fixes|already tried a lot|tried many fixes)\b/i.test(text) ||
-    /\bi have tried a lot of things to fix (?:this|the) problem\b/i.test(text) ||
-    /\bi have tried a lot of things\b/i.test(text) ||
-    /\bi have tried many things(?: already)?\b/i.test(text) ||
-    /\bi tried a lot of things to fix this\b/i.test(text) ||
-    /\bi[' ]?ve tried a lot of things(?: already)?\b/i.test(text) ||
-    /\btried many things already\b/i.test(text) ||
-    /\balready tried several fixes\b/i.test(text) ||
-    /\b(?:factory reset|reset|reinstall|updated|re-paired|paired again|troubleshooting)\b/i.test(text);
+      .test(compactText) ||
+    /\b(?:tried a lot of things|tried many things|tried so many things|already tried fixes|already tried a lot|tried many fixes)\b/i.test(compactText) ||
+    /\bi have tried a lot of things to fix (?:this|the) problem\b/i.test(compactText) ||
+    /\bi have tried a lot of things(?: already)?\b/i.test(compactText) ||
+    /\bi have tried many things(?: already)?\b/i.test(compactText) ||
+    /\bi tried a lot of things to fix this\b/i.test(compactText) ||
+    /\bi[' ]?ve tried a lot of things(?: already)?\b/i.test(compactText) ||
+    /\btried many things already\b/i.test(compactText) ||
+    /\balready tried several fixes\b/i.test(compactText) ||
+    /\b(?:factory reset|reset|reinstall|updated|re-paired|paired again|troubleshooting)\b/i.test(compactText);
 
   return {
     symptom_phrases,
@@ -400,14 +521,16 @@ function extractIssueFacts(subject: string, body: string): IssueFacts {
 }
 
 function extractProductQueries(subject: string, body: string): string[] {
-  const text = `${subject}\n${body}`;
+  const effectiveSubject = isMeaningfulLatestMessageSubject(subject) ? subject : "";
+  const text = `${effectiveSubject}\n${body}`;
   const lower = text.toLowerCase();
   const results: string[] = [];
-  const issueFacts = extractIssueFacts(subject, body);
-  const add = (value: string) => {
+  const issueFacts = extractIssueFacts(effectiveSubject, body);
+  const add = (value: string, options?: { allowLongStructured?: boolean }) => {
     const normalized = cleanProductCandidate(value);
     if (!normalized) return;
     if (normalized.length < 2 || normalized.length > 120) return;
+    if (!options?.allowLongStructured && !isCompactProductLikeValue(normalized)) return;
     if (/^(?:speaker|microphone|issue|issues|request|regarding|product|model|item)$/i.test(normalized)) return;
     if (results.includes(normalized)) return;
     results.push(normalized);
@@ -426,7 +549,7 @@ function extractProductQueries(subject: string, body: string): string[] {
     const cleaned = cleanProductCandidate(candidate);
     if (cleaned) {
       structuredProducts.push(cleaned);
-      add(cleaned);
+      add(cleaned, { allowLongStructured: true });
     }
   }
   for (const match of text.matchAll(PRODUCT_FORM_FIELD_REGEX)) {
@@ -434,7 +557,7 @@ function extractProductQueries(subject: string, body: string): string[] {
     const cleaned = cleanProductCandidate(candidate);
     if (cleaned) {
       structuredProducts.push(cleaned);
-      add(cleaned);
+      add(cleaned, { allowLongStructured: true });
     }
   }
 
@@ -506,13 +629,99 @@ function applyRules(text: string, scores: Record<GeneralCaseType, number>) {
   }
 }
 
+function applyTechnicalConnectivitySignals(text: string, scores: Record<GeneralCaseType, number>) {
+  let connectivitySignals = 0;
+  if (/\b(?:dongle|receiver|wireless connection|same frequency|same channel|trådløs forbindelse|samme frekvens)\b/i.test(text)) {
+    scores.technical_issue += 2;
+    connectivitySignals += 1;
+  }
+  if (
+    /\b(?:disconnects?|disconnecting|disconnects again|drops connection|loses connection|can't stay connected|cannot stay connected|hopper af|hopper fra|afbryder|mister forbindelsen|kan ikke holde forbindelsen|forbindelsen ryger)\b/i
+      .test(text)
+  ) {
+    scores.technical_issue += 3;
+    connectivitySignals += 1;
+  }
+  if (/\b(?:no sound|audio drops|sound cuts out|ingen lyd|lyden forsvinder)\b/i.test(text)) {
+    scores.technical_issue += 2;
+    connectivitySignals += 1;
+  }
+  if (
+    /\b(?:10\s*seconds?|ten seconds?|few seconds?|shortly after connecting|after about \d+\s*seconds?|10\s*sekunder|sekunder|sek)\b/i
+      .test(text)
+  ) {
+    scores.technical_issue += 2;
+    connectivitySignals += 1;
+  }
+  if (
+    /\b(?:everything updated|fully updated|all updated|already updated|retried the steps|tried the steps again|opdateret|alt er opdateret|prøvet trinene igen|prøvet igen)\b/i
+      .test(text)
+  ) {
+    scores.technical_issue += 1;
+    connectivitySignals += 1;
+  }
+  if (
+    /\b(?:dongle|receiver)\b/i.test(text) &&
+    /\b(?:disconnects?|loses connection|drops connection|can't stay connected|cannot stay connected|hopper af|mister forbindelsen|kan ikke holde forbindelsen)\b/i
+      .test(text)
+  ) {
+    scores.technical_issue += 3;
+  }
+  if (
+    /\b(?:no sound|audio drops|sound cuts out|ingen lyd|lyden forsvinder)\b/i.test(text) &&
+    /\b(?:disconnects?|loses connection|drops connection|can't stay connected|cannot stay connected|hopper af|mister forbindelsen|kan ikke holde forbindelsen)\b/i
+      .test(text)
+  ) {
+    scores.technical_issue += 2;
+  }
+
+  const explicitTrackingAsk =
+    /\b(?:where is my order|where is my package|tracking number|shipment delayed|not delivered|delivery status)\b/i
+      .test(text);
+  if (connectivitySignals >= 2 && !explicitTrackingAsk) {
+    scores.tracking_shipping = Math.max(0, scores.tracking_shipping - 5);
+    scores.product_question += 1;
+  }
+}
+
+function applyProcessLogisticsSignals(text: string, scores: Record<GeneralCaseType, number>) {
+  const lower = String(text || "").toLowerCase();
+  const inPersonLogistics =
+    /\b(?:drop off|come by|stop by|deliver it in person|opening hours|opening times|business hours)\b/i
+      .test(text) ||
+    /\b(?:komme forbi|forbi med|aflevere|indlevere|åbningstider|åbningstid)\b/i.test(text);
+  const shippingOrReturnContext =
+    /\b(?:package|parcel|shipping|send|return|retur|pakke|sende)\b/i.test(text);
+  const avoidShipping =
+    /\b(?:avoid sending|instead of shipping|rather than shipping|easier than shipping)\b/i.test(text) ||
+    /\b(?:slippe for at sende|undgå at sende)\b/i.test(text);
+
+  if (inPersonLogistics && (shippingOrReturnContext || avoidShipping)) {
+    scores.return_refund += 4;
+    scores.general_support += 2;
+    if (scores.tracking_shipping > 0 && !/\b(?:where is my order|where is my package|tracking number|not delivered|shipment delayed)\b/i.test(text)) {
+      scores.tracking_shipping = Math.max(0, scores.tracking_shipping - 2);
+    }
+  }
+
+  if (
+    lower.includes("opening hours") ||
+    lower.includes("opening times") ||
+    lower.includes("business hours") ||
+    lower.includes("åbningstider") ||
+    lower.includes("åbningstid")
+  ) {
+    scores.general_support += 2;
+  }
+}
+
 function applyLegacyHints(
   input: AssessCaseInput,
   scores: Record<GeneralCaseType, number>,
 ) {
   const category = String(input.ticketCategory || "").toLowerCase();
   const workflow = String(input.workflow || "").toLowerCase();
-  if (input.trackingIntent || category === "tracking" || workflow === "tracking") {
+  if (category === "tracking" || workflow === "tracking") {
     scores.tracking_shipping += 3;
   }
   if (category === "return" || workflow === "return" || category === "refund" || workflow === "refund") {
@@ -524,6 +733,76 @@ function applyLegacyHints(
   if (category === "product question" || workflow === "product_question") {
     scores.product_question += 2;
   }
+}
+
+function inferHistoricalContextIntents(input: AssessCaseInput): GeneralCaseType[] {
+  const category = String(input.ticketCategory || "").trim().toLowerCase();
+  const workflow = String(input.workflow || "").trim().toLowerCase();
+  const intents = new Set<GeneralCaseType>();
+
+  if (category === "tracking" || workflow === "tracking") {
+    intents.add("tracking_shipping");
+  }
+  if (
+    category === "return" ||
+    workflow === "return" ||
+    category === "refund" ||
+    workflow === "refund" ||
+    category === "exchange" ||
+    workflow === "exchange"
+  ) {
+    intents.add("return_refund");
+  }
+  if (
+    category === "address change" ||
+    workflow === "address_change" ||
+    category === "cancellation" ||
+    workflow === "cancellation"
+  ) {
+    intents.add("order_change");
+  }
+  if (category === "payment" || workflow === "payment") {
+    intents.add("billing_payment");
+  }
+  if (category === "product question" || workflow === "product_question") {
+    intents.add("product_question");
+  }
+  if (category === "general" || workflow === "general") {
+    intents.add("general_support");
+  }
+
+  return Array.from(intents);
+}
+
+function chooseLatestMessagePrimaryIntent(
+  scores: Record<GeneralCaseType, number>,
+): { primary: GeneralCaseType; confidence: number } {
+  const ranked = CASE_TYPES.filter((type) => type !== "mixed_case")
+    .map((type) => ({ type, score: scores[type] }))
+    .sort((left, right) => right.score - left.score);
+  const top = ranked[0] || { type: "general_support" as GeneralCaseType, score: 1 };
+  const total = ranked.reduce((sum, item) => sum + item.score, 0);
+  const confidence = total > 0 ? Math.min(0.98, Math.max(0.35, top.score / total)) : 0.35;
+  return { primary: top.type, confidence };
+}
+
+function detectIntentConflict(
+  latestMessagePrimaryIntent: GeneralCaseType,
+  historicalContextIntents: GeneralCaseType[],
+  scores: Record<GeneralCaseType, number>,
+) {
+  const historical = historicalContextIntents.filter((intent) => intent !== "general_support");
+  if (!historical.length) return false;
+  const staleTrackingRoute = historical.includes("tracking_shipping");
+  const meaningfulNonTrackingAsk =
+    latestMessagePrimaryIntent === "return_refund" ||
+    latestMessagePrimaryIntent === "order_change" ||
+    (latestMessagePrimaryIntent === "general_support" &&
+      ((scores.return_refund ?? 0) >= 3 || (scores.order_change ?? 0) >= 3)) ||
+    ((scores.return_refund ?? 0) >= 4 && (scores.tracking_shipping ?? 0) <= 2);
+  if (staleTrackingRoute && meaningfulNonTrackingAsk) return true;
+  if (latestMessagePrimaryIntent === "general_support") return false;
+  return !historical.includes(latestMessagePrimaryIntent);
 }
 
 function extractMetadataOnlySignals(subject: string, body: string): MetadataOnlySignal[] {
@@ -604,24 +883,67 @@ function inferLikelyActionFamily(text: string): string | null {
 }
 
 export function assessCase(input: AssessCaseInput): CaseAssessment {
-  const subject = String(input.subject || "");
-  const body = String(input.body || "");
+  const rawSubject = String(input.subject || "");
+  const subject = cleanLatestMessageSubject(rawSubject);
+  const subjectIsMeaningful = isMeaningfulLatestMessageSubject(subject);
+  const rawBody = String(input.body || "");
+  const cleanedLatestMessage = cleanLatestMessageBody(rawBody);
+  const body = cleanedLatestMessage.cleanBodyText;
   const text = `${subject}\n${body}`;
   const lower = text.toLowerCase();
   const matchedSubjectNumber = String(input.matchedSubjectNumber || "").replace(/\D/g, "");
   const orderNumbers = uniq(
     Array.from(body.matchAll(ORDER_NUMBER_REGEX))
       .map((match) => String(match[1] || "").trim())
-      .concat(Array.from(subject.matchAll(ORDER_NUMBER_REGEX)).map((match) => String(match[1] || "").trim()))
-      .concat(matchedSubjectNumber ? [matchedSubjectNumber] : []),
+      .concat(
+        subjectIsMeaningful
+          ? Array.from(subject.matchAll(ORDER_NUMBER_REGEX)).map((match) => String(match[1] || "").trim())
+          : [],
+      )
+      .concat(subjectIsMeaningful && matchedSubjectNumber ? [matchedSubjectNumber] : []),
   );
-  const emails = uniq([...(subject.match(EMAIL_REGEX) || []), ...(body.match(EMAIL_REGEX) || [])]);
+  const emails = uniq([
+    ...(subjectIsMeaningful ? subject.match(EMAIL_REGEX) || [] : []),
+    ...(body.match(EMAIL_REGEX) || []),
+  ]);
   const metadataOnlySignals = extractMetadataOnlySignals(subject, body);
   const issueFacts = extractIssueFacts(subject, body);
   const productQueries = extractProductQueries(subject, body);
 
+  const latestMessageScores = initializeScores();
+  applyRules(lower, latestMessageScores);
+  applyTechnicalConnectivitySignals(text, latestMessageScores);
+  applyProcessLogisticsSignals(text, latestMessageScores);
+  if (input.hasSelectedOrder) {
+    latestMessageScores.order_change += 1;
+    latestMessageScores.tracking_shipping += 1;
+  }
+  if (metadataOnlySignals.length > 0 && latestMessageScores.billing_payment > 0) {
+    const strongNonBillingSignals =
+      latestMessageScores.technical_issue >= 4 ||
+      latestMessageScores.product_question >= 4 ||
+      latestMessageScores.warranty_complaint >= 4;
+    if (strongNonBillingSignals && latestMessageScores.billing_payment <= 4) {
+      latestMessageScores.billing_payment = Math.max(0, latestMessageScores.billing_payment - 2);
+    }
+  }
+  const {
+    primary: latestMessagePrimaryIntent,
+    confidence: latestMessageConfidence,
+  } = chooseLatestMessagePrimaryIntent(latestMessageScores);
+  const historicalContextIntents = inferHistoricalContextIntents(input);
+  const intentConflictDetected = detectIntentConflict(
+    latestMessagePrimaryIntent,
+    historicalContextIntents,
+    latestMessageScores,
+  );
+  const currentMessageShouldOverrideThreadRoute =
+    intentConflictDetected && latestMessagePrimaryIntent !== "general_support";
+
   const scores = initializeScores();
   applyRules(lower, scores);
+  applyTechnicalConnectivitySignals(text, scores);
+  applyProcessLogisticsSignals(text, scores);
   applyLegacyHints(input, scores);
 
   if (input.hasSelectedOrder) {
@@ -659,6 +981,11 @@ export function assessCase(input: AssessCaseInput): CaseAssessment {
     version: 2,
     primary_case_type: primary,
     secondary_case_types: secondary,
+    latest_message_primary_intent: latestMessagePrimaryIntent,
+    latest_message_confidence: latestMessageConfidence,
+    historical_context_intents: historicalContextIntents,
+    intent_conflict_detected: intentConflictDetected,
+    current_message_should_override_thread_route: currentMessageShouldOverrideThreadRoute,
     intent_scores: scores,
     metadata_only_signals: metadataOnlySignals,
     retrieval_needs: retrievalNeeds,
@@ -675,11 +1002,7 @@ export function assessCase(input: AssessCaseInput): CaseAssessment {
       order_numbers: orderNumbers,
       emails,
       product_queries:
-        productQueries.length
-          ? productQueries
-          : primary === "technical_issue" || primary === "product_question" || secondary.includes("product_question")
-          ? [subject || body.slice(0, 160)]
-          : [],
+        productQueries.length ? productQueries : [],
       symptom_phrases: issueFacts.symptom_phrases,
       context_phrases: issueFacts.context_phrases,
       old_device_works: issueFacts.old_device_works,
