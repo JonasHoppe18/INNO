@@ -132,6 +132,65 @@ const sanitizeEmailHtml = (value, attachments = []) => {
     .replace(/<\/?(html|head|body|meta|title)[^>]*>/gi, "");
 };
 
+const stripHtmlToText = (value = "") =>
+  String(value || "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|section|article|tr|table|h[1-6])>/gi, "\n")
+    .replace(/<li\b[^>]*>/gi, "- ")
+    .replace(/<\/li>/gi, "\n")
+    .replace(/<\/td>\s*<td\b[^>]*>/gi, ": ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/\u00a0/g, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+const FORM_MESSAGE_RE = /\b(?:new customer message on|online store'?s contact form|country code:|what do you need help with\?:|if applicable, place of purchase and order number:)\b/i;
+
+const isStructuredFormMessage = (message) =>
+  FORM_MESSAGE_RE.test(
+    [
+      message?.subject,
+      message?.body_text,
+      message?.snippet,
+      stripHtmlToText(message?.body_html || ""),
+    ]
+      .filter(Boolean)
+      .join("\n")
+  );
+
+const formatStructuredFormText = (value, subjectLine = "") => {
+  const subject = String(subjectLine || "").trim().toLowerCase();
+  const lines = String(value || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .map((line) => line.replace(/\u00a0/g, " ").trim())
+    .filter((line, index, all) => !(line === "" && all[index - 1] === ""));
+
+  const filtered = lines.filter((line, index) => {
+    if (!line) return true;
+    const normalized = line.toLowerCase();
+    if (subject && normalized === subject) return false;
+    if (
+      normalized === "you received a new message from your online store's contact form." ||
+      normalized === "you received a new message from your online stores contact form."
+    ) {
+      return false;
+    }
+    if (index > 0 && normalized === String(lines[index - 1] || "").trim().toLowerCase()) {
+      return false;
+    }
+    return true;
+  });
+
+  return filtered.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+};
+
 const EMAIL_BODY_CLASS =
   "max-w-none w-full min-w-0 break-words [overflow-wrap:anywhere] text-[14px] leading-[1.55] text-gray-800 font-[inherit] [&_*]:max-w-full [&_*]:min-w-0 [&_*]:break-words [&_*]:[overflow-wrap:anywhere] [&_*]:font-[inherit] [&_*]:text-[14px] [&_*]:leading-[1.55]";
 
@@ -210,6 +269,23 @@ export function MessageBubble({
   const rawPlainBody = message.body_text || message.snippet || "No preview available.";
   const shouldFormatRawPlainBody =
     Boolean((quotedBodyText || "").trim()) || hasQuotedPlainText(rawPlainBody);
+  const isStructuredForm = isStructuredFormMessage(message);
+  const structuredFormText = isStructuredForm
+    ? formatStructuredFormText(
+        cleanBodyText || rawPlainBody || stripHtmlToText(message?.body_html || ""),
+        subjectLine
+      )
+    : "";
+  const previewHtml = safeCleanBodyHtml
+    ? safeCleanBodyHtml
+    : linkifyText(
+        isStructuredForm
+          ? structuredFormText || cleanBodyText || rawPlainBody
+          : cleanBodyText || rawPlainBody
+      );
+  const modalHtml = isStructuredForm
+    ? linkifyText(structuredFormText || rawPlainBody)
+    : safeBodyHtml;
   const shouldShowBcc = isOutbound && bccList.length > 0;
 
   return (
@@ -267,7 +343,7 @@ export function MessageBubble({
                   <div
                     className={EMAIL_BODY_CLASS}
                     dangerouslySetInnerHTML={{
-                      __html: linkifyText(cleanBodyText || message.body_text || message.snippet || "No preview available."),
+                      __html: previewHtml,
                     }}
                   />
                 )}
@@ -375,10 +451,10 @@ export function MessageBubble({
               </div>
             </div>
             <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50/40 p-4">
-              {safeBodyHtml ? (
+              {modalHtml ? (
                 <div
                   className={EMAIL_BODY_CLASS}
-                  dangerouslySetInnerHTML={{ __html: safeBodyHtml }}
+                  dangerouslySetInnerHTML={{ __html: modalHtml }}
                 />
               ) : (
                 <div

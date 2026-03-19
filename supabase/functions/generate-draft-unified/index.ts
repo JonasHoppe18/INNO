@@ -4,13 +4,35 @@ import {
   buildAutomationGuidance,
   fetchAutomation,
   fetchRelevantKnowledge,
+  fetchRelevantKnowledgeDetailed,
   fetchOwnerProfile,
   fetchPersona,
   fetchPolicies,
   type KnowledgeMatch,
 } from "../_shared/agent-context.ts";
+import { assessCase, type CaseAssessment } from "../_shared/case-assessment.ts";
+import { retrieveFactContext, type FactContext } from "../_shared/fact-context.ts";
+import {
+  getKnowledgeSourcePriority,
+  mapKnowledgeSourceClass,
+  summarizeRetrievalPriority,
+} from "../_shared/knowledge-source-class.ts";
+import { decideActions, type ActionDecision } from "../_shared/action-decision.ts";
+import {
+  validateActionDecision,
+  type ActionDecisionValidation,
+} from "../_shared/action-validator.ts";
+import { buildReplyStrategy, type ReplyStrategy } from "../_shared/reply-strategy.ts";
+import { generateReplyFromStrategy } from "../_shared/reply-generator.ts";
+import {
+  containsCompletionLanguage,
+  guardReplyForExecutionState,
+  isActionSensitiveReplyCase,
+  type ExecutionState,
+} from "../_shared/reply-safety.ts";
 import { AutomationAction, executeAutomationActions } from "../_shared/automation-actions.ts";
 import { classifyEmail } from "../_shared/classify-email.ts";
+import type { EmailCategory } from "../_shared/email-category.ts";
 import { PERSONA_REPLY_JSON_SCHEMA } from "../_shared/openai-schema.ts";
 import { buildOrderSummary, resolveOrderContext } from "../_shared/shopify.ts";
 import { buildMailPrompt } from "../_shared/prompt.ts";
@@ -92,6 +114,11 @@ const KNOWLEDGE_SECTION_MIN_TOKENS = readEnvNumber("KNOWLEDGE_SECTION_MIN_TOKENS
   min: 150,
   max: 900,
 });
+const TECHNICAL_FALLBACK_KNOWLEDGE_MIN_SIMILARITY = readEnvNumber(
+  "TECHNICAL_FALLBACK_KNOWLEDGE_MIN_SIMILARITY",
+  0.42,
+  { min: 0, max: 1 },
+);
 const POLICY_RESERVED_TOKENS = readEnvNumber("POLICY_RESERVED_TOKENS", 600, {
   min: 400,
   max: 800,
@@ -102,6 +129,26 @@ const RETRIEVAL_TRACE_SAMPLE_RATE = readEnvNumber(
   "RETRIEVAL_TRACE_SAMPLE_RATE",
   Deno.env.get("DENO_DEPLOYMENT_ID") ? 0.1 : 1,
   { min: 0, max: 1 },
+);
+const V2_STAGED_ORCHESTRATOR_ENABLED = readEnvFlag("V2_STAGED_ORCHESTRATOR_ENABLED", false);
+const V2_CASE_ASSESSMENT_ENABLED = readEnvFlag("V2_CASE_ASSESSMENT_ENABLED", false);
+const V2_ACTION_VALIDATION_ENABLED = readEnvFlag("V2_ACTION_VALIDATION_ENABLED", false);
+const V2_REPLY_STRATEGY_ENABLED = readEnvFlag("V2_REPLY_STRATEGY_ENABLED", false);
+const V2_DECIDE_ACTIONS_ENABLED = readEnvFlag("V2_DECIDE_ACTIONS_ENABLED", false);
+const V2_GENERATE_REPLY_FROM_STRATEGY_ENABLED = readEnvFlag(
+  "V2_GENERATE_REPLY_FROM_STRATEGY_ENABLED",
+  false,
+);
+const V2_TWO_STAGE_FALLBACK_ENABLED = readEnvFlag("V2_TWO_STAGE_FALLBACK_ENABLED", true);
+const V2_RETRIEVAL_RERANK_BY_CASE_TYPE_ENABLED = readEnvFlag(
+  "V2_RETRIEVAL_RERANK_BY_CASE_TYPE_ENABLED",
+  false,
+);
+const V2_RETRIEVAL_RERANK_BY_CASE_TYPE_RAW =
+  Deno.env.get("V2_RETRIEVAL_RERANK_BY_CASE_TYPE_ENABLED") ?? null;
+const V2_STRUCTURED_ARTIFACT_LOGGING_ENABLED = readEnvFlag(
+  "V2_STRUCTURED_ARTIFACT_LOGGING_ENABLED",
+  false,
 );
 const POLICY_SOURCE_PROVIDER = "shopify_policy";
 const TRACKING_CARRIERS_PROVIDER = "tracking_carriers";
@@ -264,6 +311,218 @@ const withThreadMeta = (detail: string, threadId?: string | null) => {
     }
   }
   return `${raw} |thread_id:${threadId}`;
+};
+
+const appendStructuredArtifactLog = (
+  reasoningLogs: Array<{ step_name: string; step_detail: string; status: string }>,
+  stepName: string,
+  artifact: Record<string, unknown>,
+  threadId?: string | null,
+) => {
+  if (!V2_STRUCTURED_ARTIFACT_LOGGING_ENABLED) return;
+  reasoningLogs.push({
+    step_name: stepName,
+    step_detail: withThreadMeta(JSON.stringify(artifact), threadId),
+    status: "info",
+  });
+};
+
+const deriveExecutionState = (options: {
+  validation: ActionDecisionValidation | null;
+  hasBlockedAction?: boolean;
+  hasPendingApproval?: boolean;
+}): ExecutionState => {
+  if (options.hasBlockedAction) return "blocked";
+  if (options.hasPendingApproval) return "pending_approval";
+  if (!options.validation || options.validation.allowed_actions.length === 0) return "no_action";
+  if (options.validation.decision === "approval_required") return "pending_approval";
+  if (options.validation.decision === "auto_action") return "validated_not_executed";
+  return "no_action";
+};
+
+const routeCategoryFromAssessment = (assessment: CaseAssessment): EmailCategory | null => {
+  const types = new Set([assessment.primary_case_type, ...assessment.secondary_case_types]);
+  if (types.has("technical_issue") || types.has("product_question")) return "Product question";
+  if (types.has("tracking_shipping")) return "Tracking";
+  if (types.has("return_refund")) return "Return";
+  if (types.has("billing_payment")) return "Payment";
+  return null;
+};
+
+const shouldOverrideLegacyRouting = (
+  assessment: CaseAssessment,
+  legacyWorkflow: string,
+  legacyCategory: string,
+) => {
+  const types = new Set([assessment.primary_case_type, ...assessment.secondary_case_types]);
+  const strongTechOrProduct =
+    (assessment.intent_scores.technical_issue ?? 0) >= 4 ||
+    (assessment.intent_scores.product_question ?? 0) >= 4 ||
+    types.has("technical_issue") ||
+    types.has("product_question");
+  const legacyLooksPayment =
+    String(legacyWorkflow || "").toLowerCase() === "payment" ||
+    String(legacyCategory || "").toLowerCase() === "payment";
+  return (
+    assessment.confidence >= 0.55 &&
+    strongTechOrProduct &&
+    (legacyLooksPayment || assessment.primary_case_type === "mixed_case")
+  );
+};
+
+const shouldSuppressPolicyForTechnicalReply = (options: {
+  assessment: CaseAssessment | null;
+  executionState: ExecutionState;
+  policyIntent?: string | null;
+}) => {
+  const assessment = options.assessment;
+  if (!assessment) return false;
+  const types = new Set([assessment.primary_case_type, ...assessment.secondary_case_types]);
+  const technicalOrProduct = types.has("technical_issue") || types.has("product_question");
+  const hasReturnRefundIntent = types.has("return_refund");
+  return (
+    technicalOrProduct &&
+    !hasReturnRefundIntent &&
+    options.executionState === "no_action" &&
+    String(options.policyIntent || "OTHER").toUpperCase() === "OTHER"
+  );
+};
+
+const buildCompactTroubleshootingQuery = (assessment: CaseAssessment | null) => {
+  if (!assessment) return "";
+  const tokens = [
+    ...(assessment.entities.product_queries || []).slice(0, 1),
+    ...(assessment.entities.symptom_phrases || []).slice(0, 2),
+    ...(assessment.entities.context_phrases || []).slice(0, 1),
+  ]
+    .map((value) => String(value || "").replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  return Array.from(new Set(tokens)).join(" ");
+};
+
+const buildTechnicalKnowledgeSummary = (
+  assessment: CaseAssessment | null,
+  knowledgeHits: Array<{
+    source_class: string;
+    source_provider: string;
+    similarity: number | null;
+    included: boolean;
+    content: string;
+    _text: string;
+  }>,
+) => {
+  if (!assessment) return "";
+  const types = new Set([assessment.primary_case_type, ...assessment.secondary_case_types]);
+  const technicalOrProduct = types.has("technical_issue") || types.has("product_question");
+  if (!technicalOrProduct) return "";
+  return knowledgeHits
+    .filter((hit) =>
+      hit.included &&
+      [
+        "troubleshooting",
+        "product_manual",
+        "support_process",
+        "general_knowledge",
+      ].includes(String(hit.source_class || "")) &&
+      [
+        "manual_text",
+        "shopify_file",
+        "pdf_upload",
+        "shopify_page",
+        "csv_support_knowledge",
+      ].includes(String(hit.source_provider || "").toLowerCase())
+    )
+    .sort((left, right) => Number(right.similarity ?? 0) - Number(left.similarity ?? 0))
+    .slice(0, 4)
+    .map((hit) => hit._text)
+    .join("\n");
+};
+
+const extractTechnicalDiagnosticFacts = (
+  assessment: CaseAssessment | null,
+  knowledgeHits: Array<{
+    source_class: string;
+    source_provider: string;
+    similarity: number | null;
+    included: boolean;
+    content: string;
+  }>,
+) => {
+  if (!assessment) return [] as string[];
+  const types = new Set([assessment.primary_case_type, ...assessment.secondary_case_types]);
+  const technicalOrProduct = types.has("technical_issue") || types.has("product_question");
+  if (!technicalOrProduct) return [];
+
+  const productName = String(assessment.entities.product_queries?.[0] || "").toLowerCase();
+  const symptomTerms = (assessment.entities.symptom_phrases || [])
+    .flatMap((item) => String(item || "").toLowerCase().split(/\s+/))
+    .filter(Boolean);
+  const contextTerms = (assessment.entities.context_phrases || [])
+    .flatMap((item) => String(item || "").toLowerCase().split(/\s+/))
+    .filter(Boolean);
+  const genericAudioSettingPenalty =
+    /\b(?:sidetone|microphone level|sound control panel|volume slider|windows sound settings|sound settings)\b/i;
+  const selectedFacts: Array<{ text: string; score: number }> = [];
+  const addFact = (value: string, score: number) => {
+    const normalized = String(value || "").replace(/\s+/g, " ").trim();
+    if (!normalized || normalized.length < 15 || normalized.length > 220) return;
+    if (selectedFacts.some((fact) => fact.text === normalized)) return;
+    selectedFacts.push({ text: normalized, score });
+  };
+
+  for (const hit of knowledgeHits) {
+    if (
+      !hit.included ||
+      ![
+        "troubleshooting",
+        "product_manual",
+        "support_process",
+        "general_knowledge",
+      ].includes(String(hit.source_class || "")) ||
+      ![
+        "manual_text",
+        "shopify_file",
+        "pdf_upload",
+        "shopify_page",
+        "csv_support_knowledge",
+      ].includes(String(hit.source_provider || "").toLowerCase())
+    ) {
+      continue;
+    }
+
+    const candidates = String(hit.content || "")
+      .split(/\n|(?<=[.!?])\s+/)
+      .map((part) => part.replace(/^[-*•\d.)\s]+/, "").trim())
+      .filter(Boolean)
+      .filter((part) =>
+        /(microphone|mic|speaker|audio|sound|freeze|freez|shutdown|shut down|game|firmware|reset|pair|connection|driver|update|support|serial)/i
+          .test(part)
+      );
+
+    for (const candidate of candidates) {
+      const normalized = candidate.toLowerCase();
+      let score = Number(hit.similarity ?? 0);
+      if (productName && normalized.includes(productName)) score += 2.5;
+      for (const term of symptomTerms) {
+        if (term.length >= 3 && normalized.includes(term)) score += 0.45;
+      }
+      for (const term of contextTerms) {
+        if (term.length >= 2 && normalized.includes(term)) score += 0.6;
+      }
+      if (/\b(?:freeze|freezes|freezing|shut(?:s)? down|shutdown|crash|game|app|firmware|update|serial|diagnostic|troubleshoot)\b/i.test(candidate)) {
+        score += 1.2;
+      }
+      if (genericAudioSettingPenalty.test(candidate)) {
+        score -= 1.4;
+      }
+      addFact(candidate, score);
+    }
+  }
+
+  return selectedFacts
+    .sort((left, right) => right.score - left.score)
+    .slice(0, 4)
+    .map((fact) => fact.text);
 };
 
 async function sha256Hex(input: string): Promise<string> {
@@ -1822,8 +2081,13 @@ Deno.serve(async (req) => {
       emailData,
     );
     const selectedTrackingCarriers = await fetchSelectedTrackingCarriers(workspaceId, ownerUserId);
-    const ticketCategory = extractThreadCategoryFromTags(internalThread.tags);
-    const workflowRoute = buildWorkflowRoute(ticketCategory);
+    const legacyTicketCategory = extractThreadCategoryFromTags(internalThread.tags);
+    let ticketCategory = legacyTicketCategory;
+    let workflowRoute = buildWorkflowRoute(ticketCategory);
+    let caseAssessment: CaseAssessment | null = null;
+    let factContext: FactContext | null = null;
+    let actionValidation: ActionDecisionValidation | null = null;
+    let replyStrategyArtifact: ReplyStrategy | null = null;
     reasoningLogs.push({
       step_name: "workflow_routing",
       step_detail: `Routed by ticket category: ${workflowRoute.category} -> ${workflowRoute.workflow}`,
@@ -1850,11 +2114,172 @@ Deno.serve(async (req) => {
         );
       }
     }
+    let prioritizedKnowledgeMatches = context.relevantKnowledgeMatches || [];
+    const initialTrackingIntent =
+      Boolean(workflowRoute.forceTrackingIntent) ||
+      detectTrackingIntent(emailData.subject || "", emailData.body || "");
+    if (V2_STAGED_ORCHESTRATOR_ENABLED && V2_CASE_ASSESSMENT_ENABLED) {
+      caseAssessment = assessCase({
+        subject: emailData.subject,
+        body: emailData.body,
+        from: emailData.from,
+        fromEmail: emailData.fromEmail,
+        ticketCategory,
+        workflow: workflowRoute.workflow,
+        trackingIntent: initialTrackingIntent,
+        matchedSubjectNumber: context.matchedSubjectNumber,
+        hasSelectedOrder: Boolean(selectedOrder),
+        styleLearningEnabled: Boolean(context.automation?.historic_inbox_access),
+      });
+      if (shouldOverrideLegacyRouting(caseAssessment, workflowRoute.workflow, ticketCategory)) {
+        const assessmentCategory = routeCategoryFromAssessment(caseAssessment);
+        if (assessmentCategory && assessmentCategory !== ticketCategory) {
+          ticketCategory = assessmentCategory;
+          workflowRoute = buildWorkflowRoute(ticketCategory);
+          reasoningLogs.push({
+            step_name: "workflow_routing_override",
+            step_detail: JSON.stringify({
+              reason: "assessment_override",
+              legacy_category: legacyTicketCategory,
+              legacy_workflow: buildWorkflowRoute(legacyTicketCategory).workflow,
+              primary_case_type: caseAssessment.primary_case_type,
+              secondary_case_types: caseAssessment.secondary_case_types,
+              confidence: caseAssessment.confidence,
+              overridden_category: ticketCategory,
+              overridden_workflow: workflowRoute.workflow,
+            }),
+            status: "warning",
+          });
+        }
+      }
+      appendStructuredArtifactLog(
+        reasoningLogs,
+        "v2_case_assessment",
+        {
+          artifact_type: "case_assessment",
+          version: caseAssessment.version,
+          workflow: workflowRoute.workflow,
+          case_assessment: caseAssessment,
+        },
+        internalThread.threadId,
+      );
+      appendStructuredArtifactLog(
+        reasoningLogs,
+        "v2_case_assessment_v2",
+        {
+          artifact_type: "case_assessment_v2",
+          primary_case_type: caseAssessment.primary_case_type,
+          secondary_case_types: caseAssessment.secondary_case_types,
+          intent_scores: caseAssessment.intent_scores,
+          metadata_only_signals: caseAssessment.metadata_only_signals,
+          retrieval_needs: caseAssessment.retrieval_needs,
+          entities: {
+            product_queries: caseAssessment.entities.product_queries,
+            symptom_phrases: caseAssessment.entities.symptom_phrases,
+            context_phrases: caseAssessment.entities.context_phrases,
+            old_device_works: caseAssessment.entities.old_device_works,
+            tried_fixes: caseAssessment.entities.tried_fixes,
+          },
+        },
+        internalThread.threadId,
+      );
+      const retrievalPriorityPlan = summarizeRetrievalPriority(caseAssessment.primary_case_type);
+      appendStructuredArtifactLog(
+        reasoningLogs,
+        "v2_retrieval_priority_plan",
+        {
+          artifact_type: "retrieval_priority_plan",
+          primary_case_type: caseAssessment.primary_case_type,
+          retrieval_priority: retrievalPriorityPlan,
+          rerank_enabled: V2_RETRIEVAL_RERANK_BY_CASE_TYPE_ENABLED,
+          rerank_flag_raw: V2_RETRIEVAL_RERANK_BY_CASE_TYPE_RAW,
+          effective_rerank_state:
+            V2_STAGED_ORCHESTRATOR_ENABLED &&
+            V2_CASE_ASSESSMENT_ENABLED &&
+            V2_RETRIEVAL_RERANK_BY_CASE_TYPE_ENABLED,
+        },
+        internalThread.threadId,
+      );
+      const beforeOrder = prioritizedKnowledgeMatches.map((match) => String(match?.id ?? "")).join(",");
+      prioritizedKnowledgeMatches = [...prioritizedKnowledgeMatches].sort((left, right) => {
+        const leftClass = mapKnowledgeSourceClass(left);
+        const rightClass = mapKnowledgeSourceClass(right);
+        const leftPriority = getKnowledgeSourcePriority(caseAssessment.primary_case_type, leftClass);
+        const rightPriority = getKnowledgeSourcePriority(caseAssessment.primary_case_type, rightClass);
+        if (V2_RETRIEVAL_RERANK_BY_CASE_TYPE_ENABLED && rightPriority !== leftPriority) {
+          return rightPriority - leftPriority;
+        }
+        return Number(right.similarity ?? 0) - Number(left.similarity ?? 0);
+      });
+      const afterOrder = prioritizedKnowledgeMatches.map((match) => String(match?.id ?? "")).join(",");
+      appendStructuredArtifactLog(
+        reasoningLogs,
+        "v2_retrieval_rerank_result",
+        {
+          artifact_type: "retrieval_rerank_result",
+          rerank_flag_raw: V2_RETRIEVAL_RERANK_BY_CASE_TYPE_RAW,
+          rerank_enabled: V2_RETRIEVAL_RERANK_BY_CASE_TYPE_ENABLED,
+          effective_rerank_state:
+            V2_STAGED_ORCHESTRATOR_ENABLED &&
+            V2_CASE_ASSESSMENT_ENABLED &&
+            V2_RETRIEVAL_RERANK_BY_CASE_TYPE_ENABLED,
+          case_type_used: caseAssessment.primary_case_type,
+          rerank_changed_order: beforeOrder !== afterOrder,
+          top_source_classes_before: (context.relevantKnowledgeMatches || [])
+            .slice(0, 3)
+            .map((match) => mapKnowledgeSourceClass(match)),
+          top_source_classes_after: prioritizedKnowledgeMatches
+            .slice(0, 3)
+            .map((match) => mapKnowledgeSourceClass(match)),
+        },
+        internalThread.threadId,
+      );
+    }
+    const productQueryText =
+      caseAssessment?.entities?.product_queries?.length
+        ? caseAssessment.entities.product_queries.join("\n")
+        : emailData.body || emailData.subject || "";
     const productRetrieval = await fetchProductContext(
       supabase,
       shopId,
-      emailData.body || emailData.subject || "",
+      productQueryText,
     );
+    let supplementalKnowledgeMatches: typeof prioritizedKnowledgeMatches = [];
+    const shouldTryTechnicalFallbackKnowledge =
+      Boolean(caseAssessment) &&
+      (
+        caseAssessment?.primary_case_type === "technical_issue" ||
+        caseAssessment?.secondary_case_types?.includes("technical_issue") ||
+        caseAssessment?.primary_case_type === "product_question"
+      ) &&
+      (!caseAssessment?.entities?.product_queries?.length || !(productRetrieval.hits || []).length);
+    const troubleshootingQueryText = buildCompactTroubleshootingQuery(caseAssessment);
+    let supplementalKnowledgeDebug:
+      | Awaited<ReturnType<typeof fetchRelevantKnowledgeDetailed>>["debug"]
+      | null = null;
+    if (shouldTryTechnicalFallbackKnowledge && troubleshootingQueryText.trim()) {
+      const fallbackKnowledgeResult = await fetchRelevantKnowledgeDetailed(
+        supabase,
+        shopId,
+        troubleshootingQueryText,
+        Math.max(1, Math.min(Math.round(MAX_RETRIEVAL_CHUNKS), 6)),
+        TECHNICAL_FALLBACK_KNOWLEDGE_MIN_SIMILARITY,
+      );
+      supplementalKnowledgeMatches = fallbackKnowledgeResult.matches;
+      supplementalKnowledgeDebug = fallbackKnowledgeResult.debug;
+      if (supplementalKnowledgeMatches.length) {
+        const existingIds = new Set(
+          prioritizedKnowledgeMatches.map((match) => String(match?.id ?? "")).filter(Boolean),
+        );
+        prioritizedKnowledgeMatches = [
+          ...prioritizedKnowledgeMatches,
+          ...supplementalKnowledgeMatches.filter((match) => {
+            const id = String(match?.id ?? "").trim();
+            return !id || !existingIds.has(id);
+          }),
+        ];
+      }
+    }
     console.info(
       JSON.stringify({
         event: "knowledge.retrieve.result",
@@ -1867,8 +2292,44 @@ Deno.serve(async (req) => {
         product_hits_count: Array.isArray(productRetrieval.hits)
           ? productRetrieval.hits.length
           : 0,
+        product_query_text: productQueryText,
+        troubleshooting_query_text: troubleshootingQueryText,
+        supplemental_knowledge_hits_count: supplementalKnowledgeMatches.length,
+        technical_fallback_knowledge_min_similarity: TECHNICAL_FALLBACK_KNOWLEDGE_MIN_SIMILARITY,
       }),
     );
+    appendStructuredArtifactLog(
+      reasoningLogs,
+      "v2_product_query",
+      {
+        artifact_type: "product_query",
+        product_queries: caseAssessment?.entities?.product_queries || [],
+        product_query_text: productQueryText,
+        product_hits_count: Array.isArray(productRetrieval.hits) ? productRetrieval.hits.length : 0,
+        troubleshooting_query_text: troubleshootingQueryText,
+        supplemental_knowledge_hits_count: supplementalKnowledgeMatches.length,
+        technical_fallback_knowledge_min_similarity: TECHNICAL_FALLBACK_KNOWLEDGE_MIN_SIMILARITY,
+      },
+      internalThread.threadId,
+    );
+    if (supplementalKnowledgeDebug) {
+      appendStructuredArtifactLog(
+        reasoningLogs,
+        "v2_technical_retrieval_debug",
+        {
+          artifact_type: "technical_retrieval_debug",
+          query_text: supplementalKnowledgeDebug.query_text,
+          threshold: supplementalKnowledgeDebug.threshold,
+          safe_limit: supplementalKnowledgeDebug.safe_limit,
+          retrieval_limit: supplementalKnowledgeDebug.retrieval_limit,
+          raw_count: supplementalKnowledgeDebug.raw_count,
+          filtered_count: supplementalKnowledgeDebug.filtered_count,
+          selected_count: supplementalKnowledgeDebug.selected_count,
+          top_candidates: supplementalKnowledgeDebug.top_candidates,
+        },
+        internalThread.threadId,
+      );
+    }
     if (productRetrieval.hits.length) {
       reasoningLogs.push({
         step_name: "Product Search",
@@ -1937,6 +2398,60 @@ Deno.serve(async (req) => {
       policies: context.policies,
       reservedTokens: POLICY_RESERVED_TOKENS,
     });
+    if (V2_STAGED_ORCHESTRATOR_ENABLED) {
+      factContext = retrieveFactContext({
+        selectedOrder,
+        orders: context.orders,
+        matchedSubjectNumber: context.matchedSubjectNumber,
+        automation: context.automation,
+      });
+      appendStructuredArtifactLog(
+        reasoningLogs,
+        "v2_fact_context",
+        {
+          artifact_type: "fact_context",
+          version: factContext.version,
+          fact_context: factContext,
+        },
+        internalThread.threadId,
+      );
+      appendStructuredArtifactLog(
+        reasoningLogs,
+        "v2_policy_context",
+        {
+          artifact_type: "policy_context",
+          intent: policyContext.intent,
+          summary_included: policyContext.policySummaryIncluded,
+          excerpt_included: policyContext.policyExcerptIncluded,
+          summary_tokens: policyContext.policySummaryTokens,
+          excerpt_tokens: policyContext.policyExcerptTokens,
+        },
+        internalThread.threadId,
+      );
+      appendStructuredArtifactLog(
+        reasoningLogs,
+        "v2_product_context",
+        {
+          artifact_type: "product_context",
+          hits: (productRetrieval.hits || []).map((item) => ({
+            id: item?.external_id ?? item?.id ?? null,
+            title: item?.title ?? null,
+            similarity: Number(item?.similarity ?? item?.score ?? 0) || null,
+          })),
+        },
+        internalThread.threadId,
+      );
+      appendStructuredArtifactLog(
+        reasoningLogs,
+        "v2_style_context",
+        {
+          artifact_type: "style_context",
+          learning_enabled: Boolean(learningProfile.enabled),
+          learned_style_present: Boolean(learnedStyle),
+        },
+        internalThread.threadId,
+      );
+    }
     const policySummaryText = policyContext.policySummaryText;
     const policyRulesText = policyContext.policyRulesText;
     const policyExcerptText = policyContext.policyExcerptText;
@@ -2009,7 +2524,7 @@ Deno.serve(async (req) => {
       provider,
       providerMessageId: emailData.messageId || null,
     });
-    const knowledgeTraceHits = (context.relevantKnowledgeMatches || []).map((match, index) => {
+    const knowledgeTraceHits = prioritizedKnowledgeMatches.map((match, index) => {
       const rawMatch = match as Record<string, unknown>;
       const type = match?.source_type || "snippet";
       const provider = match?.source_provider ? `, Provider: ${match.source_provider}` : "";
@@ -2023,6 +2538,7 @@ Deno.serve(async (req) => {
         knowledge_id: Number(match?.id ?? 0) || null,
         source_type: type,
         source_provider: match?.source_provider || "",
+        source_class: mapKnowledgeSourceClass(match),
         similarity:
           Number.isFinite(Number(match?.similarity)) ? Number(match?.similarity) : null,
         chunk_index:
@@ -2039,7 +2555,15 @@ Deno.serve(async (req) => {
             : null,
         included: false,
         approx_tokens: estimateTokens(text),
-        prompt_priority: getKnowledgePromptPriority(String(match?.source_provider || "")),
+        prompt_priority:
+          getKnowledgePromptPriority(String(match?.source_provider || "")) +
+          (caseAssessment
+            ? getKnowledgeSourcePriority(
+                caseAssessment.primary_case_type,
+                mapKnowledgeSourceClass(match),
+              ) * 100
+            : 0),
+        content,
         _text: text,
       };
     }).filter((hit) => hit._text)
@@ -2186,6 +2710,7 @@ Deno.serve(async (req) => {
         knowledge_id: hit.knowledge_id,
         source_type: hit.source_type,
         source_provider: hit.source_provider,
+        source_class: hit.source_class,
         similarity: hit.similarity,
         prompt_priority: hit.prompt_priority,
         chunk_index: hit.chunk_index,
@@ -2210,10 +2735,43 @@ Deno.serve(async (req) => {
         droppedContextReasons.length > 0 ? droppedContextReasons[0] : null,
       dropped_context_reasons: droppedContextReasons,
     };
+    const knowledgeSummaryText = knowledgeTraceHits
+      .filter((hit) => hit.included)
+      .map((hit) => hit._text)
+      .join("\n");
+    const technicalKnowledgeSummaryText = buildTechnicalKnowledgeSummary(
+      caseAssessment,
+      knowledgeTraceHits,
+    );
+    const technicalDiagnosticFacts = extractTechnicalDiagnosticFacts(
+      caseAssessment,
+      knowledgeTraceHits,
+    );
+    const productSummaryText = productTraceHits
+      .filter((hit) => hit.included)
+      .map((hit) => hit._text)
+      .join("\n");
+    const factSummaryText = [
+      factContext?.summary || "",
+      selectedOrder
+        ? `Selected order status: fulfillment=${String(selectedOrder?.fulfillment_status || "unknown")}, financial=${String(selectedOrder?.financial_status || "unknown")}, cancelled=${selectedOrder?.cancelled_at ? "yes" : "no"}.`
+        : "No selected order.",
+    ]
+      .filter(Boolean)
+      .join("\n");
 
     // Generer reply + actions med OpenAI JSON schema.
     let aiText: string | null = null;
     let automationActions: AutomationAction[] = [];
+    let actionDecisionArtifact: ActionDecision | null = null;
+    let usedTwoStageModel = false;
+    let shouldRunLegacyCombinedFallback = false;
+    let decisionModelSuccess = false;
+    let replyModelSuccess = false;
+    let fallbackUsed = false;
+    let fallbackReason: string | null = null;
+    let replyContainsConfirmationLanguage = false;
+    let executionState: ExecutionState = "no_action";
     let returnActionResult:
       | {
         type: string;
@@ -2225,61 +2783,121 @@ Deno.serve(async (req) => {
         error?: string;
       }
       | null = null;
+    const runLegacyCombinedModel = async () => {
+      const automationGuidance = buildAutomationGuidance(context.automation);
+      const personaGuidance = `Sprogregel har altid forrang; ignorer persona-instruktioner om sprogvalg.
+Persona instruktionsnoter: ${context.persona.instructions?.trim() || "Hold tonen venlig og effektiv."}
+Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
+      const systemMsgBase = [
+        "Du er en kundeservice-assistent.",
+        "Skriv kort, venligt og professionelt pa samme sprog som kundens mail.",
+        "Hvis kunden skriver pa engelsk, svar pa engelsk selv om andre instruktioner er pa dansk.",
+        `Start altid svaret med "Hej ${customerFirstName || "kunden"},".`,
+        "Brug KONTEKST-sektionen til at finde relevante oplysninger og nævn dem eksplicit i svaret.",
+        "Ved returns/refunds/warranty/shipping: følg policy summary/excerpts strengt.",
+        "Opfind aldrig return-portal URL, labels eller processer som ikke står i kontekst.",
+        "Når return shipping mode er customer_paid: nævn aldrig returlabel eller parcel shop.",
+        "Hvis du giver returinstruktioner, brug kun den konfigurerede return_address fra konteksten.",
+        `Ticket category: ${workflowRoute.category}.`,
+        workflowRoute.systemHint,
+        ...(workflowRoute.systemRules || []),
+        personaGuidance,
+        "Automationsregler:",
+        automationGuidance,
+        "Ud over forventet svar skal du returnere JSON med 'reply' og 'actions'.",
+        "Hvis en handling udføres (f.eks. opdater adresse, annuller ordre, refund, hold, line item edit, opdater kontakt, resend invoice, tilføj note/tag), skal actions-listen indeholde et objekt med type, orderId og payload.",
+        "Tilladte actions: update_shipping_address, cancel_order, refund_order, create_exchange_request, change_shipping_method, hold_or_release_fulfillment, edit_line_items, update_customer_contact, add_note, add_tag, add_internal_note_or_tag, resend_confirmation_or_invoice, lookup_order_status, fetch_tracking.",
+        "Ved rene status/tracking-spørgsmål skal du foretrække read-only actions: lookup_order_status og fetch_tracking. Undgå add_note/add_tag medmindre kunden udtrykkeligt beder om en intern note/tag.",
+        "Nævn aldrig trackingnummer eller trackinglink, medmindre KONTEKST for den valgte ordre indeholder trackingdata.",
+        "For update_shipping_address skal payload.shipping_address mindst indeholde name, address1, city, zip/postal_code og country.",
+        "For create_exchange_request skal payload mindst indeholde return_line_item_id og exchange_variant_id. Brug return_quantity/exchange_quantity hvis kunden har angivet antal.",
+        "For edit_line_items skal payload.operations bruges med type: set_quantity/remove_line_item/add_variant samt line_item_id/variant_id og quantity.",
+        "Afslut ikke med signatur – signaturen tilføjes automatisk senere.",
+      ].join("\n");
+      const systemMsg = context.matchedSubjectNumber
+        ? systemMsgBase +
+          ` Hvis KONTEKST indeholder et ordrenummer (fx #${context.matchedSubjectNumber}), brug dette ordrenummer som reference i svaret og spørg IKKE efter ordrenummer igen.`
+        : systemMsgBase;
+      const { reply, actions } = await callOpenAIWithImages(
+        prompt,
+        systemMsg,
+        inlineImageAttachments,
+      );
+      aiText = reply;
+      automationActions = actions ?? [];
+      const policyResult = applyWorkflowActionPolicy(automationActions, workflowRoute);
+      automationActions = policyResult.actions;
+      if (policyResult.removed.length) {
+        reasoningLogs.push({
+          step_name: "workflow_action_policy",
+          step_detail: JSON.stringify({
+            workflow: workflowRoute.workflow,
+            removed_actions: policyResult.removed,
+          }),
+          status: "warning",
+        });
+      }
+    };
     try {
       if (OPENAI_API_KEY) {
         const automationGuidance = buildAutomationGuidance(context.automation);
-        const personaGuidance = `Sprogregel har altid forrang; ignorer persona-instruktioner om sprogvalg.
-Persona instruktionsnoter: ${context.persona.instructions?.trim() || "Hold tonen venlig og effektiv."}
-Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
-        const systemMsgBase = [
-          "Du er en kundeservice-assistent.",
-          "Skriv kort, venligt og professionelt pa samme sprog som kundens mail.",
-          "Hvis kunden skriver pa engelsk, svar pa engelsk selv om andre instruktioner er pa dansk.",
-          `Start altid svaret med "Hej ${customerFirstName || "kunden"},".`,
-          "Brug KONTEKST-sektionen til at finde relevante oplysninger og nævn dem eksplicit i svaret.",
-          "Ved returns/refunds/warranty/shipping: følg policy summary/excerpts strengt.",
-          "Opfind aldrig return-portal URL, labels eller processer som ikke står i kontekst.",
-          "Når return shipping mode er customer_paid: nævn aldrig returlabel eller parcel shop.",
-          "Hvis du giver returinstruktioner, brug kun den konfigurerede return_address fra konteksten.",
-          `Ticket category: ${workflowRoute.category}.`,
-          workflowRoute.systemHint,
-          ...(workflowRoute.systemRules || []),
-          personaGuidance,
-          "Automationsregler:",
-          automationGuidance,
-          "Ud over forventet svar skal du returnere JSON med 'reply' og 'actions'.",
-          "Hvis en handling udføres (f.eks. opdater adresse, annuller ordre, refund, hold, line item edit, opdater kontakt, resend invoice, tilføj note/tag), skal actions-listen indeholde et objekt med type, orderId og payload.",
-          "Tilladte actions: update_shipping_address, cancel_order, refund_order, create_exchange_request, change_shipping_method, hold_or_release_fulfillment, edit_line_items, update_customer_contact, add_note, add_tag, add_internal_note_or_tag, resend_confirmation_or_invoice, lookup_order_status, fetch_tracking.",
-          "Ved rene status/tracking-spørgsmål skal du foretrække read-only actions: lookup_order_status og fetch_tracking. Undgå add_note/add_tag medmindre kunden udtrykkeligt beder om en intern note/tag.",
-          "Nævn aldrig trackingnummer eller trackinglink, medmindre KONTEKST for den valgte ordre indeholder trackingdata.",
-          "For update_shipping_address skal payload.shipping_address mindst indeholde name, address1, city, zip/postal_code og country.",
-          "For create_exchange_request skal payload mindst indeholde return_line_item_id og exchange_variant_id. Brug return_quantity/exchange_quantity hvis kunden har angivet antal.",
-          "For edit_line_items skal payload.operations bruges med type: set_quantity/remove_line_item/add_variant samt line_item_id/variant_id og quantity.",
-          "Afslut ikke med signatur – signaturen tilføjes automatisk senere.",
-        ].join("\n");
-        const systemMsg = context.matchedSubjectNumber
-          ? systemMsgBase +
-            ` Hvis KONTEKST indeholder et ordrenummer (fx #${context.matchedSubjectNumber}), brug dette ordrenummer som reference i svaret og spørg IKKE efter ordrenummer igen.`
-          : systemMsgBase;
-        const { reply, actions } = await callOpenAIWithImages(
-          prompt,
-          systemMsg,
-          inlineImageAttachments,
-        );
-        aiText = reply;
-        automationActions = actions ?? [];
-        const policyResult = applyWorkflowActionPolicy(automationActions, workflowRoute);
-        automationActions = policyResult.actions;
-        if (policyResult.removed.length) {
-          reasoningLogs.push({
-            step_name: "workflow_action_policy",
-            step_detail: JSON.stringify({
+        const customerMessage = `${emailData.subject || ""}\n\n${emailData.body || ""}`.trim();
+        const shouldUseTwoStageModel =
+          V2_STAGED_ORCHESTRATOR_ENABLED &&
+          V2_DECIDE_ACTIONS_ENABLED &&
+          V2_GENERATE_REPLY_FROM_STRATEGY_ENABLED;
+
+        if (shouldUseTwoStageModel) {
+          try {
+            actionDecisionArtifact = await decideActions({
+              customerMessage,
               workflow: workflowRoute.workflow,
-              removed_actions: policyResult.removed,
-            }),
-            status: "warning",
-          });
+              workflowCategory: workflowRoute.category,
+              automationGuidance,
+              orderSummary: context.orderSummary || "",
+              factSummary: factSummaryText,
+              policyRules: policyRulesText,
+              policySummary: policySummaryText,
+              policyExcerpt: policyExcerptText,
+              productSummary: productSummaryText,
+              matchedSubjectNumber: context.matchedSubjectNumber,
+              customerFirstName,
+            });
+            automationActions = actionDecisionArtifact.actions ?? [];
+            usedTwoStageModel = true;
+            decisionModelSuccess = true;
+            appendStructuredArtifactLog(
+              reasoningLogs,
+              "v2_action_decision",
+              {
+                artifact_type: "action_decision",
+                action_decision: actionDecisionArtifact,
+              },
+              internalThread.threadId,
+            );
+          } catch (stageErr) {
+            reasoningLogs.push({
+              step_name: "v2_action_decision",
+              step_detail: withThreadMeta(
+                JSON.stringify({
+                  artifact_type: "action_decision_error",
+                  error: stageErr instanceof Error ? stageErr.message : String(stageErr),
+                  fallback_to_legacy: V2_TWO_STAGE_FALLBACK_ENABLED,
+                }),
+                internalThread.threadId,
+              ),
+              status: "warning",
+            });
+            if (!V2_TWO_STAGE_FALLBACK_ENABLED) throw stageErr;
+            fallbackUsed = true;
+            fallbackReason = "action_decision_error";
+          }
         }
+
+        if (!usedTwoStageModel) {
+          await runLegacyCombinedModel();
+        }
+
         if (hasExchangeSignals(emailData.subject || "", emailData.body || "")) {
           automationActions = automationActions.filter(
             (action) => !isInternalAnnotationAction(String(action?.type || "")),
@@ -2447,6 +3065,180 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       }
     }
 
+    if (V2_STAGED_ORCHESTRATOR_ENABLED && V2_ACTION_VALIDATION_ENABLED) {
+      actionValidation = validateActionDecision({
+        actions: automationActions,
+        workflowRoute,
+        selectedOrder,
+        automation: context.automation,
+      });
+      automationActions = actionValidation.allowed_actions;
+      executionState = deriveExecutionState({
+        validation: actionValidation,
+        hasBlockedAction: false,
+        hasPendingApproval: Boolean(returnActionResult?.status === "pending_approval"),
+      });
+      appendStructuredArtifactLog(
+        reasoningLogs,
+        "v2_action_validation",
+        {
+          artifact_type: "action_validation",
+          validation: actionValidation,
+        },
+        internalThread.threadId,
+      );
+    }
+
+    if (V2_STAGED_ORCHESTRATOR_ENABLED && V2_REPLY_STRATEGY_ENABLED) {
+      const assessmentForStrategy =
+        caseAssessment ||
+        assessCase({
+          subject: emailData.subject,
+          body: emailData.body,
+          from: emailData.from,
+          fromEmail: emailData.fromEmail,
+          ticketCategory,
+          workflow: workflowRoute.workflow,
+          trackingIntent,
+          matchedSubjectNumber: context.matchedSubjectNumber,
+          hasSelectedOrder: Boolean(selectedOrder),
+          styleLearningEnabled: Boolean(context.automation?.historic_inbox_access),
+        });
+      const validationForStrategy =
+        actionValidation ||
+        validateActionDecision({
+          actions: automationActions,
+          workflowRoute,
+          selectedOrder,
+          automation: context.automation,
+        });
+      executionState = deriveExecutionState({
+        validation: validationForStrategy,
+        hasBlockedAction: false,
+        hasPendingApproval: Boolean(returnActionResult?.status === "pending_approval"),
+      });
+      replyStrategyArtifact = buildReplyStrategy({
+        assessment: assessmentForStrategy,
+        validation: validationForStrategy,
+        selectedOrder,
+        trackingIntent,
+        hasPolicyContext:
+          policyContext.policySummaryIncluded || policyContext.policyExcerptIncluded,
+        policyIntent: policyContext.intent,
+        executionState,
+      });
+      appendStructuredArtifactLog(
+        reasoningLogs,
+        "v2_reply_strategy",
+        {
+          artifact_type: "reply_strategy",
+          reply_strategy: replyStrategyArtifact,
+        },
+        internalThread.threadId,
+      );
+    }
+
+    if (
+      usedTwoStageModel &&
+      V2_STAGED_ORCHESTRATOR_ENABLED &&
+      V2_GENERATE_REPLY_FROM_STRATEGY_ENABLED &&
+      replyStrategyArtifact
+    ) {
+      try {
+        const replyActionTypes = (actionValidation?.allowed_actions || automationActions || []).map((action) =>
+          String(action?.type || "").trim().toLowerCase()
+        );
+        const allowGeneralKnowledgeForReply = !isActionSensitiveReplyCase({
+          actionTypes: replyActionTypes,
+          isReturnIntent,
+        });
+        const suppressPolicyForReply = shouldSuppressPolicyForTechnicalReply({
+          assessment: caseAssessment,
+          executionState: replyStrategyArtifact.execution_state,
+          policyIntent: policyContext.intent,
+        });
+        appendStructuredArtifactLog(
+          reasoningLogs,
+          "v2_reply_context_guard",
+          {
+            artifact_type: "reply_context_guard",
+            suppress_policy_for_reply: suppressPolicyForReply,
+            policy_intent: policyContext.intent,
+            execution_state: replyStrategyArtifact.execution_state,
+            case_type: caseAssessment?.primary_case_type ?? null,
+          },
+          internalThread.threadId,
+        );
+        appendStructuredArtifactLog(
+          reasoningLogs,
+          "v2_technical_knowledge_summary",
+          {
+            artifact_type: "technical_knowledge_summary",
+            technical_knowledge_present: Boolean(technicalKnowledgeSummaryText),
+            technical_knowledge_line_count: technicalKnowledgeSummaryText
+              ? technicalKnowledgeSummaryText.split("\n").filter(Boolean).length
+              : 0,
+            technical_diagnostic_facts: technicalDiagnosticFacts,
+          },
+          internalThread.threadId,
+        );
+        aiText = await generateReplyFromStrategy({
+          customerMessage: `${emailData.subject || ""}\n\n${emailData.body || ""}`.trim(),
+          customerFirstName,
+          replyStrategy: replyStrategyArtifact,
+          executionState: replyStrategyArtifact.execution_state,
+          factSummary: factSummaryText,
+          technicalKnowledgeSummary: technicalKnowledgeSummaryText,
+          technicalDiagnosticFacts,
+          policySummary: suppressPolicyForReply ? "" : policySummaryText,
+          policyExcerpt: suppressPolicyForReply ? "" : policyExcerptText,
+          productSummary: productSummaryText,
+          generalKnowledgeSummary: allowGeneralKnowledgeForReply ? knowledgeSummaryText : "",
+          learnedStyle,
+          personaInstructions: context.persona.instructions,
+        });
+        replyModelSuccess = Boolean(aiText);
+        appendStructuredArtifactLog(
+          reasoningLogs,
+          "v2_reply_generation",
+          {
+            artifact_type: "reply_generation",
+            used_two_stage_model: true,
+            generated_reply_present: Boolean(aiText),
+          },
+          internalThread.threadId,
+        );
+        if (!aiText && V2_TWO_STAGE_FALLBACK_ENABLED) {
+          usedTwoStageModel = false;
+          shouldRunLegacyCombinedFallback = true;
+          fallbackUsed = true;
+          fallbackReason = fallbackReason || "reply_generation_empty_output";
+        }
+      } catch (replyErr) {
+        reasoningLogs.push({
+          step_name: "v2_reply_generation",
+          step_detail: withThreadMeta(
+            JSON.stringify({
+              artifact_type: "reply_generation_error",
+              error: replyErr instanceof Error ? replyErr.message : String(replyErr),
+              fallback_to_legacy: V2_TWO_STAGE_FALLBACK_ENABLED,
+            }),
+            internalThread.threadId,
+          ),
+          status: "warning",
+        });
+        if (!V2_TWO_STAGE_FALLBACK_ENABLED) throw replyErr;
+        usedTwoStageModel = false;
+        shouldRunLegacyCombinedFallback = true;
+        fallbackUsed = true;
+        fallbackReason = "reply_generation_error";
+      }
+    }
+
+    if (shouldRunLegacyCombinedFallback && OPENAI_API_KEY) {
+      await runLegacyCombinedModel();
+    }
+
     // Fallback hvis AI fejler eller er slået fra.
     if (!aiText) {
       aiText = `Hej,\n\nTak for din besked. Vi vender tilbage hurtigst muligt med en opdatering.`;
@@ -2493,6 +3285,30 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       finalText = await enforceReplyLanguage(customerMessage, baseTrackingText, languageHint);
       finalText = ensureFirstLineHasName(finalText, trackingName);
       finalText = applyTrackingClosingByLanguage(finalText, languageHint);
+    }
+
+    const replyGuardResult = guardReplyForExecutionState({
+      text: finalText,
+      executionState: replyStrategyArtifact?.execution_state || executionState,
+      languageHint,
+    });
+    replyContainsConfirmationLanguage = replyGuardResult.containsConfirmationLanguage;
+    if (replyGuardResult.downgraded) {
+      finalText = stripTrailingSignoff(
+        enforceLocalizedGreeting(replyGuardResult.text, customerFirstName, languageHint),
+      );
+      finalText = ensureFirstLineHasName(finalText, customerFirstName);
+      appendStructuredArtifactLog(
+        reasoningLogs,
+        "v2_reply_guard",
+        {
+          artifact_type: "reply_guard",
+          execution_state: replyStrategyArtifact?.execution_state || executionState,
+          downgraded: true,
+          reply_contains_confirmation_language: replyContainsConfirmationLanguage,
+        },
+        internalThread.threadId,
+      );
     }
 
     // Render HTML med konsistent styling og line breaks.
@@ -2825,6 +3641,36 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         results: automationResults,
       });
     }
+
+    const finalExecutionState: ExecutionState = blockedAutoResults.length
+      ? "blocked"
+      : automationResults.some((result) => result.status === "success" || result.status === "partial_failure")
+      ? "executed"
+      : automationResults.some((result) => result.status === "pending_approval")
+      ? "pending_approval"
+      : replyStrategyArtifact?.execution_state || executionState;
+    replyContainsConfirmationLanguage = containsCompletionLanguage(finalText);
+
+    appendStructuredArtifactLog(
+      reasoningLogs,
+      "v2_generation_outcome",
+      {
+        artifact_type: "generation_outcome",
+        generation_path: fallbackUsed
+          ? "two_stage_with_legacy_fallback"
+          : usedTwoStageModel
+          ? "two_stage"
+          : "legacy_combined",
+        fallback_used: fallbackUsed,
+        fallback_reason: fallbackReason,
+        decision_model_success: decisionModelSuccess,
+        reply_model_success: replyModelSuccess,
+        execution_state: finalExecutionState,
+        validated_action_count: actionValidation?.allowed_actions?.length ?? automationActions.length,
+        reply_contains_confirmation_language: replyContainsConfirmationLanguage,
+      },
+      threadId,
+    );
 
     if (supabase && loggedDraftId) {
       const threadMarker = threadId ? ` |thread_id:${threadId}` : "";

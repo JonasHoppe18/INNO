@@ -41,6 +41,22 @@ export type KnowledgeMatch = {
   similarity?: number;
 };
 
+export type KnowledgeRetrievalDebug = {
+  query_text: string;
+  threshold: number;
+  safe_limit: number;
+  retrieval_limit: number;
+  raw_count: number;
+  filtered_count: number;
+  selected_count: number;
+  top_candidates: Array<{
+    id: number;
+    source_provider: string;
+    source_type: string;
+    similarity: number;
+  }>;
+};
+
 const KNOWLEDGE_PROVIDER_PRIORITY: Record<string, number> = {
   manual_text: 500,
   pdf_upload: 460,
@@ -369,20 +385,50 @@ async function embedKnowledgeQuery(input: string): Promise<number[] | null> {
   return Array.isArray(embedding) ? embedding : null;
 }
 
-export async function fetchRelevantKnowledge(
+export async function fetchRelevantKnowledgeDetailed(
   supabase: SupabaseClient | null,
   shopId: string | null,
   emailBody: string | null,
   limit = 4,
   minSimilarity = 0,
-): Promise<KnowledgeMatch[]> {
-  if (!supabase || !shopId || !emailBody?.trim()) return [];
-
-  const queryEmbedding = await embedKnowledgeQuery(emailBody);
-  if (!queryEmbedding) return [];
-
+): Promise<{ matches: KnowledgeMatch[]; debug: KnowledgeRetrievalDebug }> {
+  const safeQuery = String(emailBody || "").trim();
   const safeLimit = Math.max(1, Math.min(limit, 5));
   const retrievalLimit = Math.max(safeLimit * 4, 12);
+  const threshold = Number.isFinite(minSimilarity) ? Number(minSimilarity) : 0;
+  if (!supabase || !shopId || !safeQuery) {
+    return {
+      matches: [],
+      debug: {
+        query_text: safeQuery,
+        threshold,
+        safe_limit: safeLimit,
+        retrieval_limit: retrievalLimit,
+        raw_count: 0,
+        filtered_count: 0,
+        selected_count: 0,
+        top_candidates: [],
+      },
+    };
+  }
+
+  const queryEmbedding = await embedKnowledgeQuery(safeQuery);
+  if (!queryEmbedding) {
+    return {
+      matches: [],
+      debug: {
+        query_text: safeQuery,
+        threshold,
+        safe_limit: safeLimit,
+        retrieval_limit: retrievalLimit,
+        raw_count: 0,
+        filtered_count: 0,
+        selected_count: 0,
+        top_candidates: [],
+      },
+    };
+  }
+
   const { data, error } = await supabase.rpc("match_agent_knowledge", {
     query_embedding: queryEmbedding,
     match_count: retrievalLimit,
@@ -391,11 +437,36 @@ export async function fetchRelevantKnowledge(
 
   if (error) {
     console.warn("agent-context: could not fetch agent knowledge", error);
-    return [];
+    return {
+      matches: [],
+      debug: {
+        query_text: safeQuery,
+        threshold,
+        safe_limit: safeLimit,
+        retrieval_limit: retrievalLimit,
+        raw_count: 0,
+        filtered_count: 0,
+        selected_count: 0,
+        top_candidates: [],
+      },
+    };
   }
 
-  if (!Array.isArray(data)) return [];
-  const threshold = Number.isFinite(minSimilarity) ? Number(minSimilarity) : 0;
+  if (!Array.isArray(data)) {
+    return {
+      matches: [],
+      debug: {
+        query_text: safeQuery,
+        threshold,
+        safe_limit: safeLimit,
+        retrieval_limit: retrievalLimit,
+        raw_count: 0,
+        filtered_count: 0,
+        selected_count: 0,
+        top_candidates: [],
+      },
+    };
+  }
   const matches = data as KnowledgeMatch[];
   const filtered = threshold <= 0
     ? matches
@@ -431,7 +502,41 @@ export async function fetchRelevantKnowledge(
     providerCounts.set(entry.provider, count + 1);
     if (selected.length >= safeLimit) break;
   }
-  return selected;
+  return {
+    matches: selected,
+    debug: {
+      query_text: safeQuery,
+      threshold,
+      safe_limit: safeLimit,
+      retrieval_limit: retrievalLimit,
+      raw_count: matches.length,
+      filtered_count: filtered.length,
+      selected_count: selected.length,
+      top_candidates: matches.slice(0, 8).map((match) => ({
+        id: Number(match.id),
+        source_provider: String(match.source_provider || ""),
+        source_type: String(match.source_type || ""),
+        similarity: Number(match.similarity ?? 0),
+      })),
+    },
+  };
+}
+
+export async function fetchRelevantKnowledge(
+  supabase: SupabaseClient | null,
+  shopId: string | null,
+  emailBody: string | null,
+  limit = 4,
+  minSimilarity = 0,
+): Promise<KnowledgeMatch[]> {
+  const result = await fetchRelevantKnowledgeDetailed(
+    supabase,
+    shopId,
+    emailBody,
+    limit,
+    minSimilarity,
+  );
+  return result.matches;
 }
 
 export function formatKnowledgeForPrompt(matches: KnowledgeMatch[]): string {

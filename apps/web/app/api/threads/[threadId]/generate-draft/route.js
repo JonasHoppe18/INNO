@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
+import { getEffectiveSenderEmail, getEffectiveSenderName } from "@/lib/inbox/sender";
 
 export const runtime = "nodejs";
 
@@ -161,7 +162,7 @@ export async function POST(_request, { params }) {
     serviceClient
       .from("mail_messages")
       .select(
-        "id, provider_message_id, subject, clean_body_text, body_text, body_html, from_email, from_name, created_at, received_at"
+        "id, provider_message_id, subject, clean_body_text, body_text, body_html, from_email, from_name, extracted_customer_email, extracted_customer_name, created_at, received_at"
       )
       .eq("thread_id", threadId)
       .eq("from_me", false)
@@ -182,8 +183,8 @@ export async function POST(_request, { params }) {
     String(inboundMessage.body_text || "").trim() ||
     stripHtml(inboundMessage.body_html || "");
   const messageSubject = String(inboundMessage.subject || thread.subject || "").trim();
-  const fromEmail = String(inboundMessage.from_email || "").trim();
-  const fromName = String(inboundMessage.from_name || "").trim();
+  const fromEmail = String(getEffectiveSenderEmail(inboundMessage) || "").trim();
+  const fromName = String(getEffectiveSenderName(inboundMessage) || "").trim();
   const fromRaw = fromName && fromEmail ? `${fromName} <${fromEmail}>` : fromEmail || fromName;
 
   const endpoint = `${SUPABASE_URL}/functions/v1/generate-draft-unified`;
