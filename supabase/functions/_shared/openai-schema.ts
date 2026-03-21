@@ -187,7 +187,23 @@ export const REPLY_ONLY_JSON_SCHEMA = {
     additionalProperties: false,
     properties: {
       reply: { type: "string" },
+      quality_check: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          answers_core_question: { type: "boolean" },
+          matches_brand_voice: { type: "boolean" },
+          contains_ungrounded_claims: { type: "boolean" },
+          ready_to_send: { type: "boolean" },
+        },
+        required: [
+          "answers_core_question",
+          "matches_brand_voice",
+          "contains_ungrounded_claims",
+          "ready_to_send",
+        ],
+      },
     },
-    required: ["reply"],
+    required: ["reply", "quality_check"],
   },
 };

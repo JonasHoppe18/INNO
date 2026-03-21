@@ -71,6 +71,23 @@ const DETAIL_FOLLOWUP_ALLOWLIST_PATTERNS = [
   /\b(?:reply here|let us know here|svar her|skriv her)\b.*\b(?:which|what|when|hvilken|hvilket|hvornår)\b/i,
 ];
 
+const UNGROUNDED_LABEL_OR_ATTACHMENT_PATTERNS = [
+  /\b(?:i have attached|i've attached|attached (?:a|the) return label|please use the attached return label)\b/i,
+  /\b(?:returlabel(?:en)? (?:er vedhaeftet|er vedhæftet)|jeg har vedhaeftet|jeg har vedhæftet)\b/i,
+  /\b(?:i generated|i created) (?:a|the) return label\b/i,
+  /\b(?:jeg har (?:genereret|oprettet)) returlabel\b/i,
+];
+
+const INCLUDED_LABEL_PATTERNS = [
+  /\b(?:use the included return label|use the enclosed return label|use the pre-printed return label)\b/i,
+  /\b(?:brug den medsendte returlabel|brug den vedlagte returlabel|brug den fortrykte returlabel)\b/i,
+];
+
+const UNGROUNDED_RETURN_SHIPPING_RESPONSIBILITY_PATTERNS = [
+  /\b(?:we will pay for return shipping|we cover return shipping|return shipping is covered by us|the company will pay for return shipping)\b/i,
+  /\b(?:vi betaler returfragten|returfragten betales af os|vi daekker returfragten|vi dækker returfragten)\b/i,
+];
+
 export function isActionSensitiveReplyCase(options: {
   actionTypes?: string[];
   isReturnIntent?: boolean;
@@ -188,5 +205,55 @@ export function guardSameChannelEscalation(options: {
     text: next,
     changed: next !== original,
     removedSameChannelEscalation: removed,
+  };
+}
+
+export function guardGroundedReplyText(options: {
+  text: string;
+  executionState: ExecutionState;
+  allowReturnShippingResponsibilityClaim?: boolean;
+  allowIncludedLabelClaim?: boolean;
+}) {
+  const original = String(options.text || "").trim();
+  if (!original) {
+    return {
+      text: original,
+      changed: false,
+      removedUngroundedLabelClaim: false,
+      removedUngroundedReturnShippingClaim: false,
+    };
+  }
+
+  const lines = original.split("\n");
+  let removedUngroundedLabelClaim = false;
+  let removedUngroundedReturnShippingClaim = false;
+
+  const filtered = lines.filter((line) => {
+    const body = String(line || "").trim();
+    if (!body) return true;
+    if (UNGROUNDED_LABEL_OR_ATTACHMENT_PATTERNS.some((pattern) => pattern.test(body))) {
+      removedUngroundedLabelClaim = true;
+      return false;
+    }
+    if (!options.allowIncludedLabelClaim && INCLUDED_LABEL_PATTERNS.some((pattern) => pattern.test(body))) {
+      removedUngroundedLabelClaim = true;
+      return false;
+    }
+    if (
+      !options.allowReturnShippingResponsibilityClaim &&
+      UNGROUNDED_RETURN_SHIPPING_RESPONSIBILITY_PATTERNS.some((pattern) => pattern.test(body))
+    ) {
+      removedUngroundedReturnShippingClaim = true;
+      return false;
+    }
+    return true;
+  });
+
+  const next = filtered.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  return {
+    text: next,
+    changed: next !== original,
+    removedUngroundedLabelClaim,
+    removedUngroundedReturnShippingClaim,
   };
 }

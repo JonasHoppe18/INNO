@@ -104,19 +104,58 @@ function summarizeDraftDiff(aiText, finalText) {
   const finalWords = countWords(final);
   const delta = finalWords - aiWords;
   const deltaPct = aiWords ? delta / aiWords : 0;
+  const normalizedAi = ai.replace(/\s+/g, " ").trim().toLowerCase();
+  const normalizedFinal = final.replace(/\s+/g, " ").trim().toLowerCase();
   const removedFluff =
     /hope this email finds you well/i.test(ai) && !/hope this email finds you well/i.test(final);
   const addedNextSteps =
     /\b(next steps?|please|you can|we will)\b/i.test(final) &&
     !/\b(next steps?|please|you can|we will)\b/i.test(ai);
   return {
+    ai_length: ai.length,
+    final_length: final.length,
     ai_words: aiWords,
     final_words: finalWords,
     delta_words: delta,
     delta_pct: Number.isFinite(deltaPct) ? Number(deltaPct.toFixed(2)) : 0,
+    identical_normalized: Boolean(normalizedAi) && normalizedAi === normalizedFinal,
+    changed_materially:
+      Boolean(normalizedAi) &&
+      normalizedAi !== normalizedFinal &&
+      (Math.abs(delta) >= 5 || Math.abs(deltaPct) >= 0.15 || Math.abs(final.length - ai.length) >= 40),
     removed_fluff: removedFluff,
     added_next_steps: addedNextSteps,
   };
+}
+
+async function captureDraftEditFeedback({
+  serviceClient,
+  threadId,
+  messageDraftId,
+  sourceWasAiGenerated,
+  originalAiText,
+  finalText,
+  eventType,
+  createdAt,
+}) {
+  if (!serviceClient || !threadId || !sourceWasAiGenerated) return;
+  const diffSummary = summarizeDraftDiff(originalAiText, finalText);
+  await serviceClient.from("agent_logs").insert({
+    draft_id: null,
+    step_name: "draft_edit_feedback_captured",
+    step_detail: JSON.stringify({
+      thread_id: threadId,
+      message_draft_id: messageDraftId || null,
+      event_type: eventType,
+      source_was_ai_generated: true,
+      original_ai_draft_length: diffSummary.ai_length,
+      final_draft_length: diffSummary.final_length,
+      changed_materially: diffSummary.changed_materially,
+      diff_summary: diffSummary,
+    }),
+    status: "info",
+    created_at: createdAt || new Date().toISOString(),
+  });
 }
 
 function buildLearningBullets(diff) {
@@ -1297,6 +1336,16 @@ export async function POST(request, { params }) {
     if (finalText.trim()) {
       const diffSummary = summarizeDraftDiff(aiDraftText, finalText);
       try {
+        await captureDraftEditFeedback({
+          serviceClient,
+          threadId,
+          messageDraftId: insertedMessage?.id || null,
+          sourceWasAiGenerated: true,
+          originalAiText: aiDraftText,
+          finalText,
+          eventType: "manual_send",
+          createdAt: nowIso,
+        });
         await serviceClient.from("agent_logs").insert({
           draft_id: null,
           step_name: "learning_event",

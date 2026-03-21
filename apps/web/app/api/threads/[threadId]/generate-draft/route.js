@@ -220,6 +220,7 @@ export async function POST(_request, { params }) {
         from: fromRaw || null,
         fromEmail: fromEmail || null,
         body: messageBody,
+        rawBody: String(inboundMessage.body_text || "").trim() || null,
         headers: [],
       },
     }),

@@ -1,4 +1,5 @@
 export type PolicyShippingPaidBy = "customer" | "merchant" | "unknown";
+export type DefectReturnShippingRule = "merchant_pays" | "customer_pays" | "unspecified";
 
 export type PolicySummary = {
   return_window_days: number | null;
@@ -6,6 +7,7 @@ export type PolicySummary = {
   return_address: string;
   return_contact_email: string;
   return_shipping_paid_by: PolicyShippingPaidBy;
+  defect_return_shipping_rule: DefectReturnShippingRule;
   refund_conditions_short: string;
   warranty_duration_regions_short: string;
   last_modified_date?: string | null;
@@ -26,6 +28,7 @@ export const DEFAULT_POLICY_SUMMARY: PolicySummary = {
   return_address: "",
   return_contact_email: "",
   return_shipping_paid_by: "unknown",
+  defect_return_shipping_rule: "unspecified",
   refund_conditions_short: "Follow the store policy. If unclear, ask one question.",
   warranty_duration_regions_short: "",
   last_modified_date: null,
@@ -87,6 +90,13 @@ function firstEmail(text: string): string {
   return match ? match[0] : "";
 }
 
+function normalizeDefectReturnShippingRule(value: unknown): DefectReturnShippingRule {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "merchant_pays" || normalized === "merchant") return "merchant_pays";
+  if (normalized === "customer_pays" || normalized === "customer") return "customer_pays";
+  return "unspecified";
+}
+
 function maybeAddress(text: string): string {
   const lines = String(text || "")
     .split("\n")
@@ -122,6 +132,7 @@ export function buildHeuristicPolicySummary(input: {
     return_address: clampText(maybeAddress(refund), 400),
     return_contact_email: clampText(firstEmail(combined), 200),
     return_shipping_paid_by: returnShippingPaidBy,
+    defect_return_shipping_rule: "unspecified",
     refund_conditions_short: clampText(
       refund || "Follow the store policy. If unclear, ask one question.",
       600,
@@ -151,6 +162,9 @@ export function normalizePolicySummary(input: unknown): PolicySummary {
       shippingPaidBy === "customer" || shippingPaidBy === "merchant"
         ? (shippingPaidBy as PolicyShippingPaidBy)
         : "unknown",
+    defect_return_shipping_rule: normalizeDefectReturnShippingRule(
+      raw.defect_return_shipping_rule ?? raw.defect_return_shipping_paid_by,
+    ),
     refund_conditions_short:
       clampText(raw.refund_conditions_short, 600) || fallback.refund_conditions_short,
     warranty_duration_regions_short: clampText(raw.warranty_duration_regions_short, 600),
@@ -182,6 +196,7 @@ function policyRulesBlock(intent: PolicyIntent) {
     lines.push(
       "- RETURNS - CHANNEL RULE: If store policy says 'contact us via email' or shows an email address, do NOT tell the customer to email that address if the customer is already emailing us in this thread/inbox. Treat it as a requirement: ask for the required return details (order number, name used at purchase, reason) and confirm return conditions (return window, sealed/unused requirements, who pays return shipping). Only direct the customer to a specific email address if they are using the wrong channel or if the store explicitly requires a different dedicated return email than this inbox.",
       "- RETURNS - CONTINUATION RULE: If the customer says they already received the replacement/new item and asks how to send the old item back, answer with practical return logistics directly. Do not ask again for order number or name when the order is already known. Do not mention who pays return shipping unless the customer asks about shipping cost or the approved context explicitly requires it for this continuation.",
+      "- DEFECT/REPLACEMENT RETURN RULE: For defect, warranty, or replacement-related return continuations, use defect_return_shipping_rule if it exists. If it is unspecified, do not claim who pays return shipping.",
     );
   }
 
@@ -195,6 +210,7 @@ function summaryBlock(summary: PolicySummary) {
     `- return_shipping_paid_by: ${summary.return_shipping_paid_by}`,
     `- return_contact_email: ${summary.return_contact_email || "unknown"}`,
     `- return_address: ${summary.return_address || "unknown"}`,
+    `- defect_return_shipping_rule: ${summary.defect_return_shipping_rule}`,
     `- return_instructions_short: ${summary.return_instructions_short}`,
     `- refund_conditions_short: ${summary.refund_conditions_short}`,
     `- warranty_duration_regions_short: ${summary.warranty_duration_regions_short || "unknown"}`,

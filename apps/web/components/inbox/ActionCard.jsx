@@ -465,7 +465,12 @@ export function ActionCard({
             {addressLines.length ? (
               addressLines.map((line, index) => <div key={`pending-line-${index}`}>{line}</div>)
             ) : (
-              <div>{detail || `Sona wants to ${actionName.toLowerCase()}.`}</div>
+              <div>
+                {detail || `Sona wants to ${actionName.toLowerCase()}.`}
+                {orderDisplayNumber && normalizedAction === "cancel_order" ? (
+                  <span className="ml-1 font-medium text-slate-900">{orderDisplayNumber}</span>
+                ) : null}
+              </div>
             )}
           </div>
         </div>

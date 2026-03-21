@@ -8,7 +8,21 @@ export type ActionDecision = {
   version: 1;
   summary: string;
   actions: AutomationAction[];
+  address_update_candidate?: boolean;
+  address_update_action_selected?: boolean;
+  technical_escalation_candidate?: boolean;
+  technical_escalation_selected?: boolean;
 };
+
+type ShippingAddressCandidate = {
+  name?: string;
+  address1?: string;
+  address2?: string;
+  city?: string;
+  zip?: string;
+  country?: string;
+  phone?: string;
+} | null;
 
 export type DecideActionsInput = {
   customerMessage: string;
@@ -23,9 +37,127 @@ export type DecideActionsInput = {
   productSummary?: string | null;
   matchedSubjectNumber?: string | null;
   customerFirstName?: string | null;
+  selectedOrderId?: number | null;
+  addressCandidate?: ShippingAddressCandidate;
+  selectedOrderShippingAddress?: Record<string, unknown> | null;
+  addressIssueContext?: boolean;
+  troubleshootingExhausted?: boolean;
+  technicalIssueStrong?: boolean;
+  technicalExchangeCandidate?: AutomationAction | null;
 };
 
+const asText = (value: unknown) => (typeof value === "string" ? value.trim() : "");
+
+function buildDeterministicAddressUpdateDecision(input: DecideActionsInput): ActionDecision | null {
+  const selectedOrderId = Number(input.selectedOrderId ?? 0);
+  if (!Number.isFinite(selectedOrderId) || selectedOrderId <= 0) return null;
+  if (!input.addressIssueContext) return null;
+
+  const candidate = (input.addressCandidate || {}) as Record<string, unknown>;
+  const existingShipping = (input.selectedOrderShippingAddress || {}) as Record<string, unknown>;
+  const name = asText(candidate.name) || asText(existingShipping.name) || asText(input.customerFirstName);
+  const address1 = asText(candidate.address1);
+  const address2 = asText(candidate.address2);
+  const city = asText(candidate.city);
+  const zip = asText(candidate.zip);
+  const country =
+    asText(candidate.country) ||
+    asText(existingShipping.country) ||
+    asText(existingShipping.country_code);
+  const phone = asText(candidate.phone) || asText(existingShipping.phone);
+
+  if (!address1 || !city || !zip || !country) return null;
+
+  return {
+    version: 1,
+    summary: "Detected a replacement shipping address for a known address-issue thread and selected an address update action.",
+    actions: [
+      {
+        type: "update_shipping_address",
+        orderId: selectedOrderId,
+        payload: {
+          shipping_address: {
+            name: name || null,
+            address1,
+            address2: address2 || null,
+            zip,
+            city,
+            country,
+            phone: phone || null,
+          },
+          note: null,
+          tag: null,
+          amount: null,
+          currency: null,
+          reason: "customer_provided_replacement_shipping_address",
+          return_reason: null,
+          refund: null,
+          restock: null,
+          email: null,
+          phone: null,
+          to_email: null,
+          message: null,
+          title: null,
+          price: null,
+          code: null,
+          source: "latest_customer_message",
+          mode: null,
+          fulfillment_order_id: null,
+          reason_notes: "Customer provided a replacement shipping address after prior address issue.",
+          return_line_item_id: null,
+          returnLineItemId: null,
+          return_quantity: null,
+          exchange_variant_id: null,
+          exchangeVariantId: null,
+          exchange_quantity: null,
+          edit_summary: null,
+          requested_changes: null,
+          operations: null,
+          line_item_id: null,
+          lineItemId: null,
+          variant_id: null,
+          variantId: null,
+          quantity: null,
+        },
+      },
+    ],
+    address_update_candidate: true,
+    address_update_action_selected: true,
+  };
+}
+
+function buildDeterministicTechnicalEscalationDecision(input: DecideActionsInput): ActionDecision | null {
+  const selectedOrderId = Number(input.selectedOrderId ?? 0);
+  if (!Number.isFinite(selectedOrderId) || selectedOrderId <= 0) return null;
+  if (!input.technicalIssueStrong || !input.troubleshootingExhausted) return null;
+  const candidate = input.technicalExchangeCandidate;
+  if (!candidate || String(candidate.type || "").trim().toLowerCase() !== "create_exchange_request") {
+    return null;
+  }
+  return {
+    version: 1,
+    summary:
+      "Detected a strong unresolved technical fault after troubleshooting was already attempted and selected an exchange/replacement escalation action.",
+    actions: [
+      {
+        ...candidate,
+        orderId: Number(candidate.orderId ?? selectedOrderId),
+      },
+    ],
+    technical_escalation_candidate: true,
+    technical_escalation_selected: true,
+  };
+}
+
 export async function decideActions(input: DecideActionsInput): Promise<ActionDecision> {
+  const deterministicAddressUpdate = buildDeterministicAddressUpdateDecision(input);
+  if (deterministicAddressUpdate) {
+    return deterministicAddressUpdate;
+  }
+  const deterministicTechnicalEscalation = buildDeterministicTechnicalEscalationDecision(input);
+  if (deterministicTechnicalEscalation) {
+    return deterministicTechnicalEscalation;
+  }
   if (!OPENAI_API_KEY) {
     return { version: 1, summary: "openai_unavailable", actions: [] };
   }
@@ -47,6 +179,10 @@ export async function decideActions(input: DecideActionsInput): Promise<ActionDe
     "If ORDER SUMMARY or FACT CONTEXT already identifies the order, do not say the customer needs to provide order number, full name, or basic identity again unless identity is still genuinely ambiguous.",
     "If the customer asks how to send back an old or faulty item after a replacement or exchange flow, treat it as a practical continuation question, not a fresh return-request intake.",
     "For ongoing replacement or defect threads with a known order, do not say 'contact support for return instructions' as if the customer is starting over in a new channel.",
+    "If the thread context indicates an address issue and the latest customer message provides a usable replacement shipping address for a known order, prefer update_shipping_address over reply-only or add_note.",
+    "If the latest message and approved context show a strong unresolved technical fault, troubleshooting has already been attempted, and the issue persists for a known order, prefer create_exchange_request over reply-only or add_note.",
+    "If the customer reports placing the same order twice by mistake and asks to delete or cancel one, propose cancel_order. If multiple order numbers are mentioned, prefer cancelling the higher-numbered order (most recent duplicate) unless the customer specifies otherwise. Use the orderId from ORDER SUMMARY.",
+    "For duplicate order cases: do not refuse to act just because two order numbers are present. Use the selected order from context and note in the summary that the other duplicate should also be reviewed.",
   ].join("\n");
 
   const prompt = [
@@ -111,6 +247,14 @@ export async function decideActions(input: DecideActionsInput): Promise<ActionDe
       actions: Array.isArray(parsed?.actions)
         ? parsed.actions.filter((action: any) => typeof action?.type === "string")
         : [],
+      address_update_candidate: false,
+      address_update_action_selected: Array.isArray(parsed?.actions)
+        ? parsed.actions.some((action: any) => String(action?.type || "").trim().toLowerCase() === "update_shipping_address")
+        : false,
+      technical_escalation_candidate: false,
+      technical_escalation_selected: Array.isArray(parsed?.actions)
+        ? parsed.actions.some((action: any) => String(action?.type || "").trim().toLowerCase() === "create_exchange_request")
+        : false,
     };
   } catch {
     return { version: 1, summary: "invalid_json_response", actions: [] };

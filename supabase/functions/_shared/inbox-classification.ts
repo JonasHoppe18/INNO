@@ -59,16 +59,27 @@ const NOTIFICATION_PATTERNS = [
   /\bthanks?\s+for\s+your\s+order\b/i,
   /\bconfirmation\s+email\b/i,
   /\bthis\s+is\s+an\s+automated\b/i,
-  /\bautomated\s+(?:message|email|notification|confirmation)\b/i,
+  /\bautomated\s+(?:message|email|notification|confirmation|review|process)\b/i,
   /\bdo\s+not\s+reply\b/i,
   /\bno[- ]?reply\b/i,
   /\bsystem-generated\b/i,
   /\btransaction(?:al)?\s+email\b/i,
   /\bsubscription\s+(?:confirmed|renewed|updated)\b/i,
-  /\baccount\s+(?:verification|confirmed|updated)\b/i,
+  /\baccount\s+(?:verification|confirmed|updated|review)\b/i,
   /\blogin\s+code\b/i,
   /\bsecurity\s+code\b/i,
   /\bpassword\s+reset\b/i,
+  // Danish transactional language
+  /\bkvittering\b/i,
+  /\bforsendelse\b/i,
+  /\bsporing\b/i,
+  /\bordrebekr[æa]ftelse\b/i,
+  /\bbetalingsbekr[æa]ftelse\b/i,
+  /\blevering(?:en|sdato|sstatus)?\b/i,
+  // Spam / platform-notification phishing
+  /\bauthenticity\s+guidelines?\b/i,
+  /\bblue\s+check\s+mark\b/i,
+  /\bcompleted\s+(?:your|the)\s+(?:account|profile|page)\s+(?:review|verification)\b/i,
 ];
 
 const HUMAN_SUPPORT_PATTERNS = [

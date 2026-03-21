@@ -37,6 +37,17 @@ export type RetrievalNeeds = {
 export type CaseAssessment = {
   version: 3;
   debug_marker: "return_logistics_v3";
+  tie_break_override?: "return_logistics_override" | "address_change_override" | "technical_issue_override" | null;
+  latest_message_override_debug?: {
+    return_process_followup_matched: boolean;
+    triggered_signals: string[];
+    historical_tracking_overridden: boolean;
+    return_context_detected: boolean;
+    return_context_evidence: string[];
+    tracking_status_present: boolean;
+    override_failure_reason: string | null;
+  };
+  troubleshooting_exhausted?: boolean;
   primary_case_type: GeneralCaseType;
   secondary_case_types: GeneralCaseType[];
   latest_message_primary_intent: GeneralCaseType;
@@ -138,6 +149,14 @@ const REPLACEMENT_CONTINUATION_RE =
   /\b(?:replacement|exchange|new headset|old headset|received the new one|got the new one|erstatning|ombytning|nyt headset|gamle headset|fået det nye|modtaget det nye)\b/i;
 const ADDRESS_FIELD_CONTEXT_RE =
   /\b(?:zip|zip code|postal code|post code|postcode|city|state|province|country|address|shipping address|billing address|ship to|apo|fpo|dpo|ap)\b/i;
+const RETURN_PROCESS_GENERIC_GUIDANCE_RE =
+  /\b(?:walk me through|what do i do now|what do i do|how do i do it|how do i do the return|how do i return it|how do i send it back|how do i send it return|how do i send it back now)\b/i;
+const RETURN_PROCESS_GENERIC_GUIDANCE_DA_RE =
+  /\b(?:hvordan gør jeg|kan i gå mig igennem|kan i guide mig igennem|hvordan sender jeg den retur|hvordan sender jeg den tilbage|hvordan returnerer jeg|hvad skal jeg gøre)\b/i;
+const RETURN_PROCESS_EXPLICIT_RE =
+  /\b(?:return process|return steps|return instructions|send it back|send the old one back|send the headset back|returnere|sende den retur|sende den tilbage|returproces|returinstruktioner)\b/i;
+const REAL_TRACKING_STATUS_RE =
+  /\b(?:where is my order|where is my package|tracking number|track(?:ing)?|shipment status|delivery status|not delivered|shipment delayed|delayed package|hvornår kommer|min pakke|sporingsnummer|trackingnummer|leveringsstatus|forsinket)\b/i;
 
 const CASE_TYPES: GeneralCaseType[] = [
   "technical_issue",
@@ -239,6 +258,10 @@ const SIGNAL_RULES: SignalRule[] = [
       /\b(?:what is wrong with the address|address is wrong|wrong with the shipping address|address clarification|different address for shipment|billing address instead)\b/i,
       /\b(?:the details i provided are correct|details i provided are correct|city\s*:|state\s*:|zip(?: code)?\s*:|postal code\s*:)\b/i,
       /\b(?:hvad er der galt med adressen|der er noget galt med adressen|leveringsadressen|anden adresse til forsendelse|faktureringsadresse i stedet)\b/i,
+      /\b(?:delete|remove)\s+(?:the\s+)?(?:one|an?|the\s+duplicate|one\s+of\s+the)\s+order\b/i,
+      /\b(?:duplicate\s+order|same\s+order\s+twice|ordered\s+(?:it\s+)?twice|placed\s+(?:the\s+)?same\s+order\s+twice|placed\s+(?:it\s+)?twice|accidentally\s+(?:placed|ordered)\s+(?:twice|two|2))\b/i,
+      /\b(?:slet|fjern)\s+(?:den\s+)?(?:ene|en|en\s+af|den\s+ene)\s+(?:ordre|bestilling)\b/i,
+      /\b(?:dobbelt\s+(?:ordre|bestilling)|bestilt\s+(?:det\s+)?to\s+gange|lagt\s+(?:den\s+)?samme\s+ordre\s+ind\s+(?:to\s+gange|2\s+gange)|fået\s+lagt\s+(?:den\s+)?samme\s+ordre\s+(?:to\s+gange|2\s+gange))\b/i,
     ],
   },
   {
@@ -247,6 +270,8 @@ const SIGNAL_RULES: SignalRule[] = [
     patterns: [
       /\b(update order|change email|change phone|edit order)\b/i,
       /\b(?:apo|fpo|dpo)\b.*\b(?:zip|postal|state|city)\b/i,
+      /\b(?:two\s+(?:identical|same|duplicate)\s+orders?|only\s+(?:want|need|ordered)\s+one\b)/i,
+      /\b(?:jeg\s+har\s+(?:kun\s+)?bestilt|jeg\s+vil\s+kun\s+have\s+(?:en|ét|et)\b)/i,
     ],
   },
   {
@@ -298,7 +323,7 @@ function applyLatestMessageTailBreaks(text: string) {
   return kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
-function cleanLatestMessageBody(body: string) {
+export function cleanLatestMessageBody(body: string) {
   const parsed = parseEmailReplyBodies({ text: body });
   const parsedCandidate = applyLatestMessageTailBreaks(String(parsed.cleanBodyText || ""));
   const rawCandidate = applyLatestMessageTailBreaks(String(body || ""));
@@ -318,7 +343,7 @@ function cleanLatestMessageBody(body: string) {
   };
 }
 
-function cleanLatestMessageSubject(subject: string) {
+export function cleanLatestMessageSubject(subject: string) {
   const raw = String(subject || "").trim();
   if (!raw) return "";
   let next = raw;
@@ -377,24 +402,41 @@ function extractAddressCandidate(body: string) {
   if (!/\b(address|ship to|street|road|avenue|ave|city|zip|postal|state|province|country|apo|fpo|dpo)\b/i.test(joined)) {
     return null;
   }
-  const addressLikeLines = lines.filter((line) =>
-    !/^(?:hello|hi|hej|dear)\b[,!.\s]*$/i.test(line) &&
-    (
-      /^(?:city|state|zip(?: code)?|postal code|country|address|street|road|avenue|ave|apo|fpo|dpo)\s*:/i
-        .test(line) ||
-      /\b(?:street|road|avenue|ave|boulevard|blvd|drive|dr|lane|ln|apartment|apt|suite|unit|floor|sal|city|zip|postal|state|country|apo|fpo|dpo)\b/i
-        .test(line)
-    )
+  const contentLines = lines.filter((line) => !/^(?:hello|hi|hej|dear|thanks|thank you|tak)\b[,!.\s]*.*$/i.test(line));
+  const fieldValue = (patterns: RegExp[]) => {
+    for (const line of contentLines) {
+      for (const pattern of patterns) {
+        const match = line.match(pattern);
+        if (match?.[1]) return normalizeCandidate(match[1]);
+      }
+    }
+    return "";
+  };
+  const streetLikeLines = contentLines.filter((line) =>
+    /^(?!.*\b(?:city|state|zip(?: code)?|postal code|country|phone|name)\s*:).*(?:\d+[A-Za-z0-9 -]{0,8}\s+)?(?:street|st\.?|road|rd\.?|avenue|ave\.?|boulevard|blvd|drive|dr\.?|lane|ln\.?|way|apartment|apt|suite|unit|floor|sal)\b/i
+      .test(line) ||
+    /^(?:address|street|address1|address 1)\s*:/i.test(line)
   );
-  if (!addressLikeLines.length) return null;
+  const address1 = fieldValue([
+    /^(?:address1|address 1|address|street)\s*:\s*(.+)$/i,
+  ]) || normalizeCandidate(streetLikeLines[0] || "");
+  const address2 = fieldValue([
+    /^(?:address2|address 2|suite|unit|apartment|apt)\s*:\s*(.+)$/i,
+  ]) || normalizeCandidate(streetLikeLines[1] || "");
+  const city = fieldValue([/^(?:city|town)\s*:\s*(.+)$/i]);
+  const zip = fieldValue([/^(?:zip(?: code)?|postal code|postcode|post code)\s*:\s*(.+)$/i]);
+  const country = fieldValue([/^(?:country)\s*:\s*(.+)$/i]);
+  const phone = fieldValue([/^(?:phone|telephone|mobile)\s*:\s*(.+)$/i]);
+  const name = fieldValue([/^(?:name|full name|recipient)\s*:\s*(.+)$/i]);
+  if (!address1) return null;
   return {
-    name: "",
-    address1: addressLikeLines[0] || "",
-    address2: addressLikeLines[1] || "",
-    city: "",
-    zip: "",
-    country: "",
-    phone: "",
+    name,
+    address1,
+    address2,
+    city,
+    zip,
+    country,
+    phone,
   };
 }
 
@@ -894,7 +936,11 @@ function inferHistoricalContextIntents(input: AssessCaseInput): GeneralCaseType[
 
 function chooseLatestMessagePrimaryIntent(
   scores: Record<GeneralCaseType, number>,
-): { primary: GeneralCaseType; confidence: number } {
+): {
+  primary: GeneralCaseType;
+  confidence: number;
+  tieBreakOverride: CaseAssessment["tie_break_override"];
+} {
   if (
     scores.return_refund >= 5 &&
     scores.return_refund >= (scores.tracking_shipping + 2)
@@ -902,7 +948,25 @@ function chooseLatestMessagePrimaryIntent(
     const total = CASE_TYPES.filter((type) => type !== "mixed_case")
       .reduce((sum, type) => sum + scores[type], 0);
     const confidence = total > 0 ? Math.min(0.98, Math.max(0.55, scores.return_refund / total)) : 0.55;
-    return { primary: "return_refund", confidence };
+    return { primary: "return_refund", confidence, tieBreakOverride: "return_logistics_override" };
+  }
+  if (
+    scores.order_change >= 5 &&
+    scores.order_change >= (scores.tracking_shipping + 2)
+  ) {
+    const total = CASE_TYPES.filter((type) => type !== "mixed_case")
+      .reduce((sum, type) => sum + scores[type], 0);
+    const confidence = total > 0 ? Math.min(0.98, Math.max(0.55, scores.order_change / total)) : 0.55;
+    return { primary: "order_change", confidence, tieBreakOverride: "address_change_override" };
+  }
+  if (
+    scores.technical_issue >= 5 &&
+    scores.technical_issue >= (scores.product_question + 2)
+  ) {
+    const total = CASE_TYPES.filter((type) => type !== "mixed_case")
+      .reduce((sum, type) => sum + scores[type], 0);
+    const confidence = total > 0 ? Math.min(0.98, Math.max(0.55, scores.technical_issue / total)) : 0.55;
+    return { primary: "technical_issue", confidence, tieBreakOverride: "technical_issue_override" };
   }
   const ranked = CASE_TYPES.filter((type) => type !== "mixed_case")
     .map((type) => ({ type, score: scores[type] }))
@@ -910,7 +974,7 @@ function chooseLatestMessagePrimaryIntent(
   const top = ranked[0] || { type: "general_support" as GeneralCaseType, score: 1 };
   const total = ranked.reduce((sum, item) => sum + item.score, 0);
   const confidence = total > 0 ? Math.min(0.98, Math.max(0.35, top.score / total)) : 0.35;
-  return { primary: top.type, confidence };
+  return { primary: top.type, confidence, tieBreakOverride: null };
 }
 
 function detectIntentConflict(
@@ -930,6 +994,84 @@ function detectIntentConflict(
   if (staleTrackingRoute && meaningfulNonTrackingAsk) return true;
   if (latestMessagePrimaryIntent === "general_support") return false;
   return !historical.includes(latestMessagePrimaryIntent);
+}
+
+function detectReturnProcessFollowUpOverride(options: {
+  subject: string;
+  body: string;
+  rawSubject?: string;
+  rawBody?: string;
+  workflow?: string | null;
+  ticketCategory?: string | null;
+  historicalContextIntents: GeneralCaseType[];
+}) {
+  const text = `${options.subject || ""}\n${options.body || ""}`;
+  const rawContext = `${options.rawSubject || ""}\n${options.rawBody || ""}`;
+  const lower = text.toLowerCase();
+  const triggeredSignals: string[] = [];
+  const returnContextEvidence: string[] = [];
+  const hasGenericGuidance =
+    RETURN_PROCESS_GENERIC_GUIDANCE_RE.test(lower) ||
+    RETURN_PROCESS_GENERIC_GUIDANCE_DA_RE.test(lower);
+  if (RETURN_PROCESS_GENERIC_GUIDANCE_RE.test(lower)) triggeredSignals.push("generic_guidance_en");
+  if (RETURN_PROCESS_GENERIC_GUIDANCE_DA_RE.test(lower)) triggeredSignals.push("generic_guidance_da");
+  const hasExplicitReturnProcess = RETURN_PROCESS_EXPLICIT_RE.test(lower);
+  if (hasExplicitReturnProcess) triggeredSignals.push("explicit_return_process");
+  const hasHistoricalReturnContext =
+    options.historicalContextIntents.includes("return_refund") ||
+    /\b(?:return|refund|exchange|replacement|send back|retur|ombytning|erstatning)\b/i.test(text) ||
+    /\b(?:return address|return instructions|return shipment|send (?:it|the item|the headset) back|exchange|replacement|wrong product|wrong headset|returadresse|returinstruktioner|returnering|send(?:e)? .* tilbage|ombytning|erstatning|forkert produkt|forkert headset)\b/i
+      .test(rawContext) ||
+    ["return", "exchange"].includes(String(options.workflow || "").trim().toLowerCase()) ||
+    ["return", "exchange"].includes(String(options.ticketCategory || "").trim().toLowerCase());
+  if (options.historicalContextIntents.includes("return_refund")) returnContextEvidence.push("historical_return_refund");
+  if (/\b(?:return|refund|exchange|replacement|send back|retur|ombytning|erstatning)\b/i.test(text)) {
+    returnContextEvidence.push("latest_message_return_terms");
+  }
+  if (
+    /\b(?:return address|return instructions|return shipment|send (?:it|the item|the headset) back|exchange|replacement|wrong product|wrong headset|returadresse|returinstruktioner|returnering|send(?:e)? .* tilbage|ombytning|erstatning|forkert produkt|forkert headset)\b/i
+      .test(rawContext)
+  ) {
+    returnContextEvidence.push("raw_thread_return_context");
+  }
+  if (["return", "exchange"].includes(String(options.workflow || "").trim().toLowerCase())) {
+    returnContextEvidence.push("workflow_return_exchange");
+  }
+  if (["return", "exchange"].includes(String(options.ticketCategory || "").trim().toLowerCase())) {
+    returnContextEvidence.push("category_return_exchange");
+  }
+  if (hasHistoricalReturnContext) triggeredSignals.push("return_context_present");
+  const asksTrackingStatus = REAL_TRACKING_STATUS_RE.test(lower);
+  if (asksTrackingStatus) triggeredSignals.push("real_tracking_status");
+  if (!asksTrackingStatus) triggeredSignals.push("tracking_status_absent");
+  const matched =
+    !asksTrackingStatus &&
+    (
+      hasExplicitReturnProcess ||
+      (hasGenericGuidance && hasHistoricalReturnContext)
+    );
+  return {
+    matched,
+    triggeredSignals,
+    historicalTrackingOverridden:
+      matched && (
+        options.historicalContextIntents.includes("tracking_shipping") ||
+        String(options.workflow || "").trim().toLowerCase() === "tracking" ||
+        String(options.ticketCategory || "").trim().toLowerCase() === "tracking"
+      ),
+    returnContextDetected: hasHistoricalReturnContext,
+    returnContextEvidence,
+    trackingStatusPresent: asksTrackingStatus,
+    overrideFailureReason: matched
+      ? null
+      : asksTrackingStatus
+      ? "tracking_status_phrase_present"
+      : !hasHistoricalReturnContext
+      ? "missing_return_context"
+      : !hasGenericGuidance && !hasExplicitReturnProcess
+      ? "no_followup_override_signal"
+      : "no_match",
+  };
 }
 
 function extractMetadataOnlySignals(subject: string, body: string): MetadataOnlySignal[] {
@@ -963,7 +1105,12 @@ function extractMetadataOnlySignals(subject: string, body: string): MetadataOnly
 
 function choosePrimaryAndSecondary(
   scores: Record<GeneralCaseType, number>,
-): { primary: GeneralCaseType; secondary: GeneralCaseType[]; confidence: number } {
+): {
+  primary: GeneralCaseType;
+  secondary: GeneralCaseType[];
+  confidence: number;
+  tieBreakOverride: CaseAssessment["tie_break_override"];
+} {
   if (
     scores.return_refund >= 5 &&
     scores.return_refund >= (scores.tracking_shipping + 2)
@@ -978,7 +1125,39 @@ function choosePrimaryAndSecondary(
       .reduce((sum, type) => sum + scores[type], 0);
     const confidence = total > 0 ? Math.min(0.98, Math.max(0.55, scores.return_refund / total)) : 0.55;
     scores.mixed_case = 0;
-    return { primary: "return_refund", secondary: rankedSecondary, confidence };
+    return { primary: "return_refund", secondary: rankedSecondary, confidence, tieBreakOverride: "return_logistics_override" };
+  }
+  if (
+    scores.order_change >= 5 &&
+    scores.order_change >= (scores.tracking_shipping + 2)
+  ) {
+    const rankedSecondary = CASE_TYPES.filter((type) => type !== "mixed_case" && type !== "order_change")
+      .map((type) => ({ type, score: scores[type] }))
+      .filter((item) => item.score >= 3)
+      .sort((left, right) => right.score - left.score)
+      .slice(0, 2)
+      .map((item) => item.type);
+    const total = CASE_TYPES.filter((type) => type !== "mixed_case")
+      .reduce((sum, type) => sum + scores[type], 0);
+    const confidence = total > 0 ? Math.min(0.98, Math.max(0.55, scores.order_change / total)) : 0.55;
+    scores.mixed_case = 0;
+    return { primary: "order_change", secondary: rankedSecondary, confidence, tieBreakOverride: "address_change_override" };
+  }
+  if (
+    scores.technical_issue >= 5 &&
+    scores.technical_issue >= (scores.product_question + 2)
+  ) {
+    const rankedSecondary = CASE_TYPES.filter((type) => type !== "mixed_case" && type !== "technical_issue")
+      .map((type) => ({ type, score: scores[type] }))
+      .filter((item) => item.score >= 3)
+      .sort((left, right) => right.score - left.score)
+      .slice(0, 2)
+      .map((item) => item.type);
+    const total = CASE_TYPES.filter((type) => type !== "mixed_case")
+      .reduce((sum, type) => sum + scores[type], 0);
+    const confidence = total > 0 ? Math.min(0.98, Math.max(0.55, scores.technical_issue / total)) : 0.55;
+    scores.mixed_case = 0;
+    return { primary: "technical_issue", secondary: rankedSecondary, confidence, tieBreakOverride: "technical_issue_override" };
   }
   const ranked = CASE_TYPES.filter((type) => type !== "mixed_case")
     .map((type) => ({ type, score: scores[type] }))
@@ -987,13 +1166,16 @@ function choosePrimaryAndSecondary(
   const second = ranked[1] || { type: "general_support" as GeneralCaseType, score: 0 };
   const total = ranked.reduce((sum, item) => sum + item.score, 0);
   const confidence = total > 0 ? Math.min(0.98, Math.max(0.35, top.score / total)) : 0.35;
-  const closeScores = top.score > 0 && second.score > 0 && Math.abs(top.score - second.score) <= 2;
+  const closeScores =
+    top.score >= 4 &&
+    second.score >= 4 &&
+    Math.abs(top.score - second.score) <= 1;
   const primary = closeScores ? "mixed_case" : top.type;
   const secondary = closeScores
     ? uniq([top.type, second.type])
     : ranked.filter((item) => item.type !== top.type && item.score >= 3).slice(0, 2).map((item) => item.type);
   scores.mixed_case = closeScores ? top.score + second.score : 0;
-  return { primary, secondary, confidence };
+  return { primary, secondary, confidence, tieBreakOverride: null };
 }
 
 function buildRetrievalNeeds(primary: GeneralCaseType, secondary: GeneralCaseType[]): RetrievalNeeds {
@@ -1014,6 +1196,14 @@ function inferLikelyActionFamily(text: string): string | null {
     return "update_shipping_address";
   }
   if (/\b(cancel order|cancel my order|cancellation)\b/i.test(text)) {
+    return "cancel_order";
+  }
+  if (
+    /\b(?:delete|remove)\s+(?:the\s+)?(?:one|an?|the\s+duplicate|one\s+of\s+the)\s+order\b/i.test(text) ||
+    /\b(?:duplicate\s+order|same\s+order\s+twice|ordered\s+(?:it\s+)?twice|placed\s+(?:the\s+)?same\s+order\s+twice|placed\s+(?:it\s+)?twice|accidentally\s+(?:placed|ordered)\s+(?:twice|two|2))\b/i.test(text) ||
+    /\b(?:slet|fjern)\s+(?:den\s+)?(?:ene|en|en\s+af|den\s+ene)\s+(?:ordre|bestilling)\b/i.test(text) ||
+    /\b(?:dobbelt\s+(?:ordre|bestilling)|bestilt\s+(?:det\s+)?to\s+gange|lagt\s+(?:den\s+)?samme\s+ordre\s+ind)\b/i.test(text)
+  ) {
     return "cancel_order";
   }
   if (/\b(refund|money back)\b/i.test(text)) {
@@ -1050,6 +1240,23 @@ export function assessCase(input: AssessCaseInput): CaseAssessment {
   ]);
   const metadataOnlySignals = extractMetadataOnlySignals(subject, body);
   const issueFacts = extractIssueFacts(subject, body);
+  const historicalContextIntents = inferHistoricalContextIntents(input);
+  const returnProcessFollowUpOverride = detectReturnProcessFollowUpOverride({
+    subject,
+    body,
+    rawSubject,
+    rawBody,
+    workflow: input.workflow,
+    ticketCategory: input.ticketCategory,
+    historicalContextIntents,
+  });
+  const troubleshootingExhausted =
+    Boolean(issueFacts.tried_fixes) ||
+    Boolean(issueFacts.old_device_works) ||
+    /\b(?:everything updated|fully updated|all updated|already updated|same frequency|same channel|retried the steps|tried the steps again|tested on another device|tested another device|issue persists|still not working|still happens)\b/i
+      .test(text) ||
+    /\b(?:opdateret|alt er opdateret|samme frekvens|prøvet trinene igen|prøvet igen|testet på en anden enhed|fejlen er der stadig|det virker stadig ikke)\b/i
+      .test(text);
   const productQueries = extractProductQueries(subject, body);
 
   const latestMessageScores = initializeScores();
@@ -1070,6 +1277,11 @@ export function assessCase(input: AssessCaseInput): CaseAssessment {
     latestMessageScores.order_change += 1;
     latestMessageScores.tracking_shipping += 1;
   }
+  if (returnProcessFollowUpOverride.matched) {
+    latestMessageScores.return_refund += 6;
+    latestMessageScores.general_support += 2;
+    latestMessageScores.tracking_shipping = Math.max(0, latestMessageScores.tracking_shipping - 5);
+  }
   if (metadataOnlySignals.length > 0 && latestMessageScores.billing_payment > 0) {
     const strongNonBillingSignals =
       latestMessageScores.technical_issue >= 4 ||
@@ -1079,18 +1291,24 @@ export function assessCase(input: AssessCaseInput): CaseAssessment {
       latestMessageScores.billing_payment = Math.max(0, latestMessageScores.billing_payment - 2);
     }
   }
-  const {
+  let {
     primary: latestMessagePrimaryIntent,
     confidence: latestMessageConfidence,
+    tieBreakOverride: latestMessageTieBreakOverride,
   } = chooseLatestMessagePrimaryIntent(latestMessageScores);
-  const historicalContextIntents = inferHistoricalContextIntents(input);
+  if (returnProcessFollowUpOverride.matched) {
+    latestMessagePrimaryIntent = "return_refund";
+    latestMessageConfidence = Math.max(latestMessageConfidence, 0.72);
+    latestMessageTieBreakOverride = "return_logistics_override";
+  }
   const intentConflictDetected = detectIntentConflict(
     latestMessagePrimaryIntent,
     historicalContextIntents,
     latestMessageScores,
   );
   const currentMessageShouldOverrideThreadRoute =
-    intentConflictDetected && latestMessagePrimaryIntent !== "general_support";
+    returnProcessFollowUpOverride.historicalTrackingOverridden ||
+    (intentConflictDetected && latestMessagePrimaryIntent !== "general_support");
 
   const scores = initializeScores();
   applyRules(lower, scores);
@@ -1112,6 +1330,11 @@ export function assessCase(input: AssessCaseInput): CaseAssessment {
     scores.order_change += 1;
     scores.tracking_shipping += 1;
   }
+  if (returnProcessFollowUpOverride.matched) {
+    scores.return_refund += 6;
+    scores.general_support += 2;
+    scores.tracking_shipping = Math.max(0, scores.tracking_shipping - 5);
+  }
   if (metadataOnlySignals.length > 0 && scores.billing_payment > 0) {
     const strongNonBillingSignals =
       scores.technical_issue >= 4 ||
@@ -1122,7 +1345,12 @@ export function assessCase(input: AssessCaseInput): CaseAssessment {
     }
   }
 
-  const { primary, secondary, confidence } = choosePrimaryAndSecondary(scores);
+  let { primary, secondary, confidence, tieBreakOverride } = choosePrimaryAndSecondary(scores);
+  if (returnProcessFollowUpOverride.matched) {
+    primary = "return_refund";
+    secondary = uniq(["general_support", ...secondary.filter((item) => item !== "return_refund")]).slice(0, 2);
+    tieBreakOverride = "return_logistics_override";
+  }
   const retrievalNeeds = buildRetrievalNeeds(primary, secondary);
   const likelyActionFamily = inferLikelyActionFamily(lower);
   const missingRequiredInputs =
@@ -1142,6 +1370,17 @@ export function assessCase(input: AssessCaseInput): CaseAssessment {
   return {
     version: 3,
     debug_marker: "return_logistics_v3",
+    tie_break_override: tieBreakOverride || latestMessageTieBreakOverride || null,
+    latest_message_override_debug: {
+      return_process_followup_matched: returnProcessFollowUpOverride.matched,
+      triggered_signals: returnProcessFollowUpOverride.triggeredSignals,
+      historical_tracking_overridden: returnProcessFollowUpOverride.historicalTrackingOverridden,
+      return_context_detected: returnProcessFollowUpOverride.returnContextDetected,
+      return_context_evidence: returnProcessFollowUpOverride.returnContextEvidence,
+      tracking_status_present: returnProcessFollowUpOverride.trackingStatusPresent,
+      override_failure_reason: returnProcessFollowUpOverride.overrideFailureReason,
+    },
+    troubleshooting_exhausted: troubleshootingExhausted,
     primary_case_type: primary,
     secondary_case_types: secondary,
     latest_message_primary_intent: latestMessagePrimaryIntent,

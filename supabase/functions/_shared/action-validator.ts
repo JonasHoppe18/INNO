@@ -10,6 +10,8 @@ export type ActionDecisionValidation = {
   approval_actions: Array<{ type: string; reason: string }>;
   decision: "reply_only" | "auto_action" | "approval_required";
   summary: string;
+  address_update_action_selected?: boolean;
+  technical_escalation_selected?: boolean;
 };
 
 type ValidateActionDecisionInput = {
@@ -17,7 +19,10 @@ type ValidateActionDecisionInput = {
   workflowRoute: WorkflowRoute;
   selectedOrder?: Record<string, unknown> | null;
   automation?: Automation | null;
+  blockRedundantSameThreadReturnContactActions?: boolean;
 };
+
+const SAME_THREAD_RETURN_CONTACT_RE = /\b(?:contact us(?: via| by)? e-?mail|email us|write to us at|support@\S+|notify us of your return|kontakt os(?: via| på)? e-?mail|skriv til os(?: på)? e-?mail|giv os besked om din retur)\b/i;
 
 const LOW_RISK_ACTIONS = new Set([
   "add_note",
@@ -62,10 +67,30 @@ export function validateActionDecision(
   const workflowFiltered = applyWorkflowActionPolicy(input.actions || [], input.workflowRoute);
   const selectedOrderId = Number(input.selectedOrder?.id ?? 0);
   const removed = [...workflowFiltered.removed];
+  const prefilteredActions = (workflowFiltered.actions || []).filter((action) => {
+    if (!input.blockRedundantSameThreadReturnContactActions) return true;
+    const type = String(action?.type || "").trim().toLowerCase();
+    const payload = action?.payload && typeof action.payload === "object" ? action.payload : {};
+    const text = [
+      String(action?.detail || ""),
+      String(payload?.note || ""),
+      String(payload?.message || ""),
+      String(payload?.reason_notes || ""),
+    ]
+      .filter(Boolean)
+      .join("\n");
+    const isInternalAnnotation =
+      type === "add_note" || type === "add_tag" || type === "add_internal_note_or_tag";
+    if (isInternalAnnotation && SAME_THREAD_RETURN_CONTACT_RE.test(text)) {
+      removed.push({ type, reason: "redundant_same_thread_return_contact_instruction" });
+      return false;
+    }
+    return true;
+  });
   const allowedActions: AutomationAction[] = [];
   const approvalActions: Array<{ type: string; reason: string }> = [];
 
-  for (const action of workflowFiltered.actions) {
+  for (const action of prefilteredActions) {
     const type = String(action?.type || "").trim().toLowerCase();
     if (!type) continue;
     const actionOrderId = Number(action?.orderId ?? action?.payload?.order_id ?? action?.payload?.orderId ?? 0);
@@ -95,6 +120,12 @@ export function validateActionDecision(
       : approvalActions.length > 0
       ? "approval_required"
       : "auto_action";
+  const addressUpdateActionSelected = allowedActions.some((action) =>
+    String(action?.type || "").trim().toLowerCase() === "update_shipping_address"
+  );
+  const technicalEscalationSelected = allowedActions.some((action) =>
+    String(action?.type || "").trim().toLowerCase() === "create_exchange_request"
+  );
   const hasKnownOrderContext = Number.isFinite(selectedOrderId) && selectedOrderId > 0;
   const summarySuffix =
     hasKnownOrderContext && decision !== "approval_required"
@@ -107,11 +138,13 @@ export function validateActionDecision(
     removed_actions: removed,
     approval_actions: approvalActions,
     decision,
+    address_update_action_selected: addressUpdateActionSelected,
+    technical_escalation_selected: technicalEscalationSelected,
     summary:
       decision === "reply_only"
         ? `No executable actions remain after validation.${summarySuffix}`
         : decision === "approval_required"
-        ? "Validated actions require approval or automation is disabled."
-        : `Validated actions can continue to automation execution.${summarySuffix}`,
+        ? `Validated actions require approval or automation is disabled.${addressUpdateActionSelected ? " Shipping address update action selected." : ""}${technicalEscalationSelected ? " Technical escalation action selected." : ""}`
+        : `Validated actions can continue to automation execution.${addressUpdateActionSelected ? " Shipping address update action selected." : ""}${technicalEscalationSelected ? " Technical escalation action selected." : ""}${summarySuffix}`,
   };
 }

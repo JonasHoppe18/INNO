@@ -62,6 +62,67 @@ function stripTrailingSignature(text, signature) {
   return withoutSignature.trimEnd();
 }
 
+function countWords(text) {
+  return String(text || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean).length;
+}
+
+function summarizeDraftDiff(aiText, finalText) {
+  const ai = String(aiText || "");
+  const final = String(finalText || "");
+  const aiWords = countWords(ai);
+  const finalWords = countWords(final);
+  const delta = finalWords - aiWords;
+  const deltaPct = aiWords ? delta / aiWords : 0;
+  const normalizedAi = ai.replace(/\s+/g, " ").trim().toLowerCase();
+  const normalizedFinal = final.replace(/\s+/g, " ").trim().toLowerCase();
+  return {
+    ai_length: ai.length,
+    final_length: final.length,
+    ai_words: aiWords,
+    final_words: finalWords,
+    delta_words: delta,
+    delta_pct: Number.isFinite(deltaPct) ? Number(deltaPct.toFixed(2)) : 0,
+    identical_normalized: Boolean(normalizedAi) && normalizedAi === normalizedFinal,
+    changed_materially:
+      Boolean(normalizedAi) &&
+      normalizedAi !== normalizedFinal &&
+      (Math.abs(delta) >= 5 || Math.abs(deltaPct) >= 0.15 || Math.abs(final.length - ai.length) >= 40),
+  };
+}
+
+async function captureDraftEditFeedback({
+  serviceClient,
+  threadId,
+  messageDraftId,
+  sourceWasAiGenerated,
+  originalAiText,
+  finalText,
+  createdAt,
+}) {
+  if (!serviceClient || !threadId || !sourceWasAiGenerated) return;
+  const diffSummary = summarizeDraftDiff(originalAiText, finalText);
+  await serviceClient.from("agent_logs").insert({
+    draft_id: null,
+    step_name: "draft_edit_feedback_captured",
+    step_detail: JSON.stringify({
+      thread_id: threadId,
+      message_draft_id: messageDraftId || null,
+      event_type: "manual_save",
+      source_was_ai_generated: true,
+      original_ai_draft_length: diffSummary.ai_length,
+      final_draft_length: diffSummary.final_length,
+      changed_materially: diffSummary.changed_materially,
+      diff_summary: diffSummary,
+    }),
+    status: "info",
+    created_at: createdAt || new Date().toISOString(),
+  });
+}
+
 async function loadUserSignature(serviceClient, supabaseUserId) {
   if (!supabaseUserId) return "";
   const { data: profile, error } = await serviceClient
@@ -219,7 +280,7 @@ export async function POST(request, { params }) {
   const { data: existingDraft } = await applyScope(
     serviceClient
       .from("mail_messages")
-      .select("id")
+      .select("id, ai_draft_text, body_text")
       .eq("thread_id", threadId)
       .eq("from_me", true)
       .eq("is_draft", true)
@@ -230,6 +291,8 @@ export async function POST(request, { params }) {
   );
 
   let draftId = null;
+  const originalAiDraftText =
+    String(existingDraft?.ai_draft_text || "").trim() || String(existingDraft?.body_text || "").trim();
   if (existingDraft?.id) {
     const { data, error } = await applyScope(
       serviceClient
@@ -324,6 +387,20 @@ export async function POST(request, { params }) {
     workspace_id: scope.workspaceId || null,
     created_at: nowIso,
   });
+
+  if (originalAiDraftText && originalAiDraftText.trim() && originalAiDraftText.trim() !== nextBodyText.trim()) {
+    await captureDraftEditFeedback({
+      serviceClient,
+      threadId: thread.provider_thread_id || threadId,
+      messageDraftId: draftId,
+      sourceWasAiGenerated: true,
+      originalAiText: originalAiDraftText,
+      finalText: nextBodyText,
+      createdAt: nowIso,
+    }).catch((error) => {
+      console.warn("[threads/draft] draft edit feedback capture failed", error?.message || error);
+    });
+  }
 
   return NextResponse.json({ ok: true, draft_id: draftId }, { status: 200 });
 }

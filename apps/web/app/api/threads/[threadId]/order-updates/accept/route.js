@@ -1078,6 +1078,34 @@ async function finalizeActionDecisionDraft({
   return bodyText;
 }
 
+async function captureActionDecisionFeedback({
+  serviceClient,
+  threadId,
+  actionType,
+  decision,
+  decidedBy,
+  decisionReason,
+  sourceActionId,
+  createdAt,
+}) {
+  if (!serviceClient || !threadId || !actionType || !decision) return;
+  await serviceClient.from("agent_logs").insert({
+    draft_id: null,
+    step_name: "action_feedback_captured",
+    step_detail: JSON.stringify({
+      thread_id: threadId,
+      action_type: actionType,
+      decision,
+      decided_by: decidedBy || null,
+      decision_reason: decisionReason || null,
+      source_action_id: sourceActionId ? String(sourceActionId) : null,
+      timestamp: createdAt || new Date().toISOString(),
+    }),
+    status: "info",
+    created_at: createdAt || new Date().toISOString(),
+  });
+}
+
 function draftImpliesCompletedAction(text = "", actionType = "") {
   const normalized = String(text || "").toLowerCase();
   if (!normalized) return false;
@@ -2695,6 +2723,18 @@ export async function POST(request, { params }) {
       console.warn("order-updates/accept: failed to generate declined draft", error?.message || error);
       return null;
     });
+    await captureActionDecisionFeedback({
+      serviceClient,
+      threadId,
+      actionType: asString(actionRecord?.action_type || ""),
+      decision: "rejected",
+      decidedBy: clerkUserId,
+      decisionReason,
+      sourceActionId: actionRecord?.id || null,
+      createdAt: nowIso,
+    }).catch((error) => {
+      console.warn("order-updates/accept: failed to capture action feedback", error?.message || error);
+    });
 
     return NextResponse.json(
       {
@@ -2885,6 +2925,18 @@ export async function POST(request, { params }) {
           error: null,
         });
       }
+      await captureActionDecisionFeedback({
+        serviceClient,
+        threadId,
+        actionType: normalizedActionType,
+        decision: "approved",
+        decidedBy: clerkUserId,
+        decisionReason,
+        sourceActionId: actionRecord?.id || null,
+        createdAt: nowIso,
+      }).catch((error) => {
+        console.warn("order-updates/accept: failed to capture action feedback", error?.message || error);
+      });
       return NextResponse.json(
         {
           ok: true,
@@ -3071,6 +3123,18 @@ export async function POST(request, { params }) {
         error: null,
       });
     }
+    await captureActionDecisionFeedback({
+      serviceClient,
+      threadId,
+      actionType: normalizedActionType,
+      decision: "approved",
+      decidedBy: clerkUserId,
+      decisionReason,
+      sourceActionId: actionRecord?.id || null,
+      createdAt: nowIso,
+    }).catch((error) => {
+      console.warn("order-updates/accept: failed to capture action feedback", error?.message || error);
+    });
     return NextResponse.json(
       {
         ok: true,
@@ -3150,6 +3214,18 @@ export async function POST(request, { params }) {
           updated_at: nowIso,
         });
       }
+      await captureActionDecisionFeedback({
+        serviceClient,
+        threadId,
+        actionType: "forward_email",
+        decision: "approved",
+        decidedBy: clerkUserId,
+        decisionReason,
+        sourceActionId: actionRecord?.id || null,
+        createdAt: nowIso,
+      }).catch((error) => {
+        console.warn("order-updates/accept: failed to capture action feedback", error?.message || error);
+      });
       return NextResponse.json(
         {
           ok: true,
@@ -3210,6 +3286,18 @@ export async function POST(request, { params }) {
           updated_at: nowIso,
         });
       }
+      await captureActionDecisionFeedback({
+        serviceClient,
+        threadId,
+        actionType: "forward_email",
+        decision: "approved",
+        decidedBy: clerkUserId,
+        decisionReason,
+        sourceActionId: actionRecord?.id || null,
+        createdAt: nowIso,
+      }).catch((error) => {
+        console.warn("order-updates/accept: failed to capture action feedback", error?.message || error);
+      });
       await serviceClient.from("agent_logs").insert({
         draft_id: null,
         step_name: "forward_email_applied",
@@ -3395,6 +3483,18 @@ export async function POST(request, { params }) {
         error: testModeMessage,
       });
     }
+    await captureActionDecisionFeedback({
+      serviceClient,
+      threadId,
+      actionType: normalizedActionType,
+      decision: "approved",
+      decidedBy: clerkUserId,
+      decisionReason,
+      sourceActionId: actionRecord?.id || null,
+      createdAt: nowIso,
+    }).catch((error) => {
+      console.warn("order-updates/accept: failed to capture action feedback", error?.message || error);
+    });
 
     await serviceClient.from("agent_logs").insert({
       draft_id: null,
@@ -3720,6 +3820,18 @@ export async function POST(request, { params }) {
           error: friendlyReason,
         });
       }
+      await captureActionDecisionFeedback({
+        serviceClient,
+        threadId,
+        actionType: normalizedActionType,
+        decision: "approved",
+        decidedBy: clerkUserId,
+        decisionReason,
+        sourceActionId: actionRecord?.id || null,
+        createdAt: nowIso,
+      }).catch((error) => {
+        console.warn("order-updates/accept: failed to capture action feedback", error?.message || error);
+      });
 
       await serviceClient.from("agent_logs").insert({
         draft_id: null,
@@ -3882,6 +3994,18 @@ export async function POST(request, { params }) {
       error: null,
     });
   }
+  await captureActionDecisionFeedback({
+    serviceClient,
+    threadId,
+    actionType: normalizedActionType,
+    decision: "approved",
+    decidedBy: clerkUserId,
+    decisionReason,
+    sourceActionId: actionRecord?.id || null,
+    createdAt: nowIso,
+  }).catch((error) => {
+    console.warn("order-updates/accept: failed to capture action feedback", error?.message || error);
+  });
 
   let followUpAction = null;
   if (normalizedActionType === "create_exchange_request") {

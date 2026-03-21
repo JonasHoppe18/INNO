@@ -1877,6 +1877,10 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         [selectedThreadId]: proposalOnly,
       }));
       if (proposalOnly) {
+        setSuppressAutoDraftByThread((prev) => ({
+          ...prev,
+          [selectedThreadId]: true,
+        }));
         setDraftValue("");
         setDraftValueByThread((prev) => ({
           ...prev,
@@ -1890,6 +1894,12 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         setDraftReady(true);
         return;
       }
+      setSuppressAutoDraftByThread((prev) => {
+        if (!prev[selectedThreadId]) return prev;
+        const next = { ...prev };
+        delete next[selectedThreadId];
+        return next;
+      });
       const draftText = draft?.body_text || draft?.body_html || "";
       if (draftText) {
         setDraftValue(draftText);
@@ -1926,6 +1936,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   useEffect(() => {
     if (!selectedThreadId || !draftReady || !aiDraft) return;
     if (proposalOnlyByThread[selectedThreadId]) return;
+    if (pendingOrderUpdateByThread[selectedThreadId]) return;
     if (suppressAutoDraftByThread[selectedThreadId]) return;
     if (draftValueRef.current) return;
     setDraftValue(aiDraft);
@@ -1937,7 +1948,14 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       ...prev,
       [selectedThreadId]: true,
     }));
-  }, [aiDraft, draftReady, proposalOnlyByThread, selectedThreadId, suppressAutoDraftByThread]);
+  }, [
+    aiDraft,
+    draftReady,
+    pendingOrderUpdateByThread,
+    proposalOnlyByThread,
+    selectedThreadId,
+    suppressAutoDraftByThread,
+  ]);
 
   useEffect(() => {
     if (!selectedThreadId) return;
@@ -1954,6 +1972,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   useEffect(() => {
     if (!selectedThreadId || !draftReady || !draftMessage) return;
     if (proposalOnlyByThread[selectedThreadId]) return;
+    if (pendingOrderUpdateByThread[selectedThreadId]) return;
     if (suppressAutoDraftByThread[selectedThreadId]) return;
     const draftBody = draftMessage.body_text || draftMessage.body_html || "";
     if (draftValueRef.current) return;
@@ -1966,7 +1985,14 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       ...prev,
       [selectedThreadId]: true,
     }));
-  }, [draftMessage, draftReady, proposalOnlyByThread, selectedThreadId, suppressAutoDraftByThread]);
+  }, [
+    draftMessage,
+    draftReady,
+    pendingOrderUpdateByThread,
+    proposalOnlyByThread,
+    selectedThreadId,
+    suppressAutoDraftByThread,
+  ]);
 
   const handleGenerateDraft = useCallback(async () => {
     if (!selectedThreadId || isLocalThreadId(selectedThreadId)) return;
@@ -2012,6 +2038,10 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         [threadId]: proposalOnly,
       }));
       if (proposalOnly) {
+        setSuppressAutoDraftByThread((prev) => ({
+          ...prev,
+          [threadId]: true,
+        }));
         setDraftValue("");
         setDraftValueByThread((prev) => ({
           ...prev,
@@ -2027,6 +2057,12 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         toast.success("Action proposal created and is awaiting approval.");
         return;
       }
+      setSuppressAutoDraftByThread((prev) => {
+        if (!prev[threadId]) return prev;
+        const next = { ...prev };
+        delete next[threadId];
+        return next;
+      });
       const draftText = draft?.body_text || draft?.body_html || "";
       if (draftText) {
         setDraftValue(draftText);
@@ -2882,6 +2918,26 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
             );
           } else {
             toast.success("Action approved and applied.", { id: toastId });
+          }
+          if (payload?.draftGenerated) {
+            const draftRes = await fetch(`/api/threads/${selectedThreadId}/draft`, {
+              method: "GET",
+            }).catch(() => null);
+            if (draftRes?.ok) {
+              const draftPayload = await draftRes.json().catch(() => ({}));
+              const draft = draftPayload?.draft || null;
+              const sig = String(draftPayload?.signature || "");
+              const draftText = draft?.rendered_body_text || draft?.body_text || draft?.body_html || "";
+              if (draftText) {
+                setDraftValue(draftText);
+                draftValueRef.current = draftText;
+                draftLastSavedRef.current = draftText.trim();
+                setDraftValueByThread((prev) => ({ ...prev, [selectedThreadId]: draftText }));
+                setSystemDraftUneditedByThread((prev) => ({ ...prev, [selectedThreadId]: true }));
+              }
+              if (draft?.id) setActiveDraftId(draft.id);
+              if (sig) setSignatureByThread((prev) => ({ ...prev, [selectedThreadId]: sig }));
+            }
           }
         } else {
           toast.success("Order update denied.", { id: toastId });

@@ -23,9 +23,25 @@ import {
   type ActionDecisionValidation,
 } from "../_shared/action-validator.ts";
 import { buildReplyStrategy, type ReplyStrategy } from "../_shared/reply-strategy.ts";
-import { generateReplyFromStrategy } from "../_shared/reply-generator.ts";
+import {
+  evaluateReturnProcessFollowUpReplyCompleteness,
+  generateReplyFromStrategy,
+  reviseReturnProcessFollowUpReply,
+} from "../_shared/reply-generator.ts";
+import {
+  buildInboundNormalizedMessageArtifact,
+  buildReplyLanguageDecisionArtifact,
+  buildMessageUnderstandingArtifact,
+  buildRecipientTypeArtifact,
+  buildReplyGoalArtifact,
+  type InboundNormalizedMessageArtifact,
+  type MessageUnderstandingArtifact,
+  type RecipientTypeArtifact,
+  type ReplyLanguageDecisionArtifact,
+} from "../_shared/phase1-artifacts.ts";
 import {
   containsCompletionLanguage,
+  guardGroundedReplyText,
   guardSameChannelEscalation,
   guardReplyForExecutionState,
   isActionSensitiveReplyCase,
@@ -180,6 +196,7 @@ type EmailData = {
   from?: string;
   fromEmail?: string;
   body?: string;
+  rawBody?: string | null;
   headers?: Array<{ name: string; value: string }>;
 };
 
@@ -372,6 +389,7 @@ const routeCategoryFromIntent = (intent: CaseAssessment["latest_message_primary_
 };
 
 const shouldUseLatestMessageRoute = (assessment: CaseAssessment) =>
+  (assessment.latest_message_override_debug?.return_process_followup_matched === true) ||
   (
     assessment.latest_message_confidence >= 0.55 ||
     (
@@ -395,6 +413,7 @@ const shouldSuppressTrackingEnrichment = (options: {
   if (options.currentMessageTrackingIntent) return false;
   const assessment = options.assessment;
   if (!assessment) return false;
+  if (assessment.latest_message_override_debug?.historical_tracking_overridden) return true;
   const staleTrackingHistory = assessment.historical_context_intents.includes("tracking_shipping");
   const nonTrackingCurrentAsk =
     assessment.latest_message_primary_intent !== "tracking_shipping" &&
@@ -404,6 +423,39 @@ const shouldSuppressTrackingEnrichment = (options: {
       assessment.latest_message_primary_intent === "order_change"
     );
   return staleTrackingHistory && nonTrackingCurrentAsk;
+};
+
+const SAME_THREAD_RETURN_CONTACT_RE = /\b(?:contact us(?: via| by)? e-?mail|email us|write to us at|support@\S+|notify us of your return|kontakt os(?: via| på)? e-?mail|skriv til os(?: på)? e-?mail|giv os besked om din retur)\b/i;
+
+const filterRedundantSameThreadReturnContactActions = (options: {
+  actions: AutomationAction[];
+  assessment: CaseAssessment | null;
+}) => {
+  const overrideMatched = Boolean(options.assessment?.latest_message_override_debug?.return_process_followup_matched);
+  if (!overrideMatched) {
+    return { actions: options.actions, removed: [] as Array<{ type: string; reason: string }> };
+  }
+  const removed: Array<{ type: string; reason: string }> = [];
+  const kept = (options.actions || []).filter((action) => {
+    const type = String(action?.type || "").trim().toLowerCase();
+    const payload = action?.payload && typeof action.payload === "object" ? action.payload : {};
+    const text = [
+      String(action?.detail || ""),
+      String(payload?.note || ""),
+      String(payload?.message || ""),
+      String(payload?.reason_notes || ""),
+    ]
+      .filter(Boolean)
+      .join("\n");
+    const isInternalAnnotation =
+      type === "add_note" || type === "add_tag" || type === "add_internal_note_or_tag";
+    if (isInternalAnnotation && SAME_THREAD_RETURN_CONTACT_RE.test(text)) {
+      removed.push({ type, reason: "redundant_same_thread_return_contact_instruction" });
+      return false;
+    }
+    return true;
+  });
+  return { actions: kept, removed };
 };
 
 const shouldSuppressPolicyForTechnicalReply = (options: {
@@ -1043,6 +1095,8 @@ function buildReturnSettingsPromptBlock(
     "STRUCTURED RETURN SETTINGS:",
     `- Return window (days): ${settings.return_window_days}`,
     `- Return shipping mode: ${settings.return_shipping_mode}`,
+    `- Return label method: ${settings.return_label_method}`,
+    `- Defect return shipping rule: ${settings.defect_return_shipping_rule}`,
     `- Return address: ${settings.return_address || "missing"}`,
     `- Require original packaging: ${settings.require_original_packaging ? "yes" : "no"}`,
     `- Require unused item: ${settings.require_unused ? "yes" : "no"}`,
@@ -1251,6 +1305,93 @@ async function fetchLearningProfile(
     .map((line) => line.trim())
     .filter(Boolean);
   return { enabled: data?.enabled !== false, styleRules };
+}
+
+async function fetchThreadHistory(
+  threadId: string | null,
+  currentMessageId: string | null,
+  limit = 6,
+): Promise<Array<{ role: "customer" | "support"; text: string }>> {
+  if (!supabase || !threadId) return [];
+  const { data, error } = await supabase
+    .from("mail_messages")
+    .select("body_text, from_me, provider_message_id")
+    .eq("thread_id", threadId)
+    .order("sent_at", { ascending: true })
+    .limit(limit + 1);
+  if (error) {
+    console.warn("generate-draft-unified: thread history fetch failed", error.message);
+    return [];
+  }
+  return (Array.isArray(data) ? data : [])
+    .filter((msg) => msg.provider_message_id !== currentMessageId)
+    .slice(-limit)
+    .map((msg) => ({
+      role: (msg.from_me ? "support" : "customer") as "customer" | "support",
+      text: String(msg.body_text || "").replace(/\s+/g, " ").trim().slice(0, 400),
+    }))
+    .filter((msg) => msg.text.length > 0);
+}
+
+/**
+ * When mail_messages lacks outbound replies (e.g. replies sent via Zendesk/external tool),
+ * parse the quoted email chain from the raw body as a thread history fallback.
+ * Returns entries oldest-first, capped at `limit` messages, each trimmed to 400 chars.
+ */
+function extractQuotedHistoryFallback(
+  rawBody: string,
+  limit = 4,
+): Array<{ role: "customer" | "support"; text: string }> {
+  if (!rawBody || typeof rawBody !== "string") return [];
+
+  // Split on common quoted-reply delimiters
+  const QUOTE_DELIMITERS = [
+    /^[-]{3,}\s*Original Message\s*[-]{3,}/im,
+    /^On .+wrote:/im,
+    /^.{0,10}\d{1,2}\.\d{1,2}\.\d{4}\s+klo\s+[\d:.]+\s*.+kirjoitti:/im, // Finnish: "pe 20.3.2026 klo 16.07 ... kirjoitti:"
+    /^Den \d{1,2}\. \w+ \d{4} kl\. [\d.]+ skrev .+:/im,                  // Danish
+    /^Am .+schrieb .+:/im,
+    /^Le .+a écrit\s*:/im,
+    /^[A-Za-z]{2,4}, [A-Za-z]+ \d{1,2}, \d{4} at [\d:]+\s*(AM|PM)\s*.+wrote:/im,
+    /^[-]{5,}/m,  // Generic "-----" separator used by many mail clients
+  ];
+
+  // Try to find a delimiter and split the body
+  let parts: string[] = [rawBody];
+  for (const pattern of QUOTE_DELIMITERS) {
+    const match = rawBody.search(pattern);
+    if (match > 20) {
+      parts = [rawBody.slice(0, match).trim(), rawBody.slice(match).trim()];
+      break;
+    }
+  }
+
+  if (parts.length < 2) return [];
+
+  // The second part is the quoted chain — extract the main body text (strip the attribution line)
+  const quotedBlock = parts[1]
+    .replace(/^.+wrote:\s*/im, "")
+    .replace(/^.+kirjoitti:\s*/im, "")
+    .replace(/^.+skrev:\s*/im, "")
+    .replace(/^>/gm, "")
+    .replace(/\r?\n/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  if (!quotedBlock || quotedBlock.length < 10) return [];
+
+  // Classify as support or customer based on sender hints in the attribution line
+  const attribution = parts[1].split("\n")[0] || "";
+  const isSupportReply =
+    /support|acezone|noreply|no-reply/i.test(attribution) ||
+    /AceZone/i.test(attribution);
+
+  return [
+    {
+      role: (isSupportReply ? "support" : "customer") as "customer" | "support",
+      text: quotedBlock.slice(0, 400),
+    },
+  ].slice(-limit);
 }
 
 async function fetchMailboxHistory(mailboxId: string | null, userId: string | null) {
@@ -1713,10 +1854,25 @@ async function enforceReplyLanguage(
   const source = String(customerMessage || "").trim();
   const draft = String(reply || "").trim();
   if (!source || !draft) return draft;
+  const normalizedLanguageHint = String(languageHint || "").toLowerCase();
+  const explicitTargetLanguage =
+    normalizedLanguageHint === "da"
+      ? "Danish"
+      : normalizedLanguageHint === "en"
+      ? "English"
+      : normalizedLanguageHint === "es"
+      ? "Spanish"
+      : normalizedLanguageHint === "fr"
+      ? "French"
+      : normalizedLanguageHint === "de"
+      ? "German"
+      : null;
   const system = [
     "You rewrite customer support drafts.",
     "Keep the meaning exactly the same.",
-    "Rewrite the draft in the exact same language as the customer message.",
+    explicitTargetLanguage
+      ? `Rewrite the draft entirely in ${explicitTargetLanguage}.`
+      : "Rewrite the draft in the exact same language as the customer message.",
     "Output must be entirely in one language and must not mix languages.",
     languageHint ? `Preferred output language hint: ${languageHint}.` : "",
     "Do not add signature or extra sections.",
@@ -1732,6 +1888,195 @@ async function enforceReplyLanguage(
   ].join("\n");
   const ai = await callOpenAI(prompt, system);
   return ai.reply?.trim() || draft;
+}
+
+function resolvePreferredReplyLanguage(options: {
+  replyStrategyLanguage?: string | null;
+  caseAssessmentLanguage?: string | null;
+  fallbackLanguageHint?: string | null;
+}): string {
+  const strategyLanguage = String(options.replyStrategyLanguage || "").trim().toLowerCase();
+  if (strategyLanguage) return strategyLanguage;
+  const assessmentLanguage = String(options.caseAssessmentLanguage || "").trim().toLowerCase();
+  if (assessmentLanguage) return assessmentLanguage;
+  return String(options.fallbackLanguageHint || "same_as_customer").trim().toLowerCase();
+}
+
+function detectReplyLanguage(text: string): string {
+  const body = String(text || "").trim().toLowerCase();
+  if (!body) return "unknown";
+  const danishSignals = [
+    /\b(?:hej|tak|venlig hilsen|hvis du har flere spørgsmål|du må meget gerne|du skal|vi gennemgår|vi vender tilbage|billeder|skaden|ikke tabt|svare her)\b/i,
+    /[æøå]/i,
+  ];
+  const englishSignals = [
+    /\b(?:hi|hello|thank you|best regards|if you have any questions|please reply here|you can|we will review|photos|damage|not dropped)\b/i,
+  ];
+  const danishScore = danishSignals.reduce((score, pattern) => score + (pattern.test(body) ? 1 : 0), 0);
+  const englishScore = englishSignals.reduce((score, pattern) => score + (pattern.test(body) ? 1 : 0), 0);
+  if (danishScore > englishScore) return "da";
+  if (englishScore > danishScore) return "en";
+  return "unknown";
+}
+
+async function ensureReplyLanguageConsistency(options: {
+  customerMessage: string;
+  reply: string;
+  languageHint?: string;
+}) {
+  const intendedLanguage = String(options.languageHint || "").toLowerCase() || "unknown";
+  const initialDetected = detectReplyLanguage(options.reply);
+  const languageMatch =
+    intendedLanguage === "unknown" ||
+    initialDetected === "unknown" ||
+    initialDetected === intendedLanguage;
+  if (languageMatch) {
+    return {
+      text: options.reply,
+      artifact: {
+        artifact_type: "reply_language_check",
+        intended_language: intendedLanguage,
+        generated_language_detected: initialDetected,
+        language_match: true,
+        rewrite_triggered: false,
+        final_language_detected: initialDetected,
+        final_passed: true,
+      },
+    };
+  }
+
+  const rewritten = await enforceReplyLanguage(
+    options.customerMessage,
+    options.reply,
+    options.languageHint,
+  );
+  const finalDetected = detectReplyLanguage(rewritten);
+  const finalPassed =
+    intendedLanguage === "unknown" ||
+    finalDetected === "unknown" ||
+    finalDetected === intendedLanguage;
+  return {
+    text: rewritten,
+    artifact: {
+      artifact_type: "reply_language_check",
+      intended_language: intendedLanguage,
+      generated_language_detected: initialDetected,
+      language_match: false,
+      rewrite_triggered: true,
+      final_language_detected: finalDetected,
+      final_passed: finalPassed,
+    },
+  };
+}
+
+function polishDanishCustomerReplyNaturalness(options: {
+  text: string;
+  customerMessage: string;
+  languageHint?: string;
+  approvedFacts?: Array<{ key: string; value: string }>;
+}) {
+  const original = String(options.text || "").trim();
+  const language = String(options.languageHint || "").toLowerCase();
+  const approvedFacts = Array.isArray(options.approvedFacts) ? options.approvedFacts : [];
+  const physicalDamageClaim = approvedFacts.some((fact) =>
+    String(fact?.key || "") === "physical_damage_claim" && String(fact?.value || "") === "true"
+  );
+  if (!original || language !== "da" || !physicalDamageClaim) {
+    return {
+      text: original,
+      artifact: {
+        artifact_type: "reply_naturalness_polish",
+        applied: false,
+        language,
+        used_customer_practical_detail: false,
+        replaced_formal_phrasing: false,
+        notes: ["not_applicable"],
+      },
+    };
+  }
+
+  let next = original;
+  let replacedFormalPhrasing = false;
+  let usedCustomerPracticalDetail = false;
+  const notes: string[] = [];
+  const replaceIfChanged = (pattern: RegExp, replacement: string) => {
+    const updated = next.replace(pattern, replacement);
+    if (updated !== next) {
+      next = updated;
+      replacedFormalPhrasing = true;
+    }
+  };
+
+  replaceIfChanged(/\bJeg forstår, at\b/g, "Jeg kan godt se, at");
+  replaceIfChanged(/\bfysisk beskadiget\b/gi, "begyndt at gå i stykker");
+  replaceIfChanged(/\bvil jeg gerne anmode om, at du vedhæfter billeder af skaden\b/gi, "må du meget gerne svare med billeder af skaden");
+  replaceIfChanged(/\bvil jeg gerne anmode om, at du sender billeder af skaden\b/gi, "må du meget gerne sende billeder af skaden");
+  replaceIfChanged(/\bNår vi har modtaget billederne, kan vi gennemgå din anmodning om vurdering af skaden\b/gi, "Når vi har modtaget billederne, kigger vi nærmere på det");
+  replaceIfChanged(/\bfor at kunne vurdere din sag\b/gi, "for at kunne kigge nærmere på det");
+  replaceIfChanged(/\bvurdere din sag\b/gi, "kigge nærmere på det");
+  replaceIfChanged(/\bgennemgå din anmodning\b/gi, "kigge nærmere på det");
+
+  const customerCanAttachOnReply =
+    /\b(?:kan ikke vedhæfte|kan ikke sende billeder her|kan ikke uploade her|can't attach|cannot attach)\b/i
+      .test(options.customerMessage) &&
+    /\b(?:når i svarer|when you reply|reply by email|reply on email|på mail|på e-?mail|svare på denne mail)\b/i
+      .test(options.customerMessage);
+
+  if (customerCanAttachOnReply) {
+    const updated = next.replace(
+      /\bDu kan svare her med billederne, så vi kan komme videre med din sag\.?\b/i,
+      "Du kan bare svare på denne mail og vedhæfte billederne der, så kigger vi nærmere på det.",
+    );
+    if (updated !== next) {
+      next = updated;
+      usedCustomerPracticalDetail = true;
+      notes.push("used_reply_by_email_photo_detail");
+    } else if (!/svare på denne mail og vedhæfte billederne der/i.test(next)) {
+      next = `${next}\n\nDu kan bare svare på denne mail og vedhæfte billederne der, så kigger vi nærmere på det.`;
+      usedCustomerPracticalDetail = true;
+      notes.push("appended_reply_by_email_photo_detail");
+    }
+  }
+
+  replaceIfChanged(
+    /\bSå snart vi har modtaget billederne, gennemgår vi sagen og vender tilbage med næste skridt\.\b/gi,
+    "Så snart vi har modtaget billederne, kigger vi nærmere på det og vender tilbage med næste skridt.",
+  );
+
+  if (replacedFormalPhrasing) notes.push("softened_formal_danish_phrasing");
+
+  return {
+    text: next.trim(),
+    artifact: {
+      artifact_type: "reply_naturalness_polish",
+      applied: replacedFormalPhrasing || usedCustomerPracticalDetail,
+      language,
+      used_customer_practical_detail: usedCustomerPracticalDetail,
+      replaced_formal_phrasing: replacedFormalPhrasing,
+      notes: notes.length ? notes : ["no_change_needed"],
+    },
+  };
+}
+
+function escapeRegExp(value: string): string {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function preserveMultilineAddressBlock(text: string, addressBlock: string): string {
+  const normalizedBlock = String(addressBlock || "")
+    .split("\n")
+    .map((line) => String(line || "").trim())
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+  if (!normalizedBlock) return String(text || "");
+  const lines = normalizedBlock.split("\n");
+  if (lines.length < 2) return String(text || "");
+  const current = String(text || "");
+  if (current.includes(normalizedBlock)) return current;
+  const flattenedPattern = new RegExp(lines.map((line) => escapeRegExp(line)).join("\\s+"), "i");
+  if (!flattenedPattern.test(current)) return current;
+  return current.replace(flattenedPattern, normalizedBlock);
 }
 
 function enforceReturnChannelGuard(options: {
@@ -1896,6 +2241,7 @@ function maybeBuildExchangeFallbackAction(options: {
   subject: string;
   body: string;
   existingActions: AutomationAction[];
+  force?: boolean;
 }): AutomationAction | null {
   if (!options.selectedOrder) return null;
   const text = `${options.subject || ""}\n${options.body || ""}`.toLowerCase();
@@ -1903,7 +2249,7 @@ function maybeBuildExchangeFallbackAction(options: {
   const refundOnlySignal =
     /\b(refund|tilbagebetaling|pengene tilbage)\b/.test(text) &&
     !/\b(ombyt|exchange|replacement|replace|erstatning)\b/.test(text);
-  if (!hasExchangeSignal || refundOnlySignal) return null;
+  if ((!hasExchangeSignal && !options.force) || refundOnlySignal) return null;
   const existingTypes = new Set(
     (options.existingActions || []).map((item) => String(item?.type || "").trim().toLowerCase()),
   );
@@ -2230,6 +2576,11 @@ Deno.serve(async (req) => {
     let ticketCategory = legacyTicketCategory;
     let workflowRoute = buildWorkflowRoute(ticketCategory);
     let caseAssessment: CaseAssessment | null = null;
+    let inboundNormalizedMessageArtifact: InboundNormalizedMessageArtifact | null = null;
+    let replyLanguageDecisionArtifact: ReplyLanguageDecisionArtifact | null = null;
+    let messageUnderstandingArtifact: MessageUnderstandingArtifact | null = null;
+    let recipientTypeArtifact: RecipientTypeArtifact | null = null;
+    let replyGoalArtifact: ReturnType<typeof buildReplyGoalArtifact> | null = null;
     let factContext: FactContext | null = null;
     let actionValidation: ActionDecisionValidation | null = null;
     let replyStrategyArtifact: ReplyStrategy | null = null;
@@ -2240,7 +2591,7 @@ Deno.serve(async (req) => {
     });
     const providerMessageId =
       typeof emailData.messageId === "string" ? emailData.messageId.trim() : "";
-    if (supabase && (ownerUserId || workspaceId) && providerMessageId) {
+    if (!forceProcess && supabase && (ownerUserId || workspaceId) && providerMessageId) {
       let dedupeQuery = supabase
         .from("mail_messages")
         .select("ai_draft_text")
@@ -2316,6 +2667,7 @@ Deno.serve(async (req) => {
           intent_conflict_detected: caseAssessment.intent_conflict_detected,
           current_message_should_override_thread_route:
             caseAssessment.current_message_should_override_thread_route,
+          latest_message_override_debug: caseAssessment.latest_message_override_debug || null,
         },
         internalThread.threadId,
       );
@@ -2373,10 +2725,12 @@ Deno.serve(async (req) => {
           secondary_case_types: caseAssessment.secondary_case_types,
           latest_message_primary_intent: caseAssessment.latest_message_primary_intent,
           latest_message_confidence: caseAssessment.latest_message_confidence,
+          tie_break_override: caseAssessment.tie_break_override || null,
           historical_context_intents: caseAssessment.historical_context_intents,
           intent_conflict_detected: caseAssessment.intent_conflict_detected,
           current_message_should_override_thread_route:
             caseAssessment.current_message_should_override_thread_route,
+          latest_message_override_debug: caseAssessment.latest_message_override_debug || null,
           intent_scores: caseAssessment.intent_scores,
           metadata_only_signals: caseAssessment.metadata_only_signals,
           retrieval_needs: caseAssessment.retrieval_needs,
@@ -2388,6 +2742,84 @@ Deno.serve(async (req) => {
             tried_fixes: caseAssessment.entities.tried_fixes,
           },
           cleanup_debug: caseAssessment.cleanup_debug || null,
+        },
+        internalThread.threadId,
+      );
+      recipientTypeArtifact = buildRecipientTypeArtifact({
+        from: emailData.from,
+        fromEmail: emailData.fromEmail,
+        subject: emailData.subject,
+        body: emailData.body,
+      });
+      appendStructuredArtifactLog(
+        reasoningLogs,
+        "v2_recipient_type",
+        recipientTypeArtifact,
+        internalThread.threadId,
+      );
+      inboundNormalizedMessageArtifact = buildInboundNormalizedMessageArtifact({
+        subject: emailData.subject,
+        body: emailData.body,
+        caseAssessment,
+      });
+      appendStructuredArtifactLog(
+        reasoningLogs,
+        "v2_inbound_normalized_message",
+        inboundNormalizedMessageArtifact,
+        internalThread.threadId,
+      );
+      replyLanguageDecisionArtifact = buildReplyLanguageDecisionArtifact({
+        subject: emailData.subject,
+        body: emailData.body,
+        caseAssessment,
+        inboundNormalizedMessage: inboundNormalizedMessageArtifact,
+      });
+      appendStructuredArtifactLog(
+        reasoningLogs,
+        "v2_reply_language_decision",
+        replyLanguageDecisionArtifact,
+        internalThread.threadId,
+      );
+      messageUnderstandingArtifact = buildMessageUnderstandingArtifact({
+        subject: emailData.subject,
+        body: emailData.body,
+        caseAssessment,
+        recipientType: recipientTypeArtifact,
+        inboundNormalizedMessage: inboundNormalizedMessageArtifact,
+      });
+      appendStructuredArtifactLog(
+        reasoningLogs,
+        "v2_message_understanding",
+        messageUnderstandingArtifact,
+        internalThread.threadId,
+      );
+      appendStructuredArtifactLog(
+        reasoningLogs,
+        "v2_return_process_followup_override",
+        {
+          artifact_type: "return_process_followup_override",
+          generic_guidance_detected:
+            (caseAssessment.latest_message_override_debug?.triggered_signals || []).some((signal) =>
+              String(signal || "").startsWith("generic_guidance_")
+            ),
+          return_exchange_context_detected:
+            (caseAssessment.latest_message_override_debug?.triggered_signals || []).includes("return_context_present"),
+          tracking_status_phrase_present:
+            (caseAssessment.latest_message_override_debug?.triggered_signals || []).includes("real_tracking_status"),
+          override_matched: caseAssessment.latest_message_override_debug?.return_process_followup_matched ?? false,
+          historical_tracking_overridden:
+            caseAssessment.latest_message_override_debug?.historical_tracking_overridden ?? false,
+          override_failure_reason:
+            caseAssessment.latest_message_override_debug?.return_process_followup_matched
+              ? null
+              : (
+                (caseAssessment.latest_message_override_debug?.triggered_signals || []).includes("real_tracking_status")
+                  ? "tracking_status_phrase_present"
+                  : !(caseAssessment.latest_message_override_debug?.triggered_signals || []).includes("return_context_present")
+                  ? "missing_return_context"
+                  : "no_followup_override_signal"
+              ),
+          final_effective_case_type: caseAssessment.primary_case_type,
         },
         internalThread.threadId,
       );
@@ -2565,11 +2997,19 @@ Deno.serve(async (req) => {
       {
         artifact_type: "tracking_intent",
         current_message_tracking_intent: currentMessageTrackingIntent,
-        workflow_forces_tracking: Boolean(workflowRoute.forceTrackingIntent),
+        workflow_forces_tracking:
+          Boolean(workflowRoute.forceTrackingIntent) && !trackingIntentSuppressed,
+        workflow_forces_tracking_raw: Boolean(workflowRoute.forceTrackingIntent),
         tracking_intent_suppressed: trackingIntentSuppressed,
         effective_tracking_intent: trackingIntent,
         latest_message_primary_intent: caseAssessment?.latest_message_primary_intent ?? null,
         historical_context_intents: caseAssessment?.historical_context_intents ?? [],
+        return_process_followup_override_matched:
+          caseAssessment?.latest_message_override_debug?.return_process_followup_matched ?? false,
+        return_process_followup_override_signals:
+          caseAssessment?.latest_message_override_debug?.triggered_signals ?? [],
+        historical_tracking_overridden:
+          caseAssessment?.latest_message_override_debug?.historical_tracking_overridden ?? false,
       },
       internalThread.threadId,
     );
@@ -2984,11 +3424,55 @@ Deno.serve(async (req) => {
       .filter((hit) => hit.included)
       .map((hit) => hit._text)
       .join("\n");
+    const addressIssueContext = Boolean(selectedOrder) && Boolean(
+      caseAssessment &&
+        (
+          caseAssessment.primary_case_type === "order_change" ||
+          caseAssessment.secondary_case_types.includes("order_change") ||
+          caseAssessment.tie_break_override === "address_change_override" ||
+          /(?:use this address instead|ship it here instead|alternative shipping address|different delivery address|confirm another address|broker|carrier).*(?:address|shipment)|(?:address|shipment).*(?:cannot|unable|can't).*(?:accept|use)/i
+            .test(`${emailData.subject || ""}\n${emailData.body || ""}`)
+        )
+    );
+    const parsedAddressCandidate = caseAssessment?.entities?.address_candidate || null;
+    const technicalEscalationCandidate = Boolean(selectedOrder) &&
+      Boolean(caseAssessment?.troubleshooting_exhausted) &&
+      (
+        caseAssessment?.primary_case_type === "technical_issue" ||
+        caseAssessment?.secondary_case_types.includes("technical_issue") ||
+        Number(caseAssessment?.intent_scores?.technical_issue ?? 0) >= 6
+      );
+    const technicalExchangeCandidate = technicalEscalationCandidate
+      ? maybeBuildExchangeFallbackAction({
+        selectedOrder,
+        orderSummary: context.orderSummary || "",
+        subject: emailData.subject || "",
+        body: emailData.body || "",
+        existingActions: [],
+        force: true,
+      })
+      : null;
     const factSummaryText = [
       factContext?.summary || "",
       selectedOrder
         ? `Selected order status: fulfillment=${String(selectedOrder?.fulfillment_status || "unknown")}, financial=${String(selectedOrder?.financial_status || "unknown")}, cancelled=${selectedOrder?.cancelled_at ? "yes" : "no"}.`
         : "No selected order.",
+      addressIssueContext
+        ? "Address issue context detected: customer may be providing a replacement shipping address for the selected order."
+        : "",
+      parsedAddressCandidate?.address1
+        ? `Parsed replacement address candidate: ${[
+          parsedAddressCandidate.name,
+          parsedAddressCandidate.address1,
+          parsedAddressCandidate.address2,
+          parsedAddressCandidate.zip,
+          parsedAddressCandidate.city,
+          parsedAddressCandidate.country,
+        ].filter(Boolean).join(", ")}`
+        : "",
+      technicalEscalationCandidate
+        ? "Technical escalation candidate detected: concrete fault symptoms persist after troubleshooting."
+        : "",
     ]
       .filter(Boolean)
       .join("\n");
@@ -3095,6 +3579,17 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
               productSummary: productSummaryText,
               matchedSubjectNumber: context.matchedSubjectNumber,
               customerFirstName,
+              selectedOrderId: Number(selectedOrder?.id ?? 0) || null,
+              addressCandidate: parsedAddressCandidate,
+              selectedOrderShippingAddress:
+                selectedOrder?.shipping_address || selectedOrder?.billing_address || null,
+              addressIssueContext,
+              troubleshootingExhausted: Boolean(caseAssessment?.troubleshooting_exhausted),
+              technicalIssueStrong:
+                caseAssessment?.primary_case_type === "technical_issue" ||
+                caseAssessment?.secondary_case_types.includes("technical_issue") ||
+                Number(caseAssessment?.intent_scores?.technical_issue ?? 0) >= 6,
+              technicalExchangeCandidate,
             });
             automationActions = actionDecisionArtifact.actions ?? [];
             usedTwoStageModel = true;
@@ -3236,7 +3731,29 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       }
     }
 
-    if (isReturnIntent && returnSettings && selectedOrder) {
+    const returnProcessFollowUpReplyOnly = Boolean(
+      caseAssessment?.latest_message_override_debug?.return_process_followup_matched,
+    );
+    if (automationActions.length) {
+      const filteredReturnContactActions = filterRedundantSameThreadReturnContactActions({
+        actions: automationActions,
+        assessment: caseAssessment,
+      });
+      automationActions = filteredReturnContactActions.actions;
+      if (filteredReturnContactActions.removed.length) {
+        reasoningLogs.push({
+          step_name: "return_process_followup_action_filter",
+          step_detail: JSON.stringify({
+            return_process_followup_matched:
+              caseAssessment?.latest_message_override_debug?.return_process_followup_matched ?? false,
+            removed_actions: filteredReturnContactActions.removed,
+          }),
+          status: "warning",
+        });
+      }
+    }
+
+    if (isReturnIntent && returnSettings && selectedOrder && !returnProcessFollowUpReplyOnly) {
       const orderIdNumeric = Number(selectedOrder?.id ?? 0);
       const customerEmail = asTextOrNull(emailData.fromEmail || emailData.from);
       const returnReason = asTextOrNull(returnDetails.return_reason) || "customer_requested_return";
@@ -3304,6 +3821,7 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         workflowRoute,
         selectedOrder,
         automation: context.automation,
+        blockRedundantSameThreadReturnContactActions: returnProcessFollowUpReplyOnly,
       });
       automationActions = actionValidation.allowed_actions;
       executionState = deriveExecutionState({
@@ -3350,6 +3868,48 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         hasBlockedAction: false,
         hasPendingApproval: Boolean(returnActionResult?.status === "pending_approval"),
       });
+      if (assessmentForStrategy && messageUnderstandingArtifact && recipientTypeArtifact) {
+        replyGoalArtifact = buildReplyGoalArtifact({
+          assessment: assessmentForStrategy,
+          messageUnderstanding: messageUnderstandingArtifact,
+          recipientType: recipientTypeArtifact,
+          validation: validationForStrategy,
+        });
+        appendStructuredArtifactLog(
+          reasoningLogs,
+          "v2_reply_goal",
+          replyGoalArtifact,
+          internalThread.threadId,
+        );
+      }
+      appendStructuredArtifactLog(
+        reasoningLogs,
+        "v2_reply_strategy_inputs",
+        {
+          artifact_type: "reply_strategy_inputs",
+          used_message_understanding: Boolean(messageUnderstandingArtifact),
+          used_reply_goal: Boolean(replyGoalArtifact),
+          used_recipient_type: Boolean(recipientTypeArtifact),
+          legacy_case_type: assessmentForStrategy.primary_case_type,
+          legacy_workflow: workflowRoute.workflow,
+          effective_customer_reply_driver:
+            replyGoalArtifact?.reply_goal ||
+            messageUnderstandingArtifact?.unresolved_need ||
+            assessmentForStrategy.primary_case_type,
+          notes: [
+            replyGoalArtifact?.reply_goal
+              ? "reply_goal_soft_driver_enabled"
+              : "reply_goal_not_available",
+            messageUnderstandingArtifact?.unresolved_need
+              ? "message_understanding_unresolved_need_available"
+              : "message_understanding_unresolved_need_missing",
+            recipientTypeArtifact?.recipient_type && recipientTypeArtifact.recipient_type !== "customer"
+              ? `recipient_type_${recipientTypeArtifact.recipient_type}`
+              : "recipient_type_customer_or_unknown",
+          ],
+        },
+        internalThread.threadId,
+      );
       replyStrategyArtifact = buildReplyStrategy({
         assessment: assessmentForStrategy,
         validation: validationForStrategy,
@@ -3359,6 +3919,14 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
           policyContext.policySummaryIncluded || policyContext.policyExcerptIncluded,
         policyIntent: policyContext.intent,
         executionState,
+        defectReturnShippingRule: returnSettings?.defect_return_shipping_rule || "unspecified",
+        returnLabelMethod: returnSettings?.return_label_method || "none",
+        returnShippingMode: returnSettings?.return_shipping_mode || "customer_paid",
+        returnAddress: returnSettings?.return_address || null,
+        messageUnderstanding: messageUnderstandingArtifact,
+        replyGoal: replyGoalArtifact,
+        recipientType: recipientTypeArtifact,
+        replyLanguage: replyLanguageDecisionArtifact?.chosen_reply_language || null,
       });
       appendStructuredArtifactLog(
         reasoningLogs,
@@ -3415,7 +3983,21 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
           },
           internalThread.threadId,
         );
-        aiText = await generateReplyFromStrategy({
+        let threadHistory = await fetchThreadHistory(
+          internalThread.threadId,
+          emailData.messageId || null,
+        );
+        // If the DB has no outbound/support messages (e.g. replies sent via Zendesk),
+        // fall back to parsing the quoted email chain from the raw body.
+        const hasDbSupportMessage = threadHistory.some((m) => m.role === "support");
+        if (!hasDbSupportMessage) {
+          const rawBody = String(emailData.rawBody || emailData.body || "");
+          const quotedFallback = extractQuotedHistoryFallback(rawBody);
+          if (quotedFallback.length > 0) {
+            threadHistory = [...quotedFallback, ...threadHistory];
+          }
+        }
+        const replyInput = {
           customerMessage: `${emailData.subject || ""}\n\n${emailData.body || ""}`.trim(),
           customerFirstName,
           replyStrategy: replyStrategyArtifact,
@@ -3429,7 +4011,26 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
           generalKnowledgeSummary: allowGeneralKnowledgeForReply ? knowledgeSummaryText : "",
           learnedStyle,
           personaInstructions: context.persona.instructions,
-        });
+          languageHint: replyStrategyArtifact.language || caseAssessment?.language || null,
+          threadHistory: threadHistory.length > 0 ? threadHistory : null,
+        };
+        let replyResult = await generateReplyFromStrategy(replyInput);
+        // Quality check retry: if the first draft fails, retry once with specific feedback
+        if (replyResult?.quality_check && !replyResult.quality_check.ready_to_send) {
+          const qc = replyResult.quality_check;
+          const issues: string[] = [];
+          if (!qc.answers_core_question) issues.push("does not directly answer the customer's core question");
+          if (qc.contains_ungrounded_claims) issues.push("contains claims not supported by approved facts");
+          if (!qc.matches_brand_voice) issues.push("tone does not match brand voice");
+          if (issues.length > 0) {
+            const retryResult = await generateReplyFromStrategy({
+              ...replyInput,
+              retryHint: issues.join("; "),
+            });
+            if (retryResult?.reply) replyResult = retryResult;
+          }
+        }
+        aiText = replyResult?.reply ?? null;
         replyModelSuccess = Boolean(aiText);
         appendStructuredArtifactLog(
           reasoningLogs,
@@ -3438,6 +4039,9 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
             artifact_type: "reply_generation",
             used_two_stage_model: true,
             generated_reply_present: Boolean(aiText),
+            quality_check: replyResult?.quality_check ?? null,
+            thread_history_messages: threadHistory.length,
+            retry_triggered: replyResult?.quality_check?.ready_to_send === false,
           },
           internalThread.threadId,
         );
@@ -3478,17 +4082,20 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
     }
 
     const customerMessage = `${emailData.subject || ""}\n\n${emailData.body || ""}`.trim();
-    const languageHint = inferLanguageHint(emailData.subject || "", emailData.body || "");
+    const languageHint = resolvePreferredReplyLanguage({
+      replyStrategyLanguage: replyStrategyArtifact?.language || null,
+      caseAssessmentLanguage: caseAssessment?.language || null,
+      fallbackLanguageHint: inferLanguageHint(emailData.subject || "", emailData.body || ""),
+    });
     let finalText = stripTrailingSignoff(
       enforceLocalizedGreeting(aiText.trim(), customerFirstName, languageHint),
     );
-    finalText = await enforceReplyLanguage(customerMessage, finalText, languageHint);
     finalText = ensureFirstLineHasName(finalText, customerFirstName);
     const ongoingReturnContinuation = Boolean(selectedOrder) &&
       (
-        /\b(?:replacement|exchange|old headset|faulty headset|new headset|received the new|got the new)\b/i
+        /\b(?:replacement|exchange|received the new|got the new)\b/i
           .test(`${emailData.subject || ""}\n${emailData.body || ""}`) ||
-        /\b(?:erstatning|ombytning|gamle headset|defekt headset|nyt headset|modtaget det nye|fået det nye)\b/i
+        /\b(?:erstatning|ombytning|modtaget det nye|fået det nye)\b/i
           .test(`${emailData.subject || ""}\n${emailData.body || ""}`)
       );
     if (hasExchangeSignals(emailData.subject || "", emailData.body || "")) {
@@ -3502,7 +4109,55 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         hasKnownOrderContext: Boolean(selectedOrder),
         ongoingReturnContinuation,
       });
-      finalText = await enforceReplyLanguage(customerMessage, finalText, languageHint);
+    }
+    const returnProcessFollowUpCompletenessApplicable =
+      replyStrategyArtifact?.execution_state === "no_action" &&
+      caseAssessment?.primary_case_type === "return_refund" &&
+      (replyStrategyArtifact?.approved_facts || []).some((fact) =>
+        String(fact?.key || "") === "return_process_followup" && String(fact?.value || "") === "true"
+      );
+    let structuredReplyUsed = false;
+    let structuredReplyAddressBlock = "";
+    if (returnProcessFollowUpCompletenessApplicable) {
+      const firstPassCompleteness = evaluateReturnProcessFollowUpReplyCompleteness(
+        finalText,
+        replyStrategyArtifact?.approved_facts || [],
+      );
+      let revisionTriggered = false;
+      let normalizedAddressBlock = "";
+      // Only append genuinely missing sections — never replace AI-generated text entirely
+      if (!firstPassCompleteness.passed) {
+        revisionTriggered = true;
+        const revisionResult = reviseReturnProcessFollowUpReply({
+          text: finalText,
+          approvedFacts: replyStrategyArtifact?.approved_facts || [],
+          languageHint,
+        });
+        finalText = revisionResult.text;
+        normalizedAddressBlock = revisionResult.normalizedAddressBlock;
+        structuredReplyAddressBlock = revisionResult.normalizedAddressBlock;
+      }
+      const finalCompleteness = evaluateReturnProcessFollowUpReplyCompleteness(
+        finalText,
+        replyStrategyArtifact?.approved_facts || [],
+      );
+      appendStructuredArtifactLog(
+        reasoningLogs,
+        "v2_return_process_reply_completeness",
+        {
+          artifact_type: "return_process_reply_completeness",
+          expected_elements: firstPassCompleteness.expected,
+          present_elements_initial: firstPassCompleteness.present,
+          missing_elements_initial: firstPassCompleteness.missing,
+          revision_triggered: revisionTriggered,
+          structured_rebuild_used: false,
+          normalized_address_block: normalizedAddressBlock,
+          final_present_elements: finalCompleteness.present,
+          final_missing_elements: finalCompleteness.missing,
+          final_passed: finalCompleteness.passed,
+        },
+        internalThread.threadId,
+      );
     }
     if (trackingIntent && selectedOrder) {
       const trackingKey = pickOrderTrackingKey(selectedOrder);
@@ -3526,7 +4181,6 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         });
       finalText = await enforceReplyLanguage(customerMessage, baseTrackingText, languageHint);
       finalText = ensureFirstLineHasName(finalText, trackingName);
-      finalText = applyTrackingClosingByLanguage(finalText, languageHint);
     }
 
     const sameChannelGuardResult = guardSameChannelEscalation({
@@ -3569,6 +4223,70 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         internalThread.threadId,
       );
     }
+
+    const groundedReplyGuardResult = guardGroundedReplyText({
+      text: finalText,
+      executionState: replyStrategyArtifact?.execution_state || executionState,
+      allowReturnShippingResponsibilityClaim:
+        ["merchant_pays", "customer_pays"].includes(
+          String(
+            (replyStrategyArtifact?.approved_facts || []).find((fact) =>
+              String(fact?.key || "") === "defect_return_shipping_rule"
+            )?.value || "unspecified",
+          ).trim().toLowerCase(),
+        ),
+      allowIncludedLabelClaim:
+        String(
+          (replyStrategyArtifact?.approved_facts || []).find((fact) =>
+            String(fact?.key || "") === "return_label_method"
+          )?.value || "none",
+        ).trim().toLowerCase() === "pre_printed",
+    });
+    if (groundedReplyGuardResult.changed) {
+      finalText = groundedReplyGuardResult.text;
+      appendStructuredArtifactLog(
+        reasoningLogs,
+        "v2_grounded_reply_guard",
+        {
+          artifact_type: "grounded_reply_guard",
+          execution_state: replyStrategyArtifact?.execution_state || executionState,
+          removed_ungrounded_label_claim: groundedReplyGuardResult.removedUngroundedLabelClaim,
+          removed_ungrounded_return_shipping_claim:
+            groundedReplyGuardResult.removedUngroundedReturnShippingClaim,
+        },
+        internalThread.threadId,
+      );
+    }
+
+    if (structuredReplyUsed && structuredReplyAddressBlock) {
+      finalText = preserveMultilineAddressBlock(finalText, structuredReplyAddressBlock);
+    }
+
+    const replyLanguageCheck = await ensureReplyLanguageConsistency({
+      customerMessage,
+      reply: finalText,
+      languageHint,
+    });
+    finalText = replyLanguageCheck.text;
+    appendStructuredArtifactLog(
+      reasoningLogs,
+      "v2_reply_language_check",
+      replyLanguageCheck.artifact,
+      internalThread.threadId,
+    );
+    const replyNaturalnessPolish = polishDanishCustomerReplyNaturalness({
+      text: finalText,
+      customerMessage,
+      languageHint,
+      approvedFacts: replyStrategyArtifact?.approved_facts || [],
+    });
+    finalText = replyNaturalnessPolish.text;
+    appendStructuredArtifactLog(
+      reasoningLogs,
+      "v2_reply_naturalness_polish",
+      replyNaturalnessPolish.artifact,
+      internalThread.threadId,
+    );
 
     // Render HTML med konsistent styling og line breaks.
     let htmlBody = formatEmailBody(finalText);
@@ -3812,6 +4530,31 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
           });
           finalText = await enforceReplyLanguage(customerMessage, finalText, languageHint);
         }
+        const blockedReplyLanguageCheck = await ensureReplyLanguageConsistency({
+          customerMessage,
+          reply: finalText,
+          languageHint,
+        });
+        finalText = blockedReplyLanguageCheck.text;
+        appendStructuredArtifactLog(
+          reasoningLogs,
+          "v2_reply_language_check",
+          blockedReplyLanguageCheck.artifact,
+          internalThread.threadId,
+        );
+        const blockedReplyNaturalnessPolish = polishDanishCustomerReplyNaturalness({
+          text: finalText,
+          customerMessage,
+          languageHint,
+          approvedFacts: replyStrategyArtifact?.approved_facts || [],
+        });
+        finalText = blockedReplyNaturalnessPolish.text;
+        appendStructuredArtifactLog(
+          reasoningLogs,
+          "v2_reply_naturalness_polish",
+          blockedReplyNaturalnessPolish.artifact,
+          internalThread.threadId,
+        );
         htmlBody = formatEmailBody(finalText);
 
         if (supabase && internalDraft?.id) {

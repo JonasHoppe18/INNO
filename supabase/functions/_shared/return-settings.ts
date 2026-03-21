@@ -1,11 +1,15 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 export type ReturnShippingMode = "customer_paid" | "merchant_label" | "pre_printed";
+export type DefectReturnShippingRule = "merchant_pays" | "customer_pays" | "unspecified";
+export type ReturnLabelMethod = "generate" | "pre_printed" | "none";
 
 export type WorkspaceReturnSettings = {
   workspace_id: string;
   return_window_days: number;
   return_shipping_mode: ReturnShippingMode;
+  return_label_method: ReturnLabelMethod;
+  defect_return_shipping_rule: DefectReturnShippingRule;
   return_address: string | null;
   require_original_packaging: boolean;
   require_unused: boolean;
@@ -15,6 +19,8 @@ export type WorkspaceReturnSettings = {
 const DEFAULT_SETTINGS = {
   return_window_days: 30,
   return_shipping_mode: "customer_paid" as ReturnShippingMode,
+  return_label_method: "none" as ReturnLabelMethod,
+  defect_return_shipping_rule: "unspecified" as DefectReturnShippingRule,
   return_address: null as string | null,
   require_original_packaging: true,
   require_unused: true,
@@ -39,9 +45,32 @@ function mapPolicyShippingToMode(value: unknown): ReturnShippingMode {
   return DEFAULT_SETTINGS.return_shipping_mode;
 }
 
+function normalizeDefectReturnShippingRule(value: unknown): DefectReturnShippingRule {
+  const normalized = asString(value).toLowerCase();
+  if (normalized === "merchant_pays" || normalized === "merchant") return "merchant_pays";
+  if (normalized === "customer_pays" || normalized === "customer") return "customer_pays";
+  return "unspecified";
+}
+
+function mapShippingModeToLabelMethod(mode: ReturnShippingMode): ReturnLabelMethod {
+  if (mode === "merchant_label") return "generate";
+  if (mode === "pre_printed") return "pre_printed";
+  return "none";
+}
+
+function normalizeReturnLabelMethod(value: unknown, fallbackMode: ReturnShippingMode): ReturnLabelMethod {
+  const normalized = asString(value).toLowerCase();
+  if (normalized === "generate" || normalized === "pre_printed" || normalized === "none") {
+    return normalized as ReturnLabelMethod;
+  }
+  return mapShippingModeToLabelMethod(fallbackMode);
+}
+
 function normalizeSettingsRow(
   workspaceId: string,
   row: Record<string, unknown> | null,
+  defectRule?: DefectReturnShippingRule,
+  labelMethod?: ReturnLabelMethod,
 ): WorkspaceReturnSettings {
   const returnWindowDays =
     asPositiveIntOrNull(row?.return_window_days) ?? DEFAULT_SETTINGS.return_window_days;
@@ -52,11 +81,14 @@ function normalizeSettingsRow(
     shippingModeRaw === "pre_printed"
       ? shippingModeRaw
       : DEFAULT_SETTINGS.return_shipping_mode;
+  const returnLabelMethod = normalizeReturnLabelMethod(row?.return_label_method, returnShippingMode);
   const returnAddress = asString(row?.return_address) || null;
   return {
     workspace_id: workspaceId,
     return_window_days: returnWindowDays,
     return_shipping_mode: returnShippingMode,
+    return_label_method: labelMethod || returnLabelMethod || DEFAULT_SETTINGS.return_label_method,
+    defect_return_shipping_rule: defectRule || DEFAULT_SETTINGS.defect_return_shipping_rule,
     return_address: returnAddress,
     require_original_packaging:
       typeof row?.require_original_packaging === "boolean"
@@ -81,11 +113,17 @@ export function buildSettingsFromPolicySummary(
   const returnWindowDays =
     asPositiveIntOrNull(summary.return_window_days) ?? DEFAULT_SETTINGS.return_window_days;
   const returnShippingMode = mapPolicyShippingToMode(summary.return_shipping_paid_by);
+  const returnLabelMethod = normalizeReturnLabelMethod(summary.return_label_method, returnShippingMode);
+  const defectReturnShippingRule = normalizeDefectReturnShippingRule(
+    summary.defect_return_shipping_rule ?? summary.defect_return_shipping_paid_by,
+  );
   const returnAddress = asString(summary.return_address) || null;
   return {
     workspace_id: workspaceId,
     return_window_days: returnWindowDays,
     return_shipping_mode: returnShippingMode,
+    return_label_method: returnLabelMethod,
+    defect_return_shipping_rule: defectReturnShippingRule,
     return_address: returnAddress,
     require_original_packaging: DEFAULT_SETTINGS.require_original_packaging,
     require_unused: DEFAULT_SETTINGS.require_unused,
@@ -100,6 +138,30 @@ export async function ensureWorkspaceReturnSettings(options: {
   const { supabase, workspaceId } = options;
   if (!supabase || !workspaceId) return null;
 
+  const { data: shopRow, error: shopError } = await supabase
+    .from("shops")
+    .select("policy_summary_json")
+    .eq("workspace_id", workspaceId)
+    .is("uninstalled_at", null)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (shopError) {
+    console.warn("return-settings: failed loading policy summary", shopError.message);
+  }
+  const defectRuleFromPolicy = normalizeDefectReturnShippingRule(
+    shopRow?.policy_summary_json && typeof shopRow.policy_summary_json === "object"
+      ? (shopRow.policy_summary_json as Record<string, unknown>).defect_return_shipping_rule ??
+        (shopRow.policy_summary_json as Record<string, unknown>).defect_return_shipping_paid_by
+      : null,
+  );
+  const labelMethodFromPolicy = normalizeReturnLabelMethod(
+    shopRow?.policy_summary_json && typeof shopRow.policy_summary_json === "object"
+      ? (shopRow.policy_summary_json as Record<string, unknown>).return_label_method
+      : null,
+    DEFAULT_SETTINGS.return_shipping_mode,
+  );
+
   const { data: existing, error: existingError } = await supabase
     .from("workspace_return_settings")
     .select(
@@ -112,19 +174,12 @@ export async function ensureWorkspaceReturnSettings(options: {
     return null;
   }
   if (existing) {
-    return normalizeSettingsRow(workspaceId, existing as Record<string, unknown>);
-  }
-
-  const { data: shopRow, error: shopError } = await supabase
-    .from("shops")
-    .select("policy_summary_json")
-    .eq("workspace_id", workspaceId)
-    .is("uninstalled_at", null)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (shopError) {
-    console.warn("return-settings: failed loading policy summary", shopError.message);
+    return normalizeSettingsRow(
+      workspaceId,
+      existing as Record<string, unknown>,
+      defectRuleFromPolicy,
+      labelMethodFromPolicy,
+    );
   }
 
   const settings = buildSettingsFromPolicySummary(
@@ -158,5 +213,10 @@ export async function ensureWorkspaceReturnSettings(options: {
     console.warn("return-settings: insert failed", insertError.message);
     return settings;
   }
-  return normalizeSettingsRow(workspaceId, (inserted as Record<string, unknown>) || insertRow);
+  return normalizeSettingsRow(
+    workspaceId,
+    (inserted as Record<string, unknown>) || insertRow,
+    defectRuleFromPolicy || settings.defect_return_shipping_rule,
+    labelMethodFromPolicy || settings.return_label_method,
+  );
 }
