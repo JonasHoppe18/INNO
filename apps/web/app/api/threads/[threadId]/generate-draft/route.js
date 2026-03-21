@@ -221,6 +221,7 @@ export async function POST(_request, { params }) {
         fromEmail: fromEmail || null,
         body: messageBody,
         rawBody: String(inboundMessage.body_text || "").trim() || null,
+        rawBodyHtml: String(inboundMessage.body_html || "").trim() || null,
         headers: [],
       },
     }),

@@ -48,6 +48,7 @@ export type CaseAssessment = {
     override_failure_reason: string | null;
   };
   troubleshooting_exhausted?: boolean;
+  is_satisfaction_closure?: boolean;
   primary_case_type: GeneralCaseType;
   secondary_case_types: GeneralCaseType[];
   latest_message_primary_intent: GeneralCaseType;
@@ -1259,10 +1260,23 @@ export function assessCase(input: AssessCaseInput): CaseAssessment {
       .test(text);
   const productQueries = extractProductQueries(subject, body);
 
+  // Detect "satisfaction closure" — customer confirms issue resolved / everything working.
+  // When detected, suppress tracking and order scores to avoid sending irrelevant tracking replies.
+  const isSatisfactionClosure =
+    /\b(?:all(?:\s+is)?\s+working(?:\s+(?:perfectly|great|fine|now|well))?|everything(?:\s+is)?\s+working|works?\s+(?:perfectly|great|fine|now)|it(?:'s|\s+is)\s+working|working\s+as\s+intended|feels?\s+good\s+to(?:\s+finally)?|finally\s+(?:working|arrived|fixed)|happy\s+with|satisfied\s+with|great\s+support|excellent\s+support|amazing\s+support|thanks?\s+for\s+(?:the\s+)?(?:great|excellent|amazing|swift|quick|fast)\s+(?:support|help|service|response)|issue(?:\s+is|\s+has\s+been)\s+(?:resolved|fixed|solved)|problem(?:\s+is|\s+has\s+been)\s+(?:resolved|fixed|solved))\b/i.test(
+      text,
+    ) && !/\b(?:still\s+not\s+working|not\s+working|doesn't\s+work|wont?\s+work|broken|defective|issue|problem|error|fault|fail|return|refund|cancel)\b/i.test(body);
+
   const latestMessageScores = initializeScores();
   applyRules(lower, latestMessageScores);
   applyTechnicalConnectivitySignals(text, latestMessageScores);
   applyProcessLogisticsSignals(text, latestMessageScores);
+  if (isSatisfactionClosure) {
+    latestMessageScores.tracking_shipping = 0;
+    latestMessageScores.order_change = 0;
+    latestMessageScores.return_refund = 0;
+    latestMessageScores.general_support = Math.max(latestMessageScores.general_support, 5);
+  }
   if (
     /\b(?:what is wrong with the address|the details i provided are correct|city\s*:|state\s*:|zip(?: code)?\s*:|postal code\s*:|different address for shipment|billing address instead)\b/i
       .test(text) ||
@@ -1314,6 +1328,12 @@ export function assessCase(input: AssessCaseInput): CaseAssessment {
   applyRules(lower, scores);
   applyTechnicalConnectivitySignals(text, scores);
   applyProcessLogisticsSignals(text, scores);
+  if (isSatisfactionClosure) {
+    scores.tracking_shipping = 0;
+    scores.order_change = 0;
+    scores.return_refund = 0;
+    scores.general_support = Math.max(scores.general_support, 5);
+  }
   if (
     /\b(?:what is wrong with the address|the details i provided are correct|city\s*:|state\s*:|zip(?: code)?\s*:|postal code\s*:|different address for shipment|billing address instead)\b/i
       .test(text) ||
@@ -1381,6 +1401,7 @@ export function assessCase(input: AssessCaseInput): CaseAssessment {
       override_failure_reason: returnProcessFollowUpOverride.overrideFailureReason,
     },
     troubleshooting_exhausted: troubleshootingExhausted,
+    is_satisfaction_closure: isSatisfactionClosure,
     primary_case_type: primary,
     secondary_case_types: secondary,
     latest_message_primary_intent: latestMessagePrimaryIntent,

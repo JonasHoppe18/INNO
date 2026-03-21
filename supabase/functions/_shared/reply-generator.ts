@@ -561,7 +561,9 @@ export async function generateReplyFromStrategy(
     hasTechnicalDiagnosticFacts
       ? "If APPROVED TROUBLESHOOTING FACTS already provide a useful next step, do not lead with generic diagnostic questions."
       : "",
-    "Do not open with generic filler phrases like 'Thank you for your message', 'Thank you for contacting us', 'I hope this email finds you well', 'Tak for din besked', 'Tak for din henvendelse', or similar. Start directly by addressing the customer's actual question or situation.",
+    "Do not open with generic filler phrases like 'Thank you for your message', 'Thank you for contacting us', 'I hope this email finds you well', 'Tak for din besked', 'Tak for din henvendelse', or similar.",
+    "The very first meaningful sentence after the salutation must deliver actual help — the answer, the action taken, the next step, or the key information the customer needs. Do not use the opening line to re-describe or re-state the customer's problem back to them, and do not use it to acknowledge receipt of their message.",
+    "If the customer raises multiple distinct questions or issues, address all of them. Do not focus only on the most prominent issue and silently ignore the others.",
     "Match the reply length to the situation — short and direct for simple requests, more detailed only when the topic genuinely requires it. Do not pad the reply with unnecessary filler sentences.",
     "Do not add a signature.",
     input.retryHint

@@ -197,6 +197,7 @@ type EmailData = {
   fromEmail?: string;
   body?: string;
   rawBody?: string | null;
+  rawBodyHtml?: string | null;
   headers?: Array<{ name: string; value: string }>;
 };
 
@@ -1333,9 +1334,25 @@ async function fetchThreadHistory(
     .filter((msg) => msg.text.length > 0);
 }
 
+function stripHtmlTags(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<\/div>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 /**
  * When mail_messages lacks outbound replies (e.g. replies sent via Zendesk/external tool),
  * parse the quoted email chain from the raw body as a thread history fallback.
+ * Handles both plain-text quoted chains and HTML blockquote structures (Zendesk, Gmail, etc.).
  * Returns entries oldest-first, capped at `limit` messages, each trimmed to 400 chars.
  */
 function extractQuotedHistoryFallback(
@@ -1344,7 +1361,24 @@ function extractQuotedHistoryFallback(
 ): Array<{ role: "customer" | "support"; text: string }> {
   if (!rawBody || typeof rawBody !== "string") return [];
 
-  // Split on common quoted-reply delimiters
+  // --- Strategy 1: HTML blockquote (Zendesk, Gmail, Outlook Web) ---
+  const blockquoteMatch = rawBody.match(/<blockquote[^>]*>([\s\S]+?)<\/blockquote>/i);
+  if (blockquoteMatch) {
+    const quotedText = stripHtmlTags(blockquoteMatch[1]).trim();
+    if (quotedText.length > 20) {
+      // Check surrounding HTML for sender attribution
+      const beforeBlockquote = rawBody.slice(0, blockquoteMatch.index || 0);
+      const isSupportReply = /support|acezone|no-?reply/i.test(beforeBlockquote + quotedText.slice(0, 200));
+      return [{
+        role: (isSupportReply ? "support" : "customer") as "customer" | "support",
+        text: quotedText.slice(0, 400),
+      }];
+    }
+  }
+
+  // --- Strategy 2: Plain-text quoted chain (delimiter-based) ---
+  const plainBody = rawBody.includes("<") ? stripHtmlTags(rawBody) : rawBody;
+
   const QUOTE_DELIMITERS = [
     /^[-]{3,}\s*Original Message\s*[-]{3,}/im,
     /^On .+wrote:/im,
@@ -1353,26 +1387,22 @@ function extractQuotedHistoryFallback(
     /^Am .+schrieb .+:/im,
     /^Le .+a écrit\s*:/im,
     /^[A-Za-z]{2,4}, [A-Za-z]+ \d{1,2}, \d{4} at [\d:]+\s*(AM|PM)\s*.+wrote:/im,
-    /^[-]{5,}/m,  // Generic "-----" separator used by many mail clients
+    /^[-]{5,}/m,
   ];
 
-  // Try to find a delimiter and split the body
-  let parts: string[] = [rawBody];
+  let parts: string[] = [plainBody];
   for (const pattern of QUOTE_DELIMITERS) {
-    const match = rawBody.search(pattern);
+    const match = plainBody.search(pattern);
     if (match > 20) {
-      parts = [rawBody.slice(0, match).trim(), rawBody.slice(match).trim()];
+      parts = [plainBody.slice(0, match).trim(), plainBody.slice(match).trim()];
       break;
     }
   }
 
   if (parts.length < 2) return [];
 
-  // The second part is the quoted chain — extract the main body text (strip the attribution line)
   const quotedBlock = parts[1]
-    .replace(/^.+wrote:\s*/im, "")
-    .replace(/^.+kirjoitti:\s*/im, "")
-    .replace(/^.+skrev:\s*/im, "")
+    .replace(/^.+(?:wrote|kirjoitti|skrev)\s*:\s*/im, "")
     .replace(/^>/gm, "")
     .replace(/\r?\n/g, " ")
     .replace(/\s{2,}/g, " ")
@@ -1380,18 +1410,13 @@ function extractQuotedHistoryFallback(
 
   if (!quotedBlock || quotedBlock.length < 10) return [];
 
-  // Classify as support or customer based on sender hints in the attribution line
   const attribution = parts[1].split("\n")[0] || "";
-  const isSupportReply =
-    /support|acezone|noreply|no-reply/i.test(attribution) ||
-    /AceZone/i.test(attribution);
+  const isSupportReply = /support|acezone|noreply|no-reply/i.test(attribution + quotedBlock.slice(0, 100));
 
-  return [
-    {
-      role: (isSupportReply ? "support" : "customer") as "customer" | "support",
-      text: quotedBlock.slice(0, 400),
-    },
-  ].slice(-limit);
+  return [{
+    role: (isSupportReply ? "support" : "customer") as "customer" | "support",
+    text: quotedBlock.slice(0, 400),
+  }].slice(-limit);
 }
 
 async function fetchMailboxHistory(mailboxId: string | null, userId: string | null) {
@@ -2702,6 +2727,25 @@ Deno.serve(async (req) => {
           });
         }
       }
+      // Override tracking workflow when customer confirms the issue is resolved.
+      // A satisfaction closure message ("all is working perfectly", "issue resolved", etc.)
+      // should never generate a tracking reply regardless of the thread's legacy tag.
+      if (caseAssessment.is_satisfaction_closure && workflowRoute.workflow === "tracking") {
+        const legacyCategoryBeforeOverride = ticketCategory;
+        ticketCategory = "General";
+        workflowRoute = buildWorkflowRoute(ticketCategory);
+        reasoningLogs.push({
+          step_name: "workflow_routing_override",
+          step_detail: JSON.stringify({
+            reason: "satisfaction_closure_overrides_tracking",
+            legacy_category: legacyCategoryBeforeOverride,
+            legacy_workflow: "tracking",
+            overridden_category: "General",
+            overridden_workflow: "general",
+          }),
+          status: "warning",
+        });
+      }
       appendStructuredArtifactLog(
         reasoningLogs,
         "v2_case_assessment",
@@ -3991,7 +4035,8 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         // fall back to parsing the quoted email chain from the raw body.
         const hasDbSupportMessage = threadHistory.some((m) => m.role === "support");
         if (!hasDbSupportMessage) {
-          const rawBody = String(emailData.rawBody || emailData.body || "");
+          // Prefer HTML body for blockquote extraction (Zendesk sends quotes only in HTML)
+          const rawBody = String(emailData.rawBodyHtml || emailData.rawBody || emailData.body || "");
           const quotedFallback = extractQuotedHistoryFallback(rawBody);
           if (quotedFallback.length > 0) {
             threadHistory = [...quotedFallback, ...threadHistory];

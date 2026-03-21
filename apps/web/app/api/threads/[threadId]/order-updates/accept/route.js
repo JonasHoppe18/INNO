@@ -874,8 +874,9 @@ async function generateActionOutcomeDraft({
     String(customerMessage || "")
   );
 
+  const isConfirmedOutcome = outcome === "executed" || outcome === "approved_test_mode";
   if (!OPENAI_API_KEY) {
-    if (outcome === "executed") {
+    if (isConfirmedOutcome) {
       return isDanish
         ? [
             `Hej ${customerName},`,
@@ -918,8 +919,8 @@ async function generateActionOutcomeDraft({
   const systemPrompt = [
     "You are Sona, a customer support agent.",
     "Write a short, clear customer-facing reply in the same language as the customer message.",
-    outcome === "executed"
-      ? "The action has already been completed. You may confirm only the completed outcome stated in the prompt."
+    isConfirmedOutcome
+      ? "The action has been completed (or is confirmed as approved). Confirm the outcome to the customer."
       : "The action was not completed. Do not claim that it was completed.",
     "Do not invent actions, policies, or outcome details.",
     "Do not include a signature.",
@@ -3518,7 +3519,7 @@ export async function POST(request, { params }) {
       actionRecord,
       actionType: normalizedActionType,
       outcome: "approved_test_mode",
-      outcomeDetail: detailText || testModeMessage,
+      outcomeDetail: detailText || `The ${normalizedActionType.replace(/_/g, " ")} action has been completed.`,
       executionState: "validated_not_executed",
       orderName: asString(order?.name) || asString(order?.order_number),
       decisionReason,
