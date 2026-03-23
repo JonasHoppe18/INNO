@@ -800,8 +800,8 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     let timerId = null;
     let consecutiveFailures = 0;
 
-    const BASE_POLL_MS = 5_000;
-    const HIDDEN_POLL_MS = 30_000;
+    const BASE_POLL_MS = 20_000;
+    const HIDDEN_POLL_MS = 60_000;
     const MAX_BACKOFF_MS = 60_000;
 
     const scheduleNext = (ms) => {

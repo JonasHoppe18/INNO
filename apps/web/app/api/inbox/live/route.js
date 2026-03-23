@@ -33,7 +33,8 @@ async function loadThreads(serviceClient, scope, mailboxIds) {
       "id, user_id, mailbox_id, provider, provider_thread_id, subject, snippet, last_message_at, unread_count, is_read, status, assignee_id, priority, tags, classification_key, classification_confidence, classification_reason, created_at, updated_at"
     )
     .in("mailbox_id", mailboxIds)
-    .order("last_message_at", { ascending: false, nullsLast: true }),
+    .order("last_message_at", { ascending: false, nullsLast: true })
+    .limit(150),
     scope
   );
   const { data, error } = await query;
@@ -50,12 +51,17 @@ async function loadMessages(serviceClient, scope, mailboxIds) {
     )
     .in("mailbox_id", mailboxIds)
     .order("received_at", { ascending: false, nullsLast: true })
-    .limit(200),
+    .limit(80),
     scope
   );
   let { data, error } = await query;
 
-  if (error && /ai_draft_text|clean_body_text|quoted_body_text|extracted_customer_email|sender_identity_source/i.test(error.message || "")) {
+  if (
+    error &&
+    /ai_draft_text|provider_message_id|body_html|clean_body_text|clean_body_html|quoted_body_text|quoted_body_html|extracted_customer_email|extracted_customer_fields|sender_identity_source/i.test(
+      error.message || ""
+    )
+  ) {
     const fallback = await applyScope(
       serviceClient
         .from("mail_messages")
@@ -64,7 +70,7 @@ async function loadMessages(serviceClient, scope, mailboxIds) {
         )
         .in("mailbox_id", mailboxIds)
         .order("received_at", { ascending: false, nullsLast: true })
-        .limit(200),
+        .limit(80),
       scope
     );
     data = fallback.data;
@@ -114,12 +120,21 @@ export async function GET() {
     }
 
     const [threads, messages] = await Promise.all([
-      loadThreads(serviceClient, scope, mailboxIds),
-      loadMessages(serviceClient, scope, mailboxIds),
+      loadThreads(serviceClient, scope, mailboxIds).catch((error) => {
+        console.error("api/inbox/live loadThreads failed:", error?.message || error);
+        return [];
+      }),
+      loadMessages(serviceClient, scope, mailboxIds).catch((error) => {
+        console.error("api/inbox/live loadMessages failed:", error?.message || error);
+        return [];
+      }),
     ]);
     const messageIds = messages.map((message) => message.id).filter(Boolean);
     const attachments = messageIds.length
-      ? await loadAttachments(serviceClient, scope, mailboxIds, messageIds)
+      ? await loadAttachments(serviceClient, scope, mailboxIds, messageIds).catch((error) => {
+          console.error("api/inbox/live loadAttachments failed:", error?.message || error);
+          return [];
+        })
       : [];
 
     return NextResponse.json({ threads, messages, attachments }, { status: 200 });
