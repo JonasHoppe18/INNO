@@ -65,6 +65,13 @@ const resolveScope = async ({ supabase, user, getToken, logLabel }) => {
   const metadataUuid = user?.publicMetadata?.supabase_uuid;
   let supabaseUserId = isValidUuid(metadataUuid) ? metadataUuid : null;
 
+  if (!supabase || !user?.id) {
+    return {
+      supabaseUserId: null,
+      workspaceId: null,
+    };
+  }
+
   if (!supabaseUserId && typeof getToken === "function") {
     try {
       const templateToken = await getToken({ template: SUPABASE_TEMPLATE });
@@ -81,10 +88,6 @@ const resolveScope = async ({ supabase, user, getToken, logLabel }) => {
     }
   }
 
-  if (!supabase || !user?.id) {
-    throw new Error("Supabase user ID is not ready yet.");
-  }
-
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
     .select("user_id")
@@ -99,10 +102,6 @@ const resolveScope = async ({ supabase, user, getToken, logLabel }) => {
     }
   }
 
-  if (!supabaseUserId) {
-    throw new Error("Supabase user ID is not ready yet.");
-  }
-
   const { data: membership, error: membershipError } = await supabase
     .from("workspace_members")
     .select("workspace_id")
@@ -111,6 +110,10 @@ const resolveScope = async ({ supabase, user, getToken, logLabel }) => {
     .limit(1)
     .maybeSingle();
   if (membershipError) throw membershipError;
+
+  if (!supabaseUserId) {
+    console.warn(`${logLabel}: supabase user id not ready, continuing with workspace scope only`);
+  }
 
   return {
     supabaseUserId,
@@ -259,6 +262,27 @@ export function useThreadMessages(threadId, options = {}) {
     setLoading(true);
     setError(null);
     try {
+      // Prefer server-side scoped fetch for thread bodies.
+      // This avoids client-side scope/RLS mismatches on older rows.
+      try {
+        const response = await fetch(`/api/inbox/threads/${threadId}/messages`, {
+          method: "GET",
+          cache: "no-store",
+          credentials: "include",
+        });
+        if (response.ok) {
+          const payload = await response.json().catch(() => null);
+          const rows = Array.isArray(payload?.messages) ? payload.messages : [];
+          if (!rows.length) {
+            console.warn("[useThreadMessages] tomt server-resultat for tråd:", threadId);
+          }
+          setData(rows);
+          return;
+        }
+      } catch (_serverFetchError) {
+        // Fallback to existing client query path below.
+      }
+
       const scope = await resolveScope({
         supabase,
         user,
