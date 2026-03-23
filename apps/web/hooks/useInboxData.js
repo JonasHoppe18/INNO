@@ -265,28 +265,64 @@ export function useThreadMessages(threadId, options = {}) {
         getToken,
         logLabel: "useThreadMessages",
       });
-      let request = supabase
-        .from("mail_messages")
-        .select(
-          "id, user_id, mailbox_id, thread_id, provider_message_id, subject, snippet, body_text, body_html, clean_body_text, clean_body_html, quoted_body_text, quoted_body_html, from_name, from_email, extracted_customer_name, extracted_customer_email, extracted_customer_fields, sender_identity_source, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at, ai_draft_text"
+      const runFullQuery = async (scoped = true) => {
+        let request = supabase
+          .from("mail_messages")
+          .select(
+            "id, user_id, mailbox_id, thread_id, provider_message_id, subject, snippet, body_text, body_html, clean_body_text, clean_body_html, quoted_body_text, quoted_body_html, from_name, from_email, extracted_customer_name, extracted_customer_email, extracted_customer_fields, sender_identity_source, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at, ai_draft_text"
+          )
+          .eq("thread_id", threadId)
+          .order("received_at", { ascending: true, nullsLast: true });
+        if (scoped) request = applyClientScope(request, scope);
+        return request;
+      };
+
+      const runLeanQuery = async (scoped = true) => {
+        let request = supabase
+          .from("mail_messages")
+          .select(
+            "id, user_id, mailbox_id, thread_id, subject, snippet, body_text, body_html, from_name, from_email, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at"
+          )
+          .eq("thread_id", threadId)
+          .order("received_at", { ascending: true, nullsLast: true });
+        if (scoped) request = applyClientScope(request, scope);
+        return request;
+      };
+
+      let { data: rows, error: queryError } = await runFullQuery(true);
+      const shouldRetryUnscopedFull =
+        !queryError &&
+        Array.isArray(rows) &&
+        rows.length === 0 &&
+        Boolean(scope?.workspaceId);
+      const workspaceColumnError =
+        Boolean(queryError) && /workspace_id/i.test(String(queryError?.message || ""));
+      if (shouldRetryUnscopedFull || workspaceColumnError) {
+        const unscoped = await runFullQuery(false);
+        rows = unscoped.data;
+        queryError = unscoped.error;
+      }
+      if (
+        queryError &&
+        /ai_draft_text|provider_message_id|body_html|clean_body_text|clean_body_html|quoted_body_text|quoted_body_html|extracted_customer_email|extracted_customer_fields|sender_identity_source/i.test(
+          queryError.message || ""
         )
-        .eq("thread_id", threadId)
-        .order("received_at", { ascending: true, nullsLast: true });
-      request = applyClientScope(request, scope);
-      let { data: rows, error: queryError } = await request;
-      if (queryError && /clean_body_text|quoted_body_text|extracted_customer_email|sender_identity_source/i.test(queryError.message || "")) {
-        const fallback = await applyClientScope(
-          supabase
-            .from("mail_messages")
-            .select(
-              "id, user_id, mailbox_id, thread_id, provider_message_id, subject, snippet, body_text, body_html, from_name, from_email, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at, ai_draft_text"
-            )
-            .eq("thread_id", threadId)
-            .order("received_at", { ascending: true, nullsLast: true }),
-          scope
-        );
+      ) {
+        const fallback = await runLeanQuery(true);
         rows = fallback.data;
         queryError = fallback.error;
+        const shouldRetryUnscopedLean =
+          !queryError &&
+          Array.isArray(rows) &&
+          rows.length === 0 &&
+          Boolean(scope?.workspaceId);
+        const leanWorkspaceColumnError =
+          Boolean(queryError) && /workspace_id/i.test(String(queryError?.message || ""));
+        if (shouldRetryUnscopedLean || leanWorkspaceColumnError) {
+          const unscopedLean = await runLeanQuery(false);
+          rows = unscopedLean.data;
+          queryError = unscopedLean.error;
+        }
       }
       if (queryError) throw queryError;
       setData(Array.isArray(rows) ? rows : []);

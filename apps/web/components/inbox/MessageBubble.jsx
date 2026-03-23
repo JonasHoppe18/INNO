@@ -165,7 +165,12 @@ const isStructuredFormMessage = (message) =>
 
 const formatStructuredFormText = (value, subjectLine = "") => {
   const subject = String(subjectLine || "").trim().toLowerCase();
-  const lines = String(value || "")
+  const normalized = String(value || "")
+    .replace(
+      /\s+(Country Code:|Name:|Email:|Company\s*\/\s*Team:|Your Country:|If Applicable,\s*Place Of Purchase And Order Number:|What Is Your Request Regarding\?:|What Do You Need Help With\?:|Body:)/gi,
+      "\n$1"
+    );
+  const lines = normalized
     .replace(/\r\n/g, "\n")
     .replace(/\r/g, "\n")
     .split("\n")
