@@ -42,6 +42,23 @@ async function loadThreads(serviceClient, scope, mailboxIds) {
   return Array.isArray(data) ? data : [];
 }
 
+async function loadMessagesLite(serviceClient, scope, mailboxIds) {
+  const query = applyScope(
+    serviceClient
+      .from("mail_messages")
+      .select(
+        "id, user_id, mailbox_id, thread_id, provider_message_id, subject, snippet, from_name, from_email, extracted_customer_name, extracted_customer_email, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at"
+      )
+      .in("mailbox_id", mailboxIds)
+      .order("received_at", { ascending: false, nullsLast: true })
+      .limit(120),
+    scope
+  );
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  return Array.isArray(data) ? data : [];
+}
+
 export async function GET() {
   try {
     const { userId: clerkUserId, orgId } = await auth();
@@ -63,14 +80,18 @@ export async function GET() {
       return NextResponse.json({ threads: [], messages: [], attachments: [] }, { status: 200 });
     }
 
-    const threads = await loadThreads(serviceClient, scope, mailboxIds).catch((error) => {
-      console.error("api/inbox/live loadThreads failed:", error?.message || error);
-      return [];
-    });
+    const [threads, messages] = await Promise.all([
+      loadThreads(serviceClient, scope, mailboxIds).catch((error) => {
+        console.error("api/inbox/live loadThreads failed:", error?.message || error);
+        return [];
+      }),
+      loadMessagesLite(serviceClient, scope, mailboxIds).catch((error) => {
+        console.error("api/inbox/live loadMessagesLite failed:", error?.message || error);
+        return [];
+      }),
+    ]);
 
-    // Emergency load-shedding: keep live refresh thread-focused.
-    // Full thread messages are loaded on demand by the selected thread view.
-    return NextResponse.json({ threads, messages: [], attachments: [] }, { status: 200 });
+    return NextResponse.json({ threads, messages, attachments: [] }, { status: 200 });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to load inbox live data." },

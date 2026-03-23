@@ -25,7 +25,7 @@ export default async function InboxPage({ searchParams }) {
       orgId,
       query,
       unreadOnly,
-      includeMessages: false,
+      includeMessages: true,
       includeAttachments: false,
     });
     mailboxes = data.mailboxes;

@@ -303,10 +303,7 @@ export function useThreadMessages(threadId, options = {}) {
   }, [enabled, fetchMessages]);
 
   useEffect(() => {
-    if (!seeded?.length) {
-      setData((prev) => (prev?.length ? [] : prev));
-      return;
-    }
+    if (!seeded?.length) return;
     if (seededKeyRef.current === seededKey) return;
     seededKeyRef.current = seededKey;
     setData(seeded);
