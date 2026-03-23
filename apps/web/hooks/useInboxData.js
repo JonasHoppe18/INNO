@@ -288,7 +288,7 @@ export function useThreadMessages(threadId, options = {}) {
         if (scopeWorkspaceError || !selectedThread?.id) {
           const unscopedSelected = await supabase
             .from("mail_threads")
-            .select("id, provider_thread_id, mailbox_id")
+            .select("id, provider_thread_id, mailbox_id, subject")
             .eq("id", threadId)
             .limit(1)
             .maybeSingle();
@@ -344,8 +344,8 @@ export function useThreadMessages(threadId, options = {}) {
             .from("mail_threads")
             .select("id, subject")
             .eq("mailbox_id", mailboxId)
-            .order("created_at", { ascending: true })
-            .limit(400);
+            .order("created_at", { ascending: false })
+            .limit(2000);
           subjectQuery = applyClientScope(subjectQuery, scope);
           let subjectRowsResult = await subjectQuery;
           let subjectRows = subjectRowsResult.data;
@@ -362,8 +362,8 @@ export function useThreadMessages(threadId, options = {}) {
               .from("mail_threads")
               .select("id, subject")
               .eq("mailbox_id", mailboxId)
-              .order("created_at", { ascending: true })
-              .limit(400);
+              .order("created_at", { ascending: false })
+              .limit(2000);
             subjectRows = unscopedSubjectRows.data;
             subjectError = unscopedSubjectRows.error;
           }
