@@ -144,10 +144,33 @@ const extractSenderFromThreadSnippet = (thread) => {
   const snippet = String(thread?.snippet || "").replace(/\s+/g, " ").trim();
   if (!snippet) return "";
 
-  const fromHeaderMatch = snippet.match(/(?:^|\s)From\s*:\s*([^<,\n]+?)\s*(?:<[^>]+>)?(?=\s+(?:Sent|To|Subject)\s*:|$)/i);
-  if (fromHeaderMatch?.[1]) {
-    const name = String(fromHeaderMatch[1]).trim();
-    if (name && !/^unknown sender$/i.test(name)) return name;
+  const looksInternal = (value = "") => {
+    const lower = String(value || "").toLowerCase();
+    return (
+      lower.includes("acezone support") ||
+      lower.includes("support@acezone.io") ||
+      lower.includes("@acezone.io") ||
+      lower.includes("@sona-ai.dk")
+    );
+  };
+
+  const fromHeaderMatch = snippet.match(
+    /(?:^|\s)From\s*:\s*([^<,\n]+?)\s*(?:<([^>]+)>)?(?=\s+(?:Sent|To|Subject)\s*:|$)/i
+  );
+  const toHeaderMatch = snippet.match(
+    /(?:^|\s)To\s*:\s*([^<,\n]+?)\s*(?:<([^>]+)>)?(?=\s+(?:From|Sent|Subject)\s*:|$)/i
+  );
+
+  const fromName = String(fromHeaderMatch?.[1] || "").trim();
+  const fromEmail = String(fromHeaderMatch?.[2] || "").trim();
+  const toName = String(toHeaderMatch?.[1] || "").trim();
+  const toEmail = String(toHeaderMatch?.[2] || "").trim();
+
+  if ((fromName || fromEmail) && !looksInternal(`${fromName} ${fromEmail}`)) {
+    return fromName || fromEmail;
+  }
+  if (toName || toEmail) {
+    return toName || toEmail;
   }
 
   const nameMatch = snippet.match(
@@ -1211,6 +1234,41 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     return Array.from(emails);
   }, [liveMessages]);
 
+  const internalSenderNames = useMemo(() => {
+    const names = new Set();
+    (workspaceMembers || []).forEach((member) => {
+      const fullName = [member?.first_name, member?.last_name].filter(Boolean).join(" ").trim();
+      if (fullName) names.add(fullName.toLowerCase());
+      const email = String(member?.email || "").trim().toLowerCase();
+      if (email) names.add(email);
+    });
+    const currentName = [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim().toLowerCase();
+    if (currentName) names.add(currentName);
+    names.add("sona");
+    names.add("sona ai");
+    return names;
+  }, [user?.firstName, user?.lastName, workspaceMembers]);
+
+  const isLikelyInternalSender = useCallback(
+    (message) => {
+      if (!message) return false;
+      if (message?.from_me === true) return true;
+      const senderEmail = String(message?.from_email || "").trim().toLowerCase();
+      const replyTarget = String(getReplyTargetEmail(message) || "").trim().toLowerCase();
+      const senderLabel = String(getSenderLabel(message) || "").trim().toLowerCase();
+      const isMailboxEmail = (email = "") =>
+        mailboxEmails.some((candidate) => String(candidate || "").trim().toLowerCase() === email);
+      const isInternalDomain = (email = "") =>
+        /@(acezone\.io|sona-ai\.dk)$/i.test(String(email || ""));
+
+      if (senderEmail && (isMailboxEmail(senderEmail) || isInternalDomain(senderEmail))) return true;
+      if (replyTarget && (isMailboxEmail(replyTarget) || isInternalDomain(replyTarget))) return true;
+      if (senderLabel && internalSenderNames.has(senderLabel)) return true;
+      return false;
+    },
+    [internalSenderNames, mailboxEmails]
+  );
+
   const customerByThread = useMemo(() => {
     const map = {};
     derivedThreads.forEach((thread) => {
@@ -1218,10 +1276,11 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       const previewThreadMessages = previewMessagesByThread.get(thread.id) || [];
       const threadMessages =
         liveThreadMessages.length > 0 ? liveThreadMessages : previewThreadMessages;
-      const inbound = threadMessages.find(
-        (message) => !isOutboundMessage(message, mailboxEmails)
-      );
-      const senderFromMessages = getSenderLabel(inbound || threadMessages[0]) || "";
+      const externalCandidate =
+        threadMessages.find((message) => !isLikelyInternalSender(message)) ||
+        [...threadMessages].reverse().find((message) => !isOutboundMessage(message, mailboxEmails)) ||
+        null;
+      const senderFromMessages = getSenderLabel(externalCandidate || threadMessages[0]) || "";
       const senderFallback = extractSenderFromThreadSnippet(thread);
       map[thread.id] =
         senderFromMessages && !/^unknown sender$/i.test(senderFromMessages)
@@ -1229,7 +1288,13 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           : senderFallback || "Unknown sender";
     });
     return map;
-  }, [derivedThreads, mailboxEmails, messagesByThread, previewMessagesByThread]);
+  }, [
+    derivedThreads,
+    isLikelyInternalSender,
+    mailboxEmails,
+    messagesByThread,
+    previewMessagesByThread,
+  ]);
 
   const filteredThreads = useMemo(() => {
     return derivedThreads
