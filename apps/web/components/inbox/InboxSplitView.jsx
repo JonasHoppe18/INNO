@@ -138,6 +138,24 @@ const extractCategoryFromTags = (tags = []) => {
   return "General";
 };
 
+const extractSenderFromThreadSnippet = (thread) => {
+  const snippet = String(thread?.snippet || "").replace(/\s+/g, " ").trim();
+  if (!snippet) return "";
+
+  const nameMatch = snippet.match(
+    /(?:^|\s)(?:Name|Navn)\s*:\s*([^,:;|]+?)(?=\s+(?:Email|E-mail)\s*:|$)/i
+  );
+  if (nameMatch?.[1]) {
+    const name = String(nameMatch[1]).trim();
+    if (name && !/^unknown sender$/i.test(name)) return name;
+  }
+
+  const emailMatch = snippet.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+  if (emailMatch?.[0]) return String(emailMatch[0]).trim();
+
+  return "";
+};
+
 function InboxHeaderActions({
   ticketState,
   assignmentOptions,
@@ -1158,7 +1176,12 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       const inbound = threadMessages.find(
         (message) => !isOutboundMessage(message, mailboxEmails)
       );
-      map[thread.id] = getSenderLabel(inbound || threadMessages[0]) || "Unknown sender";
+      const senderFromMessages = getSenderLabel(inbound || threadMessages[0]) || "";
+      const senderFallback = extractSenderFromThreadSnippet(thread);
+      map[thread.id] =
+        senderFromMessages && !/^unknown sender$/i.test(senderFromMessages)
+          ? senderFromMessages
+          : senderFallback || "Unknown sender";
     });
     return map;
   }, [derivedThreads, mailboxEmails, messagesByThread]);

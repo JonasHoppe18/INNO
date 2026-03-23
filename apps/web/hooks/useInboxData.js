@@ -339,11 +339,18 @@ export function useThreadMessages(threadId, options = {}) {
   }, [enabled, fetchMessages]);
 
   useEffect(() => {
-    if (!seeded?.length) return;
+    if (!threadId) {
+      setData((prev) => (prev?.length ? [] : prev));
+      return;
+    }
+    if (!seeded?.length) {
+      setData((prev) => (Array.isArray(prev) && prev.length ? [] : prev));
+      return;
+    }
     if (seededKeyRef.current === seededKey) return;
     seededKeyRef.current = seededKey;
     setData(seeded);
-  }, [seeded, seededKey]);
+  }, [seeded, seededKey, threadId]);
 
   return { data, loading, error, refresh: fetchMessages };
 }
