@@ -6,7 +6,8 @@ import { formatMessageTime } from "@/components/inbox/inbox-utils";
 const STATUS_STYLES = {
   New: "bg-green-50 text-green-700 border-green-200",
   Open: "bg-blue-50 text-blue-700 border-blue-200",
-  Waiting: "bg-amber-50 text-amber-700 border-amber-200",
+  Pending: "bg-orange-50 text-orange-700 border-orange-200",
+  Waiting: "bg-violet-50 text-violet-700 border-violet-200",
   Solved: "bg-red-50 text-red-700 border-red-200",
 };
 

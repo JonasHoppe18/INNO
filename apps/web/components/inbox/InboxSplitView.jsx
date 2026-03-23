@@ -5,7 +5,7 @@ import { TicketList } from "@/components/inbox/TicketList";
 import { TicketDetail } from "@/components/inbox/TicketDetail";
 import { SonaInsightsModal } from "@/components/inbox/SonaInsightsModal";
 import { TranslationModal } from "@/components/inbox/TranslationModal";
-import { deriveThreadsFromMessages } from "@/hooks/useInboxData";
+import { deriveThreadsFromMessages, useThreadMessages } from "@/hooks/useInboxData";
 import {
   getInboxBucket,
   getMessageTimestamp,
@@ -53,7 +53,7 @@ const DEFAULT_FILTERS = {
   unreadsOnly: false,
 };
 
-const STATUS_OPTIONS = ["New", "Open", "Waiting", "Solved"];
+const STATUS_OPTIONS = ["New", "Open", "Pending", "Waiting", "Solved"];
 const UNASSIGNED_ASSIGNEE_VALUE = "__unassigned__";
 const EMAIL_CATEGORY_LABELS = [
   "Tracking",
@@ -90,6 +90,23 @@ const UUID_REGEX =
 
 const isUuid = (value) => typeof value === "string" && UUID_REGEX.test(value);
 
+const escapeHtml = (value = "") =>
+  String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+const linkifyHtml = (value = "") =>
+  String(value || "").replace(/https?:\/\/[^\s<]+/gi, (rawUrl) => {
+    const match = String(rawUrl).match(/^(.*?)([)\].,!?;:]*)$/);
+    const url = match?.[1] || rawUrl;
+    const trailing = match?.[2] || "";
+    return `<a href="${url}" target="_blank" rel="noreferrer">${url}</a>${trailing}`;
+  });
+
+const plainTextToMessageHtml = (value = "") =>
+  linkifyHtml(escapeHtml(String(value || "").replace(/\r\n/g, "\n"))).replace(/\n/g, "<br/>");
+
 const getAssigneeLabel = (profile, fallbackValue) => {
   const fullName = [profile?.first_name, profile?.last_name].filter(Boolean).join(" ").trim();
   if (fullName) return fullName;
@@ -108,6 +125,7 @@ const normalizeStatus = (value) => {
   if (!value) return null;
   const normalized = String(value).trim().toLowerCase();
   if (normalized === "solved" || normalized === "resolved") return "Solved";
+  if (normalized === "pending") return "Pending";
   if (normalized === "waiting") return "Waiting";
   if (normalized === "open") return "Open";
   if (normalized === "new") return "New";
@@ -176,7 +194,8 @@ function InboxHeaderActions({
   const statusStylesByStatus = {
     New: "bg-green-50 text-green-700 border-green-200",
     Open: "bg-blue-50 text-blue-700 border-blue-200",
-    Waiting: "bg-orange-50 text-orange-700 border-orange-200",
+    Pending: "bg-orange-50 text-orange-700 border-orange-200",
+    Waiting: "bg-violet-50 text-violet-700 border-violet-200",
     Solved: "bg-red-50 text-red-700 border-red-200",
   };
   if (!ticketState) return null;
@@ -727,6 +746,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const [liveMessages, setLiveMessages] = useState(messages || []);
   const [liveAttachments, setLiveAttachments] = useState(attachments || []);
   const [selectedThreadId, setSelectedThreadId] = useState(null);
+  const { data: threadDetailData, fetchMessageBody } = useThreadMessages(selectedThreadId, {
+    enabled: !!selectedThreadId,
+  });
   const [openThreadIds, setOpenThreadIds] = useState([]);
   const [localNewThread, setLocalNewThread] = useState(null);
   const [draftLogLoading, setDraftLogLoading] = useState(false);
@@ -1617,6 +1639,14 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       return true;
     });
   }, [rawThreadMessages]);
+
+  const enrichedThreadMessages = useMemo(() => {
+    if (!threadDetailData?.length) return threadMessages;
+    const bodyMap = new Map(threadDetailData.map((m) => [m.id, m]));
+    return threadMessages.map((msg) =>
+      bodyMap.has(msg.id) ? { ...msg, ...bodyMap.get(msg.id) } : msg
+    );
+  }, [threadMessages, threadDetailData]);
 
   const threadAttachments = useMemo(() => {
     if (!selectedThreadId) return [];
@@ -2674,6 +2704,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       const localTo = redirectedTo || payload.toRecipients || [];
       const localCc = redirectedTo ? [] : payload.ccRecipients || [];
       const localBcc = redirectedTo ? [] : payload.bccRecipients || [];
+      const localBodyText = String(payload?.signature || "").trim()
+        ? `${composeBody}\n\n${String(payload.signature).trim()}`
+        : composeBody;
       setLocalSentMessagesByThread((prev) => ({
         ...prev,
         [selectedThreadId]: [
@@ -2688,10 +2721,10 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
             to_emails: localTo,
             cc_emails: localCc,
             bcc_emails: localBcc,
-            body_text: String(payload?.signature || "").trim()
-              ? `${composeBody}\n\n${String(payload.signature).trim()}`
-              : composeBody,
-            body_html: null,
+            body_text: localBodyText,
+            body_html: plainTextToMessageHtml(localBodyText),
+            clean_body_text: localBodyText,
+            clean_body_html: plainTextToMessageHtml(localBodyText),
             is_read: true,
             sent_at: nowIso,
             received_at: null,
@@ -2740,6 +2773,18 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         ...prev,
         [selectedThreadId]: true,
       }));
+      setTicketStateByThread((prev) => ({
+        ...prev,
+        [selectedThreadId]: {
+          ...(prev[selectedThreadId] || DEFAULT_TICKET_STATE),
+          status: "Pending",
+        },
+      }));
+      fetch("/api/inbox/thread-status", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ threadId: selectedThreadId, status: "Pending" }),
+      }).catch(() => null);
     } catch (err) {
       toast.error(err?.message || "Could not send draft.", { id: toastId });
     } finally {
@@ -3138,8 +3183,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-sidebar">
         <TicketDetail
           thread={selectedThread}
-          messages={threadMessages}
+          messages={enrichedThreadMessages}
           attachments={threadAttachments}
+          onLoadMessageBody={fetchMessageBody}
           customerLookup={customerLookup}
           threadOrderNumber={customerLookupParams.orderNumber || ""}
           mentionUsers={effectiveMentionUsers}

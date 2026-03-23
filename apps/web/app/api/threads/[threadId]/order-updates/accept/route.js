@@ -848,7 +848,10 @@ async function loadLatestInboundContext({ serviceClient, scope, thread }) {
   const { data: inboundRow } = await messageQuery.maybeSingle();
   const bodyText = asString(inboundRow?.body_text) || asString(inboundRow?.body_html) || "";
   const subject = asString(inboundRow?.subject) || asString(thread?.subject) || "Order support";
-  const fullName = asString(getEffectiveSenderName(inboundRow)) || "";
+  const rawFullName = asString(getEffectiveSenderName(inboundRow)) || "";
+  // If the "name" is actually an email address, treat it as no name
+  const isEmailAddress = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(rawFullName);
+  const fullName = isEmailAddress ? "" : rawFullName;
   return {
     bodyText,
     subject,
@@ -857,7 +860,30 @@ async function loadLatestInboundContext({ serviceClient, scope, thread }) {
   };
 }
 
-async function generateActionOutcomeDraft({
+function buildActionConfirmationSentence(actionType, orderRef, isDanish) {
+  const orEn = orderRef ? ` for order ${orderRef}` : "";
+  const orDa = orderRef ? ` for ordre ${orderRef}` : "";
+  const templates = {
+    cancel_order:                  { en: `Order ${orderRef || "your order"} has been cancelled.`,           da: `Ordre ${orderRef || "din ordre"} er annulleret.` },
+    refund_order:                  { en: `Your refund request${orEn} has been processed.`,                  da: `Din refusionsanmodning${orDa} er behandlet.` },
+    update_shipping_address:       { en: `The shipping address${orEn} has been updated.`,                   da: `Leveringsadressen${orDa} er opdateret.` },
+    change_shipping_method:        { en: `The shipping method${orEn} has been updated.`,                    da: `Forsendelsesmetoden${orDa} er ændret.` },
+    hold_or_release_fulfillment:   { en: `The fulfillment status${orEn} has been updated.`,                 da: `Ekspeditionsstatus${orDa} er opdateret.` },
+    edit_line_items:               { en: `Your order${orEn} has been updated as requested.`,                da: `Din ordre${orDa} er opdateret som ønsket.` },
+    update_customer_contact:       { en: `Your contact information${orEn} has been updated.`,               da: `Dine kontaktoplysninger${orDa} er opdateret.` },
+    resend_confirmation_or_invoice:{ en: `Your order confirmation${orEn} has been resent.`,                 da: `Din ordrebekræftelse${orDa} er gensendt.` },
+    create_exchange_request:       { en: `Your exchange request${orEn} has been submitted.`,                da: `Din ombytningsanmodning${orDa} er oprettet.` },
+    add_note:                      { en: `A note has been added to your order${orEn}.`,                     da: `Der er tilføjet en note til din ordre${orDa}.` },
+    add_tag:                       { en: `Your order${orEn} has been updated.`,                             da: `Din ordre${orDa} er opdateret.` },
+  };
+  const t = templates[String(actionType || "").toLowerCase()];
+  if (t) return isDanish ? t.da : t.en;
+  return isDanish
+    ? `Din anmodning${orDa} er behandlet.`
+    : `Your request${orEn} has been processed.`;
+}
+
+function generateActionOutcomeDraft({
   actionType,
   outcome,
   outcomeDetail,
@@ -868,111 +894,48 @@ async function generateActionOutcomeDraft({
 }) {
   const customerName = (customerFirstName || "there").trim() || "there";
   const orderRef = String(orderName || "").trim();
-  const detail = String(outcomeDetail || "").trim();
   const note = String(decisionReason || "").trim();
   // Extract just the body text from contact form emails (which have "Body:\n..." structure)
   const rawMessage = String(customerMessage || "");
   const bodyMatch = rawMessage.match(/\bBody:\s*\n([\s\S]+)/i);
-  const messageBodyText = bodyMatch ? bodyMatch[1].trim() : rawMessage;
+  const extractedBody = bodyMatch ? bodyMatch[1].trim() : rawMessage;
+  // Strip quoted reply content (lines starting with > and "On ... wrote:" headers)
+  const messageBodyText = extractedBody
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith(">") && !/^On .{10,} wrote:/.test(line.trim()))
+    .join("\n")
+    .trim();
   const isDanish = /[æøå]|\b(hej|ordren|adresse|ændre|kan|ikke|venlig|hilsen|opdateret)\b/i.test(
     messageBodyText
   );
-  const greeting = isDanish ? `Hej ${customerName},` : `Hi ${customerName},`;
 
+  const greeting = isDanish ? `Hej ${customerName},` : `Hi ${customerName},`;
+  const closing = isDanish
+    ? "Skriv her, hvis der er andet vi kan hjælpe med."
+    : "Let us know if there is anything else we can help with.";
   const isConfirmedOutcome = outcome === "executed" || outcome === "approved_test_mode";
-  const detailContainsOrderNumber = /(?:order|ordre|#)\s*#?\d{3,}/i.test(detail);
-  if (!OPENAI_API_KEY) {
-    if (isConfirmedOutcome) {
-      return isDanish
-        ? [
-            `Hej ${customerName},`,
-            "",
-            (orderRef && !detailContainsOrderNumber) ? `${orderRef}: ${detail || "Vi har behandlet din anmodning."}` : detail || "Vi har behandlet din anmodning.",
-            "",
-            "Skriv gerne her, hvis der er andet, vi skal hjælpe med.",
-          ].join("\n")
-        : [
-            `Hi ${customerName},`,
-            "",
-            (orderRef && !detailContainsOrderNumber) ? `${orderRef}: ${detail || "We have processed your request."}` : detail || "We have processed your request.",
-            "",
-            "Please reply here if there is anything else we can help with.",
-          ].join("\n");
-    }
-    return isDanish
-      ? [
-          `Hej ${customerName},`,
-          "",
-          detail || "Vi kunne ikke gennemføre den ønskede handling.",
-          note ? `Bemærkning: ${note}` : "",
-          "",
-          "Skriv gerne her, hvis du vil have, at vi hjælper dig videre manuelt.",
-        ]
-          .filter(Boolean)
-          .join("\n")
-      : [
-          `Hi ${customerName},`,
-          "",
-          detail || "We could not complete the requested action.",
-          note ? `Note: ${note}` : "",
-          "",
-          "Please reply here if you would like us to help further manually.",
-        ]
-          .filter(Boolean)
-          .join("\n");
+
+  if (isConfirmedOutcome) {
+    const confirmation = buildActionConfirmationSentence(actionType, orderRef, isDanish);
+    return [greeting, "", confirmation, "", closing].join("\n");
   }
 
-  const systemPrompt = [
-    "You are Sona, a customer support agent.",
-    "Write a short, clear customer-facing reply in the same language as the customer message.",
-    `Always start with this exact greeting on its own line: '${greeting}'`,
-    isConfirmedOutcome
-      ? "The action has been completed. Tell the customer what was done — state the outcome directly and specifically (e.g. 'Order #X has been cancelled', 'Your refund of X has been processed'). Do not say the request was 'approved' or 'godkendt' — say what actually happened."
-      : "The action was not completed. Do not claim that it was completed.",
-    "Do not invent actions, policies, or outcome details.",
-    "Do not include a signature.",
-    "Do not use filler phrases like 'Thank you for your patience', 'Tak for din tålmodighed', or similar — skip them entirely.",
-    "Do not add explanatory statements about what will happen next if it is already obvious from the outcome (e.g. do not say 'you will only receive one order' after cancelling a duplicate — the customer knows this).",
-    "Keep the reply short and concrete: greeting + 1 sentence confirming what was done + optional closing offer to help.",
-  ].join(" ");
-
-  const userPrompt = [
-    `Action type: ${actionType}`,
-    `Outcome: ${outcome}`,
-    orderRef && !detailContainsOrderNumber ? `Order reference: ${orderRef}` : "",
-    `Customer first name: ${customerName}`,
-    detail ? `Outcome detail: ${detail}` : "",
-    note ? `Decision note: ${note}` : "",
-    "Customer message:",
-    messageBodyText || "(empty)",
-    "Write only the reply body text.",
+  // Declined / failed
+  const orEn = orderRef ? ` for order ${orderRef}` : "";
+  const orDa = orderRef ? ` for ordre ${orderRef}` : "";
+  const declined = isDanish
+    ? `Vi var desværre ikke i stand til at behandle din anmodning${orDa}.`
+    : `We were unable to process your request${orEn}.`;
+  return [
+    greeting,
+    "",
+    declined,
+    note ? (isDanish ? `Bemærkning: ${note}` : `Note: ${note}`) : "",
+    "",
+    closing,
   ]
     .filter(Boolean)
     .join("\n");
-
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      temperature: 0.2,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-    }),
-  });
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    const message =
-      payload?.error?.message || `OpenAI returned ${response.status} while generating action outcome draft.`;
-    throw new Error(message);
-  }
-  const text = String(payload?.choices?.[0]?.message?.content || "").trim();
-  return text || null;
 }
 
 async function supersedeInternalRecommendationDrafts({

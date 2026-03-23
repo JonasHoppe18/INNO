@@ -150,6 +150,7 @@ export function Composer({
   const [ccInput, setCcInput] = useState("");
   const [bccInput, setBccInput] = useState("");
   const textareaRef = useRef(null);
+  const replyTextareaRef = useRef(null);
   const replyEditorRef = useRef(null);
   const syncingReplyHtmlRef = useRef(false);
   const replyEditorFocusedRef = useRef(false);
@@ -207,6 +208,14 @@ export function Composer({
     el.style.height = `${Math.max(el.scrollHeight, minHeight)}px`;
   };
 
+  const resizeReplyTextarea = () => {
+    const el = replyTextareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    const minHeight = 112;
+    el.style.height = `${Math.max(el.scrollHeight, minHeight)}px`;
+  };
+
   useEffect(() => {
     setToRecipients(initialTo);
     setCcRecipients([]);
@@ -224,20 +233,7 @@ export function Composer({
       resizeTextarea();
       return;
     }
-    if (isDraftLoading) {
-      if (replyEditorRef.current) {
-        replyEditorRef.current.innerHTML = "";
-      }
-      return;
-    }
-    // While user is actively editing, avoid forcing innerHTML from external state.
-    // Doing so resets caret/focus and makes typing/backspace feel broken.
-    if (replyEditorFocusedRef.current) return;
-    if (syncingReplyHtmlRef.current) return;
-    const nextHtml = plainTextToReplyHtml(value || "");
-    if (replyEditorRef.current && replyEditorRef.current.innerHTML !== nextHtml) {
-      replyEditorRef.current.innerHTML = nextHtml;
-    }
+    resizeReplyTextarea();
   }, [isDraftLoading, isNote, value]);
 
   useEffect(() => {
@@ -548,33 +544,6 @@ export function Composer({
     return Array.from(resolved);
   };
 
-  const handleReplyEditorInput = (event) => {
-    const html = String(event?.currentTarget?.innerHTML || "");
-    const selection = typeof window !== "undefined" ? window.getSelection() : null;
-    if (selection && selection.rangeCount > 0) {
-      const range = selection.getRangeAt(0);
-      if (replyEditorRef.current?.contains(range.startContainer)) {
-        const beforeRange = range.cloneRange();
-        beforeRange.selectNodeContents(replyEditorRef.current);
-        beforeRange.setEnd(range.startContainer, range.startOffset);
-        replyCaretIndexRef.current = String(beforeRange.toString() || "").replace(/\r\n/g, "\n").length;
-      }
-    }
-    syncingReplyHtmlRef.current = true;
-    onChange(extractPlainTextFromReplyHtml(html));
-    syncingReplyHtmlRef.current = false;
-  };
-
-  const handleReplyEditorBlur = (event) => {
-    replyEditorFocusedRef.current = false;
-    const plain = extractPlainTextFromReplyHtml(String(event?.currentTarget?.innerHTML || ""));
-    const formatted = plainTextToReplyHtml(plain);
-    if (replyEditorRef.current && replyEditorRef.current.innerHTML !== formatted) {
-      replyEditorRef.current.innerHTML = formatted;
-    }
-    onBlur?.();
-  };
-
   if (collapsed) {
     return (
       <div className="flex-none border-t border-gray-100 bg-white px-4 py-2">
@@ -839,62 +808,25 @@ export function Composer({
                       {disabled ? disabledPlaceholder : "Write your reply..."}
                     </div>
                   ) : null}
-                  <div
-                    ref={replyEditorRef}
-                    contentEditable={!disabled && !showDraftLoadingState}
-                    suppressContentEditableWarning
-                    onFocus={() => {
-                      replyEditorFocusedRef.current = true;
-                      const selection = typeof window !== "undefined" ? window.getSelection() : null;
-                      if (selection && selection.rangeCount > 0) {
-                        const range = selection.getRangeAt(0);
-                        if (replyEditorRef.current?.contains(range.startContainer)) {
-                          const beforeRange = range.cloneRange();
-                          beforeRange.selectNodeContents(replyEditorRef.current);
-                          beforeRange.setEnd(range.startContainer, range.startOffset);
-                          replyCaretIndexRef.current = String(beforeRange.toString() || "")
-                            .replace(/\r\n/g, "\n").length;
-                        }
-                      }
+                  <Textarea
+                    ref={replyTextareaRef}
+                    value={value}
+                    onChange={(event) => {
+                      replyCaretIndexRef.current = event.target.selectionStart;
+                      onChange(event.target.value);
                     }}
-                    onInput={handleReplyEditorInput}
-                    onBlur={handleReplyEditorBlur}
-                    onKeyUp={() => {
-                      const selection = typeof window !== "undefined" ? window.getSelection() : null;
-                      if (!selection || selection.rangeCount === 0) return;
-                      const range = selection.getRangeAt(0);
-                      if (!replyEditorRef.current?.contains(range.startContainer)) return;
-                      const beforeRange = range.cloneRange();
-                      beforeRange.selectNodeContents(replyEditorRef.current);
-                      beforeRange.setEnd(range.startContainer, range.startOffset);
-                      replyCaretIndexRef.current = String(beforeRange.toString() || "")
-                        .replace(/\r\n/g, "\n").length;
-                    }}
-                    onMouseUp={() => {
-                      const selection = typeof window !== "undefined" ? window.getSelection() : null;
-                      if (!selection || selection.rangeCount === 0) return;
-                      const range = selection.getRangeAt(0);
-                      if (!replyEditorRef.current?.contains(range.startContainer)) return;
-                      const beforeRange = range.cloneRange();
-                      beforeRange.selectNodeContents(replyEditorRef.current);
-                      beforeRange.setEnd(range.startContainer, range.startOffset);
-                      replyCaretIndexRef.current = String(beforeRange.toString() || "")
-                        .replace(/\r\n/g, "\n").length;
-                    }}
-                    onPaste={(event) => {
-                      event.preventDefault();
-                      const pasted = event.clipboardData?.getData("text/plain") || "";
-                      document.execCommand("insertText", false, pasted);
-                    }}
+                    onInput={resizeReplyTextarea}
                     onClick={(event) => {
-                      const target = event.target;
-                      if (!(target instanceof HTMLAnchorElement)) return;
-                      event.preventDefault();
-                      const href = String(target.getAttribute("href") || "").trim();
-                      if (!href) return;
-                      window.open(href, "_blank", "noopener,noreferrer");
+                      replyCaretIndexRef.current = event.currentTarget.selectionStart;
                     }}
-                    className={`flex-1 whitespace-pre-wrap break-words p-0 text-[14px] leading-[1.55] text-gray-900 outline-none [&_a]:cursor-pointer [&_a]:text-blue-600 [&_a]:underline [&_a:hover]:text-blue-700 ${replyEditorMinHeightClassName}`}
+                    onKeyUp={(event) => {
+                      replyCaretIndexRef.current = event.currentTarget.selectionStart;
+                    }}
+                    onBlur={onBlur}
+                    placeholder={disabled ? disabledPlaceholder : "Write your reply..."}
+                    disabled={disabled || showDraftLoadingState}
+                    rows={5}
+                    className={`flex-1 resize-none whitespace-pre-wrap break-words !border-0 !shadow-none !bg-transparent !p-0 text-[14px] leading-[1.55] text-gray-900 focus-visible:!ring-0 ${replyEditorMinHeightClassName}`}
                   />
                 </div>
               </div>

@@ -85,6 +85,7 @@ export function TicketDetail({
   onConversationScroll = null,
   onGenerateDraft = null,
   isGeneratingDraft = false,
+  onLoadMessageBody = null,
 }) {
   const [composerCollapsed, setComposerCollapsed] = useState(false);
   const [processReturnRestock, setProcessReturnRestock] = useState(true);
@@ -381,6 +382,7 @@ export function TicketDetail({
                   attachments={messageAttachments}
                   outboundSenderName={currentUserName}
                   currentUserId={currentUserId}
+                  onLoadBody={onLoadMessageBody}
                 />
               </div>
             );
