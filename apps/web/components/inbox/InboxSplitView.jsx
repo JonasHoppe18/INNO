@@ -1522,8 +1522,11 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     if (!selectedThreadId || isLocalThreadId(selectedThreadId)) return;
     let active = true;
     const fetchDraftLogId = async () => {
-      if (draftLogIdByThread[selectedThreadId]) {
-        setDraftLogId(draftLogIdByThread[selectedThreadId]);
+      const cachedDraftLogId = draftLogIdByThread[selectedThreadId] ?? null;
+      if (cachedDraftLogId !== null) {
+        setDraftLogId(cachedDraftLogId);
+        setDraftLogLoading(false);
+        return;
       }
       setDraftLogLoading(true);
       const draftThreadId =
@@ -1552,10 +1555,13 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       const nextId = typeof data?.id === "number" ? data.id : null;
       setDraftLogId(nextId);
       if (nextId) {
-        setDraftLogIdByThread((prev) => ({
-          ...prev,
-          [selectedThreadId]: nextId,
-        }));
+        setDraftLogIdByThread((prev) => {
+          if (prev?.[selectedThreadId] === nextId) return prev;
+          return {
+            ...(prev || {}),
+            [selectedThreadId]: nextId,
+          };
+        });
       }
       setDraftLogLoading(false);
     };

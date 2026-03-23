@@ -266,9 +266,16 @@ export function useThreadMessages(threadId, options = {}) {
         logLabel: "useThreadMessages",
       });
       const loadRelatedThreadIds = async () => {
+        const normalizeSubject = (value) =>
+          String(value || "")
+            .toLowerCase()
+            .replace(/^(?:(?:re|fw|fwd)\s*:\s*)+/i, "")
+            .replace(/\s+/g, " ")
+            .trim();
+
         let selectedThreadQuery = supabase
           .from("mail_threads")
-          .select("id, provider_thread_id, mailbox_id")
+          .select("id, provider_thread_id, mailbox_id, subject")
           .eq("id", threadId)
           .limit(1)
           .maybeSingle();
@@ -293,38 +300,95 @@ export function useThreadMessages(threadId, options = {}) {
 
         const providerThreadId = String(selectedThread?.provider_thread_id || "").trim();
         const mailboxId = String(selectedThread?.mailbox_id || "").trim();
-        if (!providerThreadId || !mailboxId) return [threadId];
+        const normalizedSubject = normalizeSubject(selectedThread?.subject);
+        if (!mailboxId) return [threadId];
 
-        let siblingsQuery = supabase
-          .from("mail_threads")
-          .select("id")
-          .eq("provider_thread_id", providerThreadId)
-          .eq("mailbox_id", mailboxId)
-          .order("created_at", { ascending: true });
-        siblingsQuery = applyClientScope(siblingsQuery, scope);
-        let { data: siblingRows, error: siblingsError } = await siblingsQuery;
+        let siblingRows = [];
+        let siblingsError = null;
 
-        const siblingsScopeWorkspaceError =
-          Boolean(siblingsError) &&
-          /workspace_id/i.test(String(siblingsError?.message || ""));
-        if (siblingsScopeWorkspaceError || !Array.isArray(siblingRows) || siblingRows.length === 0) {
-          const unscopedSiblings = await supabase
+        if (providerThreadId) {
+          let siblingsQuery = supabase
             .from("mail_threads")
             .select("id")
             .eq("provider_thread_id", providerThreadId)
             .eq("mailbox_id", mailboxId)
             .order("created_at", { ascending: true });
-          siblingRows = unscopedSiblings.data;
-          siblingsError = unscopedSiblings.error;
+          siblingsQuery = applyClientScope(siblingsQuery, scope);
+          const siblingsResult = await siblingsQuery;
+          siblingRows = siblingsResult.data;
+          siblingsError = siblingsResult.error;
+
+          const siblingsScopeWorkspaceError =
+            Boolean(siblingsError) &&
+            /workspace_id/i.test(String(siblingsError?.message || ""));
+          if (
+            siblingsScopeWorkspaceError ||
+            !Array.isArray(siblingRows) ||
+            siblingRows.length === 0
+          ) {
+            const unscopedSiblings = await supabase
+              .from("mail_threads")
+              .select("id")
+              .eq("provider_thread_id", providerThreadId)
+              .eq("mailbox_id", mailboxId)
+              .order("created_at", { ascending: true });
+            siblingRows = unscopedSiblings.data;
+            siblingsError = unscopedSiblings.error;
+          }
         }
 
-        if (siblingsError || !Array.isArray(siblingRows) || siblingRows.length === 0) {
-          return [threadId];
+        // Fallback for legacy/split threads where provider_thread_id is missing or unreliable:
+        // group by normalized subject inside same mailbox.
+        if ((!Array.isArray(siblingRows) || siblingRows.length <= 1) && normalizedSubject) {
+          let subjectQuery = supabase
+            .from("mail_threads")
+            .select("id, subject")
+            .eq("mailbox_id", mailboxId)
+            .order("created_at", { ascending: true })
+            .limit(400);
+          subjectQuery = applyClientScope(subjectQuery, scope);
+          let subjectRowsResult = await subjectQuery;
+          let subjectRows = subjectRowsResult.data;
+          let subjectError = subjectRowsResult.error;
+          const subjectScopeWorkspaceError =
+            Boolean(subjectError) &&
+            /workspace_id/i.test(String(subjectError?.message || ""));
+          if (
+            subjectScopeWorkspaceError ||
+            !Array.isArray(subjectRows) ||
+            subjectRows.length === 0
+          ) {
+            const unscopedSubjectRows = await supabase
+              .from("mail_threads")
+              .select("id, subject")
+              .eq("mailbox_id", mailboxId)
+              .order("created_at", { ascending: true })
+              .limit(400);
+            subjectRows = unscopedSubjectRows.data;
+            subjectError = unscopedSubjectRows.error;
+          }
+          if (!subjectError && Array.isArray(subjectRows)) {
+            const matchedBySubject = subjectRows.filter(
+              (row) => normalizeSubject(row?.subject) === normalizedSubject
+            );
+            if (matchedBySubject.length > 0) {
+              siblingRows = [
+                ...(Array.isArray(siblingRows) ? siblingRows : []),
+                ...matchedBySubject.map((row) => ({ id: row.id })),
+              ];
+            }
+          }
         }
 
-        const ids = siblingRows
-          .map((row) => String(row?.id || "").trim())
-          .filter(Boolean);
+        if (siblingsError || !Array.isArray(siblingRows) || siblingRows.length === 0) return [threadId];
+
+        const ids = Array.from(
+          new Set(
+            siblingRows
+              .map((row) => String(row?.id || "").trim())
+              .filter(Boolean)
+          )
+        );
         if (!ids.length) return [threadId];
         if (ids.includes(String(threadId))) return ids;
         return [threadId, ...ids];
