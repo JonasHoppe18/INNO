@@ -309,6 +309,68 @@ export function useThreadMessages(threadId, options = {}) {
   return { data, loading, error, refresh: fetchMessages };
 }
 
+export function useThreadPreviewMessages(threadIds = [], options = {}) {
+  const { enabled = false } = options;
+  const supabase = useClerkSupabase();
+  const { getToken } = useAuth();
+  const { user } = useUser();
+
+  const normalizedThreadIds = useMemo(
+    () => Array.from(new Set((threadIds || []).filter(Boolean))),
+    [threadIds]
+  );
+  const threadKey = useMemo(() => normalizedThreadIds.join("|"), [normalizedThreadIds]);
+
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const fetchMessages = useCallback(async () => {
+    if (!supabase || !normalizedThreadIds.length) {
+      setData([]);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const scope = await resolveScope({
+        supabase,
+        user,
+        getToken,
+        logLabel: "useThreadPreviewMessages",
+      });
+      let request = supabase
+        .from("mail_messages")
+        .select(
+          "id, thread_id, from_name, from_email, extracted_customer_name, extracted_customer_email, to_emails, cc_emails, bcc_emails, from_me, received_at, sent_at, created_at"
+        )
+        .in("thread_id", normalizedThreadIds)
+        .order("received_at", { ascending: false, nullsLast: true })
+        .limit(Math.max(normalizedThreadIds.length * 4, 300));
+      request = applyClientScope(request, scope);
+      const { data: rows, error: queryError } = await request;
+      if (queryError) throw queryError;
+      setData(Array.isArray(rows) ? rows : []);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error("Could not load preview messages."));
+    } finally {
+      setLoading(false);
+    }
+  }, [getToken, normalizedThreadIds, supabase, user]);
+
+  useEffect(() => {
+    if (!enabled) return;
+    fetchMessages();
+  }, [enabled, fetchMessages, threadKey]);
+
+  useEffect(() => {
+    if (normalizedThreadIds.length) return;
+    setData([]);
+  }, [normalizedThreadIds.length]);
+
+  return { data, loading, error, refresh: fetchMessages };
+}
+
 export function useThreadAttachments(messageIds = [], options = {}) {
   const { initialData = [], enabled = false } = options;
   const supabase = useClerkSupabase();

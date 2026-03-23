@@ -5,7 +5,11 @@ import { TicketList } from "@/components/inbox/TicketList";
 import { TicketDetail } from "@/components/inbox/TicketDetail";
 import { SonaInsightsModal } from "@/components/inbox/SonaInsightsModal";
 import { TranslationModal } from "@/components/inbox/TranslationModal";
-import { deriveThreadsFromMessages } from "@/hooks/useInboxData";
+import {
+  deriveThreadsFromMessages,
+  useThreadMessages,
+  useThreadPreviewMessages,
+} from "@/hooks/useInboxData";
 import {
   getInboxBucket,
   getMessageTimestamp,
@@ -775,6 +779,11 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const searchParams = useSearchParams();
   const { setTitleContent } = useSiteHeaderActions();
   const currentUserName = [user?.firstName, user?.lastName].filter(Boolean).join(" ") || "You";
+  const {
+    data: selectedThreadMessagesFromDb,
+  } = useThreadMessages(selectedThreadId, {
+    enabled: Boolean(selectedThreadId) && !String(selectedThreadId || "").startsWith("local-new-ticket-"),
+  });
   const activeView = searchParams?.get("view") || "";
   const requestedThreadId = String(searchParams?.get("thread") || "").trim();
   const tabStateStorageKey = useMemo(() => {
@@ -1133,6 +1142,34 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     return map;
   }, [liveMessages]);
 
+  const previewThreadIds = useMemo(
+    () => derivedThreads.map((thread) => thread.id).filter(Boolean),
+    [derivedThreads]
+  );
+  const { data: previewMessages } = useThreadPreviewMessages(previewThreadIds, {
+    enabled: previewThreadIds.length > 0,
+  });
+  const previewMessagesByThread = useMemo(() => {
+    const map = new Map();
+    previewMessages.forEach((message) => {
+      const threadId = message.thread_id || message.id;
+      if (!threadId) return;
+      if (!map.has(threadId)) map.set(threadId, []);
+      map.get(threadId).push(message);
+    });
+    map.forEach((list, key) => {
+      map.set(
+        key,
+        [...list].sort((a, b) => {
+          const aTime = new Date(getMessageTimestamp(a)).getTime();
+          const bTime = new Date(getMessageTimestamp(b)).getTime();
+          return aTime - bTime;
+        })
+      );
+    });
+    return map;
+  }, [previewMessages]);
+
   const mailboxEmails = useMemo(() => {
     const emails = new Set();
     liveMessages.forEach((message) => {
@@ -1140,20 +1177,26 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       (message.cc_emails || []).forEach((email) => emails.add(email));
       (message.bcc_emails || []).forEach((email) => emails.add(email));
     });
+    previewMessages.forEach((message) => {
+      (message.to_emails || []).forEach((email) => emails.add(email));
+      (message.cc_emails || []).forEach((email) => emails.add(email));
+      (message.bcc_emails || []).forEach((email) => emails.add(email));
+    });
     return Array.from(emails);
-  }, [liveMessages]);
+  }, [liveMessages, previewMessages]);
 
   const customerByThread = useMemo(() => {
     const map = {};
     derivedThreads.forEach((thread) => {
-      const threadMessages = messagesByThread.get(thread.id) || [];
+      const threadMessages =
+        messagesByThread.get(thread.id) || previewMessagesByThread.get(thread.id) || [];
       const inbound = threadMessages.find(
         (message) => !isOutboundMessage(message, mailboxEmails)
       );
       map[thread.id] = getSenderLabel(inbound || threadMessages[0]) || "Unknown sender";
     });
     return map;
-  }, [derivedThreads, mailboxEmails, messagesByThread]);
+  }, [derivedThreads, mailboxEmails, messagesByThread, previewMessagesByThread]);
 
   const filteredThreads = useMemo(() => {
     return derivedThreads
@@ -1587,7 +1630,10 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
 
   const rawThreadMessages = useMemo(() => {
     if (!selectedThreadId) return [];
-    const base = messagesByThread.get(selectedThreadId) || [];
+    const base =
+      Array.isArray(selectedThreadMessagesFromDb) && selectedThreadMessagesFromDb.length
+        ? selectedThreadMessagesFromDb
+        : messagesByThread.get(selectedThreadId) || [];
     const local = localSentMessagesByThread[selectedThreadId] || [];
     const byId = new Map();
     [...base, ...local].forEach((message) => {
