@@ -8,7 +8,6 @@ import { TranslationModal } from "@/components/inbox/TranslationModal";
 import {
   deriveThreadsFromMessages,
   useThreadMessages,
-  useThreadPreviewMessages,
 } from "@/hooks/useInboxData";
 import {
   getInboxBucket,
@@ -1142,34 +1141,6 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     return map;
   }, [liveMessages]);
 
-  const previewThreadIds = useMemo(
-    () => derivedThreads.map((thread) => thread.id).filter(Boolean),
-    [derivedThreads]
-  );
-  const { data: previewMessages } = useThreadPreviewMessages(previewThreadIds, {
-    enabled: previewThreadIds.length > 0,
-  });
-  const previewMessagesByThread = useMemo(() => {
-    const map = new Map();
-    previewMessages.forEach((message) => {
-      const threadId = message.thread_id || message.id;
-      if (!threadId) return;
-      if (!map.has(threadId)) map.set(threadId, []);
-      map.get(threadId).push(message);
-    });
-    map.forEach((list, key) => {
-      map.set(
-        key,
-        [...list].sort((a, b) => {
-          const aTime = new Date(getMessageTimestamp(a)).getTime();
-          const bTime = new Date(getMessageTimestamp(b)).getTime();
-          return aTime - bTime;
-        })
-      );
-    });
-    return map;
-  }, [previewMessages]);
-
   const mailboxEmails = useMemo(() => {
     const emails = new Set();
     liveMessages.forEach((message) => {
@@ -1177,26 +1148,20 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       (message.cc_emails || []).forEach((email) => emails.add(email));
       (message.bcc_emails || []).forEach((email) => emails.add(email));
     });
-    previewMessages.forEach((message) => {
-      (message.to_emails || []).forEach((email) => emails.add(email));
-      (message.cc_emails || []).forEach((email) => emails.add(email));
-      (message.bcc_emails || []).forEach((email) => emails.add(email));
-    });
     return Array.from(emails);
-  }, [liveMessages, previewMessages]);
+  }, [liveMessages]);
 
   const customerByThread = useMemo(() => {
     const map = {};
     derivedThreads.forEach((thread) => {
-      const threadMessages =
-        messagesByThread.get(thread.id) || previewMessagesByThread.get(thread.id) || [];
+      const threadMessages = messagesByThread.get(thread.id) || [];
       const inbound = threadMessages.find(
         (message) => !isOutboundMessage(message, mailboxEmails)
       );
       map[thread.id] = getSenderLabel(inbound || threadMessages[0]) || "Unknown sender";
     });
     return map;
-  }, [derivedThreads, mailboxEmails, messagesByThread, previewMessagesByThread]);
+  }, [derivedThreads, mailboxEmails, messagesByThread]);
 
   const filteredThreads = useMemo(() => {
     return derivedThreads
@@ -1646,7 +1611,12 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       const bTime = new Date(getMessageTimestamp(b)).getTime();
       return aTime - bTime;
     });
-  }, [localSentMessagesByThread, messagesByThread, selectedThreadId]);
+  }, [
+    localSentMessagesByThread,
+    messagesByThread,
+    selectedThreadId,
+    selectedThreadMessagesFromDb,
+  ]);
 
   const threadMessages = useMemo(() => {
     return rawThreadMessages.filter((message) => {
