@@ -263,6 +263,9 @@ const SIGNAL_RULES: SignalRule[] = [
       /\b(?:duplicate\s+order|same\s+order\s+twice|ordered\s+(?:it\s+)?twice|placed\s+(?:the\s+)?same\s+order\s+twice|placed\s+(?:it\s+)?twice|accidentally\s+(?:placed|ordered)\s+(?:twice|two|2))\b/i,
       /\b(?:slet|fjern)\s+(?:den\s+)?(?:ene|en|en\s+af|den\s+ene)\s+(?:ordre|bestilling)\b/i,
       /\b(?:dobbelt\s+(?:ordre|bestilling)|bestilt\s+(?:det\s+)?to\s+gange|lagt\s+(?:den\s+)?samme\s+ordre\s+ind\s+(?:to\s+gange|2\s+gange)|fået\s+lagt\s+(?:den\s+)?samme\s+ordre\s+(?:to\s+gange|2\s+gange))\b/i,
+      // Ship-to / send-to address change patterns
+      /\b(?:ship\s+(?:it\s+)?to\s+(?:this\s+)?(?:address|location)|send\s+(?:it\s+)?to\s+(?:this\s+)?address|deliver\s+(?:it\s+)?to\s+(?:this\s+)?address|use\s+this\s+address|new\s+(?:shipping\s+)?address\s+is|please\s+(?:ship|send|deliver)\s+(?:it\s+)?to)\b/i,
+      /\b(?:kan\s+du\s+sende\s+(?:det\s+)?til|send\s+til\s+(?:denne\s+)?adresse|ny\s+(?:leverings)?adresse\s+er|brug\s+denne\s+adresse|lever\s+til\s+(?:denne\s+)?adresse)\b/i,
     ],
   },
   {
@@ -418,15 +421,26 @@ function extractAddressCandidate(body: string) {
       .test(line) ||
     /^(?:address|street|address1|address 1)\s*:/i.test(line)
   );
+  // Inline US address: "1539 Jacaranda St Rialto, CA 92376"
+  // Street suffix used as split point: everything up to and including the suffix is address1,
+  // everything after is city (until the ", STATE ZIP" portion).
+  const inlineUSAddr = (() => {
+    const m = joined.match(
+      /\b(\d+\s+[\w .#-]+?\s+(?:street|avenue|boulevard|drive|road|lane|court|place|circle|terrace|parkway|highway|trail|st|ave|blvd|dr|rd|ln|ct|pl|cir|ter|pkwy|hwy|trl)\.?)\s+([\w]+(?:\s+[\w]+)*),\s*([A-Z]{2})\s+(\d{5}(?:-\d{4})?)\b/i
+    );
+    if (!m) return null;
+    return { address1: m[1].trim(), city: m[2].trim(), zip: m[4].trim(), country: "US" };
+  })();
+
   const address1 = fieldValue([
     /^(?:address1|address 1|address|street)\s*:\s*(.+)$/i,
-  ]) || normalizeCandidate(streetLikeLines[0] || "");
+  ]) || normalizeCandidate(streetLikeLines[0] || "") || inlineUSAddr?.address1 || "";
   const address2 = fieldValue([
     /^(?:address2|address 2|suite|unit|apartment|apt)\s*:\s*(.+)$/i,
   ]) || normalizeCandidate(streetLikeLines[1] || "");
-  const city = fieldValue([/^(?:city|town)\s*:\s*(.+)$/i]);
-  const zip = fieldValue([/^(?:zip(?: code)?|postal code|postcode|post code)\s*:\s*(.+)$/i]);
-  const country = fieldValue([/^(?:country)\s*:\s*(.+)$/i]);
+  const city = fieldValue([/^(?:city|town)\s*:\s*(.+)$/i]) || inlineUSAddr?.city || "";
+  const zip = fieldValue([/^(?:zip(?: code)?|postal code|postcode|post code)\s*:\s*(.+)$/i]) || inlineUSAddr?.zip || "";
+  const country = fieldValue([/^(?:country)\s*:\s*(.+)$/i]) || inlineUSAddr?.country || "";
   const phone = fieldValue([/^(?:phone|telephone|mobile)\s*:\s*(.+)$/i]);
   const name = fieldValue([/^(?:name|full name|recipient)\s*:\s*(.+)$/i]);
   if (!address1) return null;
@@ -1285,6 +1299,13 @@ export function assessCase(input: AssessCaseInput): CaseAssessment {
   ) {
     latestMessageScores.order_change += 5;
     latestMessageScores.general_support += 2;
+    latestMessageScores.tracking_shipping = Math.max(0, latestMessageScores.tracking_shipping - 4);
+  }
+  if (
+    /\b(?:ship(?:\s+it)?\s+to\s+(?:this\s+)?address|send(?:\s+it)?\s+to\s+(?:this\s+)?address|deliver\s+(?:it\s+)?to\s+(?:this\s+)?address|use\s+this\s+address|new\s+(?:shipping\s+)?address\s+is)\b/i
+      .test(text)
+  ) {
+    latestMessageScores.order_change += 5;
     latestMessageScores.tracking_shipping = Math.max(0, latestMessageScores.tracking_shipping - 4);
   }
   if (input.hasSelectedOrder) {

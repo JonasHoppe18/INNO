@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname, useSearchParams } from "next/navigation"
 import {
+  BarChart2Icon,
   BookOpenIcon,
   BotIcon,
   CableIcon,
@@ -97,6 +98,11 @@ const baseData = {
       name: "Knowledge",
       url: "/knowledge",
       icon: BookOpenIcon,
+    },
+    {
+      name: "Analytics",
+      url: "/analytics",
+      icon: BarChart2Icon,
     },
   ],
 }

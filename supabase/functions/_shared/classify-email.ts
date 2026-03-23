@@ -25,6 +25,23 @@ const BLOCKED_SENDER_FRAGMENTS = [
   "facebook",
 ];
 
+// Domains that are always system/carrier notifications — never customer support.
+// Checked against the full sender domain (after @), not just the local part.
+const BLOCKED_SENDER_DOMAINS = new Set([
+  "postnord.com", "postnord.se", "postnord.dk", "postnord.no", "postnord.fi",
+  "gls.com", "gls-group.com", "gls-group.eu", "gls-freight.com", "gls-freight.dk",
+  "dhl.com", "dhlexpress.com", "dhl.de", "dhl.dk", "dhl.se", "dhl.no",
+  "ups.com", "ups.net",
+  "fedex.com", "fedex.dk", "fedex.se",
+  "dao.as",
+  "bring.com", "posten.no", "posten.se", "posten.dk",
+  "dpd.com", "dpd.de", "dpd.dk",
+  "budbee.com",
+  "trustpilotmail.com",
+  "klaviyo-email.com", "klaviyomail.com",
+  "list-manage.com", "mailchimpapp.net",
+]);
+
 const SUBJECT_BLOCKLIST = ["automatic reply", "out of office", "undeliverable"];
 
 const SYSTEM_PROMPT =
@@ -63,6 +80,11 @@ export async function classifyEmail(input: ClassifyEmailInput): Promise<EmailCla
   const subject = (input.subject ?? "").trim();
   const subjectLower = subject.toLowerCase();
   const headers = normalizeHeaders(input.headers);
+
+  const senderDomain = senderEmail.split("@")[1] || "";
+  if (BLOCKED_SENDER_DOMAINS.has(senderDomain)) {
+    return { process: false, reason: "carrier_notification_domain", category: "notification" };
+  }
 
   if (BLOCKED_SENDER_FRAGMENTS.some((fragment) => senderEmail.includes(fragment))) {
     return { process: false, reason: "blocked_sender" };

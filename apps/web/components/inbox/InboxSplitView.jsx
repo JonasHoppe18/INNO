@@ -2038,6 +2038,80 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         [threadId]: proposalOnly,
       }));
       if (proposalOnly) {
+        const approvalRes = await fetch(
+          `/api/threads/${encodeURIComponent(threadId)}/order-updates/accept`,
+          { method: "GET" }
+        ).catch(() => null);
+        const approvalPayload = approvalRes?.ok
+          ? await approvalRes.json().catch(() => ({}))
+          : {};
+        const latestAction = approvalPayload?.action || null;
+        const latestReturnCase =
+          approvalPayload?.returnCase && typeof approvalPayload.returnCase === "object"
+            ? approvalPayload.returnCase
+            : null;
+        if (latestReturnCase) {
+          setReturnCaseByThread((prev) => ({
+            ...prev,
+            [threadId]: latestReturnCase,
+          }));
+        }
+        if (latestAction) {
+          const normalizedStatus = String(
+            latestAction.normalizedStatus || latestAction.status || ""
+          ).toLowerCase();
+          const actionType = asString(
+            latestAction.actionType || latestAction.action_type
+          ).toLowerCase();
+          const actionPayload =
+            latestAction?.payload && typeof latestAction.payload === "object"
+              ? latestAction.payload
+              : {};
+          const isTestModeAction =
+            latestAction?.testMode === true ||
+            normalizedStatus === "approved_test_mode" ||
+            actionPayload?.test_mode === true ||
+            actionPayload?.simulated === true;
+          const isFailedStatus = normalizedStatus === "failed";
+          const actionDetail = isFailedStatus
+            ? asString(latestAction?.error) ||
+              asString(latestAction?.detail) ||
+              "Order action could not be completed."
+            : asString(latestAction?.detail) ||
+              "Sona wants to apply an order update for this customer.";
+          setPendingOrderUpdateByThread((prev) => ({
+            ...prev,
+            [threadId]: {
+              id: String(latestAction.id || ""),
+              detail: actionDetail,
+              actionType: actionType || null,
+              payload: actionPayload,
+              createdAt: latestAction.createdAt || null,
+              updatedAt: latestAction.updatedAt || latestAction.createdAt || null,
+              status:
+                asString(latestAction.status || latestAction.normalizedStatus) || "pending",
+              testMode: isTestModeAction,
+              approvedBy: asString(latestAction.approvedBy) || "",
+              error: isFailedStatus ? asString(latestAction.error) || actionDetail : null,
+            },
+          }));
+          const decisionFromAction = getDecisionFromActionStatus(latestAction.status);
+          setOrderUpdateDecisionByThread((prev) => {
+            const next = { ...prev };
+            if (decisionFromAction) next[threadId] = decisionFromAction;
+            else delete next[threadId];
+            return next;
+          });
+          setOrderUpdateErrorByThread((prev) => {
+            const next = { ...prev };
+            if (String(latestAction.status || "").toLowerCase() === "failed" && latestAction.error) {
+              next[threadId] = String(latestAction.error);
+            } else {
+              delete next[threadId];
+            }
+            return next;
+          });
+        }
         setSuppressAutoDraftByThread((prev) => ({
           ...prev,
           [threadId]: true,

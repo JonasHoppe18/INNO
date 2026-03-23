@@ -875,20 +875,21 @@ async function generateActionOutcomeDraft({
   );
 
   const isConfirmedOutcome = outcome === "executed" || outcome === "approved_test_mode";
+  const detailContainsOrderNumber = /(?:order|ordre|#)\s*#?\d{3,}/i.test(detail);
   if (!OPENAI_API_KEY) {
     if (isConfirmedOutcome) {
       return isDanish
         ? [
             `Hej ${customerName},`,
             "",
-            orderRef ? `${orderRef}: ${detail || "Vi har behandlet din anmodning."}` : detail || "Vi har behandlet din anmodning.",
+            (orderRef && !detailContainsOrderNumber) ? `${orderRef}: ${detail || "Vi har behandlet din anmodning."}` : detail || "Vi har behandlet din anmodning.",
             "",
             "Skriv gerne her, hvis der er andet, vi skal hjælpe med.",
           ].join("\n")
         : [
             `Hi ${customerName},`,
             "",
-            orderRef ? `${orderRef}: ${detail || "We have processed your request."}` : detail || "We have processed your request.",
+            (orderRef && !detailContainsOrderNumber) ? `${orderRef}: ${detail || "We have processed your request."}` : detail || "We have processed your request.",
             "",
             "Please reply here if there is anything else we can help with.",
           ].join("\n");
@@ -929,7 +930,7 @@ async function generateActionOutcomeDraft({
   const userPrompt = [
     `Action type: ${actionType}`,
     `Outcome: ${outcome}`,
-    orderRef ? `Order reference: ${orderRef}` : "",
+    orderRef && !detailContainsOrderNumber ? `Order reference: ${orderRef}` : "",
     `Customer first name: ${customerName}`,
     detail ? `Outcome detail: ${detail}` : "",
     note ? `Decision note: ${note}` : "",
@@ -2951,7 +2952,6 @@ export async function POST(request, { params }) {
     }
 
     const inboundMessage = await loadLatestInboundMessage(serviceClient, scope, thread.id);
-    const mailboxSender = await loadMailboxSender(serviceClient, scope, thread.mailbox_id || null);
     const customerEmail = asString(
       mergedPayload?.customer_email || getReplyTargetEmail(inboundMessage) || ""
     ).toLowerCase();
@@ -3059,13 +3059,72 @@ export async function POST(request, { params }) {
       );
     }
 
-    const subjectLine = `Re: ${asString(inboundMessage?.subject || thread.subject || "Return request")}`;
-    const sent = await sendPostmarkEmail({
-      From: `${mailboxSender.fromName} <${mailboxSender.fromEmail}>`,
-      To: customerEmail,
-      Subject: subjectLine.slice(0, 250),
-      TextBody: instructionsText,
-      ReplyTo: mailboxSender.fromEmail,
+    // Build a complete, ready-to-send return instructions reply
+    const orderRef = asString(actionRecord?.order_number || parsed?.orderNumber || "");
+    const isDanish = /[æøå]|\b(hej|ordren|adresse|ændre|kan|ikke|venlig|hilsen|opdateret|retur)\b/i.test(
+      asString(inboundMessage?.body_text || "")
+    );
+    const returnAddressText = returnAddress || (isDanish ? "(returadresse sendes separat)" : "(return address will be provided separately)");
+    const orderSuffix = orderRef ? (isDanish ? ` for ordre ${orderRef}` : ` for order ${orderRef}`) : "";
+    const conditionDa = [
+      requireUnused ? "ubrugt" : null,
+      requireOriginalPackaging ? "i original emballage" : null,
+    ].filter(Boolean).join(" og ");
+    const conditionEn = [
+      requireUnused ? "unused" : null,
+      requireOriginalPackaging ? "in its original packaging" : null,
+    ].filter(Boolean).join(" and ");
+    const shippingDa = returnShippingMode === "customer_paid"
+      ? "Bemærk at returfragt betales af dig som kunde."
+      : "Returfragt er forudbetalt — vi sender dig en label.";
+    const shippingEn = returnShippingMode === "customer_paid"
+      ? "Please note that return shipping costs are paid by the customer."
+      : "Return shipping is prepaid — we will send you a return label.";
+    const returnInstructionsDraft = isDanish
+      ? [
+          `Hej ${customerName},`,
+          "",
+          `Din returanmodning${orderSuffix} er godkendt.`,
+          "",
+          `Du kan sende varen retur inden for ${returnWindowDays} dage fra modtagelse${conditionDa ? `, forudsat at varen er ${conditionDa}` : ""}.`,
+          "",
+          "Send returnering til:",
+          returnAddressText,
+          "",
+          shippingDa,
+          "",
+          "Skriv her i tråden, hvis du har spørgsmål.",
+        ].join("\n")
+      : [
+          `Hi ${customerName},`,
+          "",
+          `Your return request${orderSuffix} has been approved.`,
+          "",
+          `Please send the item back within ${returnWindowDays} days of receiving it${conditionEn ? `, making sure the item is ${conditionEn}` : ""}.`,
+          "",
+          "Please send the return to:",
+          returnAddressText,
+          "",
+          shippingEn,
+          "",
+          "Reply here if you have any questions.",
+        ].join("\n");
+
+    // Save as draft in thread — agent reviews and sends manually (no editing required)
+    await finalizeActionDecisionDraft({
+      serviceClient,
+      scope,
+      thread,
+      actionRecord,
+      actionType: normalizedActionType,
+      outcome: "executed",
+      outcomeDetail: returnInstructionsDraft,
+      executionState: "executed",
+      orderName: orderRef || null,
+      decisionReason,
+      preferredText: returnInstructionsDraft,
+    }).catch((err) => {
+      console.warn("order-updates/accept: failed to generate return instructions draft", err?.message || err);
     });
 
     const returnCase = await upsertReturnCase({
@@ -3078,7 +3137,7 @@ export async function POST(request, { params }) {
         shopify_order_id: inferredOrderId || asString(mergedPayload?.shopify_order_id || ""),
         return_shipping_mode: returnShippingMode,
       },
-      status: "instructions_sent",
+      status: "draft_generated",
       isEligible:
         typeof eligibility?.eligible === "boolean" ? eligibility.eligible : null,
       eligibilityReason: asString(eligibility?.reason || "") || null,
@@ -3088,7 +3147,6 @@ export async function POST(request, { params }) {
       ...mergedPayload,
       customer_email: customerEmail,
       return_case_id: returnCase?.id || null,
-      postmark_message_id: asString(sent?.MessageID || "") || null,
       instructions_text: instructionsText,
     };
     if (actionRecord?.id) {
@@ -3096,7 +3154,7 @@ export async function POST(request, { params }) {
         .from("thread_actions")
         .update({
           status: "applied",
-          detail: "Return instructions sent to customer.",
+          detail: "Return instructions draft generated.",
           payload: actionPayload,
           action_type: normalizedActionType,
           action_key: actionKey,
@@ -3114,7 +3172,7 @@ export async function POST(request, { params }) {
         action_type: normalizedActionType,
         action_key: actionKey,
         status: "applied",
-        detail: "Return instructions sent to customer.",
+        detail: "Return instructions draft generated.",
         payload: actionPayload,
         source: "manual_approval",
         decided_at: nowIso,
@@ -3141,9 +3199,8 @@ export async function POST(request, { params }) {
         ok: true,
         decision: "accepted",
         action: normalizedActionType,
-        detail: "Return instructions sent to customer.",
+        draft_generated: true,
         returnCase: returnCase || null,
-        provider_message_id: asString(sent?.MessageID || "") || null,
         sourceStep: proposalStepName,
       },
       { status: 200 }

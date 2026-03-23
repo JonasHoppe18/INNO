@@ -4,7 +4,37 @@ export type InboxClassification = {
   bucket: "ticket" | "notification";
   reason: string;
   score: number;
+  noise_type?: "carrier_notification" | "system_notification" | null;
 };
+
+// ─── Carrier & service domains that are NEVER customer emails ─────────────────
+// Emails from these domains are always auto-generated system notifications.
+// They must never receive an AI reply and should be routed to notifications.
+const CARRIER_NOTIFICATION_DOMAINS = new Set([
+  // PostNord (Nordic)
+  "postnord.com", "postnord.se", "postnord.dk", "postnord.no", "postnord.fi",
+  // GLS
+  "gls.com", "gls-group.com", "gls-group.eu", "gls-freight.com", "gls-freight.dk",
+  // DHL
+  "dhl.com", "dhlexpress.com", "dhl.de", "dhl.dk", "dhl.se", "dhl.no",
+  // UPS
+  "ups.com", "ups.net",
+  // FedEx
+  "fedex.com", "fedex.dk", "fedex.se",
+  // DAO (Danish carrier)
+  "dao.as",
+  // Bring / Posten
+  "bring.com", "posten.no", "posten.se", "posten.dk",
+  // DPD
+  "dpd.com", "dpd.de", "dpd.dk",
+  // Budbee
+  "budbee.com",
+  // Review platforms (automated invitations only — customers use personal emails)
+  "trustpilotmail.com",
+  // Marketing automation (Klaviyo, Mailchimp etc. used for campaigns, not support)
+  "klaviyo-email.com", "klaviyomail.com",
+  "list-manage.com", "mailchimpapp.net",
+]);
 
 type InboxClassificationInput = {
   from?: string | null;
@@ -132,6 +162,22 @@ function countMatches(patterns: RegExp[], value: string): number {
   return patterns.reduce((count, pattern) => count + (pattern.test(value) ? 1 : 0), 0);
 }
 
+// ─── Patterns that confirm a human customer is asking about their shipment ────
+// Used to distinguish "where is my order?" from a carrier system notification.
+const CUSTOMER_TRACKING_ASK_PATTERNS = [
+  /\bwhere\s+is\s+my\s+(?:order|package|parcel|shipment)\b/i,
+  /\bhaven'?t\s+(?:received|gotten|got)\b/i,
+  /\bnot\s+(?:arrived|received|delivered)\b/i,
+  /\bhas(?:n'?t|\s+not)\s+(?:arrived|shown\s+up)\b/i,
+  /\bstill\s+waiting\b/i,
+  /\bwhen\s+will\s+(?:it|my\s+order|my\s+package)\s+(?:arrive|be\s+delivered)\b/i,
+  /\btrack(?:ing)?\s+(?:my|the)\s+(?:order|parcel|package)\b/i,
+  /\blevering(?:en)?\b/i,
+  /\bhvor\s+er\s+(?:min|pakken)\b/i,
+  /\bhar\s+ikke\s+(?:modtaget|fået)\b/i,
+  /\bnår\s+(?:kommer|ankommer|leveres)\b/i,
+];
+
 export function classifyInboxBucket(input: InboxClassificationInput): InboxClassification {
   const subject = String(input.subject || "").trim();
   const body = String(input.body || "").trim();
@@ -139,8 +185,20 @@ export function classifyInboxBucket(input: InboxClassificationInput): InboxClass
   const normalizedBody = body.toLowerCase();
   const combined = `${normalizedSubject}\n${normalizedBody}`;
   const senderEmail = extractSenderEmail(String(input.from || ""));
+  const senderDomain = senderEmail.split("@")[1] || "";
   const senderLocalPart = senderEmail.split("@")[0] || senderEmail;
   const headers = normalizeHeaders(input.headers);
+
+  // ── Hard block: known carrier / service domains ──────────────────────────
+  // These are ALWAYS system notifications — never customer support requests.
+  if (CARRIER_NOTIFICATION_DOMAINS.has(senderDomain)) {
+    return {
+      bucket: "notification",
+      reason: "carrier_notification_domain",
+      score: 10,
+      noise_type: "carrier_notification",
+    };
+  }
 
   let notificationScore = 0;
   let ticketScore = 0;
@@ -187,11 +245,25 @@ export function classifyInboxBucket(input: InboxClassificationInput): InboxClass
     reasons.push("subject_only_transactional");
   }
 
+  // ── Tracking: only tag as customer tracking ask when human explicitly asks ──
+  // If the combined text contains tracking language but NO customer ask patterns,
+  // it is a carrier notification that leaked past the domain check — boost to notification.
+  const hasTrackingLanguage =
+    /\btracking\b|\bshipment\b|\bdelivery\b|\bsporing\b|\bforsendelse\b/i.test(combined);
+  const hasCustomerTrackingAsk = CUSTOMER_TRACKING_ASK_PATTERNS.some((p) => p.test(combined));
+  if (hasTrackingLanguage && !hasCustomerTrackingAsk && hasSenderSignal && ticketScore === 0) {
+    notificationScore += 3;
+    reasons.push("carrier_notification_language_without_customer_ask");
+  }
+
   if (notificationScore >= 4 && ticketScore === 0) {
     return {
       bucket: "notification",
       reason: reasons.join(","),
       score: notificationScore,
+      noise_type: reasons.includes("carrier_notification_language_without_customer_ask")
+        ? "carrier_notification"
+        : "system_notification",
     };
   }
 
@@ -200,6 +272,7 @@ export function classifyInboxBucket(input: InboxClassificationInput): InboxClass
       bucket: "notification",
       reason: reasons.join(","),
       score: notificationScore,
+      noise_type: "system_notification",
     };
   }
 
@@ -207,5 +280,6 @@ export function classifyInboxBucket(input: InboxClassificationInput): InboxClass
     bucket: "ticket",
     reason: hasSupportIntent ? reasons.join(",") : "default_ticket",
     score: Math.max(ticketScore, 1),
+    noise_type: null,
   };
 }

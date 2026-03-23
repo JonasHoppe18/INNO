@@ -423,6 +423,7 @@ export async function generateReplyFromStrategy(
     "Do not say a return label is attached, generated, or created unless the approved context explicitly supports that a label artifact exists.",
     "Do not claim who pays for return shipping unless the approved context explicitly supports that responsibility for this reply.",
     "Do not make more absolute statements than the evidence supports.",
+    "Never use hedging words like 'typically', 'usually', 'generally', or 'in most cases' when the actual policy or rule is available in APPROVED FACTS or POLICY SUMMARY. If you know the rule, state it directly. If you genuinely do not know, acknowledge it — do not hedge.",
     forbidReturnOrRefundSuggestions
       ? "Do not suggest returns, refunds, exchanges, replacements, or warranty claims unless they are explicitly supported by the approved facts or requested by the reply strategy."
       : "",
@@ -561,11 +562,11 @@ export async function generateReplyFromStrategy(
     hasTechnicalDiagnosticFacts
       ? "If APPROVED TROUBLESHOOTING FACTS already provide a useful next step, do not lead with generic diagnostic questions."
       : "",
-    "Do not open with generic filler phrases like 'Thank you for your message', 'Thank you for contacting us', 'I hope this email finds you well', 'Tak for din besked', 'Tak for din henvendelse', or similar.",
-    "The very first meaningful sentence after the salutation must deliver actual help — the answer, the action taken, the next step, or the key information the customer needs. Do not use the opening line to re-describe or re-state the customer's problem back to them, and do not use it to acknowledge receipt of their message.",
+    "Do not open with generic filler phrases. Specifically banned openers (and close variants): 'Thank you for your message', 'Thank you for contacting us', 'Thank you for reaching out', 'Thank you for providing your details', 'Thank you for getting back to us', 'Thank you for the information', 'I hope this email finds you well', 'I understand your frustration', 'I can see that you are experiencing', 'I understand you are experiencing', 'Tak for din besked', 'Tak for din henvendelse', 'Tak for at kontakte os', 'Tak for dine oplysninger', or any other opener that only acknowledges receipt or re-states the problem.",
+    "The very first meaningful sentence after the salutation must deliver actual help — the answer, the action taken, the next concrete step, or the key information. Do not use the opening sentence to confirm you received the message, to acknowledge the customer's situation in general terms, or to re-state what they already told you.",
     "If the customer raises multiple distinct questions or issues, address all of them. Do not focus only on the most prominent issue and silently ignore the others.",
     "Match the reply length to the situation — short and direct for simple requests, more detailed only when the topic genuinely requires it. Do not pad the reply with unnecessary filler sentences.",
-    "Do not add a signature.",
+    "Do not add a signature or sign-off valediction. Never end the reply with 'Med venlig hilsen', 'Venlig hilsen', 'Kind regards', 'Best regards', 'Mange hilsner', 'Mvh', 'Regards', or any standalone closing phrase on its own line. The signature is added separately by the system.",
     input.retryHint
       ? `\nREVISION NOTE: A previous draft failed the quality check. Specific issues: ${input.retryHint}\nYou MUST fix these issues in your reply before returning.`
       : "",

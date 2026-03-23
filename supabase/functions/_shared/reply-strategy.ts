@@ -514,6 +514,14 @@ export function buildReplyStrategy(input: BuildReplyStrategyInput): ReplyStrateg
   forbiddenClaims.push(...replyGoalForbiddenMoves);
 
   if (
+    customerFacingExecutionState === "pending_approval" ||
+    customerFacingExecutionState === "validated_not_executed"
+  ) {
+    forbiddenClaims.push("provide_return_instructions_before_approval");
+    forbiddenClaims.push("provide_return_shipping_address_before_approval");
+  }
+
+  if (
     technicalOrProductCase &&
     customerFacingExecutionState === "no_action" &&
     String(input.policyIntent || "OTHER").toUpperCase() === "OTHER" &&
@@ -535,6 +543,8 @@ export function buildReplyStrategy(input: BuildReplyStrategyInput): ReplyStrateg
         ? "Acknowledge the reported physical damage, note that the customer says the product was not dropped, ask them to reply with photos, and explain that the case will be reviewed after the photos are received."
         : replyGoalLabel === "assess_physical_damage_claim"
         ? "Acknowledge the reported physical damage, note that the customer says the product was not dropped, and explain the next damage-assessment step without switching to firmware troubleshooting."
+        : mode === "state_action_pending"
+        ? "Explain that the requested action is pending approval or manual review. Do not provide return instructions, shipping addresses, or logistics details yet — those come after approval."
         : replyGoalLabel === "provide_return_logistics"
         ? `Provide practical return logistics that solve the sender's current need: ${unresolvedNeed || latestUserRequest || "Explain how to send the item back."}`
         : replyGoalLabel === "clarify_return_label_availability"
@@ -573,8 +583,6 @@ export function buildReplyStrategy(input: BuildReplyStrategyInput): ReplyStrateg
         ? "The technical issue appears unresolved after troubleshooting was already attempted. Continue the thread without restarting first-line troubleshooting and support the escalation path clearly."
         : mode === "decline_or_block_action"
         ? "Explain clearly that the requested action cannot be completed."
-        : mode === "state_action_pending"
-        ? "Explain that the requested action is pending approval or manual review."
         : mode === "confirm_completed_action"
         ? "Confirm the action outcome clearly and concisely."
         : strongTechnicalIssue

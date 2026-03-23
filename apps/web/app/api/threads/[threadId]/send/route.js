@@ -128,6 +128,37 @@ function summarizeDraftDiff(aiText, finalText) {
   };
 }
 
+function levenshtein(a, b) {
+  const s1 = String(a || "").slice(0, 1000);
+  const s2 = String(b || "").slice(0, 1000);
+  if (s1 === s2) return 0;
+  const m = s1.length;
+  const n = s2.length;
+  const dp = Array.from({ length: m + 1 }, (_, i) => {
+    const row = new Array(n + 1).fill(0);
+    row[0] = i;
+    return row;
+  });
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] =
+        s1[i - 1] === s2[j - 1]
+          ? dp[i - 1][j - 1]
+          : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+
+function classifyEdit(aiText, finalText, distance) {
+  const ai = String(aiText || "").replace(/\s+/g, " ").trim().toLowerCase();
+  const fin = String(finalText || "").replace(/\s+/g, " ").trim().toLowerCase();
+  if (ai === fin) return "no_edit";
+  const maxLen = Math.max(ai.length, fin.length, 1);
+  return distance / maxLen < 0.15 ? "minor_edit" : "major_edit";
+}
+
 async function captureDraftEditFeedback({
   serviceClient,
   threadId,
@@ -1308,9 +1339,30 @@ export async function POST(request, { params }) {
         .filter(Boolean);
 
       if (latestDraftId !== null) {
+        const { data: draftRow } = await serviceClient
+          .from("drafts")
+          .select("ai_draft_text")
+          .eq("id", latestDraftId)
+          .maybeSingle();
+        const savedAiText = draftRow?.ai_draft_text || aiDraftText || null;
+        const dist = savedAiText ? levenshtein(savedAiText, coreBodyText) : null;
+        const editClass = savedAiText ? classifyEdit(savedAiText, coreBodyText, dist) : null;
+        const maxLen = savedAiText
+          ? Math.max(savedAiText.slice(0, 1000).length, String(coreBodyText || "").slice(0, 1000).length, 1)
+          : null;
+        const deltaPct = dist !== null && maxLen !== null
+          ? Number((dist / maxLen).toFixed(4))
+          : null;
+
         let sentDraftQuery = serviceClient
           .from("drafts")
-          .update({ status: "sent" })
+          .update({
+            status: "sent",
+            final_sent_text: coreBodyText || null,
+            edit_distance: dist,
+            edit_delta_pct: deltaPct,
+            edit_classification: editClass,
+          })
           .eq("id", latestDraftId);
         if (scope?.workspaceId) {
           sentDraftQuery = sentDraftQuery.eq("workspace_id", scope.workspaceId);

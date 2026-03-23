@@ -1008,10 +1008,19 @@ const enforceLocalizedGreeting = (text: string, firstName: string, languageHint:
   const body = String(text || "").trim();
   if (!body) return body;
   const greeting = resolveGreetingByLanguage(languageHint, firstName);
-  const withoutGreeting = body.replace(
-    /^(hej|hi|hello|dear)\s*[^\n,]*,?\s*\n*/i,
-    "",
-  );
+  // Strip any existing greeting line — handles:
+  //   "Hi Joshua,"  "Hej Joshua,"  "Dear Joshua,"  "Hello,"
+  //   bare "Joshua," (name-only greeting the AI sometimes produces)
+  const nameEscaped = firstName
+    ? firstName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    : null;
+  const greetingPattern = nameEscaped
+    ? new RegExp(
+        `^(?:(?:hej|hi|hello|dear|hola|bonjour|hallo|ciao)\\s*[^\\n,]*,?|${nameEscaped}\\s*,?)\\s*\\n*`,
+        "i",
+      )
+    : /^(hej|hi|hello|dear|hola|bonjour|hallo|ciao)\s*[^\n,]*,?\s*\n*/i;
+  const withoutGreeting = body.replace(greetingPattern, "");
   return `${greeting}\n\n${withoutGreeting.trim()}`.trim();
 };
 
@@ -1361,19 +1370,36 @@ function extractQuotedHistoryFallback(
 ): Array<{ role: "customer" | "support"; text: string }> {
   if (!rawBody || typeof rawBody !== "string") return [];
 
-  // --- Strategy 1: HTML blockquote (Zendesk, Gmail, Outlook Web) ---
-  const blockquoteMatch = rawBody.match(/<blockquote[^>]*>([\s\S]+?)<\/blockquote>/i);
-  if (blockquoteMatch) {
-    const quotedText = stripHtmlTags(blockquoteMatch[1]).trim();
-    if (quotedText.length > 20) {
-      // Check surrounding HTML for sender attribution
-      const beforeBlockquote = rawBody.slice(0, blockquoteMatch.index || 0);
-      const isSupportReply = /support|acezone|no-?reply/i.test(beforeBlockquote + quotedText.slice(0, 200));
-      return [{
-        role: (isSupportReply ? "support" : "customer") as "customer" | "support",
-        text: quotedText.slice(0, 400),
-      }];
-    }
+  // --- Strategy 1: HTML blockquote / gmail_quote / zd-comment ---
+  // Use outermost-match (first open tag → last close tag) to handle nested blockquotes
+  // e.g. Gmail wraps Zendesk replies as <blockquote><p>On... wrote:</p><blockquote>...</blockquote></blockquote>
+  const blockquoteStart = rawBody.search(/<blockquote[^>]*>/i);
+  const blockquoteEnd = rawBody.lastIndexOf("</blockquote>");
+  const gmailQuoteMatch = rawBody.match(/<div[^>]*class="[^"]*gmail_quote[^"]*"[^>]*>([\s\S]+?)<\/div>/i);
+  const zdCommentMatch = rawBody.match(/<div[^>]*class="[^"]*(?:zd-comment|zd-chunk)[^"]*"[^>]*>([\s\S]+?)<\/div>/i);
+
+  let htmlQuoteText = "";
+  let htmlBeforeQuote = "";
+
+  if (blockquoteStart !== -1 && blockquoteEnd > blockquoteStart) {
+    const quotedHtml = rawBody.slice(blockquoteStart, blockquoteEnd + "</blockquote>".length);
+    htmlQuoteText = stripHtmlTags(quotedHtml).trim();
+    htmlBeforeQuote = rawBody.slice(0, blockquoteStart);
+  } else if (gmailQuoteMatch) {
+    htmlQuoteText = stripHtmlTags(gmailQuoteMatch[1]).trim();
+    htmlBeforeQuote = rawBody.slice(0, gmailQuoteMatch.index || 0);
+  } else if (zdCommentMatch) {
+    htmlQuoteText = stripHtmlTags(zdCommentMatch[1]).trim();
+    htmlBeforeQuote = rawBody.slice(0, zdCommentMatch.index || 0);
+  }
+
+  if (htmlQuoteText.length > 20) {
+    const attributionContext = stripHtmlTags(htmlBeforeQuote).slice(-300) + htmlQuoteText.slice(0, 300);
+    const isSupportReply = /support|acezone|no-?reply|noreply/i.test(attributionContext);
+    return [{
+      role: (isSupportReply ? "support" : "customer") as "customer" | "support",
+      text: htmlQuoteText.slice(0, 600),
+    }];
   }
 
   // --- Strategy 2: Plain-text quoted chain (delimiter-based) ---
@@ -3474,7 +3500,7 @@ Deno.serve(async (req) => {
           caseAssessment.primary_case_type === "order_change" ||
           caseAssessment.secondary_case_types.includes("order_change") ||
           caseAssessment.tie_break_override === "address_change_override" ||
-          /(?:use this address instead|ship it here instead|alternative shipping address|different delivery address|confirm another address|broker|carrier).*(?:address|shipment)|(?:address|shipment).*(?:cannot|unable|can't).*(?:accept|use)/i
+          /(?:use this address instead|ship it here instead|ship it to this address|ship to this address|send it to this address|use this address|new(?:\s+shipping)? address is|alternative shipping address|different delivery address|confirm another address|broker|carrier).*(?:address|shipment)|(?:address|shipment).*(?:cannot|unable|can't).*(?:accept|use)|(?:ship|send|deliver)(?:\s+it)?\s+to\s+(?:this\s+)?address/i
             .test(`${emailData.subject || ""}\n${emailData.body || ""}`)
         )
     );
@@ -4448,6 +4474,8 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
           draft_id: draftId,
           thread_id: threadId,
           created_at: new Date().toISOString(),
+          ai_draft_text: approvalRequiredProposalFlow ? null : (finalText || null),
+          ticket_category: ticketCategory || null,
         })
         .select("id")
         .maybeSingle();

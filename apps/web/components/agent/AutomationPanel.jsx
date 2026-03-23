@@ -479,7 +479,7 @@ export function AutomationPanel({ children = null }) {
           </div>
         ) : (
           <div className="mt-8 space-y-7 pb-6">
-            <SettingsSection
+<SettingsSection
               title="Sona Assistant"
               description="Enable Sona Assistant to prepare draft replies for your team."
               featured
@@ -616,9 +616,16 @@ export function AutomationPanel({ children = null }) {
                     className="min-h-[112px] overflow-hidden bg-white leading-relaxed"
                     placeholder={"AceZone International ApS\nNordre Fasanvej 113, 2nd floor\n2000 Frederiksberg\nDenmark"}
                   />
-                  <p className="text-xs text-slate-500">
-                    Where customers should send returned items.
-                  </p>
+                  {!returnSettings?.return_address && !returnsLoading && (
+                    <p className="text-xs text-amber-600">
+                      Missing return address — return instructions sent to customers will not include a complete address.
+                    </p>
+                  )}
+                  {returnSettings?.return_address && (
+                    <p className="text-xs text-slate-500">
+                      Where customers should send returned items.
+                    </p>
+                  )}
                 </div>
               </div>
             </SettingsSection>
