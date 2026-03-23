@@ -265,14 +265,85 @@ export function useThreadMessages(threadId, options = {}) {
         getToken,
         logLabel: "useThreadMessages",
       });
+      const loadRelatedThreadIds = async () => {
+        let selectedThreadQuery = supabase
+          .from("mail_threads")
+          .select("id, provider_thread_id, mailbox_id")
+          .eq("id", threadId)
+          .limit(1)
+          .maybeSingle();
+        selectedThreadQuery = applyClientScope(selectedThreadQuery, scope);
+        let { data: selectedThread, error: selectedThreadError } = await selectedThreadQuery;
+
+        const scopeWorkspaceError =
+          Boolean(selectedThreadError) &&
+          /workspace_id/i.test(String(selectedThreadError?.message || ""));
+        if (scopeWorkspaceError || !selectedThread?.id) {
+          const unscopedSelected = await supabase
+            .from("mail_threads")
+            .select("id, provider_thread_id, mailbox_id")
+            .eq("id", threadId)
+            .limit(1)
+            .maybeSingle();
+          selectedThread = unscopedSelected.data;
+          selectedThreadError = unscopedSelected.error;
+        }
+
+        if (selectedThreadError || !selectedThread?.id) return [threadId];
+
+        const providerThreadId = String(selectedThread?.provider_thread_id || "").trim();
+        const mailboxId = String(selectedThread?.mailbox_id || "").trim();
+        if (!providerThreadId || !mailboxId) return [threadId];
+
+        let siblingsQuery = supabase
+          .from("mail_threads")
+          .select("id")
+          .eq("provider_thread_id", providerThreadId)
+          .eq("mailbox_id", mailboxId)
+          .order("created_at", { ascending: true });
+        siblingsQuery = applyClientScope(siblingsQuery, scope);
+        let { data: siblingRows, error: siblingsError } = await siblingsQuery;
+
+        const siblingsScopeWorkspaceError =
+          Boolean(siblingsError) &&
+          /workspace_id/i.test(String(siblingsError?.message || ""));
+        if (siblingsScopeWorkspaceError || !Array.isArray(siblingRows) || siblingRows.length === 0) {
+          const unscopedSiblings = await supabase
+            .from("mail_threads")
+            .select("id")
+            .eq("provider_thread_id", providerThreadId)
+            .eq("mailbox_id", mailboxId)
+            .order("created_at", { ascending: true });
+          siblingRows = unscopedSiblings.data;
+          siblingsError = unscopedSiblings.error;
+        }
+
+        if (siblingsError || !Array.isArray(siblingRows) || siblingRows.length === 0) {
+          return [threadId];
+        }
+
+        const ids = siblingRows
+          .map((row) => String(row?.id || "").trim())
+          .filter(Boolean);
+        if (!ids.length) return [threadId];
+        if (ids.includes(String(threadId))) return ids;
+        return [threadId, ...ids];
+      };
+
+      const relatedThreadIds = await loadRelatedThreadIds();
+
       const runFullQuery = async (scoped = true) => {
         let request = supabase
           .from("mail_messages")
           .select(
             "id, user_id, mailbox_id, thread_id, provider_message_id, subject, snippet, body_text, body_html, clean_body_text, clean_body_html, quoted_body_text, quoted_body_html, from_name, from_email, extracted_customer_name, extracted_customer_email, extracted_customer_fields, sender_identity_source, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at, ai_draft_text"
           )
-          .eq("thread_id", threadId)
           .order("received_at", { ascending: true, nullsLast: true });
+        if (relatedThreadIds.length > 1) {
+          request = request.in("thread_id", relatedThreadIds);
+        } else {
+          request = request.eq("thread_id", threadId);
+        }
         if (scoped) request = applyClientScope(request, scope);
         return request;
       };
@@ -283,8 +354,12 @@ export function useThreadMessages(threadId, options = {}) {
           .select(
             "id, user_id, mailbox_id, thread_id, subject, snippet, body_text, body_html, from_name, from_email, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at"
           )
-          .eq("thread_id", threadId)
           .order("received_at", { ascending: true, nullsLast: true });
+        if (relatedThreadIds.length > 1) {
+          request = request.in("thread_id", relatedThreadIds);
+        } else {
+          request = request.eq("thread_id", threadId);
+        }
         if (scoped) request = applyClientScope(request, scope);
         return request;
       };
@@ -343,10 +418,15 @@ export function useThreadMessages(threadId, options = {}) {
       setData((prev) => (prev?.length ? [] : prev));
       return;
     }
-    if (!seeded?.length) {
-      setData((prev) => (Array.isArray(prev) && prev.length ? [] : prev));
-      return;
-    }
+    // Only reset when switching thread. Don't keep clearing when seeded is empty,
+    // otherwise fetched messages for older threads get wiped on every render.
+    seededKeyRef.current = seededKey;
+    setData(seeded);
+  }, [threadId]);
+
+  useEffect(() => {
+    if (!threadId) return;
+    if (!seeded?.length) return;
     if (seededKeyRef.current === seededKey) return;
     seededKeyRef.current = seededKey;
     setData(seeded);
