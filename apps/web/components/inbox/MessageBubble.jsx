@@ -204,22 +204,17 @@ export function MessageBubble({
   attachments = [],
   outboundSenderName,
   currentUserId,
-  onLoadBody,
 }) {
   const [selectedAttachment, setSelectedAttachment] = useState(null);
   const [viewEmailOpen, setViewEmailOpen] = useState(false);
   const isOutbound = direction === "outbound";
-  const messageSenderLabel = getSenderLabel(message);
-  const senderMatchesCurrentUser =
-    !String(outboundSenderName || "").trim() ||
-    !String(messageSenderLabel || "").trim() ||
-    normalizeLower(messageSenderLabel) === normalizeLower(outboundSenderName);
   const isAuthoredByCurrentUser =
     Boolean(currentUserId) &&
     String(message?.user_id || "") === String(currentUserId) &&
-    senderMatchesCurrentUser &&
     isOutbound;
-  const senderLabel = messageSenderLabel || outboundSenderName || "Unknown sender";
+  const senderLabel = isAuthoredByCurrentUser
+    ? outboundSenderName || getSenderLabel(message)
+    : getSenderLabel(message);
   const rawType = normalizeLower(
     message?.type || message?.message_type || message?.kind || ""
   );
@@ -415,10 +410,7 @@ export function MessageBubble({
               >
                 <button
                   type="button"
-                  onClick={() => {
-                    onLoadBody?.(message?.id);
-                    setViewEmailOpen(true);
-                  }}
+                  onClick={() => setViewEmailOpen(true)}
                   className="inline-flex items-center gap-2 rounded-md px-1 py-0.5 hover:bg-gray-100"
                 >
                   <Mail className="h-4 w-4" />

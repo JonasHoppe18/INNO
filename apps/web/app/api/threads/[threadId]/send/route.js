@@ -45,26 +45,6 @@ function stripHtml(html) {
   return String(html || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
-function escapeHtml(value) {
-  return String(value || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
-function linkifyHtml(value) {
-  return String(value || "").replace(/https?:\/\/[^\s<]+/gi, (rawUrl) => {
-    const match = String(rawUrl).match(/^(.*?)([)\].,!?;:]*)$/);
-    const url = match?.[1] || rawUrl;
-    const trailing = match?.[2] || "";
-    return `<a href="${url}" target="_blank" rel="noreferrer">${url}</a>${trailing}`;
-  });
-}
-
-function plainTextToEmailHtml(value) {
-  return linkifyHtml(escapeHtml(String(value || "").replace(/\r\n/g, "\n"))).replace(/\n/g, "<br/>");
-}
-
 function normalizeSignature(value) {
   return String(value || "").trim();
 }
@@ -973,7 +953,6 @@ export async function POST(request, { params }) {
     requestedSignature
   );
   const finalBodyText = appendSignature(coreBodyText, requestedSignature);
-  const finalBodyHtml = String(bodyHtml || "").trim() || plainTextToEmailHtml(finalBodyText);
 
   let providerMessageId = null;
   let sentFromEmail = mailbox.provider_email || null;
@@ -1005,7 +984,7 @@ export async function POST(request, { params }) {
         bcc: deliveryBcc,
         subject,
         textBody: finalBodyText,
-        htmlBody: finalBodyHtml || undefined,
+        htmlBody: bodyHtml || undefined,
         inReplyTo,
         references,
         replyTo: mailbox.provider_email || undefined,
@@ -1052,7 +1031,7 @@ export async function POST(request, { params }) {
           subject,
           body: {
             contentType: bodyHtml ? "HTML" : "Text",
-            content: bodyHtml ? finalBodyHtml : finalBodyText,
+            content: bodyHtml || finalBodyText,
           },
           toRecipients: deliveryTo.map((email) => ({ emailAddress: { address: email } })),
           ccRecipients: deliveryCc.map((email) => ({ emailAddress: { address: email } })),
@@ -1139,9 +1118,9 @@ export async function POST(request, { params }) {
         subject,
         snippet,
         body_text: finalBodyText,
-        body_html: finalBodyHtml || null,
+        body_html: bodyHtml || null,
         clean_body_text: finalBodyText,
-        clean_body_html: finalBodyHtml || null,
+        clean_body_html: bodyHtml || null,
         quoted_body_text: null,
         quoted_body_html: null,
         from_name: sentFromName,
@@ -1176,9 +1155,9 @@ export async function POST(request, { params }) {
         subject,
         snippet,
         body_text: finalBodyText,
-        body_html: finalBodyHtml || null,
+        body_html: bodyHtml || null,
         clean_body_text: finalBodyText,
-        clean_body_html: finalBodyHtml || null,
+        clean_body_html: bodyHtml || null,
         quoted_body_text: null,
         quoted_body_html: null,
         from_name: sentFromName,
@@ -1212,9 +1191,9 @@ export async function POST(request, { params }) {
         subject,
         snippet,
         body_text: finalBodyText,
-        body_html: finalBodyHtml || null,
+        body_html: bodyHtml || null,
         clean_body_text: finalBodyText,
-        clean_body_html: finalBodyHtml || null,
+        clean_body_html: bodyHtml || null,
         quoted_body_text: null,
         quoted_body_html: null,
         from_name: sentFromName,

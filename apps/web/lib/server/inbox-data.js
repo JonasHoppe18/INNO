@@ -33,7 +33,7 @@ async function loadMessages(serviceClient, scope, mailboxIds, { query, unreadOnl
     serviceClient
       .from("mail_messages")
       .select(
-        "id, user_id, mailbox_id, thread_id, subject, snippet, from_name, from_email, extracted_customer_name, extracted_customer_email, to_emails, from_me, is_draft, is_read, received_at, sent_at, created_at, ai_draft_text"
+        "id, user_id, mailbox_id, thread_id, provider_message_id, subject, snippet, body_text, body_html, clean_body_text, clean_body_html, quoted_body_text, quoted_body_html, from_name, from_email, extracted_customer_name, extracted_customer_email, extracted_customer_fields, sender_identity_source, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at, ai_draft_text"
       )
       .in("mailbox_id", mailboxIds)
       .order("received_at", { ascending: false, nullsLast: true })
@@ -53,11 +53,11 @@ async function loadMessages(serviceClient, scope, mailboxIds, { query, unreadOnl
   }
 
   let { data, error } = await request;
-  if (error && /ai_draft_text|extracted_customer_email/i.test(error.message || "")) {
+  if (error && /ai_draft_text|clean_body_text|quoted_body_text|extracted_customer_email|sender_identity_source/i.test(error.message || "")) {
     let fallbackRequest = serviceClient
       .from("mail_messages")
       .select(
-        "id, user_id, mailbox_id, thread_id, subject, snippet, from_name, from_email, to_emails, from_me, is_draft, is_read, received_at, sent_at, created_at"
+        "id, user_id, mailbox_id, thread_id, provider_message_id, subject, snippet, body_text, body_html, from_name, from_email, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at"
       )
       .in("mailbox_id", mailboxIds)
       .order("received_at", { ascending: false, nullsLast: true })

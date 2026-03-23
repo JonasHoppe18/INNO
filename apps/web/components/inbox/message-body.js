@@ -95,7 +95,6 @@ export function deriveMessageBodies(message) {
   const storedQuotedText = String(message?.quoted_body_text || "").trim();
   const storedCleanHtml = String(message?.clean_body_html || "").trim();
   const storedQuotedHtml = String(message?.quoted_body_html || "").trim();
-  const rawBodyHtml = String(message?.body_html || "").trim();
 
   if (storedCleanText || storedQuotedText || storedCleanHtml || storedQuotedHtml) {
     return {
@@ -111,7 +110,7 @@ export function deriveMessageBodies(message) {
     cleanBodyText:
       fallback.cleanBodyText || normalizeWhitespace(message?.body_text || message?.snippet || ""),
     quotedBodyText: fallback.quotedBodyText,
-    cleanBodyHtml: rawBodyHtml || null,
+    cleanBodyHtml: null,
     quotedBodyHtml: null,
   };
 }

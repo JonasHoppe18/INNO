@@ -230,10 +230,8 @@ export function useThreads(options = {}) {
   return { data, loading, error, refresh: fetchThreads };
 }
 
-const EMPTY_MESSAGES = [];
-
 export function useThreadMessages(threadId, options = {}) {
-  const { initialData = EMPTY_MESSAGES, enabled = false } = options;
+  const { initialData = [], enabled = false } = options;
   const supabase = useClerkSupabase();
   const { getToken } = useAuth();
   const { user } = useUser();
@@ -249,7 +247,6 @@ export function useThreadMessages(threadId, options = {}) {
   const [error, setError] = useState(null);
   const seededKey = useMemo(() => makeListKey(seeded), [seeded]);
   const seededKeyRef = useRef(seededKey);
-  const fetchedBodyIds = useRef(new Set());
 
   const fetchMessages = useCallback(async () => {
     if (!supabase || !threadId) return;
@@ -262,17 +259,29 @@ export function useThreadMessages(threadId, options = {}) {
         getToken,
         logLabel: "useThreadMessages",
       });
-      const request = applyClientScope(
-        supabase
-          .from("mail_messages")
-          .select(
-            "id, user_id, mailbox_id, thread_id, provider_message_id, subject, snippet, body_text, clean_body_text, clean_body_html, quoted_body_text, from_name, from_email, extracted_customer_name, extracted_customer_email, extracted_customer_fields, sender_identity_source, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at, ai_draft_text"
-          )
-          .eq("thread_id", threadId)
-          .order("received_at", { ascending: true, nullsLast: true }),
-        scope
-      );
-      const { data: rows, error: queryError } = await request;
+      let request = supabase
+        .from("mail_messages")
+        .select(
+          "id, user_id, mailbox_id, thread_id, provider_message_id, subject, snippet, body_text, body_html, clean_body_text, clean_body_html, quoted_body_text, quoted_body_html, from_name, from_email, extracted_customer_name, extracted_customer_email, extracted_customer_fields, sender_identity_source, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at, ai_draft_text"
+        )
+        .eq("thread_id", threadId)
+        .order("received_at", { ascending: true, nullsLast: true });
+      request = applyClientScope(request, scope);
+      let { data: rows, error: queryError } = await request;
+      if (queryError && /clean_body_text|quoted_body_text|extracted_customer_email|sender_identity_source/i.test(queryError.message || "")) {
+        const fallback = await applyClientScope(
+          supabase
+            .from("mail_messages")
+            .select(
+              "id, user_id, mailbox_id, thread_id, provider_message_id, subject, snippet, body_text, body_html, from_name, from_email, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at, ai_draft_text"
+            )
+            .eq("thread_id", threadId)
+            .order("received_at", { ascending: true, nullsLast: true }),
+          scope
+        );
+        rows = fallback.data;
+        queryError = fallback.error;
+      }
       if (queryError) throw queryError;
       setData(Array.isArray(rows) ? rows : []);
     } catch (err) {
@@ -282,46 +291,14 @@ export function useThreadMessages(threadId, options = {}) {
     }
   }, [getToken, supabase, threadId, user]);
 
-  const fetchMessageBody = useCallback(async (messageId) => {
-    if (!supabase || !messageId) return;
-    if (fetchedBodyIds.current.has(messageId)) return;
-    fetchedBodyIds.current.add(messageId);
-    try {
-      const scope = await resolveScope({
-        supabase,
-        user,
-        getToken,
-        logLabel: "fetchMessageBody",
-      });
-      const { data: bodyRow } = await applyClientScope(
-        supabase
-          .from("mail_messages")
-          .select("id, body_html, quoted_body_html")
-          .eq("id", messageId)
-          .maybeSingle(),
-        scope
-      );
-      if (!bodyRow) return;
-      setData((prev) =>
-        prev.map((msg) => (msg.id === messageId ? { ...msg, ...bodyRow } : msg))
-      );
-    } catch {
-      fetchedBodyIds.current.delete(messageId);
-    }
-  }, [supabase, user, getToken]);
-
   useEffect(() => {
     if (!enabled) return;
     fetchMessages();
   }, [enabled, fetchMessages]);
 
   useEffect(() => {
-    fetchedBodyIds.current = new Set();
-  }, [threadId]);
-
-  useEffect(() => {
     if (!seeded?.length) {
-      setData((prev) => (prev.length === 0 ? prev : []));
+      setData([]);
       return;
     }
     if (seededKeyRef.current === seededKey) return;
@@ -329,7 +306,7 @@ export function useThreadMessages(threadId, options = {}) {
     setData(seeded);
   }, [seeded, seededKey]);
 
-  return { data, loading, error, refresh: fetchMessages, fetchMessageBody };
+  return { data, loading, error, refresh: fetchMessages };
 }
 
 export function useThreadAttachments(messageIds = [], options = {}) {

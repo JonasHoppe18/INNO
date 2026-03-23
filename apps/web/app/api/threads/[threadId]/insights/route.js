@@ -103,27 +103,26 @@ export async function GET(_request, { params }) {
       .select("id, draft_id, step_name, step_detail, status, created_at")
       .in("draft_id", draftIds)
       .order("created_at", { ascending: false })
-      .limit(50);
+      .limit(300);
     draftLogs = Array.isArray(data) ? data : [];
   }
 
-  let actionLogs = [];
-  if (draftIds.length) {
-    const { data: actionLogsRaw } = await serviceClient
-      .from("agent_logs")
-      .select("id, draft_id, step_name, step_detail, status, created_at")
-      .in("draft_id", draftIds)
-      .in("step_name", [
-        "shopify_action",
-        "shopify_action_failed",
-        "shopify_action_applied",
-        "shopify_action_declined",
-        "shopify_action_blocked",
-      ])
-      .order("created_at", { ascending: false })
-      .limit(50);
-    actionLogs = Array.isArray(actionLogsRaw) ? actionLogsRaw : [];
-  }
+  const { data: actionLogsRaw } = await serviceClient
+    .from("agent_logs")
+    .select("id, draft_id, step_name, step_detail, status, created_at")
+    .in("step_name", [
+      "shopify_action",
+      "shopify_action_failed",
+      "shopify_action_applied",
+      "shopify_action_declined",
+      "shopify_action_blocked",
+    ])
+    .order("created_at", { ascending: false })
+    .limit(400);
+  const actionLogs = (Array.isArray(actionLogsRaw) ? actionLogsRaw : []).filter((row) => {
+    const parsedThreadId = extractThreadIdFromDetail(row?.step_detail);
+    return parsedThreadId ? threadKeySet.has(String(parsedThreadId)) : false;
+  });
 
   let threadActionsQuery = serviceClient
     .from("thread_actions")
