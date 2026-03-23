@@ -3897,7 +3897,10 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       executionState = deriveExecutionState({
         validation: actionValidation,
         hasBlockedAction: false,
-        hasPendingApproval: Boolean(returnActionResult?.status === "pending_approval"),
+        hasPendingApproval: Boolean(
+          returnActionResult?.status === "pending_approval" &&
+          returnActionResult?.type !== "send_return_instructions"
+        ),
       });
       appendStructuredArtifactLog(
         reasoningLogs,
@@ -3936,7 +3939,10 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       executionState = deriveExecutionState({
         validation: validationForStrategy,
         hasBlockedAction: false,
-        hasPendingApproval: Boolean(returnActionResult?.status === "pending_approval"),
+        hasPendingApproval: Boolean(
+          returnActionResult?.status === "pending_approval" &&
+          returnActionResult?.type !== "send_return_instructions"
+        ),
       });
       if (assessmentForStrategy && messageUnderstandingArtifact && recipientTypeArtifact) {
         replyGoalArtifact = buildReplyGoalArtifact({
@@ -3993,6 +3999,9 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         returnLabelMethod: returnSettings?.return_label_method || "none",
         returnShippingMode: returnSettings?.return_shipping_mode || "customer_paid",
         returnAddress: returnSettings?.return_address || null,
+        returnWindowDays: returnSettings?.return_window_days ?? null,
+        requireUnused: returnSettings?.require_unused ?? false,
+        requireOriginalPackaging: returnSettings?.require_original_packaging ?? false,
         messageUnderstanding: messageUnderstandingArtifact,
         replyGoal: replyGoalArtifact,
         recipientType: recipientTypeArtifact,
@@ -4398,7 +4407,10 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
     const subject = emailData.subject || "";
     const approvalRequiredProposalFlow = isApprovalRequiredProposalFlow({
       validation: actionValidation,
-      hasPendingApproval: Boolean(returnActionResult?.status === "pending_approval"),
+      hasPendingApproval: Boolean(
+        returnActionResult?.status === "pending_approval" &&
+        returnActionResult?.type !== "send_return_instructions"
+      ),
       executionState: replyStrategyArtifact?.execution_state || executionState,
     });
 

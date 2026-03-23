@@ -276,7 +276,12 @@ export function MessageBubble({
         subjectLine
       )
     : "";
-  const previewHtml = safeCleanBodyHtml
+  const formattedStructuredHtml = linkifyText(
+    structuredFormText || cleanBodyText || rawPlainBody
+  );
+  const previewHtml = isStructuredForm
+    ? formattedStructuredHtml
+    : safeCleanBodyHtml
     ? safeCleanBodyHtml
     : linkifyText(
         isStructuredForm
@@ -284,7 +289,7 @@ export function MessageBubble({
           : cleanBodyText || rawPlainBody
       );
   const modalHtml = isStructuredForm
-    ? linkifyText(structuredFormText || rawPlainBody)
+    ? formattedStructuredHtml
     : safeBodyHtml;
   const shouldShowBcc = isOutbound && bccList.length > 0;
 
@@ -334,7 +339,7 @@ export function MessageBubble({
               )}
             >
               <div className={cn("px-4 py-3 text-[14px] leading-[1.55] text-gray-800", isOutbound && "text-[14px]")}>
-                {safeCleanBodyHtml ? (
+                {!isStructuredForm && safeCleanBodyHtml ? (
                   <div
                     className={EMAIL_BODY_CLASS}
                     dangerouslySetInnerHTML={{ __html: safeCleanBodyHtml }}

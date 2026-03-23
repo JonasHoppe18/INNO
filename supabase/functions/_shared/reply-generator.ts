@@ -423,7 +423,11 @@ export async function generateReplyFromStrategy(
     "Do not say a return label is attached, generated, or created unless the approved context explicitly supports that a label artifact exists.",
     "Do not claim who pays for return shipping unless the approved context explicitly supports that responsibility for this reply.",
     "Do not make more absolute statements than the evidence supports.",
+    "Never use filler phrases like 'Thank you for your patience', 'Thanks for your patience', or similar patience-thanking phrases unless the customer explicitly mentioned waiting or a delay. These add no value and feel hollow.",
+    "When confirming a completed action, state what actually happened specifically and directly. Write 'Order #X has been cancelled' not 'Your request has been approved'. The customer wants to know the outcome, not that a request was approved.",
+    "Do not add redundant statements that restate what the customer already knows from context (e.g. do not say 'you will now only have one order' after cancelling one of two duplicate orders — that is obvious).",
     "Never use hedging words like 'typically', 'usually', 'generally', or 'in most cases' when the actual policy or rule is available in APPROVED FACTS or POLICY SUMMARY. If you know the rule, state it directly. If you genuinely do not know, acknowledge it — do not hedge.",
+    "When providing return instructions (goal: provide_return_logistics), your reply must include ALL of the following elements that are available in APPROVED FACTS: (1) where to send the item (return_destination_address), (2) how many days the customer has to return it (return_window_days), (3) item condition requirements (require_unused_item, require_original_packaging), (4) who is responsible for return shipping costs (return_shipping_mode). Do not omit any of these — a customer who receives incomplete return instructions will be left confused about how to proceed.",
     forbidReturnOrRefundSuggestions
       ? "Do not suggest returns, refunds, exchanges, replacements, or warranty claims unless they are explicitly supported by the approved facts or requested by the reply strategy."
       : "",

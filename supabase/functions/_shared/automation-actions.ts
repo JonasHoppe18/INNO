@@ -279,6 +279,20 @@ async function resolveWorkspaceIdForSupabaseUser(
     : null;
 }
 
+async function resolveWorkspaceTestMode(
+  supabase: SupabaseClient,
+  supabaseUserId: string,
+): Promise<boolean> {
+  const workspaceId = await resolveWorkspaceIdForSupabaseUser(supabase, supabaseUserId);
+  if (!workspaceId) return false;
+  const { data } = await supabase
+    .from("workspaces")
+    .select("test_mode")
+    .eq("id", workspaceId)
+    .maybeSingle();
+  return data?.test_mode === true;
+}
+
 async function resolveWebshipperIntegration(
   supabase: SupabaseClient,
   supabaseUserId: string,
@@ -1126,6 +1140,7 @@ export async function executeAutomationActions({
 
   let shop: ShopCredentials | null = null;
   let webshipper: WebshipperIntegrationConfig | null = null;
+  let workspaceTestMode = false;
   try {
     void tokenSecret;
     shop = await getShopCredentials(supabase, supabaseUserId);
@@ -1134,9 +1149,11 @@ export async function executeAutomationActions({
       supabaseUserId,
       tokenSecret,
     );
+    workspaceTestMode = await resolveWorkspaceTestMode(supabase, supabaseUserId);
     console.log("automation: shop credentials resolved", {
       shop_domain: shop?.shop_domain,
       supabaseUserId,
+      workspaceTestMode,
     });
     console.log("automation: orderId map", orderIdMap);
   } catch (err) {
@@ -1188,6 +1205,30 @@ export async function executeAutomationActions({
         continue;
       }
       seenActionKeys.add(actionKey);
+
+      const normalizedActionType = String(action.type || "").trim().toLowerCase();
+      if (
+        workspaceTestMode &&
+        (
+          normalizedActionType === "add_note" ||
+          normalizedActionType === "add_tag" ||
+          normalizedActionType === "add_internal_note_or_tag"
+        )
+      ) {
+        results.push({
+          type: action.type,
+          ok: true,
+          status: "success",
+          orderId: Number(orderIdToUse),
+          payload: {
+            ...(action.payload ?? {}),
+            simulated: true,
+            test_mode: true,
+          },
+          detail: "Skipped Shopify note/tag mutation because workspace test mode is enabled.",
+        });
+        continue;
+      }
 
       let orderState: ShopifyOrderState | null = null;
       if (action.type === "update_shipping_address" || action.type === "cancel_order") {

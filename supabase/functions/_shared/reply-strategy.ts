@@ -44,6 +44,9 @@ type BuildReplyStrategyInput = {
   returnLabelMethod?: ReturnLabelMethod;
   returnShippingMode?: ReturnShippingMode;
   returnAddress?: string | null;
+  returnWindowDays?: number | null;
+  requireUnused?: boolean;
+  requireOriginalPackaging?: boolean;
   messageUnderstanding?: {
     latest_user_request: string;
     ask_shape: string;
@@ -447,6 +450,15 @@ export function buildReplyStrategy(input: BuildReplyStrategyInput): ReplyStrateg
   }
   if (practicalReturnLogisticsFollowUp && String(input.returnLabelMethod || "none") === "none") {
     approvedFacts.push({ key: "customer_arranges_return_shipment", value: "true" });
+  }
+  if (practicalReturnLogisticsFollowUp && input.returnWindowDays) {
+    approvedFacts.push({ key: "return_window_days", value: String(input.returnWindowDays) });
+  }
+  if (practicalReturnLogisticsFollowUp && input.requireUnused) {
+    approvedFacts.push({ key: "require_unused_item", value: "true" });
+  }
+  if (practicalReturnLogisticsFollowUp && input.requireOriginalPackaging) {
+    approvedFacts.push({ key: "require_original_packaging", value: "true" });
   }
   if (
     practicalReturnLogisticsFollowUp &&
