@@ -56,6 +56,7 @@ function formatLastActivity(value) {
 function normalizeStatusLabel(value) {
   const normalized = String(value || "").trim().toLowerCase();
   if (normalized === "solved" || normalized === "resolved") return "Resolved";
+  if (normalized === "pending") return "Pending";
   if (normalized === "waiting") return "Waiting";
   if (normalized === "new") return "New";
   return "Open";
@@ -63,7 +64,8 @@ function normalizeStatusLabel(value) {
 
 function statusClasses(status) {
   if (status === "Resolved") return "border-red-200 bg-red-50 text-red-700";
-  if (status === "Waiting") return "border-orange-200 bg-orange-50 text-orange-700";
+  if (status === "Pending") return "border-orange-200 bg-orange-50 text-orange-700";
+  if (status === "Waiting") return "border-violet-200 bg-violet-50 text-violet-700";
   if (status === "New") return "border-green-200 bg-green-50 text-green-700";
   return "border-blue-200 bg-blue-50 text-blue-700";
 }

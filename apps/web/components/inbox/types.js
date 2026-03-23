@@ -66,7 +66,7 @@
 
 /**
  * @typedef {Object} TicketUIState
- * @property {"New" | "Open" | "Waiting" | "Solved"} status
+ * @property {"New" | "Open" | "Pending" | "Waiting" | "Solved"} status
  * @property {string | null} assignee
  * @property {"Low" | "Normal" | "High" | null} priority
  */

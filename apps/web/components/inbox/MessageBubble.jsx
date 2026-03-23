@@ -208,18 +208,21 @@ export function MessageBubble({
   direction = "inbound",
   attachments = [],
   outboundSenderName,
-  currentUserId,
 }) {
   const [selectedAttachment, setSelectedAttachment] = useState(null);
   const [viewEmailOpen, setViewEmailOpen] = useState(false);
   const isOutbound = direction === "outbound";
+  const normalizedOutboundSenderName = String(outboundSenderName || "").trim().toLowerCase();
+  const messageSenderLabel = getSenderLabel(message);
+  const normalizedMessageSender = String(messageSenderLabel || "").trim().toLowerCase();
   const isAuthoredByCurrentUser =
-    Boolean(currentUserId) &&
-    String(message?.user_id || "") === String(currentUserId) &&
-    isOutbound;
-  const senderLabel = isAuthoredByCurrentUser
-    ? outboundSenderName || getSenderLabel(message)
-    : getSenderLabel(message);
+    isOutbound &&
+    Boolean(normalizedOutboundSenderName) &&
+    normalizedMessageSender === normalizedOutboundSenderName;
+  const senderLabel =
+    messageSenderLabel && !/^unknown sender$/i.test(String(messageSenderLabel || ""))
+      ? messageSenderLabel
+      : outboundSenderName || messageSenderLabel;
   const rawType = normalizeLower(
     message?.type || message?.message_type || message?.kind || ""
   );

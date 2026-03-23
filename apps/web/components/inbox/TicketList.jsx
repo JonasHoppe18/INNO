@@ -10,7 +10,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { TicketListItem } from "@/components/inbox/TicketListItem";
 
-const STATUS_FILTERS = ["All", "New", "Open", "Waiting", "Solved"];
+const STATUS_FILTERS = ["All", "New", "Open", "Pending", "Waiting", "Solved"];
 export function TicketList({
   threads,
   selectedThreadId,

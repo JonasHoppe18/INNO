@@ -56,7 +56,7 @@ const DEFAULT_FILTERS = {
   unreadsOnly: false,
 };
 
-const STATUS_OPTIONS = ["New", "Open", "Waiting", "Solved"];
+const STATUS_OPTIONS = ["New", "Open", "Pending", "Waiting", "Solved"];
 const UNASSIGNED_ASSIGNEE_VALUE = "__unassigned__";
 const EMAIL_CATEGORY_LABELS = [
   "Tracking",
@@ -111,6 +111,7 @@ const normalizeStatus = (value) => {
   if (!value) return null;
   const normalized = String(value).trim().toLowerCase();
   if (normalized === "solved" || normalized === "resolved") return "Solved";
+  if (normalized === "pending") return "Pending";
   if (normalized === "waiting") return "Waiting";
   if (normalized === "open") return "Open";
   if (normalized === "new") return "New";
@@ -197,7 +198,8 @@ function InboxHeaderActions({
   const statusStylesByStatus = {
     New: "bg-green-50 text-green-700 border-green-200",
     Open: "bg-blue-50 text-blue-700 border-blue-200",
-    Waiting: "bg-orange-50 text-orange-700 border-orange-200",
+    Pending: "bg-orange-50 text-orange-700 border-orange-200",
+    Waiting: "bg-violet-50 text-violet-700 border-violet-200",
     Solved: "bg-red-50 text-red-700 border-red-200",
   };
   if (!ticketState) return null;
@@ -2764,6 +2766,27 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           { id: toastId }
         );
       }
+      if (composeMode !== "note") {
+        setTicketStateByThread((prev) => ({
+          ...prev,
+          [selectedThreadId]: {
+            ...(prev[selectedThreadId] || DEFAULT_TICKET_STATE),
+            status: "Pending",
+          },
+        }));
+        setLiveThreads((prev) =>
+          (prev || []).map((thread) =>
+            thread?.id === selectedThreadId
+              ? { ...thread, status: "pending", updated_at: nowIso }
+              : thread
+          )
+        );
+        fetch("/api/inbox/thread-status", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ threadId: selectedThreadId, status: "Pending" }),
+        }).catch(() => null);
+      }
       setDraftValue("");
       setDraftValueByThread((prev) => ({
         ...prev,
@@ -3182,7 +3205,6 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           customerLookup={customerLookup}
           threadOrderNumber={customerLookupParams.orderNumber || ""}
           mentionUsers={effectiveMentionUsers}
-          currentUserId={currentSupabaseUserId || null}
           currentUserName={currentUserName}
           ticketState={ticketStateByThread[selectedThreadId] || DEFAULT_TICKET_STATE}
           onTicketStateChange={handleTicketStateChange}
