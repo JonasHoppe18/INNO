@@ -441,6 +441,26 @@ export function useThreadMessages(threadId, options = {}) {
         rows = unscoped.data;
         queryError = unscoped.error;
       }
+      // Ældre beskeder kan have NULL workspace_id — prøv user_id filter som fallback
+      if (!queryError && Array.isArray(rows) && rows.length === 0 && scope?.supabaseUserId) {
+        let userRequest = supabase
+          .from("mail_messages")
+          .select(
+            "id, user_id, mailbox_id, thread_id, provider_message_id, subject, snippet, body_text, body_html, clean_body_text, clean_body_html, quoted_body_text, quoted_body_html, from_name, from_email, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at, ai_draft_text"
+          )
+          .eq("user_id", scope.supabaseUserId)
+          .order("received_at", { ascending: true, nullsLast: true });
+        if (relatedThreadIds.length > 1) {
+          userRequest = userRequest.in("thread_id", relatedThreadIds);
+        } else {
+          userRequest = userRequest.eq("thread_id", threadId);
+        }
+        const userResult = await userRequest;
+        if (!userResult.error && Array.isArray(userResult.data) && userResult.data.length > 0) {
+          rows = userResult.data;
+          queryError = null;
+        }
+      }
       if (
         queryError &&
         /ai_draft_text|provider_message_id|body_html|clean_body_text|clean_body_html|quoted_body_text|quoted_body_html|extracted_customer_email|extracted_customer_fields|sender_identity_source/i.test(
@@ -464,8 +484,12 @@ export function useThreadMessages(threadId, options = {}) {
         }
       }
       if (queryError) throw queryError;
+      if (!rows?.length) {
+        console.warn("[useThreadMessages] tom resultat for tråd:", threadId, "scope:", scope);
+      }
       setData(Array.isArray(rows) ? rows : []);
     } catch (err) {
+      console.error("[useThreadMessages] fejl for tråd:", threadId, err);
       setError(err instanceof Error ? err : new Error("Could not load messages."));
     } finally {
       setLoading(false);

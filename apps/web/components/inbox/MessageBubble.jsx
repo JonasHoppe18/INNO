@@ -12,8 +12,71 @@ const escapeHtml = (value) =>
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 
+const decodeHtmlEntitiesOnce = (value = "") => {
+  const named = {
+    nbsp: " ",
+    amp: "&",
+    lt: "<",
+    gt: ">",
+    quot: '"',
+    apos: "'",
+    oslash: "ø",
+    Oslash: "Ø",
+    aring: "å",
+    Aring: "Å",
+    aelig: "æ",
+    AElig: "Æ",
+    euro: "€",
+    times: "×",
+  };
+  return String(value || "")
+    .replace(/&#(\d+);/g, (_match, num) => {
+      const codePoint = Number(num);
+      if (!Number.isFinite(codePoint)) return "";
+      try {
+        return String.fromCodePoint(codePoint);
+      } catch {
+        return "";
+      }
+    })
+    .replace(/&#x([0-9a-f]+);/gi, (_match, hex) => {
+      const codePoint = Number.parseInt(hex, 16);
+      if (!Number.isFinite(codePoint)) return "";
+      try {
+        return String.fromCodePoint(codePoint);
+      } catch {
+        return "";
+      }
+    })
+    .replace(/&([a-z]+);/gi, (match, key) => {
+      if (Object.prototype.hasOwnProperty.call(named, key)) return named[key];
+      return match;
+    });
+};
+
+const decodeHtmlEntities = (value = "") => {
+  let current = String(value || "");
+  // Some providers store entities double-encoded (e.g. &amp;oslash;).
+  for (let pass = 0; pass < 3; pass += 1) {
+    const next = decodeHtmlEntitiesOnce(current);
+    if (next === current) break;
+    current = next;
+  }
+  return current;
+};
+
+const stripQuotedHeaderTail = (value = "") => {
+  const normalized = String(value || "")
+    .replace(/\s+(Sent:|From:|To:|Subject:|Dato:|Fra:|Til:|Emne:)/gi, "\n$1")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  const cutIndex = normalized.search(/\n(?:Sent:|From:|To:|Subject:|Dato:|Fra:|Til:|Emne:)/i);
+  if (cutIndex > 0) return normalized.slice(0, cutIndex).trim();
+  return normalized;
+};
+
 const linkifyText = (value) => {
-  const normalized = value
+  const normalized = decodeHtmlEntities(value)
     .replace(/<\s*(https?:\/\/[^>]+)\s*>/gi, "$1")
     .replace(/<[^>]+>/g, "")
     .replace(/([^\s])((?:https?:\/\/))/gi, "$1 $2");
@@ -133,7 +196,7 @@ const sanitizeEmailHtml = (value, attachments = []) => {
 };
 
 const stripHtmlToText = (value = "") =>
-  String(value || "")
+  decodeHtmlEntities(String(value || ""))
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/(p|div|section|article|tr|table|h[1-6])>/gi, "\n")
     .replace(/<li\b[^>]*>/gi, "- ")
@@ -274,7 +337,9 @@ export function MessageBubble({
   const attachmentCards = (attachments || []).filter((attachment) => Boolean(attachment?.id));
   const subjectLine = String(message?.subject || "").trim() || "Email";
   const senderDetails = formatAddressLabel(senderDisplayName, senderEmail);
-  const rawPlainBody = message.body_text || message.snippet || "No preview available.";
+  const rawPlainBody = stripQuotedHeaderTail(
+    decodeHtmlEntities(message.body_text || message.snippet || "No preview available.")
+  );
   const shouldFormatRawPlainBody =
     Boolean((quotedBodyText || "").trim()) || hasQuotedPlainText(rawPlainBody);
   const isStructuredForm = isStructuredFormMessage(message);
