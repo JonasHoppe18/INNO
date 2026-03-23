@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useClerkSupabase } from "@/lib/useClerkSupabase";
 import { getMessageTimestamp } from "@/components/inbox/inbox-utils";
 
+const EMPTY_LIST = [];
+
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -170,7 +172,11 @@ export function deriveThreadsFromMessages(messages = []) {
 }
 
 export function useThreads(options = {}) {
-  const { initialData = [], fallbackMessages = [], enabled = false } = options;
+  const {
+    initialData = EMPTY_LIST,
+    fallbackMessages = EMPTY_LIST,
+    enabled = false,
+  } = options;
   const supabase = useClerkSupabase();
   const { getToken } = useAuth();
   const { user } = useUser();
@@ -231,7 +237,7 @@ export function useThreads(options = {}) {
 }
 
 export function useThreadMessages(threadId, options = {}) {
-  const { initialData = [], enabled = false } = options;
+  const { initialData = EMPTY_LIST, enabled = false } = options;
   const supabase = useClerkSupabase();
   const { getToken } = useAuth();
   const { user } = useUser();
@@ -298,7 +304,7 @@ export function useThreadMessages(threadId, options = {}) {
 
   useEffect(() => {
     if (!seeded?.length) {
-      setData([]);
+      setData((prev) => (prev?.length ? [] : prev));
       return;
     }
     if (seededKeyRef.current === seededKey) return;
@@ -372,7 +378,7 @@ export function useThreadPreviewMessages(threadIds = [], options = {}) {
 }
 
 export function useThreadAttachments(messageIds = [], options = {}) {
-  const { initialData = [], enabled = false } = options;
+  const { initialData = EMPTY_LIST, enabled = false } = options;
   const supabase = useClerkSupabase();
   const { getToken } = useAuth();
   const { user } = useUser();
@@ -430,7 +436,7 @@ export function useThreadAttachments(messageIds = [], options = {}) {
 
   useEffect(() => {
     if (!seeded?.length) {
-      setData([]);
+      setData((prev) => (prev?.length ? [] : prev));
       return;
     }
     if (seededKeyRef.current === seededKey) return;

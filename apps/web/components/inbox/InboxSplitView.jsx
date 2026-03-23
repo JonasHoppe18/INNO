@@ -808,8 +808,8 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     let timerId = null;
     let consecutiveFailures = 0;
 
-    const BASE_POLL_MS = 20_000;
-    const HIDDEN_POLL_MS = 60_000;
+    const BASE_POLL_MS = 60_000;
+    const HIDDEN_POLL_MS = 180_000;
     const MAX_BACKOFF_MS = 60_000;
 
     const scheduleNext = (ms) => {
@@ -880,7 +880,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       }
     };
 
-    refreshInboxData().catch(() => null);
+    scheduleNext(BASE_POLL_MS);
     const onFocus = () => {
       if (!active || polling) return;
       scheduleNext(0);

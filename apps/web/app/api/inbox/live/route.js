@@ -42,62 +42,6 @@ async function loadThreads(serviceClient, scope, mailboxIds) {
   return Array.isArray(data) ? data : [];
 }
 
-async function loadMessages(serviceClient, scope, mailboxIds) {
-  let query = applyScope(
-    serviceClient
-    .from("mail_messages")
-    .select(
-      "id, user_id, mailbox_id, thread_id, provider_message_id, subject, snippet, body_text, body_html, clean_body_text, clean_body_html, quoted_body_text, quoted_body_html, from_name, from_email, extracted_customer_name, extracted_customer_email, extracted_customer_fields, sender_identity_source, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at, ai_draft_text"
-    )
-    .in("mailbox_id", mailboxIds)
-    .order("received_at", { ascending: false, nullsLast: true })
-    .limit(80),
-    scope
-  );
-  let { data, error } = await query;
-
-  if (
-    error &&
-    /ai_draft_text|provider_message_id|body_html|clean_body_text|clean_body_html|quoted_body_text|quoted_body_html|extracted_customer_email|extracted_customer_fields|sender_identity_source/i.test(
-      error.message || ""
-    )
-  ) {
-    const fallback = await applyScope(
-      serviceClient
-        .from("mail_messages")
-        .select(
-          "id, user_id, mailbox_id, thread_id, provider_message_id, subject, snippet, body_text, body_html, from_name, from_email, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at"
-        )
-        .in("mailbox_id", mailboxIds)
-        .order("received_at", { ascending: false, nullsLast: true })
-        .limit(80),
-      scope
-    );
-    data = fallback.data;
-    error = fallback.error;
-  }
-  if (error) throw new Error(error.message);
-  return Array.isArray(data) ? data : [];
-}
-
-async function loadAttachments(serviceClient, scope, mailboxIds, messageIds) {
-  if (!messageIds.length) return [];
-  const query = applyScope(
-    serviceClient
-      .from("mail_attachments")
-      .select(
-        "id, user_id, mailbox_id, message_id, provider, provider_attachment_id, filename, mime_type, size_bytes, storage_path, created_at"
-      )
-      .in("mailbox_id", mailboxIds)
-      .in("message_id", messageIds),
-    scope,
-    { workspaceColumn: null, userColumn: "user_id" }
-  );
-  const { data, error } = await query;
-  if (error) throw new Error(error.message);
-  return Array.isArray(data) ? data : [];
-}
-
 export async function GET() {
   try {
     const { userId: clerkUserId, orgId } = await auth();
@@ -119,25 +63,14 @@ export async function GET() {
       return NextResponse.json({ threads: [], messages: [], attachments: [] }, { status: 200 });
     }
 
-    const [threads, messages] = await Promise.all([
-      loadThreads(serviceClient, scope, mailboxIds).catch((error) => {
-        console.error("api/inbox/live loadThreads failed:", error?.message || error);
-        return [];
-      }),
-      loadMessages(serviceClient, scope, mailboxIds).catch((error) => {
-        console.error("api/inbox/live loadMessages failed:", error?.message || error);
-        return [];
-      }),
-    ]);
-    const messageIds = messages.map((message) => message.id).filter(Boolean);
-    const attachments = messageIds.length
-      ? await loadAttachments(serviceClient, scope, mailboxIds, messageIds).catch((error) => {
-          console.error("api/inbox/live loadAttachments failed:", error?.message || error);
-          return [];
-        })
-      : [];
+    const threads = await loadThreads(serviceClient, scope, mailboxIds).catch((error) => {
+      console.error("api/inbox/live loadThreads failed:", error?.message || error);
+      return [];
+    });
 
-    return NextResponse.json({ threads, messages, attachments }, { status: 200 });
+    // Emergency load-shedding: keep live refresh thread-focused.
+    // Full thread messages are loaded on demand by the selected thread view.
+    return NextResponse.json({ threads, messages: [], attachments: [] }, { status: 200 });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to load inbox live data." },
