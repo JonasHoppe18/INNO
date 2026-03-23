@@ -870,9 +870,14 @@ async function generateActionOutcomeDraft({
   const orderRef = String(orderName || "").trim();
   const detail = String(outcomeDetail || "").trim();
   const note = String(decisionReason || "").trim();
+  // Extract just the body text from contact form emails (which have "Body:\n..." structure)
+  const rawMessage = String(customerMessage || "");
+  const bodyMatch = rawMessage.match(/\bBody:\s*\n([\s\S]+)/i);
+  const messageBodyText = bodyMatch ? bodyMatch[1].trim() : rawMessage;
   const isDanish = /[æøå]|\b(hej|ordren|adresse|ændre|kan|ikke|venlig|hilsen|opdateret)\b/i.test(
-    String(customerMessage || "")
+    messageBodyText
   );
+  const greeting = isDanish ? `Hej ${customerName},` : `Hi ${customerName},`;
 
   const isConfirmedOutcome = outcome === "executed" || outcome === "approved_test_mode";
   const detailContainsOrderNumber = /(?:order|ordre|#)\s*#?\d{3,}/i.test(detail);
@@ -920,7 +925,7 @@ async function generateActionOutcomeDraft({
   const systemPrompt = [
     "You are Sona, a customer support agent.",
     "Write a short, clear customer-facing reply in the same language as the customer message.",
-    `Always start with a personal greeting on its own line: 'Hi ${customerName},' or 'Hej ${customerName},' depending on the language.`,
+    `Always start with this exact greeting on its own line: '${greeting}'`,
     isConfirmedOutcome
       ? "The action has been completed. Tell the customer what was done — state the outcome directly and specifically (e.g. 'Order #X has been cancelled', 'Your refund of X has been processed'). Do not say the request was 'approved' or 'godkendt' — say what actually happened."
       : "The action was not completed. Do not claim that it was completed.",
@@ -939,7 +944,7 @@ async function generateActionOutcomeDraft({
     detail ? `Outcome detail: ${detail}` : "",
     note ? `Decision note: ${note}` : "",
     "Customer message:",
-    customerMessage || "(empty)",
+    messageBodyText || "(empty)",
     "Write only the reply body text.",
   ]
     .filter(Boolean)
