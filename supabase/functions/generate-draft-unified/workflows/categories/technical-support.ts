@@ -18,9 +18,18 @@ export function buildTechnicalSupportDraft(category: EmailCategory): WorkflowRou
       "- If the knowledge base has no relevant steps, ask specific diagnostic questions (e.g. firmware version, paired device/OS).\n" +
       "- Do NOT mention returns, exchanges, or refunds unless troubleshooting is exhausted and explicitly grounded in the approved context.\n" +
       "- Do NOT add a signature.",
+      "NO-ORDER / THIRD-PARTY PURCHASE RULES:\n" +
+      "- If there is no order data and the product was purchased elsewhere (e.g. ProShop, retailer), do NOT pretend you can look up the order.\n" +
+      "- Be concise: state once what you cannot do, then state the single next step (e.g. send proof of purchase).\n" +
+      "- Do NOT repeat the same limitation twice in the same reply.\n" +
+      "- Do NOT use filler like 'Vi vil gerne hjælpe dig med at finde en løsning' — either give the solution or explain the next step directly.\n" +
+      "- Keep the reply to 2-3 short sentences when there is no KB data and no order context.",
     ],
     systemRules: [
       "Never suggest return_order, create_exchange_request, refund_order, or cancel_order as a first response in the technical support workflow.",
+      "Never close with 'Jeg ser frem til at høre fra dig' or any forward-looking hollow phrase.",
+      "Never repeat the same limitation or fact twice in the same reply.",
+      "When no order data and no KB steps exist, keep the reply to 2-3 sentences maximum.",
     ],
     allowedActionTypes: [
       "lookup_order_status",

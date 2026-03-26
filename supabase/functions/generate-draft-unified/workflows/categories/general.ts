@@ -20,6 +20,8 @@ export function buildGeneralDraft(): WorkflowRoute {
       "Do not ask for order number or purchase name for non-order inquiries such as partnership, press, media, B2B, or sponsorship emails.",
       "Never open with a receipt-acknowledgement phrase. The first sentence must deliver substance.",
       "Never close with hollow forward-looking phrases. End when the content is complete.",
+      "Never close with 'Jeg ser frem til at høre fra dig', 'Vi ser frem til at hjælpe dig', 'Vi glæder os til at høre fra dig', or any similar hollow phrase.",
+      "Never use filler phrases like 'Vi vil gerne hjælpe dig med at finde en løsning' without an immediate concrete solution in the same sentence.",
     ],
   };
 }

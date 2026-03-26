@@ -565,13 +565,8 @@ export function Composer({
     syncingReplyHtmlRef.current = false;
   };
 
-  const handleReplyEditorBlur = (event) => {
+  const handleReplyEditorBlur = () => {
     replyEditorFocusedRef.current = false;
-    const plain = extractPlainTextFromReplyHtml(String(event?.currentTarget?.innerHTML || ""));
-    const formatted = plainTextToReplyHtml(plain);
-    if (replyEditorRef.current && replyEditorRef.current.innerHTML !== formatted) {
-      replyEditorRef.current.innerHTML = formatted;
-    }
     onBlur?.();
   };
 
@@ -880,11 +875,6 @@ export function Composer({
                       beforeRange.setEnd(range.startContainer, range.startOffset);
                       replyCaretIndexRef.current = String(beforeRange.toString() || "")
                         .replace(/\r\n/g, "\n").length;
-                    }}
-                    onPaste={(event) => {
-                      event.preventDefault();
-                      const pasted = event.clipboardData?.getData("text/plain") || "";
-                      document.execCommand("insertText", false, pasted);
                     }}
                     onClick={(event) => {
                       const target = event.target;
