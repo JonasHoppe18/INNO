@@ -1046,6 +1046,19 @@ const enforceLocalizedGreeting = (text: string, firstName: string, languageHint:
   return `${greeting}\n\n${withoutGreeting.trim()}`.trim();
 };
 
+const detectGreetingLanguage = (text: string): string => {
+  const firstLine = String(text || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .find(Boolean) || "";
+  if (/^hej\b/i.test(firstLine)) return "da";
+  if (/^(hi|hello|hey)\b/i.test(firstLine)) return "en";
+  if (/^hola\b/i.test(firstLine)) return "es";
+  if (/^bonjour\b/i.test(firstLine)) return "fr";
+  if (/^hallo\b/i.test(firstLine)) return "de";
+  return "unknown";
+};
+
 const isSignoffLine = (value: string) => {
   const normalized = String(value || "")
     .toLowerCase()
@@ -1084,6 +1097,156 @@ const stripTrailingSignoff = (text: string) => {
   while (cleaned.length && !cleaned[cleaned.length - 1].trim()) cleaned.pop();
   return cleaned.join("\n").trim();
 };
+
+const removeGenericFillerPhrases = (text: string): string => {
+  const body = String(text || "").trim();
+  if (!body) return body;
+
+  const lines = body.split("\n");
+  if (!lines.length) return body;
+  const firstLine = String(lines[0] || "").trim();
+  const rest = lines.slice(1).join("\n").trim();
+  if (!rest) return body;
+
+  const openerPatterns: RegExp[] = [
+    /^\s*(?:i(?:'m| am)\s+sorry\s+to\s+hear\b[^.!?]*[.!?])\s*/i,
+    /^\s*(?:i\s+understand(?:\s+that)?\b[^.!?]*[.!?])\s*/i,
+    /^\s*(?:i\s+can\s+see\s+that\b[^.!?]*[.!?])\s*/i,
+    /^\s*(?:it\s+sounds\s+like\b[^.!?]*[.!?])\s*/i,
+    /^\s*(?:jeg\s+kan\s+godt\s+forstå\b[^.!?]*[.!?])\s*/i,
+    /^\s*(?:jeg\s+forstår(?:\s+at)?\b[^.!?]*[.!?])\s*/i,
+    /^\s*(?:det\s+lyder\s+som\s+om\b[^.!?]*[.!?])\s*/i,
+    /^\s*(?:tak\s+for\s+din\s+(?:besked|henvendelse)\b[^.!?]*[.!?])\s*/i,
+  ];
+
+  let trimmedBody = rest;
+  for (const pattern of openerPatterns) {
+    trimmedBody = trimmedBody.replace(pattern, "").trimStart();
+  }
+
+  const closingPatterns: RegExp[] = [
+    /(?:^|\n)\s*if you have any (?:other|further) questions[^.\n]*(?:feel free|let us know)[^.\n]*\.?\s*$/i,
+    /(?:^|\n)\s*feel free to (?:let us know|reach out|contact us)[^.\n]*\.?\s*$/i,
+    /(?:^|\n)\s*(?:hvis du har (?:yderligere|flere) spørgsmål|tøv ikke med at kontakte os|lad os vide hvis du har spørgsmål)[^.\n]*\.?\s*$/i,
+  ];
+  for (const pattern of closingPatterns) {
+    trimmedBody = trimmedBody.replace(pattern, "").trimEnd();
+  }
+
+  const normalized = trimmedBody.replace(/\n{3,}/g, "\n\n").trim();
+  return `${firstLine}\n\n${normalized}`.trim();
+};
+
+const removeNonActionLeadParagraph = (text: string): string => {
+  const body = String(text || "").trim();
+  if (!body) return body;
+  const lines = body.split("\n");
+  if (!lines.length) return body;
+  const greeting = String(lines[0] || "").trim();
+  const content = lines.slice(1).join("\n").trim();
+  if (!content) return body;
+
+  const paragraphs = content
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (paragraphs.length < 2) return body;
+
+  const first = paragraphs[0].toLowerCase();
+  const hasAcknowledgeTone =
+    /\b(?:forstår|forstaar|kan se|beklager|frustrerende|sorry|understand|i can see|it is unfortunate|det er beklageligt)\b/i
+      .test(first);
+  const hasConcreteAction =
+    /\b(?:send|sender|opdater|opdateret|retter|rettet|bekræft|bekræftet|vedhæft|upload|reply|share|provide|confirm|updated|resolved|next step|næste skridt|kan du sende)\b/i
+      .test(first);
+  if (hasAcknowledgeTone && !hasConcreteAction) {
+    const nextBody = paragraphs.slice(1).join("\n\n").trim();
+    return `${greeting}\n\n${nextBody}`.trim();
+  }
+  return body;
+};
+
+async function enforceDirectSupportReply(options: {
+  customerMessage: string;
+  reply: string;
+  languageHint?: string;
+}) {
+  const draft = String(options.reply || "").trim();
+  if (!draft) {
+    return {
+      text: draft,
+      artifact: {
+        artifact_type: "reply_directness_polish",
+        applied: false,
+        reason: "empty_reply",
+      },
+    };
+  }
+
+  const lines = draft.split("\n");
+  const greetingLine = String(lines[0] || "").trim();
+  const bodyWithoutGreeting = lines.slice(1).join("\n").trim();
+  if (!bodyWithoutGreeting) {
+    return {
+      text: draft,
+      artifact: {
+        artifact_type: "reply_directness_polish",
+        applied: false,
+        reason: "no_body",
+      },
+    };
+  }
+
+  if (!OPENAI_API_KEY) {
+    const deterministic = removeNonActionLeadParagraph(draft);
+    return {
+      text: deterministic,
+      artifact: {
+        artifact_type: "reply_directness_polish",
+        applied: deterministic !== draft,
+        reason: "deterministic_fallback",
+      },
+    };
+  }
+
+  const system = [
+    "You rewrite customer support drafts to be direct and action-first.",
+    "Keep all facts and constraints unchanged.",
+    "Do not add new promises, policies, or claims.",
+    "Remove acknowledgement/empathy/problem-restate lead-ins and generic support framing.",
+    "The first meaningful sentence must be concrete: answer, action taken, or one specific next required step.",
+    "Use concise language and avoid generic closings.",
+    "Keep the same language as the customer.",
+    "Return JSON with fields reply and actions.",
+    "actions must be an empty array.",
+  ].join("\n");
+
+  const prompt = [
+    "Customer message:",
+    options.customerMessage || "(empty)",
+    "",
+    "Draft body to rewrite (without greeting):",
+    bodyWithoutGreeting,
+    "",
+    "Rewrite now.",
+  ].join("\n");
+
+  const ai = await callOpenAI(prompt, system);
+  const rewrittenBodyRaw = String(ai.reply || "").trim();
+  const rewrittenBody = rewrittenBodyRaw || bodyWithoutGreeting;
+  const cleaned = removeGenericFillerPhrases(
+    `${greetingLine}\n\n${rewrittenBody}`.trim(),
+  );
+
+  return {
+    text: cleaned,
+    artifact: {
+      artifact_type: "reply_directness_polish",
+      applied: cleaned !== draft,
+      reason: rewrittenBodyRaw ? "llm_rewrite" : "llm_empty_fallback",
+    },
+  };
+}
 
 const stableStringify = (value: unknown): string => {
   if (Array.isArray(value)) {
@@ -3602,7 +3765,7 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         "HARD CONSTRAINTS — these rules override all persona instructions and learned style:",
         "1. NEVER open with a sentence that summarizes or restates the customer's problem. Do not write 'Jeg forstår, at...', 'Jeg kan se at...', 'Det lyder som om...', 'I understand that...', 'I can see that...', or any variant. Go directly to the answer or next concrete step.",
         "2. NEVER write hollow helping phrases: 'Vi vil gerne hjælpe', 'Vi er her for at hjælpe', 'Vi vil gerne hjælpe dig med at finde en løsning', 'Jeg vil gerne hjælpe dig', 'I would like to help you'. These add no value. Go directly to the action or next step.",
-        "3. NEVER end with: 'Jeg ser frem til at høre fra dig', 'Vi ser frem til at hjælpe dig', 'Vi glæder os til at høre fra dig', 'Tøv ikke med at kontakte os', 'Lad os vide hvis du har spørgsmål', 'Hvis du har yderligere spørgsmål', 'Feel free to contact us', 'Don't hesitate to reach out', or any equivalent.",
+        "3. NEVER end with hollow forward-looking phrases when you have NOT asked the customer for anything in this reply: 'Tøv ikke med at kontakte os', 'Lad os vide hvis du har spørgsmål', 'Hvis du har yderligere spørgsmål', 'Feel free to contact us', 'Don't hesitate to reach out', 'Vi glæder os til at høre fra dig', 'Vi ser frem til at hjælpe dig'. Exception: if you have actively asked the customer for information in this reply (e.g. a receipt, order number, photo, or clarification), a warm contextual closing like 'Jeg ser frem til at høre fra dig' is appropriate and human.",
         "4. The customer already knows their own problem. Do not repeat it back to them.",
         "END OF HARD CONSTRAINTS.",
         "",
@@ -4391,10 +4554,44 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       approvedFacts: replyStrategyArtifact?.approved_facts || [],
     });
     finalText = replyNaturalnessPolish.text;
+    finalText = removeGenericFillerPhrases(finalText);
+    const directnessPolish = await enforceDirectSupportReply({
+      customerMessage,
+      reply: finalText,
+      languageHint,
+    });
+    finalText = directnessPolish.text;
+    const finalLanguageGuard = await ensureReplyLanguageConsistency({
+      customerMessage,
+      reply: finalText,
+      languageHint,
+    });
+    finalText = finalLanguageGuard.text;
+    const greetingLanguage = detectGreetingLanguage(finalText);
+    if (greetingLanguage !== "unknown") {
+      const greetingLanguageGuard = await ensureReplyLanguageConsistency({
+        customerMessage,
+        reply: finalText,
+        languageHint: greetingLanguage,
+      });
+      finalText = greetingLanguageGuard.text;
+    }
+    const postDirectnessLanguageCheck = await ensureReplyLanguageConsistency({
+      customerMessage,
+      reply: finalText,
+      languageHint,
+    });
+    finalText = postDirectnessLanguageCheck.text;
     appendStructuredArtifactLog(
       reasoningLogs,
       "v2_reply_naturalness_polish",
       replyNaturalnessPolish.artifact,
+      internalThread.threadId,
+    );
+    appendStructuredArtifactLog(
+      reasoningLogs,
+      "v2_reply_directness_polish",
+      directnessPolish.artifact,
       internalThread.threadId,
     );
 
@@ -4664,10 +4861,44 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
           approvedFacts: replyStrategyArtifact?.approved_facts || [],
         });
         finalText = blockedReplyNaturalnessPolish.text;
+        finalText = removeGenericFillerPhrases(finalText);
+        const blockedDirectnessPolish = await enforceDirectSupportReply({
+          customerMessage,
+          reply: finalText,
+          languageHint,
+        });
+        finalText = blockedDirectnessPolish.text;
+        const blockedFinalLanguageGuard = await ensureReplyLanguageConsistency({
+          customerMessage,
+          reply: finalText,
+          languageHint,
+        });
+        finalText = blockedFinalLanguageGuard.text;
+        const blockedGreetingLanguage = detectGreetingLanguage(finalText);
+        if (blockedGreetingLanguage !== "unknown") {
+          const blockedGreetingLanguageGuard = await ensureReplyLanguageConsistency({
+            customerMessage,
+            reply: finalText,
+            languageHint: blockedGreetingLanguage,
+          });
+          finalText = blockedGreetingLanguageGuard.text;
+        }
+        const blockedPostDirectnessLanguageCheck = await ensureReplyLanguageConsistency({
+          customerMessage,
+          reply: finalText,
+          languageHint,
+        });
+        finalText = blockedPostDirectnessLanguageCheck.text;
         appendStructuredArtifactLog(
           reasoningLogs,
           "v2_reply_naturalness_polish",
           blockedReplyNaturalnessPolish.artifact,
+          internalThread.threadId,
+        );
+        appendStructuredArtifactLog(
+          reasoningLogs,
+          "v2_reply_directness_polish",
+          blockedDirectnessPolish.artifact,
           internalThread.threadId,
         );
         htmlBody = formatEmailBody(finalText);

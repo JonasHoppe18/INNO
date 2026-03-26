@@ -41,8 +41,14 @@ const linkifyHtml = (html = "") =>
     return `<a href="${url}" target="_blank" rel="noreferrer">${url}</a>${trailing}`;
   });
 
+const formatMarkdownBold = (html = "") =>
+  String(html || "").replace(/\*\*([^*\n][\s\S]*?)\*\*/g, "<strong>$1</strong>");
+
 const plainTextToReplyHtml = (text = "") =>
-  linkifyHtml(escapeHtml(String(text || "").replace(/\r\n/g, "\n"))).replace(/\n/g, "<br/>");
+  formatMarkdownBold(linkifyHtml(escapeHtml(String(text || "").replace(/\r\n/g, "\n")))).replace(
+    /\n/g,
+    "<br/>"
+  );
 
 const extractPlainTextFromReplyHtml = (html = "") => {
   if (typeof document === "undefined") return String(html || "");

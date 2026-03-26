@@ -18,6 +18,28 @@ function createServiceClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
+async function loadRelatedThreadIdsForDraftClear(serviceClient, scope, thread) {
+  const fallbackId = String(thread?.id || "").trim();
+  const mailboxId = String(thread?.mailbox_id || "").trim();
+  const providerThreadId = String(thread?.provider_thread_id || "").trim();
+  if (!fallbackId || !mailboxId || !providerThreadId) return fallbackId ? [fallbackId] : [];
+
+  const { data, error } = await applyScope(
+    serviceClient
+      .from("mail_threads")
+      .select("id")
+      .eq("mailbox_id", mailboxId)
+      .eq("provider_thread_id", providerThreadId),
+    scope
+  );
+  if (error || !Array.isArray(data) || !data.length) return [fallbackId];
+  const ids = data
+    .map((row) => String(row?.id || "").trim())
+    .filter(Boolean);
+  const unique = Array.from(new Set(ids));
+  return unique.length ? unique : [fallbackId];
+}
+
 async function loadLatestPendingDraftMeta(serviceClient, scope, threadKey) {
   if (!threadKey) return null;
   let query = serviceClient
@@ -437,7 +459,7 @@ export async function DELETE(_request, { params }) {
   const { data: thread, error: threadError } = await applyScope(
     serviceClient
       .from("mail_threads")
-      .select("id, user_id, workspace_id, provider, provider_thread_id")
+      .select("id, user_id, workspace_id, mailbox_id, provider, provider_thread_id")
       .eq("id", threadId)
       .maybeSingle(),
     scope
@@ -447,11 +469,12 @@ export async function DELETE(_request, { params }) {
   }
 
   const nowIso = new Date().toISOString();
+  const relatedThreadIds = await loadRelatedThreadIdsForDraftClear(serviceClient, scope, thread);
   await applyScope(
     serviceClient
       .from("mail_messages")
       .delete()
-      .eq("thread_id", threadId)
+      .in("thread_id", relatedThreadIds)
       .eq("from_me", true)
       .eq("is_draft", true),
     scope
@@ -461,7 +484,7 @@ export async function DELETE(_request, { params }) {
     serviceClient
       .from("mail_messages")
       .update({ ai_draft_text: null, updated_at: nowIso })
-      .eq("thread_id", threadId)
+      .in("thread_id", relatedThreadIds)
       .is("from_me", false),
     scope
   );

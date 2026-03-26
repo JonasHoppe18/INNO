@@ -2702,7 +2702,16 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       }
       if (selectedThreadIdRef.current === threadId) {
         setActiveDraftId(null);
+        setDraftValue("");
       }
+      setDraftValueByThread((prev) => ({
+        ...prev,
+        [threadId]: "",
+      }));
+      setSystemDraftUneditedByThread((prev) => ({
+        ...prev,
+        [threadId]: false,
+      }));
       draftLastSavedRef.current[threadId] = "";
       setSuppressAutoDraftByThread((prev) => ({
         ...prev,
