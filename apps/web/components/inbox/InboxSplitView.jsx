@@ -819,7 +819,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const [tabStateReady, setTabStateReady] = useState(false);
   const lastAutoReadThreadIdRef = useRef(null);
   const tabStateHydratedRef = useRef(false);
-  const draftLastSavedRef = useRef("");
+  const draftLastSavedRef = useRef({});
   const savingDraftRef = useRef(false);
   const draftValueRef = useRef("");
   const selectedThreadIdRef = useRef(null);
@@ -2034,7 +2034,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     setDraftValue("");
     setActiveDraftId(null);
     setDraftReady(false);
-    draftLastSavedRef.current = "";
+    if (selectedThreadId) {
+      draftLastSavedRef.current[selectedThreadId] = "";
+    }
     if (!selectedThreadId) return;
     setDraftValue(String(draftValueByThread[selectedThreadId] || ""));
     if (Object.prototype.hasOwnProperty.call(draftValueByThread, selectedThreadId)) {
@@ -2116,7 +2118,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           ...prev,
           [selectedThreadId]: draftText,
         }));
-        draftLastSavedRef.current = draftText.trim();
+        draftLastSavedRef.current[selectedThreadId] = draftText.trim();
         setSystemDraftUneditedByThread((prev) => ({
           ...prev,
           [selectedThreadId]: true,
@@ -2333,7 +2335,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           [threadId]: "",
         }));
         draftValueRef.current = "";
-        draftLastSavedRef.current = "";
+        draftLastSavedRef.current[threadId] = "";
         setSystemDraftUneditedByThread((prev) => ({
           ...prev,
           [threadId]: false,
@@ -2358,7 +2360,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           [threadId]: draftText,
         }));
         draftValueRef.current = draftText;
-        draftLastSavedRef.current = draftText.trim();
+        draftLastSavedRef.current[threadId] = draftText.trim();
         setSystemDraftUneditedByThread((prev) => ({
           ...prev,
           [threadId]: true,
@@ -2385,26 +2387,28 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   }, [isLocalThreadId, manualDraftGeneratingByThread, selectedThreadId]);
 
   const handleDraftChange = useCallback(
-    (nextValue) => {
+    (nextValue, threadIdOverride = null) => {
+      const targetThreadId = String(threadIdOverride || selectedThreadId || "").trim();
+      if (!targetThreadId) return;
       if (composerMode === "note") {
-        if (!selectedThreadId) return;
         setNoteValueByThread((prev) => ({
           ...prev,
-          [selectedThreadId]: String(nextValue || ""),
+          [targetThreadId]: String(nextValue || ""),
         }));
         return;
       }
-      setDraftValue(String(nextValue || ""));
-      if (!selectedThreadId) return;
+      if (selectedThreadIdRef.current === targetThreadId) {
+        setDraftValue(String(nextValue || ""));
+      }
       setDraftValueByThread((prev) => ({
         ...prev,
-        [selectedThreadId]: String(nextValue || ""),
+        [targetThreadId]: String(nextValue || ""),
       }));
       setSystemDraftUneditedByThread((prev) => {
-        if (!prev[selectedThreadId]) return prev;
+        if (!prev[targetThreadId]) return prev;
         return {
           ...prev,
-          [selectedThreadId]: false,
+          [targetThreadId]: false,
         };
       });
     },
@@ -2412,11 +2416,12 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   );
 
   const handleSignatureChange = useCallback(
-    (nextValue) => {
-      if (!selectedThreadId) return;
+    (nextValue, threadIdOverride = null) => {
+      const targetThreadId = String(threadIdOverride || selectedThreadId || "").trim();
+      if (!targetThreadId) return;
       setSignatureByThread((prev) => ({
         ...prev,
-        [selectedThreadId]: String(nextValue || ""),
+        [targetThreadId]: String(nextValue || ""),
       }));
     },
     [selectedThreadId]
@@ -2676,47 +2681,55 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     [handleTicketStateChange]
   );
 
-  const saveThreadDraft = useCallback(async ({ immediate = false, valueOverride } = {}) => {
-    if (isLocalThreadId(selectedThreadId)) return;
+  const saveThreadDraft = useCallback(async ({ immediate = false, valueOverride, threadIdOverride } = {}) => {
+    const threadId = String(threadIdOverride || selectedThreadId || "").trim();
+    if (!threadId) return;
+    if (isLocalThreadId(threadId)) return;
     if (composerMode === "note") return;
-    if (!selectedThreadId || !draftReady) return;
-    const text = String(valueOverride ?? draftValueRef.current ?? "");
+    if (!draftReady) return;
+    const fallbackValue =
+      threadId === selectedThreadIdRef.current ? draftValueRef.current : draftValueByThread[threadId] || "";
+    const text = String(valueOverride ?? fallbackValue ?? "");
     const trimmed = text.trim();
     if (!trimmed) {
       if (!immediate || savingDraftRef.current) return;
       try {
-        await fetch(`/api/threads/${selectedThreadId}/draft`, {
+        await fetch(`/api/threads/${threadId}/draft`, {
           method: "DELETE",
         });
       } catch {
         // ignore delete draft errors in UI flow
       }
-      setActiveDraftId(null);
-      draftLastSavedRef.current = "";
+      if (selectedThreadIdRef.current === threadId) {
+        setActiveDraftId(null);
+      }
+      draftLastSavedRef.current[threadId] = "";
       setSuppressAutoDraftByThread((prev) => ({
         ...prev,
-        [selectedThreadId]: true,
+        [threadId]: true,
       }));
       return;
     }
-    if (!immediate && trimmed === draftLastSavedRef.current) return;
+    if (!immediate && trimmed === String(draftLastSavedRef.current[threadId] || "")) return;
     if (savingDraftRef.current) return;
     savingDraftRef.current = true;
     try {
-      const res = await fetch(`/api/threads/${selectedThreadId}/draft`, {
+      const subject =
+        derivedThreads.find((thread) => String(thread?.id || "").trim() === threadId)?.subject || "";
+      const res = await fetch(`/api/threads/${threadId}/draft`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           body_text: text,
-          subject: selectedThread?.subject || "",
+          subject,
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(data?.error || "Could not save draft.");
       }
-      draftLastSavedRef.current = trimmed;
-      if (data?.draft_id) {
+      draftLastSavedRef.current[threadId] = trimmed;
+      if (data?.draft_id && selectedThreadIdRef.current === threadId) {
         setActiveDraftId(data.draft_id);
       }
     } catch {
@@ -2724,7 +2737,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     } finally {
       savingDraftRef.current = false;
     }
-  }, [composerMode, draftReady, isLocalThreadId, selectedThread?.subject, selectedThreadId]);
+  }, [composerMode, draftReady, draftValueByThread, derivedThreads, isLocalThreadId, selectedThreadId]);
 
   const handleSelectThreadInWorkspace = useCallback(
     (threadId, options = {}) => {
@@ -2975,7 +2988,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         [selectedThreadId]: "",
       }));
       setActiveDraftId(null);
-      draftLastSavedRef.current = "";
+      draftLastSavedRef.current[selectedThreadId] = "";
       setSystemDraftUneditedByThread((prev) => ({
         ...prev,
         [selectedThreadId]: false,
@@ -3159,7 +3172,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
                 if (selectedThreadIdRef.current === selectedThreadId) {
                   setDraftValue(draftText);
                 }
-                draftLastSavedRef.current = draftText.trim();
+                draftLastSavedRef.current[selectedThreadId] = draftText.trim();
                 setSystemDraftUneditedByThread((prev) => ({
                   ...prev,
                   [selectedThreadId]: true,
@@ -3253,7 +3266,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
                   setDraftValue(draftText);
                 }
                 draftValueRef.current = draftText;
-                draftLastSavedRef.current = draftText.trim();
+                draftLastSavedRef.current[selectedThreadId] = draftText.trim();
                 setDraftValueByThread((prev) => ({ ...prev, [selectedThreadId]: draftText }));
                 setSystemDraftUneditedByThread((prev) => ({ ...prev, [selectedThreadId]: true }));
               }
@@ -3401,7 +3414,15 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           signatureValue={selectedThreadId ? signatureByThread[selectedThreadId] || "" : ""}
           onSignatureChange={handleSignatureChange}
           onSignatureBlur={() => null}
-          onDraftBlur={() => saveThreadDraft({ immediate: true })}
+          onDraftBlur={(threadId) =>
+            saveThreadDraft({
+              immediate: true,
+              threadIdOverride: threadId,
+              valueOverride:
+                String(threadId || "") === String(selectedThreadIdRef.current || "")
+                  ? draftValueRef.current
+                  : draftValueByThread[String(threadId || "").trim()] || "",
+            })}
           draftLoaded={
             composerMode !== "note" &&
             Boolean(selectedThreadId) &&

@@ -435,9 +435,9 @@ export function TicketDetail({
           <Composer
             key={`${thread?.id || "thread"}:${composerMode}`}
             value={draftValue}
-            onChange={onDraftChange}
+            onChange={(nextValue) => onDraftChange?.(nextValue, thread?.id || null)}
             signatureValue={signatureValue}
-            onSignatureChange={onSignatureChange}
+            onSignatureChange={(nextValue) => onSignatureChange?.(nextValue, thread?.id || null)}
             onSignatureBlur={onSignatureBlur}
             collapsed={composerCollapsed}
             onToggleCollapse={() => setComposerCollapsed((prev) => !prev)}
@@ -449,7 +449,7 @@ export function TicketDetail({
             onModeChange={onComposerModeChange}
             toLabel={toLabel}
             mentionUsers={mentionUsers}
-            onBlur={onDraftBlur}
+            onBlur={() => onDraftBlur?.(thread?.id || null)}
             isDraftLoading={showThinkingCard}
             onGenerateDraft={onGenerateDraft}
             isGeneratingDraft={isGeneratingDraft}
