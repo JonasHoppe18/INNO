@@ -271,9 +271,22 @@ export function useThreadMessages(threadId, options = {}) {
   const [error, setError] = useState(null);
   const seededKey = useMemo(() => makeListKey(seeded), [seeded]);
   const seededKeyRef = useRef(seededKey);
+  const lastThreadIdRef = useRef(threadId || null);
+  const activeThreadIdRef = useRef(threadId || null);
+  const fetchTokenRef = useRef(0);
+
+  useEffect(() => {
+    activeThreadIdRef.current = threadId || null;
+  }, [threadId]);
 
   const fetchMessages = useCallback(async () => {
     if (!supabase || !threadId) return;
+    const requestThreadId = threadId;
+    const requestToken = fetchTokenRef.current + 1;
+    fetchTokenRef.current = requestToken;
+    const isStale = () =>
+      fetchTokenRef.current !== requestToken || activeThreadIdRef.current !== requestThreadId;
+
     setLoading(true);
     setError(null);
     try {
@@ -287,6 +300,7 @@ export function useThreadMessages(threadId, options = {}) {
         });
         if (response.ok) {
           const payload = await response.json().catch(() => null);
+          if (isStale()) return;
           const rows = Array.isArray(payload?.messages) ? payload.messages : [];
           if (!rows.length) {
             console.warn("[useThreadMessages] tomt server-resultat for tråd:", threadId);
@@ -304,17 +318,11 @@ export function useThreadMessages(threadId, options = {}) {
         getToken,
         logLabel: "useThreadMessages",
       });
+      if (isStale()) return;
       const loadRelatedThreadIds = async () => {
-        const normalizeSubject = (value) =>
-          String(value || "")
-            .toLowerCase()
-            .replace(/^(?:(?:re|fw|fwd)\s*:\s*)+/i, "")
-            .replace(/\s+/g, " ")
-            .trim();
-
         let selectedThreadQuery = supabase
           .from("mail_threads")
-          .select("id, provider_thread_id, mailbox_id, subject")
+          .select("id, provider_thread_id, mailbox_id")
           .eq("id", threadId)
           .limit(1)
           .maybeSingle();
@@ -327,7 +335,7 @@ export function useThreadMessages(threadId, options = {}) {
         if (scopeWorkspaceError || !selectedThread?.id) {
           const unscopedSelected = await supabase
             .from("mail_threads")
-            .select("id, provider_thread_id, mailbox_id, subject")
+            .select("id, provider_thread_id, mailbox_id")
             .eq("id", threadId)
             .limit(1)
             .maybeSingle();
@@ -339,7 +347,6 @@ export function useThreadMessages(threadId, options = {}) {
 
         const providerThreadId = String(selectedThread?.provider_thread_id || "").trim();
         const mailboxId = String(selectedThread?.mailbox_id || "").trim();
-        const normalizedSubject = normalizeSubject(selectedThread?.subject);
         if (!mailboxId) return [threadId];
 
         let siblingRows = [];
@@ -376,49 +383,6 @@ export function useThreadMessages(threadId, options = {}) {
           }
         }
 
-        // Fallback for legacy/split threads where provider_thread_id is missing or unreliable:
-        // group by normalized subject inside same mailbox.
-        if ((!Array.isArray(siblingRows) || siblingRows.length <= 1) && normalizedSubject) {
-          let subjectQuery = supabase
-            .from("mail_threads")
-            .select("id, subject")
-            .eq("mailbox_id", mailboxId)
-            .order("created_at", { ascending: false })
-            .limit(2000);
-          subjectQuery = applyClientScope(subjectQuery, scope);
-          let subjectRowsResult = await subjectQuery;
-          let subjectRows = subjectRowsResult.data;
-          let subjectError = subjectRowsResult.error;
-          const subjectScopeWorkspaceError =
-            Boolean(subjectError) &&
-            /workspace_id/i.test(String(subjectError?.message || ""));
-          if (
-            subjectScopeWorkspaceError ||
-            !Array.isArray(subjectRows) ||
-            subjectRows.length === 0
-          ) {
-            const unscopedSubjectRows = await supabase
-              .from("mail_threads")
-              .select("id, subject")
-              .eq("mailbox_id", mailboxId)
-              .order("created_at", { ascending: false })
-              .limit(2000);
-            subjectRows = unscopedSubjectRows.data;
-            subjectError = unscopedSubjectRows.error;
-          }
-          if (!subjectError && Array.isArray(subjectRows)) {
-            const matchedBySubject = subjectRows.filter(
-              (row) => normalizeSubject(row?.subject) === normalizedSubject
-            );
-            if (matchedBySubject.length > 0) {
-              siblingRows = [
-                ...(Array.isArray(siblingRows) ? siblingRows : []),
-                ...matchedBySubject.map((row) => ({ id: row.id })),
-              ];
-            }
-          }
-        }
-
         if (siblingsError || !Array.isArray(siblingRows) || siblingRows.length === 0) return [threadId];
 
         const ids = Array.from(
@@ -434,6 +398,7 @@ export function useThreadMessages(threadId, options = {}) {
       };
 
       const relatedThreadIds = await loadRelatedThreadIds();
+      if (isStale()) return;
 
       const runFullQuery = async (scoped = true) => {
         let request = supabase
@@ -468,6 +433,7 @@ export function useThreadMessages(threadId, options = {}) {
       };
 
       let { data: rows, error: queryError } = await runFullQuery(true);
+      if (isStale()) return;
       const shouldRetryUnscopedFull =
         !queryError &&
         Array.isArray(rows) &&
@@ -477,6 +443,7 @@ export function useThreadMessages(threadId, options = {}) {
         Boolean(queryError) && /workspace_id/i.test(String(queryError?.message || ""));
       if (shouldRetryUnscopedFull || workspaceColumnError) {
         const unscoped = await runFullQuery(false);
+        if (isStale()) return;
         rows = unscoped.data;
         queryError = unscoped.error;
       }
@@ -495,6 +462,7 @@ export function useThreadMessages(threadId, options = {}) {
           userRequest = userRequest.eq("thread_id", threadId);
         }
         const userResult = await userRequest;
+        if (isStale()) return;
         if (!userResult.error && Array.isArray(userResult.data) && userResult.data.length > 0) {
           rows = userResult.data;
           queryError = null;
@@ -507,6 +475,7 @@ export function useThreadMessages(threadId, options = {}) {
         )
       ) {
         const fallback = await runLeanQuery(true);
+        if (isStale()) return;
         rows = fallback.data;
         queryError = fallback.error;
         const shouldRetryUnscopedLean =
@@ -518,6 +487,7 @@ export function useThreadMessages(threadId, options = {}) {
           Boolean(queryError) && /workspace_id/i.test(String(queryError?.message || ""));
         if (shouldRetryUnscopedLean || leanWorkspaceColumnError) {
           const unscopedLean = await runLeanQuery(false);
+          if (isStale()) return;
           rows = unscopedLean.data;
           queryError = unscopedLean.error;
         }
@@ -526,11 +496,14 @@ export function useThreadMessages(threadId, options = {}) {
       if (!rows?.length) {
         console.warn("[useThreadMessages] tom resultat for tråd:", threadId, "scope:", scope);
       }
+      if (isStale()) return;
       setData(Array.isArray(rows) ? rows : []);
     } catch (err) {
+      if (isStale()) return;
       console.error("[useThreadMessages] fejl for tråd:", threadId, err);
       setError(err instanceof Error ? err : new Error("Could not load messages."));
     } finally {
+      if (isStale()) return;
       setLoading(false);
     }
   }, [getToken, supabase, threadId, user]);
@@ -541,6 +514,8 @@ export function useThreadMessages(threadId, options = {}) {
   }, [enabled, fetchMessages]);
 
   useEffect(() => {
+    if (lastThreadIdRef.current === (threadId || null)) return;
+    lastThreadIdRef.current = threadId || null;
     if (!threadId) {
       setData((prev) => (prev?.length ? [] : prev));
       return;
@@ -549,7 +524,7 @@ export function useThreadMessages(threadId, options = {}) {
     // otherwise fetched messages for older threads get wiped on every render.
     seededKeyRef.current = seededKey;
     setData(seeded);
-  }, [threadId]);
+  }, [seeded, seededKey, threadId]);
 
   useEffect(() => {
     if (!threadId) return;

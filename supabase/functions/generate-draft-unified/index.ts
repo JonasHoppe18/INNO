@@ -3598,6 +3598,14 @@ Deno.serve(async (req) => {
 Persona instruktionsnoter: ${context.persona.instructions?.trim() || "Hold tonen venlig og effektiv."}
 Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       const systemMsgBase = [
+        // HARD CONSTRAINTS — evaluated first, override persona and learned style
+        "HARD CONSTRAINTS — these rules override all persona instructions and learned style:",
+        "1. NEVER open with a sentence that summarizes or restates the customer's problem. Do not write 'Jeg forstår, at...', 'Jeg kan se at...', 'Det lyder som om...', 'I understand that...', 'I can see that...', or any variant. Go directly to the answer or next concrete step.",
+        "2. NEVER write hollow helping phrases: 'Vi vil gerne hjælpe', 'Vi er her for at hjælpe', 'Vi vil gerne hjælpe dig med at finde en løsning', 'Jeg vil gerne hjælpe dig', 'I would like to help you'. These add no value. Go directly to the action or next step.",
+        "3. NEVER end with: 'Jeg ser frem til at høre fra dig', 'Vi ser frem til at hjælpe dig', 'Vi glæder os til at høre fra dig', 'Tøv ikke med at kontakte os', 'Lad os vide hvis du har spørgsmål', 'Hvis du har yderligere spørgsmål', 'Feel free to contact us', 'Don't hesitate to reach out', or any equivalent.",
+        "4. The customer already knows their own problem. Do not repeat it back to them.",
+        "END OF HARD CONSTRAINTS.",
+        "",
         "Du er en kundeservice-assistent.",
         "Skriv kort, venligt og professionelt pa samme sprog som kundens mail.",
         "Hvis kunden skriver pa engelsk, svar pa engelsk selv om andre instruktioner er pa dansk.",
@@ -3610,11 +3618,6 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         `Ticket category: ${workflowRoute.category}.`,
         workflowRoute.systemHint,
         ...(workflowRoute.systemRules || []),
-        "FORBUDTE MØNSTRE (kritisk — gælder altid):",
-        "Åbn ALDRIG med sætninger der opsummerer kundens problem: 'Jeg forstår, at...', 'Jeg kan se at...', 'Det lyder som om...', 'Jeg forstår din situation', 'Jeg kan forstå at du...', 'I can see that...', 'I understand that...'. Gå direkte til svaret eller næste skridt.",
-        "Skriv ALDRIG: 'Vi vil gerne hjælpe', 'Vi er her for at hjælpe', 'Vi vil gerne hjælpe dig med at finde en løsning', 'Jeg vil gerne hjælpe dig', 'I would like to help'. Det er tom luft — gå direkte til handlingen eller næste konkrete skridt.",
-        "Skriv ALDRIG disse afslutningsfraser: 'Jeg ser frem til at høre fra dig', 'Vi ser frem til at hjælpe dig', 'Vi glæder os til at høre fra dig', 'Tøv ikke med at kontakte os', 'Lad os vide hvis du har spørgsmål', 'Hvis du har yderligere spørgsmål', 'Feel free to contact us', 'Don't hesitate to reach out'.",
-        "Opsummer ALDRIG kundens problem — kunden kender sit eget problem. Gå direkte til svaret.",
         personaGuidance,
         "Automationsregler:",
         automationGuidance,
