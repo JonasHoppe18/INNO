@@ -1272,14 +1272,37 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const customerByThread = useMemo(() => {
     const map = {};
     derivedThreads.forEach((thread) => {
+      const threadCustomerName = String(thread?.customer_name || "").trim();
+      const threadCustomerEmail = String(thread?.customer_email || "").trim();
+      const threadSender = threadCustomerName || threadCustomerEmail;
+      if (threadSender && !/^unknown sender$/i.test(threadSender)) {
+        map[thread.id] = threadSender;
+        return;
+      }
+
       const liveThreadMessages = messagesByThread.get(thread.id) || [];
       const previewThreadMessages = previewMessagesByThread.get(thread.id) || [];
-      const threadMessages =
-        liveThreadMessages.length > 0 ? liveThreadMessages : previewThreadMessages;
-      const externalCandidate =
-        threadMessages.find((message) => !isLikelyInternalSender(message)) ||
-        [...threadMessages].reverse().find((message) => !isOutboundMessage(message, mailboxEmails)) ||
-        null;
+      const dedupedById = new Map();
+      [...liveThreadMessages, ...previewThreadMessages].forEach((message) => {
+        const key = String(message?.id || "").trim();
+        if (!key) return;
+        if (!dedupedById.has(key)) dedupedById.set(key, message);
+      });
+      const threadMessages = Array.from(dedupedById.values()).sort((a, b) => {
+        const aTime = new Date(getMessageTimestamp(a)).getTime();
+        const bTime = new Date(getMessageTimestamp(b)).getTime();
+        return (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
+      });
+
+      const latestExternalInbound =
+        threadMessages.find(
+          (message) =>
+            !isLikelyInternalSender(message) &&
+            !isOutboundMessage(message, mailboxEmails)
+        ) || null;
+      const latestExternalAny =
+        threadMessages.find((message) => !isLikelyInternalSender(message)) || null;
+      const externalCandidate = latestExternalInbound || latestExternalAny || null;
       const senderFromMessages = getSenderLabel(externalCandidate || threadMessages[0]) || "";
       const senderFallback = extractSenderFromThreadSnippet(thread);
       map[thread.id] =

@@ -412,6 +412,7 @@ export async function generateReplyFromStrategy(
     "Do not propose, invent, or choose actions.",
     "Use only the approved context supplied in the prompt.",
     "If a fact is not in APPROVED FACTS, TECHNICAL SUPPORT FACTS, POLICY, PRODUCT FACTS, or GENERAL KNOWLEDGE, do not claim it.",
+    "CRITICAL: Never invent, guess, or suggest email addresses, phone numbers, URLs, or contact details that are not explicitly provided in APPROVED FACTS or POLICY SUMMARY. If contact information is not available, do not mention it at all.",
     "Do not infer an exact root cause, missing field, or operational reason unless it is explicitly grounded in the approved context.",
     "Prefer operational wording over absolute wording when the evidence is limited.",
     input.executionState !== "executed"
@@ -437,6 +438,7 @@ export async function generateReplyFromStrategy(
     "If continued contact is needed in this same thread, say things like 'reply here' or 'let us know here' instead.",
     "Do not ask the customer to notify, inform, or contact us again about the same return, request, or support issue they are already raising in this thread.",
     "You may ask for a missing detail such as order number, serial number, preferred date, or timing, but do not ask them to simply notify us again.",
+    "Do not use 'contact us here', 'reply here', 'reach out to us', or 'let us know here' as a generic closing line or filler. The customer is already writing to you — they are already in contact. If you need something specific from them, ask for it directly. If the reply is complete, end without a hollow invitation to get in touch.",
     knownOrderReference
       ? "An order is already matched in approved context. Do not ask again for order number, purchase name, or other basic identity details unless a narrower missing detail is explicitly required."
       : "",
@@ -566,7 +568,7 @@ export async function generateReplyFromStrategy(
     hasTechnicalDiagnosticFacts
       ? "If APPROVED TROUBLESHOOTING FACTS already provide a useful next step, do not lead with generic diagnostic questions."
       : "",
-    "Do not open with generic filler phrases. Specifically banned openers (and close variants): 'Thank you for your message', 'Thank you for contacting us', 'Thank you for reaching out', 'Thank you for providing your details', 'Thank you for getting back to us', 'Thank you for the information', 'I hope this email finds you well', 'I understand your frustration', 'I can see that you are experiencing', 'I understand you are experiencing', 'Tak for din besked', 'Tak for din henvendelse', 'Tak for at kontakte os', 'Tak for dine oplysninger', or any other opener that only acknowledges receipt or re-states the problem.",
+    "Do not open with generic filler phrases. Specifically banned openers (and close variants): 'Thank you for your message', 'Thank you for contacting us', 'Thank you for reaching out', 'Thank you for providing your details', 'Thank you for getting back to us', 'Thank you for the information', 'I hope this email finds you well', 'I understand your frustration', 'I can see that you are experiencing', 'I understand you are experiencing', 'I understand that...', 'It sounds like...', 'Tak for din besked', 'Tak for din henvendelse', 'Tak for at kontakte os', 'Tak for dine oplysninger', 'Det lyder som om...', 'Jeg forstår at...', or any other opener that only acknowledges receipt, re-states the problem, or uses hollow empathy framing.",
     "The very first meaningful sentence after the salutation must deliver actual help — the answer, the action taken, the next concrete step, or the key information. Do not use the opening sentence to confirm you received the message, to acknowledge the customer's situation in general terms, or to re-state what they already told you.",
     "If the customer raises multiple distinct questions or issues, address all of them. Do not focus only on the most prominent issue and silently ignore the others.",
     "Match the reply length to the situation — short and direct for simple requests, more detailed only when the topic genuinely requires it. Do not pad the reply with unnecessary filler sentences.",

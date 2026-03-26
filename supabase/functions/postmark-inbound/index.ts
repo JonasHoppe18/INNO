@@ -1370,6 +1370,9 @@ Deno.serve(async (req) => {
         provider_thread_id: null,
         subject,
         snippet,
+        customer_name: shopifyContact.customerName || fromName || null,
+        customer_email: (shopifyContact.customerEmail || fromEmail || "").toLowerCase() || null,
+        customer_last_inbound_at: receivedAt,
         last_message_at: receivedAt,
         unread_count: 1,
         is_read: false,
@@ -1458,7 +1461,7 @@ Deno.serve(async (req) => {
   const messageDbId = (messageInsert as any)?.id ?? null;
   const { data: existingThread } = await supabase
     .from("mail_threads")
-    .select("subject, unread_count, tags, classification_key, classification_confidence, classification_reason")
+    .select("subject, unread_count, tags, classification_key, classification_confidence, classification_reason, customer_name, customer_email")
     .eq("id", threadId)
     .maybeSingle();
   const currentUnread = Number(existingThread?.unread_count ?? 0);
@@ -1471,6 +1474,11 @@ Deno.serve(async (req) => {
     subject: existingThread?.subject ? existingThread.subject : subject,
     unread_count: nextUnreadCount,
     is_read: false,
+    customer_name: shopifyContact.customerName || fromName || existingThread?.customer_name || null,
+    customer_email:
+      (shopifyContact.customerEmail || fromEmail || existingThread?.customer_email || "").toLowerCase() ||
+      null,
+    customer_last_inbound_at: receivedAt,
     classification_key:
       inboxClassification.bucket === "notification"
         ? "notification"

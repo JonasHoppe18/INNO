@@ -192,11 +192,13 @@ async function applyInboundThreadActivity(options: {
   snippet: string;
   lastMessageAt: string | null;
   markUnread: boolean;
+  customerName?: string | null;
+  customerEmail?: string | null;
 }) {
   if (!supabase || !options.threadId) return;
   const { data } = await supabase
     .from("mail_threads")
-    .select("subject, snippet, last_message_at, unread_count, is_read")
+    .select("subject, snippet, last_message_at, unread_count, is_read, customer_name, customer_email, customer_last_inbound_at")
     .eq("id", options.threadId)
     .maybeSingle();
   if (!data) return;
@@ -220,6 +222,23 @@ async function applyInboundThreadActivity(options: {
     const currentUnread = Number(data.unread_count ?? 0);
     updates.unread_count = Math.max(0, currentUnread + 1);
     updates.is_read = false;
+  }
+
+  const currentCustomerTs = toTimestamp((data as any)?.customer_last_inbound_at);
+  const shouldRefreshCustomer =
+    nextTs !== null && (currentCustomerTs === null || nextTs >= currentCustomerTs);
+  if (shouldRefreshCustomer) {
+    const nextCustomerName = String(options.customerName || "").trim();
+    const nextCustomerEmail = String(options.customerEmail || "").trim().toLowerCase();
+    if (nextCustomerName) {
+      updates.customer_name = nextCustomerName;
+    }
+    if (nextCustomerEmail) {
+      updates.customer_email = nextCustomerEmail;
+    }
+    if (nextTs !== null) {
+      updates.customer_last_inbound_at = options.lastMessageAt;
+    }
   }
 
   if (Object.keys(updates).length > 1) {
@@ -316,12 +335,21 @@ async function upsertMessage({
     updated_at: new Date().toISOString(),
   };
 
+  const customerName =
+    String(shopifyContact.customerName || fromName || "").trim() || null;
+  const customerEmail =
+    String(shopifyContact.customerEmail || fromEmail || replyToEmail || "")
+      .trim()
+      .toLowerCase() || null;
+
   if (data?.id) {
     await supabase.from("mail_messages").update(payload).eq("id", data.id);
     return {
       inserted: false,
       becameUnread: Boolean(data?.is_read) && !isRead,
       snippet: String(payload.snippet || snippet),
+      customerName,
+      customerEmail,
     };
   } else {
     await supabase.from("mail_messages").insert(payload);
@@ -329,6 +357,8 @@ async function upsertMessage({
       inserted: true,
       becameUnread: !isRead,
       snippet: String(payload.snippet || snippet),
+      customerName,
+      customerEmail,
     };
   }
 }
@@ -788,6 +818,8 @@ Deno.serve(async (req) => {
                 snippet: messageResult?.snippet || snippet,
                 lastMessageAt: receivedAt,
                 markUnread: Boolean(messageResult?.inserted || messageResult?.becameUnread),
+                customerName: messageResult?.customerName ?? null,
+                customerEmail: messageResult?.customerEmail ?? null,
               });
             }
           }

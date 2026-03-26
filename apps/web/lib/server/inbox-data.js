@@ -89,17 +89,29 @@ async function loadMessages(serviceClient, scope, mailboxIds, { query, unreadOnl
 }
 
 async function loadThreads(serviceClient, scope, mailboxIds) {
-  const { data, error } = await applyScope(
-    serviceClient
-      .from("mail_threads")
-      .select(
-        "id, user_id, mailbox_id, provider, provider_thread_id, subject, snippet, last_message_at, unread_count, is_read, status, assignee_id, priority, tags, classification_key, classification_confidence, classification_reason, created_at, updated_at"
-      )
-      .in("mailbox_id", mailboxIds)
-      .order("last_message_at", { ascending: false, nullsLast: true })
-      .limit(150),
-    scope
-  );
+  const runQuery = (withCustomerFields = true) =>
+    applyScope(
+      serviceClient
+        .from("mail_threads")
+        .select(
+          withCustomerFields
+            ? "id, user_id, mailbox_id, provider, provider_thread_id, subject, snippet, customer_name, customer_email, customer_last_inbound_at, last_message_at, unread_count, is_read, status, assignee_id, priority, tags, classification_key, classification_confidence, classification_reason, created_at, updated_at"
+            : "id, user_id, mailbox_id, provider, provider_thread_id, subject, snippet, last_message_at, unread_count, is_read, status, assignee_id, priority, tags, classification_key, classification_confidence, classification_reason, created_at, updated_at"
+        )
+        .in("mailbox_id", mailboxIds)
+        .order("last_message_at", { ascending: false, nullsLast: true })
+        .limit(150),
+      scope
+    );
+  let { data, error } = await runQuery(true);
+  if (
+    error &&
+    /customer_name|customer_email|customer_last_inbound_at/i.test(String(error.message || ""))
+  ) {
+    const fallback = await runQuery(false);
+    data = fallback.data;
+    error = fallback.error;
+  }
   if (error) throw new Error(error.message);
   return Array.isArray(data) ? data : [];
 }

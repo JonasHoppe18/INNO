@@ -7,6 +7,9 @@
  * @property {string | null} provider_thread_id
  * @property {string | null} subject
  * @property {string | null} snippet
+ * @property {string | null} customer_name
+ * @property {string | null} customer_email
+ * @property {string | null} customer_last_inbound_at
  * @property {string | null} last_message_at
  * @property {number | null} unread_count
  * @property {string | null} classification_key

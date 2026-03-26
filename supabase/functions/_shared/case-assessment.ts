@@ -1394,8 +1394,16 @@ export function assessCase(input: AssessCaseInput): CaseAssessment {
   }
   const retrievalNeeds = buildRetrievalNeeds(primary, secondary);
   const likelyActionFamily = inferLikelyActionFamily(lower);
+  const boughtFromThirdPartyRetailer =
+    /\b(?:proshop|elgiganten|komplett|amazon|expert|coolshop|dustinhome|dustin|power\.dk|power\b|lomax|Harald Nyborg|Harald nyborg|harald nyborg|cdon|ebay|newegg|bestbuy|best buy|mediamarkt|media markt|saturn|costco|walmart|target|fnac|currys|pc world|john lewis|argos)\b/i
+      .test(text) ||
+    /\b(?:bought from|purchased at|ordered (?:from|via|through)|got it (?:from|at)|købt hos|købt fra|bestilt hos|bestilt fra|fra en butik|fra en webshop)\b/i
+      .test(text) &&
+    !/\b(?:acezone|your (?:shop|store|website|webshop)|our website|our shop)\b/i.test(text);
   const missingRequiredInputs =
-    likelyActionFamily && !input.hasSelectedOrder && orderNumbers.length === 0 ? ["order_number"] : [];
+    likelyActionFamily && !input.hasSelectedOrder && orderNumbers.length === 0 && !boughtFromThirdPartyRetailer
+      ? ["order_number"]
+      : [];
   const riskFlags = [
     ...(likelyActionFamily ? ["order_mutation"] : []),
     ...(scores.warranty_complaint >= 4 ? ["possible_warranty_case"] : []),
