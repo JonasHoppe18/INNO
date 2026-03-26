@@ -27,6 +27,12 @@ type MailPromptOptions = {
    * Hvis ikke sat, må modellen KUN bruge neutrale afslutninger som "God dag".
    */
   nowIso?: string | null; // fx new Date().toISOString()
+
+  /**
+   * Optional: Sprog detekteret i koden (ikke af modellen) fra kundens email.
+   * Fx "da" for dansk, "en" for engelsk. Injiceres øverst i prompten som hård regel.
+   */
+  detectedLanguage?: string | null;
 };
 
 function firstNameOrNull(fullName?: string | null): string | null {
@@ -71,6 +77,7 @@ export function buildMailPrompt({
   returnDetailsFound,
   returnDetailsMissing,
   nowIso,
+  detectedLanguage,
 }: MailPromptOptions): string {
   const refundPolicy = policies?.policy_refund?.trim();
   const shippingPolicy = policies?.policy_shipping?.trim();
@@ -128,8 +135,17 @@ export function buildMailPrompt({
     ? `Tidskontekst: I dag er det ${dayCtx.weekdayNameDa}. Weekend: ${dayCtx.isWeekend ? "ja" : "nej"}.`
     : `Tidskontekst: ukendt (ingen dato oplyst).`;
 
+  const languageNames: Record<string, string> = {
+    da: "dansk",
+    en: "engelsk",
+    es: "spansk",
+  };
+  const languageLockLine = detectedLanguage && languageNames[detectedLanguage]
+    ? `SPROGLÅS (ABSOLUT REGEL): Svar KUN på ${languageNames[detectedLanguage]}. Dette tilsidesætter alle andre instruktioner, herunder persona og learned style.`
+    : "";
+
   let prompt = `
-ROLLEN:
+${languageLockLine ? languageLockLine + "\n" : ""}ROLLEN:
 Du er en erfaren kundeservice-medarbejder (Human-in-the-loop).
 Sprogprioritet: Svar altid på kundens sprog, selv hvis resten af prompten er på dansk.
 Din opgave er at skrive et klart og kort udkast til et svar, som en menneskelig agent kan sende med minimale rettelser.
@@ -184,9 +200,10 @@ INSTRUKTIONER TIL SVARET:
    - Ved spørgsmål: Svar direkte.
    - Ingen standard-høflighed eller small talk.
 2. **Hilsen (obligatorisk):**
-   - Start altid svaret med: "Hej <kundens fornavn>,"
+   - Start altid svaret med en hilsen på kundens sprog:
+     - Dansk: "Hej <fornavn>," — Engelsk: "Hi <fornavn>," — Spansk: "Hola <fornavn>,"
    - Hvis kundenavn findes i data, brug det.
-   - Hvis der mangler navn, brug "Hej,".
+   - Hvis der mangler navn: "Hej," / "Hi," afhængigt af sproget.
    - Brug fornavn hvis muligt: "${customerFirstName ?? ""}"
 3. **Brand voice (vigtigt):**
    - Skriv kort, menneskeligt og effektivt som en moderne webshop.

@@ -902,7 +902,7 @@ const normalizeCustomerFirstName = (value: string) => {
   return cleaned.charAt(0).toUpperCase() + cleaned.slice(1).toLowerCase();
 };
 
-const extractCustomerFirstName = (emailData: EmailData) => {
+const extractCustomerFirstName = (emailData: EmailData, options?: { skipLocalPartFallback?: boolean }) => {
   const fromName = extractNameFromFromField(emailData?.from || "");
   if (fromName) {
     // If the from-field "name" looks like a username (matches email local part after stripping
@@ -917,19 +917,32 @@ const extractCustomerFirstName = (emailData: EmailData) => {
     // Consider it a username only when the stripped from-name and local part are
     // essentially the same token (exact match or one fully contains the other with
     // no remaining characters that would indicate a surname was concatenated).
+    // Names with a space (e.g. "Jakob Lund") are always real names, never usernames —
+    // even though stripping the space would produce a match with the email local part.
     const isUsername =
       localPart.length > 0 &&
       fromStripped.length > 0 &&
-      fromStripped === localPart;
-    if (!isUsername) return normalizeCustomerFirstName(fromName);
+      fromStripped === localPart &&
+      !fromName.trim().includes(" ");
+    // Extract only the first word (first name) before normalizing so "Jakob Lund" → "Jakob".
+    if (!isUsername) return normalizeCustomerFirstName(fromName.split(/\s+/)[0]);
   }
   const bodyName = extractNameFromBody(emailData?.body || "");
   if (bodyName) return normalizeCustomerFirstName(bodyName);
+  // Last resort: try email local part only if not suppressed.
+  // Suppress when the caller already knows the local part is a username (e.g. "jakoblund@gmail.com").
+  if (options?.skipLocalPartFallback) return "";
   const localPart = String(emailData?.fromEmail || "")
     .split("@")[0]
     .replace(/[._-]+/g, " ")
     .trim();
   const localToken = localPart.split(" ")[0] || "";
+  // Only use a local-part token that contains a separator (e.g. "jakob.lund" → "jakob").
+  // A single unseparated token like "jakoblund" is almost certainly a username, not a real name.
+  const hasOriginalSeparator = /[._-]/.test(
+    String(emailData?.fromEmail || "").split("@")[0],
+  );
+  if (!hasOriginalSeparator) return "";
   const localName = normalizeCustomerFirstName(localToken);
   return localName.length >= 2 ? localName : "";
 };
@@ -953,13 +966,17 @@ const extractOrderFirstName = (order: any) => {
 };
 
 const inferLanguageHint = (subject: string, body: string): string => {
-  const text = `${subject || ""}\n${body || ""}`.toLowerCase();
-  const hasDanish = /(\b(hvor|hvornår|modtager|levering|pakke|ikke|med)\b|[æøå])/i.test(text);
+  const rawBody = String(body || "");
+  const bodyFieldMatch = rawBody.match(/(?:^|\n)\s*body\s*:\s*([\s\S]+)$/i);
+  const primaryBody = bodyFieldMatch?.[1] ? bodyFieldMatch[1] : rawBody;
+  const text = `${subject || ""}\n${primaryBody}`.toLowerCase();
+  const hasDanish =
+    /(\b(hej|jeg|ikke|med|hvordan|hvor|hvornår|modtager|levering|pakke|desværre|kan|skal|tilbage|købte)\b|[æøå])/i
+      .test(text);
   const hasEnglish = /(\b(hi|hello|where|when|order|delivery|tracking|received)\b)/i.test(text);
   const hasSpanish = /(\b(hola|dónde|donde|pedido|entrega|seguimiento|recibido)\b|[¡¿])/i.test(text);
   if (hasSpanish) return "es";
-  if (hasEnglish && !hasDanish) return "en";
-  if (hasDanish && !hasEnglish) return "da";
+  if (hasDanish) return "da"; // Danish (æøå) always wins — English product names appear in Danish emails
   if (hasEnglish) return "en";
   return "same_as_customer";
 };
@@ -2058,7 +2075,7 @@ async function generateBlockedOrderActionReply(options: {
   const systemMsg = [
     "Du er en kundeservice-assistent.",
     "Skriv et kort, professionelt svar på samme sprog som kundens mail.",
-    `Start altid svaret med "Hej ${options.customerName || "kunden"},".`,
+    `Start svaret med en hilsen på kundens sprog: dansk → "Hej ${options.customerName || "kunden"},", engelsk → "Hi ${options.customerName || "there"},".`,
     "Forklar tydeligt at ønsket ikke kan udføres, baseret på den konkrete blokeringsårsag.",
     "Nævn aldrig trackingnummer, trackinglink eller forsendelsesstatus medmindre det fremgår eksplicit af årsagen.",
     "Tilbyd et realistisk næste skridt uden at love noget du ikke kan gennemføre.",
@@ -2132,24 +2149,38 @@ function resolvePreferredReplyLanguage(options: {
   fallbackLanguageHint?: string | null;
 }): string {
   const strategyLanguage = String(options.replyStrategyLanguage || "").trim().toLowerCase();
-  if (strategyLanguage) return strategyLanguage;
   const assessmentLanguage = String(options.caseAssessmentLanguage || "").trim().toLowerCase();
+  const fallbackLanguage = String(options.fallbackLanguageHint || "same_as_customer").trim().toLowerCase();
+  // Formularmails indeholder ofte engelske labels, men dansk fritekst i "Body:".
+  // Hvis fallback med sikkerhed er dansk, skal den kunne overrule fejlklassificeret engelsk.
+  if (
+    fallbackLanguage === "da" &&
+    (strategyLanguage === "en" || assessmentLanguage === "en")
+  ) {
+    return "da";
+  }
+  if (strategyLanguage) return strategyLanguage;
   if (assessmentLanguage) return assessmentLanguage;
-  return String(options.fallbackLanguageHint || "same_as_customer").trim().toLowerCase();
+  return fallbackLanguage;
 }
 
 function detectReplyLanguage(text: string): string {
   const body = String(text || "").trim().toLowerCase();
   if (!body) return "unknown";
+  const lines = body.split("\n").map((line) => line.trim()).filter(Boolean);
+  const content =
+    lines.length > 1
+      ? lines.slice(1).join(" ")
+      : body;
   const danishSignals = [
-    /\b(?:hej|tak|venlig hilsen|hvis du har flere spørgsmål|du må meget gerne|du skal|vi gennemgår|vi vender tilbage|billeder|skaden|ikke tabt|svare her)\b/i,
+    /\b(?:hej|tak|venlig hilsen|hvis du har flere spørgsmål|du må meget gerne|du skal|vi gennemgår|vi vender tilbage|billeder|skaden|ikke tabt|svare her|jeg|kan|ikke|med|købt|købte|pris|tilbud|samarbejdspartner|desværre)\b/i,
     /[æøå]/i,
   ];
   const englishSignals = [
-    /\b(?:hi|hello|thank you|best regards|if you have any questions|please reply here|you can|we will review|photos|damage|not dropped)\b/i,
+    /\b(?:hi|hello|thank you|best regards|if you have any questions|please reply here|you can|we will review|photos|damage|not dropped|send a copy|we can|explore|good price|new headset|contact the original retailer)\b/i,
   ];
-  const danishScore = danishSignals.reduce((score, pattern) => score + (pattern.test(body) ? 1 : 0), 0);
-  const englishScore = englishSignals.reduce((score, pattern) => score + (pattern.test(body) ? 1 : 0), 0);
+  const danishScore = danishSignals.reduce((score, pattern) => score + (pattern.test(content) ? 1 : 0), 0);
+  const englishScore = englishSignals.reduce((score, pattern) => score + (pattern.test(content) ? 1 : 0), 0);
   if (danishScore > englishScore) return "da";
   if (englishScore > danishScore) return "en";
   return "unknown";
@@ -2163,9 +2194,9 @@ async function ensureReplyLanguageConsistency(options: {
   const intendedLanguage = String(options.languageHint || "").toLowerCase() || "unknown";
   const initialDetected = detectReplyLanguage(options.reply);
   const languageMatch =
-    intendedLanguage === "unknown" ||
-    initialDetected === "unknown" ||
-    initialDetected === intendedLanguage;
+    intendedLanguage === "unknown"
+      ? true
+      : initialDetected === intendedLanguage;
   if (languageMatch) {
     return {
       text: options.reply,
@@ -2188,9 +2219,9 @@ async function ensureReplyLanguageConsistency(options: {
   );
   const finalDetected = detectReplyLanguage(rewritten);
   const finalPassed =
-    intendedLanguage === "unknown" ||
-    finalDetected === "unknown" ||
-    finalDetected === intendedLanguage;
+    intendedLanguage === "unknown"
+      ? true
+      : finalDetected === intendedLanguage || finalDetected === "unknown";
   return {
     text: rewritten,
     artifact: {
@@ -3319,7 +3350,22 @@ Deno.serve(async (req) => {
       learnedStyle = mergeBullets([], learningProfile.styleRules).join("\n");
     }
 
-    const customerFirstName = extractOrderFirstName(selectedOrder) || extractCustomerFirstName(emailData);
+    const rawOrderFirstName = extractOrderFirstName(selectedOrder);
+    // If the order's first name looks like the email username (e.g. "Jakoblund" from "jakoblund@gmail.com"),
+    // it was likely auto-populated from the email address — prefer the email-extracted name instead.
+    const emailLocalPart = String(emailData?.fromEmail || "")
+      .split("@")[0]
+      .replace(/\d+/g, "")
+      .replace(/[._-]+/g, "")
+      .toLowerCase();
+    const orderNameMatchesEmailUsername =
+      rawOrderFirstName.length > 0 &&
+      emailLocalPart.length > 0 &&
+      rawOrderFirstName.toLowerCase() === emailLocalPart;
+    const customerFirstName =
+      rawOrderFirstName && !orderNameMatchesEmailUsername
+        ? rawOrderFirstName
+        : extractCustomerFirstName(emailData, { skipLocalPartFallback: orderNameMatchesEmailUsername });
     const policyContext = buildPinnedPolicyContext({
       subject: emailData.subject || "",
       body: emailData.body || "",
@@ -3445,6 +3491,7 @@ Deno.serve(async (req) => {
       policyIntent: policyContext.intent,
       returnDetailsFound: returnDetailsFoundText,
       returnDetailsMissing,
+      detectedLanguage: inferLanguageHint(emailData.subject || "", emailData.body || "") || null,
     });
     const inlineImageAttachments = await loadInlineImageAttachments({
       userId: ownerUserId,
@@ -3763,6 +3810,7 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       const systemMsgBase = [
         // HARD CONSTRAINTS — evaluated first, override persona and learned style
         "HARD CONSTRAINTS — these rules override all persona instructions and learned style:",
+        "0. LANGUAGE — HIGHEST PRIORITY: Detect the customer's language from their email body. If the email contains Danish characters (æ, ø, å) or Danish words (hej, tak, ordre, pakke, levering, etc.), respond entirely in Danish — even if product names, order data, or other context is in English. Only respond in English if the customer's email is written entirely in English with no Danish indicators.",
         "1. NEVER open with a sentence that summarizes or restates the customer's problem. Do not write 'Jeg forstår, at...', 'Jeg kan se at...', 'Det lyder som om...', 'I understand that...', 'I can see that...', or any variant. Go directly to the answer or next concrete step.",
         "2. NEVER write hollow helping phrases: 'Vi vil gerne hjælpe', 'Vi er her for at hjælpe', 'Vi vil gerne hjælpe dig med at finde en løsning', 'Jeg vil gerne hjælpe dig', 'I would like to help you'. These add no value. Go directly to the action or next step.",
         "3. NEVER end with hollow forward-looking phrases when you have NOT asked the customer for anything in this reply: 'Tøv ikke med at kontakte os', 'Lad os vide hvis du har spørgsmål', 'Hvis du har yderligere spørgsmål', 'Feel free to contact us', 'Don't hesitate to reach out', 'Vi glæder os til at høre fra dig', 'Vi ser frem til at hjælpe dig'. Exception: if you have actively asked the customer for information in this reply (e.g. a receipt, order number, photo, or clarification), a warm contextual closing like 'Jeg ser frem til at høre fra dig' is appropriate and human.",
@@ -3772,7 +3820,7 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         "Du er en kundeservice-assistent.",
         "Skriv kort, venligt og professionelt pa samme sprog som kundens mail.",
         "Hvis kunden skriver pa engelsk, svar pa engelsk selv om andre instruktioner er pa dansk.",
-        `Start altid svaret med "Hej ${customerFirstName || "kunden"},".`,
+        `Start svaret med en hilsen på kundens sprog: dansk → "Hej ${customerFirstName || "kunden"},", engelsk → "Hi ${customerFirstName || "there"},", spansk → "Hola ${customerFirstName || "there"},".`,
         "Brug KONTEKST-sektionen til at finde relevante oplysninger og nævn dem eksplicit i svaret.",
         "Ved returns/refunds/warranty/shipping: følg policy summary/excerpts strengt.",
         "Opfind aldrig return-portal URL, labels eller processer som ikke står i kontekst.",

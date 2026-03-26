@@ -18,13 +18,6 @@ function createServiceClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
-const normalizeSubject = (value = "") =>
-  String(value || "")
-    .toLowerCase()
-    .replace(/^(?:(?:re|fw|fwd)\s*:\s*)+/i, "")
-    .replace(/\s+/g, " ")
-    .trim();
-
 async function loadMailboxIds(serviceClient, scope) {
   const query = applyScope(serviceClient.from("mail_accounts").select("id"), scope);
   const { data, error } = await query;
@@ -35,7 +28,7 @@ async function loadMailboxIds(serviceClient, scope) {
 async function loadRelatedThreadIds(serviceClient, threadId, mailboxIds) {
   const { data: selectedThread, error: selectedThreadError } = await serviceClient
     .from("mail_threads")
-    .select("id, provider_thread_id, mailbox_id, subject")
+    .select("id, provider_thread_id, mailbox_id")
     .eq("id", threadId)
     .in("mailbox_id", mailboxIds)
     .limit(1)
@@ -45,7 +38,6 @@ async function loadRelatedThreadIds(serviceClient, threadId, mailboxIds) {
 
   const mailboxId = String(selectedThread.mailbox_id || "").trim();
   const providerThreadId = String(selectedThread.provider_thread_id || "").trim();
-  const subjectNorm = normalizeSubject(selectedThread.subject || "");
 
   if (!mailboxId) return [threadId];
 
@@ -58,24 +50,6 @@ async function loadRelatedThreadIds(serviceClient, threadId, mailboxIds) {
       .eq("provider_thread_id", providerThreadId)
       .order("created_at", { ascending: false });
     if (!error && Array.isArray(data)) siblingRows = data;
-  }
-
-  if ((!Array.isArray(siblingRows) || siblingRows.length <= 1) && subjectNorm) {
-    const { data: subjectRows, error: subjectError } = await serviceClient
-      .from("mail_threads")
-      .select("id, subject")
-      .eq("mailbox_id", mailboxId)
-      .order("created_at", { ascending: false })
-      .limit(2000);
-    if (!subjectError && Array.isArray(subjectRows)) {
-      const matches = subjectRows.filter(
-        (row) => normalizeSubject(row?.subject) === subjectNorm
-      );
-      siblingRows = [
-        ...(Array.isArray(siblingRows) ? siblingRows : []),
-        ...matches.map((row) => ({ id: row.id })),
-      ];
-    }
   }
 
   const ids = Array.from(
