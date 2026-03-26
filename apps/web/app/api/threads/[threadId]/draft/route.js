@@ -18,26 +18,63 @@ function createServiceClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
+const normalizeSubject = (value = "") =>
+  String(value || "")
+    .toLowerCase()
+    .replace(/^(?:(?:re|fw|fwd)\s*:\s*)+/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
 async function loadRelatedThreadIdsForDraftClear(serviceClient, scope, thread) {
   const fallbackId = String(thread?.id || "").trim();
   const mailboxId = String(thread?.mailbox_id || "").trim();
   const providerThreadId = String(thread?.provider_thread_id || "").trim();
-  if (!fallbackId || !mailboxId || !providerThreadId) return fallbackId ? [fallbackId] : [];
+  const subjectNorm = normalizeSubject(thread?.subject || "");
+  if (!fallbackId || !mailboxId) return fallbackId ? [fallbackId] : [];
 
-  const { data, error } = await applyScope(
-    serviceClient
-      .from("mail_threads")
-      .select("id")
-      .eq("mailbox_id", mailboxId)
-      .eq("provider_thread_id", providerThreadId),
-    scope
+  let siblingRows = [];
+  if (providerThreadId) {
+    const { data, error } = await applyScope(
+      serviceClient
+        .from("mail_threads")
+        .select("id")
+        .eq("mailbox_id", mailboxId)
+        .eq("provider_thread_id", providerThreadId),
+      scope
+    );
+    if (!error && Array.isArray(data)) siblingRows = data;
+  }
+
+  if ((!Array.isArray(siblingRows) || siblingRows.length <= 1) && subjectNorm) {
+    const { data: subjectRows, error: subjectError } = await applyScope(
+      serviceClient
+        .from("mail_threads")
+        .select("id, subject")
+        .eq("mailbox_id", mailboxId)
+        .order("created_at", { ascending: false })
+        .limit(2000),
+      scope
+    );
+    if (!subjectError && Array.isArray(subjectRows)) {
+      const matches = subjectRows.filter(
+        (row) => normalizeSubject(row?.subject) === subjectNorm
+      );
+      siblingRows = [
+        ...(Array.isArray(siblingRows) ? siblingRows : []),
+        ...matches.map((row) => ({ id: row.id })),
+      ];
+    }
+  }
+
+  const ids = Array.from(
+    new Set(
+      (siblingRows || [])
+        .map((row) => String(row?.id || "").trim())
+        .filter(Boolean)
+    )
   );
-  if (error || !Array.isArray(data) || !data.length) return [fallbackId];
-  const ids = data
-    .map((row) => String(row?.id || "").trim())
-    .filter(Boolean);
-  const unique = Array.from(new Set(ids));
-  return unique.length ? unique : [fallbackId];
+  if (!ids.length) return [fallbackId];
+  return ids.includes(fallbackId) ? ids : [fallbackId, ...ids];
 }
 
 async function loadLatestPendingDraftMeta(serviceClient, scope, threadKey) {
@@ -459,7 +496,7 @@ export async function DELETE(_request, { params }) {
   const { data: thread, error: threadError } = await applyScope(
     serviceClient
       .from("mail_threads")
-      .select("id, user_id, workspace_id, mailbox_id, provider, provider_thread_id")
+      .select("id, user_id, workspace_id, mailbox_id, provider, provider_thread_id, subject")
       .eq("id", threadId)
       .maybeSingle(),
     scope

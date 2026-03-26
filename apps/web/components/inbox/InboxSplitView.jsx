@@ -831,6 +831,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const currentUserName = [user?.firstName, user?.lastName].filter(Boolean).join(" ") || "You";
   const {
     data: selectedThreadMessagesFromDb,
+    refresh: refreshSelectedThreadMessages,
   } = useThreadMessages(selectedThreadId, {
     enabled: Boolean(selectedThreadId) && !String(selectedThreadId || "").startsWith("local-new-ticket-"),
   });
@@ -2693,10 +2694,12 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     const trimmed = text.trim();
     if (!trimmed) {
       if (!immediate || savingDraftRef.current) return;
+      let deleteSucceeded = false;
       try {
-        await fetch(`/api/threads/${threadId}/draft`, {
+        const res = await fetch(`/api/threads/${threadId}/draft`, {
           method: "DELETE",
         });
+        deleteSucceeded = Boolean(res?.ok);
       } catch {
         // ignore delete draft errors in UI flow
       }
@@ -2717,6 +2720,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         ...prev,
         [threadId]: true,
       }));
+      if (deleteSucceeded && threadId === selectedThreadIdRef.current) {
+        refreshSelectedThreadMessages?.().catch(() => null);
+      }
       return;
     }
     if (!immediate && trimmed === String(draftLastSavedRef.current[threadId] || "")) return;
@@ -2746,7 +2752,15 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     } finally {
       savingDraftRef.current = false;
     }
-  }, [composerMode, draftReady, draftValueByThread, derivedThreads, isLocalThreadId, selectedThreadId]);
+  }, [
+    composerMode,
+    draftReady,
+    draftValueByThread,
+    derivedThreads,
+    isLocalThreadId,
+    selectedThreadId,
+    refreshSelectedThreadMessages,
+  ]);
 
   const handleSelectThreadInWorkspace = useCallback(
     (threadId, options = {}) => {
