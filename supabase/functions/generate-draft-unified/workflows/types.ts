@@ -6,6 +6,7 @@ export type WorkflowSlug =
   | "return"
   | "exchange"
   | "product_question"
+  | "technical_support"
   | "payment"
   | "cancellation"
   | "refund"

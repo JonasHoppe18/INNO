@@ -1269,13 +1269,33 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     [internalSenderNames, mailboxEmails]
   );
 
+  const isLikelyInternalIdentity = useCallback(
+    (nameOrEmail = "") => {
+      const value = String(nameOrEmail || "").trim().toLowerCase();
+      if (!value) return false;
+      if (internalSenderNames.has(value)) return true;
+      if (value.includes("acezone support")) return true;
+      if (value.includes("support@acezone.io")) return true;
+      if (value.endsWith("@acezone.io") || value.endsWith("@sona-ai.dk")) return true;
+      return false;
+    },
+    [internalSenderNames]
+  );
+
   const customerByThread = useMemo(() => {
     const map = {};
     derivedThreads.forEach((thread) => {
       const threadCustomerName = String(thread?.customer_name || "").trim();
       const threadCustomerEmail = String(thread?.customer_email || "").trim();
       const threadSender = threadCustomerName || threadCustomerEmail;
-      if (threadSender && !/^unknown sender$/i.test(threadSender)) {
+      const threadIdentityIsInternal =
+        isLikelyInternalIdentity(threadCustomerName) ||
+        isLikelyInternalIdentity(threadCustomerEmail);
+      if (
+        threadSender &&
+        !/^unknown sender$/i.test(threadSender) &&
+        !threadIdentityIsInternal
+      ) {
         map[thread.id] = threadSender;
         return;
       }
@@ -1313,6 +1333,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     return map;
   }, [
     derivedThreads,
+    isLikelyInternalIdentity,
     isLikelyInternalSender,
     mailboxEmails,
     messagesByThread,

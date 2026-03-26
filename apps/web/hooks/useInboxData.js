@@ -592,18 +592,26 @@ export function useThreadPreviewMessages(threadIds = [], options = {}) {
         getToken,
         logLabel: "useThreadPreviewMessages",
       });
-      let request = supabase
-        .from("mail_messages")
-        .select(
-          "id, thread_id, from_name, from_email, extracted_customer_name, extracted_customer_email, to_emails, cc_emails, bcc_emails, from_me, received_at, sent_at, created_at"
-        )
-        .in("thread_id", normalizedThreadIds)
-        .order("received_at", { ascending: false, nullsLast: true })
-        .limit(Math.max(normalizedThreadIds.length * 4, 300));
-      request = applyClientScope(request, scope);
-      const { data: rows, error: queryError } = await request;
-      if (queryError) throw queryError;
-      setData(Array.isArray(rows) ? rows : []);
+      const chunkSize = 40;
+      const allRows = [];
+      for (let index = 0; index < normalizedThreadIds.length; index += chunkSize) {
+        const chunk = normalizedThreadIds.slice(index, index + chunkSize);
+        let request = supabase
+          .from("mail_messages")
+          .select(
+            "id, thread_id, from_name, from_email, extracted_customer_name, extracted_customer_email, to_emails, cc_emails, bcc_emails, from_me, received_at, sent_at, created_at"
+          )
+          .in("thread_id", chunk)
+          .order("received_at", { ascending: false, nullsLast: true })
+          .limit(Math.max(chunk.length * 20, 500));
+        request = applyClientScope(request, scope);
+        const { data: rows, error: queryError } = await request;
+        if (queryError) throw queryError;
+        if (Array.isArray(rows) && rows.length) {
+          allRows.push(...rows);
+        }
+      }
+      setData(allRows);
     } catch (err) {
       setError(err instanceof Error ? err : new Error("Could not load preview messages."));
     } finally {

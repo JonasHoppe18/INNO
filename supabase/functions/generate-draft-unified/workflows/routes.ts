@@ -12,6 +12,7 @@ import { buildPaymentDraft } from "./categories/payment.ts";
 import { buildProductDraft } from "./categories/product-question.ts";
 import { buildRefundDraft } from "./categories/refund.ts";
 import { buildReturnDraft } from "./categories/return.ts";
+import { buildTechnicalSupportDraft } from "./categories/technical-support.ts";
 import { buildTrackingDraft } from "./categories/tracking.ts";
 import type { WorkflowRoute, WorkflowSlug } from "./types.ts";
 
@@ -39,6 +40,8 @@ function categoryToWorkflow(category: EmailCategory): WorkflowSlug {
       return "exchange";
     case "Product question":
       return "product_question";
+    case "Technical support":
+      return "technical_support";
     case "Payment":
       return "payment";
     case "Cancellation":
@@ -63,6 +66,8 @@ export function buildWorkflowRoute(category: EmailCategory): WorkflowRoute {
       return buildExchangeDraft(category);
     case "product_question":
       return buildProductDraft(category);
+    case "technical_support":
+      return buildTechnicalSupportDraft(category);
     case "payment":
       return buildPaymentDraft(category);
     case "cancellation":

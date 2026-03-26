@@ -3,6 +3,7 @@ export const EMAIL_CATEGORIES = [
   "Return",
   "Exchange",
   "Product question",
+  "Technical support",
   "Payment",
   "Cancellation",
   "Refund",
@@ -202,18 +203,21 @@ async function classifyWithOpenAI(
   if (!apiKey) return null;
 
   const systemPrompt =
-    "You are an email classifier for a support inbox. Choose exactly one category.\n" +
+    "You are an email classifier for a customer support inbox.\n" +
+    "Choose exactly one category. Use descriptions to distinguish ambiguous cases.\n\n" +
     "Categories:\n" +
-    "- Tracking\n" +
-    "- Return\n" +
-    "- Exchange\n" +
-    "- Product question\n" +
-    "- Payment\n" +
-    "- Cancellation\n" +
-    "- Refund\n" +
-    "- Address change\n" +
-    "- General\n\n" +
-    'Return ONLY JSON: { "category": "<one of the categories>" }.';
+    "- Tracking: Customer asks where their shipment is, wants tracking number, or reports a delivery problem.\n" +
+    "- Return: Customer explicitly wants to send a product back.\n" +
+    "- Exchange: Customer wants to swap for a different size/color, or received the wrong item. Goal is replacement, not fixing.\n" +
+    "- Technical support: Product is not working and customer wants help fixing it. Examples: won't power on, factory reset loop, Bluetooth won't connect, not charging, firmware issue. Customer is NOT requesting a return or swap — they want the product to work.\n" +
+    "- Product question: Pre-purchase or general product information question.\n" +
+    "- Payment: Billing, invoice, receipt, failed or double charge.\n" +
+    "- Cancellation: Customer wants to cancel their order.\n" +
+    "- Refund: Customer wants their money back.\n" +
+    "- Address change: Customer needs to update the shipping address on an existing order.\n" +
+    "- General: Anything that does not fit the above categories.\n\n" +
+    "IMPORTANT: If a product is malfunctioning, not powering on, or has a hardware/firmware problem, classify as 'Technical support' — not 'Exchange' or 'Return'.\n\n" +
+    'Return ONLY JSON: { "category": "<one of the categories above, verbatim>" }.';
 
   const userPrompt = `From: ${from || "(unknown)"}\nSubject: ${
     subject || "(no subject)"

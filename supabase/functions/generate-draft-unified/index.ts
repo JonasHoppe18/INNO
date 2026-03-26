@@ -371,8 +371,9 @@ const isApprovalRequiredProposalFlow = (options: {
 const routeCategoryFromIntent = (intent: CaseAssessment["latest_message_primary_intent"]): EmailCategory | null => {
   switch (intent) {
     case "technical_issue":
-    case "product_question":
     case "warranty_complaint":
+      return "Technical support";
+    case "product_question":
       return "Product question";
     case "tracking_shipping":
       return "Tracking";
