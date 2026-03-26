@@ -822,6 +822,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const draftLastSavedRef = useRef("");
   const savingDraftRef = useRef(false);
   const draftValueRef = useRef("");
+  const selectedThreadIdRef = useRef(null);
   const supabase = useClerkSupabase();
   const { user } = useUser();
   const router = useRouter();
@@ -1056,6 +1057,10 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   useEffect(() => {
     draftValueRef.current = draftValue;
   }, [draftValue]);
+
+  useEffect(() => {
+    selectedThreadIdRef.current = selectedThreadId;
+  }, [selectedThreadId]);
 
   const activeNoteValue = selectedThreadId ? noteValueByThread[selectedThreadId] || "" : "";
   const composerValue = composerMode === "note" ? activeNoteValue : draftValue;
@@ -2064,6 +2069,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         return;
       }
       const payload = await res.json().catch(() => ({}));
+      if (!active) return;
       const draft = payload?.draft || null;
       const proposalOnly = payload?.proposal_only === true;
       const signature = String(payload?.signature || "");
@@ -2080,7 +2086,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           ...prev,
           [selectedThreadId]: true,
         }));
-        setDraftValue("");
+        if (selectedThreadIdRef.current === selectedThreadId) {
+          setDraftValue("");
+        }
         setDraftValueByThread((prev) => ({
           ...prev,
           [selectedThreadId]: "",
@@ -2101,7 +2109,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       });
       const draftText = draft?.body_text || draft?.body_html || "";
       if (draftText) {
-        setDraftValue(draftText);
+        if (selectedThreadIdRef.current === selectedThreadId) {
+          setDraftValue(draftText);
+        }
         setDraftValueByThread((prev) => ({
           ...prev,
           [selectedThreadId]: draftText,
@@ -2315,7 +2325,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           ...prev,
           [threadId]: true,
         }));
-        setDraftValue("");
+        if (selectedThreadIdRef.current === threadId) {
+          setDraftValue("");
+        }
         setDraftValueByThread((prev) => ({
           ...prev,
           [threadId]: "",
@@ -2338,7 +2350,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       });
       const draftText = draft?.body_text || draft?.body_html || "";
       if (draftText) {
-        setDraftValue(draftText);
+        if (selectedThreadIdRef.current === threadId) {
+          setDraftValue(draftText);
+        }
         setDraftValueByThread((prev) => ({
           ...prev,
           [threadId]: draftText,
@@ -2712,6 +2726,14 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     }
   }, [composerMode, draftReady, isLocalThreadId, selectedThread?.subject, selectedThreadId]);
 
+  const handleSelectThreadInWorkspace = useCallback(
+    (threadId, options = {}) => {
+      saveThreadDraft({ immediate: true, valueOverride: draftValueRef.current });
+      openThreadInWorkspace(threadId, options);
+    },
+    [openThreadInWorkspace, saveThreadDraft]
+  );
+
   useEffect(() => {
     if (isLocalThreadId(selectedThreadId)) return;
     if (!selectedThreadId || !draftReady) return;
@@ -2945,7 +2967,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           body: JSON.stringify({ threadId: selectedThreadId, status: "Pending" }),
         }).catch(() => null);
       }
-      setDraftValue("");
+      if (selectedThreadIdRef.current === selectedThreadId) {
+        setDraftValue("");
+      }
       setDraftValueByThread((prev) => ({
         ...prev,
         [selectedThreadId]: "",
@@ -3132,7 +3156,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
               const draft = draftPayload?.draft || null;
               const draftText = draft?.body_text || draft?.body_html || "";
               if (draftText) {
-                setDraftValue(draftText);
+                if (selectedThreadIdRef.current === selectedThreadId) {
+                  setDraftValue(draftText);
+                }
                 draftLastSavedRef.current = draftText.trim();
                 setSystemDraftUneditedByThread((prev) => ({
                   ...prev,
@@ -3223,7 +3249,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
               const sig = String(draftPayload?.signature || "");
               const draftText = draft?.rendered_body_text || draft?.body_text || draft?.body_html || "";
               if (draftText) {
-                setDraftValue(draftText);
+                if (selectedThreadIdRef.current === selectedThreadId) {
+                  setDraftValue(draftText);
+                }
                 draftValueRef.current = draftText;
                 draftLastSavedRef.current = draftText.trim();
                 setDraftValueByThread((prev) => ({ ...prev, [selectedThreadId]: draftText }));
@@ -3344,13 +3372,13 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         selectedThreadId={selectedThreadId}
         ticketStateByThread={ticketStateByThread}
         customerByThread={customerByThread}
-        onSelectThread={openThreadInWorkspace}
+        onSelectThread={handleSelectThreadInWorkspace}
         filters={filters}
         onFiltersChange={handleFiltersChange}
         getTimestamp={getThreadTimestamp}
         getUnreadCount={getThreadUnreadCount}
         onCreateTicket={handleCreateTicket}
-        onOpenInNewTab={(threadId) => openThreadInWorkspace(threadId, { newTab: true })}
+        onOpenInNewTab={(threadId) => handleSelectThreadInWorkspace(threadId, { newTab: true })}
         onDeleteThread={deleteThreadById}
         hideSolvedFilter={activeView === ""}
       />

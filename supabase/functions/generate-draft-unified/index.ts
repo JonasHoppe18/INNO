@@ -861,20 +861,9 @@ const extractNameFromBody = (value: string) => {
     }
   }
 
-  // Priority 1: greeting near top of customer message ("Hi Maria,", "Hej Jonas,")
-  const greetingNameRegex =
-    /^(hej|hi|hello|hey|dear|hola|bonjour|hallo)\s+([A-Za-zÆØÅæøåÀ-ÿ'-]{2,})(?=[\s,!.:;]|$)/i;
-  const greetingWindow = Math.min(lines.length, 8);
-  for (let idx = 0; idx < greetingWindow; idx += 1) {
-    const line = lines[idx];
-    if (!line || line.length > 64) continue;
-    const match = line.match(greetingNameRegex);
-    if (!match) continue;
-    const candidate = cleanNameToken(match[2] || "");
-    if (isValidNameToken(candidate)) return candidate;
-  }
-
-  // Priority 2: signoff + explicit name line at the very end.
+  // Priority 1: signoff + explicit name line at the very end (most reliable).
+  // Must run before greeting detection to avoid picking up the shop/recipient name
+  // from the customer's own opening greeting (e.g. "Hi AceZone,").
   const signoffRegex = /^(mvh|venlig hilsen|med venlig hilsen|best regards|kind regards|regards|hilsen)$/i;
   for (let idx = lines.length - 1; idx >= 1; idx -= 1) {
     const current = String(lines[idx] || "");
@@ -885,6 +874,20 @@ const extractNameFromBody = (value: string) => {
     if (current.includes("@")) continue;
     const candidate = extractFirstCandidateToken(current);
     if (candidate) return candidate;
+  }
+
+  // Priority 2: greeting near top of customer message ("Hi Maria,", "Hej Jonas,").
+  // Used as fallback only — greetings are often directed at the shop, not the sender.
+  const greetingNameRegex =
+    /^(hej|hi|hello|hey|dear|hola|bonjour|hallo)\s+([A-Za-zÆØÅæøåÀ-ÿ'-]{2,})(?=[\s,!.:;]|$)/i;
+  const greetingWindow = Math.min(lines.length, 8);
+  for (let idx = 0; idx < greetingWindow; idx += 1) {
+    const line = lines[idx];
+    if (!line || line.length > 64) continue;
+    const match = line.match(greetingNameRegex);
+    if (!match) continue;
+    const candidate = cleanNameToken(match[2] || "");
+    if (isValidNameToken(candidate)) return candidate;
   }
 
   // No reliable name found in message body.
@@ -901,7 +904,25 @@ const normalizeCustomerFirstName = (value: string) => {
 
 const extractCustomerFirstName = (emailData: EmailData) => {
   const fromName = extractNameFromFromField(emailData?.from || "");
-  if (fromName) return normalizeCustomerFirstName(fromName);
+  if (fromName) {
+    // If the from-field "name" looks like a username (matches email local part after stripping
+    // digits/separators), fall through to body extraction for a more reliable name.
+    // e.g. "Jakoblund34 <jakoblund34@gmail.com>" should not produce "Jakoblund".
+    const localPart = String(emailData?.fromEmail || "")
+      .split("@")[0]
+      .replace(/\d+/g, "")
+      .replace(/[._-]+/g, "")
+      .toLowerCase();
+    const fromStripped = fromName.replace(/[^A-Za-z]/g, "").toLowerCase();
+    // Consider it a username only when the stripped from-name and local part are
+    // essentially the same token (exact match or one fully contains the other with
+    // no remaining characters that would indicate a surname was concatenated).
+    const isUsername =
+      localPart.length > 0 &&
+      fromStripped.length > 0 &&
+      fromStripped === localPart;
+    if (!isUsername) return normalizeCustomerFirstName(fromName);
+  }
   const bodyName = extractNameFromBody(emailData?.body || "");
   if (bodyName) return normalizeCustomerFirstName(bodyName);
   const localPart = String(emailData?.fromEmail || "")

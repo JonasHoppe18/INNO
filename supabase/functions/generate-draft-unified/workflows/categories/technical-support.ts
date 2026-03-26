@@ -13,6 +13,7 @@ export function buildTechnicalSupportDraft(category: EmailCategory): WorkflowRou
       "Workflow er Technical support: fokus på fejlfinding og løsning. Foreslå ALDRIG retur, bytte eller refusion som første svar.",
     promptBlocks: [
       "TECHNICAL SUPPORT FOCUS:\n" +
+      "- Do NOT summarize or restate the customer's problem back to them — they know what their problem is. Go straight to the response or next step.\n" +
       "- Acknowledge the exact symptom the customer described.\n" +
       "- Provide concrete troubleshooting steps from the product knowledge base (numbered list if multiple steps).\n" +
       "- If the knowledge base has no relevant steps, ask specific diagnostic questions (e.g. firmware version, paired device/OS).\n" +

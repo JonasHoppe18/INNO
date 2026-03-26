@@ -433,6 +433,7 @@ export function TicketDetail({
       ) : (
         <div className="px-3 pb-1.5">
           <Composer
+            key={`${thread?.id || "thread"}:${composerMode}`}
             value={draftValue}
             onChange={onDraftChange}
             signatureValue={signatureValue}
