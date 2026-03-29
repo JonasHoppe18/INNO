@@ -23,8 +23,11 @@ const APPROVAL_ACTION_TYPES = new Set([
   "send_return_instructions",
 ]);
 
-const TRACKING_INTENT_PATTERN =
-  /\b(track|tracking|trace|shipment|shipped|shipping status|delivery|delivered|out for delivery|parcel|package|pakke|pakken|forsendelse|forsendt|levering|leveret|spor|sporing|track and trace|track&trace)\b/i;
+const TRACKING_KEYWORD_PATTERN =
+  /\b(track|tracking|trace|shipment|shipping|delivery|delivered|out for delivery|parcel|package|pakke|pakken|forsendelse|levering|leveret|spor|sporing|track and trace|track&trace)\b/i;
+
+const TRACKING_STATUS_QUESTION_PATTERN =
+  /\b(where is my order|order status|shipping status|delivery status|when will .*arriv|estimated delivery|not received|still haven'?t received|hvor er min ordre|hvor bliver .* af|hvornår .* lever|leveringstid|forventet levering|ikke modtaget)\b/i;
 
 function getLatestInboundCustomerMessage(messages = [], mailboxEmails = []) {
   const rows = Array.isArray(messages) ? messages : [];
@@ -38,12 +41,16 @@ function getLatestInboundCustomerMessage(messages = [], mailboxEmails = []) {
 
 function messageLooksLikeTrackingQuestion(message = null) {
   if (!message) return false;
-  const haystack = [message?.subject, message?.body_text, message?.snippet]
+  const haystack = [message?.clean_body_text, message?.body_text, message?.snippet]
     .map((value) => String(value || "").trim())
     .filter(Boolean)
     .join("\n");
   if (!haystack) return false;
-  return TRACKING_INTENT_PATTERN.test(haystack);
+  const hasTrackingKeyword = TRACKING_KEYWORD_PATTERN.test(haystack);
+  if (!hasTrackingKeyword) return false;
+  if (TRACKING_STATUS_QUESTION_PATTERN.test(haystack)) return true;
+  const hasQuestionSignal = /\?|\b(where|when|how long|hvor|hvornår|hvordan)\b/i.test(haystack);
+  return hasQuestionSignal;
 }
 
 export function TicketDetail({
@@ -68,7 +75,6 @@ export function TicketDetail({
   canSend,
   onSend,
   pendingOrderUpdate,
-  returnCase,
   orderUpdateDecision,
   orderUpdateSubmitting,
   orderUpdateError,
@@ -203,6 +209,7 @@ export function TicketDetail({
     () => getLatestInboundCustomerMessage(messages, mailboxEmails),
     [mailboxEmails, messages]
   );
+  const latestInboundCustomerMessageId = String(latestInboundCustomerMessage?.id || "");
   const shouldShowTrackingCard = useMemo(() => {
     const hasTrackingData = Boolean(
       selectedOrderSummary?.tracking?.number || selectedOrderSummary?.tracking?.url
@@ -274,33 +281,6 @@ export function TicketDetail({
         onScroll={(event) => onConversationScroll?.(event.currentTarget.scrollTop)}
       >
         <div className="mx-auto w-full max-w-[900px] space-y-4 px-4 pb-4 pt-3">
-          {returnCase ? (
-            <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
-              <div className="font-medium text-slate-800">Return Case</div>
-              <div className="mt-1 text-slate-600">
-                Status: <span className="font-medium">{String(returnCase?.status || "requested")}</span>
-              </div>
-              <div className="text-slate-600">
-                Eligibility:{" "}
-                <span className="font-medium">
-                  {typeof returnCase?.is_eligible === "boolean"
-                    ? returnCase.is_eligible
-                      ? "Eligible"
-                      : "Not eligible"
-                    : "Manual review"}
-                </span>
-              </div>
-              <div className="text-slate-600">
-                Shipping mode:{" "}
-                <span className="font-medium">
-                  {String(returnCase?.return_shipping_mode || "customer_paid")}
-                </span>
-              </div>
-              {returnCase?.reason ? (
-                <div className="text-slate-600">Reason: {String(returnCase.reason)}</div>
-              ) : null}
-            </div>
-          ) : null}
           {orderUpdateError && !shouldShowActionCard ? (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
               {orderUpdateError}
@@ -380,6 +360,13 @@ export function TicketDetail({
                   attachments={messageAttachments}
                   outboundSenderName={currentUserName}
                 />
+                {shouldShowTrackingCard &&
+                  latestInboundCustomerMessageId &&
+                  String(message?.id || "") === latestInboundCustomerMessageId ? (
+                  <div className="ml-auto flex w-full max-w-[520px] justify-end">
+                    <TrackingCard order={selectedOrderSummary} threadId={thread?.id || null} />
+                  </div>
+                ) : null}
               </div>
             );
           })}
@@ -408,11 +395,6 @@ export function TicketDetail({
                 }
                 onDecline={() => onOrderUpdateDecision?.("denied")}
               />
-            </div>
-          ) : null}
-          {shouldShowTrackingCard ? (
-            <div className="ml-auto flex w-full max-w-[520px] justify-end">
-              <TrackingCard order={selectedOrderSummary} threadId={thread?.id || null} />
             </div>
           ) : null}
         </div>

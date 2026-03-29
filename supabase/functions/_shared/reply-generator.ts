@@ -541,6 +541,9 @@ export async function generateReplyFromStrategy(
     ongoingTechnicalTroubleshootingFlow
       ? "If the customer has already answered prior troubleshooting questions or already tried steps, do not ask them to repeat those basics. Prefer the next practical troubleshooting step or one narrowly missing detail."
       : "",
+    ongoingTechnicalTroubleshootingFlow
+      ? "Do not output a generic starter checklist (e.g. 'charge for an hour', 'reset pairing list', 're-pair everything', 'try firmware update') unless each step is explicitly grounded in APPROVED TROUBLESHOOTING FACTS or directly requested in CUSTOMER MESSAGE."
+      : "",
     hasTechnicalDiagnosticFacts
       ? "When APPROVED TROUBLESHOOTING FACTS are present, prioritize them over broader technical knowledge and use them to make the reply more concrete."
       : "",

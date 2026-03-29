@@ -1,11 +1,9 @@
 import { useMemo, useState } from "react";
 import {
-  Bot,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
   LoaderCircle,
-  ShieldAlert,
   X,
   XCircle,
 } from "lucide-react";
@@ -155,6 +153,70 @@ function getResultStatusText({ status = "completed", actionType = "", testMode =
   return getActionStatusLabel(actionType);
 }
 
+function getRefundAmount(payload = {}, orderSummary = null) {
+  const candidates = [
+    payload?.amount,
+    payload?.refund_amount,
+    payload?.refundAmount,
+    payload?.value,
+  ];
+  for (const candidate of candidates) {
+    const amount = parseAmount(candidate);
+    if (amount !== null) {
+      return formatCurrency(amount, payload?.currency || orderSummary?.currency || null);
+    }
+  }
+  return null;
+}
+
+function getApproveButtonLabel({ actionType = "", actionName = "", payload = {}, orderSummary = null }) {
+  const normalizedAction = String(actionType || "").trim().toLowerCase();
+  if (normalizedAction === "cancel_order") return "Approve cancellation";
+  if (normalizedAction === "refund_order") {
+    const amount = getRefundAmount(payload, orderSummary);
+    return amount ? `Approve refund (${amount})` : "Approve refund";
+  }
+  if (normalizedAction === "create_exchange_request") return "Approve exchange";
+  if (normalizedAction === "process_exchange_return") return "Approve return processing";
+  if (normalizedAction === "update_shipping_address") return "Approve address update";
+  if (normalizedAction === "change_shipping_method") return "Approve shipping change";
+  if (normalizedAction === "update_customer_contact") return "Approve contact update";
+  if (normalizedAction === "send_return_instructions") return "Approve return instructions";
+  if (normalizedAction === "forward_email") return "Approve forward";
+  const fallback = String(actionName || "").trim();
+  return fallback ? `Approve ${fallback.toLowerCase()}` : "Approve action";
+}
+
+function getImpactSummaryLines({ actionType = "", payload = {}, orderDisplayNumber = "", orderSummary = null }) {
+  const normalizedAction = String(actionType || "").trim().toLowerCase();
+  const lines = [];
+  if (normalizedAction === "cancel_order") {
+    lines.push("This order will be cancelled in Shopify.");
+  } else if (normalizedAction === "refund_order") {
+    const amount = getRefundAmount(payload, orderSummary);
+    lines.push(amount ? `A refund of ${amount} will be issued.` : "A refund will be issued.");
+  } else if (normalizedAction === "create_exchange_request") {
+    lines.push("An exchange request will be created for this customer.");
+  } else if (normalizedAction === "process_exchange_return") {
+    lines.push("The return will be processed in Shopify.");
+  } else if (normalizedAction === "send_return_instructions") {
+    lines.push("Return instructions will be sent to the customer.");
+  } else if (normalizedAction === "update_shipping_address") {
+    lines.push("Shipping address on the order will be updated.");
+  } else if (normalizedAction === "change_shipping_method") {
+    lines.push("Shipping method on the order will be changed.");
+  } else if (normalizedAction === "update_customer_contact") {
+    lines.push("Customer contact details will be updated.");
+  } else {
+    lines.push("This action will apply the requested change.");
+  }
+
+  if (orderDisplayNumber) {
+    lines.push(`Applies to ${orderDisplayNumber}.`);
+  }
+  return lines;
+}
+
 function parseAmount(value) {
   if (value === null || value === undefined || value === "") return null;
   const num = Number(String(value).replace(",", "."));
@@ -248,6 +310,7 @@ export function ActionCard({
     () => getResultStatusText({ status, actionType, testMode }),
     [actionType, status, testMode]
   );
+  const normalizedAction = String(actionType || "").trim().toLowerCase();
   const resolvedOrderNumber =
     String(orderSummary?.id || orderSummary?.orderNumber || fallbackOrderNumber || "").trim();
   const hasResolvedOrderNumber = Boolean(resolvedOrderNumber);
@@ -263,6 +326,26 @@ export function ActionCard({
   );
   const orderCustomer = customerEmail || orderSummary?.customerEmail || null;
   const orderItems = Array.isArray(orderSummary?.items) ? orderSummary.items.filter(Boolean) : [];
+  const approveButtonLabel = useMemo(
+    () => getApproveButtonLabel({ actionType, actionName, payload, orderSummary }),
+    [actionName, actionType, orderSummary, payload]
+  );
+  const impactSummaryLines = useMemo(
+    () =>
+      getImpactSummaryLines({
+        actionType,
+        payload,
+        orderDisplayNumber,
+        orderSummary,
+      }),
+    [actionType, orderDisplayNumber, orderSummary, payload]
+  );
+  const proposedTitle = useMemo(() => {
+    if (normalizedAction === "cancel_order" && orderDisplayNumber) {
+      return `${actionName} ${orderDisplayNumber}`;
+    }
+    return actionName;
+  }, [actionName, normalizedAction, orderDisplayNumber]);
 
   if (isResultState) {
     return (
@@ -441,37 +524,26 @@ export function ActionCard({
   }
 
   return (
-    <div className="w-full max-w-[520px] overflow-hidden rounded-lg border border-indigo-100 bg-white">
+    <div className="w-full max-w-[520px] overflow-hidden rounded-lg border border-violet-100 bg-white">
       <div className="p-3">
-        <div className="flex items-start gap-3">
-          <div className="rounded-full bg-indigo-50 p-1.5">
-            {actionName.toLowerCase().includes("address") ? (
-              <ShieldAlert className="h-3.5 w-3.5 text-indigo-600" />
-            ) : (
-              <Bot className="h-3.5 w-3.5 text-indigo-600" />
-            )}
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center">
+              <Image src={shopifyLogo} alt="" className="h-12 w-12 object-contain" />
+            </div>
+            <div className="truncate text-l font-semibold leading-tight text-slate-900">{proposedTitle}</div>
           </div>
-          <div className="min-w-0 flex-1">
-            <div className="text-base font-semibold text-slate-900">{actionName}</div>
-            <div className="mt-0.5 text-xs font-medium text-amber-600">Awaiting approval</div>
+          <div className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-violet-600">
+            <LoaderCircle className="h-5 w-5 animate-spin" />
+            <span>Awaiting approval</span>
           </div>
         </div>
 
-        <div className="mt-2 rounded-md border border-indigo-100 bg-slate-50/40 p-2.5">
-          <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-            Requested Change
-          </div>
-          <div className="mt-1 space-y-0.5 text-sm text-slate-700">
-            {addressLines.length ? (
-              addressLines.map((line, index) => <div key={`pending-line-${index}`}>{line}</div>)
-            ) : (
-              <div>
-                {detail || `Sona wants to ${actionName.toLowerCase()}.`}
-                {orderDisplayNumber && normalizedAction === "cancel_order" ? (
-                  <span className="ml-1 font-medium text-slate-900">{orderDisplayNumber}</span>
-                ) : null}
-              </div>
-            )}
+        <div className="mt-3 rounded-md border border-violet-100 bg-slate-50/40 p-2.5">
+          <div className="space-y-0.5 text-sm text-slate-700">
+            {impactSummaryLines.map((line, index) => (
+              <div key={`impact-line-${index}`}>{line}</div>
+            ))}
           </div>
         </div>
 
@@ -479,8 +551,8 @@ export function ActionCard({
         {extraContent ? <div className="mt-2">{extraContent}</div> : null}
       </div>
 
-      <div className="flex items-center justify-between gap-2 border-t border-indigo-100 bg-indigo-50/30 px-3 py-2">
-        <div className="text-xs text-slate-600">Requires approval</div>
+      <div className="flex items-center justify-between gap-2 border-t border-violet-100 bg-violet-50/30 px-3 py-2">
+        <div className="text-xs text-slate-600">This action requires your approval</div>
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -493,12 +565,12 @@ export function ActionCard({
           </button>
           <button
             type="button"
-            className="inline-flex items-center gap-1 rounded-md bg-indigo-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center gap-1 rounded-md bg-violet-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
             onClick={onApprove}
             disabled={loading}
           >
             <CheckCircle2 className="h-3.5 w-3.5" />
-            {loading ? "Applying..." : "Approve"}
+            {loading ? "Applying..." : approveButtonLabel}
           </button>
         </div>
       </div>

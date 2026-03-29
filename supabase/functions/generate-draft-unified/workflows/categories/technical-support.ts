@@ -17,6 +17,8 @@ export function buildTechnicalSupportDraft(category: EmailCategory): WorkflowRou
       "- Acknowledge the exact symptom the customer described.\n" +
       "- Provide concrete troubleshooting steps from the product knowledge base (numbered list if multiple steps).\n" +
       "- If the knowledge base has no relevant steps, ask specific diagnostic questions (e.g. firmware version, paired device/OS).\n" +
+      "- In follow-up troubleshooting threads, do NOT send a generic starter checklist (charge for 1 hour, reset pairing list, basic re-pair flow) unless the customer explicitly asked to retry those exact steps.\n" +
+      "- In follow-up troubleshooting threads, every step must be justified by concrete context from the latest customer message or approved troubleshooting facts.\n" +
       "- Do NOT mention returns, exchanges, or refunds unless troubleshooting is exhausted and explicitly grounded in the approved context.\n" +
       "- Do NOT add a signature.",
       "NO-ORDER / THIRD-PARTY PURCHASE RULES:\n" +
@@ -31,6 +33,7 @@ export function buildTechnicalSupportDraft(category: EmailCategory): WorkflowRou
       "Never close with 'Jeg ser frem til at høre fra dig' or any forward-looking hollow phrase.",
       "Never repeat the same limitation or fact twice in the same reply.",
       "When no order data and no KB steps exist, keep the reply to 2-3 sentences maximum.",
+      "In follow-up troubleshooting cases, never fall back to a generic 'charge/reset/re-pair/update firmware' checklist unless each step is explicitly grounded in approved facts or the latest customer message.",
     ],
     allowedActionTypes: [
       "lookup_order_status",

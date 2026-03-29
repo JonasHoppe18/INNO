@@ -805,6 +805,11 @@ function inferReplyGoalLabel(input: {
   ) {
     return "troubleshoot_connectivity_issue";
   }
+  if (input.assessment.primary_case_type === "technical_issue") {
+    return input.messageUnderstanding.is_continuation
+      ? "continue_troubleshooting"
+      : "answer_practical_question";
+  }
   if (
     input.assessment.primary_case_type === "tracking_shipping" ||
     input.messageUnderstanding.ask_shape === "status_check"

@@ -167,22 +167,49 @@ export function guardSameChannelEscalation(options: {
   }
 
   const lines = original.split("\n");
+  const isDanish = String(options.languageHint || "").toLowerCase() === "da" ||
+    String(options.languageHint || "").toLowerCase() === "same_as_customer";
+  const inThreadPhrase = isDanish ? "svar her" : "reply here";
   let removed = false;
-  const filtered = lines.filter((line) => {
+  const rewritten = lines.map((line) => {
     const body = String(line || "").trim();
-    if (!body) return true;
+    if (!body) return line;
+    // Same-channel escalation (email/support@) must NEVER be allowlisted.
+    const sameChannelMatch = SAME_CHANNEL_ESCALATION_LINE_PATTERNS.some((pattern) => pattern.test(body));
+    if (sameChannelMatch) {
+      removed = true;
+      let next = body;
+      next = next.replace(/\bplease\s+email\s+\S+@\S+\b/gi, `please ${inThreadPhrase}`);
+      next = next.replace(/\bsupport@\S+\b/gi, inThreadPhrase);
+      next = next.replace(/\bcontact us at\s+\S+@\S+\b/gi, inThreadPhrase);
+      next = next.replace(/\bwrite to us at\s+\S+@\S+\b/gi, inThreadPhrase);
+      next = next.replace(/\bsend (?:us|an) (?:an )?e-?mail\b/gi, inThreadPhrase);
+      next = next.replace(/\bemail us\b/gi, inThreadPhrase);
+      next = next.replace(/\breply by e-?mail\b/gi, inThreadPhrase);
+      next = next.replace(/\breach out to us via e-?mail\b/gi, inThreadPhrase);
+      next = next.replace(/\bnotify us by e-?mail\b/gi, inThreadPhrase);
+      next = next.replace(/\bwrite to us by e-?mail\b/gi, inThreadPhrase);
+      next = next.replace(/\bcontact us via e-?mail\b/gi, inThreadPhrase);
+      next = next.replace(/\bcontact us by e-?mail\b/gi, inThreadPhrase);
+      next = next.replace(/\bskriv til\s+\S+@\S+\b/gi, inThreadPhrase);
+      next = next.replace(/\bkontakt os på\s+\S+@\S+\b/gi, inThreadPhrase);
+      next = next.replace(/\bsend os en e-?mail\b/gi, inThreadPhrase);
+      next = next.replace(/\bskriv til os på e-?mail\b/gi, inThreadPhrase);
+      next = next.replace(/\bskriv til os via e-?mail\b/gi, inThreadPhrase);
+      next = next.replace(/\bkontakt os via e-?mail\b/gi, inThreadPhrase);
+      next = next.replace(/\s{2,}/g, " ").trim();
+      return next;
+    }
+
     const allowDetailFollowup = DETAIL_FOLLOWUP_ALLOWLIST_PATTERNS.some((pattern) => pattern.test(body));
-    const match =
-      !allowDetailFollowup &&
-      (
-        SAME_CHANNEL_ESCALATION_LINE_PATTERNS.some((pattern) => pattern.test(body)) ||
-        REDUNDANT_IN_THREAD_NOTIFICATION_LINE_PATTERNS.some((pattern) => pattern.test(body))
-      );
+    const match = !allowDetailFollowup &&
+      REDUNDANT_IN_THREAD_NOTIFICATION_LINE_PATTERNS.some((pattern) => pattern.test(body));
     if (match) removed = true;
-    return !match;
+    return match ? "" : line;
   });
 
-  let next = filtered.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  let next = rewritten.filter((line) => String(line || "").trim().length > 0).join("\n")
+    .replace(/\n{3,}/g, "\n\n").trim();
   if (removed) {
     const hasInThreadPhrase =
       /\breply here\b/i.test(next) ||
@@ -192,8 +219,6 @@ export function guardSameChannelEscalation(options: {
       /\bskriv her\b/i.test(next) ||
       /\bgiv os gerne besked her\b/i.test(next);
     if (!hasInThreadPhrase) {
-      const isDanish = String(options.languageHint || "").toLowerCase() === "da" ||
-        String(options.languageHint || "").toLowerCase() === "same_as_customer";
       const addition = isDanish
         ? "Hvis du har flere spørgsmål, er du velkommen til bare at svare her."
         : "If you have any questions, just reply here.";

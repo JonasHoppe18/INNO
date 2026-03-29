@@ -2100,7 +2100,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           ...prev,
           [selectedThreadId]: false,
         }));
-        setActiveDraftId(null);
+        if (selectedThreadIdRef.current === selectedThreadId) {
+          setActiveDraftId(null);
+        }
         setDraftReady(true);
         return;
       }
@@ -2335,13 +2337,17 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           ...prev,
           [threadId]: "",
         }));
-        draftValueRef.current = "";
+        if (selectedThreadIdRef.current === threadId) {
+          draftValueRef.current = "";
+        }
         draftLastSavedRef.current[threadId] = "";
         setSystemDraftUneditedByThread((prev) => ({
           ...prev,
           [threadId]: false,
         }));
-        setActiveDraftId(null);
+        if (selectedThreadIdRef.current === threadId) {
+          setActiveDraftId(null);
+        }
         toast.success("Action proposal created and is awaiting approval.");
         return;
       }
@@ -2360,13 +2366,15 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           ...prev,
           [threadId]: draftText,
         }));
-        draftValueRef.current = draftText;
+        if (selectedThreadIdRef.current === threadId) {
+          draftValueRef.current = draftText;
+        }
         draftLastSavedRef.current[threadId] = draftText.trim();
         setSystemDraftUneditedByThread((prev) => ({
           ...prev,
           [threadId]: true,
         }));
-        if (draft?.id) {
+        if (draft?.id && selectedThreadIdRef.current === threadId) {
           setActiveDraftId(draft.id);
         }
         toast.success("Draft generated.");
@@ -3201,7 +3209,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
                   [selectedThreadId]: true,
                 }));
               }
-              if (draft?.id) setActiveDraftId(draft.id);
+              if (draft?.id && selectedThreadIdRef.current === selectedThreadId) {
+                setActiveDraftId(draft.id);
+              }
             }
           }
 
@@ -3288,12 +3298,16 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
                 if (selectedThreadIdRef.current === selectedThreadId) {
                   setDraftValue(draftText);
                 }
-                draftValueRef.current = draftText;
+                if (selectedThreadIdRef.current === selectedThreadId) {
+                  draftValueRef.current = draftText;
+                }
                 draftLastSavedRef.current[selectedThreadId] = draftText.trim();
                 setDraftValueByThread((prev) => ({ ...prev, [selectedThreadId]: draftText }));
                 setSystemDraftUneditedByThread((prev) => ({ ...prev, [selectedThreadId]: true }));
               }
-              if (draft?.id) setActiveDraftId(draft.id);
+              if (draft?.id && selectedThreadIdRef.current === selectedThreadId) {
+                setActiveDraftId(draft.id);
+              }
               if (sig) setSignatureByThread((prev) => ({ ...prev, [selectedThreadId]: sig }));
             }
           }

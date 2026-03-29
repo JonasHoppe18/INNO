@@ -33,6 +33,8 @@ type MailPromptOptions = {
    * Fx "da" for dansk, "en" for engelsk. Injiceres øverst i prompten som hård regel.
    */
   detectedLanguage?: string | null;
+  caseStateText?: string | null;
+  threadHistoryText?: string | null;
 };
 
 function firstNameOrNull(fullName?: string | null): string | null {
@@ -78,6 +80,8 @@ export function buildMailPrompt({
   returnDetailsMissing,
   nowIso,
   detectedLanguage,
+  caseStateText,
+  threadHistoryText,
 }: MailPromptOptions): string {
   const refundPolicy = policies?.policy_refund?.trim();
   const shippingPolicy = policies?.policy_shipping?.trim();
@@ -113,6 +117,7 @@ export function buildMailPrompt({
         ongoingReturnContinuation
           ? "- Do not ask again for order_number or name_used_at_purchase when the order is already known in the thread context."
           : "- Ask only for missing details: order_number, name_used_at_purchase, reason.",
+        "- If order_number is unknown, do not provide final return address/instructions yet. Ask for order_number first in this thread.",
         "- If RETURN DETAILS FOUND contains an order_number, do not ask for order number again.",
         allReturnDetailsPresent
           ? ongoingReturnContinuation
@@ -162,6 +167,8 @@ ${matchedSubjectNumber ? `Note: Kunden har nævnt ordrenummer #${matchedSubjectN
 ${customerName ? `Kundens navn: ${customerName}` : "Kundens navn: ukendt"}
 ${timeContextLine}
 ${extraContext ? `Ekstra viden: ${extraContext}` : ""}
+${caseStateText ? `${caseStateText}` : ""}
+${threadHistoryText ? `${threadHistoryText}` : ""}
 ${policyRules ? `${policyRules}` : ""}
 ${
   policySummary
@@ -192,6 +199,8 @@ ${learnedStyle ? `--- LEARNED STYLE (auto) ---\n${learnedStyle}\n` : ""}
 
   prompt += `
 INSTRUKTIONER TIL SVARET:
+Use CASE STATE as the primary source of truth for verified facts and execution status.
+Use RECENT THREAD HISTORY to avoid repeating already answered points.
 0. **Sprog:** Svar på samme sprog som kundens mail (inkl. hilsen og afslutning). Hvis mailen er på engelsk, svar på engelsk.
 1. **Start — ingen opsummering, ingen filler (kritisk):**
    - Opsummer ALDRIG kundens problem tilbage til dem. Kunden ved hvad deres problem er.

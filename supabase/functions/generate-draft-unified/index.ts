@@ -49,10 +49,18 @@ import {
 } from "../_shared/reply-safety.ts";
 import { AutomationAction, executeAutomationActions } from "../_shared/automation-actions.ts";
 import { classifyEmail } from "../_shared/classify-email.ts";
-import type { EmailCategory } from "../_shared/email-category.ts";
 import { PERSONA_REPLY_JSON_SCHEMA } from "../_shared/openai-schema.ts";
 import { buildOrderSummary, resolveOrderContext } from "../_shared/shopify.ts";
 import { buildMailPrompt } from "../_shared/prompt.ts";
+import {
+  buildCaseState,
+  formatCaseStateForPrompt,
+  formatThreadHistoryForPrompt,
+} from "../_shared/case-state.ts";
+import {
+  evaluateThreadContextGate,
+  hasThreadReplyHeaders,
+} from "../_shared/thread-context-gate.ts";
 import { formatEmailBody } from "../_shared/email.ts";
 import { buildPinnedPolicyContext } from "../_shared/policy-context.ts";
 import {
@@ -67,6 +75,8 @@ import {
   isReturnReasonRequiredByPolicy,
   missingReturnDetails,
 } from "../_shared/return-details.ts";
+import { resolveReturnMissingDetails } from "../_shared/return-missing-guard.ts";
+import { guardReturnReplyWithoutOrderContext } from "../_shared/return-order-gate.ts";
 import { fetchTrackingDetailsForOrders } from "../_shared/tracking.ts";
 import {
   buildTrackingReplyFallback,
@@ -77,6 +87,7 @@ import {
 import { applyWorkflowActionPolicy } from "./workflows/action-policy.ts";
 import { BASE_ACTION_CONTEXT } from "./workflows/prompt-parts.ts";
 import { buildWorkflowRoute, extractThreadCategoryFromTags } from "./workflows/routes.ts";
+import { resolveLatestMessageCategoryOverride } from "./workflows/latest-message-routing.ts";
 
 
 const PROJECT_URL = Deno.env.get("PROJECT_URL") ?? Deno.env.get("SUPABASE_URL");
@@ -368,46 +379,6 @@ const isApprovalRequiredProposalFlow = (options: {
   options.executionState === "pending_approval" ||
   options.validation?.decision === "approval_required";
 
-const routeCategoryFromIntent = (intent: CaseAssessment["latest_message_primary_intent"]): EmailCategory | null => {
-  switch (intent) {
-    case "technical_issue":
-    case "warranty_complaint":
-      return "Technical support";
-    case "product_question":
-      return "Product question";
-    case "tracking_shipping":
-      return "Tracking";
-    case "return_refund":
-      return "Return";
-    case "billing_payment":
-      return "Payment";
-    case "order_change":
-      return "General";
-    case "general_support":
-      return "General";
-    default:
-      return null;
-  }
-};
-
-const shouldUseLatestMessageRoute = (assessment: CaseAssessment) =>
-  (assessment.latest_message_override_debug?.return_process_followup_matched === true) ||
-  (
-    assessment.latest_message_confidence >= 0.55 ||
-    (
-      assessment.latest_message_confidence >= 0.42 &&
-      assessment.historical_context_intents.includes("tracking_shipping") &&
-      assessment.latest_message_primary_intent !== "tracking_shipping" &&
-      (
-        assessment.latest_message_primary_intent === "general_support" ||
-        assessment.latest_message_primary_intent === "return_refund" ||
-        assessment.latest_message_primary_intent === "order_change"
-      )
-    )
-  ) &&
-  assessment.intent_conflict_detected &&
-  assessment.current_message_should_override_thread_route;
-
 const shouldSuppressTrackingEnrichment = (options: {
   assessment: CaseAssessment | null;
   currentMessageTrackingIntent: boolean;
@@ -581,11 +552,33 @@ const buildTechnicalKnowledgeSummary = (
     _text: string;
   }>,
 ) => {
+  const normalizeKnowledgeText = (value: string) =>
+    String(value || "")
+      .replace(/<\s*br\s*\/?\s*>/gi, "\n")
+      .replace(/<\/\s*(?:p|div|li|h[1-6]|tr)\s*>/gi, "\n")
+      .replace(/<\s*li[^>]*>/gi, "- ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&nbsp;/gi, " ")
+      .replace(/&amp;/gi, "&")
+      .replace(/&quot;/gi, "\"")
+      .replace(/(?:&#39;|&apos;)/gi, "'")
+      .replace(/\s+/g, " ")
+      .trim();
+  const isUsableKnowledgeLine = (value: string) => {
+    const line = String(value || "").trim();
+    if (!line || line.length < 18) return false;
+    if (/[<>]/.test(line)) return false;
+    if (/^(?:li|\/li|ul|\/ul|ol|\/ol)\b/i.test(line)) return false;
+    if (line.split(/\s+/).length < 4) return false;
+    return true;
+  };
   if (!assessment) return "";
   const types = new Set([assessment.primary_case_type, ...assessment.secondary_case_types]);
   const technicalOrProduct = types.has("technical_issue") || types.has("product_question");
   if (!technicalOrProduct) return "";
-  return knowledgeHits
+  return Array.from(
+    new Set(
+      knowledgeHits
     .filter((hit) =>
       hit.included &&
       [
@@ -604,8 +597,142 @@ const buildTechnicalKnowledgeSummary = (
     )
     .sort((left, right) => Number(right.similarity ?? 0) - Number(left.similarity ?? 0))
     .slice(0, 4)
-    .map((hit) => hit._text)
-    .join("\n");
+        .map((hit) => normalizeKnowledgeText(hit._text))
+        .filter((line) => isUsableKnowledgeLine(line)),
+    ),
+  ).join("\n");
+};
+
+const TECHNICAL_RELEVANCE_STOPWORDS = new Set([
+  "the",
+  "and",
+  "for",
+  "with",
+  "that",
+  "this",
+  "have",
+  "from",
+  "your",
+  "you",
+  "are",
+  "was",
+  "were",
+  "they",
+  "them",
+  "their",
+  "will",
+  "would",
+  "could",
+  "should",
+  "please",
+  "thanks",
+  "thank",
+  "hello",
+  "hi",
+  "hej",
+  "med",
+  "venlig",
+  "hilsen",
+  "kind",
+  "regards",
+  "problem",
+  "issue",
+  "help",
+  "support",
+]);
+
+const tokenizeForTechnicalRelevance = (value: string) =>
+  String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9æøå]/gi, " ")
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 4 && !TECHNICAL_RELEVANCE_STOPWORDS.has(token));
+
+const filterTechnicalKnowledgeSummaryForFollowup = (options: {
+  summaryText: string;
+  assessment: CaseAssessment | null;
+  latestMessage: string;
+  threadHistory?: Array<{ role: "customer" | "support"; text: string }>;
+  isFollowUp: boolean;
+}) => {
+  const summaryText = String(options.summaryText || "").trim();
+  const lines = summaryText
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const beforeCount = lines.length;
+  const isTechnicalCase = Boolean(
+    options.assessment &&
+      (
+        options.assessment.primary_case_type === "technical_issue" ||
+        options.assessment.secondary_case_types.includes("technical_issue")
+      ),
+  );
+  const active = options.isFollowUp && isTechnicalCase;
+  if (!active || !beforeCount) {
+    return {
+      text: summaryText,
+      active,
+      before_count: beforeCount,
+      after_count: beforeCount,
+    };
+  }
+
+  const symptomTerms = (options.assessment?.entities?.symptom_phrases || [])
+    .flatMap((item) => String(item || "").toLowerCase().split(/\s+/))
+    .filter((term) => term.length >= 4);
+  const contextTerms = (options.assessment?.entities?.context_phrases || [])
+    .flatMap((item) => String(item || "").toLowerCase().split(/\s+/))
+    .filter((term) => term.length >= 4);
+  const latestMessage = String(options.latestMessage || "");
+  const historyText = (options.threadHistory || [])
+    .slice(-4)
+    .map((item) => String(item?.text || ""))
+    .join(" ");
+  const anchorTokenSet = new Set([
+    ...tokenizeForTechnicalRelevance(latestMessage),
+    ...tokenizeForTechnicalRelevance(historyText),
+    ...symptomTerms,
+    ...contextTerms,
+  ]);
+  const mentionsInContext = (pattern: RegExp) =>
+    pattern.test(latestMessage) || pattern.test(historyText);
+  const hasFirmwareContext = mentionsInContext(/\b(?:firmware|software|updater|update)\b/i);
+  const hasSoundConfigContext = mentionsInContext(
+    /\b(?:sound settings|sound control panel|24\s*bit|48000|microphone level|sidetone)\b/i,
+  );
+
+  const filtered = lines.filter((line) => {
+    const lower = line.toLowerCase();
+    const tokens = tokenizeForTechnicalRelevance(lower);
+    const overlapCount = tokens.reduce((count, token) => count + (anchorTokenSet.has(token) ? 1 : 0), 0);
+    const hasSymptomOverlap = symptomTerms.some((term) => lower.includes(term));
+    const hasContextOverlap = contextTerms.some((term) => lower.includes(term));
+    const hasAnchorOverlap = overlapCount >= 2 || hasSymptomOverlap || hasContextOverlap;
+    if (!hasAnchorOverlap) return false;
+    if (
+      /\b(?:firmware|updater|software update|update the firmware)\b/i.test(lower) &&
+      !hasFirmwareContext
+    ) {
+      return false;
+    }
+    if (
+      /\b(?:sound settings|sound control panel|24\s*bit|48000|microphone level|sidetone)\b/i.test(lower) &&
+      !hasSoundConfigContext
+    ) {
+      return false;
+    }
+    return true;
+  });
+
+  const deduped = Array.from(new Set(filtered));
+  return {
+    text: deduped.join("\n"),
+    active,
+    before_count: beforeCount,
+    after_count: deduped.length,
+  };
 };
 
 const extractTechnicalDiagnosticFacts = (
@@ -617,7 +744,29 @@ const extractTechnicalDiagnosticFacts = (
     included: boolean;
     content: string;
   }>,
+  options?: {
+    latestMessage?: string;
+    threadHistory?: Array<{ role: "customer" | "support"; text: string }>;
+    isFollowUp?: boolean;
+    metrics?: {
+      before_count?: number;
+      after_count?: number;
+      dropped_as_already_tried?: number;
+      dropped_as_repeat_from_customer_report?: number;
+    };
+  },
 ) => {
+  const normalizeKnowledgeText = (value: string) =>
+    String(value || "")
+      .replace(/<\s*br\s*\/?\s*>/gi, "\n")
+      .replace(/<\/\s*(?:p|div|li|h[1-6]|tr)\s*>/gi, "\n")
+      .replace(/<\s*li[^>]*>/gi, "- ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&nbsp;/gi, " ")
+      .replace(/&amp;/gi, "&")
+      .replace(/&quot;/gi, "\"")
+      .replace(/(?:&#39;|&apos;)/gi, "'")
+      .trim();
   if (!assessment) return [] as string[];
   const types = new Set([assessment.primary_case_type, ...assessment.secondary_case_types]);
   const technicalOrProduct = types.has("technical_issue") || types.has("product_question");
@@ -640,6 +789,8 @@ const extractTechnicalDiagnosticFacts = (
   const addFact = (value: string, score: number) => {
     const normalized = String(value || "").replace(/\s+/g, " ").trim();
     if (!normalized || normalized.length < 15 || normalized.length > 220) return;
+    if (/[<>]/.test(normalized)) return;
+    if (normalized.split(/\s+/).length < 4) return;
     if (selectedFacts.some((fact) => fact.text === normalized)) return;
     selectedFacts.push({ text: normalized, score });
   };
@@ -664,7 +815,7 @@ const extractTechnicalDiagnosticFacts = (
       continue;
     }
 
-    const candidates = String(hit.content || "")
+    const candidates = normalizeKnowledgeText(String(hit.content || ""))
       .split(/\n|(?<=[.!?])\s+/)
       .map((part) => part.replace(/^[-*•\d.)\s]+/, "").trim())
       .filter(Boolean)
@@ -710,10 +861,477 @@ const extractTechnicalDiagnosticFacts = (
     }
   }
 
-  return selectedFacts
+  const rankedFacts = selectedFacts
     .sort((left, right) => right.score - left.score)
-    .slice(0, 4)
     .map((fact) => fact.text);
+  if (options?.metrics) {
+    options.metrics.before_count = rankedFacts.length;
+    options.metrics.after_count = Math.min(4, rankedFacts.length);
+    options.metrics.dropped_as_already_tried = 0;
+    options.metrics.dropped_as_repeat_from_customer_report = 0;
+  }
+
+  const shouldApplyFollowupGate = Boolean(
+    options?.isFollowUp &&
+      assessment &&
+      (
+        assessment.primary_case_type === "technical_issue" ||
+        assessment.secondary_case_types.includes("technical_issue")
+      ),
+  );
+  if (!shouldApplyFollowupGate) {
+    return rankedFacts.slice(0, 4);
+  }
+
+  const latestMessageText = String(options?.latestMessage || "");
+  const historyText = (options?.threadHistory || [])
+    .slice(-4)
+    .map((item) => String(item?.text || ""))
+    .join(" ");
+  const anchorTokenSet = new Set([
+    ...tokenizeForTechnicalRelevance(latestMessageText),
+    ...tokenizeForTechnicalRelevance(historyText),
+    ...symptomTerms.filter((term) => term.length >= 4),
+    ...contextTerms.filter((term) => term.length >= 4),
+  ]);
+
+  const mentionsInContext = (pattern: RegExp) =>
+    pattern.test(latestMessageText) || pattern.test(historyText);
+  const hasFirmwareContext = mentionsInContext(/\b(?:firmware|software|updater|update)\b/i);
+  const hasSoundConfigContext = mentionsInContext(
+    /\b(?:sound settings|sound control panel|24\s*bit|48000|microphone level|sidetone)\b/i,
+  );
+
+  const filtered = rankedFacts.filter((fact) => {
+    const lower = fact.toLowerCase();
+    const factTokens = tokenizeForTechnicalRelevance(lower);
+    const overlapCount = factTokens.reduce(
+      (count, token) => count + (anchorTokenSet.has(token) ? 1 : 0),
+      0,
+    );
+    const hasSymptomOverlap = symptomTerms.some((term) => term.length >= 4 && lower.includes(term));
+    const hasContextOverlap = contextTerms.some((term) => term.length >= 4 && lower.includes(term));
+    const hasAnchorOverlap = overlapCount >= 2 || hasSymptomOverlap || hasContextOverlap;
+    if (!hasAnchorOverlap) return false;
+
+    if (
+      /\b(?:firmware|updater|software update|update the firmware)\b/i.test(lower) &&
+      !hasFirmwareContext
+    ) {
+      return false;
+    }
+    if (
+      /\b(?:sound settings|sound control panel|24\s*bit|48000|microphone level|sidetone)\b/i.test(lower) &&
+      !hasSoundConfigContext
+    ) {
+      return false;
+    }
+    return true;
+  });
+
+  const unresolvedFollowupPattern =
+    /\b(?:still|doesn['’]t work|does not work|not working|unable to|cannot|can['’]t|persists?|same problem|no change|didn['’]t help|did not help|problem seems to be there|stadig|virker ikke|kan ikke|løste ikke)\b/i;
+  const isLikelyUnresolvedFollowup = unresolvedFollowupPattern.test(latestMessageText);
+  const supportHistoryText = (options?.threadHistory || [])
+    .filter((item) => item.role === "support")
+    .map((item) => String(item.text || ""))
+    .join(" ")
+    .toLowerCase();
+  const customerReportText = [
+    latestMessageText,
+    ...(options?.threadHistory || [])
+      .filter((item) => item.role === "customer")
+      .slice(-4)
+      .map((item) => String(item.text || "")),
+  ]
+    .join(" ")
+    .toLowerCase();
+  const priorSteps = {
+    firmware: /\b(?:firmware|updater|software update|update the firmware)\b/i.test(supportHistoryText),
+    pairing: /\b(?:pair(?:ing)?|re-?pair|dongle|list button)\b/i.test(supportHistoryText),
+    reset: /\b(?:factory reset|reset|pairing list(?:\s+cleared)?|erase the pairing list)\b/i.test(
+      supportHistoryText,
+    ),
+    powerCycle: /\b(?:turn (?:it|the headset)? on|turn (?:it|the headset)? off|power button|power cycle)\b/i
+      .test(supportHistoryText),
+  };
+  const customerReportedTried = {
+    firmware: /\b(?:firmware|updater|software update|update(?:d)?)\b/i.test(customerReportText),
+    pairing: /\b(?:pair(?:ing)?|re-?pair|dongle|list button)\b/i.test(customerReportText),
+    reset: /\b(?:factory reset|reset|pairing list(?:\s+cleared)?|erase the pairing list)\b/i.test(
+      customerReportText,
+    ),
+    powerCycle: /\b(?:turn(?:ing)? (?:it|the headset)? on|turn(?:ing)? (?:it|the headset)? off|power button)\b/i
+      .test(customerReportText),
+  };
+  const classifyStepFamilies = (line: string) => ({
+    firmware: /\b(?:firmware|updater|software update|update the firmware)\b/i.test(line),
+    pairing: /\b(?:pair(?:ing)?|re-?pair|dongle|list button)\b/i.test(line),
+    reset: /\b(?:factory reset|reset|pairing list(?:\s+cleared)?|erase the pairing list)\b/i.test(line),
+    powerCycle: /\b(?:turn (?:it|the headset)? on|turn (?:it|the headset)? off|power button|power cycle)\b/i.test(
+      line,
+    ),
+  });
+  let droppedAsCustomerReported = 0;
+  const repeatedStepSuppressed = (line: string) => {
+    if (!isLikelyUnresolvedFollowup) return false;
+    const current = classifyStepFamilies(line.toLowerCase());
+    const repeatedFromSupport = (current.firmware && priorSteps.firmware) ||
+      (current.pairing && priorSteps.pairing) ||
+      (current.reset && priorSteps.reset) ||
+      (current.powerCycle && priorSteps.powerCycle);
+    const repeatedFromCustomer = (current.firmware && customerReportedTried.firmware) ||
+      (current.pairing && customerReportedTried.pairing) ||
+      (current.reset && customerReportedTried.reset) ||
+      (current.powerCycle && customerReportedTried.powerCycle);
+    if (repeatedFromCustomer) droppedAsCustomerReported += 1;
+    return repeatedFromSupport || repeatedFromCustomer;
+  };
+
+  const alreadyTriedFiltered = filtered.filter((fact) => !repeatedStepSuppressed(fact));
+  const droppedAsAlreadyTried = Math.max(0, filtered.length - alreadyTriedFiltered.length);
+  const chosen = alreadyTriedFiltered.length > 0
+    ? alreadyTriedFiltered.slice(0, 4)
+    : isLikelyUnresolvedFollowup
+    ? []
+    : filtered.length > 0
+    ? filtered.slice(0, 2)
+    : rankedFacts.slice(0, 2);
+
+  if (options?.metrics) {
+    options.metrics.after_count = chosen.length;
+    options.metrics.dropped_as_already_tried = droppedAsAlreadyTried;
+    options.metrics.dropped_as_repeat_from_customer_report = Math.max(
+      0,
+      Math.min(droppedAsCustomerReported, droppedAsAlreadyTried),
+    );
+  }
+  return chosen;
+};
+
+const shouldSkipDirectnessPolish = (options: {
+  assessment: CaseAssessment | null;
+  replyGoal: ReturnType<typeof buildReplyGoalArtifact> | null;
+  threadContextGate: ReturnType<typeof evaluateThreadContextGate> | null;
+}) => {
+  const assessment = options.assessment;
+  const isTechnicalCase = Boolean(
+    assessment &&
+      (
+        assessment.primary_case_type === "technical_issue" ||
+        assessment.secondary_case_types.includes("technical_issue")
+      ),
+  );
+  const isFollowUp = options.threadContextGate?.is_follow_up === true;
+  const isContinuationGoal =
+    options.replyGoal?.continuation_style_reply === true ||
+    options.replyGoal?.reply_goal === "continue_troubleshooting" ||
+    options.replyGoal?.reply_goal === "troubleshoot_connectivity_issue";
+  return isTechnicalCase && isFollowUp && isContinuationGoal;
+};
+
+type DeterministicThreadState = {
+  version: 1;
+  is_follow_up: boolean;
+  latest_intent: string;
+  latest_confidence: number;
+  historical_intents: string[];
+  intent_conflict: boolean;
+  explicit_switch_signal: boolean;
+  continuity_mode: "continue" | "switch_confirmed" | "switch_uncertain";
+  should_clarify_before_workflow_switch: boolean;
+  last_support_message_excerpt: string | null;
+};
+
+const buildDeterministicThreadState = (options: {
+  assessment: CaseAssessment | null;
+  threadContextGate: ReturnType<typeof evaluateThreadContextGate> | null;
+  latestMessage: string;
+  threadHistory?: Array<{ role: "customer" | "support"; text: string }>;
+}): DeterministicThreadState => {
+  const latestMessage = String(options.latestMessage || "");
+  const explicitSwitchSignal =
+    /\b(?:instead|on second thought|actually|rather|i would like to ask if i can instead|in that case)\b/i
+      .test(latestMessage);
+  const lastSupportMessage = (options.threadHistory || [])
+    .slice()
+    .reverse()
+    .find((item) => item.role === "support");
+  const lastSupportExcerptRaw = String(lastSupportMessage?.text || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const lastSupportExcerpt = lastSupportExcerptRaw
+    ? lastSupportExcerptRaw.slice(0, 220)
+    : null;
+
+  const latestIntent = String(options.assessment?.latest_message_primary_intent || "unknown");
+  const latestConfidence = Number(options.assessment?.latest_message_confidence || 0);
+  const historicalIntents = Array.isArray(options.assessment?.historical_context_intents)
+    ? options.assessment!.historical_context_intents.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+  const intentConflict = Boolean(options.assessment?.intent_conflict_detected);
+  const isFollowUp = options.threadContextGate?.is_follow_up === true;
+  const shouldClarifyBeforeWorkflowSwitch = Boolean(
+    isFollowUp &&
+      intentConflict &&
+      latestConfidence > 0 &&
+      latestConfidence < 0.78 &&
+      !explicitSwitchSignal,
+  );
+  const continuityMode: DeterministicThreadState["continuity_mode"] = explicitSwitchSignal
+    ? "switch_confirmed"
+    : shouldClarifyBeforeWorkflowSwitch
+    ? "switch_uncertain"
+    : "continue";
+
+  return {
+    version: 1,
+    is_follow_up: isFollowUp,
+    latest_intent: latestIntent,
+    latest_confidence: latestConfidence,
+    historical_intents: historicalIntents,
+    intent_conflict: intentConflict,
+    explicit_switch_signal: explicitSwitchSignal,
+    continuity_mode: continuityMode,
+    should_clarify_before_workflow_switch: shouldClarifyBeforeWorkflowSwitch,
+    last_support_message_excerpt: lastSupportExcerpt,
+  };
+};
+
+const formatThreadStateForPrompt = (state: DeterministicThreadState): string => {
+  const lines = [
+    "THREAD STATE (DETERMINISTIC):",
+    `- Follow-up thread: ${state.is_follow_up ? "yes" : "no"}`,
+    `- Latest intent: ${state.latest_intent} (confidence=${state.latest_confidence.toFixed(2)})`,
+    `- Historical intents: ${
+      state.historical_intents.length ? state.historical_intents.join(", ") : "none"
+    }`,
+    `- Intent conflict detected: ${state.intent_conflict ? "yes" : "no"}`,
+    `- Explicit switch signal in latest message: ${state.explicit_switch_signal ? "yes" : "no"}`,
+    `- Continuity mode: ${state.continuity_mode}`,
+    `- Clarify before workflow switch: ${
+      state.should_clarify_before_workflow_switch ? "yes" : "no"
+    }`,
+    state.last_support_message_excerpt
+      ? `- Last support message excerpt: ${state.last_support_message_excerpt}`
+      : "- Last support message excerpt: none",
+  ];
+  return lines.join("\n");
+};
+
+const guardThreadStateSwitch = (options: {
+  text: string;
+  threadState: DeterministicThreadState | null;
+  languageHint?: string | null;
+  customerFirstName?: string | null;
+}) => {
+  const body = String(options.text || "").trim();
+  if (!body || !options.threadState?.should_clarify_before_workflow_switch) {
+    return {
+      text: body,
+      changed: false,
+      forced_clarify_switch: false,
+      reason: "not_applicable",
+    };
+  }
+  const hasHardPolicyOrRmaMove =
+    /\b(?:rma|return(?:ed|ing)?|refund|exchange|within\s+\d+\s+days|original condition|original packaging)\b/i
+      .test(body);
+  if (!hasHardPolicyOrRmaMove) {
+    return {
+      text: body,
+      changed: false,
+      forced_clarify_switch: false,
+      reason: "no_hard_switch_content",
+    };
+  }
+  const name = String(options.customerFirstName || "").trim();
+  const hint = String(options.languageHint || "").toLowerCase();
+  const isDanish = hint.startsWith("da");
+  const clarify = isDanish
+    ? "Inden vi skifter spor: vil du helst fortsætte med vejledning om udskiftning af ørepuder, eller vil du i stedet starte en RMA-sag?"
+    : "Before we switch track: would you like to continue with ear-pad replacement guidance, or would you prefer to start an RMA request instead?";
+  const rebuilt = `${isDanish ? "Hej" : "Hi"} ${name || (isDanish ? "der" : "there")},\n\n${clarify}`;
+  return {
+    text: rebuilt,
+    changed: true,
+    forced_clarify_switch: true,
+    reason: "uncertain_workflow_switch_requires_clarification",
+  };
+};
+
+const shouldForceSatisfactionClosureReply = (options: {
+  assessment: CaseAssessment | null;
+  body: string;
+}) => {
+  if (!options.assessment?.is_satisfaction_closure) return false;
+  const text = String(options.body || "");
+  const hasExplicitQuestion = /\?/.test(text) ||
+    /\b(?:can you|could you|do you|how|what|why|where|when|hvad|hvordan|kan i|kan du)\b/i.test(text);
+  return !hasExplicitQuestion;
+};
+
+const buildSatisfactionClosureReply = (options: {
+  customerFirstName: string;
+  languageHint?: string | null;
+}) => {
+  const name = String(options.customerFirstName || "").trim();
+  const hint = String(options.languageHint || "").toLowerCase();
+  const isDanish = hint.startsWith("da");
+  if (isDanish) {
+    return `Hej ${name || "der"},\n\nSuper, tak for opdateringen — godt at høre det hjalp.\n\nHvis der opstår noget igen, så svar bare her, så hjælper vi med det samme.`;
+  }
+  return `Hi ${name || "there"},\n\nGreat, thanks for the update — happy to hear that helped.\n\nIf anything changes, just reply here and we’ll help right away.`;
+};
+
+const guardTechnicalFollowupGrounding = (options: {
+  text: string;
+  assessment: CaseAssessment | null;
+  threadContextGate: ReturnType<typeof evaluateThreadContextGate> | null;
+  technicalDiagnosticFacts: string[];
+  isReturnIntent: boolean;
+  latestMessage: string;
+  threadHistory?: Array<{ role: "customer" | "support"; text: string }>;
+  languageHint?: string | null;
+}) => {
+  const buildClarifyingQuestion = (languageHint?: string | null) => {
+    const english =
+      "To avoid repeating steps you already tried, could you confirm exactly what happens on short-press vs long-press of the power button (including LED behavior), and whether the headset is detected over USB on your PC?";
+    const danish =
+      "For at undgå at gentage trin du allerede har prøvet, kan du bekræfte præcist hvad der sker ved kort tryk vs langt tryk på power-knappen (inkl. LED-adfærd), og om headsettet bliver registreret via USB på din PC?";
+    const isDanish = String(languageHint || "").toLowerCase().startsWith("da");
+    return isDanish ? danish : english;
+  };
+  const original = String(options.text || "").trim();
+  const isTechnicalFollowup = Boolean(
+    options.threadContextGate?.is_follow_up &&
+      options.assessment &&
+      (
+        options.assessment.primary_case_type === "technical_issue" ||
+        options.assessment.secondary_case_types.includes("technical_issue")
+      ),
+  );
+  if (!isTechnicalFollowup || !original) {
+    return {
+      text: original,
+      changed: false,
+      removedUnapprovedStepsCount: 0,
+      removedReturnLeakCount: 0,
+      fallbackToClarifyingQuestion: false,
+      reason: "not_applicable",
+    };
+  }
+
+  const bodyLines = original.split("\n").map((line) => String(line || ""));
+  const firstLine = String(bodyLines[0] || "").trim();
+  const remainder = bodyLines.slice(1).join("\n").trim();
+  if (!remainder) {
+    return {
+      text: original,
+      changed: false,
+      removedUnapprovedStepsCount: 0,
+      removedReturnLeakCount: 0,
+      fallbackToClarifyingQuestion: false,
+      reason: "empty_body",
+    };
+  }
+
+  // Hard safety rule:
+  // In technical follow-up mode, if no approved technical steps remain,
+  // force a clarifying question instead of introducing new troubleshooting steps.
+  if (!Array.isArray(options.technicalDiagnosticFacts) || options.technicalDiagnosticFacts.length === 0) {
+    const forced = `${firstLine}\n\n${buildClarifyingQuestion(options.languageHint)}`.trim();
+    return {
+      text: forced,
+      changed: forced !== original,
+      removedUnapprovedStepsCount: 0,
+      removedReturnLeakCount: 0,
+      fallbackToClarifyingQuestion: true,
+      reason: "no_approved_technical_steps",
+    };
+  }
+
+  const combinedContext = [
+    options.latestMessage || "",
+    ...(options.threadHistory || []).slice(-6).map((item) => String(item?.text || "")),
+    ...(options.technicalDiagnosticFacts || []),
+  ]
+    .join("\n")
+    .toLowerCase();
+
+  const stepFamilies = [
+    { key: "firmware", re: /\b(?:firmware|updater|software update|update the firmware)\b/i },
+    { key: "pairing", re: /\b(?:pair(?:ing)?|re-?pair|dongle|list button)\b/i },
+    { key: "reset", re: /\b(?:factory reset|reset|pairing list(?:\s+cleared)?|erase the pairing list)\b/i },
+    { key: "power_cycle", re: /\b(?:turn (?:it|the headset)? on|turn (?:it|the headset)? off|power button|power cycle)\b/i },
+    { key: "sound_settings", re: /\b(?:sound settings|sound control panel|24\s*bit|48000|microphone level|sidetone)\b/i },
+    { key: "cable_swap", re: /\b(?:different usb|different cable|another cable|other cable)\b/i },
+    { key: "hardware_cleaning", re: /\b(?:blocking the power button|button.*stuck|clean(?:ing)? with a dry cloth|obstructed)\b/i },
+  ] as const;
+
+  const allowedFamilies = new Set<string>();
+  for (const family of stepFamilies) {
+    if (family.re.test(combinedContext)) allowedFamilies.add(family.key);
+  }
+
+  const troubleshootingCue =
+    /\b(?:try|please|check|ensure|make sure|hold down|press|connect|update|reinstall|reset|pair|turn off|turn on)\b/i;
+  const returnLeakCue =
+    /\b(?:rma|return(?:ed|ing)?|refund|exchange|replacement|within\s+\d+\s+days|original packaging|order number|name under which the purchase was made)\b/i;
+  const paragraphs = remainder
+    .split(/\n\s*\n/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  let removed = 0;
+  let removedReturnLeakCount = 0;
+  const filteredParagraphs = paragraphs.filter((paragraph) => {
+    const lower = paragraph.toLowerCase();
+    if (!options.isReturnIntent && returnLeakCue.test(lower)) {
+      removed += 1;
+      removedReturnLeakCount += 1;
+      return false;
+    }
+    if (!troubleshootingCue.test(lower)) return true;
+    const matchedFamilies = stepFamilies
+      .filter((family) => family.re.test(lower))
+      .map((family) => family.key);
+    if (!matchedFamilies.length) return true;
+    const hasUnapproved = matchedFamilies.some((key) => !allowedFamilies.has(key));
+    if (!hasUnapproved) return true;
+    removed += 1;
+    return false;
+  });
+
+  if (!removed) {
+    return {
+      text: original,
+      changed: false,
+      removedUnapprovedStepsCount: 0,
+      removedReturnLeakCount: 0,
+      fallbackToClarifyingQuestion: false,
+      reason: "no_unapproved_steps_detected",
+    };
+  }
+
+  let nextBody = filteredParagraphs.join("\n\n").trim();
+  let fallbackToClarifyingQuestion = false;
+  if (!nextBody || nextBody.length < 80) {
+    fallbackToClarifyingQuestion = true;
+    nextBody = buildClarifyingQuestion(options.languageHint);
+  }
+
+  const rebuilt = `${firstLine}\n\n${nextBody}`.trim();
+  return {
+    text: rebuilt,
+    changed: rebuilt !== original,
+    removedUnapprovedStepsCount: removed,
+    removedReturnLeakCount,
+    fallbackToClarifyingQuestion,
+    reason: fallbackToClarifyingQuestion
+      ? "removed_unapproved_steps_then_forced_clarifying_question"
+      : "removed_unapproved_steps",
+  };
 };
 
 async function sha256Hex(input: string): Promise<string> {
@@ -876,19 +1494,10 @@ const extractNameFromBody = (value: string) => {
     if (candidate) return candidate;
   }
 
-  // Priority 2: greeting near top of customer message ("Hi Maria,", "Hej Jonas,").
-  // Used as fallback only — greetings are often directed at the shop, not the sender.
-  const greetingNameRegex =
-    /^(hej|hi|hello|hey|dear|hola|bonjour|hallo)\s+([A-Za-zÆØÅæøåÀ-ÿ'-]{2,})(?=[\s,!.:;]|$)/i;
-  const greetingWindow = Math.min(lines.length, 8);
-  for (let idx = 0; idx < greetingWindow; idx += 1) {
-    const line = lines[idx];
-    if (!line || line.length > 64) continue;
-    const match = line.match(greetingNameRegex);
-    if (!match) continue;
-    const candidate = cleanNameToken(match[2] || "");
-    if (isValidNameToken(candidate)) return candidate;
-  }
+  // NOTE:
+  // We intentionally do not infer sender name from greeting lines like
+  // "Hi Morten," or "Hej Jonas," because those are usually addressed to support
+  // and not the customer's own name. This previously caused wrong greetings.
 
   // No reliable name found in message body.
   return "";
@@ -929,6 +1538,12 @@ const extractCustomerFirstName = (emailData: EmailData, options?: { skipLocalPar
   }
   const bodyName = extractNameFromBody(emailData?.body || "");
   if (bodyName) return normalizeCustomerFirstName(bodyName);
+  // Fallback: clean_body can remove signatures; raw bodies often still contain
+  // the sender sign-off line ("Kind regards, Sjaak").
+  const rawBodyName = extractNameFromBody(emailData?.rawBody || "");
+  if (rawBodyName) return normalizeCustomerFirstName(rawBodyName);
+  const rawHtmlBodyName = extractNameFromBody(stripHtmlTags(String(emailData?.rawBodyHtml || "")));
+  if (rawHtmlBodyName) return normalizeCustomerFirstName(rawHtmlBodyName);
   // Last resort: try email local part only if not suppressed.
   // Suppress when the caller already knows the local part is a username (e.g. "jakoblund@gmail.com").
   if (options?.skipLocalPartFallback) return "";
@@ -945,6 +1560,19 @@ const extractCustomerFirstName = (emailData: EmailData, options?: { skipLocalPar
   if (!hasOriginalSeparator) return "";
   const localName = normalizeCustomerFirstName(localToken);
   return localName.length >= 2 ? localName : "";
+};
+
+const extractCustomerFirstNameFromThreadHistory = (
+  history: Array<{ role: "customer" | "support"; text: string }>,
+): string => {
+  const rows = Array.isArray(history) ? history.slice().reverse() : [];
+  for (const row of rows) {
+    if (row?.role !== "customer") continue;
+    const name = extractNameFromBody(String(row?.text || ""));
+    const normalized = normalizeCustomerFirstName(name || "");
+    if (normalized) return normalized;
+  }
+  return "";
 };
 
 const extractOrderFirstName = (order: any) => {
@@ -1545,6 +2173,32 @@ async function fetchThreadHistory(
     .filter((msg) => msg.text.length > 0);
 }
 
+async function fetchThreadCustomerFirstName(
+  threadId: string | null,
+  currentMessageId: string | null,
+  limit = 25,
+): Promise<string> {
+  if (!supabase || !threadId) return "";
+  const { data, error } = await supabase
+    .from("mail_messages")
+    .select("body_text, from_me, provider_message_id")
+    .eq("thread_id", threadId)
+    .eq("from_me", false)
+    .order("sent_at", { ascending: false })
+    .limit(limit + 1);
+  if (error) {
+    console.warn("generate-draft-unified: thread customer name fetch failed", error.message);
+    return "";
+  }
+  const rows = Array.isArray(data) ? data : [];
+  for (const row of rows) {
+    if (row?.provider_message_id === currentMessageId) continue;
+    const candidate = normalizeCustomerFirstName(extractNameFromBody(String(row?.body_text || "")));
+    if (candidate) return candidate;
+  }
+  return "";
+}
+
 function stripHtmlTags(html: string): string {
   return html
     .replace(/<br\s*\/?>/gi, "\n")
@@ -1860,20 +2514,20 @@ async function getAgentContext(
 }
 
 // Brug JSON schema så vi altid får reply + automation actions.
-async function callOpenAI(prompt: string, system?: string): Promise<OpenAIResult> {
+async function callOpenAI(prompt: string, system?: string, model?: string): Promise<OpenAIResult> {
   if (!OPENAI_API_KEY) return { reply: null, actions: [] };
   const messages: any[] = [];
   if (system) messages.push({ role: "system", content: system });
   messages.push({ role: "user", content: prompt });
   const body = {
-    model: OPENAI_MODEL,
+    model: model ?? OPENAI_MODEL,
     temperature: 0.3,
     messages,
     response_format: {
       type: "json_schema",
       json_schema: PERSONA_REPLY_JSON_SCHEMA,
     },
-    max_tokens: 800,
+    max_tokens: 1800,
   };
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -1977,9 +2631,10 @@ async function callOpenAIWithImages(
   prompt: string,
   system: string | undefined,
   images: InlineImageAttachment[],
+  model?: string,
 ): Promise<OpenAIResult> {
   if (!OPENAI_API_KEY) return { reply: null, actions: [] };
-  if (!Array.isArray(images) || !images.length) return callOpenAI(prompt, system);
+  if (!Array.isArray(images) || !images.length) return callOpenAI(prompt, system, model);
   const messages: any[] = [];
   if (system) messages.push({ role: "system", content: system });
   const content: any[] = [{ type: "text", text: prompt }];
@@ -1994,14 +2649,14 @@ async function callOpenAIWithImages(
   });
   messages.push({ role: "user", content });
   const body = {
-    model: OPENAI_MODEL,
+    model: model ?? OPENAI_MODEL,
     temperature: 0.3,
     messages,
     response_format: {
       type: "json_schema",
       json_schema: PERSONA_REPLY_JSON_SCHEMA,
     },
-    max_tokens: 900,
+    max_tokens: 1800,
   };
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -2351,6 +3006,7 @@ function enforceReturnChannelGuard(options: {
   languageHint: string;
   missingDetails: Array<"order_number" | "customer_name" | "return_reason">;
   hasKnownOrderContext?: boolean;
+  hasKnownCustomerName?: boolean;
   ongoingReturnContinuation?: boolean;
 }): string {
   let next = String(options.text || "");
@@ -2388,9 +3044,10 @@ function enforceReturnChannelGuard(options: {
     .trim();
 
   const effectiveMissingDetails = options.missingDetails.filter((key) => {
-    if (!options.hasKnownOrderContext) return true;
+    if (key === "order_number" && options.hasKnownOrderContext) return false;
+    if (key === "customer_name" && (options.hasKnownCustomerName || options.hasKnownOrderContext)) return false;
     if (key === "return_reason" && options.ongoingReturnContinuation) return false;
-    return key !== "order_number" && key !== "customer_name";
+    return true;
   });
 
   if (!effectiveMissingDetails.length) return next;
@@ -2453,6 +3110,105 @@ function hasExchangeSignals(subject: string, body: string): boolean {
     /\b(ombyt|exchange|replacement|replace|erstatning)\b/.test(text) ||
     /\b(mangler|missing|kun en|only one|forkert vare|wrong item)\b/.test(text)
   );
+}
+
+function toOrderNumberNumeric(order: any): number {
+  const candidates = [
+    order?.order_number,
+    order?.name,
+    order?.orderNumber,
+  ];
+  for (const candidate of candidates) {
+    const digits = String(candidate ?? "").match(/\d{3,8}/);
+    if (!digits?.[0]) continue;
+    const num = Number(digits[0]);
+    if (Number.isFinite(num) && num > 0) return num;
+  }
+  return 0;
+}
+
+function isOrderLikelyCancelable(order: any): boolean {
+  if (!order || typeof order !== "object") return false;
+  if (order?.cancelled_at) return false;
+  const fulfillment = String(order?.fulfillment_status || "").trim().toLowerCase();
+  // Conservative: avoid auto-cancel proposals for already fulfilled orders.
+  return fulfillment !== "fulfilled";
+}
+
+function detectDuplicateOrderCancellationDecision(options: {
+  subject: string;
+  body: string;
+  orders: any[];
+}): {
+  matched: boolean;
+  chosenOrderId: number | null;
+  chosenOrderNumber: number | null;
+  mentionedOrderNumbers: number[];
+  reason: string;
+} {
+  const text = `${options.subject || ""}\n${options.body || ""}`.toLowerCase();
+  const duplicateSignal = /\b(?:bestilt\s*2|bestilt.*2\s*gange|2\s*headsets?|ordered\s+twice|duplicate\s+order)\b/i
+    .test(text);
+  const keepOneSignal = /\b(?:kun\s+bruge\s+det\s+ene|only\s+use\s+one|one\s+of\s+them)\b/i.test(text);
+  const cancelOrRefundSignal = /\b(?:annuller|cancel|slet|delete|penge\s+tilbage|refund)\b/i.test(text);
+  if (!(duplicateSignal || keepOneSignal) || !cancelOrRefundSignal) {
+    return {
+      matched: false,
+      chosenOrderId: null,
+      chosenOrderNumber: null,
+      mentionedOrderNumbers: [],
+      reason: "no_duplicate_cancel_intent",
+    };
+  }
+
+  const allMentioned = Array.from(
+    new Set(
+      (String(options.subject || "") + " " + String(options.body || ""))
+        .match(/#?\d{3,8}/g)?.map((token) => Number(String(token).replace(/\D/g, ""))).filter((n) =>
+          Number.isFinite(n) && n > 0
+        ) || [],
+    ),
+  );
+  const orderRows = (options.orders || []).filter(Boolean).map((order) => ({
+    order,
+    id: Number(order?.id ?? 0),
+    orderNumber: toOrderNumberNumeric(order),
+    cancelable: isOrderLikelyCancelable(order),
+  })).filter((row) => Number.isFinite(row.id) && row.id > 0 && row.orderNumber > 0);
+  if (!orderRows.length) {
+    return {
+      matched: false,
+      chosenOrderId: null,
+      chosenOrderNumber: null,
+      mentionedOrderNumbers: allMentioned,
+      reason: "no_order_rows",
+    };
+  }
+
+  const mentionedRows = orderRows.filter((row) => allMentioned.includes(row.orderNumber));
+  const candidatePool = mentionedRows.length >= 2 ? mentionedRows : orderRows;
+  const cancelablePool = candidatePool.filter((row) => row.cancelable);
+  const rankedPool = (cancelablePool.length ? cancelablePool : candidatePool)
+    .slice()
+    .sort((a, b) => b.orderNumber - a.orderNumber);
+  const chosen = rankedPool[0];
+  if (!chosen) {
+    return {
+      matched: false,
+      chosenOrderId: null,
+      chosenOrderNumber: null,
+      mentionedOrderNumbers: allMentioned,
+      reason: "no_cancellation_candidate",
+    };
+  }
+
+  return {
+    matched: true,
+    chosenOrderId: chosen.id,
+    chosenOrderNumber: chosen.orderNumber,
+    mentionedOrderNumbers: allMentioned,
+    reason: "duplicate_order_cancel_preferred",
+  };
 }
 
 function isInternalAnnotationAction(type: string): boolean {
@@ -2585,6 +3341,40 @@ function stripSupportEscalationLines(text: string): string {
     return true;
   });
   return filtered.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function hardEnforceInThreadChannel(text: string, languageHint?: string | null): {
+  text: string;
+  changed: boolean;
+  replaced_lines: number;
+} {
+  const original = String(text || "").trim();
+  if (!original) return { text: original, changed: false, replaced_lines: 0 };
+  const isDanish = String(languageHint || "").toLowerCase().startsWith("da");
+  const inThreadPhrase = isDanish ? "svar her" : "reply here";
+  const lines = original.split("\n");
+  let replaced = 0;
+  const nextLines = lines.map((line) => {
+    let next = String(line || "");
+    const before = next;
+    next = next.replace(/\bplease\s+email\s+\S+@\S+\b/gi, `please ${inThreadPhrase}`);
+    next = next.replace(/\bsupport@\S+\b/gi, inThreadPhrase);
+    next = next.replace(/\bcontact us at\s+\S+@\S+\b/gi, inThreadPhrase);
+    next = next.replace(/\bwrite to us at\s+\S+@\S+\b/gi, inThreadPhrase);
+    next = next.replace(/\bsend (?:us|an) (?:an )?e-?mail\b/gi, inThreadPhrase);
+    next = next.replace(/\bemail us\b/gi, inThreadPhrase);
+    next = next.replace(/\bcontact us via e-?mail\b/gi, inThreadPhrase);
+    next = next.replace(/\bcontact us by e-?mail\b/gi, inThreadPhrase);
+    next = next.replace(/\s{2,}/g, " ").trimEnd();
+    if (next !== before) replaced += 1;
+    return next;
+  });
+  const next = nextLines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  return {
+    text: next,
+    changed: next !== original,
+    replaced_lines: replaced,
+  };
 }
 
 async function resolveInternalThread(
@@ -2842,6 +3632,7 @@ Deno.serve(async (req) => {
     const legacyTicketCategory = extractThreadCategoryFromTags(internalThread.tags);
     let ticketCategory = legacyTicketCategory;
     let workflowRoute = buildWorkflowRoute(ticketCategory);
+    let workflowRouteSource: "thread_tags" | "latest_message_override" = "thread_tags";
     let caseAssessment: CaseAssessment | null = null;
     let inboundNormalizedMessageArtifact: InboundNormalizedMessageArtifact | null = null;
     let replyLanguageDecisionArtifact: ReplyLanguageDecisionArtifact | null = null;
@@ -2851,6 +3642,9 @@ Deno.serve(async (req) => {
     let factContext: FactContext | null = null;
     let actionValidation: ActionDecisionValidation | null = null;
     let replyStrategyArtifact: ReplyStrategy | null = null;
+    let preflightDbHistory: Array<{ role: "customer" | "support"; text: string }> = [];
+    let preflightQuotedFallback: Array<{ role: "customer" | "support"; text: string }> = [];
+    let threadContextGateResult: ReturnType<typeof evaluateThreadContextGate> | null = null;
     reasoningLogs.push({
       step_name: "workflow_routing",
       step_detail: `Routed by ticket category: ${workflowRoute.category} -> ${workflowRoute.workflow}`,
@@ -2877,6 +3671,44 @@ Deno.serve(async (req) => {
         );
       }
     }
+    try {
+      preflightDbHistory = await fetchThreadHistory(
+        internalThread.threadId,
+        emailData.messageId || null,
+        6,
+      );
+      if (!preflightDbHistory.length) {
+        const rawBody = String(emailData.rawBodyHtml || emailData.rawBody || emailData.body || "");
+        preflightQuotedFallback = extractQuotedHistoryFallback(rawBody);
+      }
+      threadContextGateResult = evaluateThreadContextGate({
+        hasReplyHeaders: hasThreadReplyHeaders(emailData.headers ?? []),
+        dbHistoryCount: preflightDbHistory.length,
+        quotedFallbackCount: preflightQuotedFallback.length,
+      });
+      reasoningLogs.push({
+        step_name: "thread_context_gate",
+        step_detail: JSON.stringify(threadContextGateResult),
+        status: threadContextGateResult.should_block_normal_reply ? "warning" : "info",
+      });
+      if (threadContextGateResult.should_block_normal_reply) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            skipped: true,
+            reason: "insufficient_thread_context",
+            explanation: "needs_review",
+          }),
+          { status: 200 },
+        );
+      }
+    } catch (threadContextErr) {
+      console.warn(
+        "generate-draft-unified: thread context sufficiency check failed",
+        threadContextErr instanceof Error ? threadContextErr.message : threadContextErr,
+      );
+    }
+
     let prioritizedKnowledgeMatches = context.relevantKnowledgeMatches || [];
     const currentMessageTrackingIntent = detectTrackingIntent(
       emailData.subject || "",
@@ -2938,19 +3770,22 @@ Deno.serve(async (req) => {
         },
         internalThread.threadId,
       );
-      if (shouldUseLatestMessageRoute(caseAssessment)) {
-        const assessmentCategory = routeCategoryFromIntent(
-          caseAssessment.latest_message_primary_intent,
-        );
-        if (assessmentCategory && assessmentCategory !== ticketCategory) {
+      const latestMessageRouteDecision = resolveLatestMessageCategoryOverride({
+        assessment: caseAssessment,
+        currentCategory: ticketCategory,
+      });
+      if (latestMessageRouteDecision.should_override && latestMessageRouteDecision.category) {
+        const assessmentCategory = latestMessageRouteDecision.category;
+        if (assessmentCategory !== ticketCategory) {
           const legacyCategoryBeforeOverride = ticketCategory;
           const legacyWorkflowBeforeOverride = workflowRoute.workflow;
           ticketCategory = assessmentCategory;
           workflowRoute = buildWorkflowRoute(ticketCategory);
+          workflowRouteSource = "latest_message_override";
           reasoningLogs.push({
             step_name: "workflow_routing_override",
             step_detail: JSON.stringify({
-              reason: "current_message_first_override",
+              reason: latestMessageRouteDecision.reason,
               legacy_category: legacyCategoryBeforeOverride,
               legacy_workflow: legacyWorkflowBeforeOverride,
               latest_message_primary_intent: caseAssessment.latest_message_primary_intent,
@@ -2969,19 +3804,19 @@ Deno.serve(async (req) => {
           });
         }
       }
-      // Override tracking workflow when customer confirms the issue is resolved.
-      // A satisfaction closure message ("all is working perfectly", "issue resolved", etc.)
-      // should never generate a tracking reply regardless of the thread's legacy tag.
-      if (caseAssessment.is_satisfaction_closure && workflowRoute.workflow === "tracking") {
+      // Satisfaction closure ("all good now", "thanks, that worked", etc.) should
+      // not run category-specific troubleshooting/return/tracking flows.
+      if (caseAssessment.is_satisfaction_closure && workflowRoute.workflow !== "general") {
         const legacyCategoryBeforeOverride = ticketCategory;
+        const legacyWorkflowBeforeOverride = workflowRoute.workflow;
         ticketCategory = "General";
         workflowRoute = buildWorkflowRoute(ticketCategory);
         reasoningLogs.push({
           step_name: "workflow_routing_override",
           step_detail: JSON.stringify({
-            reason: "satisfaction_closure_overrides_tracking",
+            reason: "satisfaction_closure_overrides_workflow",
             legacy_category: legacyCategoryBeforeOverride,
-            legacy_workflow: "tracking",
+            legacy_workflow: legacyWorkflowBeforeOverride,
             overridden_category: "General",
             overridden_workflow: "general",
           }),
@@ -3362,10 +4197,21 @@ Deno.serve(async (req) => {
       rawOrderFirstName.length > 0 &&
       emailLocalPart.length > 0 &&
       rawOrderFirstName.toLowerCase() === emailLocalPart;
+    const threadMessageFirstName = await fetchThreadCustomerFirstName(
+      internalThread.threadId,
+      emailData.messageId || null,
+    );
+    const historyFirstName = extractCustomerFirstNameFromThreadHistory([
+      ...preflightDbHistory,
+      ...preflightQuotedFallback,
+    ]);
+    const fallbackEmailFirstName = extractCustomerFirstName(emailData, {
+      skipLocalPartFallback: orderNameMatchesEmailUsername,
+    });
     const customerFirstName =
       rawOrderFirstName && !orderNameMatchesEmailUsername
         ? rawOrderFirstName
-        : extractCustomerFirstName(emailData, { skipLocalPartFallback: orderNameMatchesEmailUsername });
+        : (threadMessageFirstName || historyFirstName || fallbackEmailFirstName);
     const policyContext = buildPinnedPolicyContext({
       subject: emailData.subject || "",
       body: emailData.body || "",
@@ -3437,15 +4283,64 @@ Deno.serve(async (req) => {
       Boolean(workflowRoute.forceReturnDetailsFlow) ||
       policyContext.intent === "RETURN" ||
       policyContext.intent === "REFUND";
-    const returnDetailsFoundText = isReturnIntent
-      ? buildReturnDetailsFoundBlock(returnDetails)
-      : "";
     const reasonRequired = isReturnReasonRequiredByPolicy(
       `${context.policies?.policy_refund || ""}\n${context.policies?.policy_terms || ""}`,
     );
     const returnDetailsMissing = isReturnIntent
       ? missingReturnDetails(returnDetails, { requireReason: reasonRequired })
       : [];
+    const returnHistoryForMissingGuard = preflightDbHistory.length
+      ? preflightDbHistory
+      : preflightQuotedFallback;
+    const returnMissingDetailsGuard = isReturnIntent
+      ? resolveReturnMissingDetails({
+        missingDetails: returnDetailsMissing,
+        selectedOrder,
+        returnDetailsCustomerName: returnDetails.customer_name,
+        customerFirstName,
+        threadHistory: returnHistoryForMissingGuard,
+      })
+      : {
+        effectiveMissingDetails: returnDetailsMissing,
+        knownOrderNumber: false,
+        knownCustomerName: false,
+        historyProvidedOrderNumber: false,
+        historyProvidedCustomerName: false,
+      };
+    const effectiveReturnDetailsMissing = returnMissingDetailsGuard.effectiveMissingDetails;
+    const selectedOrderReferenceRaw = selectedOrder
+      ? String(selectedOrder?.name || selectedOrder?.order_number || selectedOrder?.id || "").trim()
+      : "";
+    const selectedOrderReference = selectedOrderReferenceRaw
+      ? selectedOrderReferenceRaw.startsWith("#")
+        ? selectedOrderReferenceRaw
+        : `#${selectedOrderReferenceRaw}`
+      : null;
+    const returnDetailsFoundText = isReturnIntent
+      ? buildReturnDetailsFoundBlock({
+        ...returnDetails,
+        order_number: returnMissingDetailsGuard.knownOrderNumber
+          ? (returnDetails.order_number || selectedOrderReference)
+          : null,
+        customer_name: returnDetails.customer_name || customerFirstName || null,
+      })
+      : "";
+    if (isReturnIntent) {
+      appendStructuredArtifactLog(
+        reasoningLogs,
+        "v2_return_missing_details_guard",
+        {
+          artifact_type: "return_missing_details_guard",
+          missing_before: returnDetailsMissing,
+          missing_after: effectiveReturnDetailsMissing,
+          known_order_number: returnMissingDetailsGuard.knownOrderNumber,
+          known_customer_name: returnMissingDetailsGuard.knownCustomerName,
+          history_provided_order_number: returnMissingDetailsGuard.historyProvidedOrderNumber,
+          history_provided_customer_name: returnMissingDetailsGuard.historyProvidedCustomerName,
+        },
+        internalThread.threadId,
+      );
+    }
     const returnSettings = isReturnIntent
       ? await ensureWorkspaceReturnSettings({
         supabase,
@@ -3459,9 +4354,110 @@ Deno.serve(async (req) => {
           order: selectedOrder,
         })
         : null;
-    const returnPromptBlock = isReturnIntent
+    const suppressReturnPromptInstructions = isReturnIntent && !returnMissingDetailsGuard.knownOrderNumber;
+    const returnPromptBlock = isReturnIntent && !suppressReturnPromptInstructions
       ? buildReturnSettingsPromptBlock(returnSettings, returnEligibility)
       : "";
+    if (isReturnIntent) {
+      appendStructuredArtifactLog(
+        reasoningLogs,
+        "v2_return_order_gate",
+        {
+          artifact_type: "return_order_gate",
+          known_order_number: returnMissingDetailsGuard.knownOrderNumber,
+          prompt_block_suppressed: suppressReturnPromptInstructions,
+          prompt_stage: "pre_prompt",
+        },
+        internalThread.threadId,
+      );
+    }
+    let executionState: ExecutionState = "no_action";
+    let returnActionResult:
+      | {
+        type: string;
+        ok: boolean;
+        status: "pending_approval";
+        orderId?: number;
+        payload?: Record<string, unknown>;
+        detail?: string;
+        error?: string;
+      }
+      | null = null;
+
+    let caseStateText = "";
+    let legacyThreadHistoryText = "";
+    let legacyThreadHistoryCount = 0;
+    try {
+      const approvalRequiredFlow = isApprovalRequiredProposalFlow({
+        validation: actionValidation,
+        hasPendingApproval: false,
+        executionState,
+      });
+      const trackingDataPresent = Object.keys(trackingDetailsByOrderKey || {}).length > 0;
+      const caseState = buildCaseState({
+        workflowCategory: workflowRoute.category,
+        workflowSlug: workflowRoute.workflow,
+        workflowSource: workflowRouteSource,
+        executionState,
+        approvalRequiredFlow,
+        selectedOrder,
+        matchedSubjectNumber: context.matchedSubjectNumber,
+        automation: context.automation,
+        policyIntent: policyContext.intent,
+        policySummaryIncluded: policyContext.policySummaryIncluded,
+        policyExcerptIncluded: policyContext.policyExcerptIncluded,
+        isReturnIntent,
+        returnDetailsMissing: effectiveReturnDetailsMissing,
+        returnEligibility,
+        trackingIntent,
+        trackingDataPresent,
+      });
+      caseStateText = formatCaseStateForPrompt(caseState, { maxTokens: 320 });
+
+      let legacyHistory = preflightDbHistory;
+      if (!legacyHistory.length && preflightQuotedFallback.length) {
+        legacyHistory = preflightQuotedFallback;
+      } else if (!legacyHistory.some((item) => item.role === "support")) {
+        if (!preflightQuotedFallback.length) {
+          const rawBody = String(emailData.rawBodyHtml || emailData.rawBody || emailData.body || "");
+          preflightQuotedFallback = extractQuotedHistoryFallback(rawBody);
+        }
+        if (preflightQuotedFallback.length) legacyHistory = [...preflightQuotedFallback, ...legacyHistory];
+      }
+      legacyThreadHistoryCount = legacyHistory.length;
+      legacyThreadHistoryText = formatThreadHistoryForPrompt(legacyHistory, {
+        maxMessages: 6,
+        maxCharsPerMessage: 240,
+        maxTokens: 420,
+      });
+
+      appendStructuredArtifactLog(
+        reasoningLogs,
+        "legacy_case_state",
+        {
+          artifact_type: "legacy_case_state",
+          workflow: workflowRoute.workflow,
+          execution_state: executionState,
+          has_selected_order: Boolean(selectedOrder),
+          return_intent: isReturnIntent,
+          tracking_intent: trackingIntent,
+          history_message_count: legacyThreadHistoryCount,
+          case_state_present: Boolean(caseStateText),
+        },
+        internalThread.threadId,
+      );
+    } catch (caseStateErr) {
+      const caseStateErrMsg = caseStateErr instanceof Error ? caseStateErr.message : String(caseStateErr);
+      console.warn("generate-draft-unified: case_state/thread_history build failed", caseStateErrMsg);
+      reasoningLogs.push({
+        step_name: "legacy_case_state",
+        step_detail: JSON.stringify({
+          artifact_type: "legacy_case_state_error",
+          error: caseStateErrMsg,
+        }),
+        status: "error",
+      });
+    }
 
     // Byg shared prompt med policies, automation-regler og ordre-kontekst.
     const promptBase = buildMailPrompt({
@@ -3490,8 +4486,10 @@ Deno.serve(async (req) => {
       policyRules: policyRulesText,
       policyIntent: policyContext.intent,
       returnDetailsFound: returnDetailsFoundText,
-      returnDetailsMissing,
+      returnDetailsMissing: effectiveReturnDetailsMissing,
       detectedLanguage: inferLanguageHint(emailData.subject || "", emailData.body || "") || null,
+      caseStateText: caseStateText || null,
+      threadHistoryText: legacyThreadHistoryText || null,
     });
     const inlineImageAttachments = await loadInlineImageAttachments({
       userId: ownerUserId,
@@ -3714,13 +4712,77 @@ Deno.serve(async (req) => {
       .filter((hit) => hit.included)
       .map((hit) => hit._text)
       .join("\n");
-    const technicalKnowledgeSummaryText = buildTechnicalKnowledgeSummary(
+    const rawTechnicalKnowledgeSummaryText = buildTechnicalKnowledgeSummary(
       caseAssessment,
       knowledgeTraceHits,
     );
+    const technicalFactHistoryContext = preflightDbHistory.length
+      ? preflightDbHistory
+      : preflightQuotedFallback;
+    const technicalKnowledgeSummaryGate = filterTechnicalKnowledgeSummaryForFollowup({
+      summaryText: rawTechnicalKnowledgeSummaryText,
+      assessment: caseAssessment,
+      latestMessage: `${emailData.subject || ""}\n${emailData.body || ""}`.trim(),
+      threadHistory: technicalFactHistoryContext,
+      isFollowUp: threadContextGateResult?.is_follow_up === true,
+    });
+    const technicalKnowledgeSummaryText = technicalKnowledgeSummaryGate.text;
+    const deterministicThreadState = buildDeterministicThreadState({
+      assessment: caseAssessment,
+      threadContextGate: threadContextGateResult,
+      latestMessage: `${emailData.subject || ""}\n${emailData.body || ""}`.trim(),
+      threadHistory: technicalFactHistoryContext,
+    });
+    appendStructuredArtifactLog(
+      reasoningLogs,
+      "v2_thread_state",
+      {
+        artifact_type: "thread_state",
+        thread_state: deterministicThreadState,
+      },
+      internalThread.threadId,
+    );
+    const threadStateText = formatThreadStateForPrompt(deterministicThreadState);
+    const technicalDiagnosticMetrics: {
+      before_count?: number;
+      after_count?: number;
+      dropped_as_already_tried?: number;
+      dropped_as_repeat_from_customer_report?: number;
+    } = {};
     const technicalDiagnosticFacts = extractTechnicalDiagnosticFacts(
       caseAssessment,
       knowledgeTraceHits,
+      {
+        latestMessage: `${emailData.subject || ""}\n${emailData.body || ""}`.trim(),
+        threadHistory: technicalFactHistoryContext,
+        isFollowUp: threadContextGateResult?.is_follow_up === true,
+        metrics: technicalDiagnosticMetrics,
+      },
+    );
+    appendStructuredArtifactLog(
+      reasoningLogs,
+      "v2_technical_fact_relevance_gate",
+      {
+        artifact_type: "technical_fact_relevance_gate",
+        active: threadContextGateResult?.is_follow_up === true &&
+          (
+            caseAssessment?.primary_case_type === "technical_issue" ||
+            caseAssessment?.secondary_case_types.includes("technical_issue")
+          ),
+        technical_knowledge_summary_gate_active: technicalKnowledgeSummaryGate.active,
+        technical_knowledge_summary_before_count: technicalKnowledgeSummaryGate.before_count,
+        technical_knowledge_summary_after_count: technicalKnowledgeSummaryGate.after_count,
+        diagnostic_before_count: technicalDiagnosticMetrics.before_count ?? null,
+        diagnostic_after_count: technicalDiagnosticMetrics.after_count ?? null,
+        diagnostic_dropped_as_already_tried:
+          technicalDiagnosticMetrics.dropped_as_already_tried ?? 0,
+        diagnostic_dropped_as_repeat_from_customer_report:
+          technicalDiagnosticMetrics.dropped_as_repeat_from_customer_report ?? 0,
+        latest_message_chars: String(`${emailData.subject || ""}\n${emailData.body || ""}`).trim().length,
+        history_messages_used: technicalFactHistoryContext.length,
+        selected_fact_count: technicalDiagnosticFacts.length,
+      },
+      internalThread.threadId,
     );
     const productSummaryText = productTraceHits
       .filter((hit) => hit.included)
@@ -3755,6 +4817,7 @@ Deno.serve(async (req) => {
       })
       : null;
     const factSummaryText = [
+      threadStateText,
       factContext?.summary || "",
       selectedOrder
         ? `Selected order status: fulfillment=${String(selectedOrder?.fulfillment_status || "unknown")}, financial=${String(selectedOrder?.financial_status || "unknown")}, cancelled=${selectedOrder?.cancelled_at ? "yes" : "no"}.`
@@ -3790,18 +4853,6 @@ Deno.serve(async (req) => {
     let fallbackUsed = false;
     let fallbackReason: string | null = null;
     let replyContainsConfirmationLanguage = false;
-    let executionState: ExecutionState = "no_action";
-    let returnActionResult:
-      | {
-        type: string;
-        ok: boolean;
-        status: "pending_approval";
-        orderId?: number;
-        payload?: Record<string, unknown>;
-        detail?: string;
-        error?: string;
-      }
-      | null = null;
     const runLegacyCombinedModel = async () => {
       const automationGuidance = buildAutomationGuidance(context.automation);
       const personaGuidance = `Sprogregel har altid forrang; ignorer persona-instruktioner om sprogvalg.
@@ -3817,11 +4868,17 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         "4. The customer already knows their own problem. Do not repeat it back to them.",
         "END OF HARD CONSTRAINTS.",
         "",
+        "EXAMPLE — no order data, product bought from third-party retailer:",
+        "Customer: 'My headset from ProShop is broken and won't turn on.'",
+        "CORRECT reply: 'Hej [name], send en kopi af kvitteringen fra ProShop, så ser vi hvad vi kan gøre.'",
+        "WRONG reply (never write this): 'Hej [name], Jeg kan godt forstå at det er frustrerende. Vi vil gerne hjælpe. Send kvittering, så kan vi finde en løsning. Vi ser frem til at høre fra dig.' — Wrong because: empathy opener restates the problem, filler phrase, hollow closing.",
+        "END OF EXAMPLE.",
+        "",
         "Du er en kundeservice-assistent.",
         "Skriv kort, venligt og professionelt pa samme sprog som kundens mail.",
         "Hvis kunden skriver pa engelsk, svar pa engelsk selv om andre instruktioner er pa dansk.",
         `Start svaret med en hilsen på kundens sprog: dansk → "Hej ${customerFirstName || "kunden"},", engelsk → "Hi ${customerFirstName || "there"},", spansk → "Hola ${customerFirstName || "there"},".`,
-        "Brug KONTEKST-sektionen til at finde relevante oplysninger og nævn dem eksplicit i svaret.",
+        "Brug kun det fra KONTEKST-sektionen der er relevant — inkludér ikke alt.",
         "Ved returns/refunds/warranty/shipping: følg policy summary/excerpts strengt.",
         "Opfind aldrig return-portal URL, labels eller processer som ikke står i kontekst.",
         "Når return shipping mode er customer_paid: nævn aldrig returlabel eller parcel shop.",
@@ -3846,10 +4903,28 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         ? systemMsgBase +
           ` Hvis KONTEKST indeholder et ordrenummer (fx #${context.matchedSubjectNumber}), brug dette ordrenummer som reference i svaret og spørg IKKE efter ordrenummer igen.`
         : systemMsgBase;
+      // Only downgrade to cheaper model when there is genuinely no order context at all.
+      // !internalThread.threadId is NOT used — it can be false due to DB lookup failures
+      // and would silently downgrade complex multi-message tickets.
+      const isTrivialTicket =
+        (context.orders?.length ?? 0) === 0 &&
+        !context.matchedSubjectNumber;
+      const replyModel = isTrivialTicket ? OPENAI_MODEL : "gpt-4o";
+      if (isTrivialTicket) {
+        reasoningLogs.push({
+          step_name: "reply_model_downgrade",
+          step_detail: JSON.stringify({
+            model: OPENAI_MODEL,
+            reason: "no_orders_no_order_ref_in_subject",
+          }),
+          status: "info",
+        });
+      }
       const { reply, actions } = await callOpenAIWithImages(
         prompt,
         systemMsg,
         inlineImageAttachments,
+        replyModel,
       );
       aiText = reply;
       automationActions = actions ?? [];
@@ -4064,7 +5139,59 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       }
     }
 
-    if (isReturnIntent && returnSettings && selectedOrder && !returnProcessFollowUpReplyOnly) {
+    const duplicateOrderCancellationDecision = detectDuplicateOrderCancellationDecision({
+      subject: emailData.subject || "",
+      body: emailData.body || "",
+      orders: Array.isArray(context.orders) ? context.orders : [],
+    });
+    const shouldPreferDuplicateOrderCancellation = duplicateOrderCancellationDecision.matched &&
+      Number.isFinite(Number(duplicateOrderCancellationDecision.chosenOrderId)) &&
+      Number(duplicateOrderCancellationDecision.chosenOrderId) > 0;
+    if (shouldPreferDuplicateOrderCancellation) {
+      const hasCancelOrderAction = automationActions.some((action) =>
+        String(action?.type || "").trim().toLowerCase() === "cancel_order"
+      );
+      if (!hasCancelOrderAction) {
+        automationActions = [
+          ...automationActions.filter((action) => !isInternalAnnotationAction(String(action?.type || ""))),
+          {
+            type: "cancel_order",
+            orderId: Number(duplicateOrderCancellationDecision.chosenOrderId),
+            payload: {
+              reason: "duplicate_order_customer_requested_cancel_one",
+              reason_notes:
+                duplicateOrderCancellationDecision.mentionedOrderNumbers.length >= 2
+                  ? `Customer mentioned duplicate order numbers: ${
+                    duplicateOrderCancellationDecision.mentionedOrderNumbers.join(", ")
+                  }.`
+                  : "Customer requested cancellation of one duplicate order.",
+            },
+          },
+        ];
+      }
+      appendStructuredArtifactLog(
+        reasoningLogs,
+        "v2_duplicate_order_cancellation_override",
+        {
+          artifact_type: "duplicate_order_cancellation_override",
+          matched: true,
+          chosen_order_id: duplicateOrderCancellationDecision.chosenOrderId,
+          chosen_order_number: duplicateOrderCancellationDecision.chosenOrderNumber,
+          mentioned_order_numbers: duplicateOrderCancellationDecision.mentionedOrderNumbers,
+          reason: duplicateOrderCancellationDecision.reason,
+          cancel_action_injected: !hasCancelOrderAction,
+        },
+        internalThread.threadId,
+      );
+    }
+
+    if (
+      isReturnIntent &&
+      returnSettings &&
+      selectedOrder &&
+      !returnProcessFollowUpReplyOnly &&
+      !shouldPreferDuplicateOrderCancellation
+    ) {
       const orderIdNumeric = Number(selectedOrder?.id ?? 0);
       const customerEmail = asTextOrNull(emailData.fromEmail || emailData.from);
       const returnReason = asTextOrNull(returnDetails.return_reason) || "customer_requested_return";
@@ -4426,10 +5553,34 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       finalText = enforceReturnChannelGuard({
         text: finalText,
         languageHint,
-        missingDetails: returnDetailsMissing,
-        hasKnownOrderContext: Boolean(selectedOrder),
+        missingDetails: effectiveReturnDetailsMissing,
+        hasKnownOrderContext: returnMissingDetailsGuard.knownOrderNumber,
+        hasKnownCustomerName: returnMissingDetailsGuard.knownCustomerName,
         ongoingReturnContinuation,
       });
+      const returnOrderGateResult = guardReturnReplyWithoutOrderContext({
+        text: finalText,
+        languageHint,
+        knownOrderNumber: returnMissingDetailsGuard.knownOrderNumber,
+        customerFirstName,
+      });
+      if (returnOrderGateResult.changed) {
+        finalText = returnOrderGateResult.text;
+      }
+      appendStructuredArtifactLog(
+        reasoningLogs,
+        "v2_return_order_gate",
+        {
+          artifact_type: "return_order_gate",
+          known_order_number: returnMissingDetailsGuard.knownOrderNumber,
+          instructions_suppressed: returnOrderGateResult.instructionsSuppressed,
+          order_number_request_added: returnOrderGateResult.orderNumberRequestAdded,
+          changed: returnOrderGateResult.changed,
+          reason: returnOrderGateResult.reason,
+          prompt_stage: "post_reply",
+        },
+        internalThread.threadId,
+      );
     }
     const returnProcessFollowUpCompletenessApplicable =
       replyStrategyArtifact?.execution_state === "no_action" &&
@@ -4520,6 +5671,20 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         internalThread.threadId,
       );
     }
+    const hardSameChannelGuardResult = hardEnforceInThreadChannel(finalText, languageHint);
+    if (hardSameChannelGuardResult.changed) {
+      finalText = hardSameChannelGuardResult.text;
+      appendStructuredArtifactLog(
+        reasoningLogs,
+        "v2_same_channel_hard_guard",
+        {
+          artifact_type: "same_channel_hard_guard",
+          changed: true,
+          replaced_lines: hardSameChannelGuardResult.replaced_lines,
+        },
+        internalThread.threadId,
+      );
+    }
 
     const replyGuardResult = guardReplyForExecutionState({
       text: finalText,
@@ -4603,11 +5768,25 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
     });
     finalText = replyNaturalnessPolish.text;
     finalText = removeGenericFillerPhrases(finalText);
-    const directnessPolish = await enforceDirectSupportReply({
-      customerMessage,
-      reply: finalText,
-      languageHint,
+    const skipDirectnessPolish = shouldSkipDirectnessPolish({
+      assessment: caseAssessment,
+      replyGoal: replyGoalArtifact,
+      threadContextGate: threadContextGateResult,
     });
+    const directnessPolish = skipDirectnessPolish
+      ? {
+        text: finalText,
+        artifact: {
+          artifact_type: "reply_directness_polish" as const,
+          applied: false,
+          reason: "skipped_technical_followup",
+        },
+      }
+      : await enforceDirectSupportReply({
+        customerMessage,
+        reply: finalText,
+        languageHint,
+      });
     finalText = directnessPolish.text;
     const finalLanguageGuard = await ensureReplyLanguageConsistency({
       customerMessage,
@@ -4630,6 +5809,18 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       languageHint,
     });
     finalText = postDirectnessLanguageCheck.text;
+    const technicalFollowupGroundingResult = guardTechnicalFollowupGrounding({
+      text: finalText,
+      assessment: caseAssessment,
+      threadContextGate: threadContextGateResult,
+      technicalDiagnosticFacts,
+      isReturnIntent,
+      latestMessage: `${emailData.subject || ""}\n${emailData.body || ""}`.trim(),
+      threadHistory: preflightDbHistory.length ? preflightDbHistory : preflightQuotedFallback,
+      languageHint,
+    });
+    finalText = technicalFollowupGroundingResult.text;
+    finalText = ensureFirstLineHasName(finalText, customerFirstName);
     appendStructuredArtifactLog(
       reasoningLogs,
       "v2_reply_naturalness_polish",
@@ -4642,6 +5833,57 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       directnessPolish.artifact,
       internalThread.threadId,
     );
+    appendStructuredArtifactLog(
+      reasoningLogs,
+      "v2_technical_followup_grounding_guard",
+      {
+        artifact_type: "technical_followup_grounding_guard",
+        changed: technicalFollowupGroundingResult.changed,
+        removed_unapproved_steps_count: technicalFollowupGroundingResult.removedUnapprovedStepsCount,
+        removed_return_leak_count: technicalFollowupGroundingResult.removedReturnLeakCount,
+        fallback_to_clarifying_question: technicalFollowupGroundingResult.fallbackToClarifyingQuestion,
+        forced_clarifying_reply_mode: technicalFollowupGroundingResult.fallbackToClarifyingQuestion,
+        reason: technicalFollowupGroundingResult.reason || null,
+      },
+      internalThread.threadId,
+    );
+    const threadStateSwitchGuardResult = guardThreadStateSwitch({
+      text: finalText,
+      threadState: deterministicThreadState,
+      languageHint,
+      customerFirstName,
+    });
+    finalText = threadStateSwitchGuardResult.text;
+    appendStructuredArtifactLog(
+      reasoningLogs,
+      "v2_thread_state_switch_guard",
+      {
+        artifact_type: "thread_state_switch_guard",
+        changed: threadStateSwitchGuardResult.changed,
+        forced_clarify_switch: threadStateSwitchGuardResult.forced_clarify_switch,
+        reason: threadStateSwitchGuardResult.reason || null,
+      },
+      internalThread.threadId,
+    );
+    if (shouldForceSatisfactionClosureReply({
+      assessment: caseAssessment,
+      body: `${emailData.subject || ""}\n${emailData.body || ""}`,
+    })) {
+      finalText = buildSatisfactionClosureReply({
+        customerFirstName,
+        languageHint,
+      });
+      appendStructuredArtifactLog(
+        reasoningLogs,
+        "v2_satisfaction_closure_reply",
+        {
+          artifact_type: "satisfaction_closure_reply",
+          forced: true,
+          language_hint: languageHint || null,
+        },
+        internalThread.threadId,
+      );
+    }
 
     // Render HTML med konsistent styling og line breaks.
     let htmlBody = formatEmailBody(finalText);
@@ -4884,10 +6126,34 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
           finalText = enforceReturnChannelGuard({
             text: finalText,
             languageHint,
-            missingDetails: returnDetailsMissing,
-            hasKnownOrderContext: Boolean(selectedOrder),
+            missingDetails: effectiveReturnDetailsMissing,
+            hasKnownOrderContext: returnMissingDetailsGuard.knownOrderNumber,
+            hasKnownCustomerName: returnMissingDetailsGuard.knownCustomerName,
             ongoingReturnContinuation: Boolean(selectedOrder),
           });
+          const blockedReturnOrderGateResult = guardReturnReplyWithoutOrderContext({
+            text: finalText,
+            languageHint,
+            knownOrderNumber: returnMissingDetailsGuard.knownOrderNumber,
+            customerFirstName,
+          });
+          if (blockedReturnOrderGateResult.changed) {
+            finalText = blockedReturnOrderGateResult.text;
+          }
+          appendStructuredArtifactLog(
+            reasoningLogs,
+            "v2_return_order_gate",
+            {
+              artifact_type: "return_order_gate",
+              known_order_number: returnMissingDetailsGuard.knownOrderNumber,
+              instructions_suppressed: blockedReturnOrderGateResult.instructionsSuppressed,
+              order_number_request_added: blockedReturnOrderGateResult.orderNumberRequestAdded,
+              changed: blockedReturnOrderGateResult.changed,
+              reason: blockedReturnOrderGateResult.reason,
+              prompt_stage: "post_reply_blocked",
+            },
+            internalThread.threadId,
+          );
           finalText = await enforceReplyLanguage(customerMessage, finalText, languageHint);
         }
         const blockedReplyLanguageCheck = await ensureReplyLanguageConsistency({
@@ -4910,11 +6176,25 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         });
         finalText = blockedReplyNaturalnessPolish.text;
         finalText = removeGenericFillerPhrases(finalText);
-        const blockedDirectnessPolish = await enforceDirectSupportReply({
-          customerMessage,
-          reply: finalText,
-          languageHint,
+        const skipBlockedDirectnessPolish = shouldSkipDirectnessPolish({
+          assessment: caseAssessment,
+          replyGoal: replyGoalArtifact,
+          threadContextGate: threadContextGateResult,
         });
+        const blockedDirectnessPolish = skipBlockedDirectnessPolish
+          ? {
+            text: finalText,
+            artifact: {
+              artifact_type: "reply_directness_polish" as const,
+              applied: false,
+              reason: "skipped_technical_followup",
+            },
+          }
+          : await enforceDirectSupportReply({
+            customerMessage,
+            reply: finalText,
+            languageHint,
+          });
         finalText = blockedDirectnessPolish.text;
         const blockedFinalLanguageGuard = await ensureReplyLanguageConsistency({
           customerMessage,
@@ -4937,6 +6217,18 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
           languageHint,
         });
         finalText = blockedPostDirectnessLanguageCheck.text;
+        const blockedTechnicalFollowupGroundingResult = guardTechnicalFollowupGrounding({
+          text: finalText,
+          assessment: caseAssessment,
+          threadContextGate: threadContextGateResult,
+          technicalDiagnosticFacts,
+          isReturnIntent,
+          latestMessage: `${emailData.subject || ""}\n${emailData.body || ""}`.trim(),
+          threadHistory: preflightDbHistory.length ? preflightDbHistory : preflightQuotedFallback,
+          languageHint,
+        });
+        finalText = blockedTechnicalFollowupGroundingResult.text;
+        finalText = ensureFirstLineHasName(finalText, customerFirstName);
         appendStructuredArtifactLog(
           reasoningLogs,
           "v2_reply_naturalness_polish",
@@ -4949,6 +6241,75 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
           blockedDirectnessPolish.artifact,
           internalThread.threadId,
         );
+        appendStructuredArtifactLog(
+          reasoningLogs,
+          "v2_technical_followup_grounding_guard",
+          {
+            artifact_type: "technical_followup_grounding_guard",
+            changed: blockedTechnicalFollowupGroundingResult.changed,
+            removed_unapproved_steps_count:
+              blockedTechnicalFollowupGroundingResult.removedUnapprovedStepsCount,
+            removed_return_leak_count:
+              blockedTechnicalFollowupGroundingResult.removedReturnLeakCount,
+            fallback_to_clarifying_question:
+              blockedTechnicalFollowupGroundingResult.fallbackToClarifyingQuestion,
+            forced_clarifying_reply_mode:
+              blockedTechnicalFollowupGroundingResult.fallbackToClarifyingQuestion,
+            reason: blockedTechnicalFollowupGroundingResult.reason || null,
+          },
+          internalThread.threadId,
+        );
+        const blockedHardSameChannelGuard = hardEnforceInThreadChannel(finalText, languageHint);
+        if (blockedHardSameChannelGuard.changed) {
+          finalText = blockedHardSameChannelGuard.text;
+          appendStructuredArtifactLog(
+            reasoningLogs,
+            "v2_same_channel_hard_guard",
+            {
+              artifact_type: "same_channel_hard_guard",
+              changed: true,
+              replaced_lines: blockedHardSameChannelGuard.replaced_lines,
+            },
+            internalThread.threadId,
+          );
+        }
+        const blockedThreadStateSwitchGuardResult = guardThreadStateSwitch({
+          text: finalText,
+          threadState: deterministicThreadState,
+          languageHint,
+          customerFirstName,
+        });
+        finalText = blockedThreadStateSwitchGuardResult.text;
+        appendStructuredArtifactLog(
+          reasoningLogs,
+          "v2_thread_state_switch_guard",
+          {
+            artifact_type: "thread_state_switch_guard",
+            changed: blockedThreadStateSwitchGuardResult.changed,
+            forced_clarify_switch: blockedThreadStateSwitchGuardResult.forced_clarify_switch,
+            reason: blockedThreadStateSwitchGuardResult.reason || null,
+          },
+          internalThread.threadId,
+        );
+        if (shouldForceSatisfactionClosureReply({
+          assessment: caseAssessment,
+          body: `${emailData.subject || ""}\n${emailData.body || ""}`,
+        })) {
+          finalText = buildSatisfactionClosureReply({
+            customerFirstName,
+            languageHint,
+          });
+          appendStructuredArtifactLog(
+            reasoningLogs,
+            "v2_satisfaction_closure_reply",
+            {
+              artifact_type: "satisfaction_closure_reply",
+              forced: true,
+              language_hint: languageHint || null,
+            },
+            internalThread.threadId,
+          );
+        }
         htmlBody = formatEmailBody(finalText);
 
         if (supabase && internalDraft?.id) {
