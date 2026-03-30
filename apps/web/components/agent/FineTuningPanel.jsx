@@ -103,6 +103,7 @@ export function FineTuningPanel({ children }) {
       scenario: generatedEmail.body,
       instructions,
       signature: "",
+      emailLanguage: generatedEmail.language ?? null,
     }).catch(() => null);
   };
 
@@ -153,9 +154,16 @@ export function FineTuningPanel({ children }) {
                 {/* Step 1: Generated email */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <label className="text-sm font-medium text-foreground">
-                      Test email
-                    </label>
+                    <div className="flex items-center gap-2">
+                      <label className="text-sm font-medium text-foreground">
+                        Test email
+                      </label>
+                      {generatedEmail?.language && (
+                        <Badge variant="outline" className="text-xs px-1.5 py-0">
+                          {generatedEmail.language === "Danish" ? "DA" : "EN"}
+                        </Badge>
+                      )}
+                    </div>
                     <button
                       type="button"
                       onClick={handleGenerateEmail}

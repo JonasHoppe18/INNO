@@ -214,6 +214,7 @@ export function useAgentPersonaConfig(options = {}) {
             : "Best regards\nYour agent",
           scenario: scenarioInput,
           instructions: instructionsInput,
+          ...(overrides.emailLanguage ? { emailLanguage: overrides.emailLanguage } : {}),
         };
 
         const response = await fetch("/api/persona-test", {

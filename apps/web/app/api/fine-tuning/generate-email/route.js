@@ -34,8 +34,14 @@ const EMAIL_TOPICS = [
   "wrong item received",
 ];
 
+const LANGUAGES = ["English", "Danish"];
+
 function pickTopic() {
   return EMAIL_TOPICS[Math.floor(Math.random() * EMAIL_TOPICS.length)];
+}
+
+function pickLanguage() {
+  return LANGUAGES[Math.floor(Math.random() * LANGUAGES.length)];
 }
 
 export async function POST() {
@@ -91,12 +97,18 @@ export async function POST() {
           .slice(0, 8);
       }
 
-      if (shop.policy_refund) policyHints.push("has a refund/return policy");
-      if (shop.policy_shipping) policyHints.push("has a shipping policy");
+      if (shop.policy_refund) {
+        policyHints.push(`Refund/return policy: ${shop.policy_refund.slice(0, 300)}`);
+      }
+      if (shop.policy_shipping) {
+        policyHints.push(`Shipping policy: ${shop.policy_shipping.slice(0, 300)}`);
+      }
     }
   }
 
   const topic = pickTopic();
+  const language = pickLanguage();
+
   const shopContext = shopName ? `The shop is called "${shopName}".` : "This is a generic e-commerce shop.";
   const productContext =
     productNames.length > 0
@@ -104,7 +116,7 @@ export async function POST() {
       : "The shop sells various consumer products.";
   const policyContext =
     policyHints.length > 0
-      ? `The shop ${policyHints.join(" and ")}.`
+      ? `\n\nShop policies (use these for realistic context):\n${policyHints.join("\n\n")}`
       : "";
 
   const systemPrompt =
@@ -113,8 +125,9 @@ export async function POST() {
     "Always respond with valid JSON only, no markdown.";
 
   const userPrompt =
-    `${shopContext} ${productContext} ${policyContext}\n\n` +
-    `Generate a realistic customer support email about: ${topic}.\n\n` +
+    `${shopContext} ${productContext}${policyContext}\n\n` +
+    `Generate a realistic customer support email about: ${topic}.\n` +
+    `Write the email in ${language}.\n\n` +
     `Respond with JSON in this exact format:\n` +
     `{\n` +
     `  "from": "customer first name and a plausible email address",\n` +
@@ -158,5 +171,5 @@ export async function POST() {
   const subject = typeof generated.subject === "string" && generated.subject.trim() ? generated.subject.trim() : "Customer inquiry";
   const body = typeof generated.body === "string" && generated.body.trim() ? generated.body.trim() : "";
 
-  return NextResponse.json({ from, subject, body });
+  return NextResponse.json({ from, subject, body, language });
 }
