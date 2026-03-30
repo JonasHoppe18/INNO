@@ -116,7 +116,7 @@ export function FineTuningPanel({ children }) {
       {children || null}
       <Card className="overflow-hidden border-0 bg-white shadow-none">
         <CardContent className="bg-white">
-          <div className="grid gap-8 lg:grid-cols-[minmax(0,2fr)_minmax(360px,1fr)]">
+          <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(500px,1fr)]">
             {/* Left column: Instructions editor */}
             <div className="space-y-5">
               <EditorField
@@ -135,7 +135,7 @@ export function FineTuningPanel({ children }) {
             </div>
 
             {/* Right column: Playground */}
-            <aside className="flex flex-col rounded-2xl border bg-card/70 shadow-sm lg:sticky lg:top-6 lg:mt-4">
+            <aside className="flex flex-col rounded-2xl border bg-card/70 shadow-sm lg:sticky lg:top-6 lg:mt-4 lg:min-h-[900px]">
               <div className="flex items-start justify-between gap-2 border-b px-4 py-3">
                 <div>
                   <p className="text-sm font-semibold text-foreground">Playground</p>
@@ -229,7 +229,7 @@ export function FineTuningPanel({ children }) {
                   ) : null}
 
                   <div className="rounded-xl border bg-slate-50 p-3">
-                    <div className="min-h-[120px] text-sm leading-relaxed text-foreground">
+                    <div className="min-h-[300px] text-sm leading-relaxed text-foreground">
                       {test?.loading ? (
                         <div className="space-y-2">
                           <div className="h-3.5 w-2/3 animate-pulse rounded bg-slate-200" />
