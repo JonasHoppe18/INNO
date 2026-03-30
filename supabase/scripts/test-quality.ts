@@ -301,7 +301,7 @@ async function runPipelineForTicket(
     ticketId: thread.threadId,
     subject: thread.subject,
     primaryIntent: assessment.primary_case_type,
-    replyPreview: result ? truncate(result.reply) : "(intet svar genereret)",
+    replyPreview: result?.reply ?? "(intet svar genereret)",
     quality_check: result?.quality_check ?? null,
     durationMs: Date.now() - start,
   };
