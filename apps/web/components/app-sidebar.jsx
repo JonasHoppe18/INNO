@@ -17,6 +17,7 @@ import {
   MailIcon,
   Bell,
   Plus,
+  SlidersHorizontal,
   Trash2,
   User,
   UserRoundPenIcon,
@@ -84,11 +85,11 @@ const baseData = {
       url: "/mailboxes",
       icon: MailIcon,
     },
-    // {
-    //   name: "Persona",
-    //   url: "/persona",
-    //   icon: UserRoundPenIcon,
-    // },
+    {
+      name: "Fine-tuning",
+      url: "/fine-tuning",
+      icon: SlidersHorizontal,
+    },
     {
       name: "Automation",
       url: "/automation",
