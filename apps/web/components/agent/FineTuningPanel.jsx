@@ -334,10 +334,12 @@ function EvalResultRow({ result }) {
 }
 
 const EMPTY_EMAIL = () => ({ id: Math.random().toString(36).slice(2), subject: "", body: "" });
+const MODELS = ["gpt-4o", "gpt-4o-mini"];
 
 function EvalSection() {
   const [emails, setEmails] = useState([EMPTY_EMAIL()]);
   const [runLabel, setRunLabel] = useState("");
+  const [model, setModel] = useState("gpt-4o");
   const [running, setRunning] = useState(false);
   const [runError, setRunError] = useState(null);
   const [runs, setRuns] = useState([]);
@@ -375,7 +377,7 @@ function EvalSection() {
         body: JSON.stringify({
           emails: validEmails.map((e) => ({ subject: e.subject, body: e.body })),
           run_label: runLabel.trim(),
-          model: "gpt-4o",
+          model,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -449,6 +451,15 @@ function EvalSection() {
             placeholder='Run label, e.g. "gpt-4o baseline"'
             className="flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/30"
           />
+          <select
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            className="rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+          >
+            {MODELS.map((m) => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
           <button
             type="button"
             onClick={handleRun}
