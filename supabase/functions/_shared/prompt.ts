@@ -41,6 +41,10 @@ type MailPromptOptions = {
   brandDescription?: string | null;
   productOverview?: string | null;
   supportIdentity?: string | null;
+
+  /** Reply opening style — kun på første besked (isFollowUp = false) */
+  replyGreeting?: string | null;
+  isFollowUp?: boolean;
 };
 
 function firstNameOrNull(fullName?: string | null): string | null {
@@ -92,6 +96,8 @@ export function buildMailPrompt({
   brandDescription,
   productOverview,
   supportIdentity,
+  replyGreeting,
+  isFollowUp,
 }: MailPromptOptions): string {
   const refundPolicy = policies?.policy_refund?.trim();
   const shippingPolicy = policies?.policy_shipping?.trim();
@@ -168,10 +174,15 @@ export function buildMailPrompt({
       ].filter(Boolean).join("\n")
     : `Du er en erfaren kundeservice-medarbejder. Du ER virksomhedens support — henvis aldrig kunden til "en professionel" eller "kontakt support", de har allerede kontaktet dig.`;
 
+  // Reply greeting — kun på første besked i en tråd, ikke follow-ups
+  const replyGreetingBlock = replyGreeting && !isFollowUp
+    ? `ÅBNING (kun på første svar i en tråd): ${replyGreeting}`
+    : "";
+
   let prompt = `
 ${languageLockLine ? languageLockLine + "\n" : ""}ROLLEN:
 ${companyIdentityBlock}
-Sprogprioritet: Svar altid på kundens sprog, selv hvis resten af prompten er på dansk.
+${replyGreetingBlock ? replyGreetingBlock + "\n" : ""}Sprogprioritet: Svar altid på kundens sprog, selv hvis resten af prompten er på dansk.
 Din opgave er at skrive et klart og kort udkast til et svar, som en menneskelig agent kan sende med minimale rettelser.
 
 OPGAVEN:

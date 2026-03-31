@@ -222,6 +222,7 @@ type AgentContext = {
   brandDescription: string | null;
   productOverview: string | null;
   supportIdentity: string | null;
+  replyGreeting: string | null;
   profile: Awaited<ReturnType<typeof fetchOwnerProfile>>;
   persona: Awaited<ReturnType<typeof fetchPersona>>;
   automation: Awaited<ReturnType<typeof fetchAutomation>>;
@@ -239,6 +240,7 @@ type ShopScope = {
   brandDescription: string | null;
   productOverview: string | null;
   supportIdentity: string | null;
+  replyGreeting: string | null;
 };
 
 type OpenAIResult = {
@@ -2398,11 +2400,11 @@ function buildStyleHeuristics(history: Array<any>): string[] {
 
 // Find shop scope så vi kan læse workspace-shared konfiguration.
 async function resolveShopScope(shopId: string): Promise<ShopScope> {
-  const fallback: ShopScope = { ownerUserId: null, workspaceId: null, shopName: null, brandDescription: null, productOverview: null, supportIdentity: null };
+  const fallback: ShopScope = { ownerUserId: null, workspaceId: null, shopName: null, brandDescription: null, productOverview: null, supportIdentity: null, replyGreeting: null };
   if (!supabase) return fallback;
   const { data, error } = await supabase
     .from("shops")
-    .select("owner_user_id, workspace_id, shop_name, brand_description, product_overview, support_identity")
+    .select("owner_user_id, workspace_id, shop_name, brand_description, product_overview, support_identity, reply_greeting")
     .eq("id", shopId)
     .maybeSingle();
   if (error) {
@@ -2416,6 +2418,7 @@ async function resolveShopScope(shopId: string): Promise<ShopScope> {
     brandDescription: data?.brand_description ?? null,
     productOverview: data?.product_overview ?? null,
     supportIdentity: data?.support_identity ?? null,
+    replyGreeting: data?.reply_greeting ?? null,
   };
 }
 
@@ -2610,6 +2613,7 @@ async function getAgentContext(
     brandDescription: scope.brandDescription,
     productOverview: scope.productOverview,
     supportIdentity: scope.supportIdentity,
+    replyGreeting: scope.replyGreeting,
     profile,
     persona,
     automation,
@@ -4602,6 +4606,8 @@ Deno.serve(async (req) => {
       brandDescription: context.brandDescription,
       productOverview: context.productOverview,
       supportIdentity: context.supportIdentity,
+      replyGreeting: context.replyGreeting,
+      isFollowUp: threadContextGateResult?.is_follow_up === true,
     });
     const inlineImageAttachments = await loadInlineImageAttachments({
       userId: ownerUserId,

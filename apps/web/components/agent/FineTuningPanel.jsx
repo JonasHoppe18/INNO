@@ -47,7 +47,9 @@ export function FineTuningPanel({ children }) {
     useAgentPersonaConfig();
 
   const [instructions, setInstructions] = useState("");
+  const [replyGreeting, setReplyGreeting] = useState("");
   const [dirty, setDirty] = useState(false);
+  const [greetingSaving, setGreetingSaving] = useState(false);
 
   // Generated email state
   const [generatedEmail, setGeneratedEmail] = useState(null);
@@ -63,6 +65,29 @@ export function FineTuningPanel({ children }) {
     setInstructions(persona?.instructions ?? "");
     setDirty(false);
   }, [persona?.instructions]);
+
+  // Load reply greeting from shops table
+  useEffect(() => {
+    fetch("/api/settings/company-context")
+      .then((r) => r.json())
+      .then((data) => { if (data?.reply_greeting != null) setReplyGreeting(data.reply_greeting); })
+      .catch(() => null);
+  }, []);
+
+  const handleSaveGreeting = useCallback(async () => {
+    setGreetingSaving(true);
+    try {
+      await fetch("/api/settings/company-context", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reply_greeting: replyGreeting }),
+      });
+    } catch (_err) {
+      // ignore
+    } finally {
+      setGreetingSaving(false);
+    }
+  }, [replyGreeting]);
 
   const handleChange = (event) => {
     setInstructions(event.target.value);
@@ -133,6 +158,33 @@ export function FineTuningPanel({ children }) {
                   {error.message ?? "Could not load or save instructions."}
                 </p>
               )}
+
+              {/* Reply greeting — only injected on first message in a thread */}
+              <div className="space-y-1.5">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Opening style</p>
+                  <p className="text-xs text-muted-foreground">
+                    Describe how the AI should open its first reply. Leave empty for a direct response without a warm intro. Only applied on the first message — not follow-ups.
+                  </p>
+                </div>
+                <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+                  <textarea
+                    value={replyGreeting}
+                    onChange={(e) => setReplyGreeting(e.target.value)}
+                    rows={4}
+                    className="w-full resize-y border-0 bg-transparent px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                    placeholder="Example: Start by thanking the customer for reaching out and expressing empathy about their issue before providing the solution."
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSaveGreeting}
+                  disabled={greetingSaving}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition hover:bg-blue-500 disabled:opacity-50"
+                >
+                  {greetingSaving ? "Saving…" : "Save opening style"}
+                </button>
+              </div>
             </div>
 
             {/* Right column: Playground */}
