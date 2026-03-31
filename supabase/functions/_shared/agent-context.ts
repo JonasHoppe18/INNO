@@ -393,8 +393,8 @@ export async function fetchRelevantKnowledgeDetailed(
   minSimilarity = 0,
 ): Promise<{ matches: KnowledgeMatch[]; debug: KnowledgeRetrievalDebug }> {
   const safeQuery = String(emailBody || "").trim();
-  const safeLimit = Math.max(1, Math.min(limit, 5));
-  const retrievalLimit = Math.max(safeLimit * 4, 12);
+  const safeLimit = Math.max(1, Math.min(limit, 20));
+  const retrievalLimit = Math.max(safeLimit * 4, 24);
   const threshold = Number.isFinite(minSimilarity) ? Number(minSimilarity) : 0;
   if (!supabase || !shopId || !safeQuery) {
     return {
@@ -536,7 +536,59 @@ export async function fetchRelevantKnowledge(
     limit,
     minSimilarity,
   );
-  return result.matches;
+  const matches = result.matches;
+
+  // For multi-chunk snippets, fetch sibling chunks that weren't retrieved by similarity.
+  // Chunks from the same snippet share metadata.snippet_id and metadata.chunk_count > 1.
+  // Without siblings the model receives truncated content mid-sentence.
+  if (supabase && shopId && matches.length > 0) {
+    const snippetIds = [...new Set(
+      matches
+        .filter((m) => {
+          const meta = m?.metadata as Record<string, unknown> | null | undefined;
+          return Number(meta?.chunk_count ?? 1) > 1 && meta?.snippet_id;
+        })
+        .map((m) => String((m.metadata as Record<string, unknown>).snippet_id)),
+    )];
+    if (snippetIds.length > 0) {
+      const retrievedIds = new Set(matches.map((m) => String(m.id)));
+      const { data: siblings } = await supabase
+        .from("agent_knowledge")
+        .select("id, content, source_type, source_provider, metadata")
+        .eq("shop_id", shopId)
+        .in("metadata->>snippet_id", snippetIds)
+        .order("metadata->>chunk_index");
+      if (Array.isArray(siblings)) {
+        for (const sibling of siblings) {
+          if (!retrievedIds.has(String(sibling.id))) {
+            matches.push({ ...sibling, similarity: 0.01 } as KnowledgeMatch);
+            retrievedIds.add(String(sibling.id));
+          }
+        }
+      }
+    }
+  }
+
+  return matches;
+}
+
+// Strip HTML tags and decode common HTML entities from knowledge chunk content.
+// manual_text snippets are stored with raw HTML from the rich-text editor.
+function stripHtml(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/?(p|div|ol|ul|li|h[1-6])[^>]*>/gi, "\n")
+    .replace(/<strong[^>]*>(.*?)<\/strong>/gi, "$1")
+    .replace(/<em[^>]*>(.*?)<\/em>/gi, "$1")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 export function formatKnowledgeForPrompt(matches: KnowledgeMatch[]): string {
@@ -546,7 +598,10 @@ export function formatKnowledgeForPrompt(matches: KnowledgeMatch[]): string {
   matches.forEach((match, index) => {
     const type = match?.source_type || "snippet";
     const provider = match?.source_provider ? `, Provider: ${match.source_provider}` : "";
-    const content = String(match?.content || "").trim();
+    const rawContent = String(match?.content || "").trim();
+    if (!rawContent) return;
+    // Strip HTML so the model receives clean readable text instead of markup
+    const content = rawContent.includes("<") ? stripHtml(rawContent) : rawContent;
     if (!content) return;
     lines.push(`[${index + 1}] (Type: ${type}${provider}) ${content}`);
   });

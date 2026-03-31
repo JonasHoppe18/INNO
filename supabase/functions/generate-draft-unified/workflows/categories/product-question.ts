@@ -12,7 +12,8 @@ export function buildProductDraft(category: EmailCategory): WorkflowRoute {
     promptBlocks: [
       "PRODUCT QUESTION FOCUS:\n" +
       "- Do NOT summarize or restate the customer's problem back to them — go straight to the answer or next step.\n" +
-      "- Answer the product question directly with known facts.\n" +
+      "- Answer the product question directly with known facts from the knowledge base. Use specific product names, features, and specifications.\n" +
+      "- If the knowledge base contains product details (specs, compatibility, features, usage guides), use them to give a thorough answer. Do NOT give generic advice when specific information is available.\n" +
       "- If there is no order data and the product was purchased elsewhere, state once what you cannot do, then give the single next step in 1-2 sentences.\n" +
       "- Do NOT use filler like 'Vi vil gerne hjælpe dig med at finde en løsning' — either give the answer or explain the next step directly.\n" +
       "- Do not add actions that mutate the order.",

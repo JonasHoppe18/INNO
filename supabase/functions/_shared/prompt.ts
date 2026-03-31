@@ -35,6 +35,12 @@ type MailPromptOptions = {
   detectedLanguage?: string | null;
   caseStateText?: string | null;
   threadHistoryText?: string | null;
+
+  /** Company identity — injiceres i ROLLEN-blokken */
+  shopName?: string | null;
+  brandDescription?: string | null;
+  productOverview?: string | null;
+  supportIdentity?: string | null;
 };
 
 function firstNameOrNull(fullName?: string | null): string | null {
@@ -82,6 +88,10 @@ export function buildMailPrompt({
   detectedLanguage,
   caseStateText,
   threadHistoryText,
+  shopName,
+  brandDescription,
+  productOverview,
+  supportIdentity,
 }: MailPromptOptions): string {
   const refundPolicy = policies?.policy_refund?.trim();
   const shippingPolicy = policies?.policy_shipping?.trim();
@@ -149,9 +159,18 @@ export function buildMailPrompt({
     ? `SPROGLÅS (ABSOLUT REGEL): Svar KUN på ${languageNames[detectedLanguage]}. Dette tilsidesætter alle andre instruktioner, herunder persona og learned style.`
     : "";
 
+  const companyIdentityBlock = shopName
+    ? [
+        `Du er en kundeservice-medarbejder hos ${shopName}.`,
+        brandDescription ? brandDescription : "",
+        productOverview ? `Produkter: ${productOverview}` : "",
+        supportIdentity ? supportIdentity : `Du svarer på vegne af ${shopName}. Du ER supporten — henvis aldrig kunden til "en professionel" eller "kontakt support", de har allerede kontaktet dig.`,
+      ].filter(Boolean).join("\n")
+    : `Du er en erfaren kundeservice-medarbejder. Du ER virksomhedens support — henvis aldrig kunden til "en professionel" eller "kontakt support", de har allerede kontaktet dig.`;
+
   let prompt = `
 ${languageLockLine ? languageLockLine + "\n" : ""}ROLLEN:
-Du er en erfaren kundeservice-medarbejder (Human-in-the-loop).
+${companyIdentityBlock}
 Sprogprioritet: Svar altid på kundens sprog, selv hvis resten af prompten er på dansk.
 Din opgave er at skrive et klart og kort udkast til et svar, som en menneskelig agent kan sende med minimale rettelser.
 

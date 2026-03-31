@@ -123,7 +123,7 @@ const readEnvFlag = (key: string, fallback: boolean) => {
   return fallback;
 };
 
-const KNOWLEDGE_MIN_SIMILARITY = readEnvNumber("KNOWLEDGE_MIN_SIMILARITY", 0.62, {
+const KNOWLEDGE_MIN_SIMILARITY = readEnvNumber("KNOWLEDGE_MIN_SIMILARITY", 0.40, {
   min: 0,
   max: 1,
 });
@@ -131,16 +131,16 @@ const PRODUCT_MIN_SIMILARITY = readEnvNumber("PRODUCT_MIN_SIMILARITY", 0.35, {
   min: 0,
   max: 1,
 });
-const MAX_RETRIEVAL_CHUNKS = readEnvNumber("MAX_RETRIEVAL_CHUNKS", 4, {
+const MAX_RETRIEVAL_CHUNKS = readEnvNumber("MAX_RETRIEVAL_CHUNKS", 8, {
   min: 1,
-  max: 10,
+  max: 20,
 });
-const MAX_CONTEXT_TOKENS = readEnvNumber("MAX_CONTEXT_TOKENS", 3500, {
+const MAX_CONTEXT_TOKENS = readEnvNumber("MAX_CONTEXT_TOKENS", 8000, {
   min: 0,
 });
-const KNOWLEDGE_SECTION_MIN_TOKENS = readEnvNumber("KNOWLEDGE_SECTION_MIN_TOKENS", 450, {
+const KNOWLEDGE_SECTION_MIN_TOKENS = readEnvNumber("KNOWLEDGE_SECTION_MIN_TOKENS", 1500, {
   min: 150,
-  max: 900,
+  max: 3000,
 });
 const TECHNICAL_FALLBACK_KNOWLEDGE_MIN_SIMILARITY = readEnvNumber(
   "TECHNICAL_FALLBACK_KNOWLEDGE_MIN_SIMILARITY",
@@ -158,6 +158,9 @@ const RETRIEVAL_TRACE_SAMPLE_RATE = readEnvNumber(
   Deno.env.get("DENO_DEPLOYMENT_ID") ? 0.1 : 1,
   { min: 0, max: 1 },
 );
+// V2_STAGED_ORCHESTRATOR_ENABLED enables the full V2 pipeline incl. guards like
+// TechnicalFollowupGroundingGuard that block knowledge delivery when no steps are "approved".
+// Keep false until V2 guards are properly tuned.
 const V2_STAGED_ORCHESTRATOR_ENABLED = readEnvFlag("V2_STAGED_ORCHESTRATOR_ENABLED", false);
 const V2_CASE_ASSESSMENT_ENABLED = readEnvFlag("V2_CASE_ASSESSMENT_ENABLED", false);
 const V2_ACTION_VALIDATION_ENABLED = readEnvFlag("V2_ACTION_VALIDATION_ENABLED", false);
@@ -170,13 +173,13 @@ const V2_GENERATE_REPLY_FROM_STRATEGY_ENABLED = readEnvFlag(
 const V2_TWO_STAGE_FALLBACK_ENABLED = readEnvFlag("V2_TWO_STAGE_FALLBACK_ENABLED", true);
 const V2_RETRIEVAL_RERANK_BY_CASE_TYPE_ENABLED = readEnvFlag(
   "V2_RETRIEVAL_RERANK_BY_CASE_TYPE_ENABLED",
-  false,
+  true,
 );
 const V2_RETRIEVAL_RERANK_BY_CASE_TYPE_RAW =
   Deno.env.get("V2_RETRIEVAL_RERANK_BY_CASE_TYPE_ENABLED") ?? null;
 const V2_STRUCTURED_ARTIFACT_LOGGING_ENABLED = readEnvFlag(
   "V2_STRUCTURED_ARTIFACT_LOGGING_ENABLED",
-  false,
+  true,
 );
 const POLICY_SOURCE_PROVIDER = "shopify_policy";
 const TRACKING_CARRIERS_PROVIDER = "tracking_carriers";
@@ -215,6 +218,10 @@ type EmailData = {
 type AgentContext = {
   workspaceId: string | null;
   ownerUserId: string | null;
+  shopName: string | null;
+  brandDescription: string | null;
+  productOverview: string | null;
+  supportIdentity: string | null;
   profile: Awaited<ReturnType<typeof fetchOwnerProfile>>;
   persona: Awaited<ReturnType<typeof fetchPersona>>;
   automation: Awaited<ReturnType<typeof fetchAutomation>>;
@@ -228,6 +235,10 @@ type AgentContext = {
 type ShopScope = {
   ownerUserId: string | null;
   workspaceId: string | null;
+  shopName: string | null;
+  brandDescription: string | null;
+  productOverview: string | null;
+  supportIdentity: string | null;
 };
 
 type OpenAIResult = {
@@ -1027,7 +1038,10 @@ const shouldSkipDirectnessPolish = (options: {
     options.replyGoal?.continuation_style_reply === true ||
     options.replyGoal?.reply_goal === "continue_troubleshooting" ||
     options.replyGoal?.reply_goal === "troubleshoot_connectivity_issue";
-  return isTechnicalCase && isFollowUp && isContinuationGoal;
+  // Skip directness polish for all technical cases — the polish LLM condenses numbered
+  // troubleshooting steps into single sentences, losing the specific instructions we want to keep.
+  if (isTechnicalCase) return true;
+  return isFollowUp && isContinuationGoal;
 };
 
 type DeterministicThreadState = {
@@ -2384,11 +2398,11 @@ function buildStyleHeuristics(history: Array<any>): string[] {
 
 // Find shop scope så vi kan læse workspace-shared konfiguration.
 async function resolveShopScope(shopId: string): Promise<ShopScope> {
-  const fallback: ShopScope = { ownerUserId: null, workspaceId: null };
+  const fallback: ShopScope = { ownerUserId: null, workspaceId: null, shopName: null, brandDescription: null, productOverview: null, supportIdentity: null };
   if (!supabase) return fallback;
   const { data, error } = await supabase
     .from("shops")
-    .select("owner_user_id, workspace_id")
+    .select("owner_user_id, workspace_id, shop_name, brand_description, product_overview, support_identity")
     .eq("id", shopId)
     .maybeSingle();
   if (error) {
@@ -2398,6 +2412,10 @@ async function resolveShopScope(shopId: string): Promise<ShopScope> {
   return {
     ownerUserId: data?.owner_user_id ?? null,
     workspaceId: data?.workspace_id ?? null,
+    shopName: data?.shop_name ?? null,
+    brandDescription: data?.brand_description ?? null,
+    productOverview: data?.product_overview ?? null,
+    supportIdentity: data?.support_identity ?? null,
   };
 }
 
@@ -2436,7 +2454,7 @@ async function fetchProductContext(
     const { data, error } = await supabaseClient.rpc("match_products", {
       query_embedding: embedding,
       match_threshold: PRODUCT_MIN_SIMILARITY,
-      match_count: Math.max(1, Math.min(Math.round(MAX_RETRIEVAL_CHUNKS), 10)),
+      match_count: Math.max(1, Math.min(Math.round(MAX_RETRIEVAL_CHUNKS), 20)),
       filter_shop_id: shopId,
     });
     if (error || !Array.isArray(data) || !data.length) return { hits: [] as ProductMatch[] };
@@ -2444,6 +2462,47 @@ async function fetchProductContext(
   } catch (err) {
     console.warn("generate-draft-unified: product context failed", err);
     return { hits: [] as ProductMatch[] };
+  }
+}
+
+// Translate a non-English email body to a short English search query for knowledge retrieval.
+// Used to bridge language gaps when the knowledge base is in English but the customer writes in Danish.
+async function expandQueryToEnglish(text: string): Promise<string | null> {
+  if (!OPENAI_API_KEY) return null;
+  try {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "user",
+            content:
+              `Generate TWO short English knowledge base search queries for this customer support message. Return JSON: {"primary": "...", "supplementary": "..."}\n- primary: product name + the specific symptom + fix/troubleshoot keywords\n- supplementary: product name ONLY + general fix categories (firmware update, reset, settings) WITHOUT the symptom — this finds solution guides even when they don't mention the symptom\n\nCustomer message: ${text.slice(0, 600)}\n\nJSON:`,
+          },
+        ],
+        max_tokens: 120,
+        temperature: 0,
+        response_format: { type: "json_object" },
+      }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null);
+    const content = data?.choices?.[0]?.message?.content?.trim() ?? null;
+    if (!content) return null;
+    try {
+      const parsed = JSON.parse(content);
+      return { primary: parsed.primary ?? null, supplementary: parsed.supplementary ?? null };
+    } catch {
+      // Fallback: treat as plain string primary query
+      return { primary: content, supplementary: null };
+    }
+  } catch {
+    return null;
   }
 }
 
@@ -2468,11 +2527,12 @@ async function getAgentContext(
   const persona = await fetchPersona(supabase, ownerUserId);
   const automation = await fetchAutomation(supabase, ownerUserId, scope.workspaceId);
   const policies = await fetchPolicies(supabase, ownerUserId, scope.workspaceId);
+  const retrievalLimit = Math.max(1, Math.min(Math.round(MAX_RETRIEVAL_CHUNKS), 20));
   const relevantKnowledgeMatches = await fetchRelevantKnowledge(
     supabase,
     shopId,
     emailBody ?? "",
-    Math.max(1, Math.min(Math.round(MAX_RETRIEVAL_CHUNKS), 10)),
+    retrievalLimit,
     KNOWLEDGE_MIN_SIMILARITY,
   );
   console.info(
@@ -2485,23 +2545,71 @@ async function getAgentContext(
         : 0,
     }),
   );
-  const filteredKnowledgeMatches = (relevantKnowledgeMatches || []).filter(
-    (match) => String(match?.source_provider || "").toLowerCase() !== POLICY_SOURCE_PROVIDER,
+
+  // English query expansion for non-English emails — run concurrently with order context resolution.
+  // Bridges the language gap when the knowledge base is in English but the customer writes in Danish.
+  // Multi-query: primary (symptom-focused) + supplementary (product-focused) to find solution guides
+  // even when they don't mention the symptom directly.
+  const hasDanishOrEuropeanChars = /[æøåÆØÅäöüÄÖÜ]/.test(emailBody ?? "");
+  const [expandedEnglishMatches, resolvedOrderContext] = await Promise.all([
+    hasDanishOrEuropeanChars
+      ? expandQueryToEnglish(emailBody ?? "").then(async (result) => {
+        if (!result) return [] as KnowledgeMatch[];
+        const { primary, supplementary } = result;
+        console.info(
+          JSON.stringify({
+            event: "knowledge.retrieve.english_expansion",
+            english_query: primary,
+            supplementary_query: supplementary,
+            shop_id: shopId,
+          }),
+        );
+        const [primaryMatches, supplementaryMatches] = await Promise.all([
+          primary ? fetchRelevantKnowledge(supabase, shopId, primary, retrievalLimit, KNOWLEDGE_MIN_SIMILARITY) : Promise.resolve([] as KnowledgeMatch[]),
+          supplementary ? fetchRelevantKnowledge(supabase, shopId, supplementary, retrievalLimit, KNOWLEDGE_MIN_SIMILARITY) : Promise.resolve([] as KnowledgeMatch[]),
+        ]);
+        // Merge: primary first, then supplementary for new ids only
+        const seen = new Set((primaryMatches || []).map((m) => String(m.id)));
+        return [
+          ...(primaryMatches || []),
+          ...(supplementaryMatches || []).filter((m) => !seen.has(String(m.id))),
+        ];
+      })
+      : Promise.resolve([] as KnowledgeMatch[]),
+    resolveOrderContext({
+      supabase,
+      userId: ownerUserId,
+      workspaceId: scope.workspaceId,
+      email,
+      subject: [subject, emailBody].filter(Boolean).join("\n"),
+      tokenSecret: ENCRYPTION_KEY,
+      apiVersion: SHOPIFY_API_VERSION,
+    }),
+  ]);
+
+  // Merge retrieval results — deduplicate by id, English expansion fills gaps
+  const seenKnowledgeIds = new Set((relevantKnowledgeMatches || []).map((m) => String(m.id)));
+  const mergedKnowledgeMatches = [
+    ...(relevantKnowledgeMatches || []),
+    ...(expandedEnglishMatches || []).filter((m) => !seenKnowledgeIds.has(String(m.id))),
+  ];
+
+  // Filter out policy chunks (pinned separately) and marketing noise (blog articles)
+  const NOISE_SOURCE_PROVIDERS = new Set([POLICY_SOURCE_PROVIDER, "shopify_blog_article"]);
+  const filteredKnowledgeMatches = mergedKnowledgeMatches.filter(
+    (match) => !NOISE_SOURCE_PROVIDERS.has(String(match?.source_provider || "").toLowerCase()),
   );
-  const { orders, matchedSubjectNumber } = await resolveOrderContext({
-    supabase,
-    userId: ownerUserId,
-    workspaceId: scope.workspaceId,
-    email,
-    subject: [subject, emailBody].filter(Boolean).join("\n"),
-    tokenSecret: ENCRYPTION_KEY,
-    apiVersion: SHOPIFY_API_VERSION,
-  });
+
+  const { orders, matchedSubjectNumber } = resolvedOrderContext;
   const orderSummary = buildOrderSummary(orders);
 
   return {
     workspaceId: scope.workspaceId,
     ownerUserId,
+    shopName: scope.shopName,
+    brandDescription: scope.brandDescription,
+    productOverview: scope.productOverview,
+    supportIdentity: scope.supportIdentity,
     profile,
     persona,
     automation,
@@ -4490,6 +4598,10 @@ Deno.serve(async (req) => {
       detectedLanguage: inferLanguageHint(emailData.subject || "", emailData.body || "") || null,
       caseStateText: caseStateText || null,
       threadHistoryText: legacyThreadHistoryText || null,
+      shopName: context.shopName,
+      brandDescription: context.brandDescription,
+      productOverview: context.productOverview,
+      supportIdentity: context.supportIdentity,
     });
     const inlineImageAttachments = await loadInlineImageAttachments({
       userId: ownerUserId,
@@ -4866,6 +4978,8 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         "2. NEVER write hollow helping phrases: 'Vi vil gerne hjælpe', 'Vi er her for at hjælpe', 'Vi vil gerne hjælpe dig med at finde en løsning', 'Jeg vil gerne hjælpe dig', 'I would like to help you'. These add no value. Go directly to the action or next step.",
         "3. NEVER end with hollow forward-looking phrases when you have NOT asked the customer for anything in this reply: 'Tøv ikke med at kontakte os', 'Lad os vide hvis du har spørgsmål', 'Hvis du har yderligere spørgsmål', 'Feel free to contact us', 'Don't hesitate to reach out', 'Vi glæder os til at høre fra dig', 'Vi ser frem til at hjælpe dig'. Exception: if you have actively asked the customer for information in this reply (e.g. a receipt, order number, photo, or clarification), a warm contextual closing like 'Jeg ser frem til at høre fra dig' is appropriate and human.",
         "4. The customer already knows their own problem. Do not repeat it back to them.",
+        "5. ACTION BIAS: If RELEVANT KNOWLEDGE or DATA & KONTEKST contains troubleshooting steps, firmware update instructions, setup guides, or specific product information relevant to the customer's issue, provide those steps directly in your reply. Do NOT ask the customer for more information if you already have the answer in context. Only ask clarifying questions when the knowledge base genuinely has no relevant answer.",
+        "6. YOU ARE THE SUPPORT TEAM. NEVER refer the customer to 'a professional', 'a technician', 'contact support', or 'have it inspected by a specialist'. The customer has already contacted you — you are the expert. If you cannot resolve the issue remotely, offer warranty replacement, RMA, or return — never deflect to an unnamed third party.",
         "END OF HARD CONSTRAINTS.",
         "",
         "EXAMPLE — no order data, product bought from third-party retailer:",
@@ -4874,7 +4988,15 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         "WRONG reply (never write this): 'Hej [name], Jeg kan godt forstå at det er frustrerende. Vi vil gerne hjælpe. Send kvittering, så kan vi finde en løsning. Vi ser frem til at høre fra dig.' — Wrong because: empathy opener restates the problem, filler phrase, hollow closing.",
         "END OF EXAMPLE.",
         "",
-        "Du er en kundeservice-assistent.",
+        "EXAMPLE — technical issue, product defect:",
+        "Customer: 'My headset makes a noise when I charge it. It keeps cutting out.'",
+        `CORRECT reply: 'Hi [name], let's try a few things to resolve this. First, try using a different USB-C cable to rule out a cable issue. If the noise persists, please update the firmware using [specific tool from knowledge context]. If neither helps, we can arrange a replacement under warranty.'`,
+        "WRONG reply (never write this): 'Hi [name], try a different cable. If the problem continues, it might be beneficial to have a professional inspect the device.' — Wrong because: you ARE the support team. Never refer the customer to an external professional. Offer concrete next steps and warranty options.",
+        "END OF EXAMPLE.",
+        "",
+        context.shopName
+          ? `Du er en kundeservice-medarbejder hos ${context.shopName}.`
+          : "Du er en kundeservice-medarbejder.",
         "Skriv kort, venligt og professionelt pa samme sprog som kundens mail.",
         "Hvis kunden skriver pa engelsk, svar pa engelsk selv om andre instruktioner er pa dansk.",
         `Start svaret med en hilsen på kundens sprog: dansk → "Hej ${customerFirstName || "kunden"},", engelsk → "Hi ${customerFirstName || "there"},", spansk → "Hola ${customerFirstName || "there"},".`,
@@ -4903,23 +5025,9 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         ? systemMsgBase +
           ` Hvis KONTEKST indeholder et ordrenummer (fx #${context.matchedSubjectNumber}), brug dette ordrenummer som reference i svaret og spørg IKKE efter ordrenummer igen.`
         : systemMsgBase;
-      // Only downgrade to cheaper model when there is genuinely no order context at all.
-      // !internalThread.threadId is NOT used — it can be false due to DB lookup failures
-      // and would silently downgrade complex multi-message tickets.
-      const isTrivialTicket =
-        (context.orders?.length ?? 0) === 0 &&
-        !context.matchedSubjectNumber;
-      const replyModel = isTrivialTicket ? OPENAI_MODEL : "gpt-4o";
-      if (isTrivialTicket) {
-        reasoningLogs.push({
-          step_name: "reply_model_downgrade",
-          step_detail: JSON.stringify({
-            model: OPENAI_MODEL,
-            reason: "no_orders_no_order_ref_in_subject",
-          }),
-          status: "info",
-        });
-      }
+      // Always use gpt-4o for all tickets. Technical/product questions without
+      // order numbers are NOT trivial and need the best model.
+      const replyModel = "gpt-4o";
       const { reply, actions } = await callOpenAIWithImages(
         prompt,
         systemMsg,
@@ -6029,7 +6137,7 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
           category: classification.category ?? null,
           query_hash: queryHash,
           context_budget_tokens: MAX_CONTEXT_TOKENS,
-          max_retrieval_chunks: Math.max(1, Math.min(Math.round(MAX_RETRIEVAL_CHUNKS), 10)),
+          max_retrieval_chunks: Math.max(1, Math.min(Math.round(MAX_RETRIEVAL_CHUNKS), 20)),
           knowledge_min_similarity: KNOWLEDGE_MIN_SIMILARITY,
           product_min_similarity: PRODUCT_MIN_SIMILARITY,
           included_context_tokens: retrievalTracePayload.included_context_tokens,

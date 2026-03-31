@@ -328,11 +328,46 @@ async function syncShopify({ serviceClient, creds }) {
     }
   }
 
+  // Auto-generate product_overview for the shop based on synced product titles + descriptions.
+  if (rows.length > 0) {
+    await updateShopProductOverview(serviceClient, creds.shop_id, products);
+  }
+
   return {
     synced: rows.length,
     indexed,
     unchanged,
   };
+}
+
+async function updateShopProductOverview(serviceClient, shopId, products) {
+  try {
+    const lines = products
+      .filter((p) => p?.title)
+      .slice(0, 30)
+      .map((p) => {
+        const title = String(p.title || "").trim();
+        const desc = stripHtml(
+          p?.body_html || p?.body || p?.description || p?.body_text || ""
+        );
+        // Take first sentence of description (up to 120 chars) as a brief summary
+        const brief = desc
+          ? desc.replace(/\n.*/s, "").slice(0, 120).replace(/[.,;]\s*$/, "").trim()
+          : null;
+        return brief ? `- ${title}: ${brief}` : `- ${title}`;
+      });
+
+    if (!lines.length) return;
+    const overview = lines.join("\n");
+
+    await serviceClient
+      .from("shops")
+      .update({ product_overview: overview })
+      .eq("id", shopId);
+  } catch (err) {
+    // Non-fatal — log and continue
+    console.warn("sync-products: could not update shop product_overview", err?.message ?? err);
+  }
 }
 
 async function fetchActiveShopIds(serviceClient, scope) {
