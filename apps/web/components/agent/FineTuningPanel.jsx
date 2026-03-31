@@ -14,6 +14,9 @@ import { Badge } from "@/components/ui/badge";
 import { useAgentPersonaConfig } from "@/hooks/useAgentPersonaConfig";
 import {
   Bold,
+  ChevronDown,
+  ChevronRight,
+  FlaskConical,
   Italic,
   List,
   Loader2,
@@ -138,7 +141,7 @@ export function FineTuningPanel({ children }) {
                   {error.message ?? "Could not load or save instructions."}
                 </p>
               )}
-
+              <EvalSection />
             </div>
 
             {/* Right column: Playground */}
@@ -269,6 +272,202 @@ export function FineTuningPanel({ children }) {
     </FineTuningPanelContext.Provider>
   );
 }
+
+// ─── Eval Panel ──────────────────────────────────────────────────────────────
+
+function ScoreBadge({ value }) {
+  const color =
+    value >= 4 ? "bg-emerald-100 text-emerald-700" :
+    value === 3 ? "bg-amber-100 text-amber-700" :
+    "bg-red-100 text-red-700";
+  return (
+    <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold ${color}`}>
+      {value}/5
+    </span>
+  );
+}
+
+function EvalResultRow({ result }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="border-b last:border-0">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-xs hover:bg-slate-50 transition-colors"
+      >
+        {open ? <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+        <span className="flex-1 truncate font-medium text-slate-700">
+          {result.ticket_subject || result.thread_id?.slice(0, 8) + "…"}
+        </span>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <span className="text-muted-foreground">Overall</span>
+          <ScoreBadge value={result.overall} />
+        </div>
+      </button>
+      {open && (
+        <div className="bg-slate-50 px-4 pb-3 pt-1 text-xs space-y-2">
+          <div className="flex flex-wrap gap-3">
+            {[
+              ["Correctness", result.correctness],
+              ["Completeness", result.completeness],
+              ["Tone", result.tone],
+              ["Actionability", result.actionability],
+            ].map(([label, val]) => (
+              <div key={label} className="flex items-center gap-1.5">
+                <span className="text-muted-foreground">{label}</span>
+                <ScoreBadge value={val} />
+              </div>
+            ))}
+          </div>
+          {result.reasoning && (
+            <p className="text-slate-600 italic">{result.reasoning}</p>
+          )}
+          {result.draft_content && (
+            <details className="mt-1">
+              <summary className="cursor-pointer text-muted-foreground hover:text-foreground">Draft</summary>
+              <p className="mt-1 whitespace-pre-wrap rounded border bg-white p-2 text-slate-700">{result.draft_content}</p>
+            </details>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EvalSection() {
+  const [runLabel, setRunLabel] = useState("");
+  const [running, setRunning] = useState(false);
+  const [runError, setRunError] = useState(null);
+  const [runs, setRuns] = useState([]);
+  const [loadingRuns, setLoadingRuns] = useState(true);
+  const [expandedRun, setExpandedRun] = useState(null);
+
+  const fetchRuns = useCallback(async () => {
+    setLoadingRuns(true);
+    try {
+      const res = await fetch("/api/eval/results", { credentials: "include" });
+      const data = await res.json().catch(() => ({}));
+      setRuns(data?.runs ?? []);
+    } catch {
+      // silent
+    } finally {
+      setLoadingRuns(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchRuns(); }, [fetchRuns]);
+
+  const handleRun = async () => {
+    if (!runLabel.trim()) return;
+    setRunning(true);
+    setRunError(null);
+    try {
+      // Fetch latest 10 thread_ids that have drafts
+      const threadsRes = await fetch("/api/eval/threads", { credentials: "include" });
+      const threadsData = await threadsRes.json().catch(() => ({}));
+      const threadIds = threadsData?.thread_ids ?? [];
+      if (threadIds.length === 0) throw new Error("No threads with drafts found");
+
+      const res = await fetch("/api/eval/run", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ thread_ids: threadIds, run_label: runLabel.trim(), model: "gpt-4o" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Eval failed");
+      await fetchRuns();
+      setRunLabel("");
+    } catch (err) {
+      setRunError(err.message);
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div className="mt-8 space-y-4">
+      <div className="flex items-center gap-2">
+        <FlaskConical className="h-4 w-4 text-muted-foreground" />
+        <p className="text-sm font-semibold text-foreground">Draft quality eval</p>
+      </div>
+      <p className="text-xs text-muted-foreground -mt-2">
+        Score the AI&apos;s latest drafts with an LLM judge (1–5 on correctness, completeness, tone, actionability).
+      </p>
+
+      {/* Run form */}
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={runLabel}
+          onChange={(e) => setRunLabel(e.target.value)}
+          placeholder='Run label, e.g. "gpt-4o baseline"'
+          className="flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+        />
+        <button
+          type="button"
+          onClick={handleRun}
+          disabled={running || !runLabel.trim()}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-blue-500 disabled:opacity-50"
+        >
+          {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+          {running ? "Running…" : "Run eval"}
+        </button>
+      </div>
+      {runError && <p className="text-xs text-destructive">{runError}</p>}
+
+      {/* Results */}
+      {loadingRuns ? (
+        <div className="h-16 animate-pulse rounded-xl bg-slate-100" />
+      ) : runs.length === 0 ? (
+        <p className="text-xs text-muted-foreground">No eval runs yet. Enter a label and click Run eval.</p>
+      ) : (
+        <div className="space-y-3">
+          {runs.map((run) => (
+            <div key={run.run_label} className="overflow-hidden rounded-xl border bg-white shadow-sm">
+              <button
+                type="button"
+                onClick={() => setExpandedRun(expandedRun === run.run_label ? null : run.run_label)}
+                className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-slate-50 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  {expandedRun === run.run_label
+                    ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                    : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                  <span className="text-sm font-semibold text-slate-800">{run.run_label}</span>
+                  <span className="text-xs text-muted-foreground">{run.count} drafts · {run.model}</span>
+                </div>
+                <div className="flex items-center gap-3 text-xs">
+                  {[
+                    ["C", run.averages.correctness],
+                    ["Co", run.averages.completeness],
+                    ["T", run.averages.tone],
+                    ["A", run.averages.actionability],
+                  ].map(([abbr, val]) => (
+                    <span key={abbr} className="text-muted-foreground hidden sm:inline">
+                      {abbr} <span className="font-medium text-slate-700">{val}</span>
+                    </span>
+                  ))}
+                  <span className="ml-1 inline-flex items-center rounded-md bg-blue-50 px-2 py-0.5 text-xs font-bold text-blue-700">
+                    {run.averages.overall} avg
+                  </span>
+                </div>
+              </button>
+              {expandedRun === run.run_label && (
+                <div className="border-t">
+                  {run.results.map((r) => <EvalResultRow key={r.id} result={r} />)}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 function EditorField({ label, description, value, onChange, placeholder, rows = 5 }) {
   return (
