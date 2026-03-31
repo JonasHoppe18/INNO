@@ -38,6 +38,24 @@ function normalizeWhitespace(value: string) {
     .trim();
 }
 
+function stripHtml(html: string): string {
+  if (!html.includes("<") && !html.includes("&")) return html;
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/?(p|div|ol|ul|li|h[1-6])[^>]*>/gi, "\n")
+    .replace(/<strong[^>]*>(.*?)<\/strong>/gi, "$1")
+    .replace(/<em[^>]*>(.*?)<\/em>/gi, "$1")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function splitIntoChunks(text: string, size = 1200, overlap = 200) {
   const normalized = normalizeWhitespace(text);
   if (!normalized) return [];
@@ -455,7 +473,7 @@ export async function POST(request: Request) {
     const payload = await request.json().catch(() => null);
     const requestedShopId = String(payload?.shop_id || "").trim();
     const title = String(payload?.title || "").trim();
-    const content = normalizeWhitespace(String(payload?.content || ""));
+    const content = normalizeWhitespace(stripHtml(String(payload?.content || "")));
     if (!title || !content) {
       return NextResponse.json({ error: "title and content are required." }, { status: 400 });
     }
@@ -537,7 +555,7 @@ export async function PUT(request: Request) {
     const snippetId = String(payload?.id || "").trim();
     const requestedShopId = String(payload?.shop_id || "").trim();
     const title = String(payload?.title || "").trim();
-    const content = normalizeWhitespace(String(payload?.content || ""));
+    const content = normalizeWhitespace(stripHtml(String(payload?.content || "")));
 
     if (!snippetId || !title || !content) {
       return NextResponse.json({ error: "id, title and content are required." }, { status: 400 });
@@ -592,6 +610,64 @@ export async function PUT(request: Request) {
     });
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || "Could not update knowledge snippet." }, { status: 500 });
+  }
+}
+
+// PATCH /api/knowledge/snippets — re-strip HTML and re-embed all manual_text chunks for a shop.
+// One-time migration for snippets that were ingested before HTML stripping was added.
+export async function PATCH(request: Request) {
+  const { userId: clerkUserId, orgId } = await auth();
+  if (!clerkUserId) {
+    return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
+  }
+  const serviceClient = createServiceClient();
+  if (!serviceClient) {
+    return NextResponse.json({ error: "Supabase configuration is missing." }, { status: 500 });
+  }
+  let scope: { workspaceId: string | null; supabaseUserId: string | null };
+  try {
+    scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId }, { requireExplicitWorkspace: true });
+  } catch (error: any) {
+    return NextResponse.json({ error: error?.message || "Could not resolve workspace scope." }, { status: 500 });
+  }
+
+  try {
+    const payload = await request.json().catch(() => ({}));
+    const requestedShopId = String(payload?.shop_id || "").trim();
+    const shopId = await resolveShopId(serviceClient, scope, requestedShopId || undefined);
+
+    const { data: rows, error: fetchError } = await serviceClient
+      .from("agent_knowledge")
+      .select("id, content")
+      .eq("shop_id", shopId)
+      .eq("source_provider", "manual_text");
+
+    if (fetchError) throw new Error(fetchError.message);
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return NextResponse.json({ success: true, updated: 0, message: "No manual_text chunks found." });
+    }
+
+    let updated = 0;
+    let skipped = 0;
+    for (const row of rows) {
+      const rawContent = String(row.content || "");
+      const cleanContent = normalizeWhitespace(stripHtml(rawContent));
+      if (cleanContent === normalizeWhitespace(rawContent)) {
+        skipped += 1;
+        continue; // Already clean — skip re-embedding
+      }
+      const embedding = await embedText(cleanContent);
+      const { error: updateError } = await serviceClient
+        .from("agent_knowledge")
+        .update({ content: cleanContent, embedding })
+        .eq("id", row.id);
+      if (updateError) throw new Error(`Failed to update chunk ${row.id}: ${updateError.message}`);
+      updated += 1;
+    }
+
+    return NextResponse.json({ success: true, updated, skipped, total: rows.length });
+  } catch (error: any) {
+    return NextResponse.json({ error: error?.message || "Re-embed failed." }, { status: 500 });
   }
 }
 
