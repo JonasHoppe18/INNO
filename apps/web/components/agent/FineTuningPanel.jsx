@@ -47,9 +47,7 @@ export function FineTuningPanel({ children }) {
     useAgentPersonaConfig();
 
   const [instructions, setInstructions] = useState("");
-  const [replyGreeting, setReplyGreeting] = useState("");
   const [dirty, setDirty] = useState(false);
-  const [greetingSaving, setGreetingSaving] = useState(false);
 
   // Generated email state
   const [generatedEmail, setGeneratedEmail] = useState(null);
@@ -66,28 +64,6 @@ export function FineTuningPanel({ children }) {
     setDirty(false);
   }, [persona?.instructions]);
 
-  // Load reply greeting from shops table
-  useEffect(() => {
-    fetch("/api/settings/company-context")
-      .then((r) => r.json())
-      .then((data) => { if (data?.reply_greeting != null) setReplyGreeting(data.reply_greeting); })
-      .catch(() => null);
-  }, []);
-
-  const handleSaveGreeting = useCallback(async () => {
-    setGreetingSaving(true);
-    try {
-      await fetch("/api/settings/company-context", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reply_greeting: replyGreeting }),
-      });
-    } catch (_err) {
-      // ignore
-    } finally {
-      setGreetingSaving(false);
-    }
-  }, [replyGreeting]);
 
   const handleChange = (event) => {
     setInstructions(event.target.value);
@@ -147,10 +123,14 @@ export function FineTuningPanel({ children }) {
             <div className="space-y-5">
               <EditorField
                 label="Instructions"
-                description="Define the AI's tone of voice, what it can promise, and how it should reply. This is applied to every response the AI generates."
+                description="Describe how the AI should behave, open and close its replies, and what it can promise. The AI understands context — you can write conditional rules."
                 value={instructions}
                 onChange={handleChange}
-                placeholder="Example: Always be empathetic and solution-oriented. Never promise refunds without checking the order date. Sign off with the agent's first name only."
+                placeholder={`Examples:
+- Start first replies by thanking the customer for reaching out and showing empathy for their issue.
+- Close with "I look forward to hearing from you" when the issue is still being troubleshot, and "Have a great day!" when a solution has been given.
+- Never promise a refund without first checking the order date.
+- Always sign off with the agent's first name only.`}
                 rows={14}
               />
               {error && (
@@ -159,32 +139,6 @@ export function FineTuningPanel({ children }) {
                 </p>
               )}
 
-              {/* Reply greeting — only injected on first message in a thread */}
-              <div className="space-y-1.5">
-                <div>
-                  <p className="text-sm font-semibold text-foreground">Opening style</p>
-                  <p className="text-xs text-muted-foreground">
-                    Describe how the AI should open its first reply. Leave empty for a direct response without a warm intro. Only applied on the first message — not follow-ups.
-                  </p>
-                </div>
-                <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-                  <textarea
-                    value={replyGreeting}
-                    onChange={(e) => setReplyGreeting(e.target.value)}
-                    rows={4}
-                    className="w-full resize-y border-0 bg-transparent px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-                    placeholder="Example: Start by thanking the customer for reaching out and expressing empathy about their issue before providing the solution."
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={handleSaveGreeting}
-                  disabled={greetingSaving}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition hover:bg-blue-500 disabled:opacity-50"
-                >
-                  {greetingSaving ? "Saving…" : "Save opening style"}
-                </button>
-              </div>
             </div>
 
             {/* Right column: Playground */}
