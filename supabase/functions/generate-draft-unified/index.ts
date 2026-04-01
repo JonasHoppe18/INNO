@@ -1026,8 +1026,16 @@ const shouldSkipDirectnessPolish = (options: {
   assessment: CaseAssessment | null;
   replyGoal: ReturnType<typeof buildReplyGoalArtifact> | null;
   threadContextGate: ReturnType<typeof evaluateThreadContextGate> | null;
+  workflowSlug?: string | null;
 }) => {
   const assessment = options.assessment;
+  // Skip for technical/product workflows determined by routing — this is reliable even
+  // when V2 case assessment is disabled (caseAssessment === null). The directness polish LLM
+  // condenses numbered troubleshooting steps into single sentences and strips warm openings.
+  const isTechnicalOrProductWorkflow =
+    options.workflowSlug === "technical_support" ||
+    options.workflowSlug === "product_question";
+  if (isTechnicalOrProductWorkflow) return true;
   const isTechnicalCase = Boolean(
     assessment &&
       (
@@ -1035,14 +1043,12 @@ const shouldSkipDirectnessPolish = (options: {
         assessment.secondary_case_types.includes("technical_issue")
       ),
   );
+  if (isTechnicalCase) return true;
   const isFollowUp = options.threadContextGate?.is_follow_up === true;
   const isContinuationGoal =
     options.replyGoal?.continuation_style_reply === true ||
     options.replyGoal?.reply_goal === "continue_troubleshooting" ||
     options.replyGoal?.reply_goal === "troubleshoot_connectivity_issue";
-  // Skip directness polish for all technical cases — the polish LLM condenses numbered
-  // troubleshooting steps into single sentences, losing the specific instructions we want to keep.
-  if (isTechnicalCase) return true;
   return isFollowUp && isContinuationGoal;
 };
 
@@ -1757,6 +1763,36 @@ const stripTrailingSignoff = (text: string) => {
   const cleaned = lines.slice(0, signoffIndex);
   while (cleaned.length && !cleaned[cleaned.length - 1].trim()) cleaned.pop();
   return cleaned.join("\n").trim();
+};
+
+// Normalizes paragraph spacing in a reply so that major sections are separated by blank lines.
+// The model reliably outputs \n\n after the greeting but often uses \n between subsequent paragraphs.
+// This function ensures: greeting → blank → warm opening → blank → body → blank → closing.
+const normalizeReplyFormatting = (text: string): string => {
+  if (!text?.trim()) return text;
+  // Split into lines, collapse runs of 3+ blank lines to 2
+  const lines = text.split("\n");
+  const result: string[] = [];
+  let consecutiveBlanks = 0;
+  for (const line of lines) {
+    const isBlank = line.trim() === "";
+    if (isBlank) {
+      consecutiveBlanks++;
+      if (consecutiveBlanks <= 1) result.push("");
+    } else {
+      consecutiveBlanks = 0;
+      result.push(line);
+    }
+  }
+  const normalized = result.join("\n").trim();
+
+  // Insert blank line between prose paragraphs:
+  // wherever a single \n separates a prose line from a new line starting with
+  // an uppercase letter — but NOT inside numbered/bullet lists (starting with digit or dash).
+  return normalized.replace(
+    /([^\n])\n(?!\n)(?![ \t]*[-\d])([A-ZÆØÅ])/g,
+    "$1\n\n$2"
+  );
 };
 
 const removeGenericFillerPhrases = (text: string): string => {
@@ -2484,7 +2520,7 @@ async function expandQueryToEnglish(text: string): Promise<string | null> {
           {
             role: "user",
             content:
-              `Generate TWO short English knowledge base search queries for this customer support message. Return JSON: {"primary": "...", "supplementary": "..."}\n- primary: product name + the specific symptom + fix/troubleshoot keywords\n- supplementary: product name ONLY + general fix categories (firmware update, reset, settings) WITHOUT the symptom — this finds solution guides even when they don't mention the symptom\n\nCustomer message: ${text.slice(0, 600)}\n\nJSON:`,
+              `Generate THREE short English knowledge base search queries for this customer support message. Return JSON: {"primary": "...", "supplementary": "...", "faq": "..."}\n- primary: exact product name (preserve wired/wireless distinction — if customer says "A-Spire" without "Wireless", add "wired" or "USB" to the query) + specific symptom + fix/troubleshoot\n- supplementary: exact product name (same wired/wireless rule) + general fix categories (firmware update, reset, settings) WITHOUT the symptom\n- faq: a short phrase that matches a typical FAQ article title about this issue, e.g. "why does A-Spire keep losing audio" or "A-Spire not play audio"\n\nCustomer message: ${text.slice(0, 600)}\n\nJSON:`,
           },
         ],
         max_tokens: 120,
@@ -2557,25 +2593,31 @@ async function getAgentContext(
     hasDanishOrEuropeanChars
       ? expandQueryToEnglish(emailBody ?? "").then(async (result) => {
         if (!result) return [] as KnowledgeMatch[];
-        const { primary, supplementary } = result;
+        const { primary, supplementary, faq } = result;
         console.info(
           JSON.stringify({
             event: "knowledge.retrieve.english_expansion",
             english_query: primary,
             supplementary_query: supplementary,
+            faq_query: faq,
             shop_id: shopId,
           }),
         );
-        const [primaryMatches, supplementaryMatches] = await Promise.all([
+        const [primaryMatches, supplementaryMatches, faqMatches] = await Promise.all([
           primary ? fetchRelevantKnowledge(supabase, shopId, primary, retrievalLimit, KNOWLEDGE_MIN_SIMILARITY) : Promise.resolve([] as KnowledgeMatch[]),
           supplementary ? fetchRelevantKnowledge(supabase, shopId, supplementary, retrievalLimit, KNOWLEDGE_MIN_SIMILARITY) : Promise.resolve([] as KnowledgeMatch[]),
+          faq ? fetchRelevantKnowledge(supabase, shopId, faq, retrievalLimit, KNOWLEDGE_MIN_SIMILARITY) : Promise.resolve([] as KnowledgeMatch[]),
         ]);
-        // Merge: primary first, then supplementary for new ids only
+        // Merge: primary first, then supplementary, then faq — new ids only
         const seen = new Set((primaryMatches || []).map((m) => String(m.id)));
-        return [
-          ...(primaryMatches || []),
-          ...(supplementaryMatches || []).filter((m) => !seen.has(String(m.id))),
-        ];
+        const merged = [...(primaryMatches || [])];
+        for (const m of [...(supplementaryMatches || []), ...(faqMatches || [])]) {
+          if (!seen.has(String(m.id))) {
+            seen.add(String(m.id));
+            merged.push(m);
+          }
+        }
+        return merged;
       })
       : Promise.resolve([] as KnowledgeMatch[]),
     resolveOrderContext({
@@ -2589,12 +2631,49 @@ async function getAgentContext(
     }),
   ]);
 
-  // Merge retrieval results — deduplicate by id, English expansion fills gaps
-  const seenKnowledgeIds = new Set((relevantKnowledgeMatches || []).map((m) => String(m.id)));
-  const mergedKnowledgeMatches = [
+  // Product-name text search — always fetch chunks whose title matches the exact product variant.
+  // Vector search misses these when the query is symptom-focused but the chunk is solution-focused.
+  // Only runs when a specific AceZone product is mentioned in the email.
+  const productVariantMatch = (emailBody ?? "").match(/\bA-Spire(?:\s+Wireless)?\b/i)?.[0] ?? null;
+  const customerWantsWired = productVariantMatch && !/wireless/i.test(productVariantMatch);
+  const productSpecificMatches: KnowledgeMatch[] = [];
+  if (productVariantMatch && shopId) {
+    let query = supabase
+      .from("agent_knowledge")
+      .select("id,content,source_type,source_provider,metadata")
+      .eq("shop_id", shopId)
+      .filter("metadata->>title", "ilike", `%${productVariantMatch}%`)
+      .limit(25);
+    // If customer has wired variant, exclude chunks specifically for Wireless
+    if (customerWantsWired) {
+      query = query.not("metadata->>title", "ilike", "%Wireless%");
+    }
+    const { data: productChunks, error: productChunksError } = await query;
+    if (productChunks && !productChunksError) {
+      for (const c of productChunks) {
+        productSpecificMatches.push({ ...c, similarity: 0.9 } as KnowledgeMatch);
+      }
+      console.info(JSON.stringify({ event: "knowledge.retrieve.product_text_search", product: productVariantMatch, wired_only: customerWantsWired, count: productChunks.length, shop_id: shopId }));
+    } else if (productChunksError) {
+      console.warn(JSON.stringify({ event: "knowledge.retrieve.product_text_search.error", error: productChunksError.message }));
+    }
+  }
+
+  // Merge retrieval results — product text search comes FIRST (highest priority),
+  // then vector results, then English expansion fills gaps.
+  const seenKnowledgeIds = new Set<string>();
+  const mergedKnowledgeMatches: KnowledgeMatch[] = [];
+  for (const m of [
+    ...productSpecificMatches,
     ...(relevantKnowledgeMatches || []),
-    ...(expandedEnglishMatches || []).filter((m) => !seenKnowledgeIds.has(String(m.id))),
-  ];
+    ...(expandedEnglishMatches || []),
+  ]) {
+    const key = String(m.id);
+    if (!seenKnowledgeIds.has(key)) {
+      seenKnowledgeIds.add(key);
+      mergedKnowledgeMatches.push(m);
+    }
+  }
 
   // Filter out policy chunks (pinned separately) and marketing noise (blog articles)
   const NOISE_SOURCE_PROVIDERS = new Set([POLICY_SOURCE_PROVIDER, "shopify_blog_article"]);
@@ -4612,16 +4691,33 @@ Deno.serve(async (req) => {
       provider,
       providerMessageId: emailData.messageId || null,
     });
+    // Detect product variant from customer message for mismatch warnings
+    const customerEmailBody = (emailData.body || "").toLowerCase();
+    const customerMentionsWireless = /\bwireless\b/.test(customerEmailBody);
+
     const knowledgeTraceHits = prioritizedKnowledgeMatches.map((match, index) => {
       const rawMatch = match as Record<string, unknown>;
       const type = match?.source_type || "snippet";
       const provider = match?.source_provider ? `, Provider: ${match.source_provider}` : "";
       const content = String(match?.content || "").trim();
-      const text = content ? `[${index + 1}] (Type: ${type}${provider}) ${content}` : "";
+
+      // Detect product variant mismatches and prepend a warning inline in the chunk text,
+      // so the model sees it as data rather than just a prompt rule it can override.
       const metadata =
         match?.metadata && typeof match.metadata === "object"
           ? (match.metadata as Record<string, unknown>)
           : {};
+      const chunkTitle = String(metadata?.title || metadata?.question || "").toLowerCase();
+      const chunkText = (content + " " + chunkTitle).toLowerCase();
+      const chunkMentionsWireless = /\bwireless\b/.test(chunkText);
+      let productWarning = "";
+      if (chunkMentionsWireless && !customerMentionsWireless) {
+        productWarning = "[NOTE: This entry is for A-Spire Wireless. Prefer wired A-Spire entries if available. Use as fallback only if no wired-specific steps exist.]\n";
+      } else if (!chunkMentionsWireless && customerMentionsWireless && chunkTitle.includes("a-spire")) {
+        productWarning = "[NOTE: This entry is for A-Spire (wired). Customer has Wireless — use only if no Wireless-specific steps are available.]\n";
+      }
+
+      const text = content ? `[${index + 1}] (Type: ${type}${provider}) ${productWarning}${content}` : "";
       return {
         knowledge_id: Number(match?.id ?? 0) || null,
         source_type: type,
@@ -4970,14 +5066,17 @@ Deno.serve(async (req) => {
     let replyContainsConfirmationLanguage = false;
     const runLegacyCombinedModel = async () => {
       const automationGuidance = buildAutomationGuidance(context.automation);
+      const isFirstReply = legacyThreadHistoryCount === 0;
       const personaGuidance = `Sprogregel har altid forrang; ignorer persona-instruktioner om sprogvalg.
+${isFirstReply ? "OPENING RULE (første svar — obligatorisk): Efter hilsenen (\"Hej [navn],\" / \"Hi [name],\") skal du på næste linje tilføje en kort, varm sætning der takker kunden for at henvende sig og viser empati — på kundens sprog. Eksempel dansk: \"Tak fordi du kontakter os. Det er kedeligt at høre, at du oplever problemer med dit headset.\" Eksempel engelsk: \"Thank you for reaching out. I'm sorry to hear you're having trouble with your headset.\" Tilpas til kundens sprog. Skriv dette FØR trinene." : "OPENING RULE (opfølgning): Spring indledningen over — gå direkte til sagen."}
 Persona instruktionsnoter: ${context.persona.instructions?.trim() || "Hold tonen venlig og effektiv."}
+FORMATTING: Use a blank line (empty line) between each paragraph. Specifically: (1) blank line between the salutation and the warm opening, (2) blank line between the warm opening sentence and the next paragraph, (3) no blank lines between numbered list items or between the intro sentence and item 1, (4) blank line after the last list item before the closing sentence.
 Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       const systemMsgBase = [
         // HARD CONSTRAINTS — evaluated first, override persona and learned style
         "HARD CONSTRAINTS — these rules override all persona instructions and learned style:",
         "0. LANGUAGE — HIGHEST PRIORITY: Detect the customer's language from their email body. If the email contains Danish characters (æ, ø, å) or Danish words (hej, tak, ordre, pakke, levering, etc.), respond entirely in Danish — even if product names, order data, or other context is in English. Only respond in English if the customer's email is written entirely in English with no Danish indicators.",
-        "1. NEVER open with a sentence that summarizes or restates the customer's problem. Do not write 'Jeg forstår, at...', 'Jeg kan se at...', 'Det lyder som om...', 'I understand that...', 'I can see that...', or any variant. Go directly to the answer or next concrete step.",
+        `1. REPLY OPENING — REQUIRED STRUCTURE: ${isFirstReply ? "This is the FIRST reply in the thread. After the salutation ('Hej [navn],' / 'Hi [name],') you MUST write a short warm sentence thanking the customer and showing empathy — on the customer's language — BEFORE any steps or solution. Follow the persona instructions for this opening. Example Danish: 'Tak fordi du kontakter os. Vi er kede af at høre, at du oplever problemer med dit headset.' Example English: 'Thank you for reaching out. I'm sorry to hear you're having trouble.' Adapt to the customer's language. This warm opening is MANDATORY — do not skip it even when you have troubleshooting steps ready. NEVER restate or summarize the customer's specific problem." : "This is a FOLLOW-UP reply — skip the warm opening entirely and go directly to the point. Do not write 'Tak fordi du kontakter os' or any opening that restates the problem."}`,
         "2. NEVER write hollow helping phrases: 'Vi vil gerne hjælpe', 'Vi er her for at hjælpe', 'Vi vil gerne hjælpe dig med at finde en løsning', 'Jeg vil gerne hjælpe dig', 'I would like to help you'. These add no value. Go directly to the action or next step.",
         "3. NEVER end with hollow forward-looking phrases when you have NOT asked the customer for anything in this reply: 'Tøv ikke med at kontakte os', 'Lad os vide hvis du har spørgsmål', 'Hvis du har yderligere spørgsmål', 'Feel free to contact us', 'Don't hesitate to reach out', 'Vi glæder os til at høre fra dig', 'Vi ser frem til at hjælpe dig'. Exception: if you have actively asked the customer for information in this reply (e.g. a receipt, order number, photo, or clarification), a warm contextual closing like 'Jeg ser frem til at høre fra dig' is appropriate and human.",
         "4. The customer already knows their own problem. Do not repeat it back to them.",
@@ -5002,16 +5101,16 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
           : "Du er en kundeservice-medarbejder.",
         "Skriv kort, venligt og professionelt pa samme sprog som kundens mail.",
         "Hvis kunden skriver pa engelsk, svar pa engelsk selv om andre instruktioner er pa dansk.",
-        `Start svaret med en hilsen på kundens sprog: dansk → "Hej ${customerFirstName || "kunden"},", engelsk → "Hi ${customerFirstName || "there"},", spansk → "Hola ${customerFirstName || "there"},".`,
+        `Start svaret med en hilsen på kundens sprog: dansk → "Hej ${customerFirstName || "kunden"},", engelsk → "Hi ${customerFirstName || "there"},", spansk → "Hola ${customerFirstName || "there"},". Hvis persona-instruktioner angiver en varm åbning, tilføj den på ny linje direkte efter hilsenen.`,
         "Brug kun det fra KONTEKST-sektionen der er relevant — inkludér ikke alt.",
         "Ved returns/refunds/warranty/shipping: følg policy summary/excerpts strengt.",
         "Opfind aldrig return-portal URL, labels eller processer som ikke står i kontekst.",
         "Når return shipping mode er customer_paid: nævn aldrig returlabel eller parcel shop.",
         "Hvis du giver returinstruktioner, brug kun den konfigurerede return_address fra konteksten.",
+        personaGuidance,
         `Ticket category: ${workflowRoute.category}.`,
         workflowRoute.systemHint,
         ...(workflowRoute.systemRules || []),
-        personaGuidance,
         "Automationsregler:",
         automationGuidance,
         "Ud over forventet svar skal du returnere JSON med 'reply' og 'actions'.",
@@ -5879,10 +5978,12 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
     });
     finalText = replyNaturalnessPolish.text;
     finalText = removeGenericFillerPhrases(finalText);
+    finalText = normalizeReplyFormatting(finalText);
     const skipDirectnessPolish = shouldSkipDirectnessPolish({
       assessment: caseAssessment,
       replyGoal: replyGoalArtifact,
       threadContextGate: threadContextGateResult,
+      workflowSlug: workflowRoute.workflow,
     });
     const directnessPolish = skipDirectnessPolish
       ? {
@@ -6287,10 +6388,12 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         });
         finalText = blockedReplyNaturalnessPolish.text;
         finalText = removeGenericFillerPhrases(finalText);
+    finalText = normalizeReplyFormatting(finalText);
         const skipBlockedDirectnessPolish = shouldSkipDirectnessPolish({
           assessment: caseAssessment,
           replyGoal: replyGoalArtifact,
           threadContextGate: threadContextGateResult,
+          workflowSlug: workflowRoute.workflow,
         });
         const blockedDirectnessPolish = skipBlockedDirectnessPolish
           ? {
