@@ -2526,7 +2526,7 @@ async function getAgentContext(
   );
   const ownerUserId = scope.ownerUserId;
   const profile = await fetchOwnerProfile(supabase, ownerUserId);
-  const persona = await fetchPersona(supabase, ownerUserId);
+  const persona = await fetchPersona(supabase, ownerUserId, scope.workspaceId);
   const automation = await fetchAutomation(supabase, ownerUserId, scope.workspaceId);
   const policies = await fetchPolicies(supabase, ownerUserId, scope.workspaceId);
   const retrievalLimit = Math.max(1, Math.min(Math.round(MAX_RETRIEVAL_CHUNKS), 20));

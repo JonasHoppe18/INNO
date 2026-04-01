@@ -158,19 +158,43 @@ export async function resolveSupabaseUserId(
 }
 
 // Henter gemt persona eller falder tilbage til default
+// Prioriterer workspace_id over user_id (workspace-migration)
 export async function fetchPersona(
   supabase: SupabaseClient | null,
   userId: string | null,
+  workspaceId?: string | null,
 ): Promise<Persona> {
-  if (!supabase || !userId) return DEFAULT_PERSONA;
-  const { data, error } = await supabase
-    .from("agent_persona")
-    .select("scenario,instructions")
-    .eq("user_id", userId)
-    .maybeSingle();
+  if (!supabase) return DEFAULT_PERSONA;
+
+  let data = null;
+  let error = null;
+
+  // Forsøg workspace-opslag først
+  if (workspaceId) {
+    const result = await supabase
+      .from("agent_persona")
+      .select("scenario,instructions")
+      .eq("workspace_id", workspaceId)
+      .maybeSingle();
+    data = result.data;
+    error = result.error;
+  }
+
+  // Fallback til user_id hvis workspace ikke gav resultat
+  if (!data && userId) {
+    const result = await supabase
+      .from("agent_persona")
+      .select("scenario,instructions")
+      .eq("user_id", userId)
+      .maybeSingle();
+    data = result.data;
+    error = result.error;
+  }
+
   if (error) {
     console.warn("agent-context: kunne ikke hente persona", error);
   }
+
   return {
     signature: DEFAULT_PERSONA.signature,
     scenario: data?.scenario ?? DEFAULT_PERSONA.scenario,
