@@ -158,7 +158,7 @@ export async function resolveSupabaseUserId(
 }
 
 // Henter gemt persona eller falder tilbage til default
-// Prioriterer workspace_id over user_id (workspace-migration)
+// Instructions/scenario fra workspace_agent_settings, signature fra agent_persona
 export async function fetchPersona(
   supabase: SupabaseClient | null,
   userId: string | null,
@@ -166,39 +166,42 @@ export async function fetchPersona(
 ): Promise<Persona> {
   if (!supabase) return DEFAULT_PERSONA;
 
-  let data = null;
-  let error = null;
+  // Instructions + scenario — workspace-niveau
+  let instructions = DEFAULT_PERSONA.instructions;
+  let scenario = DEFAULT_PERSONA.scenario;
 
-  // Forsøg workspace-opslag først
   if (workspaceId) {
-    const result = await supabase
-      .from("agent_persona")
-      .select("scenario,instructions")
+    const { data, error } = await supabase
+      .from("workspace_agent_settings")
+      .select("persona_instructions,persona_scenario")
       .eq("workspace_id", workspaceId)
       .maybeSingle();
-    data = result.data;
-    error = result.error;
+    if (error) console.warn("agent-context: kunne ikke hente workspace_agent_settings", error);
+    if (data) {
+      instructions = data.persona_instructions ?? instructions;
+      scenario = data.persona_scenario ?? scenario;
+    }
   }
 
-  // Fallback til user_id hvis workspace ikke gav resultat
-  if (!data && userId) {
-    const result = await supabase
+  // Signature — bruger-niveau (fallback til default)
+  if (userId) {
+    const { data, error } = await supabase
       .from("agent_persona")
       .select("scenario,instructions")
       .eq("user_id", userId)
       .maybeSingle();
-    data = result.data;
-    error = result.error;
-  }
-
-  if (error) {
-    console.warn("agent-context: kunne ikke hente persona", error);
+    if (error) console.warn("agent-context: kunne ikke hente agent_persona", error);
+    // Brug legacy instructions fra agent_persona hvis workspace ikke havde nogen
+    if (data && !workspaceId) {
+      instructions = data.instructions ?? instructions;
+      scenario = data.scenario ?? scenario;
+    }
   }
 
   return {
     signature: DEFAULT_PERSONA.signature,
-    scenario: data?.scenario ?? DEFAULT_PERSONA.scenario,
-    instructions: data?.instructions ?? DEFAULT_PERSONA.instructions,
+    scenario,
+    instructions,
   };
 }
 

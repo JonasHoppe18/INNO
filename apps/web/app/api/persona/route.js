@@ -20,30 +20,6 @@ function createServiceClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
-async function resolvePersona(supabase, scope) {
-  // Forsøg workspace-opslag først
-  if (scope?.workspaceId) {
-    const { data } = await supabase
-      .from("agent_persona")
-      .select("*")
-      .eq("workspace_id", scope.workspaceId)
-      .maybeSingle();
-    if (data) return data;
-  }
-
-  // Fallback til user_id
-  if (scope?.supabaseUserId) {
-    const { data } = await supabase
-      .from("agent_persona")
-      .select("*")
-      .eq("user_id", scope.supabaseUserId)
-      .maybeSingle();
-    if (data) return data;
-  }
-
-  return null;
-}
-
 export async function GET() {
   const { userId: clerkUserId, orgId } = await auth();
   if (!clerkUserId) {
@@ -60,8 +36,32 @@ export async function GET() {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 
-  const data = await resolvePersona(supabase, scope);
-  return NextResponse.json({ persona: data ?? null });
+  // Signature — per bruger
+  const { data: userPersona } = await supabase
+    .from("agent_persona")
+    .select("signature, user_id")
+    .eq("user_id", scope.supabaseUserId)
+    .maybeSingle();
+
+  // Instructions + scenario — per workspace
+  let workspaceSettings = null;
+  if (scope?.workspaceId) {
+    const { data } = await supabase
+      .from("workspace_agent_settings")
+      .select("persona_instructions, persona_scenario")
+      .eq("workspace_id", scope.workspaceId)
+      .maybeSingle();
+    workspaceSettings = data;
+  }
+
+  return NextResponse.json({
+    persona: {
+      user_id: userPersona?.user_id ?? scope.supabaseUserId,
+      signature: userPersona?.signature ?? "",
+      instructions: workspaceSettings?.persona_instructions ?? "",
+      scenario: workspaceSettings?.persona_scenario ?? "",
+    },
+  });
 }
 
 export async function POST(req) {
@@ -81,46 +81,45 @@ export async function POST(req) {
   }
 
   const body = await req.json().catch(() => ({}));
-  const { signature, scenario, instructions } = body;
+  const { signature, instructions, scenario } = body;
 
-  const existing = await resolvePersona(supabase, scope);
-
-  if (existing) {
-    // Opdater eksisterende — brug workspace_id hvis muligt
-    const filter = scope?.workspaceId && existing.workspace_id
-      ? { workspace_id: scope.workspaceId }
-      : { user_id: existing.user_id };
-
-    const { data, error } = await supabase
+  // Gem signature — per bruger
+  if (signature !== undefined) {
+    await supabase
       .from("agent_persona")
-      .update({
-        signature: signature ?? existing.signature,
-        scenario: scenario ?? existing.scenario,
-        instructions: instructions ?? existing.instructions,
-        workspace_id: scope?.workspaceId ?? existing.workspace_id,
-        updated_at: new Date().toISOString(),
-      })
-      .match(filter)
-      .select()
-      .maybeSingle();
-
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json({ persona: data });
+      .upsert(
+        { user_id: scope.supabaseUserId, signature },
+        { onConflict: "user_id" }
+      );
   }
 
-  // Opret ny persona til workspace
-  const { data, error } = await supabase
-    .from("agent_persona")
-    .insert({
-      user_id: scope.supabaseUserId,
-      workspace_id: scope?.workspaceId ?? null,
-      signature: signature ?? "",
-      scenario: scenario ?? "",
-      instructions: instructions ?? "",
-    })
-    .select()
-    .maybeSingle();
+  // Gem instructions + scenario — per workspace
+  if (scope?.workspaceId && (instructions !== undefined || scenario !== undefined)) {
+    const existing = await supabase
+      .from("workspace_agent_settings")
+      .select("workspace_id")
+      .eq("workspace_id", scope.workspaceId)
+      .maybeSingle();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ persona: data });
+    if (existing.data) {
+      await supabase
+        .from("workspace_agent_settings")
+        .update({
+          ...(instructions !== undefined && { persona_instructions: instructions }),
+          ...(scenario !== undefined && { persona_scenario: scenario }),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("workspace_id", scope.workspaceId);
+    } else {
+      await supabase
+        .from("workspace_agent_settings")
+        .insert({
+          workspace_id: scope.workspaceId,
+          persona_instructions: instructions ?? "",
+          persona_scenario: scenario ?? "",
+        });
+    }
+  }
+
+  return NextResponse.json({ ok: true });
 }
