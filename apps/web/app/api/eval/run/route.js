@@ -135,12 +135,12 @@ export async function POST(req) {
   // Fetch persona instructions
   let instructions = null;
   if (scope?.workspaceId) {
-    const { data: persona } = await supabase
-      .from("agent_personas")
-      .select("instructions")
+    const { data: settings } = await supabase
+      .from("workspace_agent_settings")
+      .select("persona_instructions")
       .eq("workspace_id", scope.workspaceId)
       .maybeSingle();
-    instructions = persona?.instructions || null;
+    instructions = settings?.persona_instructions || null;
   }
 
   const shopName = shop?.shop_name || shop?.team_name || null;

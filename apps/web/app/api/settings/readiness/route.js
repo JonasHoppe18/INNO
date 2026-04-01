@@ -69,11 +69,11 @@ export async function GET() {
       .select("support_language")
       .eq("id", workspaceId)
       .maybeSingle(),
-    supabaseUserId
+    workspaceId
       ? serviceClient
-          .from("agent_persona")
-          .select("instructions")
-          .eq("user_id", supabaseUserId)
+          .from("workspace_agent_settings")
+          .select("persona_instructions")
+          .eq("workspace_id", workspaceId)
           .maybeSingle()
       : Promise.resolve({ data: null }),
   ]);
@@ -81,7 +81,7 @@ export async function GET() {
   const returnSettings = returnSettingsResult.data;
   const shopId = shopResult.data?.id || null;
   const supportLanguage = asString(workspaceResult.data?.support_language);
-  const personaInstructions = asString(personaResult.data?.instructions);
+  const personaInstructions = asString(personaResult.data?.persona_instructions);
 
   // Check knowledge base separately (needs shopId)
   let knowledgeCount = 0;

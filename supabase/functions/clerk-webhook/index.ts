@@ -493,18 +493,12 @@ serve(async (req) => {
         return new Response(`Upsert error: ${error.message}`, { status: 500 });
       }
 
-      // Sikrer default-række i agent_persona og agent_automation
+      // Sæt default signature på profiles hvis ikke allerede sat
       await supabase
-        .from("agent_persona")
-        .upsert(
-          {
-            user_id: supabaseUserId,
-            signature: `Venlig hilsen\n${data?.first_name ?? "Din agent"}`,
-            scenario: "",
-            instructions: "",
-          },
-          { onConflict: "user_id", ignoreDuplicates: true }
-        );
+        .from("profiles")
+        .update({ signature: `Venlig hilsen\n${data?.first_name ?? "Din agent"}` })
+        .eq("user_id", supabaseUserId)
+        .is("signature", null);
 
       await supabase
         .from("agent_automation")

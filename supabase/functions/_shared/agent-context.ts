@@ -158,7 +158,7 @@ export async function resolveSupabaseUserId(
 }
 
 // Henter gemt persona eller falder tilbage til default
-// Instructions/scenario fra workspace_agent_settings, signature fra agent_persona
+// Instructions/scenario fra workspace_agent_settings, signature fra profiles
 export async function fetchPersona(
   supabase: SupabaseClient | null,
   userId: string | null,
