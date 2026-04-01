@@ -74,10 +74,10 @@ export function FineTuningPanel({ children }) {
   };
 
   const handleSave = useCallback(() => {
-    save({ instructions, signature: persona?.signature ?? "" })
+    save({ instructions })
       .then(() => setDirty(false))
       .catch(() => null);
-  }, [instructions, persona?.signature, save]);
+  }, [instructions, save]);
 
   const handleRefresh = useCallback(() => refresh().catch(() => null), [refresh]);
 
