@@ -133,54 +133,39 @@ export function useAgentPersonaConfig(options = {}) {
     setLoading(true);
     setError(null);
     try {
-      const userId = await ensureUserId().catch(() => null);
-      if (!userId) {
-        setPersona(null);
-        return null;
-      }
-
-      const { data, error: queryError } = await supabase
-        .from("agent_persona")
-        .select("*")
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      if (queryError) throw queryError;
-      setPersona(toPersona(data));
-      return data;
+      const res = await fetch("/api/persona");
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || "Could not load persona.");
+      setPersona(toPersona(body.persona));
+      return body.persona;
     } catch (err) {
       setError(err instanceof Error ? err : new Error("Could not load persona."));
       throw err;
     } finally {
       setLoading(false);
     }
-  }, [supabase, ensureUserId, toPersona]);
+  }, [toPersona]);
 
   const savePersona = useCallback(
     async (updates) => {
       setSaving(true);
       setError(null);
       try {
-        const userId = await ensureUserId().catch(() => null);
-        if (!userId) {
-          throw new Error("Supabase user ID is not ready yet.");
-        }
         const payload = {
-          user_id: userId,
           signature: updates.signature ?? persona?.signature ?? null,
           scenario: updates.scenario ?? persona?.scenario ?? null,
           instructions: updates.instructions ?? persona?.instructions ?? null,
         };
 
-        const { data, error: upsertError } = await supabase
-          .from("agent_persona")
-          .upsert(payload, { onConflict: "user_id" })
-          .select()
-          .maybeSingle();
-
-        if (upsertError) throw upsertError;
-        setPersona(toPersona(data));
-        return data;
+        const res = await fetch("/api/persona", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body?.error || "Could not save persona.");
+        setPersona(toPersona(body.persona));
+        return body.persona;
       } catch (err) {
         setError(err instanceof Error ? err : new Error("Could not save persona."));
         throw err;
@@ -188,7 +173,7 @@ export function useAgentPersonaConfig(options = {}) {
         setSaving(false);
       }
     },
-    [ensureUserId, persona, supabase, toPersona]
+    [persona, toPersona]
   );
 
   const runPersonaTest = useCallback(
