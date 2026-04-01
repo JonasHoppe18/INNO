@@ -81,11 +81,24 @@ const UNGROUNDED_LABEL_OR_ATTACHMENT_PATTERNS = [
 const INCLUDED_LABEL_PATTERNS = [
   /\b(?:use the included return label|use the enclosed return label|use the pre-printed return label)\b/i,
   /\b(?:brug den medsendte returlabel|brug den vedlagte returlabel|brug den fortrykte returlabel)\b/i,
+  // "we will/do/can/shall provide/send/organize a return label"
+  /\b(?:we|i)\s+(?:will|do|can|shall|are able to)\s+(?:provide|send|organize|arrange|prepare|email)\s+(?:you\s+)?(?:a|the)\s+(?:\w+\s+)?return label\b/i,
+  /\b(?:we'll|i'll)\s+(?:provide|send|organize|arrange|prepare)\s+(?:you\s+)?(?:a|the)\s+(?:\w+\s+)?return label\b/i,
+  /\b(?:using|use|with)\s+(?:a|the)\s+(?:\w+\s+)?return label\b/i,
+  /\b(?:vi sender|vi fremsender|vi mailer)\s+(?:dig\s+)?(?:en\s+)?(?:\w+\s+)?(?:retur)?label\b/i,
+  /\b(?:return label\s+(?:will\s+be\s+)?(?:sent|provided)\s+(?:to\s+you|by\s+us))\b/i,
+  // any specific carrier + "return label" implies we're providing it
+  /\b(?:GLS|PostNord|DHL|DAO|TNT)\s+return label\b/i,
 ];
 
 const UNGROUNDED_RETURN_SHIPPING_RESPONSIBILITY_PATTERNS = [
   /\b(?:we will pay for return shipping|we cover return shipping|return shipping is covered by us|the company will pay for return shipping)\b/i,
   /\b(?:vi betaler returfragten|returfragten betales af os|vi daekker returfragten|vi dækker returfragten)\b/i,
+  // Broader patterns covering "we will cover the cost of return shipping" and similar
+  /\b(?:we will cover|we'll cover|we cover|we take care of)\s+(?:the\s+)?(?:cost\s+of\s+)?(?:the\s+)?return shipping\b/i,
+  /\b(?:return shipping\s+(?:cost\s+)?(?:is|will be|are)\s+(?:on us|covered by us|free|included|paid by us))\b/i,
+  /\b(?:vi betaler|vi dækker|vi daekker)\s+(?:returfragtomkostningerne|returomkostningerne|returfragten)\b/i,
+  /\b(?:du betaler ikke|ingen fragtomkostninger)\s+(?:for\s+)?(?:returfragten|returneringen)\b/i,
 ];
 
 export function isActionSensitiveReplyCase(options: {

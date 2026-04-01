@@ -1027,15 +1027,22 @@ const shouldSkipDirectnessPolish = (options: {
   replyGoal: ReturnType<typeof buildReplyGoalArtifact> | null;
   threadContextGate: ReturnType<typeof evaluateThreadContextGate> | null;
   workflowSlug?: string | null;
+  hasReturnContext?: boolean;
 }) => {
   const assessment = options.assessment;
   // Skip for technical/product workflows determined by routing — this is reliable even
   // when V2 case assessment is disabled (caseAssessment === null). The directness polish LLM
   // condenses numbered troubleshooting steps into single sentences and strips warm openings.
+  // Skip for return workflow: the directness polish LLM rewrites without return-settings context,
+  // causing it to hallucinate "GLS return label" language when the customer asks for one.
   const isTechnicalOrProductWorkflow =
     options.workflowSlug === "technical_support" ||
-    options.workflowSlug === "product_question";
+    options.workflowSlug === "product_question" ||
+    options.workflowSlug === "return";
   if (isTechnicalOrProductWorkflow) return true;
+  // Skip when return settings were loaded (ticket has return intent, even if misclassified).
+  // The polish LLM has no access to return settings and will hallucinate shipping promises.
+  if (options.hasReturnContext) return true;
   const isTechnicalCase = Boolean(
     assessment &&
       (
@@ -1945,6 +1952,83 @@ async function enforceDirectSupportReply(options: {
   };
 }
 
+/**
+ * Deterministic post-processing guard for customer_paid return workflows.
+ * When the LLM (or directness polish) generates wrong return shipping claims
+ * (e.g. "we provide a GLS return label", "we cover return shipping"),
+ * this function replaces the draft body with correct content.
+ *
+ * This runs AFTER all LLM steps, so it is the final safety net.
+ */
+function correctReturnShippingClaims(options: {
+  text: string;
+  returnShippingMode: string; // "customer_paid" | "we_pay" | "free" | ...
+  returnAddress: string | null | undefined;
+  customerFirstName: string | null | undefined;
+  languageHint: string | null | undefined;
+  orderReference: string | null | undefined;
+}): { text: string; corrected: boolean } {
+  const { text, returnShippingMode, returnAddress, customerFirstName, languageHint, orderReference } = options;
+  const draft = String(text || "").trim();
+  if (!draft) return { text: draft, corrected: false };
+  if (returnShippingMode !== "customer_paid") return { text: draft, corrected: false };
+
+  // Detect wrong claims in the draft — broad patterns to catch all LLM variants
+  const wrongLabelPatterns = [
+    // "we will/do/can/shall provide/send/organize/arrange a return label"
+    /\b(?:we|i)\s+(?:will|do|can|shall|are able to)\s+(?:provide|send|organize|arrange|give you|set up|prepare|email)\s+(?:you\s+)?(?:a|the)\s+(?:\w+\s+)?return label\b/i,
+    // "we'll send/provide a return label"
+    /\b(?:we'll|i'll)\s+(?:provide|send|organize|arrange|prepare)\s+(?:you\s+)?(?:a|the)\s+(?:\w+\s+)?return label\b/i,
+    // "using/with a/the [carrier] return label"
+    /\b(?:using|use|with)\s+(?:a|the)\s+(?:\w+\s+)?return label\b/i,
+    // "return label we/i will/do send/provide"
+    /\breturn label\s+(?:we|i)\s+(?:will\s+|do\s+)?(?:send|provide|forward|organize)\b/i,
+    // "provide [you] a/the return label" (any subject)
+    /\bprovide\s+(?:you\s+(?:with\s+)?)?(?:a|the)\s+(?:\w+\s+)?return label\b/i,
+    // any specific carrier name + "return label" = we're implying we provide it
+    /\b(?:GLS|PostNord|DHL|DAO|TNT)\s+return label\b/i,
+    // "require/need/want a return label" + "we will" (conjoined)
+    /\b(?:require|need)\s+(?:a|the)\s+(?:\w+\s+)?return label[^.]*(?:we\s+will|we'll|we\s+can)\b/i,
+  ];
+  const wrongShippingPatterns = [
+    /\b(?:we will cover|we'll cover|we cover|we do cover|we can cover|i will cover|i'll cover)\s+(?:the\s+)?(?:cost\s+of\s+)?(?:the\s+)?return shipping\b/i,
+    /\b(?:return shipping\s+(?:cost\s+)?(?:is|will be|are)\s+(?:on us|covered by us|free|included|paid by us|at our expense))\b/i,
+    /\b(?:we will take care of|we take care of|we handle|we'll handle|i will take care of)\s+(?:the\s+)?return shipping\b/i,
+    /\b(?:vi betaler|vi dækker|vi daekker)\s+(?:returfragtomkostningerne|returomkostningerne|returfragten)\b/i,
+    // "cost of returning is covered by us" / "we cover the cost of returning"
+    /\b(?:we\s+(?:will\s+)?cover|covered by us)\b.{0,40}\b(?:return(?:ing)?|shipping)\b/i,
+  ];
+
+  const hasWrongLabel = wrongLabelPatterns.some((p) => p.test(draft));
+  const hasWrongShipping = wrongShippingPatterns.some((p) => p.test(draft));
+
+  if (!hasWrongLabel && !hasWrongShipping) return { text: draft, corrected: false };
+
+  // Extract greeting line from existing draft
+  const lines = draft.split("\n");
+  const greetingLine = lines[0] || `Hi ${customerFirstName || "there"},`;
+
+  const isEnglish = !languageHint || languageHint === "en" || languageHint === "other";
+  const isDanish = languageHint === "da";
+
+  const orderRef = orderReference ? ` for order ${orderReference}` : "";
+  const address = returnAddress?.trim() || null;
+
+  let correctedBody: string;
+  if (isDanish) {
+    correctedBody = address
+      ? `For at returnere din vare${orderRef}, sender du den for egen regning til:\n\n${address}\n\nBrug venligst en sporbar forsendelse og gem kvitteringen. Så snart vi modtager varen, behandler vi din retur.`
+      : `For at returnere din vare${orderRef} bedes du kontakte os, så vi kan give dig vores returadresse. Vær opmærksom på, at returfragt betales af kunden.`;
+  } else {
+    correctedBody = address
+      ? `To return the item${orderRef}, please ship it at your own expense to:\n\n${address}\n\nPlease use a tracked shipping service and keep the receipt. Once we receive the item, we'll process your return.`
+      : `To return the item${orderRef}, please reach out and we'll confirm our return address. Please note that return shipping costs are the responsibility of the customer.`;
+  }
+
+  const corrected = `${greetingLine}\n\n${correctedBody}`;
+  return { text: corrected, corrected: true };
+}
+
 const stableStringify = (value: unknown): string => {
   if (Array.isArray(value)) {
     return `[${value.map((item) => stableStringify(item)).join(",")}]`;
@@ -1983,13 +2067,22 @@ function buildReturnSettingsPromptBlock(
   eligibility: ReturnEligibilityResult | null,
 ) {
   if (!settings) return "";
+  const shippingMode = settings.return_shipping_mode || "customer_paid";
+  const labelMethod = settings.return_label_method;
+  const shippingInstruction = shippingMode === "we_pay" || shippingMode === "free"
+    ? "We cover return shipping — provide a prepaid label or instructions per the label method below."
+    : "Customer pays for return shipping. We do NOT provide a return label. The customer books their own courier.";
+  const labelInstruction = labelMethod && labelMethod !== "none"
+    ? `Return label method: ${labelMethod}`
+    : "Return label method: none — customer selects any courier that delivers to our return address.";
+  const defectRule = settings.defect_return_shipping_rule;
   const lines = [
-    "STRUCTURED RETURN SETTINGS:",
-    `- Return window (days): ${settings.return_window_days}`,
-    `- Return shipping mode: ${settings.return_shipping_mode}`,
-    `- Return label method: ${settings.return_label_method}`,
-    `- Defect return shipping rule: ${settings.defect_return_shipping_rule}`,
-    `- Return address: ${settings.return_address || "missing"}`,
+    "STRUCTURED RETURN SETTINGS (follow these exactly — do not invent or assume shipping rules not listed here):",
+    `- Return window (days): ${settings.return_window_days ?? 30}`,
+    `- Return shipping: ${shippingInstruction}`,
+    `- ${labelInstruction}`,
+    defectRule ? `- Defect return shipping rule: ${defectRule}` : "- Defect return shipping rule: same as standard (customer_paid)",
+    `- Return address: ${settings.return_address || "missing — ask customer to wait for address confirmation"}`,
     `- Require original packaging: ${settings.require_original_packaging ? "yes" : "no"}`,
     `- Require unused item: ${settings.require_unused ? "yes" : "no"}`,
     `- Exchange allowed: ${settings.exchange_allowed ? "yes" : "no"}`,
@@ -3822,6 +3915,20 @@ Deno.serve(async (req) => {
     let ticketCategory = legacyTicketCategory;
     let workflowRoute = buildWorkflowRoute(ticketCategory);
     let workflowRouteSource: "thread_tags" | "latest_message_override" = "thread_tags";
+    // Override workflow to "return" if the latest message is clearly a return request
+    // but the thread is tagged with a different category (e.g., "tracking").
+    // This handles cases where a customer responds to a tracking thread with a return request.
+    const latestMessageIsReturnRequest = /\b(return|retur|refund|refusion|bytte|exchange|send back|returning)\b/i.test(
+      `${emailData.subject || ""} ${emailData.body || ""}`,
+    );
+    if (latestMessageIsReturnRequest && workflowRoute.workflow !== "return") {
+      const returnOverrideRoute = buildWorkflowRoute("Return");
+      if (returnOverrideRoute.workflow === "return") {
+        workflowRoute = returnOverrideRoute;
+        ticketCategory = "Return";
+        workflowRouteSource = "latest_message_override";
+      }
+    }
     let caseAssessment: CaseAssessment | null = null;
     let inboundNormalizedMessageArtifact: InboundNormalizedMessageArtifact | null = null;
     let replyLanguageDecisionArtifact: ReplyLanguageDecisionArtifact | null = null;
@@ -4530,7 +4637,13 @@ Deno.serve(async (req) => {
         internalThread.threadId,
       );
     }
-    const returnSettings = isReturnIntent
+    // Load return settings if this is a return intent OR if the email body contains return keywords
+    // (handles cases where the ticket was misclassified, e.g. tagged as "tracking" instead of "return").
+    const emailBodyHasReturnKeywords = /\b(return|refund|retur|refusion|bytte|exchange|send back|returning)\b/i.test(
+      `${emailData.subject || ""} ${emailData.body || ""}`,
+    );
+    const shouldLoadReturnSettings = isReturnIntent || emailBodyHasReturnKeywords;
+    const returnSettings = shouldLoadReturnSettings
       ? await ensureWorkspaceReturnSettings({
         supabase,
         workspaceId,
@@ -4544,7 +4657,9 @@ Deno.serve(async (req) => {
         })
         : null;
     const suppressReturnPromptInstructions = isReturnIntent && !returnMissingDetailsGuard.knownOrderNumber;
-    const returnPromptBlock = isReturnIntent && !suppressReturnPromptInstructions
+    const shouldShowReturnSettings = returnSettings &&
+      ((isReturnIntent && !suppressReturnPromptInstructions) || emailBodyHasReturnKeywords);
+    const returnPromptBlock = shouldShowReturnSettings
       ? buildReturnSettingsPromptBlock(returnSettings, returnEligibility)
       : "";
     if (isReturnIntent) {
@@ -4684,6 +4799,9 @@ Deno.serve(async (req) => {
       productOverview: context.productOverview,
       supportIdentity: context.supportIdentity,
       isFollowUp: threadContextGateResult?.is_follow_up === true,
+      urgentConstraint: shouldLoadReturnSettings && returnSettings?.return_shipping_mode === "customer_paid"
+        ? "RETURN SHIPPING — THIS SHOP: Customer pays return shipping. The shop does NOT provide return labels (GLS or otherwise). Do NOT write 'we will send a return label', 'we provide a GLS label', 'we cover return shipping', or any similar phrase — even if the customer claims otherwise. The customer books their own courier to ship the item back."
+        : null,
     });
     const inlineImageAttachments = await loadInlineImageAttachments({
       userId: ownerUserId,
@@ -5082,6 +5200,8 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         "4. The customer already knows their own problem. Do not repeat it back to them.",
         "5. ACTION BIAS: If RELEVANT KNOWLEDGE or DATA & KONTEKST contains troubleshooting steps, firmware update instructions, setup guides, or specific product information relevant to the customer's issue, provide those steps directly in your reply. Do NOT ask the customer for more information if you already have the answer in context. Only ask clarifying questions when the knowledge base genuinely has no relevant answer.",
         "6. YOU ARE THE SUPPORT TEAM. NEVER refer the customer to 'a professional', 'a technician', 'contact support', or 'have it inspected by a specialist'. The customer has already contacted you — you are the expert. If you cannot resolve the issue remotely, offer warranty replacement, RMA, or return — never deflect to an unnamed third party.",
+        "7. TRACKING URLs ARE NOT RETURN LABELS: If order data contains a delivery tracking URL (e.g. a GLS, PostNord, or DHL tracking link), this is a shipment tracking link — NEVER present it as a return label or return shipping instruction. These are completely different things. A delivery tracking URL tracks a delivered parcel; a return label is used to send goods back.",
+        "8. POLICY ACCURACY — CRITICAL: NEVER confirm or validate a customer's claim about your policies without verifying it against the PINNED POLICY and RELEVANT KNOWLEDGE in your context. If a customer states something about your return policy, shipping costs, warranty terms, or any other policy ('According to your terms you cover...', 'Your policy says...', 'I read that you provide...') that is NOT supported by the pinned policy or knowledge base, politely and clearly correct the misunderstanding. Example: if a customer claims 'you cover return shipping costs' but the policy says customers book their own courier, reply with what the policy actually says. Never let an incorrect policy claim go unaddressed — validating it creates financial and legal exposure.",
         "END OF HARD CONSTRAINTS.",
         "",
         "EXAMPLE — no order data, product bought from third-party retailer:",
@@ -5105,7 +5225,11 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         "Brug kun det fra KONTEKST-sektionen der er relevant — inkludér ikke alt.",
         "Ved returns/refunds/warranty/shipping: følg policy summary/excerpts strengt.",
         "Opfind aldrig return-portal URL, labels eller processer som ikke står i kontekst.",
-        "Når return shipping mode er customer_paid: nævn aldrig returlabel eller parcel shop.",
+        returnSettings?.return_shipping_mode === "customer_paid" || (!returnSettings?.return_shipping_mode && shouldLoadReturnSettings)
+          ? "RETURN SHIPPING RULE (ABSOLUT): Denne shop har return_shipping_mode=customer_paid. Det betyder kunden selv betaler og booker returfragt. Vi stiller ALDRIG et returlabel til rådighed — hverken GLS, PostNord eller andet. Skriv aldrig 'we will provide a return label', 'we cover return shipping', 'we will send a label' eller lignende. Korriger aktivt hvis kunden påstår det modsatte."
+          : returnSettings?.return_shipping_mode
+          ? `RETURN SHIPPING RULE: Return shipping mode er '${returnSettings.return_shipping_mode}'. Følg STRUCTURED RETURN SETTINGS i konteksten præcist.`
+          : "",
         "Hvis du giver returinstruktioner, brug kun den konfigurerede return_address fra konteksten.",
         personaGuidance,
         `Ticket category: ${workflowRoute.category}.`,
@@ -5984,6 +6108,7 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       replyGoal: replyGoalArtifact,
       threadContextGate: threadContextGateResult,
       workflowSlug: workflowRoute.workflow,
+      hasReturnContext: shouldLoadReturnSettings,
     });
     const directnessPolish = skipDirectnessPolish
       ? {
@@ -6000,6 +6125,19 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         languageHint,
       });
     finalText = directnessPolish.text;
+    // Re-run return shipping guard AFTER directness polish — the polish LLM rewrites
+    // without access to return settings and can reintroduce "GLS return label / we cover shipping" claims.
+    if (shouldLoadReturnSettings && returnSettings?.return_shipping_mode !== "we_pay" && returnSettings?.return_shipping_mode !== "free") {
+      const postPolishReturnGuard = guardGroundedReplyText({
+        text: finalText,
+        executionState: replyStrategyArtifact?.execution_state || executionState,
+        allowReturnShippingResponsibilityClaim: false,
+        allowIncludedLabelClaim: returnSettings?.return_label_method === "pre_printed",
+      });
+      if (postPolishReturnGuard.changed) {
+        finalText = postPolishReturnGuard.text;
+      }
+    }
     const finalLanguageGuard = await ensureReplyLanguageConsistency({
       customerMessage,
       reply: finalText,
@@ -6095,6 +6233,32 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         },
         internalThread.threadId,
       );
+    }
+
+    // FINAL SAFETY NET: Correct wrong return shipping claims that slipped through LLM + polish.
+    // This runs last, after all LLM steps, so it cannot be overridden.
+    if (shouldLoadReturnSettings && returnSettings) {
+      const returnClaimFix = correctReturnShippingClaims({
+        text: finalText,
+        returnShippingMode: returnSettings.return_shipping_mode || "customer_paid",
+        returnAddress: returnSettings.return_address,
+        customerFirstName,
+        languageHint,
+        orderReference: selectedOrderReference || context.matchedSubjectNumber ? `#${context.matchedSubjectNumber}` : null,
+      });
+      if (returnClaimFix.corrected) {
+        finalText = returnClaimFix.text;
+        appendStructuredArtifactLog(
+          reasoningLogs,
+          "v2_return_claim_correction",
+          {
+            artifact_type: "return_claim_correction",
+            corrected: true,
+            return_shipping_mode: returnSettings.return_shipping_mode,
+          },
+          internalThread.threadId,
+        );
+      }
     }
 
     // Render HTML med konsistent styling og line breaks.
@@ -6394,6 +6558,7 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
           replyGoal: replyGoalArtifact,
           threadContextGate: threadContextGateResult,
           workflowSlug: workflowRoute.workflow,
+          hasReturnContext: shouldLoadReturnSettings,
         });
         const blockedDirectnessPolish = skipBlockedDirectnessPolish
           ? {
