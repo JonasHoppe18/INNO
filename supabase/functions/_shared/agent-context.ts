@@ -183,21 +183,6 @@ export async function fetchPersona(
     }
   }
 
-  // Signature — bruger-niveau (fallback til default)
-  if (userId) {
-    const { data, error } = await supabase
-      .from("agent_persona")
-      .select("scenario,instructions")
-      .eq("user_id", userId)
-      .maybeSingle();
-    if (error) console.warn("agent-context: kunne ikke hente agent_persona", error);
-    // Brug legacy instructions fra agent_persona hvis workspace ikke havde nogen
-    if (data && !workspaceId) {
-      instructions = data.instructions ?? instructions;
-      scenario = data.scenario ?? scenario;
-    }
-  }
-
   return {
     signature: DEFAULT_PERSONA.signature,
     scenario,

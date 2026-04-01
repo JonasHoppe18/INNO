@@ -36,9 +36,9 @@ export async function GET() {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 
-  // Signature — per bruger
-  const { data: userPersona } = await supabase
-    .from("agent_persona")
+  // Signature — per bruger (fra profiles)
+  const { data: profile } = await supabase
+    .from("profiles")
     .select("signature, user_id")
     .eq("user_id", scope.supabaseUserId)
     .maybeSingle();
@@ -56,8 +56,8 @@ export async function GET() {
 
   return NextResponse.json({
     persona: {
-      user_id: userPersona?.user_id ?? scope.supabaseUserId,
-      signature: userPersona?.signature ?? "",
+      user_id: profile?.user_id ?? scope.supabaseUserId,
+      signature: profile?.signature ?? "",
       instructions: workspaceSettings?.persona_instructions ?? "",
       scenario: workspaceSettings?.persona_scenario ?? "",
     },
@@ -83,14 +83,12 @@ export async function POST(req) {
   const body = await req.json().catch(() => ({}));
   const { signature, instructions, scenario } = body;
 
-  // Gem signature — per bruger
+  // Gem signature — per bruger (profiles)
   if (signature !== undefined) {
     await supabase
-      .from("agent_persona")
-      .upsert(
-        { user_id: scope.supabaseUserId, signature },
-        { onConflict: "user_id" }
-      );
+      .from("profiles")
+      .update({ signature })
+      .eq("user_id", scope.supabaseUserId);
   }
 
   // Gem instructions + scenario — per workspace
