@@ -32,11 +32,11 @@ async function resolvePersona(supabase, scope) {
   }
 
   // Fallback til user_id
-  if (scope?.userId) {
+  if (scope?.supabaseUserId) {
     const { data } = await supabase
       .from("agent_persona")
       .select("*")
-      .eq("user_id", scope.userId)
+      .eq("user_id", scope.supabaseUserId)
       .maybeSingle();
     if (data) return data;
   }
@@ -112,7 +112,7 @@ export async function POST(req) {
   const { data, error } = await supabase
     .from("agent_persona")
     .insert({
-      user_id: scope.userId,
+      user_id: scope.supabaseUserId,
       workspace_id: scope?.workspaceId ?? null,
       signature: signature ?? "",
       scenario: scenario ?? "",
