@@ -71,6 +71,8 @@ export function useAgentPersonaConfig(options = {}) {
     loading: false,
     error: null,
     result: "",
+    trace: null,
+    model: null,
   });
 
   const toPersona = useCallback((row) => {
@@ -80,6 +82,9 @@ export function useAgentPersonaConfig(options = {}) {
       signature: row.signature ?? "",
       scenario: row.scenario ?? "",
       instructions: row.instructions ?? "",
+      shop_name: row.shop_name ?? "",
+      brand_description: row.brand_description ?? "",
+      support_identity: row.support_identity ?? "",
       updatedAt: row.updated_at ?? null,
     };
   }, []);
@@ -155,6 +160,8 @@ export function useAgentPersonaConfig(options = {}) {
           signature: updates.signature ?? persona?.signature ?? null,
           scenario: updates.scenario ?? persona?.scenario ?? null,
           instructions: updates.instructions ?? persona?.instructions ?? null,
+          brand_description: updates.brand_description ?? persona?.brand_description ?? null,
+          support_identity: updates.support_identity ?? persona?.support_identity ?? null,
         };
 
         const res = await fetch("/api/persona", {
@@ -178,7 +185,7 @@ export function useAgentPersonaConfig(options = {}) {
 
   const runPersonaTest = useCallback(
     async (overrides = {}) => {
-      setTestState({ loading: true, error: null, result: "" });
+      setTestState({ loading: true, error: null, result: "", trace: null, model: null });
       try {
         const signatureInput =
           typeof overrides.signature === "string"
@@ -199,6 +206,13 @@ export function useAgentPersonaConfig(options = {}) {
             : "Best regards\nYour agent",
           scenario: scenarioInput,
           instructions: instructionsInput,
+          ...(typeof overrides.ticketSubject === "string"
+            ? { ticketSubject: overrides.ticketSubject }
+            : {}),
+          ...(typeof overrides.customerFrom === "string"
+            ? { customerFrom: overrides.customerFrom }
+            : {}),
+          ...(typeof overrides.model === "string" ? { model: overrides.model } : {}),
           ...(overrides.emailLanguage ? { emailLanguage: overrides.emailLanguage } : {}),
         };
 
@@ -220,7 +234,9 @@ export function useAgentPersonaConfig(options = {}) {
           typeof body?.reply === "string" && body.reply.trim().length
             ? body.reply.trim()
             : "The test returned no response.";
-        setTestState({ loading: false, error: null, result: reply });
+        const trace = body?.trace && typeof body.trace === "object" ? body.trace : null;
+        const model = typeof body?.model === "string" ? body.model : null;
+        setTestState({ loading: false, error: null, result: reply, trace, model });
         return reply;
       } catch (err) {
         const normalized =
@@ -229,7 +245,7 @@ export function useAgentPersonaConfig(options = {}) {
               ? new Error("Could not reach the persona test. Try again in a moment.")
               : err
             : new Error("Unknown error during the test.");
-        setTestState({ loading: false, error: normalized, result: "" });
+        setTestState({ loading: false, error: normalized, result: "", trace: null, model: null });
         throw normalized;
       }
     },

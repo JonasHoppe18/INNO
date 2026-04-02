@@ -15,6 +15,7 @@ const TITLE_MAP = {
   "/integrations": "Integrations",
   "/settings": "Settings",
   "/persona": "Persona",
+  "/fine-tuning": "Fine-tuning",
 };
 
 export function SiteHeader() {

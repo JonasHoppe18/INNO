@@ -182,7 +182,6 @@ const V2_STRUCTURED_ARTIFACT_LOGGING_ENABLED = readEnvFlag(
   true,
 );
 const POLICY_SOURCE_PROVIDER = "shopify_policy";
-const TRACKING_CARRIERS_PROVIDER = "tracking_carriers";
 const ZENDESK_SOURCE_PROVIDER = "zendesk";
 
 if (!PROJECT_URL) console.warn("PROJECT_URL mangler – generate-draft-unified kan ikke kalde Supabase.");
@@ -1511,7 +1510,7 @@ const extractNameFromBody = (value: string) => {
   // Priority 1: signoff + explicit name line at the very end (most reliable).
   // Must run before greeting detection to avoid picking up the shop/recipient name
   // from the customer's own opening greeting (e.g. "Hi AceZone,").
-  const signoffRegex = /^(mvh|venlig hilsen|med venlig hilsen|best regards|kind regards|regards|hilsen)$/i;
+  const signoffRegex = /^(mvh\.?|venlig hilsen\.?|med venlig hilsen\.?|best regards\.?|kind regards\.?|regards\.?|hilsen\.?)$/i;
   for (let idx = lines.length - 1; idx >= 1; idx -= 1) {
     const current = String(lines[idx] || "");
     const previous = String(lines[idx - 1] || "").toLowerCase();
@@ -1535,7 +1534,9 @@ const extractNameFromBody = (value: string) => {
 const normalizeCustomerFirstName = (value: string) => {
   const raw = String(value || "").trim();
   if (!raw) return "";
-  const cleaned = raw.replace(/\d+/g, "").replace(/[^A-Za-zÆØÅæøåÀ-ÿ'-]/g, "").trim();
+  // Take the first word only — prevents "Victor Hein" concatenating into "Victorhein".
+  const firstWord = raw.split(/\s+/)[0] || raw;
+  const cleaned = firstWord.replace(/\d+/g, "").replace(/[^A-Za-zÆØÅæøåÀ-ÿ'-]/g, "").trim();
   if (!cleaned) return "";
   return cleaned.charAt(0).toUpperCase() + cleaned.slice(1).toLowerCase();
 };
@@ -1800,6 +1801,51 @@ const normalizeReplyFormatting = (text: string): string => {
     /([^\n])\n(?!\n)(?![ \t]*[-\d])([A-ZÆØÅ])/g,
     "$1\n\n$2"
   );
+};
+
+// ensureWarmOpening — deterministisk sikring af varm åbning på første svar,
+// men KUN hvis shopens persona-instruktioner eksplicit beskriver en varm åbning.
+// Forskellige shops har forskellig stil — vi tvinger aldrig noget på shops der ikke har promptet det.
+const ensureWarmOpening = (
+  text: string,
+  opts: { isFirstReply: boolean; languageHint: string; productName?: string | null; personaInstructions?: string | null }
+): string => {
+  if (!opts.isFirstReply) return text;
+
+  // Kun aktiver hvis shopens persona specifikt nævner en varm åbning
+  const persona = opts.personaInstructions || "";
+  const personaWantsWarmOpening = /\b(varm|warm|tak kunden|thank.*customer|åbning|opening|empat|sympat|kedeligt|sorry to hear|reaching out)\b/i.test(persona);
+  if (!personaWantsWarmOpening) return text;
+
+  const body = String(text || "").trim();
+  if (!body) return body;
+
+  const lines = body.split("\n");
+  // Find greeting line
+  const greetingIdx = lines.findIndex(l => /^(hi|hej|hello|hey|dear|kære)\b/i.test(l.trim()) || /^[A-ZÆØÅa-zæøå].*,\s*$/.test(l.trim()));
+  if (greetingIdx === -1) return body;
+
+  // Find first non-empty line after the greeting
+  let firstContentIdx = greetingIdx + 1;
+  while (firstContentIdx < lines.length && lines[firstContentIdx].trim() === "") firstContentIdx++;
+  if (firstContentIdx >= lines.length) return body;
+
+  const firstContent = lines[firstContentIdx].trim();
+
+  // Allerede en varm åbning? Lad den være
+  const hasWarmOpening = /\b(tak for|thank you|thanks for|reaching out|kontakter|vi er kede|sorry to hear|i'm sorry|vi beklager|apologies)\b/i.test(firstContent);
+  if (hasWarmOpening) return body;
+
+  // Byg varm sætning baseret på sprog og produkt — simpel og neutral
+  const isDanish = opts.languageHint === "da" || /[æøå]/i.test(body.slice(0, 200));
+  const product = opts.productName;
+  const warmSentence = isDanish
+    ? `Tak fordi du kontakter os.${product ? ` Det er kedeligt at høre, at du oplever problemer med dit ${product}-headset.` : " Det er kedeligt at høre, at du oplever problemer."}`
+    : `Thank you for reaching out.${product ? ` I'm sorry to hear you're having trouble with your ${product}.` : " I'm sorry to hear you're having trouble."}`;
+
+  const before = lines.slice(0, greetingIdx + 1);
+  const after = lines.slice(greetingIdx + 1);
+  return [...before, "", warmSentence, ...after].join("\n");
 };
 
 const removeGenericFillerPhrases = (text: string): string => {
@@ -2463,32 +2509,6 @@ async function fetchMailboxHistory(mailboxId: string | null, userId: string | nu
   return Array.isArray(data) ? data : [];
 }
 
-async function fetchSelectedTrackingCarriers(
-  workspaceId: string | null,
-  userId: string | null,
-): Promise<string[]> {
-  if (!supabase || (!workspaceId && !userId)) return [];
-  let query = supabase
-    .from("integrations")
-    .select("config")
-    .eq("provider", TRACKING_CARRIERS_PROVIDER)
-    .eq("is_active", true)
-    .order("updated_at", { ascending: false })
-    .limit(1);
-  query = workspaceId ? query.eq("workspace_id", workspaceId) : query.eq("user_id", userId);
-  const { data, error } = await query.maybeSingle();
-  if (error) {
-    console.warn("generate-draft-unified: tracking carrier settings fetch failed", error.message);
-    return [];
-  }
-  const carriers = Array.isArray((data as any)?.config?.selected_carriers)
-    ? (data as any).config.selected_carriers
-    : [];
-  return carriers
-    .map((carrier: unknown) => String(carrier || "").trim().toLowerCase())
-    .filter(Boolean);
-}
-
 function buildStyleHeuristics(history: Array<any>): string[] {
   if (!history.length) return [];
   const sent = history.filter((msg) => msg?.from_me && msg?.sent_at);
@@ -2724,11 +2744,16 @@ async function getAgentContext(
     }),
   ]);
 
-  // Product-name text search — always fetch chunks whose title matches the exact product variant.
+  // Product-name text search — fetch chunks whose title matches the product mentioned in the email.
   // Vector search misses these when the query is symptom-focused but the chunk is solution-focused.
-  // Only runs when a specific AceZone product is mentioned in the email.
-  const productVariantMatch = (emailBody ?? "").match(/\bA-Spire(?:\s+Wireless)?\b/i)?.[0] ?? null;
-  const customerWantsWired = productVariantMatch && !/wireless/i.test(productVariantMatch);
+  // Covers all AceZone product lines.
+  const productVariantMatch = (emailBody ?? "").match(
+    /\bA-Blaze\b|\bA-Spire(?:\s+Wireless)?\b|\bA-Rise\b/i
+  )?.[0] ?? null;
+  const customerWantsWired = productVariantMatch &&
+    /A-Spire/i.test(productVariantMatch) &&
+    !/wireless/i.test(productVariantMatch);
+  const issueKeywordMatches: KnowledgeMatch[] = [];
   const productSpecificMatches: KnowledgeMatch[] = [];
   if (productVariantMatch && shopId) {
     let query = supabase
@@ -2736,8 +2761,8 @@ async function getAgentContext(
       .select("id,content,source_type,source_provider,metadata")
       .eq("shop_id", shopId)
       .filter("metadata->>title", "ilike", `%${productVariantMatch}%`)
-      .limit(25);
-    // If customer has wired variant, exclude chunks specifically for Wireless
+      .limit(30);
+    // If customer has wired A-Spire, exclude chunks specifically for Wireless
     if (customerWantsWired) {
       query = query.not("metadata->>title", "ilike", "%Wireless%");
     }
@@ -2752,11 +2777,51 @@ async function getAgentContext(
     }
   }
 
-  // Merge retrieval results — product text search comes FIRST (highest priority),
-  // then vector results, then English expansion fills gaps.
+  // Issue-keyword title search — catches chunks whose title matches the symptom described in the email
+  // but don't contain the product name in their content (e.g. "Dongle doesn't connect to headset.").
+  // These are inserted FIRST in the merge so they aren't crowded out by token budget.
+  if (productVariantMatch && shopId) {
+    const emailTextForKeywords = `${subject ?? ""} ${emailBody ?? ""}`.toLowerCase();
+    const issueKeywords: Array<{ trigger: RegExp; titleSearch: string }> = [
+      { trigger: /\b(dongle|connector|usb receiver)\b/, titleSearch: "dongle" },
+      { trigger: /\b(pair|pairing|re-pair|reconnect)\b/, titleSearch: "pair" },
+      { trigger: /\b(disconnect|losing connection|drops connection)\b/, titleSearch: "disconnect" },
+      { trigger: /\b(microphone|mic)\b/, titleSearch: "microphone" },
+      { trigger: /\b(crackling|cracking|hissing|static|distortion|audio quality)\b/, titleSearch: "audio quality" },
+      { trigger: /\b(power off|powers off|turns off|battery)\b/, titleSearch: "powers off" },
+    ];
+    for (const { trigger, titleSearch } of issueKeywords) {
+      if (trigger.test(emailTextForKeywords)) {
+        const { data: issueChunks, error: issueChunksError } = await supabase
+          .from("agent_knowledge")
+          .select("id,content,source_type,source_provider,metadata")
+          .eq("shop_id", shopId)
+          .filter("metadata->>title", "ilike", `%${titleSearch}%`)
+          .limit(10);
+        if (issueChunks && !issueChunksError) {
+          const seenIds = new Set(issueKeywordMatches.map(m => String(m.id)));
+          const newCount = issueChunks.filter(c => !seenIds.has(String(c.id))).length;
+          for (const c of issueChunks) {
+            if (!seenIds.has(String(c.id))) {
+              issueKeywordMatches.push({ ...c, similarity: 0.92 } as KnowledgeMatch);
+            }
+          }
+          if (newCount > 0) {
+            console.info(JSON.stringify({ event: "knowledge.retrieve.issue_keyword_search", keyword: titleSearch, new_chunks: newCount, shop_id: shopId }));
+          }
+        } else if (issueChunksError) {
+          console.warn(JSON.stringify({ event: "knowledge.retrieve.issue_keyword_search.error", keyword: titleSearch, error: issueChunksError.message }));
+        }
+      }
+    }
+  }
+
+  // Merge retrieval results — issue-keyword chunks FIRST (most specific to symptom),
+  // then product text search chunks, then vector results, then English expansion fills gaps.
   const seenKnowledgeIds = new Set<string>();
   const mergedKnowledgeMatches: KnowledgeMatch[] = [];
   for (const m of [
+    ...issueKeywordMatches,
     ...productSpecificMatches,
     ...(relevantKnowledgeMatches || []),
     ...(expandedEnglishMatches || []),
@@ -3910,7 +3975,6 @@ Deno.serve(async (req) => {
       provider,
       emailData,
     );
-    const selectedTrackingCarriers = await fetchSelectedTrackingCarriers(workspaceId, ownerUserId);
     const legacyTicketCategory = extractThreadCategoryFromTags(internalThread.tags);
     let ticketCategory = legacyTicketCategory;
     let workflowRoute = buildWorkflowRoute(ticketCategory);
@@ -4430,18 +4494,11 @@ Deno.serve(async (req) => {
       },
       internalThread.threadId,
     );
-    if (trackingIntent && selectedTrackingCarriers.length) {
-      reasoningLogs.push({
-        step_name: "carrier_preferences",
-        step_detail: `Configured carriers: ${selectedTrackingCarriers.join(", ")}`,
-        status: "success",
-      });
-    }
     const trackingOrders = selectedOrder ? [selectedOrder] : [];
     const trackingDetailsByOrderKey =
       trackingIntent && trackingOrders.length
         ? await fetchTrackingDetailsForOrders(trackingOrders, {
-          preferredCarriers: selectedTrackingCarriers,
+          preferredCarriers: [],
         })
         : {};
     if (trackingIntent) {
@@ -4459,6 +4516,7 @@ Deno.serve(async (req) => {
             source: selectedTracking.source || "shopify",
             lookup_source: selectedTracking.lookupSource || "unknown",
             lookup_detail: selectedTracking.lookupDetail || "",
+            snapshot: selectedTracking.snapshot ?? null,
           }),
           status: "success",
         });
@@ -4493,6 +4551,23 @@ Deno.serve(async (req) => {
       rawOrderFirstName.length > 0 &&
       emailLocalPart.length > 0 &&
       rawOrderFirstName.toLowerCase() === emailLocalPart;
+
+    // Extract the FROM field display name directly — this is the person actually writing.
+    // A parent writing on behalf of a child will have their own name in FROM even if the
+    // order is under the child's name.
+    const fromDisplayFirstName = (() => {
+      const fromName = extractNameFromFromField(emailData?.from || "");
+      if (!fromName) return "";
+      const fromStripped = fromName.replace(/[^A-Za-z]/g, "").toLowerCase();
+      const isUsername =
+        emailLocalPart.length > 0 &&
+        fromStripped.length > 0 &&
+        fromStripped === emailLocalPart &&
+        !fromName.trim().includes(" ");
+      if (isUsername) return "";
+      return normalizeCustomerFirstName(fromName.split(/\s+/)[0]);
+    })();
+
     const threadMessageFirstName = await fetchThreadCustomerFirstName(
       internalThread.threadId,
       emailData.messageId || null,
@@ -4504,10 +4579,16 @@ Deno.serve(async (req) => {
     const fallbackEmailFirstName = extractCustomerFirstName(emailData, {
       skipLocalPartFallback: orderNameMatchesEmailUsername,
     });
+
+    // Priority: FROM display name > thread history > email body signoff > order name > email local part.
+    // Order name is last because the order customer and the email sender can be different people
+    // (e.g. parent writing on behalf of child). We always want to greet the actual sender.
     const customerFirstName =
-      rawOrderFirstName && !orderNameMatchesEmailUsername
-        ? rawOrderFirstName
-        : (threadMessageFirstName || historyFirstName || fallbackEmailFirstName);
+      fromDisplayFirstName ||
+      threadMessageFirstName ||
+      historyFirstName ||
+      fallbackEmailFirstName ||
+      (rawOrderFirstName && !orderNameMatchesEmailUsername ? rawOrderFirstName : "");
     const policyContext = buildPinnedPolicyContext({
       subject: emailData.subject || "",
       body: emailData.body || "",
@@ -4773,8 +4854,8 @@ Deno.serve(async (req) => {
       extraContext: [
         BASE_ACTION_CONTEXT,
         `Workflow category: ${workflowRoute.category}`,
-        workflowRoute.workflow === "tracking" && selectedTrackingCarriers.length
-          ? `Configured carriers for this workspace: ${selectedTrackingCarriers.join(", ")}.`
+        workflowRoute.workflow === "tracking"
+          ? "Carrier auto-detected from Shopify tracking URL."
           : "",
         returnPromptBlock,
         workflowRoute.promptHint,
@@ -4896,9 +4977,26 @@ Deno.serve(async (req) => {
     const trackingTraceHits =
       trackingIntent && selectedOrder
         ? Object.entries(trackingDetailsByOrderKey).map(([, detail]) => {
-            const text =
-              `Carrier: ${detail.carrier}. Status: ${detail.statusText}. ` +
-              `Tracking: ${detail.trackingNumber}. Link: ${detail.trackingUrl}`;
+            const lines: string[] = [
+              `Carrier: ${detail.carrier}. Status: ${detail.statusText}.`,
+              `Tracking number: ${detail.trackingNumber}. Tracking link: ${detail.trackingUrl}`,
+            ];
+            const snap = detail.snapshot;
+            if (snap?.expectedDeliveryAt) lines.push(`Expected delivery: ${snap.expectedDeliveryAt}`);
+            if (snap?.deliveredAt) lines.push(`Delivered at: ${snap.deliveredAt}`);
+            if (snap?.outForDeliveryAt) lines.push(`Out for delivery since: ${snap.outForDeliveryAt}`);
+            if (snap?.pickupReadyAt) lines.push(`Ready for pickup since: ${snap.pickupReadyAt}`);
+            if (snap?.pickupPoint) {
+              const pp = snap.pickupPoint;
+              const ppStr = [pp.name, pp.address, pp.city].filter(Boolean).join(", ");
+              if (ppStr) lines.push(`Pickup point (parcel shop): ${ppStr}`);
+            }
+            if (snap?.deliveryCity) lines.push(`Delivered to: ${snap.deliveryCity}`);
+            if (snap?.lastEvent?.description) {
+              const loc = snap.lastEvent.location ? ` (${snap.lastEvent.location})` : "";
+              lines.push(`Last event: ${snap.lastEvent.description}${loc}${snap.lastEvent.occurredAt ? ` at ${snap.lastEvent.occurredAt}` : ""}`);
+            }
+            const text = lines.join("\n");
             return {
               included: false,
               approx_tokens: estimateTokens(text),
@@ -5219,6 +5317,11 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         context.shopName
           ? `Du er en kundeservice-medarbejder hos ${context.shopName}.`
           : "Du er en kundeservice-medarbejder.",
+        context.brandDescription ? context.brandDescription : "",
+        context.productOverview
+          ? `Shopens produktsortiment:\n${context.productOverview}`
+          : "",
+        context.supportIdentity ? context.supportIdentity : "",
         "Skriv kort, venligt og professionelt pa samme sprog som kundens mail.",
         "Hvis kunden skriver pa engelsk, svar pa engelsk selv om andre instruktioner er pa dansk.",
         `Start svaret med en hilsen på kundens sprog: dansk → "Hej ${customerFirstName || "kunden"},", engelsk → "Hi ${customerFirstName || "there"},", spansk → "Hola ${customerFirstName || "there"},". Hvis persona-instruktioner angiver en varm åbning, tilføj den på ny linje direkte efter hilsenen.`,
@@ -5251,9 +5354,9 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         ? systemMsgBase +
           ` Hvis KONTEKST indeholder et ordrenummer (fx #${context.matchedSubjectNumber}), brug dette ordrenummer som reference i svaret og spørg IKKE efter ordrenummer igen.`
         : systemMsgBase;
-      // Always use gpt-4o for all tickets. Technical/product questions without
-      // order numbers are NOT trivial and need the best model.
-      const replyModel = "gpt-4o";
+      // Route model by category: complex categories need gpt-4o, simple ones use env var default (gpt-4o-mini)
+      const complexWorkflows = ["technical_support", "product_question", "return", "exchange", "refund"];
+      const replyModel = complexWorkflows.includes(workflowRoute?.workflow ?? "") ? "gpt-4o" : OPENAI_MODEL;
       const { reply, actions } = await callOpenAIWithImages(
         prompt,
         systemMsg,
@@ -6102,6 +6205,12 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
     });
     finalText = replyNaturalnessPolish.text;
     finalText = removeGenericFillerPhrases(finalText);
+    finalText = ensureWarmOpening(finalText, {
+      isFirstReply: legacyThreadHistoryCount === 0,
+      languageHint,
+      productName: (emailData.body ?? "").match(/\bA-Blaze\b|\bA-Spire(?:\s+Wireless)?\b|\bA-Rise\b/i)?.[0] || null,
+      personaInstructions: context.persona.instructions || null,
+    });
     finalText = normalizeReplyFormatting(finalText);
     const skipDirectnessPolish = shouldSkipDirectnessPolish({
       assessment: caseAssessment,
@@ -6473,7 +6582,9 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       });
       emitDebugLog("generate-draft-unified: automation results", automationResults);
     }
-    if (returnActionResult) {
+    // "send_return_instructions" er ikke en Shopify-mutation — svardraftet håndterer instruktionerne.
+    // Kun actions der muterer eksternt system (cancel, refund, address-ændring) vises som approval-flow.
+    if (returnActionResult && returnActionResult.type !== "send_return_instructions") {
       automationResults = [...automationResults, returnActionResult];
     }
 
@@ -6552,7 +6663,12 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         });
         finalText = blockedReplyNaturalnessPolish.text;
         finalText = removeGenericFillerPhrases(finalText);
-    finalText = normalizeReplyFormatting(finalText);
+        finalText = ensureWarmOpening(finalText, {
+          isFirstReply: legacyThreadHistoryCount === 0,
+          languageHint,
+          productName: (emailData.body ?? "").match(/\bA-Blaze\b|\bA-Spire(?:\s+Wireless)?\b|\bA-Rise\b/i)?.[0] || null,
+        });
+        finalText = normalizeReplyFormatting(finalText);
         const skipBlockedDirectnessPolish = shouldSkipDirectnessPolish({
           assessment: caseAssessment,
           replyGoal: replyGoalArtifact,

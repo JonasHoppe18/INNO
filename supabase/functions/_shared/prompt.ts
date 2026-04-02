@@ -43,6 +43,12 @@ type MailPromptOptions = {
   supportIdentity?: string | null;
 
   isFollowUp?: boolean;
+
+  /**
+   * Optional: Kritisk begrænsning der injiceres DIREKTE OVER kundens mail.
+   * Bruges til at forhindre modellen i at følge kundens falske påstande (fx om returfragt).
+   */
+  urgentConstraint?: string | null;
 };
 
 function firstNameOrNull(fullName?: string | null): string | null {
@@ -95,6 +101,7 @@ export function buildMailPrompt({
   productOverview,
   supportIdentity,
   isFollowUp,
+  urgentConstraint,
 }: MailPromptOptions): string {
   const refundPolicy = policies?.policy_refund?.trim();
   const shippingPolicy = policies?.policy_shipping?.trim();
@@ -180,7 +187,7 @@ Din opgave er at skrive et klart og kort udkast til et svar, som en menneskelig 
 OPGAVEN:
 Læs kundens mail og den medfølgende ordre-data. Skriv et svar der løser problemet eller besvarer spørgsmålet direkte.
 
---- KUNDENS MAIL ---
+${urgentConstraint ? `⚠️ MANDATORY CONSTRAINT (read before customer message):\n${urgentConstraint}\n\n` : ""}--- KUNDENS MAIL ---
 "${emailBody}"
 
 --- DATA & KONTEKST ---
@@ -208,7 +215,19 @@ ${internalTone ? `INTERNE REGLER (DEL IKKE ORDRET): ${internalTone}` : ""}
 ${
   personaInstructions
     ? `Specifik instruks: ${personaInstructions}`
-    : "Skriv som en moderne webshop: venlig, rolig og nede på jorden. Undgå kancellisprog og ‘kundeservice-manual’."
+    : `Specifik instruks: TONE OG STIL — gælder på alle sprog:
+
+Åbning (kun første svar i en tråd):
+Start altid med en kort, varm indledning på kundens sprog. Tak kunden for at henvende sig og vis empati for problemet. Eksempel på dansk: "Tak fordi du kontakter os. Vi er kede af at høre, at du oplever problemer med [produkt]." — tilpas til kundens sprog og skriv altid indledningen på samme sprog som kunden.
+Gå direkte til løsning efter indledningen — skriv aldrig kundens problem om med egne ord.
+
+Opfølgningssvar (kunden har allerede skrevet):
+Spring indledningen over — gå direkte til sagen.
+
+Afslutning — vurdér altid situationen og skriv på kundens sprog:
+- Konkrete trin givet, afventer resultat: "Jeg ser frem til at høre fra dig."
+- Problemet løst eller ombytning aftalt: "God dag!"
+- Frustreret kunde eller lang ventetid: "Undskyld for ulejligheden og tak for din tålmodighed."`
 }
 Ingen fluff. Start direkte. Skriv kort og naturligt.
 Undgå standardfraser som “Tak for din besked” ved små rettelser (fx adresse/telefon/navn). Gå direkte til bekræftelsen.

@@ -203,8 +203,17 @@ export function TicketDetail({
     (isApprovalManagedActionType || pendingUpdateState === "proposed");
   const selectedOrderSummary = useMemo(() => {
     const orders = Array.isArray(customerLookup?.orders) ? customerLookup.orders : [];
-    return orders[0] || null;
-  }, [customerLookup?.orders]);
+    if (!orders.length) return null;
+    // Prefer the order that matches the thread's order number
+    if (threadOrderNumber) {
+      const normalized = String(threadOrderNumber).replace(/^#/, "").trim();
+      const match = orders.find((o) =>
+        String(o?.id || o?.order_number || "").replace(/^#/, "").trim() === normalized
+      );
+      if (match) return match;
+    }
+    return orders[0];
+  }, [customerLookup?.orders, threadOrderNumber]);
   const latestInboundCustomerMessage = useMemo(
     () => getLatestInboundCustomerMessage(messages, mailboxEmails),
     [mailboxEmails, messages]
@@ -215,8 +224,11 @@ export function TicketDetail({
       selectedOrderSummary?.tracking?.number || selectedOrderSummary?.tracking?.url
     );
     if (!hasTrackingData) return false;
-    return messageLooksLikeTrackingQuestion(latestInboundCustomerMessage);
+    // Show for all tracking-categorised threads, or when the message looks like a tracking question
+    const threadIsTracking = Array.isArray(thread?.tags) && thread.tags.includes("Tracking");
+    return threadIsTracking || messageLooksLikeTrackingQuestion(latestInboundCustomerMessage);
   }, [
+    thread?.tags,
     latestInboundCustomerMessage,
     selectedOrderSummary?.tracking?.number,
     selectedOrderSummary?.tracking?.url,

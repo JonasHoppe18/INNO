@@ -54,12 +54,31 @@ export async function GET() {
     workspaceSettings = data;
   }
 
+  // Shop identity fields — fra shops tabellen
+  let shopData = null;
+  if (scope?.workspaceId) {
+    const { data } = await supabase
+      .from("shops")
+      .select("shop_name, brand_description, support_identity")
+      .eq("workspace_id", scope.workspaceId)
+      .maybeSingle();
+    shopData = data;
+  }
+
+  const shopName = shopData?.shop_name ?? "";
+  const defaultSupportIdentity = shopName
+    ? `Du er en del af ${shopName}'s supportteam. Du ER supporten — henvis aldrig kunden til "en professionel" eller "kontakt support", de har allerede kontaktet dig. Hvis problemet ikke kan løses remote, tilbyd garantiombytning eller retur.`
+    : "";
+
   return NextResponse.json({
     persona: {
       user_id: profile?.user_id ?? scope.supabaseUserId,
       signature: profile?.signature ?? "",
       instructions: workspaceSettings?.persona_instructions ?? "",
       scenario: workspaceSettings?.persona_scenario ?? "",
+      shop_name: shopName,
+      brand_description: shopData?.brand_description ?? "",
+      support_identity: shopData?.support_identity ?? defaultSupportIdentity,
     },
   });
 }
@@ -81,7 +100,7 @@ export async function POST(req) {
   }
 
   const body = await req.json().catch(() => ({}));
-  const { signature, instructions, scenario } = body;
+  const { signature, instructions, scenario, brand_description, support_identity } = body;
 
   // Gem signature — per bruger (profiles)
   if (signature !== undefined) {
@@ -117,6 +136,17 @@ export async function POST(req) {
           persona_scenario: scenario ?? "",
         });
     }
+  }
+
+  // Gem shop identity fields — brand_description + support_identity i shops tabellen
+  if (scope?.workspaceId && (brand_description !== undefined || support_identity !== undefined)) {
+    await supabase
+      .from("shops")
+      .update({
+        ...(brand_description !== undefined && { brand_description }),
+        ...(support_identity !== undefined && { support_identity }),
+      })
+      .eq("workspace_id", scope.workspaceId);
   }
 
   return NextResponse.json({ ok: true });

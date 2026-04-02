@@ -16,6 +16,20 @@ import {
   Underline,
 } from "lucide-react";
 
+const DEFAULT_INSTRUCTIONS = `TONE OG STIL — gælder på alle sprog:
+
+Åbning (kun første svar i en tråd):
+Start altid med en kort, varm indledning på kundens sprog. Tak kunden for at henvende sig og vis empati for problemet. Eksempel på dansk: "Tak fordi du kontakter os. Vi er kede af at høre, at du oplever problemer med [produkt]." — tilpas til kundens sprog og skriv altid indledningen på samme sprog som kunden.
+Gå direkte til løsning efter indledningen — skriv aldrig kundens problem om med egne ord.
+
+Opfølgningssvar (kunden har allerede skrevet):
+Spring indledningen over — gå direkte til sagen.
+
+Afslutning — vurdér altid situationen og skriv på kundens sprog:
+- Konkrete trin givet, afventer resultat: "Jeg ser frem til at høre fra dig."
+- Problemet løst eller ombytning aftalt: "God dag!"
+- Frustreret kunde eller lang ventetid: "Undskyld for ulejligheden og tak for din tålmodighed."`;
+
 // Dummy toolbar data – ren kosmetik men hjælper med at beskrive editoren.
 const TOOLBAR_BUTTONS = [
   { icon: Bold, label: "Bold" },
@@ -42,6 +56,8 @@ export function PersonaPanel({ children }) {
   const [form, setForm] = useState({
     signature: "",
     instructions: "",
+    brand_description: "",
+    support_identity: "",
   });
   // Dirty flag styrer hvornår gem-knappen skal aktiveres.
   const [dirty, setDirty] = useState(false);
@@ -54,14 +70,17 @@ export function PersonaPanel({ children }) {
   }, [test?.error]);
 
   // Når persona data ændrer sig synker vi formularen og rydder dirty flag.
+  // Nye shops uden instructions får default-teksten pre-filled.
   useEffect(() => {
     setForm({
       signature: persona?.signature ?? "",
-      instructions: persona?.instructions ?? "",
+      instructions: persona?.instructions || DEFAULT_INSTRUCTIONS,
+      brand_description: persona?.brand_description ?? "",
+      support_identity: persona?.support_identity ?? "",
     });
     setScenarioInput(persona?.scenario ?? "");
     setDirty(false);
-  }, [persona?.signature, persona?.scenario, persona?.instructions]);
+  }, [persona?.signature, persona?.scenario, persona?.instructions, persona?.brand_description, persona?.support_identity]);
 
   // Generisk onChange der opdaterer form state.
   const handleChange = (key) => (event) => {
@@ -102,6 +121,42 @@ export function PersonaPanel({ children }) {
         <CardContent className="bg-white">
         <div className="grid gap-8 lg:grid-cols-[minmax(0,2fr)_minmax(360px,1fr)]">
           <div className="space-y-5">
+            {/* Shop identity */}
+            <div className="space-y-4 rounded-2xl border border-slate-100 bg-slate-50/60 p-4">
+              <div>
+                <p className="text-sm font-semibold text-foreground">Shop identity</p>
+                <p className="text-xs text-muted-foreground">
+                  Tells the AI who it represents. Auto-populated from Shopify — edit to refine.
+                </p>
+              </div>
+              {persona?.shop_name && (
+                <div>
+                  <p className="mb-1 text-xs font-medium text-muted-foreground">Shop name</p>
+                  <p className="text-sm font-semibold text-slate-800">{persona.shop_name}</p>
+                </div>
+              )}
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-muted-foreground">Brand description</p>
+                <textarea
+                  value={form.brand_description}
+                  onChange={handleChange("brand_description")}
+                  rows={2}
+                  placeholder={persona?.shop_name ? `${persona.shop_name} er en dansk webshop...` : "Beskriv hvad jeres shop sælger og til hvem."}
+                  className="w-full resize-y rounded-lg border border-input bg-white px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-muted-foreground">Support identity</p>
+                <textarea
+                  value={form.support_identity}
+                  onChange={handleChange("support_identity")}
+                  rows={3}
+                  placeholder="Du er en del af [shop]'s supportteam. Du ER supporten — henvis aldrig kunden videre."
+                  className="w-full resize-y rounded-lg border border-input bg-white px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                />
+              </div>
+            </div>
+
             <EditorField
               label="Signature"
               description="Shown at the bottom of every reply - supports line breaks."

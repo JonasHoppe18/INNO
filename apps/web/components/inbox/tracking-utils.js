@@ -119,28 +119,188 @@ function buildTrackingEventFromLog(log) {
     parsed?.detail ||
     "Tracking lookup completed";
 
+  // Try to get rich data from snapshot if available (new log format)
+  let snapshot = null;
+  try {
+    const raw = String(log?.step_detail || "").trim();
+    if (raw.startsWith("{")) {
+      const full = JSON.parse(raw);
+      snapshot = full?.snapshot || null;
+    }
+  } catch { /* ignore */ }
+
+  // Use actual event timestamp (deliveredAt, lastEvent, or occurredAt) — NOT log created_at
+  const actualTimestamp =
+    snapshot?.deliveredAt ||
+    snapshot?.outForDeliveryAt ||
+    snapshot?.pickupReadyAt ||
+    snapshot?.lastEvent?.occurredAt ||
+    null;
+
+  const location = snapshot?.lastEvent?.location || snapshot?.pickupPoint?.city || null;
+
   const metaParts = [
     parsed?.trackingCarrier || "",
-    parsed?.trackingLookupSource || parsed?.trackingSource || "",
-    formatEventTimestamp(log?.created_at),
-  ].filter(Boolean);
-
-  const detailParts = [
-    parsed?.trackingLookupDetail || "",
-    parsed?.trackingNumber ? `#${parsed.trackingNumber}` : "",
+    location,
+    formatEventTimestamp(actualTimestamp || log?.created_at),
   ].filter(Boolean);
 
   return {
     id: String(log?.id || `${step}-${log?.created_at || title}`),
     title,
     meta: metaParts.join(" • "),
-    detail: detailParts.join(" • "),
-    timestamp: log?.created_at || null,
+    detail: "",
+    timestamp: actualTimestamp || log?.created_at || null,
     isCurrent: step === "carrier_tracking" || step === "carrier tracking",
   };
 }
 
+const NOISE_EVENT_PATTERN = /\b(e-?mail|text message|sms|notification has been sent|besked.*sendt|notifikation|received a notification from your shipper|preparing an item for you|tracking information will be updated)\b/i;
+
+function normalizeLocationName(raw = "") {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  // Map known PostNord depot codes → readable city names
+  const DEPOT_MAP = {
+    "NORDSJÆLLAND PO": "Nordsjælland",
+    "ST KBH 385 1": "København",
+    "ST KBH 385": "København",
+    "BRØNDBY TERMINAL": "Brøndby",
+    "TAULOV TERMINAL": "Taulov",
+    "AARHUS TERMINAL": "Aarhus",
+    "AALBORG TERMINAL": "Aalborg",
+    "ODENSE TERMINAL": "Odense",
+    "ESBJERG TERMINAL": "Esbjerg",
+    "VEJLE TERMINAL": "Vejle",
+    "KOLDING TERMINAL": "Kolding",
+    "RANDERS TERMINAL": "Randers",
+    "HERNING TERMINAL": "Herning",
+    "HORSENS TERMINAL": "Horsens",
+    "SILKEBORG TERMINAL": "Silkeborg",
+    "ROSKILDE TERMINAL": "Roskilde",
+    "HELSINGØR TERMINAL": "Helsingør",
+    "POSTNORD DANMARK": "",
+  };
+  const upper = s.toUpperCase();
+  if (DEPOT_MAP[upper] !== undefined) return DEPOT_MAP[upper];
+  // Generic cleanup: remove "TERMINAL", "PO", "PO " suffixes and title-case
+  const cleaned = s
+    .replace(/\bTERMINAL\b/gi, "")
+    .replace(/\bP\.?O\.?\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  // Title case
+  return cleaned.replace(/\w\S*/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+}
+
+function normalizeEventDescription(raw = "") {
+  const s = String(raw || "").trim();
+  const l = s.toLowerCase();
+  if (/delivered/.test(l) && !/not delivered|attempt/.test(l)) return "Delivered";
+  if (/in progress|out for delivery|ude til levering/.test(l)) return "Out for delivery";
+  if (/arrived at the distribution|arrived at distribution/.test(l)) return "Arrived at distribution center";
+  if (/under transportation|in transit|på vej/.test(l)) return "In transit";
+  if (/dropped off by sender|handed over|afleveret af afsender/.test(l)) return "Dropped off by sender";
+  if (/delayed/.test(l)) return "Delayed";
+  if (/ready for pickup|klar til afhentning|delivered to parcel shop|deliveredps/.test(l)) return "Ready for pickup";
+  if (/delivery attempt|not delivered/.test(l)) return "Delivery attempt failed";
+  if (/customs/.test(l)) return "In customs";
+  return s;
+}
+
+function buildSnapshotEvents(snapshot, carrier) {
+  if (!snapshot || !Array.isArray(snapshot.events) || snapshot.events.length === 0) return [];
+  const sorted = [...snapshot.events].sort((a, b) => {
+    const aTs = a?.occurredAt ? Date.parse(a.occurredAt) : Number.NaN;
+    const bTs = b?.occurredAt ? Date.parse(b.occurredAt) : Number.NaN;
+    const aValid = Number.isFinite(aTs);
+    const bValid = Number.isFinite(bTs);
+    if (aValid && bValid) return bTs - aTs;
+    if (aValid) return -1;
+    if (bValid) return 1;
+    return 0;
+  });
+  const filtered = sorted.filter((event) => {
+    const description = asString(event?.description || event?.code || "");
+    return !NOISE_EVENT_PATTERN.test(description);
+  });
+
+  return filtered.map((event, index) => {
+    const description = normalizeEventDescription(asString(event?.description || event?.code || ""));
+    const rawLocation = asString(event?.location || "");
+    // For the latest (delivered) event, prefer the recipient delivery city from snapshot over terminal name
+    const rawDeliveryCity = snapshot?.deliveryCity || "";
+    const deliveryCity = rawDeliveryCity
+      ? rawDeliveryCity.replace(/\w\S*/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+      : "";
+    const location = index === 0 && deliveryCity
+      ? deliveryCity
+      : normalizeLocationName(rawLocation);
+    const ts = formatEventTimestamp(event?.occurredAt);
+    // For the latest event: embed timestamp in title so it's immediately visible
+    const title = index === 0 && ts
+      ? `${description || "Tracking event"} · ${ts}`
+      : description || "Tracking event";
+    // Meta: location only (carrier name is redundant — already in modal header)
+    const metaParts = [location].filter(Boolean);
+    return {
+      id: `snapshot-event-${index}-${event?.occurredAt || index}`,
+      title,
+      meta: metaParts.join(" • "),
+      detail: "",
+      timestamp: event?.occurredAt || null,
+      isCurrent: index === 0,
+    };
+  });
+}
+
+
 export function buildTrackingTimeline({ logs = [], order = null }) {
+  // Find the NEWEST carrier_tracking log entry (there may be multiple after regenerations)
+  const carrierLog = (Array.isArray(logs) ? logs : [])
+    .filter((log) => String(log?.step_name || "").toLowerCase() === "carrier_tracking")
+    .sort((a, b) => {
+      const aTs = a?.created_at ? Date.parse(a.created_at) : 0;
+      const bTs = b?.created_at ? Date.parse(b.created_at) : 0;
+      return bTs - aTs;
+    })[0] ?? null;
+  if (carrierLog) {
+    const raw = String(carrierLog?.step_detail || "").trim();
+    if (raw.startsWith("{")) {
+      try {
+        const parsed = JSON.parse(raw);
+        const snapshot = parsed?.snapshot || null;
+        const carrier = asString(parsed?.carrier || "");
+        const snapshotEvents = buildSnapshotEvents(snapshot, carrier);
+        if (snapshotEvents.length > 0) return snapshotEvents;
+        // Fallback: single event from status
+        const status = normalizeTrackingStatusLabel(asString(parsed?.status || ""));
+        if (status) {
+          // Use actual event time from snapshot — NOT log creation time
+          const actualTs =
+            snapshot?.deliveredAt ||
+            snapshot?.outForDeliveryAt ||
+            snapshot?.pickupReadyAt ||
+            snapshot?.lastEvent?.occurredAt ||
+            null;
+          const location = snapshot?.lastEvent?.location || snapshot?.pickupPoint?.city || null;
+          const metaParts = [carrier, location, formatEventTimestamp(actualTs)].filter(Boolean);
+          return [{
+            id: `carrier-status-${carrierLog?.id || "0"}`,
+            title: status,
+            meta: metaParts.join(" • "),
+            detail: "",
+            timestamp: actualTs || carrierLog?.created_at || null,
+            isCurrent: true,
+          }];
+        }
+      } catch {
+        // fall through
+      }
+    }
+  }
+
+  // Fallback: build from all logs
   const logEvents = (Array.isArray(logs) ? logs : [])
     .map(buildTrackingEventFromLog)
     .filter(Boolean)

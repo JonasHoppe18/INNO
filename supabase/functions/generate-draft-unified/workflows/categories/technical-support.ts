@@ -15,7 +15,8 @@ export function buildTechnicalSupportDraft(category: EmailCategory): WorkflowRou
       "TECHNICAL SUPPORT RULES:\n" +
       "- Use ALL relevant knowledge entries for the customer's issue — include every piece of relevant advice.\n" +
       "- Present knowledge faithfully in the format it appears in the source. Prose stays prose. Numbered lists stay numbered lists. Do NOT invent steps that are not in the source.\n" +
-      "- CRITICAL: When the source has a numbered list, include EVERY step — do not skip, merge, or abbreviate any step.\n" +
+      "- CRITICAL: When the knowledge base contains a numbered step-by-step procedure (e.g. re-pairing, factory reset, firmware update), include ALL steps verbatim. NEVER replace a detailed procedure with vague references like 'follow the user manual', 'see the pairing guide', or 'check the instructions'. The steps ARE the reply.\n" +
+      "- When multiple knowledge entries cover the same issue at different levels of detail, prefer the MOST detailed entry — include its full procedure, then add supplementary tips from simpler entries afterward.\n" +
       "- PRODUCT ACCURACY: Prefer knowledge entries that match the exact product the customer names. If an entry is marked as being for a different variant (e.g. Wireless vs wired), use it only if no matching entry exists.\n" +
       "- The knowledge base may be in English even if the customer writes in Danish — translate the advice into the customer's language.\n" +
       "- WARRANTY/REPLACEMENT: Do NOT mention warranty replacement or RMA in a first reply. Give all available troubleshooting first. Only offer replacement in a follow-up after the customer confirms the steps failed.\n" +
@@ -29,8 +30,9 @@ export function buildTechnicalSupportDraft(category: EmailCategory): WorkflowRou
     systemRules: [
       "Never suggest return_order, create_exchange_request, refund_order, or cancel_order as a first response in the technical support workflow.",
       "NEVER end a first-reply with a warranty replacement offer. Only offer replacement in follow-up replies after the customer confirms troubleshooting failed.",
-      "Never close with 'Jeg ser frem til at høre fra dig', 'Giv besked om fejlfindingen', or any forward-looking hollow phrase.",
+      "Never close with hollow troubleshooting follow-up phrases like 'Giv besked om fejlfindingen' or 'Lad mig vide om du har prøvet trinene'. A warm close like 'Jeg ser frem til at høre fra dig' is fine.",
       "Never ask the customer what troubleshooting steps they have already tried. Always give the steps directly.",
+      "NEVER replace a detailed numbered procedure from the knowledge base with a vague reference to 'the user manual', 'the pairing guide', or 'our instructions'. Always include the full steps inline in the reply.",
     ],
     allowedActionTypes: [
       "lookup_order_status",

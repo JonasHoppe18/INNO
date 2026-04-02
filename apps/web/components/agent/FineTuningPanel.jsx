@@ -11,20 +11,35 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useAgentPersonaConfig } from "@/hooks/useAgentPersonaConfig";
 import {
   Bold,
+  Bot,
+  CheckCircle2,
   ChevronDown,
   ChevronRight,
   FlaskConical,
+  Heading1,
+  Heading2,
+  Heading3,
   Italic,
+  Link2,
   List,
   Loader2,
   Play,
   Quote,
   RefreshCw,
-  Sparkles,
+  Search,
+  Shield,
   Underline,
+  User,
+  XCircle,
 } from "lucide-react";
 
 const TOOLBAR_BUTTONS = [
@@ -32,8 +47,69 @@ const TOOLBAR_BUTTONS = [
   { icon: Italic, label: "Italic" },
   { icon: Underline, label: "Underline" },
   { icon: List, label: "List" },
+  { icon: Heading1, label: "H1" },
+  { icon: Heading2, label: "H2" },
+  { icon: Heading3, label: "H3" },
+  { icon: Link2, label: "Link" },
   { icon: Quote, label: "Quote" },
 ];
+const MODEL_OPTIONS = ["gpt-4o-mini", "gpt-4o"];
+const ACTION_MODES = [
+  { value: "automatic", label: "Automatic" },
+  { value: "approval", label: "Approval flow" },
+];
+
+const SIMULATION_PRESETS = [
+  {
+    id: "shopify-address-change",
+    label: "Address update (Shopify action)",
+    from: "Maja Jensen <maja.jensen@example.com>",
+    subject: "Can you update my delivery address?",
+    body:
+      "Hi team,\n\nI just placed order #19428, but I entered the wrong apartment number.\nCan you update the shipping address to:\nNørrebrogade 18, 4. th\n2200 Copenhagen N\n\nThanks!",
+    language: "English",
+    status: "Open",
+    shopifyAction: {
+      tool: "shopify_update_order_shipping_address",
+      details: "Order #19428 updated with corrected apartment number.",
+      duration: "412ms",
+    },
+  },
+  {
+    id: "refund-policy",
+    label: "Refund policy question",
+    from: "Lucas Madsen <lucas.madsen@example.com>",
+    subject: "What is your return window?",
+    body:
+      "Hey,\n\nBefore I place an order, can you confirm how many days I have to return an item?\n\nBest,\nLucas",
+    language: "English",
+    status: "Open",
+    shopifyAction: null,
+  },
+];
+
+const SHOPIFY_SIGNAL_REGEX =
+  /\b(order|adresse|address|refund|return|exchange|cancel|tracking|shipment|shipping)\b/i;
+
+function toDurationLabel(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return "—";
+  return `${Math.round(numeric)}ms`;
+}
+
+function extractSenderName(value) {
+  const from = String(value || "").trim();
+  if (!from) return "Customer";
+  if (from.includes("<")) return from.split("<")[0].trim();
+  return from;
+}
+
+function getInitials(value) {
+  const name = extractSenderName(value);
+  const parts = name.split(/\s+/).filter(Boolean);
+  const initials = parts.slice(0, 2).map((item) => item[0]?.toUpperCase() || "").join("");
+  return initials || "CU";
+}
 
 const FineTuningPanelContext = createContext(null);
 
@@ -50,12 +126,20 @@ export function FineTuningPanel({ children }) {
     useAgentPersonaConfig();
 
   const [instructions, setInstructions] = useState("");
+  const [brandDescription, setBrandDescription] = useState("");
+  const [supportIdentity, setSupportIdentity] = useState("");
+  const [shopContextModalOpen, setShopContextModalOpen] = useState(false);
   const [dirty, setDirty] = useState(false);
 
   // Generated email state
   const [generatedEmail, setGeneratedEmail] = useState(null);
   const [generatingEmail, setGeneratingEmail] = useState(false);
   const [generateError, setGenerateError] = useState(null);
+  const [selectedSimulationId, setSelectedSimulationId] = useState("shopify-address-change");
+  const [simulationVariant, setSimulationVariant] = useState("Simulation 3");
+  const [selectedModel, setSelectedModel] = useState("gpt-4o-mini");
+  const [actionMode, setActionMode] = useState("automatic");
+  const [approvalDecision, setApprovalDecision] = useState(null);
 
   const testErrorMessage = useMemo(() => {
     if (!test?.error) return null;
@@ -64,8 +148,10 @@ export function FineTuningPanel({ children }) {
 
   useEffect(() => {
     setInstructions(persona?.instructions ?? "");
+    setBrandDescription(persona?.brand_description ?? "");
+    setSupportIdentity(persona?.support_identity ?? "");
     setDirty(false);
-  }, [persona?.instructions]);
+  }, [persona?.instructions, persona?.brand_description, persona?.support_identity]);
 
 
   const handleChange = (event) => {
@@ -74,10 +160,10 @@ export function FineTuningPanel({ children }) {
   };
 
   const handleSave = useCallback(() => {
-    save({ instructions })
+    save({ instructions, brand_description: brandDescription, support_identity: supportIdentity })
       .then(() => setDirty(false))
       .catch(() => null);
-  }, [instructions, save]);
+  }, [instructions, brandDescription, supportIdentity, save]);
 
   const handleRefresh = useCallback(() => refresh().catch(() => null), [refresh]);
 
@@ -94,6 +180,7 @@ export function FineTuningPanel({ children }) {
         throw new Error(data?.error || "Could not generate email.");
       }
       setGeneratedEmail(data);
+      setSelectedSimulationId("generated");
     } catch (err) {
       setGenerateError(err instanceof Error ? err.message : "Could not generate email.");
     } finally {
@@ -101,19 +188,124 @@ export function FineTuningPanel({ children }) {
     }
   };
 
+  const activeSimulation = useMemo(() => {
+    if (selectedSimulationId === "generated") {
+      if (!generatedEmail?.body) return null;
+      return {
+        id: "generated",
+        label: "Generated ticket",
+        from: generatedEmail.from || "Customer",
+        subject: generatedEmail.subject || "Customer request",
+        body: generatedEmail.body || "",
+        language: generatedEmail.language || null,
+        status: "Open",
+        shopifyAction: null,
+      };
+    }
+    return SIMULATION_PRESETS.find((item) => item.id === selectedSimulationId) || null;
+  }, [selectedSimulationId, generatedEmail]);
+
+  const simulationToolCalls = useMemo(() => {
+    if (Array.isArray(test?.trace?.actions) && test.trace.actions.length > 0) {
+      return test.trace.actions
+        .map((action) => ({
+          tool: String(action?.tool || "").trim(),
+          details: String(action?.detail || "Simulation action").trim(),
+          durationLabel: toDurationLabel(action?.duration_ms),
+        }))
+        .filter((action) => action.tool.length > 0);
+    }
+    if (!activeSimulation?.body) return [];
+    const fallback = [
+      {
+        tool: "write_email_draft_response",
+        details: "Draft generated from current fine-tuning instructions.",
+        durationLabel: "239ms",
+      },
+    ];
+    const needsShopify =
+      Boolean(activeSimulation.shopifyAction) ||
+      SHOPIFY_SIGNAL_REGEX.test(`${activeSimulation.subject} ${activeSimulation.body}`);
+    if (needsShopify) {
+      fallback.push({
+        tool: activeSimulation.shopifyAction?.tool || "shopify_update_order_by_id",
+        details:
+          activeSimulation.shopifyAction?.details || "Order metadata/status changed in Shopify.",
+        durationLabel: activeSimulation.shopifyAction?.duration || "384ms",
+      });
+    }
+    fallback.push({
+      tool: "update_ticket_by_id",
+      details: "Ticket status synced after simulation run.",
+      durationLabel: "71ms",
+    });
+    return fallback;
+  }, [activeSimulation, test?.trace?.actions]);
+
+  const traceThought = useMemo(() => {
+    const raw = typeof test?.trace?.thought === "string" ? test.trace.thought.trim() : "";
+    return raw || "Thought for a few seconds";
+  }, [test?.trace?.thought]);
+
+  const toolCallsBeforeReply = useMemo(
+    () => simulationToolCalls.filter((call) => call.tool !== "update_ticket_by_id"),
+    [simulationToolCalls]
+  );
+
+  const finalTicketAction = useMemo(
+    () => simulationToolCalls.find((call) => call.tool === "update_ticket_by_id") || null,
+    [simulationToolCalls]
+  );
+
+  const hasSimulationRun = Boolean(test?.result || simulationToolCalls.length > 0);
+  const shopifyActionCall = useMemo(
+    () => simulationToolCalls.find((call) => String(call.tool || "").startsWith("shopify_")) || null,
+    [simulationToolCalls]
+  );
+  const requiresApproval = actionMode === "approval" && Boolean(shopifyActionCall);
+
+  const visibleToolCallsBeforeReply = useMemo(() => {
+    if (!requiresApproval) return toolCallsBeforeReply;
+    return toolCallsBeforeReply.filter((call) => {
+      if (call.tool === shopifyActionCall?.tool) return approvalDecision === "approved";
+      if (call.tool === "send_email_response") return approvalDecision !== null;
+      return true;
+    });
+  }, [requiresApproval, toolCallsBeforeReply, shopifyActionCall?.tool, approvalDecision]);
+
+  const displayedReply = useMemo(() => {
+    if (requiresApproval && approvalDecision === null) return "";
+    if (requiresApproval && approvalDecision === "declined") {
+      return "Simulation outcome: Shopify action was declined, so the assistant keeps the ticket open and asks for manual follow-up.";
+    }
+    return test?.result || "";
+  }, [requiresApproval, approvalDecision, test?.result]);
+
   const handleRunTest = () => {
-    if (!generatedEmail?.body) return;
+    if (!activeSimulation?.body) return;
+    setApprovalDecision(null);
     testPersona({
-      scenario: generatedEmail.body,
+      scenario: activeSimulation.body,
+      ticketSubject: activeSimulation.subject,
+      customerFrom: activeSimulation.from,
       instructions,
       signature: "",
-      emailLanguage: generatedEmail.language ?? null,
+      model: selectedModel,
+      emailLanguage: activeSimulation.language ?? null,
     }).catch(() => null);
   };
 
   const contextValue = useMemo(
-    () => ({ refresh: handleRefresh, save: handleSave, loading, saving, dirty }),
-    [handleRefresh, handleSave, loading, saving, dirty]
+    () => ({
+      refresh: handleRefresh,
+      save: handleSave,
+      loading,
+      saving,
+      dirty,
+      openShopContext: () => setShopContextModalOpen(true),
+      shopName: persona?.shop_name || "",
+    }),
+    [handleRefresh, handleSave, loading, saving, dirty, persona?.shop_name]
   );
 
   return (
@@ -121,20 +313,22 @@ export function FineTuningPanel({ children }) {
       {children || null}
       <Card className="overflow-hidden border-0 bg-white shadow-none">
         <CardContent className="bg-white">
-          <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(500px,1fr)]">
-            {/* Left column: Instructions editor */}
+          <div className="grid items-stretch gap-8 lg:grid-cols-2">
+            {/* Left column: Instructions first, advanced shop context second */}
             <div className="space-y-5">
               <EditorField
                 label="Instructions"
                 description="Describe how the AI should behave, open and close its replies, and what it can promise. The AI understands context — you can write conditional rules."
                 value={instructions}
                 onChange={handleChange}
+                selectedModel={selectedModel}
+                onSelectedModelChange={setSelectedModel}
                 placeholder={`Examples:
 - Start first replies by thanking the customer for reaching out and showing empathy for their issue.
 - Close with "I look forward to hearing from you" when the issue is still being troubleshot, and "Have a great day!" when a solution has been given.
 - Never promise a refund without first checking the order date.
 - Always sign off with the agent's first name only.`}
-                rows={14}
+                rows={24}
               />
               {error && (
                 <p className="text-sm text-destructive">
@@ -143,132 +337,245 @@ export function FineTuningPanel({ children }) {
               )}
             </div>
 
-            {/* Right column: Playground */}
-            <aside className="flex flex-col rounded-2xl border bg-card/70 shadow-sm lg:sticky lg:top-6 lg:mt-4 lg:min-h-[900px]">
-              <div className="flex items-start justify-between gap-2 border-b px-4 py-3">
-                <div>
-                  <p className="text-sm font-semibold text-foreground">Playground</p>
-                  <p className="text-xs text-muted-foreground">
-                    Generate a test email and see how the AI responds.
-                  </p>
-                </div>
-                <Badge variant="secondary" className="gap-1">
-                  <Sparkles className="h-3.5 w-3.5" />
-                  Live
-                </Badge>
+            {/* Right column: Ticket simulation */}
+            <aside className="overflow-hidden rounded-2xl border border-gray-200 bg-sidebar shadow-sm lg:sticky lg:top-6 lg:min-h-[760px]">
+              <div className="flex items-center gap-2 border-b border-gray-100 bg-sidebar px-4 py-2 text-xs font-medium text-slate-600">
+                <Shield className="h-3.5 w-3.5 text-slate-500" />
+                Simulation mode — no real-world impact. The AI will not send emails or update live orders.
               </div>
 
-              <div className="flex flex-1 flex-col gap-5 px-4 py-4">
-                {/* Step 1: Generated email */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <label className="text-sm font-medium text-foreground">
-                        Test email
-                      </label>
-                      {generatedEmail?.language && (
-                        <Badge variant="outline" className="text-xs px-1.5 py-0">
-                          {generatedEmail.language === "Danish" ? "DA" : "EN"}
-                        </Badge>
-                      )}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleGenerateEmail}
-                      disabled={generatingEmail}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-input bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition hover:bg-accent disabled:opacity-50"
-                    >
-                      {generatingEmail ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <RefreshCw className="h-3.5 w-3.5" />
-                      )}
-                      {generatingEmail ? "Generating…" : "Generate email"}
-                    </button>
-                  </div>
-
-                  {generateError ? (
-                    <p className="text-xs text-destructive">{generateError}</p>
-                  ) : null}
-
-                  <div className="rounded-xl border bg-slate-50 p-3 text-xs text-muted-foreground">
-                    {generatingEmail ? (
-                      <div className="space-y-2">
-                        <div className="h-3 w-1/2 animate-pulse rounded bg-slate-200" />
-                        <div className="h-3 w-2/3 animate-pulse rounded bg-slate-200" />
-                        <div className="mt-2 h-3 w-full animate-pulse rounded bg-slate-200" />
-                        <div className="h-3 w-11/12 animate-pulse rounded bg-slate-200" />
-                        <div className="h-3 w-4/5 animate-pulse rounded bg-slate-200" />
-                      </div>
-                    ) : generatedEmail ? (
-                      <div className="space-y-1.5">
-                        <p>
-                          <span className="font-semibold text-slate-700">From:</span>{" "}
-                          {generatedEmail.from}
-                        </p>
-                        <p>
-                          <span className="font-semibold text-slate-700">Subject:</span>{" "}
-                          {generatedEmail.subject}
-                        </p>
-                        <p className="mt-2 whitespace-pre-wrap text-slate-600">
-                          {generatedEmail.body}
-                        </p>
-                      </div>
-                    ) : (
-                      <p>Click &quot;Generate email&quot; to create a test scenario based on your shop.</p>
-                    )}
-                  </div>
+              <div className="flex items-center gap-2 border-b border-gray-100 bg-sidebar px-4 py-3">
+                <div className="relative flex-1 min-w-[190px]">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <select
+                    value={selectedSimulationId}
+                    onChange={(event) => setSelectedSimulationId(event.target.value)}
+                    className="h-9 w-full rounded-lg border border-input bg-background pl-9 pr-3 text-xs shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  >
+                    {SIMULATION_PRESETS.map((simulation) => (
+                      <option key={simulation.id} value={simulation.id}>
+                        {simulation.label}
+                      </option>
+                    ))}
+                    <option value="generated" disabled={!generatedEmail?.body}>
+                      {generatedEmail?.body ? "Generated ticket" : "Generated ticket (create first)"}
+                    </option>
+                  </select>
                 </div>
+                <select
+                  value={simulationVariant}
+                  onChange={(event) => setSimulationVariant(event.target.value)}
+                  className="h-9 rounded-lg border border-input bg-background px-3 text-xs font-medium text-slate-600 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                >
+                  <option>Simulation 1</option>
+                  <option>Simulation 2</option>
+                  <option>Simulation 3</option>
+                </select>
+                <select
+                  value={actionMode}
+                  onChange={(event) => {
+                    setActionMode(event.target.value);
+                    setApprovalDecision(null);
+                  }}
+                  className="h-9 rounded-lg border border-input bg-background px-3 text-xs font-medium text-slate-600 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                >
+                  {ACTION_MODES.map((mode) => (
+                    <option key={mode.value} value={mode.value}>
+                      {mode.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleRunTest}
+                  disabled={test?.loading || !activeSimulation?.body}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-slate-900 px-3 text-xs font-semibold text-white transition hover:bg-black disabled:opacity-50"
+                >
+                  {test?.loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                  {test?.loading ? "Simulating" : "Simulate"}
+                </button>
+              </div>
 
-                {/* Step 2: AI response */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium text-foreground">AI response</p>
-                    <button
-                      type="button"
-                      onClick={handleRunTest}
-                      disabled={test?.loading || !generatedEmail?.body}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition hover:bg-blue-500 disabled:opacity-50"
-                      aria-label="Run test"
-                    >
-                      {test?.loading ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Play className="h-3.5 w-3.5" />
-                      )}
-                      {test?.loading ? "Running…" : "Run"}
-                    </button>
-                  </div>
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <div className="mx-auto w-full max-w-[900px] space-y-4 px-4 pb-4 pt-3">
+                {generateError ? <p className="text-xs text-destructive">{generateError}</p> : null}
+                {testErrorMessage ? <p className="text-xs text-destructive">{testErrorMessage}</p> : null}
+                <button
+                  type="button"
+                  onClick={handleGenerateEmail}
+                  disabled={generatingEmail}
+                  className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-500 transition hover:bg-slate-50 disabled:opacity-50"
+                >
+                  {generatingEmail ? "Generating ticket…" : "Generate ticket from shop data"}
+                </button>
 
-                  {testErrorMessage ? (
-                    <p className="text-xs text-destructive">{testErrorMessage}</p>
-                  ) : null}
-
-                  <div className="rounded-xl border bg-slate-50 p-3">
-                    <div className="min-h-[300px] text-sm leading-relaxed text-foreground">
-                      {test?.loading ? (
-                        <div className="space-y-2">
-                          <div className="h-3.5 w-2/3 animate-pulse rounded bg-slate-200" />
-                          <div className="h-3.5 w-full animate-pulse rounded bg-slate-200" />
-                          <div className="h-3.5 w-11/12 animate-pulse rounded bg-slate-200" />
-                          <div className="h-3.5 w-1/2 animate-pulse rounded bg-slate-200" />
-                        </div>
-                      ) : test?.result ? (
-                        <p className="whitespace-pre-wrap">{test.result}</p>
-                      ) : (
-                        <p className="text-muted-foreground text-xs">
-                          Generate an email above, then click &quot;Run&quot; to see how the AI responds with your current instructions.
-                        </p>
-                      )}
+                {activeSimulation ? (
+                  <div className="space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h3 className="text-3xl font-semibold tracking-tight text-slate-900">{activeSimulation.subject}</h3>
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">
+                          Open
+                        </span>
+                        <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-600">
+                          <User className="h-3 w-3" />
+                          Unassigned
+                        </span>
+                      </div>
                     </div>
+
+                    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-[0_1px_2px_0_rgba(0,0,0,0.05),0_4px_6px_-1px_rgba(0,0,0,0.02)]">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
+                          {getInitials(activeSimulation.from)}
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-slate-700">{extractSenderName(activeSimulation.from)}</p>
+                          <p className="text-xs text-muted-foreground">2d ago</p>
+                        </div>
+                      </div>
+                      <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700">{activeSimulation.body}</p>
+                    </div>
+
+                    {requiresApproval && hasSimulationRun ? (
+                      <div className="rounded-xl border border-slate-200 bg-white p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Shopify approval
+                        </p>
+                        <p className="mt-2 text-sm text-slate-700">
+                          Sona proposes: <code>{shopifyActionCall?.tool}</code>
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">{shopifyActionCall?.details}</p>
+                        {approvalDecision === null ? (
+                          <div className="mt-3 flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setApprovalDecision("approved")}
+                              className="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-medium text-emerald-700"
+                            >
+                              <CheckCircle2 className="h-3.5 w-3.5" />
+                              Approve
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setApprovalDecision("declined")}
+                              className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-medium text-red-700"
+                            >
+                              <XCircle className="h-3.5 w-3.5" />
+                              Decline
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="mt-3 inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium text-slate-700">
+                            {approvalDecision === "approved" ? (
+                              <>
+                                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                                Approved in simulation
+                              </>
+                            ) : (
+                              <>
+                                <XCircle className="h-3.5 w-3.5 text-red-600" />
+                                Declined in simulation
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
+
+                    <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-4 shadow-[0_1px_2px_0_rgba(0,0,0,0.05),0_4px_6px_-1px_rgba(0,0,0,0.02)]">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-100 text-indigo-700">
+                          <Bot className="h-4 w-4" />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-semibold text-indigo-700">Sona</p>
+                          <span className="text-xs text-muted-foreground">Just now</span>
+                        </div>
+                      </div>
+                      <div className="mt-3 min-h-[120px] text-sm text-slate-700">
+                        {test?.loading ? (
+                          <div className="space-y-2">
+                            <div className="h-3.5 w-2/3 animate-pulse rounded bg-slate-200" />
+                            <div className="h-3.5 w-full animate-pulse rounded bg-slate-200" />
+                            <div className="h-3.5 w-11/12 animate-pulse rounded bg-slate-200" />
+                          </div>
+                        ) : displayedReply ? (
+                          <p className="whitespace-pre-wrap">{displayedReply}</p>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">
+                            {requiresApproval && hasSimulationRun
+                              ? "Approve or decline the Shopify action to continue the simulated flow."
+                              : "Click \"Simulate\" to run this ticket with your current instructions."}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
                   </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Select a preset ticket or generate one from your shop context to start simulation.
+                  </p>
+                )}
                 </div>
               </div>
             </aside>
           </div>
         </CardContent>
       </Card>
-      <EvalSection />
+      <Dialog open={shopContextModalOpen} onOpenChange={setShopContextModalOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Shop Context</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-xs text-muted-foreground">
+              Used as background context for tone and brand consistency. Keep it concise.
+            </p>
+            {persona?.shop_name && (
+              <div>
+                <p className="mb-0.5 text-xs font-medium text-muted-foreground">Shop name</p>
+                <p className="text-sm font-semibold text-slate-800">{persona.shop_name}</p>
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground">Brand description</p>
+              <textarea
+                value={brandDescription}
+                onChange={(e) => { setBrandDescription(e.target.value); setDirty(true); }}
+                rows={3}
+                placeholder={persona?.shop_name ? `${persona.shop_name} er en dansk webshop...` : "Beskriv hvad jeres shop sælger og til hvem."}
+                className="w-full resize-y rounded-lg border border-input bg-white px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground">Support identity</p>
+              <textarea
+                value={supportIdentity}
+                onChange={(e) => { setSupportIdentity(e.target.value); setDirty(true); }}
+                rows={4}
+                placeholder={`Du er en del af ${persona?.shop_name || "[shop]"}'s supportteam. Du ER supporten — henvis aldrig kunden videre.`}
+                className="w-full resize-y rounded-lg border border-input bg-white px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+              />
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+      {dirty ? (
+        <div className="fixed bottom-4 right-6 z-50 flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-lg">
+          <span className="text-xs text-slate-600">Unsaved changes</span>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+            className="inline-flex items-center rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-black disabled:opacity-50"
+          >
+            {saving ? "Saving..." : "Save"}
+          </button>
+        </div>
+      ) : null}
+      {false && <EvalSection />}
     </FineTuningPanelContext.Provider>
   );
 }
@@ -519,33 +826,57 @@ function EvalSection() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-function EditorField({ label, description, value, onChange, placeholder, rows = 5 }) {
+function EditorField({
+  label,
+  description,
+  value,
+  onChange,
+  placeholder,
+  rows = 5,
+  selectedModel,
+  onSelectedModelChange,
+}) {
   return (
-    <div className="space-y-1.5">
+    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+      {(label || description) && (
+        <div className="border-b border-gray-200 px-4 py-3">
+          {label ? <p className="text-sm font-semibold text-foreground">{label}</p> : null}
+          {description ? (
+            <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+          ) : null}
+        </div>
+      )}
       <div>
-        <p className="text-sm font-semibold text-foreground">{label}</p>
-        {description ? (
-          <p className="text-xs text-muted-foreground">{description}</p>
-        ) : null}
-      </div>
-      <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-        <div className="flex flex-wrap gap-1.5 border-b border-gray-200 bg-gray-50 px-3 py-2">
-          {TOOLBAR_BUTTONS.map(({ icon: Icon, label: buttonLabel }) => (
-            <span
-              key={buttonLabel}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground"
-              role="presentation"
-              aria-hidden="true"
-            >
-              <Icon className="h-3.5 w-3.5" />
-            </span>
-          ))}
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 bg-gray-50 px-3 py-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {TOOLBAR_BUTTONS.map(({ icon: Icon, label: buttonLabel }) => (
+              <span
+                key={buttonLabel}
+                className="inline-flex h-7 min-w-7 items-center justify-center rounded-md border border-transparent px-1.5 text-muted-foreground"
+                role="presentation"
+                aria-hidden="true"
+              >
+                <Icon className="h-3.5 w-3.5" />
+              </span>
+            ))}
+          </div>
+          <select
+            value={selectedModel}
+            onChange={(event) => onSelectedModelChange(event.target.value)}
+            className="h-8 rounded-md border border-gray-200 bg-white px-2 text-xs font-medium text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+          >
+            {MODEL_OPTIONS.map((model) => (
+              <option key={model} value={model}>
+                {model}
+              </option>
+            ))}
+          </select>
         </div>
         <Textarea
           value={value}
           onChange={onChange}
           rows={rows}
-          className="min-h-[120px] resize-y border-0 bg-transparent px-4 py-3 text-sm focus-visible:ring-2 focus-visible:ring-blue-500/30 focus-visible:ring-offset-2"
+          className="min-h-[760px] resize-y border-0 bg-transparent px-4 py-4 text-sm leading-relaxed text-slate-800 focus-visible:ring-2 focus-visible:ring-blue-500/30 focus-visible:ring-offset-2"
           placeholder={placeholder}
         />
       </div>

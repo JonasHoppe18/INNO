@@ -5,6 +5,7 @@ import { resolveAuthScope } from "@/lib/server/workspace-auth";
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
+const ALLOWED_MODELS = new Set(["gpt-4o-mini", "gpt-4o"]);
 
 const SUPABASE_URL = (
   process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -75,6 +76,18 @@ export async function POST(request) {
     typeof body.emailLanguage === "string" && body.emailLanguage.trim()
       ? body.emailLanguage.trim()
       : null;
+  const ticketSubject =
+    typeof body.ticketSubject === "string" && body.ticketSubject.trim()
+      ? body.ticketSubject.trim()
+      : "Customer support inquiry";
+  const customerFrom =
+    typeof body.customerFrom === "string" && body.customerFrom.trim()
+      ? body.customerFrom.trim()
+      : "Customer";
+  const requestedModel =
+    typeof body.model === "string" && ALLOWED_MODELS.has(body.model.trim())
+      ? body.model.trim()
+      : OPENAI_MODEL;
 
   // Fetch shop policies for a more realistic response
   const shop = await fetchShopPolicies(clerkUserId, orgId);
@@ -100,15 +113,35 @@ export async function POST(request) {
     `Du er en kundeservice-agent${shopName ? ` for ${shopName}` : ""}. ` +
     "Skriv et realistisk svar til kunden baseret på butikkens politikker og dine instruktioner. " +
     "Undgå placeholders som {navn} — brug en generisk hilsen. " +
-    "Dette er en test, så giv ikke løfter der ikke er dækning for i politikkerne." +
+    "Dette er en test, så giv ikke løfter der ikke er dækning for i politikkerne. " +
+    "Svar KUN med gyldig JSON.\n\n" +
+    "JSON format:\n" +
+    "{\n" +
+    '  "reply": "full email reply text",\n' +
+    '  "thought": "short internal summary, max 12 words",\n' +
+    '  "actions": [\n' +
+    '    { "tool": "write_email_draft_response", "detail": "what happened", "duration_ms": 200 }\n' +
+    "  ]\n" +
+    "}\n\n" +
+    "Action rules:\n" +
+    "- First action must always be write_email_draft_response.\n" +
+    "- Last action must always be update_ticket_by_id.\n" +
+    "- Include send_email_response when response should be sent.\n" +
+    "- If ticket implies order/refund/address/cancel/tracking change, include one relevant Shopify tool action.\n" +
+    "- Keep actions short and realistic." +
     policyContext;
 
   const userMessage = [
+    `Ticket subject: ${ticketSubject}`,
+    `Customer: ${customerFrom}`,
     `Kundens besked: ${scenario}`,
     `Tone og instruktioner: ${instructions}`,
     signature ? `Afslut med denne signatur:\n${signature}` : "",
-  ].filter(Boolean).join("\n\n");
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 
+  const startedAt = Date.now();
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -116,14 +149,16 @@ export async function POST(request) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: OPENAI_MODEL,
+      model: requestedModel,
       temperature: 0.4,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userMessage },
       ],
+      response_format: { type: "json_object" },
     }),
   });
+  const elapsedMs = Date.now() - startedAt;
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -131,10 +166,78 @@ export async function POST(request) {
     return NextResponse.json({ error: errorMessage }, { status: 502 });
   }
 
-  const reply = data?.choices?.[0]?.message?.content?.trim();
-  if (!reply) {
-    return NextResponse.json({ error: "OpenAI returned no response." }, { status: 502 });
+  const raw = data?.choices?.[0]?.message?.content;
+  let parsed = null;
+  try {
+    parsed = typeof raw === "string" ? JSON.parse(raw) : null;
+  } catch {
+    parsed = null;
   }
 
-  return NextResponse.json({ reply, model: OPENAI_MODEL });
+  const fallbackReply =
+    typeof raw === "string" && raw.trim().length
+      ? raw.trim()
+      : "Tak for din besked. Vi undersøger sagen og vender tilbage hurtigst muligt.";
+
+  const reply =
+    typeof parsed?.reply === "string" && parsed.reply.trim().length
+      ? parsed.reply.trim()
+      : fallbackReply;
+
+  const thought =
+    typeof parsed?.thought === "string" && parsed.thought.trim().length
+      ? parsed.thought.trim()
+      : `Thought for ${Math.max(3, Math.round(elapsedMs / 1000))} seconds`;
+
+  const normalizedActions = Array.isArray(parsed?.actions)
+    ? parsed.actions
+        .map((item) => ({
+          tool:
+            typeof item?.tool === "string" && item.tool.trim()
+              ? item.tool.trim()
+              : null,
+          detail:
+            typeof item?.detail === "string" && item.detail.trim()
+              ? item.detail.trim()
+              : "Simulation action",
+          duration_ms:
+            Number.isFinite(Number(item?.duration_ms)) && Number(item.duration_ms) > 0
+              ? Math.round(Number(item.duration_ms))
+              : null,
+        }))
+        .filter((item) => Boolean(item.tool))
+    : [];
+
+  const actions = [];
+  if (!normalizedActions.some((item) => item.tool === "write_email_draft_response")) {
+    actions.push({
+      tool: "write_email_draft_response",
+      detail: "Draft generated from persona instructions.",
+      duration_ms: 240,
+    });
+  }
+  actions.push(...normalizedActions);
+  if (!actions.some((item) => item.tool === "send_email_response")) {
+    actions.push({
+      tool: "send_email_response",
+      detail: "Draft prepared for outbound response in simulation.",
+      duration_ms: 420,
+    });
+  }
+  if (!actions.some((item) => item.tool === "update_ticket_by_id")) {
+    actions.push({
+      tool: "update_ticket_by_id",
+      detail: "Ticket metadata updated after simulation.",
+      duration_ms: 64,
+    });
+  }
+
+  return NextResponse.json({
+    reply,
+    model: requestedModel,
+    trace: {
+      thought,
+      actions,
+    },
+  });
 }

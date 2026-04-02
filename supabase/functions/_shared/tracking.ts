@@ -38,6 +38,7 @@ export type TrackingSnapshot = {
   pickupPoint?: NormalizedTrackingEvent["pickupPoint"];
   lastEvent?: NormalizedTrackingEvent | null;
   events: NormalizedTrackingEvent[];
+  deliveryCity?: string | null;
 };
 
 export type TrackingDetail = {
@@ -598,6 +599,55 @@ function extractPostNordExpectedDelivery(payload: any): string | null {
   );
 }
 
+function extractPostNordDeliveryCity(payload: any): string | null {
+  const root = payload?.TrackingInformationResponse || payload || {};
+  const shipments = Array.isArray(root?.shipments) ? root.shipments : [];
+  const firstShipment = shipments[0] || null;
+  const firstItem = Array.isArray(firstShipment?.items) ? firstShipment.items[0] || null : null;
+
+  // Try every known PostNord field name for recipient/delivery address
+  const addr =
+    firstItem?.deliveryAddress ||
+    firstItem?.recipientAddress ||
+    firstItem?.toAddress ||
+    firstItem?.addressTo ||
+    firstItem?.consigneeAddress ||
+    firstItem?.dropOffAddress ||
+    firstItem?.receiver?.address ||
+    firstShipment?.deliveryAddress ||
+    firstShipment?.recipientAddress ||
+    firstShipment?.toAddress ||
+    firstShipment?.addressTo ||
+    firstShipment?.consignee?.address ||
+    firstShipment?.receiver?.address ||
+    root?.deliveryAddress ||
+    root?.recipientAddress ||
+    null;
+
+  if (addr && typeof addr === "object") {
+    const postalCode = asString(
+      addr?.postalCode || addr?.postal_code || addr?.zip || addr?.zipCode || addr?.postCode || ""
+    );
+    const city = asString(
+      addr?.city || addr?.cityName || addr?.town || addr?.municipality || ""
+    );
+    if (postalCode && city) return `${postalCode} ${city}`;
+    if (city) return city;
+    if (postalCode) return postalCode;
+  }
+
+  // Fallback: check if any event location looks like a postal code + city (e.g. "1620 KØBENHAVN V")
+  // PostNord sometimes puts recipient info in the last delivery event's location
+  const events = Array.isArray(firstItem?.events) ? firstItem.events :
+    Array.isArray(firstShipment?.events) ? firstShipment.events : [];
+  for (const event of events) {
+    const loc = asString(event?.location || event?.city || "");
+    if (/^\d{4}\s+\w/.test(loc)) return loc; // Matches "1620 KØBENHAVN V" pattern
+  }
+
+  return null;
+}
+
 function extractPostNordStatusCode(payload: any, statusText: string): string | null {
   const root = payload?.TrackingInformationResponse || payload || {};
   const shipments = Array.isArray(root?.shipments) ? root.shipments : [];
@@ -836,6 +886,7 @@ async function fetchPostNordStatus(
         const deliveredAt = statusCode === "delivered" ? (lastEvent?.occurredAt || null) : null;
         const outForDeliveryAt =
           statusCode === "out_for_delivery" ? (lastEvent?.occurredAt || expectedDeliveryAt || null) : null;
+        const deliveryCity = extractPostNordDeliveryCity(payload);
         const snapshot: TrackingSnapshot = {
           ...buildSnapshotFromStatusText(statusText),
           statusCode,
@@ -844,6 +895,7 @@ async function fetchPostNordStatus(
           expectedDeliveryAt,
           lastEvent,
           events,
+          deliveryCity,
         };
 
         return {

@@ -64,6 +64,7 @@ const EMAIL_CATEGORY_LABELS = [
   "Return",
   "Exchange",
   "Product question",
+  "Technical support",
   "Payment",
   "Cancellation",
   "Refund",
@@ -1880,7 +1881,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     ...customerLookupParams,
     enabled:
       Boolean(selectedThreadId) &&
-      (insightsOpen || Boolean(pendingOrderUpdateByThread[selectedThreadId])),
+      (insightsOpen ||
+        Boolean(pendingOrderUpdateByThread[selectedThreadId]) ||
+        (Array.isArray(selectedThread?.tags) && selectedThread.tags.includes("Tracking"))),
   });
 
   const actions = useMemo(() => {
