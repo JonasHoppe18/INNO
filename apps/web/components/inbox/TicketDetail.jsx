@@ -224,11 +224,18 @@ export function TicketDetail({
       selectedOrderSummary?.tracking?.number || selectedOrderSummary?.tracking?.url
     );
     if (!hasTrackingData) return false;
+    // Never show tracking card for return/exchange tickets — the order tracking is not relevant
+    const classKey = String(thread?.classification_key || "").toLowerCase();
+    const isReturnOrExchange = classKey === "return" || classKey === "exchange";
+    const tags = Array.isArray(thread?.tags) ? thread.tags : [];
+    const hasReturnTag = tags.some((t) => /^return/i.test(String(t || "")));
+    if (isReturnOrExchange || hasReturnTag) return false;
     // Show for all tracking-categorised threads, or when the message looks like a tracking question
-    const threadIsTracking = Array.isArray(thread?.tags) && thread.tags.includes("Tracking");
+    const threadIsTracking = tags.includes("Tracking");
     return threadIsTracking || messageLooksLikeTrackingQuestion(latestInboundCustomerMessage);
   }, [
     thread?.tags,
+    thread?.classification_key,
     latestInboundCustomerMessage,
     selectedOrderSummary?.tracking?.number,
     selectedOrderSummary?.tracking?.url,
@@ -260,7 +267,12 @@ export function TicketDetail({
   useEffect(() => {
     const node = conversationRef.current;
     if (!node) return;
-    node.scrollTop = Number.isFinite(Number(conversationScrollTop)) ? Number(conversationScrollTop) : 0;
+    // Restore saved scroll position if available, otherwise scroll to bottom (newest messages)
+    if (Number.isFinite(Number(conversationScrollTop)) && Number(conversationScrollTop) > 0) {
+      node.scrollTop = Number(conversationScrollTop);
+    } else {
+      node.scrollTop = node.scrollHeight;
+    }
   }, [conversationScrollTop, thread?.id]);
 
   if (!thread) {

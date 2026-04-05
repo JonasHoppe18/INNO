@@ -1098,9 +1098,12 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       derivedThreads.forEach((thread) => {
         const threadId = String(thread?.id || "").trim();
         if (!threadId || !next[threadId]) return;
-        const hasUnreadActivity =
-          thread?.is_read === false || Number(thread?.unread_count ?? 0) > 0;
-        if (!hasUnreadActivity) return;
+        // Only clear the local "read" override when a NEW message has arrived
+        // (unread_count > 0). Don't use is_read — the server briefly still says
+        // false during the window between local mark-as-read and server confirmation,
+        // which causes the unread badge to flash back on.
+        const hasNewUnreadMessages = Number(thread?.unread_count ?? 0) > 0;
+        if (!hasNewUnreadMessages) return;
         delete next[threadId];
         changed = true;
       });
@@ -1442,6 +1445,23 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     setSelectedThreadId(requestedThreadId);
   }, [derivedThreads, requestedThreadId]);
 
+  // Keep ?thread= in the URL in sync with the selected thread so page refresh restores it
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const current = new URLSearchParams(window.location.search);
+    const currentThreadParam = current.get("thread") || "";
+    const nextThreadId = selectedThreadId || "";
+    if (currentThreadParam === nextThreadId) return;
+    const next = new URLSearchParams(current);
+    if (nextThreadId) {
+      next.set("thread", nextThreadId);
+    } else {
+      next.delete("thread");
+    }
+    const newUrl = `${window.location.pathname}?${next.toString()}`;
+    router.replace(newUrl, { scroll: false });
+  }, [selectedThreadId, router]);
+
   useEffect(() => {
     if (!tabStateReady) return;
     if (openThreadIds.length) {
@@ -1457,6 +1477,26 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     setOpenThreadIds([fallbackThreadId]);
     setSelectedThreadId(fallbackThreadId);
   }, [derivedThreads, filteredThreads, openThreadIds, selectedThreadId, tabStateReady]);
+
+  // Bug #5: When the user switches view/filter the selected thread may no longer
+  // be visible in the list. Auto-advance to the first thread in the new view.
+  // Guard: only act when the thread exists in derivedThreads (otherwise the
+  // deletion handler above takes care of it).
+  useEffect(() => {
+    if (!tabStateReady) return;
+    if (!selectedThreadId) return;
+    if (!filteredThreads.length) return;
+    const isInDerived = derivedThreads.some((t) => t.id === selectedThreadId);
+    if (!isInDerived) return;
+    const isVisible = filteredThreads.some((t) => t.id === selectedThreadId);
+    if (isVisible) return;
+    const nextThread = filteredThreads[0];
+    setOpenThreadIds((prev) => {
+      const without = prev.filter((id) => id !== selectedThreadId);
+      return without.includes(nextThread.id) ? without : [nextThread.id, ...without];
+    });
+    setSelectedThreadId(nextThread.id);
+  }, [derivedThreads, filteredThreads, selectedThreadId, tabStateReady]);
 
   useEffect(() => {
     if (!tabStateReady) return;
@@ -1883,7 +1923,10 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       Boolean(selectedThreadId) &&
       (insightsOpen ||
         Boolean(pendingOrderUpdateByThread[selectedThreadId]) ||
-        (Array.isArray(selectedThread?.tags) && selectedThread.tags.includes("Tracking"))),
+        (Array.isArray(selectedThread?.tags) &&
+          selectedThread.tags.includes("Tracking") &&
+          !selectedThread.tags.some((t) => /^return/i.test(String(t || ""))) &&
+          !["return", "exchange"].includes(String(selectedThread?.classification_key || "").toLowerCase()))),
   });
 
   const actions = useMemo(() => {
@@ -2583,6 +2626,22 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         ...updates,
       },
     }));
+
+    // When a ticket is resolved/closed it disappears from the current view —
+    // automatically advance to the next visible ticket instead of leaving an
+    // orphaned selection with nothing highlighted in the list.
+    if (updates.status === "Solved") {
+      const currentIdx = filteredThreads.findIndex((t) => t.id === selectedThreadId);
+      const nextThread =
+        filteredThreads[currentIdx + 1] || filteredThreads[currentIdx - 1] || null;
+      setOpenThreadIds((prev) => {
+        const without = prev.filter((id) => id !== selectedThreadId);
+        if (!nextThread) return without;
+        return without.includes(nextThread.id) ? without : [nextThread.id, ...without];
+      });
+      setSelectedThreadId(nextThread?.id || null);
+    }
+
     const payload = {};
     if (typeof updates.status === "string") {
       payload.status = updates.status;
@@ -2611,7 +2670,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       .catch((error) => {
         toast.error(error.message || "Could not update ticket status.");
       });
-  }, [selectedThreadId]);
+  }, [filteredThreads, selectedThreadId]);
 
   const handleInboxChange = useCallback(
     (destination) => {

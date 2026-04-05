@@ -70,12 +70,12 @@ async function loadMessages(serviceClient, scope, mailboxIds, { query, unreadOnl
     fallbackRequest = applyScope(fallbackRequest, scope);
 
     if (unreadOnly) {
-      fallbackRequest.eq("is_read", false);
+      fallbackRequest = fallbackRequest.eq("is_read", false);
     }
 
     if (query) {
       const escaped = query.replace(/%/g, "\\%").replace(/_/g, "\\_");
-      fallbackRequest.or(
+      fallbackRequest = fallbackRequest.or(
         `subject.ilike.%${escaped}%,snippet.ilike.%${escaped}%,from_name.ilike.%${escaped}%,from_email.ilike.%${escaped}%`
       );
     }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronRight, ExternalLink, Loader2, Truck, X } from "lucide-react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
@@ -113,6 +113,9 @@ function getTrackingStatusLabel({ tracking = null, order = null, timeline = [] }
 
 export function TrackingCard({ order = null, threadId = null }) {
   const [open, setOpen] = useState(false);
+  // Live snapshot fetched directly from carrier API
+  const [liveDetail, setLiveDetail] = useState(null);
+  // Fallback: stored agent_log entries
   const [timelineLogs, setTimelineLogs] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -122,50 +125,90 @@ export function TrackingCard({ order = null, threadId = null }) {
   const carrier = getCarrierLabel(tracking?.company);
   const orderLabel = String(order?.id || "").trim();
 
-  const timeline = useMemo(
-    () => buildTrackingTimeline({ logs: timelineLogs, order }),
-    [order, timelineLogs]
-  );
+  // Build timeline: prefer live snapshot events, fall back to stored logs
+  const timeline = useMemo(() => {
+    if (liveDetail?.snapshot) {
+      // Inject live snapshot into a fake log so buildTrackingTimeline can parse it
+      const fakeLog = {
+        id: "live",
+        step_name: "carrier_tracking",
+        step_detail: JSON.stringify({
+          carrier: liveDetail.carrier,
+          status: liveDetail.statusText,
+          snapshot: liveDetail.snapshot,
+        }),
+        created_at: new Date().toISOString(),
+      };
+      return buildTrackingTimeline({ logs: [fakeLog], order });
+    }
+    return buildTrackingTimeline({ logs: timelineLogs, order });
+  }, [liveDetail, order, timelineLogs]);
 
   const statusLabel = useMemo(
     () => getTrackingStatusLabel({ tracking, order, timeline }),
     [order, timeline, tracking]
   );
 
-  // Extract pickup point from newest carrier_tracking log snapshot
+  // Extract pickup point from live snapshot or stored logs
   const pickupPoint = useMemo(() => {
+    const pp = liveDetail?.snapshot?.pickupPoint || null;
+    if (pp) {
+      const name = String(pp.name || "").trim();
+      const address = String(pp.address || "").trim();
+      const city = String(pp.city || pp.postalCode || "").trim();
+      if (name || address || city) return { name, address, city };
+    }
     const carrierLog = [...(timelineLogs || [])]
       .filter((l) => String(l?.step_name || "").toLowerCase() === "carrier_tracking")
       .sort((a, b) => (Date.parse(b?.created_at) || 0) - (Date.parse(a?.created_at) || 0))[0];
     if (!carrierLog) return null;
     try {
       const parsed = JSON.parse(String(carrierLog?.step_detail || "{}"));
-      const pp = parsed?.snapshot?.pickupPoint;
-      if (!pp) return null;
-      const name = String(pp.name || "").trim();
-      const address = String(pp.address || "").trim();
-      const city = String(pp.city || pp.postalCode || "").trim();
+      const storedPp = parsed?.snapshot?.pickupPoint;
+      if (!storedPp) return null;
+      const name = String(storedPp.name || "").trim();
+      const address = String(storedPp.address || "").trim();
+      const city = String(storedPp.city || storedPp.postalCode || "").trim();
       if (!name && !address && !city) return null;
       return { name, address, city };
     } catch { return null; }
-  }, [timelineLogs]);
+  }, [liveDetail, timelineLogs]);
+
+  const fetchLive = useCallback(async () => {
+    if (!trackingNumber || !threadId) return;
+    setLoading(true);
+    setLiveDetail(null);
+    try {
+      const params = new URLSearchParams({ trackingNumber });
+      if (trackingUrl) params.set("trackingUrl", trackingUrl);
+      if (tracking?.company) params.set("company", tracking.company);
+      const res = await fetch(
+        `/api/threads/${encodeURIComponent(threadId)}/tracking/refresh?${params}`
+      ).catch(() => null);
+      if (res?.ok) {
+        const body = await res.json().catch(() => ({}));
+        if (body?.detail) {
+          setLiveDetail(body.detail);
+          setLoading(false);
+          return;
+        }
+      }
+    } catch { /* fall through to stored logs */ }
+    // Fallback: load stored logs from insights endpoint
+    const response = await fetch(
+      `/api/threads/${encodeURIComponent(threadId)}/insights`
+    ).catch(() => null);
+    if (response?.ok) {
+      const payload = await response.json().catch(() => ({}));
+      const logs = Array.isArray(payload?.logs) ? payload.logs : [];
+      setTimelineLogs(logs);
+    }
+    setLoading(false);
+  }, [threadId, trackingNumber, trackingUrl, tracking?.company]);
 
   useEffect(() => {
-    let active = true;
-    const fetchTimeline = async () => {
-      if (!open || !threadId) return;
-      setLoading(true);
-      const response = await fetch(`/api/threads/${encodeURIComponent(threadId)}/insights`).catch(() => null);
-      if (!active) return;
-      if (!response?.ok) { setTimelineLogs([]); setLoading(false); return; }
-      const payload = await response.json().catch(() => ({}));
-      if (!active) return;
-      setTimelineLogs(Array.isArray(payload?.logs) ? payload.logs : []);
-      setLoading(false);
-    };
-    fetchTimeline();
-    return () => { active = false; };
-  }, [open, threadId]);
+    if (open) fetchLive();
+  }, [open, fetchLive]);
 
   if (!trackingNumber && !trackingUrl) return null;
 
@@ -283,7 +326,7 @@ export function TrackingCard({ order = null, threadId = null }) {
             )}
           </div>
 
-          {/* Open carrier link */}
+          {/* Footer: carrier link */}
           {trackingUrl && (
             <div className="flex justify-end border-t border-slate-100 pt-3">
               <Button asChild size="sm" className="bg-slate-900 text-white hover:bg-slate-700">
