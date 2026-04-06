@@ -94,6 +94,8 @@ export function TicketDetail({
   const [composerCollapsed, setComposerCollapsed] = useState(false);
   const [processReturnRestock, setProcessReturnRestock] = useState(true);
   const conversationRef = useRef(null);
+  const restoredThreadIdRef = useRef(null);
+  const initialScrollTopRef = useRef(0);
   const normalizedPendingStatus = String(pendingOrderUpdate?.status || "").toLowerCase();
   const pendingUpdateState = orderUpdateSubmitting
     ? "executing"
@@ -265,15 +267,24 @@ export function TicketDetail({
     ) : null;
 
   useEffect(() => {
+    initialScrollTopRef.current = Number(conversationScrollTop) || 0;
+  }, [conversationScrollTop]);
+
+  useEffect(() => {
     const node = conversationRef.current;
     if (!node) return;
+    const threadId = String(thread?.id || "");
+    if (!threadId) return;
+    if (restoredThreadIdRef.current === threadId) return;
+    const initialScrollTop = Number(initialScrollTopRef.current) || 0;
     // Restore saved scroll position if available, otherwise scroll to bottom (newest messages)
-    if (Number.isFinite(Number(conversationScrollTop)) && Number(conversationScrollTop) > 0) {
-      node.scrollTop = Number(conversationScrollTop);
+    if (Number.isFinite(initialScrollTop) && initialScrollTop > 0) {
+      node.scrollTop = initialScrollTop;
     } else {
       node.scrollTop = node.scrollHeight;
     }
-  }, [conversationScrollTop, thread?.id]);
+    restoredThreadIdRef.current = threadId;
+  }, [thread?.id]);
 
   if (!thread) {
     return (

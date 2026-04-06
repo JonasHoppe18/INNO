@@ -597,7 +597,7 @@ export function Composer({
   return (
     <div className="flex-none bg-transparent px-3 py-1.5">
       <div
-        className={`mx-auto flex w-full max-w-[900px] flex-col rounded-3xl border border-gray-200/80 bg-white shadow-sm ${
+        className={`mx-auto flex w-full max-w-[900px] flex-col overflow-hidden rounded-3xl border border-gray-200/80 bg-white shadow-sm ${
           disabled ? "opacity-60" : ""
         }`}
         style={{ maxHeight: "45vh" }}
@@ -765,8 +765,8 @@ export function Composer({
             ))}
           </div>
         ) : null}
-        <div className="relative min-h-0 flex-1 overflow-y-auto">
-          <div className="bg-white px-3 py-2">
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div className="min-h-0 flex-1 overflow-y-auto bg-white px-3 py-2">
             {isNote ? (
               <Textarea
                 ref={textareaRef}
@@ -947,7 +947,7 @@ export function Composer({
               </>
             ) : null}
           </div>
-          <div className="flex items-center justify-between border-t border-gray-200/80 px-3 py-1.5 text-[12px] text-gray-500">
+          <div className="sticky bottom-0 z-10 flex items-center justify-between border-t border-gray-200/80 bg-white px-3 py-1.5 text-[12px] text-gray-500">
             <div className="flex items-center gap-2">
               {!isNote ? (
                 <>
