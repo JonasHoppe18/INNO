@@ -46,3 +46,4 @@ yarn-error.*
 /ios
 /android
 apps/web/.env.production
+.mcp.json
