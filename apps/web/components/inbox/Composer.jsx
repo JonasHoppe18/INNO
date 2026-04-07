@@ -134,7 +134,7 @@ export function Composer({
   onGenerateDraft = null,
   isGeneratingDraft = false,
 }) {
-  const MIN_COMPOSER_HEIGHT_PX = 190;
+  const MIN_COMPOSER_HEIGHT_PX = 170;
   const MAX_COMPOSER_VIEWPORT_RATIO = 0.8;
   const isNote = mode === "note";
   const isForward = mode === "forward";
@@ -591,7 +591,7 @@ export function Composer({
   };
 
   const getAutoComposerHeightPx = useCallback(
-    (textValue = "") => {
+    (textValue = "", measuredEditorHeight = null) => {
       const normalizedText = String(textValue || "")
         // Generated drafts can contain trailing blank lines; ignore them for height fitting.
         .replace(/[ \t]+\n/g, "\n")
@@ -605,18 +605,22 @@ export function Composer({
         0
       );
       const editorLineHeight = 23;
-      const minEditorHeight = isNote ? 74 : 88;
-      const maxEditorHeight = 260;
+      const minEditorHeight = isNote ? 62 : 72;
+      const maxEditorHeight = 240;
       const estimatedEditorHeight = Math.min(
         maxEditorHeight,
         Math.max(minEditorHeight, estimatedLineCount * editorLineHeight + 20)
       );
-      const chromeHeight = (isNote ? 116 : 136) + (showSignatureEditor && !isNote ? 78 : 0);
+      const effectiveEditorHeight =
+        Number.isFinite(Number(measuredEditorHeight)) && Number(measuredEditorHeight) > 0
+          ? Math.min(maxEditorHeight, Math.max(minEditorHeight, Number(measuredEditorHeight)))
+          : estimatedEditorHeight;
+      const chromeHeight = (isNote ? 112 : 124) + (showSignatureEditor && !isNote ? 74 : 0);
       const maxHeight = Math.max(
         MIN_COMPOSER_HEIGHT_PX,
         Math.round((typeof window !== "undefined" ? window.innerHeight : 900) * MAX_COMPOSER_VIEWPORT_RATIO)
       );
-      return Math.min(maxHeight, Math.max(MIN_COMPOSER_HEIGHT_PX, chromeHeight + estimatedEditorHeight));
+      return Math.min(maxHeight, Math.max(MIN_COMPOSER_HEIGHT_PX, chromeHeight + effectiveEditorHeight));
     },
     [MAX_COMPOSER_VIEWPORT_RATIO, MIN_COMPOSER_HEIGHT_PX, isNote, showSignatureEditor]
   );
@@ -626,8 +630,14 @@ export function Composer({
     if (manualComposerResizeRef.current) return;
     if (replyEditorFocusedRef.current) return;
     if (typeof document !== "undefined" && document.activeElement === textareaRef.current) return;
-    setComposerHeightPx(getAutoComposerHeightPx(value));
-  }, [collapsed, getAutoComposerHeightPx, value]);
+    const rafId = requestAnimationFrame(() => {
+      const measuredEditorHeight = isNote
+        ? Number(textareaRef.current?.scrollHeight || 0)
+        : Number(replyEditorRef.current?.scrollHeight || 0);
+      setComposerHeightPx(getAutoComposerHeightPx(value, measuredEditorHeight));
+    });
+    return () => cancelAnimationFrame(rafId);
+  }, [collapsed, getAutoComposerHeightPx, isNote, showDraftLoadingState, value]);
 
   const onResizeMove = useCallback(
     (event) => {

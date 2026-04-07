@@ -100,22 +100,35 @@ export async function GET(req) {
   const { searchParams } = new URL(req.url);
   const limit = Math.min(Number(searchParams.get("limit") || "30"), 100);
 
-  // Fetch solved tickets
-  const ticketsUrl = `${baseUrl}/api/v2/tickets.json?status=solved&sort_by=created_at&sort_order=desc&per_page=${limit}`;
-  const ticketsRes = await fetch(ticketsUrl, {
-    headers: { Authorization: authorization, "Content-Type": "application/json" },
-    cache: "no-store",
-  });
+  // Fetch solved + closed tickets (Zendesk auto-closes solved tickets after a period)
+  const [solvedRes, closedRes] = await Promise.all([
+    fetch(`${baseUrl}/api/v2/tickets.json?status=solved&sort_by=created_at&sort_order=desc&per_page=${limit}`, {
+      headers: { Authorization: authorization, "Content-Type": "application/json" },
+      cache: "no-store",
+    }),
+    fetch(`${baseUrl}/api/v2/tickets.json?status=closed&sort_by=created_at&sort_order=desc&per_page=${limit}`, {
+      headers: { Authorization: authorization, "Content-Type": "application/json" },
+      cache: "no-store",
+    }),
+  ]);
 
-  if (!ticketsRes.ok) {
-    const err = await ticketsRes.json().catch(() => ({}));
+  if (!solvedRes.ok && !closedRes.ok) {
+    const err = await solvedRes.json().catch(() => ({}));
     return NextResponse.json(
-      { error: `Zendesk API error: ${err?.error || ticketsRes.status}` },
-      { status: ticketsRes.status }
+      { error: `Zendesk API error: ${err?.error || solvedRes.status}` },
+      { status: solvedRes.status }
     );
   }
 
-  const { tickets = [] } = await ticketsRes.json().catch(() => ({ tickets: [] }));
+  const [solvedData, closedData] = await Promise.all([
+    solvedRes.ok ? solvedRes.json().catch(() => ({ tickets: [] })) : { tickets: [] },
+    closedRes.ok ? closedRes.json().catch(() => ({ tickets: [] })) : { tickets: [] },
+  ]);
+
+  // Merge and sort by created_at descending
+  const tickets = [...(solvedData.tickets || []), ...(closedData.tickets || [])]
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    .slice(0, limit);
 
   const results = [];
 
@@ -133,13 +146,15 @@ export async function GET(req) {
 
     const { comments = [] } = await commentsRes.json().catch(() => ({ comments: [] }));
 
-    // First public customer comment
-    const customerComment = comments.find(
-      (c) => c.public && c.author_id === ticket.requester_id
-    );
-    // First public agent reply
-    const agentComment = comments.find(
-      (c) => c.public && c.author_id !== ticket.requester_id && c.author_id !== customerComment?.author_id
+    // First public comment (usually the customer's opening message)
+    const publicComments = comments.filter((c) => c.public);
+    const customerComment = publicComments.find(
+      (c) => c.author_id === ticket.requester_id
+    ) || publicComments[0];
+
+    // First public reply from someone other than the requester
+    const agentComment = publicComments.find(
+      (c) => c.author_id !== ticket.requester_id
     );
 
     if (!customerComment || !agentComment) continue;
