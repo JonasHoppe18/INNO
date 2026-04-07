@@ -53,7 +53,7 @@
     "@tailwindcss/container-queries": "^0.1.1",
     "@types/react": "19.2.8",
     "autoprefixer": "^10.4.22",
-    "baseline-browser-mapping": "^2.10.14",
+    "baseline-browser-mapping": "^2.10.16",
     "eslint": "^8.57.1",
     "eslint-config-next": "14.2.5",
     "postcss": "^8.4.31",

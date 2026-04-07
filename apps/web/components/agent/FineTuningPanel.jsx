@@ -706,7 +706,7 @@ function EvalSection() {
           <FlaskConical className="h-4 w-4 text-muted-foreground" />
           <div>
             <p className="text-sm font-semibold text-foreground">Draft quality eval</p>
-            <p className="text-xs text-muted-foreground">Score Sona's drafts against real Zendesk tickets or pasted emails.</p>
+            <p className="text-xs text-muted-foreground">Score Sona&apos;s drafts against real Zendesk tickets or pasted emails.</p>
           </div>
         </div>
         <div className="flex items-center gap-1 rounded-lg border bg-slate-50 p-0.5">
