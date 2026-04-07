@@ -43,15 +43,39 @@ Return ONLY valid JSON, no markdown:
   "reasoning": "<1-2 sentences explaining the overall score>"
 }`;
 
-async function judgeWithOpenAI(ticketBody, draftContent) {
-  const userPrompt = `CUSTOMER TICKET:\n${ticketBody}\n\nDRAFT RESPONSE:\n${draftContent}`;
+const JUDGE_WITH_HUMAN_PROMPT = `You are an expert customer service quality evaluator.
+You will be given a customer support ticket, an AI-generated draft response, and the actual response a human support agent sent.
+Score the AI draft by comparing it to the human response on four dimensions, each from 1 to 5:
+
+- correctness: Does the AI correctly identify the issue and provide accurate information, like the human did?
+- completeness: Does the AI cover the same key points the human covered? Is anything important missing?
+- tone: Is the AI's tone as professional, empathetic, and warm as the human's?
+- actionability: Does the AI give the customer equally clear next steps as the human did?
+
+overall: Your holistic score (1-5) — would a support manager prefer the AI draft or the human reply? 5 = AI is as good or better than the human.
+
+Return ONLY valid JSON, no markdown:
+{
+  "correctness": <1-5>,
+  "completeness": <1-5>,
+  "tone": <1-5>,
+  "actionability": <1-5>,
+  "overall": <1-5>,
+  "reasoning": "<1-2 sentences on how the AI draft compares to the human reply>"
+}`;
+
+async function judgeWithOpenAI(ticketBody, draftContent, humanReply = null) {
+  const systemPrompt = humanReply ? JUDGE_WITH_HUMAN_PROMPT : JUDGE_SYSTEM_PROMPT;
+  const userPrompt = humanReply
+    ? `CUSTOMER TICKET:\n${ticketBody}\n\nHUMAN AGENT REPLY:\n${humanReply}\n\nAI DRAFT:\n${draftContent}`
+    : `CUSTOMER TICKET:\n${ticketBody}\n\nDRAFT RESPONSE:\n${draftContent}`;
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: "gpt-4o",
+      model: "gpt-4o-mini",
       messages: [
-        { role: "system", content: JUDGE_SYSTEM_PROMPT },
+        { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
       temperature: 0,
@@ -98,7 +122,7 @@ export async function POST(req) {
   }
 
   const body = await req.json().catch(() => ({}));
-  const { emails, thread_ids, run_label, model = "gpt-4o" } = body;
+  const { emails, thread_ids, zendesk_tickets, run_label, model = "gpt-4o" } = body;
 
   if (!run_label) {
     return NextResponse.json({ error: "run_label required" }, { status: 400 });
@@ -106,8 +130,9 @@ export async function POST(req) {
 
   const hasEmails = Array.isArray(emails) && emails.length > 0;
   const hasThreads = Array.isArray(thread_ids) && thread_ids.length > 0;
-  if (!hasEmails && !hasThreads) {
-    return NextResponse.json({ error: "emails or thread_ids required" }, { status: 400 });
+  const hasZendesk = Array.isArray(zendesk_tickets) && zendesk_tickets.length > 0;
+  if (!hasEmails && !hasThreads && !hasZendesk) {
+    return NextResponse.json({ error: "emails, thread_ids, or zendesk_tickets required" }, { status: 400 });
   }
 
   const supabase = createServiceClient();
@@ -172,6 +197,45 @@ export async function POST(req) {
             ticket_subject: ticketSubject,
             ticket_body: ticketBody.slice(0, 2000),
             draft_content: draft.slice(0, 2000),
+            correctness: scores.correctness,
+            completeness: scores.completeness,
+            tone: scores.tone,
+            actionability: scores.actionability,
+            overall: scores.overall,
+            reasoning: scores.reasoning,
+          })
+          .select("id")
+          .single();
+        results.push({ subject: ticketSubject, id: inserted?.id, scores, draft });
+      } catch (err) {
+        errors.push({ subject: ticketSubject, error: err.message });
+      }
+    }
+  }
+
+  // Mode 3: zendesk_tickets — generate draft + compare vs human reply
+  if (hasZendesk) {
+    for (const ticket of zendesk_tickets) {
+      const ticketBody = String(ticket.customer_body || ticket.body || "").trim();
+      const ticketSubject = String(ticket.subject || "").trim() || null;
+      const humanReply = String(ticket.human_reply || "").trim() || null;
+      const zendeskId = String(ticket.id || "");
+      if (!ticketBody) continue;
+      try {
+        const draft = await generateDraft(ticketBody, instructions, shopContext);
+        const scores = await judgeWithOpenAI(ticketBody, draft, humanReply);
+        const { data: inserted } = await supabase
+          .from("eval_results")
+          .insert({
+            shop_id: shop?.id || null,
+            thread_id: null,
+            run_label,
+            model,
+            ticket_subject: ticketSubject,
+            ticket_body: ticketBody.slice(0, 2000),
+            draft_content: draft.slice(0, 2000),
+            human_reply: humanReply ? humanReply.slice(0, 2000) : null,
+            zendesk_ticket_id: zendeskId || null,
             correctness: scores.correctness,
             completeness: scores.completeness,
             tone: scores.tone,

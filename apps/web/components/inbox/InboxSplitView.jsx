@@ -1144,10 +1144,12 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       const savedSelectedId = String(parsed?.selectedThreadId || "").trim();
 
       if (savedOpenIds.length) {
-        setOpenThreadIds(savedOpenIds);
-        setSelectedThreadId(
-          savedSelectedId && savedOpenIds.includes(savedSelectedId) ? savedSelectedId : savedOpenIds[0]
-        );
+        const restoredSelectedId =
+          savedSelectedId && savedOpenIds.includes(savedSelectedId)
+            ? savedSelectedId
+            : savedOpenIds[0];
+        setOpenThreadIds(restoredSelectedId ? [restoredSelectedId] : []);
+        setSelectedThreadId(restoredSelectedId || null);
       }
     } catch {
       // noop
@@ -1502,9 +1504,11 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     if (!tabStateReady) return;
     if (typeof window === "undefined") return;
 
-    const persistedOpenIds = openThreadIds
-      .map((threadId) => String(threadId || "").trim())
-      .filter((threadId) => threadId && !isLocalThreadId(threadId));
+    const normalizedSelectedId = String(selectedThreadId || "").trim();
+    const persistedOpenIds =
+      normalizedSelectedId && !isLocalThreadId(normalizedSelectedId)
+        ? [normalizedSelectedId]
+        : [];
     const persistedSelectedId = String(selectedThreadId || "").trim();
     const payload = {
       openThreadIds: persistedOpenIds,
@@ -1866,11 +1870,16 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
 
   const threadAttachments = useMemo(() => {
     if (!selectedThreadId) return [];
-    const messageIdSet = new Set(rawThreadMessages.map((message) => message?.id).filter(Boolean));
-    if (!messageIdSet.size) return [];
-    return (liveAttachments || []).filter((attachment) =>
-      messageIdSet.has(attachment?.message_id)
+    const messageIdSet = new Set(
+      rawThreadMessages
+        .map((message) => String(message?.id || "").trim())
+        .filter(Boolean)
     );
+    if (!messageIdSet.size) return [];
+    return (liveAttachments || []).filter((attachment) => {
+      const attachmentMessageId = String(attachment?.message_id || "").trim();
+      return attachmentMessageId && messageIdSet.has(attachmentMessageId);
+    });
   }, [liveAttachments, rawThreadMessages, selectedThreadId]);
 
   const draftMessage = useMemo(() => {

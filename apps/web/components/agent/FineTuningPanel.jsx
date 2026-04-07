@@ -520,7 +520,7 @@ export function FineTuningPanel({ children }) {
           </button>
         </div>
       ) : null}
-      {false && <EvalSection />}
+      <EvalSection />
       <ThreadPickerModal
         open={threadPickerOpen}
         onOpenChange={setThreadPickerOpen}
@@ -602,7 +602,12 @@ const EMPTY_EMAIL = () => ({ id: Math.random().toString(36).slice(2), subject: "
 const MODELS = ["gpt-4o", "gpt-4o-mini"];
 
 function EvalSection() {
+  const [mode, setMode] = useState("manual"); // "manual" | "zendesk"
   const [emails, setEmails] = useState([EMPTY_EMAIL()]);
+  const [zendeskTickets, setZendeskTickets] = useState([]);
+  const [selectedZendesk, setSelectedZendesk] = useState(new Set());
+  const [loadingZendesk, setLoadingZendesk] = useState(false);
+  const [zendeskError, setZendeskError] = useState(null);
   const [runLabel, setRunLabel] = useState("");
   const [model, setModel] = useState("gpt-4o");
   const [running, setRunning] = useState(false);
@@ -624,26 +629,58 @@ function EvalSection() {
 
   useEffect(() => { fetchRuns(); }, [fetchRuns]);
 
+  const fetchZendeskTickets = async () => {
+    setLoadingZendesk(true);
+    setZendeskError(null);
+    try {
+      const res = await fetch("/api/eval/zendesk-tickets?limit=30", { credentials: "include" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Failed to fetch Zendesk tickets");
+      setZendeskTickets(data?.tickets ?? []);
+      setSelectedZendesk(new Set((data?.tickets ?? []).map((t) => t.id)));
+    } catch (err) {
+      setZendeskError(err.message);
+    } finally {
+      setLoadingZendesk(false);
+    }
+  };
+
+  const toggleZendesk = (id) => setSelectedZendesk((prev) => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+
   const addEmail = () => setEmails((prev) => [...prev, EMPTY_EMAIL()]);
   const removeEmail = (id) => setEmails((prev) => prev.filter((e) => e.id !== id));
   const updateEmail = (id, field, value) =>
     setEmails((prev) => prev.map((e) => e.id === id ? { ...e, [field]: value } : e));
 
   const handleRun = async () => {
-    const validEmails = emails.filter((e) => e.body.trim());
-    if (!runLabel.trim() || validEmails.length === 0) return;
+    if (!runLabel.trim()) return;
+    if (mode === "manual" && !emails.some((e) => e.body.trim())) return;
+    if (mode === "zendesk" && selectedZendesk.size === 0) return;
+
     setRunning(true);
     setRunError(null);
     try {
+      const body = mode === "zendesk"
+        ? {
+            zendesk_tickets: zendeskTickets.filter((t) => selectedZendesk.has(t.id)),
+            run_label: runLabel.trim(),
+            model,
+          }
+        : {
+            emails: emails.filter((e) => e.body.trim()).map((e) => ({ subject: e.subject, body: e.body })),
+            run_label: runLabel.trim(),
+            model,
+          };
+
       const res = await fetch("/api/eval/run", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          emails: validEmails.map((e) => ({ subject: e.subject, body: e.body })),
-          run_label: runLabel.trim(),
-          model,
-        }),
+        body: JSON.stringify(body),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "Eval failed");
@@ -657,7 +694,10 @@ function EvalSection() {
     }
   };
 
-  const hasValidEmails = emails.some((e) => e.body.trim());
+  const canRun = runLabel.trim() && (
+    (mode === "manual" && emails.some((e) => e.body.trim())) ||
+    (mode === "zendesk" && selectedZendesk.size > 0)
+  );
 
   return (
     <Card className="mt-8 overflow-hidden border bg-white shadow-sm">
@@ -666,13 +706,25 @@ function EvalSection() {
           <FlaskConical className="h-4 w-4 text-muted-foreground" />
           <div>
             <p className="text-sm font-semibold text-foreground">Draft quality eval</p>
-            <p className="text-xs text-muted-foreground">Paste customer emails, run them through the AI, and get a quality score (1–5) on correctness, completeness, tone and actionability.</p>
+            <p className="text-xs text-muted-foreground">Score Sona's drafts against real Zendesk tickets or pasted emails.</p>
           </div>
+        </div>
+        <div className="flex items-center gap-1 rounded-lg border bg-slate-50 p-0.5">
+          <button
+            type="button"
+            onClick={() => setMode("manual")}
+            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${mode === "manual" ? "bg-white shadow-sm text-slate-800" : "text-muted-foreground hover:text-slate-700"}`}
+          >Manual</button>
+          <button
+            type="button"
+            onClick={() => { setMode("zendesk"); if (zendeskTickets.length === 0) fetchZendeskTickets(); }}
+            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${mode === "zendesk" ? "bg-white shadow-sm text-slate-800" : "text-muted-foreground hover:text-slate-700"}`}
+          >Zendesk</button>
         </div>
       </div>
 
       <CardContent className="space-y-6 pt-5">
-        {/* Email inputs */}
+        {mode === "manual" ? (
         <div className="space-y-3">
           {emails.map((email, idx) => (
             <div key={email.id} className="rounded-xl border bg-slate-50 p-4 space-y-2">
@@ -706,6 +758,47 @@ function EvalSection() {
             + Add email
           </button>
         </div>
+        ) : (
+        <div className="space-y-3">
+          {loadingZendesk && (
+            <p className="text-xs text-muted-foreground">Fetching tickets from Zendesk…</p>
+          )}
+          {zendeskError && (
+            <p className="text-xs text-destructive">{zendeskError}</p>
+          )}
+          {!loadingZendesk && !zendeskError && zendeskTickets.length === 0 && (
+            <p className="text-xs text-muted-foreground">No solved Zendesk tickets found.</p>
+          )}
+          {zendeskTickets.length > 0 && (
+            <>
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-muted-foreground">{selectedZendesk.size} of {zendeskTickets.length} tickets selected</p>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setSelectedZendesk(new Set(zendeskTickets.map((t) => t.id)))} className="text-xs text-blue-600 hover:text-blue-500 font-medium">Select all</button>
+                  <button type="button" onClick={() => setSelectedZendesk(new Set())} className="text-xs text-muted-foreground hover:text-slate-700">Clear</button>
+                </div>
+              </div>
+              <div className="divide-y rounded-xl border bg-white overflow-hidden">
+                {zendeskTickets.map((ticket) => (
+                  <label key={ticket.id} className="flex cursor-pointer items-start gap-3 px-4 py-2.5 hover:bg-slate-50 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={selectedZendesk.has(ticket.id)}
+                      onChange={() => toggleZendesk(ticket.id)}
+                      className="mt-0.5 shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-medium text-slate-800">{ticket.subject || "(no subject)"}</p>
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">{ticket.customer_body?.slice(0, 80)}…</p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+              <button type="button" onClick={fetchZendeskTickets} className="text-xs text-muted-foreground hover:text-slate-700">Refresh</button>
+            </>
+          )}
+        </div>
+        )}
 
         {/* Run controls */}
         <div className="flex gap-2">
@@ -728,7 +821,7 @@ function EvalSection() {
           <button
             type="button"
             onClick={handleRun}
-            disabled={running || !runLabel.trim() || !hasValidEmails}
+            disabled={running || !canRun}
             className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-blue-500 disabled:opacity-50"
           >
             {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}

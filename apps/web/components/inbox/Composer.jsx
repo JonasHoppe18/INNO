@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
   X,
@@ -134,6 +134,8 @@ export function Composer({
   onGenerateDraft = null,
   isGeneratingDraft = false,
 }) {
+  const MIN_COMPOSER_HEIGHT_PX = 190;
+  const MAX_COMPOSER_VIEWPORT_RATIO = 0.8;
   const isNote = mode === "note";
   const isForward = mode === "forward";
   const showDraftLoadingState = !isNote && isDraftLoading;
@@ -181,6 +183,10 @@ export function Composer({
   const [savedReplies, setSavedReplies] = useState([]);
   const [savedRepliesQuery, setSavedRepliesQuery] = useState("");
   const [showSignatureEditor, setShowSignatureEditor] = useState(false);
+  const [composerHeightPx, setComposerHeightPx] = useState(MIN_COMPOSER_HEIGHT_PX);
+  const composerContainerRef = useRef(null);
+  const resizeStateRef = useRef(null);
+  const manualComposerResizeRef = useRef(false);
   const mentionCandidates = useMemo(() => {
     const base = Array.isArray(mentionUsers) ? mentionUsers : [];
     const query = String(mentionState.query || "").trim().toLowerCase();
@@ -226,6 +232,14 @@ export function Composer({
   }, [initialTo]);
 
   useEffect(() => {
+    if (collapsed) {
+      // If the composer is hidden while the contentEditable is active,
+      // clear focus state so value hydration works when reopening.
+      replyEditorFocusedRef.current = false;
+      // Re-open with auto-calculated height based on current text content.
+      manualComposerResizeRef.current = false;
+      return;
+    }
     if (isNote) {
       resizeTextarea();
       return;
@@ -244,7 +258,7 @@ export function Composer({
     if (replyEditorRef.current && replyEditorRef.current.innerHTML !== nextHtml) {
       replyEditorRef.current.innerHTML = nextHtml;
     }
-  }, [isDraftLoading, isNote, value]);
+  }, [collapsed, isDraftLoading, isNote, value]);
 
   useEffect(() => {
     if (!isSending && !String(value || "").trim()) {
@@ -576,6 +590,83 @@ export function Composer({
     onBlur?.();
   };
 
+  const getAutoComposerHeightPx = useCallback(
+    (textValue = "") => {
+      const normalizedText = String(textValue || "")
+        // Generated drafts can contain trailing blank lines; ignore them for height fitting.
+        .replace(/[ \t]+\n/g, "\n")
+        .replace(/\n{3,}/g, "\n\n")
+        .trimEnd();
+      const lines = normalizedText
+        .replace(/\r\n/g, "\n")
+        .split("\n");
+      const estimatedLineCount = lines.reduce(
+        (sum, line) => sum + Math.max(1, Math.ceil(String(line || "").length / 110)),
+        0
+      );
+      const editorLineHeight = 23;
+      const minEditorHeight = isNote ? 74 : 88;
+      const maxEditorHeight = 260;
+      const estimatedEditorHeight = Math.min(
+        maxEditorHeight,
+        Math.max(minEditorHeight, estimatedLineCount * editorLineHeight + 20)
+      );
+      const chromeHeight = (isNote ? 116 : 136) + (showSignatureEditor && !isNote ? 78 : 0);
+      const maxHeight = Math.max(
+        MIN_COMPOSER_HEIGHT_PX,
+        Math.round((typeof window !== "undefined" ? window.innerHeight : 900) * MAX_COMPOSER_VIEWPORT_RATIO)
+      );
+      return Math.min(maxHeight, Math.max(MIN_COMPOSER_HEIGHT_PX, chromeHeight + estimatedEditorHeight));
+    },
+    [MAX_COMPOSER_VIEWPORT_RATIO, MIN_COMPOSER_HEIGHT_PX, isNote, showSignatureEditor]
+  );
+
+  useEffect(() => {
+    if (collapsed) return;
+    if (manualComposerResizeRef.current) return;
+    if (replyEditorFocusedRef.current) return;
+    if (typeof document !== "undefined" && document.activeElement === textareaRef.current) return;
+    setComposerHeightPx(getAutoComposerHeightPx(value));
+  }, [collapsed, getAutoComposerHeightPx, value]);
+
+  const onResizeMove = useCallback(
+    (event) => {
+      const state = resizeStateRef.current;
+      if (!state) return;
+      const delta = Number(event?.clientY || 0) - state.startY;
+      const maxHeight = Math.max(
+        MIN_COMPOSER_HEIGHT_PX,
+        Math.round((typeof window !== "undefined" ? window.innerHeight : 900) * MAX_COMPOSER_VIEWPORT_RATIO)
+      );
+      const next = Math.min(maxHeight, Math.max(MIN_COMPOSER_HEIGHT_PX, state.startHeight - delta));
+      setComposerHeightPx(next);
+    },
+    [MAX_COMPOSER_VIEWPORT_RATIO, MIN_COMPOSER_HEIGHT_PX]
+  );
+
+  const stopResize = useCallback(() => {
+    resizeStateRef.current = null;
+    if (typeof window === "undefined") return;
+    window.removeEventListener("mousemove", onResizeMove);
+    window.removeEventListener("mouseup", stopResize);
+  }, [onResizeMove]);
+
+  const startResize = useCallback((event) => {
+    event.preventDefault();
+    const container = composerContainerRef.current;
+    if (!container || typeof window === "undefined") return;
+    manualComposerResizeRef.current = true;
+    const rect = container.getBoundingClientRect();
+    resizeStateRef.current = {
+      startY: Number(event?.clientY || 0),
+      startHeight: Math.round(rect.height),
+    };
+    window.addEventListener("mousemove", onResizeMove);
+    window.addEventListener("mouseup", stopResize);
+  }, [onResizeMove, stopResize]);
+
+  useEffect(() => () => stopResize(), [stopResize]);
+
   if (collapsed) {
     return (
       <div className="flex-none border-t border-gray-100 bg-white px-4 py-2">
@@ -597,11 +688,25 @@ export function Composer({
   return (
     <div className="flex-none bg-transparent px-3 py-1.5">
       <div
+        ref={composerContainerRef}
         className={`mx-auto flex w-full max-w-[900px] flex-col overflow-hidden rounded-3xl border border-gray-200/80 bg-white shadow-sm ${
           disabled ? "opacity-60" : ""
         }`}
-        style={{ maxHeight: "45vh" }}
+        style={{
+          height: `${composerHeightPx}px`,
+          minHeight: `${MIN_COMPOSER_HEIGHT_PX}px`,
+          maxHeight: `${Math.round(MAX_COMPOSER_VIEWPORT_RATIO * 100)}vh`,
+        }}
       >
+        <div
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Resize reply box"
+          onMouseDown={startResize}
+          className="group flex h-2.5 cursor-row-resize items-center justify-center bg-white"
+        >
+          <span className="h-1 w-14 rounded-full bg-gray-200 transition-colors group-hover:bg-gray-300" />
+        </div>
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200/80 px-3 py-1.5">
           <div className="flex flex-1 items-start justify-between gap-2 text-[12px] text-gray-700">
             <div className="flex flex-1 flex-wrap items-center gap-2">

@@ -323,8 +323,9 @@ export function TicketDetail({
           ) : null}
           {messages.map((message) => {
             const direction = isOutboundMessage(message, mailboxEmails) ? "outbound" : "inbound";
+            const messageId = String(message?.id || "").trim();
             const persistedAttachments = attachments.filter(
-              (attachment) => attachment.message_id === message.id
+              (attachment) => String(attachment?.message_id || "").trim() === messageId
             );
             const messageAttachments =
               persistedAttachments.length || !Array.isArray(message?.attachments)
