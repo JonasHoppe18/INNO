@@ -1280,7 +1280,7 @@ export function KnowledgePageClient() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ id }),
+        body: JSON.stringify({ id, shop_id: shopId }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {

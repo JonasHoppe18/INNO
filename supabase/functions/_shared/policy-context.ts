@@ -177,7 +177,11 @@ export function detectPolicyIntent(subject: string, body: string): PolicyIntent 
   if (/\b(warranty|guarantee|defect|repair|replace(?:ment)?)\b/.test(text)) return "WARRANTY";
   if (/\b(shipping|delivery|ship|courier|carrier|postage|dispatch)\b/.test(text)) return "SHIPPING";
   if (/\b(refund|money back|chargeback|reimburse)\b/.test(text)) return "REFUND";
-  if (/\b(return|rma|send back|exchange)\b/.test(text)) return "RETURN";
+  // Only classify as RETURN if it's a direct request — not a conditional threat like
+  // "I will return unless X", "I might return if", "considering returning", "would return if not fixed"
+  const hasReturnKeyword = /\b(return|rma|send back|exchange)\b/.test(text);
+  const isConditionalReturn = /\b(unless|if not|if you|would.*return|going to return unless|considering return|thinking.*return|return.*unless|return.*if)\b/.test(text);
+  if (hasReturnKeyword && !isConditionalReturn) return "RETURN";
   return "OTHER";
 }
 

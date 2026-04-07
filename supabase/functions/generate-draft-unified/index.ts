@@ -1631,12 +1631,25 @@ const inferLanguageHint = (subject: string, body: string): string => {
   const hasDanish =
     /(\b(hej|jeg|ikke|med|hvordan|hvor|hvornår|modtager|levering|pakke|desværre|kan|skal|tilbage|købte)\b|[æøå])/i
       .test(text);
-  const hasEnglish = /(\b(hi|hello|where|when|order|delivery|tracking|received)\b)/i.test(text);
+  const hasFinnish =
+    /(\b(hei|kiitos|tilaus|toimitus|palautus|ongelma|tuote|kuulokkeet|laite|voimme|olen|sinulla)\b|[äöå])/i
+      .test(text);
+  const hasSwedish =
+    /(\b(hej|tack|beställning|leverans|retur|problem|produkt|hörlurar|enhet|kan|inte|också)\b|[åäö])/i
+      .test(text);
+  const hasGerman =
+    /(\b(hallo|bitte|danke|bestell|lieferung|rückgabe|problem|produkt|können|nicht|auch|sehr|leider)\b|[äöüß])/i
+      .test(text);
   const hasSpanish = /(\b(hola|dónde|donde|pedido|entrega|seguimiento|recibido)\b|[¡¿])/i.test(text);
-  if (hasSpanish) return "es";
+  // English: broad set of common function words and support vocabulary
+  const hasEnglish = /\b(the|this|is|are|have|not|can|will|please|your|with|from|that|there|way|just|really|would|could|should|these|those|very|also|hi|hello|where|when|order|delivery|tracking|received|return|refund|headphones|headset|device)\b/i.test(text);
   if (hasDanish) return "da"; // Danish (æøå) always wins — English product names appear in Danish emails
+  if (hasFinnish) return "fi";
+  if (hasSwedish) return "sv";
+  if (hasGerman) return "de";
+  if (hasSpanish) return "es";
   if (hasEnglish) return "en";
-  return "same_as_customer";
+  return "en"; // Default to English for unrecognised Latin-script emails
 };
 
 const ensureFirstLineHasName = (text: string, firstName: string): string => {
@@ -1698,6 +1711,9 @@ const resolveGreetingByLanguage = (languageHint: string, firstName: string) => {
   if (normalized === "es") return name ? `Hola ${name},` : "Hola,";
   if (normalized === "fr") return name ? `Bonjour ${name},` : "Bonjour,";
   if (normalized === "de") return name ? `Hallo ${name},` : "Hallo,";
+  if (normalized === "fi") return name ? `Hei ${name},` : "Hei,";
+  if (normalized === "sv") return name ? `Hej ${name},` : "Hej,";
+  if (normalized === "nl") return name ? `Hallo ${name},` : "Hallo,";
   return name ? `Hi ${name},` : "Hi,";
 };
 
@@ -3979,12 +3995,27 @@ Deno.serve(async (req) => {
     let ticketCategory = legacyTicketCategory;
     let workflowRoute = buildWorkflowRoute(ticketCategory);
     let workflowRouteSource: "thread_tags" | "latest_message_override" = "thread_tags";
-    // Override workflow to "return" if the latest message is clearly a return request
-    // but the thread is tagged with a different category (e.g., "tracking").
-    // This handles cases where a customer responds to a tracking thread with a return request.
-    const latestMessageIsReturnRequest = /\b(return|retur|refund|refusion|bytte|exchange|send back|returning)\b/i.test(
+    // Detect whether the return keyword is a genuine request or a conditional threat.
+    // "I will return UNLESS X" / "I am going to return if you cannot fix Y" are NOT return requests —
+    // the customer is asking a question and threatening a return as leverage.
+    const _returnKeywordFound = /\b(return|retur|refund|refusion|bytte|exchange|send back|returning)\b/i.test(
       `${emailData.subject || ""} ${emailData.body || ""}`,
     );
+    const _isConditionalReturn = /\b(unless|if not|if you|would.*return|going to return unless|considering return|thinking.*return|return.*unless|return.*if)\b/i.test(
+      `${emailData.subject || ""} ${emailData.body || ""}`,
+    );
+    const latestMessageIsReturnRequest = _returnKeywordFound && !_isConditionalReturn;
+
+    // If thread was tagged "Return" from initial classification but the latest message is
+    // a conditional return (not a real request), downgrade to General so knowledge retrieval runs.
+    if (workflowRoute.workflow === "return" && _returnKeywordFound && _isConditionalReturn) {
+      workflowRoute = buildWorkflowRoute("General");
+      ticketCategory = "General";
+      workflowRouteSource = "latest_message_override";
+    }
+
+    // Override workflow to "return" if the latest message is clearly a return request
+    // but the thread is tagged with a different category (e.g., "tracking").
     if (latestMessageIsReturnRequest && workflowRoute.workflow !== "return") {
       const returnOverrideRoute = buildWorkflowRoute("Return");
       if (returnOverrideRoute.workflow === "return") {
@@ -5291,7 +5322,7 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       const systemMsgBase = [
         // HARD CONSTRAINTS — evaluated first, override persona and learned style
         "HARD CONSTRAINTS — these rules override all persona instructions and learned style:",
-        "0. LANGUAGE — HIGHEST PRIORITY: Detect the customer's language from their email body. If the email contains Danish characters (æ, ø, å) or Danish words (hej, tak, ordre, pakke, levering, etc.), respond entirely in Danish — even if product names, order data, or other context is in English. Only respond in English if the customer's email is written entirely in English with no Danish indicators.",
+        `0. LANGUAGE — HIGHEST PRIORITY: You MUST reply in the same language the customer used to write their email. Detected language from email text: ${inferLanguageHint(emailData.subject || "", emailData.body || "").toUpperCase()}. Obey this detection STRICTLY — do NOT use country codes, country fields, zip codes, or any other metadata to determine language. A customer from Finland who writes in English gets an English reply. A customer from Denmark who writes in German gets a German reply. Supported: Danish (da), English (en), Finnish (fi), Swedish (sv), German (de), Spanish (es). If uncertain, default to English.`,
         `1. REPLY OPENING — REQUIRED STRUCTURE: ${isFirstReply ? "This is the FIRST reply in the thread. After the salutation ('Hej [navn],' / 'Hi [name],') you MUST write a short warm sentence thanking the customer and showing empathy — on the customer's language — BEFORE any steps or solution. Follow the persona instructions for this opening. Example Danish: 'Tak fordi du kontakter os. Vi er kede af at høre, at du oplever problemer med dit headset.' Example English: 'Thank you for reaching out. I'm sorry to hear you're having trouble.' Adapt to the customer's language. This warm opening is MANDATORY — do not skip it even when you have troubleshooting steps ready. NEVER restate or summarize the customer's specific problem." : "This is a FOLLOW-UP reply — skip the warm opening entirely and go directly to the point. Do not write 'Tak fordi du kontakter os' or any opening that restates the problem."}`,
         "2. NEVER write hollow helping phrases: 'Vi vil gerne hjælpe', 'Vi er her for at hjælpe', 'Vi vil gerne hjælpe dig med at finde en løsning', 'Jeg vil gerne hjælpe dig', 'I would like to help you'. These add no value. Go directly to the action or next step.",
         "3. NEVER end with hollow forward-looking phrases when you have NOT asked the customer for anything in this reply: 'Tøv ikke med at kontakte os', 'Lad os vide hvis du har spørgsmål', 'Hvis du har yderligere spørgsmål', 'Feel free to contact us', 'Don't hesitate to reach out', 'Vi glæder os til at høre fra dig', 'Vi ser frem til at hjælpe dig', 'Let me know if you need further assistance', 'Let me know if you have any questions', 'Please let me know if there is anything else I can help you with'. Exception: if you have actively asked the customer for information in this reply (e.g. a receipt, order number, photo, or clarification), a warm contextual closing like 'Jeg ser frem til at høre fra dig' is appropriate and human.",
@@ -5301,6 +5332,9 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         "7. TRACKING URLs ARE NOT RETURN LABELS: If order data contains a delivery tracking URL (e.g. a GLS, PostNord, or DHL tracking link), this is a shipment tracking link — NEVER present it as a return label or return shipping instruction. These are completely different things. A delivery tracking URL tracks a delivered parcel; a return label is used to send goods back.",
         "8. POLICY ACCURACY — CRITICAL: NEVER confirm or validate a customer's claim about your policies without verifying it against the PINNED POLICY and RELEVANT KNOWLEDGE in your context. If a customer states something about your return policy, shipping costs, warranty terms, or any other policy ('According to your terms you cover...', 'Your policy says...', 'I read that you provide...') that is NOT supported by the pinned policy or knowledge base, politely and clearly correct the misunderstanding. Example: if a customer claims 'you cover return shipping costs' but the policy says customers book their own courier, reply with what the policy actually says. Never let an incorrect policy claim go unaddressed — validating it creates financial and legal exposure.",
         "9. DO NOT ASK FOR WHAT THE CUSTOMER ALREADY PROVIDED: Before asking the customer for photos, attachments, order numbers, receipts, or any other information, read the email carefully to check if they have already provided it. If the customer writes 'I have attached photos' or 'see the attached images' or mentions any specific order number or receipt — do NOT ask them to send what they already sent. Asking for something already provided wastes the customer's time and signals inattention.",
+        "10. LANGUAGE: Always reply in the EXACT language the customer used to write their email. Detect language from the email text itself — NEVER from the country code, country field, or any other metadata. A customer from Finland who writes in English must receive a reply in English, not Finnish. A customer from Denmark who writes in German must receive a reply in German.",
+        "11. NEVER STATE PRICES: Do not state specific prices, costs, or fees for any product or service unless the exact price is explicitly provided in your knowledge base or order data. If a customer asks for pricing, direct them to the website or sales contact. Inventing or estimating prices creates serious commercial liability.",
+        "12. ANSWER THE ACTUAL QUESTION FIRST: Read the customer's message carefully and answer what they actually asked before offering alternatives. If a customer asks whether a feature can be disabled, answer that question directly first. Do NOT jump to offering a return or replacement without first addressing the core question. A threat to return ('I will return this unless...') is a conditional — answer the condition, not the threat.",
         "END OF HARD CONSTRAINTS.",
         "",
         "EXAMPLE — no order data, product bought from third-party retailer:",

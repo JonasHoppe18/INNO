@@ -692,16 +692,33 @@ export async function DELETE(request: Request) {
   try {
     const payload = await request.json().catch(() => null);
     const snippetId = String(payload?.id || "").trim();
+    const requestedShopId = String(payload?.shop_id || "").trim();
     if (!snippetId) return NextResponse.json({ error: "id is required." }, { status: 400 });
 
-    const shopId = await resolveShopId(serviceClient, scope, undefined);
+    const shopId = await resolveShopId(serviceClient, scope, requestedShopId || undefined);
 
-    await serviceClient
+    // First verify the snippet exists so we can return a meaningful error
+    const { data: existingRows, error: checkError } = await serviceClient
+      .from("agent_knowledge")
+      .select("id")
+      .eq("shop_id", shopId)
+      .or("source_provider.eq.manual_text,source_provider.eq.pdf_upload,source_provider.eq.image_upload")
+      .eq("metadata->>snippet_id", snippetId)
+      .limit(1);
+
+    if (checkError) throw new Error(checkError.message);
+    if (!Array.isArray(existingRows) || existingRows.length === 0) {
+      return NextResponse.json({ error: "Snippet not found." }, { status: 404 });
+    }
+
+    const { error: deleteError } = await serviceClient
       .from("agent_knowledge")
       .delete()
       .eq("shop_id", shopId)
       .or("source_provider.eq.manual_text,source_provider.eq.pdf_upload,source_provider.eq.image_upload")
       .eq("metadata->>snippet_id", snippetId);
+
+    if (deleteError) throw new Error(deleteError.message);
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
