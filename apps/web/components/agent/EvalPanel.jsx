@@ -9,6 +9,7 @@ import {
   Loader2,
   Play,
   RefreshCw,
+  Trash2,
   Zap,
 } from "lucide-react";
 import Link from "next/link";
@@ -187,41 +188,87 @@ function EvalResultRow({ result }) {
 
 // ─── Run card ─────────────────────────────────────────────────────────────────
 
-function RunCard({ run, expanded, onToggle }) {
+function RunCard({ run, expanded, onToggle, onDelete }) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
   const overall = run.averages.overall;
   const scoreColor =
     overall >= 4 ? "text-emerald-700 bg-emerald-50 border-emerald-200" :
     overall === 3 ? "text-amber-700 bg-amber-50 border-amber-200" :
     "text-red-600 bg-red-50 border-red-200";
 
+  const handleDelete = async (e) => {
+    e.stopPropagation();
+    if (!confirmDelete) { setConfirmDelete(true); return; }
+    setDeleting(true);
+    await onDelete(run.run_label);
+    setDeleting(false);
+    setConfirmDelete(false);
+  };
+
   return (
-    <Card className="overflow-hidden shadow-none">
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={onToggle}
-        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onToggle()}
-        className="flex w-full cursor-pointer items-center gap-3 p-4 text-left hover:bg-muted/30 transition-colors select-none"
-      >
-        <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border text-sm font-bold tabular-nums ${scoreColor}`}>
-          {overall}
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold">{run.run_label}</p>
-          <p className="text-xs text-muted-foreground">
-            {run.count} ticket{run.count !== 1 ? "s" : ""} · <span className="font-mono">{run.model}</span>
-            {run.created_at && ` · ${new Date(run.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`}
-          </p>
+    <Card className="group overflow-hidden shadow-none">
+      <div className="flex items-center">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={onToggle}
+          onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onToggle()}
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 p-4 text-left hover:bg-muted/30 transition-colors select-none"
+        >
+          <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border text-sm font-bold tabular-nums ${scoreColor}`}>
+            {overall}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold">{run.run_label}</p>
+            <p className="text-xs text-muted-foreground">
+              {run.count} ticket{run.count !== 1 ? "s" : ""} · <span className="font-mono">{run.model}</span>
+              {run.created_at && ` · ${new Date(run.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`}
+            </p>
+          </div>
+          <div className="hidden shrink-0 items-center gap-4 sm:flex">
+            {[["Corr", run.averages.correctness], ["Comp", run.averages.completeness], ["Tone", run.averages.tone], ["Act", run.averages.actionability]].map(([abbr, val]) => (
+              <div key={abbr} className="text-center">
+                <p className="text-xs font-medium tabular-nums">{val}</p>
+                <p className="text-[10px] text-muted-foreground">{abbr}</p>
+              </div>
+            ))}
+          </div>
+          <ChevronRight className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${expanded ? "rotate-90" : ""}`} />
         </div>
-        <div className="hidden shrink-0 items-center gap-4 sm:flex">
-          {[["Corr", run.averages.correctness], ["Comp", run.averages.completeness], ["Tone", run.averages.tone], ["Act", run.averages.actionability]].map(([abbr, val]) => (
-            <div key={abbr} className="text-center">
-              <p className="text-xs font-medium tabular-nums">{val}</p>
-              <p className="text-[10px] text-muted-foreground">{abbr}</p>
+
+        {/* Delete control — separate from the expand area */}
+        <div className="shrink-0 pr-3">
+          {confirmDelete ? (
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deleting}
+                className="rounded px-2 py-1 text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+              >
+                {deleting ? <Loader2 className="h-3 w-3 animate-spin" /> : "Slet"}
+              </button>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setConfirmDelete(false); }}
+                className="rounded px-2 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Annuller
+              </button>
             </div>
-          ))}
+          ) : (
+            <button
+              type="button"
+              onClick={handleDelete}
+              className="rounded p-1.5 text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-muted hover:text-destructive transition-all [.group:hover_&]:opacity-100"
+              aria-label="Slet run"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
-        <ChevronRight className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${expanded ? "rotate-90" : ""}`} />
       </div>
 
       {expanded && (
@@ -267,6 +314,19 @@ export function EvalPanel({ fullPage = false }) {
   }, []);
 
   useEffect(() => { fetchRuns(); }, [fetchRuns]);
+
+  const deleteRun = useCallback(async (runLabel) => {
+    try {
+      await fetch("/api/eval/results", {
+        method: "DELETE",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ run_label: runLabel }),
+      });
+      setRuns((prev) => prev.filter((r) => r.run_label !== runLabel));
+      if (expandedRun === runLabel) setExpandedRun(null);
+    } catch { /* silent */ }
+  }, [expandedRun]);
 
   const fetchZendeskTickets = async () => {
     setLoadingZendesk(true);
@@ -476,6 +536,7 @@ export function EvalPanel({ fullPage = false }) {
           run={run}
           expanded={expandedRun === run.run_label}
           onToggle={() => setExpandedRun(expandedRun === run.run_label ? null : run.run_label)}
+          onDelete={deleteRun}
         />
       ))}
     </div>

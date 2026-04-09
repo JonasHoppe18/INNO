@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
-import { resolveAuthScope } from "@/lib/server/workspace-auth";
+import { resolveAuthScope, listScopedShops } from "@/lib/server/workspace-auth";
 
 const SUPABASE_URL = (
   process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -91,30 +91,41 @@ async function judgeWithOpenAI(ticketBody, draftContent, humanReply = null) {
 
 async function generateDraft(shopId, subject, emailBody) {
   const endpoint = `${SUPABASE_URL}/functions/v1/generate-draft-unified`;
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-      ...(INTERNAL_AGENT_SECRET ? { "x-internal-secret": INTERNAL_AGENT_SECRET } : {}),
-    },
-    body: JSON.stringify({
-      shop_id: shopId,
-      provider: "smtp",
-      force_process: true,
-      email_data: {
-        subject: subject || "",
-        body: emailBody,
-        from: "eval@eval.internal",
-        fromEmail: "eval@eval.internal",
-        headers: [],
+  let res;
+  try {
+    res = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        ...(INTERNAL_AGENT_SECRET ? { "x-internal-secret": INTERNAL_AGENT_SECRET } : {}),
       },
-    }),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.error || "Draft generation failed");
+      body: JSON.stringify({
+        shop_id: shopId,
+        provider: "smtp",
+        force_process: true,
+        email_data: {
+          subject: subject || "",
+          body: emailBody,
+          from: "eval@eval.internal",
+          fromEmail: "eval@eval.internal",
+          headers: [],
+        },
+      }),
+    });
+  } catch (fetchErr) {
+    throw new Error(`Could not reach generate-draft-unified: ${fetchErr.message}`);
+  }
+  const raw = await res.text();
+  let data;
+  try { data = JSON.parse(raw); } catch { data = {}; }
+  if (!res.ok) {
+    throw new Error(`generate-draft-unified ${res.status}: ${data?.error || raw.slice(0, 200)}`);
+  }
   const draft = String(data?.reply || "").trim();
-  if (!draft) throw new Error("generate-draft-unified returned empty reply");
+  if (!draft) {
+    throw new Error(`generate-draft-unified returned no reply. Raw: ${raw.slice(0, 300)}`);
+  }
   const actions = Array.isArray(data?.actions) ? data.actions : [];
   return { draft, actions };
 }
@@ -151,16 +162,13 @@ export async function POST(req) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 
-  let shopQuery = supabase
-    .from("shops")
-    .select("id")
-    .is("uninstalled_at", null)
-    .order("created_at", { ascending: false })
-    .limit(1);
-  if (scope?.workspaceId) shopQuery = shopQuery.eq("workspace_id", scope.workspaceId);
-  else if (scope?.userId) shopQuery = shopQuery.eq("owner_user_id", scope.userId);
-  const { data: shop } = await shopQuery.maybeSingle();
-
+  let shops;
+  try {
+    shops = await listScopedShops(supabase, scope, { fields: "id" });
+  } catch (err) {
+    return NextResponse.json({ error: `Shop lookup failed: ${err.message}` }, { status: 500 });
+  }
+  const shop = shops[0];
   if (!shop?.id) {
     return NextResponse.json({ error: "No shop found for this account" }, { status: 400 });
   }
