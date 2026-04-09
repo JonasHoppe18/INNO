@@ -125,8 +125,17 @@ export async function GET(req) {
     closedRes.ok ? closedRes.json().catch(() => ({ tickets: [] })) : { tickets: [] },
   ]);
 
-  // Merge and sort by created_at descending
+  // Merge, deduplicate by id, and sort by created_at descending
+  const seenIds = new Set();
+  const NON_SUPPORT_PATTERNS = /\b(faktura|invoice|payment reminder|påmindelse|bill|betaling|regning|bolls)\b/i;
   const tickets = [...(solvedData.tickets || []), ...(closedData.tickets || [])]
+    .filter((t) => {
+      if (seenIds.has(t.id)) return false;
+      seenIds.add(t.id);
+      // Filter out invoices and non-support tickets by subject
+      if (NON_SUPPORT_PATTERNS.test(String(t.subject || ""))) return false;
+      return true;
+    })
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
     .slice(0, limit);
 

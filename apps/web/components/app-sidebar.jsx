@@ -114,6 +114,7 @@ function InboxSection({
   handleCreateInbox,
   handleDeleteInbox,
   customInboxes = [],
+  allTicketsUnreadCount = 0,
 }) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -150,16 +151,22 @@ function InboxSection({
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
-              asChild
               tooltip="All Tickets"
               className={cn(
                 "justify-start",
                 isAllTicketsActive && "bg-slate-100 text-slate-900 hover:bg-slate-100 hover:text-slate-900"
               )}
             >
-              <Link href="/inbox" className="flex w-full items-center gap-2 text-inherit no-underline">
-                <Inbox className="h-4 w-4 shrink-0" />
-                <span>All Tickets</span>
+              <>
+                <Link href="/inbox" className="flex min-w-0 flex-1 items-center gap-2 text-inherit no-underline">
+                  <Inbox className="h-4 w-4 shrink-0" />
+                  <span>All Tickets</span>
+                  {allTicketsUnreadCount > 0 ? (
+                    <span className="rounded-full bg-slate-900 px-2 py-0.5 text-[11px] font-semibold leading-none text-white">
+                      {allTicketsUnreadCount > 99 ? "99+" : allTicketsUnreadCount}
+                    </span>
+                  ) : null}
+                </Link>
                 <button
                   type="button"
                   onClick={(e) => {
@@ -167,7 +174,7 @@ function InboxSection({
                     e.stopPropagation()
                     setIsInboxOpen((prev) => !prev)
                   }}
-                  className="ml-auto rounded p-0.5 hover:bg-slate-200 group-data-[collapsible=icon]:hidden"
+                  className="ml-1 rounded p-0.5 hover:bg-slate-200 group-data-[collapsible=icon]:hidden"
                 >
                   {isInboxOpen ? (
                     <ChevronDown className="h-3.5 w-3.5" />
@@ -176,7 +183,7 @@ function InboxSection({
                   )}
                   <span className="sr-only">Toggle inbox filters</span>
                 </button>
-              </Link>
+              </>
             </SidebarMenuButton>
           </SidebarMenuItem>
 
@@ -286,6 +293,7 @@ export function AppSidebar({
   const [deleteInboxTarget, setDeleteInboxTarget] = useState(null)
   const [deleteInboxError, setDeleteInboxError] = useState("")
   const [isDeletingInbox, setIsDeletingInbox] = useState(false)
+  const [allTicketsUnreadCount, setAllTicketsUnreadCount] = useState(0)
   const supabase = useClerkSupabase()
 
   const loadCustomInboxes = async () => {
@@ -303,6 +311,34 @@ export function AppSidebar({
   useEffect(() => {
     if (!supabase) return
     loadCustomInboxes().catch(() => null)
+  }, [supabase])
+
+  useEffect(() => {
+    if (!supabase) return
+    let active = true
+
+    const loadUnreadCount = async () => {
+      const response = await fetch("/api/inbox/unread-count", {
+        method: "GET",
+        cache: "no-store",
+        credentials: "include",
+      }).catch(() => null)
+      if (!active || !response?.ok) return
+      const payload = await response.json().catch(() => ({}))
+      if (!active) return
+      const totalUnread = Number(payload?.unreadCount ?? 0)
+      setAllTicketsUnreadCount(totalUnread)
+    }
+
+    loadUnreadCount().catch(() => null)
+    const intervalId = setInterval(() => {
+      loadUnreadCount().catch(() => null)
+    }, 30_000)
+
+    return () => {
+      active = false
+      clearInterval(intervalId)
+    }
   }, [supabase])
 
   const handleOpenCreateInbox = () => {
@@ -404,6 +440,7 @@ export function AppSidebar({
           handleCreateInbox={handleOpenCreateInbox}
           customInboxes={customInboxes}
           handleDeleteInbox={handleOpenDeleteInbox}
+          allTicketsUnreadCount={allTicketsUnreadCount}
         />
         <NavAgent items={data.agent} />
         <NavSecondary items={data.navSecondary} className="mt-auto" />

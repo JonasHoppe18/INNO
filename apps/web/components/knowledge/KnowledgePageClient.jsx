@@ -1272,6 +1272,7 @@ export function KnowledgePageClient() {
 
   const handleDeleteSnippet = async (id) => {
     if (!shopId) return;
+    if (!window.confirm("Are you sure you want to delete this snippet?")) return;
 
     setDeletingSnippetId(id);
     try {
@@ -2059,7 +2060,7 @@ export function KnowledgePageClient() {
         }}
       >
         <DialogContent
-          className="max-w-5xl"
+          className="max-h-[90vh] max-w-5xl overflow-hidden flex flex-col"
           onInteractOutside={(event) => {
             event.preventDefault();
           }}
@@ -2072,7 +2073,7 @@ export function KnowledgePageClient() {
                 : "Add text or upload a file to train the AI."}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="flex-1 space-y-4 overflow-y-auto pr-1">
             <div className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 p-1">
               <button
                 type="button"

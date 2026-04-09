@@ -173,7 +173,8 @@ export function normalizePolicySummary(input: unknown): PolicySummary {
 }
 
 export function detectPolicyIntent(subject: string, body: string): PolicyIntent {
-  const text = `${subject || ""}\n${body || ""}`.toLowerCase();
+  // Normalize whitespace so multi-line emails don't break cross-line patterns like "return these\nheadphones unless"
+  const text = `${subject || ""} ${body || ""}`.toLowerCase().replace(/\s+/g, " ");
   if (/\b(warranty|guarantee|defect|repair|replace(?:ment)?)\b/.test(text)) return "WARRANTY";
   if (/\b(shipping|delivery|ship|courier|carrier|postage|dispatch)\b/.test(text)) return "SHIPPING";
   if (/\b(refund|money back|chargeback|reimburse)\b/.test(text)) return "REFUND";
@@ -195,6 +196,12 @@ function policyRulesBlock(intent: PolicyIntent) {
     "- For return flows that require support contact, ask briefly for order number, full name, and return reason if missing.",
     "- If this is an ongoing replacement, defect, or exchange follow-up and the order is already known, do not restart the case as a fresh return intake.",
   ];
+
+  if (intent === "OTHER" || intent === "WARRANTY" || intent === "SHIPPING") {
+    lines.push(
+      "- RETURN DETAILS SUPPRESSED: This ticket has NOT been classified as a return or refund request. Even though the POLICY SUMMARY below contains return_address, return_shipping_paid_by, and similar fields — DO NOT mention, share, or reference any return logistics (return address, return shipping costs, packaging requirements, courier instructions) in your reply. Answer the customer's actual question only. If the customer mentions returning as a conditional threat ('I will return unless...'), treat it as a question to answer — not as a return request to process.",
+    );
+  }
 
   if (intent === "RETURN" || intent === "REFUND") {
     lines.push(

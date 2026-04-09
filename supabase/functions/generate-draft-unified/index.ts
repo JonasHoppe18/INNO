@@ -2364,6 +2364,7 @@ async function fetchThreadHistory(
     .from("mail_messages")
     .select("body_text, from_me, provider_message_id")
     .eq("thread_id", threadId)
+    .eq("is_draft", false)
     .order("sent_at", { ascending: true })
     .limit(limit + 1);
   if (error) {
@@ -2796,8 +2797,42 @@ async function getAgentContext(
   // Issue-keyword title search — catches chunks whose title matches the symptom described in the email
   // but don't contain the product name in their content (e.g. "Dongle doesn't connect to headset.").
   // These are inserted FIRST in the merge so they aren't crowded out by token budget.
-  if (productVariantMatch && shopId) {
+  // Some keywords (like sidetone) run unconditionally — no product variant match required.
+  if (shopId) {
     const emailTextForKeywords = `${subject ?? ""} ${emailBody ?? ""}`.toLowerCase();
+
+    // Unconditional keywords — run even when there's no order/product variant match.
+    // These cover feature questions that come in without order context.
+    const unconditionalKeywords: Array<{ trigger: RegExp; titleSearch: string }> = [
+      { trigger: /\b(sidetone|side.?tone|hear myself|hearing myself|my own voice)\b/, titleSearch: "sidetone" },
+      { trigger: /\b(noise cancell|anc|active noise)\b/, titleSearch: "noise cancel" },
+      { trigger: /\b(eq|equalizer|equaliser|sound settings|audio settings)\b/, titleSearch: "eq" },
+    ];
+    for (const { trigger, titleSearch } of unconditionalKeywords) {
+      if (trigger.test(emailTextForKeywords)) {
+        const { data: chunks, error: chunksError } = await supabase
+          .from("agent_knowledge")
+          .select("id,content,source_type,source_provider,metadata")
+          .eq("shop_id", shopId)
+          .filter("metadata->>title", "ilike", `%${titleSearch}%`)
+          .limit(10);
+        if (chunks && !chunksError) {
+          const seenIds = new Set(issueKeywordMatches.map(m => String(m.id)));
+          const newCount = chunks.filter(c => !seenIds.has(String(c.id))).length;
+          for (const c of chunks) {
+            if (!seenIds.has(String(c.id))) {
+              issueKeywordMatches.push({ ...c, similarity: 0.93 } as KnowledgeMatch);
+            }
+          }
+          if (newCount > 0) {
+            console.info(JSON.stringify({ event: "knowledge.retrieve.unconditional_keyword_search", keyword: titleSearch, new_chunks: newCount, shop_id: shopId }));
+          }
+        }
+      }
+    }
+
+    // Product-variant-specific keywords — only run when a product is identified.
+    if (productVariantMatch) {
     const issueKeywords: Array<{ trigger: RegExp; titleSearch: string }> = [
       { trigger: /\b(dongle|connector|usb receiver)\b/, titleSearch: "dongle" },
       { trigger: /\b(pair|pairing|re-pair|reconnect)\b/, titleSearch: "pair" },
@@ -2830,6 +2865,7 @@ async function getAgentContext(
         }
       }
     }
+    } // end productVariantMatch
   }
 
   // Merge retrieval results — issue-keyword chunks FIRST (most specific to symptom),
@@ -4001,8 +4037,10 @@ Deno.serve(async (req) => {
     const _returnKeywordFound = /\b(return|retur|refund|refusion|bytte|exchange|send back|returning)\b/i.test(
       `${emailData.subject || ""} ${emailData.body || ""}`,
     );
+    // Normalize whitespace so multi-line emails don't break cross-line patterns like "return these\nheadphones unless"
+    const _normalizedEmailText = `${emailData.subject || ""} ${emailData.body || ""}`.replace(/\s+/g, " ");
     const _isConditionalReturn = /\b(unless|if not|if you|would.*return|going to return unless|considering return|thinking.*return|return.*unless|return.*if)\b/i.test(
-      `${emailData.subject || ""} ${emailData.body || ""}`,
+      _normalizedEmailText,
     );
     const latestMessageIsReturnRequest = _returnKeywordFound && !_isConditionalReturn;
 
@@ -5335,6 +5373,7 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         "10. LANGUAGE: Always reply in the EXACT language the customer used to write their email. Detect language from the email text itself — NEVER from the country code, country field, or any other metadata. A customer from Finland who writes in English must receive a reply in English, not Finnish. A customer from Denmark who writes in German must receive a reply in German.",
         "11. NEVER STATE PRICES: Do not state specific prices, costs, or fees for any product or service unless the exact price is explicitly provided in your knowledge base or order data. If a customer asks for pricing, direct them to the website or sales contact. Inventing or estimating prices creates serious commercial liability.",
         "12. ANSWER THE ACTUAL QUESTION FIRST: Read the customer's message carefully and answer what they actually asked before offering alternatives. If a customer asks whether a feature can be disabled, answer that question directly first. Do NOT jump to offering a return or replacement without first addressing the core question. A threat to return ('I will return this unless...') is a conditional — answer the condition, not the threat.",
+        "13. DO NOT PROACTIVELY OFFER RETURNS: NEVER suggest, offer, or mention returns, refunds, or return shipping unless the customer explicitly and directly asks for a return or refund in their message. If the answer to a customer's question is negative (e.g. 'this feature cannot be disabled'), respond with the answer and empathy — do NOT follow up by explaining how to return the product. The customer can ask about returns separately if they choose.",
         "END OF HARD CONSTRAINTS.",
         "",
         "EXAMPLE — no order data, product bought from third-party retailer:",
