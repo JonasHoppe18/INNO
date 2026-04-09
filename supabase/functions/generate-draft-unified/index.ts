@@ -7060,7 +7060,7 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       threadId,
     });
 
-    return new Response(JSON.stringify({ success: true, draftId }), {
+    return new Response(JSON.stringify({ success: true, draftId, reply: finalText ?? null, actions: automationActions ?? [] }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });

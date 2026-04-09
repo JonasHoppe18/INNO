@@ -16,6 +16,7 @@ const SUPABASE_SERVICE_ROLE_KEY =
   "";
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
+const INTERNAL_AGENT_SECRET = process.env.INTERNAL_AGENT_SECRET || "";
 
 function createServiceClient() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null;
@@ -88,31 +89,34 @@ async function judgeWithOpenAI(ticketBody, draftContent, humanReply = null) {
   return JSON.parse(data?.choices?.[0]?.message?.content || "{}");
 }
 
-async function generateDraft(emailBody, instructions, shopContext) {
-  const systemMsg = [
-    instructions
-      ? `You are a customer support agent. Follow these instructions:\n${instructions}`
-      : "You are a professional customer support agent.",
-    shopContext || "",
-    "Write a helpful, specific reply to the customer's message. Be concise but complete.",
-  ].filter(Boolean).join("\n\n");
-
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+async function generateDraft(shopId, subject, emailBody) {
+  const endpoint = `${SUPABASE_URL}/functions/v1/generate-draft-unified`;
+  const res = await fetch(endpoint, {
     method: "POST",
-    headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      ...(INTERNAL_AGENT_SECRET ? { "x-internal-secret": INTERNAL_AGENT_SECRET } : {}),
+    },
     body: JSON.stringify({
-      model: "gpt-4o",
-      messages: [
-        { role: "system", content: systemMsg },
-        { role: "user", content: emailBody },
-      ],
-      temperature: 0.3,
-      max_tokens: 600,
+      shop_id: shopId,
+      provider: "smtp",
+      force_process: true,
+      email_data: {
+        subject: subject || "",
+        body: emailBody,
+        from: "eval@eval.internal",
+        fromEmail: "eval@eval.internal",
+        headers: [],
+      },
     }),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.error?.message || "Draft generation failed");
-  return data?.choices?.[0]?.message?.content || "";
+  if (!res.ok) throw new Error(data?.error || "Draft generation failed");
+  const draft = String(data?.reply || "").trim();
+  if (!draft) throw new Error("generate-draft-unified returned empty reply");
+  const actions = Array.isArray(data?.actions) ? data.actions : [];
+  return { draft, actions };
 }
 
 export async function POST(req) {
@@ -149,7 +153,7 @@ export async function POST(req) {
 
   let shopQuery = supabase
     .from("shops")
-    .select("id, shop_name, team_name, brand_description, product_overview")
+    .select("id")
     .is("uninstalled_at", null)
     .order("created_at", { ascending: false })
     .limit(1);
@@ -157,23 +161,9 @@ export async function POST(req) {
   else if (scope?.userId) shopQuery = shopQuery.eq("owner_user_id", scope.userId);
   const { data: shop } = await shopQuery.maybeSingle();
 
-  // Fetch persona instructions
-  let instructions = null;
-  if (scope?.workspaceId) {
-    const { data: settings } = await supabase
-      .from("workspace_agent_settings")
-      .select("persona_instructions")
-      .eq("workspace_id", scope.workspaceId)
-      .maybeSingle();
-    instructions = settings?.persona_instructions || null;
+  if (!shop?.id) {
+    return NextResponse.json({ error: "No shop found for this account" }, { status: 400 });
   }
-
-  const shopName = shop?.shop_name || shop?.team_name || null;
-  const shopContext = [
-    shopName ? `Shop: ${shopName}` : null,
-    shop?.brand_description || null,
-    shop?.product_overview ? `Products: ${shop.product_overview}` : null,
-  ].filter(Boolean).join("\n");
 
   const results = [];
   const errors = [];
@@ -185,18 +175,19 @@ export async function POST(req) {
       const ticketSubject = email.subject?.trim() || null;
       if (!ticketBody) continue;
       try {
-        const draft = await generateDraft(ticketBody, instructions, shopContext);
+        const { draft, actions } = await generateDraft(shop.id, ticketSubject, ticketBody);
         const scores = await judgeWithOpenAI(ticketBody, draft);
         const { data: inserted } = await supabase
           .from("eval_results")
           .insert({
-            shop_id: shop?.id || null,
+            shop_id: shop.id,
             thread_id: null,
             run_label,
             model,
             ticket_subject: ticketSubject,
             ticket_body: ticketBody.slice(0, 2000),
             draft_content: draft.slice(0, 2000),
+            proposed_actions: actions.length > 0 ? actions : null,
             correctness: scores.correctness,
             completeness: scores.completeness,
             tone: scores.tone,
@@ -222,18 +213,19 @@ export async function POST(req) {
       const zendeskId = String(ticket.id || "");
       if (!ticketBody) continue;
       try {
-        const draft = await generateDraft(ticketBody, instructions, shopContext);
+        const { draft, actions } = await generateDraft(shop.id, ticketSubject, ticketBody);
         const scores = await judgeWithOpenAI(ticketBody, draft, humanReply);
         const { data: inserted } = await supabase
           .from("eval_results")
           .insert({
-            shop_id: shop?.id || null,
+            shop_id: shop.id,
             thread_id: null,
             run_label,
             model,
             ticket_subject: ticketSubject,
             ticket_body: ticketBody.slice(0, 2000),
             draft_content: draft.slice(0, 2000),
+            proposed_actions: actions.length > 0 ? actions : null,
             human_reply: humanReply ? humanReply.slice(0, 2000) : null,
             zendesk_ticket_id: zendeskId || null,
             correctness: scores.correctness,
@@ -283,7 +275,7 @@ export async function POST(req) {
         const { data: inserted } = await supabase
           .from("eval_results")
           .insert({
-            shop_id: shop?.id || null,
+            shop_id: shop.id,
             thread_id: threadId,
             run_label,
             model,
