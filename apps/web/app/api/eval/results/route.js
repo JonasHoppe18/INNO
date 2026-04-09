@@ -38,35 +38,34 @@ export async function GET() {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 
+  // Resolve all shop IDs belonging to this workspace/user
   let shopQuery = supabase
     .from("shops")
     .select("id")
-    .is("uninstalled_at", null)
-    .order("created_at", { ascending: false })
-    .limit(1);
+    .is("uninstalled_at", null);
 
   if (scope?.workspaceId) {
     shopQuery = shopQuery.eq("workspace_id", scope.workspaceId);
   } else if (scope?.userId) {
     shopQuery = shopQuery.eq("owner_user_id", scope.userId);
+  } else {
+    return NextResponse.json({ runs: [] });
   }
 
-  const { data: shop } = await shopQuery.maybeSingle();
+  const { data: shops } = await shopQuery;
+  const shopIds = (shops || []).map((s) => s.id).filter(Boolean);
 
-  // Fetch results scoped to this shop, plus legacy rows stored with null shop_id
-  let resultsQuery = supabase
+  if (shopIds.length === 0) {
+    return NextResponse.json({ runs: [] });
+  }
+
+  // Fetch results strictly scoped to this workspace's shops only
+  const { data: rows } = await supabase
     .from("eval_results")
     .select("*")
+    .in("shop_id", shopIds)
     .order("created_at", { ascending: false })
     .limit(200);
-
-  if (shop?.id) {
-    resultsQuery = resultsQuery.or(`shop_id.eq.${shop.id},shop_id.is.null`);
-  } else {
-    resultsQuery = resultsQuery.is("shop_id", null);
-  }
-
-  const { data: rows } = await resultsQuery;
 
   if (!rows || rows.length === 0) {
     return NextResponse.json({ runs: [] });
