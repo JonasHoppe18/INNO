@@ -71,11 +71,11 @@ const KNOWLEDGE_PROVIDER_PRIORITY: Record<string, number> = {
   shopify_metafield: 320,
   shopify_blog_article: 310,
   csv_support_knowledge: 300,
-  zendesk: 50,
+  zendesk: 280,
 };
 
 const KNOWLEDGE_PROVIDER_LIMITS: Record<string, number> = {
-  zendesk: 1,
+  zendesk: 2,
 };
 
 function getKnowledgeProviderPriority(provider: string | null | undefined) {

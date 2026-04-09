@@ -240,6 +240,9 @@ export function KnowledgePageClient() {
   const [snippetTitle, setSnippetTitle] = useState("");
   const [snippetContent, setSnippetContent] = useState("");
   const [historyProvider, setHistoryProvider] = useState(null);
+  const [zendeskImportCount, setZendeskImportCount] = useState(null);
+  const [zendeskImporting, setZendeskImporting] = useState(false);
+  const [zendeskImportResult, setZendeskImportResult] = useState(null);
   const [uploadingPdf, setUploadingPdf] = useState(false);
   const [snippetMode, setSnippetMode] = useState("text");
   const [pdfFile, setPdfFile] = useState(null);
@@ -357,6 +360,35 @@ export function KnowledgePageClient() {
 
     setHistoryProvider(typeof data?.provider === "string" ? data.provider : null);
   }, [resolveScope, supabase, user?.id]);
+
+  const loadZendeskImportCount = useCallback(async () => {
+    try {
+      const res = await fetch("/api/knowledge/import-zendesk", { credentials: "include" });
+      const data = await res.json().catch(() => ({}));
+      setZendeskImportCount(data?.count ?? 0);
+    } catch {
+      setZendeskImportCount(0);
+    }
+  }, []);
+
+  const handleZendeskImport = useCallback(async () => {
+    setZendeskImporting(true);
+    setZendeskImportResult(null);
+    try {
+      const res = await fetch("/api/knowledge/import-zendesk", {
+        method: "POST",
+        credentials: "include",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Import failed");
+      setZendeskImportResult({ ok: true, imported: data.imported, skipped: data.skipped });
+      await loadZendeskImportCount();
+    } catch (err) {
+      setZendeskImportResult({ ok: false, error: err.message });
+    } finally {
+      setZendeskImporting(false);
+    }
+  }, [loadZendeskImportCount]);
 
   const loadShops = useCallback(async () => {
     const { data, error } = await supabase
@@ -510,7 +542,7 @@ export function KnowledgePageClient() {
           : shopRows.length > 0
           ? shopRows[0]?.id || null
           : null;
-      await Promise.all([loadHistoryConnection(), loadSavedReplies()]);
+      await Promise.all([loadHistoryConnection(), loadSavedReplies(), loadZendeskImportCount()]);
       if (!currentShopId) {
         setSnippets([]);
         setCsvImportBatches([]);
@@ -589,7 +621,7 @@ export function KnowledgePageClient() {
     } finally {
       setLoading(false);
     }
-  }, [loadCsvImportBatches, loadHistoryConnection, loadSavedReplies, loadShops, loadSnippets, shopId, supabase]);
+  }, [loadCsvImportBatches, loadHistoryConnection, loadSavedReplies, loadShops, loadSnippets, loadZendeskImportCount, shopId, supabase]);
 
   useEffect(() => {
     loadData().catch(() => null);
@@ -1978,8 +2010,10 @@ export function KnowledgePageClient() {
               <Card className="h-full rounded-xl border border-gray-200/60 bg-white shadow-sm">
                 <CardHeader className="flex flex-col gap-3 px-6 pb-3 pt-6 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0 space-y-1">
-                    <CardTitle className="text-lg">History</CardTitle>
-                    <CardDescription>One-time import from integrations.</CardDescription>
+                    <CardTitle className="text-lg">Ticket history</CardTitle>
+                    <CardDescription>
+                      Import solved tickets so Sona can learn from previous answers.
+                    </CardDescription>
                   </div>
                   <Button
                     type="button"
@@ -1991,16 +2025,56 @@ export function KnowledgePageClient() {
                     <Link href="/integrations">Manage</Link>
                   </Button>
                 </CardHeader>
-                <CardContent className="px-6 pb-6">
-                  <div className="flex items-center justify-between rounded-lg border border-gray-100 bg-white px-4 py-3">
+                <CardContent className="px-6 pb-6 space-y-3">
+                  {/* Connection status */}
+                  <div className="flex items-center justify-between rounded-lg border border-gray-100 bg-gray-50 px-4 py-3">
                     <div className="flex items-center gap-2 text-sm text-gray-700">
                       <Cable className="h-4 w-4 text-gray-400" />
-                      <span>Source: {String(historyProvider).charAt(0).toUpperCase() + String(historyProvider).slice(1)}</span>
+                      <span>{String(historyProvider).charAt(0).toUpperCase() + String(historyProvider).slice(1)} connected</span>
                     </div>
-                    <span className="rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700">
-                      Connected
-                    </span>
+                    {zendeskImportCount !== null && (
+                      <span className="text-xs text-gray-500">
+                        {zendeskImportCount === 0 ? "Not imported yet" : `${zendeskImportCount} tickets in knowledge base`}
+                      </span>
+                    )}
                   </div>
+
+                  {/* Import result feedback */}
+                  {zendeskImportResult && (
+                    <div className={`rounded-lg border px-4 py-3 text-sm ${zendeskImportResult.ok ? "border-emerald-100 bg-emerald-50 text-emerald-700" : "border-red-100 bg-red-50 text-red-700"}`}>
+                      {zendeskImportResult.ok
+                        ? `✓ ${zendeskImportResult.imported} tickets imported${zendeskImportResult.skipped > 0 ? `, ${zendeskImportResult.skipped} already up to date` : ""}.`
+                        : `Error: ${zendeskImportResult.error}`}
+                    </div>
+                  )}
+
+                  {/* Import button */}
+                  <Button
+                    type="button"
+                    onClick={handleZendeskImport}
+                    disabled={zendeskImporting}
+                    className="w-full"
+                  >
+                    {zendeskImporting ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                        Importing tickets…
+                      </>
+                    ) : zendeskImportCount > 0 ? (
+                      <>
+                        <RefreshCw className="h-4 w-4" />
+                        Re-import from {String(historyProvider).charAt(0).toUpperCase() + String(historyProvider).slice(1)}
+                      </>
+                    ) : (
+                      <>
+                        <Database className="h-4 w-4" />
+                        Import tickets from {String(historyProvider).charAt(0).toUpperCase() + String(historyProvider).slice(1)}
+                      </>
+                    )}
+                  </Button>
+                  <p className="text-xs text-gray-400 text-center">
+                    Imports up to 200 solved tickets. Re-import anytime to sync new tickets.
+                  </p>
                 </CardContent>
               </Card>
             ) : null}
