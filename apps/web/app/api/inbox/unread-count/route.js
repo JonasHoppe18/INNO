@@ -31,7 +31,9 @@ async function loadUnreadCount(serviceClient, scope, mailboxIds) {
       .from("mail_threads")
       .select("unread_count")
       .in("mailbox_id", mailboxIds)
-      .gt("unread_count", 0),
+      .gt("unread_count", 0)
+      // "All Tickets" excludes notification-classified threads.
+      .or("classification_key.is.null,classification_key.neq.notification"),
     scope
   );
   const { data, error } = await query;

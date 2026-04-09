@@ -38,7 +38,7 @@ export async function GET() {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 
-  const shopQuery = supabase
+  let shopQuery = supabase
     .from("shops")
     .select("id")
     .is("uninstalled_at", null)
@@ -46,22 +46,27 @@ export async function GET() {
     .limit(1);
 
   if (scope?.workspaceId) {
-    shopQuery.eq("workspace_id", scope.workspaceId);
+    shopQuery = shopQuery.eq("workspace_id", scope.workspaceId);
   } else if (scope?.userId) {
-    shopQuery.eq("owner_user_id", scope.userId);
+    shopQuery = shopQuery.eq("owner_user_id", scope.userId);
   }
 
   const { data: shop } = await shopQuery.maybeSingle();
-  if (!shop?.id) {
-    return NextResponse.json({ runs: [] });
-  }
 
-  const { data: rows } = await supabase
+  // Fetch results scoped to this shop, plus legacy rows stored with null shop_id
+  let resultsQuery = supabase
     .from("eval_results")
     .select("*")
-    .eq("shop_id", shop.id)
     .order("created_at", { ascending: false })
     .limit(200);
+
+  if (shop?.id) {
+    resultsQuery = resultsQuery.or(`shop_id.eq.${shop.id},shop_id.is.null`);
+  } else {
+    resultsQuery = resultsQuery.is("shop_id", null);
+  }
+
+  const { data: rows } = await resultsQuery;
 
   if (!rows || rows.length === 0) {
     return NextResponse.json({ runs: [] });

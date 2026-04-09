@@ -162,7 +162,7 @@ function InboxSection({
                   <Inbox className="h-4 w-4 shrink-0" />
                   <span>All Tickets</span>
                   {allTicketsUnreadCount > 0 ? (
-                    <span className="rounded-full bg-slate-900 px-2 py-0.5 text-[11px] font-semibold leading-none text-white">
+                    <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-slate-300 bg-white px-1.5 text-[11px] font-semibold leading-none text-slate-700 tabular-nums">
                       {allTicketsUnreadCount > 99 ? "99+" : allTicketsUnreadCount}
                     </span>
                   ) : null}

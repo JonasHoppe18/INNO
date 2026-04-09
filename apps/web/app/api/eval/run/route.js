@@ -147,14 +147,14 @@ export async function POST(req) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 
-  const shopQuery = supabase
+  let shopQuery = supabase
     .from("shops")
     .select("id, shop_name, team_name, brand_description, product_overview")
     .is("uninstalled_at", null)
     .order("created_at", { ascending: false })
     .limit(1);
-  if (scope?.workspaceId) shopQuery.eq("workspace_id", scope.workspaceId);
-  else if (scope?.userId) shopQuery.eq("owner_user_id", scope.userId);
+  if (scope?.workspaceId) shopQuery = shopQuery.eq("workspace_id", scope.workspaceId);
+  else if (scope?.userId) shopQuery = shopQuery.eq("owner_user_id", scope.userId);
   const { data: shop } = await shopQuery.maybeSingle();
 
   // Fetch persona instructions
