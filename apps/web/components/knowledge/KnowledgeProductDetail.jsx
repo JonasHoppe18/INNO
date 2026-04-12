@@ -163,7 +163,7 @@ function SnippetModal({ open, onClose, onSave, shopId, productId, productTitle, 
               className="resize-none text-sm"
             />
             <p className="text-xs text-muted-foreground">
-              The more specific and precise you are, the better the AI's answers will be.
+              The more specific and precise you are, the better the AI&apos;s answers will be.
             </p>
           </div>
         </div>
