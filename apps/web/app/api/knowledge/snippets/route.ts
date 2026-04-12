@@ -366,7 +366,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ snippets: [], shop_id: null });
     }
 
-    let query = serviceClient
+    let query = (serviceClient as any)
       .from("agent_knowledge")
       .select("content, metadata")
       .eq("shop_id", shop.id)

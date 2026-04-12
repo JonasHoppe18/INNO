@@ -56,7 +56,7 @@ export async function GET() {
   }
 
   // Count product-specific knowledge snippets per product
-  const { data: knowledgeRows } = await supabase
+  const { data: knowledgeRows } = await (supabase as any)
     .from("agent_knowledge")
     .select("metadata")
     .eq("shop_id", shop.id)
