@@ -20,7 +20,7 @@ function createServiceClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 }
 
-export const DEFAULT_CATEGORIES = [
+const DEFAULT_CATEGORIES = [
   {
     slug: "product-questions",
     label: "Product Questions",
