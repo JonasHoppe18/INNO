@@ -546,21 +546,6 @@ export function EvalPanel({ fullPage = false }) {
   if (fullPage) {
     return (
       <div className="flex h-screen flex-col overflow-hidden bg-background">
-        {/* Header */}
-        <div className="flex shrink-0 items-center justify-between border-b px-6 py-3">
-          <div className="flex items-center gap-2.5">
-            <FlaskConical className="h-4 w-4 text-muted-foreground" />
-            <div>
-              <h1 className="text-sm font-semibold leading-tight">Draft Quality Eval</h1>
-              <p className="text-xs text-muted-foreground">Full pipeline · knowledge retrieval · action proposals</p>
-            </div>
-          </div>
-          <Button variant="outline" size="sm" onClick={fetchRuns} disabled={loadingRuns}>
-            {loadingRuns ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-            Refresh
-          </Button>
-        </div>
-
         {/* Body — two panes that fill remaining height */}
         <div className="flex min-h-0 flex-1">
           {/* Left: results */}

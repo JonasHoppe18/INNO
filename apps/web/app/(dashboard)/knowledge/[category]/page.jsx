@@ -1,9 +1,9 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { KnowledgeCategoriesClient } from "@/components/knowledge/KnowledgeCategoriesClient";
 import { DashboardPageShell } from "@/components/dashboard-page-shell";
+import { KnowledgeCategoryDetail } from "@/components/knowledge/KnowledgeCategoryDetail";
 
-export default async function KnowledgePage() {
+export default async function KnowledgeCategoryPage({ params }) {
   const { userId } = await auth();
 
   if (!userId) {
@@ -12,7 +12,7 @@ export default async function KnowledgePage() {
 
   return (
     <DashboardPageShell>
-      <KnowledgeCategoriesClient />
+      <KnowledgeCategoryDetail categorySlug={params.category} />
     </DashboardPageShell>
   );
 }

@@ -75,6 +75,7 @@ const KNOWLEDGE_PROVIDER_PRIORITY: Record<string, number> = {
 };
 
 const KNOWLEDGE_PROVIDER_LIMITS: Record<string, number> = {
+  manual_text: 6,
   zendesk: 2,
 };
 
@@ -374,6 +375,30 @@ export async function fetchOwnerProfile(
   };
 }
 
+/**
+ * Detects which support category an email most likely belongs to.
+ * Used to boost category-tagged snippets during retrieval reranking.
+ */
+function detectCategoryHint(text: string): string | null {
+  const lower = text.toLowerCase();
+  if (/return|refund|exchange|money.back|send.back|cancel.*order|retur/.test(lower)) return "returns";
+  if (/shipping|deliver|dispatch|track(ing)?|postage|courier|forsend|levering/.test(lower)) return "shipping";
+  return null;
+}
+
+/**
+ * Returns true if the snippet's product_title appears in the email text.
+ * Used to boost product-specific snippets when the customer mentions a product.
+ */
+function isProductMatch(
+  queryLower: string,
+  metadata: Record<string, unknown> | null | undefined,
+): boolean {
+  const productTitle = String(metadata?.product_title || "").trim().toLowerCase();
+  if (!productTitle) return false;
+  return queryLower.includes(productTitle);
+}
+
 async function embedKnowledgeQuery(input: string): Promise<number[] | null> {
   const trimmed = String(input || "").trim();
   if (!trimmed || !OPENAI_API_KEY) return null;
@@ -483,6 +508,11 @@ export async function fetchRelevantKnowledgeDetailed(
   const filtered = threshold <= 0
     ? matches
     : matches.filter((match) => Number(match?.similarity ?? 0) >= threshold);
+
+  // Detect category and product hints from the query to boost relevant snippets
+  const queryLower = safeQuery.toLowerCase();
+  const categoryHint = detectCategoryHint(safeQuery);
+
   const reranked = filtered
     .map((match, index) => {
       const provider = String(match?.source_provider || "").trim().toLowerCase();
@@ -490,7 +520,16 @@ export async function fetchRelevantKnowledgeDetailed(
       const providerPriority = getKnowledgeProviderPriority(provider);
       const contentLength = String(match?.content || "").trim().length;
       const lengthPenalty = contentLength > 1200 ? 0.03 : contentLength > 800 ? 0.015 : 0;
-      const adjustedScore = similarity + providerPriority / 1000 - lengthPenalty - index / 100000;
+      const meta = match?.metadata as Record<string, unknown> | null | undefined;
+
+      // Boost snippets whose category matches the detected ticket category
+      const categoryBoost = (categoryHint && meta?.category === categoryHint) ? 0.15 : 0;
+      // Boost snippets whose product_title appears in the email (e.g. "A-Spire Wireless")
+      const productBoost = isProductMatch(queryLower, meta) ? 0.25 : 0;
+
+      const adjustedScore =
+        similarity + providerPriority / 1000 - lengthPenalty - index / 100000 +
+        categoryBoost + productBoost;
       return {
         match,
         provider,

@@ -218,11 +218,18 @@ export async function POST(req) {
       const ticketBody = String(ticket.customer_body || ticket.body || "").trim();
       const ticketSubject = String(ticket.subject || "").trim() || null;
       const humanReply = String(ticket.human_reply || "").trim() || null;
+      const conversationHistory = String(ticket.conversation_history || "").trim() || null;
       const zendeskId = String(ticket.id || "");
       if (!ticketBody) continue;
+
+      // Include prior conversation turns so generate-draft-unified has full context
+      const fullBody = conversationHistory
+        ? `[Previous conversation:\n${conversationHistory}\n]\n\n${ticketBody}`
+        : ticketBody;
+
       try {
-        const { draft, actions } = await generateDraft(shop.id, ticketSubject, ticketBody);
-        const scores = await judgeWithOpenAI(ticketBody, draft, humanReply);
+        const { draft, actions } = await generateDraft(shop.id, ticketSubject, fullBody);
+        const scores = await judgeWithOpenAI(fullBody, draft, humanReply);
         const { data: inserted } = await supabase
           .from("eval_results")
           .insert({

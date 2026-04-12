@@ -167,14 +167,16 @@ function InboxSection({
                     </span>
                   ) : null}
                 </Link>
-                <button
-                  type="button"
+                <div
+                  role="button"
+                  tabIndex={0}
                   onClick={(e) => {
                     e.preventDefault()
                     e.stopPropagation()
                     setIsInboxOpen((prev) => !prev)
                   }}
-                  className="ml-1 rounded p-0.5 hover:bg-slate-200 group-data-[collapsible=icon]:hidden"
+                  onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setIsInboxOpen((prev) => !prev)}
+                  className="ml-1 rounded p-0.5 hover:bg-slate-200 group-data-[collapsible=icon]:hidden cursor-pointer"
                 >
                   {isInboxOpen ? (
                     <ChevronDown className="h-3.5 w-3.5" />
@@ -182,7 +184,7 @@ function InboxSection({
                     <ChevronRight className="h-3.5 w-3.5" />
                   )}
                   <span className="sr-only">Toggle inbox filters</span>
-                </button>
+                </div>
               </>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -253,19 +255,21 @@ function InboxSection({
                         <Inbox className="h-4 w-4 shrink-0" />
                         <span className="truncate">{inbox?.name || slug}</span>
                       </Link>
-                      <button
-                        type="button"
+                      <div
+                        role="button"
+                        tabIndex={0}
                         onClick={(event) => {
                           event.preventDefault()
                           event.stopPropagation()
                           handleDeleteInbox?.(inbox)
                         }}
-                        className="opacity-0 transition-opacity group-hover:opacity-100 rounded p-0.5 text-slate-500 hover:bg-slate-200 hover:text-slate-700"
+                        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && handleDeleteInbox?.(inbox)}
+                        className="opacity-0 transition-opacity group-hover:opacity-100 rounded p-0.5 text-slate-500 hover:bg-slate-200 hover:text-slate-700 cursor-pointer"
                         aria-label={`Delete ${inbox?.name || slug}`}
                         title="Delete inbox"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      </div>
                     </div>
                   </SidebarMenuItem>
                 )

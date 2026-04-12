@@ -158,8 +158,7 @@ mod rigtige tickets fra kunden.
 
 ## Kritiske ting at vide
 
-**OpenAI model:** Sættes via OPENAI_MODEL env var. Default er gpt-4o-mini 
-hvilket er utilstrækkeligt til produktionskvalitet. Skal være gpt-4o.
+**OpenAI model:** Sættes via OPENAI_MODEL env var. Default er gpt-4o
 
 **V2 pipeline:** Der eksisterer en V2 orchestrator med staged rollout via 
 feature flags (V2_STAGED_ORCHESTRATOR_ENABLED m.fl.) — alle default false. 

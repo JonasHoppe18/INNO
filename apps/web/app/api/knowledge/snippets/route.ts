@@ -337,6 +337,78 @@ async function insertKnowledgeChunks(options: {
   return chunks.length;
 }
 
+export async function GET(request: Request) {
+  const { userId: clerkUserId, orgId } = await auth();
+  if (!clerkUserId) {
+    return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
+  }
+
+  const serviceClient = createServiceClient();
+  if (!serviceClient) {
+    return NextResponse.json({ error: "Supabase configuration is missing." }, { status: 500 });
+  }
+
+  let scope: { workspaceId: string | null; supabaseUserId: string | null };
+  try {
+    scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId }, { requireExplicitWorkspace: true });
+  } catch (error: any) {
+    return NextResponse.json({ error: error?.message || "Could not resolve scope." }, { status: 500 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const category = searchParams.get("category") || null;
+  const productId = searchParams.get("product_id") || null;
+
+  try {
+    const { resolveScopedShop } = await import("@/lib/server/workspace-auth");
+    const shop = await resolveScopedShop(serviceClient, scope, undefined, { fields: "id", allowSingleScopedFallback: true }) as { id?: string } | null;
+    if (!shop?.id) {
+      return NextResponse.json({ snippets: [], shop_id: null });
+    }
+
+    let query = serviceClient
+      .from("agent_knowledge")
+      .select("content, metadata")
+      .eq("shop_id", shop.id)
+      .eq("source_provider", "manual_text");
+
+    if (category) {
+      query = query.eq("metadata->>category" as any, category);
+    } else {
+      query = query.is("metadata->>category" as any, null);
+    }
+
+    if (productId) {
+      query = query.eq("metadata->>product_id" as any, productId);
+    }
+
+    const { data: rows, error } = await query.order("created_at" as any, { ascending: false });
+    if (error) throw new Error(error.message);
+
+    // Deduplicate by snippet_id, take first chunk (chunk_index 0)
+    const seen = new Set<string>();
+    const snippets: Array<{ snippet_id: string; title: string; content: string; category: string | null; product_id: string | null }> = [];
+    for (const row of rows || []) {
+      const meta = row.metadata as any;
+      const snippetId = meta?.snippet_id as string | undefined;
+      if (!snippetId || seen.has(snippetId)) continue;
+      if ((meta?.chunk_index ?? 0) !== 0) continue;
+      seen.add(snippetId);
+      snippets.push({
+        snippet_id: snippetId,
+        title: String(meta?.title || ""),
+        content: String(row.content || ""),
+        category: (meta?.category as string) || null,
+        product_id: (meta?.product_id as string) || null,
+      });
+    }
+
+    return NextResponse.json({ snippets, shop_id: shop.id });
+  } catch (error: any) {
+    return NextResponse.json({ error: error?.message || "Could not fetch snippets." }, { status: 500 });
+  }
+}
+
 export async function POST(request: Request) {
   const { userId: clerkUserId, orgId } = await auth();
   if (!clerkUserId) {
@@ -474,6 +546,9 @@ export async function POST(request: Request) {
     const requestedShopId = String(payload?.shop_id || "").trim();
     const title = String(payload?.title || "").trim();
     const content = normalizeWhitespace(stripHtml(String(payload?.content || "")));
+    const category = String(payload?.category || "").trim() || null;
+    const productId = String(payload?.product_id || "").trim() || null;
+    const productTitle = String(payload?.product_title || "").trim() || null;
     if (!title || !content) {
       return NextResponse.json({ error: "title and content are required." }, { status: 400 });
     }
@@ -486,6 +561,8 @@ export async function POST(request: Request) {
         resolved_shop_id: shopId,
         workspace_id: scope.workspaceId,
         title,
+        category,
+        product_id: productId,
       })
     );
     const snippetId = makeSnippetId();
@@ -501,6 +578,8 @@ export async function POST(request: Request) {
         workspace_id: scope.workspaceId,
         snippet_id: snippetId,
         title,
+        ...(category ? { category } : {}),
+        ...(productId ? { product_id: productId, product_title: productTitle } : {}),
       },
     });
     console.info(
@@ -556,6 +635,9 @@ export async function PUT(request: Request) {
     const requestedShopId = String(payload?.shop_id || "").trim();
     const title = String(payload?.title || "").trim();
     const content = normalizeWhitespace(stripHtml(String(payload?.content || "")));
+    const category = String(payload?.category || "").trim() || null;
+    const productId = String(payload?.product_id || "").trim() || null;
+    const productTitle = String(payload?.product_title || "").trim() || null;
 
     if (!snippetId || !title || !content) {
       return NextResponse.json({ error: "id, title and content are required." }, { status: 400 });
@@ -595,8 +677,11 @@ export async function PUT(request: Request) {
       sourceProvider: "manual_text",
       maxChunks: 12,
       metadata: {
+        workspace_id: scope.workspaceId,
         snippet_id: snippetId,
         title,
+        ...(category ? { category } : {}),
+        ...(productId ? { product_id: productId, product_title: productTitle } : {}),
       },
     });
 

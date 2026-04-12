@@ -155,29 +155,43 @@ export async function GET(req) {
 
     const { comments = [] } = await commentsRes.json().catch(() => ({ comments: [] }));
 
-    // First public comment (usually the customer's opening message)
+    // Build full conversation from public comments
     const publicComments = comments.filter((c) => c.public);
-    const customerComment = publicComments.find(
-      (c) => c.author_id === ticket.requester_id
-    ) || publicComments[0];
+    const conversation = publicComments
+      .map((c) => ({
+        role: c.author_id === ticket.requester_id ? "customer" : "agent",
+        body: stripHtml(c.html_body || c.body || "").trim(),
+      }))
+      .filter((c) => c.body.length > 0 && !isAutoReply(c.body));
 
-    // First public reply from someone other than the requester
-    const agentComment = publicComments.find(
-      (c) => c.author_id !== ticket.requester_id
-    );
+    if (conversation.length < 2) continue;
 
-    if (!customerComment || !agentComment) continue;
+    // Last customer message = what we're replying to
+    const lastCustomerIdx = conversation.map((c, i) => (c.role === "customer" ? i : -1)).filter((i) => i >= 0).pop();
+    if (lastCustomerIdx === undefined) continue;
+    const lastCustomerMessage = conversation[lastCustomerIdx];
 
-    const customerBody = stripHtml(customerComment.html_body || customerComment.body || "").trim();
-    const agentBody = stripHtml(agentComment.html_body || agentComment.body || "").trim();
+    // First substantive agent reply
+    const agentMessage = conversation.find((c) => c.role === "agent");
+    if (!agentMessage) continue;
 
-    if (!customerBody || !agentBody || isAutoReply(agentBody)) continue;
+    // Everything before the last customer message = conversation history
+    const priorMessages = conversation.slice(0, lastCustomerIdx);
+    const conversationHistory = priorMessages.length > 0
+      ? priorMessages.map((m) => `${m.role === "customer" ? "Customer" : "Agent"}: ${m.body}`).join("\n\n")
+      : null;
+
+    const customerBody = lastCustomerMessage.body;
+    const agentBody = agentMessage.body;
+
+    if (!customerBody || !agentBody) continue;
 
     results.push({
       id: String(ticketId),
       subject,
       customer_body: customerBody.slice(0, 3000),
       human_reply: agentBody.slice(0, 3000),
+      conversation_history: conversationHistory ? conversationHistory.slice(0, 3000) : null,
       created_at: ticket.created_at,
     });
 
