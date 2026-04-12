@@ -78,12 +78,12 @@ export async function GET() {
   }
 
   // Count manual_text snippets per category from metadata
-  const { data: rows } = await supabase
+  const { data: rows } = await (supabase as any)
     .from("agent_knowledge")
     .select("metadata")
     .in("shop_id", shopIds)
     .eq("source_provider", "manual_text")
-    .eq("chunk_index" as any, 0); // only count first chunk of each snippet
+    .eq("chunk_index", 0);
 
   const countsByCategory: Record<string, number> = {};
   const customCategories = new Set<string>();
