@@ -386,7 +386,7 @@ function decodeEntities(text) {
     .replace(/&gt;/gi, ">");
 }
 
-function PolicyEditor({ title, description, field, initialContent, onSynced }) {
+function PolicyEditor({ title, description, field, initialContent, shopId, onSynced }) {
   const [value, setValue] = useState(() => decodeEntities(initialContent));
   const [saved, setSaved] = useState(() => decodeEntities(initialContent));
   const [saving, setSaving] = useState(false);
@@ -425,6 +425,8 @@ function PolicyEditor({ title, description, field, initialContent, onSynced }) {
       const res = await fetch("/api/knowledge/sync-policies", {
         method: "POST",
         credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shop_id: shopId || undefined }),
       });
       if (!res.ok) throw new Error("Could not sync from Shopify");
       toast.success("Policy synced from Shopify");
@@ -522,7 +524,10 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
   const fetchShopPolicy = useCallback(() => {
     fetch("/api/knowledge/shop-policy", { credentials: "include" })
       .then((r) => r.json())
-      .then((d) => setShopPolicy(d))
+      .then((d) => {
+        setShopPolicy(d);
+        if (d?.shop_id) setShopId(d.shop_id);
+      })
       .catch(() => setShopPolicy({}));
   }, []);
 
@@ -595,6 +600,7 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
             description="Shown to customers and used by AI when answering return & refund questions."
             field="policy_refund"
             initialContent={shopPolicy.policy_refund}
+            shopId={shopId}
             onSynced={fetchShopPolicy}
           />
         ) : (
@@ -603,6 +609,7 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
             description="Shown to customers and used by AI when answering shipping & delivery questions."
             field="policy_shipping"
             initialContent={shopPolicy.policy_shipping}
+            shopId={shopId}
             onSynced={fetchShopPolicy}
           />
         )

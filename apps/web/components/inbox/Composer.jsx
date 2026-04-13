@@ -201,9 +201,11 @@ export function Composer({
   }, [mentionState.query, mentionUsers]);
   const filteredSavedReplies = useMemo(() => {
     const rows = Array.isArray(savedReplies) ? savedReplies : [];
+    // Sort by use_count descending so most-used appear first
+    const sorted = [...rows].sort((a, b) => (b.use_count || 0) - (a.use_count || 0));
     const query = String(savedRepliesQuery || "").trim().toLowerCase();
-    if (!query) return rows;
-    return rows.filter((reply) => {
+    if (!query) return sorted;
+    return sorted.filter((reply) => {
       const title = String(reply?.title || "").toLowerCase();
       const category = String(reply?.category || "").toLowerCase();
       const content = normalizeSavedReplyToPlainText(reply?.content || "").toLowerCase();
@@ -480,6 +482,20 @@ export function Composer({
     });
   };
 
+  const trackSavedReplyUse = (reply) => {
+    if (!reply?.id) return;
+    fetch("/api/settings/saved-replies", {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: reply.id }),
+    }).catch(() => {});
+    // Optimistically update local count so sort updates immediately next open
+    setSavedReplies((prev) =>
+      prev.map((r) => r.id === reply.id ? { ...r, use_count: (r.use_count || 0) + 1 } : r)
+    );
+  };
+
   const applySavedReplyReplace = (reply) => {
     const content = normalizeSavedReplyToPlainText(reply?.content || "");
     if (!content) return;
@@ -490,6 +506,7 @@ export function Composer({
       const confirmed = window.confirm("Replace current draft with this saved reply?");
       if (!confirmed) return;
     }
+    trackSavedReplyUse(reply);
     onChange(content);
     setSavedRepliesOpen(false);
   };
@@ -497,6 +514,7 @@ export function Composer({
   const applySavedReplyInsert = (reply) => {
     const content = normalizeSavedReplyToPlainText(reply?.content || "");
     if (!content) return;
+    trackSavedReplyUse(reply);
     const current = String(value || "");
     let caretIndex = null;
     if (isNote) {

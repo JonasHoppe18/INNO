@@ -127,6 +127,7 @@ function formatSavedReply(row) {
     category: toNullableString(row.category),
     is_active: Boolean(row.is_active),
     sort_order: Number(row.sort_order || 0),
+    use_count: Number(row.use_count || 0),
     created_at: row.created_at || null,
     updated_at: row.updated_at || null,
   };
@@ -169,7 +170,7 @@ export async function GET(request) {
     let query = serviceClient
       .from("saved_replies")
       .select(
-        "id, workspace_id, title, content, category, is_active, sort_order, created_at, updated_at"
+        "id, workspace_id, title, content, category, is_active, sort_order, use_count, created_at, updated_at"
       )
       .eq("workspace_id", scope.workspaceId)
       .order("sort_order", { ascending: true })
@@ -361,6 +362,33 @@ export async function PUT(request) {
       { error: error instanceof Error ? error.message : "Could not update saved reply." },
       { status: 500 }
     );
+  }
+}
+
+export async function PATCH(request) {
+  // Lightweight endpoint — just increments use_count for a reply.
+  const serviceClient = createServiceClient();
+  if (!serviceClient) return NextResponse.json({ error: "Server misconfigured" }, { status: 500 });
+
+  let body = {};
+  try { body = (await request.json()) || {}; } catch { body = {}; }
+
+  const id = asString(body?.id);
+  if (!id) return NextResponse.json({ error: "id is required." }, { status: 400 });
+
+  try {
+    const { scope, error } = await resolveWorkspaceScope(serviceClient);
+    if (error) return error;
+
+    await serviceClient.rpc("increment_saved_reply_use_count", {
+      reply_id: id,
+      workspace_id_param: scope.workspaceId,
+    });
+
+    return NextResponse.json({ ok: true }, { status: 200 });
+  } catch (err) {
+    // Non-critical — don't fail the user's action if tracking fails
+    return NextResponse.json({ ok: true }, { status: 200 });
   }
 }
 

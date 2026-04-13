@@ -44,6 +44,7 @@ export async function GET() {
   }) as { id?: string; policy_refund?: string; policy_shipping?: string } | null;
 
   return NextResponse.json({
+    shop_id: shop?.id || null,
     policy_refund: shop?.policy_refund || null,
     policy_shipping: shop?.policy_shipping || null,
   });
