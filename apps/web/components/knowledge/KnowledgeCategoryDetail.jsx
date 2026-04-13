@@ -6,7 +6,6 @@ import {
   ArrowLeft,
   ChevronDown,
   ChevronRight,
-  ChevronUp,
   MessageSquare,
   Package,
   Pencil,
@@ -63,58 +62,58 @@ const DEFAULT_CATEGORIES = {
 function SnippetCard({ snippet, onEdit, onDelete }) {
   const [expanded, setExpanded] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const preview = snippet.content?.slice(0, 160);
-  const isLong = (snippet.content?.length || 0) > 160;
+
+  const toggle = () => setExpanded((v) => !v);
 
   return (
-    <Card className="group">
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium truncate">{snippet.title}</p>
-            <p className="mt-1 text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed">
-              {expanded ? snippet.content : preview}
-              {isLong && !expanded && "…"}
-            </p>
-            {isLong && (
-              <div
-                role="button"
-                tabIndex={0}
-                onClick={() => setExpanded((v) => !v)}
-                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setExpanded((v) => !v)}
-                className="mt-1 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground cursor-pointer"
-              >
-                {expanded ? <><ChevronUp className="h-3 w-3" /> Show less</> : <><ChevronDown className="h-3 w-3" /> Show more</>}
-              </div>
-            )}
-          </div>
-          <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(snippet)}>
-              <Pencil className="h-3.5 w-3.5" />
-            </Button>
-            {confirmDelete ? (
-              <div className="flex items-center gap-1">
-                <Button variant="destructive" size="sm" className="h-7 text-xs px-2" onClick={() => onDelete(snippet.snippet_id)}>
-                  Delete
-                </Button>
-                <Button variant="ghost" size="sm" className="h-7 text-xs px-2" onClick={() => setConfirmDelete(false)}>
-                  Cancel
-                </Button>
-              </div>
-            ) : (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                onClick={() => setConfirmDelete(true)}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
+    <div className="group">
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={toggle}
+        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && toggle()}
+        className="flex items-center gap-3 px-4 py-3 cursor-pointer select-none"
+      >
+        <ChevronDown
+          className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-150 ${expanded ? "rotate-180" : ""}`}
+        />
+        <span className="text-sm font-medium flex-1 truncate">{snippet.title}</span>
+        <div
+          className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(snippet)}>
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+          {confirmDelete ? (
+            <div className="flex items-center gap-1">
+              <Button variant="destructive" size="sm" className="h-7 text-xs px-2" onClick={() => onDelete(snippet.snippet_id)}>
+                Delete
               </Button>
-            )}
-          </div>
+              <Button variant="ghost" size="sm" className="h-7 text-xs px-2" onClick={() => setConfirmDelete(false)}>
+                Cancel
+              </Button>
+            </div>
+          ) : (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground hover:text-destructive"
+              onClick={() => setConfirmDelete(true)}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
         </div>
-      </CardContent>
-    </Card>
+      </div>
+      {expanded && (
+        <div className="px-10 pb-4">
+          <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
+            {snippet.content}
+          </p>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -359,26 +358,44 @@ function SnippetList({ snippets, loading, onEdit, onDelete, onAdd, icon: Icon })
   }
 
   return (
-    <div className="space-y-3">
+    <div className="rounded-lg border divide-y overflow-hidden">
       {snippets.map((snippet) => (
         <SnippetCard key={snippet.snippet_id} snippet={snippet} onEdit={onEdit} onDelete={onDelete} />
       ))}
-      <Button variant="outline" size="sm" className="gap-1.5" onClick={onAdd}>
-        <Plus className="h-3.5 w-3.5" />
-        Add snippet
-      </Button>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={onAdd}
+        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onAdd()}
+        className="flex items-center gap-3 px-4 py-3 cursor-pointer text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+      >
+        <Plus className="h-3.5 w-3.5 shrink-0" />
+        <span className="text-sm">Add snippet</span>
+      </div>
     </div>
   );
 }
 
-function PolicyEditor({ title, description, field, initialContent }) {
-  const [value, setValue] = useState(initialContent || "");
-  const [saved, setSaved] = useState(initialContent || "");
+function decodeEntities(text) {
+  return String(text || "")
+    .replace(/&amp;/gi, "&")
+    .replace(/&apos;/gi, "'")
+    .replace(/&#39;/gi, "'")
+    .replace(/&quot;/gi, '"')
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">");
+}
+
+function PolicyEditor({ title, description, field, initialContent, onSynced }) {
+  const [value, setValue] = useState(() => decodeEntities(initialContent));
+  const [saved, setSaved] = useState(() => decodeEntities(initialContent));
   const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
-    setValue(initialContent || "");
-    setSaved(initialContent || "");
+    const decoded = decodeEntities(initialContent);
+    setValue(decoded);
+    setSaved(decoded);
   }, [initialContent]);
 
   const isDirty = value !== saved;
@@ -402,12 +419,41 @@ function PolicyEditor({ title, description, field, initialContent }) {
     }
   };
 
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      const res = await fetch("/api/knowledge/sync-policies", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Could not sync from Shopify");
+      toast.success("Policy synced from Shopify");
+      onSynced?.();
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   return (
     <>
       <div className="rounded-xl border bg-card overflow-hidden">
-        <div className="px-6 py-5 border-b">
-          <h2 className="text-base font-semibold">{title}</h2>
-          <p className="text-sm text-muted-foreground mt-0.5">{description}</p>
+        <div className="flex items-start justify-between gap-4 px-6 py-5 border-b">
+          <div>
+            <h2 className="text-base font-semibold">{title}</h2>
+            <p className="text-sm text-muted-foreground mt-0.5">{description}</p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="shrink-0 gap-1.5"
+            onClick={handleSync}
+            disabled={syncing}
+          >
+            <RotateCcw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
+            {syncing ? "Syncing…" : "Sync from Shopify"}
+          </Button>
         </div>
         <div className="px-6 py-5">
           <Textarea
@@ -473,13 +519,17 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
     if (!hasPolicySection) fetchSnippets();
   }, [fetchSnippets, hasPolicySection]);
 
-  useEffect(() => {
-    if (!hasPolicySection) return;
+  const fetchShopPolicy = useCallback(() => {
     fetch("/api/knowledge/shop-policy", { credentials: "include" })
       .then((r) => r.json())
       .then((d) => setShopPolicy(d))
       .catch(() => setShopPolicy({}));
-  }, [hasPolicySection]);
+  }, []);
+
+  useEffect(() => {
+    if (!hasPolicySection) return;
+    fetchShopPolicy();
+  }, [hasPolicySection, fetchShopPolicy]);
 
   const handleDelete = async (snippetId) => {
     try {
@@ -545,6 +595,7 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
             description="Shown to customers and used by AI when answering return & refund questions."
             field="policy_refund"
             initialContent={shopPolicy.policy_refund}
+            onSynced={fetchShopPolicy}
           />
         ) : (
           <PolicyEditor
@@ -552,6 +603,7 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
             description="Shown to customers and used by AI when answering shipping & delivery questions."
             field="policy_shipping"
             initialContent={shopPolicy.policy_shipping}
+            onSynced={fetchShopPolicy}
           />
         )
       )}

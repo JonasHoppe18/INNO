@@ -195,6 +195,64 @@ async function upsertShop(options: {
   }
 }
 
+async function registerShopUpdateWebhook(domain: string, accessToken: string): Promise<void> {
+  const appUrl = (Deno.env.get("APP_URL") ?? "").replace(/\/$/, "");
+  if (!appUrl) {
+    console.warn("[webhook] APP_URL ikke sat — springer webhook-registrering over");
+    return;
+  }
+  const webhookAddress = `${appUrl}/api/webhooks/shopify`;
+  const apiBase = `https://${domain}/admin/api/${SHOPIFY_API_VERSION}`;
+  const headers = {
+    "Content-Type": "application/json",
+    "X-Shopify-Access-Token": accessToken,
+  };
+
+  // Forsøg at oprette webhook
+  const createRes = await fetch(`${apiBase}/webhooks.json`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      webhook: { topic: "shop/update", address: webhookAddress, format: "json" },
+    }),
+  });
+
+  if (createRes.ok || createRes.status === 201) {
+    console.info(`[webhook] Registreret shop/update webhook for ${domain} → ${webhookAddress}`);
+    return;
+  }
+
+  if (createRes.status !== 422) {
+    const text = await createRes.text();
+    console.warn(`[webhook] Kunne ikke registrere webhook for ${domain}: ${createRes.status} ${text}`);
+    return;
+  }
+
+  // 422 = webhook eksisterer allerede — opdater adressen hvis den er anderledes
+  const listRes = await fetch(`${apiBase}/webhooks.json?topic=shop/update`, { headers });
+  if (!listRes.ok) return;
+  const listData = await listRes.json().catch(() => null) as any;
+  const existing = (listData?.webhooks ?? []).find((w: any) => w.topic === "shop/update");
+  if (!existing) return;
+
+  if (existing.address === webhookAddress) {
+    console.info(`[webhook] shop/update webhook allerede opdateret for ${domain}`);
+    return;
+  }
+
+  const updateRes = await fetch(`${apiBase}/webhooks/${existing.id}.json`, {
+    method: "PUT",
+    headers,
+    body: JSON.stringify({ webhook: { address: webhookAddress } }),
+  });
+  if (updateRes.ok) {
+    console.info(`[webhook] Opdateret shop/update webhook for ${domain} → ${webhookAddress}`);
+  } else {
+    const text = await updateRes.text();
+    console.warn(`[webhook] Kunne ikke opdatere webhook for ${domain}: ${text}`);
+  }
+}
+
 Deno.serve(async (req) => {
   try {
     if (req.method !== "POST") {
@@ -227,6 +285,11 @@ Deno.serve(async (req) => {
       domain,
       token: accessToken,
     });
+
+    // Register shop/update webhook — fire-and-forget, doesn't block the response
+    registerShopUpdateWebhook(domain, accessToken).catch((err) =>
+      console.warn("[webhook] Registrering fejlede (ikke kritisk):", err?.message ?? err)
+    );
 
     return Response.json({
       ok: true,

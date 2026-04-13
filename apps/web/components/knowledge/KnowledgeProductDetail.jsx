@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   ChevronDown,
-  ChevronUp,
   Package,
   Pencil,
   Plus,
@@ -13,7 +12,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
@@ -29,58 +27,78 @@ import { Textarea } from "@/components/ui/textarea";
 function SnippetCard({ snippet, onEdit, onDelete }) {
   const [expanded, setExpanded] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const preview = snippet.content?.slice(0, 160);
-  const isLong = (snippet.content?.length || 0) > 160;
+
+  const toggle = () => setExpanded((v) => !v);
 
   return (
-    <Card className="group">
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium truncate">{snippet.title}</p>
-            <p className="mt-1 text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed">
-              {expanded ? snippet.content : preview}
-              {isLong && !expanded && "…"}
-            </p>
-            {isLong && (
-              <div
-                role="button"
-                tabIndex={0}
-                onClick={() => setExpanded((v) => !v)}
-                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setExpanded((v) => !v)}
-                className="mt-1 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground cursor-pointer"
-              >
-                {expanded ? <><ChevronUp className="h-3 w-3" /> Show less</> : <><ChevronDown className="h-3 w-3" /> Show more</>}
-              </div>
-            )}
-          </div>
-          <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(snippet)}>
-              <Pencil className="h-3.5 w-3.5" />
-            </Button>
-            {confirmDelete ? (
-              <div className="flex items-center gap-1">
-                <Button variant="destructive" size="sm" className="h-7 text-xs px-2" onClick={() => onDelete(snippet.snippet_id)}>
-                  Delete
-                </Button>
-                <Button variant="ghost" size="sm" className="h-7 text-xs px-2" onClick={() => setConfirmDelete(false)}>
-                  Cancel
-                </Button>
-              </div>
-            ) : (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                onClick={() => setConfirmDelete(true)}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
+    <div className="group">
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={toggle}
+        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && toggle()}
+        className="flex items-center gap-3 px-4 py-3 cursor-pointer select-none"
+      >
+        <ChevronDown
+          className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-150 ${expanded ? "rotate-180" : ""}`}
+        />
+        <span className="text-sm font-medium flex-1 truncate">{snippet.title}</span>
+        <div
+          className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(snippet)}>
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+          {confirmDelete ? (
+            <div className="flex items-center gap-1">
+              <Button variant="destructive" size="sm" className="h-7 text-xs px-2" onClick={() => onDelete(snippet.snippet_id)}>
+                Delete
               </Button>
-            )}
-          </div>
+              <Button variant="ghost" size="sm" className="h-7 text-xs px-2" onClick={() => setConfirmDelete(false)}>
+                Cancel
+              </Button>
+            </div>
+          ) : (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground hover:text-destructive"
+              onClick={() => setConfirmDelete(true)}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
         </div>
-      </CardContent>
-    </Card>
+      </div>
+      {expanded && (
+        <div className="px-10 pb-4">
+          <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
+            {snippet.content}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SnippetList({ snippets, onEdit, onDelete, onAdd }) {
+  return (
+    <div className="rounded-lg border divide-y overflow-hidden">
+      {snippets.map((snippet) => (
+        <SnippetCard key={snippet.snippet_id} snippet={snippet} onEdit={onEdit} onDelete={onDelete} />
+      ))}
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={onAdd}
+        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onAdd()}
+        className="flex items-center gap-3 px-4 py-3 cursor-pointer text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+      >
+        <Plus className="h-3.5 w-3.5 shrink-0" />
+        <span className="text-sm">Add snippet</span>
+      </div>
+    </div>
   );
 }
 
@@ -145,7 +163,7 @@ function SnippetModal({ open, onClose, onSave, shopId, productId, productTitle, 
         </DialogHeader>
         <div className="space-y-4 py-2">
           <div className="space-y-1.5">
-            <Label>Titel</Label>
+            <Label>Title</Label>
             <Input
               placeholder="e.g. Firmware update, Pairing with iOS, Known issues..."
               value={title}
@@ -154,7 +172,7 @@ function SnippetModal({ open, onClose, onSave, shopId, productId, productTitle, 
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Indhold</Label>
+            <Label>Content</Label>
             <Textarea
               placeholder="Describe the answer precisely. The AI uses this directly to answer customers asking about this product."
               value={content}
@@ -240,9 +258,16 @@ export function KnowledgeProductDetail({ productId, productTitle }) {
             <Package className="h-4 w-4 text-muted-foreground" />
           </div>
           <div className="min-w-0">
-            <h1 className="text-lg font-semibold leading-tight truncate">
-              {productTitle || productId}
-            </h1>
+            <div className="flex items-center gap-2 min-w-0">
+              <h1 className="text-lg font-semibold leading-tight truncate">
+                {productTitle || productId}
+              </h1>
+              {!loading && snippets.length > 0 && (
+                <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                  {snippets.length}
+                </span>
+              )}
+            </div>
             <p className="text-sm text-muted-foreground">Product-specific knowledge</p>
           </div>
         </div>
@@ -256,15 +281,12 @@ export function KnowledgeProductDetail({ productId, productTitle }) {
 
       {/* Snippets */}
       {loading ? (
-        <div className="space-y-3">
-          {[1, 2].map((i) => (
-            <Card key={i}>
-              <CardContent className="p-4 space-y-2">
-                <Skeleton className="h-4 w-1/3" />
-                <Skeleton className="h-3 w-full" />
-                <Skeleton className="h-3 w-4/5" />
-              </CardContent>
-            </Card>
+        <div className="rounded-lg border divide-y overflow-hidden">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="flex items-center gap-3 px-4 py-3">
+              <Skeleton className="h-3.5 w-3.5 rounded shrink-0" />
+              <Skeleton className="h-4 w-1/2" />
+            </div>
           ))}
         </div>
       ) : snippets.length === 0 ? (
@@ -283,20 +305,12 @@ export function KnowledgeProductDetail({ productId, productTitle }) {
           </Button>
         </div>
       ) : (
-        <div className="space-y-3">
-          {snippets.map((snippet) => (
-            <SnippetCard
-              key={snippet.snippet_id}
-              snippet={snippet}
-              onEdit={(s) => { setEditingSnippet(s); setModalOpen(true); }}
-              onDelete={handleDelete}
-            />
-          ))}
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => { setEditingSnippet(null); setModalOpen(true); }}>
-            <Plus className="h-3.5 w-3.5" />
-            Add snippet
-          </Button>
-        </div>
+        <SnippetList
+          snippets={snippets}
+          onEdit={(s) => { setEditingSnippet(s); setModalOpen(true); }}
+          onDelete={handleDelete}
+          onAdd={() => { setEditingSnippet(null); setModalOpen(true); }}
+        />
       )}
 
       <SnippetModal
