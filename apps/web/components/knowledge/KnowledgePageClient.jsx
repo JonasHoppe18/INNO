@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useUser } from "@clerk/nextjs";
 import { toast } from "sonner";
 import {
@@ -56,6 +57,16 @@ function formatPrice(value) {
     }).format(num);
   }
   return String(value);
+}
+
+function formatFileSize(bytes) {
+  const size = Number(bytes || 0);
+  if (!Number.isFinite(size) || size <= 0) return "";
+  if (size < 1024) return `${size} B`;
+  const kb = size / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  const mb = kb / 1024;
+  return `${mb.toFixed(1)} MB`;
 }
 
 function escapeHtml(input = "") {
@@ -174,6 +185,23 @@ function toSavedReplyEditorHtml(value = "") {
   return escapeHtml(raw).replace(/\r\n/g, "\n").replace(/\n/g, "<br>");
 }
 
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || "");
+      const commaIndex = result.indexOf(",");
+      if (commaIndex < 0) {
+        resolve("");
+        return;
+      }
+      resolve(result.slice(commaIndex + 1));
+    };
+    reader.onerror = () => reject(reader.error || new Error("Could not read file."));
+    reader.readAsDataURL(file);
+  });
+}
+
 function getChunkIndex(row) {
   const metadata = row?.metadata && typeof row.metadata === "object" ? row.metadata : {};
   const index = Number(metadata?.chunk_index);
@@ -218,6 +246,7 @@ export function KnowledgePageClient() {
   const [savedReplyTitle, setSavedReplyTitle] = useState("");
   const [savedReplyContent, setSavedReplyContent] = useState("");
   const [savedReplyCategory, setSavedReplyCategory] = useState("");
+  const [savedReplyImage, setSavedReplyImage] = useState(null);
   const [editingSavedReplyId, setEditingSavedReplyId] = useState(null);
   const [savingSavedReply, setSavingSavedReply] = useState(false);
   const [deletingSavedReplyId, setDeletingSavedReplyId] = useState(null);
@@ -250,6 +279,7 @@ export function KnowledgePageClient() {
   const pdfFileInputRef = useRef(null);
   const snippetEditorRef = useRef(null);
   const savedReplyEditorRef = useRef(null);
+  const savedReplyImageInputRef = useRef(null);
   const [productsModalOpen, setProductsModalOpen] = useState(false);
   const [productsLoading, setProductsLoading] = useState(false);
   const [products, setProducts] = useState([]);
@@ -1403,6 +1433,10 @@ export function KnowledgePageClient() {
     setSavedReplyTitle("");
     setSavedReplyContent("");
     setSavedReplyCategory("");
+    setSavedReplyImage(null);
+    if (savedReplyImageInputRef.current) {
+      savedReplyImageInputRef.current.value = "";
+    }
   };
 
   const syncSavedReplyEditorToState = () => {
@@ -1461,11 +1495,12 @@ export function KnowledgePageClient() {
         if (!raw) return null;
         const parsed = JSON.parse(raw);
         if (!parsed || typeof parsed !== "object") return null;
-        return {
-          title: String(parsed?.title || ""),
-          category: String(parsed?.category || ""),
-          content: String(parsed?.content || ""),
-        };
+      return {
+        title: String(parsed?.title || ""),
+        category: String(parsed?.category || ""),
+        content: String(parsed?.content || ""),
+        image: parsed?.image && typeof parsed.image === "object" ? parsed.image : null,
+      };
       } catch (_error) {
         return null;
       }
@@ -1492,6 +1527,7 @@ export function KnowledgePageClient() {
       setSavedReplyTitle(draft.title);
       setSavedReplyCategory(draft.category);
       setSavedReplyContent(draft.content);
+      setSavedReplyImage(draft.image || null);
     }
     setSavedReplyModalOpen(true);
     hydrateSavedReplyEditor(draft?.content || "");
@@ -1504,6 +1540,9 @@ export function KnowledgePageClient() {
     setSavedReplyTitle(draft?.title || String(reply?.title || ""));
     setSavedReplyContent(draft?.content || String(reply?.content || ""));
     setSavedReplyCategory(draft?.category || String(reply?.category || ""));
+    setSavedReplyImage(
+      draft?.image || (reply?.image && typeof reply.image === "object" ? reply.image : null)
+    );
     setSavedReplyModalOpen(true);
     hydrateSavedReplyEditor(draft?.content || String(reply?.content || ""));
   };
@@ -1511,7 +1550,9 @@ export function KnowledgePageClient() {
   useEffect(() => {
     if (!savedReplyModalOpen) return undefined;
     const hasContent = Boolean(stripHtmlToPlainText(savedReplyContent));
-    const hasAny = Boolean(savedReplyTitle.trim() || savedReplyCategory.trim() || hasContent);
+    const hasAny = Boolean(
+      savedReplyTitle.trim() || savedReplyCategory.trim() || hasContent || savedReplyImage
+    );
     const draftKey = buildSavedReplyDraftKey(editingSavedReplyId);
 
     const timer = window.setTimeout(() => {
@@ -1527,6 +1568,7 @@ export function KnowledgePageClient() {
             title: savedReplyTitle,
             category: savedReplyCategory,
             content: savedReplyContent,
+            image: savedReplyImage,
             updated_at: new Date().toISOString(),
           }),
         );
@@ -1541,9 +1583,43 @@ export function KnowledgePageClient() {
     editingSavedReplyId,
     savedReplyCategory,
     savedReplyContent,
+    savedReplyImage,
     savedReplyModalOpen,
     savedReplyTitle,
   ]);
+
+  const handleSavedReplyImageChange = async (event) => {
+    const file = event?.target?.files?.[0];
+    if (!file) return;
+    const mimeType = String(file.type || "").toLowerCase();
+    if (!mimeType.startsWith("image/")) {
+      toast.error("Only image files are supported.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Image must be 5 MB or smaller.");
+      return;
+    }
+    try {
+      const contentBase64 = await fileToBase64(file);
+      if (!contentBase64) {
+        toast.error("Could not read image file.");
+        return;
+      }
+      setSavedReplyImage({
+        filename: String(file.name || "saved-reply-image"),
+        mime_type: mimeType,
+        content_base64: contentBase64,
+        size_bytes: Number(file.size || 0),
+      });
+    } catch (_error) {
+      toast.error("Could not read image file.");
+    } finally {
+      if (event?.target) {
+        event.target.value = "";
+      }
+    }
+  };
 
   const handleSaveSavedReply = async () => {
     const draftReplyId = editingSavedReplyId;
@@ -1570,6 +1646,7 @@ export function KnowledgePageClient() {
           title,
           content,
           category: category || null,
+          image: savedReplyImage,
         }),
       });
       const payload = await response.json().catch(() => ({}));
@@ -2425,6 +2502,54 @@ export function KnowledgePageClient() {
                   />
                 </div>
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Image (optional)</Label>
+              <input
+                ref={savedReplyImageInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleSavedReplyImageChange}
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => savedReplyImageInputRef.current?.click()}
+                >
+                  {savedReplyImage ? "Replace image" : "Add image"}
+                </Button>
+                {savedReplyImage ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setSavedReplyImage(null)}
+                  >
+                    Remove image
+                  </Button>
+                ) : null}
+              </div>
+              {savedReplyImage ? (
+                <div className="rounded-md border border-gray-200 bg-gray-50 p-2">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <p className="truncate text-xs text-gray-600">
+                      {savedReplyImage.filename || "saved-reply-image"}
+                    </p>
+                    <p className="shrink-0 text-[11px] text-gray-500">
+                      {formatFileSize(savedReplyImage.size_bytes)}
+                    </p>
+                  </div>
+                  <Image
+                    src={`data:${savedReplyImage.mime_type};base64,${savedReplyImage.content_base64}`}
+                    alt={savedReplyImage.filename || "Saved reply image"}
+                    width={640}
+                    height={320}
+                    unoptimized
+                    className="max-h-48 w-auto rounded border border-gray-200 bg-white object-contain"
+                  />
+                </div>
+              ) : null}
             </div>
           </div>
           <DialogFooter>

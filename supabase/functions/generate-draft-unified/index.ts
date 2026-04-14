@@ -1627,23 +1627,34 @@ const inferLanguageHint = (subject: string, body: string): string => {
   const rawBody = String(body || "");
   const bodyFieldMatch = rawBody.match(/(?:^|\n)\s*body\s*:\s*([\s\S]+)$/i);
   const primaryBody = bodyFieldMatch?.[1] ? bodyFieldMatch[1] : rawBody;
-  const text = `${subject || ""}\n${primaryBody}`.toLowerCase();
+  // Strip quoted reply content so previous replies in other languages don't poison detection.
+  // Quoted content starts at lines like "Den ... skrev:", "On ... wrote:", "---", or "> ".
+  const quoteStart = primaryBody.search(/^(>|[-]{3,}|Den\s.+skrev:|On\s.+wrote:|Am\s.+schrieb:)/im);
+  const newContentOnly = quoteStart > 0 ? primaryBody.slice(0, quoteStart) : primaryBody;
+  const text = `${subject || ""}\n${newContentOnly}`.toLowerCase();
   const hasDanish =
     /(\b(hej|jeg|ikke|med|hvordan|hvor|hvornår|modtager|levering|pakke|desværre|kan|skal|tilbage|købte)\b|[æøå])/i
       .test(text);
   const hasFinnish =
     /(\b(hei|kiitos|tilaus|toimitus|palautus|ongelma|tuote|kuulokkeet|laite|voimme|olen|sinulla)\b|[äöå])/i
       .test(text);
+  // Swedish: only distinctively Swedish words — removed "problem", "kan", "inte", "produkt"
+  // which are common English words and cause false positives on English emails.
   const hasSwedish =
-    /(\b(hej|tack|beställning|leverans|retur|problem|produkt|hörlurar|enhet|kan|inte|också)\b|[åäö])/i
+    /(\b(tack|beställning|leverans|hörlurar|också|och|att|är|det|för)\b|[åäö])/i
       .test(text);
+  // German: removed "problem" and "produkt" (common in English) — keep clear German-only markers.
   const hasGerman =
-    /(\b(hallo|bitte|danke|bestell|lieferung|rückgabe|problem|produkt|können|nicht|auch|sehr|leider)\b|[äöüß])/i
+    /(\b(hallo|bitte|danke|bestell|lieferung|rückgabe|können|nicht|auch|sehr|leider)\b|[äöüß])/i
       .test(text);
   const hasSpanish = /(\b(hola|dónde|donde|pedido|entrega|seguimiento|recibido)\b|[¡¿])/i.test(text);
-  // English: broad set of common function words and support vocabulary
-  const hasEnglish = /\b(the|this|is|are|have|not|can|will|please|your|with|from|that|there|way|just|really|would|could|should|these|those|very|also|hi|hello|where|when|order|delivery|tracking|received|return|refund|headphones|headset|device)\b/i.test(text);
+  // English: count distinct English function/support words — 4+ unique words = strong English signal.
+  // This early exit prevents Swedish/German false positives on English emails.
+  const englishWordMatches = text.match(/\b(the|this|is|are|have|has|not|can|will|please|your|with|from|that|there|way|just|really|would|could|should|these|those|very|also|hi|hello|where|when|order|delivery|tracking|received|return|refund|headphones|headset|device|quality|battery|problem|issue|firmware|update)\b/gi) || [];
+  const hasStrongEnglish = new Set(englishWordMatches.map((w) => w.toLowerCase())).size >= 4;
+  const hasEnglish = englishWordMatches.length > 0;
   if (hasDanish) return "da"; // Danish (æøå) always wins — English product names appear in Danish emails
+  if (hasStrongEnglish) return "en"; // 4+ distinct English words → return before checking Swedish/German
   if (hasFinnish) return "fi";
   if (hasSwedish) return "sv";
   if (hasGerman) return "de";
@@ -1882,7 +1893,8 @@ const removeGenericFillerPhrases = (text: string): string => {
     /^\s*(?:jeg\s+kan\s+godt\s+forstå\b[^.!?]*[.!?])\s*/i,
     /^\s*(?:jeg\s+forstår(?:\s+at)?\b[^.!?]*[.!?])\s*/i,
     /^\s*(?:det\s+lyder\s+som\s+om\b[^.!?]*[.!?])\s*/i,
-    /^\s*(?:tak\s+for\s+din\s+(?:besked|henvendelse)\b[^.!?]*[.!?])\s*/i,
+    // NOTE: "Tak for din besked" is intentionally NOT removed here — it is appropriate for
+    // service questions (shipping, delivery, etc.) and is controlled by the urgentConstraint.
   ];
 
   let trimmedBody = rest;
@@ -2696,10 +2708,14 @@ async function getAgentContext(
   const automation = await fetchAutomation(supabase, ownerUserId, scope.workspaceId);
   const policies = await fetchPolicies(supabase, ownerUserId, scope.workspaceId);
   const retrievalLimit = Math.max(1, Math.min(Math.round(MAX_RETRIEVAL_CHUNKS), 20));
+  // Enrich the retrieval query with the subject so short follow-up messages (e.g. "attached is a
+  // screenshot") still find knowledge relevant to the original thread topic.
+  const cleanSubject = subject ? subject.replace(/^(Re:\s*|Fwd:\s*)+/i, "").trim() : "";
+  const retrievalQuery = [cleanSubject, emailBody ?? ""].filter(Boolean).join("\n").trim();
   const relevantKnowledgeMatches = await fetchRelevantKnowledge(
     supabase,
     shopId,
-    emailBody ?? "",
+    retrievalQuery,
     retrievalLimit,
     KNOWLEDGE_MIN_SIMILARITY,
   );
@@ -2718,10 +2734,10 @@ async function getAgentContext(
   // Bridges the language gap when the knowledge base is in English but the customer writes in Danish.
   // Multi-query: primary (symptom-focused) + supplementary (product-focused) to find solution guides
   // even when they don't mention the symptom directly.
-  const hasDanishOrEuropeanChars = /[æøåÆØÅäöüÄÖÜ]/.test(emailBody ?? "");
+  const hasDanishOrEuropeanChars = /[æøåÆØÅäöüÄÖÜ]/.test(retrievalQuery);
   const [expandedEnglishMatches, resolvedOrderContext] = await Promise.all([
     hasDanishOrEuropeanChars
-      ? expandQueryToEnglish(emailBody ?? "").then(async (result) => {
+      ? expandQueryToEnglish(retrievalQuery).then(async (result) => {
         if (!result) return [] as KnowledgeMatch[];
         const { primary, supplementary, faq } = result;
         console.info(
@@ -2807,6 +2823,7 @@ async function getAgentContext(
       { trigger: /\b(sidetone|side.?tone|hear myself|hearing myself|my own voice)\b/, titleSearch: "sidetone" },
       { trigger: /\b(noise cancell|anc|active noise)\b/, titleSearch: "noise cancel" },
       { trigger: /\b(eq|equalizer|equaliser|sound settings|audio settings)\b/, titleSearch: "eq" },
+      { trigger: /\b(firmware|update.*error|update.*fail|app.*update|update.*app|update.*restart|restart.*update)\b/, titleSearch: "firmware" },
     ];
     for (const { trigger, titleSearch } of unconditionalKeywords) {
       if (trigger.test(emailTextForKeywords)) {
@@ -4110,6 +4127,51 @@ Deno.serve(async (req) => {
         const rawBody = String(emailData.rawBodyHtml || emailData.rawBody || emailData.body || "");
         preflightQuotedFallback = extractQuotedHistoryFallback(rawBody);
       }
+
+      // Supplemental knowledge retrieval: if the latest message is very short (e.g. "attached is a
+      // screenshot"), the initial retrieval query lacks context. Use recent customer messages from
+      // the DB thread history to find relevant knowledge the initial query missed.
+      const currentBodyLength = (emailData.body ?? "").trim().length;
+      if (currentBodyLength < 150 && preflightDbHistory.length > 0) {
+        const recentCustomerText = preflightDbHistory
+          .filter((m) => m.role === "customer")
+          .slice(-3)
+          .map((m) => m.text)
+          .join("\n")
+          .trim();
+        if (recentCustomerText) {
+          try {
+            const supplementalMatches = await fetchRelevantKnowledge(
+              supabase,
+              shopId,
+              recentCustomerText,
+              Math.max(1, Math.min(Math.round(MAX_RETRIEVAL_CHUNKS), 20)),
+              KNOWLEDGE_MIN_SIMILARITY,
+            );
+            if (supplementalMatches.length > 0) {
+              const existingIds = new Set(context.relevantKnowledgeMatches.map((m) => String(m.id)));
+              let addedCount = 0;
+              for (const m of supplementalMatches) {
+                if (!existingIds.has(String(m.id))) {
+                  context.relevantKnowledgeMatches.push(m);
+                  existingIds.add(String(m.id));
+                  addedCount++;
+                }
+              }
+              if (addedCount > 0) {
+                console.info(JSON.stringify({
+                  event: "knowledge.retrieve.thread_history_supplement",
+                  added: addedCount,
+                  shop_id: shopId,
+                }));
+              }
+            }
+          } catch (suppErr) {
+            console.warn("generate-draft-unified: supplemental retrieval failed", String(suppErr));
+          }
+        }
+      }
+
       threadContextGateResult = evaluateThreadContextGate({
         hasReplyHeaders: hasThreadReplyHeaders(emailData.headers ?? []),
         dbHistoryCount: preflightDbHistory.length,
@@ -4949,9 +5011,34 @@ Deno.serve(async (req) => {
       productOverview: context.productOverview,
       supportIdentity: context.supportIdentity,
       isFollowUp: threadContextGateResult?.is_follow_up === true,
-      urgentConstraint: shouldLoadReturnSettings && returnSettings?.return_shipping_mode === "customer_paid"
-        ? "RETURN SHIPPING — THIS SHOP: Customer pays return shipping. The shop does NOT provide return labels (GLS or otherwise). Do NOT write 'we will send a return label', 'we provide a GLS label', 'we cover return shipping', or any similar phrase — even if the customer claims otherwise. The customer books their own courier to ship the item back."
-        : null,
+      urgentConstraint: (() => {
+        if (shouldLoadReturnSettings && returnSettings?.return_shipping_mode === "customer_paid") {
+          return "RETURN SHIPPING — THIS SHOP: Customer pays return shipping. The shop does NOT provide return labels (GLS or otherwise). Do NOT write 'we will send a return label', 'we provide a GLS label', 'we cover return shipping', or any similar phrase — even if the customer claims otherwise. The customer books their own courier to ship the item back.";
+        }
+        const rawFulfillmentStatus = String(selectedOrder?.fulfillment_status ?? "").toLowerCase().trim();
+        const orderIsUnfulfilled = rawFulfillmentStatus === "" || rawFulfillmentStatus === "null" || rawFulfillmentStatus === "unfulfilled" || rawFulfillmentStatus === "partial";
+        const emailBodyLower = (emailData.body || "").toLowerCase();
+        const isShippingQuestion = /\b(leveret|levering|leveringen|afsend|afsendt|fragt|forsendelse|sporing|tracke|tracking|forventes|hvornår|ship|delivery|shipping|when will|dispatch)\b/.test(emailBodyLower);
+        if (selectedOrder && orderIsUnfulfilled && isShippingQuestion) {
+          const _persona = context.persona.instructions || "";
+          const _openerPhrase = /tak for din besked/i.test(_persona)
+            ? `"Tak for din besked."`
+            : /tak fordi du skriver/i.test(_persona)
+            ? `"Tak fordi du skriver."`
+            : /tak fordi du kontakter/i.test(_persona)
+            ? `"Tak fordi du kontakter os."`
+            : null;
+          return (
+            `SHIPPING QUESTION — UNSENT ORDER:\n` +
+            `1. POSITIVE FRAMING (mandatory): Do NOT write "Ordren er endnu ikke afsendt" or similar negative openings. Write e.g. "Din ordre klargøres" or "Vi er ved at klargøre din ordre".\n` +
+            `2. SHIPPING WINDOW: Use the dispatch window from the shipping policy in POLITIKKER. Do not invent a timeframe.\n` +
+            `3. TRACKING: Include a sentence that the customer will receive a tracking email with tracking number when the package ships.\n` +
+            (_openerPhrase ? `4. OPENER (this shop's style — mandatory, even in follow-up threads): Place ${_openerPhrase} on its own line immediately after the greeting.\n` : ``) +
+            `5. CLOSING: Follow the shop's TONE/persona instructions — choose a closing appropriate to the context and the customer's language.`
+          );
+        }
+        return null;
+      })(),
     });
     const inlineImageAttachments = await loadInlineImageAttachments({
       userId: ownerUserId,
@@ -6051,6 +6138,7 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       enforceLocalizedGreeting(aiText.trim(), customerFirstName, languageHint),
     );
     finalText = ensureFirstLineHasName(finalText, customerFirstName);
+
     const ongoingReturnContinuation = Boolean(selectedOrder) &&
       (
         /\b(?:replacement|exchange|received the new|got the new)\b/i
@@ -6442,6 +6530,30 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
           },
           internalThread.threadId,
         );
+      }
+    }
+
+    // Persona-driven post-processing: apply configured opener/closing for shipping questions.
+    // Reads from shop's persona config — not hardcoded. Shops without these phrases in their
+    // persona will not have them applied. Only applies to Danish emails (detectedLanguage === "da").
+    {
+      const _persona = context.persona.instructions || "";
+      const _emailLower = (emailData.body || "").toLowerCase();
+      const _isDanish = (inferLanguageHint(emailData.subject || "", emailData.body || "") || "").toLowerCase() === "da";
+      const _isShippingQ = /leveret|levering|afsend|afsendt|fragt|forsendelse|sporing|tracking|forventes|hvorn|ship|delivery|shipping|dispatch/.test(_emailLower);
+      if (_isDanish && _isShippingQ && finalText) {
+        // Extract opener phrase from persona config
+        const _openerMatch = _persona.match(/"(Tak for din besked\.|Tak fordi du skriver\.|Tak fordi du kontakter os\.?)"/i);
+        const _opener = _openerMatch ? _openerMatch[1] : null;
+        if (_opener && !finalText.toLowerCase().includes(_opener.toLowerCase().replace(/\.$/, ""))) {
+          const _lines = finalText.split("\n");
+          const _greetIdx = _lines.findIndex((l) => /^(hej|hi|hola)\b/i.test(l.trim()));
+          if (_greetIdx !== -1) {
+            _lines.splice(_greetIdx + 1, 0, "", _opener);
+            finalText = _lines.join("\n");
+          }
+        }
+        // Closing is left to the model — it decides based on context and persona.
       }
     }
 
@@ -6880,6 +6992,42 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
             internalThread.threadId,
           );
         }
+        // Post-processing: collapse blank lines inside address blocks.
+        // Line-by-line: skip a blank line when it sits between address-like lines
+        // (short, no sentence-ending punctuation) where the surrounding context suggests
+        // a postal address — org suffix on prev line, or postal code / country on next line.
+        {
+          const _addrCountries = new Set([
+            "denmark","germany","sweden","norway","finland","netherlands","belgium",
+            "france","spain","italy","austria","switzerland","poland","united kingdom",
+            "uk","usa","us","canada","australia","new zealand",
+          ]);
+          const _lines = finalText.split("\n");
+          const _out: string[] = [];
+          for (let _i = 0; _i < _lines.length; _i++) {
+            const _cur = _lines[_i];
+            if (_cur.trim() === "") {
+              const _prev = _out.length > 0 ? _out[_out.length - 1] : "";
+              const _next = _i + 1 < _lines.length ? _lines[_i + 1] : "";
+              const _prevTrimmed = _prev.trim();
+              const _nextTrimmed = _next.trim();
+              const _prevIsAddrLike =
+                _prevTrimmed.length > 0 &&
+                _prevTrimmed.length <= 60 &&
+                !/[.!?]$/.test(_prevTrimmed) &&
+                !/:$/.test(_prevTrimmed);
+              const _nextIsCountry = _addrCountries.has(_nextTrimmed.toLowerCase().replace(/[,.]$/, ""));
+              const _nextIsPostal = /^\d{4,6}[ ,]/.test(_nextTrimmed);
+              const _prevHasOrgSuffix = /\b(ApS|A\/S|Ltd|Inc|GmbH|International|Group)\b/.test(_prevTrimmed);
+              if (_prevIsAddrLike && (_nextIsCountry || _nextIsPostal || _prevHasOrgSuffix)) {
+                continue; // skip blank line
+              }
+            }
+            _out.push(_cur);
+          }
+          finalText = _out.join("\n");
+        }
+
         htmlBody = formatEmailBody(finalText);
 
         if (supabase && internalDraft?.id) {

@@ -111,6 +111,34 @@ const normalizeSavedReplyToPlainText = (value = "") => {
   return raw;
 };
 
+const fileFromSavedReplyImage = (image) => {
+  if (!image || typeof image !== "object") return null;
+  const mimeType = String(image?.mime_type || image?.mimeType || "").toLowerCase();
+  const contentBase64 = String(image?.content_base64 || image?.contentBase64 || "").trim();
+  if (!mimeType.startsWith("image/") || !contentBase64) return null;
+  if (typeof atob !== "function") return null;
+  try {
+    const binary = atob(contentBase64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    const filename = String(image?.filename || "saved-reply-image");
+    return new File([bytes], filename, { type: mimeType, lastModified: Date.now() });
+  } catch {
+    return null;
+  }
+};
+
+const filesFromSavedReplyImages = (reply) => {
+  const source = Array.isArray(reply?.images)
+    ? reply.images
+    : reply?.image
+      ? [reply.image]
+      : [];
+  return source.map((image) => fileFromSavedReplyImage(image)).filter(Boolean);
+};
+
 export function Composer({
   value,
   onChange,
@@ -496,6 +524,21 @@ export function Composer({
     );
   };
 
+  const addSavedReplyImageAttachment = (reply) => {
+    const imageFiles = filesFromSavedReplyImages(reply);
+    if (!imageFiles.length) return;
+    setAttachments((prev) => {
+      const next = [...prev];
+      imageFiles.forEach((imageFile) => {
+        const key = `${imageFile.name}:${imageFile.size}:${imageFile.type}`;
+        if (!next.some((item) => `${item.name}:${item.size}:${item.type}` === key)) {
+          next.push(imageFile);
+        }
+      });
+      return next;
+    });
+  };
+
   const applySavedReplyReplace = (reply) => {
     const content = normalizeSavedReplyToPlainText(reply?.content || "");
     if (!content) return;
@@ -508,6 +551,7 @@ export function Composer({
     }
     trackSavedReplyUse(reply);
     onChange(content);
+    addSavedReplyImageAttachment(reply);
     setSavedRepliesOpen(false);
   };
 
@@ -538,6 +582,7 @@ export function Composer({
         ? `${current.replace(/\s+$/, "")}\n\n${content}`
         : content;
     onChange(nextValue);
+    addSavedReplyImageAttachment(reply);
     setSavedRepliesOpen(false);
     if (isNote) {
       requestAnimationFrame(() => {
@@ -1243,6 +1288,11 @@ export function Composer({
                   const content = normalizeSavedReplyToPlainText(reply?.content || "");
                   const preview =
                     content.length > 180 ? `${content.slice(0, 180).trim()}...` : content;
+                  const imageCount = Array.isArray(reply?.images)
+                    ? reply.images.length
+                    : reply?.image?.content_base64
+                      ? 1
+                      : 0;
                   return (
                     <div
                       key={reply?.id || `${title}-${preview}`}
@@ -1255,6 +1305,11 @@ export function Composer({
                             {category ? (
                               <span className="rounded-full border border-gray-200 px-2 py-0.5 text-[11px] text-gray-500">
                                 {category}
+                              </span>
+                            ) : null}
+                            {imageCount > 0 ? (
+                              <span className="rounded-full border border-indigo-100 bg-indigo-50 px-2 py-0.5 text-[11px] text-indigo-700">
+                                {imageCount === 1 ? "1 image" : `${imageCount} images`}
                               </span>
                             ) : null}
                           </div>

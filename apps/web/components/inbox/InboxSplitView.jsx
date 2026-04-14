@@ -7,6 +7,7 @@ import { SonaInsightsModal } from "@/components/inbox/SonaInsightsModal";
 import { TranslationModal } from "@/components/inbox/TranslationModal";
 import {
   deriveThreadsFromMessages,
+  useThreadAttachments,
   useThreadMessages,
   useThreadPreviewMessages,
 } from "@/hooks/useInboxData";
@@ -1868,19 +1869,34 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     });
   }, [rawThreadMessages]);
 
-  const threadAttachments = useMemo(() => {
-    if (!selectedThreadId) return [];
-    const messageIdSet = new Set(
+  const selectedThreadMessageIds = useMemo(
+    () =>
       rawThreadMessages
         .map((message) => String(message?.id || "").trim())
-        .filter(Boolean)
-    );
+        .filter(Boolean),
+    [rawThreadMessages]
+  );
+
+  const { data: selectedThreadAttachments } = useThreadAttachments(selectedThreadMessageIds, {
+    enabled:
+      Boolean(selectedThreadId) &&
+      !String(selectedThreadId || "").startsWith("local-new-ticket-") &&
+      selectedThreadMessageIds.length > 0,
+  });
+
+  const threadAttachments = useMemo(() => {
+    if (!selectedThreadId) return [];
+    const messageIdSet = new Set(selectedThreadMessageIds);
     if (!messageIdSet.size) return [];
-    return (liveAttachments || []).filter((attachment) => {
+    const byId = new Map();
+    [...(liveAttachments || []), ...(selectedThreadAttachments || [])].forEach((attachment) => {
+      const attachmentId = String(attachment?.id || "").trim();
       const attachmentMessageId = String(attachment?.message_id || "").trim();
-      return attachmentMessageId && messageIdSet.has(attachmentMessageId);
+      if (!attachmentId || !attachmentMessageId || !messageIdSet.has(attachmentMessageId)) return;
+      if (!byId.has(attachmentId)) byId.set(attachmentId, attachment);
     });
-  }, [liveAttachments, rawThreadMessages, selectedThreadId]);
+    return Array.from(byId.values());
+  }, [liveAttachments, selectedThreadAttachments, selectedThreadId, selectedThreadMessageIds]);
 
   const draftMessage = useMemo(() => {
     const reversed = [...rawThreadMessages].reverse();
@@ -3151,10 +3167,23 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         delete next[threadId];
         return next;
       });
+      setLocalSentMessagesByThread((prev) => {
+        const next = { ...prev };
+        delete next[threadId];
+        return next;
+      });
+      setTicketStateByThread((prev) => {
+        const next = { ...prev };
+        delete next[threadId];
+        return next;
+      });
+      setLiveThreads((prev) =>
+        (prev || []).filter((thread) => String(thread?.id || "") !== String(threadId || ""))
+      );
+      setLiveMessages((prev) =>
+        (prev || []).filter((message) => String(message?.thread_id || "") !== String(threadId || ""))
+      );
       setActiveDraftId(null);
-      if (typeof window !== "undefined") {
-        window.location.reload();
-      }
     } catch (error) {
       toast.error(error?.message || "Could not delete ticket.");
     } finally {

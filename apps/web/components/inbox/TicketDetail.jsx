@@ -301,7 +301,7 @@ export function TicketDetail({
 
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-sidebar lg:min-w-0">
-      <header className="flex min-h-[58px] items-center justify-between border-b border-gray-100 bg-sidebar px-4 py-1.5">
+      <header className="flex min-h-[58px] items-center justify-between border-b border-gray-100 bg-slate-50 px-4 py-1.5">
         <div className="flex min-w-0 items-center gap-3">
           {headerActions ? <div className="flex shrink-0 items-center gap-2">{headerActions}</div> : null}
         </div>

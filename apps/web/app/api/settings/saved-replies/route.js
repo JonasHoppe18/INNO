@@ -118,7 +118,98 @@ function toStoredContent(value) {
   return escapeHtml(raw).replace(/\r\n/g, "\n").replace(/\n/g, "<br>");
 }
 
+function sanitizeBase64(value = "") {
+  return String(value || "").replace(/\s+/g, "").trim();
+}
+
+function parseSavedReplyImage(value) {
+  if (value === null) return null;
+  if (!value || typeof value !== "object") return undefined;
+  const filename = asString(value?.filename || "saved-reply-image");
+  const mimeType = asString(value?.mime_type || value?.mimeType).toLowerCase();
+  const contentBase64 = sanitizeBase64(value?.content_base64 || value?.contentBase64);
+  const sizeBytes = Number(value?.size_bytes || value?.sizeBytes || 0);
+  if (!mimeType || !mimeType.startsWith("image/")) {
+    throw new Error("Saved reply image must be an image file.");
+  }
+  if (!contentBase64) {
+    throw new Error("Saved reply image is missing content.");
+  }
+  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
+    throw new Error("Saved reply image size is invalid.");
+  }
+  if (sizeBytes > 5 * 1024 * 1024) {
+    throw new Error("Saved reply image must be 5 MB or smaller.");
+  }
+  return {
+    filename,
+    mimeType,
+    contentBase64,
+    sizeBytes,
+  };
+}
+
+function parseSavedReplyImages(value) {
+  if (value === undefined) return undefined;
+  if (value === null) return [];
+  if (!Array.isArray(value)) {
+    throw new Error("Saved reply images must be an array.");
+  }
+  if (value.length > 10) {
+    throw new Error("You can upload up to 10 images per saved reply.");
+  }
+  return value
+    .map((item) => parseSavedReplyImage(item))
+    .filter(Boolean);
+}
+
+function isSavedReplyImageValidationError(error) {
+  return /Saved reply image/i.test(String(error?.message || ""));
+}
+
+const SAVED_REPLY_BASE_SELECT =
+  "id, workspace_id, title, content, category, is_active, sort_order, use_count, created_at, updated_at";
+const SAVED_REPLY_IMAGE_SELECT =
+  `${SAVED_REPLY_BASE_SELECT}, image_filename, image_mime_type, image_content_base64, image_size_bytes, image_attachments_json`;
+
+function isMissingSavedReplyImageColumnsError(error) {
+  return /image_filename|image_mime_type|image_content_base64|image_size_bytes|image_attachments_json/i.test(
+    String(error?.message || "")
+  );
+}
+
 function formatSavedReply(row) {
+  const imageBase64 = asString(row?.image_content_base64);
+  const imageMimeType = asString(row?.image_mime_type).toLowerCase();
+  const imageFilename = asString(row?.image_filename);
+  const imageSizeBytes = Number(row?.image_size_bytes || 0);
+  const imageAttachments = Array.isArray(row?.image_attachments_json)
+    ? row.image_attachments_json
+        .map((item) => {
+          const filename = asString(item?.filename || "saved-reply-image");
+          const mimeType = asString(item?.mime_type || item?.mimeType).toLowerCase();
+          const contentBase64 = sanitizeBase64(item?.content_base64 || item?.contentBase64);
+          const sizeBytes = Number(item?.size_bytes || item?.sizeBytes || 0);
+          if (!mimeType.startsWith("image/") || !contentBase64) return null;
+          return {
+            filename,
+            mime_type: mimeType,
+            content_base64: contentBase64,
+            size_bytes: Number.isFinite(sizeBytes) && sizeBytes > 0 ? sizeBytes : null,
+          };
+        })
+        .filter(Boolean)
+    : [];
+  const fallbackSingleImage =
+    imageBase64 && imageMimeType && imageMimeType.startsWith("image/")
+      ? {
+          filename: imageFilename || "saved-reply-image",
+          mime_type: imageMimeType,
+          content_base64: imageBase64,
+          size_bytes: Number.isFinite(imageSizeBytes) && imageSizeBytes > 0 ? imageSizeBytes : null,
+        }
+      : null;
+  const images = imageAttachments.length ? imageAttachments : fallbackSingleImage ? [fallbackSingleImage] : [];
   return {
     id: row.id,
     workspace_id: row.workspace_id,
@@ -128,6 +219,8 @@ function formatSavedReply(row) {
     is_active: Boolean(row.is_active),
     sort_order: Number(row.sort_order || 0),
     use_count: Number(row.use_count || 0),
+    image: images[0] || null,
+    images,
     created_at: row.created_at || null,
     updated_at: row.updated_at || null,
   };
@@ -167,20 +260,25 @@ export async function GET(request) {
       false
     );
 
-    let query = serviceClient
-      .from("saved_replies")
-      .select(
-        "id, workspace_id, title, content, category, is_active, sort_order, use_count, created_at, updated_at"
-      )
-      .eq("workspace_id", scope.workspaceId)
-      .order("sort_order", { ascending: true })
-      .order("created_at", { ascending: true });
+    const buildQuery = (select) => {
+      let query = serviceClient
+        .from("saved_replies")
+        .select(select)
+        .eq("workspace_id", scope.workspaceId)
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: true });
+      if (activeOnly) {
+        query = query.eq("is_active", true);
+      }
+      return query;
+    };
 
-    if (activeOnly) {
-      query = query.eq("is_active", true);
+    let { data, error: fetchError } = await buildQuery(SAVED_REPLY_IMAGE_SELECT);
+    if (fetchError && isMissingSavedReplyImageColumnsError(fetchError)) {
+      const fallback = await buildQuery(SAVED_REPLY_BASE_SELECT);
+      data = fallback.data;
+      fetchError = fallback.error;
     }
-
-    const { data, error: fetchError } = await query;
     if (fetchError) {
       return NextResponse.json({ error: fetchError.message }, { status: 500 });
     }
@@ -188,6 +286,12 @@ export async function GET(request) {
     const replies = (Array.isArray(data) ? data : []).map(formatSavedReply);
     return NextResponse.json({ replies }, { status: 200 });
   } catch (error) {
+    if (isSavedReplyImageValidationError(error)) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Invalid saved reply image." },
+        { status: 400 }
+      );
+    }
     if (isMissingTableError(error)) {
       return NextResponse.json(
         { error: "Table saved_replies is missing. Run the SQL migration first." },
@@ -227,6 +331,11 @@ export async function POST(request) {
       return NextResponse.json({ error: "content is required." }, { status: 400 });
     }
 
+    const parsedImage = parseSavedReplyImage(body?.image);
+    const parsedImagesRaw = parseSavedReplyImages(body?.images);
+    const parsedImages =
+      parsedImagesRaw !== undefined ? parsedImagesRaw : parsedImage ? [parsedImage] : [];
+    const firstImage = parsedImages[0] || null;
     const nowIso = new Date().toISOString();
     const insertPayload = {
       workspace_id: scope.workspaceId,
@@ -237,15 +346,35 @@ export async function POST(request) {
       sort_order: normalizeSortOrder(body?.sort_order, 0),
       created_at: nowIso,
       updated_at: nowIso,
+      image_filename: firstImage ? firstImage.filename : null,
+      image_mime_type: firstImage ? firstImage.mimeType : null,
+      image_content_base64: firstImage ? firstImage.contentBase64 : null,
+      image_size_bytes: firstImage ? firstImage.sizeBytes : null,
+      image_attachments_json: parsedImages,
     };
 
-    const { data, error: insertError } = await serviceClient
+    let { data, error: insertError } = await serviceClient
       .from("saved_replies")
       .insert(insertPayload)
-      .select(
-        "id, workspace_id, title, content, category, is_active, sort_order, created_at, updated_at"
-      )
+      .select(SAVED_REPLY_IMAGE_SELECT)
       .maybeSingle();
+    if (insertError && isMissingSavedReplyImageColumnsError(insertError)) {
+      const fallbackPayload = {
+        ...insertPayload,
+      };
+      delete fallbackPayload.image_filename;
+      delete fallbackPayload.image_mime_type;
+      delete fallbackPayload.image_content_base64;
+      delete fallbackPayload.image_size_bytes;
+      delete fallbackPayload.image_attachments_json;
+      const fallback = await serviceClient
+        .from("saved_replies")
+        .insert(fallbackPayload)
+        .select(SAVED_REPLY_BASE_SELECT)
+        .maybeSingle();
+      data = fallback.data;
+      insertError = fallback.error;
+    }
 
     if (insertError || !data?.id) {
       return NextResponse.json(
@@ -256,6 +385,12 @@ export async function POST(request) {
 
     return NextResponse.json({ reply: formatSavedReply(data) }, { status: 201 });
   } catch (error) {
+    if (isSavedReplyImageValidationError(error)) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Invalid saved reply image." },
+        { status: 400 }
+      );
+    }
     if (isMissingTableError(error)) {
       return NextResponse.json(
         { error: "Table saved_replies is missing. Run the SQL migration first." },
@@ -291,12 +426,24 @@ export async function PUT(request) {
     const { scope, error } = await resolveWorkspaceScope(serviceClient);
     if (error) return error;
 
-    const { data: existing, error: existingError } = await serviceClient
+    let { data: existing, error: existingError } = await serviceClient
       .from("saved_replies")
-      .select("id, title, content, category, is_active, sort_order")
+      .select(
+        "id, title, content, category, is_active, sort_order, image_filename, image_mime_type, image_content_base64, image_size_bytes"
+      )
       .eq("workspace_id", scope.workspaceId)
       .eq("id", id)
       .maybeSingle();
+    if (existingError && isMissingSavedReplyImageColumnsError(existingError)) {
+      const fallback = await serviceClient
+        .from("saved_replies")
+        .select("id, title, content, category, is_active, sort_order")
+        .eq("workspace_id", scope.workspaceId)
+        .eq("id", id)
+        .maybeSingle();
+      existing = fallback.data;
+      existingError = fallback.error;
+    }
 
     if (existingError || !existing?.id) {
       return NextResponse.json(
@@ -317,6 +464,17 @@ export async function PUT(request) {
       return NextResponse.json({ error: "content is required." }, { status: 400 });
     }
 
+    const parsedImage = parseSavedReplyImage(body?.image);
+    const parsedImagesRaw = parseSavedReplyImages(body?.images);
+    const hasImageUpdate = body?.images !== undefined || body?.image !== undefined;
+    const parsedImages =
+      parsedImagesRaw !== undefined
+        ? parsedImagesRaw
+        : body?.image !== undefined
+          ? parsedImage
+            ? [parsedImage]
+            : []
+          : undefined;
     const updatePayload = {
       title: nextTitle,
       content: nextContent,
@@ -332,16 +490,39 @@ export async function PUT(request) {
           : normalizeSortOrder(existing.sort_order, 0),
       updated_at: new Date().toISOString(),
     };
+    if (hasImageUpdate) {
+      const firstImage = parsedImages?.[0] || null;
+      updatePayload.image_filename = firstImage ? firstImage.filename : null;
+      updatePayload.image_mime_type = firstImage ? firstImage.mimeType : null;
+      updatePayload.image_content_base64 = firstImage ? firstImage.contentBase64 : null;
+      updatePayload.image_size_bytes = firstImage ? firstImage.sizeBytes : null;
+      updatePayload.image_attachments_json = parsedImages || [];
+    }
 
-    const { data, error: updateError } = await serviceClient
+    let { data, error: updateError } = await serviceClient
       .from("saved_replies")
       .update(updatePayload)
       .eq("workspace_id", scope.workspaceId)
       .eq("id", id)
-      .select(
-        "id, workspace_id, title, content, category, is_active, sort_order, created_at, updated_at"
-      )
+      .select(SAVED_REPLY_IMAGE_SELECT)
       .maybeSingle();
+    if (updateError && isMissingSavedReplyImageColumnsError(updateError)) {
+      const fallbackPayload = { ...updatePayload };
+      delete fallbackPayload.image_filename;
+      delete fallbackPayload.image_mime_type;
+      delete fallbackPayload.image_content_base64;
+      delete fallbackPayload.image_size_bytes;
+      delete fallbackPayload.image_attachments_json;
+      const fallback = await serviceClient
+        .from("saved_replies")
+        .update(fallbackPayload)
+        .eq("workspace_id", scope.workspaceId)
+        .eq("id", id)
+        .select(SAVED_REPLY_BASE_SELECT)
+        .maybeSingle();
+      data = fallback.data;
+      updateError = fallback.error;
+    }
 
     if (updateError || !data?.id) {
       return NextResponse.json(

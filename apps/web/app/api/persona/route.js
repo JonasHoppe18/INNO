@@ -149,5 +149,44 @@ export async function POST(req) {
       .eq("workspace_id", scope.workspaceId);
   }
 
-  return NextResponse.json({ ok: true });
+  // Re-fetch the saved state and return it so the client can update its local state correctly.
+  let savedWorkspaceSettings = null;
+  if (scope?.workspaceId) {
+    const { data } = await supabase
+      .from("workspace_agent_settings")
+      .select("persona_instructions, persona_scenario")
+      .eq("workspace_id", scope.workspaceId)
+      .maybeSingle();
+    savedWorkspaceSettings = data;
+  }
+
+  const { data: savedProfile } = await supabase
+    .from("profiles")
+    .select("signature, user_id")
+    .eq("user_id", scope.supabaseUserId)
+    .maybeSingle();
+
+  let savedShopData = null;
+  if (scope?.workspaceId) {
+    const { data } = await supabase
+      .from("shops")
+      .select("shop_name, brand_description, support_identity")
+      .eq("workspace_id", scope.workspaceId)
+      .maybeSingle();
+    savedShopData = data;
+  }
+
+  const savedShopName = savedShopData?.shop_name ?? "";
+  return NextResponse.json({
+    ok: true,
+    persona: {
+      user_id: savedProfile?.user_id ?? scope.supabaseUserId,
+      signature: savedProfile?.signature ?? "",
+      instructions: savedWorkspaceSettings?.persona_instructions ?? "",
+      scenario: savedWorkspaceSettings?.persona_scenario ?? "",
+      shop_name: savedShopName,
+      brand_description: savedShopData?.brand_description ?? "",
+      support_identity: savedShopData?.support_identity ?? "",
+    },
+  });
 }

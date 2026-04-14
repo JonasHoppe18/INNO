@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -27,9 +27,70 @@ export function TicketList({
   hideSolvedFilter = false,
 }) {
   const [contextMenu, setContextMenu] = useState(null);
+  const [renderedThreads, setRenderedThreads] = useState(
+    (threads || []).map((thread) => ({ thread, isExiting: false }))
+  );
+  const exitTimersRef = useRef(new Map());
   const statusFilters = hideSolvedFilter
     ? STATUS_FILTERS.filter((option) => option !== "Solved")
     : STATUS_FILTERS;
+
+  useEffect(() => {
+    setRenderedThreads((prev) => {
+      const nextById = new Map((threads || []).map((thread) => [String(thread?.id || ""), thread]));
+      const prevIds = new Set(prev.map((item) => String(item?.thread?.id || "")));
+      const merged = [];
+
+      prev.forEach((item) => {
+        const id = String(item?.thread?.id || "");
+        if (!id) return;
+        if (nextById.has(id)) {
+          merged.push({ thread: nextById.get(id), isExiting: false });
+        } else {
+          merged.push({ thread: item.thread, isExiting: true });
+        }
+      });
+
+      (threads || []).forEach((thread) => {
+        const id = String(thread?.id || "");
+        if (!id || prevIds.has(id)) return;
+        merged.push({ thread, isExiting: false });
+      });
+
+      return merged;
+    });
+  }, [threads]);
+
+  useEffect(() => {
+    renderedThreads.forEach((item) => {
+      const id = String(item?.thread?.id || "");
+      if (!id) return;
+      if (item.isExiting) {
+        if (exitTimersRef.current.has(id)) return;
+        const timerId = setTimeout(() => {
+          setRenderedThreads((prev) =>
+            prev.filter((row) => String(row?.thread?.id || "") !== id)
+          );
+          exitTimersRef.current.delete(id);
+        }, 520);
+        exitTimersRef.current.set(id, timerId);
+        return;
+      }
+      const existingTimer = exitTimersRef.current.get(id);
+      if (existingTimer) {
+        clearTimeout(existingTimer);
+        exitTimersRef.current.delete(id);
+      }
+    });
+  }, [renderedThreads]);
+
+  useEffect(
+    () => () => {
+      exitTimersRef.current.forEach((timerId) => clearTimeout(timerId));
+      exitTimersRef.current.clear();
+    },
+    []
+  );
 
   useEffect(() => {
     if (!contextMenu) return undefined;
@@ -80,10 +141,10 @@ export function TicketList({
           </div>
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto pt-1 pb-24">
-        {threads.length ? (
+      <div className="min-h-0 flex-1 overflow-y-auto pt-1">
+        {renderedThreads.length ? (
           <div>
-            {threads.map((thread) => {
+            {renderedThreads.map(({ thread, isExiting }) => {
               const uiState = ticketStateByThread[thread.id];
               const customer = customerByThread[thread.id] || "Unknown sender";
               const timestamp = getTimestamp(thread);
@@ -99,6 +160,7 @@ export function TicketList({
                   unreadCount={unreadCount}
                   assignee={uiState?.assignee}
                   priority={uiState?.priority}
+                  isExiting={isExiting}
                   onSelect={(options) => onSelectThread(thread.id, options)}
                   onContextMenu={(event) => {
                     event.preventDefault();
@@ -118,7 +180,7 @@ export function TicketList({
           </div>
         )}
       </div>
-      <div className="sticky bottom-0 border-t border-gray-200 bg-sidebar px-3 pb-3 pt-2.5">
+      <div className="border-t border-gray-200 bg-sidebar px-3 pb-1 pt-2.5">
         <div className="mb-2 text-center text-[12px] text-gray-400">
           ({threads.length} total)
         </div>

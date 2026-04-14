@@ -176,7 +176,7 @@ export function detectPolicyIntent(subject: string, body: string): PolicyIntent 
   // Normalize whitespace so multi-line emails don't break cross-line patterns like "return these\nheadphones unless"
   const text = `${subject || ""} ${body || ""}`.toLowerCase().replace(/\s+/g, " ");
   if (/\b(warranty|guarantee|defect|repair|replace(?:ment)?)\b/.test(text)) return "WARRANTY";
-  if (/\b(shipping|delivery|ship|courier|carrier|postage|dispatch)\b/.test(text)) return "SHIPPING";
+  if (/\b(shipping|delivery|ship|courier|carrier|postage|dispatch|leveret|levering|leveringen|fragt|fragtmand|forsendelse|afsendelse|afsendt|sendt|sporing|tracke|tracking|forventes|hvornår)\b/.test(text)) return "SHIPPING";
   if (/\b(refund|money back|chargeback|reimburse)\b/.test(text)) return "REFUND";
   // Only classify as RETURN if it's a direct request — not a conditional threat like
   // "I will return unless X", "I might return if", "considering returning", "would return if not fixed"

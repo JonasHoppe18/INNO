@@ -1,9 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import Image from "next/image";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  Bold as BoldIcon,
+  Italic as ItalicIcon,
+  Underline as UnderlineIcon,
+  List as ListIcon,
+  ListOrdered as ListOrderedIcon,
   MessageSquare,
+  Paperclip,
   Package,
   Pencil,
   Plus,
@@ -30,7 +37,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Textarea } from "@/components/ui/textarea";
 
 const ICON_MAP = {
   Package,
@@ -44,6 +50,97 @@ const ICON_MAP = {
 function CategoryIcon({ name, className }) {
   const Icon = ICON_MAP[name] || Tag;
   return <Icon className={className} />;
+}
+
+function escapeHtml(input = "") {
+  return String(input || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function hasHtmlTag(value = "") {
+  return /<[^>]+>/.test(String(value || ""));
+}
+
+function stripHtmlToPlainText(value = "") {
+  const raw = String(value || "");
+  if (!raw) return "";
+  const withLineHints = raw
+    .replace(/<\s*li[^>]*>/gi, "\n- ")
+    .replace(/<\s*br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|ul|ol|section|article|header|footer|main|tr)>/gi, "\n");
+  if (typeof document === "undefined") {
+    return withLineHints
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\r\n/g, "\n")
+      .replace(/[ \t]+\n/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+  const container = document.createElement("div");
+  container.innerHTML = withLineHints;
+  return String(container.textContent || "")
+    .replace(/\u00a0/g, " ")
+    .replace(/\r\n/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function sanitizeSavedReplyHtmlClient(value = "") {
+  const source = String(value || "");
+  if (!source.trim()) return "";
+  if (typeof document === "undefined") {
+    return source
+      .replace(/<\s*(script|style)[^>]*>[\s\S]*?<\s*\/\1>/gi, "")
+      .replace(/\son[a-z]+\s*=\s*(".*?"|'.*?'|[^\s>]+)/gi, "")
+      .trim();
+  }
+
+  const allowedTags = new Set(["B", "STRONG", "I", "EM", "U", "BR", "P", "DIV", "UL", "OL", "LI", "A"]);
+  const sourceContainer = document.createElement("div");
+  sourceContainer.innerHTML = source;
+
+  const sanitizeNode = (node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      return document.createTextNode(String(node.nodeValue || ""));
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return document.createDocumentFragment();
+    const element = node;
+    const tag = String(element.tagName || "").toUpperCase();
+    const fragment = document.createDocumentFragment();
+    const sanitizedChildren = Array.from(element.childNodes || []).map(sanitizeNode);
+    if (!allowedTags.has(tag)) {
+      sanitizedChildren.forEach((child) => fragment.appendChild(child));
+      return fragment;
+    }
+    const cleanElement = document.createElement(tag.toLowerCase());
+    if (tag === "A") {
+      const hrefRaw = String(element.getAttribute("href") || "").trim();
+      const isSafeHref = /^https?:\/\//i.test(hrefRaw) || /^mailto:/i.test(hrefRaw);
+      if (isSafeHref) {
+        cleanElement.setAttribute("href", hrefRaw);
+        cleanElement.setAttribute("target", "_blank");
+        cleanElement.setAttribute("rel", "noreferrer noopener");
+      }
+    }
+    sanitizedChildren.forEach((child) => cleanElement.appendChild(child));
+    return cleanElement;
+  };
+
+  const targetContainer = document.createElement("div");
+  Array.from(sourceContainer.childNodes || []).forEach((node) => {
+    targetContainer.appendChild(sanitizeNode(node));
+  });
+  return targetContainer.innerHTML.replace(/\r\n/g, "\n").replace(/\u0000/g, "").trim();
+}
+
+function toSavedReplyEditorHtml(value = "") {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (hasHtmlTag(raw)) return sanitizeSavedReplyHtmlClient(raw);
+  return escapeHtml(raw).replace(/\r\n/g, "\n").replace(/\n/g, "<br>");
 }
 
 function CategoryCard({ category, onClick }) {
@@ -83,6 +180,23 @@ function SavedRepliesSection() {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [savedReplyImages, setSavedReplyImages] = useState([]);
+  const savedReplyImageInputRef = useRef(null);
+  const savedReplyEditorRef = useRef(null);
+
+  const resetForm = () => {
+    setEditing(null);
+    setTitle("");
+    setContent("");
+    setCategory("");
+    setSavedReplyImages([]);
+    if (savedReplyImageInputRef.current) {
+      savedReplyImageInputRef.current.value = "";
+    }
+    if (savedReplyEditorRef.current) {
+      savedReplyEditorRef.current.innerHTML = "";
+    }
+  };
 
   const loadReplies = useCallback(async () => {
     setLoading(true);
@@ -100,25 +214,137 @@ function SavedRepliesSection() {
   useEffect(() => { loadReplies(); }, [loadReplies]);
 
   const openNew = () => {
-    setEditing(null);
-    setTitle(""); setContent(""); setCategory("");
+    resetForm();
     setModalOpen(true);
   };
 
   const openEdit = (reply) => {
     setEditing(reply);
     setTitle(reply.title || "");
-    // Strip HTML tags for plain text editing
-    setContent(String(reply.content || "").replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&#39;/g, "'").replace(/&quot;/g, '"'));
+    setContent(String(reply.content || ""));
     setCategory(reply.category || "");
+    setSavedReplyImages(
+      Array.isArray(reply?.images)
+        ? reply.images.filter(Boolean)
+        : reply?.image
+          ? [reply.image]
+          : []
+    );
+    if (savedReplyImageInputRef.current) {
+      savedReplyImageInputRef.current.value = "";
+    }
     setModalOpen(true);
+    requestAnimationFrame(() => {
+      const editor = savedReplyEditorRef.current;
+      if (editor) {
+        editor.innerHTML = toSavedReplyEditorHtml(String(reply?.content || ""));
+      }
+    });
+  };
+
+  const fileToBase64 = (file) =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = String(reader.result || "");
+        const commaIndex = result.indexOf(",");
+        resolve(commaIndex >= 0 ? result.slice(commaIndex + 1) : "");
+      };
+      reader.onerror = () => reject(reader.error || new Error("Could not read file"));
+      reader.readAsDataURL(file);
+    });
+
+  const handleSavedReplyImageChange = async (event) => {
+    const files = Array.from(event?.target?.files || []);
+    if (!files.length) return;
+    const prepared = [];
+    for (const file of files) {
+      const mimeType = String(file.type || "").toLowerCase();
+      if (!mimeType.startsWith("image/")) {
+        toast.error(`"${file.name}" is not an image`);
+        continue;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error(`"${file.name}" is larger than 5 MB`);
+        continue;
+      }
+      try {
+        const contentBase64 = await fileToBase64(file);
+        if (!contentBase64) continue;
+        prepared.push({
+          filename: String(file.name || "saved-reply-image"),
+          mime_type: mimeType,
+          content_base64: contentBase64,
+          size_bytes: Number(file.size || 0),
+        });
+      } catch {
+        toast.error(`Could not read "${file.name}"`);
+      }
+    }
+    if (prepared.length) {
+      setSavedReplyImages((prev) => {
+        const next = [...prev];
+        prepared.forEach((image) => {
+          const key = `${image.filename}:${image.size_bytes}:${image.mime_type}`;
+          if (!next.some((item) => `${item.filename}:${item.size_bytes}:${item.mime_type}` === key)) {
+            next.push(image);
+          }
+        });
+        return next.slice(0, 10);
+      });
+    }
+    if (event?.target) event.target.value = "";
+  };
+
+  const removeSavedReplyImageAt = (index) => {
+    setSavedReplyImages((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const syncSavedReplyEditorToState = () => {
+    const editor = savedReplyEditorRef.current;
+    if (!editor) return;
+    const sanitized = sanitizeSavedReplyHtmlClient(editor.innerHTML);
+    if (editor.innerHTML !== sanitized) {
+      editor.innerHTML = sanitized;
+    }
+    setContent(sanitized);
+  };
+
+  const handleSavedReplyEditorPaste = (event) => {
+    event.preventDefault();
+    const clipboard = event?.clipboardData;
+    const html = String(clipboard?.getData("text/html") || "");
+    const text = String(clipboard?.getData("text/plain") || "");
+    const editor = savedReplyEditorRef.current;
+    if (!editor) return;
+    editor.focus();
+    if (html.trim()) {
+      document.execCommand("insertHTML", false, sanitizeSavedReplyHtmlClient(html));
+    } else if (text.trim()) {
+      document.execCommand("insertText", false, text);
+    }
+    syncSavedReplyEditorToState();
+  };
+
+  const applySavedReplyFormatting = (command) => {
+    const editor = savedReplyEditorRef.current;
+    if (!editor) return;
+    editor.focus();
+    document.execCommand(command, false);
+    syncSavedReplyEditorToState();
   };
 
   const handleSave = async () => {
-    if (!title.trim() || !content.trim()) return;
+    const contentValue = String(content || "").trim();
+    if (!title.trim() || !stripHtmlToPlainText(contentValue)) return;
     setSaving(true);
     try {
-      const body = { title: title.trim(), content: content.trim(), category: category.trim() || null };
+      const body = {
+        title: title.trim(),
+        content: contentValue,
+        category: category.trim() || null,
+        images: savedReplyImages,
+      };
       if (editing?.id) {
         const res = await fetch("/api/settings/saved-replies", {
           method: "PUT", credentials: "include",
@@ -136,6 +362,7 @@ function SavedRepliesSection() {
       }
       toast.success(editing?.id ? "Saved reply updated" : "Saved reply created");
       setModalOpen(false);
+      resetForm();
       loadReplies();
     } catch (err) {
       toast.error(err.message);
@@ -213,12 +440,19 @@ function SavedRepliesSection() {
                   {reply.category && (
                     <Badge variant="secondary" className="text-xs shrink-0">{reply.category}</Badge>
                   )}
+                  {(Array.isArray(reply?.images) ? reply.images.length : reply?.image ? 1 : 0) > 0 && (
+                    <Badge variant="outline" className="text-xs shrink-0">
+                      {(Array.isArray(reply?.images) ? reply.images.length : 1) === 1
+                        ? "1 image"
+                        : `${Array.isArray(reply?.images) ? reply.images.length : 1} images`}
+                    </Badge>
+                  )}
                   {!reply.is_active && (
                     <Badge variant="outline" className="text-xs shrink-0 text-muted-foreground">Inactive</Badge>
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground truncate mt-0.5">
-                  {String(reply.content || "").replace(/<[^>]+>/g, "").slice(0, 80)}
+                  {stripHtmlToPlainText(reply?.content || "").slice(0, 80)}
                 </p>
               </div>
               {reply.use_count > 0 && (
@@ -252,8 +486,14 @@ function SavedRepliesSection() {
         </div>
       )}
 
-      <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-        <DialogContent className="sm:max-w-lg">
+      <Dialog
+        open={modalOpen}
+        onOpenChange={(open) => {
+          setModalOpen(open);
+          if (!open) resetForm();
+        }}
+      >
+        <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>{editing ? "Edit saved reply" : "New saved reply"}</DialogTitle>
           </DialogHeader>
@@ -270,14 +510,131 @@ function SavedRepliesSection() {
             </div>
             <div className="space-y-1.5">
               <Label>Content</Label>
-              <Textarea placeholder="Write the reply text here…" value={content}
-                onChange={(e) => setContent(e.target.value)} rows={8}
-                className="resize-none text-sm" />
+              <div className="overflow-hidden rounded-md border border-gray-200">
+                <div className="flex items-center gap-1 border-b border-gray-200 bg-muted/40 px-2 py-1.5">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => applySavedReplyFormatting("bold")}
+                    title="Bold"
+                  >
+                    <BoldIcon className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => applySavedReplyFormatting("italic")}
+                    title="Italic"
+                  >
+                    <ItalicIcon className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => applySavedReplyFormatting("underline")}
+                    title="Underline"
+                  >
+                    <UnderlineIcon className="h-3.5 w-3.5" />
+                  </Button>
+                  <div className="mx-1 h-4 w-px bg-gray-300" />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => applySavedReplyFormatting("insertUnorderedList")}
+                    title="Bulleted list"
+                  >
+                    <ListIcon className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => applySavedReplyFormatting("insertOrderedList")}
+                    title="Numbered list"
+                  >
+                    <ListOrderedIcon className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+                <div className="relative">
+                  {!stripHtmlToPlainText(content) ? (
+                    <p className="pointer-events-none absolute left-3 top-3 text-sm text-muted-foreground">
+                      Write the reply text here...
+                    </p>
+                  ) : null}
+                  <div
+                    ref={savedReplyEditorRef}
+                    contentEditable
+                    suppressContentEditableWarning
+                    onInput={syncSavedReplyEditorToState}
+                    onPaste={handleSavedReplyEditorPaste}
+                    className="min-h-[220px] max-h-[420px] overflow-y-auto px-3 py-2 text-sm leading-6 outline-none"
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Images (optional)</Label>
+              <input
+                ref={savedReplyImageInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={handleSavedReplyImageChange}
+              />
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => savedReplyImageInputRef.current?.click()}
+                >
+                  <Paperclip className="mr-1.5 h-3.5 w-3.5" />
+                  Add images
+                </Button>
+                <span className="text-xs text-muted-foreground">Up to 10 images (max 5 MB each)</span>
+              </div>
+              {savedReplyImages.length ? (
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {savedReplyImages.map((image, index) => (
+                    <div key={`${image.filename}-${image.size_bytes}-${index}`} className="rounded-md border border-gray-200 bg-muted/20 p-2">
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <p className="truncate text-xs text-muted-foreground">{image.filename}</p>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2 text-xs"
+                          onClick={() => removeSavedReplyImageAt(index)}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                      <Image
+                        src={`data:${image.mime_type};base64,${image.content_base64}`}
+                        alt={image.filename || "Saved reply image"}
+                        width={320}
+                        height={180}
+                        unoptimized
+                        className="h-24 w-full rounded border border-gray-200 bg-white object-contain"
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setModalOpen(false)}>Cancel</Button>
-            <Button onClick={handleSave} disabled={!title.trim() || !content.trim() || saving}>
+            <Button onClick={handleSave} disabled={!title.trim() || !stripHtmlToPlainText(content) || saving}>
               {saving ? "Saving…" : editing ? "Save changes" : "Create reply"}
             </Button>
           </DialogFooter>

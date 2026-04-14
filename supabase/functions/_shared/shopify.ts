@@ -536,7 +536,8 @@ export function buildOrderSummary(orders: ShopifyOrder[]): string {
       order?.order_number ?? order?.name ?? (order?.id ? String(order.id) : "ukendt");
     const status = order?.fulfillment_status ?? order?.financial_status ?? "ukendt";
     const total = order?.total_price ?? order?.current_total_price ?? "ukendt";
-    summary += `- Ordre ${friendlyId} (id:${order?.id ?? "ukendt"}) — status: ${status} — total: ${total}\n`;
+    const orderDate = formatShopifyTimestamp(order?.processed_at || order?.created_at);
+    summary += `- Ordre ${friendlyId} (id:${order?.id ?? "ukendt"}) — status: ${status} — total: ${total}${orderDate ? ` — bestilt: ${orderDate}` : ""}\n`;
     if (order?.shipping_address) {
       summary += `  Adresse: ${[
         order.shipping_address?.name,

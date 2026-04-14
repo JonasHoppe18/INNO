@@ -28,6 +28,7 @@ export function TicketListItem({
   unreadCount,
   assignee,
   priority,
+  isExiting = false,
   onSelect,
   onContextMenu,
 }) {
@@ -54,16 +55,32 @@ export function TicketListItem({
     <button
       type="button"
       onClick={(event) =>
+        isExiting
+          ? null
+          :
         onSelect?.({
           newTab: Boolean(event.metaKey || event.ctrlKey),
         })
       }
       onContextMenu={(event) => onContextMenu?.(event)}
       className={cn(
-        "relative mx-2 my-1 flex w-[calc(100%-1rem)] flex-col gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left transition-colors hover:bg-gray-50",
+        "relative mx-2 my-1 flex w-[calc(100%-1rem)] flex-col gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left hover:bg-gray-50",
         isActive && "z-10 border-slate-800 ring-1 ring-inset ring-slate-800",
-        isUnread && "bg-slate-50"
+        isUnread && "bg-slate-50",
+        isExiting && "pointer-events-none"
       )}
+      style={{
+        transition:
+          "opacity 420ms ease, transform 420ms ease, max-height 420ms ease, margin 420ms ease, padding 420ms ease",
+        opacity: isExiting ? 0 : 1,
+        transform: isExiting ? "translateX(20px) scale(0.98)" : "translateX(0) scale(1)",
+        maxHeight: isExiting ? "0px" : "220px",
+        marginTop: isExiting ? "0px" : undefined,
+        marginBottom: isExiting ? "0px" : undefined,
+        paddingTop: isExiting ? "0px" : undefined,
+        paddingBottom: isExiting ? "0px" : undefined,
+        overflow: "hidden",
+      }}
       aria-pressed={isActive}
     >
       {isUnread ? (
