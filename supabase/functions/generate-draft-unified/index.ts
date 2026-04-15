@@ -2819,30 +2819,45 @@ async function getAgentContext(
 
     // Unconditional keywords — run even when there's no order/product variant match.
     // These cover feature questions that come in without order context.
-    const unconditionalKeywords: Array<{ trigger: RegExp; titleSearch: string }> = [
+    const unconditionalKeywords: Array<{ trigger: RegExp; titleSearch: string; categorySearch?: string }> = [
       { trigger: /\b(sidetone|side.?tone|hear myself|hearing myself|my own voice)\b/, titleSearch: "sidetone" },
       { trigger: /\b(noise cancell|anc|active noise)\b/, titleSearch: "noise cancel" },
       { trigger: /\b(eq|equalizer|equaliser|sound settings|audio settings)\b/, titleSearch: "eq" },
       { trigger: /\b(firmware|update.*error|update.*fail|app.*update|update.*app|update.*restart|restart.*update)\b/, titleSearch: "firmware" },
+      // Always pull return/refund knowledge so the model has the correct procedure and address
+      { trigger: /\b(return|refund|send back|exchange|cancel.*order|right of cancellation|returnere|retur|bytte|fortryd)\b/i, titleSearch: "return", categorySearch: "returns" },
     ];
-    for (const { trigger, titleSearch } of unconditionalKeywords) {
+    for (const { trigger, titleSearch, categorySearch } of unconditionalKeywords) {
       if (trigger.test(emailTextForKeywords)) {
-        const { data: chunks, error: chunksError } = await supabase
+        // Fetch by title match
+        const { data: byTitle, error: titleErr } = await supabase
           .from("agent_knowledge")
           .select("id,content,source_type,source_provider,metadata")
           .eq("shop_id", shopId)
           .filter("metadata->>title", "ilike", `%${titleSearch}%`)
           .limit(10);
-        if (chunks && !chunksError) {
+        // Optionally fetch by category match (e.g. "returns")
+        const { data: byCategory, error: catErr } = categorySearch
+          ? await supabase
+              .from("agent_knowledge")
+              .select("id,content,source_type,source_provider,metadata")
+              .eq("shop_id", shopId)
+              .filter("metadata->>category", "eq", categorySearch)
+              .limit(10)
+          : { data: null, error: null };
+        const allChunks = [...(byTitle && !titleErr ? byTitle : []), ...(byCategory && !catErr ? byCategory : [])];
+        if (allChunks.length > 0) {
           const seenIds = new Set(issueKeywordMatches.map(m => String(m.id)));
-          const newCount = chunks.filter(c => !seenIds.has(String(c.id))).length;
-          for (const c of chunks) {
+          let newCount = 0;
+          for (const c of allChunks) {
             if (!seenIds.has(String(c.id))) {
               issueKeywordMatches.push({ ...c, similarity: 0.93 } as KnowledgeMatch);
+              seenIds.add(String(c.id));
+              newCount++;
             }
           }
           if (newCount > 0) {
-            console.info(JSON.stringify({ event: "knowledge.retrieve.unconditional_keyword_search", keyword: titleSearch, new_chunks: newCount, shop_id: shopId }));
+            console.info(JSON.stringify({ event: "knowledge.retrieve.unconditional_keyword_search", keyword: titleSearch, category: categorySearch ?? null, new_chunks: newCount, shop_id: shopId }));
           }
         }
       }

@@ -494,7 +494,7 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
 
   const [snippets, setSnippets] = useState([]);
   const [shopId, setShopId] = useState(null);
-  const [loading, setLoading] = useState(!hasPolicySection);
+  const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingSnippet, setEditingSnippet] = useState(null);
   const [shopPolicy, setShopPolicy] = useState(null);
@@ -518,8 +518,8 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
   }, [categorySlug, isProductCategory]);
 
   useEffect(() => {
-    if (!hasPolicySection) fetchSnippets();
-  }, [fetchSnippets, hasPolicySection]);
+    fetchSnippets();
+  }, [fetchSnippets]);
 
   const fetchShopPolicy = useCallback(() => {
     fetch("/api/knowledge/shop-policy", { credentials: "include" })
@@ -570,7 +570,7 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
             )}
           </div>
         </div>
-        {!isProductCategory && !hasPolicySection && (
+        {!isProductCategory && (
           <div className="ml-auto">
             <Button onClick={() => { setEditingSnippet(null); setModalOpen(true); }}>
               <Plus className="h-4 w-4 mr-1.5" />
@@ -632,16 +632,26 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
         </>
       )}
 
-      {/* Snippets — not shown on policy pages */}
-      {!hasPolicySection && (
-        <SnippetList
-          snippets={snippets}
-          loading={loading}
-          onEdit={(s) => { setEditingSnippet(s); setModalOpen(true); }}
-          onDelete={handleDelete}
-          onAdd={() => { setEditingSnippet(null); setModalOpen(true); }}
-          icon={Icon}
-        />
+      {/* Snippets */}
+      {!isProductCategory && (
+        <>
+          {hasPolicySection && (
+            <div>
+              <h2 className="text-sm font-medium mb-1">Snippets</h2>
+              <p className="text-xs text-muted-foreground mb-3">
+                Upload specific Q&amp;A or instructions the AI should follow when answering questions in this category.
+              </p>
+            </div>
+          )}
+          <SnippetList
+            snippets={snippets}
+            loading={loading}
+            onEdit={(s) => { setEditingSnippet(s); setModalOpen(true); }}
+            onDelete={handleDelete}
+            onAdd={() => { setEditingSnippet(null); setModalOpen(true); }}
+            icon={Icon}
+          />
+        </>
       )}
 
       <SnippetModal
