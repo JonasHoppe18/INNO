@@ -804,6 +804,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const [draftWaitTimedOutByThread, setDraftWaitTimedOutByThread] = useState({});
   const [systemDraftUneditedByThread, setSystemDraftUneditedByThread] = useState({});
   const [manualDraftGeneratingByThread, setManualDraftGeneratingByThread] = useState({});
+  const [staleDraftByThread, setStaleDraftByThread] = useState({});
   const [insightsOpen, setInsightsOpen] = useState(false);
   const [translationModalOpen, setTranslationModalOpen] = useState(false);
   const [draftLogId, setDraftLogId] = useState(null);
@@ -1910,6 +1911,12 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     return match?.ai_draft_text?.trim() || "";
   }, [draftMessage, rawThreadMessages]);
 
+  // Count of real inbound messages — used to detect when a new customer message arrives.
+  const inboundMessageCount = useMemo(
+    () => rawThreadMessages.filter((m) => !m.from_me && !m.is_draft).length,
+    [rawThreadMessages],
+  );
+
   const customerLookupParams = useMemo(() => {
     const inboundCandidates = [...threadMessages]
       .filter((message) => !isOutboundMessage(message, mailboxEmails))
@@ -2285,6 +2292,50 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     suppressAutoDraftByThread,
   ]);
 
+  // Ref that always holds the latest systemDraftUneditedByThread value so effects
+  // can read it without needing it as a dependency.
+  const systemDraftUneditedRef = useRef({});
+  useEffect(() => {
+    systemDraftUneditedRef.current = systemDraftUneditedByThread;
+  }, [systemDraftUneditedByThread]);
+
+  // Ref tracking last seen inbound count per thread — to detect NEW inbound messages.
+  const prevInboundCountRef = useRef({});
+
+  // Detect new inbound customer message:
+  // • If draft is unedited → clear compose box (a fresh draft will arrive momentarily from generate-draft-unified)
+  // • If draft was edited by the agent → show stale-draft banner so they know context changed
+  useEffect(() => {
+    if (!selectedThreadId) return;
+    const prev = prevInboundCountRef.current[selectedThreadId] ?? null;
+    const curr = inboundMessageCount;
+    prevInboundCountRef.current[selectedThreadId] = curr;
+    if (prev === null || curr <= prev) return; // first load or no new message
+    const currentDraftText = draftValueRef.current;
+    if (!currentDraftText) return; // compose box already empty, nothing to do
+    const isUnedited = systemDraftUneditedRef.current[selectedThreadId];
+    if (isUnedited) {
+      // Unedited system draft → clear immediately; generate-draft-unified will repopulate
+      setDraftValue("");
+      setDraftValueByThread((p) => ({ ...p, [selectedThreadId]: "" }));
+      setSystemDraftUneditedByThread((p) => ({ ...p, [selectedThreadId]: false }));
+    } else {
+      // Agent was editing → warn without destroying their work
+      setStaleDraftByThread((p) => ({ ...p, [selectedThreadId]: true }));
+    }
+  }, [inboundMessageCount, selectedThreadId]);
+
+  // Clear stale banner + compose when switching threads
+  useEffect(() => {
+    if (!selectedThreadId) return;
+    setStaleDraftByThread((p) => {
+      if (!p[selectedThreadId]) return p;
+      const next = { ...p };
+      delete next[selectedThreadId];
+      return next;
+    });
+  }, [selectedThreadId]);
+
   const handleGenerateDraft = useCallback(async () => {
     if (!selectedThreadId || isLocalThreadId(selectedThreadId)) return;
     if (manualDraftGeneratingByThread[selectedThreadId]) return;
@@ -2451,6 +2502,12 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           ...prev,
           [threadId]: true,
         }));
+        setStaleDraftByThread((prev) => {
+          if (!prev[threadId]) return prev;
+          const next = { ...prev };
+          delete next[threadId];
+          return next;
+        });
         if (draft?.id && selectedThreadIdRef.current === threadId) {
           setActiveDraftId(draft.id);
         }
@@ -3633,6 +3690,15 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           isGeneratingDraft={Boolean(
             selectedThreadId && manualDraftGeneratingByThread[selectedThreadId]
           )}
+          staleDraft={Boolean(selectedThreadId && staleDraftByThread[selectedThreadId])}
+          onDismissStaleDraft={() => {
+            if (!selectedThreadId) return;
+            setStaleDraftByThread((prev) => {
+              const next = { ...prev };
+              delete next[selectedThreadId];
+              return next;
+            });
+          }}
         />
       </div>
 

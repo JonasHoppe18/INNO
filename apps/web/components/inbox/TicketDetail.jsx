@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { Sparkles } from "lucide-react";
+import { Sparkles, TriangleAlert, X } from "lucide-react";
 import { MessageBubble } from "@/components/inbox/MessageBubble";
 import { Composer } from "@/components/inbox/Composer";
 import { ThinkingCard } from "@/components/inbox/ThinkingCard";
@@ -90,6 +90,8 @@ export function TicketDetail({
   onConversationScroll = null,
   onGenerateDraft = null,
   isGeneratingDraft = false,
+  staleDraft = false,
+  onDismissStaleDraft = null,
 }) {
   const [composerCollapsed, setComposerCollapsed] = useState(false);
   const [processReturnRestock, setProcessReturnRestock] = useState(true);
@@ -449,6 +451,28 @@ export function TicketDetail({
           </div>
         </div>
       ) : (
+        <>
+        {staleDraft && (
+          <div className="mx-3 mb-2 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            <TriangleAlert className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+            <span className="flex-1">Ny besked fra kunden — dit udkast er muligvis forældet.</span>
+            <button
+              type="button"
+              onClick={() => onGenerateDraft?.()}
+              className="shrink-0 font-medium underline underline-offset-2 hover:text-amber-900"
+            >
+              Regenerer
+            </button>
+            <button
+              type="button"
+              onClick={() => onDismissStaleDraft?.()}
+              className="shrink-0 rounded p-0.5 hover:bg-amber-100"
+              aria-label="Luk"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        )}
         <div className="px-3 pb-1.5">
           <Composer
             key={`${thread?.id || "thread"}:${composerMode}`}
@@ -473,6 +497,7 @@ export function TicketDetail({
             isGeneratingDraft={isGeneratingDraft}
           />
         </div>
+        </>
       )}
     </section>
   );
