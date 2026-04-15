@@ -2223,7 +2223,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     if (proposalOnlyByThread[selectedThreadId]) return;
     if (pendingOrderUpdateByThread[selectedThreadId]) return;
     if (suppressAutoDraftByThread[selectedThreadId]) return;
-    if (draftValueRef.current) return;
+    // Allow overwriting an existing system draft that hasn't been edited by the agent,
+    // so new customer messages replace stale auto-generated drafts.
+    if (draftValueRef.current && !systemDraftUneditedByThread[selectedThreadId]) return;
     setDraftValue(aiDraft);
     setDraftValueByThread((prev) => ({
       ...prev,
@@ -2240,6 +2242,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     proposalOnlyByThread,
     selectedThreadId,
     suppressAutoDraftByThread,
+    systemDraftUneditedByThread,
   ]);
 
   useEffect(() => {
@@ -2260,7 +2263,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     if (pendingOrderUpdateByThread[selectedThreadId]) return;
     if (suppressAutoDraftByThread[selectedThreadId]) return;
     const draftBody = draftMessage.body_text || draftMessage.body_html || "";
-    if (draftValueRef.current) return;
+    // Allow overwriting an existing system draft that hasn't been edited by the agent,
+    // so new customer messages replace stale auto-generated drafts.
+    if (draftValueRef.current && !systemDraftUneditedByThread[selectedThreadId]) return;
     setDraftValue(draftBody);
     setDraftValueByThread((prev) => ({
       ...prev,
@@ -2277,6 +2282,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     proposalOnlyByThread,
     selectedThreadId,
     suppressAutoDraftByThread,
+    systemDraftUneditedByThread,
   ]);
 
   const handleGenerateDraft = useCallback(async () => {

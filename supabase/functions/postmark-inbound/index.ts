@@ -1459,6 +1459,23 @@ Deno.serve(async (req) => {
   }
 
   const messageDbId = (messageInsert as any)?.id ?? null;
+
+  // Clear stale AI drafts when a new customer message arrives on an existing thread.
+  // This ensures agents never see an outdated draft that was generated for a previous message.
+  if (!createdNewThread && threadId) {
+    await supabase
+      .from("mail_messages")
+      .delete()
+      .eq("thread_id", threadId)
+      .eq("is_draft", true)
+      .eq("from_me", true);
+    await supabase
+      .from("mail_messages")
+      .update({ ai_draft_text: null, updated_at: new Date().toISOString() })
+      .eq("thread_id", threadId)
+      .not("ai_draft_text", "is", null);
+  }
+
   const { data: existingThread } = await supabase
     .from("mail_threads")
     .select("subject, unread_count, tags, classification_key, classification_confidence, classification_reason, customer_name, customer_email")

@@ -6557,6 +6557,42 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       }
     }
 
+    // Post-processing: collapse blank lines inside address blocks.
+    // Line-by-line: skip a blank line when it sits between address-like lines
+    // (short, no sentence-ending punctuation) where the surrounding context suggests
+    // a postal address — org suffix on prev line, or postal code / country on next line.
+    {
+      const _addrCountries = new Set([
+        "denmark","germany","sweden","norway","finland","netherlands","belgium",
+        "france","spain","italy","austria","switzerland","poland","united kingdom",
+        "uk","usa","us","canada","australia","new zealand",
+      ]);
+      const _lines = finalText.split("\n");
+      const _out: string[] = [];
+      for (let _i = 0; _i < _lines.length; _i++) {
+        const _cur = _lines[_i];
+        if (_cur.trim() === "") {
+          const _prev = _out.length > 0 ? _out[_out.length - 1] : "";
+          const _next = _i + 1 < _lines.length ? _lines[_i + 1] : "";
+          const _prevTrimmed = _prev.trim();
+          const _nextTrimmed = _next.trim();
+          const _prevIsAddrLike =
+            _prevTrimmed.length > 0 &&
+            _prevTrimmed.length <= 60 &&
+            !/[.!?]$/.test(_prevTrimmed) &&
+            !/:$/.test(_prevTrimmed);
+          const _nextIsCountry = _addrCountries.has(_nextTrimmed.toLowerCase().replace(/[,.]$/, ""));
+          const _nextIsPostal = /^\d{4,6}[ ,]/.test(_nextTrimmed);
+          const _prevHasOrgSuffix = /\b(ApS|A\/S|Ltd|Inc|GmbH|International|Group)\b/.test(_prevTrimmed);
+          if (_prevIsAddrLike && (_nextIsCountry || _nextIsPostal || _prevHasOrgSuffix)) {
+            continue; // skip blank line
+          }
+        }
+        _out.push(_cur);
+      }
+      finalText = _out.join("\n");
+    }
+
     // Render HTML med konsistent styling og line breaks.
     let htmlBody = formatEmailBody(finalText);
 
@@ -6992,42 +7028,6 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
             internalThread.threadId,
           );
         }
-        // Post-processing: collapse blank lines inside address blocks.
-        // Line-by-line: skip a blank line when it sits between address-like lines
-        // (short, no sentence-ending punctuation) where the surrounding context suggests
-        // a postal address — org suffix on prev line, or postal code / country on next line.
-        {
-          const _addrCountries = new Set([
-            "denmark","germany","sweden","norway","finland","netherlands","belgium",
-            "france","spain","italy","austria","switzerland","poland","united kingdom",
-            "uk","usa","us","canada","australia","new zealand",
-          ]);
-          const _lines = finalText.split("\n");
-          const _out: string[] = [];
-          for (let _i = 0; _i < _lines.length; _i++) {
-            const _cur = _lines[_i];
-            if (_cur.trim() === "") {
-              const _prev = _out.length > 0 ? _out[_out.length - 1] : "";
-              const _next = _i + 1 < _lines.length ? _lines[_i + 1] : "";
-              const _prevTrimmed = _prev.trim();
-              const _nextTrimmed = _next.trim();
-              const _prevIsAddrLike =
-                _prevTrimmed.length > 0 &&
-                _prevTrimmed.length <= 60 &&
-                !/[.!?]$/.test(_prevTrimmed) &&
-                !/:$/.test(_prevTrimmed);
-              const _nextIsCountry = _addrCountries.has(_nextTrimmed.toLowerCase().replace(/[,.]$/, ""));
-              const _nextIsPostal = /^\d{4,6}[ ,]/.test(_nextTrimmed);
-              const _prevHasOrgSuffix = /\b(ApS|A\/S|Ltd|Inc|GmbH|International|Group)\b/.test(_prevTrimmed);
-              if (_prevIsAddrLike && (_nextIsCountry || _nextIsPostal || _prevHasOrgSuffix)) {
-                continue; // skip blank line
-              }
-            }
-            _out.push(_cur);
-          }
-          finalText = _out.join("\n");
-        }
-
         htmlBody = formatEmailBody(finalText);
 
         if (supabase && internalDraft?.id) {
