@@ -2235,6 +2235,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       ...prev,
       [selectedThreadId]: true,
     }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- systemDraftUneditedByThread intentionally omitted: effect also sets it, adding it would cause an infinite loop
   }, [
     aiDraft,
     draftReady,
@@ -2242,9 +2243,6 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     proposalOnlyByThread,
     selectedThreadId,
     suppressAutoDraftByThread,
-    // systemDraftUneditedByThread intentionally omitted: reading its latest value
-    // without re-triggering (adding it would cause an infinite loop since this effect
-    // also sets it).
   ]);
 
   useEffect(() => {
@@ -2277,6 +2275,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       ...prev,
       [selectedThreadId]: true,
     }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- systemDraftUneditedByThread intentionally omitted: effect also sets it, adding it would cause an infinite loop
   }, [
     draftMessage,
     draftReady,
@@ -2284,9 +2283,6 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     proposalOnlyByThread,
     selectedThreadId,
     suppressAutoDraftByThread,
-    // systemDraftUneditedByThread intentionally omitted: reading its latest value
-    // without re-triggering (adding it would cause an infinite loop since this effect
-    // also sets it).
   ]);
 
   const handleGenerateDraft = useCallback(async () => {
