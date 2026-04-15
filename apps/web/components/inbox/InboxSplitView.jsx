@@ -2242,7 +2242,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     proposalOnlyByThread,
     selectedThreadId,
     suppressAutoDraftByThread,
-    systemDraftUneditedByThread,
+    // systemDraftUneditedByThread intentionally omitted: reading its latest value
+    // without re-triggering (adding it would cause an infinite loop since this effect
+    // also sets it).
   ]);
 
   useEffect(() => {
@@ -2282,7 +2284,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     proposalOnlyByThread,
     selectedThreadId,
     suppressAutoDraftByThread,
-    systemDraftUneditedByThread,
+    // systemDraftUneditedByThread intentionally omitted: reading its latest value
+    // without re-triggering (adding it would cause an infinite loop since this effect
+    // also sets it).
   ]);
 
   const handleGenerateDraft = useCallback(async () => {
