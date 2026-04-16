@@ -36,6 +36,13 @@ async function loadLatestPendingDraftMeta(serviceClient, scope, threadKey) {
   return data || null;
 }
 
+function isProposalOnlyDraftMeta(meta) {
+  if (!meta) return false;
+  const kind = String(meta?.kind || "").trim().toLowerCase();
+  if (!kind) return false;
+  return kind !== "final_customer_reply";
+}
+
 function stripHtml(html) {
   return String(html || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
@@ -241,8 +248,7 @@ export async function POST(_request, { params }) {
     scope,
     thread.provider_thread_id || threadId
   );
-  const proposalOnly =
-    Boolean(latestPendingDraftMeta) && String(latestPendingDraftMeta?.kind || "") !== "final_customer_reply";
+  const proposalOnly = isProposalOnlyDraftMeta(latestPendingDraftMeta);
   const { data: draft } = await applyScope(
     serviceClient
       .from("mail_messages")
