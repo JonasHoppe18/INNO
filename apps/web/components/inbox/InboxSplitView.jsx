@@ -2318,6 +2318,8 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     if (pendingOrderUpdateByThread[selectedThreadId]) return;
     if (suppressAutoDraftByThread[selectedThreadId]) return;
     const draftBody = draftMessage.body_text || draftMessage.body_html || "";
+    // Realtime can briefly deliver an empty draft row; never clobber a loaded draft with empty content.
+    if (!String(draftBody || "").trim()) return;
     // Allow overwriting an existing system draft that hasn't been edited by the agent,
     // so new customer messages replace stale auto-generated drafts.
     if (draftValueRef.current && !systemDraftUneditedByThread[selectedThreadId]) return;
