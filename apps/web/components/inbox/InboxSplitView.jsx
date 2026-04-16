@@ -2198,7 +2198,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         ...prev,
         [selectedThreadId]: proposalOnly,
       }));
-      if (proposalOnly) {
+      if (proposalOnly && !draft) {
         setSuppressAutoDraftByThread((prev) => ({
           ...prev,
           [selectedThreadId]: true,

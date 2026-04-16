@@ -272,7 +272,8 @@ export async function GET(_request, { params }) {
       signature: userSignature,
       proposal_only: proposalOnly,
       draft_kind: latestPendingDraftMeta?.kind || null,
-      draft: !proposalOnly && draft
+      // Keep persisted drafts visible even when a proposal action is pending.
+      draft: draft
         ? {
             id: draft.id,
             body_text: draft.body_text || "",
