@@ -2146,16 +2146,21 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   ]);
 
   useEffect(() => {
-    setDraftValue("");
-    setActiveDraftId(null);
-    setDraftReady(false);
-    if (selectedThreadId) {
-      draftLastSavedRef.current[selectedThreadId] = "";
+    if (!selectedThreadId) {
+      setDraftValue("");
+      setActiveDraftId(null);
+      setDraftReady(false);
+      return;
     }
-    if (!selectedThreadId) return;
-    setDraftValue(String(draftValueByThread[selectedThreadId] || ""));
-    if (Object.prototype.hasOwnProperty.call(draftValueByThread, selectedThreadId)) {
+
+    const hasThreadDraft = Object.prototype.hasOwnProperty.call(draftValueByThread, selectedThreadId);
+    if (hasThreadDraft) {
+      setDraftValue(String(draftValueByThread[selectedThreadId] || ""));
       setDraftReady(true);
+    } else {
+      setDraftValue("");
+      setActiveDraftId(null);
+      setDraftReady(false);
     }
     setDraftWaitTimedOutByThread((prev) => {
       if (prev[selectedThreadId] === false || !(selectedThreadId in prev)) return prev;
@@ -2241,14 +2246,21 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           [selectedThreadId]: true,
         }));
       } else {
-        setDraftValueByThread((prev) => ({
-          ...prev,
-          [selectedThreadId]: "",
-        }));
-        setSystemDraftUneditedByThread((prev) => ({
-          ...prev,
-          [selectedThreadId]: false,
-        }));
+        setDraftValueByThread((prev) => {
+          const existing = String(prev?.[selectedThreadId] || "");
+          if (existing.trim()) return prev;
+          return {
+            ...prev,
+            [selectedThreadId]: "",
+          };
+        });
+        setSystemDraftUneditedByThread((prev) => {
+          if (String(draftValueRef.current || "").trim()) return prev;
+          return {
+            ...prev,
+            [selectedThreadId]: false,
+          };
+        });
       }
       if (draft?.id) {
         setActiveDraftId(draft.id);
@@ -2437,7 +2449,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         ...prev,
         [threadId]: proposalOnly,
       }));
-      if (proposalOnly) {
+      if (proposalOnly && !draft) {
         const approvalRes = await fetch(
           `/api/threads/${encodeURIComponent(threadId)}/order-updates/accept`,
           { method: "GET" }
