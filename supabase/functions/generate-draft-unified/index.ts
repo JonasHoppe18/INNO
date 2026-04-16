@@ -2219,6 +2219,24 @@ async function persistThreadActions({
   if (!supabase || !ownerUserId || !threadId || !results.length) return;
   const nowIso = new Date().toISOString();
 
+  // Supersede any stale pending actions before writing new ones.
+  // This prevents old proposals from re-appearing when a new draft is generated.
+  const hasPendingIncoming = results.some((r) => r?.status === "pending_approval");
+  if (hasPendingIncoming) {
+    let supersedePendingQuery = supabase
+      .from("thread_actions")
+      .update({ status: "superseded", updated_at: nowIso })
+      .eq("thread_id", threadId)
+      .eq("status", "pending");
+    supersedePendingQuery = workspaceId
+      ? supersedePendingQuery.eq("workspace_id", workspaceId)
+      : supersedePendingQuery.eq("user_id", ownerUserId);
+    const { error: supersedePendingError } = await supersedePendingQuery;
+    if (supersedePendingError) {
+      console.warn("generate-draft-unified: failed to supersede stale pending actions", supersedePendingError.message);
+    }
+  }
+
   for (const result of results) {
     const actionType = String(result?.type || "").trim().toLowerCase();
     if (!actionType) continue;
@@ -3689,7 +3707,7 @@ function normalizeAutomationActionsForOrderContext(
   return { actions: kept, removed };
 }
 
-function maybeBuildExchangeFallbackAction(options: {
+function maybeBuildExchangeReturnAction(options: {
   selectedOrder: any;
   orderSummary: string;
   subject: string;
@@ -3707,7 +3725,8 @@ function maybeBuildExchangeFallbackAction(options: {
   const existingTypes = new Set(
     (options.existingActions || []).map((item) => String(item?.type || "").trim().toLowerCase()),
   );
-  if (existingTypes.has("create_exchange_request")) return null;
+  // Already have return instructions or fulfill step — don't add again
+  if (existingTypes.has("send_return_instructions") || existingTypes.has("fulfill_exchange")) return null;
   const hasBlockingMutation = Array.from(existingTypes).some(
     (type) =>
       ![
@@ -3720,6 +3739,9 @@ function maybeBuildExchangeFallbackAction(options: {
   );
   if (hasBlockingMutation) return null;
 
+  const orderId = Number(options.selectedOrder?.id);
+  if (!Number.isFinite(orderId) || orderId <= 0) return null;
+
   const lineItems = Array.isArray(options.selectedOrder?.line_items)
     ? options.selectedOrder.line_items
     : [];
@@ -3728,12 +3750,9 @@ function maybeBuildExchangeFallbackAction(options: {
     const variantId = toVariantGid(item?.variant_admin_graphql_api_id || item?.variant_id);
     return Boolean(lineItemId && variantId);
   }) || null;
-  if (!chosen) return null;
 
-  const orderId = Number(options.selectedOrder?.id);
-  if (!Number.isFinite(orderId) || orderId <= 0) return null;
-  let lineItemId = toLineItemGid(chosen?.admin_graphql_api_id || chosen?.id);
-  let variantId = toVariantGid(chosen?.variant_admin_graphql_api_id || chosen?.variant_id);
+  let lineItemId = chosen ? toLineItemGid(chosen?.admin_graphql_api_id || chosen?.id) : "";
+  let variantId = chosen ? toVariantGid(chosen?.variant_admin_graphql_api_id || chosen?.variant_id) : "";
   if (!lineItemId || !variantId) {
     const summary = String(options.orderSummary || "");
     const lineMatch = summary.match(/line_item_id=(gid:\/\/shopify\/LineItem\/\d+)/i);
@@ -3741,17 +3760,22 @@ function maybeBuildExchangeFallbackAction(options: {
     lineItemId = lineItemId || (lineMatch?.[1] ? String(lineMatch[1]).trim() : "");
     variantId = variantId || (variantMatch?.[1] ? String(variantMatch[1]).trim() : "");
   }
-  if (!lineItemId || !variantId) return null;
+
+  const productTitle = String(chosen?.title || chosen?.name || "").trim();
+  const variantTitle = String(chosen?.variant_title || "").trim();
 
   return {
-    type: "create_exchange_request",
+    type: "send_return_instructions",
     orderId: Math.trunc(orderId),
     payload: {
-      return_line_item_id: lineItemId,
-      exchange_variant_id: variantId,
+      is_exchange: true,
+      ...(lineItemId ? { return_line_item_id: lineItemId } : {}),
+      ...(variantId ? { exchange_variant_id: variantId } : {}),
+      ...(productTitle ? { exchange_product_title: productTitle } : {}),
+      ...(variantTitle ? { exchange_variant_title: variantTitle } : {}),
+      return_reason: inferExchangeReason(options.subject, options.body),
       return_quantity: 1,
       exchange_quantity: 1,
-      return_reason: inferExchangeReason(options.subject, options.body),
     },
   };
 }
@@ -3944,6 +3968,23 @@ Deno.serve(async (req) => {
     const provider = typeof body?.provider === "string" ? body.provider.trim() : "";
     const forceProcess = body?.force_process === true;
     const emailData: EmailData = body?.email_data ?? {};
+
+    // Sanitize phone numbers from customer email body — prevent AI from
+    // accidentally including the customer's own number as a support contact number.
+    function stripPhoneNumbers(text: string): string {
+      return text
+        // International format: +45 12 34 56 78 / +1-800-555-1234 etc.
+        .replace(/\+\d{1,3}[\s.\-]?\d{2,4}[\s.\-]?\d{2,4}[\s.\-]?\d{2,4}[\s.\-]?\d{0,4}/g, "[telefonnummer]")
+        // Danish 8-digit: 12 34 56 78 / 12-34-56-78 / 12345678
+        .replace(/\b\d{2}[\s.\-]\d{2}[\s.\-]\d{2}[\s.\-]\d{2}\b/g, "[telefonnummer]")
+        .replace(/\b\d{8}\b/g, "[telefonnummer]");
+    }
+    if (emailData.body) {
+      emailData.body = stripPhoneNumbers(emailData.body);
+    }
+    if (emailData.rawBody) {
+      emailData.rawBody = stripPhoneNumbers(emailData.rawBody);
+    }
 
     if (!shopId || !provider) {
       return new Response(JSON.stringify({ error: "shop_id og provider er påkrævet." }), {
@@ -5404,16 +5445,8 @@ Deno.serve(async (req) => {
         caseAssessment?.secondary_case_types.includes("technical_issue") ||
         Number(caseAssessment?.intent_scores?.technical_issue ?? 0) >= 6
       );
-    const technicalExchangeCandidate = technicalEscalationCandidate
-      ? maybeBuildExchangeFallbackAction({
-        selectedOrder,
-        orderSummary: context.orderSummary || "",
-        subject: emailData.subject || "",
-        body: emailData.body || "",
-        existingActions: [],
-        force: true,
-      })
-      : null;
+    // Exchange actions are no longer auto-proposed; return instructions come from the AI draft.
+    const technicalExchangeCandidate = null;
     const factSummaryText = [
       threadStateText,
       factContext?.summary || "",
@@ -5477,6 +5510,9 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         "11. NEVER STATE PRICES: Do not state specific prices, costs, or fees for any product or service unless the exact price is explicitly provided in your knowledge base or order data. If a customer asks for pricing, direct them to the website or sales contact. Inventing or estimating prices creates serious commercial liability.",
         "12. ANSWER THE ACTUAL QUESTION FIRST: Read the customer's message carefully and answer what they actually asked before offering alternatives. If a customer asks whether a feature can be disabled, answer that question directly first. Do NOT jump to offering a return or replacement without first addressing the core question. A threat to return ('I will return this unless...') is a conditional — answer the condition, not the threat.",
         "13. DO NOT PROACTIVELY OFFER RETURNS: NEVER suggest, offer, or mention returns, refunds, or return shipping unless the customer explicitly and directly asks for a return or refund in their message. If the answer to a customer's question is negative (e.g. 'this feature cannot be disabled'), respond with the answer and empathy — do NOT follow up by explaining how to return the product. The customer can ask about returns separately if they choose.",
+        "15. NEVER INCLUDE PHONE NUMBERS IN YOUR REPLY: Do not include any phone number in your reply — not from the customer's message, not from the knowledge base, not from anywhere. Phone numbers do not belong in support emails. If the customer included their own number, it is theirs to use — never repeat it back as if it is a contact number they should call.",
+        "16. NEVER INVENT PRODUCT AVAILABILITY OR POLICIES: Do not state that a product, part, or service 'cannot be purchased', 'is not available', or 'is not sold separately' unless this is explicitly stated in the pinned policy or knowledge base. If you do not know, say you will look into it — never fabricate a negative answer.",
+        "17. NEVER REFER THE CUSTOMER TO A THIRD PARTY: You are the customer's ONLY support channel. Never tell the customer to contact a distributor, manufacturer, wholesaler, repair center, supplier, or any external company or organization. If the problem requires a warranty claim or repair, you handle it — not the customer. Do not write phrases like 'kontakt [company]', 'reach out to [company]', 'contact [brand]', or 'get in touch with [partner]'.",
         "END OF HARD CONSTRAINTS.",
         "",
         "EXAMPLE — no order data, product bought from third-party retailer:",
@@ -5531,9 +5567,10 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         ? systemMsgBase +
           ` Hvis KONTEKST indeholder et ordrenummer (fx #${context.matchedSubjectNumber}), brug dette ordrenummer som reference i svaret og spørg IKKE efter ordrenummer igen.`
         : systemMsgBase;
-      // Route model by category: complex categories need gpt-4o, simple ones use env var default (gpt-4o-mini)
-      const complexWorkflows = ["technical_support", "product_question", "return", "exchange", "refund"];
-      const replyModel = complexWorkflows.includes(workflowRoute?.workflow ?? "") ? "gpt-4o" : OPENAI_MODEL;
+      // Route model by category: only use mini for simple, predictable workflows with structured answers.
+      // Everything else (including general/unknown) needs gpt-4o for judgment and instruction-following.
+      const simpleWorkflows = ["tracking", "cancellation", "address_change", "payment"];
+      const replyModel = simpleWorkflows.includes(workflowRoute?.workflow ?? "") ? OPENAI_MODEL : "gpt-4o";
       const { reply, actions } = await callOpenAIWithImages(
         prompt,
         systemMsg,
@@ -5626,25 +5663,11 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
           await runLegacyCombinedModel();
         }
 
+        // Exchange threads: strip annotation-only actions — the draft itself carries the instructions
         if (hasExchangeSignals(emailData.subject || "", emailData.body || "")) {
           automationActions = automationActions.filter(
             (action) => !isInternalAnnotationAction(String(action?.type || "")),
           );
-        }
-        const exchangeFallbackAction = maybeBuildExchangeFallbackAction({
-          selectedOrder,
-          orderSummary: context.orderSummary || "",
-          subject: emailData.subject || "",
-          body: emailData.body || "",
-          existingActions: automationActions,
-        });
-        if (exchangeFallbackAction) {
-          automationActions = [...automationActions, exchangeFallbackAction];
-          reasoningLogs.push({
-            step_name: "Shopify Action",
-            step_detail: "Fallback exchange action inferred from return request.",
-            status: "warning",
-          });
         }
       } else {
         aiText = null;
@@ -5652,50 +5675,6 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
     } catch (e) {
       console.warn("OpenAI fejl", e?.message || e);
       aiText = null;
-    }
-
-    if (!automationActions.length) {
-      const exchangeFallbackAction = maybeBuildExchangeFallbackAction({
-        selectedOrder,
-        orderSummary: context.orderSummary || "",
-        subject: emailData.subject || "",
-        body: emailData.body || "",
-        existingActions: automationActions,
-      });
-      if (exchangeFallbackAction) {
-        automationActions = [...automationActions, exchangeFallbackAction];
-        reasoningLogs.push({
-          step_name: "Shopify Action",
-          step_detail: "Fallback exchange action inferred after empty AI action set.",
-          status: "warning",
-        });
-      }
-    }
-
-    if (
-      hasExchangeSignals(emailData.subject || "", emailData.body || "") &&
-      !automationActions.some(
-        (action) => String(action?.type || "").trim().toLowerCase() === "create_exchange_request",
-      )
-    ) {
-      const forcedExchangeAction = maybeBuildExchangeFallbackAction({
-        selectedOrder,
-        orderSummary: context.orderSummary || "",
-        subject: emailData.subject || "",
-        body: emailData.body || "",
-        existingActions: automationActions,
-      });
-      if (forcedExchangeAction) {
-        automationActions = [
-          ...automationActions.filter((action) => !isInternalAnnotationAction(String(action?.type || ""))),
-          forcedExchangeAction,
-        ];
-        reasoningLogs.push({
-          step_name: "Shopify Action",
-          step_detail: "Forced exchange action replaced internal note/tag action.",
-          status: "warning",
-        });
-      }
     }
 
     if (automationActions.length) {
@@ -6153,6 +6132,24 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
       enforceLocalizedGreeting(aiText.trim(), customerFirstName, languageHint),
     );
     finalText = ensureFirstLineHasName(finalText, customerFirstName);
+
+    // Post-processing: remove any sentences/lines that contain bare phone numbers.
+    // Phone numbers have no place in a support reply — regardless of source.
+    finalText = finalText
+      .split("\n")
+      .map((line) =>
+        // Remove 8-digit Danish numbers and international +XX formats from each line
+        line
+          .replace(/\+\d{1,3}[\s.\-]?\d{2,4}[\s.\-]?\d{2,4}[\s.\-]?\d{2,4}(?:[\s.\-]?\d{0,4})?/g, "")
+          .replace(/\b\d{8}\b/g, "")
+          .replace(/\b\d{2}[\s\-\.]\d{2}[\s\-\.]\d{2}[\s\-\.]\d{2}\b/g, "")
+      )
+      // Remove lines that became empty or just punctuation after stripping
+      .map((line) => (/^[\s,;.!?–—-]*$/.test(line) ? "" : line))
+      .join("\n")
+      // Clean up runs of blank lines
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
 
     const ongoingReturnContinuation = Boolean(selectedOrder) &&
       (

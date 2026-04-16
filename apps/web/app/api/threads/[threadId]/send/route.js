@@ -858,7 +858,7 @@ export async function POST(request, { params }) {
 
   let threadQuery = serviceClient
     .from("mail_threads")
-    .select("id, user_id, workspace_id, mailbox_id, provider, provider_thread_id, subject, snippet")
+    .select("id, user_id, workspace_id, mailbox_id, provider, provider_thread_id, subject, snippet, classification_key, tags")
     .eq("id", threadId);
   threadQuery = applyScope(threadQuery, scope);
   const { data: thread, error: threadError } = await threadQuery.maybeSingle();
@@ -1304,11 +1304,32 @@ export async function POST(request, { params }) {
   clearAiDraftQuery = applyScope(clearAiDraftQuery, scope);
   await clearAiDraftQuery;
 
+  // Supersede any still-pending Shopify action proposals when a reply is sent.
+  // An agent replying means they've handled the situation — pending proposals are no longer relevant.
+  let supersedePendingActionsQuery = serviceClient
+    .from("thread_actions")
+    .update({ status: "superseded", updated_at: nowIso })
+    .eq("thread_id", threadId)
+    .eq("status", "pending");
+  supersedePendingActionsQuery = applyScope(supersedePendingActionsQuery, scope);
+  await supersedePendingActionsQuery;
+
+  // Tag exchange threads as awaiting_return on first outbound reply
+  // so the UI can show the "Markér modtaget" banner.
+  const threadClassKey = String(thread.classification_key || "").toLowerCase();
+  const threadTags = Array.isArray(thread.tags) ? thread.tags : [];
+  const isExchangeThread = threadClassKey === "exchange";
+  const alreadyAwaitingReturn = threadTags.includes("awaiting_return");
+  const updatedTags = isExchangeThread && !alreadyAwaitingReturn
+    ? [...threadTags, "awaiting_return"]
+    : threadTags;
+
   let updateThreadQuery = serviceClient
     .from("mail_threads")
     .update({
       snippet,
       subject: thread.subject ? thread.subject : subject,
+      tags: isExchangeThread && !alreadyAwaitingReturn ? updatedTags : undefined,
       updated_at: nowIso,
     })
     .eq("id", threadId);

@@ -124,6 +124,7 @@ function getActionStatusLabel(actionType = "") {
   if (normalizedAction === "forward_email") return "Forwarded";
   if (normalizedAction === "create_return_case") return "Return created";
   if (normalizedAction === "send_return_instructions") return "Instructions sent";
+  if (normalizedAction === "fulfill_exchange") return "Exchange fulfilled";
   if (normalizedAction === "add_note" || normalizedAction === "add_internal_note_or_tag") {
     return "Note added";
   }
@@ -182,6 +183,7 @@ function getApproveButtonLabel({ actionType = "", actionName = "", payload = {},
   if (normalizedAction === "change_shipping_method") return "Approve shipping change";
   if (normalizedAction === "update_customer_contact") return "Approve contact update";
   if (normalizedAction === "send_return_instructions") return "Approve return instructions";
+  if (normalizedAction === "fulfill_exchange") return "Fulfill exchange";
   if (normalizedAction === "forward_email") return "Approve forward";
   const fallback = String(actionName || "").trim();
   return fallback ? `Approve ${fallback.toLowerCase()}` : "Approve action";
@@ -201,6 +203,13 @@ function getImpactSummaryLines({ actionType = "", payload = {}, orderDisplayNumb
     lines.push("The return will be processed in Shopify.");
   } else if (normalizedAction === "send_return_instructions") {
     lines.push("Return instructions will be sent to the customer.");
+  } else if (normalizedAction === "fulfill_exchange") {
+    const product = payload?.exchange_product_title;
+    const variant = payload?.exchange_variant_title;
+    const label = product
+      ? variant ? `${product} (${variant})` : product
+      : "the replacement item";
+    lines.push(`${label} will be shipped to the customer via Shopify.`);
   } else if (normalizedAction === "update_shipping_address") {
     lines.push("Shipping address on the order will be updated.");
   } else if (normalizedAction === "change_shipping_method") {

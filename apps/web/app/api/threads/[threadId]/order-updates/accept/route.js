@@ -704,7 +704,8 @@ function isOrderMutationBlocked(order = {}, actionType = "") {
   if (
     type !== "update_shipping_address" &&
     type !== "cancel_order" &&
-    type !== "create_exchange_request"
+    type !== "create_exchange_request" &&
+    type !== "fulfill_exchange"
   ) {
     return null;
   }
@@ -713,7 +714,7 @@ function isOrderMutationBlocked(order = {}, actionType = "") {
     return "Order is canceled and cannot be changed";
   }
 
-  if (order?.closed_at && type !== "create_exchange_request") {
+  if (order?.closed_at && type !== "create_exchange_request" && type !== "fulfill_exchange") {
     return "Order is closed and cannot be changed";
   }
 
@@ -2215,6 +2216,28 @@ async function executeShopifyAction({ domain, token, actionType, orderId, payloa
         orderId,
         payload,
       });
+    case "fulfill_exchange": {
+      // Combined: create the Shopify return+exchange, then immediately process it
+      const createResult = await createExchangeRequest({
+        domain,
+        token,
+        orderId,
+        payload: {
+          return_line_item_id: payload.return_line_item_id,
+          exchange_variant_id: payload.exchange_variant_id,
+          return_quantity: payload.return_quantity || 1,
+          exchange_quantity: payload.exchange_quantity || 1,
+          return_reason: payload.return_reason,
+        },
+      });
+      const returnId = asString(createResult?.returnId || createResult?.return_id || "");
+      if (returnId) {
+        await processExchangeReturn({ domain, token, payload: { return_id: returnId } }).catch((err) => {
+          console.warn("fulfill_exchange: processExchangeReturn failed (non-fatal)", err?.message || err);
+        });
+      }
+      return { ...createResult, returnId, processed: Boolean(returnId) };
+    }
     case "process_exchange_return":
       return await processExchangeReturn({
         domain,
@@ -3067,6 +3090,7 @@ export async function POST(request, { params }) {
     const shippingEn = returnShippingMode === "customer_paid"
       ? "Please note that return shipping costs are paid by the customer."
       : "Return shipping is prepaid — we will send you a return label.";
+
     const returnInstructionsDraft = isDanish
       ? [
           `Hej ${customerName},`,
@@ -3192,6 +3216,26 @@ export async function POST(request, { params }) {
       },
       { status: 200 }
     );
+  }
+
+  // fulfill_exchange: remove awaiting_return tag once fulfilled
+  if (normalizedActionType === "fulfill_exchange") {
+    const { data: threadRow } = await serviceClient
+      .from("mail_threads")
+      .select("tags")
+      .eq("id", thread.id)
+      .maybeSingle();
+    const currentTags = Array.isArray(threadRow?.tags) ? threadRow.tags : [];
+    const updatedTags = currentTags.filter((t) => t !== "awaiting_return");
+    if (updatedTags.length !== currentTags.length) {
+      await serviceClient
+        .from("mail_threads")
+        .update({ tags: updatedTags, updated_at: new Date().toISOString() })
+        .eq("id", thread.id)
+        .catch((err) => {
+          console.warn("order-updates/accept: failed to remove awaiting_return tag", err?.message || err);
+        });
+    }
   }
 
   if (normalizedActionType === "forward_email") {

@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { Sparkles, TriangleAlert, X } from "lucide-react";
+import { Package, Sparkles, TriangleAlert, X } from "lucide-react";
 import { MessageBubble } from "@/components/inbox/MessageBubble";
 import { Composer } from "@/components/inbox/Composer";
 import { ThinkingCard } from "@/components/inbox/ThinkingCard";
@@ -14,6 +14,7 @@ const APPROVAL_ACTION_TYPES = new Set([
   "refund_order",
   "create_exchange_request",
   "process_exchange_return",
+  "fulfill_exchange",
   "change_shipping_method",
   "hold_or_release_fulfillment",
   "edit_line_items",
@@ -92,6 +93,9 @@ export function TicketDetail({
   isGeneratingDraft = false,
   staleDraft = false,
   onDismissStaleDraft = null,
+  awaitingReturn = false,
+  onMarkReturnReceived = null,
+  markReturnReceivedLoading = false,
 }) {
   const [composerCollapsed, setComposerCollapsed] = useState(false);
   const [processReturnRestock, setProcessReturnRestock] = useState(true);
@@ -131,6 +135,7 @@ export function TicketDetail({
     forward_email: "Forward Email",
     create_return_case: "Create Return Case",
     send_return_instructions: "Send Return Instructions",
+    fulfill_exchange: "Fulfill Exchange",
     add_note: "Add Internal Note",
     add_tag: "Add Internal Tag",
     add_internal_note_or_tag: "Add Internal Note/Tag",
@@ -452,6 +457,20 @@ export function TicketDetail({
         </div>
       ) : (
         <>
+        {awaitingReturn && !shouldShowActionCard && (
+          <div className="mx-3 mb-2 flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+            <Package className="h-3.5 w-3.5 shrink-0 text-blue-500" />
+            <span className="flex-1">Afventer retur fra kunde</span>
+            <button
+              type="button"
+              onClick={() => onMarkReturnReceived?.()}
+              disabled={markReturnReceivedLoading}
+              className="shrink-0 rounded-md bg-blue-600 px-2.5 py-1 font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {markReturnReceivedLoading ? "..." : "Markér modtaget"}
+            </button>
+          </div>
+        )}
         {staleDraft && (
           <div className="mx-3 mb-2 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
             <TriangleAlert className="h-3.5 w-3.5 shrink-0 text-amber-500" />

@@ -805,6 +805,8 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const [systemDraftUneditedByThread, setSystemDraftUneditedByThread] = useState({});
   const [manualDraftGeneratingByThread, setManualDraftGeneratingByThread] = useState({});
   const [staleDraftByThread, setStaleDraftByThread] = useState({});
+  const [markReturnReceivedLoadingByThread, setMarkReturnReceivedLoadingByThread] = useState({});
+  const [refreshPendingActionByThread, setRefreshPendingActionByThread] = useState({});
   const [insightsOpen, setInsightsOpen] = useState(false);
   const [translationModalOpen, setTranslationModalOpen] = useState(false);
   const [draftLogId, setDraftLogId] = useState(null);
@@ -935,7 +937,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       }
     };
 
-    scheduleNext(BASE_POLL_MS);
+    scheduleNext(0);
     const onFocus = () => {
       if (!active || polling) return;
       scheduleNext(0);
@@ -955,27 +957,50 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
 
   useEffect(() => {
     if (!supabase || !user?.id) return;
+    const upsertThread = (incomingThread) => {
+      const nextThreadId = String(incomingThread?.id || "").trim();
+      if (!nextThreadId) return;
+      setLiveThreads((prev) => {
+        const existing = Array.isArray(prev) ? prev : [];
+        let found = false;
+        const updated = existing.map((thread) => {
+          if (String(thread?.id || "") !== nextThreadId) return thread;
+          found = true;
+          return {
+            ...thread,
+            ...incomingThread,
+          };
+        });
+        return found ? updated : [...updated, incomingThread];
+      });
+    };
+
     const channel = supabase
       .channel(`inbox-thread-updates:${user.id}`)
       .on(
         "postgres_changes",
+        { event: "INSERT", schema: "public", table: "mail_threads" },
+        (payload) => {
+          upsertThread(payload?.new);
+        }
+      )
+      .on(
+        "postgres_changes",
         { event: "UPDATE", schema: "public", table: "mail_threads" },
         (payload) => {
-          const nextThread = payload?.new;
-          const nextThreadId = String(nextThread?.id || "").trim();
-          if (!nextThreadId) return;
+          upsertThread(payload?.new);
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "mail_threads" },
+        (payload) => {
+          const deletedThreadId = String(payload?.old?.id || "").trim();
+          if (!deletedThreadId) return;
           setLiveThreads((prev) => {
-            if (!Array.isArray(prev) || !prev.length) return prev;
-            let found = false;
-            const updated = prev.map((thread) => {
-              if (String(thread?.id || "") !== nextThreadId) return thread;
-              found = true;
-              return {
-                ...thread,
-                ...nextThread,
-              };
-            });
-            return found ? updated : prev;
+            const existing = Array.isArray(prev) ? prev : [];
+            if (!existing.length) return existing;
+            return existing.filter((thread) => String(thread?.id || "") !== deletedThreadId);
           });
         }
       )
@@ -1680,6 +1705,13 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const selectedTagLabel = extractCategoryFromTags(selectedThread?.tags || []);
   const selectedInboxSlug = extractInboxSlugFromTags(selectedThread?.tags || []);
   const selectedInboxBucket = getInboxBucket(selectedThread);
+
+  // Awaiting return: thread tagged awaiting_return and no active pending action card
+  const isAwaitingReturn = useMemo(() => {
+    if (!selectedThread) return false;
+    const tags = Array.isArray(selectedThread.tags) ? selectedThread.tags : [];
+    return tags.includes("awaiting_return");
+  }, [selectedThread]);
   const inboxOptions = useMemo(
     () =>
       (workspaceInboxes || [])
@@ -2107,6 +2139,10 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   }, [
     isLocalThreadId,
     selectedThreadId,
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-fetch actions when new draft arrives or mark-received triggered
+    draftMessage?.id,
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- manual refresh trigger from mark-received
+    refreshPendingActionByThread[selectedThreadId],
   ]);
 
   useEffect(() => {
@@ -2335,6 +2371,28 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       return next;
     });
   }, [selectedThreadId]);
+
+  const handleMarkReturnReceived = useCallback(async () => {
+    if (!selectedThreadId || isLocalThreadId(selectedThreadId)) return;
+    if (markReturnReceivedLoadingByThread[selectedThreadId]) return;
+    const threadId = selectedThreadId;
+    setMarkReturnReceivedLoadingByThread((prev) => ({ ...prev, [threadId]: true }));
+    try {
+      const res = await fetch(
+        `/api/threads/${encodeURIComponent(threadId)}/exchange/mark-received`,
+        { method: "POST" }
+      ).catch(() => null);
+      if (!res?.ok) return;
+      // Trigger action re-fetch by bumping the refresh counter (re-uses existing loadPendingOrderUpdate)
+      setRefreshPendingActionByThread((prev) => ({ ...prev, [threadId]: (prev[threadId] || 0) + 1 }));
+    } finally {
+      setMarkReturnReceivedLoadingByThread((prev) => {
+        const next = { ...prev };
+        delete next[threadId];
+        return next;
+      });
+    }
+  }, [selectedThreadId, isLocalThreadId, markReturnReceivedLoadingByThread]);
 
   const handleGenerateDraft = useCallback(async () => {
     if (!selectedThreadId || isLocalThreadId(selectedThreadId)) return;
@@ -3699,6 +3757,11 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
               return next;
             });
           }}
+          awaitingReturn={isAwaitingReturn}
+          onMarkReturnReceived={handleMarkReturnReceived}
+          markReturnReceivedLoading={Boolean(
+            selectedThreadId && markReturnReceivedLoadingByThread[selectedThreadId]
+          )}
         />
       </div>
 
