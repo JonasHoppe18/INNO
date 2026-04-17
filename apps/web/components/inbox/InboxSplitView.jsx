@@ -826,7 +826,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const [draftCacheReady, setDraftCacheReady] = useState(false);
   const lastAutoReadThreadIdRef = useRef(null);
   const tabStateHydratedRef = useRef(false);
-  const draftCacheHydratedRef = useRef(false);
+  const draftCacheHydratedKeyRef = useRef("");
   const draftLastSavedRef = useRef({});
   const savingDraftRef = useRef(false);
   const draftValueRef = useRef("");
@@ -1193,9 +1193,13 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   }, [derivedThreads, isLocalThreadId, tabStateStorageKey]);
 
   useEffect(() => {
-    if (draftCacheHydratedRef.current) return;
     if (typeof window === "undefined") return;
-    draftCacheHydratedRef.current = true;
+    if (draftCacheHydratedKeyRef.current === draftCacheStorageKey) {
+      setDraftCacheReady(true);
+      return;
+    }
+    draftCacheHydratedKeyRef.current = draftCacheStorageKey;
+    setDraftCacheReady(false);
     try {
       const raw = window.localStorage.getItem(draftCacheStorageKey);
       if (!raw) return;

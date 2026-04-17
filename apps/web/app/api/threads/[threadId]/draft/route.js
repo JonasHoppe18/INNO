@@ -249,12 +249,13 @@ export async function GET(_request, { params }) {
     thread.provider_thread_id || threadId
   );
   const proposalOnly = isProposalOnlyDraftMeta(latestPendingDraftMeta);
+  const relatedThreadIds = await loadRelatedThreadIdsForDraftClear(serviceClient, scope, thread);
 
   const { data: draft, error } = await applyScope(
     serviceClient
       .from("mail_messages")
       .select("id, body_text, body_html, subject, updated_at")
-      .eq("thread_id", threadId)
+      .in("thread_id", relatedThreadIds)
       .eq("from_me", true)
       .eq("is_draft", true)
       .order("updated_at", { ascending: false })
@@ -342,12 +343,13 @@ export async function POST(request, { params }) {
   const userSignature = await loadUserSignature(serviceClient, scope.supabaseUserId);
   const nextBodyText = stripTrailingSignature(bodyText || bodyHtml, userSignature);
   const snippet = buildSnippet(nextBodyText);
+  const relatedThreadIds = await loadRelatedThreadIdsForDraftClear(serviceClient, scope, thread);
 
   const { data: existingDraft } = await applyScope(
     serviceClient
       .from("mail_messages")
       .select("id, ai_draft_text, body_text")
-      .eq("thread_id", threadId)
+      .in("thread_id", relatedThreadIds)
       .eq("from_me", true)
       .eq("is_draft", true)
       .order("updated_at", { ascending: false })
@@ -372,7 +374,6 @@ export async function POST(request, { params }) {
           updated_at: nowIso,
         })
         .eq("id", existingDraft.id)
-        .eq("thread_id", threadId)
         .select("id")
         .maybeSingle(),
       scope
@@ -418,7 +419,7 @@ export async function POST(request, { params }) {
     serviceClient
       .from("mail_messages")
       .update({ ai_draft_text: nextBodyText, updated_at: nowIso })
-      .eq("thread_id", threadId)
+      .in("thread_id", relatedThreadIds)
       .is("from_me", false),
     scope
   );
