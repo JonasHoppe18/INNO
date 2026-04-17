@@ -2139,8 +2139,6 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   }, [
     isLocalThreadId,
     selectedThreadId,
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-fetch actions when new draft arrives or mark-received triggered
-    draftMessage?.id,
     // eslint-disable-next-line react-hooks/exhaustive-deps -- manual refresh trigger from mark-received
     refreshPendingActionByThread[selectedThreadId],
   ]);
@@ -2314,8 +2312,6 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
 
   useEffect(() => {
     if (!selectedThreadId || !draftReady || !draftMessage) return;
-    if (proposalOnlyByThread[selectedThreadId]) return;
-    if (pendingOrderUpdateByThread[selectedThreadId]) return;
     if (suppressAutoDraftByThread[selectedThreadId]) return;
     const draftBody = draftMessage.body_text || draftMessage.body_html || "";
     // Realtime can briefly deliver an empty draft row; never clobber a loaded draft with empty content.
@@ -2336,8 +2332,6 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   }, [
     draftMessage,
     draftReady,
-    pendingOrderUpdateByThread,
-    proposalOnlyByThread,
     selectedThreadId,
     suppressAutoDraftByThread,
   ]);
