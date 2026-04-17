@@ -41,7 +41,7 @@ export function useCustomerLookup({
   const fetchLookup = useCallback(
     async (forceRefresh = false) => {
       if (!enabled) return;
-      if (!email && !orderNumber && !subject) {
+      if (!email && !orderNumber && !sourceMessageId) {
         setData(null);
         setError(null);
         return;

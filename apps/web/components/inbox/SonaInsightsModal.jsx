@@ -6,6 +6,7 @@ import { CustomerTab } from "@/components/inbox/CustomerTab";
 import { X } from "lucide-react";
 
 const asString = (value) => (typeof value === "string" ? value.trim() : "");
+const DISPLAY_TIMEZONE = "Europe/Copenhagen";
 
 const stripThreadMeta = (value) =>
   String(value || "")
@@ -117,6 +118,7 @@ export function SonaInsightsModal({
 }) {
   const [logs, setLogs] = useState([]);
   const [logsLoading, setLogsLoading] = useState(false);
+  const [containerEl, setContainerEl] = useState(null);
 
   useEffect(() => {
     let active = true;
@@ -259,14 +261,25 @@ export function SonaInsightsModal({
         timestamp: new Date(log.created_at).toLocaleTimeString("en-GB", {
           hour: "2-digit",
           minute: "2-digit",
+          timeZone: DISPLAY_TIMEZONE,
         }),
         status: log.status,
       };
     });
   }, [logs]);
 
+  useEffect(() => {
+    if (open) return;
+    if (!containerEl || typeof document === "undefined") return;
+    const activeEl = document.activeElement;
+    if (activeEl && containerEl.contains(activeEl) && typeof activeEl.blur === "function") {
+      activeEl.blur();
+    }
+  }, [containerEl, open]);
+
   return (
     <aside
+      ref={setContainerEl}
       className={`flex h-full min-w-0 flex-none flex-col overflow-hidden border-l border-gray-200 bg-background transition-[width] duration-200 ease-linear ${
         open ? "w-[clamp(20rem,24vw,28rem)]" : "w-0"
       }`}
@@ -281,7 +294,12 @@ export function SonaInsightsModal({
             type="button"
             variant="ghost"
             size="icon"
-            onClick={() => onOpenChange(false)}
+            onClick={(event) => {
+              if (typeof event?.currentTarget?.blur === "function") {
+                event.currentTarget.blur();
+              }
+              onOpenChange(false);
+            }}
             aria-label="Close insights"
           >
             <X className="h-4 w-4" />

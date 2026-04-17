@@ -265,6 +265,7 @@ const EMAIL_BODY_CLASS =
 const isImageAttachment = (mimeType = "") => String(mimeType || "").toLowerCase().startsWith("image/");
 const isPdfAttachment = (mimeType = "") => String(mimeType || "").toLowerCase() === "application/pdf";
 const normalizeLower = (value = "") => String(value || "").trim().toLowerCase();
+const DISPLAY_TIMEZONE = "Europe/Copenhagen";
 
 export function MessageBubble({
   message,
@@ -304,6 +305,7 @@ export function MessageBubble({
       hour: "2-digit",
       minute: "2-digit",
       month: "short",
+      timeZone: DISPLAY_TIMEZONE,
     })
     : "";
   const toList = message.to_emails || [];

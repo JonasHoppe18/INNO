@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CheckCircle2,
   ChevronDown,
@@ -47,12 +47,13 @@ function normalizeFailedDetail(value = "") {
   return raw;
 }
 
-function formatActionTimestamp(value) {
+function formatActionTimestamp(value, nowMs = null) {
   if (!value) return "";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
+  if (!Number.isFinite(nowMs)) return "";
 
-  const diffMs = Date.now() - date.getTime();
+  const diffMs = nowMs - date.getTime();
   if (diffMs < 60 * 1000) return "just now";
 
   const diffMinutes = Math.floor(diffMs / (60 * 1000));
@@ -251,6 +252,7 @@ function formatOrderDate(value) {
     month: "short",
     day: "numeric",
     year: "numeric",
+    timeZone: "UTC",
   });
 }
 
@@ -285,6 +287,7 @@ export function ActionCard({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [showApprovedDetail, setShowApprovedDetail] = useState(false);
+  const [nowMs, setNowMs] = useState(null);
   const isProposed = status === "proposed";
   const isExecuting = status === "executing";
   const isCompleted = status === "completed";
@@ -296,15 +299,24 @@ export function ActionCard({
   const addressLines = useMemo(() => formatAddressLines(detail), [detail]);
   const canExpand = !isProposed && (addressLines.length > 0 || Boolean(detail));
   const shouldShowDetails = isProposed || (canExpand && expanded);
+
+  useEffect(() => {
+    setNowMs(Date.now());
+    const timer = setInterval(() => {
+      setNowMs(Date.now());
+    }, 60_000);
+    return () => clearInterval(timer);
+  }, []);
+
   const resultMeta = useMemo(() => {
     if (!isResultState) return "";
     const parts = [];
     if (approvedBy) parts.push(`Approved by ${approvedBy}`);
     else parts.push("Approved");
-    const timeLabel = formatActionTimestamp(approvedAt);
+    const timeLabel = formatActionTimestamp(approvedAt, nowMs);
     if (timeLabel) parts.push(timeLabel);
     return parts.join(" • ");
-  }, [approvedAt, approvedBy, isResultState]);
+  }, [approvedAt, approvedBy, isResultState, nowMs]);
   const appliedChangeLines = useMemo(
     () => getAppliedChangeLines({ actionType, detail, payload }),
     [actionType, detail, payload]
