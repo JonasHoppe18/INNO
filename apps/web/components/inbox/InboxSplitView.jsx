@@ -2312,7 +2312,12 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
 
   useEffect(() => {
     if (!selectedThreadId || !draftReady || !draftMessage) return;
-    if (suppressAutoDraftByThread[selectedThreadId]) return;
+    // Only block if the draft was explicitly deleted by the user (saveThreadDraft DELETE path sets
+    // draftLastSavedRef to ""). suppressAutoDraftByThread is intentionally NOT checked here because
+    // it can be set by loadDraft when proposal_only=true and no API draft is found, even though a
+    // real is_draft=true row may exist in rawThreadMessages (e.g. on a sibling thread). A real DB
+    // draft should always win.
+    if (draftLastSavedRef.current[selectedThreadId] === "") return;
     const draftBody = draftMessage.body_text || draftMessage.body_html || "";
     // Realtime can briefly deliver an empty draft row; never clobber a loaded draft with empty content.
     if (!String(draftBody || "").trim()) return;
@@ -2328,12 +2333,11 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       ...prev,
       [selectedThreadId]: true,
     }));
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- systemDraftUneditedByThread intentionally omitted: effect also sets it, adding it would cause an infinite loop
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- systemDraftUneditedByThread intentionally omitted: effect also sets it, adding it would cause an infinite loop; suppressAutoDraftByThread intentionally omitted: we use draftLastSavedRef instead
   }, [
     draftMessage,
     draftReady,
     selectedThreadId,
-    suppressAutoDraftByThread,
   ]);
 
   // Ref that always holds the latest systemDraftUneditedByThread value so effects
