@@ -2673,7 +2673,6 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         if (selectedThreadIdRef.current === threadId) {
           draftValueRef.current = draftText;
         }
-        draftLastSavedRef.current[threadId] = draftText.trim();
         setSystemDraftUneditedByThread((prev) => ({
           ...prev,
           [threadId]: true,
@@ -2686,6 +2685,30 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         });
         if (draft?.id && selectedThreadIdRef.current === threadId) {
           setActiveDraftId(draft.id);
+        }
+        // Persist generated draft immediately so a quick thread switch cannot lose it.
+        try {
+          const subject =
+            derivedThreads.find((thread) => String(thread?.id || "").trim() === threadId)?.subject || "";
+          const persistRes = await fetch(`/api/threads/${threadId}/draft`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              body_text: draftText,
+              subject,
+            }),
+          });
+          const persistPayload = await persistRes.json().catch(() => ({}));
+          if (persistRes?.ok) {
+            draftLastSavedRef.current[threadId] = draftText.trim();
+            if (persistPayload?.draft_id && selectedThreadIdRef.current === threadId) {
+              setActiveDraftId(persistPayload.draft_id);
+            }
+          } else {
+            draftLastSavedRef.current[threadId] = "";
+          }
+        } catch {
+          draftLastSavedRef.current[threadId] = "";
         }
         toast.success("Draft generated.");
       } else if (payload?.skipped) {
@@ -2703,7 +2726,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         return next;
       });
     }
-  }, [isLocalThreadId, manualDraftGeneratingByThread, selectedThreadId]);
+  }, [derivedThreads, isLocalThreadId, manualDraftGeneratingByThread, selectedThreadId]);
 
   const handleDraftChange = useCallback(
     (nextValue, threadIdOverride = null) => {

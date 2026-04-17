@@ -471,7 +471,7 @@ export function TicketDetail({
             </button>
           </div>
         )}
-        {staleDraft && (
+        {/* {staleDraft && (
           <div className="mx-3 mb-2 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
             <TriangleAlert className="h-3.5 w-3.5 shrink-0 text-amber-500" />
             <span className="flex-1">Ny besked fra kunden — dit udkast er muligvis forældet.</span>
@@ -491,7 +491,7 @@ export function TicketDetail({
               <X className="h-3 w-3" />
             </button>
           </div>
-        )}
+        )} */}
         <div className="px-3 pb-1.5">
           <Composer
             key={`${thread?.id || "thread"}:${composerMode}`}
