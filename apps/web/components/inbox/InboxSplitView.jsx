@@ -2467,8 +2467,21 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     if (!selectedThreadId) return;
     const prev = prevInboundCountRef.current[selectedThreadId] ?? null;
     const curr = inboundMessageCount;
+    // Guard: when switching threads, message data can temporarily resolve to 0 before
+    // the thread messages rehydrate. Ignore that transient 0 so we don't interpret
+    // the subsequent restore (0 -> N) as a brand-new inbound email.
+    if (prev !== null && prev > 0 && curr === 0) return;
+    if (prev === null) {
+      // First stable baseline for this thread in this session.
+      if (curr === 0) return;
+      prevInboundCountRef.current[selectedThreadId] = curr;
+      return;
+    }
+    if (curr <= prev) {
+      prevInboundCountRef.current[selectedThreadId] = curr;
+      return; // no new message
+    }
     prevInboundCountRef.current[selectedThreadId] = curr;
-    if (prev === null || curr <= prev) return; // first load or no new message
     const currentDraftText = draftValueRef.current;
     if (!currentDraftText) return; // compose box already empty, nothing to do
     const isUnedited = systemDraftUneditedRef.current[selectedThreadId];
