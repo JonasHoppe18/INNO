@@ -840,6 +840,10 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   } = useThreadMessages(selectedThreadId, {
     enabled: Boolean(selectedThreadId) && !String(selectedThreadId || "").startsWith("local-new-ticket-"),
   });
+  const refreshSelectedThreadMessagesRef = useRef(refreshSelectedThreadMessages);
+  useEffect(() => {
+    refreshSelectedThreadMessagesRef.current = refreshSelectedThreadMessages;
+  }, [refreshSelectedThreadMessages]);
   const activeView = searchParams?.get("view") || "";
   const requestedThreadId = String(searchParams?.get("thread") || "").trim();
   const tabStateStorageKey = useMemo(() => {
@@ -1034,6 +1038,14 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
             }
             return [...existing, nextMessage];
           });
+          // New AI draft for the selected thread: refresh API data so draftMessage picks it up
+          if (
+            nextMessage?.is_draft &&
+            nextMessage?.from_me &&
+            String(nextMessage?.thread_id || "") === selectedThreadIdRef.current
+          ) {
+            refreshSelectedThreadMessagesRef.current?.().catch(() => null);
+          }
         }
       )
       .on(
@@ -2404,7 +2416,8 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const prevInboundCountRef = useRef({});
 
   // Detect new inbound customer message:
-  // • If draft is unedited → clear compose box (a fresh draft will arrive momentarily from generate-draft-unified)
+  // • Always reset send-guards so the new AI draft can auto-load
+  // • If draft is unedited → clear compose box (a fresh draft will arrive from generate-draft-unified)
   // • If draft was edited by the agent → show stale-draft banner so they know context changed
   useEffect(() => {
     if (!selectedThreadId) return;
@@ -2425,8 +2438,21 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       return; // no new message
     }
     prevInboundCountRef.current[selectedThreadId] = curr;
+
+    // Reset guards set by handleSendDraft that would otherwise block new AI drafts.
+    // Must happen regardless of whether the compose box has content.
+    delete draftLastSavedRef.current[selectedThreadId];
+    setSuppressAutoDraftByThread((p) => {
+      if (!p[selectedThreadId]) return p;
+      const next = { ...p };
+      delete next[selectedThreadId];
+      return next;
+    });
+    // Refresh API data so the new AI draft from generate-draft-unified is picked up
+    refreshSelectedThreadMessagesRef.current?.().catch(() => null);
+
     const currentDraftText = draftValueRef.current;
-    if (!currentDraftText) return; // compose box already empty, nothing to do
+    if (!currentDraftText) return; // compose box already empty, nothing more to do
     const isUnedited = systemDraftUneditedRef.current[selectedThreadId];
     if (isUnedited) {
       // Unedited system draft → clear immediately; generate-draft-unified will repopulate
