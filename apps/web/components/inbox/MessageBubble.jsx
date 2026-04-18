@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
-import { ChevronLeft, ChevronRight, Download, Mail, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Globe, Mail, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatBytes, getEffectiveSenderEmail, getSenderLabel } from "@/components/inbox/inbox-utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -404,10 +404,22 @@ export function MessageBubble({
   direction = "inbound",
   attachments = [],
   outboundSenderName,
+  translatedText = null,
+  translationLoading = false,
+  onRequestTranslation = null,
 }) {
   const [selectedAttachment, setSelectedAttachment] = useState(null);
   const [viewEmailOpen, setViewEmailOpen] = useState(false);
+  const [showTranslation, setShowTranslation] = useState(false);
   const isOutbound = direction === "outbound";
+
+  const handleToggleTranslation = () => {
+    if (!showTranslation && !translatedText) {
+      onRequestTranslation?.();
+    }
+    setShowTranslation((prev) => !prev);
+  };
+
   const normalizedOutboundSenderName = String(outboundSenderName || "").trim().toLowerCase();
   const messageSenderLabel = getSenderLabel(message);
   const normalizedMessageSender = String(messageSenderLabel || "").trim().toLowerCase();
@@ -569,6 +581,36 @@ export function MessageBubble({
                   />
                 )}
               </div>
+
+              {!isOutbound && (
+                <div className="border-t border-gray-100 px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={handleToggleTranslation}
+                    className="inline-flex items-center gap-1 text-[12px] text-gray-400 hover:text-gray-600 transition-colors"
+                  >
+                    <Globe className="h-3 w-3" />
+                    {showTranslation ? "Hide translation" : "Show translation"}
+                  </button>
+
+                  {showTranslation && (
+                    <div className="mt-2 rounded-md border border-gray-100 bg-gray-50 px-3 py-2">
+                      {translationLoading ? (
+                        <div className="flex items-center gap-2 text-[12px] text-gray-400">
+                          <span className="inline-block h-3 w-3 animate-spin rounded-full border border-gray-300 border-t-gray-600" />
+                          Translating…
+                        </div>
+                      ) : translatedText ? (
+                        <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-gray-700">
+                          {translatedText}
+                        </p>
+                      ) : (
+                        <p className="text-[12px] text-gray-400">Translation not available.</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {imageAttachments.length ? (
