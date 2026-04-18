@@ -1259,9 +1259,6 @@ export function Composer({
           ) : null}
         </div>
       </div>
-      <p className="mx-auto mt-2 w-full max-w-[900px] text-center text-[12px] text-gray-500">
-        Sona can make mistakes. Please verify important information.
-      </p>
       <Dialog open={savedRepliesOpen} onOpenChange={setSavedRepliesOpen}>
         <DialogContent className="sm:max-w-[680px]">
           <DialogHeader>

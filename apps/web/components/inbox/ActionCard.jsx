@@ -545,12 +545,12 @@ export function ActionCard({
   }
 
   return (
-    <div className="w-full max-w-[520px] overflow-hidden rounded-lg border border-violet-100 bg-white">
+    <div className="animate-in fade-in slide-in-from-bottom-2 w-full max-w-[520px] overflow-hidden rounded-lg border border-violet-100 bg-white duration-300">
       <div className="p-3">
         <div className="flex items-center justify-between gap-4">
           <div className="flex min-w-0 items-center gap-2">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center">
-              <Image src={shopifyLogo} alt="" className="h-12 w-12 object-contain" />
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center">
+              <Image src={shopifyLogo} alt="" className="h-10 w-10 object-contain" />
             </div>
             <div className="truncate text-l font-semibold leading-tight text-slate-900">{proposedTitle}</div>
           </div>
@@ -572,28 +572,24 @@ export function ActionCard({
         {extraContent ? <div className="mt-2">{extraContent}</div> : null}
       </div>
 
-      <div className="flex items-center justify-between gap-2 border-t border-violet-100 bg-violet-50/30 px-3 py-2">
-        <div className="text-xs text-slate-600">This action requires your approval</div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
-            onClick={onDecline}
-            disabled={loading}
-          >
-            <XCircle className="h-3.5 w-3.5" />
-            Reject
-          </button>
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 rounded-md bg-violet-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
-            onClick={onApprove}
-            disabled={loading}
-          >
-            <CheckCircle2 className="h-3.5 w-3.5" />
-            {loading ? "Applying..." : approveButtonLabel}
-          </button>
-        </div>
+      <div className="flex items-center justify-end gap-2 border-t border-violet-100 px-3 py-2">
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+          onClick={onDecline}
+          disabled={loading}
+        >
+          Reject
+        </button>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 rounded-md bg-violet-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
+          onClick={onApprove}
+          disabled={loading}
+        >
+          <CheckCircle2 className="h-3.5 w-3.5" />
+          {loading ? "Applying..." : approveButtonLabel}
+        </button>
       </div>
     </div>
   );

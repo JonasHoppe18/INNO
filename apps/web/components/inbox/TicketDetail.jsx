@@ -308,7 +308,7 @@ export function TicketDetail({
 
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-sidebar lg:min-w-0">
-      <header className="flex min-h-[58px] items-center justify-between border-b border-gray-100 bg-slate-50 px-4 py-1.5">
+      <header className="flex min-h-[58px] items-center justify-between border-b border-gray-100 bg-white px-4 py-1.5">
         <div className="flex min-w-0 items-center gap-3">
           {headerActions ? <div className="flex shrink-0 items-center gap-2">{headerActions}</div> : null}
         </div>
@@ -319,10 +319,10 @@ export function TicketDetail({
 
       <div
         ref={conversationRef}
-        className="min-h-0 flex-1 overflow-y-auto"
+        className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         onScroll={(event) => onConversationScroll?.(event.currentTarget.scrollTop)}
       >
-        <div className="mx-auto w-full max-w-[900px] space-y-4 px-4 pb-4 pt-3">
+        <div className="mx-auto w-full max-w-[900px] space-y-2.5 px-4 pb-4 pt-3">
           {orderUpdateError && !shouldShowActionCard ? (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
               {orderUpdateError}
@@ -444,15 +444,10 @@ export function TicketDetail({
       </div>
 
       {isActionPending ? (
-        <div className="sticky bottom-0 flex-none bg-transparent px-3 py-1.5">
-          <div className="mx-auto w-full max-w-[900px] rounded-3xl border border-violet-100 bg-violet-50/40 px-4 py-5 text-center">
-            <div className="flex flex-col items-center justify-center">
-              <Sparkles className="mb-2 h-5 w-5 animate-pulse text-violet-500" />
-              <div className="text-sm font-medium text-violet-900">Sona is waiting for your decision</div>
-              <p className="mt-1 max-w-xl text-xs text-violet-500">
-                Review the action above to generate the reply draft.
-              </p>
-            </div>
+        <div className="flex-none border-t border-violet-100 bg-violet-50/60 px-4 py-2.5">
+          <div className="mx-auto flex w-full max-w-[900px] items-center gap-2 text-[13px] text-violet-700">
+            <Sparkles className="h-3.5 w-3.5 shrink-0 animate-pulse text-violet-500" />
+            <span>Review the action above to proceed</span>
           </div>
         </div>
       ) : (

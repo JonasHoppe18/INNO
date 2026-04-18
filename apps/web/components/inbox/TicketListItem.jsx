@@ -1,14 +1,13 @@
-import { CheckCircle2, Clock, Sparkles } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatMessageTime } from "@/components/inbox/inbox-utils";
 
-const STATUS_STYLES = {
-  New: "bg-green-50 text-green-700 border-green-200",
-  Open: "bg-blue-50 text-blue-700 border-blue-200",
-  Pending: "bg-orange-50 text-orange-700 border-orange-200",
-  Waiting: "bg-violet-50 text-violet-700 border-violet-200",
-  Solved: "bg-red-50 text-red-700 border-red-200",
+const STATUS_TEXT_STYLES = {
+  New: "text-green-600",
+  Open: "text-blue-600",
+  Pending: "text-orange-500",
+  Waiting: "text-violet-500",
+  Solved: "text-gray-400",
 };
 
 const CLASSIFICATION_LABELS = {
@@ -39,12 +38,6 @@ export function TicketListItem({
       thread?.has_ai_draft
   );
 
-  const statusIcon =
-    status === "Solved" ? (
-      <CheckCircle2 className="h-3.5 w-3.5" />
-    ) : (
-      <Clock className="h-3.5 w-3.5" />
-    );
   const classificationKey = String(thread?.classification_key || "").toLowerCase();
   const classificationLabel =
     classificationKey && classificationKey !== "support"
@@ -57,65 +50,56 @@ export function TicketListItem({
       onClick={(event) =>
         isExiting
           ? null
-          :
-        onSelect?.({
-          newTab: Boolean(event.metaKey || event.ctrlKey),
-        })
+          : onSelect?.({
+              newTab: Boolean(event.metaKey || event.ctrlKey),
+            })
       }
       onContextMenu={(event) => onContextMenu?.(event)}
       className={cn(
-        "relative mx-2 my-1 flex w-[calc(100%-1rem)] flex-col gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left hover:bg-gray-50",
-        isActive && "z-10 border-slate-800 ring-1 ring-inset ring-slate-800",
-        isUnread && "bg-slate-50",
+        "animate-in fade-in slide-in-from-left-1 relative flex w-full flex-col gap-1 px-4 py-3 text-left transition-colors duration-200 hover:bg-gray-50",
+        isActive && "bg-gray-50",
         isExiting && "pointer-events-none"
       )}
       style={{
         transition:
-          "opacity 420ms ease, transform 420ms ease, max-height 420ms ease, margin 420ms ease, padding 420ms ease",
+          "opacity 420ms ease, transform 420ms ease, max-height 420ms ease, padding 420ms ease",
         opacity: isExiting ? 0 : 1,
         transform: isExiting ? "translateX(20px) scale(0.98)" : "translateX(0) scale(1)",
         maxHeight: isExiting ? "0px" : "220px",
-        marginTop: isExiting ? "0px" : undefined,
-        marginBottom: isExiting ? "0px" : undefined,
         paddingTop: isExiting ? "0px" : undefined,
         paddingBottom: isExiting ? "0px" : undefined,
         overflow: "hidden",
       }}
       aria-pressed={isActive}
     >
-      {isUnread ? (
-        <span className="absolute left-0 top-0 h-full w-[2px] bg-indigo-500" />
-      ) : null}
+      <span
+        className={cn(
+          "absolute left-0 top-0 h-full w-[3px] rounded-r transition-all",
+          isActive ? "bg-slate-800" : isUnread ? "bg-indigo-400" : "bg-transparent"
+        )}
+      />
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 flex-1 items-center gap-2 truncate text-[13px] font-semibold text-slate-900">
-          {isUnread ? <span className="h-2 w-2 rounded-full bg-indigo-500" /> : null}
           <span className="truncate">{customerLabel}</span>
         </div>
         <span className="shrink-0 text-[12px] text-gray-400">{formatMessageTime(timestamp)}</span>
       </div>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px] text-slate-500">
+          <span className={cn("truncate", isUnread && "font-medium text-slate-700")}>
+            {thread.subject || "Untitled ticket"}
+          </span>
+          {hasAiDraft ? <Sparkles className="h-3 w-3 text-amber-400" /> : null}
+        </div>
+        <span className={cn("shrink-0 text-[12px]", STATUS_TEXT_STYLES[status] || "text-gray-400")}>
+          {status === "Solved" ? "Resolved" : status}
+        </span>
+      </div>
       {classificationLabel ? (
-        <div className="text-[12px] font-medium uppercase tracking-wide text-slate-500">
+        <div className="text-[11px] text-slate-400">
           {classificationLabel}
         </div>
       ) : null}
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px] text-slate-700">
-          <span className={cn("truncate", isUnread && "font-semibold text-slate-900")}>
-              {thread.subject || "Untitled ticket"}
-          </span>
-          {hasAiDraft ? <Sparkles className="h-3.5 w-3.5 text-amber-500" /> : null}
-        </div>
-        <Badge
-          variant="secondary"
-          className={cn(
-            "shrink-0 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[12px] font-bold",
-            STATUS_STYLES[status]
-          )}
-        >
-          {statusIcon}
-          {status === "Solved" ? "Resolved" : status}
-        </Badge>
-      </div>
     </button>
   );
 }
