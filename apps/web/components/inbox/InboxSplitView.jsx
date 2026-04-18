@@ -809,6 +809,8 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const [refreshPendingActionByThread, setRefreshPendingActionByThread] = useState({});
   const [insightsOpen, setInsightsOpen] = useState(false);
   const [translationModalOpen, setTranslationModalOpen] = useState(false);
+  const [translationCache, setTranslationCache] = useState({});
+  // Shape: { [threadId]: { loading: boolean, items: Array<{id, translatedText, originalLanguage, role}>, draft: {translatedText} | null } }
   const [draftLogId, setDraftLogId] = useState(null);
   const sendingStartedAtRef = useRef(0);
   const [deletingThread, setDeletingThread] = useState(false);
@@ -2725,6 +2727,35 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     }
   }, [derivedThreads, isLocalThreadId, manualDraftGeneratingByThread, selectedThreadId]);
 
+  const fetchTranslationForThread = useCallback(async (threadId) => {
+    if (!threadId) return;
+    setTranslationCache((prev) => {
+      if (prev[threadId]?.items?.length || prev[threadId]?.loading) return prev;
+      return { ...prev, [threadId]: { loading: true, items: [], draft: null } };
+    });
+    try {
+      const res = await fetch(
+        `/api/inbox/threads/${encodeURIComponent(threadId)}/translation`,
+        { method: "GET", cache: "no-store", credentials: "include" }
+      );
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload?.error || "Translation failed.");
+      setTranslationCache((prev) => ({
+        ...prev,
+        [threadId]: {
+          loading: false,
+          items: Array.isArray(payload?.conversation?.items) ? payload.conversation.items : [],
+          draft: payload?.draft || null,
+        },
+      }));
+    } catch {
+      setTranslationCache((prev) => ({
+        ...prev,
+        [threadId]: { loading: false, items: [], draft: null },
+      }));
+    }
+  }, []);
+
   const handleDraftChange = useCallback(
     (nextValue, threadIdOverride = null) => {
       const targetThreadId = String(threadIdOverride || selectedThreadId || "").trim();
@@ -3882,6 +3913,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
               </button>
             ) : null
           }
+          detectedLanguage={selectedThread?.customer_language || null}
           onGenerateDraft={handleGenerateDraft}
           isGeneratingDraft={Boolean(
             selectedThreadId && manualDraftGeneratingByThread[selectedThreadId]
@@ -3900,6 +3932,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           markReturnReceivedLoading={Boolean(
             selectedThreadId && markReturnReceivedLoadingByThread[selectedThreadId]
           )}
+          translationItems={translationCache[selectedThreadId]?.items || []}
+          translationLoading={translationCache[selectedThreadId]?.loading || false}
+          onRequestTranslation={() => fetchTranslationForThread(selectedThreadId)}
         />
       </div>
 
@@ -3919,8 +3954,14 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
 
       <TranslationModal
         open={translationModalOpen}
-        onOpenChange={setTranslationModalOpen}
-        threadId={selectedThread?.id || null}
+        onOpenChange={(open) => {
+          setTranslationModalOpen(open);
+          if (open && selectedThreadId && !translationCache[selectedThreadId]?.items?.length) {
+            fetchTranslationForThread(selectedThreadId);
+          }
+        }}
+        threadId={selectedThreadId}
+        translationData={translationCache[selectedThreadId] || null}
       />
     </div>
   );

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -6,7 +6,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import {
   getSupportLanguageLabel,
   isSupportedSupportLanguage,
@@ -26,51 +25,16 @@ function roleLabel(role) {
   return ROLE_LABELS[String(role || "").toLowerCase()] || "Message";
 }
 
-export function TranslationModal({ open, onOpenChange, threadId }) {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [data, setData] = useState(null);
-
-  const fetchTranslation = useCallback(async () => {
-    if (!threadId) return;
-    setLoading(true);
-    setError("");
-    try {
-      const response = await fetch(
-        `/api/inbox/threads/${encodeURIComponent(threadId)}/translation`,
-        {
-          method: "GET",
-          cache: "no-store",
-          credentials: "include",
-        }
-      );
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload?.error || "Could not load translation.");
-      }
-      setData(payload);
-    } catch (fetchError) {
-      setError(fetchError?.message || "Could not load translation.");
-      setData(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [threadId]);
-
-  useEffect(() => {
-    if (!open || !threadId) return;
-    fetchTranslation().catch(() => null);
-  }, [fetchTranslation, open, threadId]);
+export function TranslationModal({ open, onOpenChange, threadId, translationData }) {
+  const loading = translationData?.loading ?? false;
+  const conversationItems = Array.isArray(translationData?.items) ? translationData.items : [];
+  const translatedDraftText = asString(translationData?.draft?.translatedText);
+  const error = (!loading && translationData !== null && conversationItems.length === 0 && !translatedDraftText) ? "Could not load translation." : "";
 
   const targetLabel = useMemo(() => {
-    const code = asString(data?.targetLanguage || "en");
+    const code = asString(conversationItems[0]?.originalLanguage || "en");
     return getSupportLanguageLabel(code);
-  }, [data?.targetLanguage]);
-
-  const conversationItems = Array.isArray(data?.conversation?.items)
-    ? data.conversation.items
-    : [];
-  const translatedDraftText = asString(data?.draft?.translatedText);
+  }, [conversationItems]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -94,15 +58,6 @@ export function TranslationModal({ open, onOpenChange, threadId }) {
           {!loading && error ? (
             <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-4">
               <p className="text-sm text-slate-700">Could not load translation.</p>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => fetchTranslation()}
-                className="mt-3"
-              >
-                Retry
-              </Button>
             </div>
           ) : null}
 

@@ -96,6 +96,10 @@ export function TicketDetail({
   awaitingReturn = false,
   onMarkReturnReceived = null,
   markReturnReceivedLoading = false,
+  translationItems = [],
+  translationLoading = false,
+  onRequestTranslation = null,
+  detectedLanguage = null,
 }) {
   const [composerCollapsed, setComposerCollapsed] = useState(false);
   const [processReturnRestock, setProcessReturnRestock] = useState(true);
@@ -402,6 +406,11 @@ export function TicketDetail({
                   direction={direction}
                   attachments={messageAttachments}
                   outboundSenderName={currentUserName}
+                  translatedText={
+                    (Array.isArray(translationItems) ? translationItems : []).find((item) => item.id === message.id)?.translatedText || null
+                  }
+                  translationLoading={translationLoading}
+                  onRequestTranslation={onRequestTranslation}
                 />
                 {shouldShowTrackingCard &&
                   latestInboundCustomerMessageId &&
