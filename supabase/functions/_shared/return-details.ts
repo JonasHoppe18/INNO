@@ -29,8 +29,9 @@ const toNull = (value: string) => {
 function extractOrderNumber(text: string): string | null {
   const patterns = [
     /#\s*([A-Z0-9-]{3,})/i,
-    /\border\s*(?:number|nr|no\.?|#)?\s*[:\-]?\s*([A-Z0-9-]{3,})/i,
+    /\b(?:order|ordre)\s*(?:number|nr|no\.?|#)?\s*[:\-]?\s*([A-Z0-9-]{3,})/i,
     /\bordrenummer\s*[:\-]?\s*([A-Z0-9-]{3,})/i,
+    /\b(?:faktura|invoice)\s*(?:number|nr|no\.?|#)?\s*[:\-]?\s*([A-Z0-9-]{3,})/i,
   ];
   for (const pattern of patterns) {
     const match = text.match(pattern);

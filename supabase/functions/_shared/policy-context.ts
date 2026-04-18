@@ -203,6 +203,12 @@ function policyRulesBlock(intent: PolicyIntent) {
     );
   }
 
+  if (intent === "WARRANTY") {
+    lines.push(
+      "- WARRANTY CLAIM RULE: This ticket is classified as a WARRANTY case, not a return request. The return_window_days in POLICY SUMMARY refers to the standard return window — it does NOT apply to warranty or defect claims. Do NOT cite the return window as a reason to reject or limit a warranty claim. Use warranty_duration_regions_short (if available) to assess warranty eligibility instead.",
+    );
+  }
+
   if (intent === "RETURN" || intent === "REFUND") {
     lines.push(
       "- RETURNS - CHANNEL RULE: If store policy says 'contact us via email' or shows an email address, do NOT tell the customer to email that address if the customer is already emailing us in this thread/inbox. Treat it as a requirement: ask for the required return details (order number, name used at purchase, reason) and confirm return conditions (return window, sealed/unused requirements, who pays return shipping). Only direct the customer to a specific email address if they are using the wrong channel or if the store explicitly requires a different dedicated return email than this inbox.",

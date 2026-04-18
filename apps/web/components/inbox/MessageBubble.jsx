@@ -370,32 +370,16 @@ export function MessageBubble({
 
   return (
     <>
-      <div className={cn("w-full", isOutbound ? "flex justify-end" : "flex justify-start")}>
-        <div
-          className={cn(
-            "w-full max-w-full sm:max-w-[560px] lg:max-w-[620px]"
-          )}
-        >
+      <div className={cn("animate-in fade-in slide-in-from-bottom-1 duration-200 group/bubble w-full", isOutbound ? "flex justify-end" : "flex justify-start")}>
+        <div className={cn("w-full max-w-full sm:max-w-[560px] lg:max-w-[620px]")}>
           <div className="min-w-0 space-y-0.5">
-            <div
-              className={cn(
-                "flex flex-wrap items-start gap-2 px-1",
-                isOutbound ? "justify-end" : "justify-start"
-              )}
-            >
-              <div className={cn("leading-tight", isOutbound ? "text-right" : "text-left")}>
-                <div className="text-[13px] font-semibold text-gray-800">
-                  {senderDisplayName}{" "}
-                  <span className="text-[12px] font-medium text-gray-400">
-                    {timestamp}
-                  </span>
-                </div>
-              </div>
-              {isAuthoredByCurrentUser ? (
-                <span className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[12px] font-medium text-slate-600">
-                  You
+            <div className="flex flex-wrap items-center gap-2 px-1">
+              <div className="text-[13px] font-semibold text-gray-800">
+                {senderDisplayName}{" "}
+                <span className="text-[12px] font-normal text-gray-400">
+                  {timestamp}
                 </span>
-              ) : null}
+              </div>
               {isDraft ? (
                 <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[12px] font-medium text-blue-700">
                   Draft
@@ -405,11 +389,11 @@ export function MessageBubble({
 
             <div
               className={cn(
-                "overflow-hidden rounded-xl border text-xs shadow-[0_1px_2px_0_rgba(0,0,0,0.05),0_4px_6px_-1px_rgba(0,0,0,0.02)]",
+                "overflow-hidden rounded-xl border text-xs",
                 isInternalNote
                   ? "border-yellow-200 bg-yellow-50"
                   : isOutbound
-                  ? "border-indigo-100 bg-indigo-50/40"
+                  ? "border-gray-200 bg-gray-50"
                   : "border-gray-200 bg-white"
               )}
             >
@@ -477,18 +461,13 @@ export function MessageBubble({
             ) : null}
 
             {!isInternalNote ? (
-              <div
-                className={cn(
-                  "flex flex-wrap items-center gap-3 px-1 text-sm font-medium text-gray-600",
-                  isOutbound ? "justify-end" : "justify-start"
-                )}
-              >
+              <div className="flex flex-wrap items-center gap-3 px-1 text-sm font-medium text-gray-500">
                 <button
                   type="button"
                   onClick={() => setViewEmailOpen(true)}
-                  className="inline-flex items-center gap-2 rounded-md px-1 py-0.5 hover:bg-gray-100"
+                  className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-[12px] opacity-0 transition-opacity hover:bg-gray-100 group-hover/bubble:opacity-100"
                 >
-                  <Mail className="h-4 w-4" />
+                  <Mail className="h-3.5 w-3.5" />
                   <span>View email</span>
                 </button>
               </div>

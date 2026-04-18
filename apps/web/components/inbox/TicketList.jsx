@@ -104,43 +104,37 @@ export function TicketList({
 
   return (
     <aside className="flex w-full flex-col border-r border-gray-200 bg-white lg:w-[clamp(18rem,20vw,24rem)] lg:min-w-[clamp(18rem,20vw,24rem)] lg:max-w-[clamp(18rem,20vw,24rem)] lg:flex-none">
-      <div className="px-3 pb-3 pt-2.5">
-        <div className="grid gap-2">
-          <Input
-            value={filters.query}
-            onChange={(event) => onFiltersChange({ query: event.target.value })}
-            placeholder="Search tickets"
-            className="h-9 text-[13px]"
-          />
-          <div className="flex items-center justify-between gap-2">
-            <Select
-              value={filters.status}
-              onValueChange={(value) => onFiltersChange({ status: value })}
-            >
-              <SelectTrigger className="h-9 w-[150px] text-[13px]">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                {statusFilters.map((option) => (
-                  <SelectItem key={option} value={option}>
-                    {option}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
-              <span>Unreads</span>
-              <Switch
-                checked={filters.unreadsOnly}
-                onCheckedChange={(checked) => onFiltersChange({ unreadsOnly: checked })}
-              />
-            </div>
-          </div>
-        </div>
+      <div className="flex items-center gap-2 border-b border-gray-100 px-3 py-2">
+        <Input
+          value={filters.query}
+          onChange={(event) => onFiltersChange({ query: event.target.value })}
+          placeholder="Search..."
+          className="h-8 flex-1 text-[13px]"
+        />
+        <Select
+          value={filters.status}
+          onValueChange={(value) => onFiltersChange({ status: value })}
+        >
+          <SelectTrigger className="h-8 w-[90px] shrink-0 text-[13px]">
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            {statusFilters.map((option) => (
+              <SelectItem key={option} value={option}>
+                {option}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Switch
+          checked={filters.unreadsOnly}
+          onCheckedChange={(checked) => onFiltersChange({ unreadsOnly: checked })}
+          title="Unread only"
+        />
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto pt-1">
+      <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {renderedThreads.length ? (
-          <div>
+          <div className="divide-y divide-gray-100">
             {renderedThreads.map(({ thread, isExiting }) => {
               const uiState = ticketStateByThread[thread.id];
               const customer = customerByThread[thread.id] || "Unknown sender";
@@ -177,17 +171,14 @@ export function TicketList({
           </div>
         )}
       </div>
-      <div className="border-t border-gray-200 bg-sidebar px-3 pb-1 pt-2.5">
-        <div className="mb-2 text-center text-[12px] text-gray-400">
-          ({threads.length} total)
-        </div>
+      <div className="border-t border-gray-100 px-3 pb-2 pt-2">
         <button
           type="button"
           onClick={onCreateTicket}
-          className="flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-dashed border-gray-300 bg-white px-3 text-[13px] font-medium text-gray-500 transition hover:border-gray-400 hover:text-gray-700"
+          className="flex h-8 w-full items-center justify-center gap-1.5 rounded-md px-3 text-[13px] text-gray-400 transition hover:bg-gray-50 hover:text-gray-600"
         >
-          <span className="text-sm font-semibold">+</span>
-          Create New Ticket
+          <span className="text-base leading-none">+</span>
+          New ticket
         </button>
       </div>
       {contextMenu ? (
