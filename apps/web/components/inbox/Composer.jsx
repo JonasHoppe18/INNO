@@ -22,7 +22,6 @@ import {
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -1260,89 +1259,80 @@ export function Composer({
         </div>
       </div>
       <Dialog open={savedRepliesOpen} onOpenChange={setSavedRepliesOpen}>
-        <DialogContent className="sm:max-w-[680px]">
-          <DialogHeader>
-            <DialogTitle>Saved Replies</DialogTitle>
-            <DialogDescription>
-              Choose an approved reply and apply it to your draft.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
+        <DialogContent className="sm:max-w-[620px] gap-0 p-0 overflow-hidden">
+          <div className="border-b border-gray-100 px-4 pt-4 pb-3">
+            <DialogHeader className="mb-3">
+              <DialogTitle className="text-[15px]">Saved Replies</DialogTitle>
+            </DialogHeader>
             <Input
+              autoFocus
               value={savedRepliesQuery}
               onChange={(event) => setSavedRepliesQuery(event.target.value)}
-              placeholder="Search saved replies..."
+              placeholder="Search replies..."
+              className="h-9 border-gray-200 bg-gray-50 text-[13px] placeholder:text-gray-400 focus-visible:ring-1 focus-visible:ring-gray-300"
             />
-            <div className="max-h-[360px] space-y-2 overflow-y-auto rounded-md border border-gray-200 p-2">
-              {savedRepliesLoading ? (
-                <p className="px-2 py-6 text-center text-sm text-muted-foreground">
-                  Loading saved replies...
-                </p>
-              ) : filteredSavedReplies.length ? (
-                filteredSavedReplies.map((reply) => {
-                  const title = String(reply?.title || "Untitled reply");
-                  const category = String(reply?.category || "").trim();
-                  const content = normalizeSavedReplyToPlainText(reply?.content || "");
-                  const preview =
-                    content.length > 180 ? `${content.slice(0, 180).trim()}...` : content;
-                  const imageCount = Array.isArray(reply?.images)
-                    ? reply.images.length
-                    : reply?.image?.content_base64
-                      ? 1
-                      : 0;
-                  return (
-                    <div
-                      key={reply?.id || `${title}-${preview}`}
-                      className="rounded-lg border border-gray-200 bg-white p-3"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <p className="truncate text-sm font-semibold text-gray-900">{title}</p>
-                            {category ? (
-                              <span className="rounded-full border border-gray-200 px-2 py-0.5 text-[11px] text-gray-500">
-                                {category}
-                              </span>
-                            ) : null}
-                            {imageCount > 0 ? (
-                              <span className="rounded-full border border-indigo-100 bg-indigo-50 px-2 py-0.5 text-[11px] text-indigo-700">
-                                {imageCount === 1 ? "1 image" : `${imageCount} images`}
-                              </span>
-                            ) : null}
-                          </div>
-                          <p className="mt-1 whitespace-pre-wrap text-xs text-gray-600">{preview}</p>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-2">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => applySavedReplyInsert(reply)}
-                          >
-                            Insert
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            onClick={() => applySavedReplyReplace(reply)}
-                            className="bg-black text-white hover:bg-slate-900"
-                          >
-                            Replace draft
-                          </Button>
-                        </div>
+          </div>
+          <div className="max-h-[400px] overflow-y-auto p-2">
+            {savedRepliesLoading ? (
+              <p className="px-3 py-8 text-center text-[13px] text-gray-400">
+                Loading…
+              </p>
+            ) : filteredSavedReplies.length ? (
+              filteredSavedReplies.map((reply, i) => {
+                const title = String(reply?.title || "Untitled reply");
+                const category = String(reply?.category || "").trim();
+                const content = normalizeSavedReplyToPlainText(reply?.content || "");
+                const preview =
+                  content.length > 160 ? `${content.slice(0, 160).trim()}…` : content;
+                const imageCount = Array.isArray(reply?.images)
+                  ? reply.images.length
+                  : reply?.image?.content_base64
+                    ? 1
+                    : 0;
+                return (
+                  <div
+                    key={reply?.id || `${title}-${preview}`}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => applySavedReplyReplace(reply)}
+                    onKeyDown={(e) => e.key === "Enter" && applySavedReplyReplace(reply)}
+                    style={{ animationDelay: `${i * 30}ms` }}
+                    className="group/row animate-in fade-in slide-in-from-bottom-1 duration-200 flex cursor-pointer items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-gray-50 focus:outline-none focus-visible:bg-gray-50"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <p className="truncate text-[13px] font-medium text-gray-900">{title}</p>
+                        {category ? (
+                          <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-500">
+                            {category}
+                          </span>
+                        ) : null}
+                        {imageCount > 0 ? (
+                          <span className="shrink-0 rounded-full bg-indigo-50 px-1.5 py-0.5 text-[11px] text-indigo-600">
+                            {imageCount === 1 ? "1 image" : `${imageCount} images`}
+                          </span>
+                        ) : null}
                       </div>
+                      <p className="mt-0.5 line-clamp-2 text-[12px] leading-[1.5] text-gray-500">{preview}</p>
                     </div>
-                  );
-                })
-              ) : (
-                <div className="px-2 py-8 text-center">
-                  <p className="text-sm font-medium text-gray-700">No saved replies yet.</p>
-                  <p className="mt-1 text-xs text-gray-500">
-                    Create your first saved reply in Settings.
-                  </p>
-                </div>
-              )}
-            </div>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); applySavedReplyInsert(reply); }}
+                      className="mt-0.5 shrink-0 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-[12px] font-medium text-gray-600 opacity-0 transition-opacity duration-150 hover:border-gray-300 hover:bg-gray-50 group-hover/row:opacity-100"
+                    >
+                      Insert
+                    </button>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="px-3 py-10 text-center">
+                <p className="text-[13px] font-medium text-gray-700">No saved replies yet.</p>
+                <p className="mt-1 text-[12px] text-gray-400">
+                  Create your first saved reply in Settings.
+                </p>
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>

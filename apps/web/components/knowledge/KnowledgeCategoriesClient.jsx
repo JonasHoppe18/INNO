@@ -143,24 +143,35 @@ function toSavedReplyEditorHtml(value = "") {
   return escapeHtml(raw).replace(/\r\n/g, "\n").replace(/\n/g, "<br>");
 }
 
-function CategoryCard({ category, onClick }) {
+const ICON_COLORS = {
+  Package: "bg-blue-50 text-blue-600",
+  RotateCcw: "bg-orange-50 text-orange-600",
+  Truck: "bg-green-50 text-green-600",
+  MessageSquare: "bg-purple-50 text-purple-600",
+  Tag: "bg-yellow-50 text-yellow-600",
+  BookOpen: "bg-indigo-50 text-indigo-600",
+};
+
+function CategoryCard({ category, onClick, index = 0 }) {
+  const iconColor = ICON_COLORS[category.icon] || "bg-gray-50 text-gray-500";
   return (
     <Card
-      className="group cursor-pointer transition-colors hover:bg-muted/50"
+      className="group cursor-pointer border-gray-200 transition-all duration-150 hover:border-gray-300 hover:shadow-sm active:scale-[0.98]"
+      style={{ animationDelay: `${index * 50}ms` }}
       onClick={onClick}
     >
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
-          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-muted">
-            <CategoryIcon name={category.icon} className="h-4 w-4 text-muted-foreground" />
+          <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${iconColor}`}>
+            <CategoryIcon name={category.icon} className="h-4 w-4" />
           </div>
-          <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+          <ChevronRight className="h-4 w-4 text-gray-300 transition-all duration-150 group-hover:translate-x-0.5 group-hover:text-gray-400" />
         </div>
       </CardHeader>
       <CardContent>
-        <CardTitle className="text-sm">{category.label}</CardTitle>
+        <CardTitle className="text-[13px] font-semibold text-gray-900">{category.label}</CardTitle>
         {category.description && (
-          <CardDescription className="mt-1 text-xs line-clamp-2">
+          <CardDescription className="mt-1 text-[12px] line-clamp-2 leading-[1.5]">
             {category.description}
           </CardDescription>
         )}
@@ -394,15 +405,15 @@ function SavedRepliesSection() {
     <div>
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <h2 className="text-sm font-medium">Saved Replies</h2>
+          <h2 className="text-[15px] font-semibold text-gray-900">Saved Replies</h2>
           {replies.length > 0 && (
-            <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-500">
               {replies.length}
             </span>
           )}
         </div>
-        <Button size="sm" variant="outline" onClick={openNew}>
-          <Plus className="h-3.5 w-3.5 mr-1.5" />
+        <Button size="sm" variant="outline" onClick={openNew} className="gap-1">
+          <Plus className="h-3.5 w-3.5" />
           New reply
         </Button>
       </div>
@@ -431,32 +442,32 @@ function SavedRepliesSection() {
           </Button>
         </div>
       ) : (
-        <div className="rounded-lg border divide-y overflow-hidden">
+        <div className="rounded-lg border border-gray-200 divide-y divide-gray-100 overflow-hidden">
           {replies.map((reply) => (
-            <div key={reply.id} className="group flex items-center gap-3 px-4 py-3">
+            <div key={reply.id} className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-gray-50/60">
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-sm font-medium truncate">{reply.title}</span>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-[13px] font-medium text-gray-900 truncate">{reply.title}</span>
                   {reply.category && (
-                    <Badge variant="secondary" className="text-xs shrink-0">{reply.category}</Badge>
+                    <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-500">{reply.category}</span>
                   )}
                   {(Array.isArray(reply?.images) ? reply.images.length : reply?.image ? 1 : 0) > 0 && (
-                    <Badge variant="outline" className="text-xs shrink-0">
+                    <span className="shrink-0 rounded-full bg-indigo-50 px-1.5 py-0.5 text-[11px] text-indigo-600">
                       {(Array.isArray(reply?.images) ? reply.images.length : 1) === 1
                         ? "1 image"
                         : `${Array.isArray(reply?.images) ? reply.images.length : 1} images`}
-                    </Badge>
+                    </span>
                   )}
                   {!reply.is_active && (
-                    <Badge variant="outline" className="text-xs shrink-0 text-muted-foreground">Inactive</Badge>
+                    <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-400">Inactive</span>
                   )}
                 </div>
-                <p className="text-xs text-muted-foreground truncate mt-0.5">
-                  {stripHtmlToPlainText(reply?.content || "").slice(0, 80)}
+                <p className="text-[12px] text-gray-400 truncate mt-0.5">
+                  {stripHtmlToPlainText(reply?.content || "").slice(0, 90)}
                 </p>
               </div>
               {reply.use_count > 0 && (
-                <span className="text-xs text-muted-foreground shrink-0">{reply.use_count}×</span>
+                <span className="text-[12px] text-gray-400 shrink-0">{reply.use_count}×</span>
               )}
               <div className="flex shrink-0 items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                 <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(reply)}>
@@ -686,13 +697,13 @@ export function KnowledgeCategoriesClient() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold">Knowledge Base</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
+          <h1 className="text-[20px] font-semibold tracking-tight text-gray-900">Knowledge Base</h1>
+          <p className="text-[13px] text-gray-500 mt-0.5">
             Manage what your AI knows about your store
           </p>
         </div>
-        <Button onClick={() => setCreateOpen(true)}>
-          <Plus className="h-4 w-4 mr-1.5" />
+        <Button onClick={() => setCreateOpen(true)} className="gap-1.5">
+          <Plus className="h-4 w-4" />
           New category
         </Button>
       </div>
@@ -713,22 +724,24 @@ export function KnowledgeCategoriesClient() {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {categories.map((cat) => (
+          {categories.map((cat, i) => (
             <CategoryCard
               key={cat.slug}
               category={cat}
+              index={i}
               onClick={() => router.push(`/knowledge/${cat.slug}`)}
             />
           ))}
           <Card
-            className="cursor-pointer border-dashed hover:bg-muted/30 transition-colors"
+            className="group cursor-pointer border-dashed border-gray-200 transition-all duration-150 hover:border-gray-300 hover:bg-gray-50/50 active:scale-[0.98]"
+            style={{ animationDelay: `${categories.length * 50}ms` }}
             onClick={() => setCreateOpen(true)}
           >
-            <CardContent className="flex flex-col items-center justify-center h-full min-h-[120px] text-muted-foreground gap-2 pt-6">
-              <div className="flex h-9 w-9 items-center justify-center rounded-md border border-dashed">
+            <CardContent className="flex flex-col items-center justify-center h-full min-h-[120px] gap-2 pt-6 text-gray-400">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-dashed border-gray-300 transition-colors group-hover:border-gray-400">
                 <Plus className="h-4 w-4" />
               </div>
-              <span className="text-sm">New category</span>
+              <span className="text-[13px]">New category</span>
             </CardContent>
           </Card>
         </div>

@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
-import { Download, Mail } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Mail, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatBytes, getEffectiveSenderEmail, getSenderLabel } from "@/components/inbox/inbox-utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -267,6 +267,138 @@ const isPdfAttachment = (mimeType = "") => String(mimeType || "").toLowerCase() 
 const normalizeLower = (value = "") => String(value || "").trim().toLowerCase();
 const DISPLAY_TIMEZONE = "Europe/Copenhagen";
 
+function ImageGrid({ images, onOpen }) {
+  const count = images.length;
+  const shown = images.slice(0, 4);
+  const overflow = count - 4;
+
+  const gridClass =
+    count === 1
+      ? "grid-cols-1"
+      : count === 2
+      ? "grid-cols-2"
+      : "grid-cols-2";
+
+  return (
+    <div className={cn("grid gap-1 overflow-hidden rounded-xl", gridClass, count === 3 && "grid-rows-2")}>
+      {shown.map((img, i) => {
+        const isLast = i === 3 && overflow > 0;
+        const isTall = count === 3 && i === 0;
+        return (
+          <button
+            key={img.id}
+            type="button"
+            onClick={() => onOpen(img)}
+            style={{ animationDelay: `${i * 40}ms` }}
+            className={cn(
+              "group/img relative overflow-hidden bg-gray-100 outline-none animate-in fade-in duration-200",
+              isTall ? "row-span-2" : "",
+              count === 1 ? "max-h-[340px] min-h-[180px]" : "h-[160px]"
+            )}
+          >
+            <Image
+              src={`/api/attachments/${img.id}/download?disposition=inline`}
+              alt={img?.filename || "Image"}
+              fill
+              sizes="(max-width: 640px) 50vw, 280px"
+              className="object-cover transition-transform duration-200 ease-out group-hover/img:scale-[1.03]"
+              unoptimized
+            />
+            {isLast ? (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-[2px]">
+                <span className="text-[22px] font-semibold text-white">+{overflow}</span>
+              </div>
+            ) : (
+              <div className="absolute inset-0 bg-black/0 transition-colors duration-150 group-hover/img:bg-black/10" />
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ImageLightbox({ images, index, onClose, onNext, onPrev }) {
+  const img = images[index];
+  const url = img ? `/api/attachments/${img.id}/download` : "";
+  const hasNext = index < images.length - 1;
+  const hasPrev = index > 0;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{ backgroundColor: "rgba(0,0,0,0.88)" }}
+      onClick={onClose}
+    >
+      <div
+        className="relative flex max-h-[90vh] max-w-[90vw] animate-in fade-in zoom-in-95 duration-150 flex-col items-center"
+        style={{ animationTimingFunction: "cubic-bezier(0.23,1,0.32,1)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="relative">
+          <Image
+            key={img?.id}
+            src={url}
+            alt={img?.filename || "Image"}
+            width={1600}
+            height={1200}
+            className="max-h-[80vh] max-w-[88vw] rounded-lg object-contain shadow-2xl"
+            unoptimized
+          />
+        </div>
+
+        {images.length > 1 ? (
+          <div className="mt-3 text-[13px] font-medium text-white/60">
+            {index + 1} / {images.length}
+          </div>
+        ) : null}
+      </div>
+
+      <button
+        type="button"
+        onClick={onClose}
+        className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
+      >
+        <X className="h-4 w-4" />
+      </button>
+
+      {hasPrev ? (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onPrev(); }}
+          className="absolute left-4 top-1/2 -translate-y-1/2 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
+        >
+          <ChevronLeft className="h-5 w-5" />
+        </button>
+      ) : null}
+
+      {hasNext ? (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onNext(); }}
+          className="absolute right-4 top-1/2 -translate-y-1/2 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
+        >
+          <ChevronRight className="h-5 w-5" />
+        </button>
+      ) : null}
+
+      {img?.id ? (
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          download
+          onClick={(e) => e.stopPropagation()}
+          className="absolute bottom-5 right-5 flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-2 text-[13px] font-medium text-white/80 transition-colors hover:bg-white/20"
+        >
+          <Download className="h-3.5 w-3.5" />
+          Download
+        </a>
+      ) : null}
+    </div>
+  );
+}
+
 export function MessageBubble({
   message,
   direction = "inbound",
@@ -337,6 +469,31 @@ export function MessageBubble({
   const canPreviewPdf = isPdfAttachment(selectedAttachment?.mime_type);
   const canDownload = Boolean(selectedAttachment?.storage_path);
   const attachmentCards = (attachments || []).filter((attachment) => Boolean(attachment?.id));
+  const imageAttachments = attachmentCards.filter((a) => isImageAttachment(a?.mime_type) && Boolean(a?.storage_path));
+  const fileAttachments = attachmentCards.filter((a) => !isImageAttachment(a?.mime_type));
+  const lightboxImages = imageAttachments;
+  const lightboxIndex = lightboxImages.findIndex((a) => a?.id === selectedAttachment?.id);
+  const isLightboxOpen = Boolean(selectedAttachment) && canPreviewImage;
+
+  const openLightbox = useCallback((attachment) => setSelectedAttachment(attachment), []);
+  const closeLightbox = useCallback(() => setSelectedAttachment(null), []);
+  const goNext = useCallback(() => {
+    if (lightboxIndex < lightboxImages.length - 1) setSelectedAttachment(lightboxImages[lightboxIndex + 1]);
+  }, [lightboxIndex, lightboxImages]);
+  const goPrev = useCallback(() => {
+    if (lightboxIndex > 0) setSelectedAttachment(lightboxImages[lightboxIndex - 1]);
+  }, [lightboxIndex, lightboxImages]);
+
+  useEffect(() => {
+    if (!isLightboxOpen) return;
+    const handler = (e) => {
+      if (e.key === "ArrowRight") goNext();
+      else if (e.key === "ArrowLeft") goPrev();
+      else if (e.key === "Escape") closeLightbox();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [isLightboxOpen, goNext, goPrev, closeLightbox]);
   const subjectLine = String(message?.subject || "").trim() || "Email";
   const senderDetails = formatAddressLabel(senderDisplayName, senderEmail);
   const rawPlainBody = stripQuotedHeaderTail(
@@ -414,48 +571,34 @@ export function MessageBubble({
               </div>
             </div>
 
-            {attachmentCards.length ? (
+            {imageAttachments.length ? (
+              <ImageGrid images={imageAttachments} onOpen={openLightbox} />
+            ) : null}
+
+            {fileAttachments.length ? (
               <div className="rounded-xl border border-gray-200 bg-white px-4 pb-3 pt-2">
                 <p className="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-gray-400">Files</p>
                 <div className="flex flex-wrap gap-1.5">
-                  {attachmentCards.map((attachment) => {
-                    const isImage = isImageAttachment(attachment?.mime_type);
-                    const canPreview = Boolean(attachment?.storage_path);
-                    return (
-                      <button
-                        key={attachment.id}
-                        type="button"
-                        onClick={() => setSelectedAttachment(attachment)}
-                        className="w-[260px] overflow-hidden rounded-md border border-gray-200 bg-white text-left hover:border-gray-300"
-                      >
-                        <div className="flex items-center gap-2 px-2 py-1.5">
-                          {isImage && canPreview ? (
-                            <Image
-                              src={`/api/attachments/${attachment.id}/download?disposition=inline`}
-                              alt={attachment?.filename || "Image attachment"}
-                              width={56}
-                              height={56}
-                              className="h-12 w-12 shrink-0 rounded object-cover"
-                              unoptimized
-                            />
-                          ) : (
-                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded bg-gray-100 text-[12px] text-gray-500">
-                              File
-                            </div>
-                          )}
-                          <div className="min-w-0">
-                            <p className="truncate text-[12px] font-medium text-gray-800">
-                              {attachment?.filename || "Attachment"}
-                            </p>
-                            <p className="text-[12px] text-gray-500">
-                              {attachment?.mime_type || "Unknown type"}
-                              {attachment?.size_bytes ? ` • ${formatBytes(attachment.size_bytes)}` : ""}
-                            </p>
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
+                  {fileAttachments.map((attachment) => (
+                    <button
+                      key={attachment.id}
+                      type="button"
+                      onClick={() => setSelectedAttachment(attachment)}
+                      className="group/file flex w-[240px] items-center gap-2 overflow-hidden rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-left transition-colors hover:border-gray-300 hover:bg-gray-50"
+                    >
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-gray-100 text-[11px] font-semibold uppercase tracking-wide text-gray-500 transition-colors group-hover/file:bg-gray-200">
+                        {String(attachment?.mime_type || "").includes("pdf") ? "PDF" : "File"}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-[12px] font-medium text-gray-800">
+                          {attachment?.filename || "Attachment"}
+                        </p>
+                        <p className="text-[11px] text-gray-400">
+                          {attachment?.size_bytes ? formatBytes(attachment.size_bytes) : attachment?.mime_type || "Unknown"}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
                 </div>
               </div>
             ) : null}
@@ -533,41 +676,35 @@ export function MessageBubble({
           </div>
         </DialogContent>
       </Dialog>
-      <Dialog open={Boolean(selectedAttachment)} onOpenChange={(open) => !open && setSelectedAttachment(null)}>
-        <DialogContent className="max-h-[85vh] max-w-4xl overflow-hidden p-0">
+      {isLightboxOpen ? (
+        <ImageLightbox
+          images={lightboxImages}
+          index={lightboxIndex}
+          onClose={closeLightbox}
+          onNext={goNext}
+          onPrev={goPrev}
+        />
+      ) : null}
+
+      <Dialog open={Boolean(selectedAttachment) && !canPreviewImage} onOpenChange={(open) => !open && setSelectedAttachment(null)}>
+        <DialogContent className="max-h-[85vh] max-w-3xl overflow-hidden p-0">
           <DialogHeader className="border-b border-gray-100 px-5 py-4">
             <DialogTitle className="pr-8 text-base">
               {selectedAttachment?.filename || "Attachment"}
             </DialogTitle>
           </DialogHeader>
           <div className="max-h-[65vh] overflow-auto bg-gray-50 p-4">
-            {canPreviewImage && canDownload ? (
-              <Image
-                src={selectedAttachmentUrl}
-                alt={selectedAttachment?.filename || "Attachment preview"}
-                width={1600}
-                height={1200}
-                className="mx-auto h-auto max-h-[60vh] max-w-full rounded border border-gray-200 bg-white object-contain"
-                unoptimized
-              />
-            ) : null}
             {canPreviewPdf && canDownload ? (
               <iframe
                 title={selectedAttachment?.filename || "Attachment preview"}
                 src={selectedAttachmentUrl}
                 className="h-[60vh] w-full rounded border border-gray-200 bg-white"
               />
-            ) : null}
-            {!canPreviewImage && !canPreviewPdf ? (
+            ) : (
               <div className="rounded border border-dashed border-gray-300 bg-white p-6 text-sm text-gray-600">
-                Preview is not available for this file type.
+                {canDownload ? "Preview is not available for this file type." : "File content is currently unavailable."}
               </div>
-            ) : null}
-            {(canPreviewImage || canPreviewPdf) && !canDownload ? (
-              <div className="rounded border border-dashed border-gray-300 bg-white p-6 text-sm text-gray-600">
-                File content is currently unavailable.
-              </div>
-            ) : null}
+            )}
           </div>
           <div className="flex items-center justify-between border-t border-gray-100 px-5 py-3">
             <div className="text-xs text-gray-500">
