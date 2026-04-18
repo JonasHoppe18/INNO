@@ -19,6 +19,7 @@ import {
 } from "../_shared/email-routing-classifier.ts";
 import { parseEmailReplyBodies } from "../_shared/email-reply-parser.ts";
 import { parseShopifyContactIdentity } from "../_shared/shopify-contact-form.ts";
+import { detectCustomerLanguage } from "../_shared/detect-language.ts";
 
 const PROJECT_URL = Deno.env.get("SUPABASE_URL") ?? Deno.env.get("PROJECT_URL");
 const SERVICE_ROLE_KEY =
@@ -28,6 +29,7 @@ const INTERNAL_AGENT_SECRET = Deno.env.get("INTERNAL_AGENT_SECRET") ?? "";
 const IGNORE_SPAM_FILTER = Deno.env.get("POSTMARK_IGNORE_SPAM") === "true";
 const POSTMARK_SERVER_TOKEN = Deno.env.get("POSTMARK_SERVER_TOKEN") ?? "";
 const POSTMARK_MESSAGE_STREAM = Deno.env.get("POSTMARK_MESSAGE_STREAM") ?? "outbound";
+const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY") ?? "";
 const POSTMARK_FROM_EMAIL = Deno.env.get("POSTMARK_FROM_EMAIL") ?? "support@sona-ai.dk";
 const POSTMARK_FROM_NAME = Deno.env.get("POSTMARK_FROM_NAME") ?? "Sona";
 
@@ -1517,6 +1519,23 @@ Deno.serve(async (req) => {
     .from("mail_threads")
     .update(updatePayload)
     .eq("id", threadId);
+
+  // Detect and store customer language (fire-and-forget, non-blocking)
+  if (createdNewThread) {
+    const textToDetect = parsedBodies.cleanBodyText || textBody;
+    if (textToDetect) {
+      detectCustomerLanguage(textToDetect, OPENAI_API_KEY).then((lang) => {
+        if (lang !== "unknown") {
+          supabase
+            .from("mail_threads")
+            .update({ customer_language: lang })
+            .eq("id", threadId)
+            .then(() => null)
+            .catch(() => null);
+        }
+      }).catch(() => null);
+    }
+  }
 
   if (messageDbId) {
     const attachments = Array.isArray(payload?.Attachments)
