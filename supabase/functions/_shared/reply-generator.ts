@@ -269,7 +269,6 @@ export type GenerateReplyFromStrategyInput = {
   policyExcerpt?: string | null;
   productSummary?: string | null;
   generalKnowledgeSummary?: string | null;
-  learnedStyle?: string | null;
   personaInstructions?: string | null;
   languageHint?: string | null;
   threadHistory?: ThreadHistoryMessage[] | null;
@@ -394,9 +393,6 @@ export async function generateReplyFromStrategy(
     "",
     input.personaInstructions
       ? `BRAND VOICE (highest priority):\n${input.personaInstructions}`
-      : "",
-    input.learnedStyle
-      ? `LEARNED STYLE:\n${input.learnedStyle}`
       : "",
     "Your reply MUST reflect this brand voice throughout. If no persona is defined, use a warm, professional tone.",
     (() => {

@@ -189,86 +189,6 @@ async function captureDraftEditFeedback({
   });
 }
 
-function buildLearningBullets(diff) {
-  const bullets = [];
-  if (diff.delta_pct < -0.2) {
-    bullets.push("Prefer shorter replies when possible.");
-  } else if (diff.delta_pct > 0.2) {
-    bullets.push("Allow more detail when the customer needs clarity.");
-  }
-  if (diff.removed_fluff) {
-    bullets.push("Avoid filler greetings and unnecessary pleasantries.");
-  }
-  if (diff.added_next_steps) {
-    bullets.push("Include clear next steps in the response.");
-  }
-  return bullets.slice(0, 3);
-}
-
-function mergeLearningRules(existing, updates) {
-  const parsed = String(existing || "")
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const match = line.match(/^(?:[-•]\s*)?(.*?)(?:\s*\(confidence:\s*([0-9.]+)\))?$/i);
-      return {
-        text: match?.[1]?.trim() || line.replace(/^[-•]\s*/, "").trim(),
-        confidence: match?.[2] ? Number(match[2]) : 0.55,
-      };
-    });
-
-  const map = new Map(parsed.map((item) => [item.text.toLowerCase(), item]));
-  updates.forEach((bullet) => {
-    const key = bullet.toLowerCase();
-    const existingItem = map.get(key);
-    if (existingItem) {
-      existingItem.confidence = Math.min(0.95, Number((existingItem.confidence + 0.05).toFixed(2)));
-    } else {
-      map.set(key, { text: bullet, confidence: 0.55 });
-    }
-  });
-
-  return Array.from(map.values())
-    .map((item) => `- ${item.text} (confidence: ${item.confidence.toFixed(2)})`)
-    .join("\n");
-}
-
-async function updateLearningProfile(serviceClient, mailboxId, userId, diffSummary) {
-  if (!mailboxId || !userId) return;
-  const { data, error } = await serviceClient
-    .from("mail_learning_profiles")
-    .select("style_rules")
-    .eq("mailbox_id", mailboxId)
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  const updates = buildLearningBullets(diffSummary);
-  if (!updates.length) return;
-
-  const nextRules = mergeLearningRules(data?.style_rules || "", updates);
-
-  const { error: upsertError } = await serviceClient
-    .from("mail_learning_profiles")
-    .upsert(
-      {
-        mailbox_id: mailboxId,
-        user_id: userId,
-        enabled: true,
-        style_rules: nextRules,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "mailbox_id" }
-    );
-
-  if (upsertError) {
-    throw new Error(upsertError.message);
-  }
-}
 
 function encodeBase64(bytes) {
   return Buffer.from(bytes).toString("base64");
@@ -1404,39 +1324,25 @@ export async function POST(request, { params }) {
     }
   }
 
-  if (supabaseUserId && learnFromEdits && draftDestinationSetting === "sona_inbox" && aiDraftText) {
-    const finalText = coreBodyText;
-    if (finalText.trim()) {
-      const diffSummary = summarizeDraftDiff(aiDraftText, finalText);
-      try {
-        await captureDraftEditFeedback({
-          serviceClient,
-          threadId,
-          messageDraftId: insertedMessage?.id || null,
-          sourceWasAiGenerated: true,
-          originalAiText: aiDraftText,
-          finalText,
-          eventType: "manual_send",
-          createdAt: nowIso,
-        });
-        await serviceClient.from("agent_logs").insert({
-          draft_id: null,
-          step_name: "learning_event",
-          step_detail: JSON.stringify({
-            mailbox_id: mailbox.id,
-            thread_id: threadId,
-            ai_draft_text: aiDraftText,
-            final_text: finalText,
-            diff_summary: diffSummary,
-          }),
-          status: "success",
-          created_at: nowIso,
-        });
-        await updateLearningProfile(serviceClient, mailbox.id, supabaseUserId, diffSummary);
-      } catch (error) {
-        console.warn("[threads/send] learning update failed", error?.message || error);
-      }
-    }
+  // Store sent reply as a knowledge example for future AI draft retrieval (fire-and-forget)
+  const shopIdForLearning = mailbox?.shop_id || null;
+  const customerTextForLearning = inboundMessage?.body_text || inboundMessage?.snippet || "";
+  if (learnFromEdits && shopIdForLearning && coreBodyText?.trim() && customerTextForLearning.trim() && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+    fetch(`${SUPABASE_URL}/functions/v1/store-reply-example`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        thread_id: threadId,
+        shop_id: shopIdForLearning,
+        workspace_id: scope?.workspaceId || null,
+        sent_reply_text: coreBodyText,
+        customer_message_text: customerTextForLearning,
+        subject: thread?.subject || "",
+      }),
+    }).catch(() => null);
   }
 
   return NextResponse.json(

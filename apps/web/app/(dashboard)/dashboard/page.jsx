@@ -96,8 +96,7 @@ export default async function Page() {
 
   const serviceClient = createServiceClient();
   let drafts = [];
-  let sentMailCount = 0;
-  let sentConversations = 0;
+  let exampleCount = 0;
   if (serviceClient) {
     try {
       const scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
@@ -119,29 +118,14 @@ export default async function Page() {
         drafts = Array.isArray(data) ? data : [];
       }
 
-      if (scope?.workspaceId || scope?.supabaseUserId) {
-        const { count: sentMailCountResult } = await applyScope(
-          serviceClient
-          .from("mail_messages")
+      if (shopId) {
+        const { count } = await serviceClient
+          .from("agent_knowledge")
           .select("id", { count: "exact", head: true })
-          .eq("from_me", true)
-          .not("sent_at", "is", null),
-          scope
-        );
-        sentMailCount = sentMailCountResult ?? 0;
-
-        const { data: conversationRows } = await applyScope(
-          serviceClient
-          .from("mail_messages")
-          .select("thread_id")
-          .eq("from_me", true)
-          .not("sent_at", "is", null)
-          .limit(2000),
-          scope
-        );
-        sentConversations = new Set(
-          (conversationRows || []).map((row) => row.thread_id).filter(Boolean)
-        ).size;
+          .eq("shop_id", shopId)
+          .eq("source_type", "ticket")
+          .eq("source_provider", "sent_reply");
+        exampleCount = count ?? 0;
       }
     } catch (error) {
       console.error("Dashboard drafts lookup failed:", error);
@@ -256,7 +240,7 @@ export default async function Page() {
             </Card>
           </div>
           <div className="px-4 lg:px-6">
-            <LearningCard sentCount={sentMailCount} conversationCount={sentConversations} />
+            <LearningCard exampleCount={exampleCount} />
           </div>
           <div className="px-4 lg:px-6">
             {totalDrafts === 0 ? (

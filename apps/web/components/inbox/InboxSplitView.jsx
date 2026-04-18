@@ -778,7 +778,6 @@ const formatPendingOrderUpdateDetail = ({
 export function InboxSplitView({ messages = [], threads = [], attachments = [] }) {
   const DRAFT_WAIT_TIMEOUT_MS = 12_000;
   const TAB_STATE_STORAGE_PREFIX = "inbox-open-tabs";
-  const DRAFT_CACHE_STORAGE_PREFIX = "inbox-thread-drafts-v1";
   const [liveThreads, setLiveThreads] = useState(threads || []);
   const [liveMessages, setLiveMessages] = useState(messages || []);
   const [liveAttachments, setLiveAttachments] = useState(attachments || []);
@@ -823,10 +822,8 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const [workspaceInboxes, setWorkspaceInboxes] = useState([]);
   const [isWorkspaceTestMode, setIsWorkspaceTestMode] = useState(false);
   const [tabStateReady, setTabStateReady] = useState(false);
-  const [draftCacheReady, setDraftCacheReady] = useState(false);
   const lastAutoReadThreadIdRef = useRef(null);
   const tabStateHydratedRef = useRef(false);
-  const draftCacheHydratedKeyRef = useRef("");
   const draftLastSavedRef = useRef({});
   const savingDraftRef = useRef(false);
   const draftValueRef = useRef("");
@@ -848,10 +845,6 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const tabStateStorageKey = useMemo(() => {
     const viewerId = String(currentSupabaseUserId || user?.id || "anonymous").trim();
     return `${TAB_STATE_STORAGE_PREFIX}:${viewerId}`;
-  }, [currentSupabaseUserId, user?.id]);
-  const draftCacheStorageKey = useMemo(() => {
-    const viewerId = String(currentSupabaseUserId || user?.id || "anonymous").trim();
-    return `${DRAFT_CACHE_STORAGE_PREFIX}:${viewerId}`;
   }, [currentSupabaseUserId, user?.id]);
 
   useEffect(() => {
@@ -1191,50 +1184,6 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       setTabStateReady(true);
     }
   }, [derivedThreads, isLocalThreadId, tabStateStorageKey]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (draftCacheHydratedKeyRef.current === draftCacheStorageKey) {
-      setDraftCacheReady(true);
-      return;
-    }
-    draftCacheHydratedKeyRef.current = draftCacheStorageKey;
-    setDraftCacheReady(false);
-    try {
-      const raw = window.localStorage.getItem(draftCacheStorageKey);
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      const cachedDrafts =
-        parsed?.draftValueByThread && typeof parsed.draftValueByThread === "object"
-          ? parsed.draftValueByThread
-          : {};
-      const cachedSystemDraftFlags =
-        parsed?.systemDraftUneditedByThread &&
-        typeof parsed.systemDraftUneditedByThread === "object"
-          ? parsed.systemDraftUneditedByThread
-          : {};
-      const cachedSignatures =
-        parsed?.signatureByThread && typeof parsed.signatureByThread === "object"
-          ? parsed.signatureByThread
-          : {};
-      setDraftValueByThread((prev) => ({
-        ...cachedDrafts,
-        ...prev,
-      }));
-      setSystemDraftUneditedByThread((prev) => ({
-        ...cachedSystemDraftFlags,
-        ...prev,
-      }));
-      setSignatureByThread((prev) => ({
-        ...cachedSignatures,
-        ...prev,
-      }));
-    } catch {
-      // noop
-    } finally {
-      setDraftCacheReady(true);
-    }
-  }, [draftCacheStorageKey]);
 
   useEffect(() => {
     if (selectedThreadId) return;
@@ -1597,51 +1546,6 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       };
     window.localStorage.setItem(tabStateStorageKey, JSON.stringify(payload));
   }, [isLocalThreadId, openThreadIds, selectedThreadId, tabStateReady, tabStateStorageKey]);
-
-  useEffect(() => {
-    if (!draftCacheReady) return;
-    if (typeof window === "undefined") return;
-
-    const persistedDrafts = Object.fromEntries(
-      Object.entries(draftValueByThread || {}).filter(
-        ([threadId, value]) => threadId && String(value || "").trim().length > 0
-      )
-    );
-    const persistedSystemFlags = Object.fromEntries(
-      Object.entries(systemDraftUneditedByThread || {}).filter(
-        ([threadId, isUnedited]) => threadId && Boolean(isUnedited)
-      )
-    );
-    const persistedSignatures = Object.fromEntries(
-      Object.entries(signatureByThread || {}).filter(
-        ([threadId, value]) => threadId && String(value || "").trim().length > 0
-      )
-    );
-    const hasData =
-      Object.keys(persistedDrafts).length > 0 ||
-      Object.keys(persistedSystemFlags).length > 0 ||
-      Object.keys(persistedSignatures).length > 0;
-
-    if (!hasData) {
-      window.localStorage.removeItem(draftCacheStorageKey);
-      return;
-    }
-
-    window.localStorage.setItem(
-      draftCacheStorageKey,
-      JSON.stringify({
-        draftValueByThread: persistedDrafts,
-        systemDraftUneditedByThread: persistedSystemFlags,
-        signatureByThread: persistedSignatures,
-      })
-    );
-  }, [
-    draftCacheReady,
-    draftCacheStorageKey,
-    draftValueByThread,
-    signatureByThread,
-    systemDraftUneditedByThread,
-  ]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -2238,6 +2142,45 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- manual refresh trigger from mark-received
     refreshPendingActionByThread[selectedThreadId],
   ]);
+
+  // Auto-supersede a pending action if a newer inbound message has arrived since it was created.
+  // This handles cases where the customer resolved their issue before the agent approved the action.
+  useEffect(() => {
+    const pendingAction = pendingOrderUpdateByThread[selectedThreadId];
+    if (!supabase || !selectedThreadId || !pendingAction?.id) return;
+    if (pendingAction.status !== "pending") return;
+    if (!pendingAction.createdAt) return;
+
+    const actionTime = new Date(pendingAction.createdAt).getTime();
+    if (!actionTime) return;
+
+    const latestInboundTime = threadMessages
+      .filter((m) => !isOutboundMessage(m, mailboxEmails))
+      .reduce((max, m) => {
+        const t = new Date(m.received_at || m.created_at || 0).getTime();
+        return t > max ? t : max;
+      }, 0);
+
+    if (latestInboundTime <= actionTime) return;
+
+    supabase
+      .from("thread_actions")
+      .update({ status: "superseded", updated_at: new Date().toISOString() })
+      .eq("id", pendingAction.id)
+      .then(({ error }) => {
+        if (error) return;
+        setPendingOrderUpdateByThread((prev) => {
+          const next = { ...prev };
+          delete next[selectedThreadId];
+          return next;
+        });
+        setOrderUpdateDecisionByThread((prev) => {
+          const next = { ...prev };
+          delete next[selectedThreadId];
+          return next;
+        });
+      });
+  }, [supabase, selectedThreadId, pendingOrderUpdateByThread, threadMessages, mailboxEmails]);
 
   useEffect(() => {
     if (!selectedThreadId) {

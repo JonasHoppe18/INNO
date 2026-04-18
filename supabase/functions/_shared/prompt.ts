@@ -8,7 +8,6 @@ type MailPromptOptions = {
   extraContext?: string | null;
   // Signatur kommer fra profiles.signatur i runtime og tilføjes automatisk efter model-output.
   signature?: string | null;
-  learnedStyle?: string | null;
   policies?: {
     policy_refund?: string;
     policy_shipping?: string;
@@ -84,7 +83,6 @@ export function buildMailPrompt({
   matchedSubjectNumber,
   customerName,
   extraContext,
-  learnedStyle,
   policies,
   policySummary: policySummaryInput,
   policyExcerpt: policyExcerptInput,
@@ -238,7 +236,6 @@ Undgå fyldord som “lige”, “bare”, “venligst”, medmindre det er natu
 Brug ikke tankestreg (–) eller bindestreg som pause i sætninger. Brug punktum i stedet.
 Sprogregel har altid forrang over persona- og tone-instruktioner.
 
-${learnedStyle ? `--- LEARNED STYLE (auto) ---\n${learnedStyle}\n` : ""}
 `;
 
   prompt += `

@@ -1422,17 +1422,6 @@ const extractPhrasesToAvoid = (text: string) => {
   return phrases.filter((phrase) => lower.includes(phrase));
 };
 
-const mergeBullets = (base: string[], extra: string[], max = 8) => {
-  const seen = new Set<string>();
-  const output: string[] = [];
-  [...base, ...extra].forEach((item) => {
-    const cleaned = item.replace(/^[-•]\s*/, "").trim();
-    if (!cleaned || seen.has(cleaned)) return;
-    seen.add(cleaned);
-    output.push(`- ${cleaned}`);
-  });
-  return output.slice(0, max);
-};
 
 const extractNameFromFromField = (value: string) => {
   const raw = String(value || "").trim();
@@ -2219,10 +2208,9 @@ async function persistThreadActions({
   if (!supabase || !ownerUserId || !threadId || !results.length) return;
   const nowIso = new Date().toISOString();
 
-  // Supersede any stale pending actions before writing new ones.
-  // This prevents old proposals from re-appearing when a new draft is generated.
-  const hasPendingIncoming = results.some((r) => r?.status === "pending_approval");
-  if (hasPendingIncoming) {
+  // Always supersede stale pending actions when a new draft is generated,
+  // even if the new run produces no new actions (e.g. customer resolved the issue).
+  {
     let supersedePendingQuery = supabase
       .from("thread_actions")
       .update({ status: "superseded", updated_at: nowIso })
@@ -2362,27 +2350,6 @@ async function upsertRejectedReturnCase(options: {
   });
 }
 
-async function fetchLearningProfile(
-  mailboxId: string | null,
-  userId: string | null,
-): Promise<{ enabled: boolean; styleRules: string[] }> {
-  if (!supabase || !mailboxId || !userId) return { enabled: false, styleRules: [] };
-  const { data, error } = await supabase
-    .from("mail_learning_profiles")
-    .select("enabled, style_rules")
-    .eq("mailbox_id", mailboxId)
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (error) {
-    console.warn("generate-draft-unified: learning profile fetch failed", error.message);
-    return { enabled: false, styleRules: [] };
-  }
-  const styleRules = String(data?.style_rules || "")
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-  return { enabled: data?.enabled !== false, styleRules };
-}
 
 async function fetchThreadHistory(
   threadId: string | null,
@@ -2539,60 +2506,6 @@ function extractQuotedHistoryFallback(
   }].slice(-limit);
 }
 
-async function fetchMailboxHistory(mailboxId: string | null, userId: string | null) {
-  if (!supabase || !mailboxId || !userId) return [];
-  const { data, error } = await supabase
-    .from("mail_messages")
-    .select("body_text, body_html, from_me, sent_at, received_at, created_at")
-    .eq("mailbox_id", mailboxId)
-    .eq("user_id", userId)
-    .order("sent_at", { ascending: false })
-    .order("created_at", { ascending: false })
-    .limit(20);
-  if (error) {
-    console.warn("generate-draft-unified: mailbox history fetch failed", error.message);
-    return [];
-  }
-  return Array.isArray(data) ? data : [];
-}
-
-function buildStyleHeuristics(history: Array<any>): string[] {
-  if (!history.length) return [];
-  const sent = history.filter((msg) => msg?.from_me && msg?.sent_at);
-  const samples = (sent.length ? sent : history)
-    .map((msg) => msg?.body_text || stripHtmlSimple(msg?.body_html || ""))
-    .map(maskPii)
-    .filter(Boolean);
-  if (!samples.length) return [];
-
-  const avgWords =
-    samples.reduce((sum, text) => sum + wordCount(text), 0) / samples.length;
-
-  const greetings = samples.map(extractGreeting).filter(Boolean) as string[];
-  const signoffs = samples.map(extractSignoff).filter(Boolean) as string[];
-  const avoidPhrases = samples.flatMap(extractPhrasesToAvoid);
-
-  const topGreeting = greetings.sort(
-    (a, b) => greetings.filter((g) => g === b).length - greetings.filter((g) => g === a).length
-  )[0];
-  const topSignoff = signoffs.sort(
-    (a, b) => signoffs.filter((g) => g === b).length - signoffs.filter((g) => g === a).length
-  )[0];
-
-  const language = detectLanguage(samples);
-
-  const bullets: string[] = [];
-  if (Number.isFinite(avgWords)) {
-    const rounded = Math.round(avgWords / 5) * 5;
-    bullets.push(`Keep replies around ${rounded} words on average.`);
-  }
-  if (topGreeting) bullets.push(`Typical greeting: "${topGreeting}".`);
-  if (topSignoff) bullets.push(`Typical sign-off: "${topSignoff}".`);
-  if (language) bullets.push(`Preferred language: ${language}.`);
-  if (avoidPhrases.length) bullets.push("Avoid filler phrases (e.g., “hope this email finds you well”).");
-
-  return bullets;
-}
 
 // Find shop scope så vi kan læse workspace-shared konfiguration.
 async function resolveShopScope(shopId: string): Promise<ShopScope> {
@@ -4716,16 +4629,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    let learnedStyle = "";
-    const learningProfile = await fetchLearningProfile(internalThread.mailboxId, ownerUserId);
-    if (context.automation?.historic_inbox_access && learningProfile.enabled) {
-      const history = await fetchMailboxHistory(internalThread.mailboxId, ownerUserId);
-      const heuristicBullets = buildStyleHeuristics(history);
-      learnedStyle = mergeBullets(heuristicBullets, learningProfile.styleRules).join("\n");
-    } else if (learningProfile.enabled && learningProfile.styleRules.length) {
-      learnedStyle = mergeBullets([], learningProfile.styleRules).join("\n");
-    }
-
     const rawOrderFirstName = extractOrderFirstName(selectedOrder);
     // If the order's first name looks like the email username (e.g. "Jakoblund" from "jakoblund@gmail.com"),
     // it was likely auto-populated from the email address — prefer the email-extracted name instead.
@@ -4822,16 +4725,6 @@ Deno.serve(async (req) => {
             title: item?.title ?? null,
             similarity: Number(item?.similarity ?? item?.score ?? 0) || null,
           })),
-        },
-        internalThread.threadId,
-      );
-      appendStructuredArtifactLog(
-        reasoningLogs,
-        "v2_style_context",
-        {
-          artifact_type: "style_context",
-          learning_enabled: Boolean(learningProfile.enabled),
-          learned_style_present: Boolean(learnedStyle),
         },
         internalThread.threadId,
       );
@@ -5051,7 +4944,6 @@ Deno.serve(async (req) => {
         .filter(Boolean)
         .join("\n"),
       signature: context.profile.signature?.trim() || "",
-      learnedStyle: learnedStyle || null,
       policies: context.policies,
       policySummary: policySummaryText,
       policyExcerpt: policyExcerptText,
@@ -6050,7 +5942,6 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
           policyExcerpt: suppressPolicyForReply ? "" : policyExcerptText,
           productSummary: productSummaryText,
           generalKnowledgeSummary: allowGeneralKnowledgeForReply ? knowledgeSummaryText : "",
-          learnedStyle,
           personaInstructions: context.persona.instructions,
           languageHint: replyStrategyArtifact.language || caseAssessment?.language || null,
           threadHistory: threadHistory.length > 0 ? threadHistory : null,

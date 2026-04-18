@@ -1,37 +1,18 @@
 "use client";
 
-import { useMemo } from "react";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, BookOpen } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useAgentAutomation } from "@/hooks/useAgentAutomation";
 
-const EMAIL_GOAL = 20;
-const CONVERSATION_GOAL = 5;
-
-export function LearningCard({ sentCount = 0, conversationCount = 0 }) {
+export function LearningCard({ exampleCount = 0 }) {
   const { settings, loading, saving, save } = useAgentAutomation();
 
   const isEnabled = Boolean(settings?.learnFromEdits);
-  const draftDestination = settings?.draftDestination || "sona_inbox";
-  const requiresSonaInbox = draftDestination !== "sona_inbox";
-  const isUnlocked = sentCount >= EMAIL_GOAL;
-
-  const statusLabel = useMemo(
-    () => (isEnabled ? "Active" : "Inactive"),
-    [isEnabled]
-  );
 
   const handleToggle = async () => {
-    const next = !isEnabled;
-    await save({ learnFromEdits: next });
+    await save({ learnFromEdits: !isEnabled });
   };
-
-  const emailProgress = Math.min(100, Math.round((sentCount / EMAIL_GOAL) * 100));
-  const conversationProgress = Math.min(
-    100,
-    Math.round((conversationCount / CONVERSATION_GOAL) * 100)
-  );
 
   return (
     <Card className="relative overflow-hidden border border-indigo-300/60 bg-gradient-to-br from-[#2f2a6f] via-[#43358a] to-[#5a4bb3] shadow-sm">
@@ -40,68 +21,47 @@ export function LearningCard({ sentCount = 0, conversationCount = 0 }) {
           <div className="space-y-2">
             <div className="text-sm font-semibold text-white">AI Self Learning</div>
             <p className="max-w-xl text-sm text-indigo-100/80">
-              Learn from your edits in the Sona inbox to match your tone, shorten replies, and
-              keep responses consistent.
+              Sona saves the replies you send and uses them as a reference the next time a similar case comes in.
             </p>
-            {requiresSonaInbox ? (
-              <p className="text-xs text-amber-200">
-                Edit-learning requires Sona inbox. Historic learning still works.
-              </p>
-            ) : (
+            {isEnabled ? (
               <div className="flex items-center gap-2 text-xs text-emerald-200">
                 <CheckCircle2 className="h-3.5 w-3.5" />
-                Ready to learn from edits.
+                Active — new replies are saved automatically.
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-xs text-indigo-100/60">
+                Disabled — replies are not being saved.
               </div>
             )}
           </div>
-
           <div className="flex items-center gap-4" />
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="rounded-xl border border-white/10 bg-white/10 p-4">
-            <div className="flex items-center justify-between text-xs font-semibold text-indigo-100/80">
-              <span>Email volume</span>
-              <span className="text-white/90">
-                {sentCount} / {EMAIL_GOAL} emails
-              </span>
-            </div>
-            <div className="mt-3 h-2.5 w-full rounded-full bg-indigo-900/50">
-              <div
-                className="h-2.5 rounded-full bg-gradient-to-r from-fuchsia-400 to-indigo-300"
-                style={{ width: `${emailProgress}%` }}
-              />
-            </div>
-          </div>
-          <div className="rounded-xl border border-white/10 bg-white/10 p-4">
-            <div className="flex items-center justify-between text-xs font-semibold text-indigo-100/80">
-              <span>Conversations learned</span>
-              <span className="text-white/90">
-                {conversationCount} / {CONVERSATION_GOAL} conversations
-              </span>
-            </div>
-            <div className="mt-3 h-2.5 w-full rounded-full bg-indigo-900/50">
-              <div
-                className="h-2.5 rounded-full bg-gradient-to-r from-emerald-300 to-teal-300"
-                style={{ width: `${conversationProgress}%` }}
-              />
+        <div className="rounded-xl border border-white/10 bg-white/10 p-4">
+          <div className="flex items-center gap-3">
+            <BookOpen className="h-4 w-4 text-indigo-200/70 shrink-0" />
+            <div className="flex-1">
+              <div className="flex items-center justify-between text-xs font-semibold text-indigo-100/80">
+                <span>Saved reply examples</span>
+                <span className="text-white/90">{exampleCount}</span>
+              </div>
+              <p className="mt-1 text-xs text-indigo-100/50">
+                {exampleCount === 0
+                  ? "No examples yet — send the first reply to get started."
+                  : exampleCount === 1
+                  ? "1 reply saved. Sona will use it as a reference."
+                  : `${exampleCount} replies saved. Sona uses them as reference.`}
+              </p>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center justify-between text-xs text-indigo-100/80">
-          {!isUnlocked ? (
-            <span>
-              Locked – needs {Math.max(0, EMAIL_GOAL - sentCount)} sent emails.
-            </span>
-          ) : (
-            <span>&nbsp;</span>
-          )}
+        <div className="flex items-center justify-end">
           <Button
             type="button"
             size="sm"
             onClick={handleToggle}
-            disabled={loading || saving || !isUnlocked}
+            disabled={loading || saving}
             className="bg-white/10 text-white hover:bg-white/20"
           >
             {isEnabled ? "Self-learning enabled ✓" : "Enable self-learning"}

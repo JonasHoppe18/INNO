@@ -22,12 +22,14 @@ export function buildReturnDraft(category: EmailCategory): WorkflowRoute {
       "Follow STRUCTURED RETURN SETTINGS exactly. If return_shipping_mode is customer_paid: never promise a prepaid return label or say we cover return shipping costs.",
       "NEVER present an order delivery tracking URL as a return label URL. These are entirely different things.",
       "Do not suggest order changes (address update, shipping method) in return workflow.",
+      "NEVER propose a refund_order action during a return request. Refunds are processed AFTER the item is physically received back — not at the time the return is initiated.",
     ],
     blockedActionTypes: [
       "update_shipping_address",
       "change_shipping_method",
       "hold_or_release_fulfillment",
       "edit_line_items",
+      "refund_order",
     ],
     forceReturnDetailsFlow: true,
   };

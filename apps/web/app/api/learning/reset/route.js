@@ -46,35 +46,28 @@ export async function POST(request) {
     return NextResponse.json({ error: "Supabase profile was not found." }, { status: 404 });
   }
 
-  let mailboxQuery = applyScope(
-    serviceClient.from("mail_accounts").select("id"),
+  // Resolve shop_id for the current user/workspace
+  let shopQuery = applyScope(
+    serviceClient.from("mail_accounts").select("shop_id").not("shop_id", "is", null).limit(1),
     scope
   );
+  const { data: accountRow } = await shopQuery.maybeSingle();
+  const shopId = accountRow?.shop_id || null;
 
-  if (mailboxId) {
-    mailboxQuery = mailboxQuery.eq("id", mailboxId);
+  if (!shopId) {
+    return NextResponse.json({ ok: true, deleted: 0 });
   }
 
-  const { data: mailboxes, error: mailboxError } = await mailboxQuery;
-  if (mailboxError) {
-    return NextResponse.json({ error: mailboxError.message }, { status: 500 });
-  }
+  const { error, count } = await serviceClient
+    .from("agent_knowledge")
+    .delete({ count: "exact" })
+    .eq("shop_id", shopId)
+    .eq("source_type", "ticket")
+    .eq("source_provider", "sent_reply");
 
-  const scopedMailboxIds = (mailboxes ?? []).map((row) => row.id).filter(Boolean);
-  if (!scopedMailboxIds.length) {
-    return NextResponse.json({ ok: true, updated: 0 });
-  }
-
-  let query = serviceClient
-    .from("mail_learning_profiles")
-    .update({ style_rules: null, updated_at: new Date().toISOString() })
-    .eq("user_id", scope.supabaseUserId)
-    .in("mailbox_id", scopedMailboxIds);
-
-  const { error, data } = await query.select("mailbox_id");
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, updated: (data ?? []).length });
+  return NextResponse.json({ ok: true, deleted: count ?? 0 });
 }

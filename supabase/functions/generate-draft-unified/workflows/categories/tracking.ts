@@ -26,11 +26,10 @@ export function buildTrackingDraft(category: EmailCategory): WorkflowRoute {
       "- Undgå vage formuleringer som 'vi undersøger det'\n\n" +
       "SCENARIE C — Ordre ikke afsendt endnu (fulfillment=unfulfilled eller partial):\n" +
       "Brug DENNE STRUKTUR præcist — tilpas kun de konkrete detaljer:\n" +
-      "1. ÅBNING (obligatorisk ved første svar i tråden): Start med 'Tak for din besked.' eller 'Tak fordi du skriver.' — kort og venlig.\n" +
-      "2. POSITIV framing — ALDRIG start med negativt: Skriv IKKE 'Ordren er endnu ikke afsendt'. Skriv I STEDET: 'Din ordre klargøres til afsendelse' eller 'Vi er ved at klargøre din ordre.'\n" +
-      "3. Oplys afsendelsesvinduet FRA BUTIKKENS FRAGPOLITIK (se POLITIKKER i kontekst). Eksempel: 'Vi sender normalt inden for 1-3 hverdage fra vores lager.' Brug det PRÆCISE tal fra politikken.\n" +
-      "4. Afslut med: 'Du modtager automatisk en sporingsmail med trackingnummer, når pakken er afsendt.'\n" +
-      "5. AFSLUTNINGSHILSEN: Afslut med 'God dag!' på en ny linje.\n" +
+      "1. POSITIV framing — ALDRIG start med negativt: Skriv IKKE 'Ordren er endnu ikke afsendt'. Skriv I STEDET: 'Din ordre klargøres til afsendelse' eller 'Vi er ved at klargøre din ordre.'\n" +
+      "2. Oplys afsendelsesvinduet FRA BUTIKKENS FRAGPOLITIK (se POLITIKKER i kontekst). Eksempel: 'Vi sender normalt inden for 1-3 hverdage fra vores lager.' Brug det PRÆCISE tal fra politikken.\n" +
+      "3. Afslut med: 'Du modtager automatisk en sporingsmail med trackingnummer, når pakken er afsendt.'\n" +
+      "4. AFSLUTNINGSHILSEN: Afslut med 'God dag!' på en ny linje.\n" +
       "VIGTIGT: 'Du modtager en sporingsmail' er en korrekt formulering — brug den selvom brand voice ellers fraråder 'Du vil modtage en bekræftelse'.\n" +
       "VIGTIGT: Nævn ALDRIG bare 'vi arbejder på det' eller 'vi sender så hurtigt som muligt' uden at inkludere det konkrete tidsvindue fra fragpolitikken.\n" +
       "Undgå at love en specifik leveringsdato medmindre den fremgår eksplicit af ordredata.\n\n" +
