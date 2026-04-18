@@ -984,7 +984,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
             ...incomingThread,
           };
         });
-        return found ? updated : [...updated, incomingThread];
+        return found ? updated : [incomingThread, ...updated];
       });
     };
 

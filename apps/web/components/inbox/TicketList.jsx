@@ -31,11 +31,39 @@ export function TicketList({
     (threads || []).map((thread) => ({ thread, isExiting: false }))
   );
   const exitTimersRef = useRef(new Map());
+  const prevThreadIdsRef = useRef(null);
+  const [newThreadIds, setNewThreadIds] = useState(new Set());
+  const newTimersRef = useRef(new Map());
   const statusFilters = hideSolvedFilter
     ? STATUS_FILTERS.filter((option) => option !== "Solved")
     : STATUS_FILTERS;
 
   useEffect(() => {
+    const currentIds = new Set((threads || []).map((t) => String(t?.id || "")).filter(Boolean));
+    if (prevThreadIdsRef.current !== null) {
+      const addedIds = [...currentIds].filter((id) => !prevThreadIdsRef.current.has(id));
+      if (addedIds.length > 0) {
+        setNewThreadIds((prev) => {
+          const next = new Set(prev);
+          addedIds.forEach((id) => next.add(id));
+          return next;
+        });
+        addedIds.forEach((id) => {
+          if (newTimersRef.current.has(id)) return;
+          const timer = setTimeout(() => {
+            setNewThreadIds((prev) => {
+              const next = new Set(prev);
+              next.delete(id);
+              return next;
+            });
+            newTimersRef.current.delete(id);
+          }, 800);
+          newTimersRef.current.set(id, timer);
+        });
+      }
+    }
+    prevThreadIdsRef.current = currentIds;
+
     setRenderedThreads((prev) => {
       const nextById = new Map((threads || []).map((thread) => [String(thread?.id || ""), thread]));
       const merged = [];
@@ -85,6 +113,8 @@ export function TicketList({
     () => () => {
       exitTimersRef.current.forEach((timerId) => clearTimeout(timerId));
       exitTimersRef.current.clear();
+      newTimersRef.current.forEach((timerId) => clearTimeout(timerId));
+      newTimersRef.current.clear();
     },
     []
   );
@@ -152,6 +182,7 @@ export function TicketList({
                   assignee={uiState?.assignee}
                   priority={uiState?.priority}
                   isExiting={isExiting}
+                  isNew={newThreadIds.has(String(thread.id))}
                   onSelect={(options) => onSelectThread(thread.id, options)}
                   onContextMenu={(event) => {
                     event.preventDefault();
