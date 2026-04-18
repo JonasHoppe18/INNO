@@ -38,23 +38,20 @@ export function TicketList({
   useEffect(() => {
     setRenderedThreads((prev) => {
       const nextById = new Map((threads || []).map((thread) => [String(thread?.id || ""), thread]));
-      const prevIds = new Set(prev.map((item) => String(item?.thread?.id || "")));
       const merged = [];
 
-      prev.forEach((item) => {
-        const id = String(item?.thread?.id || "");
-        if (!id) return;
-        if (nextById.has(id)) {
-          merged.push({ thread: nextById.get(id), isExiting: false });
-        } else {
-          merged.push({ thread: item.thread, isExiting: true });
-        }
-      });
-
+      // Render threads in the sorted order from the parent (newest first).
       (threads || []).forEach((thread) => {
         const id = String(thread?.id || "");
-        if (!id || prevIds.has(id)) return;
+        if (!id) return;
         merged.push({ thread, isExiting: false });
+      });
+
+      // Append threads that are leaving so their exit animation can finish.
+      prev.forEach((item) => {
+        const id = String(item?.thread?.id || "");
+        if (!id || nextById.has(id)) return;
+        merged.push({ thread: item.thread, isExiting: true });
       });
 
       return merged;
