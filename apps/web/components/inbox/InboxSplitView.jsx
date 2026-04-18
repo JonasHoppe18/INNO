@@ -863,14 +863,16 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     setLiveAttachments(Array.isArray(attachments) ? attachments : []);
   }, [attachments]);
 
+  const refreshInboxDataRef = useRef(null);
+
   useEffect(() => {
     let active = true;
     let polling = false;
     let timerId = null;
     let consecutiveFailures = 0;
 
-    const BASE_POLL_MS = 60_000;
-    const HIDDEN_POLL_MS = 180_000;
+    const BASE_POLL_MS = 15_000;
+    const HIDDEN_POLL_MS = 60_000;
     const MAX_BACKOFF_MS = 60_000;
 
     const scheduleNext = (ms) => {
@@ -950,8 +952,15 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       window.addEventListener("focus", onFocus);
     }
 
+    // Expose refresh so realtime handlers can trigger an immediate poll
+    refreshInboxDataRef.current = () => {
+      if (!active || polling) return;
+      scheduleNext(0);
+    };
+
     return () => {
       active = false;
+      refreshInboxDataRef.current = null;
       if (timerId) clearTimeout(timerId);
       if (typeof window !== "undefined") {
         window.removeEventListener("focus", onFocus);
@@ -986,6 +995,8 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         { event: "INSERT", schema: "public", table: "mail_threads" },
         (payload) => {
           upsertThread(payload?.new);
+          // Trigger an immediate poll so the full thread list (with correct sorting/scope) refreshes
+          refreshInboxDataRef.current?.();
         }
       )
       .on(
