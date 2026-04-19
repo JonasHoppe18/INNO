@@ -2511,7 +2511,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     }
   }, [selectedThreadId, isLocalThreadId, markReturnReceivedLoadingByThread]);
 
-  const handleGenerateDraft = useCallback(async () => {
+  const handleGenerateDraft = useCallback(async (replyLanguage) => {
     if (!selectedThreadId || isLocalThreadId(selectedThreadId)) return;
     if (manualDraftGeneratingByThread[selectedThreadId]) return;
     const threadId = selectedThreadId;
@@ -2534,6 +2534,8 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     try {
       const res = await fetch(`/api/threads/${threadId}/generate-draft`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(replyLanguage ? { reply_language: replyLanguage } : {}),
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {

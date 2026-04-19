@@ -208,6 +208,11 @@ export async function POST(_request, { params }) {
   const fromName = String(getEffectiveSenderName(inboundMessage) || "").trim();
   const fromRaw = fromName && fromEmail ? `${fromName} <${fromEmail}>` : fromEmail || fromName;
 
+  const body = await _request.json().catch(() => ({}));
+  const replyLanguage = typeof body?.reply_language === "string"
+    ? body.reply_language.trim().toLowerCase().slice(0, 2)
+    : null;
+
   const endpoint = `${SUPABASE_URL}/functions/v1/generate-draft-unified`;
   const response = await fetch(endpoint, {
     method: "POST",
@@ -220,6 +225,7 @@ export async function POST(_request, { params }) {
       shop_id: effectiveMailbox.shop_id,
       provider,
       force_process: true,
+      ...(replyLanguage ? { reply_language: replyLanguage } : {}),
       email_data: {
         messageId: inboundMessage.provider_message_id || null,
         threadId: provider === "smtp" ? thread.id : thread.provider_thread_id || thread.id,
