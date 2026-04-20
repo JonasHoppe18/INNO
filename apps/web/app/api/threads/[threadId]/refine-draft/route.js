@@ -74,14 +74,11 @@ export async function POST(request, { params }) {
     return NextResponse.json({ error: "Thread not found." }, { status: 404 });
   }
 
-  const { data: mailbox, error: mailboxError } = await applyScope(
-    serviceClient
-      .from("mail_accounts")
-      .select("shop_id")
-      .eq("id", thread.mailbox_id)
-      .maybeSingle(),
-    scope
-  );
+  const { data: mailbox, error: mailboxError } = await serviceClient
+    .from("mail_accounts")
+    .select("shop_id")
+    .eq("id", thread.mailbox_id)
+    .maybeSingle();
   if (mailboxError || !mailbox?.shop_id) {
     return NextResponse.json(
       { error: "This mailbox is not connected to a Shopify shop." },

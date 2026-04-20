@@ -2755,10 +2755,14 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       }
       const refined = String(payload?.draft || "").trim();
       if (refined) {
+        if (selectedThreadIdRef.current === threadId) {
+          setDraftValue(refined);
+        }
         setDraftValueByThread((prev) => ({ ...prev, [threadId]: refined }));
       }
     } catch (err) {
       console.error("[handleRefineDraft]", err);
+      toast.error(err instanceof Error ? err.message : "Could not refine draft.");
     } finally {
       setRefineDraftLoadingByThread((prev) => {
         const next = { ...prev };

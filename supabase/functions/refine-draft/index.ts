@@ -72,7 +72,7 @@ Deno.serve(async (req) => {
     },
     body: JSON.stringify({
       model: "gpt-4o-mini",
-      max_tokens: 800,
+      max_tokens: 1600,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userMessage },
