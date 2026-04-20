@@ -254,7 +254,12 @@ async function upsertCachedTranslation({
   );
 }
 
-async function buildConversationTranslation({ serviceClient, workspaceId, threadId, targetLanguage }) {
+async function buildConversationTranslation({
+  serviceClient,
+  workspaceId,
+  threadId,
+  targetLanguage,
+}) {
   const { data: rows, error } = await serviceClient
     .from("mail_messages")
     .select(
@@ -301,10 +306,11 @@ async function buildConversationTranslation({ serviceClient, workspaceId, thread
     targetLanguage,
     sourceHash,
   });
+  const cachedLooksFallback = isLikelyFallbackConversationCache(cached, sourceItems, targetLanguage);
   if (
     cached?.items &&
     Array.isArray(cached.items) &&
-    !isLikelyFallbackConversationCache(cached, sourceItems, targetLanguage)
+    !cachedLooksFallback
   ) {
     return cached;
   }
@@ -408,7 +414,12 @@ async function getCurrentDraftSource(serviceClient, threadId) {
   };
 }
 
-async function buildDraftTranslation({ serviceClient, workspaceId, threadId, targetLanguage }) {
+async function buildDraftTranslation({
+  serviceClient,
+  workspaceId,
+  threadId,
+  targetLanguage,
+}) {
   const draftSource = await getCurrentDraftSource(serviceClient, threadId);
   if (!draftSource?.text) {
     return null;
@@ -428,9 +439,10 @@ async function buildDraftTranslation({ serviceClient, workspaceId, threadId, tar
     targetLanguage,
     sourceHash,
   });
+  const cachedLooksFallback = isLikelyFallbackDraftCache(cached, draftSource.text, targetLanguage);
   if (
     cached?.translatedText &&
-    !isLikelyFallbackDraftCache(cached, draftSource.text, targetLanguage)
+    !cachedLooksFallback
   ) {
     return cached;
   }
@@ -529,11 +541,12 @@ export async function GET(request, { params }) {
         (item) => item.role === "customer" && item.originalLanguage && item.originalLanguage !== "unknown"
       );
       if (firstCustomerItem?.originalLanguage) {
-        await serviceClient
-          .from("mail_threads")
-          .update({ customer_language: firstCustomerItem.originalLanguage })
-          .eq("id", threadId)
-          .catch(() => null);
+        try {
+          await serviceClient
+            .from("mail_threads")
+            .update({ customer_language: firstCustomerItem.originalLanguage })
+            .eq("id", threadId);
+        } catch {}
       }
     }
 
