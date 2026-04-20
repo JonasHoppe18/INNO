@@ -9,6 +9,7 @@ import {
   PenLine,
   Zap,
   Globe,
+  Sparkles,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -168,6 +169,8 @@ export function Composer({
   isGeneratingDraft = false,
   detectedLanguage = null,
   onReplyLanguageChange = null,
+  onRefineDraft = null,
+  isRefiningDraft = false,
 }) {
   const [replyLanguage, setReplyLanguage] = useState(detectedLanguage || null);
   const [languagePickerOpen, setLanguagePickerOpen] = useState(false);
@@ -181,7 +184,16 @@ export function Composer({
   const MAX_COMPOSER_VIEWPORT_RATIO = 0.8;
   const isNote = mode === "note";
   const isForward = mode === "forward";
-  const showDraftLoadingState = !isNote && isDraftLoading;
+  const showDraftLoadingState = !isNote && (isDraftLoading || isRefiningDraft);
+
+  const handleRefineSubmit = async () => {
+    const prompt = refinePrompt.trim();
+    if (!prompt || !onRefineDraft) return;
+    setRefineError("");
+    setRefineOpen(false);
+    setRefinePrompt("");
+    await onRefineDraft(prompt);
+  };
   const replyEditorMinHeightClassName = "min-h-[72px]";
   const loadingStateMinHeightClassName = "min-h-[120px]";
   const editorBodyMinHeightClassName = isNote ? "min-h-[96px]" : "min-h-[112px]";
@@ -226,6 +238,9 @@ export function Composer({
   const [savedReplies, setSavedReplies] = useState([]);
   const [savedRepliesQuery, setSavedRepliesQuery] = useState("");
   const [showSignatureEditor, setShowSignatureEditor] = useState(false);
+  const [refineOpen, setRefineOpen] = useState(false);
+  const [refinePrompt, setRefinePrompt] = useState("");
+  const [refineError, setRefineError] = useState("");
   const [composerHeightPx, setComposerHeightPx] = useState(MIN_COMPOSER_HEIGHT_PX);
   const composerContainerRef = useRef(null);
   const resizeStateRef = useRef(null);
@@ -357,6 +372,13 @@ export function Composer({
       setSelectedMentionIds([]);
     }
   }, [isNote, value]);
+
+  useEffect(() => {
+    if (isDraftLoading || isRefiningDraft) {
+      setRefineOpen(false);
+      setRefinePrompt("");
+    }
+  }, [isDraftLoading, isRefiningDraft]);
 
   const addRecipient = (valueToAdd, setter, inputSetter) => {
     const trimmed = valueToAdd.trim();
@@ -798,6 +820,12 @@ export function Composer({
 
   return (
     <div className="flex-none bg-transparent px-3 py-1.5">
+      <style>{`
+        @keyframes refine-slide-in {
+          from { opacity: 0; transform: translateY(-6px); }
+          to   { opacity: 1; transform: translateY(0);    }
+        }
+      `}</style>
       <div
         ref={composerContainerRef}
         className={`mx-auto flex w-full max-w-[900px] flex-col overflow-hidden rounded-3xl border border-gray-200/80 bg-white shadow-sm ${
@@ -983,6 +1011,47 @@ export function Composer({
         ) : null}
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           <div className="min-h-0 flex-1 overflow-y-auto bg-white px-3 py-2">
+            {refineOpen && !isNote ? (
+              <div
+                className="mb-2 flex flex-col gap-1.5 rounded-xl border border-violet-100 bg-violet-50/60 px-3 py-2"
+                style={{
+                  animation: "refine-slide-in 180ms cubic-bezier(0.23,1,0.32,1) both",
+                }}
+              >
+                <div className="flex items-center gap-2">
+                  <input
+                    autoFocus
+                    type="text"
+                    value={refinePrompt}
+                    onChange={(e) => setRefinePrompt(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        handleRefineSubmit();
+                      }
+                      if (e.key === "Escape") {
+                        setRefineOpen(false);
+                        setRefineError("");
+                      }
+                    }}
+                    placeholder="Add instruction to Sona..."
+                    className="flex-1 bg-transparent text-[13px] text-gray-800 outline-none placeholder:text-gray-400"
+                  />
+                  <button
+                    type="button"
+                    disabled={!refinePrompt.trim()}
+                    onClick={handleRefineSubmit}
+                    className="flex h-6 w-6 items-center justify-center rounded-full bg-violet-600 text-white disabled:opacity-40 hover:bg-violet-700 transition-colors"
+                    aria-label="Submit refinement"
+                  >
+                    <Send className="h-3 w-3" />
+                  </button>
+                </div>
+                {refineError ? (
+                  <p className="text-[11px] text-red-500">{refineError}</p>
+                ) : null}
+              </div>
+            ) : null}
             {isNote ? (
               <Textarea
                 ref={textareaRef}
@@ -1254,6 +1323,23 @@ export function Composer({
                       className="rounded-md border border-gray-200 bg-white px-2.5 py-1 text-[12px] font-medium text-gray-600 hover:border-gray-300 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {isGeneratingDraft ? "Generating..." : "Generate draft"}
+                    </button>
+                  ) : null}
+                  {typeof onRefineDraft === "function" && String(value || "").trim() ? (
+                    <button
+                      type="button"
+                      disabled={disabled || showDraftLoadingState || isRefiningDraft || isGeneratingDraft}
+                      onClick={() => {
+                        setRefineOpen((prev) => !prev);
+                        setRefineError("");
+                      }}
+                      aria-label="Refine draft with AI"
+                      title="Refine draft"
+                      className={refineOpen
+                        ? "rounded-md bg-violet-50 p-1.5 text-violet-600 hover:bg-violet-100"
+                        : "rounded-md p-1.5 text-gray-500 hover:bg-white hover:text-gray-700"}
+                    >
+                      <Sparkles className="h-4 w-4" />
                     </button>
                   ) : null}
                 </>
