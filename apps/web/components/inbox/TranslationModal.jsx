@@ -27,7 +27,10 @@ function roleLabel(role) {
 
 export function TranslationModal({ open, onOpenChange, threadId, translationData }) {
   const loading = translationData?.loading ?? false;
-  const conversationItems = Array.isArray(translationData?.items) ? translationData.items : [];
+  const conversationItems = useMemo(
+    () => (Array.isArray(translationData?.items) ? translationData.items : []),
+    [translationData?.items]
+  );
   const translatedDraftText = asString(translationData?.draft?.translatedText);
   const error = (!loading && translationData !== null && conversationItems.length === 0 && !translatedDraftText) ? "Could not load translation." : "";
 

@@ -81,6 +81,7 @@ function pickLanguageCode(value, fallback = "unknown") {
 
 function fallbackConversationPayload(items = []) {
   return {
+    isFallback: true,
     sourceLanguageSummary: [],
     items: items.map((item) => ({
       id: item.id,
@@ -95,9 +96,37 @@ function fallbackDraftPayload(sourceText = "") {
   const text = asString(sourceText);
   if (!text) return null;
   return {
+    isFallback: true,
     originalLanguage: "unknown",
     translatedText: text,
   };
+}
+
+function isLikelyFallbackConversationCache(cached, sourceItems = [], targetLanguage = "en") {
+  if (!cached || !Array.isArray(cached.items) || targetLanguage === "en") return false;
+  if (cached.isFallback) return true;
+
+  const sourceById = new Map((sourceItems || []).map((item) => [String(item?.id || ""), item]));
+  const cachedItems = cached.items || [];
+  if (!cachedItems.length) return false;
+
+  return cachedItems.every((item) => {
+    const id = String(item?.id || "");
+    const source = sourceById.get(id);
+    if (!source) return false;
+    const originalLanguage = pickLanguageCode(item?.originalLanguage);
+    const translatedText = asString(item?.translatedText);
+    return originalLanguage === "unknown" && translatedText === asString(source.text);
+  });
+}
+
+function isLikelyFallbackDraftCache(cached, sourceText = "", targetLanguage = "en") {
+  if (!cached || targetLanguage === "en") return false;
+  if (cached.isFallback) return true;
+  return (
+    pickLanguageCode(cached?.originalLanguage) === "unknown" &&
+    asString(cached?.translatedText) === asString(sourceText)
+  );
 }
 
 async function callOpenAITranslation({ targetLanguage, targetLanguageLabel, payloadType, items }) {
@@ -272,7 +301,11 @@ async function buildConversationTranslation({ serviceClient, workspaceId, thread
     targetLanguage,
     sourceHash,
   });
-  if (cached?.items && Array.isArray(cached.items)) {
+  if (
+    cached?.items &&
+    Array.isArray(cached.items) &&
+    !isLikelyFallbackConversationCache(cached, sourceItems, targetLanguage)
+  ) {
     return cached;
   }
 
@@ -314,6 +347,7 @@ async function buildConversationTranslation({ serviceClient, workspaceId, thread
   const payload =
     translatedItems && translatedItems.length
       ? {
+          isFallback: false,
           sourceLanguageSummary,
           items: normalizedItems,
         }
@@ -394,7 +428,10 @@ async function buildDraftTranslation({ serviceClient, workspaceId, threadId, tar
     targetLanguage,
     sourceHash,
   });
-  if (cached?.translatedText) {
+  if (
+    cached?.translatedText &&
+    !isLikelyFallbackDraftCache(cached, draftSource.text, targetLanguage)
+  ) {
     return cached;
   }
 
@@ -413,6 +450,7 @@ async function buildDraftTranslation({ serviceClient, workspaceId, threadId, tar
   const translated = Array.isArray(translatedItems) ? translatedItems[0] : null;
   const payload = translated
     ? {
+        isFallback: false,
         originalLanguage: pickLanguageCode(translated?.originalLanguage),
         translatedText: asString(translated?.translatedText) || draftSource.text,
       }

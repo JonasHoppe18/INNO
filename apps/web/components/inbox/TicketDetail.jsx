@@ -407,7 +407,9 @@ export function TicketDetail({
                   attachments={messageAttachments}
                   outboundSenderName={currentUserName}
                   translatedText={
-                    (Array.isArray(translationItems) ? translationItems : []).find((item) => item.id === message.id)?.translatedText || null
+                    (Array.isArray(translationItems) ? translationItems : []).find(
+                      (item) => String(item?.id || "") === String(message?.id || "")
+                    )?.translatedText || null
                   }
                   translationLoading={translationLoading}
                   onRequestTranslation={onRequestTranslation}
