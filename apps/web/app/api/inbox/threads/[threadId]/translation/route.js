@@ -162,7 +162,7 @@ async function getScopedThread(serviceClient, scope, threadId) {
   const { data: thread, error } = await applyScope(
     serviceClient
       .from("mail_threads")
-      .select("id, workspace_id")
+      .select("id, workspace_id, customer_language")
       .eq("id", threadId)
       .maybeSingle(),
     scope
@@ -484,6 +484,20 @@ export async function GET(request, { params }) {
       threadId: thread.id,
       targetLanguage,
     });
+
+    // Lazy backfill: store detected language from first customer item
+    if (!thread.customer_language) {
+      const firstCustomerItem = (conversation?.items || []).find(
+        (item) => item.role === "customer" && item.originalLanguage && item.originalLanguage !== "unknown"
+      );
+      if (firstCustomerItem?.originalLanguage) {
+        await serviceClient
+          .from("mail_threads")
+          .update({ customer_language: firstCustomerItem.originalLanguage })
+          .eq("id", threadId)
+          .catch(() => null);
+      }
+    }
 
     return NextResponse.json(
       {

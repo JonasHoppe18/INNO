@@ -3881,6 +3881,11 @@ Deno.serve(async (req) => {
     const provider = typeof body?.provider === "string" ? body.provider.trim() : "";
     const forceProcess = body?.force_process === true;
     const emailData: EmailData = body?.email_data ?? {};
+    const replyLanguageOverride: string | null =
+      typeof body?.reply_language === "string" &&
+      /^[a-z]{2}$/.test(body.reply_language.trim())
+        ? body.reply_language.trim().toLowerCase()
+        : null;
 
     // Sanitize phone numbers from customer email body — prevent AI from
     // accidentally including the customer's own number as a support contact number.
@@ -6014,7 +6019,7 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
     }
 
     const customerMessage = `${emailData.subject || ""}\n\n${emailData.body || ""}`.trim();
-    const languageHint = resolvePreferredReplyLanguage({
+    const languageHint = replyLanguageOverride || resolvePreferredReplyLanguage({
       replyStrategyLanguage: replyStrategyArtifact?.language || null,
       caseAssessmentLanguage: caseAssessment?.language || null,
       fallbackLanguageHint: inferLanguageHint(emailData.subject || "", emailData.body || ""),

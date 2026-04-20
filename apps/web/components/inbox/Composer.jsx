@@ -8,7 +8,13 @@ import {
   Send,
   PenLine,
   Zap,
+  Globe,
 } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  SUPPORTED_SUPPORT_LANGUAGE_CODES,
+  SUPPORT_LANGUAGE_LABELS,
+} from "@/lib/translation/languages";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { SonaLogo } from "@/components/ui/SonaLogo";
@@ -160,7 +166,17 @@ export function Composer({
   isDraftLoading = false,
   onGenerateDraft = null,
   isGeneratingDraft = false,
+  detectedLanguage = null,
+  onReplyLanguageChange = null,
 }) {
+  const [replyLanguage, setReplyLanguage] = useState(detectedLanguage || null);
+  const [languagePickerOpen, setLanguagePickerOpen] = useState(false);
+  const [isTranslating, setIsTranslating] = useState(false);
+
+  useEffect(() => {
+    if (detectedLanguage) setReplyLanguage(detectedLanguage);
+  }, [detectedLanguage]);
+
   const MIN_COMPOSER_HEIGHT_PX = 170;
   const MAX_COMPOSER_VIEWPORT_RATIO = 0.8;
   const isNote = mode === "note";
@@ -365,6 +381,29 @@ export function Composer({
     const pending = String(pendingValue || "").trim();
     if (pending && !next.includes(pending)) next.push(pending);
     return next;
+  };
+
+  const handleLanguageChange = async (lang) => {
+    setLanguagePickerOpen(false);
+    if (lang === replyLanguage) return;
+    setReplyLanguage(lang);
+    onReplyLanguageChange?.(lang);
+    const draftText = String(value || "").trim();
+    if (!draftText) return;
+    setIsTranslating(true);
+    try {
+      const res = await fetch("/api/translate-text", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: draftText, targetLanguage: lang }),
+      });
+      if (res.ok) {
+        const { translatedText } = await res.json();
+        if (translatedText) onChange?.(translatedText);
+      }
+    } finally {
+      setIsTranslating(false);
+    }
   };
 
   const handleAddAttachments = (event) => {
@@ -1171,11 +1210,47 @@ export function Composer({
                   >
                     <PenLine className="h-4 w-4" />
                   </button>
+                  {!isNote && (
+                    <Popover open={languagePickerOpen} onOpenChange={setLanguagePickerOpen}>
+                      <PopoverTrigger asChild>
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors disabled:opacity-50"
+                          disabled={isTranslating}
+                        >
+                          {isTranslating ? (
+                            <span className="inline-block h-4 w-4 animate-spin rounded-full border border-gray-300 border-t-gray-600" />
+                          ) : (
+                            <Globe className="h-4 w-4" />
+                          )}
+                          {replyLanguage && (
+                            <span className="text-[12px] font-medium">
+                              {SUPPORT_LANGUAGE_LABELS[replyLanguage] || replyLanguage}
+                            </span>
+                          )}
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent align="start" className="w-40 p-1">
+                        {SUPPORTED_SUPPORT_LANGUAGE_CODES.map((code) => (
+                          <button
+                            key={code}
+                            type="button"
+                            onClick={() => handleLanguageChange(code)}
+                            className={`w-full rounded-md px-3 py-1.5 text-left text-[13px] hover:bg-gray-50 transition-colors ${
+                              code === replyLanguage ? "font-medium text-gray-900" : "text-gray-600"
+                            }`}
+                          >
+                            {SUPPORT_LANGUAGE_LABELS[code]}
+                          </button>
+                        ))}
+                      </PopoverContent>
+                    </Popover>
+                  )}
                   {typeof onGenerateDraft === "function" ? (
                     <button
                       type="button"
                       disabled={disabled || showDraftLoadingState || isGeneratingDraft}
-                      onClick={onGenerateDraft}
+                      onClick={() => onGenerateDraft?.(replyLanguage)}
                       className="rounded-md border border-gray-200 bg-white px-2.5 py-1 text-[12px] font-medium text-gray-600 hover:border-gray-300 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {isGeneratingDraft ? "Generating..." : "Generate draft"}
