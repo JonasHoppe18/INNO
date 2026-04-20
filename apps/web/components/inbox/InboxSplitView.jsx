@@ -804,6 +804,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const [draftWaitTimedOutByThread, setDraftWaitTimedOutByThread] = useState({});
   const [systemDraftUneditedByThread, setSystemDraftUneditedByThread] = useState({});
   const [manualDraftGeneratingByThread, setManualDraftGeneratingByThread] = useState({});
+  const [refineDraftLoadingByThread, setRefineDraftLoadingByThread] = useState({});
   const [staleDraftByThread, setStaleDraftByThread] = useState({});
   const [markReturnReceivedLoadingByThread, setMarkReturnReceivedLoadingByThread] = useState({});
   const [refreshPendingActionByThread, setRefreshPendingActionByThread] = useState({});
@@ -2729,6 +2730,44 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     }
   }, [derivedThreads, isLocalThreadId, manualDraftGeneratingByThread, selectedThreadId]);
 
+  const handleRefineDraft = useCallback(async (userPrompt) => {
+    if (!selectedThreadId || isLocalThreadId(selectedThreadId)) return;
+    if (refineDraftLoadingByThread[selectedThreadId]) return;
+    const threadId = selectedThreadId;
+
+    setRefineDraftLoadingByThread((prev) => ({ ...prev, [threadId]: true }));
+
+    const currentDraft = String(draftValueByThread?.[threadId] || "").trim();
+    if (!currentDraft || !userPrompt) {
+      setRefineDraftLoadingByThread((prev) => ({ ...prev, [threadId]: false }));
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/threads/${threadId}/refine-draft`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentDraft, userPrompt }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload?.error || "Could not refine draft.");
+      }
+      const refined = String(payload?.draft || "").trim();
+      if (refined) {
+        setDraftValueByThread((prev) => ({ ...prev, [threadId]: refined }));
+      }
+    } catch (err) {
+      console.error("[handleRefineDraft]", err);
+    } finally {
+      setRefineDraftLoadingByThread((prev) => {
+        const next = { ...prev };
+        delete next[threadId];
+        return next;
+      });
+    }
+  }, [selectedThreadId, isLocalThreadId, refineDraftLoadingByThread, draftValueByThread]);
+
   const fetchTranslationForThread = useCallback(async (threadId) => {
     if (!threadId) return;
     setTranslationCache((prev) => {
@@ -3920,6 +3959,8 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           isGeneratingDraft={Boolean(
             selectedThreadId && manualDraftGeneratingByThread[selectedThreadId]
           )}
+          onRefineDraft={handleRefineDraft}
+          isRefiningDraft={Boolean(refineDraftLoadingByThread[selectedThreadId])}
           staleDraft={Boolean(selectedThreadId && staleDraftByThread[selectedThreadId])}
           onDismissStaleDraft={() => {
             if (!selectedThreadId) return;
