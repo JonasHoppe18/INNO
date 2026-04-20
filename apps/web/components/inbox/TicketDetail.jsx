@@ -91,6 +91,8 @@ export function TicketDetail({
   onConversationScroll = null,
   onGenerateDraft = null,
   isGeneratingDraft = false,
+  onRefineDraft = null,
+  isRefiningDraft = false,
   staleDraft = false,
   onDismissStaleDraft = null,
   awaitingReturn = false,
@@ -520,6 +522,8 @@ export function TicketDetail({
             isDraftLoading={showThinkingCard}
             onGenerateDraft={onGenerateDraft}
             isGeneratingDraft={isGeneratingDraft}
+            onRefineDraft={onRefineDraft}
+            isRefiningDraft={isRefiningDraft}
           />
         </div>
         </>
