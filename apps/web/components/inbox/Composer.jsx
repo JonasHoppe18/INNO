@@ -10,6 +10,7 @@ import {
   Zap,
   Globe,
   Sparkles,
+  CornerDownLeft,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -18,7 +19,6 @@ import {
 } from "@/lib/translation/languages";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { SonaLogo } from "@/components/ui/SonaLogo";
 import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
@@ -195,7 +195,6 @@ export function Composer({
     await onRefineDraft(prompt);
   };
   const replyEditorMinHeightClassName = "min-h-[72px]";
-  const loadingStateMinHeightClassName = "min-h-[120px]";
   const editorBodyMinHeightClassName = isNote ? "min-h-[96px]" : "min-h-[112px]";
   const initialTo = useMemo(() => {
     if (isForward) return [];
@@ -1041,10 +1040,10 @@ export function Composer({
                     type="button"
                     disabled={!refinePrompt.trim()}
                     onClick={handleRefineSubmit}
-                    className="flex h-6 w-6 items-center justify-center rounded-full bg-violet-600 text-white disabled:opacity-40 hover:bg-violet-700 transition-colors"
+                    className="flex items-center justify-center rounded-md bg-violet-600 px-2 py-1 text-white disabled:opacity-40 hover:bg-violet-700 transition-colors"
                     aria-label="Submit refinement"
                   >
-                    <Send className="h-3 w-3" />
+                    <CornerDownLeft className="h-3 w-3" />
                   </button>
                 </div>
                 {refineError ? (
@@ -1178,6 +1177,14 @@ export function Composer({
                     }}
                     className={`flex-1 whitespace-pre-wrap break-words p-0 text-[14px] leading-[1.55] text-gray-900 outline-none [&_a]:cursor-pointer [&_a]:text-blue-600 [&_a]:underline [&_a:hover]:text-blue-700 ${replyEditorMinHeightClassName}`}
                   />
+                  {showDraftLoadingState ? (
+                    <div className="absolute inset-0 flex flex-col gap-3 pt-0.5">
+                      <div className="h-3 rounded-full bg-gray-100 animate-pulse" style={{ width: "72%" }} />
+                      <div className="h-3 rounded-full bg-gray-100 animate-pulse" style={{ width: "91%", animationDelay: "120ms" }} />
+                      <div className="h-3 rounded-full bg-gray-100 animate-pulse" style={{ width: "84%", animationDelay: "240ms" }} />
+                      <div className="h-3 rounded-full bg-gray-100 animate-pulse" style={{ width: "58%", animationDelay: "360ms" }} />
+                    </div>
+                  ) : null}
                 </div>
               </div>
             )}
@@ -1234,7 +1241,12 @@ export function Composer({
           </div>
           <div className="sticky bottom-0 z-10 flex items-center justify-between border-t border-gray-200/80 bg-white px-3 py-1.5 text-[12px] text-gray-500">
             <div className="flex items-center gap-2">
-              {!isNote ? (
+              {showDraftLoadingState ? (
+                <div className="flex items-center gap-1.5 text-[12px] text-violet-500">
+                  <span className="h-1.5 w-1.5 rounded-full bg-violet-400 animate-pulse" />
+                  {isRefiningDraft ? "Refining draft..." : "Drafting reply..."}
+                </div>
+              ) : !isNote ? (
                 <>
                   <input
                     ref={fileInputRef}
@@ -1336,8 +1348,8 @@ export function Composer({
                       aria-label="Refine draft with AI"
                       title="Refine draft"
                       className={refineOpen
-                        ? "rounded-md bg-violet-50 p-1.5 text-violet-600 hover:bg-violet-100"
-                        : "rounded-md p-1.5 text-gray-500 hover:bg-white hover:text-gray-700"}
+                        ? "rounded-md bg-violet-100 p-1.5 text-violet-600 hover:bg-violet-100"
+                        : "rounded-md p-1.5 text-violet-400 hover:bg-violet-50 hover:text-violet-600"}
                     >
                       <Sparkles className="h-4 w-4" />
                     </button>
@@ -1396,27 +1408,6 @@ export function Composer({
               </Button>
             </div>
           </div>
-          {showDraftLoadingState ? (
-            <div className="absolute inset-0 z-20 flex items-center justify-center rounded-b-[28px] bg-white/86 backdrop-blur-[3px]">
-              <div
-                key="draft-loading-state"
-                className={`flex h-full w-full flex-col items-center justify-center rounded-b-[28px] bg-gradient-to-b from-slate-50 to-white px-6 py-7 ${loadingStateMinHeightClassName}`}
-              >
-                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-indigo-50 ring-1 ring-indigo-100">
-                  <SonaLogo size={24} speed="working" />
-                </div>
-                <div className="mt-3 text-center">
-                  <div className="text-sm font-semibold text-slate-900">Sona is drafting your reply</div>
-                  <div className="mt-1 text-xs leading-relaxed text-slate-600">
-                    Analyzing policy context and building a precise response.
-                  </div>
-                </div>
-                <div className="mt-4 h-1.5 w-32 overflow-hidden rounded-full bg-indigo-100">
-                  <div className="h-full w-1/2 animate-pulse rounded-full bg-indigo-500" />
-                </div>
-              </div>
-            </div>
-          ) : null}
         </div>
       </div>
       <Dialog open={savedRepliesOpen} onOpenChange={setSavedRepliesOpen}>
