@@ -212,6 +212,9 @@ export async function POST(_request, { params }) {
   const replyLanguage = typeof body?.reply_language === "string"
     ? body.reply_language.trim().toLowerCase().slice(0, 2)
     : null;
+  const userInstruction = typeof body?.user_instruction === "string" && body.user_instruction.trim()
+    ? body.user_instruction.trim()
+    : null;
 
   const endpoint = `${SUPABASE_URL}/functions/v1/generate-draft-unified`;
   const response = await fetch(endpoint, {
@@ -226,6 +229,7 @@ export async function POST(_request, { params }) {
       provider,
       force_process: true,
       ...(replyLanguage ? { reply_language: replyLanguage } : {}),
+      ...(userInstruction ? { user_instruction: userInstruction } : {}),
       email_data: {
         messageId: inboundMessage.provider_message_id || null,
         threadId: provider === "smtp" ? thread.id : thread.provider_thread_id || thread.id,

@@ -2738,22 +2738,34 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     setRefineDraftLoadingByThread((prev) => ({ ...prev, [threadId]: true }));
 
     const currentDraft = String(draftValueByThread?.[threadId] || "").trim();
-    if (!currentDraft || !userPrompt) {
+    if (!userPrompt) {
       setRefineDraftLoadingByThread((prev) => ({ ...prev, [threadId]: false }));
       return;
     }
 
     try {
-      const res = await fetch(`/api/threads/${threadId}/refine-draft`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ currentDraft, userPrompt }),
-      });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(payload?.error || "Could not refine draft.");
+      let refined = "";
+      if (currentDraft) {
+        const res = await fetch(`/api/threads/${threadId}/refine-draft`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ currentDraft, userPrompt }),
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(payload?.error || "Could not refine draft.");
+        refined = String(payload?.draft || "").trim();
+      } else {
+        const res = await fetch(`/api/threads/${threadId}/generate-draft`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_instruction: userPrompt }),
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(payload?.error || "Could not generate draft.");
+        refined = String(payload?.draft?.body_text || payload?.draft?.rendered_body_text || "").trim();
       }
-      const refined = String(payload?.draft || "").trim();
       if (refined) {
         if (selectedThreadIdRef.current === threadId) {
           setDraftValue(refined);

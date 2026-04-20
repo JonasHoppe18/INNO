@@ -3886,6 +3886,10 @@ Deno.serve(async (req) => {
       /^[a-z]{2}$/.test(body.reply_language.trim())
         ? body.reply_language.trim().toLowerCase()
         : null;
+    const userInstruction: string | null =
+      typeof body?.user_instruction === "string" && body.user_instruction.trim()
+        ? body.user_instruction.trim()
+        : null;
 
     // Sanitize phone numbers from customer email body — prevent AI from
     // accidentally including the customer's own number as a support contact number.
@@ -4945,6 +4949,7 @@ Deno.serve(async (req) => {
         returnPromptBlock,
         workflowRoute.promptHint,
         ...(workflowRoute.promptBlocks || []),
+        userInstruction ? `AGENT INSTRUCTION (høj prioritet — følg dette nøje): ${userInstruction}` : "",
       ]
         .filter(Boolean)
         .join("\n"),

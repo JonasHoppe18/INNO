@@ -1325,7 +1325,7 @@ export function Composer({
                       {isGeneratingDraft ? "Generating..." : "Generate draft"}
                     </button>
                   ) : null}
-                  {typeof onRefineDraft === "function" && String(value || "").trim() ? (
+                  {typeof onRefineDraft === "function" ? (
                     <button
                       type="button"
                       disabled={disabled || showDraftLoadingState || isRefiningDraft || isGeneratingDraft}
