@@ -169,8 +169,9 @@ export function Composer({
   detectedLanguage = null,
   onReplyLanguageChange = null,
 }) {
-  const [replyLanguage, setReplyLanguage] = useState(detectedLanguage || "en");
+  const [replyLanguage, setReplyLanguage] = useState(detectedLanguage || null);
   const [languagePickerOpen, setLanguagePickerOpen] = useState(false);
+  const [isTranslating, setIsTranslating] = useState(false);
 
   useEffect(() => {
     if (detectedLanguage) setReplyLanguage(detectedLanguage);
@@ -382,19 +383,26 @@ export function Composer({
     return next;
   };
 
-  const handleLanguageChange = (lang) => {
+  const handleLanguageChange = async (lang) => {
     setLanguagePickerOpen(false);
     if (lang === replyLanguage) return;
-    const hasDraftContent = Boolean(String(value || "").trim());
-    if (hasDraftContent) {
-      const label = SUPPORT_LANGUAGE_LABELS[lang] || lang;
-      const confirmed = window.confirm(`Regenerate draft in ${label}?`);
-      if (!confirmed) return;
-    }
     setReplyLanguage(lang);
     onReplyLanguageChange?.(lang);
-    if (hasDraftContent && onGenerateDraft) {
-      onGenerateDraft(lang);
+    const draftText = String(value || "").trim();
+    if (!draftText) return;
+    setIsTranslating(true);
+    try {
+      const res = await fetch("/api/translate-text", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: draftText, targetLanguage: lang }),
+      });
+      if (res.ok) {
+        const { translatedText } = await res.json();
+        if (translatedText) onChange?.(translatedText);
+      }
+    } finally {
+      setIsTranslating(false);
     }
   };
 
@@ -1207,10 +1215,19 @@ export function Composer({
                       <PopoverTrigger asChild>
                         <button
                           type="button"
-                          className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-[12px] font-medium text-gray-600 hover:border-gray-300 hover:bg-gray-50 transition-colors"
+                          className="inline-flex items-center gap-1 rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors disabled:opacity-50"
+                          disabled={isTranslating}
                         >
-                          <Globe className="h-3.5 w-3.5" />
-                          {SUPPORT_LANGUAGE_LABELS[replyLanguage] || replyLanguage}
+                          {isTranslating ? (
+                            <span className="inline-block h-4 w-4 animate-spin rounded-full border border-gray-300 border-t-gray-600" />
+                          ) : (
+                            <Globe className="h-4 w-4" />
+                          )}
+                          {replyLanguage && (
+                            <span className="text-[12px] font-medium">
+                              {SUPPORT_LANGUAGE_LABELS[replyLanguage] || replyLanguage}
+                            </span>
+                          )}
                         </button>
                       </PopoverTrigger>
                       <PopoverContent align="start" className="w-40 p-1">

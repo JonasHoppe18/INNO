@@ -582,35 +582,6 @@ export function MessageBubble({
                 )}
               </div>
 
-              {!isOutbound && (
-                <div className="border-t border-gray-100 px-4 py-3">
-                  <button
-                    type="button"
-                    onClick={handleToggleTranslation}
-                    className="inline-flex items-center gap-1 text-[12px] text-gray-400 hover:text-gray-600 transition-colors"
-                  >
-                    <Globe className="h-3 w-3" />
-                    {showTranslation ? "Hide translation" : "Show translation"}
-                  </button>
-
-                  {showTranslation && (
-                    <div className="mt-2 rounded-md border border-gray-100 bg-gray-50 px-3 py-2">
-                      {translationLoading ? (
-                        <div className="flex items-center gap-2 text-[12px] text-gray-400">
-                          <span className="inline-block h-3 w-3 animate-spin rounded-full border border-gray-300 border-t-gray-600" />
-                          Translating…
-                        </div>
-                      ) : translatedText ? (
-                        <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-gray-700">
-                          {translatedText}
-                        </p>
-                      ) : (
-                        <p className="text-[12px] text-gray-400">Translation not available.</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
 
             {imageAttachments.length ? (
@@ -645,6 +616,23 @@ export function MessageBubble({
               </div>
             ) : null}
 
+            {!isOutbound && showTranslation && (
+              <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                {translationLoading ? (
+                  <div className="flex items-center gap-2 text-[12px] text-gray-400">
+                    <span className="inline-block h-3 w-3 animate-spin rounded-full border border-gray-300 border-t-gray-600" />
+                    Translating…
+                  </div>
+                ) : translatedText ? (
+                  <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-gray-700">
+                    {translatedText}
+                  </p>
+                ) : (
+                  <p className="text-[12px] text-gray-400">Translation not available.</p>
+                )}
+              </div>
+            )}
+
             {!isInternalNote ? (
               <div className="flex flex-wrap items-center gap-3 px-1 text-sm font-medium text-gray-500">
                 <button
@@ -655,6 +643,16 @@ export function MessageBubble({
                   <Mail className="h-3.5 w-3.5" />
                   <span>View email</span>
                 </button>
+                {!isOutbound && (
+                  <button
+                    type="button"
+                    onClick={handleToggleTranslation}
+                    className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-[12px] opacity-0 transition-opacity hover:bg-gray-100 group-hover/bubble:opacity-100"
+                  >
+                    <Globe className="h-3.5 w-3.5" />
+                    <span>{showTranslation ? "Hide translation" : "Show translation"}</span>
+                  </button>
+                )}
               </div>
             ) : null}
           </div>
