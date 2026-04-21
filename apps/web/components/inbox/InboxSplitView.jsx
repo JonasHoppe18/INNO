@@ -807,6 +807,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const [systemDraftUneditedByThread, setSystemDraftUneditedByThread] = useState({});
   const [manualDraftGeneratingByThread, setManualDraftGeneratingByThread] = useState({});
   const [refineDraftLoadingByThread, setRefineDraftLoadingByThread] = useState({});
+  const [tagsRefreshTriggerByThread, setTagsRefreshTriggerByThread] = useState({});
   const [staleDraftByThread, setStaleDraftByThread] = useState({});
   const [markReturnReceivedLoadingByThread, setMarkReturnReceivedLoadingByThread] = useState({});
   const [refreshPendingActionByThread, setRefreshPendingActionByThread] = useState({});
@@ -2748,6 +2749,13 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           draftLastSavedRef.current[threadId] = "";
         }
         toast.success("Draft generated.");
+        // Refresh tags after a short delay to let fire-and-forget auto-tagging complete
+        setTimeout(() => {
+          setTagsRefreshTriggerByThread((prev) => ({
+            ...prev,
+            [threadId]: (prev[threadId] || 0) + 1,
+          }));
+        }, 3000);
       } else if (payload?.skipped) {
         throw new Error(payload?.explanation || payload?.reason || "Draft generation was skipped.");
       } else {
@@ -4022,6 +4030,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           )}
           onRefineDraft={handleRefineDraft}
           isRefiningDraft={Boolean(refineDraftLoadingByThread[selectedThreadId])}
+          tagsRefreshTrigger={selectedThreadId ? (tagsRefreshTriggerByThread[selectedThreadId] || 0) : 0}
           staleDraft={Boolean(selectedThreadId && staleDraftByThread[selectedThreadId])}
           onDismissStaleDraft={() => {
             if (!selectedThreadId) return;

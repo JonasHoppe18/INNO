@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 import { getEffectiveSenderEmail, getEffectiveSenderName } from "@/lib/inbox/sender";
+import { autoTagThread } from "@/lib/ai/autoTagThread";
 
 export const runtime = "nodejs";
 
@@ -278,6 +279,41 @@ export async function POST(_request, { params }) {
       : draft?.body_text ||
         draft?.body_html ||
     (String(payload?.reply || "").trim() ? String(payload.reply).trim() : "");
+
+  // Auto-tagging ved draft-generering (fire-and-forget)
+  const workspaceIdForTags = scope?.workspaceId || thread?.workspace_id || null;
+  if (workspaceIdForTags && messageBody) {
+    (async () => {
+      try {
+        const { data: workspaceTags } = await serviceClient
+          .from("workspace_tags")
+          .select("id, name, category")
+          .eq("workspace_id", workspaceIdForTags)
+          .eq("is_active", true);
+
+        if (!workspaceTags?.length) return;
+
+        const result = await autoTagThread({
+          subject: messageSubject,
+          sentReply: messageBody,
+          availableTags: workspaceTags,
+        });
+
+        if (result.tag_ids?.length) {
+          await serviceClient.from("thread_tag_assignments").upsert(
+            result.tag_ids.map((id) => ({
+              thread_id: threadId,
+              tag_id: id,
+              source: "ai",
+            })),
+            { onConflict: "thread_id,tag_id", ignoreDuplicates: true }
+          );
+        }
+      } catch (err) {
+        console.warn("[auto-tag/draft] fejl:", err?.message);
+      }
+    })();
+  }
 
   return NextResponse.json(
     {

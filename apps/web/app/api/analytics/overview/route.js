@@ -54,7 +54,7 @@ function periodToWindow(period) {
  */
 async function fetchPeriodMetrics(serviceClient, scope, since, until) {
   // Build base queries
-  let threadsQ = serviceClient.from("mail_threads").select("created_at, tags");
+  let threadsQ = serviceClient.from("mail_threads").select("id, created_at");
   if (since) threadsQ = threadsQ.gte("created_at", since);
   threadsQ = threadsQ.lt("created_at", until);
   threadsQ = applyScope(threadsQ, scope);
@@ -98,6 +98,7 @@ async function fetchPeriodMetrics(serviceClient, scope, since, until) {
   if (actionsResult.error) throw new Error(actionsResult.error.message);
 
   const threadRows = Array.isArray(threadsResult.data) ? threadsResult.data : [];
+  const threadIds = threadRows.map((r) => r.id).filter(Boolean);
 
   // Volume by day — based on created_at (when tickets were opened)
   const volumeMap = {};
@@ -109,18 +110,28 @@ async function fetchPeriodMetrics(serviceClient, scope, since, until) {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, count]) => ({ date, count }));
 
-  // Ticket types from tags
-  const tagMap = {};
-  for (const row of threadRows) {
-    if (Array.isArray(row.tags)) {
-      for (const tag of row.tags) {
-        if (tag) tagMap[tag] = (tagMap[tag] || 0) + 1;
+  // Ticket types fra workspace_tags via thread_tag_assignments
+  let ticketTypes = [];
+  if (threadIds.length > 0) {
+    const { data: tagAssignments } = await serviceClient
+      .from("thread_tag_assignments")
+      .select("thread_id, workspace_tags(name, color)")
+      .in("thread_id", threadIds);
+
+    const tagMap = {};
+    const colorMap = {};
+    for (const row of tagAssignments ?? []) {
+      const name = row.workspace_tags?.name;
+      const color = row.workspace_tags?.color;
+      if (name) {
+        tagMap[name] = (tagMap[name] || 0) + 1;
+        colorMap[name] = color;
       }
     }
+    ticketTypes = Object.entries(tagMap)
+      .sort(([, a], [, b]) => b - a)
+      .map(([tag, count]) => ({ tag, count, color: colorMap[tag] || null }));
   }
-  const ticketTypes = Object.entries(tagMap)
-    .sort(([, a], [, b]) => b - a)
-    .map(([tag, count]) => ({ tag, count }));
 
   // Draft quality
   const qualityData = Array.isArray(qualityResult.data) ? qualityResult.data : [];

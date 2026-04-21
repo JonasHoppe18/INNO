@@ -5,6 +5,7 @@ import crypto from "crypto";
 import { sendPostmarkEmail } from "@/lib/server/postmark";
 import { getReplyTargetEmail } from "@/lib/inbox/sender";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
+import { autoTagThread } from "@/lib/ai/autoTagThread";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -1322,6 +1323,48 @@ export async function POST(request, { params }) {
         await supersedeDraftsQuery;
       }
     }
+  }
+
+  // AI auto-tagging + løsningsopsummering (fire-and-forget)
+  const workspaceIdForTags = scope?.workspaceId || thread?.workspace_id || null;
+  if (workspaceIdForTags && coreBodyText?.trim()) {
+    (async () => {
+      try {
+        const { data: workspaceTags } = await serviceClient
+          .from("workspace_tags")
+          .select("id, name, category")
+          .eq("workspace_id", workspaceIdForTags)
+          .eq("is_active", true);
+
+        if (!workspaceTags?.length) return;
+
+        const result = await autoTagThread({
+          subject: thread?.subject || "",
+          sentReply: coreBodyText,
+          availableTags: workspaceTags,
+        });
+
+        if (result.tag_ids?.length) {
+          await serviceClient.from("thread_tag_assignments").upsert(
+            result.tag_ids.map((id) => ({
+              thread_id: threadId,
+              tag_id: id,
+              source: "ai",
+            })),
+            { onConflict: "thread_id,tag_id", ignoreDuplicates: true }
+          );
+        }
+
+        if (result.solution_summary) {
+          await serviceClient
+            .from("mail_threads")
+            .update({ solution_summary: result.solution_summary })
+            .eq("id", threadId);
+        }
+      } catch (err) {
+        console.warn("[auto-tag] fejl:", err?.message);
+      }
+    })();
   }
 
   // Store sent reply as a knowledge example for future AI draft retrieval (fire-and-forget)
