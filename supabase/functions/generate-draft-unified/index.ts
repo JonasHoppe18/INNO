@@ -5730,7 +5730,7 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
           detail: "Create return case for manual review.",
           error: "Return data is incomplete and requires manual review.",
         };
-      } else if (returnEligibility?.reason === "outside_return_window") {
+      } else if (returnEligibility?.reason === "outside_return_window" && workflowRoute.workflow !== "exchange") {
         aiText = buildOutsideWindowReply({
           languageHint: inferLanguageHint(emailData.subject || "", emailData.body || ""),
           customerName: customerFirstName || "there",
