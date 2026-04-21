@@ -34,6 +34,29 @@ function parseInlineStoragePath(value = "") {
   };
 }
 
+function parseDataUrlStoragePath(value = "") {
+  const raw = String(value || "").trim();
+  if (!raw.startsWith("data:")) return null;
+  const commaIndex = raw.indexOf(",");
+  if (commaIndex <= 5) return null;
+  const metadata = raw.slice(5, commaIndex);
+  const payload = raw.slice(commaIndex + 1).replace(/\s+/g, "");
+  if (!payload) return null;
+  const [mimeType = "application/octet-stream"] = metadata.split(";");
+  const isBase64 = /;base64/i.test(metadata);
+  try {
+    const bytes = isBase64
+      ? Buffer.from(payload, "base64")
+      : Buffer.from(decodeURIComponent(payload), "utf8");
+    return {
+      mimeType: String(mimeType || "application/octet-stream").trim() || "application/octet-stream",
+      bytes,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function GET(request, { params }) {
   const { userId: clerkUserId, orgId } = await auth();
   if (!clerkUserId) {
@@ -57,12 +80,22 @@ export async function GET(request, { params }) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  // Scope via mailbox_id — mail_accounts is workspace-scoped so this is safe.
+  let mailboxIds = [];
+  try {
+    const { data: mailboxRows } = await applyScope(
+      serviceClient.from("mail_accounts").select("id"),
+      scope
+    );
+    mailboxIds = (mailboxRows || []).map((r) => r.id).filter(Boolean);
+  } catch (_) {}
+
   let query = serviceClient
     .from("mail_attachments")
-    .select("id, user_id, filename, mime_type, storage_path")
-    .eq("id", attachmentId)
-    .maybeSingle();
-  query = applyScope(query, scope, { workspaceColumn: null, userColumn: "user_id" });
+    .select("id, user_id, mailbox_id, filename, mime_type, storage_path")
+    .eq("id", attachmentId);
+  if (mailboxIds.length) query = query.in("mailbox_id", mailboxIds);
+  query = query.maybeSingle();
   const { data, error } = await query;
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -71,16 +104,45 @@ export async function GET(request, { params }) {
     return NextResponse.json({ error: "Attachment not found." }, { status: 404 });
   }
 
-  const inline = parseInlineStoragePath(data.storage_path || "");
-  if (!inline) {
-    return NextResponse.json({ error: "Attachment content is unavailable." }, { status: 404 });
+  const storagePath = String(data.storage_path || "").trim();
+  let bytes = null;
+  let resolvedMimeType = String(data.mime_type || "").trim();
+
+  const inline = parseInlineStoragePath(storagePath);
+  if (inline) {
+    try {
+      bytes = Buffer.from(inline.contentBase64, "base64");
+      if (!resolvedMimeType) resolvedMimeType = inline.mimeType;
+    } catch {
+      return NextResponse.json({ error: "Attachment content is invalid." }, { status: 500 });
+    }
   }
 
-  let bytes;
-  try {
-    bytes = Buffer.from(inline.contentBase64, "base64");
-  } catch {
-    return NextResponse.json({ error: "Attachment content is invalid." }, { status: 500 });
+  if (!bytes) {
+    const dataUrl = parseDataUrlStoragePath(storagePath);
+    if (dataUrl) {
+      bytes = dataUrl.bytes;
+      if (!resolvedMimeType) resolvedMimeType = dataUrl.mimeType;
+    }
+  }
+
+  if (!bytes && /^https?:\/\//i.test(storagePath)) {
+    const upstream = await fetch(storagePath, { method: "GET" }).catch(() => null);
+    if (upstream?.ok) {
+      const buffer = await upstream.arrayBuffer().catch(() => null);
+      if (buffer) {
+        bytes = Buffer.from(buffer);
+        if (!resolvedMimeType) {
+          resolvedMimeType =
+            String(upstream.headers.get("content-type") || "").trim() ||
+            "application/octet-stream";
+        }
+      }
+    }
+  }
+
+  if (!bytes) {
+    return NextResponse.json({ error: "Attachment content is unavailable." }, { status: 404 });
   }
 
   const filename = String(data.filename || "attachment").replace(/["\r\n]/g, "_");
@@ -91,7 +153,7 @@ export async function GET(request, { params }) {
   return new Response(bytes, {
     status: 200,
     headers: {
-      "Content-Type": String(data.mime_type || inline.mimeType || "application/octet-stream"),
+      "Content-Type": resolvedMimeType || "application/octet-stream",
       "Content-Length": String(bytes.byteLength),
       "Content-Disposition": `${dispositionType}; filename="${filename}"`,
       "Cache-Control": "private, max-age=60",

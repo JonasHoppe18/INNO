@@ -132,7 +132,26 @@ export async function GET(_request, context) {
     }
 
     if (error) throw new Error(error.message);
-    return NextResponse.json({ messages: Array.isArray(rows) ? rows : [] }, { status: 200 });
+
+    const messages = Array.isArray(rows) ? rows : [];
+    const messageIds = messages
+      .map((row) => String(row?.id || "").trim())
+      .filter(Boolean);
+
+    let attachments = [];
+    if (messageIds.length) {
+      const { data: attachmentRows, error: attachmentError } = await serviceClient
+        .from("mail_attachments")
+        .select(
+          "id, user_id, mailbox_id, message_id, provider, provider_attachment_id, filename, mime_type, size_bytes, storage_path, created_at"
+        )
+        .in("mailbox_id", mailboxIds)
+        .in("message_id", messageIds);
+      if (attachmentError) throw new Error(attachmentError.message);
+      attachments = Array.isArray(attachmentRows) ? attachmentRows : [];
+    }
+
+    return NextResponse.json({ messages, attachments }, { status: 200 });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to load thread messages." },

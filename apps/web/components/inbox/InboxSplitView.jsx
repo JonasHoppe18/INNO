@@ -839,6 +839,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const currentUserName = [user?.firstName, user?.lastName].filter(Boolean).join(" ") || "You";
   const {
     data: selectedThreadMessagesFromDb,
+    attachments: selectedThreadAttachmentsFromDb,
     refresh: refreshSelectedThreadMessages,
   } = useThreadMessages(selectedThreadId, {
     enabled: Boolean(selectedThreadId) && !String(selectedThreadId || "").startsWith("local-new-ticket-"),
@@ -1948,14 +1949,31 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     const messageIdSet = new Set(selectedThreadMessageIds);
     if (!messageIdSet.size) return [];
     const byId = new Map();
-    [...(liveAttachments || []), ...(selectedThreadAttachments || [])].forEach((attachment) => {
+    [
+      ...(liveAttachments || []),
+      ...(selectedThreadAttachmentsFromDb || []),
+      ...(selectedThreadAttachments || []),
+    ].forEach((attachment) => {
       const attachmentId = String(attachment?.id || "").trim();
       const attachmentMessageId = String(attachment?.message_id || "").trim();
-      if (!attachmentId || !attachmentMessageId || !messageIdSet.has(attachmentMessageId)) return;
-      if (!byId.has(attachmentId)) byId.set(attachmentId, attachment);
+      if (!attachmentMessageId || !messageIdSet.has(attachmentMessageId)) return;
+      const dedupeKey =
+        attachmentId ||
+        [
+          attachmentMessageId,
+          String(attachment?.provider_attachment_id || "").trim(),
+          String(attachment?.filename || "").trim().toLowerCase(),
+        ].join("::");
+      if (!byId.has(dedupeKey)) byId.set(dedupeKey, attachment);
     });
     return Array.from(byId.values());
-  }, [liveAttachments, selectedThreadAttachments, selectedThreadId, selectedThreadMessageIds]);
+  }, [
+    liveAttachments,
+    selectedThreadAttachments,
+    selectedThreadAttachmentsFromDb,
+    selectedThreadId,
+    selectedThreadMessageIds,
+  ]);
 
   const draftMessage = useMemo(() => {
     const reversed = [...rawThreadMessages].reverse();

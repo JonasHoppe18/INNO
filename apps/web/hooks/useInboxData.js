@@ -267,6 +267,7 @@ export function useThreadMessages(threadId, options = {}) {
   }, [initialData, threadId]);
 
   const [data, setData] = useState(seeded);
+  const [attachments, setAttachments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const seededKey = useMemo(() => makeListKey(seeded), [seeded]);
@@ -302,10 +303,12 @@ export function useThreadMessages(threadId, options = {}) {
           const payload = await response.json().catch(() => null);
           if (isStale()) return;
           const rows = Array.isArray(payload?.messages) ? payload.messages : [];
+          const attachmentRows = Array.isArray(payload?.attachments) ? payload.attachments : [];
           if (!rows.length) {
             console.warn("[useThreadMessages] tomt server-resultat for tråd:", threadId);
           }
           setData(rows);
+          setAttachments(attachmentRows);
           return;
         }
       } catch (_serverFetchError) {
@@ -497,7 +500,30 @@ export function useThreadMessages(threadId, options = {}) {
         console.warn("[useThreadMessages] tom resultat for tråd:", threadId, "scope:", scope);
       }
       if (isStale()) return;
-      setData(Array.isArray(rows) ? rows : []);
+      const normalizedRows = Array.isArray(rows) ? rows : [];
+      setData(normalizedRows);
+
+      const messageIds = normalizedRows
+        .map((row) => String(row?.id || "").trim())
+        .filter(Boolean);
+      if (!messageIds.length) {
+        setAttachments([]);
+      } else {
+        let attachmentRequest = supabase
+          .from("mail_attachments")
+          .select(
+            "id, user_id, mailbox_id, message_id, provider, provider_attachment_id, filename, mime_type, size_bytes, storage_path, created_at"
+          )
+          .in("message_id", messageIds);
+        attachmentRequest = applyClientScope(attachmentRequest, scope, {
+          workspaceColumn: null,
+          userColumn: "user_id",
+        });
+        const { data: attachmentRows } = await attachmentRequest;
+        if (!isStale()) {
+          setAttachments(Array.isArray(attachmentRows) ? attachmentRows : []);
+        }
+      }
     } catch (err) {
       if (isStale()) return;
       console.error("[useThreadMessages] fejl for tråd:", threadId, err);
@@ -518,12 +544,14 @@ export function useThreadMessages(threadId, options = {}) {
     lastThreadIdRef.current = threadId || null;
     if (!threadId) {
       setData((prev) => (prev?.length ? [] : prev));
+      setAttachments((prev) => (prev?.length ? [] : prev));
       return;
     }
     // Only reset when switching thread. Don't keep clearing when seeded is empty,
     // otherwise fetched messages for older threads get wiped on every render.
     seededKeyRef.current = seededKey;
     setData(seeded);
+    setAttachments([]);
   }, [seeded, seededKey, threadId]);
 
   useEffect(() => {
@@ -532,9 +560,10 @@ export function useThreadMessages(threadId, options = {}) {
     if (seededKeyRef.current === seededKey) return;
     seededKeyRef.current = seededKey;
     setData(seeded);
+    setAttachments([]);
   }, [seeded, seededKey, threadId]);
 
-  return { data, loading, error, refresh: fetchMessages };
+  return { data, attachments, loading, error, refresh: fetchMessages };
 }
 
 export function useThreadPreviewMessages(threadIds = [], options = {}) {

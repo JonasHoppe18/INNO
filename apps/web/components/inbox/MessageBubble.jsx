@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import Image from "next/image";
 import { ChevronLeft, ChevronRight, Download, Globe, Mail, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -136,23 +137,106 @@ const normalizeCid = (value = "") =>
     .replace(/^<|>$/g, "")
     .toLowerCase();
 
+const normalizeAttachmentFilename = (value = "") =>
+  String(value || "")
+    .trim()
+    .replace(/^["']|["']$/g, "")
+    .toLowerCase();
+
+const parseInlineStoragePath = (value = "") => {
+  const raw = String(value || "");
+  if (!raw.startsWith("inline:")) return null;
+  const payload = raw.slice("inline:".length);
+  const commaIndex = payload.indexOf(",");
+  if (commaIndex <= 0) return null;
+  const metadata = payload.slice(0, commaIndex);
+  const contentBase64 = payload.slice(commaIndex + 1).replace(/\s+/g, "");
+  const [mimeType] = metadata.split(";");
+  if (!contentBase64) return null;
+  return {
+    mimeType: String(mimeType || "application/octet-stream").trim() || "application/octet-stream",
+    contentBase64,
+  };
+};
+
+const getAttachmentInlineSrc = (attachment) => {
+  if (!attachment || typeof attachment !== "object") return "";
+  const attachmentId = String(attachment?.id || "").trim();
+  if (attachmentId) {
+    return `/api/attachments/${attachmentId}/download?disposition=inline`;
+  }
+  const storageInline = parseInlineStoragePath(attachment?.storage_path || "");
+  if (storageInline?.contentBase64) {
+    return `data:${storageInline.mimeType};base64,${storageInline.contentBase64}`;
+  }
+  const contentBase64 = String(
+    attachment?.content_base64 || attachment?.contentBase64 || ""
+  ).replace(/\s+/g, "");
+  if (!contentBase64) return "";
+  const mimeType = String(
+    attachment?.mime_type || attachment?.mimeType || "application/octet-stream"
+  ).trim();
+  return `data:${mimeType || "application/octet-stream"};base64,${contentBase64}`;
+};
+
+const lookupAttachmentInlineUrl = (cidMap, rawSrc = "") => {
+  const src = String(rawSrc || "").trim();
+  if (!src) return "";
+  const withoutCidPrefix = src.replace(/^cid:/i, "");
+  const basename = withoutCidPrefix.split("/").pop() || withoutCidPrefix;
+  const decodedBasename = (() => {
+    try {
+      return decodeURIComponent(basename);
+    } catch {
+      return basename;
+    }
+  })();
+
+  const candidates = [
+    normalizeCid(src),
+    normalizeCid(withoutCidPrefix),
+    normalizeCid(basename),
+    normalizeAttachmentFilename(src),
+    normalizeAttachmentFilename(withoutCidPrefix),
+    normalizeAttachmentFilename(basename),
+    normalizeAttachmentFilename(decodedBasename),
+  ].filter(Boolean);
+
+  for (const key of candidates) {
+    const mapped = cidMap.get(key);
+    if (mapped) return mapped;
+  }
+
+  return "";
+};
+
 const buildCidAttachmentUrlMap = (attachments = []) => {
   const map = new Map();
+  const addCandidate = (candidate, url) => {
+    const key = normalizeCid(candidate);
+    if (!key || map.has(key)) return;
+    map.set(key, url);
+    const withoutDomainPart = key.split("@")[0];
+    if (withoutDomainPart && !map.has(withoutDomainPart)) {
+      map.set(withoutDomainPart, url);
+    }
+  };
+
   for (const attachment of attachments || []) {
-    const attachmentId = String(attachment?.id || "").trim();
-    if (!attachmentId || !attachment?.storage_path) continue;
+    const url = getAttachmentInlineSrc(attachment);
+    if (!url) continue;
     const candidates = [
       attachment?.provider_attachment_id,
       attachment?.providerAttachmentId,
       attachment?.content_id,
       attachment?.contentId,
+      attachment?.filename,
+      attachment?.name,
     ];
     for (const candidate of candidates) {
-      const key = normalizeCid(candidate);
-      if (!key) continue;
-      if (!map.has(key)) {
-        map.set(key, `/api/attachments/${attachmentId}/download?disposition=inline`);
-      }
+      addCandidate(candidate, url);
+      const filename = normalizeAttachmentFilename(candidate);
+      if (filename) addCandidate(filename, url);
     }
   }
   return map;
@@ -183,16 +267,73 @@ const resolveInlineCidImages = (html, attachments = []) => {
 
 const sanitizeEmailHtml = (value, attachments = []) => {
   if (!value) return "";
+  const cidMap = buildCidAttachmentUrlMap(attachments);
   const htmlWithResolvedInlineCids = resolveInlineCidImages(value, attachments);
-  return String(htmlWithResolvedInlineCids)
+  const sanitizedWithSafeImages = String(htmlWithResolvedInlineCids).replace(
+    /<img\b[^>]*>/gi,
+    (imgTag) => {
+      const quotedSrc = String(imgTag).match(/\bsrc=(['"])(.*?)\1/i)?.[2] || "";
+      const unquotedSrc = String(imgTag).match(/\bsrc=([^\s>]+)/i)?.[1] || "";
+      const rawSrc = String(quotedSrc || unquotedSrc || "").trim();
+      if (!rawSrc) return "";
+
+      const mappedSrc = lookupAttachmentInlineUrl(cidMap, rawSrc);
+      const resolvedSrc = mappedSrc || rawSrc;
+
+      const isSafeAttachmentSrc =
+        resolvedSrc.startsWith("/api/attachments/") ||
+        /\/api\/attachments\/[^/]+\/download/i.test(resolvedSrc) ||
+        /^data:image\//i.test(resolvedSrc) ||
+        /^https?:\/\//i.test(resolvedSrc);
+
+      if (!isSafeAttachmentSrc) return "";
+
+      return `<img src="${escapeHtml(resolvedSrc)}" alt="Inline attachment image" loading="lazy">`;
+    }
+  );
+
+  const sanitized = String(sanitizedWithSafeImages)
     .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
     .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, "")
     .replace(/<link[\s\S]*?>/gi, "")
-    .replace(/<img\b[^>]*>/gi, "")
     .replace(/<\/?font[^>]*>/gi, "")
     .replace(/\sstyle=(['"])[\s\S]*?\1/gi, "")
     .replace(/\sclass=(['"])[\s\S]*?\1/gi, "")
     .replace(/<\/?(html|head|body|meta|title)[^>]*>/gi, "");
+
+  const tokens = sanitized.split(/(<[^>]+>)/g);
+  let insideAnchor = false;
+  return tokens
+    .map((token) => {
+      if (!token) return token;
+      if (token.startsWith("<")) {
+        if (/^<a\b/i.test(token)) insideAnchor = true;
+        if (/^<\/a>/i.test(token)) insideAnchor = false;
+        return token;
+      }
+      if (insideAnchor) return token;
+      return token.replace(
+        /https?:\/\/[a-z0-9.-]+\.[a-z]{2,}(?:\/[^\s<]*)?/gi,
+        (rawUrl) => {
+          const match = String(rawUrl).match(/^(.*?)([)\].,!?;:]*)$/);
+          const url = match?.[1] || rawUrl;
+          const trailing = match?.[2] || "";
+          return `<a href="${url}" target="_blank" rel="noreferrer">${url}</a>${trailing}`;
+        }
+      );
+    })
+    .join("");
+};
+
+const INLINE_ATTACHMENT_ID_RE = /\/api\/attachments\/([^/?#"'\s]+)\/download/g;
+const collectInlineAttachmentIds = (html = "") => {
+  const ids = new Set();
+  const str = String(html || "");
+  let match;
+  INLINE_ATTACHMENT_ID_RE.lastIndex = 0;
+  while ((match = INLINE_ATTACHMENT_ID_RE.exec(str)) !== null) ids.add(match[1]);
+  INLINE_ATTACHMENT_ID_RE.lastIndex = 0;
+  return ids;
 };
 
 const stripHtmlToText = (value = "") =>
@@ -260,9 +401,23 @@ const formatStructuredFormText = (value, subjectLine = "") => {
 };
 
 const EMAIL_BODY_CLASS =
-  "max-w-none w-full min-w-0 break-words [overflow-wrap:anywhere] text-[14px] leading-[1.55] text-gray-800 font-[inherit] [&_*]:max-w-full [&_*]:min-w-0 [&_*]:break-words [&_*]:[overflow-wrap:anywhere] [&_*]:font-[inherit] [&_*]:text-[14px] [&_*]:leading-[1.55]";
+  "max-w-none w-full min-w-0 break-words [overflow-wrap:anywhere] text-[14px] leading-[1.55] text-gray-800 font-[inherit] [&_*]:max-w-full [&_*]:min-w-0 [&_*]:break-words [&_*]:[overflow-wrap:anywhere] [&_*]:font-[inherit] [&_*]:text-[14px] [&_*]:leading-[1.55] [&_a]:text-blue-600 [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-blue-700 [&_img]:max-h-[340px] [&_img]:w-auto [&_img]:rounded-lg [&_img]:my-2 [&_img]:cursor-zoom-in [&_img]:transition-opacity [&_img]:duration-150 hover:[&_img]:opacity-90";
 
-const isImageAttachment = (mimeType = "") => String(mimeType || "").toLowerCase().startsWith("image/");
+const IMAGE_FILENAME_RE = /\.(?:avif|bmp|gif|heic|heif|jpe?g|png|svg|tiff?|webp)$/i;
+
+const isImageAttachment = (attachmentOrMime = "") => {
+  if (typeof attachmentOrMime === "string") {
+    return String(attachmentOrMime || "").toLowerCase().startsWith("image/");
+  }
+  const mimeType = String(
+    attachmentOrMime?.mime_type || attachmentOrMime?.content_type || attachmentOrMime?.mimeType || ""
+  )
+    .trim()
+    .toLowerCase();
+  if (mimeType.startsWith("image/")) return true;
+  const filename = String(attachmentOrMime?.filename || attachmentOrMime?.name || "").trim();
+  return IMAGE_FILENAME_RE.test(filename);
+};
 const isPdfAttachment = (mimeType = "") => String(mimeType || "").toLowerCase() === "application/pdf";
 const normalizeLower = (value = "") => String(value || "").trim().toLowerCase();
 const DISPLAY_TIMEZONE = "Europe/Copenhagen";
@@ -284,9 +439,12 @@ function ImageGrid({ images, onOpen }) {
       {shown.map((img, i) => {
         const isLast = i === 3 && overflow > 0;
         const isTall = count === 3 && i === 0;
+        const src = getAttachmentInlineSrc(img);
+        const key = String(img?.id || img?.provider_attachment_id || img?.filename || `image-${i}`);
+        if (!src) return null;
         return (
           <button
-            key={img.id}
+            key={key}
             type="button"
             onClick={() => onOpen(img)}
             style={{ animationDelay: `${i * 40}ms` }}
@@ -297,7 +455,7 @@ function ImageGrid({ images, onOpen }) {
             )}
           >
             <Image
-              src={`/api/attachments/${img.id}/download?disposition=inline`}
+              src={src}
               alt={img?.filename || "Image"}
               fill
               sizes="(max-width: 640px) 50vw, 280px"
@@ -320,13 +478,13 @@ function ImageGrid({ images, onOpen }) {
 
 function ImageLightbox({ images, index, onClose, onNext, onPrev }) {
   const img = images[index];
-  const url = img ? `/api/attachments/${img.id}/download` : "";
+  const url = img ? getAttachmentInlineSrc(img) : "";
   const hasNext = index < images.length - 1;
   const hasPrev = index > 0;
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
+      className="fixed inset-0 z-[9999] flex items-center justify-center"
       style={{ backgroundColor: "rgba(0,0,0,0.88)" }}
       onClick={onClose}
     >
@@ -384,7 +542,7 @@ function ImageLightbox({ images, index, onClose, onNext, onPrev }) {
 
       {img?.id ? (
         <a
-          href={url}
+          href={String(img?.id || "").trim() ? `/api/attachments/${img.id}/download` : url}
           target="_blank"
           rel="noreferrer"
           download
@@ -477,13 +635,26 @@ export function MessageBubble({
     if (!selectedAttachment?.id) return "";
     return `/api/attachments/${selectedAttachment.id}/download?disposition=inline`;
   }, [selectedAttachment]);
-  const canPreviewImage = isImageAttachment(selectedAttachment?.mime_type);
+  const canPreviewImage = isImageAttachment(selectedAttachment) && Boolean(getAttachmentInlineSrc(selectedAttachment));
   const canPreviewPdf = isPdfAttachment(selectedAttachment?.mime_type);
   const canDownload = Boolean(selectedAttachment?.storage_path);
-  const attachmentCards = (attachments || []).filter((attachment) => Boolean(attachment?.id));
-  const imageAttachments = attachmentCards.filter((a) => isImageAttachment(a?.mime_type) && Boolean(a?.storage_path));
-  const fileAttachments = attachmentCards.filter((a) => !isImageAttachment(a?.mime_type));
-  const lightboxImages = imageAttachments;
+  const attachmentCards = (attachments || []).filter((attachment) => Boolean(getAttachmentInlineSrc(attachment) || attachment?.id));
+  const inlineBodyImageIds = useMemo(() => collectInlineAttachmentIds(safeBodyHtml), [safeBodyHtml]);
+  const inlineImageAttachments = useMemo(
+    () => attachmentCards.filter((a) => isImageAttachment(a) && inlineBodyImageIds.has(String(a?.id || ""))),
+    [attachmentCards, inlineBodyImageIds]
+  );
+  const inlineSrcToAttachment = useMemo(() => {
+    const map = new Map();
+    for (const a of inlineImageAttachments) {
+      const src = getAttachmentInlineSrc(a);
+      if (src) map.set(src, a);
+    }
+    return map;
+  }, [inlineImageAttachments]);
+  const imageAttachments = attachmentCards.filter((a) => isImageAttachment(a) && Boolean(getAttachmentInlineSrc(a)) && !inlineBodyImageIds.has(String(a?.id || "")));
+  const fileAttachments = attachmentCards.filter((a) => !isImageAttachment(a));
+  const lightboxImages = useMemo(() => [...inlineImageAttachments, ...imageAttachments], [inlineImageAttachments, imageAttachments]);
   const lightboxIndex = lightboxImages.findIndex((a) => a?.id === selectedAttachment?.id);
   const isLightboxOpen = Boolean(selectedAttachment) && canPreviewImage;
 
@@ -508,9 +679,10 @@ export function MessageBubble({
   }, [isLightboxOpen, goNext, goPrev, closeLightbox]);
   const subjectLine = String(message?.subject || "").trim() || "Email";
   const senderDetails = formatAddressLabel(senderDisplayName, senderEmail);
-  const rawPlainBody = stripQuotedHeaderTail(
+  const rawPlainBodyFull = stripQuotedHeaderTail(
     decodeHtmlEntities(message.body_text || message.snippet || "No preview available.")
   );
+  const rawPlainBody = rawPlainBodyFull.replace(/\[cid:[^\]]+\]/gi, "").trim();
   const shouldFormatRawPlainBody =
     Boolean((quotedBodyText || "").trim()) || hasQuotedPlainText(rawPlainBody);
   const isStructuredForm = isStructuredFormMessage(message);
@@ -523,10 +695,26 @@ export function MessageBubble({
   const formattedStructuredHtml = linkifyText(
     structuredFormText || cleanBodyText || rawPlainBody
   );
+  const rawBodyForPlaceholderCheck = String(cleanBodyText || rawPlainBodyFull || "");
+  const containsInlineImagePlaceholder =
+    /\[[^\]]+\.(?:avif|bmp|gif|heic|heif|jpe?g|png|svg|tiff?|webp)\]/i.test(rawBodyForPlaceholderCheck) ||
+    /\[cid:[^\]]+\]/i.test(rawBodyForPlaceholderCheck);
+  const cleanHtmlHasRenderableImage = /<img\b/i.test(String(safeCleanBodyHtml || ""));
+  const bodyHtmlHasRenderableImage = /<img\b/i.test(String(safeBodyHtml || ""));
+  const cleanHtmlHasLink = /<a\b/i.test(String(safeCleanBodyHtml || ""));
+  const bodyHtmlHasLink = /<a\b/i.test(String(safeBodyHtml || ""));
+  const shouldPreferFullBodyPreview =
+    !isStructuredForm &&
+    (
+      (containsInlineImagePlaceholder && bodyHtmlHasRenderableImage) ||
+      (bodyHtmlHasRenderableImage && !cleanHtmlHasRenderableImage) ||
+      (bodyHtmlHasLink && !cleanHtmlHasLink)
+    );
+  const previewBodyHtml = shouldPreferFullBodyPreview ? safeBodyHtml : safeCleanBodyHtml;
   const previewHtml = isStructuredForm
     ? formattedStructuredHtml
-    : safeCleanBodyHtml
-    ? safeCleanBodyHtml
+    : previewBodyHtml
+    ? previewBodyHtml
     : linkifyText(
         isStructuredForm
           ? structuredFormText || cleanBodyText || rawPlainBody
@@ -566,11 +754,19 @@ export function MessageBubble({
                   : "border-gray-200 bg-white"
               )}
             >
-              <div className={cn("px-4 py-3 text-[14px] leading-[1.55] text-gray-800", isOutbound && "text-[14px]")}>
-                {!isStructuredForm && safeCleanBodyHtml ? (
+              <div
+                className={cn("px-4 py-3 text-[14px] leading-[1.55] text-gray-800", isOutbound && "text-[14px]")}
+                onClick={(e) => {
+                  if (e.target.tagName !== "IMG") return;
+                  const src = e.target.getAttribute("src");
+                  const attachment = src ? inlineSrcToAttachment.get(src) : null;
+                  if (attachment) openLightbox(attachment);
+                }}
+              >
+                {!isStructuredForm && previewBodyHtml ? (
                   <div
                     className={EMAIL_BODY_CLASS}
-                    dangerouslySetInnerHTML={{ __html: safeCleanBodyHtml }}
+                    dangerouslySetInnerHTML={{ __html: previewBodyHtml }}
                   />
                 ) : (
                   <div
@@ -716,14 +912,15 @@ export function MessageBubble({
           </div>
         </DialogContent>
       </Dialog>
-      {isLightboxOpen ? (
+      {isLightboxOpen ? createPortal(
         <ImageLightbox
           images={lightboxImages}
           index={lightboxIndex}
           onClose={closeLightbox}
           onNext={goNext}
           onPrev={goPrev}
-        />
+        />,
+        document.body
       ) : null}
 
       <Dialog open={Boolean(selectedAttachment) && !canPreviewImage} onOpenChange={(open) => !open && setSelectedAttachment(null)}>

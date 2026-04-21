@@ -1560,7 +1560,7 @@ Deno.serve(async (req) => {
         user_id: mailbox!.user_id,
         mailbox_id: mailbox!.mailbox_id,
         message_id: messageDbId,
-        provider: "smtp",
+        provider: "postmark",
         provider_attachment_id: att?.ContentID ?? null,
         filename: att?.Name ?? null,
         mime_type: att?.ContentType ?? null,
@@ -1572,7 +1572,10 @@ Deno.serve(async (req) => {
         })(),
         created_at: new Date().toISOString(),
       }));
-      await supabase.from("mail_attachments").insert(rows);
+      const { error: attachmentInsertError } = await supabase.from("mail_attachments").insert(rows);
+      if (attachmentInsertError) {
+        console.error("postmark-inbound: attachment insert fejlede", attachmentInsertError.message, { messageDbId, count: rows.length });
+      }
     }
   }
 

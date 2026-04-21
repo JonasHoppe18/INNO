@@ -299,6 +299,34 @@ export function TicketDetail({
     restoredThreadIdRef.current = threadId;
   }, [thread?.id]);
 
+  const threadMessageIdSet = useMemo(
+    () => new Set((messages || []).map((msg) => String(msg?.id || "").trim()).filter(Boolean)),
+    [messages]
+  );
+  const orphanThreadAttachments = useMemo(
+    () =>
+      (attachments || []).filter((attachment) => {
+        const attachmentMessageId = String(attachment?.message_id || "").trim();
+        return !attachmentMessageId || !threadMessageIdSet.has(attachmentMessageId);
+      }),
+    [attachments, threadMessageIdSet]
+  );
+  const latestInboundMessageWithoutOwnAttachmentsId = useMemo(() => {
+    const rows = Array.isArray(messages) ? messages : [];
+    for (let index = rows.length - 1; index >= 0; index -= 1) {
+      const message = rows[index];
+      if (!message || isOutboundMessage(message, mailboxEmails)) continue;
+      const messageId = String(message?.id || "").trim();
+      if (!messageId) continue;
+      const hasPersisted = (attachments || []).some(
+        (attachment) => String(attachment?.message_id || "").trim() === messageId
+      );
+      const hasEmbedded = Array.isArray(message?.attachments) && message.attachments.length > 0;
+      if (!hasPersisted && !hasEmbedded) return messageId;
+    }
+    return "";
+  }, [attachments, mailboxEmails, messages]);
+
   if (!thread) {
     return (
       <section className="flex min-h-0 flex-1 flex-col items-center justify-center text-sm text-muted-foreground">
@@ -340,9 +368,41 @@ export function TicketDetail({
             const persistedAttachments = attachments.filter(
               (attachment) => String(attachment?.message_id || "").trim() === messageId
             );
+            const bodyWithPlaceholders = String(
+              message?.clean_body_text || message?.body_text || message?.snippet || ""
+            );
+            const inlineImagePlaceholderMatches = Array.from(
+              bodyWithPlaceholders.matchAll(/\[([^\]]+\.(?:avif|bmp|gif|heic|heif|jpe?g|png|svg|tiff?|webp))\]/gi)
+            )
+              .map((match) => String(match?.[1] || "").trim().toLowerCase())
+              .filter(Boolean);
+            const inferredAttachments =
+              !persistedAttachments.length && inlineImagePlaceholderMatches.length
+                ? orphanThreadAttachments.filter((attachment) => {
+                    const filename = String(attachment?.filename || "").trim().toLowerCase();
+                    if (!filename) return false;
+                    return inlineImagePlaceholderMatches.includes(filename);
+                  })
+                : [];
+            const inferredLatestInboundFallbackAttachments =
+              !persistedAttachments.length &&
+              !inferredAttachments.length &&
+              !Array.isArray(message?.attachments) &&
+              messageId &&
+              messageId === latestInboundMessageWithoutOwnAttachmentsId
+                ? orphanThreadAttachments.filter((attachment) => {
+                    const mimeType = String(attachment?.mime_type || "").trim().toLowerCase();
+                    const filename = String(attachment?.filename || "").trim().toLowerCase();
+                    return mimeType.startsWith("image/") || /\.(avif|bmp|gif|heic|heif|jpe?g|png|svg|tiff?|webp)$/.test(filename);
+                  })
+                : [];
             const messageAttachments =
               persistedAttachments.length || !Array.isArray(message?.attachments)
-                ? persistedAttachments
+                ? persistedAttachments.length
+                  ? persistedAttachments
+                  : inferredAttachments.length
+                    ? inferredAttachments
+                    : inferredLatestInboundFallbackAttachments
                 : message.attachments;
             const isDraft = Boolean(message.from_me && message.is_draft);
             const shouldInsertActionCardBeforeMessage =
