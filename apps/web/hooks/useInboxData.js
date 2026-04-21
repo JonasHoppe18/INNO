@@ -164,6 +164,7 @@ export function deriveThreadsFromMessages(messages = []) {
       mailbox_id: latest.mailbox_id ?? null,
       provider: latest.provider ?? null,
       provider_thread_id: null,
+      ticket_number: null,
       subject: latest.subject ?? "",
       snippet: latest.snippet ?? "",
       last_message_at: getMessageTimestamp(latest),
@@ -210,25 +211,39 @@ export function useThreads(options = {}) {
       let request = supabase
         .from("mail_threads")
         .select(
-          "id, user_id, mailbox_id, provider, provider_thread_id, subject, snippet, customer_name, customer_email, customer_last_inbound_at, last_message_at, unread_count, is_read, status, assignee_id, priority, tags, classification_key, classification_confidence, classification_reason, created_at, updated_at"
+          "id, user_id, mailbox_id, provider, provider_thread_id, ticket_number, subject, snippet, customer_name, customer_email, customer_last_inbound_at, last_message_at, unread_count, is_read, status, assignee_id, priority, tags, classification_key, classification_confidence, classification_reason, created_at, updated_at"
         )
         .order("last_message_at", { ascending: false, nullsLast: true });
       request = applyClientScope(request, scope);
       let { data: rows, error: queryError } = await request;
       if (
         queryError &&
-        /customer_name|customer_email|customer_last_inbound_at/i.test(String(queryError.message || ""))
+        /customer_name|customer_email|customer_last_inbound_at|ticket_number/i.test(
+          String(queryError.message || "")
+        )
       ) {
         let fallbackRequest = supabase
           .from("mail_threads")
           .select(
-            "id, user_id, mailbox_id, provider, provider_thread_id, subject, snippet, last_message_at, unread_count, is_read, status, assignee_id, priority, tags, classification_key, classification_confidence, classification_reason, created_at, updated_at"
+            "id, user_id, mailbox_id, provider, provider_thread_id, ticket_number, subject, snippet, last_message_at, unread_count, is_read, status, assignee_id, priority, tags, classification_key, classification_confidence, classification_reason, created_at, updated_at"
           )
           .order("last_message_at", { ascending: false, nullsLast: true });
         fallbackRequest = applyClientScope(fallbackRequest, scope);
         const fallback = await fallbackRequest;
         rows = fallback.data;
         queryError = fallback.error;
+        if (queryError && /ticket_number/i.test(String(queryError.message || ""))) {
+          let noTicketFallbackRequest = supabase
+            .from("mail_threads")
+            .select(
+              "id, user_id, mailbox_id, provider, provider_thread_id, subject, snippet, last_message_at, unread_count, is_read, status, assignee_id, priority, tags, classification_key, classification_confidence, classification_reason, created_at, updated_at"
+            )
+            .order("last_message_at", { ascending: false, nullsLast: true });
+          noTicketFallbackRequest = applyClientScope(noTicketFallbackRequest, scope);
+          const noTicketFallback = await noTicketFallbackRequest;
+          rows = noTicketFallback.data;
+          queryError = noTicketFallback.error;
+        }
       }
       if (queryError) throw queryError;
       setData(Array.isArray(rows) ? rows : []);

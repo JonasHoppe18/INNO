@@ -45,7 +45,26 @@ const getInitials = (name, email) => {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 };
 
-export function CustomerTab({ data, loading, error, onRefresh, lookupParams }) {
+const formatTicketStatus = (value) => {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "solved" || normalized === "resolved") return "Resolved";
+  if (normalized === "pending") return "Pending";
+  if (normalized === "waiting") return "Waiting";
+  if (normalized === "new") return "New";
+  return "Open";
+};
+
+const formatTicketRef = (ticketNumber) => {
+  const raw = String(ticketNumber ?? "").trim();
+  if (!raw) return "No ticket ID";
+  const digits = raw.replace(/\D/g, "");
+  const parsed = Number(digits);
+  return Number.isFinite(parsed) && parsed > 0
+    ? `T-${String(parsed).padStart(6, "0")}`
+    : "No ticket ID";
+};
+
+export function CustomerTab({ data, loading, error, onRefresh, lookupParams, onOpenTicket }) {
   if (loading) {
     return (
       <div className="space-y-4 text-sm text-slate-500">
@@ -102,6 +121,7 @@ export function CustomerTab({ data, loading, error, onRefresh, lookupParams }) {
   const totalSpent = totals.length ? totals.reduce((sum, value) => sum + value, 0) : null;
   const currency = orders.find((order) => order?.currency)?.currency || null;
   const initials = getInitials(customer?.name, customer?.email);
+  const previousTickets = Array.isArray(data?.previousTickets) ? data.previousTickets : [];
 
   return (
     <div className="space-y-5">
@@ -230,6 +250,48 @@ export function CustomerTab({ data, loading, error, onRefresh, lookupParams }) {
         ) : (
           <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 text-[13px] text-slate-500">
             Ingen ordrer fundet.
+          </div>
+        )}
+      </div>
+      <div className="space-y-2">
+        <div className="text-[11px] font-medium text-slate-400">Previous tickets</div>
+        {previousTickets.length ? (
+          previousTickets.map((ticket) => {
+            const threadId = String(ticket?.thread_id || "").trim();
+            const lastActivity = formatTimestamp(ticket?.last_message_at);
+            return (
+              <button
+                key={threadId || `${ticket?.ticket_number || "no-number"}-${ticket?.subject || ""}`}
+                type="button"
+                onClick={() => {
+                  if (!threadId) return;
+                  onOpenTicket?.(threadId);
+                }}
+                className="w-full rounded-lg border border-slate-200 bg-white p-3 text-left transition hover:border-slate-300 hover:bg-slate-50"
+                disabled={!threadId}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div
+                    className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-[0.06em] ${
+                      formatTicketRef(ticket?.ticket_number) !== "No ticket ID"
+                        ? "bg-slate-100 font-mono font-medium text-slate-500"
+                        : "text-slate-400"
+                    }`}
+                  >
+                    {formatTicketRef(ticket?.ticket_number)}
+                  </div>
+                  <div className="text-[11px] text-slate-400">{formatTicketStatus(ticket?.status)}</div>
+                </div>
+                <div className="mt-1 line-clamp-2 text-[13px] font-medium text-slate-900">
+                  {String(ticket?.subject || "").trim() || "Untitled ticket"}
+                </div>
+                <div className="mt-1 text-[11px] text-slate-400">{lastActivity || "—"}</div>
+              </button>
+            );
+          })
+        ) : (
+          <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 text-[13px] text-slate-500">
+            No previous tickets found.
           </div>
         )}
       </div>

@@ -80,17 +80,23 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
   const rows = useMemo(() => {
     const normalizedQuery = String(deferredQuery || "").trim().toLowerCase();
     return (threads || [])
-      .map((thread, index) => {
+      .map((thread) => {
         const assigneeId = String(thread?.assignee_id || "").trim();
         const assignee = assigneeId ? membersById.get(assigneeId) || null : null;
         const subject = String(thread?.subject || "").trim() || "Untitled ticket";
         const status = normalizeStatusLabel(thread?.status);
         const createdAt = thread?.created_at || null;
         const lastActivity = thread?.last_message_at || thread?.updated_at || createdAt || null;
-        const displayNumber = String(thread?.provider_thread_id || thread?.id || "").trim();
+        const ticketNumber = Number(thread?.ticket_number);
+        const hasTicketNumber = Number.isFinite(ticketNumber) && ticketNumber > 0;
+        const ticketRef = hasTicketNumber
+          ? `T-${String(ticketNumber).padStart(6, "0")}`
+          : "No ticket ID";
+        const ticketRefRaw = hasTicketNumber ? `t-${ticketNumber}` : "";
         return {
           id: String(thread?.id || ""),
-          displayNumber: displayNumber || String(index + 1),
+          ticketRef,
+          ticketRefRaw,
           subject,
           snippet: String(thread?.snippet || "").trim(),
           status,
@@ -101,10 +107,17 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
       })
       .filter((row) => {
         if (!normalizedQuery) return true;
-        return [row.subject, row.snippet, row.assigneeLabel]
-          .join(" ")
-          .toLowerCase()
-          .includes(normalizedQuery);
+        const ticketMatch = normalizedQuery.startsWith("t-")
+          ? row.ticketRef.toLowerCase().includes(normalizedQuery) ||
+            row.ticketRefRaw.includes(normalizedQuery)
+          : false;
+        return (
+          ticketMatch ||
+          [row.subject, row.snippet, row.assigneeLabel]
+            .join(" ")
+            .toLowerCase()
+            .includes(normalizedQuery)
+        );
       });
   }, [deferredQuery, membersById, threads]);
 
@@ -172,6 +185,15 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
                   <TableRow key={row.id} className="border-b border-slate-200/80 hover:bg-slate-50/60">
                     <TableCell className="align-top">
                       <Link href={`/inbox?thread=${encodeURIComponent(row.id)}`} className="block py-1">
+                        <div
+                          className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-[0.06em] ${
+                            row.ticketRef !== "No ticket ID"
+                              ? "border border-indigo-200 bg-gradient-to-b from-indigo-50 to-white font-mono text-indigo-700"
+                              : "border border-slate-200 bg-slate-50 text-slate-500"
+                          }`}
+                        >
+                          {row.ticketRef}
+                        </div>
                         <div className="font-medium text-slate-900">{row.subject}</div>
                           <div className="mt-1 line-clamp-2 text-sm leading-6 text-slate-500">
                             {row.snippet || "No preview available."}

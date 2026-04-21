@@ -339,11 +339,24 @@ export function TicketDetail({
   const toEmail = getReplyTargetEmail(firstMessage);
   const senderLabel = getSenderLabel(firstMessage);
   const toLabel = toEmail ? `${senderLabel} <${toEmail}>` : senderLabel;
+  const threadTicketRef = Number.isFinite(Number(thread?.ticket_number))
+    ? `T-${String(Number(thread.ticket_number)).padStart(6, "0")}`
+    : "No ticket ID";
+  const hasTicketNumber = threadTicketRef !== "No ticket ID";
 
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-sidebar lg:min-w-0">
       <header className="flex min-h-[58px] items-center justify-between border-b border-gray-100 bg-white px-4 py-1.5">
         <div className="flex min-w-0 items-center gap-3">
+          <div
+            className={`rounded px-2 py-0.5 font-mono text-[11px] tabular-nums ${
+              hasTicketNumber
+                ? "bg-slate-100 font-medium text-slate-600"
+                : "text-slate-400"
+            }`}
+          >
+            {threadTicketRef}
+          </div>
           {headerActions ? <div className="flex shrink-0 items-center gap-2">{headerActions}</div> : null}
         </div>
         <div className="flex items-center gap-2">

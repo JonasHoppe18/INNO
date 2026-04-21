@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { getEffectiveSenderEmail } from "@/lib/inbox/sender";
-import { resolveAuthScope } from "@/lib/server/workspace-auth";
+import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 import { resolveShopifyCredentialsWithDiagnostics } from "@/lib/server/shopify-credentials";
 
 const SUPABASE_URL =
@@ -128,6 +128,40 @@ function buildEmailVariants(email) {
     variants.add(`${localPart.charAt(0).toUpperCase()}${localPart.slice(1)}@${domain}`);
   }
   return Array.from(variants).filter(Boolean);
+}
+
+async function loadPreviousTickets(serviceClient, scope, { customerEmail, currentThreadId = "" }) {
+  const normalizedEmail = normalizeEmail(customerEmail);
+  if (!normalizedEmail) return [];
+
+  let query = serviceClient
+    .from("mail_threads")
+    .select("id, ticket_number, subject, status, last_message_at")
+    .ilike("customer_email", normalizedEmail)
+    .not("ticket_number", "is", null)
+    .or("classification_key.is.null,classification_key.neq.notification")
+    .order("last_message_at", { ascending: false, nullsLast: true })
+    .limit(12);
+  query = applyScope(query, scope);
+  if (currentThreadId) {
+    query = query.neq("id", currentThreadId);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    console.warn("customer-lookup: failed to load previous tickets", error?.message || error);
+    return [];
+  }
+
+  return (Array.isArray(data) ? data : []).map((row) => ({
+    thread_id: String(row?.id || ""),
+    ticket_number: Number.isFinite(Number(row?.ticket_number))
+      ? Number(row.ticket_number)
+      : null,
+    subject: String(row?.subject || "").trim() || "Untitled ticket",
+    status: String(row?.status || "").trim() || "open",
+    last_message_at: row?.last_message_at || null,
+  }));
 }
 
 function matchesOrderNumber(order, candidate) {
@@ -307,6 +341,7 @@ export async function POST(request) {
   });
 
   const scopedCacheKey = `${workspaceId ? `ws:${workspaceId}` : `u:${supabaseUserId}`}|${cacheKey}`;
+  const threadScopedCacheKey = threadId ? `${scopedCacheKey}|thread:${threadId}` : scopedCacheKey;
   const logContext = {
     thread_id: threadId || null,
     source_message_id: sourceMessageId || null,
@@ -322,7 +357,7 @@ export async function POST(request) {
       .from("customer_lookup_cache")
       .select("data, fetched_at, expires_at, source")
       .eq("user_id", supabaseUserId)
-      .eq("cache_key", scopedCacheKey)
+      .eq("cache_key", threadScopedCacheKey)
       .maybeSingle();
     if (cacheError) {
       await logCustomerLookup(serviceClient, {
@@ -340,9 +375,19 @@ export async function POST(request) {
           expires_at: cached.expires_at,
         },
       });
+      const cachedCustomerEmail =
+        normalizeEmail(cached?.data?.customer?.email) ||
+        normalizeEmail(cached?.data?.email) ||
+        effectiveInputEmail;
+      // Always refresh previous tickets from DB to avoid stale ticket numbers in cached payloads.
+      const cachedPreviousTickets = await loadPreviousTickets(serviceClient, scope, {
+        customerEmail: cachedCustomerEmail,
+        currentThreadId: threadId,
+      });
       return NextResponse.json(
         {
           ...(cached?.data || {}),
+          previousTickets: cachedPreviousTickets,
           cached: true,
           fetchedAt: cached.fetched_at,
           expiresAt: cached.expires_at,
@@ -556,10 +601,15 @@ export async function POST(request) {
     return mapped;
   });
   const customer = ordersToUse.length ? mapCustomer(ordersToUse, effectiveInputEmail) : null;
+  const previousTickets = await loadPreviousTickets(serviceClient, scope, {
+    customerEmail: customer?.email || effectiveInputEmail,
+    currentThreadId: threadId,
+  });
 
   const data = {
     customer,
     orders: mappedOrders,
+    previousTickets,
     matchedOrderNumber: derivedOrderNumber,
     source: platform,
     shopDomain: finalShopDomain,
@@ -607,7 +657,7 @@ export async function POST(request) {
       {
         user_id: supabaseUserId,
         platform,
-        cache_key: scopedCacheKey,
+        cache_key: threadScopedCacheKey,
         email: effectiveInputEmail,
         order_number: derivedOrderNumber,
         data,

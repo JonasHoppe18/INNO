@@ -115,6 +115,7 @@ export function SonaInsightsModal({
   customerLookupError,
   onCustomerRefresh,
   customerLookupParams,
+  onOpenTicket,
 }) {
   const [logs, setLogs] = useState([]);
   const [logsLoading, setLogsLoading] = useState(false);
@@ -330,6 +331,7 @@ export function SonaInsightsModal({
               error={customerLookupError}
               onRefresh={onCustomerRefresh}
               lookupParams={customerLookupParams}
+              onOpenTicket={onOpenTicket}
             />
           </TabsContent>
         </Tabs>

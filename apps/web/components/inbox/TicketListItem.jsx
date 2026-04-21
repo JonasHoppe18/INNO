@@ -44,6 +44,10 @@ export function TicketListItem({
     classificationKey && classificationKey !== "support"
       ? CLASSIFICATION_LABELS[classificationKey] || null
       : null;
+  const ticketRef = Number.isFinite(Number(thread?.ticket_number))
+    ? `T-${String(Number(thread.ticket_number)).padStart(6, "0")}`
+    : "No ticket ID";
+  const hasTicketNumber = ticketRef !== "No ticket ID";
 
   return (
     <button
@@ -82,6 +86,16 @@ export function TicketListItem({
       />
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 flex-1 items-center gap-2 truncate text-[13px] font-semibold text-slate-900">
+          <span
+            className={cn(
+              "shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] tabular-nums",
+              hasTicketNumber
+                ? "bg-slate-100 font-medium text-slate-500"
+                : "text-slate-400"
+            )}
+          >
+            {ticketRef}
+          </span>
           <span className="truncate">{customerLabel}</span>
         </div>
         <span className="shrink-0 text-[12px] text-gray-400">{formatMessageTime(timestamp)}</span>

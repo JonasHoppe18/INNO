@@ -5,6 +5,7 @@
  * @property {string | null} mailbox_id
  * @property {string | null} provider
  * @property {string | null} provider_thread_id
+ * @property {number | null} ticket_number
  * @property {string | null} subject
  * @property {string | null} snippet
  * @property {string | null} customer_name

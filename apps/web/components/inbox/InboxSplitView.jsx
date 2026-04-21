@@ -411,9 +411,11 @@ function WorkspaceTabsRow({
                 className="flex min-w-0 flex-1 items-center gap-2 text-left"
               >
                 {unreadCount > 0 ? <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-500" /> : null}
-                <span className="min-w-0 truncate pr-1 text-[12px] font-semibold leading-[18px]">
-                  {subject}
-                </span>
+                <div className="min-w-0 pr-1">
+                  <span className="block min-w-0 truncate text-[12px] font-semibold leading-[16px]">
+                    {subject}
+                  </span>
+                </div>
               </button>
               <button
                 type="button"
@@ -1461,7 +1463,22 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           const subject = (thread.subject || "").toLowerCase();
           const snippet = (thread.snippet || "").toLowerCase();
           const customer = (customerByThread[thread.id] || "").toLowerCase();
-          if (!subject.includes(query) && !snippet.includes(query) && !customer.includes(query)) {
+          const ticketNumber = Number(thread?.ticket_number);
+          const hasTicketNumber = Number.isFinite(ticketNumber) && ticketNumber > 0;
+          const ticketRefDisplay = hasTicketNumber
+            ? `t-${String(ticketNumber).padStart(6, "0")}`
+            : "";
+          const ticketRefRaw = hasTicketNumber ? `t-${ticketNumber}` : "";
+          const shouldMatchTicketRef = query.startsWith("t-");
+          if (
+            !subject.includes(query) &&
+            !snippet.includes(query) &&
+            !customer.includes(query) &&
+            !(
+              shouldMatchTicketRef &&
+              (ticketRefDisplay.includes(query) || ticketRefRaw.includes(query))
+            )
+          ) {
             return false;
           }
         }
@@ -3230,6 +3247,16 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     [openThreadInWorkspace, saveThreadDraft]
   );
 
+  const handleOpenPreviousTicket = useCallback(
+    (threadId) => {
+      const nextThreadId = String(threadId || "").trim();
+      if (!nextThreadId) return;
+      handleSelectThreadInWorkspace(nextThreadId, { newTab: false });
+      setInsightsOpen(false);
+    },
+    [handleSelectThreadInWorkspace]
+  );
+
   useEffect(() => {
     if (isLocalThreadId(selectedThreadId)) return;
     if (!selectedThreadId || !draftReady) return;
@@ -4027,6 +4054,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         customerLookupError={customerLookupError}
         onCustomerRefresh={refreshCustomerLookup}
         customerLookupParams={customerLookupParams}
+        onOpenTicket={handleOpenPreviousTicket}
       />
 
       <TranslationModal
