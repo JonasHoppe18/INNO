@@ -32,6 +32,12 @@ const TRACKING_STATUS_QUESTION_PATTERN =
 
 const SATISFACTION_CLOSURE_PATTERN =
   /\b(?:thanks?(?:\s+a\s+lot)?|thank you(?:\s+so\s+much)?|tak(?:\s+for\s+hjælpen)?|perfekt|super|awesome|great|issue(?:\s+is|'s)?\s+(?:resolved|fixed|solved)|problem(?:\s+is|'s)?\s+(?:resolved|fixed|solved)|it(?:\s+is|'s)?\s+(?:resolved|fixed|solved)|it works(?:\s+now)?|works(?:\s+perfectly|fine|great)?(?:\s+now)?|alt(?:\s+er)?\s+løst|det(?:\s+er)?\s+løst|det virker(?:\s+nu)?|virker\s+nu|fungerer(?:\s+nu)?|all good(?:\s+now)?|all set|you can close(?:\s+the\s+ticket)?|close\s+the\s+ticket)\b/i;
+const EXPLICIT_CLOSE_CONFIRMATION_PATTERN =
+  /\b(?:you can close(?:\s+the\s+ticket)?|close\s+the\s+ticket|issue(?:\s+is|'s)?\s+(?:resolved|fixed|solved)|problem(?:\s+is|'s)?\s+(?:resolved|fixed|solved)|it(?:\s+is|'s)?\s+(?:resolved|fixed|solved)|all good(?:\s+now)?|all set|alt(?:\s+er)?\s+løst|det(?:\s+er)?\s+løst)\b/i;
+const QUESTION_SIGNAL_PATTERN =
+  /(?:\?|\b(?:can|could|would|should|how|what|why|where|when|hvor|hvornår|hvordan|hvad|hvorfor|kan|skal)\b)/i;
+const OPEN_ISSUE_PATTERN =
+  /\b(?:problem|issue|doesn'?t|does not|not\s+work(?:ing)?|still|however|but|cost|price|who\s+needs\s+to\s+pay|hvem\s+skal\s+betale)\b/i;
 
 function getLatestInboundCustomerMessage(messages = [], mailboxEmails = []) {
   const rows = Array.isArray(messages) ? messages : [];
@@ -64,7 +70,14 @@ function messageLooksLikeSatisfactionClosure(message = null) {
     .filter(Boolean)
     .join("\n");
   if (!haystack) return false;
-  return SATISFACTION_CLOSURE_PATTERN.test(haystack);
+  const normalized = haystack.trim();
+  const explicitClose = EXPLICIT_CLOSE_CONFIRMATION_PATTERN.test(normalized);
+  if (QUESTION_SIGNAL_PATTERN.test(normalized) && !explicitClose) return false;
+  if (OPEN_ISSUE_PATTERN.test(normalized) && !explicitClose) return false;
+  if (!SATISFACTION_CLOSURE_PATTERN.test(normalized)) return false;
+  // Keep this suggestion conservative: long detailed replies are rarely closure confirmations.
+  if (normalized.length > 240 && !explicitClose) return false;
+  return true;
 }
 
 export function TicketDetail({

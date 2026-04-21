@@ -748,9 +748,9 @@ export function MessageBubble({
               className={cn(
                 "overflow-hidden rounded-xl border text-xs",
                 isInternalNote
-                  ? "border-yellow-300/40 bg-yellow-500/10"
+                  ? "border-yellow-200 bg-yellow-50 dark:border-yellow-300/40 dark:bg-yellow-500/10"
                   : isOutbound
-                  ? "border-border bg-muted"
+                  ? "border-violet-200 bg-violet-50/55 dark:border-violet-400/30 dark:bg-violet-500/10"
                   : "border-border bg-card"
               )}
             >
