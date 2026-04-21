@@ -5,6 +5,7 @@ import { Composer } from "@/components/inbox/Composer";
 import { ThinkingCard } from "@/components/inbox/ThinkingCard";
 import { ActionCard } from "@/components/inbox/ActionCard";
 import { TrackingCard } from "@/components/inbox/TrackingCard";
+import { ThreadTagsBar } from "@/components/inbox/ThreadTagsBar";
 import { getReplyTargetEmail, getSenderLabel, isOutboundMessage } from "@/components/inbox/inbox-utils";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -128,6 +129,7 @@ export function TicketDetail({
   translationLoading = false,
   onRequestTranslation = null,
   detectedLanguage = null,
+  tagsRefreshTrigger = 0,
 }) {
   const [composerCollapsed, setComposerCollapsed] = useState(false);
   const [processReturnRestock, setProcessReturnRestock] = useState(true);
@@ -397,6 +399,8 @@ export function TicketDetail({
           {rightHeaderActions}
         </div>
       </header>
+
+      <ThreadTagsBar threadId={thread.id} refreshTrigger={tagsRefreshTrigger} />
 
       <div
         ref={conversationRef}
