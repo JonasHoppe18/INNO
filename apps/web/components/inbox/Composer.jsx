@@ -801,13 +801,13 @@ export function Composer({
 
   if (collapsed) {
     return (
-      <div className="flex-none border-t border-gray-100 bg-white px-4 py-2">
-        <div className="flex items-center justify-between rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
-          <span className="text-[12px] font-medium text-gray-600">Reply box hidden</span>
+      <div className="flex-none border-t border-border bg-background px-4 py-2">
+        <div className="flex items-center justify-between rounded-md border border-border bg-muted px-3 py-2">
+          <span className="text-[12px] font-medium text-muted-foreground">Reply box hidden</span>
           <button
             type="button"
             onClick={onToggleCollapse}
-            className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-[12px] font-medium text-gray-600 hover:bg-gray-50"
+            className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-[12px] font-medium text-muted-foreground hover:bg-muted"
           >
             <Maximize2 className="h-3.5 w-3.5" />
             Expand
@@ -827,7 +827,7 @@ export function Composer({
       `}</style>
       <div
         ref={composerContainerRef}
-        className={`mx-auto flex w-full max-w-[900px] flex-col overflow-hidden rounded-3xl border border-gray-200/80 bg-white shadow-sm ${
+        className={`mx-auto flex w-full max-w-[900px] flex-col overflow-hidden rounded-3xl border border-border bg-card shadow-sm ${
           disabled ? "opacity-60" : ""
         }`}
         style={{
@@ -841,11 +841,11 @@ export function Composer({
           aria-orientation="horizontal"
           aria-label="Resize reply box"
           onMouseDown={startResize}
-          className="group flex h-2.5 cursor-row-resize items-center justify-center bg-white"
+          className="group flex h-2.5 cursor-row-resize items-center justify-center bg-card"
         >
-          <span className="h-1 w-14 rounded-full bg-gray-200 transition-colors group-hover:bg-gray-300" />
+          <span className="h-1 w-14 rounded-full bg-border transition-colors group-hover:bg-muted-foreground/40" />
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200/80 px-3 py-1.5">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-1.5">
           <div className="flex flex-1 items-start justify-between gap-2 text-[12px] text-gray-700">
             <div className="flex flex-1 flex-wrap items-center gap-2">
               <span className="font-medium text-gray-500">To:</span>
@@ -1009,7 +1009,7 @@ export function Composer({
           </div>
         ) : null}
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-          <div className="min-h-0 flex-1 overflow-y-auto bg-white px-3 py-2">
+          <div className="min-h-0 flex-1 overflow-y-auto bg-card px-3 py-2">
             {refineOpen && !isNote ? (
               <div
                 className="mb-2 flex flex-col gap-1.5 rounded-xl border border-violet-100 bg-violet-50/60 px-3 py-2"
@@ -1239,7 +1239,7 @@ export function Composer({
               </>
             ) : null}
           </div>
-          <div className="sticky bottom-0 z-10 flex items-center justify-between border-t border-gray-200/80 bg-white px-3 py-1.5 text-[12px] text-gray-500">
+          <div className="sticky bottom-0 z-10 flex items-center justify-between border-t border-border bg-card px-3 py-1.5 text-[12px] text-muted-foreground">
             <div className="flex items-center gap-2">
               {showDraftLoadingState ? (
                 <div className="flex items-center gap-1.5 text-[12px] text-violet-500">

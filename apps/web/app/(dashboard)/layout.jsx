@@ -2,6 +2,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { GlobalTestModeBanner } from "@/components/GlobalTestModeBanner";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { DashboardShell } from "@/components/dashboard-shell";
+import { DashboardThemeProvider } from "@/components/theme/dashboard-theme-provider";
 import { auth, clerkClient } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
@@ -83,14 +84,16 @@ export default async function DashboardLayout({ children }) {
   const defaultSidebarOpen = sidebarCookie === "false" ? false : true;
 
   return (
-    <div className="flex min-h-svh flex-col">
-      <GlobalTestModeBanner />
-      <div className="flex min-h-0 flex-1">
-        <SidebarProvider defaultOpen={defaultSidebarOpen}>
-          <AppSidebar variant="inset" user={sidebarUser} />
-          <DashboardShell>{children}</DashboardShell>
-        </SidebarProvider>
+    <DashboardThemeProvider>
+      <div className="dashboard-theme flex min-h-svh flex-col">
+        <GlobalTestModeBanner />
+        <div className="flex min-h-0 flex-1">
+          <SidebarProvider defaultOpen={defaultSidebarOpen}>
+            <AppSidebar variant="inset" user={sidebarUser} />
+            <DashboardShell>{children}</DashboardShell>
+          </SidebarProvider>
+        </div>
       </div>
-    </div>
+    </DashboardThemeProvider>
   );
 }

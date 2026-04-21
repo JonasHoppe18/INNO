@@ -26,8 +26,8 @@ export function SiteHeader() {
 
   return (
     <header
-      className={`group-has-data-[collapsible=icon]/sidebar-wrapper:h-10 flex h-10 shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear ${
-        hasCustomTitle ? "bg-white" : "bg-white"
+      className={`group-has-data-[collapsible=icon]/sidebar-wrapper:h-10 flex h-10 shrink-0 items-center gap-2 border-b border-border bg-background text-foreground transition-[width,height] ease-linear ${
+        hasCustomTitle ? "bg-background" : "bg-background"
       }`}>
       {hasCustomTitle ? (
         <div className="relative flex w-full min-w-0 items-center">

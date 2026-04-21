@@ -748,14 +748,14 @@ export function MessageBubble({
               className={cn(
                 "overflow-hidden rounded-xl border text-xs",
                 isInternalNote
-                  ? "border-yellow-200 bg-yellow-50"
+                  ? "border-yellow-300/40 bg-yellow-500/10"
                   : isOutbound
-                  ? "border-gray-200 bg-gray-50"
-                  : "border-gray-200 bg-white"
+                  ? "border-border bg-muted"
+                  : "border-border bg-card"
               )}
             >
               <div
-                className={cn("px-4 py-3 text-[14px] leading-[1.55] text-gray-800", isOutbound && "text-[14px]")}
+                className={cn("px-4 py-3 text-[14px] leading-[1.55] text-foreground", isOutbound && "text-[14px]")}
                 onClick={(e) => {
                   if (e.target.tagName !== "IMG") return;
                   const src = e.target.getAttribute("src");
@@ -785,24 +785,24 @@ export function MessageBubble({
             ) : null}
 
             {fileAttachments.length ? (
-              <div className="rounded-xl border border-gray-200 bg-white px-4 pb-3 pt-2">
-                <p className="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-gray-400">Files</p>
+              <div className="rounded-xl border border-border bg-card px-4 pb-3 pt-2">
+                <p className="mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">Files</p>
                 <div className="flex flex-wrap gap-1.5">
                   {fileAttachments.map((attachment) => (
                     <button
                       key={attachment.id}
                       type="button"
                       onClick={() => setSelectedAttachment(attachment)}
-                      className="group/file flex w-[240px] items-center gap-2 overflow-hidden rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-left transition-colors hover:border-gray-300 hover:bg-gray-50"
+                      className="group/file flex w-[240px] items-center gap-2 overflow-hidden rounded-lg border border-border bg-card px-2.5 py-2 text-left transition-colors hover:border-border hover:bg-muted"
                     >
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-gray-100 text-[11px] font-semibold uppercase tracking-wide text-gray-500 transition-colors group-hover/file:bg-gray-200">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted text-[11px] font-semibold uppercase tracking-wide text-muted-foreground transition-colors group-hover/file:bg-muted/80">
                         {String(attachment?.mime_type || "").includes("pdf") ? "PDF" : "File"}
                       </div>
                       <div className="min-w-0">
-                        <p className="truncate text-[12px] font-medium text-gray-800">
+                        <p className="truncate text-[12px] font-medium text-foreground">
                           {attachment?.filename || "Attachment"}
                         </p>
-                        <p className="text-[11px] text-gray-400">
+                        <p className="text-[11px] text-muted-foreground">
                           {attachment?.size_bytes ? formatBytes(attachment.size_bytes) : attachment?.mime_type || "Unknown"}
                         </p>
                       </div>
@@ -813,28 +813,28 @@ export function MessageBubble({
             ) : null}
 
             {!isOutbound && showTranslation && (
-              <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+              <div className="rounded-xl border border-border bg-muted px-4 py-3">
                 {translationLoading ? (
-                  <div className="flex items-center gap-2 text-[12px] text-gray-400">
-                    <span className="inline-block h-3 w-3 animate-spin rounded-full border border-gray-300 border-t-gray-600" />
+                  <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
+                    <span className="inline-block h-3 w-3 animate-spin rounded-full border border-muted-foreground/40 border-t-foreground/80" />
                     Translating…
                   </div>
                 ) : translatedText ? (
-                  <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-gray-700">
+                  <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-foreground">
                     {translatedText}
                   </p>
                 ) : (
-                  <p className="text-[12px] text-gray-400">Translation not available.</p>
+                  <p className="text-[12px] text-muted-foreground">Translation not available.</p>
                 )}
               </div>
             )}
 
             {!isInternalNote ? (
-              <div className="flex flex-wrap items-center gap-3 px-1 text-sm font-medium text-gray-500">
+              <div className="flex flex-wrap items-center gap-3 px-1 text-sm font-medium text-muted-foreground">
                 <button
                   type="button"
                   onClick={() => setViewEmailOpen(true)}
-                  className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-[12px] opacity-0 transition-opacity hover:bg-gray-100 group-hover/bubble:opacity-100"
+                  className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-[12px] opacity-0 transition-opacity hover:bg-muted group-hover/bubble:opacity-100"
                 >
                   <Mail className="h-3.5 w-3.5" />
                   <span>View email</span>
@@ -843,7 +843,7 @@ export function MessageBubble({
                   <button
                     type="button"
                     onClick={handleToggleTranslation}
-                    className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-[12px] opacity-0 transition-opacity hover:bg-gray-100 group-hover/bubble:opacity-100"
+                    className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-[12px] opacity-0 transition-opacity hover:bg-muted group-hover/bubble:opacity-100"
                   >
                     <Globe className="h-3.5 w-3.5" />
                     <span>{showTranslation ? "Hide translation" : "Show translation"}</span>
@@ -856,39 +856,39 @@ export function MessageBubble({
       </div>
       <Dialog open={viewEmailOpen} onOpenChange={setViewEmailOpen}>
         <DialogContent className="max-h-[85vh] max-w-3xl overflow-hidden p-0">
-          <DialogHeader className="border-b border-gray-100 px-5 py-4">
+          <DialogHeader className="border-b border-border px-5 py-4">
             <DialogTitle className="pr-8 text-base">{subjectLine}</DialogTitle>
           </DialogHeader>
-          <div className="max-h-[65vh] overflow-auto bg-white px-5 py-4">
+          <div className="max-h-[65vh] overflow-auto bg-card px-5 py-4">
             <div className="space-y-2 text-sm">
               <div className="flex flex-wrap gap-2">
-                <span className="w-12 shrink-0 text-[12px] font-semibold uppercase tracking-wide text-gray-400">From</span>
-                <span className="text-[13px] text-gray-700">{senderDetails}</span>
+                <span className="w-12 shrink-0 text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">From</span>
+                <span className="text-[13px] text-foreground">{senderDetails}</span>
               </div>
               {toList.length ? (
                 <div className="flex flex-wrap gap-2">
-                  <span className="w-12 shrink-0 text-[12px] font-semibold uppercase tracking-wide text-gray-400">To</span>
-                  <span className="text-[13px] text-gray-700">{toList.join(", ")}</span>
+                  <span className="w-12 shrink-0 text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">To</span>
+                  <span className="text-[13px] text-foreground">{toList.join(", ")}</span>
                 </div>
               ) : null}
               {ccList.length ? (
                 <div className="flex flex-wrap gap-2">
-                  <span className="w-12 shrink-0 text-[12px] font-semibold uppercase tracking-wide text-gray-400">Cc</span>
-                  <span className="text-[13px] text-gray-700">{ccList.join(", ")}</span>
+                  <span className="w-12 shrink-0 text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">Cc</span>
+                  <span className="text-[13px] text-foreground">{ccList.join(", ")}</span>
                 </div>
               ) : null}
               {shouldShowBcc ? (
                 <div className="flex flex-wrap gap-2">
-                  <span className="w-12 shrink-0 text-[12px] font-semibold uppercase tracking-wide text-gray-400">Bcc</span>
-                  <span className="text-[13px] text-gray-700">{bccList.join(", ")}</span>
+                  <span className="w-12 shrink-0 text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">Bcc</span>
+                  <span className="text-[13px] text-foreground">{bccList.join(", ")}</span>
                 </div>
               ) : null}
               <div className="flex flex-wrap gap-2">
-                <span className="w-12 shrink-0 text-[12px] font-semibold uppercase tracking-wide text-gray-400">Date</span>
-                <span className="text-[13px] text-gray-700">{timestamp || "-"}</span>
+                <span className="w-12 shrink-0 text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">Date</span>
+                <span className="text-[13px] text-foreground">{timestamp || "-"}</span>
               </div>
             </div>
-            <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50/40 p-4">
+            <div className="mt-4 rounded-lg border border-border bg-muted/40 p-4">
               {modalHtml ? (
                 <div
                   className={EMAIL_BODY_CLASS}
@@ -899,7 +899,7 @@ export function MessageBubble({
                   className={cn(
                     EMAIL_BODY_CLASS,
                     shouldFormatRawPlainBody &&
-                      "text-[14px] leading-6 text-gray-700 [&_*]:text-[14px] [&_*]:leading-6"
+                      "text-[14px] leading-6 text-foreground [&_*]:text-[14px] [&_*]:leading-6"
                   )}
                   dangerouslySetInnerHTML={{
                     __html: shouldFormatRawPlainBody
@@ -925,26 +925,26 @@ export function MessageBubble({
 
       <Dialog open={Boolean(selectedAttachment) && !canPreviewImage} onOpenChange={(open) => !open && setSelectedAttachment(null)}>
         <DialogContent className="max-h-[85vh] max-w-3xl overflow-hidden p-0">
-          <DialogHeader className="border-b border-gray-100 px-5 py-4">
+          <DialogHeader className="border-b border-border px-5 py-4">
             <DialogTitle className="pr-8 text-base">
               {selectedAttachment?.filename || "Attachment"}
             </DialogTitle>
           </DialogHeader>
-          <div className="max-h-[65vh] overflow-auto bg-gray-50 p-4">
+          <div className="max-h-[65vh] overflow-auto bg-muted p-4">
             {canPreviewPdf && canDownload ? (
               <iframe
                 title={selectedAttachment?.filename || "Attachment preview"}
                 src={selectedAttachmentUrl}
-                className="h-[60vh] w-full rounded border border-gray-200 bg-white"
+                className="h-[60vh] w-full rounded border border-border bg-card"
               />
             ) : (
-              <div className="rounded border border-dashed border-gray-300 bg-white p-6 text-sm text-gray-600">
+              <div className="rounded border border-dashed border-border bg-card p-6 text-sm text-muted-foreground">
                 {canDownload ? "Preview is not available for this file type." : "File content is currently unavailable."}
               </div>
             )}
           </div>
-          <div className="flex items-center justify-between border-t border-gray-100 px-5 py-3">
-            <div className="text-xs text-gray-500">
+          <div className="flex items-center justify-between border-t border-border px-5 py-3">
+            <div className="text-xs text-muted-foreground">
               {selectedAttachment?.mime_type || "Unknown type"}
               {selectedAttachment?.size_bytes ? ` • ${formatBytes(selectedAttachment.size_bytes)}` : ""}
             </div>
@@ -954,7 +954,7 @@ export function MessageBubble({
                   href={selectedAttachmentInlineUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                  className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs font-medium text-foreground hover:bg-muted"
                 >
                   Open in new tab
                 </a>
@@ -962,7 +962,7 @@ export function MessageBubble({
                   href={selectedAttachmentUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                  className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs font-medium text-foreground hover:bg-muted"
                 >
                   <Download className="h-3.5 w-3.5" />
                   Download

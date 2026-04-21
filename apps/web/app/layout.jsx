@@ -13,7 +13,7 @@ export const metadata = {
 // Wrapper layout der sætter globale providers og <html lang="da">
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body>
         <Providers>{children}</Providers>
       </body>

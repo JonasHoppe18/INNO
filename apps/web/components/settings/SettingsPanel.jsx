@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth, useOrganization, useUser } from "@clerk/nextjs";
+import { useTheme } from "next-themes";
 import {
   Building2,
   ChevronDown,
@@ -48,6 +49,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { StickySaveBar } from "@/components/ui/sticky-save-bar";
+import {
+  DEFAULT_THEME,
+  THEME_OPTIONS,
+  normalizeThemePreference,
+} from "@/lib/theme-options";
 
 const MENU_SECTIONS = [
   {
@@ -1311,8 +1317,12 @@ function EmailSettings({
 }
 
 function ProfileTab({ user, isLoaded }) {
+  const { setTheme } = useTheme();
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [themePreference, setThemePreference] = useState(DEFAULT_THEME);
+  const [initialThemePreference, setInitialThemePreference] = useState(DEFAULT_THEME);
+  const [themeLoading, setThemeLoading] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
 
   useEffect(() => {
@@ -1321,23 +1331,95 @@ function ProfileTab({ user, isLoaded }) {
     setLastName(user.lastName || "");
   }, [isLoaded, user]);
 
+  useEffect(() => {
+    if (!isLoaded || !user?.id) {
+      setThemePreference(DEFAULT_THEME);
+      setInitialThemePreference(DEFAULT_THEME);
+      setThemeLoading(false);
+      return;
+    }
+
+    let isActive = true;
+    setThemeLoading(true);
+
+    const loadThemePreference = async () => {
+      try {
+        const response = await fetch("/api/settings/theme", {
+          method: "GET",
+          cache: "no-store",
+          credentials: "include",
+        });
+        if (!response.ok) throw new Error("Could not load theme settings.");
+        const payload = await response.json().catch(() => ({}));
+        const nextTheme = normalizeThemePreference(payload?.theme_preference, DEFAULT_THEME);
+        if (!isActive) return;
+        setThemePreference(nextTheme);
+        setInitialThemePreference(nextTheme);
+        setTheme(nextTheme);
+      } catch {
+        if (!isActive) return;
+        setThemePreference(DEFAULT_THEME);
+        setInitialThemePreference(DEFAULT_THEME);
+      } finally {
+        if (isActive) setThemeLoading(false);
+      }
+    };
+
+    loadThemePreference().catch(() => null);
+
+    return () => {
+      isActive = false;
+    };
+  }, [isLoaded, setTheme, user?.id]);
+
   const email = user?.primaryEmailAddress?.emailAddress || "";
+  const hasNameChanges =
+    firstName !== (user?.firstName || "") || lastName !== (user?.lastName || "");
+  const hasThemeChanges = themePreference !== initialThemePreference;
   const hasChanges =
     isLoaded &&
     Boolean(user) &&
-    (firstName !== (user?.firstName || "") || lastName !== (user?.lastName || ""));
+    (hasNameChanges || hasThemeChanges);
 
   const handleSaveProfile = async () => {
     if (!user || !hasChanges || savingProfile) return;
     setSavingProfile(true);
     try {
-      await user.update({
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-      });
-      toast.success("Profile updated.");
+      if (hasNameChanges) {
+        await user.update({
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+        });
+      }
+
+      if (hasThemeChanges) {
+        const response = await fetch("/api/settings/theme", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ theme_preference: themePreference }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload?.error || "Could not save theme preference.");
+        }
+        const savedTheme = normalizeThemePreference(payload?.theme_preference, DEFAULT_THEME);
+        setTheme(savedTheme);
+        setThemePreference(savedTheme);
+        setInitialThemePreference(savedTheme);
+      }
+
+      if (hasNameChanges && hasThemeChanges) {
+        toast.success("Profile and theme updated.");
+      } else if (hasThemeChanges) {
+        toast.success("Theme updated.");
+      } else {
+        toast.success("Profile updated.");
+      }
     } catch (error) {
-      toast.error(error?.errors?.[0]?.longMessage || "Could not update profile.");
+      toast.error(
+        error?.errors?.[0]?.longMessage || error?.message || "Could not update profile."
+      );
     } finally {
       setSavingProfile(false);
     }
@@ -1417,9 +1499,33 @@ function ProfileTab({ user, isLoaded }) {
           </div>
         </div>
 
+        <div className="space-y-2">
+          <label htmlFor="profile-theme" className="text-sm font-medium text-slate-700">
+            Theme
+          </label>
+          <select
+            id="profile-theme"
+            value={themePreference}
+            onChange={(event) =>
+              setThemePreference(
+                normalizeThemePreference(event.target.value, DEFAULT_THEME)
+              )
+            }
+            disabled={themeLoading || savingProfile}
+            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {THEME_OPTIONS.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-slate-500">Applies to the logged-in app only.</p>
+        </div>
+
         <Button
           onClick={handleSaveProfile}
-          disabled={!hasChanges || savingProfile}
+          disabled={!hasChanges || savingProfile || themeLoading}
           className="bg-slate-900 text-white hover:bg-slate-800"
         >
           {savingProfile ? "Saving..." : "Save Changes"}
@@ -2314,7 +2420,7 @@ export function SettingsPanel() {
   };
 
   return (
-    <main className="bg-white px-4 py-6 lg:px-10 lg:py-10">
+    <main className="settings-theme bg-background px-4 py-6 lg:px-10 lg:py-10">
       <div className="grid gap-8 lg:grid-cols-[260px_1fr]">
         <aside className="space-y-7">
           {MENU_SECTIONS.map((section) => (

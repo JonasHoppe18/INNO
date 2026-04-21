@@ -369,11 +369,11 @@ function WorkspaceTabsRow({
     <div
       className={
         inline
-          ? "relative min-w-0 flex-1 bg-white"
-          : "border-b border-slate-200 bg-white"
+          ? "relative min-w-0 flex-1 bg-background"
+          : "border-b border-border bg-background"
       }
     >
-      {inline ? <div className="absolute inset-y-0 left-0 z-10 w-2 bg-white" /> : null}
+      {inline ? <div className="absolute inset-y-0 left-0 z-10 w-2 bg-background" /> : null}
       <div
         className={
           inline
@@ -393,11 +393,11 @@ function WorkspaceTabsRow({
               className={`group relative flex min-w-0 ${inline ? "max-w-[260px]" : "max-w-[240px]"} shrink-0 items-center gap-2 px-4 py-1.5 transition ${
                 inline
                   ? isActive
-                    ? "-mb-px ml-2 rounded-t-[12px] rounded-b-none bg-white text-slate-900"
-                    : "rounded-t-[12px] rounded-b-none bg-white/65 text-slate-500 hover:bg-white/80 hover:text-slate-700"
+                    ? "-mb-px ml-2 rounded-t-[12px] rounded-b-none bg-background text-foreground"
+                    : "rounded-t-[12px] rounded-b-none bg-muted/70 text-muted-foreground hover:bg-muted hover:text-foreground"
                   : isActive
-                  ? "-mb-px rounded-t-lg rounded-b-none border border-slate-200 border-b-0 bg-white text-slate-900 shadow-sm"
-                  : "rounded-t-lg rounded-b-none border border-slate-200/80 bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                  ? "-mb-px rounded-t-lg rounded-b-none border border-border border-b-0 bg-background text-foreground shadow-sm"
+                  : "rounded-t-lg rounded-b-none border border-border bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground"
               }`}
             >
               {isActive ? (
@@ -420,7 +420,7 @@ function WorkspaceTabsRow({
               <button
                 type="button"
                 onClick={() => onCloseTab?.(threadId)}
-                className={`rounded p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 ${
+                className={`rounded p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground ${
                   isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
                 }`}
                 aria-label={`Close ${subject}`}
@@ -433,7 +433,7 @@ function WorkspaceTabsRow({
         <button
           type="button"
           onClick={() => onAddTab?.()}
-          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-transparent bg-transparent text-slate-400 transition hover:bg-white/80 hover:text-slate-700"
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-transparent bg-transparent text-muted-foreground transition hover:bg-muted hover:text-foreground"
           aria-label="Open new tab"
         >
           <Plus className="h-4 w-4" />
@@ -2980,17 +2980,17 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   useEffect(() => {
     setTitleContent(
       <div className="flex min-w-0 flex-1 items-center">
-        <div className="hidden h-10 shrink-0 items-center justify-end gap-3 bg-white px-3 lg:flex lg:w-[clamp(18rem,20vw,24rem)] lg:min-w-[clamp(18rem,20vw,24rem)] lg:max-w-[clamp(18rem,20vw,24rem)]">
+        <div className="hidden h-10 shrink-0 items-center justify-end gap-3 bg-background px-3 lg:flex lg:w-[clamp(18rem,20vw,24rem)] lg:min-w-[clamp(18rem,20vw,24rem)] lg:max-w-[clamp(18rem,20vw,24rem)]">
           <button
             type="button"
             onClick={handleViewAllTickets}
-            className="inline-flex items-center gap-1 text-[13px] font-medium text-slate-500 transition hover:text-slate-800"
+            className="inline-flex items-center gap-1 text-[13px] font-medium text-muted-foreground transition hover:text-foreground"
           >
             View all
             <ArrowUpRight className="h-3.5 w-3.5" />
           </button>
           {unreadThreadCount > 0 ? (
-            <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-sm bg-slate-100 px-1.5 text-[11px] font-semibold text-slate-500">
+            <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-sm bg-muted px-1.5 text-[11px] font-semibold text-muted-foreground">
               {unreadThreadCount}
             </span>
           ) : null}

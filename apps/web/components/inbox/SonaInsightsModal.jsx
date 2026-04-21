@@ -281,7 +281,7 @@ export function SonaInsightsModal({
   return (
     <aside
       ref={setContainerEl}
-      className={`flex h-full min-w-0 flex-none flex-col overflow-hidden border-l border-gray-200 bg-background transition-[width] duration-200 ease-linear ${
+      className={`flex h-full min-w-0 flex-none flex-col overflow-hidden border-l border-border bg-background transition-[width] duration-200 ease-linear ${
         open ? "w-[clamp(20rem,24vw,28rem)]" : "w-0"
       }`}
       aria-hidden={!open}
@@ -312,13 +312,13 @@ export function SonaInsightsModal({
             <TabsTrigger value="customer">Customer</TabsTrigger>
           </TabsList>
           <TabsContent value="actions" className="min-w-0 flex-1 overflow-y-auto">
-            <div className="rounded-2xl border border-blue-100 bg-gradient-to-b from-blue-50/50 to-white p-4">
+            <div className="rounded-2xl border border-border bg-card/90 p-4">
               {logsLoading || (draftLoading && !timelineItems.length) ? (
-                <div className="text-sm text-slate-500">Loading investigation data…</div>
+                <div className="text-sm text-muted-foreground">Loading investigation data…</div>
               ) : timelineItems.length ? (
                 <ActionsTimeline items={timelineItems} />
               ) : (
-                <div className="text-sm text-slate-500">
+                <div className="text-sm text-muted-foreground">
                   No actions required for this conversation.
                 </div>
               )}

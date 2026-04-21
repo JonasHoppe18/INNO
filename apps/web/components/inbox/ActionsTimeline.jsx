@@ -3,9 +3,9 @@ import { MapPin, RefreshCcw, XCircle, Zap } from "lucide-react";
 
 const statusStyles = {
   success: {
-    dot: "border-indigo-500",
-    line: "bg-indigo-200",
-    badge: "border-indigo-200 bg-indigo-50 text-indigo-700",
+    dot: "border-violet-500",
+    line: "bg-violet-300/70",
+    badge: "border-violet-300 bg-violet-100/80 text-violet-700",
   },
   warning: {
     dot: "border-amber-500",
@@ -13,9 +13,9 @@ const statusStyles = {
     badge: "border-amber-200 bg-amber-50 text-amber-700",
   },
   info: {
-    dot: "border-indigo-300",
-    line: "bg-indigo-100",
-    badge: "border-indigo-100 bg-indigo-50 text-indigo-600",
+    dot: "border-violet-400",
+    line: "bg-violet-200/70",
+    badge: "border-violet-200 bg-violet-50 text-violet-700",
   },
   error: {
     dot: "border-red-500",
@@ -56,8 +56,8 @@ function ShopifyActionCard({ detail }) {
         Icon: RefreshCcw,
       }
     : {
-        wrapper: "border-indigo-200 bg-indigo-50 text-indigo-900",
-        icon: "text-indigo-600",
+        wrapper: "border-violet-200 bg-violet-50 text-violet-900",
+        icon: "text-violet-600",
         label: "Shopify Action",
         Icon: Zap,
       };
@@ -78,21 +78,21 @@ function ShopifyActionCard({ detail }) {
         <Icon className={cn("h-3.5 w-3.5", theme.icon)} />
         {theme.label}
       </div>
-      <div className="mt-2 rounded border border-white/60 bg-white/70 p-2 text-sm">
+      <div className="mt-2 rounded border border-border bg-card p-2 text-sm">
         {isAddressUpdate && addressLines.length ? (
           addressLines.map((line, idx) => (
             <div
               key={`address-line-${idx}`}
               className={cn(
                 "break-words",
-                idx === 0 ? "font-bold text-gray-900" : "text-gray-600"
+                idx === 0 ? "font-bold text-foreground" : "text-muted-foreground"
               )}
             >
               {line}
             </div>
           ))
         ) : (
-          <div className="break-words text-gray-700">{cleaned}</div>
+          <div className="break-words text-foreground">{cleaned}</div>
         )}
       </div>
     </div>
@@ -102,7 +102,7 @@ function ShopifyActionCard({ detail }) {
 export function ActionsTimeline({ items = [] }) {
   return (
     <div className="space-y-4">
-      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         Action timeline
       </div>
       <div className="space-y-4">
@@ -115,14 +115,14 @@ export function ActionsTimeline({ items = [] }) {
             <div key={item.id} className="flex gap-3">
             <div className="relative flex flex-col items-center">
               <div
-                className={cn("h-2.5 w-2.5 rounded-full border-2 bg-white", styles.dot)}
+                className={cn("h-2.5 w-2.5 rounded-full border-2 bg-card", styles.dot)}
               />
               {index < items.length - 1 ? (
                 <div className={cn("mt-1 h-full w-px flex-1", styles.line)} />
               ) : null}
             </div>
             <div className="space-y-2">
-              <div className="text-sm font-semibold text-slate-900">{item.title}</div>
+              <div className="text-sm font-semibold text-foreground">{item.title}</div>
               {isShopifyAction ? (
                 <ShopifyActionCard detail={detailText} />
               ) : item.statusLabel ? (
@@ -135,7 +135,7 @@ export function ActionsTimeline({ items = [] }) {
                   {item.statusLabel}
                 </div>
               ) : null}
-              <div className={cn("text-xs text-slate-400")}>
+              <div className={cn("text-xs text-muted-foreground")}>
                 {item.timestamp}
               </div>
             </div>

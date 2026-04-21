@@ -133,8 +133,8 @@ export function TicketList({
   }, [contextMenu]);
 
   return (
-    <aside className="flex w-full flex-col border-r border-gray-200 bg-white lg:w-[clamp(18rem,20vw,24rem)] lg:min-w-[clamp(18rem,20vw,24rem)] lg:max-w-[clamp(18rem,20vw,24rem)] lg:flex-none">
-      <div className="flex items-center gap-2 border-b border-gray-100 px-3 py-2">
+    <aside className="flex w-full flex-col border-r border-border bg-background lg:w-[clamp(18rem,20vw,24rem)] lg:min-w-[clamp(18rem,20vw,24rem)] lg:max-w-[clamp(18rem,20vw,24rem)] lg:flex-none">
+      <div className="flex items-center gap-2 border-b border-border px-3 py-2">
         <Input
           value={filters.query}
           onChange={(event) => onFiltersChange({ query: event.target.value })}
@@ -164,7 +164,7 @@ export function TicketList({
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {renderedThreads.length ? (
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-border">
             {renderedThreads.map(({ thread, isExiting }) => {
               const uiState = ticketStateByThread[thread.id];
               const customer = customerByThread[thread.id] || "Unknown sender";
@@ -202,11 +202,11 @@ export function TicketList({
           </div>
         )}
       </div>
-      <div className="border-t border-gray-100 px-3 pb-2 pt-2">
+      <div className="border-t border-border px-3 pb-2 pt-2">
         <button
           type="button"
           onClick={onCreateTicket}
-          className="flex h-8 w-full items-center justify-center gap-1.5 rounded-md px-3 text-[13px] text-gray-400 transition hover:bg-gray-50 hover:text-gray-600"
+          className="flex h-8 w-full items-center justify-center gap-1.5 rounded-md px-3 text-[13px] text-muted-foreground transition hover:bg-muted hover:text-foreground"
         >
           <span className="text-base leading-none">+</span>
           New ticket
@@ -214,7 +214,7 @@ export function TicketList({
       </div>
       {contextMenu ? (
         <div
-          className="fixed z-50 min-w-[160px] rounded-md border border-gray-200 bg-white p-1 shadow-lg"
+          className="fixed z-50 min-w-[160px] rounded-md border border-border bg-popover p-1 shadow-lg"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
           <button
@@ -223,7 +223,7 @@ export function TicketList({
               onOpenInNewTab?.(contextMenu.threadId);
               setContextMenu(null);
             }}
-            className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+            className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-foreground hover:bg-muted"
           >
             Open in new tab
           </button>
@@ -233,7 +233,7 @@ export function TicketList({
               onDeleteThread?.(contextMenu.threadId);
               setContextMenu(null);
             }}
-            className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+            className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-red-500 hover:bg-red-500/10"
           >
             Delete
           </button>

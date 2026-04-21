@@ -112,7 +112,7 @@ function SettingsSection({
     <Card
       className={cn(
         "rounded-2xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]",
-        featured && "border-indigo-100 bg-gradient-to-b from-indigo-50/35 to-white",
+        featured && "border-primary/30 bg-gradient-to-b from-primary/12 to-card",
         className,
       )}
     >
@@ -479,12 +479,12 @@ export function AutomationPanel({ children = null }) {
           </div>
         ) : (
           <div className="mt-8 space-y-7 pb-6">
-<SettingsSection
+            <SettingsSection
               title="Sona Assistant"
               description="Enable Sona Assistant to prepare draft replies for your team."
               featured
               action={
-                <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                <div className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2">
                   <span
                     className={cn(
                       "text-xs font-medium",
