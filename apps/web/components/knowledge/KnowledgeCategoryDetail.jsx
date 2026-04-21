@@ -628,6 +628,14 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
             <p className="text-xs text-muted-foreground mb-4">
               Knowledge that applies across all products — not product-specific.
             </p>
+            <SnippetList
+              snippets={snippets}
+              loading={loading}
+              onEdit={(s) => { setEditingSnippet(s); setModalOpen(true); }}
+              onDelete={handleDelete}
+              onAdd={() => { setEditingSnippet(null); setModalOpen(true); }}
+              icon={Icon}
+            />
           </div>
         </>
       )}

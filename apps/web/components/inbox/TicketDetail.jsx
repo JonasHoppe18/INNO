@@ -30,6 +30,9 @@ const TRACKING_KEYWORD_PATTERN =
 const TRACKING_STATUS_QUESTION_PATTERN =
   /\b(where is my order|order status|shipping status|delivery status|when will .*arriv|estimated delivery|not received|still haven'?t received|hvor er min ordre|hvor bliver .* af|hvornår .* lever|leveringstid|forventet levering|ikke modtaget)\b/i;
 
+const SATISFACTION_CLOSURE_PATTERN =
+  /\b(?:thanks?(?:\s+a\s+lot)?|thank you(?:\s+so\s+much)?|tak(?:\s+for\s+hjælpen)?|perfekt|super|awesome|great|issue(?:\s+is|'s)?\s+(?:resolved|fixed|solved)|problem(?:\s+is|'s)?\s+(?:resolved|fixed|solved)|it(?:\s+is|'s)?\s+(?:resolved|fixed|solved)|it works(?:\s+now)?|works(?:\s+perfectly|fine|great)?(?:\s+now)?|alt(?:\s+er)?\s+løst|det(?:\s+er)?\s+løst|det virker(?:\s+nu)?|virker\s+nu|fungerer(?:\s+nu)?|all good(?:\s+now)?|all set|you can close(?:\s+the\s+ticket)?|close\s+the\s+ticket)\b/i;
+
 function getLatestInboundCustomerMessage(messages = [], mailboxEmails = []) {
   const rows = Array.isArray(messages) ? messages : [];
   for (let index = rows.length - 1; index >= 0; index -= 1) {
@@ -52,6 +55,16 @@ function messageLooksLikeTrackingQuestion(message = null) {
   if (TRACKING_STATUS_QUESTION_PATTERN.test(haystack)) return true;
   const hasQuestionSignal = /\?|\b(where|when|how long|hvor|hvornår|hvordan)\b/i.test(haystack);
   return hasQuestionSignal;
+}
+
+function messageLooksLikeSatisfactionClosure(message = null) {
+  if (!message) return false;
+  const haystack = [message?.clean_body_text, message?.body_text, message?.snippet]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .join("\n");
+  if (!haystack) return false;
+  return SATISFACTION_CLOSURE_PATTERN.test(haystack);
 }
 
 export function TicketDetail({
@@ -105,6 +118,7 @@ export function TicketDetail({
 }) {
   const [composerCollapsed, setComposerCollapsed] = useState(false);
   const [processReturnRestock, setProcessReturnRestock] = useState(true);
+  const [dismissedCloseSuggestionByThread, setDismissedCloseSuggestionByThread] = useState({});
   const conversationRef = useRef(null);
   const restoredThreadIdRef = useRef(null);
   const initialScrollTopRef = useRef(0);
@@ -234,6 +248,13 @@ export function TicketDetail({
     [mailboxEmails, messages]
   );
   const latestInboundCustomerMessageId = String(latestInboundCustomerMessage?.id || "");
+  const shouldSuggestCloseFromCustomerReply = useMemo(() => {
+    const normalizedTicketStatus = String(ticketState?.status || "").trim().toLowerCase();
+    if (normalizedTicketStatus === "solved" || normalizedTicketStatus === "resolved") return false;
+    const threadId = String(thread?.id || "").trim();
+    if (threadId && dismissedCloseSuggestionByThread[threadId]) return false;
+    return messageLooksLikeSatisfactionClosure(latestInboundCustomerMessage);
+  }, [dismissedCloseSuggestionByThread, latestInboundCustomerMessage, thread?.id, ticketState?.status]);
   const shouldShowTrackingCard = useMemo(() => {
     const hasTrackingData = Boolean(
       selectedOrderSummary?.tracking?.number || selectedOrderSummary?.tracking?.url
@@ -573,6 +594,45 @@ export function TicketDetail({
             </button>
           </div>
         )} */}
+        {shouldSuggestCloseFromCustomerReply && !shouldShowActionCard && (
+          <div className="px-3 pb-1">
+            <div className="mx-auto w-full max-w-[900px] rounded-xl border border-transparent bg-transparent px-3 py-2">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0 flex items-center gap-2 text-[13px] font-medium text-slate-700">
+                  <span className="truncate">
+                    Mark this ticket as solved.
+                  </span>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-7 shrink-0 border border-emerald-200 bg-white px-2.5 text-emerald-700 hover:bg-emerald-50"
+                    onClick={() => onTicketStateChange?.({ status: "Solved" })}
+                  >
+                    Mark as solved
+                  </Button>
+                  <button
+                    type="button"
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-md text-emerald-700 hover:bg-emerald-50"
+                    aria-label="Dismiss suggestion"
+                    title="Dismiss suggestion"
+                    onClick={() => {
+                      const threadId = String(thread?.id || "").trim();
+                      if (!threadId) return;
+                      setDismissedCloseSuggestionByThread((prev) => ({
+                        ...prev,
+                        [threadId]: true,
+                      }));
+                    }}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="px-3 pb-1.5">
           <Composer
             key={`${thread?.id || "thread"}:${composerMode}`}

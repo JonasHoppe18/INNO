@@ -1512,6 +1512,10 @@ Deno.serve(async (req) => {
         : routingClassification.reason,
     updated_at: new Date().toISOString(),
   };
+  if (!createdNewThread) {
+    // Re-open existing threads when a new inbound customer message arrives.
+    updatePayload.status = "open";
+  }
   if (shouldUpdateCategory) {
     updatePayload.tags = buildThreadTags(existingThread?.tags, inboundCategory);
   }

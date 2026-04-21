@@ -68,6 +68,15 @@ const MENU_SECTIONS = [
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+const DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS = 24 * 14;
+
+const normalizeCloseSuggestionDelayHours = (value, fallback = DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  const rounded = Math.round(parsed);
+  return Math.max(1, Math.min(720, rounded));
+};
+
 const normalizeRoutingRows = (rows = []) =>
   (Array.isArray(rows) ? rows : [])
     .map((row, index) => {
@@ -129,6 +138,8 @@ function GeneralTab({
   onTestEmailChange,
   supportLanguage,
   onSupportLanguageChange,
+  closeSuggestionDelayHours,
+  onCloseSuggestionDelayHoursChange,
   hasWorkspaceScope,
   onSave,
   onReset,
@@ -206,6 +217,27 @@ function GeneralTab({
               the inbox will use this language.
             </p>
           </div>
+
+          <div className="space-y-1.5">
+            <label htmlFor="close-suggestion-delay-hours" className="text-xs font-semibold tracking-wide text-slate-500">
+              AUTO CLOSE (HOURS)
+            </label>
+            <Input
+              id="close-suggestion-delay-hours"
+              type="number"
+              min={1}
+              max={720}
+              step={1}
+              value={closeSuggestionDelayHours}
+              onChange={(event) => onCloseSuggestionDelayHoursChange(event.target.value)}
+              placeholder="336"
+              className="h-11 w-full max-w-xl focus-visible:ring-2 focus-visible:ring-sky-500/40"
+              disabled={!hasWorkspaceScope}
+            />
+            <p className="text-xs text-slate-500">
+              Automatically close tickets after this many hours in Pending with no customer reply.
+            </p>
+          </div>
         </div>
       </div>
 
@@ -258,6 +290,7 @@ function GeneralTab({
               When set, all outgoing emails are redirected to this address while Test Mode is active.
             </p>
           </div>
+
         </div>
         {!hasWorkspaceScope ? (
           <p className="mt-3 text-xs text-amber-700">
@@ -1414,6 +1447,12 @@ export function SettingsPanel() {
   const [initialTestEmail, setInitialTestEmail] = useState("");
   const [supportLanguage, setSupportLanguage] = useState("en");
   const [initialSupportLanguage, setInitialSupportLanguage] = useState("en");
+  const [closeSuggestionDelayHours, setCloseSuggestionDelayHours] = useState(
+    String(DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS)
+  );
+  const [initialCloseSuggestionDelayHours, setInitialCloseSuggestionDelayHours] = useState(
+    String(DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS)
+  );
   const [members, setMembers] = useState([]);
   const [workspaceCurrentRole, setWorkspaceCurrentRole] = useState("");
   const [canManageWorkspaceMembers, setCanManageWorkspaceMembers] = useState(false);
@@ -1570,6 +1609,8 @@ export function SettingsPanel() {
         setInitialTestEmail("");
         setSupportLanguage("en");
         setInitialSupportLanguage("en");
+        setCloseSuggestionDelayHours(String(DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS));
+        setInitialCloseSuggestionDelayHours(String(DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS));
         setMembers([]);
         setWorkspaceCurrentRole("");
         setCanManageWorkspaceMembers(false);
@@ -1590,9 +1631,13 @@ export function SettingsPanel() {
       setInitialTestMode(false);
       setTestEmail("");
       setInitialTestEmail("");
+      setCloseSuggestionDelayHours(String(DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS));
+      setInitialCloseSuggestionDelayHours(String(DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS));
       if (!workspaceId) {
         setSupportLanguage("en");
         setInitialSupportLanguage("en");
+        setCloseSuggestionDelayHours(String(DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS));
+        setInitialCloseSuggestionDelayHours(String(DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS));
       }
 
       const memberOwnerId = shopRow?.owner_user_id ?? supabaseUserId;
@@ -1632,12 +1677,17 @@ export function SettingsPanel() {
           const resolvedSupportLanguage = normalizeSupportLanguage(
             testModePayload?.support_language || "en"
           );
+          const resolvedCloseSuggestionDelayHours = String(
+            normalizeCloseSuggestionDelayHours(testModePayload?.close_suggestion_delay_hours)
+          );
           setTestMode(resolvedTestMode);
           setInitialTestMode(resolvedTestMode);
           setTestEmail(resolvedTestEmail);
           setInitialTestEmail(resolvedTestEmail);
           setSupportLanguage(resolvedSupportLanguage);
           setInitialSupportLanguage(resolvedSupportLanguage);
+          setCloseSuggestionDelayHours(resolvedCloseSuggestionDelayHours);
+          setInitialCloseSuggestionDelayHours(resolvedCloseSuggestionDelayHours);
         }
       }
 
@@ -1732,8 +1782,12 @@ export function SettingsPanel() {
       String(teamName || "").trim() !== String(initialTeamName || "").trim() ||
       Boolean(testMode) !== Boolean(initialTestMode) ||
       String(testEmail || "").trim() !== String(initialTestEmail || "").trim() ||
-      normalizeSupportLanguage(supportLanguage) !== normalizeSupportLanguage(initialSupportLanguage),
+      normalizeSupportLanguage(supportLanguage) !== normalizeSupportLanguage(initialSupportLanguage) ||
+      normalizeCloseSuggestionDelayHours(closeSuggestionDelayHours) !==
+        normalizeCloseSuggestionDelayHours(initialCloseSuggestionDelayHours),
     [
+      closeSuggestionDelayHours,
+      initialCloseSuggestionDelayHours,
       initialSupportLanguage,
       initialTeamName,
       teamName,
@@ -1754,6 +1808,9 @@ export function SettingsPanel() {
       const nextTestMode = Boolean(testMode);
       const nextTestEmail = String(testEmail || "").trim() || null;
       const nextSupportLanguage = normalizeSupportLanguage(supportLanguage, "en");
+      const nextCloseSuggestionDelayHours = normalizeCloseSuggestionDelayHours(
+        closeSuggestionDelayHours
+      );
       if (workspaceId) {
         const { error: workspaceNameError } = await supabase
           .from("workspaces")
@@ -1769,6 +1826,7 @@ export function SettingsPanel() {
             test_mode: nextTestMode,
             test_email: nextTestEmail,
             support_language: nextSupportLanguage,
+            close_suggestion_delay_hours: nextCloseSuggestionDelayHours,
           }),
         });
         const testModePayload = await testModeResponse.json().catch(() => ({}));
@@ -1778,8 +1836,14 @@ export function SettingsPanel() {
         const persistedSupportLanguage = normalizeSupportLanguage(
           testModePayload?.support_language || nextSupportLanguage
         );
+        const persistedCloseSuggestionDelayHours = normalizeCloseSuggestionDelayHours(
+          testModePayload?.close_suggestion_delay_hours,
+          nextCloseSuggestionDelayHours
+        );
         setSupportLanguage(persistedSupportLanguage);
         setInitialSupportLanguage(persistedSupportLanguage);
+        setCloseSuggestionDelayHours(String(persistedCloseSuggestionDelayHours));
+        setInitialCloseSuggestionDelayHours(String(persistedCloseSuggestionDelayHours));
       } else if (shopId) {
         const { error } = await supabase.from("shops").update({ team_name: nextTeamName }).eq("id", shopId);
         if (error) throw error;
@@ -1795,6 +1859,8 @@ export function SettingsPanel() {
       if (!workspaceId) {
         setSupportLanguage(nextSupportLanguage);
         setInitialSupportLanguage(nextSupportLanguage);
+        setCloseSuggestionDelayHours(String(DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS));
+        setInitialCloseSuggestionDelayHours(String(DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS));
       }
       toast.success("Settings saved.");
     } catch (error) {
@@ -1812,6 +1878,7 @@ export function SettingsPanel() {
     shopId,
     supabase,
     supportLanguage,
+    closeSuggestionDelayHours,
     teamName,
     testEmail,
     testMode,
@@ -1823,7 +1890,11 @@ export function SettingsPanel() {
     setTestMode(Boolean(initialTestMode));
     setTestEmail(String(initialTestEmail || ""));
     setSupportLanguage(normalizeSupportLanguage(initialSupportLanguage, "en"));
+    setCloseSuggestionDelayHours(
+      String(normalizeCloseSuggestionDelayHours(initialCloseSuggestionDelayHours))
+    );
   }, [
+    initialCloseSuggestionDelayHours,
     initialSupportLanguage,
     initialTeamName,
     initialTestEmail,
@@ -2230,6 +2301,8 @@ export function SettingsPanel() {
             onTestEmailChange={setTestEmail}
             supportLanguage={supportLanguage}
             onSupportLanguageChange={setSupportLanguage}
+            closeSuggestionDelayHours={closeSuggestionDelayHours}
+            onCloseSuggestionDelayHoursChange={setCloseSuggestionDelayHours}
             hasWorkspaceScope={Boolean(workspaceId)}
             onSave={handleSaveGeneral}
             onReset={handleResetGeneral}

@@ -33,17 +33,42 @@ function parseTestMode(value) {
   return false;
 }
 
+const DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS = 24 * 14;
+const MIN_CLOSE_SUGGESTION_DELAY_HOURS = 1;
+const MAX_CLOSE_SUGGESTION_DELAY_HOURS = 24 * 30;
+
+function normalizeCloseSuggestionDelayHours(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS;
+  const rounded = Math.round(parsed);
+  return Math.max(
+    MIN_CLOSE_SUGGESTION_DELAY_HOURS,
+    Math.min(MAX_CLOSE_SUGGESTION_DELAY_HOURS, rounded)
+  );
+}
+
 async function getWorkspaceSettings(serviceClient, workspaceId) {
-  const { data, error } = await serviceClient
+  let query = await serviceClient
     .from("workspaces")
-    .select("id, test_mode, test_email, support_language")
+    .select("id, test_mode, test_email, support_language, close_suggestion_delay_hours")
     .eq("id", workspaceId)
     .maybeSingle();
-  if (error) throw new Error(error.message);
+  if (query.error?.code === "42703") {
+    query = await serviceClient
+      .from("workspaces")
+      .select("id, test_mode, test_email, support_language")
+      .eq("id", workspaceId)
+      .maybeSingle();
+  }
+  if (query.error) throw new Error(query.error.message);
+  const data = query.data;
   return {
     test_mode: Boolean(data?.test_mode),
     test_email: normalizeEmail(data?.test_email),
     support_language: normalizeSupportLanguage(data?.support_language || "en"),
+    close_suggestion_delay_hours: normalizeCloseSuggestionDelayHours(
+      data?.close_suggestion_delay_hours
+    ),
   };
 }
 
@@ -66,6 +91,7 @@ export async function GET() {
           test_mode: false,
           test_email: null,
           support_language: "en",
+          close_suggestion_delay_hours: DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS,
           workspace_found: false,
         },
         { status: 200 }
@@ -113,6 +139,9 @@ export async function PUT(request) {
     const testMode = parseTestMode(body?.test_mode);
     const testEmail = normalizeEmail(body?.test_email);
     const supportLanguage = normalizeSupportLanguage(body?.support_language || "en");
+    const closeSuggestionDelayHours = normalizeCloseSuggestionDelayHours(
+      body?.close_suggestion_delay_hours
+    );
 
     const { error: updateError } = await serviceClient
       .from("workspaces")
@@ -120,13 +149,17 @@ export async function PUT(request) {
         test_mode: testMode,
         test_email: testEmail,
         support_language: supportLanguage,
+        close_suggestion_delay_hours: closeSuggestionDelayHours,
         updated_at: nowIso,
       })
       .eq("id", scope.workspaceId);
 
     if (updateError) {
       const message = String(updateError.message || "");
-      if (message.includes("updated_at")) {
+      if (
+        message.includes("updated_at") ||
+        message.includes("close_suggestion_delay_hours")
+      ) {
         const fallback = await serviceClient
           .from("workspaces")
           .update({
