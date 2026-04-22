@@ -134,6 +134,7 @@ export function TicketDetail({
   const [composerCollapsed, setComposerCollapsed] = useState(false);
   const [processReturnRestock, setProcessReturnRestock] = useState(true);
   const [dismissedCloseSuggestionByThread, setDismissedCloseSuggestionByThread] = useState({});
+  const closeSuggestionEnabled = false; // Temporarily disabled until heuristics are reworked.
   const conversationRef = useRef(null);
   const restoredThreadIdRef = useRef(null);
   const initialScrollTopRef = useRef(0);
@@ -400,7 +401,7 @@ export function TicketDetail({
         </div>
       </header>
 
-      <ThreadTagsBar threadId={thread.id} refreshTrigger={tagsRefreshTrigger} />
+      {false && <ThreadTagsBar threadId={thread.id} refreshTrigger={tagsRefreshTrigger} />}
 
       <div
         ref={conversationRef}
@@ -611,7 +612,7 @@ export function TicketDetail({
             </button>
           </div>
         )} */}
-        {shouldSuggestCloseFromCustomerReply && !shouldShowActionCard && (
+        {closeSuggestionEnabled && shouldSuggestCloseFromCustomerReply && !shouldShowActionCard && (
           <div className="px-3 pb-1">
             <div className="mx-auto w-full max-w-[900px] rounded-xl border border-transparent bg-transparent px-3 py-2">
               <div className="flex items-center justify-between gap-3">
