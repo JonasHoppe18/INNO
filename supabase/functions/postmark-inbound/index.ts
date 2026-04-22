@@ -20,6 +20,7 @@ import {
 import { parseEmailReplyBodies } from "../_shared/email-reply-parser.ts";
 import { parseShopifyContactIdentity } from "../_shared/shopify-contact-form.ts";
 import { detectCustomerLanguage } from "../_shared/detect-language.ts";
+import { autoTagThread } from "../_shared/autoTagThread.ts";
 
 const PROJECT_URL = Deno.env.get("SUPABASE_URL") ?? Deno.env.get("PROJECT_URL");
 const SERVICE_ROLE_KEY =
@@ -1539,6 +1540,19 @@ Deno.serve(async (req) => {
         }
       }).catch(() => null);
     }
+  }
+
+  // Fire-and-forget: AI auto-tagging based on email content
+  if (supabase && mailbox.workspace_id && threadId && OPENAI_API_KEY) {
+    const tagBody = parsedBodies?.cleanBodyText || textBody || "";
+    autoTagThread({
+      supabase,
+      workspaceId: mailbox.workspace_id,
+      threadId,
+      subject,
+      body: tagBody,
+      openaiApiKey: OPENAI_API_KEY,
+    }).catch((err: Error) => console.warn("[auto-tag] error:", err?.message));
   }
 
   if (messageDbId) {

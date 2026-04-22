@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS workspace_tags (
   name TEXT NOT NULL,
   color TEXT NOT NULL DEFAULT '#6366f1',
   category TEXT,
+  ai_prompt TEXT,
   is_active BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT now()
 );

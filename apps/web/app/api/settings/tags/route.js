@@ -51,7 +51,7 @@ export async function GET() {
 
   const { data, error } = await serviceClient
     .from("workspace_tags")
-    .select("id, name, color, category, is_active, created_at")
+    .select("id, name, color, category, ai_prompt, is_active, created_at")
     .eq("workspace_id", workspaceId)
     .order("category", { nullsFirst: true })
     .order("name");
@@ -79,6 +79,7 @@ export async function POST(request) {
   if (!isValidColor(color)) return NextResponse.json({ error: "Ugyldig farve — brug hex-format (#rrggbb)." }, { status: 400 });
 
   const category = asString(body?.category) || null;
+  const ai_prompt = asString(body?.ai_prompt) || null;
 
   let workspaceId;
   try {
@@ -89,8 +90,8 @@ export async function POST(request) {
 
   const { data, error } = await serviceClient
     .from("workspace_tags")
-    .insert({ workspace_id: workspaceId, name, color, category, is_active: true })
-    .select("id, name, color, category, is_active, created_at")
+    .insert({ workspace_id: workspaceId, name, color, category, ai_prompt, is_active: true })
+    .select("id, name, color, category, ai_prompt, is_active, created_at")
     .maybeSingle();
 
   if (error) {
@@ -135,6 +136,9 @@ export async function PUT(request) {
   if ("category" in body) {
     updates.category = asString(body.category) || null;
   }
+  if ("ai_prompt" in body) {
+    updates.ai_prompt = asString(body.ai_prompt) || null;
+  }
   if (typeof body.is_active === "boolean") {
     updates.is_active = body.is_active;
   }
@@ -146,7 +150,7 @@ export async function PUT(request) {
     .update(updates)
     .eq("id", tagId)
     .eq("workspace_id", workspaceId)
-    .select("id, name, color, category, is_active, created_at")
+    .select("id, name, color, category, ai_prompt, is_active, created_at")
     .maybeSingle();
 
   if (error) {
@@ -190,7 +194,7 @@ export async function DELETE(request) {
       .update({ is_active: false })
       .eq("id", tagId)
       .eq("workspace_id", workspaceId)
-      .select("id, name, color, category, is_active, created_at")
+      .select("id, name, color, category, ai_prompt, is_active, created_at")
       .maybeSingle();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ tag: data, deactivated: true });

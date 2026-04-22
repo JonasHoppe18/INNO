@@ -18,6 +18,7 @@ import {
   Bell,
   Plus,
   SlidersHorizontal,
+  TagIcon,
   Trash2,
   User,
   UserRoundPenIcon,
@@ -99,6 +100,11 @@ const baseData = {
       name: "Knowledge",
       url: "/knowledge",
       icon: BookOpenIcon,
+    },
+    {
+      name: "Tags",
+      url: "/tags",
+      icon: TagIcon,
     },
     {
       name: "Analytics",

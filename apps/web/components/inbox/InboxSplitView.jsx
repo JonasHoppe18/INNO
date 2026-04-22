@@ -60,23 +60,6 @@ const DEFAULT_FILTERS = {
 
 const STATUS_OPTIONS = ["New", "Open", "Pending", "Waiting", "Solved"];
 const UNASSIGNED_ASSIGNEE_VALUE = "__unassigned__";
-const EMAIL_CATEGORY_LABELS = [
-  "Tracking",
-  "Return",
-  "Exchange",
-  "Product question",
-  "Technical support",
-  "Payment",
-  "Cancellation",
-  "Refund",
-  "Address change",
-  "General",
-];
-const LEGACY_CATEGORY_LABEL_MAP = {
-  "Order Tracking": "Tracking",
-  "Address Change": "Address change",
-  Cancel: "Cancellation",
-};
 const APPROVAL_ACTION_TYPES = new Set([
   "update_shipping_address",
   "cancel_order",
@@ -131,16 +114,6 @@ const extractInboxSlugFromTags = (tags = []) => {
   return slug || null;
 };
 
-const extractCategoryFromTags = (tags = []) => {
-  const list = Array.isArray(tags) ? tags : [];
-  for (const rawTag of list) {
-    const tag = String(rawTag || "").trim();
-    if (!tag || tag.startsWith("inbox:")) continue;
-    if (EMAIL_CATEGORY_LABELS.includes(tag)) return tag;
-    if (LEGACY_CATEGORY_LABEL_MAP[tag]) return LEGACY_CATEGORY_LABEL_MAP[tag];
-  }
-  return "General";
-};
 
 const extractSenderFromThreadSnippet = (thread) => {
   const snippet = String(thread?.snippet || "").replace(/\s+/g, " ").trim();
@@ -196,7 +169,6 @@ function InboxHeaderActions({
   inboxOptions,
   selectedInboxBucket,
   selectedInboxSlug,
-  tagLabel,
   onTicketStateChange,
   onAssignmentChange,
   onInboxChange,
@@ -280,12 +252,6 @@ function InboxHeaderActions({
           ))}
         </SelectContent>
       </Select>
-      <button
-        type="button"
-        className="cursor-pointer rounded-md border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-medium text-orange-700"
-      >
-        {tagLabel || "General"}
-      </button>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
@@ -1747,7 +1713,6 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       .filter(Boolean)
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [workspaceMembers]);
-  const selectedTagLabel = extractCategoryFromTags(selectedThread?.tags || []);
   const selectedInboxSlug = extractInboxSlugFromTags(selectedThread?.tags || []);
   const selectedInboxBucket = getInboxBucket(selectedThread);
 
@@ -4004,7 +3969,6 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
                 inboxOptions={inboxOptions}
                 selectedInboxBucket={selectedInboxBucket}
                 selectedInboxSlug={selectedInboxSlug}
-                tagLabel={selectedTagLabel}
                 onTicketStateChange={handleTicketStateChange}
                 onAssignmentChange={handleAssignmentChange}
                 onInboxChange={handleInboxChange}

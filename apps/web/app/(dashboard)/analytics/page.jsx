@@ -162,6 +162,25 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  const [backfillState, setBackfillState] = useState("idle"); // idle | running | done | error
+  const [backfillResult, setBackfillResult] = useState(null);
+
+  async function handleBackfill() {
+    if (backfillState === "running") return;
+    setBackfillState("running");
+    setBackfillResult(null);
+    try {
+      const res = await fetch("/api/admin/backfill-tags", { method: "POST" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "Backfill mislykkedes.");
+      setBackfillResult(json);
+      setBackfillState("done");
+    } catch (err) {
+      setBackfillResult({ error: err.message });
+      setBackfillState("error");
+    }
+  }
+
   const [minutesPerDraft, setMinutesPerDraft] = useState(() => {
     if (typeof window === "undefined") return 5;
     const n = parseInt(localStorage.getItem("sona_minutes_per_draft") ?? "", 10);
@@ -504,6 +523,38 @@ export default function AnalyticsPage() {
               />
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Data management */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm font-semibold">Data management</CardTitle>
+          <CardDescription className="text-xs">Maintenance actions for your workspace data.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-slate-800">Tag historical tickets</p>
+              <p className="text-xs text-slate-500 mt-0.5">Run AI tagging on all tickets that currently have no tags.</p>
+              {backfillState === "done" && backfillResult && !backfillResult.error && (
+                <p className="text-xs text-emerald-600 mt-1">
+                  Done — {backfillResult.tagged ?? 0} of {backfillResult.processed ?? 0} tickets tagged.
+                </p>
+              )}
+              {backfillState === "error" && backfillResult?.error && (
+                <p className="text-xs text-rose-600 mt-1">{backfillResult.error}</p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={handleBackfill}
+              disabled={backfillState === "running"}
+              className="shrink-0 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {backfillState === "running" ? "Running…" : "Run backfill"}
+            </button>
+          </div>
         </CardContent>
       </Card>
     </div>
