@@ -11,7 +11,6 @@ import {
   Lock,
   PenLine,
   Settings,
-  Tag,
   Trash2,
   User,
   Users2,
@@ -55,7 +54,6 @@ import {
   THEME_OPTIONS,
   normalizeThemePreference,
 } from "@/lib/theme-options";
-import { TagsSettings } from "@/components/settings/TagsSettings";
 
 const MENU_SECTIONS = [
   {
@@ -68,8 +66,7 @@ const MENU_SECTIONS = [
       { key: "general", label: "General", icon: Building2 },
       { key: "members", label: "Members", icon: Users2 },
       { key: "email", label: "Email", icon: Mail },
-      { key: "tags", label: "Tags", icon: Tag },
-      { key: "billing", label: "Billing", icon: CreditCard },
+{ key: "billing", label: "Billing", icon: CreditCard },
     ],
   },
 ];
@@ -2375,8 +2372,6 @@ export function SettingsPanel() {
             }}
           />
         );
-      case "tags":
-        return <TagsSettings />;
       case "billing":
         return <BillingTab />;
       case "email":
