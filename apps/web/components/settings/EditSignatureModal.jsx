@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { GripVertical } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -246,6 +247,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
   const [builderOpen, setBuilderOpen] = useState(false);
   const [builderDraft, setBuilderDraft] = useState(DEFAULT_SIGNATURE_BUILDER);
   const [logoUploadError, setLogoUploadError] = useState("");
+  const [draggingFieldKey, setDraggingFieldKey] = useState(null);
 
   useEffect(() => {
     if (!open) return;
@@ -310,6 +312,12 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
     () => "Message body preview.<br/><br/>" + buildSignatureTemplateFromBuilder(builderDraft),
     [builderDraft]
   );
+  const hasBuilderChanges = useMemo(() => {
+    return (
+      String(buildSignatureTemplateFromBuilder(builderDraft) || "").trim() !==
+      String(templateHtml || "").trim()
+    );
+  }, [builderDraft, templateHtml]);
 
   const handleBuilderField = useCallback((field, value) => {
     setBuilderDraft((prev) => ({ ...prev, [field]: value }));
@@ -326,19 +334,24 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
     }));
   }, []);
 
-  const handleBuilderFieldMove = useCallback((fieldKey, direction) => {
-    if (!SIGNATURE_TEXT_FIELD_KEYS.includes(fieldKey)) return;
+  const handleFieldDrop = useCallback((sourceFieldKey, targetFieldKey) => {
+    if (
+      !sourceFieldKey ||
+      !targetFieldKey ||
+      sourceFieldKey === targetFieldKey ||
+      !SIGNATURE_TEXT_FIELD_KEYS.includes(sourceFieldKey) ||
+      !SIGNATURE_TEXT_FIELD_KEYS.includes(targetFieldKey)
+    ) {
+      return;
+    }
     setBuilderDraft((prev) => {
       const order = Array.isArray(prev?.textOrder) ? [...prev.textOrder] : [...SIGNATURE_TEXT_FIELD_KEYS];
-      const index = order.indexOf(fieldKey);
-      if (index < 0) return prev;
-      const nextIndex = direction === "up" ? index - 1 : index + 1;
-      if (nextIndex < 0 || nextIndex >= order.length) return prev;
-      [order[index], order[nextIndex]] = [order[nextIndex], order[index]];
-      return {
-        ...prev,
-        textOrder: order,
-      };
+      const fromIndex = order.indexOf(sourceFieldKey);
+      const toIndex = order.indexOf(targetFieldKey);
+      if (fromIndex < 0 || toIndex < 0) return prev;
+      const [moved] = order.splice(fromIndex, 1);
+      order.splice(toIndex, 0, moved);
+      return { ...prev, textOrder: order };
     });
   }, []);
 
@@ -556,230 +569,255 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
         open={builderOpen}
         onOpenChange={(next) => {
           setBuilderOpen(next);
-          if (!next) setLogoUploadError("");
+          if (!next) {
+            setLogoUploadError("");
+            setDraggingFieldKey(null);
+          }
         }}
       >
-        <DialogContent className="w-[95vw] max-w-6xl max-h-[90vh] overflow-hidden">
+        <DialogContent className="w-[95vw] max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle>Signature Template Builder</DialogTitle>
             <DialogDescription>
               Build a visual footer and apply it to this team member.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid min-h-0 gap-6 md:grid-cols-[1fr_1fr]">
-            <div className="space-y-3 overflow-y-auto pr-1 max-h-[65vh]">
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold tracking-wide text-slate-500">FULL NAME</label>
-                <Input
-                  value={builderDraft.fullName}
-                  onChange={(event) => handleBuilderField("fullName", event.target.value)}
-                  placeholder="Full name"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold tracking-wide text-slate-500">JOB TITLE</label>
-                <Input
-                  value={builderDraft.jobTitle}
-                  onChange={(event) => handleBuilderField("jobTitle", event.target.value)}
-                  placeholder="Support specialist"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold tracking-wide text-slate-500">PHONE</label>
-                <Input
-                  value={builderDraft.phone}
-                  onChange={(event) => handleBuilderField("phone", event.target.value)}
-                  placeholder="+45 00000000"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold tracking-wide text-slate-500">EMAIL</label>
-                <Input
-                  value={builderDraft.email}
-                  onChange={(event) => handleBuilderField("email", event.target.value)}
-                  placeholder="name@company.com"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold tracking-wide text-slate-500">COMPANY NAME</label>
-                <Input
-                  value={builderDraft.companyName}
-                  onChange={(event) => handleBuilderField("companyName", event.target.value)}
-                  placeholder="Company name"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold tracking-wide text-slate-500">LAYOUT</label>
-                <select
-                  value={builderDraft.layout || "logo_left"}
-                  onChange={(event) => handleBuilderField("layout", event.target.value)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-slate-700"
-                >
-                  <option value="logo_left">Logo left, text right</option>
-                  <option value="logo_right">Text left, logo right</option>
-                  <option value="logo_top">Logo top, text below</option>
-                  <option value="logo_bottom">Text top, logo below</option>
-                </select>
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold tracking-wide text-slate-500">TEXT ALIGNMENT</label>
-                <select
-                  value={builderDraft.textAlign || "left"}
-                  onChange={(event) => handleBuilderField("textAlign", event.target.value)}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-slate-700"
-                >
-                  <option value="left">Left</option>
-                  <option value="center">Center</option>
-                  <option value="right">Right</option>
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold tracking-wide text-slate-500">NAME SIZE (px)</label>
-                  <Input
-                    type="number"
-                    min={12}
-                    max={28}
-                    value={builderDraft.nameSize || "16"}
-                    onChange={(event) => handleBuilderField("nameSize", event.target.value)}
-                  />
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="grid min-h-0 gap-6 md:grid-cols-[1.05fr_1fr]">
+              <div className="space-y-4 pr-1">
+                <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
+                  <h4 className="text-sm font-semibold text-slate-900">Content</h4>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold tracking-wide text-slate-500">FULL NAME</label>
+                    <Input
+                      value={builderDraft.fullName}
+                      onChange={(event) => handleBuilderField("fullName", event.target.value)}
+                      placeholder="Full name"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold tracking-wide text-slate-500">JOB TITLE</label>
+                    <Input
+                      value={builderDraft.jobTitle}
+                      onChange={(event) => handleBuilderField("jobTitle", event.target.value)}
+                      placeholder="Support specialist"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold tracking-wide text-slate-500">PHONE</label>
+                      <Input
+                        value={builderDraft.phone}
+                        onChange={(event) => handleBuilderField("phone", event.target.value)}
+                        placeholder="+45 00000000"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold tracking-wide text-slate-500">EMAIL</label>
+                      <Input
+                        value={builderDraft.email}
+                        onChange={(event) => handleBuilderField("email", event.target.value)}
+                        placeholder="name@company.com"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold tracking-wide text-slate-500">COMPANY NAME</label>
+                    <Input
+                      value={builderDraft.companyName}
+                      onChange={(event) => handleBuilderField("companyName", event.target.value)}
+                      placeholder="Company name"
+                    />
+                  </div>
                 </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold tracking-wide text-slate-500">TEXT SIZE (px)</label>
-                  <Input
-                    type="number"
-                    min={11}
-                    max={22}
-                    value={builderDraft.bodySize || "13"}
-                    onChange={(event) => handleBuilderField("bodySize", event.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold tracking-wide text-slate-500">LOGO WIDTH (px)</label>
-                  <Input
-                    type="number"
-                    min={90}
-                    max={320}
-                    value={builderDraft.logoWidth || "170"}
-                    onChange={(event) => handleBuilderField("logoWidth", event.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold tracking-wide text-slate-500">COLUMN GAP (px)</label>
-                  <Input
-                    type="number"
-                    min={4}
-                    max={40}
-                    value={builderDraft.columnGap || "14"}
-                    onChange={(event) => handleBuilderField("columnGap", event.target.value)}
-                  />
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold tracking-wide text-slate-500">TEXT ORDER</label>
-                <div className="space-y-2 rounded-md border border-slate-200 p-2">
-                  {(Array.isArray(builderDraft.textOrder) ? builderDraft.textOrder : SIGNATURE_TEXT_FIELD_KEYS)
-                    .filter((fieldKey) => SIGNATURE_TEXT_FIELD_KEYS.includes(fieldKey))
-                    .map((fieldKey, index, arr) => (
-                      <div
-                        key={fieldKey}
-                        className="flex items-center justify-between rounded-md border border-slate-100 px-2 py-2"
+
+                <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
+                  <h4 className="text-sm font-semibold text-slate-900">Layout & Style</h4>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold tracking-wide text-slate-500">LAYOUT</label>
+                      <select
+                        value={builderDraft.layout || "logo_left"}
+                        onChange={(event) => handleBuilderField("layout", event.target.value)}
+                        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-slate-700"
                       >
-                        <label className="flex items-center gap-2 text-sm text-slate-700">
-                          <input
-                            type="checkbox"
-                            checked={builderDraft?.fieldVisibility?.[fieldKey] !== false}
-                            onChange={(event) =>
-                              handleBuilderFieldVisibility(fieldKey, event.target.checked)
-                            }
-                          />
-                          {SIGNATURE_TEXT_FIELD_LABELS[fieldKey] || fieldKey}
-                        </label>
-                        <div className="flex items-center gap-1">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            className="h-7 px-2"
-                            onClick={() => handleBuilderFieldMove(fieldKey, "up")}
-                            disabled={index === 0}
-                          >
-                            Up
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            className="h-7 px-2"
-                            onClick={() => handleBuilderFieldMove(fieldKey, "down")}
-                            disabled={index === arr.length - 1}
-                          >
-                            Down
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
+                        <option value="logo_left">Logo left, text right</option>
+                        <option value="logo_right">Text left, logo right</option>
+                        <option value="logo_top">Logo top, text below</option>
+                        <option value="logo_bottom">Text top, logo below</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold tracking-wide text-slate-500">TEXT ALIGNMENT</label>
+                      <select
+                        value={builderDraft.textAlign || "left"}
+                        onChange={(event) => handleBuilderField("textAlign", event.target.value)}
+                        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-slate-700"
+                      >
+                        <option value="left">Left</option>
+                        <option value="center">Center</option>
+                        <option value="right">Right</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold tracking-wide text-slate-500">NAME SIZE (px)</label>
+                      <Input
+                        type="number"
+                        min={12}
+                        max={28}
+                        value={builderDraft.nameSize || "16"}
+                        onChange={(event) => handleBuilderField("nameSize", event.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold tracking-wide text-slate-500">TEXT SIZE (px)</label>
+                      <Input
+                        type="number"
+                        min={11}
+                        max={22}
+                        value={builderDraft.bodySize || "13"}
+                        onChange={(event) => handleBuilderField("bodySize", event.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold tracking-wide text-slate-500">LOGO WIDTH (px)</label>
+                      <Input
+                        type="number"
+                        min={90}
+                        max={320}
+                        value={builderDraft.logoWidth || "170"}
+                        onChange={(event) => handleBuilderField("logoWidth", event.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold tracking-wide text-slate-500">COLUMN GAP (px)</label>
+                      <Input
+                        type="number"
+                        min={4}
+                        max={40}
+                        value={builderDraft.columnGap || "14"}
+                        onChange={(event) => handleBuilderField("columnGap", event.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold tracking-wide text-slate-500">ACCENT COLOR</label>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="color"
+                        value={builderDraft.accentColor || "#111827"}
+                        onChange={(event) => handleBuilderField("accentColor", event.target.value)}
+                        className="h-10 w-12 rounded border border-slate-300 bg-white p-1"
+                      />
+                      <span className="text-sm text-slate-600">
+                        {builderDraft.accentColor ? builderDraft.accentColor : "Pick color"}
+                      </span>
+                      {builderDraft.accentColor ? (
+                        <button
+                          type="button"
+                          className="text-xs text-slate-500 underline"
+                          onClick={() => handleBuilderField("accentColor", "")}
+                        >
+                          Clear
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold tracking-wide text-slate-500">ACCENT COLOR</label>
-                <div className="flex items-center gap-3">
+
+                <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
+                  <h4 className="text-sm font-semibold text-slate-900">Text Order</h4>
+                  <p className="text-xs text-slate-500">Drag rows to reorder fields in the signature.</p>
+                  <div className="space-y-2">
+                    {(Array.isArray(builderDraft.textOrder) ? builderDraft.textOrder : SIGNATURE_TEXT_FIELD_KEYS)
+                      .filter((fieldKey) => SIGNATURE_TEXT_FIELD_KEYS.includes(fieldKey))
+                      .map((fieldKey, index, arr) => (
+                        <div
+                          key={fieldKey}
+                          draggable
+                          onDragStart={() => setDraggingFieldKey(fieldKey)}
+                          onDragOver={(event) => event.preventDefault()}
+                          onDrop={() => {
+                            handleFieldDrop(draggingFieldKey, fieldKey);
+                            setDraggingFieldKey(null);
+                          }}
+                          onDragEnd={() => setDraggingFieldKey(null)}
+                          className={`flex items-center justify-between rounded-md border px-2 py-2 transition ${
+                            draggingFieldKey === fieldKey
+                              ? "border-sky-300 bg-sky-50"
+                              : "border-slate-200 bg-white"
+                          }`}
+                        >
+                          <label className="flex items-center gap-2 text-sm text-slate-700">
+                            <button
+                              type="button"
+                              className="cursor-grab text-slate-400 hover:text-slate-600"
+                              aria-label={`Drag ${SIGNATURE_TEXT_FIELD_LABELS[fieldKey] || fieldKey}`}
+                            >
+                              <GripVertical className="h-4 w-4" />
+                            </button>
+                            <input
+                              type="checkbox"
+                              checked={builderDraft?.fieldVisibility?.[fieldKey] !== false}
+                              onChange={(event) =>
+                                handleBuilderFieldVisibility(fieldKey, event.target.checked)
+                              }
+                            />
+                            {SIGNATURE_TEXT_FIELD_LABELS[fieldKey] || fieldKey}
+                          </label>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-2">
+                  <h4 className="text-sm font-semibold text-slate-900">Logo</h4>
                   <input
-                    type="color"
-                    value={builderDraft.accentColor || "#111827"}
-                    onChange={(event) => handleBuilderField("accentColor", event.target.value)}
-                    className="h-10 w-12 rounded border border-slate-300 bg-white p-1"
+                    type="file"
+                    accept="image/*"
+                    onChange={handleLogoUpload}
+                    className="block w-full text-sm text-slate-600 file:mr-3 file:rounded file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm"
                   />
-                  <span className="text-sm text-slate-600">
-                    {builderDraft.accentColor ? builderDraft.accentColor : "Pick color"}
-                  </span>
-                  {builderDraft.accentColor ? (
-                    <button
-                      type="button"
-                      className="text-xs text-slate-500 underline"
-                      onClick={() => handleBuilderField("accentColor", "")}
-                    >
-                      Clear
-                    </button>
+                  {logoUploadError ? <p className="text-xs text-red-600">{logoUploadError}</p> : null}
+                  {builderDraft.logoUrl ? (
+                    <div className="flex items-center gap-3">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={builderDraft.logoUrl} alt="Logo preview" className="h-10 w-auto rounded border border-slate-200" />
+                      <button
+                        type="button"
+                        className="text-xs text-slate-500 underline"
+                        onClick={() => handleBuilderField("logoUrl", "")}
+                      >
+                        Remove logo
+                      </button>
+                    </div>
                   ) : null}
                 </div>
               </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold tracking-wide text-slate-500">LOGO IMAGE</label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleLogoUpload}
-                  className="block w-full text-sm text-slate-600 file:mr-3 file:rounded file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm"
-                />
-                {logoUploadError ? <p className="text-xs text-red-600">{logoUploadError}</p> : null}
-                {builderDraft.logoUrl ? (
-                  <button
-                    type="button"
-                    className="text-xs text-slate-500 underline"
-                    onClick={() => handleBuilderField("logoUrl", "")}
-                  >
-                    Remove logo
-                  </button>
-                ) : null}
-              </div>
-            </div>
-            <div className="space-y-2 overflow-y-auto pr-1 max-h-[65vh]">
-              <h4 className="text-sm font-medium text-slate-800">Preview</h4>
-              <div className="rounded-md border border-slate-200">
-                <div className="border-b border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600">
-                  <div>From: [sender]</div>
-                  <div>To: [recipient]</div>
-                  <div>Subject: Re: Your request</div>
+              <div className="space-y-2 md:sticky md:top-0 self-start">
+                <h4 className="text-sm font-medium text-slate-800">Preview</h4>
+                <div className="rounded-md border border-slate-200 bg-white shadow-sm">
+                  <div className="border-b border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600">
+                    <div>From: [sender]</div>
+                    <div>To: [recipient]</div>
+                    <div>Subject: Re: Your request</div>
+                  </div>
+                  <div
+                    className="p-4 text-sm text-slate-900"
+                    dangerouslySetInnerHTML={{ __html: builderPreviewHtml }}
+                  />
                 </div>
-                <div
-                  className="p-4 text-sm text-slate-900"
-                  dangerouslySetInnerHTML={{ __html: builderPreviewHtml }}
-                />
               </div>
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="mt-4 border-t border-slate-200 pt-3 bg-white">
+            <div className="mr-auto text-xs text-slate-500">
+              {hasBuilderChanges ? "Unsaved changes" : "No pending changes"}
+            </div>
             <Button type="button" variant="outline" onClick={() => setBuilderOpen(false)}>
               Cancel
             </Button>
