@@ -159,10 +159,12 @@ For hver henvendelsestype: hvad skal AI'en have adgang til, og hvad er succeskri
 - Betalingsgateway + forventet behandlingstid (fra shop-konfiguration eller Shopify-data)
 - Thread State: om refund allerede er kommunikeret
 
-**Succes:** Præcist beløb, præcis dato, klar forklaring på eventuelle fradrag — ingen generiske estimater
+**Succes:** Præcist beløb, præcis dato, klar forklaring på eventuelle fradrag — ingen generiske estimater.
+
+Behandlingstid er altid typisk 2-5 hverdage (standard bank-behandlingstid, ikke konfigurerbar). Det afgørende er at AI'en kender `transactions[].processed_at`-datoen fra Shopify, så den kan beregne en konkret forventningsdato fremfor at sige "op til 14 dage".
 
 **Succes-eksempel:**
-> "Refunderingen på 349 DKK er godkendt og behandlet den 27. april. Det tager typisk 2-5 hverdage fra behandling til pengene er synlige på din konto — du kan forvente dem senest den 2. maj."
+> "Refunderingen på 349 DKK er godkendt og behandlet den 27. april. Det tager typisk 2-5 hverdage — du kan forvente dem på din konto senest den 2. maj."
 
 ---
 
@@ -260,9 +262,8 @@ Hvad en shop SKAL konfigurere for gode svar:
 |---|---|---|
 | Tone / persona | shops.tone_instructions | Kritisk |
 | Returnpolitik (window, adresse, shipping mode) | return_settings | Kritisk |
-| Refund behandlingstid (dage) | shops.refund_processing_days | Høj |
+| Betalingsgateway-navn (til kundevenlig tekst) | shops.payment_gateway | Medium |
 | Knowledge base (FAQ, produktguides, troubleshooting) | agent_knowledge | Høj |
-| Betalingsgateway-navn | shops.payment_gateway | Medium |
 | Automatiske actions (on/off) | agent_automation | Valgfri |
 
 Hvad der har gode defaults:
@@ -338,12 +339,6 @@ ALTER TABLE mail_threads
 ADD COLUMN conversation_summary TEXT;
 ```
 
-### 3. `shops.refund_processing_days` (INTEGER)
-```sql
-ALTER TABLE shops 
-ADD COLUMN refund_processing_days INTEGER DEFAULT 5;
-```
-
 ---
 
 ## Hvad vi IKKE gør (scope boundary)
@@ -368,7 +363,6 @@ ADD COLUMN refund_processing_days INTEGER DEFAULT 5;
 ## Implementeringsrækkefølge
 
 1. **Enriched Order Context** — størst immediate impact, ingen DB-migration
-2. **`shops.refund_processing_days`** — lille migration, stor effekt på refund-svar
-3. **Thread State** — DB-migration + update-logik + prompt-integration
+2. **Thread State** — DB-migration + update-logik + prompt-integration
 4. **Conversation Summarization** — bygger ovenpå thread state
 5. **Prompt omstrukturering** — samler det hele
