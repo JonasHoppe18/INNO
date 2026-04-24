@@ -30,6 +30,7 @@ const parseLogDetail = (value) => {
       trackingSource: null,
       trackingLookupSource: null,
       trackingLookupDetail: null,
+      trackingEvents: [],
     };
   }
   if (raw.startsWith("{") && raw.endsWith("}")) {
@@ -60,6 +61,7 @@ const parseLogDetail = (value) => {
           asString(parsed?.lookup_source || parsed?.lookupSource) || null,
         trackingLookupDetail:
           asString(parsed?.lookup_detail || parsed?.lookupDetail) || null,
+        trackingEvents: summarizeTrackingEvents(parsed?.snapshot || null),
       };
     } catch {
       return {
@@ -74,6 +76,7 @@ const parseLogDetail = (value) => {
         trackingSource: null,
         trackingLookupSource: null,
         trackingLookupDetail: null,
+        trackingEvents: [],
       };
     }
   }
@@ -89,6 +92,7 @@ const parseLogDetail = (value) => {
     trackingSource: null,
     trackingLookupSource: null,
     trackingLookupDetail: null,
+    trackingEvents: [],
   };
 };
 
@@ -101,6 +105,86 @@ const normalizeTrackingStatusLabel = (value) => {
   }
   if (lower === "afsendt") return "Shipped";
   return text;
+};
+
+const GENERIC_TRACKING_EVENT_PATTERN = /^tracking event$/i;
+const COUNTRY_ONLY_LOCATION_PATTERN = /^[a-z]{2}$/i;
+
+const mapGlsEventCodeToDescription = (code) => {
+  const raw = String(code || "").trim().toUpperCase();
+  if (!raw) return "";
+  const compact = raw.replace(/[^A-Z]/g, "");
+  if (raw.includes("DELIVD") && (raw.includes("PSAPP") || raw.includes("PARCELSHOP"))) {
+    return "Delivered to parcel shop";
+  }
+  if (raw.includes("OUTDEL")) return "Out for delivery";
+  if (raw.includes("INBOD") || raw.includes("INBOUD")) return "Arrived at distribution center";
+  if (raw.includes("OUTBOD")) return "Departed from distribution center";
+  if (raw.includes("INTIAL") && raw.includes("PREADVICE")) {
+    return "Shipment data received by carrier";
+  }
+  if (raw.includes("INTIAL")) return "Shipment accepted by carrier";
+  if (compact === "PREADVICE") return "Shipment data received by carrier";
+  if (compact === "PLANNEDPICKUP") return "Pickup planned";
+  if (compact === "INPICKUP") return "Picked up by carrier";
+  if (compact === "NOTPICKEDUP") return "Pickup not completed";
+  if (compact === "INTRANSIT") return "In transit";
+  if (compact === "INDELIVERY") return "Out for delivery";
+  if (compact === "DELIVEREDPS") return "Delivered to parcel shop";
+  if (compact === "INWAREHOUSE") return "Ready for pickup";
+  if (compact === "DELIVERED" || compact === "FINAL") return "Delivered";
+  if (compact === "NOTDELIVERED") return "Delivery attempt failed";
+  if (compact === "CANCELED") return "Shipment canceled";
+  return "";
+};
+
+const describeTrackingEvent = (event) => {
+  const description = asString(event?.description);
+  const code = asString(event?.code);
+  if (description && !GENERIC_TRACKING_EVENT_PATTERN.test(description)) {
+    const mappedFromDescription = mapGlsEventCodeToDescription(description);
+    if (mappedFromDescription) return mappedFromDescription;
+    return description;
+  }
+  const mappedFromCode = mapGlsEventCodeToDescription(code);
+  if (mappedFromCode) return mappedFromCode;
+  if (code) {
+    return code
+      .replace(/[_-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+  return "Tracking event";
+};
+
+const normalizeEventLocation = (value) => {
+  const location = asString(value);
+  if (!location) return "";
+  if (COUNTRY_ONLY_LOCATION_PATTERN.test(location)) return "";
+  return location;
+};
+
+const summarizeTrackingEvents = (snapshot) => {
+  if (!snapshot || !Array.isArray(snapshot.events)) return [];
+  return [...snapshot.events]
+    .filter((event) => event?.description || event?.code || event?.occurredAt)
+    .sort((a, b) => {
+      const aTs = a?.occurredAt ? Date.parse(String(a.occurredAt)) : Number.NaN;
+      const bTs = b?.occurredAt ? Date.parse(String(b.occurredAt)) : Number.NaN;
+      const aValid = Number.isFinite(aTs);
+      const bValid = Number.isFinite(bTs);
+      if (aValid && bValid) return bTs - aTs;
+      if (aValid) return -1;
+      if (bValid) return 1;
+      return 0;
+    })
+    .slice(0, 4)
+    .map((event) => {
+      const description = describeTrackingEvent(event);
+      const location = normalizeEventLocation(event?.location);
+      return location ? `${description} (${location})` : description;
+    })
+    .filter(Boolean);
 };
 
 export function SonaInsightsModal({
@@ -187,7 +271,12 @@ export function SonaInsightsModal({
           parsed?.trackingNumber ? `#${parsed.trackingNumber}` : "",
           parsed?.trackingUrl || "",
         ].filter(Boolean);
+        const events = Array.isArray(parsed?.trackingEvents) ? parsed.trackingEvents : [];
+        if (chunks.length && events.length) {
+          return `${chunks.join(" | ")}\nRecent events: ${events.join(" → ")}`;
+        }
         if (chunks.length) return chunks.join(" | ");
+        if (events.length) return `Recent events: ${events.join(" → ")}`;
         return parsed?.detail || "Loaded live tracking status.";
       }
       if (step === "postmark_inbound_draft_created" || step === "draft_created") {

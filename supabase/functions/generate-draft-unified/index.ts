@@ -5110,6 +5110,31 @@ Deno.serve(async (req) => {
               const loc = snap.lastEvent.location ? ` (${snap.lastEvent.location})` : "";
               lines.push(`Last event: ${snap.lastEvent.description}${loc}${snap.lastEvent.occurredAt ? ` at ${snap.lastEvent.occurredAt}` : ""}`);
             }
+            if (Array.isArray(snap?.events) && snap.events.length > 0) {
+              const recentEvents = [...snap.events]
+                .filter((event) => event?.description || event?.code || event?.occurredAt)
+                .sort((a, b) => {
+                  const aTs = a?.occurredAt ? Date.parse(String(a.occurredAt)) : Number.NaN;
+                  const bTs = b?.occurredAt ? Date.parse(String(b.occurredAt)) : Number.NaN;
+                  const aValid = Number.isFinite(aTs);
+                  const bValid = Number.isFinite(bTs);
+                  if (aValid && bValid) return bTs - aTs;
+                  if (aValid) return -1;
+                  if (bValid) return 1;
+                  return 0;
+                })
+                .slice(0, 6)
+                .map((event, index) => {
+                  const title = String(event?.description || event?.code || "Tracking event").trim();
+                  const location = event?.location ? ` (${event.location})` : "";
+                  const timestamp = event?.occurredAt ? ` at ${event.occurredAt}` : "";
+                  return `${index + 1}. ${title}${location}${timestamp}`;
+                });
+              if (recentEvents.length) {
+                lines.push("Recent tracking events:");
+                lines.push(...recentEvents);
+              }
+            }
             const text = lines.join("\n");
             return {
               included: false,

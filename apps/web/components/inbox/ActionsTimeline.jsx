@@ -128,7 +128,7 @@ export function ActionsTimeline({ items = [] }) {
               ) : item.statusLabel ? (
                 <div
                   className={cn(
-                    "max-w-full rounded-lg border px-3 py-1 text-xs font-medium leading-5 shadow-sm whitespace-normal break-words",
+                    "max-w-full rounded-lg border px-3 py-1 text-xs font-medium leading-5 shadow-sm whitespace-pre-line break-words",
                     styles.badge
                   )}
                 >

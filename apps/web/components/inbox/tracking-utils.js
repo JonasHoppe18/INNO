@@ -156,6 +156,83 @@ function buildTrackingEventFromLog(log) {
 }
 
 const NOISE_EVENT_PATTERN = /\b(e-?mail|text message|sms|notification has been sent|besked.*sendt|notifikation|received a notification from your shipper|preparing an item for you|tracking information will be updated)\b/i;
+const GENERIC_TRACKING_EVENT_PATTERN = /^tracking event$/i;
+const COUNTRY_ONLY_LOCATION_PATTERN = /^[a-z]{2}$/i;
+
+function mapGlsEventCodeToDescription(code = "") {
+  const raw = String(code || "").trim().toUpperCase();
+  if (!raw) return "";
+  const compact = raw.replace(/[^A-Z]/g, "");
+
+  if (raw.includes("DELIVD") && (raw.includes("PSAPP") || raw.includes("PARCELSHOP"))) {
+    return "Delivered to parcel shop";
+  }
+  if (raw.includes("OUTDEL")) return "Out for delivery";
+  if (raw.includes("INBOD") || raw.includes("INBOUD")) return "Arrived at distribution center";
+  if (raw.includes("OUTBOD")) return "Departed from distribution center";
+  if (raw.includes("INTIAL") && raw.includes("PREADVICE")) {
+    return "Shipment data received by carrier";
+  }
+  if (raw.includes("INTIAL")) return "Shipment accepted by carrier";
+
+  if (compact === "PREADVICE") return "Shipment data received by carrier";
+  if (compact === "PLANNEDPICKUP") return "Pickup planned";
+  if (compact === "INPICKUP") return "Picked up by carrier";
+  if (compact === "NOTPICKEDUP") return "Pickup not completed";
+  if (compact === "INTRANSIT") return "In transit";
+  if (compact === "INDELIVERY") return "Out for delivery";
+  if (compact === "DELIVEREDPS") return "Delivered to parcel shop";
+  if (compact === "INWAREHOUSE") return "Ready for pickup";
+  if (compact === "DELIVERED" || compact === "FINAL") return "Delivered";
+  if (compact === "NOTDELIVERED") return "Delivery attempt failed";
+  if (compact === "CANCELED") return "Shipment canceled";
+  return "";
+}
+
+function resolveEventDescription(event, carrier = "") {
+  const rawDescription = asString(event?.description || "");
+  const rawCode = asString(event?.code || "");
+  if (rawDescription && !GENERIC_TRACKING_EVENT_PATTERN.test(rawDescription)) {
+    if (/gls/i.test(String(carrier || ""))) {
+      const mappedFromDescription = mapGlsEventCodeToDescription(rawDescription);
+      if (mappedFromDescription) return mappedFromDescription;
+    }
+    return normalizeEventDescription(rawDescription);
+  }
+  if (/gls/i.test(String(carrier || ""))) {
+    const mapped = mapGlsEventCodeToDescription(rawCode);
+    if (mapped) return mapped;
+  }
+  if (rawCode) {
+    return normalizeEventDescription(
+      rawCode
+        .replace(/[_-]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+    );
+  }
+  return "Tracking event";
+}
+
+function resolveEventLocation(raw = "") {
+  const input = asString(raw);
+  if (!input) return "";
+  if (COUNTRY_ONLY_LOCATION_PATTERN.test(input)) return "";
+  const normalized = normalizeLocationName(input);
+  if (COUNTRY_ONLY_LOCATION_PATTERN.test(normalized)) return "";
+  return normalized;
+}
+
+function buildPickupPointLocation(snapshot) {
+  const point = snapshot?.pickupPoint || null;
+  if (!point || typeof point !== "object") return "";
+  const name = asString(point?.name);
+  const address = asString(point?.address);
+  const city = asString(point?.city);
+  const postalCode = asString(point?.postalCode);
+  const cityLine = [postalCode, city].filter(Boolean).join(" ").trim();
+  return cityLine || address || name || "";
+}
 
 function normalizeLocationName(raw = "") {
   const s = String(raw || "").trim();
@@ -226,21 +303,25 @@ function buildSnapshotEvents(snapshot, carrier) {
   });
 
   return filtered.map((event, index) => {
-    const description = normalizeEventDescription(asString(event?.description || event?.code || ""));
+    const description = resolveEventDescription(event, carrier);
     const rawLocation = asString(event?.location || "");
     // For the latest (delivered) event, prefer the recipient delivery city from snapshot over terminal name
     const rawDeliveryCity = snapshot?.deliveryCity || "";
     const deliveryCity = rawDeliveryCity
       ? rawDeliveryCity.replace(/\w\S*/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
       : "";
+    const pickupPointLocation =
+      index === 0 && /delivered to parcel shop/i.test(description)
+        ? buildPickupPointLocation(snapshot)
+        : "";
     const location = index === 0 && deliveryCity
       ? deliveryCity
-      : normalizeLocationName(rawLocation);
+      : pickupPointLocation || resolveEventLocation(rawLocation);
     const ts = formatEventTimestamp(event?.occurredAt);
     // For the latest event: embed timestamp in title so it's immediately visible
     const title = index === 0 && ts
-      ? `${description || "Tracking event"} · ${ts}`
-      : description || "Tracking event";
+      ? `${description} · ${ts}`
+      : description;
     // Meta: location only (carrier name is redundant — already in modal header)
     const metaParts = [location].filter(Boolean);
     return {

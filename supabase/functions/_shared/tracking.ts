@@ -693,18 +693,29 @@ function mapGlsSnapshotToTrackingDetail(
   snapshot: GlsProviderSnapshot,
   fallbackUrl: string,
 ): TrackingDetail {
+  const parcelShopLocation = [snapshot?.parcelShop?.postalCode, snapshot?.parcelShop?.city]
+    .map((part) => String(part || "").trim())
+    .filter(Boolean)
+    .join(" ")
+    .trim();
   const latest = snapshot.latestEvent;
   const events = Array.isArray(snapshot.events)
-    ? snapshot.events.map((event) => ({
-      code: String(event?.code || "").trim() || null,
-      description: String(event?.description || "").trim() || null,
-      occurredAt: normalizeIso(event?.eventDateTime) || null,
-      location:
+    ? snapshot.events.map((event, index) => {
+      const location =
         [event?.postalCode, event?.city, event?.country]
           .map((part) => String(part || "").trim())
           .filter(Boolean)
-          .join(" ") || null,
-    })).filter((event) => event.code || event.description || event.occurredAt || event.location)
+          .join(" ")
+          .trim() ||
+        (index === 0 ? parcelShopLocation : "") ||
+        null;
+      return {
+        code: String(event?.code || "").trim() || null,
+        description: String(event?.description || "").trim() || null,
+        occurredAt: normalizeIso(event?.eventDateTime) || null,
+        location,
+      };
+    }).filter((event) => event.code || event.description || event.occurredAt || event.location)
     : [];
   const newestEventFromList = [...events].sort((a, b) => {
     const aTs = a.occurredAt ? Date.parse(a.occurredAt) : Number.NaN;
@@ -726,7 +737,10 @@ function mapGlsSnapshotToTrackingDetail(
           [latest.postalCode, latest.city, latest.country]
             .map((part) => String(part || "").trim())
             .filter(Boolean)
-            .join(" ") || null,
+            .join(" ")
+            .trim() ||
+          parcelShopLocation ||
+          null,
       }
       : null;
   const lastEvent = normalizedLatestFromSnapshot || newestEventFromList;

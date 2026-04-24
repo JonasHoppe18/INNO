@@ -102,6 +102,17 @@ function pickFirstString(record: Record<string, unknown>, keys: string[]): strin
   return "";
 }
 
+function extractPostalCity(value: unknown): { postalCode: string | null; city: string | null } {
+  const raw = asString(value);
+  if (!raw) return { postalCode: null, city: null };
+  const normalized = raw.replace(/\s+/g, " ").trim();
+  const match = normalized.match(/\b(\d{4,5})\s+(.+)$/);
+  if (!match) return { postalCode: null, city: null };
+  const postalCode = asString(match[1]) || null;
+  const city = asString(match[2]) || null;
+  return { postalCode, city };
+}
+
 function normalizeEvent(event: unknown): NormalizedEvent | null {
   if (!event || typeof event !== "object") return null;
   const record = event as Record<string, unknown>;
@@ -118,9 +129,25 @@ function normalizeEvent(event: unknown): NormalizedEvent | null {
   );
   if (!code && !description && !eventDateTime) return null;
 
-  const country = asString(record.country || record.countryCode) || null;
-  const city = asString(record.city || record.locationCity || record.locationName) || null;
-  const postalCode = asString(record.postalCode || record.zipCode || record.zip) || null;
+  const rawLocation = pickFirstString(record, [
+    "location",
+    "locationName",
+    "eventLocation",
+    "locationText",
+    "depot",
+    "hub",
+    "terminal",
+  ]);
+  const parsedPostalCity = extractPostalCity(rawLocation);
+  const country = asString(record.country || record.countryCode || record.countryName) || null;
+  const city =
+    asString(record.city || record.locationCity || record.cityName || record.town || record.locationName) ||
+    parsedPostalCity.city ||
+    null;
+  const postalCode =
+    asString(record.postalCode || record.zipCode || record.zip || record.postCode) ||
+    parsedPostalCity.postalCode ||
+    null;
 
   return {
     code: code || "UNKNOWN",
@@ -177,12 +204,33 @@ function parseParcelShopFromTrackingEvents(events: NormalizedEvent[]): GlsParcel
 function normalizeParcelShop(value: unknown, source: GlsParcelShop["source"]): GlsParcelShop {
   if (!value || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
-  const name = pickFirstString(record, ["name", "shopName", "parcelShopName", "displayName"]);
-  const addressLine = pickFirstString(record, ["addressLine", "address", "street", "streetName"]);
-  const postalCode = pickFirstString(record, ["postalCode", "zipCode", "zip"]);
-  const city = pickFirstString(record, ["city", "town"]);
-  const country = pickFirstString(record, ["country", "countryCode"]);
-  const openingHours = pickFirstString(record, ["openingHours", "openHours", "hours"]);
+  const addressRecord =
+    record.address && typeof record.address === "object"
+      ? (record.address as Record<string, unknown>)
+      : null;
+  const name = pickFirstString(record, ["name", "shopName", "parcelShopName", "displayName", "parcelShop"]);
+  const addressLine =
+    pickFirstString(record, ["addressLine", "address", "street", "streetName", "streetAddress"]) ||
+    (addressRecord
+      ? pickFirstString(addressRecord, [
+          "addressLine",
+          "address1",
+          "addressLine1",
+          "street",
+          "streetName",
+          "streetAddress",
+        ])
+      : "");
+  const postalCode =
+    pickFirstString(record, ["postalCode", "zipCode", "zip", "postCode"]) ||
+    (addressRecord ? pickFirstString(addressRecord, ["postalCode", "zipCode", "zip", "postCode"]) : "");
+  const city =
+    pickFirstString(record, ["city", "town", "cityName", "municipality"]) ||
+    (addressRecord ? pickFirstString(addressRecord, ["city", "town", "cityName", "municipality"]) : "");
+  const country =
+    pickFirstString(record, ["country", "countryCode", "countryName"]) ||
+    (addressRecord ? pickFirstString(addressRecord, ["country", "countryCode", "countryName"]) : "");
+  const openingHours = pickFirstString(record, ["openingHours", "openHours", "hours", "openingTime"]);
   const id = pickFirstString(record, ["id", "shopId", "parcelShopId"]);
 
   if (!id && !name && !addressLine && !postalCode && !city && !country && !openingHours) return null;
