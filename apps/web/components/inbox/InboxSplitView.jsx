@@ -1844,6 +1844,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           unreadCount: 0,
         }),
       }).catch(() => null);
+      window.dispatchEvent(new CustomEvent("sona:thread-read"));
     }
 
     const currentState = ticketStateByThread[selectedThreadId];
