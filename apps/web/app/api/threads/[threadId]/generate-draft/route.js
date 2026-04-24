@@ -4,6 +4,11 @@ import { createClient } from "@supabase/supabase-js";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 import { getEffectiveSenderEmail, getEffectiveSenderName } from "@/lib/inbox/sender";
 import { autoTagThread } from "@/lib/ai/autoTagThread";
+import {
+  composeEmailBodyWithSignature,
+  loadEmailSignatureConfig,
+  normalizePlainText,
+} from "@/lib/server/email-signature";
 
 export const runtime = "nodejs";
 
@@ -48,20 +53,7 @@ function stripHtml(html) {
   return String(html || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
-function normalizeSignature(value) {
-  return String(value || "").trim();
-}
-
-function appendSignature(text, signature) {
-  const base = String(text || "").trimEnd();
-  const normalizedSignature = normalizeSignature(signature);
-  if (!normalizedSignature) return base;
-  if (base.endsWith(normalizedSignature)) return base;
-  if (!base) return normalizedSignature;
-  return `${base}\n\n${normalizedSignature}`;
-}
-
-async function loadUserSignature(serviceClient, supabaseUserId) {
+async function loadLegacyUserSignature(serviceClient, supabaseUserId) {
   if (!supabaseUserId) return "";
   const { data: profile, error } = await serviceClient
     .from("profiles")
@@ -72,7 +64,7 @@ async function loadUserSignature(serviceClient, supabaseUserId) {
     console.warn("[threads/generate-draft] profile signature lookup failed", error.message);
     return "";
   }
-  return normalizeSignature(profile?.signature);
+  return normalizePlainText(profile?.signature);
 }
 
 async function ensureMailboxShopBinding(serviceClient, mailbox) {
@@ -253,7 +245,13 @@ export async function POST(_request, { params }) {
     );
   }
 
-  const userSignature = await loadUserSignature(serviceClient, scope.supabaseUserId);
+  const legacySignature = await loadLegacyUserSignature(serviceClient, scope.supabaseUserId);
+  const signatureConfig = await loadEmailSignatureConfig(serviceClient, {
+    workspaceId: scope?.workspaceId || effectiveMailbox?.workspace_id || null,
+    shopId: effectiveMailbox?.shop_id || null,
+    userId: scope?.supabaseUserId || null,
+    legacySignature,
+  });
   const latestPendingDraftMeta = await loadLatestPendingDraftMeta(
     serviceClient,
     scope,
@@ -321,28 +319,44 @@ export async function POST(_request, { params }) {
       skipped: Boolean(payload?.skipped),
       reason: payload?.reason || null,
       explanation: payload?.explanation || null,
-      signature: userSignature,
+      signature: signatureConfig.closingText || "",
       proposal_only: proposalOnly,
       draft_kind: latestPendingDraftMeta?.kind || null,
       // Keep persisted drafts visible even when a proposal action is pending.
       draft: draft
-        ? {
-            id: draft.id,
-            body_text: draft.body_text || "",
-            rendered_body_text: appendSignature(draft.body_text || "", userSignature),
-            body_html: draft.body_html || "",
-            subject: draft.subject || "",
-            updated_at: draft.updated_at,
-          }
+        ? (() => {
+            const rendered = composeEmailBodyWithSignature({
+              bodyText: draft.body_text || "",
+              bodyHtml: draft.body_html || "",
+              config: signatureConfig,
+            });
+            return {
+              id: draft.id,
+              body_text: draft.body_text || "",
+              rendered_body_text: rendered.finalBodyText,
+              rendered_body_html: rendered.finalBodyHtml,
+              body_html: draft.body_html || "",
+              subject: draft.subject || "",
+              updated_at: draft.updated_at,
+            };
+          })()
         : aiDraftText
-        ? {
-            id: null,
-            body_text: aiDraftText,
-            rendered_body_text: appendSignature(aiDraftText, userSignature),
-            body_html: "",
-            subject: messageSubject ? `Re: ${messageSubject}` : "Re:",
-            updated_at: new Date().toISOString(),
-          }
+        ? (() => {
+            const rendered = composeEmailBodyWithSignature({
+              bodyText: aiDraftText,
+              bodyHtml: "",
+              config: signatureConfig,
+            });
+            return {
+              id: null,
+              body_text: aiDraftText,
+              rendered_body_text: rendered.finalBodyText,
+              rendered_body_html: rendered.finalBodyHtml,
+              body_html: "",
+              subject: messageSubject ? `Re: ${messageSubject}` : "Re:",
+              updated_at: new Date().toISOString(),
+            };
+          })()
         : null,
     },
     { status: 200 }

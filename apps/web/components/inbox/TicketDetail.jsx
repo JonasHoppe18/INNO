@@ -95,9 +95,6 @@ export function TicketDetail({
   showThinkingCard = false,
   draftValue,
   onDraftChange,
-  signatureValue,
-  onSignatureChange,
-  onSignatureBlur,
   onDraftBlur,
   draftLoaded,
   canSend,
@@ -656,9 +653,6 @@ export function TicketDetail({
             key={`${thread?.id || "thread"}:${composerMode}`}
             value={draftValue}
             onChange={(nextValue) => onDraftChange?.(nextValue, thread?.id || null)}
-            signatureValue={signatureValue}
-            onSignatureChange={(nextValue) => onSignatureChange?.(nextValue, thread?.id || null)}
-            onSignatureBlur={onSignatureBlur}
             collapsed={composerCollapsed}
             onToggleCollapse={() => setComposerCollapsed((prev) => !prev)}
             draftLoaded={draftLoaded}

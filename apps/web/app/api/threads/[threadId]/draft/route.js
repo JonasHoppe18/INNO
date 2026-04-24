@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
+import {
+  composeEmailBodyWithSignature,
+  loadEmailSignatureConfig,
+  normalizePlainText,
+  stripTrailingComposedFooter,
+} from "@/lib/server/email-signature";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -104,30 +110,6 @@ function buildSnippet(text, maxLength = 240) {
   return cleaned.length > maxLength ? `${cleaned.slice(0, maxLength).trim()}...` : cleaned;
 }
 
-function normalizeSignature(value) {
-  return String(value || "").trim();
-}
-
-function appendSignature(text, signature) {
-  const base = String(text || "").trimEnd();
-  const normalizedSignature = normalizeSignature(signature);
-  if (!normalizedSignature) return base;
-  if (base.endsWith(normalizedSignature)) return base;
-  if (!base) return normalizedSignature;
-  return `${base}\n\n${normalizedSignature}`;
-}
-
-function stripTrailingSignature(text, signature) {
-  const normalizedText = String(text || "").trimEnd();
-  const normalizedSignature = normalizeSignature(signature);
-  if (!normalizedText || !normalizedSignature) return normalizedText;
-  if (!normalizedText.endsWith(normalizedSignature)) return normalizedText;
-  const withoutSignature = normalizedText
-    .slice(0, normalizedText.length - normalizedSignature.length)
-    .replace(/\s+$/, "");
-  return withoutSignature.trimEnd();
-}
-
 function countWords(text) {
   return String(text || "")
     .replace(/\s+/g, " ")
@@ -189,7 +171,7 @@ async function captureDraftEditFeedback({
   });
 }
 
-async function loadUserSignature(serviceClient, supabaseUserId) {
+async function loadLegacyUserSignature(serviceClient, supabaseUserId) {
   if (!supabaseUserId) return "";
   const { data: profile, error } = await serviceClient
     .from("profiles")
@@ -200,7 +182,7 @@ async function loadUserSignature(serviceClient, supabaseUserId) {
     console.warn("[threads/draft] profile signature lookup failed", error.message);
     return "";
   }
-  return normalizeSignature(profile?.signature);
+  return normalizePlainText(profile?.signature);
 }
 
 export async function GET(_request, { params }) {
@@ -231,11 +213,11 @@ export async function GET(_request, { params }) {
   if (!scope?.workspaceId && !scope?.supabaseUserId) {
     return NextResponse.json({ error: "Auth scope not found." }, { status: 404 });
   }
-  const userSignature = await loadUserSignature(serviceClient, scope.supabaseUserId);
+  const legacySignature = await loadLegacyUserSignature(serviceClient, scope.supabaseUserId);
   const { data: thread, error: threadError } = await applyScope(
     serviceClient
       .from("mail_threads")
-      .select("id, provider_thread_id")
+      .select("id, provider_thread_id, mailbox_id")
       .eq("id", threadId)
       .maybeSingle(),
     scope
@@ -250,6 +232,20 @@ export async function GET(_request, { params }) {
   );
   const proposalOnly = isProposalOnlyDraftMeta(latestPendingDraftMeta);
   const relatedThreadIds = await loadRelatedThreadIdsForDraftClear(serviceClient, scope, thread);
+  const { data: mailbox } = await applyScope(
+    serviceClient
+      .from("mail_accounts")
+      .select("id, shop_id, workspace_id")
+      .eq("id", thread.mailbox_id)
+      .maybeSingle(),
+    scope
+  );
+  const signatureConfig = await loadEmailSignatureConfig(serviceClient, {
+    workspaceId: scope?.workspaceId || mailbox?.workspace_id || null,
+    shopId: mailbox?.shop_id || null,
+    userId: scope?.supabaseUserId || null,
+    legacySignature,
+  });
 
   const { data: draft, error } = await applyScope(
     serviceClient
@@ -270,19 +266,27 @@ export async function GET(_request, { params }) {
 
   return NextResponse.json(
     {
-      signature: userSignature,
+      signature: signatureConfig.closingText || "",
       proposal_only: proposalOnly,
       draft_kind: latestPendingDraftMeta?.kind || null,
       // Keep persisted drafts visible even when a proposal action is pending.
       draft: draft
-        ? {
-            id: draft.id,
-            body_text: draft.body_text || "",
-            rendered_body_text: appendSignature(draft.body_text || "", userSignature),
-            body_html: draft.body_html || "",
-            subject: draft.subject || "",
-            updated_at: draft.updated_at,
-          }
+        ? (() => {
+            const rendered = composeEmailBodyWithSignature({
+              bodyText: draft.body_text || "",
+              bodyHtml: draft.body_html || "",
+              config: signatureConfig,
+            });
+            return {
+              id: draft.id,
+              body_text: draft.body_text || "",
+              rendered_body_text: rendered.finalBodyText,
+              rendered_body_html: rendered.finalBodyHtml,
+              body_html: draft.body_html || "",
+              subject: draft.subject || "",
+              updated_at: draft.updated_at,
+            };
+          })()
         : null,
     },
     { status: 200 }
@@ -340,8 +344,22 @@ export async function POST(request, { params }) {
 
   const nowIso = new Date().toISOString();
   const nextSubject = subject || thread.subject || "Re:";
-  const userSignature = await loadUserSignature(serviceClient, scope.supabaseUserId);
-  const nextBodyText = stripTrailingSignature(bodyText || bodyHtml, userSignature);
+  const legacySignature = await loadLegacyUserSignature(serviceClient, scope.supabaseUserId);
+  const { data: mailbox } = await applyScope(
+    serviceClient
+      .from("mail_accounts")
+      .select("id, shop_id, workspace_id")
+      .eq("id", thread.mailbox_id)
+      .maybeSingle(),
+    scope
+  );
+  const signatureConfig = await loadEmailSignatureConfig(serviceClient, {
+    workspaceId: scope?.workspaceId || mailbox?.workspace_id || null,
+    shopId: mailbox?.shop_id || null,
+    userId: scope?.supabaseUserId || null,
+    legacySignature,
+  });
+  const nextBodyText = stripTrailingComposedFooter(bodyText || bodyHtml, signatureConfig);
   const snippet = buildSnippet(nextBodyText);
   const relatedThreadIds = await loadRelatedThreadIdsForDraftClear(serviceClient, scope, thread);
 

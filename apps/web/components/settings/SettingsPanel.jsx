@@ -673,6 +673,8 @@ function MembersTab({
                 !isOwner &&
                 !isSelf &&
                 (currentIsOwner || !rawRole.includes("admin"));
+              const canEditSignature =
+                Boolean(member?.user_id) && (isSelf || canManageRoles);
               const canRemoveMember = canEditRole;
               const isRoleUpdating =
                 roleUpdatingForUserId &&
@@ -759,8 +761,14 @@ function MembersTab({
                           variant="outline"
                           className="border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
                           onClick={() => handleOpenSignatureModal(member)}
-                          disabled={!member?.user_id}
-                          title={!member?.user_id ? "User profile not synced yet" : ""}
+                          disabled={!canEditSignature}
+                          title={
+                            !member?.user_id
+                              ? "User profile not synced yet"
+                              : !canEditSignature
+                              ? "You can only edit your own signature."
+                              : ""
+                          }
                         >
                           <PenLine className="mr-2 h-[14px] w-[14px]" />
                           Signature
@@ -907,6 +915,212 @@ function BillingTab() {
   );
 }
 
+const SIGNATURE_BUILDER_MARKER_PREFIX = "sona_signature_builder:";
+const SIGNATURE_TEXT_FIELD_KEYS = ["fullName", "jobTitle", "phone", "email", "companyName"];
+const SIGNATURE_TEXT_FIELD_LABELS = {
+  fullName: "Full name",
+  jobTitle: "Job title",
+  phone: "Phone",
+  email: "Email",
+  companyName: "Company name",
+};
+const DEFAULT_SIGNATURE_BUILDER = {
+  fullName: "",
+  jobTitle: "",
+  phone: "",
+  email: "",
+  logoUrl: "",
+  companyName: "",
+  accentColor: "",
+  layout: "logo_left",
+  textAlign: "left",
+  textOrder: [...SIGNATURE_TEXT_FIELD_KEYS],
+  fieldVisibility: {
+    fullName: true,
+    jobTitle: true,
+    phone: true,
+    email: true,
+    companyName: true,
+  },
+};
+
+function escapeSignatureHtml(value = "") {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function safeBtoa(value = "") {
+  try {
+    if (typeof window !== "undefined" && typeof window.btoa === "function") {
+      return window.btoa(unescape(encodeURIComponent(String(value || ""))));
+    }
+  } catch {}
+  return "";
+}
+
+function safeAtob(value = "") {
+  try {
+    if (typeof window !== "undefined" && typeof window.atob === "function") {
+      return decodeURIComponent(escape(window.atob(String(value || ""))));
+    }
+  } catch {}
+  return "";
+}
+
+function normalizePhoneHref(value = "") {
+  return String(value || "").replace(/[^\d+]/g, "");
+}
+
+function buildSignatureTemplateFromBuilder(builder = DEFAULT_SIGNATURE_BUILDER) {
+  const payload = {
+    fullName: String(builder?.fullName || "").trim(),
+    jobTitle: String(builder?.jobTitle || "").trim(),
+    phone: String(builder?.phone || "").trim(),
+    email: String(builder?.email || "").trim(),
+    logoUrl: String(builder?.logoUrl || "").trim(),
+    companyName: String(builder?.companyName || "").trim(),
+    accentColor: String(builder?.accentColor || "").trim(),
+    layout: String(builder?.layout || "logo_left").trim() || "logo_left",
+    textAlign: String(builder?.textAlign || "left").trim() || "left",
+    textOrder: Array.isArray(builder?.textOrder) ? builder.textOrder : [...SIGNATURE_TEXT_FIELD_KEYS],
+    fieldVisibility:
+      builder?.fieldVisibility && typeof builder.fieldVisibility === "object"
+        ? builder.fieldVisibility
+        : { ...DEFAULT_SIGNATURE_BUILDER.fieldVisibility },
+  };
+  const encoded = safeBtoa(JSON.stringify(payload));
+  const marker = encoded ? `<!-- ${SIGNATURE_BUILDER_MARKER_PREFIX}${encoded} -->` : "";
+  const accentStyle = payload.accentColor
+    ? `color:${escapeSignatureHtml(payload.accentColor)};`
+    : "";
+  const normalizedTextAlign = ["left", "center", "right"].includes(payload.textAlign)
+    ? payload.textAlign
+    : "left";
+  const textAlignStyle = `text-align:${normalizedTextAlign};`;
+  const normalizedLayout = ["logo_left", "logo_right", "logo_top", "logo_bottom"].includes(payload.layout)
+    ? payload.layout
+    : "logo_left";
+
+  const normalizedVisibility = {
+    fullName: payload.fieldVisibility?.fullName !== false,
+    jobTitle: payload.fieldVisibility?.jobTitle !== false,
+    phone: payload.fieldVisibility?.phone !== false,
+    email: payload.fieldVisibility?.email !== false,
+    companyName: payload.fieldVisibility?.companyName !== false,
+  };
+  const normalizedOrder = [
+    ...new Set(
+      [...payload.textOrder, ...SIGNATURE_TEXT_FIELD_KEYS].filter((key) =>
+        SIGNATURE_TEXT_FIELD_KEYS.includes(key)
+      )
+    ),
+  ];
+
+  const phoneHref = normalizePhoneHref(payload.phone);
+  const renderFieldHtml = (fieldKey) => {
+    if (!normalizedVisibility[fieldKey]) return "";
+    if (fieldKey === "fullName" && payload.fullName) {
+      return `<div style="margin-top:4px;font-size:18px;font-weight:700;${accentStyle}${textAlignStyle}line-height:1.2;">${escapeSignatureHtml(payload.fullName)}</div>`;
+    }
+    if (fieldKey === "jobTitle" && payload.jobTitle) {
+      return `<div style="margin-top:4px;font-size:14px;color:#111827;${textAlignStyle}line-height:1.35;">${escapeSignatureHtml(payload.jobTitle)}</div>`;
+    }
+    if (fieldKey === "phone" && payload.phone) {
+      return `<div style="margin-top:4px;font-size:14px;color:#111827;${textAlignStyle}line-height:1.35;">${
+        phoneHref
+          ? `<a href="tel:${escapeSignatureHtml(phoneHref)}" style="color:#111827;text-decoration:none;">${escapeSignatureHtml(payload.phone)}</a>`
+          : escapeSignatureHtml(payload.phone)
+      }</div>`;
+    }
+    if (fieldKey === "email" && payload.email) {
+      return `<div style="margin-top:4px;font-size:14px;${textAlignStyle}line-height:1.35;"><a href="mailto:${escapeSignatureHtml(payload.email)}" style="color:#2563EB;text-decoration:underline;">${escapeSignatureHtml(payload.email)}</a></div>`;
+    }
+    if (fieldKey === "companyName" && payload.companyName) {
+      return `<div style="margin-top:6px;font-size:15px;letter-spacing:0.04em;color:#111827;font-weight:600;${textAlignStyle}line-height:1.3;">${escapeSignatureHtml(payload.companyName)}</div>`;
+    }
+    return "";
+  };
+
+  const logoHtml = payload.logoUrl
+    ? `<img src="${escapeSignatureHtml(payload.logoUrl)}" alt="${escapeSignatureHtml(payload.companyName || "Company logo")}" style="display:block;max-width:190px;max-height:84px;height:auto;width:auto;">`
+    : "";
+  const logoBlock = `
+<div style="min-width:220px;">
+  ${logoHtml || ""}
+</div>`.trim();
+  const textFieldsHtml = normalizedOrder.map((fieldKey) => renderFieldHtml(fieldKey)).filter(Boolean).join("");
+  const textBlock = `
+<div>
+  ${textFieldsHtml}
+</div>`.trim();
+
+  let body = "";
+  if (normalizedLayout === "logo_top" || normalizedLayout === "logo_bottom") {
+    const top = normalizedLayout === "logo_top" ? logoBlock : textBlock;
+    const bottom = normalizedLayout === "logo_top" ? textBlock : logoBlock;
+    body = `
+<div style="display:block;">
+  <div style="margin-bottom:12px;">${top}</div>
+  <div>${bottom}</div>
+</div>`.trim();
+  } else {
+    const left = normalizedLayout === "logo_left" ? logoBlock : textBlock;
+    const right = normalizedLayout === "logo_left" ? textBlock : logoBlock;
+    body = `
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+  <tr>
+    <td style="vertical-align:top;padding-right:24px;">${left}</td>
+    <td style="vertical-align:top;">${right}</td>
+  </tr>
+</table>`.trim();
+  }
+  return [marker, body].filter(Boolean).join("\n");
+}
+
+function parseSignatureBuilderFromTemplate(templateHtml = "") {
+  const raw = String(templateHtml || "");
+  const markerRegex = new RegExp(
+    `<!--\\s*${SIGNATURE_BUILDER_MARKER_PREFIX}([A-Za-z0-9+/=_-]+)\\s*-->`,
+    "i"
+  );
+  const match = raw.match(markerRegex);
+  if (!match?.[1]) return { ...DEFAULT_SIGNATURE_BUILDER };
+  const decoded = safeAtob(match[1]);
+  if (!decoded) return { ...DEFAULT_SIGNATURE_BUILDER };
+  try {
+    const parsed = JSON.parse(decoded);
+    return {
+      fullName: String(parsed?.fullName || ""),
+      jobTitle: String(parsed?.jobTitle || ""),
+      phone: String(parsed?.phone || ""),
+      email: String(parsed?.email || ""),
+      logoUrl: String(parsed?.logoUrl || ""),
+      companyName: String(parsed?.companyName || ""),
+      accentColor: String(parsed?.accentColor || ""),
+      layout: String(parsed?.layout || "logo_left"),
+      textAlign: String(parsed?.textAlign || "left"),
+      textOrder: Array.isArray(parsed?.textOrder)
+        ? parsed.textOrder.filter((key) => SIGNATURE_TEXT_FIELD_KEYS.includes(String(key)))
+        : [...SIGNATURE_TEXT_FIELD_KEYS],
+      fieldVisibility:
+        parsed?.fieldVisibility && typeof parsed.fieldVisibility === "object"
+          ? {
+              fullName: parsed.fieldVisibility.fullName !== false,
+              jobTitle: parsed.fieldVisibility.jobTitle !== false,
+              phone: parsed.fieldVisibility.phone !== false,
+              email: parsed.fieldVisibility.email !== false,
+              companyName: parsed.fieldVisibility.companyName !== false,
+            }
+          : { ...DEFAULT_SIGNATURE_BUILDER.fieldVisibility },
+    };
+  } catch {
+    return { ...DEFAULT_SIGNATURE_BUILDER };
+  }
+}
+
 function EmailSettings({
   enabled,
   onEnabledChange,
@@ -914,6 +1128,12 @@ function EmailSettings({
   onSubjectTemplateChange,
   bodyTextTemplate,
   onBodyTextTemplateChange,
+  signatureIsActive = true,
+  onSignatureIsActiveChange,
+  signatureTemplateHtml = "",
+  onSignatureTemplateHtmlChange,
+  onSendSignatureTest,
+  sendingSignatureTest = false,
   routingRows = [],
   onUpdateRoutingRow,
   onAddRoutingCategory,
@@ -929,6 +1149,9 @@ function EmailSettings({
   const [draftBody, setDraftBody] = useState(bodyTextTemplate || "");
   const [addCategoryModalOpen, setAddCategoryModalOpen] = useState(false);
   const [newCategoryLabel, setNewCategoryLabel] = useState("");
+  const [signatureBuilderOpen, setSignatureBuilderOpen] = useState(false);
+  const [signatureDraft, setSignatureDraft] = useState(DEFAULT_SIGNATURE_BUILDER);
+  const [signatureLogoUploadError, setSignatureLogoUploadError] = useState("");
 
   useEffect(() => {
     setDraftSubject(subjectTemplate || "");
@@ -959,11 +1182,107 @@ function EmailSettings({
     setAddCategoryModalOpen(false);
   }, [newCategoryLabel, onAddRoutingCategory]);
 
+  const handleSignatureDraftField = useCallback((field, value) => {
+    setSignatureDraft((prev) => ({ ...prev, [field]: value }));
+  }, []);
+
+  const handleSignatureFieldVisibility = useCallback((fieldKey, nextVisible) => {
+    if (!SIGNATURE_TEXT_FIELD_KEYS.includes(fieldKey)) return;
+    setSignatureDraft((prev) => ({
+      ...prev,
+      fieldVisibility: {
+        ...(prev?.fieldVisibility || {}),
+        [fieldKey]: Boolean(nextVisible),
+      },
+    }));
+  }, []);
+
+  const handleSignatureFieldMove = useCallback((fieldKey, direction) => {
+    if (!SIGNATURE_TEXT_FIELD_KEYS.includes(fieldKey)) return;
+    setSignatureDraft((prev) => {
+      const order = Array.isArray(prev?.textOrder) ? [...prev.textOrder] : [...SIGNATURE_TEXT_FIELD_KEYS];
+      const index = order.indexOf(fieldKey);
+      if (index < 0) return prev;
+      const nextIndex = direction === "up" ? index - 1 : index + 1;
+      if (nextIndex < 0 || nextIndex >= order.length) return prev;
+      [order[index], order[nextIndex]] = [order[nextIndex], order[index]];
+      return {
+        ...prev,
+        textOrder: order,
+      };
+    });
+  }, []);
+
+  const handleLogoUpload = useCallback((event) => {
+    const file = event?.target?.files?.[0];
+    if (!file) return;
+    if (!String(file.type || "").toLowerCase().startsWith("image/")) {
+      setSignatureLogoUploadError("Please upload an image file.");
+      return;
+    }
+    if (Number(file.size || 0) > 5 * 1024 * 1024) {
+      setSignatureLogoUploadError("Logo must be 5 MB or smaller.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || "");
+      if (!result) {
+        setSignatureLogoUploadError("Could not read logo file.");
+        return;
+      }
+      setSignatureLogoUploadError("");
+      setSignatureDraft((prev) => ({ ...prev, logoUrl: result }));
+    };
+    reader.onerror = () => setSignatureLogoUploadError("Could not read logo file.");
+    reader.readAsDataURL(file);
+  }, []);
+
+  const handleApplySignatureBuilder = useCallback(() => {
+    onSignatureTemplateHtmlChange?.(buildSignatureTemplateFromBuilder(signatureDraft));
+    setSignatureBuilderOpen(false);
+  }, [onSignatureTemplateHtmlChange, signatureDraft]);
+
+  const handleClearSignatureTemplate = useCallback(() => {
+    if (!window.confirm("Clear outbound signature template?")) return;
+    onSignatureTemplateHtmlChange?.("");
+  }, [onSignatureTemplateHtmlChange]);
+
   const previewLines = String(bodyTextTemplate || "")
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean)
     .slice(0, 3);
+
+  const signaturePreviewHtml = useMemo(() => {
+    const sampleReply = "Message body preview.";
+    const templateHtml = String(signatureTemplateHtml || "").trim();
+    const templateSection = templateHtml || "";
+    return [sampleReply.replace(/\n/g, "<br/>"), templateSection]
+      .filter(Boolean)
+      .join("<br/><br/>");
+  }, [signatureTemplateHtml]);
+
+  const signatureSummary = useMemo(() => {
+    const parsed = parseSignatureBuilderFromTemplate(signatureTemplateHtml);
+    const hasAnyTemplate = Boolean(String(signatureTemplateHtml || "").trim());
+    const lineOne =
+      String(parsed.fullName || "").trim() ||
+      (hasAnyTemplate ? "Signature template configured." : "No signature configured yet.");
+    const lineTwo = String(parsed.jobTitle || "").trim();
+    return [lineOne, lineTwo].filter(Boolean).join(" • ");
+  }, [signatureTemplateHtml]);
+
+  const signatureDraftPreviewHtml = useMemo(
+    () => buildSignatureTemplateFromBuilder(signatureDraft),
+    [signatureDraft]
+  );
+
+  useEffect(() => {
+    if (!signatureBuilderOpen) return;
+    setSignatureDraft(parseSignatureBuilderFromTemplate(signatureTemplateHtml));
+    setSignatureLogoUploadError("");
+  }, [signatureBuilderOpen, signatureTemplateHtml]);
 
   return (
     <section className="max-w-4xl rounded-lg bg-white">
@@ -1045,27 +1364,6 @@ function EmailSettings({
                   )}
                 </div>
               </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-[#E5E7EB] bg-white p-6 opacity-50 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(260px,40%)_1fr] md:items-start">
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-medium text-gray-900">Template</h3>
-                <div className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-                  Coming soon
-                </div>
-              </div>
-              <p className="mt-1 text-sm text-gray-500">
-                Shared email template for layout and branding across replies.
-              </p>
-            </div>
-            <div>
-              <p className="text-sm text-slate-500">
-                Template editor and live wrapper preview will be available here.
-              </p>
             </div>
           </div>
         </div>
@@ -1231,8 +1529,8 @@ function EmailSettings({
               <h4 className="text-sm font-medium text-slate-800">Email Preview</h4>
               <div className="rounded-md border border-slate-200">
                 <div className="border-b border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600">
-                  <div>From: Support Team &lt;support@yourcompany.com&gt;</div>
-                  <div>To: customer@example.com</div>
+                  <div>From: [sender]</div>
+                  <div>To: [recipient]</div>
                   <div>Subject: {draftSubject || "Tak for din henvendelse"}</div>
                 </div>
                 <div
@@ -1575,6 +1873,9 @@ export function SettingsPanel() {
   const [autoReplyTemplateHtml, setAutoReplyTemplateHtml] = useState(
     "<div style=\"font-family:Arial,sans-serif;line-height:1.6;color:#111\">{{content}}</div>"
   );
+  const [signatureIsActive, setSignatureIsActive] = useState(true);
+  const [signatureTemplateHtml, setSignatureTemplateHtml] = useState("");
+  const [sendingSignatureTest, setSendingSignatureTest] = useState(false);
   const [savingAutoReply, setSavingAutoReply] = useState(false);
   const [emailRoutingRows, setEmailRoutingRows] = useState([]);
   const [savingEmailRouting, setSavingEmailRouting] = useState(false);
@@ -1593,6 +1894,8 @@ export function SettingsPanel() {
   const [initialAutoReplyTemplateHtml, setInitialAutoReplyTemplateHtml] = useState(
     "<div style=\"font-family:Arial,sans-serif;line-height:1.6;color:#111\">{{content}}</div>"
   );
+  const [initialSignatureIsActive, setInitialSignatureIsActive] = useState(true);
+  const [initialSignatureTemplateHtml, setInitialSignatureTemplateHtml] = useState("");
   const [initialEmailRoutingRows, setInitialEmailRoutingRows] = useState([]);
   const loadData = useCallback(async () => {
     if (!supabase) {
@@ -1854,6 +2157,25 @@ export function SettingsPanel() {
         );
       }
 
+      const emailSignatureResponse = await fetch("/api/settings/email-signature", {
+        method: "GET",
+        cache: "no-store",
+        credentials: "include",
+      }).catch(() => null);
+      if (emailSignatureResponse?.ok) {
+        const payload = await emailSignatureResponse.json().catch(() => ({}));
+        const signature = payload?.signature || {};
+        setSignatureIsActive(signature?.is_active !== false);
+        setInitialSignatureIsActive(signature?.is_active !== false);
+        setSignatureTemplateHtml(String(signature?.template_html || ""));
+        setInitialSignatureTemplateHtml(String(signature?.template_html || ""));
+      } else {
+        setSignatureIsActive(true);
+        setInitialSignatureIsActive(true);
+        setSignatureTemplateHtml("");
+        setInitialSignatureTemplateHtml("");
+      }
+
       const emailRoutingResponse = await fetch("/api/settings/email-routing", {
         method: "GET",
         cache: "no-store",
@@ -2052,7 +2374,6 @@ export function SettingsPanel() {
           template_id: nextTemplateId,
           template_name: nextTemplateName,
           template_html: nextTemplateHtml,
-          template_text_fallback: nextBodyText,
         }),
       });
       const payload = await response.json().catch(() => ({}));
@@ -2147,6 +2468,37 @@ export function SettingsPanel() {
     setEmailRoutingRows((prev) => prev.filter((entry) => String(entry?.id || "") !== id));
   }, []);
 
+  const handleSendSignatureTest = useCallback(async () => {
+    if (sendingSignatureTest) return;
+    setSendingSignatureTest(true);
+    try {
+      const response = await fetch("/api/settings/email-signature/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          sample_body_text:
+            "Message body preview.",
+          is_active: Boolean(signatureIsActive),
+          template_html: signatureTemplateHtml,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || "Could not send test email.");
+      }
+      toast.success(`Test email sent to ${payload?.sent_to || "recipient"}.`);
+    } catch (error) {
+      toast.error(error?.message || "Could not send test email.");
+    } finally {
+      setSendingSignatureTest(false);
+    }
+  }, [
+    sendingSignatureTest,
+    signatureIsActive,
+    signatureTemplateHtml,
+  ]);
+
   const hasAutoReplyChanges = useMemo(() => {
     if (Boolean(autoReplyEnabled) !== Boolean(initialAutoReplyEnabled)) return true;
     if (String(autoReplyTriggerMode || "") !== String(initialAutoReplyTriggerMode || "")) return true;
@@ -2184,9 +2536,20 @@ export function SettingsPanel() {
     [emailRoutingRows, initialEmailRoutingRows]
   );
 
+  const hasSignatureTemplateChanges = useMemo(() => {
+    if (Boolean(signatureIsActive) !== Boolean(initialSignatureIsActive)) return true;
+    if (String(signatureTemplateHtml || "") !== String(initialSignatureTemplateHtml || "")) return true;
+    return false;
+  }, [
+    initialSignatureIsActive,
+    initialSignatureTemplateHtml,
+    signatureIsActive,
+    signatureTemplateHtml,
+  ]);
+
   const canSaveEmailSettings = useMemo(() => {
-    return hasAutoReplyChanges || hasRoutingChanges;
-  }, [hasAutoReplyChanges, hasRoutingChanges]);
+    return hasAutoReplyChanges || hasRoutingChanges || hasSignatureTemplateChanges;
+  }, [hasAutoReplyChanges, hasRoutingChanges, hasSignatureTemplateChanges]);
 
   const handleDiscardEmailSettings = useCallback(() => {
     setAutoReplyEnabled(Boolean(initialAutoReplyEnabled));
@@ -2198,6 +2561,8 @@ export function SettingsPanel() {
     setAutoReplyTemplateId(initialAutoReplyTemplateId || null);
     setAutoReplyTemplateName(String(initialAutoReplyTemplateName || "Default template"));
     setAutoReplyTemplateHtml(String(initialAutoReplyTemplateHtml || ""));
+    setSignatureIsActive(Boolean(initialSignatureIsActive));
+    setSignatureTemplateHtml(String(initialSignatureTemplateHtml || ""));
     setEmailRoutingRows(normalizeRoutingRows(initialEmailRoutingRows));
   }, [
     initialAutoReplyBodyHtmlTemplate,
@@ -2209,6 +2574,8 @@ export function SettingsPanel() {
     initialAutoReplyTemplateId,
     initialAutoReplyTemplateName,
     initialAutoReplyTriggerMode,
+    initialSignatureIsActive,
+    initialSignatureTemplateHtml,
     initialEmailRoutingRows,
   ]);
 
@@ -2228,13 +2595,33 @@ export function SettingsPanel() {
             template_id: autoReplyTemplateId,
             template_name: autoReplyTemplateName,
             template_html: autoReplyTemplateHtml,
-            template_text_fallback: autoReplyBodyTextTemplate,
           },
           { showToast: false }
         );
         if (!autoReplyResult?.ok) {
           throw new Error(autoReplyResult?.error || "Could not save auto reply settings.");
         }
+      }
+
+      if (hasSignatureTemplateChanges) {
+        const response = await fetch("/api/settings/email-signature", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            is_active: Boolean(signatureIsActive),
+            template_html: signatureTemplateHtml,
+          }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload?.error || "Could not save outbound signature template.");
+        }
+        const persistedSignature = payload?.signature || {};
+        setSignatureIsActive(persistedSignature?.is_active !== false);
+        setInitialSignatureIsActive(persistedSignature?.is_active !== false);
+        setSignatureTemplateHtml(String(persistedSignature?.template_html || ""));
+        setInitialSignatureTemplateHtml(String(persistedSignature?.template_html || ""));
       }
 
       if (hasRoutingChanges) {
@@ -2335,9 +2722,12 @@ export function SettingsPanel() {
     canSaveEmailSettings,
     emailRoutingRows,
     hasAutoReplyChanges,
+    hasSignatureTemplateChanges,
     hasRoutingChanges,
     handleSaveAutoReply,
     initialEmailRoutingRows,
+    signatureIsActive,
+    signatureTemplateHtml,
     savingAutoReply,
     savingEmailRouting,
   ]);
@@ -2383,6 +2773,12 @@ export function SettingsPanel() {
             onSubjectTemplateChange={setAutoReplySubjectTemplate}
             bodyTextTemplate={autoReplyBodyTextTemplate}
             onBodyTextTemplateChange={setAutoReplyBodyTextTemplate}
+            signatureIsActive={signatureIsActive}
+            onSignatureIsActiveChange={setSignatureIsActive}
+            signatureTemplateHtml={signatureTemplateHtml}
+            onSignatureTemplateHtmlChange={setSignatureTemplateHtml}
+            onSendSignatureTest={handleSendSignatureTest}
+            sendingSignatureTest={sendingSignatureTest}
             routingRows={emailRoutingRows}
             onUpdateRoutingRow={handleUpdateEmailRoutingRow}
             onAddRoutingCategory={handleAddEmailRoutingCategory}

@@ -6,7 +6,6 @@ import {
   Maximize2,
   Paperclip,
   Send,
-  PenLine,
   Zap,
   Globe,
   Sparkles,
@@ -148,9 +147,6 @@ const filesFromSavedReplyImages = (reply) => {
 export function Composer({
   value,
   onChange,
-  signatureValue = "",
-  onSignatureChange,
-  onSignatureBlur,
   draftLoaded = false,
   canSend = false,
   onSend,
@@ -236,7 +232,6 @@ export function Composer({
   const [savedRepliesLoading, setSavedRepliesLoading] = useState(false);
   const [savedReplies, setSavedReplies] = useState([]);
   const [savedRepliesQuery, setSavedRepliesQuery] = useState("");
-  const [showSignatureEditor, setShowSignatureEditor] = useState(false);
   const [refineOpen, setRefineOpen] = useState(false);
   const [refinePrompt, setRefinePrompt] = useState("");
   const [refineError, setRefineError] = useState("");
@@ -737,14 +732,14 @@ export function Composer({
         Number.isFinite(Number(measuredEditorHeight)) && Number(measuredEditorHeight) > 0
           ? Math.min(maxEditorHeight, Math.max(minEditorHeight, Number(measuredEditorHeight)))
           : estimatedEditorHeight;
-      const chromeHeight = (isNote ? 112 : 124) + (showSignatureEditor && !isNote ? 74 : 0);
+      const chromeHeight = isNote ? 112 : 124;
       const maxHeight = Math.max(
         MIN_COMPOSER_HEIGHT_PX,
         Math.round((typeof window !== "undefined" ? window.innerHeight : 900) * MAX_COMPOSER_VIEWPORT_RATIO)
       );
       return Math.min(maxHeight, Math.max(MIN_COMPOSER_HEIGHT_PX, chromeHeight + effectiveEditorHeight));
     },
-    [MAX_COMPOSER_VIEWPORT_RATIO, MIN_COMPOSER_HEIGHT_PX, isNote, showSignatureEditor]
+    [MAX_COMPOSER_VIEWPORT_RATIO, MIN_COMPOSER_HEIGHT_PX, isNote]
   );
 
   useEffect(() => {
@@ -1223,25 +1218,7 @@ export function Composer({
                 })}
               </div>
             ) : null}
-            {!isNote ? (
-              <>
-                {showSignatureEditor ? (
-                  <>
-                    <div className="mt-2 border-t border-border pt-2" />
-                    <div className="mb-1.5 text-[12px] font-medium text-muted-foreground">Signature</div>
-                    <textarea
-                      value={signatureValue}
-                      onChange={(event) => onSignatureChange?.(event.target.value)}
-                      onBlur={onSignatureBlur}
-                      placeholder="Your signature..."
-                      rows={3}
-                      disabled={disabled}
-                      className="w-full resize-none border-0 bg-transparent p-0 text-[14px] leading-[1.55] text-foreground outline-none"
-                    />
-                  </>
-                ) : null}
-              </>
-            ) : null}
+            {null}
           </div>
           <div className="sticky bottom-0 z-10 flex items-center justify-between border-t border-border bg-card px-3 py-1.5 text-[12px] text-muted-foreground">
             <div className="flex items-center gap-2">
@@ -1282,18 +1259,6 @@ export function Composer({
                     className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                   >
                     <Zap className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    disabled={disabled || showDraftLoadingState}
-                    onClick={() => setShowSignatureEditor((prev) => !prev)}
-                    aria-label={showSignatureEditor ? "Hide signature" : "Show signature"}
-                    title={showSignatureEditor ? "Hide signature" : "Show signature"}
-                    className={showSignatureEditor
-                      ? "rounded-md bg-indigo-100 dark:bg-indigo-500/20 p-1.5 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/30"
-                      : "rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground"}
-                  >
-                    <PenLine className="h-4 w-4" />
                   </button>
                   {!isNote && (
                     <Popover open={languagePickerOpen} onOpenChange={setLanguagePickerOpen}>
@@ -1396,7 +1361,6 @@ export function Composer({
                   onSend?.({
                     mode: isNote ? "note" : isForward ? "forward" : "reply",
                     bodyText: value,
-                    signature: signatureValue,
                     toRecipients: buildRecipients(toRecipients, toInput),
                     ccRecipients: buildRecipients(ccRecipients, ccInput),
                     bccRecipients: buildRecipients(bccRecipients, bccInput),

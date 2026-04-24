@@ -6,6 +6,11 @@ import { sendPostmarkEmail } from "@/lib/server/postmark";
 import { getReplyTargetEmail } from "@/lib/inbox/sender";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 import { autoTagThread } from "@/lib/ai/autoTagThread";
+import {
+  composeEmailBodyWithSignature,
+  loadEmailSignatureConfig,
+  normalizePlainText,
+} from "@/lib/server/email-signature";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -46,31 +51,7 @@ function stripHtml(html) {
   return String(html || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
 
-function normalizeSignature(value) {
-  return String(value || "").trim();
-}
-
-function appendSignature(text, signature) {
-  const base = String(text || "").trimEnd();
-  const normalizedSignature = normalizeSignature(signature);
-  if (!normalizedSignature) return base;
-  if (base.endsWith(normalizedSignature)) return base;
-  if (!base) return normalizedSignature;
-  return `${base}\n\n${normalizedSignature}`;
-}
-
-function stripTrailingSignature(text, signature) {
-  const normalizedText = String(text || "").trimEnd();
-  const normalizedSignature = normalizeSignature(signature);
-  if (!normalizedText || !normalizedSignature) return normalizedText;
-  if (!normalizedText.endsWith(normalizedSignature)) return normalizedText;
-  return normalizedText
-    .slice(0, normalizedText.length - normalizedSignature.length)
-    .replace(/\s+$/, "")
-    .trimEnd();
-}
-
-async function loadUserSignature(serviceClient, supabaseUserId) {
+async function loadLegacyUserSignature(serviceClient, supabaseUserId) {
   if (!supabaseUserId) return "";
   const { data: profile, error } = await serviceClient
     .from("profiles")
@@ -81,7 +62,7 @@ async function loadUserSignature(serviceClient, supabaseUserId) {
     console.warn("[threads/send] profile signature lookup failed", error.message);
     return "";
   }
-  return normalizeSignature(profile?.signature);
+  return normalizePlainText(profile?.signature);
 }
 
 function buildSnippet(text, maxLength = 240) {
@@ -771,11 +752,7 @@ export async function POST(request, { params }) {
       );
     }
   }
-  const userSignature = await loadUserSignature(serviceClient, supabaseUserId);
-  const hasSignatureOverride = Object.prototype.hasOwnProperty.call(body || {}, "signature");
-  const requestedSignature = hasSignatureOverride
-    ? normalizeSignature(body?.signature)
-    : userSignature;
+  const legacySignature = await loadLegacyUserSignature(serviceClient, supabaseUserId);
 
   let threadQuery = serviceClient
     .from("mail_threads")
@@ -790,7 +767,7 @@ export async function POST(request, { params }) {
   let mailboxQuery = serviceClient
     .from("mail_accounts")
     .select(
-      "id, user_id, workspace_id, provider, provider_email, access_token_enc, refresh_token_enc, token_expires_at, status, smtp_host, smtp_port, smtp_secure, smtp_username_enc, smtp_password_enc, smtp_status, sending_type, sending_domain, domain_status, from_email, from_name"
+      "id, user_id, workspace_id, shop_id, provider, provider_email, access_token_enc, refresh_token_enc, token_expires_at, status, smtp_host, smtp_port, smtp_secure, smtp_username_enc, smtp_password_enc, smtp_status, sending_type, sending_domain, domain_status, from_email, from_name"
     )
     .eq("id", thread.mailbox_id);
   mailboxQuery = applyScope(mailboxQuery, scope);
@@ -865,15 +842,20 @@ export async function POST(request, { params }) {
     : subjectRaw
     ? `Re: ${subjectRaw}`
     : "Re:";
-  const textWithoutProfileSignature = stripTrailingSignature(
-    bodyText || stripHtml(bodyHtml),
-    userSignature
-  );
-  const coreBodyText = stripTrailingSignature(
-    textWithoutProfileSignature,
-    requestedSignature
-  );
-  const finalBodyText = appendSignature(coreBodyText, requestedSignature);
+  const signatureConfig = await loadEmailSignatureConfig(serviceClient, {
+    workspaceId: scope?.workspaceId || mailbox?.workspace_id || null,
+    shopId: mailbox?.shop_id || null,
+    userId: supabaseUserId,
+    legacySignature,
+  });
+  const composed = composeEmailBodyWithSignature({
+    bodyText: bodyText || stripHtml(bodyHtml),
+    bodyHtml,
+    config: signatureConfig,
+  });
+  const coreBodyText = composed.coreBodyText;
+  const finalBodyText = composed.finalBodyText;
+  const finalBodyHtml = composed.finalBodyHtml || "";
 
   let providerMessageId = null;
   let sentFromEmail = mailbox.provider_email || null;
@@ -905,7 +887,7 @@ export async function POST(request, { params }) {
         bcc: deliveryBcc,
         subject,
         textBody: finalBodyText,
-        htmlBody: bodyHtml || undefined,
+        htmlBody: finalBodyHtml || undefined,
         inReplyTo,
         references,
         replyTo: mailbox.provider_email || undefined,
@@ -937,7 +919,7 @@ export async function POST(request, { params }) {
         bcc: deliveryBcc,
         subject,
         bodyText: finalBodyText,
-        bodyHtml: bodyHtml || null,
+        bodyHtml: finalBodyHtml || null,
         inReplyTo: inboundMessage?.provider_message_id || null,
         attachments: attachmentsPayload,
       });
@@ -951,8 +933,8 @@ export async function POST(request, { params }) {
         const message = {
           subject,
           body: {
-            contentType: bodyHtml ? "HTML" : "Text",
-            content: bodyHtml || finalBodyText,
+            contentType: finalBodyHtml ? "HTML" : "Text",
+            content: finalBodyHtml || finalBodyText,
           },
           toRecipients: deliveryTo.map((email) => ({ emailAddress: { address: email } })),
           ccRecipients: deliveryCc.map((email) => ({ emailAddress: { address: email } })),
@@ -1039,9 +1021,9 @@ export async function POST(request, { params }) {
         subject,
         snippet,
         body_text: finalBodyText,
-        body_html: bodyHtml || null,
+        body_html: finalBodyHtml || null,
         clean_body_text: finalBodyText,
-        clean_body_html: bodyHtml || null,
+        clean_body_html: finalBodyHtml || null,
         quoted_body_text: null,
         quoted_body_html: null,
         from_name: sentFromName,
@@ -1076,9 +1058,9 @@ export async function POST(request, { params }) {
         subject,
         snippet,
         body_text: finalBodyText,
-        body_html: bodyHtml || null,
+        body_html: finalBodyHtml || null,
         clean_body_text: finalBodyText,
-        clean_body_html: bodyHtml || null,
+        clean_body_html: finalBodyHtml || null,
         quoted_body_text: null,
         quoted_body_html: null,
         from_name: sentFromName,
@@ -1112,9 +1094,9 @@ export async function POST(request, { params }) {
         subject,
         snippet,
         body_text: finalBodyText,
-        body_html: bodyHtml || null,
+        body_html: finalBodyHtml || null,
         clean_body_text: finalBodyText,
-        clean_body_html: bodyHtml || null,
+        clean_body_html: finalBodyHtml || null,
         quoted_body_text: null,
         quoted_body_html: null,
         from_name: sentFromName,
