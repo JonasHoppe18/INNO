@@ -3,11 +3,11 @@ import { cn } from "@/lib/utils";
 import { formatMessageTime } from "@/components/inbox/inbox-utils";
 
 const STATUS_TEXT_STYLES = {
-  New: "text-green-600",
-  Open: "text-blue-600",
-  Pending: "text-orange-500",
-  Waiting: "text-violet-500",
-  Solved: "text-gray-400",
+  New: "text-green-600 dark:text-green-400",
+  Open: "text-blue-600 dark:text-blue-400",
+  Pending: "text-orange-500 dark:text-orange-400",
+  Waiting: "text-violet-500 dark:text-violet-400",
+  Solved: "text-muted-foreground",
 };
 
 const CLASSIFICATION_LABELS = {
@@ -61,9 +61,9 @@ export function TicketListItem({
       }
       onContextMenu={(event) => onContextMenu?.(event)}
       className={cn(
-        "relative flex w-full flex-col gap-1 px-4 py-3 text-left transition-colors duration-200 hover:bg-gray-50",
+        "relative flex w-full flex-col gap-1 px-4 py-3 text-left transition-colors duration-200 hover:bg-muted/50",
         isNew && "animate-ticket-enter",
-        isActive && "bg-gray-50",
+        isActive && "bg-muted/50",
         isExiting && "pointer-events-none"
       )}
       style={{
@@ -81,38 +81,38 @@ export function TicketListItem({
       <span
         className={cn(
           "absolute left-0 top-0 h-full w-[3px] rounded-r transition-all",
-          isActive ? "bg-slate-800" : isUnread ? "bg-indigo-400" : "bg-transparent"
+          isActive ? "bg-primary" : isUnread ? "bg-indigo-400" : "bg-transparent"
         )}
       />
       <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-1 items-center gap-2 truncate text-[13px] font-semibold text-slate-900">
+        <div className="flex min-w-0 flex-1 items-center gap-2 truncate text-[13px] font-semibold text-foreground">
           <span
             className={cn(
               "shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] tabular-nums",
               hasTicketNumber
-                ? "bg-slate-100 font-medium text-slate-500"
-                : "text-slate-400"
+                ? "bg-muted font-medium text-muted-foreground"
+                : "text-muted-foreground"
             )}
           >
             {ticketRef}
           </span>
           <span className="truncate">{customerLabel}</span>
         </div>
-        <span className="shrink-0 text-[12px] text-gray-400">{formatMessageTime(timestamp)}</span>
+        <span className="shrink-0 text-[12px] text-muted-foreground">{formatMessageTime(timestamp)}</span>
       </div>
       <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px] text-slate-500">
-          <span className={cn("truncate", isUnread && "font-medium text-slate-700")}>
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px] text-muted-foreground">
+          <span className={cn("truncate", isUnread && "font-medium text-foreground")}>
             {thread.subject || "Untitled ticket"}
           </span>
           {hasAiDraft ? <Sparkles className="h-3 w-3 text-amber-400" /> : null}
         </div>
-        <span className={cn("shrink-0 text-[12px]", STATUS_TEXT_STYLES[status] || "text-gray-400")}>
+        <span className={cn("shrink-0 text-[12px]", STATUS_TEXT_STYLES[status] || "text-muted-foreground")}>
           {status === "Solved" ? "Resolved" : status}
         </span>
       </div>
       {classificationLabel ? (
-        <div className="text-[11px] text-slate-400">
+        <div className="text-[11px] text-muted-foreground">
           {classificationLabel}
         </div>
       ) : null}

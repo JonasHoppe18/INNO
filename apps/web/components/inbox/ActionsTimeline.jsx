@@ -4,23 +4,23 @@ import { MapPin, RefreshCcw, XCircle, Zap } from "lucide-react";
 const statusStyles = {
   success: {
     dot: "border-violet-500",
-    line: "bg-violet-300/70",
-    badge: "border-violet-300 bg-violet-100/80 text-violet-700",
+    line: "bg-violet-300/70 dark:bg-violet-500/30",
+    badge: "border-violet-300 dark:border-violet-500/40 bg-violet-100/80 dark:bg-violet-500/15 text-violet-700 dark:text-violet-300",
   },
   warning: {
     dot: "border-amber-500",
-    line: "bg-amber-200",
-    badge: "border-amber-200 bg-amber-50 text-amber-700",
+    line: "bg-amber-200 dark:bg-amber-500/30",
+    badge: "border-amber-200 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300",
   },
   info: {
     dot: "border-violet-400",
-    line: "bg-violet-200/70",
-    badge: "border-violet-200 bg-violet-50 text-violet-700",
+    line: "bg-violet-200/70 dark:bg-violet-500/25",
+    badge: "border-violet-200 dark:border-violet-500/40 bg-violet-50 dark:bg-violet-500/15 text-violet-700 dark:text-violet-300",
   },
   error: {
     dot: "border-red-500",
-    line: "bg-red-200",
-    badge: "border-red-200 bg-red-50 text-red-700",
+    line: "bg-red-200 dark:bg-red-500/30",
+    badge: "border-red-200 dark:border-red-500/40 bg-red-50 dark:bg-red-500/15 text-red-700 dark:text-red-300",
   },
 };
 
@@ -36,28 +36,28 @@ function ShopifyActionCard({ detail }) {
 
   const theme = isAddressUpdate
     ? {
-        wrapper: "border-violet-200 bg-violet-50 text-violet-900",
-        icon: "text-violet-600",
+        wrapper: "border-violet-200 dark:border-violet-500/40 bg-violet-50 dark:bg-violet-500/10 text-violet-900 dark:text-violet-200",
+        icon: "text-violet-600 dark:text-violet-400",
         label: "Updated Shipping Address",
         Icon: MapPin,
       }
     : isCancellation
     ? {
-        wrapper: "border-rose-200 bg-rose-50 text-rose-900",
-        icon: "text-rose-600",
+        wrapper: "border-rose-200 dark:border-rose-500/40 bg-rose-50 dark:bg-rose-500/10 text-rose-900 dark:text-rose-200",
+        icon: "text-rose-600 dark:text-rose-400",
         label: "Cancellation",
         Icon: XCircle,
       }
     : isRefund
     ? {
-        wrapper: "border-amber-200 bg-amber-50 text-amber-900",
-        icon: "text-amber-600",
+        wrapper: "border-amber-200 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 text-amber-900 dark:text-amber-200",
+        icon: "text-amber-600 dark:text-amber-400",
         label: "Refund",
         Icon: RefreshCcw,
       }
     : {
-        wrapper: "border-violet-200 bg-violet-50 text-violet-900",
-        icon: "text-violet-600",
+        wrapper: "border-violet-200 dark:border-violet-500/40 bg-violet-50 dark:bg-violet-500/10 text-violet-900 dark:text-violet-200",
+        icon: "text-violet-600 dark:text-violet-400",
         label: "Shopify Action",
         Icon: Zap,
       };

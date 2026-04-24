@@ -401,7 +401,7 @@ const formatStructuredFormText = (value, subjectLine = "") => {
 };
 
 const EMAIL_BODY_CLASS =
-  "max-w-none w-full min-w-0 break-words [overflow-wrap:anywhere] text-[14px] leading-[1.55] text-gray-800 font-[inherit] [&_*]:max-w-full [&_*]:min-w-0 [&_*]:break-words [&_*]:[overflow-wrap:anywhere] [&_*]:font-[inherit] [&_*]:text-[14px] [&_*]:leading-[1.55] [&_a]:text-blue-600 [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-blue-700 [&_img]:max-h-[340px] [&_img]:w-auto [&_img]:rounded-lg [&_img]:my-2 [&_img]:cursor-zoom-in [&_img]:transition-opacity [&_img]:duration-150 hover:[&_img]:opacity-90";
+  "max-w-none w-full min-w-0 break-words [overflow-wrap:anywhere] text-[14px] leading-[1.55] text-foreground font-[inherit] [&_*]:max-w-full [&_*]:min-w-0 [&_*]:break-words [&_*]:[overflow-wrap:anywhere] [&_*]:font-[inherit] [&_*]:text-[14px] [&_*]:leading-[1.55] [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-blue-700 dark:hover:[&_a]:text-blue-300 [&_img]:max-h-[340px] [&_img]:w-auto [&_img]:rounded-lg [&_img]:my-2 [&_img]:cursor-zoom-in [&_img]:transition-opacity [&_img]:duration-150 hover:[&_img]:opacity-90";
 
 const IMAGE_FILENAME_RE = /\.(?:avif|bmp|gif|heic|heif|jpe?g|png|svg|tiff?|webp)$/i;
 
@@ -449,7 +449,7 @@ function ImageGrid({ images, onOpen }) {
             onClick={() => onOpen(img)}
             style={{ animationDelay: `${i * 40}ms` }}
             className={cn(
-              "group/img relative overflow-hidden bg-gray-100 outline-none animate-in fade-in duration-200",
+              "group/img relative overflow-hidden bg-muted outline-none animate-in fade-in duration-200",
               isTall ? "row-span-2" : "",
               count === 1 ? "max-h-[340px] min-h-[180px]" : "h-[160px]"
             )}
@@ -731,14 +731,14 @@ export function MessageBubble({
         <div className={cn("w-full max-w-full sm:max-w-[560px] lg:max-w-[620px]")}>
           <div className="min-w-0 space-y-0.5">
             <div className="flex flex-wrap items-center gap-2 px-1">
-              <div className="text-[13px] font-semibold text-gray-800">
+              <div className="text-[13px] font-semibold text-foreground">
                 {senderDisplayName}{" "}
-                <span className="text-[12px] font-normal text-gray-400">
+                <span className="text-[12px] font-normal text-muted-foreground">
                   {timestamp}
                 </span>
               </div>
               {isDraft ? (
-                <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[12px] font-medium text-blue-700">
+                <span className="rounded-full border border-blue-200 dark:border-blue-500/40 bg-blue-50 dark:bg-blue-500/15 px-2 py-0.5 text-[12px] font-medium text-blue-700 dark:text-blue-300">
                   Draft
                 </span>
               ) : null}

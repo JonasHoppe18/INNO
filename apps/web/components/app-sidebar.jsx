@@ -135,7 +135,7 @@ function InboxSection({
   return (
     <SidebarGroup className="pt-0">
       <div className="mb-1 flex items-center justify-between px-2 group-data-[collapsible=icon]:hidden">
-        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
           INBOXES
         </span>
         <button
@@ -144,7 +144,7 @@ function InboxSection({
             e.stopPropagation()
             handleCreateInbox()
           }}
-          className="cursor-pointer rounded p-0.5 text-slate-600 hover:bg-slate-200"
+          className="cursor-pointer rounded p-0.5 text-muted-foreground hover:bg-accent"
         >
           <Plus className="h-3.5 w-3.5" />
           <span className="sr-only">Create inbox</span>
@@ -158,14 +158,14 @@ function InboxSection({
               tooltip="All Tickets"
               className={cn(
                 "justify-start",
-                isAllTicketsActive && "bg-slate-100 text-slate-900 hover:bg-slate-100 hover:text-slate-900"
+                isAllTicketsActive && "bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground"
               )}
             >
               <Link href="/inbox" className="flex min-w-0 flex-1 items-center gap-2 text-inherit no-underline">
                 <Inbox className="h-4 w-4 shrink-0" />
                 <span>All Tickets</span>
                 {allTicketsUnreadCount > 0 ? (
-                  <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded px-1.5 text-xs font-semibold leading-none text-slate-500 tabular-nums">
+                  <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded px-1.5 text-xs font-semibold leading-none text-muted-foreground tabular-nums">
                     {allTicketsUnreadCount > 99 ? "99+" : allTicketsUnreadCount}
                   </span>
                 ) : null}
@@ -181,14 +181,14 @@ function InboxSection({
                   tooltip="Notifications"
                   className={cn(
                     "justify-start pl-8",
-                    isNotificationsActive && "bg-slate-100 text-slate-900 hover:bg-slate-100 hover:text-slate-900"
+                    isNotificationsActive && "bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground"
                   )}
                 >
                   <Link href="/inbox?view=notifications" className="flex w-full items-center gap-2 text-inherit no-underline">
                     <Bell className="h-4 w-4 shrink-0" />
                     <span>Notifications</span>
                     {notificationsCount > 0 ? (
-                      <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded px-1.5 text-xs font-semibold leading-none text-slate-500 tabular-nums">
+                      <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded px-1.5 text-xs font-semibold leading-none text-muted-foreground tabular-nums">
                         {notificationsCount > 99 ? "99+" : notificationsCount}
                       </span>
                     ) : null}
@@ -201,14 +201,14 @@ function InboxSection({
                   tooltip="Assigned to me"
                   className={cn(
                     "justify-start pl-8",
-                    isAssignedActive && "bg-slate-100 text-slate-900 hover:bg-slate-100 hover:text-slate-900"
+                    isAssignedActive && "bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground"
                   )}
                 >
                   <Link href="/inbox?view=mine" className="flex w-full items-center gap-2 text-inherit no-underline">
                     <User className="h-4 w-4 shrink-0" />
                     <span>Assigned to me</span>
                     {assignedCount > 0 ? (
-                      <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded px-1.5 text-xs font-semibold leading-none text-slate-500 tabular-nums">
+                      <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded px-1.5 text-xs font-semibold leading-none text-muted-foreground tabular-nums">
                         {assignedCount > 99 ? "99+" : assignedCount}
                       </span>
                     ) : null}
@@ -221,7 +221,7 @@ function InboxSection({
                   tooltip="Resolved"
                   className={cn(
                     "justify-start pl-8",
-                    isResolvedActive && "bg-slate-100 text-slate-900 hover:bg-slate-100 hover:text-slate-900"
+                    isResolvedActive && "bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground"
                   )}
                 >
                   <Link href="/inbox?view=resolved" className="flex w-full items-center gap-2 text-inherit no-underline">
@@ -238,8 +238,8 @@ function InboxSection({
                   <SidebarMenuItem key={slug}>
                     <div
                       className={cn(
-                        "group flex items-center gap-1 rounded-md px-2 py-1.5 pl-8 text-sm text-slate-600 hover:bg-slate-100",
-                        isActive && "bg-slate-100 text-slate-900"
+                        "group flex items-center gap-1 rounded-md px-2 py-1.5 pl-8 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                        isActive && "bg-accent text-accent-foreground"
                       )}
                     >
                       <Link
@@ -258,7 +258,7 @@ function InboxSection({
                           handleDeleteInbox?.(inbox)
                         }}
                         onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && handleDeleteInbox?.(inbox)}
-                        className="opacity-0 transition-opacity group-hover:opacity-100 rounded p-0.5 text-slate-500 hover:bg-slate-200 hover:text-slate-700 cursor-pointer"
+                        className="opacity-0 transition-opacity group-hover:opacity-100 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground cursor-pointer"
                         aria-label={`Delete ${inbox?.name || slug}`}
                         title="Delete inbox"
                       >

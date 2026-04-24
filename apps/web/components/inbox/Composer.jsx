@@ -846,19 +846,19 @@ export function Composer({
           <span className="h-1 w-14 rounded-full bg-border transition-colors group-hover:bg-muted-foreground/40" />
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-1.5">
-          <div className="flex flex-1 items-start justify-between gap-2 text-[12px] text-gray-700">
+          <div className="flex flex-1 items-start justify-between gap-2 text-[12px] text-foreground">
             <div className="flex flex-1 flex-wrap items-center gap-2">
-              <span className="font-medium text-gray-500">To:</span>
+              <span className="font-medium text-muted-foreground">To:</span>
               {toRecipients.map((recipient) => (
                 <span
                   key={recipient}
-                  className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-100 px-2 py-0.5 text-[12px] text-gray-600"
+                  className="inline-flex items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-[12px] text-foreground"
                 >
                   {recipient}
                   <button
                     type="button"
                     onClick={() => removeRecipient(recipient, setToRecipients)}
-                    className="text-gray-400 hover:text-gray-600"
+                    className="text-muted-foreground hover:text-foreground"
                   >
                     <X className="h-3 w-3" />
                   </button>
@@ -872,7 +872,7 @@ export function Composer({
                 }
                 placeholder={toRecipients.length ? "" : "Add recipient"}
                 disabled={disabled}
-                className="min-w-[120px] flex-1 bg-transparent text-[13px] text-gray-700 outline-none"
+                className="min-w-[120px] flex-1 bg-transparent text-[13px] text-foreground outline-none"
               />
             </div>
           </div>
@@ -881,7 +881,7 @@ export function Composer({
               type="button"
               disabled={disabled}
               onClick={() => setShowCC((prev) => !prev)}
-              className="font-medium text-gray-500 hover:text-gray-700"
+              className="font-medium text-muted-foreground hover:text-foreground"
             >
               Cc
             </button>
@@ -889,7 +889,7 @@ export function Composer({
               type="button"
               disabled={disabled}
               onClick={() => setShowBCC((prev) => !prev)}
-              className="font-medium text-gray-500 hover:text-gray-700"
+              className="font-medium text-muted-foreground hover:text-foreground"
             >
               Bcc
             </button>
@@ -898,25 +898,25 @@ export function Composer({
               onClick={onToggleCollapse}
               aria-label="Hide reply box"
               title="Hide reply box"
-              className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
             >
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
         </div>
         {showCC ? (
-          <div className="flex items-start gap-2 border-b border-gray-200/80 px-3 py-1.5 text-[12px] text-gray-700">
-            <span className="font-medium text-gray-500">Cc:</span>
+          <div className="flex items-start gap-2 border-b border-border px-3 py-1.5 text-[12px] text-foreground">
+            <span className="font-medium text-muted-foreground">Cc:</span>
             {ccRecipients.map((recipient) => (
               <span
                 key={recipient}
-                className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[12px] text-gray-600"
+                className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[12px] text-foreground"
               >
                 {recipient}
                 <button
                   type="button"
                   onClick={() => removeRecipient(recipient, setCcRecipients)}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-muted-foreground hover:text-foreground"
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -930,7 +930,7 @@ export function Composer({
               }
               placeholder="Add CC"
               disabled={disabled}
-              className="min-w-[120px] flex-1 bg-transparent text-[13px] text-gray-700 outline-none"
+              className="min-w-[120px] flex-1 bg-transparent text-[13px] text-foreground outline-none"
             />
             <button
               type="button"
@@ -940,25 +940,25 @@ export function Composer({
                 setCcRecipients([]);
                 setCcInput("");
               }}
-              className="text-[12px] text-gray-400 hover:text-gray-600"
+              className="text-[12px] text-muted-foreground hover:text-foreground"
             >
               Remove
             </button>
           </div>
         ) : null}
         {showBCC ? (
-          <div className="flex items-start gap-2 border-b border-gray-200/80 px-3 py-1.5 text-[12px] text-gray-700">
-            <span className="font-medium text-gray-500">Bcc:</span>
+          <div className="flex items-start gap-2 border-b border-border px-3 py-1.5 text-[12px] text-foreground">
+            <span className="font-medium text-muted-foreground">Bcc:</span>
             {bccRecipients.map((recipient) => (
               <span
                 key={`bcc-${recipient}`}
-                className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[12px] text-gray-600"
+                className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[12px] text-foreground"
               >
                 {recipient}
                 <button
                   type="button"
                   onClick={() => removeRecipient(recipient, setBccRecipients)}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-muted-foreground hover:text-foreground"
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -972,7 +972,7 @@ export function Composer({
               }
               placeholder="Add BCC"
               disabled={disabled}
-              className="min-w-[120px] flex-1 bg-transparent text-[13px] text-gray-700 outline-none"
+              className="min-w-[120px] flex-1 bg-transparent text-[13px] text-foreground outline-none"
             />
             <button
               type="button"
@@ -982,7 +982,7 @@ export function Composer({
                 setBccRecipients([]);
                 setBccInput("");
               }}
-              className="text-[12px] text-gray-400 hover:text-gray-600"
+              className="text-[12px] text-muted-foreground hover:text-foreground"
             >
               Remove
             </button>
@@ -993,13 +993,13 @@ export function Composer({
             {attachments.map((file) => (
               <span
                 key={`${file.name}:${file.size}:${file.lastModified}`}
-                className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-2 py-1 text-gray-600"
+                className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/50 px-2 py-1 text-foreground"
               >
                 <span className="max-w-[220px] truncate">{file.name}</span>
                 <button
                   type="button"
                   onClick={() => removeAttachment(file)}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-muted-foreground hover:text-foreground"
                   aria-label={`Remove ${file.name}`}
                 >
                   <X className="h-3 w-3" />
@@ -1012,11 +1012,14 @@ export function Composer({
           <div className="min-h-0 flex-1 overflow-y-auto bg-card px-3 py-2">
             {refineOpen && !isNote ? (
               <div
-                className="mb-2 flex flex-col gap-1.5 rounded-xl border border-violet-100 bg-violet-50/60 px-3 py-2"
+                className="mb-2 flex flex-col gap-2 rounded-xl border border-violet-200 dark:border-violet-500/30 bg-violet-50/70 dark:bg-violet-500/10 px-3 py-2.5"
                 style={{
                   animation: "refine-slide-in 180ms cubic-bezier(0.23,1,0.32,1) both",
                 }}
               >
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-violet-500 dark:text-violet-400">
+                  Refine draft
+                </div>
                 <div className="flex items-center gap-2">
                   <input
                     autoFocus
@@ -1033,21 +1036,22 @@ export function Composer({
                         setRefineError("");
                       }
                     }}
-                    placeholder="Add instruction to Sona..."
-                    className="flex-1 bg-transparent text-[13px] text-gray-800 outline-none placeholder:text-gray-400"
+                    placeholder="Write a custom instruction..."
+                    className="flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-violet-400/70 dark:placeholder:text-violet-400/50"
                   />
                   <button
                     type="button"
                     disabled={!refinePrompt.trim()}
                     onClick={handleRefineSubmit}
-                    className="flex items-center justify-center rounded-md bg-violet-600 px-2 py-1 text-white disabled:opacity-40 hover:bg-violet-700 transition-colors"
+                    className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-2.5 py-1 text-[12px] font-medium text-white disabled:opacity-40 hover:bg-violet-700 transition-colors"
                     aria-label="Submit refinement"
                   >
+                    Apply
                     <CornerDownLeft className="h-3 w-3" />
                   </button>
                 </div>
                 {refineError ? (
-                  <p className="text-[11px] text-red-500">{refineError}</p>
+                  <p className="text-[11px] text-red-500 dark:text-red-400">{refineError}</p>
                 ) : null}
               </div>
             ) : null}
@@ -1121,7 +1125,7 @@ export function Composer({
                   className={`relative flex flex-1 flex-col ${replyEditorMinHeightClassName}`}
                 >
                   {!showDraftLoadingState && !String(value || "").trim() ? (
-                    <div className="pointer-events-none absolute left-0 top-0 text-[14px] text-gray-400">
+                    <div className="pointer-events-none absolute left-0 top-0 text-[14px] text-muted-foreground">
                       {disabled ? disabledPlaceholder : "Write your reply..."}
                     </div>
                   ) : null}
@@ -1175,14 +1179,14 @@ export function Composer({
                       if (!href) return;
                       window.open(href, "_blank", "noopener,noreferrer");
                     }}
-                    className={`flex-1 whitespace-pre-wrap break-words p-0 text-[14px] leading-[1.55] text-gray-900 outline-none [&_a]:cursor-pointer [&_a]:text-blue-600 [&_a]:underline [&_a:hover]:text-blue-700 ${replyEditorMinHeightClassName}`}
+                    className={`flex-1 whitespace-pre-wrap break-words p-0 text-[14px] leading-[1.55] text-foreground outline-none [&_a]:cursor-pointer [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline [&_a:hover]:text-blue-700 dark:[&_a:hover]:text-blue-300 ${replyEditorMinHeightClassName}`}
                   />
                   {showDraftLoadingState ? (
                     <div className="absolute inset-0 flex flex-col gap-3 pt-0.5">
-                      <div className="h-3 rounded-full bg-gray-100 animate-pulse" style={{ width: "72%" }} />
-                      <div className="h-3 rounded-full bg-gray-100 animate-pulse" style={{ width: "91%", animationDelay: "120ms" }} />
-                      <div className="h-3 rounded-full bg-gray-100 animate-pulse" style={{ width: "84%", animationDelay: "240ms" }} />
-                      <div className="h-3 rounded-full bg-gray-100 animate-pulse" style={{ width: "58%", animationDelay: "360ms" }} />
+                      <div className="h-3 rounded-full bg-muted animate-pulse" style={{ width: "72%" }} />
+                      <div className="h-3 rounded-full bg-muted animate-pulse" style={{ width: "91%", animationDelay: "120ms" }} />
+                      <div className="h-3 rounded-full bg-muted animate-pulse" style={{ width: "84%", animationDelay: "240ms" }} />
+                      <div className="h-3 rounded-full bg-muted animate-pulse" style={{ width: "58%", animationDelay: "360ms" }} />
                     </div>
                   ) : null}
                 </div>
@@ -1190,7 +1194,7 @@ export function Composer({
             )}
             {isNote && mentionState.open && mentionCandidates.length ? (
               <div
-                className="absolute z-20 w-[320px] rounded-xl border border-gray-200 bg-white/95 p-1.5 shadow-xl backdrop-blur-[2px]"
+                className="absolute z-20 w-[320px] rounded-xl border border-border bg-popover/95 p-1.5 shadow-xl backdrop-blur-[2px]"
                 style={{
                   left: `${mentionPopupPosition.left}px`,
                   top: `${mentionPopupPosition.top}px`,
@@ -1209,11 +1213,11 @@ export function Composer({
                       onMouseDown={(event) => event.preventDefault()}
                       onClick={() => insertMention(candidate)}
                       className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[12px] ${
-                        isActive ? "bg-gray-100 text-gray-900" : "text-gray-700 hover:bg-gray-50"
+                        isActive ? "bg-accent text-accent-foreground" : "text-foreground hover:bg-accent/50"
                       }`}
                     >
                       <span className="truncate text-[13px] font-medium">{candidate.label}</span>
-                      <span className="ml-2 truncate text-[12px] text-gray-400">{candidate.email}</span>
+                      <span className="ml-2 truncate text-[12px] text-muted-foreground">{candidate.email}</span>
                     </button>
                   );
                 })}
@@ -1223,8 +1227,8 @@ export function Composer({
               <>
                 {showSignatureEditor ? (
                   <>
-                    <div className="mt-2 border-t border-gray-200 pt-2" />
-                    <div className="mb-1.5 text-[12px] font-medium text-gray-500">Signature</div>
+                    <div className="mt-2 border-t border-border pt-2" />
+                    <div className="mb-1.5 text-[12px] font-medium text-muted-foreground">Signature</div>
                     <textarea
                       value={signatureValue}
                       onChange={(event) => onSignatureChange?.(event.target.value)}
@@ -1232,7 +1236,7 @@ export function Composer({
                       placeholder="Your signature..."
                       rows={3}
                       disabled={disabled}
-                      className="w-full resize-none border-0 bg-transparent p-0 text-[14px] leading-[1.55] text-gray-700 outline-none"
+                      className="w-full resize-none border-0 bg-transparent p-0 text-[14px] leading-[1.55] text-foreground outline-none"
                     />
                   </>
                 ) : null}
@@ -1262,7 +1266,7 @@ export function Composer({
                     onClick={() => fileInputRef.current?.click()}
                     aria-label="Attach file"
                     title="Attach file"
-                    className="rounded-md p-1.5 text-gray-500 hover:bg-white hover:text-gray-700"
+                    className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                   >
                     <Paperclip className="h-4 w-4" />
                   </button>
@@ -1275,7 +1279,7 @@ export function Composer({
                     }}
                     aria-label="Open saved replies"
                     title="Saved Replies"
-                    className="rounded-md p-1.5 text-gray-500 hover:bg-white hover:text-gray-700"
+                    className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                   >
                     <Zap className="h-4 w-4" />
                   </button>
@@ -1286,8 +1290,8 @@ export function Composer({
                     aria-label={showSignatureEditor ? "Hide signature" : "Show signature"}
                     title={showSignatureEditor ? "Hide signature" : "Show signature"}
                     className={showSignatureEditor
-                      ? "rounded-md bg-indigo-50 p-1.5 text-indigo-600 hover:bg-indigo-100"
-                      : "rounded-md p-1.5 text-gray-500 hover:bg-white hover:text-gray-700"}
+                      ? "rounded-md bg-indigo-100 dark:bg-indigo-500/20 p-1.5 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/30"
+                      : "rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground"}
                   >
                     <PenLine className="h-4 w-4" />
                   </button>
@@ -1296,11 +1300,11 @@ export function Composer({
                       <PopoverTrigger asChild>
                         <button
                           type="button"
-                          className="inline-flex items-center gap-1 rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors disabled:opacity-50"
+                          className="inline-flex items-center gap-1 rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors disabled:opacity-50"
                           disabled={isTranslating}
                         >
                           {isTranslating ? (
-                            <span className="inline-block h-4 w-4 animate-spin rounded-full border border-gray-300 border-t-gray-600" />
+                            <span className="inline-block h-4 w-4 animate-spin rounded-full border border-border border-t-foreground" />
                           ) : (
                             <Globe className="h-4 w-4" />
                           )}
@@ -1317,8 +1321,10 @@ export function Composer({
                             key={code}
                             type="button"
                             onClick={() => handleLanguageChange(code)}
-                            className={`w-full rounded-md px-3 py-1.5 text-left text-[13px] hover:bg-gray-50 transition-colors ${
-                              code === replyLanguage ? "font-medium text-gray-900" : "text-gray-600"
+                            className={`w-full rounded-md px-3 py-1.5 text-left text-[13px] transition-colors ${
+                              code === replyLanguage
+                                ? "bg-accent font-medium text-foreground"
+                                : "text-foreground/70 hover:bg-accent hover:text-foreground"
                             }`}
                           >
                             {SUPPORT_LANGUAGE_LABELS[code]}
@@ -1332,7 +1338,7 @@ export function Composer({
                       type="button"
                       disabled={disabled || showDraftLoadingState || isGeneratingDraft}
                       onClick={() => onGenerateDraft?.(replyLanguage)}
-                      className="rounded-md border border-gray-200 bg-white px-2.5 py-1 text-[12px] font-medium text-gray-600 hover:border-gray-300 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="rounded-md border border-border bg-background px-2.5 py-1 text-[12px] font-medium text-foreground/80 hover:border-border/80 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {isGeneratingDraft ? "Generating..." : "Generate draft"}
                     </button>
@@ -1348,8 +1354,8 @@ export function Composer({
                       aria-label="Refine draft with AI"
                       title="Refine draft"
                       className={refineOpen
-                        ? "rounded-md bg-violet-100 p-1.5 text-violet-600 hover:bg-violet-100"
-                        : "rounded-md p-1.5 text-violet-400 hover:bg-violet-50 hover:text-violet-600"}
+                        ? "rounded-md bg-violet-100 dark:bg-violet-500/25 p-1.5 text-violet-600 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-500/30"
+                        : "rounded-md p-1.5 text-violet-400 dark:text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-500/15 hover:text-violet-600 dark:hover:text-violet-400"}
                     >
                       <Sparkles className="h-4 w-4" />
                     </button>
@@ -1365,8 +1371,8 @@ export function Composer({
                     disabled={disabled || showDraftLoadingState}
                     className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[12px] font-medium ${
                       isNote
-                        ? "bg-yellow-50 text-yellow-700"
-                        : "bg-white text-gray-600"
+                        ? "bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400"
+                        : "bg-muted text-foreground/80"
                     }`}
                   >
                     {isNote ? "Internal note" : isForward ? "Forward email" : "Reply to customer"}
@@ -1412,7 +1418,7 @@ export function Composer({
       </div>
       <Dialog open={savedRepliesOpen} onOpenChange={setSavedRepliesOpen}>
         <DialogContent className="sm:max-w-[620px] gap-0 p-0 overflow-hidden">
-          <div className="border-b border-gray-100 px-4 pt-4 pb-3">
+          <div className="border-b border-border px-4 pt-4 pb-3">
             <DialogHeader className="mb-3">
               <DialogTitle className="text-[15px]">Saved Replies</DialogTitle>
             </DialogHeader>
@@ -1421,12 +1427,12 @@ export function Composer({
               value={savedRepliesQuery}
               onChange={(event) => setSavedRepliesQuery(event.target.value)}
               placeholder="Search replies..."
-              className="h-9 border-gray-200 bg-gray-50 text-[13px] placeholder:text-gray-400 focus-visible:ring-1 focus-visible:ring-gray-300"
+              className="h-9 text-[13px]"
             />
           </div>
           <div className="max-h-[400px] overflow-y-auto p-2">
             {savedRepliesLoading ? (
-              <p className="px-3 py-8 text-center text-[13px] text-gray-400">
+              <p className="px-3 py-8 text-center text-[13px] text-muted-foreground">
                 Loading…
               </p>
             ) : filteredSavedReplies.length ? (
@@ -1449,28 +1455,28 @@ export function Composer({
                     onClick={() => applySavedReplyReplace(reply)}
                     onKeyDown={(e) => e.key === "Enter" && applySavedReplyReplace(reply)}
                     style={{ animationDelay: `${i * 30}ms` }}
-                    className="group/row animate-in fade-in slide-in-from-bottom-1 duration-200 flex cursor-pointer items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-gray-50 focus:outline-none focus-visible:bg-gray-50"
+                    className="group/row animate-in fade-in slide-in-from-bottom-1 duration-200 flex cursor-pointer items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-accent focus:outline-none focus-visible:bg-accent"
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
-                        <p className="truncate text-[13px] font-medium text-gray-900">{title}</p>
+                        <p className="truncate text-[13px] font-medium text-foreground">{title}</p>
                         {category ? (
-                          <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-500">
+                          <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
                             {category}
                           </span>
                         ) : null}
                         {imageCount > 0 ? (
-                          <span className="shrink-0 rounded-full bg-indigo-50 px-1.5 py-0.5 text-[11px] text-indigo-600">
+                          <span className="shrink-0 rounded-full bg-indigo-100 dark:bg-indigo-500/20 px-1.5 py-0.5 text-[11px] text-indigo-600 dark:text-indigo-400">
                             {imageCount === 1 ? "1 image" : `${imageCount} images`}
                           </span>
                         ) : null}
                       </div>
-                      <p className="mt-0.5 line-clamp-2 text-[12px] leading-[1.5] text-gray-500">{preview}</p>
+                      <p className="mt-0.5 line-clamp-2 text-[12px] leading-[1.5] text-muted-foreground">{preview}</p>
                     </div>
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); applySavedReplyInsert(reply); }}
-                      className="mt-0.5 shrink-0 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-[12px] font-medium text-gray-600 opacity-0 transition-opacity duration-150 hover:border-gray-300 hover:bg-gray-50 group-hover/row:opacity-100"
+                      className="mt-0.5 shrink-0 rounded-md border border-border bg-background px-2.5 py-1 text-[12px] font-medium text-foreground/80 opacity-0 transition-opacity duration-150 hover:bg-accent group-hover/row:opacity-100"
                     >
                       Insert
                     </button>
@@ -1479,8 +1485,8 @@ export function Composer({
               })
             ) : (
               <div className="px-3 py-10 text-center">
-                <p className="text-[13px] font-medium text-gray-700">No saved replies yet.</p>
-                <p className="mt-1 text-[12px] text-gray-400">
+                <p className="text-[13px] font-medium text-foreground">No saved replies yet.</p>
+                <p className="mt-1 text-[12px] text-muted-foreground">
                   Create your first saved reply in Settings.
                 </p>
               </div>
