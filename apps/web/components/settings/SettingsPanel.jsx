@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth, useOrganization, useUser } from "@clerk/nextjs";
 import { useTheme } from "next-themes";
 import {
   Building2,
-  ChevronDown,
+  Clock,
   CreditCard,
+  Globe,
   Mail,
   Lock,
   PenLine,
@@ -57,17 +58,17 @@ import {
 
 const MENU_SECTIONS = [
   {
-    label: "PERSONAL",
-    items: [{ key: "profile", label: "Profile", icon: User }],
-  },
-  {
     label: "TEAM",
     items: [
       { key: "general", label: "General", icon: Building2 },
       { key: "members", label: "Members", icon: Users2 },
       { key: "email", label: "Email", icon: Mail },
-{ key: "billing", label: "Billing", icon: CreditCard },
+      { key: "billing", label: "Billing", icon: CreditCard },
     ],
+  },
+  {
+    label: "PERSONAL",
+    items: [{ key: "profile", label: "Profile", icon: User }],
   },
 ];
 
@@ -134,6 +135,25 @@ function TabSkeleton() {
   );
 }
 
+function StoreTeamRow({ icon: Icon, label, description, value, editing, children }) {
+  return (
+    <div className="flex items-center gap-4 border-b border-border/80 py-5 last:border-b-0">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
+        <Icon className="h-4 w-4 text-primary" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-foreground">{label}</p>
+        <p className="text-xs text-muted-foreground">{description}</p>
+      </div>
+      {editing ? (
+        <div className="w-56 shrink-0">{children}</div>
+      ) : (
+        <span className="shrink-0 text-sm font-medium text-slate-500">{value}</span>
+      )}
+    </div>
+  );
+}
+
 function GeneralTab({
   shopDomain,
   teamName,
@@ -152,62 +172,88 @@ function GeneralTab({
   saving,
   canSave,
 }) {
+  const [isEditing, setIsEditing] = useState(false);
+
+  const handleSave = async () => {
+    await onSave();
+    setIsEditing(false);
+  };
+
+  const handleCancel = () => {
+    onReset();
+    setIsEditing(false);
+  };
+
+  const langLabel = SUPPORT_LANGUAGE_LABELS[supportLanguage] || supportLanguage;
+
   return (
-    <section className="max-w-5xl space-y-4">
-      <div className="px-1">
-        <p className="text-xs font-medium tracking-[0.08em] text-slate-500">SETTINGS / GENERAL</p>
-        <h2 className="mt-1 text-3xl font-semibold text-slate-900">General</h2>
-        <p className="mt-1 text-sm text-slate-600">Configure shared team settings.</p>
+    <section className="w-full max-w-[1280px] space-y-5">
+      <div className="mb-6">
+        <h2 className="text-2xl font-semibold tracking-tight text-foreground">Team Settings</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Manage your team, store connection and preferences.</p>
       </div>
 
-      <div className="rounded-xl border border-gray-200 bg-white p-6">
-        <h3 className="text-base font-semibold text-slate-900">Store Information</h3>
-        <p className="mt-1 text-sm text-slate-500">Store connection and team profile details.</p>
-
-        <div className="mt-5 grid grid-cols-1 gap-5">
-          <div className="space-y-1.5">
-            <label htmlFor="shop-url" className="text-xs font-semibold tracking-wide text-slate-500">
-              SHOP URL
-            </label>
-            <div className="flex h-11 w-full max-w-xl items-center gap-2 rounded-md bg-slate-100 px-3 text-slate-700">
-              <Lock className="h-4 w-4 text-slate-400" />
-              <span className="truncate text-sm">{shopDomain || "No shop connected"}</span>
-            </div>
-            <p className="text-xs text-slate-500">Connected Shopify store (read-only).</p>
+      {/* Store & Team */}
+      <div className="rounded-xl border border-border/90 bg-card">
+        <div className="flex items-center justify-between px-6 pt-5 pb-2">
+          <div>
+            <h3 className="text-base font-semibold text-foreground">Store &amp; Team</h3>
+            <p className="mt-0.5 text-sm text-muted-foreground">Your store connection and basic team settings.</p>
           </div>
-
-          <div className="space-y-1.5">
-            <label htmlFor="team-name" className="text-xs font-semibold tracking-wide text-slate-500">
-              TEAM NAME
-            </label>
-            <Input
-              id="team-name"
-              value={teamName}
-              onChange={(event) => onTeamNameChange(event.target.value)}
-              placeholder="Enter your team name"
-              className="h-11 w-full max-w-xl focus-visible:ring-2 focus-visible:ring-sky-500/40"
-            />
-            <p className="text-xs text-slate-500">
-              This is your team&apos;s visible name within Sona.
-            </p>
-          </div>
-
-          <div className="space-y-1.5">
-            <label
-              htmlFor="support-language"
-              className="text-xs font-semibold tracking-wide text-slate-500"
-            >
-              SUPPORT LANGUAGE
-            </label>
-            <Select
-              value={supportLanguage}
-              onValueChange={onSupportLanguageChange}
+          {!isEditing ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => setIsEditing(true)}
               disabled={!hasWorkspaceScope}
             >
-              <SelectTrigger
-                id="support-language"
-                className="h-11 w-full max-w-xl text-sm text-slate-700 focus-visible:ring-2 focus-visible:ring-sky-500/40"
-              >
+              <PenLine className="h-3.5 w-3.5" />
+              Edit
+            </Button>
+          ) : (
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={handleCancel} disabled={saving}>
+                Cancel
+              </Button>
+              <Button type="button" size="sm" onClick={handleSave} disabled={!canSave || saving}>
+                {saving ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          )}
+        </div>
+        <div className="px-6 pb-2">
+          <StoreTeamRow
+            icon={Lock}
+            label="Store URL"
+            description="Connected Shopify store (read-only)"
+            value={shopDomain || "No shop connected"}
+            editing={false}
+          />
+          <StoreTeamRow
+            icon={User}
+            label="Team name"
+            description="This is your team's visible name within Sona."
+            value={teamName}
+            editing={isEditing}
+          >
+            <Input
+              value={teamName}
+              onChange={(e) => onTeamNameChange(e.target.value)}
+              placeholder="Team name"
+              className="h-9 text-sm"
+            />
+          </StoreTeamRow>
+          <StoreTeamRow
+            icon={Globe}
+            label="Support language"
+            description="The language your team prefers to read messages in."
+            value={langLabel}
+            editing={isEditing}
+          >
+            <Select value={supportLanguage} onValueChange={onSupportLanguageChange} disabled={!hasWorkspaceScope}>
+              <SelectTrigger className="h-9 text-sm">
                 <SelectValue placeholder="Select language" />
               </SelectTrigger>
               <SelectContent>
@@ -218,114 +264,100 @@ function GeneralTab({
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-xs text-slate-500">
-              This is the language your team prefers to read messages in. Translation views in
-              the inbox will use this language.
-            </p>
-          </div>
-
-          <div className="space-y-1.5">
-            <label htmlFor="close-suggestion-delay-hours" className="text-xs font-semibold tracking-wide text-slate-500">
-              AUTO CLOSE (HOURS)
-            </label>
+          </StoreTeamRow>
+          <StoreTeamRow
+            icon={Clock}
+            label="Auto close (hours)"
+            description="Automatically close tickets after this many hours in Pending with no customer reply."
+            value={`${closeSuggestionDelayHours} hours`}
+            editing={isEditing}
+          >
             <Input
-              id="close-suggestion-delay-hours"
               type="number"
               min={1}
               max={720}
               step={1}
               value={closeSuggestionDelayHours}
-              onChange={(event) => onCloseSuggestionDelayHoursChange(event.target.value)}
+              onChange={(e) => onCloseSuggestionDelayHoursChange(e.target.value)}
               placeholder="336"
-              className="h-11 w-full max-w-xl focus-visible:ring-2 focus-visible:ring-sky-500/40"
+              className="h-9 text-sm"
               disabled={!hasWorkspaceScope}
             />
-            <p className="text-xs text-slate-500">
-              Automatically close tickets after this many hours in Pending with no customer reply.
-            </p>
-          </div>
+          </StoreTeamRow>
         </div>
       </div>
 
-      <div className="rounded-xl border border-gray-200 bg-white p-6">
-        <h3 className="text-base font-semibold text-slate-900">Test Mode</h3>
-        <p className="mt-1 text-sm text-slate-500">
-          Simulate actions without writing to Shopify, shipping providers, or other integrations.
-        </p>
-
-        <div className="mt-5 grid grid-cols-1 gap-4">
-          <div className="flex items-center justify-between rounded-lg px-1 py-1">
-            <span className="text-sm text-slate-500">
-              Enable Test Mode
-            </span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={Boolean(testMode)}
-              onClick={() => onTestModeChange(!Boolean(testMode))}
-              disabled={!hasWorkspaceScope}
-              className={cn(
-                "relative inline-flex h-7 w-12 items-center rounded-full transition",
-                testMode ? "bg-[#F59E0B]" : "bg-slate-300",
-                !hasWorkspaceScope && "cursor-not-allowed opacity-70"
-              )}
-            >
-              <span
-                className={cn(
-                  "inline-block h-5 w-5 transform rounded-full bg-white transition",
-                  testMode ? "translate-x-6" : "translate-x-1"
-                )}
-              />
-            </button>
+      {/* Test Mode */}
+      <div className="rounded-xl border border-border/90 bg-card">
+        <div className="flex items-center justify-between px-6 py-5">
+          <div>
+            <h3 className="text-base font-semibold text-foreground">Test Mode</h3>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Simulate actions without writing to Shopify, shipping providers, or other integrations.
+            </p>
           </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={Boolean(testMode)}
+            onClick={() => onTestModeChange(!Boolean(testMode))}
+            disabled={!hasWorkspaceScope}
+            className={cn(
+              "relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors duration-200",
+              testMode ? "bg-primary/80" : "bg-slate-300",
+              !hasWorkspaceScope && "cursor-not-allowed opacity-70"
+            )}
+          >
+            <span
+              className={cn(
+                "inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200",
+                testMode ? "translate-x-6" : "translate-x-1"
+              )}
+            />
+          </button>
+        </div>
 
-          <div className="space-y-1.5">
-            <label htmlFor="test-email" className="text-xs font-semibold tracking-wide text-slate-500">
-              TEST EMAIL ADDRESS
-            </label>
+        <div className="border-t border-border px-6 py-4">
+          <div className="flex items-center gap-4">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10">
+              <Mail className="h-4 w-4 text-primary" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-foreground">Test email address</p>
+              <p className="text-xs text-muted-foreground">All outgoing emails will be redirected here while Test Mode is active.</p>
+            </div>
             <Input
-              id="test-email"
               type="email"
               value={testEmail}
-              onChange={(event) => onTestEmailChange(event.target.value)}
+              onChange={(e) => onTestEmailChange(e.target.value)}
               placeholder="qa@company.com"
-              className="h-11 w-full max-w-xl focus-visible:ring-2 focus-visible:ring-sky-500/40"
+              className="h-11 w-full max-w-[520px] shrink-0 text-sm"
               disabled={!hasWorkspaceScope}
             />
-            <p className="text-xs text-slate-500">
-              When set, all outgoing emails are redirected to this address while Test Mode is active.
-            </p>
           </div>
-
         </div>
-        {!hasWorkspaceScope ? (
-          <p className="mt-3 text-xs text-amber-700">
-            Test Mode settings require an organization workspace.
-          </p>
-        ) : null}
+        {!hasWorkspaceScope && (
+          <p className="px-6 pb-4 text-xs text-amber-700">Test Mode settings require an organization workspace.</p>
+        )}
       </div>
 
-      <div className="rounded-xl border border-red-200 bg-white p-6">
-        <h3 className="text-base font-semibold text-red-700">Danger Zone</h3>
-        <p className="mt-1 text-sm text-slate-500">
-          Permanently delete this team and all data.
-        </p>
-        <div className="mt-4">
+      {/* Danger Zone */}
+      <div className="rounded-xl border border-red-200/80 bg-card px-6 py-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-base font-semibold text-red-600">Danger Zone</h3>
+            <p className="mt-0.5 text-sm text-muted-foreground">Permanently delete this team and all data. This action cannot be undone.</p>
+          </div>
           <Button
             type="button"
-            className="bg-red-600 text-white hover:bg-red-700"
+            variant="outline"
+            className="shrink-0 gap-1.5 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
           >
+            <Trash2 className="h-3.5 w-3.5" />
             Delete Team
           </Button>
         </div>
       </div>
-
-      <StickySaveBar
-        isVisible={canSave}
-        isSaving={saving}
-        onSave={onSave}
-        onDiscard={onReset}
-      />
     </section>
   );
 }
@@ -346,17 +378,6 @@ function normalizeOrgRole(role) {
   if (normalized.includes("owner")) return "Owner";
   if (normalized.includes("member")) return "Member";
   return "Member";
-}
-
-function formatJoinedDate(value) {
-  if (!value) return "";
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
 }
 
 function MembersTab({
@@ -639,18 +660,34 @@ function MembersTab({
 
   return (
     <>
-      <section className="w-full max-w-none rounded-lg bg-white p-6">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-2xl font-semibold text-slate-900">Team Members</h2>
-            <p className="mt-1 text-sm text-slate-600">Manage who has access.</p>
+      <section className="w-full max-w-[1320px] space-y-5">
+        <div className="mb-6">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-primary">TEAM</p>
+          <div className="mt-1 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-2xl font-semibold tracking-tight text-foreground">Team Members</h2>
+              <p className="mt-1 text-sm text-muted-foreground">Manage who has access to your workspace.</p>
+            </div>
+            <Button
+              type="button"
+              onClick={() => setInviteOpen(true)}
+              disabled={!canManageRoles}
+              className="h-10 gap-2 rounded-lg bg-slate-900 px-4 text-sm font-medium text-white hover:bg-slate-800 active:scale-[0.97] transition-transform duration-100"
+            >
+              <Users2 className="h-4 w-4" />
+              Invite Member
+            </Button>
           </div>
-          <Button type="button" onClick={() => setInviteOpen(true)} disabled={!canManageRoles}>
-            Invite Member
-          </Button>
         </div>
 
-        <div className="mt-5 w-full overflow-hidden rounded-lg border border-gray-200 divide-y divide-gray-100 bg-white">
+        <div className="w-full overflow-hidden rounded-2xl border border-border bg-card">
+          <div className="grid grid-cols-[minmax(260px,1fr)_140px_180px_80px] items-center gap-4 border-b border-border px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+            <p>Member</p>
+            <p>Role</p>
+            <p>Signature</p>
+            <p className="text-right">Actions</p>
+          </div>
+
           {rows.length ? (
             rows.map((member) => {
               const displayName = getDisplayName(member);
@@ -662,6 +699,10 @@ function MembersTab({
                 .toUpperCase();
               const role = normalizeOrgRole(member?.workspace_role);
               const rawRole = String(member?.workspace_role || "").toLowerCase();
+              const isAdminLikeRole = rawRole.includes("admin") || rawRole.includes("owner");
+              const rolePillClassName = isAdminLikeRole
+                ? "bg-violet-100 text-violet-600"
+                : "bg-blue-100 text-blue-600";
               const isOwner = rawRole.includes("owner");
               const memberUserId = String(member?.org_user_id || member?.clerk_user_id || "").trim();
               const isSelf =
@@ -680,14 +721,13 @@ function MembersTab({
                 roleUpdatingForUserId &&
                 roleUpdatingForUserId === memberUserId;
               const isInvited = String(member?.status || "") === "invited";
-              const joinedLabel = formatJoinedDate(member?.joined_at);
 
               return (
                 <div
                   key={member.user_id || member.clerk_user_id || member.email}
-                  className="flex items-center justify-between p-4 bg-white hover:bg-gray-50/50 transition-colors"
+                  className="grid grid-cols-[minmax(260px,1fr)_140px_180px_80px] items-center gap-4 border-b border-border px-5 py-4 last:border-b-0 hover:bg-slate-50/60 transition-colors duration-150"
                 >
-                  <div className="flex min-w-0 flex-1 items-center gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
                     {member.image_url && !isInvited ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
@@ -696,50 +736,84 @@ function MembersTab({
                         className="h-9 w-9 rounded-full object-cover"
                       />
                     ) : (
-                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-sm font-medium text-slate-600">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-200/80 text-xs font-semibold text-slate-600">
                         {initials || "U"}
                       </div>
                     )}
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="truncate font-medium text-gray-900">{displayName}</p>
-                        {isInvited && (
-                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-                            Pending
-                          </span>
-                        )}
-                      </div>
-                      <p className="truncate text-sm text-gray-500">
+                      <p className="truncate font-medium text-foreground">{displayName}</p>
+                      <p className="truncate text-sm text-muted-foreground">
                         {member.email || "No email"}
-                        {!isInvited && joinedLabel ? ` • Joined ${joinedLabel}` : ""}
+                        {isInvited ? " • Invitation sent" : ""}
                       </p>
                     </div>
                   </div>
 
-                  <div className="ml-6 flex shrink-0 items-center gap-1.5">
+                  <div>
+                    <Badge
+                      variant="secondary"
+                      className={cn(
+                        "h-7 rounded-md border-0 px-3 text-[13px] font-semibold",
+                        rolePillClassName
+                      )}
+                    >
+                      {role}
+                    </Badge>
+                  </div>
+
+                  <div className="shrink-0">
                     {isInvited ? (
-                      <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-10 rounded-lg border border-gray-200 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                        onClick={() => handleResendInvite(member)}
+                      >
+                        <Mail className="mr-2 h-[14px] w-[14px]" />
+                        Resend
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="h-10 rounded-lg px-4 text-sm font-semibold text-gray-700 hover:bg-gray-100"
+                        onClick={() => handleOpenSignatureModal(member)}
+                        disabled={!canEditSignature}
+                        title={
+                          !member?.user_id
+                            ? "User profile not synced yet"
+                            : !canEditSignature
+                            ? "You can only edit your own signature."
+                            : ""
+                        }
+                      >
+                        <PenLine className="mr-2 h-[14px] w-[14px]" />
+                        Signature
+                      </Button>
+                    )}
+                  </div>
+
+                  <div className="ml-auto flex shrink-0 justify-end">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
                         <Button
                           type="button"
-                          variant="outline"
-                          className="border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                          onClick={() => handleResendInvite(member)}
+                          size="icon"
+                          variant="ghost"
+                          className="h-10 w-10 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                          disabled={!canManageRoles && !isInvited}
+                          title={
+                            canManageRoles || isInvited
+                              ? "More actions"
+                              : "Only admins can manage members"
+                          }
                         >
-                          <Mail className="mr-2 h-[14px] w-[14px]" />
-                          Resend
+                          <Settings className="h-4 w-4" />
                         </Button>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              type="button"
-                              size="icon"
-                              variant="ghost"
-                              className="text-gray-400 hover:text-gray-700"
-                            >
-                              <Settings className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-44">
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-44">
+                        {isInvited ? (
+                          <>
                             <DropdownMenuItem onSelect={() => handleResendInvite(member)}>
                               <Mail className="mr-2 h-4 w-4" />
                               Resend invite
@@ -751,65 +825,21 @@ function MembersTab({
                               <Trash2 className="mr-2 h-4 w-4" />
                               Remove user
                             </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </>
-                    ) : (
-                      <>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                          onClick={() => handleOpenSignatureModal(member)}
-                          disabled={!canEditSignature}
-                          title={
-                            !member?.user_id
-                              ? "User profile not synced yet"
-                              : !canEditSignature
-                              ? "You can only edit your own signature."
-                              : ""
-                          }
-                        >
-                          <PenLine className="mr-2 h-[14px] w-[14px]" />
-                          Signature
-                        </Button>
-                        {canEditRole ? (
-                          <div className="relative">
-                            <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-[14px] w-[14px] -translate-y-1/2 text-gray-600" />
-                            <select
-                              className="h-8 appearance-none rounded-md border border-gray-200 bg-white pl-3 pr-7 text-xs font-medium text-gray-700"
-                              value={rawRole.includes("admin") ? "org:admin" : "org:member"}
-                              onChange={(event) => handleRoleChange(member, event.target.value)}
-                              disabled={Boolean(isRoleUpdating)}
-                            >
-                              <option value="org:member">Member</option>
-                              {(currentIsOwner || !rawRole.includes("admin")) && (
-                                <option value="org:admin">Admin</option>
-                              )}
-                            </select>
-                          </div>
+                          </>
                         ) : (
-                          <Badge
-                            variant="secondary"
-                            className="h-8 rounded-md border border-gray-200 bg-white px-2.5 text-xs font-medium text-gray-700"
-                          >
-                            {role}
-                          </Badge>
-                        )}
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              type="button"
-                              size="icon"
-                              variant="ghost"
-                              className="text-gray-400 hover:text-gray-700"
-                              disabled={!canManageRoles}
-                              title={canManageRoles ? "More actions" : "Only admins can manage members"}
+                          <>
+                            <DropdownMenuItem
+                              disabled={!canEditRole || Boolean(isRoleUpdating)}
+                              onSelect={() =>
+                                handleRoleChange(
+                                  member,
+                                  rawRole.includes("admin") ? "org:member" : "org:admin"
+                                )
+                              }
                             >
-                              <Settings className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-44">
+                              <User className="mr-2 h-4 w-4" />
+                              {rawRole.includes("admin") ? "Make member" : "Make admin"}
+                            </DropdownMenuItem>
                             <DropdownMenuItem
                               className="text-red-600 focus:text-red-600"
                               disabled={!canRemoveMember}
@@ -818,18 +848,22 @@ function MembersTab({
                               <Trash2 className="mr-2 h-4 w-4" />
                               Remove user
                             </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </>
-                    )}
+                          </>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </div>
               );
             })
           ) : (
-            <div className="px-4 py-8 text-sm text-slate-500">No members found.</div>
+            <div className="px-5 py-8 text-sm text-muted-foreground">No members found.</div>
           )}
         </div>
+
+        <p className="px-1 text-sm text-muted-foreground">
+          Showing {rows.length} of {rows.length} members
+        </p>
       </section>
 
       <EditSignatureModal
@@ -893,11 +927,14 @@ function MembersTab({
 
 function BillingTab() {
   return (
-    <section className="max-w-2xl rounded-lg bg-white p-6">
-      <h2 className="text-2xl font-semibold text-slate-900">Billing</h2>
-      <p className="mt-1 text-sm text-slate-600">Manage your subscription.</p>
+    <section className="max-w-2xl space-y-5">
+      <div className="mb-6">
+        <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Billing</p>
+        <h2 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">Billing</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Manage your subscription and plan.</p>
+      </div>
 
-      <div className="mt-6 max-w-xl rounded-lg border border-slate-200 p-5">
+      <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-slate-700">Plan:</span>
           <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
@@ -1285,20 +1322,21 @@ function EmailSettings({
   }, [signatureBuilderOpen, signatureTemplateHtml]);
 
   return (
-    <section className="max-w-4xl rounded-lg bg-white">
-      <div className="border-b border-slate-200 px-6 py-5">
-        <h2 className="text-2xl font-semibold text-slate-900">Email &amp; Template</h2>
-        <p className="mt-1 text-sm text-slate-600">
-          Configure auto-reply behavior and prepare reusable email template settings.
+    <section className="w-full max-w-[1320px] space-y-5">
+      <div className="mb-6">
+        <p className="text-[11px] font-bold uppercase tracking-wider text-primary">EMAIL</p>
+        <h2 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">Email &amp; Templates</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Configure auto-reply behavior and outbound email settings.
         </p>
       </div>
 
-      <div className="space-y-10 px-6 py-8">
-        <div className="rounded-xl border border-[#E5E7EB] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+      <div className="space-y-4">
+        <div className="rounded-2xl border border-border bg-card p-6">
           <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(260px,40%)_1fr] md:items-center">
             <div>
-              <h3 className="font-medium text-gray-900">Enable Auto-Reply</h3>
-              <p className="mt-1 text-sm text-gray-500">
+              <h3 className="font-medium text-foreground">Enable Auto-Reply</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
                 Automatically send a response when new customers contact you via email.
               </p>
             </div>
@@ -1310,14 +1348,14 @@ function EmailSettings({
                 onClick={() => handleToggleEnabled(!enabled)}
                 disabled={saving}
                 className={cn(
-                  "relative inline-flex h-7 w-12 items-center rounded-full transition",
-                  enabled ? "bg-emerald-500" : "bg-slate-300",
+                  "relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-200",
+                  enabled ? "bg-emerald-500" : "bg-slate-200",
                   saving && "cursor-not-allowed opacity-70"
                 )}
               >
                 <span
                   className={cn(
-                    "inline-block h-5 w-5 transform rounded-full bg-white transition",
+                    "inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200",
                     enabled ? "translate-x-6" : "translate-x-1"
                   )}
                 />
@@ -1326,11 +1364,11 @@ function EmailSettings({
           </div>
         </div>
 
-        <div className="rounded-xl border border-[#E5E7EB] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+        <div className="rounded-2xl border border-border bg-card p-6">
           <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(260px,40%)_1fr]">
             <div className="min-w-0">
-              <h3 className="font-medium text-gray-900">Auto-Reply Message</h3>
-              <p className="mt-1 text-sm text-gray-500">
+              <h3 className="font-medium text-foreground">Auto-Reply Message</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
                 Message sent to new customers. Click edit to update text and preview.
               </p>
             </div>
@@ -1347,12 +1385,12 @@ function EmailSettings({
                   Edit
                 </Button>
               </div>
-              <div className="min-w-0 rounded-xl border border-[#E5E7EB] bg-white p-4">
-                <p className="text-xs font-medium tracking-wide text-slate-500">Preview</p>
-                <p className="mt-2 text-sm font-medium text-slate-900">
+              <div className="min-w-0 rounded-xl border border-border bg-card p-4">
+                <p className="text-xs font-medium tracking-wide text-muted-foreground">Preview</p>
+                <p className="mt-2 text-sm font-medium text-foreground">
                   {subjectTemplate || "Tak for din henvendelse"}
                 </p>
-                <div className="mt-2 space-y-1 text-sm text-slate-600">
+                <div className="mt-2 space-y-1 text-sm text-muted-foreground">
                   {previewLines.length ? (
                     previewLines.map((line, index) => (
                       <p key={`${line}-${index}`} className="break-words">
@@ -1368,17 +1406,17 @@ function EmailSettings({
           </div>
         </div>
 
-        <div className="rounded-xl border border-[#E5E7EB] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+        <div className="rounded-2xl border border-border bg-card p-6">
           <div className="space-y-5">
             <div className="max-w-3xl">
-              <h3 className="font-medium text-gray-900">Email Routing</h3>
-              <p className="mt-1 text-sm text-gray-500">
+              <h3 className="font-medium text-foreground">Email Routing</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
                 Automatically detect non-support emails and route them to the right team.
               </p>
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-muted-foreground">
                 Emails that don&apos;t match an active category stay in your Sona inbox.
               </p>
-              <p className="mt-1 text-xs text-slate-500">Support emails are always handled in Sona.</p>
+              <p className="mt-1 text-xs text-muted-foreground">Support emails are always handled in Sona.</p>
             </div>
             <div className="space-y-3">
               <div className="flex justify-end">
@@ -1391,9 +1429,9 @@ function EmailSettings({
                   + Add email category
                 </Button>
               </div>
-              <div className="overflow-x-auto rounded-xl border border-[#F3F4F6]">
+              <div className="overflow-x-auto rounded-xl border border-border">
                 <div>
-                  <div className="grid grid-cols-[1.1fr_2fr_1.2fr_90px_44px] items-center gap-3 border-b border-[#F3F4F6] px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                  <div className="grid grid-cols-[1.1fr_2fr_1.2fr_90px_44px] items-center gap-3 border-b border-border px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                     <span>Category</span>
                     <span>Forward to</span>
                     <span>Mode</span>
@@ -1403,10 +1441,10 @@ function EmailSettings({
                   {routingRows.map((row) => (
                     <div
                       key={row.id}
-                      className="grid grid-cols-[1.1fr_2fr_1.2fr_90px_44px] items-center gap-3 border-b border-[#F3F4F6] px-4 py-3 last:border-b-0"
+                      className="grid grid-cols-[1.1fr_2fr_1.2fr_90px_44px] items-center gap-3 border-b border-border px-4 py-3 last:border-b-0"
                     >
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-slate-900">{row.label}</span>
+                      <span className="text-sm font-semibold text-foreground">{row.label}</span>
                     </div>
                     <Input
                       type="email"
@@ -1452,14 +1490,14 @@ function EmailSettings({
                         }
                         disabled={savingRouting}
                         className={cn(
-                          "relative inline-flex h-7 w-12 items-center rounded-full transition",
-                          row.is_active ? "bg-emerald-500" : "bg-slate-300",
+                          "relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-200",
+                          row.is_active ? "bg-emerald-500" : "bg-slate-200",
                           savingRouting && "cursor-not-allowed opacity-70"
                         )}
                       >
                         <span
                           className={cn(
-                            "inline-block h-5 w-5 transform rounded-full bg-white transition",
+                            "inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200",
                             row.is_active ? "translate-x-6" : "translate-x-1"
                           )}
                         />
@@ -1480,7 +1518,7 @@ function EmailSettings({
                   ))}
                 </div>
               </div>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-muted-foreground">
                 If a category is inactive, deleted, or has no forwarding email, messages remain in the normal inbox.
               </p>
             </div>
@@ -1620,6 +1658,10 @@ function ProfileTab({ user, isLoaded }) {
   const [lastName, setLastName] = useState("");
   const [themePreference, setThemePreference] = useState(DEFAULT_THEME);
   const [initialThemePreference, setInitialThemePreference] = useState(DEFAULT_THEME);
+  const themePreferenceRef = useRef(DEFAULT_THEME);
+  const initialThemePreferenceRef = useRef(DEFAULT_THEME);
+  const hasThemeInteractionRef = useRef(false);
+  const setThemeRef = useRef(setTheme);
   const [themeLoading, setThemeLoading] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
 
@@ -1638,6 +1680,7 @@ function ProfileTab({ user, isLoaded }) {
     }
 
     let isActive = true;
+    hasThemeInteractionRef.current = false;
     setThemeLoading(true);
 
     const loadThemePreference = async () => {
@@ -1651,13 +1694,18 @@ function ProfileTab({ user, isLoaded }) {
         const payload = await response.json().catch(() => ({}));
         const nextTheme = normalizeThemePreference(payload?.theme_preference, DEFAULT_THEME);
         if (!isActive) return;
-        setThemePreference(nextTheme);
         setInitialThemePreference(nextTheme);
-        setTheme(nextTheme);
+        if (!hasThemeInteractionRef.current) {
+          setThemePreference(nextTheme);
+          setThemeRef.current(nextTheme);
+        }
       } catch {
         if (!isActive) return;
-        setThemePreference(DEFAULT_THEME);
         setInitialThemePreference(DEFAULT_THEME);
+        if (!hasThemeInteractionRef.current) {
+          setThemePreference(DEFAULT_THEME);
+          setThemeRef.current(DEFAULT_THEME);
+        }
       } finally {
         if (isActive) setThemeLoading(false);
       }
@@ -1668,7 +1716,7 @@ function ProfileTab({ user, isLoaded }) {
     return () => {
       isActive = false;
     };
-  }, [isLoaded, setTheme, user?.id]);
+  }, [isLoaded, user?.id]);
 
   const email = user?.primaryEmailAddress?.emailAddress || "";
   const hasNameChanges =
@@ -1678,6 +1726,36 @@ function ProfileTab({ user, isLoaded }) {
     isLoaded &&
     Boolean(user) &&
     (hasNameChanges || hasThemeChanges);
+
+  useEffect(() => {
+    themePreferenceRef.current = themePreference;
+  }, [themePreference]);
+
+  useEffect(() => {
+    initialThemePreferenceRef.current = initialThemePreference;
+  }, [initialThemePreference]);
+
+  useEffect(() => {
+    setThemeRef.current = setTheme;
+  }, [setTheme]);
+
+  const handleDiscardProfile = useCallback(() => {
+    if (!user) return;
+    hasThemeInteractionRef.current = true;
+    setFirstName(user.firstName || "");
+    setLastName(user.lastName || "");
+    const nextTheme = initialThemePreference || DEFAULT_THEME;
+    setThemePreference(nextTheme);
+    setTheme(nextTheme);
+  }, [initialThemePreference, setTheme, user]);
+
+  useEffect(() => {
+    return () => {
+      if (themePreferenceRef.current !== initialThemePreferenceRef.current) {
+        setThemeRef.current(initialThemePreferenceRef.current || DEFAULT_THEME);
+      }
+    };
+  }, []);
 
   const handleSaveProfile = async () => {
     if (!user || !hasChanges || savingProfile) return;
@@ -1734,102 +1812,141 @@ function ProfileTab({ user, isLoaded }) {
   }
 
   return (
-    <section className="max-w-2xl rounded-lg bg-white p-6">
-      <h2 className="text-2xl font-semibold text-slate-900">Personal Profile</h2>
-      <p className="mt-1 text-sm text-slate-600">Manage your account details.</p>
-
-      <div className="mt-6 flex items-center gap-4">
-        {user?.imageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={user.imageUrl}
-            alt={user.fullName || "Profile avatar"}
-            className="h-20 w-20 rounded-full object-cover ring-1 ring-slate-200"
-          />
-        ) : (
-          <div className="flex h-20 w-20 items-center justify-center rounded-full bg-slate-200 text-xl font-semibold text-slate-600">
-            {`${firstName?.[0] || ""}${lastName?.[0] || ""}`.toUpperCase() || "U"}
-          </div>
-        )}
-        <Button type="button" variant="outline">
-          Change Avatar
-        </Button>
-      </div>
-
-      <div className="mt-8 space-y-5">
-        <div className="space-y-2">
-          <label htmlFor="profile-first-name" className="text-sm font-medium text-slate-700">
-            First Name
-          </label>
-          <Input
-            id="profile-first-name"
-            value={firstName}
-            onChange={(event) => setFirstName(event.target.value)}
-            placeholder="Enter first name"
-          />
+    <>
+      <section className="w-full max-w-[1320px] space-y-5">
+        <div className="mb-6">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-primary">PROFILE</p>
+          <h2 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">Personal Profile</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Manage your account details and preferences.</p>
         </div>
-
-        <div className="space-y-2">
-          <label htmlFor="profile-last-name" className="text-sm font-medium text-slate-700">
-            Last Name
-          </label>
-          <Input
-            id="profile-last-name"
-            value={lastName}
-            onChange={(event) => setLastName(event.target.value)}
-            placeholder="Enter last name"
-          />
-        </div>
-
-        <div className="space-y-2">
-          <label htmlFor="profile-email" className="text-sm font-medium text-slate-700">
-            Email Address
-          </label>
-          <div className="relative">
-            <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <Input
-              id="profile-email"
-              value={email}
-              disabled
-              readOnly
-              className="bg-slate-100 pl-9 text-slate-600"
+        <div className="rounded-2xl border border-border bg-card p-6">
+        <div className="flex flex-wrap items-center gap-3">
+          {user?.imageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={user.imageUrl}
+              alt={user.fullName || "Profile avatar"}
+              className="h-20 w-20 rounded-full object-cover ring-1 ring-slate-200"
             />
+          ) : (
+            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-slate-200 text-2xl font-semibold text-slate-600">
+              {`${firstName?.[0] || ""}${lastName?.[0] || ""}`.toUpperCase() || "U"}
+            </div>
+          )}
+          <div className="min-w-0">
+            <p className="truncate text-2xl font-semibold text-foreground">
+              {user?.fullName || `${firstName} ${lastName}`.trim() || "User"}
+            </p>
+            <p className="mt-0.5 truncate text-sm text-muted-foreground">{email || "No email"}</p>
+          </div>
+          <Button type="button" variant="outline" className="ml-auto h-9 rounded-lg px-3.5 text-sm">
+            Change Avatar
+          </Button>
+        </div>
+
+        <div className="my-6 h-px bg-border" />
+
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <div className="space-y-5">
+            <div className="space-y-2">
+              <label htmlFor="profile-first-name" className="text-sm font-medium text-slate-700">
+                First Name
+              </label>
+              <Input
+                id="profile-first-name"
+                value={firstName}
+                onChange={(event) => setFirstName(event.target.value)}
+                placeholder="Enter first name"
+                className="h-11"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="profile-last-name" className="text-sm font-medium text-slate-700">
+                Last Name
+              </label>
+              <Input
+                id="profile-last-name"
+                value={lastName}
+                onChange={(event) => setLastName(event.target.value)}
+                placeholder="Enter last name"
+                className="h-11"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="profile-email" className="text-sm font-medium text-slate-700">
+                Email Address
+              </label>
+              <div className="relative">
+                <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Input
+                  id="profile-email"
+                  value={email}
+                  disabled
+                  readOnly
+                  className="h-11 bg-slate-100 pl-9 text-slate-600"
+                />
+              </div>
+              <p className="text-xs text-slate-500">This is your login email and cannot be changed.</p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <label className="text-sm font-medium text-slate-700">Theme</label>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {THEME_OPTIONS.map((option) => {
+                const selected = themePreference === option.id;
+                const isDarkOption = option.id === "dark";
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    disabled={themeLoading || savingProfile}
+                    onClick={() => {
+                      hasThemeInteractionRef.current = true;
+                      const nextTheme = normalizeThemePreference(option.id, DEFAULT_THEME);
+                      setThemePreference(nextTheme);
+                      setTheme(nextTheme);
+                    }}
+                    className={cn(
+                      "rounded-xl border p-3 text-left transition-colors",
+                      selected ? "border-primary ring-1 ring-primary/30" : "border-border hover:bg-slate-50",
+                      themeLoading || savingProfile ? "cursor-not-allowed opacity-60" : ""
+                    )}
+                  >
+                    <div
+                      className={cn(
+                        "h-20 rounded-lg border",
+                        isDarkOption ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-slate-50"
+                      )}
+                    >
+                      <div className="flex h-full items-start gap-2 p-2">
+                        <div className={cn("h-full w-5 rounded", isDarkOption ? "bg-slate-800" : "bg-slate-200")} />
+                        <div className="flex-1 space-y-2">
+                          <div className={cn("h-4 w-20 rounded", isDarkOption ? "bg-slate-800" : "bg-slate-200")} />
+                          <div className={cn("h-3 w-16 rounded", isDarkOption ? "bg-slate-800" : "bg-slate-200")} />
+                        </div>
+                      </div>
+                    </div>
+                    <p className="mt-2 text-sm font-semibold text-foreground">{option.label}</p>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-xs text-slate-500">Applies to the logged-in app only.</p>
           </div>
         </div>
 
-        <div className="space-y-2">
-          <label htmlFor="profile-theme" className="text-sm font-medium text-slate-700">
-            Theme
-          </label>
-          <select
-            id="profile-theme"
-            value={themePreference}
-            onChange={(event) =>
-              setThemePreference(
-                normalizeThemePreference(event.target.value, DEFAULT_THEME)
-              )
-            }
-            disabled={themeLoading || savingProfile}
-            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {THEME_OPTIONS.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          <p className="text-xs text-slate-500">Applies to the logged-in app only.</p>
         </div>
-
-        <Button
-          onClick={handleSaveProfile}
-          disabled={!hasChanges || savingProfile || themeLoading}
-          className="bg-slate-900 text-white hover:bg-slate-800"
-        >
-          {savingProfile ? "Saving..." : "Save Changes"}
-        </Button>
-      </div>
-    </section>
+      </section>
+      <StickySaveBar
+        isVisible={hasChanges}
+        isSaving={savingProfile || themeLoading}
+        onSave={handleSaveProfile}
+        onDiscard={handleDiscardProfile}
+      />
+    </>
   );
 }
 
@@ -2816,15 +2933,16 @@ export function SettingsPanel() {
   };
 
   return (
-    <main className="settings-theme bg-background px-4 py-6 lg:px-10 lg:py-10">
-      <div className="grid gap-8 lg:grid-cols-[260px_1fr]">
-        <aside className="space-y-7">
+    <main className="settings-theme flex min-h-screen bg-background">
+      {/* Sidebar — matches app's sidebar design system */}
+      <aside className="sticky top-0 flex h-screen w-[256px] shrink-0 flex-col overflow-y-auto border-r border-sidebar-border bg-sidebar">
+        <nav className="flex-1 space-y-6 px-5 pb-7 pt-12">
           {MENU_SECTIONS.map((section) => (
-            <div key={section.label} className="space-y-2">
-              <h3 className="px-2 text-xs font-semibold tracking-[0.12em] text-slate-500">
+            <div key={section.label}>
+              <p className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
                 {section.label}
-              </h3>
-              <nav className="space-y-1">
+              </p>
+              <div className="space-y-1">
                 {section.items.map((item) => {
                   const active = activeTab === item.key;
                   return (
@@ -2833,21 +2951,35 @@ export function SettingsPanel() {
                       type="button"
                       onClick={() => setActiveTab(item.key)}
                       className={cn(
-                        "flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-base text-slate-600 hover:bg-slate-100",
-                        active && "bg-slate-100 font-medium text-slate-900"
+                        "group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[14px] transition-colors duration-150",
+                        active
+                          ? "bg-primary/12 font-semibold text-primary"
+                          : "font-medium text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                       )}
                     >
-                      <item.icon className="h-4 w-4 shrink-0" />
+                      <item.icon
+                        className={cn(
+                          "h-[18px] w-[18px] shrink-0 transition-colors duration-150",
+                          active ? "text-primary" : "text-muted-foreground group-hover:text-sidebar-accent-foreground"
+                        )}
+                      />
                       <span>{item.label}</span>
                     </button>
                   );
                 })}
-              </nav>
+              </div>
             </div>
           ))}
-        </aside>
+        </nav>
+      </aside>
 
-        {renderContent()}
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto bg-muted/[0.24]">
+        <div className="px-6 py-10 lg:px-12">
+          <div key={activeTab} className="settings-tab-enter min-w-0">
+            {renderContent()}
+          </div>
+        </div>
       </div>
     </main>
   );

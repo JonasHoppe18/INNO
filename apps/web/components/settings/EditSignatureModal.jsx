@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { GripVertical } from "lucide-react";
+import { AlignCenter, AlignLeft, AlignRight, GripVertical, Minus, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,6 +48,98 @@ const DEFAULT_SIGNATURE_BUILDER = {
   logoWidth: "170",
   columnGap: "14",
 };
+
+const LAYOUT_OPTIONS = [
+  {
+    value: "logo_left",
+    label: "Logo left",
+    preview: (
+      <div className="flex items-start gap-1">
+        <div className="h-5 w-5 flex-shrink-0 rounded bg-slate-400" />
+        <div className="flex flex-1 flex-col gap-0.5 pt-0.5">
+          <div className="h-1.5 w-full rounded bg-slate-300" />
+          <div className="h-1 w-3/4 rounded bg-slate-200" />
+          <div className="h-1 w-1/2 rounded bg-slate-200" />
+        </div>
+      </div>
+    ),
+  },
+  {
+    value: "logo_right",
+    label: "Logo right",
+    preview: (
+      <div className="flex items-start gap-1">
+        <div className="flex flex-1 flex-col gap-0.5 pt-0.5">
+          <div className="h-1.5 w-full rounded bg-slate-300" />
+          <div className="h-1 w-3/4 rounded bg-slate-200" />
+          <div className="h-1 w-1/2 rounded bg-slate-200" />
+        </div>
+        <div className="h-5 w-5 flex-shrink-0 rounded bg-slate-400" />
+      </div>
+    ),
+  },
+  {
+    value: "logo_top",
+    label: "Logo top",
+    preview: (
+      <div className="flex flex-col gap-1">
+        <div className="h-3 w-full rounded bg-slate-400" />
+        <div className="flex flex-col gap-0.5">
+          <div className="h-1.5 w-full rounded bg-slate-300" />
+          <div className="h-1 w-2/3 rounded bg-slate-200" />
+        </div>
+      </div>
+    ),
+  },
+  {
+    value: "logo_bottom",
+    label: "Logo bottom",
+    preview: (
+      <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-0.5">
+          <div className="h-1.5 w-full rounded bg-slate-300" />
+          <div className="h-1 w-2/3 rounded bg-slate-200" />
+        </div>
+        <div className="h-3 w-full rounded bg-slate-400" />
+      </div>
+    ),
+  },
+];
+
+const TEXT_ALIGN_OPTIONS = [
+  { value: "left", icon: AlignLeft, label: "Left" },
+  { value: "center", icon: AlignCenter, label: "Center" },
+  { value: "right", icon: AlignRight, label: "Right" },
+];
+
+function StepperInput({ value, onChange, min, max }) {
+  const num = Number(value);
+  return (
+    <div className="flex h-9 items-center rounded-md border border-slate-200 bg-white">
+      <button
+        type="button"
+        onClick={() => onChange(String(Math.max(min, num - 1)))}
+        className="flex h-full w-8 items-center justify-center text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-600 active:scale-95"
+      >
+        <Minus className="h-3 w-3" />
+      </button>
+      <span className="w-10 select-none text-center text-sm text-slate-700">{value}</span>
+      <button
+        type="button"
+        onClick={() => onChange(String(Math.min(max, num + 1)))}
+        className="flex h-full w-8 items-center justify-center text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-600 active:scale-95"
+      >
+        <Plus className="h-3 w-3" />
+      </button>
+    </div>
+  );
+}
+
+function SectionLabel({ children }) {
+  return (
+    <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">{children}</p>
+  );
+}
 
 function getDisplayName(member) {
   const first = String(member?.first_name || "").trim();
@@ -301,7 +393,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
       String(parsed.fullName || "").trim() ||
       (hasTemplate ? "Template configured." : "No template configured yet.");
     const lineTwo = String(parsed.jobTitle || "").trim();
-    return [lineOne, lineTwo].filter(Boolean).join(" • ");
+    return [lineOne, lineTwo].filter(Boolean).join(" · ");
   }, [templateHtml]);
 
   const templatePreviewHtml = useMemo(() => {
@@ -423,19 +515,22 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
     }
   };
 
+  const hasTemplate = Boolean(String(templateHtml || "").trim());
+
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="w-[96vw] max-w-3xl border-gray-200 bg-white max-h-[92vh] overflow-hidden flex flex-col">
+        <DialogContent className="flex w-[96vw] max-w-2xl flex-col overflow-hidden border-gray-200 bg-white" style={{ maxHeight: "92vh" }}>
           <DialogHeader>
-            <DialogTitle>Edit Email Signature</DialogTitle>
-            <DialogDescription>
+            <DialogTitle className="text-base">Edit Email Signature</DialogTitle>
+            <DialogDescription className="text-sm text-slate-500">
               Update signature for {getDisplayName(member)}.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
-            <div className="space-y-2">
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-0.5">
+            {/* Plain text signature */}
+            <div className="space-y-1.5">
               <label htmlFor="member-signature" className="text-sm font-medium text-slate-700">
                 Signature
               </label>
@@ -444,112 +539,95 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                 value={signature}
                 onChange={(event) => setSignature(event.target.value)}
                 placeholder={"Best regards,\nYour Name"}
-                className="min-h-[120px] resize-y border-gray-200"
+                className="min-h-[100px] resize-y border-slate-200 text-sm"
               />
             </div>
 
-            <details className="rounded-lg border border-gray-200 p-3">
-              <summary className="cursor-pointer list-none">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-medium text-slate-900">Extend with template</p>
-                    <p className="text-xs text-slate-500">
-                      Add a visual email footer without removing plain text signature.
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={(event) => {
-                        event.preventDefault();
-                        setBuilderOpen(true);
-                      }}
-                    >
-                      Configure template
-                    </Button>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={Boolean(templateIsActive)}
-                      onClick={(event) => {
-                        event.preventDefault();
-                        setTemplateIsActive((prev) => !prev);
-                      }}
-                      className={`relative inline-flex h-7 w-12 items-center rounded-full transition ${
-                        templateIsActive ? "bg-emerald-500" : "bg-slate-300"
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-5 w-5 transform rounded-full bg-white transition ${
-                          templateIsActive ? "translate-x-6" : "translate-x-1"
-                        }`}
-                      />
-                    </button>
-                  </div>
-                </div>
-              </summary>
-
-              <div className="mt-3 space-y-3">
-                <div className="rounded-md border border-slate-200 px-3 py-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm text-slate-700">{templateSummary}</p>
-                    <div className="flex items-center gap-2">
-                      <Button type="button" variant="outline" onClick={() => setBuilderOpen(true)}>
-                        Edit template
-                      </Button>
-                      <Button type="button" variant="outline" onClick={() => setTemplateHtml("")}>
-                        Clear
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-lg bg-gray-100 p-4">
-                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">
-                    Template Preview
+            {/* Visual template toggle row */}
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium text-slate-900">Extend with template</p>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    Add a visual email footer without removing plain text signature.
                   </p>
-                  <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-slate-700">
-                    {templateLoading ? (
-                      <p className="text-sm text-slate-500">Loading template…</p>
-                    ) : (
-                      <div dangerouslySetInnerHTML={{ __html: templatePreviewHtml }} />
-                    )}
-                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-2.5">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 border-slate-200 text-xs"
+                    onClick={() => setBuilderOpen(true)}
+                  >
+                    Configure template
+                  </Button>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={Boolean(templateIsActive)}
+                    onClick={() => setTemplateIsActive((prev) => !prev)}
+                    className={`relative inline-flex h-6 w-10 items-center rounded-full transition-colors ${
+                      templateIsActive ? "bg-emerald-500" : "bg-slate-300"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
+                        templateIsActive ? "translate-x-5" : "translate-x-1"
+                      }`}
+                    />
+                  </button>
                 </div>
               </div>
-            </details>
 
-            <div className="rounded-lg bg-gray-100 p-4">
-              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">
-                Final Preview
-              </p>
-              <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-slate-700">
-                <div className="-m-4 mb-4 rounded-t-lg border-b border-gray-200 bg-gray-50 p-4 text-gray-700">
-                  <p>
-                    <span className="font-semibold">From:</span> Sona Support{" "}
-                    <span className="text-gray-500">&lt;support@yourcompany.com&gt;</span>
-                  </p>
-                  <p>
-                    <span className="font-semibold">To:</span>{" "}
-                    <span className="text-gray-600">customer@example.com</span>
-                  </p>
-                  <p>
-                    <span className="font-semibold">Subject:</span>{" "}
-                    <span className="text-gray-600">Re: Your inquiry</span>
-                  </p>
+              {hasTemplate && (
+                <div className="mt-3 flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                  <p className="truncate text-sm text-slate-600">{templateSummary}</p>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs text-slate-500 hover:text-slate-700"
+                      onClick={() => setBuilderOpen(true)}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs text-slate-400 hover:text-red-500"
+                      onClick={() => setTemplateHtml("")}
+                    >
+                      Clear
+                    </Button>
+                  </div>
                 </div>
+              )}
+            </div>
 
-                <p>Hi Customer, thanks for reaching out...</p>
-                <p className="mt-4 whitespace-pre-line">{previewSignature}</p>
-                {templateIsActive && String(templateHtml || "").trim() ? (
-                  <div className="mt-4" dangerouslySetInnerHTML={{ __html: templateHtml }} />
-                ) : null}
+            {/* Final preview */}
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-slate-400 uppercase tracking-widest">Final Preview</p>
+              <div className="overflow-hidden rounded-xl border border-slate-200 bg-white text-sm text-slate-700 shadow-sm">
+                <div className="border-b border-slate-100 bg-slate-50 px-4 py-3 text-xs text-slate-500">
+                  <p><span className="font-medium text-slate-700">From:</span> Sona Support <span className="text-slate-400">&lt;support@yourcompany.com&gt;</span></p>
+                  <p className="mt-0.5"><span className="font-medium text-slate-700">To:</span> customer@example.com</p>
+                  <p className="mt-0.5"><span className="font-medium text-slate-700">Subject:</span> Re: Your inquiry</p>
+                </div>
+                <div className="px-4 py-4">
+                  <p className="text-slate-600">Hi Customer, thanks for reaching out...</p>
+                  <p className="mt-4 whitespace-pre-line text-slate-700">{previewSignature}</p>
+                  {templateIsActive && hasTemplate && (
+                    <div className="mt-4" dangerouslySetInnerHTML={{ __html: templateHtml }} />
+                  )}
+                </div>
               </div>
             </div>
           </div>
 
-          <DialogFooter className="mt-2 border-t border-gray-200 pt-3">
+          <DialogFooter className="mt-3 border-t border-gray-100 pt-3">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
@@ -565,6 +643,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
         </DialogContent>
       </Dialog>
 
+      {/* Template Builder */}
       <Dialog
         open={builderOpen}
         onOpenChange={(next) => {
@@ -575,151 +654,187 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
           }
         }}
       >
-        <DialogContent className="w-[95vw] max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+        <DialogContent className="flex w-[95vw] max-w-6xl flex-col overflow-hidden" style={{ maxHeight: "90vh" }}>
           <DialogHeader>
-            <DialogTitle>Signature Template Builder</DialogTitle>
-            <DialogDescription>
+            <DialogTitle className="text-base">Signature Template Builder</DialogTitle>
+            <DialogDescription className="text-sm text-slate-500">
               Build a visual footer and apply it to this team member.
             </DialogDescription>
           </DialogHeader>
+
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <div className="grid min-h-0 gap-6 md:grid-cols-[1.05fr_1fr]">
-              <div className="space-y-4 pr-1">
-                <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
+            <div className="grid min-h-0 gap-6 md:grid-cols-[1.1fr_1fr]">
+              {/* Left: controls */}
+              <div className="space-y-4 pr-1 pb-1">
+
+                {/* Content */}
+                <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
                   <h4 className="text-sm font-semibold text-slate-900">Content</h4>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-semibold tracking-wide text-slate-500">FULL NAME</label>
+                    <SectionLabel>Full Name</SectionLabel>
                     <Input
                       value={builderDraft.fullName}
-                      onChange={(event) => handleBuilderField("fullName", event.target.value)}
+                      onChange={(e) => handleBuilderField("fullName", e.target.value)}
                       placeholder="Full name"
+                      className="border-slate-200 text-sm"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-semibold tracking-wide text-slate-500">JOB TITLE</label>
+                    <SectionLabel>Job Title</SectionLabel>
                     <Input
                       value={builderDraft.jobTitle}
-                      onChange={(event) => handleBuilderField("jobTitle", event.target.value)}
+                      onChange={(e) => handleBuilderField("jobTitle", e.target.value)}
                       placeholder="Support specialist"
+                      className="border-slate-200 text-sm"
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
-                      <label className="text-xs font-semibold tracking-wide text-slate-500">PHONE</label>
+                      <SectionLabel>Phone</SectionLabel>
                       <Input
                         value={builderDraft.phone}
-                        onChange={(event) => handleBuilderField("phone", event.target.value)}
+                        onChange={(e) => handleBuilderField("phone", e.target.value)}
                         placeholder="+45 00000000"
+                        className="border-slate-200 text-sm"
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-xs font-semibold tracking-wide text-slate-500">EMAIL</label>
+                      <SectionLabel>Email</SectionLabel>
                       <Input
                         value={builderDraft.email}
-                        onChange={(event) => handleBuilderField("email", event.target.value)}
+                        onChange={(e) => handleBuilderField("email", e.target.value)}
                         placeholder="name@company.com"
+                        className="border-slate-200 text-sm"
                       />
                     </div>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-semibold tracking-wide text-slate-500">COMPANY NAME</label>
+                    <SectionLabel>Company Name</SectionLabel>
                     <Input
                       value={builderDraft.companyName}
-                      onChange={(event) => handleBuilderField("companyName", event.target.value)}
+                      onChange={(e) => handleBuilderField("companyName", e.target.value)}
                       placeholder="Company name"
+                      className="border-slate-200 text-sm"
                     />
                   </div>
                 </div>
 
-                <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
+                {/* Layout & Style */}
+                <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-4">
                   <h4 className="text-sm font-semibold text-slate-900">Layout & Style</h4>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold tracking-wide text-slate-500">LAYOUT</label>
-                      <select
-                        value={builderDraft.layout || "logo_left"}
-                        onChange={(event) => handleBuilderField("layout", event.target.value)}
-                        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-slate-700"
-                      >
-                        <option value="logo_left">Logo left, text right</option>
-                        <option value="logo_right">Text left, logo right</option>
-                        <option value="logo_top">Logo top, text below</option>
-                        <option value="logo_bottom">Text top, logo below</option>
-                      </select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold tracking-wide text-slate-500">TEXT ALIGNMENT</label>
-                      <select
-                        value={builderDraft.textAlign || "left"}
-                        onChange={(event) => handleBuilderField("textAlign", event.target.value)}
-                        className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-slate-700"
-                      >
-                        <option value="left">Left</option>
-                        <option value="center">Center</option>
-                        <option value="right">Right</option>
-                      </select>
+
+                  {/* Layout picker */}
+                  <div className="space-y-2">
+                    <SectionLabel>Layout</SectionLabel>
+                    <div className="grid grid-cols-4 gap-2">
+                      {LAYOUT_OPTIONS.map((opt) => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => handleBuilderField("layout", opt.value)}
+                          className={`flex flex-col items-center gap-2 rounded-lg border p-2.5 text-center transition-all ${
+                            builderDraft.layout === opt.value
+                              ? "border-slate-900 bg-slate-900 text-white"
+                              : "border-slate-200 bg-slate-50 text-slate-400 hover:border-slate-300 hover:bg-white"
+                          }`}
+                        >
+                          <div className={`w-full ${builderDraft.layout === opt.value ? "[&_div]:bg-white/60 [&_.logo-block]:bg-white" : ""}`}>
+                            {opt.preview}
+                          </div>
+                          <span className="text-[10px] font-medium leading-none">{opt.label}</span>
+                        </button>
+                      ))}
                     </div>
                   </div>
+
+                  {/* Text alignment */}
+                  <div className="space-y-2">
+                    <SectionLabel>Text Alignment</SectionLabel>
+                    <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+                      {TEXT_ALIGN_OPTIONS.map((opt) => {
+                        const Icon = opt.icon;
+                        return (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => handleBuilderField("textAlign", opt.value)}
+                            aria-label={opt.label}
+                            className={`flex flex-1 items-center justify-center rounded-md py-1.5 transition-all ${
+                              builderDraft.textAlign === opt.value
+                                ? "bg-white text-slate-900 shadow-sm"
+                                : "text-slate-400 hover:text-slate-600"
+                            }`}
+                          >
+                            <Icon className="h-3.5 w-3.5" />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Size controls */}
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
-                      <label className="text-xs font-semibold tracking-wide text-slate-500">NAME SIZE (px)</label>
-                      <Input
-                        type="number"
+                      <SectionLabel>Name size (px)</SectionLabel>
+                      <StepperInput
+                        value={builderDraft.nameSize || "16"}
+                        onChange={(v) => handleBuilderField("nameSize", v)}
                         min={12}
                         max={28}
-                        value={builderDraft.nameSize || "16"}
-                        onChange={(event) => handleBuilderField("nameSize", event.target.value)}
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-xs font-semibold tracking-wide text-slate-500">TEXT SIZE (px)</label>
-                      <Input
-                        type="number"
+                      <SectionLabel>Text size (px)</SectionLabel>
+                      <StepperInput
+                        value={builderDraft.bodySize || "13"}
+                        onChange={(v) => handleBuilderField("bodySize", v)}
                         min={11}
                         max={22}
-                        value={builderDraft.bodySize || "13"}
-                        onChange={(event) => handleBuilderField("bodySize", event.target.value)}
                       />
                     </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
-                      <label className="text-xs font-semibold tracking-wide text-slate-500">LOGO WIDTH (px)</label>
-                      <Input
-                        type="number"
+                      <SectionLabel>Logo width (px)</SectionLabel>
+                      <StepperInput
+                        value={builderDraft.logoWidth || "170"}
+                        onChange={(v) => handleBuilderField("logoWidth", v)}
                         min={90}
                         max={320}
-                        value={builderDraft.logoWidth || "170"}
-                        onChange={(event) => handleBuilderField("logoWidth", event.target.value)}
                       />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-xs font-semibold tracking-wide text-slate-500">COLUMN GAP (px)</label>
-                      <Input
-                        type="number"
+                      <SectionLabel>Column gap (px)</SectionLabel>
+                      <StepperInput
+                        value={builderDraft.columnGap || "14"}
+                        onChange={(v) => handleBuilderField("columnGap", v)}
                         min={4}
                         max={40}
-                        value={builderDraft.columnGap || "14"}
-                        onChange={(event) => handleBuilderField("columnGap", event.target.value)}
                       />
                     </div>
                   </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-semibold tracking-wide text-slate-500">ACCENT COLOR</label>
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="color"
-                        value={builderDraft.accentColor || "#111827"}
-                        onChange={(event) => handleBuilderField("accentColor", event.target.value)}
-                        className="h-10 w-12 rounded border border-slate-300 bg-white p-1"
-                      />
-                      <span className="text-sm text-slate-600">
-                        {builderDraft.accentColor ? builderDraft.accentColor : "Pick color"}
+
+                  {/* Accent color */}
+                  <div className="space-y-2">
+                    <SectionLabel>Accent Color</SectionLabel>
+                    <div className="flex items-center gap-2.5">
+                      <label className="relative cursor-pointer">
+                        <div
+                          className="h-8 w-8 rounded-lg border border-slate-200 shadow-sm"
+                          style={{ backgroundColor: builderDraft.accentColor || "#111827" }}
+                        />
+                        <input
+                          type="color"
+                          value={builderDraft.accentColor || "#111827"}
+                          onChange={(e) => handleBuilderField("accentColor", e.target.value)}
+                          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                        />
+                      </label>
+                      <span className="font-mono text-sm text-slate-600">
+                        {builderDraft.accentColor || "#111827"}
                       </span>
                       {builderDraft.accentColor ? (
                         <button
                           type="button"
-                          className="text-xs text-slate-500 underline"
+                          className="text-xs text-slate-400 underline hover:text-slate-600"
                           onClick={() => handleBuilderField("accentColor", "")}
                         >
                           Clear
@@ -729,67 +844,76 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                   </div>
                 </div>
 
-                <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
-                  <h4 className="text-sm font-semibold text-slate-900">Text Order</h4>
-                  <p className="text-xs text-slate-500">Drag rows to reorder fields in the signature.</p>
-                  <div className="space-y-2">
+                {/* Text order */}
+                <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-900">Text Order</h4>
+                    <p className="mt-0.5 text-xs text-slate-500">Drag rows to reorder fields in the signature.</p>
+                  </div>
+                  <div className="space-y-1.5">
                     {(Array.isArray(builderDraft.textOrder) ? builderDraft.textOrder : SIGNATURE_TEXT_FIELD_KEYS)
                       .filter((fieldKey) => SIGNATURE_TEXT_FIELD_KEYS.includes(fieldKey))
-                      .map((fieldKey, index, arr) => (
+                      .map((fieldKey) => (
                         <div
                           key={fieldKey}
                           draggable
                           onDragStart={() => setDraggingFieldKey(fieldKey)}
-                          onDragOver={(event) => event.preventDefault()}
+                          onDragOver={(e) => e.preventDefault()}
                           onDrop={() => {
                             handleFieldDrop(draggingFieldKey, fieldKey);
                             setDraggingFieldKey(null);
                           }}
                           onDragEnd={() => setDraggingFieldKey(null)}
-                          className={`flex items-center justify-between rounded-md border px-2 py-2 transition ${
+                          className={`flex cursor-grab items-center gap-2.5 rounded-lg border px-3 py-2 transition-all active:cursor-grabbing ${
                             draggingFieldKey === fieldKey
-                              ? "border-sky-300 bg-sky-50"
-                              : "border-slate-200 bg-white"
+                              ? "border-slate-900 bg-slate-50 opacity-60"
+                              : "border-slate-200 bg-white hover:border-slate-300"
                           }`}
                         >
-                          <label className="flex items-center gap-2 text-sm text-slate-700">
-                            <button
-                              type="button"
-                              className="cursor-grab text-slate-400 hover:text-slate-600"
-                              aria-label={`Drag ${SIGNATURE_TEXT_FIELD_LABELS[fieldKey] || fieldKey}`}
-                            >
-                              <GripVertical className="h-4 w-4" />
-                            </button>
-                            <input
-                              type="checkbox"
-                              checked={builderDraft?.fieldVisibility?.[fieldKey] !== false}
-                              onChange={(event) =>
-                                handleBuilderFieldVisibility(fieldKey, event.target.checked)
-                              }
-                            />
+                          <GripVertical className="h-3.5 w-3.5 text-slate-300" />
+                          <input
+                            type="checkbox"
+                            checked={builderDraft?.fieldVisibility?.[fieldKey] !== false}
+                            onChange={(e) => handleBuilderFieldVisibility(fieldKey, e.target.checked)}
+                            className="accent-slate-900"
+                          />
+                          <span className="text-sm text-slate-700">
                             {SIGNATURE_TEXT_FIELD_LABELS[fieldKey] || fieldKey}
-                          </label>
+                          </span>
                         </div>
                       ))}
                   </div>
                 </div>
 
-                <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-2">
+                {/* Logo */}
+                <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
                   <h4 className="text-sm font-semibold text-slate-900">Logo</h4>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleLogoUpload}
-                    className="block w-full text-sm text-slate-600 file:mr-3 file:rounded file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm"
-                  />
-                  {logoUploadError ? <p className="text-xs text-red-600">{logoUploadError}</p> : null}
+                  <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-3 transition-colors hover:border-slate-400 hover:bg-slate-100">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleLogoUpload}
+                      className="sr-only"
+                    />
+                    <span className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm">
+                      Choose file
+                    </span>
+                    <span className="text-xs text-slate-400">PNG, SVG, or JPG · max 5 MB</span>
+                  </label>
+                  {logoUploadError ? (
+                    <p className="text-xs text-red-500">{logoUploadError}</p>
+                  ) : null}
                   {builderDraft.logoUrl ? (
                     <div className="flex items-center gap-3">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={builderDraft.logoUrl} alt="Logo preview" className="h-10 w-auto rounded border border-slate-200" />
+                      <img
+                        src={builderDraft.logoUrl}
+                        alt="Logo preview"
+                        className="h-10 w-auto rounded-md border border-slate-200"
+                      />
                       <button
                         type="button"
-                        className="text-xs text-slate-500 underline"
+                        className="text-xs text-slate-400 underline hover:text-red-500"
                         onClick={() => handleBuilderField("logoUrl", "")}
                       >
                         Remove logo
@@ -798,31 +922,35 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                   ) : null}
                 </div>
               </div>
-              <div className="space-y-2 md:sticky md:top-0 self-start">
-                <h4 className="text-sm font-medium text-slate-800">Preview</h4>
-                <div className="rounded-md border border-slate-200 bg-white shadow-sm">
-                  <div className="border-b border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600">
-                    <div>From: [sender]</div>
-                    <div>To: [recipient]</div>
-                    <div>Subject: Re: Your request</div>
+
+              {/* Right: preview */}
+              <div className="space-y-2.5 md:sticky md:top-0 self-start">
+                <p className="text-xs font-medium text-slate-400 uppercase tracking-widest">Preview</p>
+                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                  <div className="border-b border-slate-100 bg-slate-50 px-4 py-3 text-xs text-slate-500">
+                    <p>From: [sender]</p>
+                    <p className="mt-0.5">To: [recipient]</p>
+                    <p className="mt-0.5">Subject: Re: Your request</p>
                   </div>
                   <div
-                    className="p-4 text-sm text-slate-900"
+                    className="p-4 text-sm text-slate-700"
                     dangerouslySetInnerHTML={{ __html: builderPreviewHtml }}
                   />
                 </div>
               </div>
             </div>
           </div>
-          <DialogFooter className="mt-4 border-t border-slate-200 pt-3 bg-white">
-            <div className="mr-auto text-xs text-slate-500">
-              {hasBuilderChanges ? "Unsaved changes" : "No pending changes"}
-            </div>
+
+          <DialogFooter className="mt-4 border-t border-slate-100 pt-3">
+            <p className="mr-auto text-xs text-slate-400">
+              {hasBuilderChanges ? "Unsaved changes" : ""}
+            </p>
             <Button type="button" variant="outline" onClick={() => setBuilderOpen(false)}>
               Cancel
             </Button>
             <Button
               type="button"
+              className="bg-slate-900 text-white hover:bg-slate-800"
               onClick={() => {
                 setTemplateHtml(buildSignatureTemplateFromBuilder(builderDraft));
                 setBuilderOpen(false);

@@ -1,11 +1,16 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { ThemeProvider, useTheme } from "next-themes";
 import { DEFAULT_THEME, normalizeThemePreference } from "@/lib/theme-options";
 
 function DashboardThemeSync() {
   const { setTheme } = useTheme();
+  const setThemeRef = useRef(setTheme);
+
+  useEffect(() => {
+    setThemeRef.current = setTheme;
+  }, [setTheme]);
 
   useEffect(() => {
     let isActive = true;
@@ -21,7 +26,7 @@ function DashboardThemeSync() {
         const payload = await response.json().catch(() => ({}));
         const nextTheme = normalizeThemePreference(payload?.theme_preference, DEFAULT_THEME);
         if (!isActive) return;
-        setTheme(nextTheme);
+        setThemeRef.current(nextTheme);
       } catch {
         // Keep local theme fallback when request fails.
       }
@@ -32,7 +37,7 @@ function DashboardThemeSync() {
     return () => {
       isActive = false;
     };
-  }, [setTheme]);
+  }, []);
 
   return null;
 }
