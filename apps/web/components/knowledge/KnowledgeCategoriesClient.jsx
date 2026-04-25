@@ -21,6 +21,7 @@ import {
   ChevronRight,
   BookOpen,
   BookMarked,
+  ImagePlus,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -98,7 +99,21 @@ function sanitizeSavedReplyHtmlClient(value = "") {
       .trim();
   }
 
-  const allowedTags = new Set(["B", "STRONG", "I", "EM", "U", "BR", "P", "DIV", "UL", "OL", "LI", "A"]);
+  const allowedTags = new Set([
+    "B",
+    "STRONG",
+    "I",
+    "EM",
+    "U",
+    "BR",
+    "P",
+    "DIV",
+    "UL",
+    "OL",
+    "LI",
+    "A",
+    "IMG",
+  ]);
   const sourceContainer = document.createElement("div");
   sourceContainer.innerHTML = source;
 
@@ -125,6 +140,25 @@ function sanitizeSavedReplyHtmlClient(value = "") {
         cleanElement.setAttribute("rel", "noreferrer noopener");
       }
     }
+    if (tag === "IMG") {
+      const dataContentIdRaw = String(element.getAttribute("data-content-id") || "").trim();
+      const safeDataContentId = normalizeContentId(dataContentIdRaw);
+      const srcRaw = String(element.getAttribute("src") || "").trim();
+      const isCidSrc = /^cid:[A-Za-z0-9._@-]+$/i.test(srcRaw);
+      const isDataSrc = /^data:image\//i.test(srcRaw);
+      const safeSrc = isCidSrc || (isDataSrc && safeDataContentId) ? srcRaw : "";
+      if (!safeSrc) return document.createDocumentFragment();
+      const cleanImg = document.createElement("img");
+      cleanImg.setAttribute("src", safeSrc);
+      if (safeDataContentId) cleanImg.setAttribute("data-content-id", safeDataContentId);
+      const altRaw = String(element.getAttribute("alt") || "").trim();
+      if (altRaw) cleanImg.setAttribute("alt", altRaw);
+      const widthRaw = String(element.getAttribute("width") || "").trim();
+      if (/^\d{1,4}$/.test(widthRaw)) cleanImg.setAttribute("width", widthRaw);
+      const heightRaw = String(element.getAttribute("height") || "").trim();
+      if (/^\d{1,4}$/.test(heightRaw)) cleanImg.setAttribute("height", heightRaw);
+      return cleanImg;
+    }
     sanitizedChildren.forEach((child) => cleanElement.appendChild(child));
     return cleanElement;
   };
@@ -141,6 +175,90 @@ function toSavedReplyEditorHtml(value = "") {
   if (!raw) return "";
   if (hasHtmlTag(raw)) return sanitizeSavedReplyHtmlClient(raw);
   return escapeHtml(raw).replace(/\r\n/g, "\n").replace(/\n/g, "<br>");
+}
+
+function normalizeSavedReplyImageDeliveryMode(value = "") {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  return normalized === "inline" ? "inline" : "attachment";
+}
+
+function normalizeContentId(value = "", fallback = "") {
+  const cleaned = String(value || fallback || "")
+    .trim()
+    .replace(/^cid:/i, "")
+    .replace(/[^A-Za-z0-9._@-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120);
+  return cleaned || null;
+}
+
+function makeSavedReplyContentId(filename = "") {
+  const stem = String(filename || "image")
+    .trim()
+    .toLowerCase()
+    .replace(/\.[a-z0-9]+$/i, "")
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  return normalizeContentId(`${stem || "image"}-${suffix}`);
+}
+
+function toSavedReplyEditorPreviewHtml(value = "", images = []) {
+  const html = toSavedReplyEditorHtml(value);
+  if (!html) return "";
+  const imageByCid = new Map(
+    (Array.isArray(images) ? images : [])
+      .map((image) => {
+        const cid = normalizeContentId(image?.content_id || image?.contentId, image?.filename);
+        const mimeType = String(image?.mime_type || image?.mimeType || "").trim();
+        const base64 = String(image?.content_base64 || image?.contentBase64 || "").trim();
+        if (!cid || !mimeType || !base64) return null;
+        return [cid, { mimeType, base64 }];
+      })
+      .filter(Boolean)
+  );
+  return html.replace(
+    /<img\b([^>]*?)\bsrc=(['"])cid:([^'"]+)\2([^>]*)>/gi,
+    (match, before = "", _quote = "\"", rawCid = "", after = "") => {
+      const cid = normalizeContentId(rawCid);
+      if (!cid) return match;
+      const image = imageByCid.get(cid);
+      if (!image) return match;
+      return `<img${before}src="data:${image.mimeType};base64,${image.base64}" data-content-id="${cid}"${after}>`;
+    }
+  );
+}
+
+function toSavedReplyStorageHtml(value = "") {
+  return String(value || "").replace(/<img\b([^>]*)>/gi, (_match, attrs = "") => {
+    const srcMatch = String(attrs).match(/\ssrc\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i);
+    const srcRaw = srcMatch?.[2] || srcMatch?.[3] || srcMatch?.[4] || "";
+    const dataCidMatch = String(attrs).match(
+      /\sdata-content-id\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i
+    );
+    const dataCidRaw = dataCidMatch?.[2] || dataCidMatch?.[3] || dataCidMatch?.[4] || "";
+    const cid = normalizeContentId(
+      dataCidRaw,
+      /^cid:/i.test(String(srcRaw || "").trim()) ? String(srcRaw).trim().slice(4) : ""
+    );
+    if (!cid) return "";
+
+    const altMatch = String(attrs).match(/\salt\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i);
+    const altRaw = altMatch?.[2] || altMatch?.[3] || altMatch?.[4] || "";
+    const widthMatch = String(attrs).match(/\swidth\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i);
+    const widthRaw = widthMatch?.[2] || widthMatch?.[3] || widthMatch?.[4] || "";
+    const heightMatch = String(attrs).match(/\sheight\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i);
+    const heightRaw = heightMatch?.[2] || heightMatch?.[3] || heightMatch?.[4] || "";
+    const safeWidth = /^\d{1,4}$/.test(String(widthRaw || "").trim()) ? String(widthRaw).trim() : "";
+    const safeHeight = /^\d{1,4}$/.test(String(heightRaw || "").trim()) ? String(heightRaw).trim() : "";
+    const altAttr = altRaw ? ` alt="${escapeHtml(altRaw)}"` : "";
+    const widthAttr = safeWidth ? ` width="${safeWidth}"` : "";
+    const heightAttr = safeHeight ? ` height="${safeHeight}"` : "";
+    return `<img src="cid:${cid}"${altAttr}${widthAttr}${heightAttr}>`;
+  });
 }
 
 const ICON_COLORS = {
@@ -194,6 +312,7 @@ function SavedRepliesSection() {
   const [savedReplyImages, setSavedReplyImages] = useState([]);
   const savedReplyImageInputRef = useRef(null);
   const savedReplyEditorRef = useRef(null);
+  const savedReplyImageResizeStateRef = useRef(null);
 
   const resetForm = () => {
     setEditing(null);
@@ -235,11 +354,19 @@ function SavedRepliesSection() {
     setContent(String(reply.content || ""));
     setCategory(reply.category || "");
     setSavedReplyImages(
-      Array.isArray(reply?.images)
-        ? reply.images.filter(Boolean)
-        : reply?.image
-          ? [reply.image]
-          : []
+      (
+        Array.isArray(reply?.images)
+          ? reply.images.filter(Boolean)
+          : reply?.image
+            ? [reply.image]
+            : []
+      ).map((image) => ({
+        ...image,
+        delivery_mode: normalizeSavedReplyImageDeliveryMode(
+          image?.delivery_mode || image?.deliveryMode
+        ),
+        content_id: normalizeContentId(image?.content_id || image?.contentId, image?.filename),
+      }))
     );
     if (savedReplyImageInputRef.current) {
       savedReplyImageInputRef.current.value = "";
@@ -248,7 +375,10 @@ function SavedRepliesSection() {
     requestAnimationFrame(() => {
       const editor = savedReplyEditorRef.current;
       if (editor) {
-        editor.innerHTML = toSavedReplyEditorHtml(String(reply?.content || ""));
+        editor.innerHTML = toSavedReplyEditorPreviewHtml(
+          String(reply?.content || ""),
+          Array.isArray(reply?.images) ? reply.images : []
+        );
       }
     });
   };
@@ -287,6 +417,8 @@ function SavedRepliesSection() {
           mime_type: mimeType,
           content_base64: contentBase64,
           size_bytes: Number(file.size || 0),
+          delivery_mode: "inline",
+          content_id: makeSavedReplyContentId(file.name),
         });
       } catch {
         toast.error(`Could not read "${file.name}"`);
@@ -303,12 +435,50 @@ function SavedRepliesSection() {
         });
         return next.slice(0, 10);
       });
+      const editor = savedReplyEditorRef.current;
+      if (editor) {
+        editor.focus();
+        prepared.forEach((image) => {
+          if (!image?.content_id) return;
+          document.execCommand(
+            "insertHTML",
+            false,
+            `<img src="data:${image.mime_type};base64,${image.content_base64}" data-content-id="${image.content_id}" alt="${escapeHtml(
+              image.filename || "Inline image"
+            )}">`
+          );
+        });
+        syncSavedReplyEditorToState();
+      }
     }
     if (event?.target) event.target.value = "";
   };
 
   const removeSavedReplyImageAt = (index) => {
+    const image = (Array.isArray(savedReplyImages) ? savedReplyImages : [])[index];
     setSavedReplyImages((prev) => prev.filter((_, i) => i !== index));
+    const contentId = normalizeContentId(image?.content_id || image?.contentId);
+    if (!contentId) return;
+    const editor = savedReplyEditorRef.current;
+    if (!editor) return;
+    editor.innerHTML = String(editor.innerHTML || "").replace(
+      new RegExp(
+        `<img\\b[^>]*(?:\\bdata-content-id=(['\"])${contentId}\\1|\\bsrc=(['\"])cid:${contentId}\\2)[^>]*>`,
+        "gi"
+      ),
+      ""
+    );
+    syncSavedReplyEditorToState();
+  };
+
+  const toggleSavedReplyImageMode = (index, nextMode) => {
+    setSavedReplyImages((prev) =>
+      (Array.isArray(prev) ? prev : []).map((image, i) =>
+        i === index
+          ? { ...image, delivery_mode: normalizeSavedReplyImageDeliveryMode(nextMode) }
+          : image
+      )
+    );
   };
 
   const syncSavedReplyEditorToState = () => {
@@ -318,7 +488,7 @@ function SavedRepliesSection() {
     if (editor.innerHTML !== sanitized) {
       editor.innerHTML = sanitized;
     }
-    setContent(sanitized);
+    setContent(toSavedReplyStorageHtml(sanitized));
   };
 
   const handleSavedReplyEditorPaste = (event) => {
@@ -345,6 +515,74 @@ function SavedRepliesSection() {
     syncSavedReplyEditorToState();
   };
 
+  const getSavedReplyResizeTarget = (event) => {
+    const target = event?.target;
+    if (!(target instanceof HTMLImageElement)) return null;
+    const rect = target.getBoundingClientRect();
+    const handleZonePx = 16;
+    const inCorner =
+      event.clientX >= rect.right - handleZonePx && event.clientY >= rect.bottom - handleZonePx;
+    return inCorner ? target : null;
+  };
+
+  const handleSavedReplyEditorMouseMove = (event) => {
+    const editor = savedReplyEditorRef.current;
+    if (!editor) return;
+    const target = getSavedReplyResizeTarget(event);
+    editor.style.cursor = target ? "nwse-resize" : "";
+  };
+
+  const handleSavedReplyEditorMouseLeave = () => {
+    const editor = savedReplyEditorRef.current;
+    if (!editor) return;
+    if (!savedReplyImageResizeStateRef.current) {
+      editor.style.cursor = "";
+    }
+  };
+
+  const handleSavedReplyEditorMouseDown = (event) => {
+    const img = getSavedReplyResizeTarget(event);
+    if (!img) return;
+    event.preventDefault();
+    const editor = savedReplyEditorRef.current;
+    const startWidth =
+      Number(img.getAttribute("width")) || Number(img.width) || Number(img.clientWidth) || 320;
+    const startHeight =
+      Number(img.getAttribute("height")) || Number(img.height) || Number(img.clientHeight) || 180;
+    const ratio = startHeight > 0 ? startWidth / startHeight : 1;
+
+    savedReplyImageResizeStateRef.current = {
+      img,
+      startX: Number(event.clientX || 0),
+      startWidth,
+      ratio,
+    };
+    if (editor) editor.style.cursor = "nwse-resize";
+
+    const onMove = (moveEvent) => {
+      const state = savedReplyImageResizeStateRef.current;
+      if (!state?.img) return;
+      const deltaX = Number(moveEvent.clientX || 0) - state.startX;
+      const nextWidth = Math.max(80, Math.min(1200, Math.round(state.startWidth + deltaX)));
+      const nextHeight = Math.max(40, Math.round(nextWidth / Math.max(state.ratio || 1, 0.1)));
+      state.img.style.width = `${nextWidth}px`;
+      state.img.style.height = "auto";
+      state.img.setAttribute("width", String(nextWidth));
+      state.img.setAttribute("height", String(nextHeight));
+    };
+
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      savedReplyImageResizeStateRef.current = null;
+      if (editor) editor.style.cursor = "";
+      syncSavedReplyEditorToState();
+    };
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
   const handleSave = async () => {
     const contentValue = String(content || "").trim();
     if (!title.trim() || !stripHtmlToPlainText(contentValue)) return;
@@ -354,7 +592,16 @@ function SavedRepliesSection() {
         title: title.trim(),
         content: contentValue,
         category: category.trim() || null,
-        images: savedReplyImages,
+        images: (Array.isArray(savedReplyImages) ? savedReplyImages : []).map((image) => ({
+          filename: String(image?.filename || "saved-reply-image"),
+          mime_type: String(image?.mime_type || image?.mimeType || "image/png"),
+          content_base64: String(image?.content_base64 || image?.contentBase64 || ""),
+          size_bytes: Number(image?.size_bytes || image?.sizeBytes || 0),
+          delivery_mode: normalizeSavedReplyImageDeliveryMode(
+            image?.delivery_mode || image?.deliveryMode
+          ),
+          content_id: normalizeContentId(image?.content_id || image?.contentId, image?.filename),
+        })),
       };
       if (editing?.id) {
         const res = await fetch("/api/settings/saved-replies", {
@@ -504,7 +751,7 @@ function SavedRepliesSection() {
           if (!open) resetForm();
         }}
       >
-        <DialogContent className="sm:max-w-3xl">
+        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>{editing ? "Edit saved reply" : "New saved reply"}</DialogTitle>
           </DialogHeader>
@@ -574,6 +821,17 @@ function SavedRepliesSection() {
                   >
                     <ListOrderedIcon className="h-3.5 w-3.5" />
                   </Button>
+                  <div className="mx-1 h-4 w-px bg-gray-300" />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => savedReplyImageInputRef.current?.click()}
+                    title="Insert image"
+                  >
+                    <ImagePlus className="h-3.5 w-3.5" />
+                  </Button>
                 </div>
                 <div className="relative">
                   {!stripHtmlToPlainText(content) ? (
@@ -587,7 +845,10 @@ function SavedRepliesSection() {
                     suppressContentEditableWarning
                     onInput={syncSavedReplyEditorToState}
                     onPaste={handleSavedReplyEditorPaste}
-                    className="min-h-[220px] max-h-[420px] overflow-y-auto px-3 py-2 text-sm leading-6 outline-none"
+                    onMouseDown={handleSavedReplyEditorMouseDown}
+                    onMouseMove={handleSavedReplyEditorMouseMove}
+                    onMouseLeave={handleSavedReplyEditorMouseLeave}
+                    className="min-h-[220px] max-h-[420px] overflow-y-auto px-3 py-2 text-sm leading-6 outline-none [&_img]:my-2 [&_img]:inline-block [&_img]:max-w-full [&_img]:rounded-md [&_img]:border [&_img]:border-gray-200 [&_img]:align-middle"
                   />
                 </div>
               </div>
@@ -611,19 +872,46 @@ function SavedRepliesSection() {
                   <Paperclip className="mr-1.5 h-3.5 w-3.5" />
                   Add images
                 </Button>
-                <span className="text-xs text-muted-foreground">Up to 10 images (max 5 MB each)</span>
+                <span className="text-xs text-muted-foreground">
+                  Upload inserts image inline by default. Toggle each to attachment if needed.
+                </span>
               </div>
               {savedReplyImages.length ? (
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {savedReplyImages.map((image, index) => (
+                  {savedReplyImages.map((image, index) => {
+                    const isInline =
+                      normalizeSavedReplyImageDeliveryMode(
+                        image?.delivery_mode || image?.deliveryMode
+                      ) === "inline";
+                    return (
                     <div key={`${image.filename}-${image.size_bytes}-${index}`} className="rounded-md border border-gray-200 bg-muted/20 p-2">
-                      <div className="mb-2 flex items-center justify-between gap-2">
+                      <div className="mb-1 flex items-center justify-between gap-2">
                         <p className="truncate text-xs text-muted-foreground">{image.filename}</p>
+                      </div>
+                      <div className="mb-2 flex items-center gap-1">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={isInline ? "default" : "outline"}
+                          className="h-6 px-2 text-xs"
+                          onClick={() => toggleSavedReplyImageMode(index, "inline")}
+                        >
+                          Inline
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={!isInline ? "default" : "outline"}
+                          className="h-6 px-2 text-xs"
+                          onClick={() => toggleSavedReplyImageMode(index, "attachment")}
+                        >
+                          Attachment
+                        </Button>
                         <Button
                           type="button"
                           variant="ghost"
                           size="sm"
-                          className="h-6 px-2 text-xs"
+                          className="ml-auto h-6 px-2 text-xs"
                           onClick={() => removeSavedReplyImageAt(index)}
                         >
                           Remove
@@ -637,8 +925,14 @@ function SavedRepliesSection() {
                         unoptimized
                         className="h-24 w-full rounded border border-gray-200 bg-white object-contain"
                       />
+                      {isInline && image?.content_id ? (
+                        <p className="mt-1 truncate text-[11px] text-muted-foreground">
+                          CID: {String(image.content_id)}
+                        </p>
+                      ) : null}
                     </div>
-                  ))}
+                  );
+                  })}
                 </div>
               ) : null}
             </div>

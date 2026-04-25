@@ -378,10 +378,86 @@ function sanitizeBase64(input) {
   return value;
 }
 
+function escapeHtml(value = "") {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function normalizeContentId(value = "", fallback = "") {
+  const cleaned = String(value || fallback || "")
+    .trim()
+    .replace(/^cid:/i, "")
+    .replace(/[^A-Za-z0-9._@-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120);
+  return cleaned || null;
+}
+
+function normalizeImageDimension(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return null;
+  return Math.max(1, Math.min(2400, Math.round(num)));
+}
+
+function parseCidMarker(raw = "") {
+  const source = String(raw || "").trim();
+  if (!source) return { contentId: null, width: null, height: null };
+  const [rawId = "", ...rest] = source.split("|");
+  const contentId = normalizeContentId(rawId);
+  let width = null;
+  let height = null;
+  rest.forEach((segment) => {
+    const [rawKey = "", rawValue = ""] = String(segment || "").split(":", 2);
+    const key = String(rawKey || "").trim().toLowerCase();
+    const value = normalizeImageDimension(rawValue);
+    if (!value) return;
+    if (key === "w") width = value;
+    if (key === "h") height = value;
+  });
+  return { contentId, width, height };
+}
+
+function buildHtmlFromBodyTextWithInlineImages(bodyText = "") {
+  const source = String(bodyText || "").replace(/\r\n/g, "\n");
+  if (!/\[cid:[^\]]+\]/i.test(source)) return null;
+  const html = source
+    .split("\n")
+    .map((line) =>
+      line.replace(/\[cid:([^\]]+)\]/gi, (_match, rawMarker = "") => {
+        const { contentId, width, height } = parseCidMarker(rawMarker);
+        if (!contentId) return "";
+        const widthAttr = width ? ` width="${width}"` : "";
+        const heightAttr = height ? ` height="${height}"` : "";
+        return `<img src="cid:${escapeHtml(contentId)}" alt="Inline image"${widthAttr}${heightAttr}>`;
+      })
+    )
+    .join("<br/>");
+  return html.trim() || null;
+}
+
+function stripInlineCidMarkers(text = "") {
+  return String(text || "")
+    .replace(/\s*\[cid:[^\]]+\]\s*/gi, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function buildRawEmail({ from, to, cc, bcc, subject, bodyText, bodyHtml, inReplyTo, attachments }) {
   const safeAttachments = Array.isArray(attachments) ? attachments : [];
-  const hasAttachments = safeAttachments.length > 0;
   const hasHtml = Boolean(String(bodyHtml || "").trim());
+  const inlineAttachments = hasHtml
+    ? safeAttachments.filter(
+        (attachment) =>
+          attachment?.is_inline &&
+          normalizeContentId(attachment?.content_id || attachment?.filename)
+      )
+    : [];
+  const regularAttachments = safeAttachments.filter(
+    (attachment) => !attachment?.is_inline || !hasHtml
+  );
+  const hasAttachments = safeAttachments.length > 0;
   const headers = [];
   headers.push(`From: ${from}`);
   headers.push(`To: ${to.join(", ")}`);
@@ -405,6 +481,7 @@ function buildRawEmail({ from, to, cc, bcc, subject, bodyText, bodyHtml, inReply
 
   const mixedBoundary = `mix_${crypto.randomBytes(12).toString("hex")}`;
   const altBoundary = `alt_${crypto.randomBytes(12).toString("hex")}`;
+  const relatedBoundary = `rel_${crypto.randomBytes(12).toString("hex")}`;
   const lines = [...headers];
 
   if (hasAttachments) {
@@ -414,6 +491,12 @@ function buildRawEmail({ from, to, cc, bcc, subject, bodyText, bodyHtml, inReply
   } else {
     lines.push(`Content-Type: multipart/alternative; boundary="${altBoundary}"`);
     lines.push("");
+  }
+
+  if (hasHtml && inlineAttachments.length) {
+    lines.push(`Content-Type: multipart/related; boundary="${relatedBoundary}"`);
+    lines.push("");
+    lines.push(`--${relatedBoundary}`);
   }
 
   lines.push(`Content-Type: multipart/alternative; boundary="${altBoundary}"`);
@@ -434,8 +517,29 @@ function buildRawEmail({ from, to, cc, bcc, subject, bodyText, bodyHtml, inReply
 
   lines.push(`--${altBoundary}--`);
 
+  if (hasHtml && inlineAttachments.length) {
+    inlineAttachments.forEach((attachment, index) => {
+      const filename = String(attachment?.filename || "").trim() || `inline-${index + 1}`;
+      const mimeType =
+        String(attachment?.mime_type || "").trim() || "application/octet-stream";
+      const content = chunkBase64(sanitizeBase64(attachment?.content_base64));
+      const contentId =
+        normalizeContentId(attachment?.content_id || attachment?.filename, `inline-${index + 1}`) ||
+        `inline-${index + 1}`;
+      lines.push("");
+      lines.push(`--${relatedBoundary}`);
+      lines.push(`Content-Type: ${mimeType}; name="${filename}"`);
+      lines.push(`Content-Disposition: inline; filename="${filename}"`);
+      lines.push(`Content-ID: <${contentId}>`);
+      lines.push("Content-Transfer-Encoding: base64");
+      lines.push("");
+      lines.push(content);
+    });
+    lines.push(`--${relatedBoundary}--`);
+  }
+
   if (hasAttachments) {
-    safeAttachments.forEach((attachment, index) => {
+    regularAttachments.forEach((attachment, index) => {
       const filename = String(attachment?.filename || "").trim() || `attachment-${index + 1}`;
       const mimeType =
         String(attachment?.mime_type || "").trim() || "application/octet-stream";
@@ -542,6 +646,10 @@ async function sendViaPostmark({
           Name: String(attachment?.filename || "").trim() || `attachment-${index + 1}`,
           Content: sanitizeBase64(attachment?.content_base64),
           ContentType: String(attachment?.mime_type || "").trim() || "application/octet-stream",
+          ContentID: attachment?.is_inline
+            ? normalizeContentId(attachment?.content_id || attachment?.filename, `inline-${index + 1}`) ||
+              undefined
+            : undefined,
         }))
       : undefined,
   });
@@ -690,12 +798,12 @@ export async function POST(request, { params }) {
   }
 
   const body = await request.json().catch(() => ({}));
-  const bodyText = String(body?.body_text || "").trim();
-  const bodyHtml = String(body?.body_html || "").trim();
+  const requestedBodyText = String(body?.body_text || "").trim();
+  const requestedBodyHtml = String(body?.body_html || "").trim();
   const senderName = String(body?.sender_name || "").trim();
   const draftMessageId =
     typeof body?.draft_message_id === "string" ? body.draft_message_id.trim() : null;
-  if (!bodyText && !bodyHtml) {
+  if (!requestedBodyText && !requestedBodyHtml) {
     return NextResponse.json({ error: "body_text is required." }, { status: 400 });
   }
   const requestedAttachments = Array.isArray(body?.attachments) ? body.attachments : [];
@@ -709,8 +817,21 @@ export async function POST(request, { params }) {
       String(attachment?.mime_type || "").trim() || "application/octet-stream";
     const sizeBytes = Number(attachment?.size_bytes || 0);
     const contentBase64 = String(attachment?.content_base64 || "").trim();
+    const isInline = attachment?.is_inline === true;
+    const contentId = isInline
+      ? normalizeContentId(
+          attachment?.content_id || attachment?.contentId,
+          filename || `inline-${attachmentsPayload.length + 1}`
+        )
+      : null;
     if (!filename || !contentBase64 || !Number.isFinite(sizeBytes) || sizeBytes <= 0) {
       return NextResponse.json({ error: "Invalid attachment payload." }, { status: 400 });
+    }
+    if (isInline && !contentId) {
+      return NextResponse.json(
+        { error: `Inline attachment "${filename}" is missing a valid content_id.` },
+        { status: 400 }
+      );
     }
     if (sizeBytes > 15 * 1024 * 1024) {
       return NextResponse.json(
@@ -728,6 +849,8 @@ export async function POST(request, { params }) {
       mime_type: mimeType,
       size_bytes: sizeBytes,
       content_base64: contentBase64,
+      is_inline: isInline,
+      content_id: contentId,
     });
   }
 
@@ -848,6 +971,9 @@ export async function POST(request, { params }) {
     userId: supabaseUserId,
     legacySignature,
   });
+  const generatedBodyHtmlFromText = buildHtmlFromBodyTextWithInlineImages(requestedBodyText);
+  const bodyText = stripInlineCidMarkers(requestedBodyText);
+  const bodyHtml = requestedBodyHtml || generatedBodyHtmlFromText || "";
   const composed = composeEmailBodyWithSignature({
     bodyText: bodyText || stripHtml(bodyHtml),
     bodyHtml,
@@ -952,6 +1078,8 @@ export async function POST(request, { params }) {
             name: attachment.filename,
             contentType: attachment.mime_type,
             contentBytes: attachment.content_base64,
+            isInline: attachment?.is_inline === true,
+            contentId: attachment?.is_inline ? attachment.content_id || undefined : undefined,
           })),
         };
         const useReply =
@@ -1149,7 +1277,7 @@ export async function POST(request, { params }) {
         mailbox_id: mailbox.id,
         message_id: insertedMessage.id,
         provider: mailbox.provider,
-        provider_attachment_id: null,
+        provider_attachment_id: attachment?.is_inline ? attachment?.content_id || null : null,
         filename: attachment.filename,
         mime_type: attachment.mime_type,
         size_bytes: attachment.size_bytes,

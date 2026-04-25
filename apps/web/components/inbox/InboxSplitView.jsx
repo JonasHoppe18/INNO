@@ -3343,11 +3343,23 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
             binary += String.fromCharCode(...chunk);
           }
           const contentBase64 = btoa(binary);
+          const deliveryMode =
+            String(file?.__innoDeliveryMode || "").trim().toLowerCase() === "inline"
+              ? "inline"
+              : "attachment";
+          const normalizedContentId = String(file?.__innoContentId || "")
+            .trim()
+            .replace(/^cid:/i, "")
+            .replace(/[^A-Za-z0-9._@-]+/g, "-")
+            .replace(/^-+|-+$/g, "")
+            .slice(0, 120);
           return {
             filename: name,
             mime_type: mimeType,
             size_bytes: sizeBytes,
             content_base64: contentBase64,
+            is_inline: deliveryMode === "inline",
+            content_id: deliveryMode === "inline" ? normalizedContentId || null : null,
           };
         })
       );
@@ -3372,6 +3384,25 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       }
       const nowIso = new Date().toISOString();
       const localMessageId = data?.message_id || `local-sent-${Date.now()}`;
+      const localBodyHtml = String(composeBody || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(
+          /\[cid:([^\]]+)\]/gi,
+          (_match, rawCid = "") => {
+            const normalizedCid = String(rawCid || "")
+              .trim()
+              .replace(/^cid:/i, "")
+              .replace(/[^A-Za-z0-9._@-]+/g, "-")
+              .replace(/^-+|-+$/g, "")
+              .slice(0, 120);
+            return normalizedCid
+              ? `<img src="cid:${normalizedCid}" alt="Inline image">`
+              : "";
+          }
+        )
+        .replace(/\n/g, "<br/>");
       const redirectedTo =
         data?.redirected_to && typeof data.redirected_to === "string"
           ? [String(data.redirected_to)]
@@ -3394,7 +3425,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
             cc_emails: localCc,
             bcc_emails: localBcc,
             body_text: composeBody,
-            body_html: null,
+            body_html: localBodyHtml,
             is_read: true,
             sent_at: nowIso,
             received_at: null,
@@ -3402,9 +3433,11 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
             attachments: attachmentsPayload.map((attachment, index) => ({
               id: `local-attachment-${Date.now()}-${index}`,
               message_id: localMessageId,
+              provider_attachment_id: attachment?.is_inline ? attachment?.content_id || null : null,
               filename: attachment.filename,
               mime_type: attachment.mime_type,
               size_bytes: attachment.size_bytes,
+              content_base64: attachment.content_base64,
             })),
           },
         ],

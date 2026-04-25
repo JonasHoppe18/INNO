@@ -70,6 +70,7 @@ function sanitizeSavedReplyHtml(value = "") {
     "ol",
     "li",
     "a",
+    "img",
   ]);
 
   const withoutDangerousBlocks = String(value || "").replace(
@@ -98,6 +99,39 @@ function sanitizeSavedReplyHtml(value = "") {
         return `<a href="${escapeHtml(safeHref)}" target="_blank" rel="noreferrer noopener">`;
       }
 
+      if (tag === "img") {
+        const srcMatch = String(rawAttrs || "").match(
+          /\ssrc\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i
+        );
+        const srcRaw = srcMatch?.[2] || srcMatch?.[3] || srcMatch?.[4] || "";
+        const src = String(srcRaw || "").trim();
+        const safeSrc = /^cid:[A-Za-z0-9._@-]+$/i.test(src) ? src : "";
+        if (!safeSrc) return "";
+
+        const altMatch = String(rawAttrs || "").match(
+          /\salt\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i
+        );
+        const altRaw = altMatch?.[2] || altMatch?.[3] || altMatch?.[4] || "";
+        const widthMatch = String(rawAttrs || "").match(
+          /\swidth\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i
+        );
+        const widthRaw = widthMatch?.[2] || widthMatch?.[3] || widthMatch?.[4] || "";
+        const heightMatch = String(rawAttrs || "").match(
+          /\sheight\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i
+        );
+        const heightRaw = heightMatch?.[2] || heightMatch?.[3] || heightMatch?.[4] || "";
+        const safeWidth = /^\d{1,4}$/.test(String(widthRaw || "").trim())
+          ? String(widthRaw || "").trim()
+          : "";
+        const safeHeight = /^\d{1,4}$/.test(String(heightRaw || "").trim())
+          ? String(heightRaw || "").trim()
+          : "";
+        const altAttr = altRaw ? ` alt="${escapeHtml(altRaw)}"` : "";
+        const widthAttr = safeWidth ? ` width="${safeWidth}"` : "";
+        const heightAttr = safeHeight ? ` height="${safeHeight}"` : "";
+        return `<img src="${escapeHtml(safeSrc)}"${altAttr}${widthAttr}${heightAttr}>`;
+      }
+
       return `<${tag}>`;
     }
   );
@@ -122,6 +156,23 @@ function sanitizeBase64(value = "") {
   return String(value || "").replace(/\s+/g, "").trim();
 }
 
+function normalizeSavedReplyImageDeliveryMode(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  return normalized === "inline" ? "inline" : "attachment";
+}
+
+function normalizeContentId(value, fallback = "") {
+  const cleaned = String(value || fallback || "")
+    .trim()
+    .replace(/^cid:/i, "")
+    .replace(/[^A-Za-z0-9._@-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120);
+  return cleaned || null;
+}
+
 function parseSavedReplyImage(value) {
   if (value === null) return null;
   if (!value || typeof value !== "object") return undefined;
@@ -141,11 +192,21 @@ function parseSavedReplyImage(value) {
   if (sizeBytes > 5 * 1024 * 1024) {
     throw new Error("Saved reply image must be 5 MB or smaller.");
   }
+  const deliveryMode = normalizeSavedReplyImageDeliveryMode(
+    value?.delivery_mode || value?.deliveryMode
+  );
+  const contentId =
+    normalizeContentId(
+      value?.content_id || value?.contentId,
+      `saved-reply-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+    ) || null;
   return {
     filename,
     mimeType,
     contentBase64,
     sizeBytes,
+    delivery_mode: deliveryMode,
+    content_id: contentId,
   };
 }
 
@@ -191,11 +252,20 @@ function formatSavedReply(row) {
           const contentBase64 = sanitizeBase64(item?.content_base64 || item?.contentBase64);
           const sizeBytes = Number(item?.size_bytes || item?.sizeBytes || 0);
           if (!mimeType.startsWith("image/") || !contentBase64) return null;
+          const deliveryMode = normalizeSavedReplyImageDeliveryMode(
+            item?.delivery_mode || item?.deliveryMode
+          );
+          const contentId = normalizeContentId(
+            item?.content_id || item?.contentId,
+            filename
+          );
           return {
             filename,
             mime_type: mimeType,
             content_base64: contentBase64,
             size_bytes: Number.isFinite(sizeBytes) && sizeBytes > 0 ? sizeBytes : null,
+            delivery_mode: deliveryMode,
+            content_id: contentId,
           };
         })
         .filter(Boolean)
@@ -207,6 +277,8 @@ function formatSavedReply(row) {
           mime_type: imageMimeType,
           content_base64: imageBase64,
           size_bytes: Number.isFinite(imageSizeBytes) && imageSizeBytes > 0 ? imageSizeBytes : null,
+          delivery_mode: "attachment",
+          content_id: null,
         }
       : null;
   const images = imageAttachments.length ? imageAttachments : fallbackSingleImage ? [fallbackSingleImage] : [];

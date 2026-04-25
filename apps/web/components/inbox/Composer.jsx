@@ -107,11 +107,146 @@ const extractPlainTextFromReplyHtml = (html = "") => {
 
 const hasHtmlTag = (value = "") => /<[^>]+>/.test(String(value || ""));
 
-const normalizeSavedReplyToPlainText = (value = "") => {
+const normalizeSavedReplyImageDeliveryMode = (value = "") =>
+  String(value || "").trim().toLowerCase() === "inline" ? "inline" : "attachment";
+
+const normalizeContentId = (value = "", fallback = "") => {
+  const cleaned = String(value || fallback || "")
+    .trim()
+    .replace(/^cid:/i, "")
+    .replace(/[^A-Za-z0-9._@-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120);
+  return cleaned || null;
+};
+
+const normalizeDimension = (value) => {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return null;
+  return Math.max(1, Math.min(2400, Math.round(num)));
+};
+
+const parseCidMarker = (raw = "") => {
+  const source = String(raw || "").trim();
+  if (!source) return { contentId: null, width: null, height: null };
+  const [rawId = "", ...rest] = source.split("|");
+  const contentId = normalizeContentId(rawId);
+  let width = null;
+  let height = null;
+  rest.forEach((segment) => {
+    const [rawKey = "", rawValue = ""] = String(segment || "").split(":", 2);
+    const key = String(rawKey || "").trim().toLowerCase();
+    const value = normalizeDimension(rawValue);
+    if (!value) return;
+    if (key === "w") width = value;
+    if (key === "h") height = value;
+  });
+  return { contentId, width, height };
+};
+
+const buildCidMarker = (contentId = "", width = null, height = null) => {
+  const normalizedId = normalizeContentId(contentId);
+  if (!normalizedId) return "";
+  const parts = [normalizedId];
+  const safeWidth = normalizeDimension(width);
+  const safeHeight = normalizeDimension(height);
+  if (safeWidth) parts.push(`w:${safeWidth}`);
+  if (safeHeight) parts.push(`h:${safeHeight}`);
+  return `[cid:${parts.join("|")}]`;
+};
+
+const extractImageContentIdFromTag = (tagHtml = "") => {
+  const raw = String(tagHtml || "");
+  const dataContentIdMatch = raw.match(
+    /\sdata-content-id\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i
+  );
+  const dataContentIdRaw =
+    dataContentIdMatch?.[2] || dataContentIdMatch?.[3] || dataContentIdMatch?.[4] || "";
+  const normalizedDataContentId = normalizeContentId(dataContentIdRaw);
+  if (normalizedDataContentId) return normalizedDataContentId;
+
+  const srcMatch = raw.match(/\ssrc\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i);
+  const srcRaw = srcMatch?.[2] || srcMatch?.[3] || srcMatch?.[4] || "";
+  const cidMatch = String(srcRaw || "").match(/^cid:(.+)$/i);
+  return cidMatch ? normalizeContentId(cidMatch[1]) : null;
+};
+
+const extractImageDimensionsFromTag = (tagHtml = "") => {
+  const raw = String(tagHtml || "");
+  const widthMatch = raw.match(/\swidth\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i);
+  const widthRaw = widthMatch?.[2] || widthMatch?.[3] || widthMatch?.[4] || "";
+  const heightMatch = raw.match(/\sheight\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i);
+  const heightRaw = heightMatch?.[2] || heightMatch?.[3] || heightMatch?.[4] || "";
+  return {
+    width: normalizeDimension(widthRaw),
+    height: normalizeDimension(heightRaw),
+  };
+};
+
+const replaceInlineImageTagsWithMarkers = (html = "") =>
+  String(html || "").replace(/<img\b[^>]*>/gi, (imgTag) => {
+    const contentId = extractImageContentIdFromTag(imgTag);
+    if (!contentId) return "";
+    const { width, height } = extractImageDimensionsFromTag(imgTag);
+    const marker = buildCidMarker(contentId, width, height);
+    return marker ? `\n${marker}\n` : "";
+  });
+
+const buildInlineImagePreviewMap = (attachments = []) => {
+  const map = new Map();
+  for (const attachment of attachments || []) {
+    const isInline =
+      attachment?.__innoInline === true ||
+      String(attachment?.__innoDeliveryMode || "").trim().toLowerCase() === "inline";
+    if (!isInline) continue;
+    const contentId = normalizeContentId(attachment?.__innoContentId || "");
+    const mimeType = String(attachment?.type || attachment?.__innoMimeType || "").trim();
+    const base64 = String(attachment?.__innoContentBase64 || "").trim();
+    if (!contentId || !mimeType || !base64) continue;
+    map.set(contentId, { mimeType, base64 });
+  }
+  return map;
+};
+
+const plainTextToReplyHtmlWithInlineImages = (text = "", attachments = []) => {
+  const previewMap = buildInlineImagePreviewMap(attachments);
+  return plainTextToReplyHtml(text).replace(/\[cid:([^\]]+)\]/gi, (fullMatch, rawCid = "") => {
+    const { contentId, width, height } = parseCidMarker(rawCid);
+    if (!contentId) return fullMatch;
+    const preview = previewMap.get(contentId);
+    if (!preview) return fullMatch;
+    const widthAttr = width ? ` width="${width}"` : "";
+    const heightAttr = height ? ` height="${height}"` : "";
+    return `<img src="data:${preview.mimeType};base64,${preview.base64}" data-content-id="${contentId}" alt="Inline image"${widthAttr}${heightAttr} style="max-width:100%;height:auto;display:block;margin:8px 0;border-radius:8px;">`;
+  });
+};
+
+const savedReplyHtmlToComposerText = (value = "", allowedInlineContentIds = null) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const withInlineMarkers = raw.replace(
+    /<img\b[^>]*\bsrc=(['"])cid:([^'"]+)\1[^>]*>/gi,
+    (match, _quote, rawCid = "") => {
+      const cid = normalizeContentId(rawCid);
+      const shouldKeepInline =
+        cid &&
+        (!allowedInlineContentIds ||
+          allowedInlineContentIds.size === 0 ||
+          allowedInlineContentIds.has(cid));
+      if (!shouldKeepInline) return "\n";
+      const { width, height } = extractImageDimensionsFromTag(match);
+      const marker = buildCidMarker(cid, width, height);
+      return marker ? `\n${marker}\n` : "\n";
+    }
+  );
+  return extractPlainTextFromReplyHtml(withInlineMarkers);
+};
+
+const normalizeSavedReplyToPlainText = (value = "", allowedInlineContentIds = null) => {
   const raw = String(value || "").trim();
   if (!raw) return "";
   if (hasHtmlTag(raw)) {
-    return extractPlainTextFromReplyHtml(raw);
+    return savedReplyHtmlToComposerText(raw, allowedInlineContentIds);
   }
   return raw;
 };
@@ -129,7 +264,17 @@ const fileFromSavedReplyImage = (image) => {
       bytes[i] = binary.charCodeAt(i);
     }
     const filename = String(image?.filename || "saved-reply-image");
-    return new File([bytes], filename, { type: mimeType, lastModified: Date.now() });
+    const file = new File([bytes], filename, { type: mimeType, lastModified: Date.now() });
+    const deliveryMode = normalizeSavedReplyImageDeliveryMode(
+      image?.delivery_mode || image?.deliveryMode
+    );
+    const contentId = normalizeContentId(image?.content_id || image?.contentId, filename);
+    file.__innoDeliveryMode = deliveryMode;
+    file.__innoInline = deliveryMode === "inline";
+    file.__innoContentId = contentId;
+    file.__innoContentBase64 = contentBase64;
+    file.__innoMimeType = mimeType;
+    return file;
   } catch {
     return null;
   }
@@ -142,6 +287,24 @@ const filesFromSavedReplyImages = (reply) => {
       ? [reply.image]
       : [];
   return source.map((image) => fileFromSavedReplyImage(image)).filter(Boolean);
+};
+
+const getSavedReplyInlineContentIdSet = (reply) => {
+  const source = Array.isArray(reply?.images)
+    ? reply.images
+    : reply?.image
+      ? [reply.image]
+      : [];
+  return new Set(
+    source
+      .filter(
+        (image) =>
+          normalizeSavedReplyImageDeliveryMode(image?.delivery_mode || image?.deliveryMode) ===
+          "inline"
+      )
+      .map((image) => normalizeContentId(image?.content_id || image?.contentId))
+      .filter(Boolean)
+  );
 };
 
 export function Composer({
@@ -209,6 +372,7 @@ export function Composer({
   const [bccInput, setBccInput] = useState("");
   const textareaRef = useRef(null);
   const replyEditorRef = useRef(null);
+  const replyInlineImageResizeStateRef = useRef(null);
   const syncingReplyHtmlRef = useRef(false);
   const replyEditorFocusedRef = useRef(false);
   const noteCaretIndexRef = useRef(null);
@@ -264,6 +428,13 @@ export function Composer({
       return title.includes(query) || category.includes(query) || content.includes(query);
     });
   }, [savedReplies, savedRepliesQuery]);
+  const visibleAttachmentPills = useMemo(
+    () =>
+      (attachments || []).filter(
+        (file) => !(file?.__innoDeliveryMode === "inline" || file?.__innoInline === true)
+      ),
+    [attachments]
+  );
 
   const resizeTextarea = () => {
     const el = textareaRef.current;
@@ -308,11 +479,11 @@ export function Composer({
     // Doing so resets caret/focus and makes typing/backspace feel broken.
     if (replyEditorFocusedRef.current) return;
     if (syncingReplyHtmlRef.current) return;
-    const nextHtml = plainTextToReplyHtml(value || "");
+    const nextHtml = plainTextToReplyHtmlWithInlineImages(value || "", attachments);
     if (replyEditorRef.current && replyEditorRef.current.innerHTML !== nextHtml) {
       replyEditorRef.current.innerHTML = nextHtml;
     }
-  }, [collapsed, isDraftLoading, isNote, value]);
+  }, [attachments, collapsed, isDraftLoading, isNote, value]);
 
   useEffect(() => {
     if (!isSending && !String(value || "").trim()) {
@@ -578,14 +749,22 @@ export function Composer({
     );
   };
 
-  const addSavedReplyImageAttachment = (reply) => {
+  const addSavedReplyImagesToAttachments = (reply) => {
     const imageFiles = filesFromSavedReplyImages(reply);
     if (!imageFiles.length) return;
     setAttachments((prev) => {
       const next = [...prev];
       imageFiles.forEach((imageFile) => {
-        const key = `${imageFile.name}:${imageFile.size}:${imageFile.type}`;
-        if (!next.some((item) => `${item.name}:${item.size}:${item.type}` === key)) {
+        const mode = String(imageFile.__innoDeliveryMode || "attachment");
+        const cid = String(imageFile.__innoContentId || "");
+        const key = `${imageFile.name}:${imageFile.size}:${imageFile.type}:${mode}:${cid}`;
+        if (
+          !next.some((item) => {
+            const existingMode = String(item?.__innoDeliveryMode || "attachment");
+            const existingCid = String(item?.__innoContentId || "");
+            return `${item.name}:${item.size}:${item.type}:${existingMode}:${existingCid}` === key;
+          })
+        ) {
           next.push(imageFile);
         }
       });
@@ -594,7 +773,8 @@ export function Composer({
   };
 
   const applySavedReplyReplace = (reply) => {
-    const content = normalizeSavedReplyToPlainText(reply?.content || "");
+    const inlineContentIds = getSavedReplyInlineContentIdSet(reply);
+    const content = normalizeSavedReplyToPlainText(reply?.content || "", inlineContentIds);
     if (!content) return;
     const current = String(value || "");
     const hasCurrentText = Boolean(current.trim());
@@ -605,12 +785,13 @@ export function Composer({
     }
     trackSavedReplyUse(reply);
     onChange(content);
-    addSavedReplyImageAttachment(reply);
+    addSavedReplyImagesToAttachments(reply);
     setSavedRepliesOpen(false);
   };
 
   const applySavedReplyInsert = (reply) => {
-    const content = normalizeSavedReplyToPlainText(reply?.content || "");
+    const inlineContentIds = getSavedReplyInlineContentIdSet(reply);
+    const content = normalizeSavedReplyToPlainText(reply?.content || "", inlineContentIds);
     if (!content) return;
     trackSavedReplyUse(reply);
     const current = String(value || "");
@@ -636,7 +817,7 @@ export function Composer({
         ? `${current.replace(/\s+$/, "")}\n\n${content}`
         : content;
     onChange(nextValue);
-    addSavedReplyImageAttachment(reply);
+    addSavedReplyImagesToAttachments(reply);
     setSavedRepliesOpen(false);
     if (isNote) {
       requestAnimationFrame(() => {
@@ -687,6 +868,7 @@ export function Composer({
 
   const handleReplyEditorInput = (event) => {
     const html = String(event?.currentTarget?.innerHTML || "");
+    const htmlWithMarkers = replaceInlineImageTagsWithMarkers(html);
     const selection = typeof window !== "undefined" ? window.getSelection() : null;
     if (selection && selection.rangeCount > 0) {
       const range = selection.getRangeAt(0);
@@ -698,8 +880,73 @@ export function Composer({
       }
     }
     syncingReplyHtmlRef.current = true;
-    onChange(extractPlainTextFromReplyHtml(html));
+    onChange(extractPlainTextFromReplyHtml(htmlWithMarkers));
     syncingReplyHtmlRef.current = false;
+  };
+
+  const getReplyInlineResizeTarget = (event) => {
+    const target = event?.target;
+    if (!(target instanceof HTMLImageElement)) return null;
+    const rect = target.getBoundingClientRect();
+    const handleZonePx = 16;
+    const inCorner =
+      event.clientX >= rect.right - handleZonePx && event.clientY >= rect.bottom - handleZonePx;
+    return inCorner ? target : null;
+  };
+
+  const handleReplyEditorMouseMove = (event) => {
+    const editor = replyEditorRef.current;
+    if (!editor) return;
+    const target = getReplyInlineResizeTarget(event);
+    editor.style.cursor = target ? "nwse-resize" : "";
+  };
+
+  const handleReplyEditorMouseLeave = () => {
+    const editor = replyEditorRef.current;
+    if (!editor) return;
+    if (!replyInlineImageResizeStateRef.current) editor.style.cursor = "";
+  };
+
+  const handleReplyEditorMouseDown = (event) => {
+    const img = getReplyInlineResizeTarget(event);
+    if (!img) return;
+    event.preventDefault();
+    const editor = replyEditorRef.current;
+    const startWidth =
+      Number(img.getAttribute("width")) || Number(img.width) || Number(img.clientWidth) || 320;
+    const startHeight =
+      Number(img.getAttribute("height")) || Number(img.height) || Number(img.clientHeight) || 180;
+    const ratio = startHeight > 0 ? startWidth / startHeight : 1;
+    replyInlineImageResizeStateRef.current = {
+      img,
+      startX: Number(event.clientX || 0),
+      startWidth,
+      ratio,
+    };
+    if (editor) editor.style.cursor = "nwse-resize";
+
+    const onMove = (moveEvent) => {
+      const state = replyInlineImageResizeStateRef.current;
+      if (!state?.img) return;
+      const deltaX = Number(moveEvent.clientX || 0) - state.startX;
+      const nextWidth = Math.max(80, Math.min(1400, Math.round(state.startWidth + deltaX)));
+      const nextHeight = Math.max(40, Math.round(nextWidth / Math.max(state.ratio || 1, 0.1)));
+      state.img.style.width = `${nextWidth}px`;
+      state.img.style.height = "auto";
+      state.img.setAttribute("width", String(nextWidth));
+      state.img.setAttribute("height", String(nextHeight));
+    };
+
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      replyInlineImageResizeStateRef.current = null;
+      if (editor) editor.style.cursor = "";
+      handleReplyEditorInput({ currentTarget: replyEditorRef.current });
+    };
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
   };
 
   const handleReplyEditorBlur = () => {
@@ -983,9 +1230,9 @@ export function Composer({
             </button>
           </div>
         ) : null}
-        {attachments.length ? (
+        {visibleAttachmentPills.length ? (
           <div className="mb-1 flex flex-wrap items-center gap-2 px-3 text-[12px]">
-            {attachments.map((file) => (
+            {visibleAttachmentPills.map((file) => (
               <span
                 key={`${file.name}:${file.size}:${file.lastModified}`}
                 className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/50 px-2 py-1 text-foreground"
@@ -1143,6 +1390,9 @@ export function Composer({
                       }
                     }}
                     onInput={handleReplyEditorInput}
+                    onMouseDown={handleReplyEditorMouseDown}
+                    onMouseMove={handleReplyEditorMouseMove}
+                    onMouseLeave={handleReplyEditorMouseLeave}
                     onBlur={handleReplyEditorBlur}
                     onKeyUp={() => {
                       const selection = typeof window !== "undefined" ? window.getSelection() : null;
@@ -1174,7 +1424,7 @@ export function Composer({
                       if (!href) return;
                       window.open(href, "_blank", "noopener,noreferrer");
                     }}
-                    className={`flex-1 whitespace-pre-wrap break-words p-0 text-[14px] leading-[1.55] text-foreground outline-none [&_a]:cursor-pointer [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline [&_a:hover]:text-blue-700 dark:[&_a:hover]:text-blue-300 ${replyEditorMinHeightClassName}`}
+                    className={`flex-1 whitespace-pre-wrap break-words p-0 text-[14px] leading-[1.55] text-foreground outline-none [&_a]:cursor-pointer [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline [&_a:hover]:text-blue-700 dark:[&_a:hover]:text-blue-300 [&_img]:my-2 [&_img]:max-w-full [&_img]:rounded-md ${replyEditorMinHeightClassName}`}
                   />
                   {showDraftLoadingState ? (
                     <div className="absolute inset-0 flex flex-col gap-3 pt-0.5">

@@ -36,8 +36,7 @@ async function loadMessages(serviceClient, scope, mailboxIds, { query, unreadOnl
         "id, user_id, mailbox_id, thread_id, provider_message_id, subject, snippet, body_text, from_name, from_email, extracted_customer_name, extracted_customer_email, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at, ai_draft_text"
       )
       .in("mailbox_id", mailboxIds)
-      .order("received_at", { ascending: false, nullsLast: true })
-      .limit(120),
+      .order("received_at", { ascending: false, nullsLast: true }),
     scope
   );
 
@@ -65,8 +64,7 @@ async function loadMessages(serviceClient, scope, mailboxIds, { query, unreadOnl
         "id, user_id, mailbox_id, thread_id, provider_message_id, subject, snippet, body_text, from_name, from_email, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at"
       )
       .in("mailbox_id", mailboxIds)
-      .order("received_at", { ascending: false, nullsLast: true })
-      .limit(120);
+      .order("received_at", { ascending: false, nullsLast: true });
     fallbackRequest = applyScope(fallbackRequest, scope);
 
     if (unreadOnly) {
@@ -103,8 +101,7 @@ async function loadThreads(serviceClient, scope, mailboxIds) {
               }subject, snippet, last_message_at, unread_count, is_read, status, assignee_id, priority, tags, classification_key, classification_confidence, classification_reason, created_at, updated_at, customer_language`
         )
         .in("mailbox_id", mailboxIds)
-        .order("last_message_at", { ascending: false, nullsLast: true })
-        .limit(150),
+        .order("last_message_at", { ascending: false, nullsLast: true }),
       scope
     );
   let { data, error } = await runQuery({ withCustomerFields: true, withTicketNumber: true });
