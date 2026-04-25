@@ -134,6 +134,8 @@ function getApprovalRequirement(action: string, automation: AutomationSettings):
       break;
     case "create_exchange_request":
       return "ombytninger kræver manuel godkendelse.";
+    case "initiate_return":
+      return "returanmodninger kræver manuel godkendelse.";
     default:
       break;
   }
@@ -952,6 +954,50 @@ async function refundOrder(
   );
 }
 
+async function initiateReturn(
+  shop: ShopCredentials,
+  apiVersion: string,
+  orderId: number,
+  payload: Record<string, unknown> = {},
+) {
+  const reason = asString(payload?.reason || payload?.return_reason);
+  const noteText = reason
+    ? `Sona: Return initiated. Reason: ${reason}`
+    : "Sona: Return initiated.";
+
+  const current = await shopifyRequest<{ order?: { tags?: string } }>(
+    shop,
+    apiVersion,
+    `orders/${orderId}.json?fields=id,tags`,
+    { method: "GET" },
+  );
+
+  const existingTags = (current.order?.tags ?? "")
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
+
+  if (!existingTags.includes("sona-return")) {
+    existingTags.push("sona-return");
+  }
+
+  return shopifyRequest(
+    shop,
+    apiVersion,
+    `orders/${orderId}.json`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        order: {
+          id: orderId,
+          tags: existingTags.join(", "),
+          note: noteText,
+        },
+      }),
+    },
+  );
+}
+
 async function fetchOrderState(
   shop: ShopCredentials,
   apiVersion: string,
@@ -1088,6 +1134,8 @@ async function handleAction(
       return cancelOrder(shop, apiVersion, orderId, action.payload);
     case "refund_order":
       return refundOrder(shop, apiVersion, orderId, action.payload);
+    case "initiate_return":
+      return initiateReturn(shop, apiVersion, orderId, action.payload);
     case "create_exchange_request":
       throw Object.assign(
         new Error("create_exchange_request skal godkendes og udføres manuelt i approve-flow."),
@@ -1281,6 +1329,8 @@ export async function executeAutomationActions({
           pendingDetail = "Requested shipping method change.";
         } else if (action.type === "create_exchange_request") {
           pendingDetail = "Requested exchange creation.";
+        } else if (action.type === "initiate_return") {
+          pendingDetail = "Requested return initiation.";
         } else if (action.type === "hold_or_release_fulfillment") {
           const mode = asString(action.payload?.mode ?? action.payload?.operation).toLowerCase();
           pendingDetail =
