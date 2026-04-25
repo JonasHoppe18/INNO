@@ -127,6 +127,7 @@ const AUTOMATION_ACTION_SCHEMA = {
         "cancel_order",
         "refund_order",
         "create_exchange_request",
+        "initiate_return",
         "change_shipping_method",
         "hold_or_release_fulfillment",
         "edit_line_items",
