@@ -1,13 +1,21 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Sparkles } from "lucide-react";
+import { Sparkles, X, Plus } from "lucide-react";
+
+function hexToRgba(hex, alpha) {
+  if (!hex || !hex.startsWith("#")) return `rgba(100,100,100,${alpha})`;
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 
 function SectionLabel({ children, isAI = false }) {
   return (
     <div className="flex items-center gap-1.5">
       {isAI && <Sparkles className="w-3 h-3 text-violet-400 shrink-0" />}
-      <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+      <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400/80">
         {children}
       </span>
     </div>
@@ -35,7 +43,7 @@ function EditableTextField({ label, value, onSave, placeholder = "—", isAI = f
   };
 
   return (
-    <div className="space-y-1">
+    <div className="space-y-1.5">
       <SectionLabel isAI={isAI && Boolean(value)}>{label}</SectionLabel>
       {editing ? (
         <textarea
@@ -50,7 +58,7 @@ function EditableTextField({ label, value, onSave, placeholder = "—", isAI = f
         <button
           type="button"
           onClick={() => setEditing(true)}
-          className={`block w-full text-left rounded px-1 -mx-1 py-0.5 text-sm hover:bg-slate-50 transition-colors min-h-[28px] ${
+          className={`block w-full text-left rounded-md px-2 -mx-2 py-1 text-sm hover:bg-slate-50 active:scale-[0.99] transition-[transform,background-color] duration-150 ease-out min-h-[28px] ${
             value ? "text-slate-800" : "text-slate-400 italic"
           }`}
         >
@@ -80,13 +88,13 @@ function ProductField({ value, availableProducts, onSave }) {
   );
 
   return (
-    <div className="space-y-1">
+    <div className="space-y-1.5">
       <SectionLabel isAI={Boolean(value)}>Product</SectionLabel>
       <div className="relative" ref={dropdownRef}>
         <button
           type="button"
           onClick={() => { setOpen((v) => !v); setSearch(""); }}
-          className={`block w-full text-left rounded px-1 -mx-1 py-0.5 text-sm hover:bg-slate-50 transition-colors min-h-[28px] ${
+          className={`block w-full text-left rounded-md px-2 -mx-2 py-1 text-sm hover:bg-slate-50 active:scale-[0.99] transition-[transform,background-color] duration-150 ease-out min-h-[28px] ${
             value ? "text-slate-800" : "text-slate-400 italic"
           }`}
         >
@@ -105,7 +113,7 @@ function ProductField({ value, availableProducts, onSave }) {
               <button
                 type="button"
                 onClick={() => { onSave(null); setOpen(false); }}
-                className="flex items-center w-full px-3 py-1.5 text-sm text-slate-400 italic hover:bg-slate-50"
+                className="flex items-center w-full px-3 py-1.5 text-sm text-slate-400 italic hover:bg-slate-50 active:scale-[0.98] transition-[transform,background-color] duration-100 ease-out"
               >
                 None
               </button>
@@ -114,7 +122,7 @@ function ProductField({ value, availableProducts, onSave }) {
                   key={p.id}
                   type="button"
                   onClick={() => { onSave(p.id); setOpen(false); }}
-                  className={`flex items-center w-full px-3 py-1.5 text-sm text-left hover:bg-slate-50 ${
+                  className={`flex items-center w-full px-3 py-1.5 text-sm text-left hover:bg-slate-50 active:scale-[0.98] transition-[transform,background-color] duration-100 ease-out ${
                     value?.id === p.id ? "font-medium text-violet-700" : "text-slate-700"
                   }`}
                 >
@@ -129,6 +137,29 @@ function ProductField({ value, availableProducts, onSave }) {
         )}
       </div>
     </div>
+  );
+}
+
+function Tag({ tag, onRemove, isRemoving }) {
+  return (
+    <span
+      className="inline-flex items-center gap-1 pl-2.5 pr-1 py-[3px] rounded-full text-xs font-medium"
+      style={{
+        backgroundColor: hexToRgba(tag.color, 0.1),
+        color: tag.color,
+      }}
+      title={tag.source === "ai" ? "Set by AI" : "Set manually"}
+    >
+      {tag.name}
+      <button
+        type="button"
+        onClick={() => onRemove(tag)}
+        disabled={isRemoving}
+        className="ml-0.5 w-[18px] h-[18px] rounded-full inline-flex items-center justify-center hover:bg-black/10 active:scale-90 transition-[transform,background-color] duration-100 ease-out opacity-50 hover:opacity-100 disabled:opacity-30"
+      >
+        <X className="w-2.5 h-2.5" />
+      </button>
+    </span>
   );
 }
 
@@ -203,36 +234,26 @@ function TagsSection({ threadId }) {
   const unassigned = availableTags.filter((t) => !assignedIds.has(t.id));
 
   return (
-    <div className="space-y-1">
+    <div className="space-y-1.5">
       <SectionLabel>Tags</SectionLabel>
       <div className="flex items-center gap-1.5 flex-wrap min-h-[28px]">
         {assignedTags.map((tag) => (
-          <span
+          <Tag
             key={tag.id}
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium text-white"
-            style={{ backgroundColor: tag.color }}
-            title={tag.source === "ai" ? "Set by AI" : "Set manually"}
-          >
-            {tag.source === "ai" && <Sparkles className="w-2.5 h-2.5 opacity-80 shrink-0" />}
-            {tag.name}
-            <button
-              type="button"
-              onClick={() => handleRemove(tag)}
-              disabled={removing === tag.id}
-              className="ml-0.5 opacity-70 hover:opacity-100 leading-none"
-            >
-              ×
-            </button>
-          </span>
+            tag={tag}
+            onRemove={handleRemove}
+            isRemoving={removing === tag.id}
+          />
         ))}
         {unassigned.length > 0 && (
           <div className="relative" ref={dropdownRef}>
             <button
               type="button"
               onClick={() => setDropdownOpen((v) => !v)}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium text-slate-400 border border-dashed border-slate-200 hover:border-slate-400 hover:text-slate-600 transition-colors"
+              className="inline-flex items-center gap-0.5 px-2 py-[3px] rounded-full text-[11px] font-medium text-slate-400 border border-dashed border-slate-300 hover:border-slate-400 hover:text-slate-600 hover:bg-slate-50 active:scale-[0.97] transition-[transform,color,border-color,background-color] duration-150 ease-out"
             >
-              + Tag
+              <Plus className="w-3 h-3" />
+              Tag
             </button>
             {dropdownOpen && (
               <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-slate-200 rounded-lg shadow-lg py-1 min-w-[160px] max-h-48 overflow-y-auto">
@@ -242,9 +263,9 @@ function TagsSection({ threadId }) {
                     type="button"
                     onClick={() => handleAdd(tag)}
                     disabled={adding === tag.id}
-                    className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left hover:bg-slate-50"
+                    className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left hover:bg-slate-50 active:scale-[0.98] transition-[transform,background-color] duration-100 ease-out disabled:opacity-50"
                   >
-                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: tag.color }} />
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: tag.color }} />
                     {tag.name}
                   </button>
                 ))}
@@ -304,40 +325,35 @@ export function TicketMetadataPanel({ threadId }) {
     return <div className="text-sm text-slate-400 py-6 text-center">Loading…</div>;
   }
 
-  const categoryLabel = metadata?.classification_key
-    ? metadata.classification_key
-        .replace(/_/g, " ")
-        .replace(/\b\w/g, (c) => c.toUpperCase())
-    : null;
-
   return (
-    <div className="space-y-4">
-      <EditableTextField
-        label="Summary"
-        value={metadata?.issue_summary}
-        onSave={(v) => handleSave("issue_summary", v)}
-        placeholder="Click to edit"
-        isAI
-      />
-      <ProductField
-        value={metadata?.detected_product}
-        availableProducts={metadata?.available_products ?? []}
-        onSave={(productId) => handleSave("detected_product_id", productId)}
-      />
-      <TagsSection threadId={threadId} />
-      <div className="space-y-1">
-        <SectionLabel>Category</SectionLabel>
-        <p className="text-sm text-slate-700 px-1 -mx-1 min-h-[28px] py-0.5">
-          {categoryLabel || <span className="text-slate-400 italic">—</span>}
-        </p>
+    <div>
+      <div className="pb-4">
+        <EditableTextField
+          label="Summary"
+          value={metadata?.issue_summary}
+          onSave={(v) => handleSave("issue_summary", v)}
+          placeholder="Click to edit"
+          isAI
+        />
       </div>
-      <EditableTextField
-        label="Solution"
-        value={metadata?.solution_summary}
-        onSave={(v) => handleSave("solution_summary", v)}
-        placeholder="Generated when ticket is solved"
-        isAI
-      />
+      <div className="py-4 border-t border-slate-100">
+        <ProductField
+          value={metadata?.detected_product}
+          availableProducts={metadata?.available_products ?? []}
+          onSave={(productId) => handleSave("detected_product_id", productId)}
+        />
+      </div>
+      <div className="py-4 border-t border-slate-100">
+        <TagsSection threadId={threadId} />
+      </div>
+      <div className="pt-4 border-t border-slate-100">
+        <EditableTextField
+          label="Solution"
+          value={metadata?.solution_summary}
+          onSave={(v) => handleSave("solution_summary", v)}
+          placeholder="Generated when ticket is solved"
+        />
+      </div>
     </div>
   );
 }

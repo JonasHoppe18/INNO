@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Package, Sparkles, TriangleAlert, X } from "lucide-react";
 import { MessageBubble } from "@/components/inbox/MessageBubble";
@@ -7,7 +8,26 @@ import { ActionCard } from "@/components/inbox/ActionCard";
 import { TrackingCard } from "@/components/inbox/TrackingCard";
 import { ThreadTagsBar } from "@/components/inbox/ThreadTagsBar";
 import { getReplyTargetEmail, getSenderLabel, isOutboundMessage } from "@/components/inbox/inbox-utils";
-import { useEffect, useMemo, useRef, useState } from "react";
+
+function FirstTagPill({ threadId, refreshTrigger }) {
+  const [tag, setTag] = useState(null);
+
+  useEffect(() => {
+    if (!threadId) return;
+    fetch(`/api/threads/${threadId}/tags`)
+      .then((r) => r.json())
+      .then((json) => setTag(json?.tags?.[0] ?? null))
+      .catch(() => null);
+  }, [threadId, refreshTrigger]);
+
+  if (!tag) return null;
+
+  return (
+    <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-orange-50 text-orange-600 border border-orange-200">
+      {tag.name}
+    </span>
+  );
+}
 
 const APPROVAL_ACTION_TYPES = new Set([
   "update_shipping_address",
@@ -391,6 +411,7 @@ export function TicketDetail({
           >
             {threadTicketRef}
           </div>
+          <FirstTagPill threadId={thread?.id} refreshTrigger={tagsRefreshTrigger} />
           {headerActions ? <div className="flex shrink-0 items-center gap-2">{headerActions}</div> : null}
         </div>
         <div className="flex items-center gap-2">
