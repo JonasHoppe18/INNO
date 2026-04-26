@@ -3022,6 +3022,11 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     // automatically advance to the next visible ticket instead of leaving an
     // orphaned selection with nothing highlighted in the list.
     if (updates.status === "Solved") {
+      // Trigger AI solution summary generation (fire-and-forget)
+      fetch(`/api/threads/${encodeURIComponent(selectedThreadId)}/solution-summary`, {
+        method: "POST",
+      }).catch(() => null);
+
       const currentIdx = filteredThreads.findIndex((t) => t.id === selectedThreadId);
       const nextThread =
         filteredThreads[currentIdx + 1] || filteredThreads[currentIdx - 1] || null;
