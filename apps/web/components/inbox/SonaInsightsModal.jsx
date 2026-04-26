@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { ActionsTimeline } from "@/components/inbox/ActionsTimeline";
 import { CustomerTab } from "@/components/inbox/CustomerTab";
 import { X } from "lucide-react";
+import { TicketMetadataPanel } from "@/components/inbox/TicketMetadataPanel";
 
 const asString = (value) => (typeof value === "string" ? value.trim() : "");
 const DISPLAY_TIMEZONE = "Europe/Copenhagen";
@@ -397,20 +398,40 @@ export function SonaInsightsModal({
         </div>
         <Tabs defaultValue="actions" className="flex min-w-0 flex-1 flex-col gap-4 overflow-hidden">
           <TabsList className="grid w-full min-w-0 grid-cols-2">
-            <TabsTrigger value="actions">Sona Actions</TabsTrigger>
+            <TabsTrigger value="actions">Overview</TabsTrigger>
             <TabsTrigger value="customer">Customer</TabsTrigger>
           </TabsList>
           <TabsContent value="actions" className="min-w-0 flex-1 overflow-y-auto">
-            <div className="rounded-2xl border border-border bg-card/90 p-4">
-              {logsLoading || (draftLoading && !timelineItems.length) ? (
-                <div className="text-sm text-muted-foreground">Loading investigation data…</div>
-              ) : timelineItems.length ? (
-                <ActionsTimeline items={timelineItems} />
-              ) : (
-                <div className="text-sm text-muted-foreground">
-                  No actions required for this conversation.
+            <div className="space-y-5">
+              <div className="rounded-2xl border border-border bg-card/90 p-4">
+                <TicketMetadataPanel threadId={threadId} />
+              </div>
+
+              <details className="group">
+                <summary className="flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-400 hover:text-slate-600 select-none list-none">
+                  <svg
+                    className="w-3.5 h-3.5 transition-transform group-open:rotate-90"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                  What did Sona do?
+                </summary>
+                <div className="mt-3 rounded-2xl border border-border bg-card/90 p-4">
+                  {logsLoading || (draftLoading && !timelineItems.length) ? (
+                    <div className="text-sm text-muted-foreground">Loading…</div>
+                  ) : timelineItems.length ? (
+                    <ActionsTimeline items={timelineItems} />
+                  ) : (
+                    <div className="text-sm text-muted-foreground">
+                      No actions recorded for this conversation.
+                    </div>
+                  )}
                 </div>
-              )}
+              </details>
             </div>
           </TabsContent>
           <TabsContent value="customer" className="min-w-0 flex-1 overflow-y-auto">
