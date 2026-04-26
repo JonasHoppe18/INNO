@@ -305,7 +305,7 @@ export default async function Page() {
   const attentionItems = [
     pendingCount > 0 && {
       key: "pending",
-      icon: <AlertCircleIcon className="size-4 shrink-0 text-amber-500" />,
+      iconName: "alert",
       title: "Pending approvals",
       subtitle: "Actions waiting for your review",
       count: pendingCount,
@@ -313,7 +313,7 @@ export default async function Page() {
     },
     awaitingCount > 0 && {
       key: "awaiting",
-      icon: <InboxIcon className="size-4 shrink-0 text-red-500" />,
+      iconName: "inbox",
       title: "Customers waiting over 12h",
       subtitle: "No reply from your team",
       count: awaitingCount,
@@ -321,7 +321,7 @@ export default async function Page() {
     },
     missingTrackingCount > 0 && {
       key: "tracking",
-      icon: <PackageMinusIcon className="size-4 shrink-0 text-blue-500" />,
+      iconName: "package",
       title: "Missing tracking link",
       subtitle: "Returns need tracking updates",
       count: missingTrackingCount,
@@ -363,7 +363,9 @@ export default async function Page() {
                 <ul className="divide-y divide-border list-none">
                   {attentionItems.map((item) => (
                     <li key={item.key} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
-                      {item.icon}
+                      {item.iconName === "alert" && <AlertCircleIcon className="size-4 shrink-0 text-amber-500" />}
+                      {item.iconName === "inbox" && <InboxIcon className="size-4 shrink-0 text-red-500" />}
+                      {item.iconName === "package" && <PackageMinusIcon className="size-4 shrink-0 text-blue-500" />}
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium">{item.title}</p>
                         <p className="text-xs text-muted-foreground">{item.subtitle}</p>
