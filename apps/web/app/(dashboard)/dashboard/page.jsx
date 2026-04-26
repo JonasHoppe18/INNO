@@ -357,7 +357,7 @@ export default async function Page() {
               {attentionItems.length === 0 ? (
                 <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
                   <CheckCircle2Icon className="size-4 text-green-500" />
-                  Alt ser godt ud — ingen opgaver kræver din opmærksomhed.
+                  All clear — no tasks require your attention.
                 </div>
               ) : (
                 <ul className="divide-y divide-border list-none">
