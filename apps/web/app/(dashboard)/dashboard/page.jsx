@@ -57,6 +57,12 @@ function formatTimeAgo(value) {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+function formatTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString("da-DK", { hour: "2-digit", minute: "2-digit" });
+}
+
 async function resolveShopId(serviceClient, scope) {
   let query = serviceClient
     .from("shops")
@@ -121,6 +127,74 @@ async function loadReturnsInTransit(serviceClient, shopId) {
   return { returns: data ?? [], count: count ?? 0 };
 }
 
+function actionLabel(actionType) {
+  const labels = {
+    initiate_return: "Return initiated",
+    create_refund: "Refund draft generated",
+    cancel_order: "Order cancellation approved",
+    change_shipping_address: "Shipping address updated",
+    send_message: "Message sent to customer",
+  };
+  return labels[actionType] ?? "Action executed";
+}
+
+async function loadMissingTrackingCount(serviceClient, shopId) {
+  if (!shopId) return 0;
+  const { count, error } = await serviceClient
+    .from("thread_actions")
+    .select("id", { count: "exact", head: true })
+    .eq("shop_id", shopId)
+    .eq("action_type", "initiate_return")
+    .eq("status", "applied")
+    .is("payload->tracking_url", null);
+  if (error) return 0;
+  return count ?? 0;
+}
+
+async function loadRecentActivity(serviceClient, scope, shopId) {
+  const draftsPromise = applyScope(
+    serviceClient
+      .from("drafts")
+      .select("id, created_at, customer_email, subject, status")
+      .eq("status", "sent")
+      .order("created_at", { ascending: false })
+      .limit(10),
+    scope
+  );
+
+  const actionsPromise = shopId
+    ? serviceClient
+        .from("thread_actions")
+        .select("id, action_type, payload, created_at, status")
+        .eq("shop_id", shopId)
+        .in("status", ["applied", "pending"])
+        .order("created_at", { ascending: false })
+        .limit(10)
+    : Promise.resolve({ data: [] });
+
+  const [draftsResult, actionsResult] = await Promise.all([draftsPromise, actionsPromise]);
+
+  const draftEvents = (draftsResult.data ?? []).map((d) => ({
+    id: `draft-${d.id}`,
+    time: d.created_at,
+    label: "Draft sent",
+    detail: d.subject || d.customer_email || "—",
+    badge: "sent",
+  }));
+
+  const actionEvents = (actionsResult.data ?? []).map((a) => ({
+    id: `action-${a.id}`,
+    time: a.created_at,
+    label: actionLabel(a.action_type),
+    detail: a.payload?.orderId ? `Order #${a.payload.orderId}` : null,
+    badge: a.status === "applied" ? "approved" : "pending",
+  }));
+
+  return [...draftEvents, ...actionEvents]
+    .sort((a, b) => new Date(b.time) - new Date(a.time))
+    .slice(0, 10);
+}
+
 export default async function Page() {
   const { userId: clerkUserId, orgId } = await auth();
   if (!clerkUserId) {
@@ -139,6 +213,8 @@ export default async function Page() {
   let exampleCount = 0;
   let returnsInTransit = [];
   let returnsCount = 0;
+  let missingTrackingCount = 0;
+  let recentActivity = [];
 
   if (serviceClient) {
     try {
@@ -164,12 +240,22 @@ export default async function Page() {
             .eq("source_provider", "sent_reply")
         : Promise.resolve({ count: 0 });
 
-      const [draftResult, awaitingResult, pendingResult, exampleResult, returnsResult] = await Promise.all([
+      const [
+        draftResult,
+        awaitingResult,
+        pendingResult,
+        exampleResult,
+        returnsResult,
+        missingTracking,
+        activityResult,
+      ] = await Promise.all([
         draftQuery,
         loadAwaitingThreads(serviceClient, scope, mailboxIds),
         loadPendingActions(serviceClient, shopId),
         exampleQuery,
         loadReturnsInTransit(serviceClient, shopId),
+        loadMissingTrackingCount(serviceClient, shopId),
+        loadRecentActivity(serviceClient, scope, shopId),
       ]);
 
       if (!draftResult.error) {
@@ -182,6 +268,8 @@ export default async function Page() {
       exampleCount = exampleResult.count ?? 0;
       returnsInTransit = returnsResult.returns;
       returnsCount = returnsResult.count;
+      missingTrackingCount = missingTracking;
+      recentActivity = activityResult;
     } catch (error) {
       console.error("Dashboard data lookup failed:", error);
     }
