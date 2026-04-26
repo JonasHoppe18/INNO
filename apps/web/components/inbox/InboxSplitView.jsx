@@ -1378,6 +1378,10 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const filteredThreads = useMemo(() => {
     return derivedThreads
       .filter((thread) => {
+        const threadId = String(thread?.id || "").trim();
+        const isRequestedThread = Boolean(requestedThreadId && threadId === requestedThreadId);
+        if (isRequestedThread) return true;
+
         const hasLocalState = Object.prototype.hasOwnProperty.call(ticketStateByThread, thread.id);
         const uiState = hasLocalState
           ? ticketStateByThread[thread.id]
@@ -1462,6 +1466,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     customerByThread,
     derivedThreads,
     filters,
+    requestedThreadId,
     ticketStateByThread,
     user?.id,
   ]);
@@ -1862,6 +1867,23 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         body: JSON.stringify({ threadId: selectedThreadId, status: "Open" }),
       }).catch(() => null);
     }
+
+    if (isNewSelection && isUuid(selectedThreadId)) {
+      fetch("/api/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ thread_id: selectedThreadId }),
+        keepalive: true,
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((payload) => {
+          if (Number(payload?.marked || 0) > 0) {
+            window.dispatchEvent(new CustomEvent("sona:thread-read"));
+          }
+        })
+        .catch(() => null);
+    }
+
     lastAutoReadThreadIdRef.current = selectedThreadId;
   }, [
     currentSupabaseUserId,

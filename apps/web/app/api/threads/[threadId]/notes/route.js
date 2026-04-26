@@ -23,6 +23,22 @@ function asString(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    String(value || "").trim()
+  );
+}
+
+function parseMentionUserIds(value) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  value.forEach((entry) => {
+    const normalized = String(entry || "").trim();
+    if (isUuid(normalized)) seen.add(normalized);
+  });
+  return Array.from(seen);
+}
+
 function buildSnippet(value, maxLength = 240) {
   const cleaned = String(value || "").replace(/\s+/g, " ").trim();
   if (!cleaned) return "";
@@ -56,6 +72,7 @@ export async function POST(request, { params }) {
   if (!bodyText) {
     return NextResponse.json({ error: "body_text is required." }, { status: 400 });
   }
+  const mentionUserIds = parseMentionUserIds(payload?.mention_user_ids);
 
   let scope = null;
   try {
@@ -141,6 +158,67 @@ export async function POST(request, { params }) {
   const message = messageInsert.data || null;
   if (!message?.id) {
     return NextResponse.json({ error: "Could not save internal note." }, { status: 500 });
+  }
+
+  if (scope?.workspaceId && scope?.supabaseUserId && mentionUserIds.length) {
+    try {
+      const candidateIds = mentionUserIds.filter((id) => id !== scope.supabaseUserId);
+      if (candidateIds.length) {
+        const { data: workspaceMembers, error: workspaceMembersError } = await serviceClient
+          .from("workspace_members")
+          .select("clerk_user_id")
+          .eq("workspace_id", scope.workspaceId);
+        if (workspaceMembersError) throw workspaceMembersError;
+
+        const workspaceClerkIds = Array.from(
+          new Set(
+            (workspaceMembers || [])
+              .map((row) => String(row?.clerk_user_id || "").trim())
+              .filter(Boolean)
+          )
+        );
+        if (workspaceClerkIds.length) {
+          const { data: mentionProfiles, error: mentionProfilesError } = await serviceClient
+            .from("profiles")
+            .select("user_id")
+            .in("clerk_user_id", workspaceClerkIds)
+            .in("user_id", candidateIds);
+          if (mentionProfilesError) throw mentionProfilesError;
+
+          const allowedRecipientIds = Array.from(
+            new Set(
+              (mentionProfiles || [])
+                .map((row) => String(row?.user_id || "").trim())
+                .filter(Boolean)
+            )
+          );
+
+          if (allowedRecipientIds.length) {
+            const title = `${authorName} mentioned you in an internal note`;
+            const notificationRows = allowedRecipientIds.map((recipientUserId) => ({
+              workspace_id: scope.workspaceId,
+              recipient_user_id: recipientUserId,
+              actor_user_id: scope.supabaseUserId,
+              thread_id: thread.id,
+              message_id: message.id,
+              kind: "internal_note_mention",
+              title,
+              body: snippet || bodyText.slice(0, 240),
+            }));
+
+            const { error: notifyError } = await serviceClient
+              .from("workspace_member_notifications")
+              .upsert(notificationRows, {
+                onConflict: "recipient_user_id,message_id,kind",
+                ignoreDuplicates: true,
+              });
+            if (notifyError) throw notifyError;
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Internal note mention notification failed:", error);
+    }
   }
 
   return NextResponse.json({ ok: true, message }, { status: 200 });

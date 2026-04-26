@@ -44,6 +44,7 @@ async function loadAssignedCount(serviceClient, scope, mailboxIds, supabaseUserI
 }
 
 async function loadNotificationsCount(serviceClient, scope, mailboxIds) {
+  if (!mailboxIds.length) return 0;
   const { count, error } = await applyScope(
     serviceClient
       .from("mail_threads")
@@ -54,6 +55,24 @@ async function loadNotificationsCount(serviceClient, scope, mailboxIds) {
     scope
   );
   if (error) throw new Error(error.message);
+  return count ?? 0;
+}
+
+async function loadMentionNotificationsCount(serviceClient, scope) {
+  if (!scope?.supabaseUserId) return 0;
+  const { count, error } = await applyScope(
+    serviceClient
+      .from("workspace_member_notifications")
+      .select("id", { count: "exact", head: true })
+      .eq("recipient_user_id", scope.supabaseUserId)
+      .eq("is_read", false),
+    scope,
+    { workspaceColumn: "workspace_id", userColumn: null }
+  );
+  if (error) {
+    if (String(error?.code || "") === "42P01") return 0;
+    throw new Error(error.message);
+  }
   return count ?? 0;
 }
 
@@ -75,14 +94,15 @@ export async function GET() {
     }
 
     const mailboxIds = await loadMailboxIds(serviceClient, scope);
-    if (!mailboxIds.length) {
-      return NextResponse.json({ assignedCount: 0, notificationsCount: 0 }, { status: 200 });
-    }
 
-    const [assignedCount, notificationsCount] = await Promise.all([
-      loadAssignedCount(serviceClient, scope, mailboxIds, scope.supabaseUserId, clerkUserId),
+    const [assignedCount, mailNotificationsCount, mentionNotificationsCount] = await Promise.all([
+      mailboxIds.length
+        ? loadAssignedCount(serviceClient, scope, mailboxIds, scope.supabaseUserId, clerkUserId)
+        : 0,
       loadNotificationsCount(serviceClient, scope, mailboxIds),
+      loadMentionNotificationsCount(serviceClient, scope),
     ]);
+    const notificationsCount = mailNotificationsCount + mentionNotificationsCount;
 
     return NextResponse.json({ assignedCount, notificationsCount }, { status: 200 });
   } catch (error) {

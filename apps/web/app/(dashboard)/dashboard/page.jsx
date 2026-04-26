@@ -6,7 +6,6 @@ import {
   Clock3Icon,
   FileTextIcon,
   InboxIcon,
-  PackageIcon,
   PackageMinusIcon,
 } from "lucide-react";
 
@@ -136,7 +135,6 @@ export default async function Page() {
   let drafts = [];
   let awaitingThreads = [];
   let awaitingCount = 0;
-  let pendingActions = [];
   let pendingCount = 0;
   let exampleCount = 0;
   let returnsInTransit = [];
@@ -180,7 +178,6 @@ export default async function Page() {
 
       awaitingThreads = awaitingResult.threads;
       awaitingCount = awaitingResult.count;
-      pendingActions = pendingResult.actions;
       pendingCount = pendingResult.count;
       exampleCount = exampleResult.count ?? 0;
       returnsInTransit = returnsResult.returns;
@@ -308,13 +305,8 @@ export default async function Page() {
           </Card>
         </div>
 
-        {/* AI Self Learning */}
-        <div className="px-4 lg:px-6">
-          <LearningCard exampleCount={exampleCount} />
-        </div>
-
-        {/* Three-column section */}
-        <div className="grid grid-cols-1 gap-4 px-4 lg:grid-cols-3 lg:px-6">
+        {/* Bottom cards */}
+        <div className="grid grid-cols-1 gap-4 px-4 lg:grid-cols-2 lg:px-6">
           {/* Awaiting Reply list */}
           <Card>
             <CardHeader>
@@ -343,41 +335,6 @@ export default async function Page() {
                       </span>
                       <span className="shrink-0 text-xs text-muted-foreground">
                         {formatTimeAgo(thread.updated_at)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Pending Actions list */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Pending approvals</CardTitle>
-              <CardDescription>Actions waiting for your review</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {pendingActions.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No actions pending approval.</p>
-              ) : (
-                <div className="divide-y divide-border">
-                  {pendingActions.map((action) => (
-                    <div
-                      key={action.id}
-                      className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0"
-                    >
-                      <PackageIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm capitalize">
-                          {(action.action_type || "action").replace(/_/g, " ")}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Thread #{action.thread_id?.slice(0, 8) ?? "—"}
-                        </p>
-                      </div>
-                      <span className="shrink-0 text-xs text-muted-foreground">
-                        {formatTimeAgo(action.created_at)}
                       </span>
                     </div>
                   ))}
@@ -420,6 +377,11 @@ export default async function Page() {
               )}
             </CardContent>
           </Card>
+        </div>
+
+        {/* AI Self Learning */}
+        <div className="px-4 lg:px-6">
+          <LearningCard exampleCount={exampleCount} />
         </div>
       </div>
     </div>

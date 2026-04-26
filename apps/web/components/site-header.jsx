@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useSiteHeaderActions } from "@/components/site-header-actions";
+import { NotificationBell } from "@/components/dashboard/NotificationBell";
 
 const TITLE_MAP = {
   "/dashboard": "Dashboard",
@@ -23,6 +24,7 @@ export function SiteHeader() {
   const title = TITLE_MAP[pathname] || "Sona";
   const { actions, titleContent } = useSiteHeaderActions();
   const hasCustomTitle = Boolean(titleContent);
+  const showBell = pathname === "/dashboard";
 
   return (
     <header
@@ -36,7 +38,10 @@ export function SiteHeader() {
             <Separator orientation="vertical" className="mx-2 data-[orientation=vertical]:h-4" />
           </div>
           <div className="min-w-0 flex-1">{titleContent}</div>
-          {actions ? <div className="ml-auto flex items-center gap-2">{actions}</div> : null}
+          <div className="ml-auto flex items-center gap-2">
+            {showBell && <NotificationBell />}
+            {actions}
+          </div>
         </div>
       ) : (
         <div className="flex w-full min-w-0 items-center px-4 lg:px-6">
@@ -45,7 +50,10 @@ export function SiteHeader() {
             <Separator orientation="vertical" className="mx-2 data-[orientation=vertical]:h-4" />
           </div>
           <h1 className="min-w-0 truncate text-base font-medium">{title}</h1>
-          {actions ? <div className="ml-auto flex items-center gap-2">{actions}</div> : null}
+          <div className="ml-auto flex items-center gap-2">
+            {showBell && <NotificationBell />}
+            {actions}
+          </div>
         </div>
       )}
     </header>
