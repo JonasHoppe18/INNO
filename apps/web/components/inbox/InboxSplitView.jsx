@@ -199,6 +199,14 @@ function InboxHeaderActions({
       String(option?.label || "").toLowerCase().includes(query)
     );
   }, [destinationOptions, inboxFilter]);
+  const selectedInboxLabel = useMemo(() => {
+    if (selectedDestinationValue === "__notifications__") return "Notifications";
+    if (!selectedInboxSlug) return null;
+    const hit = (inboxOptions || []).find(
+      (option) => String(option?.value || "").trim() === String(selectedInboxSlug || "").trim()
+    );
+    return String(hit?.label || selectedInboxSlug).trim() || null;
+  }, [inboxOptions, selectedDestinationValue, selectedInboxSlug]);
   const statusStylesByStatus = {
     New: "bg-green-50 text-green-700 border-green-200",
     Open: "bg-blue-50 text-blue-700 border-blue-200",
@@ -252,6 +260,16 @@ function InboxHeaderActions({
           ))}
         </SelectContent>
       </Select>
+      {selectedInboxLabel ? (
+        <button
+          type="button"
+          onClick={() => setInboxPickerOpen(true)}
+          className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 hover:border-amber-400 hover:bg-amber-100"
+          title="Change tag"
+        >
+          {selectedInboxLabel}
+        </button>
+      ) : null}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
