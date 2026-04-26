@@ -360,9 +360,9 @@ export default async function Page() {
                   Alt ser godt ud — ingen opgaver kræver din opmærksomhed.
                 </div>
               ) : (
-                <div className="divide-y divide-border">
+                <ul className="divide-y divide-border list-none">
                   {attentionItems.map((item) => (
-                    <div key={item.key} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+                    <li key={item.key} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
                       {item.icon}
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium">{item.title}</p>
@@ -372,9 +372,9 @@ export default async function Page() {
                         {item.count}
                       </span>
                       <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground" />
-                    </div>
+                    </li>
                   ))}
-                </div>
+                </ul>
               )}
             </CardContent>
             {attentionItems.length > 0 && (
@@ -487,9 +487,9 @@ export default async function Page() {
               {recentActivity.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No recent activity.</p>
               ) : (
-                <div>
+                <ol className="list-none">
                   {recentActivity.map((event, i) => (
-                    <div key={event.id} className="flex gap-3">
+                    <li key={event.id} className="flex gap-3">
                       <div className="flex flex-col items-center">
                         <div className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${ACTIVITY_DOT_CLASSES[event.badge]}`} />
                         {i < recentActivity.length - 1 && (
@@ -513,9 +513,9 @@ export default async function Page() {
                           </Badge>
                         </div>
                       </div>
-                    </div>
+                    </li>
                   ))}
-                </div>
+                </ol>
               )}
             </CardContent>
           </Card>
