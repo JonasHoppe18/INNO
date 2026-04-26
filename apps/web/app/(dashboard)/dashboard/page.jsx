@@ -1,8 +1,11 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
 import {
   AlertCircleIcon,
+  CheckCircle2Icon,
+  ChevronRightIcon,
   Clock3Icon,
   FileTextIcon,
   InboxIcon,
@@ -12,6 +15,7 @@ import {
 import DashboardGreeting from "@/components/dashboard/DashboardGreeting";
 import { LearningCard } from "@/components/agent/LearningCard";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -195,6 +199,24 @@ async function loadRecentActivity(serviceClient, scope, shopId) {
     .slice(0, 10);
 }
 
+const ACTIVITY_BADGE_CLASSES = {
+  sent: "border-green-200 bg-green-50 text-green-700",
+  approved: "border-blue-200 bg-blue-50 text-blue-700",
+  pending: "border-amber-200 bg-amber-50 text-amber-700",
+};
+
+const ACTIVITY_DOT_CLASSES = {
+  sent: "bg-green-500",
+  approved: "bg-blue-500",
+  pending: "bg-amber-400",
+};
+
+const ACTIVITY_BADGE_LABEL = {
+  sent: "Sent",
+  approved: "Approved",
+  pending: "Pending",
+};
+
 export default async function Page() {
   const { userId: clerkUserId, orgId } = await auth();
   if (!clerkUserId) {
@@ -280,6 +302,35 @@ export default async function Page() {
   const timeSavedMinutes = totalDrafts * 5;
   const timeSavedLabel = totalDrafts === 0 ? "0 hrs" : formatTimeSaved(timeSavedMinutes);
 
+  const attentionItems = [
+    pendingCount > 0 && {
+      key: "pending",
+      icon: <AlertCircleIcon className="size-4 shrink-0 text-amber-500" />,
+      title: "Pending approvals",
+      subtitle: "Actions waiting for your review",
+      count: pendingCount,
+      countColor: "text-amber-600",
+    },
+    awaitingCount > 0 && {
+      key: "awaiting",
+      icon: <InboxIcon className="size-4 shrink-0 text-red-500" />,
+      title: "Customers waiting over 12h",
+      subtitle: "No reply from your team",
+      count: awaitingCount,
+      countColor: "text-red-600",
+    },
+    missingTrackingCount > 0 && {
+      key: "tracking",
+      icon: <PackageMinusIcon className="size-4 shrink-0 text-blue-500" />,
+      title: "Missing tracking link",
+      subtitle: "Returns need tracking updates",
+      count: missingTrackingCount,
+      countColor: "text-blue-600",
+    },
+  ].filter(Boolean);
+
+  const totalAttention = attentionItems.reduce((sum, item) => sum + item.count, 0);
+
   return (
     <div className="@container/main flex flex-1 flex-col gap-2">
       <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
@@ -288,142 +339,180 @@ export default async function Page() {
           <DashboardGreeting firstName={firstName} />
         </div>
 
-        {/* Stat cards grid */}
-        <div className="*:data-[slot=card]:shadow-xs @xl/main:grid-cols-2 @5xl/main:grid-cols-4 grid grid-cols-1 gap-4 px-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card dark:*:data-[slot=card]:bg-card lg:px-6">
-          {/* Awaiting Reply */}
-          <Card className="@container/card">
-            <CardHeader className="relative">
-              <CardDescription>Awaiting Reply</CardDescription>
-              <CardTitle className="@[250px]/card:text-3xl text-2xl font-semibold tabular-nums">
-                {awaitingCount}
-              </CardTitle>
-              <div className="absolute right-4 top-4">
-                <Badge
-                  variant="outline"
-                  className={`flex gap-1 rounded-lg text-xs ${
-                    awaitingCount > 0
-                      ? "border-red-200 bg-red-50 text-red-700"
-                      : "text-muted-foreground"
-                  }`}
-                >
-                  <InboxIcon className="size-3" />
-                  {awaitingCount > 0 ? "Action needed" : "All clear"}
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardFooter className="flex-col items-start gap-1 text-sm">
-              <div className="line-clamp-1 flex gap-2 font-medium">
-                Tickets without a reply <InboxIcon className="size-4" />
-              </div>
-              <div className="text-muted-foreground">Over 12 hours old</div>
-            </CardFooter>
-          </Card>
-
-          {/* Pending Approvals */}
-          <Card className="@container/card">
-            <CardHeader className="relative">
-              <CardDescription>Pending Approvals</CardDescription>
-              <CardTitle className="@[250px]/card:text-3xl text-2xl font-semibold tabular-nums">
-                {pendingCount}
-              </CardTitle>
-              <div className="absolute right-4 top-4">
-                <Badge
-                  variant="outline"
-                  className={`flex gap-1 rounded-lg text-xs ${
-                    pendingCount > 0
-                      ? "border-amber-200 bg-amber-50 text-amber-700"
-                      : "text-muted-foreground"
-                  }`}
-                >
-                  <AlertCircleIcon className="size-3" />
-                  {pendingCount > 0 ? "Need review" : "All clear"}
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardFooter className="flex-col items-start gap-1 text-sm">
-              <div className="line-clamp-1 flex gap-2 font-medium">
-                Actions waiting for you <AlertCircleIcon className="size-4" />
-              </div>
-              <div className="text-muted-foreground">Require manual approval</div>
-            </CardFooter>
-          </Card>
-
-          {/* AI Drafts Sent */}
-          <Card className="@container/card">
-            <CardHeader className="relative">
-              <CardDescription>AI Drafts Sent</CardDescription>
-              <CardTitle className="@[250px]/card:text-3xl text-2xl font-semibold tabular-nums">
-                {sentDraftCount}
-              </CardTitle>
-              <div className="absolute right-4 top-4">
-                <Badge variant="outline" className="flex gap-1 rounded-lg text-xs text-muted-foreground">
-                  <FileTextIcon className="size-3" />
-                  {sentDraftCount} sent
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardFooter className="flex-col items-start gap-1 text-sm">
-              <div className="line-clamp-1 flex gap-2 font-medium">
-                Drafts sent to customers <FileTextIcon className="size-4" />
-              </div>
-              <div className="text-muted-foreground">Generated across your inbox</div>
-            </CardFooter>
-          </Card>
-
-          {/* Time Saved */}
-          <Card className="@container/card">
-            <CardHeader className="relative">
-              <CardDescription>Time Saved</CardDescription>
-              <CardTitle className="@[250px]/card:text-3xl text-2xl font-semibold tabular-nums">
-                {timeSavedLabel}
-              </CardTitle>
-              <div className="absolute right-4 top-4">
-                <Badge variant="outline" className="flex gap-1 rounded-lg text-xs text-muted-foreground">
-                  <Clock3Icon className="size-3" />
-                  Estimated
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardFooter className="flex-col items-start gap-1 text-sm">
-              <div className="line-clamp-1 flex gap-2 font-medium">
-                Automation time saved <Clock3Icon className="size-4" />
-              </div>
-              <div className="text-muted-foreground">Based on 5 min per draft</div>
-            </CardFooter>
-          </Card>
-        </div>
-
-        {/* Bottom cards */}
+        {/* Middle row: Needs your attention + 2×2 stat cards */}
         <div className="grid grid-cols-1 gap-4 px-4 lg:grid-cols-2 lg:px-6">
-          {/* Awaiting Reply list */}
+          {/* Needs your attention */}
           <Card>
             <CardHeader>
-              <CardTitle>Awaiting reply</CardTitle>
-              <CardDescription>Tickets without a response for over 12 hours</CardDescription>
+              <div className="flex items-center gap-2">
+                <CardTitle>Needs your attention</CardTitle>
+                {totalAttention > 0 && (
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-100 text-xs font-semibold text-red-600">
+                    {totalAttention}
+                  </span>
+                )}
+              </div>
             </CardHeader>
-            <CardContent>
-              {awaitingThreads.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No tickets awaiting reply.</p>
+            <CardContent className="pb-2">
+              {attentionItems.length === 0 ? (
+                <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+                  <CheckCircle2Icon className="size-4 text-green-500" />
+                  Alt ser godt ud — ingen opgaver kræver din opmærksomhed.
+                </div>
               ) : (
                 <div className="divide-y divide-border">
-                  {awaitingThreads.map((thread) => (
-                    <div
-                      key={thread.id}
-                      className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0"
-                    >
-                      <span
-                        className={`h-2 w-2 shrink-0 rounded-full ${
-                          Date.now() - new Date(thread.updated_at).getTime() > 86400000
-                            ? "bg-destructive"
-                            : "bg-amber-400"
-                        }`}
-                      />
-                      <span className="min-w-0 flex-1 truncate text-sm">
-                        {thread.subject || "No subject"}
+                  {attentionItems.map((item) => (
+                    <div key={item.key} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+                      {item.icon}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium">{item.title}</p>
+                        <p className="text-xs text-muted-foreground">{item.subtitle}</p>
+                      </div>
+                      <span className={`shrink-0 text-sm font-semibold ${item.countColor}`}>
+                        {item.count}
                       </span>
-                      <span className="shrink-0 text-xs text-muted-foreground">
-                        {formatTimeAgo(thread.updated_at)}
-                      </span>
+                      <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground" />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+            {attentionItems.length > 0 && (
+              <CardFooter className="pt-2">
+                <Button variant="outline" className="w-full" asChild>
+                  <Link href="/inbox">
+                    Review tickets
+                    <ChevronRightIcon className="ml-1 size-4" />
+                  </Link>
+                </Button>
+              </CardFooter>
+            )}
+          </Card>
+
+          {/* 2×2 stat cards */}
+          <div className="grid grid-cols-2 gap-4">
+            <Card className="@container/card">
+              <CardHeader className="relative pb-2">
+                <CardDescription>Awaiting Reply</CardDescription>
+                <CardTitle className="text-2xl font-semibold tabular-nums">{awaitingCount}</CardTitle>
+                <div className="absolute right-4 top-4">
+                  <Badge
+                    variant="outline"
+                    className={`flex gap-1 rounded-lg text-xs ${
+                      awaitingCount > 0
+                        ? "border-red-200 bg-red-50 text-red-700"
+                        : "text-muted-foreground"
+                    }`}
+                  >
+                    <InboxIcon className="size-3" />
+                    {awaitingCount > 0 ? "Action needed" : "All clear"}
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardFooter className="flex-col items-start gap-0.5 text-sm">
+                <div className="font-medium">Tickets without a reply</div>
+                <div className="text-xs text-muted-foreground">Over 12 hours old</div>
+              </CardFooter>
+            </Card>
+
+            <Card className="@container/card">
+              <CardHeader className="relative pb-2">
+                <CardDescription>Pending Approvals</CardDescription>
+                <CardTitle className="text-2xl font-semibold tabular-nums">{pendingCount}</CardTitle>
+                <div className="absolute right-4 top-4">
+                  <Badge
+                    variant="outline"
+                    className={`flex gap-1 rounded-lg text-xs ${
+                      pendingCount > 0
+                        ? "border-amber-200 bg-amber-50 text-amber-700"
+                        : "text-muted-foreground"
+                    }`}
+                  >
+                    <AlertCircleIcon className="size-3" />
+                    {pendingCount > 0 ? "Need review" : "All clear"}
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardFooter className="flex-col items-start gap-0.5 text-sm">
+                <div className="font-medium">Actions waiting for you</div>
+                <div className="text-xs text-muted-foreground">Require manual approval</div>
+              </CardFooter>
+            </Card>
+
+            <Card className="@container/card">
+              <CardHeader className="relative pb-2">
+                <CardDescription>AI Drafts Sent</CardDescription>
+                <CardTitle className="text-2xl font-semibold tabular-nums">{sentDraftCount}</CardTitle>
+                <div className="absolute right-4 top-4">
+                  <Badge variant="outline" className="flex gap-1 rounded-lg text-xs text-muted-foreground">
+                    <FileTextIcon className="size-3" />
+                    {sentDraftCount} sent
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardFooter className="flex-col items-start gap-0.5 text-sm">
+                <div className="font-medium">Drafts sent to customers</div>
+                <div className="text-xs text-muted-foreground">Generated across your inbox</div>
+              </CardFooter>
+            </Card>
+
+            <Card className="@container/card">
+              <CardHeader className="relative pb-2">
+                <CardDescription>Time Saved</CardDescription>
+                <CardTitle className="text-2xl font-semibold tabular-nums">{timeSavedLabel}</CardTitle>
+                <div className="absolute right-4 top-4">
+                  <Badge variant="outline" className="flex gap-1 rounded-lg text-xs text-muted-foreground">
+                    <Clock3Icon className="size-3" />
+                    Estimated
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardFooter className="flex-col items-start gap-0.5 text-sm">
+                <div className="font-medium">Automation time saved</div>
+                <div className="text-xs text-muted-foreground">Based on 5 min per draft</div>
+              </CardFooter>
+            </Card>
+          </div>
+        </div>
+
+        {/* Bottom row: Recent AI activity + Returns in transit */}
+        <div className="grid grid-cols-1 gap-4 px-4 lg:grid-cols-2 lg:px-6">
+          {/* Recent AI activity */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Recent AI activity</CardTitle>
+              <CardDescription>What Sona has done lately</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {recentActivity.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No recent activity.</p>
+              ) : (
+                <div>
+                  {recentActivity.map((event, i) => (
+                    <div key={event.id} className="flex gap-3">
+                      <div className="flex flex-col items-center">
+                        <div className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${ACTIVITY_DOT_CLASSES[event.badge]}`} />
+                        {i < recentActivity.length - 1 && (
+                          <div className="mt-1 w-px flex-1 bg-border" />
+                        )}
+                      </div>
+                      <div className="flex min-w-0 flex-1 items-start justify-between gap-2 pb-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium">{event.label}</p>
+                          {event.detail && (
+                            <p className="truncate text-xs text-muted-foreground">{event.detail}</p>
+                          )}
+                        </div>
+                        <div className="flex shrink-0 flex-col items-end gap-1">
+                          <span className="text-xs text-muted-foreground">{formatTime(event.time)}</span>
+                          <Badge
+                            variant="outline"
+                            className={`text-xs ${ACTIVITY_BADGE_CLASSES[event.badge]}`}
+                          >
+                            {ACTIVITY_BADGE_LABEL[event.badge]}
+                          </Badge>
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -438,6 +527,12 @@ export default async function Page() {
               <CardDescription>Packages on their way back — refund after inspection</CardDescription>
             </CardHeader>
             <CardContent>
+              {returnsCount > 0 && (
+                <div className="mb-4">
+                  <p className="text-2xl font-semibold tabular-nums">{returnsCount}</p>
+                  <p className="text-xs text-muted-foreground">In transit</p>
+                </div>
+              )}
               {returnsInTransit.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No active returns.</p>
               ) : (
@@ -467,7 +562,7 @@ export default async function Page() {
           </Card>
         </div>
 
-        {/* AI Self Learning */}
+        {/* AI Self Learning — full width */}
         <div className="px-4 lg:px-6">
           <LearningCard exampleCount={exampleCount} />
         </div>
