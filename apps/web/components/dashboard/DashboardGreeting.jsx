@@ -16,7 +16,7 @@ export default function DashboardGreeting({ firstName, conversationCount = 0, at
         {greeting}, <span className="text-indigo-600 dark:text-indigo-400">{firstName}</span> 👋
       </h1>
       <p className="mt-0.5 text-sm text-muted-foreground">
-        Here's what's happening with your support today.
+        Here&apos;s what&apos;s happening with your support today.
       </p>
       {attentionCount > 0 && (
         <Link
