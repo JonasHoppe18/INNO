@@ -146,7 +146,7 @@ async function loadMissingTrackingCount(serviceClient, shopId) {
     .eq("shop_id", shopId)
     .eq("action_type", "initiate_return")
     .eq("status", "applied")
-    .is("payload->tracking_url", null);
+    .filter("payload->>tracking_url", "is", null);
   if (error) return 0;
   return count ?? 0;
 }
