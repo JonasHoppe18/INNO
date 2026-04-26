@@ -21,6 +21,7 @@ import { parseEmailReplyBodies } from "../_shared/email-reply-parser.ts";
 import { parseShopifyContactIdentity } from "../_shared/shopify-contact-form.ts";
 import { detectCustomerLanguage } from "../_shared/detect-language.ts";
 import { autoTagThread } from "../_shared/autoTagThread.ts";
+import { generateIssueMetadata } from "../_shared/generateIssueMetadata.ts";
 
 const PROJECT_URL = Deno.env.get("SUPABASE_URL") ?? Deno.env.get("PROJECT_URL");
 const SERVICE_ROLE_KEY =
@@ -1553,6 +1554,15 @@ Deno.serve(async (req) => {
       body: tagBody,
       openaiApiKey: OPENAI_API_KEY,
     }).catch((err: Error) => console.warn("[auto-tag] error:", err?.message));
+
+    generateIssueMetadata({
+      supabase,
+      workspaceId: mailbox.workspace_id,
+      threadId,
+      subject,
+      body: tagBody,
+      openaiApiKey: OPENAI_API_KEY,
+    }).catch((err: Error) => console.warn("[issue-metadata] error:", err?.message));
   }
 
   if (messageDbId) {
