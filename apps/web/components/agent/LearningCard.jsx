@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, BookOpen } from "lucide-react";
+import { CheckCircle2, BookOpen, Sparkles, Power } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useAgentAutomation } from "@/hooks/useAgentAutomation";
@@ -17,24 +17,19 @@ export function LearningCard({ exampleCount = 0 }) {
   return (
     <Card className="relative overflow-hidden border border-indigo-300/60 bg-gradient-to-br from-[#2f2a6f] via-[#43358a] to-[#5a4bb3] shadow-sm">
       <CardContent className="relative flex flex-col gap-6 p-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="space-y-2">
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-indigo-300" />
             <div className="text-sm font-semibold text-white">AI Self Learning</div>
-            <p className="max-w-xl text-sm text-indigo-100/80">
-              Sona saves the replies you send and uses them as a reference the next time a similar case comes in.
-            </p>
-            {isEnabled ? (
-              <div className="flex items-center gap-2 text-xs text-emerald-200">
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                Active — new replies are saved automatically.
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 text-xs text-indigo-100/60">
-                Disabled — replies are not being saved.
-              </div>
+            {isEnabled && (
+              <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-medium text-emerald-200 border border-emerald-400/30">
+                Active
+              </span>
             )}
           </div>
-          <div className="flex items-center gap-4" />
+          <p className="max-w-xl text-sm text-indigo-100/70">
+            Sona learns from the replies you approve and uses them as reference for similar cases.
+          </p>
         </div>
 
         <div className="rounded-xl border border-white/10 bg-white/10 p-4">
@@ -56,15 +51,34 @@ export function LearningCard({ exampleCount = 0 }) {
           </div>
         </div>
 
-        <div className="flex items-center justify-end">
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-indigo-100/50">
+            {isEnabled
+              ? "Replies you approve are used to improve future drafts."
+              : "Enable to let Sona learn from your approved replies."}
+          </p>
           <Button
             type="button"
             size="sm"
             onClick={handleToggle}
             disabled={loading || saving}
-            className="bg-white/10 text-white hover:bg-white/20"
+            className={`ml-4 shrink-0 gap-1.5 transition-colors ${
+              isEnabled
+                ? "bg-emerald-500/20 text-emerald-200 hover:bg-emerald-500/30 border border-emerald-400/30"
+                : "bg-white/10 text-white hover:bg-white/20"
+            }`}
           >
-            {isEnabled ? "Self-learning enabled ✓" : "Enable self-learning"}
+            {isEnabled ? (
+              <>
+                <CheckCircle2 className="size-3.5" />
+                Learning active
+              </>
+            ) : (
+              <>
+                <Power className="size-3.5" />
+                Enable
+              </>
+            )}
           </Button>
         </div>
       </CardContent>

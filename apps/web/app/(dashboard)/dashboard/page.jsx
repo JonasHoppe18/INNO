@@ -7,9 +7,13 @@ import {
   CheckCircle2Icon,
   ChevronRightIcon,
   Clock3Icon,
-  FileTextIcon,
   InboxIcon,
+  MessageCircleIcon,
+  PackageIcon,
   PackageMinusIcon,
+  SendIcon,
+  SparklesIcon,
+  TimerIcon,
 } from "lucide-react";
 
 import DashboardGreeting from "@/components/dashboard/DashboardGreeting";
@@ -42,11 +46,28 @@ function createServiceClient() {
 }
 
 function formatTimeSaved(totalMinutes) {
-  if (!totalMinutes) return "0 hrs";
+  if (!totalMinutes) return "0h";
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
-  return `${hours} hrs ${minutes} mins`;
+  if (hours === 0) return `${minutes}m`;
+  if (minutes === 0) return `${hours}h`;
+  return `${hours}h ${minutes}m`;
 }
+
+function Sparkline({ path, color, className = "" }) {
+  return (
+    <svg viewBox="0 0 100 32" className={`w-full h-8 ${className}`} preserveAspectRatio="none">
+      <path d={path} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+const SPARKLINE_PATHS = {
+  awaiting: "M0,24 C12,24 20,18 34,15 C48,12 58,14 72,12 C82,10 91,8 100,6",
+  pending:  "M0,8  C10,8  20,12 36,16 C50,18 62,17 76,15 C87,13 94,15 100,16",
+  drafts:   "M0,26 C10,24 20,18 36,13 C50,9  64,7  78,5  C88,4  95,3  100,2",
+  saved:    "M0,28 C16,26 28,20 46,14 C60,10 74,6  88,4  C94,3  98,2  100,2",
+};
 
 function formatTimeAgo(value) {
   const date = new Date(value);
@@ -64,7 +85,22 @@ function formatTimeAgo(value) {
 function formatTime(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleTimeString("da-DK", { hour: "2-digit", minute: "2-digit" });
+  const now = new Date();
+  const isToday =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+  if (isToday) {
+    return date.toLocaleTimeString("da-DK", { hour: "2-digit", minute: "2-digit" });
+  }
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const isYesterday =
+    date.getFullYear() === yesterday.getFullYear() &&
+    date.getMonth() === yesterday.getMonth() &&
+    date.getDate() === yesterday.getDate();
+  if (isYesterday) return "I går";
+  return date.toLocaleDateString("da-DK", { day: "numeric", month: "short" });
 }
 
 async function resolveShopId(serviceClient, scope) {
@@ -200,15 +236,15 @@ async function loadRecentActivity(serviceClient, scope, shopId) {
 }
 
 const ACTIVITY_BADGE_CLASSES = {
-  sent: "border-green-200 bg-green-50 text-green-700",
-  approved: "border-blue-200 bg-blue-50 text-blue-700",
-  pending: "border-amber-200 bg-amber-50 text-amber-700",
+  sent: "border-green-500/25 bg-green-500/10 text-green-700 dark:text-green-400",
+  approved: "border-indigo-500/25 bg-indigo-500/10 text-indigo-700 dark:text-indigo-400",
+  pending: "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-400",
 };
 
 const ACTIVITY_DOT_CLASSES = {
-  sent: "bg-green-500",
-  approved: "bg-blue-500",
-  pending: "bg-amber-400",
+  sent: "bg-green-500 ring-green-500/20",
+  approved: "bg-indigo-500 ring-indigo-500/20",
+  pending: "bg-amber-400 ring-amber-400/20",
 };
 
 const ACTIVITY_BADGE_LABEL = {
@@ -300,7 +336,7 @@ export default async function Page() {
   const sentDraftCount = drafts.filter((d) => d.status === "sent").length;
   const totalDrafts = drafts.length;
   const timeSavedMinutes = totalDrafts * 5;
-  const timeSavedLabel = totalDrafts === 0 ? "0 hrs" : formatTimeSaved(timeSavedMinutes);
+  const timeSavedLabel = totalDrafts === 0 ? "0h" : formatTimeSaved(timeSavedMinutes);
 
   const attentionItems = [
     pendingCount > 0 && {
@@ -335,19 +371,29 @@ export default async function Page() {
     <div className="@container/main flex flex-1 flex-col gap-2">
       <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
         {/* Greeting */}
-        <div className="px-4 lg:px-6">
-          <DashboardGreeting firstName={firstName} />
+        <div className="px-4 lg:px-6 flex items-start justify-between gap-4">
+          <DashboardGreeting
+            firstName={firstName}
+            conversationCount={sentDraftCount}
+            attentionCount={totalAttention}
+          />
         </div>
 
         {/* Middle row: Needs your attention + 2×2 stat cards */}
         <div className="grid grid-cols-1 gap-4 px-4 lg:grid-cols-2 lg:px-6">
           {/* Needs your attention */}
-          <Card>
+          <Card className={`transition-[border-color,background-color] duration-200 ${
+            attentionItems.length === 0
+              ? "bg-green-500/[0.04] border-green-200 dark:border-green-800/40"
+              : "border-red-200 dark:border-red-900/40"
+          }`}>
             <CardHeader>
-              <div className="flex items-center gap-2">
-                <CardTitle>Needs your attention</CardTitle>
+              <div className="flex items-center gap-3">
+                <CardTitle>
+                  {attentionItems.length === 0 ? "All clear" : "Needs your attention"}
+                </CardTitle>
                 {totalAttention > 0 && (
-                  <span className="flex h-5 min-w-5 px-1 items-center justify-center rounded-full bg-red-100 text-xs font-semibold text-red-600">
+                  <span className="flex h-5 min-w-5 px-1 items-center justify-center rounded-full bg-red-500/15 text-xs font-semibold text-red-600 dark:text-red-400">
                     {totalAttention}
                   </span>
                 )}
@@ -355,25 +401,42 @@ export default async function Page() {
             </CardHeader>
             <CardContent className="pb-2">
               {attentionItems.length === 0 ? (
-                <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+                <div className="flex items-center gap-2 py-4 text-sm text-green-700 dark:text-green-400">
                   <CheckCircle2Icon className="size-4 text-green-500" />
                   All clear — no tasks require your attention.
                 </div>
               ) : (
-                <ul className="divide-y divide-border list-none">
+                <ul className="list-none">
                   {attentionItems.map((item) => (
-                    <li key={item.key} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
-                      {item.iconName === "alert" && <AlertCircleIcon className="size-4 shrink-0 text-amber-500" />}
-                      {item.iconName === "inbox" && <InboxIcon className="size-4 shrink-0 text-red-500" />}
-                      {item.iconName === "package" && <PackageMinusIcon className="size-4 shrink-0 text-blue-500" />}
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium">{item.title}</p>
-                        <p className="text-xs text-muted-foreground">{item.subtitle}</p>
-                      </div>
-                      <span className={`shrink-0 text-sm font-semibold ${item.countColor}`}>
-                        {item.count}
-                      </span>
-                      <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground" />
+                    <li key={item.key}>
+                      <Link
+                        href="/inbox"
+                        className="group flex items-center gap-3 rounded-lg py-2.5 px-2 -mx-2 hover:bg-muted/60 active:scale-[0.99] transition-[background-color,transform] duration-150"
+                      >
+                        {item.iconName === "alert" && (
+                          <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-amber-500/15">
+                            <AlertCircleIcon className="size-3.5 text-amber-600 dark:text-amber-400" />
+                          </span>
+                        )}
+                        {item.iconName === "inbox" && (
+                          <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-red-500/15">
+                            <InboxIcon className="size-3.5 text-red-600 dark:text-red-400" />
+                          </span>
+                        )}
+                        {item.iconName === "package" && (
+                          <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-blue-500/15">
+                            <PackageMinusIcon className="size-3.5 text-blue-600 dark:text-blue-400" />
+                          </span>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium">{item.title}</p>
+                          <p className="text-xs text-muted-foreground">{item.subtitle}</p>
+                        </div>
+                        <span className={`shrink-0 text-sm font-semibold tabular-nums ${item.countColor}`}>
+                          {item.count}
+                        </span>
+                        <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5" />
+                      </Link>
                     </li>
                   ))}
                 </ul>
@@ -393,86 +456,98 @@ export default async function Page() {
 
           {/* 2×2 stat cards */}
           <div className="grid grid-cols-2 gap-4">
-            <Card className="@container/card">
-              <CardHeader className="relative pb-2">
-                <CardDescription>Awaiting Reply</CardDescription>
-                <CardTitle className="text-2xl font-semibold tabular-nums">{awaitingCount}</CardTitle>
-                <div className="absolute right-4 top-4">
-                  <Badge
-                    variant="outline"
-                    className={`flex gap-1 rounded-lg text-xs ${
-                      awaitingCount > 0
-                        ? "border-red-200 bg-red-50 text-red-700"
-                        : "text-muted-foreground"
-                    }`}
-                  >
-                    <InboxIcon className="size-3" />
-                    {awaitingCount > 0 ? "Action needed" : "All clear"}
-                  </Badge>
+            {/* Awaiting Reply */}
+            <Card className={`@container/card overflow-hidden transition-[box-shadow,transform] duration-150 hover:shadow-md hover:-translate-y-px ${
+              awaitingCount > 0 ? "border-red-200 dark:border-red-900/40" : "border-indigo-500/15"
+            }`}>
+              <CardHeader className="pb-0">
+                {awaitingCount > 0 && (
+                  <div className="flex justify-end">
+                    <Badge variant="outline" className="text-xs border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-400">
+                      Action needed
+                    </Badge>
+                  </div>
+                )}
+                <div className={awaitingCount > 0 ? "" : "mt-1"}>
+                  <CardTitle className={`text-4xl font-bold tabular-nums ${
+                    awaitingCount > 0 ? "text-red-600 dark:text-red-400" : ""
+                  }`}>{awaitingCount}</CardTitle>
                 </div>
               </CardHeader>
-              <CardFooter className="flex-col items-start gap-0.5 text-sm">
-                <div className="font-medium">Tickets without a reply</div>
-                <div className="text-xs text-muted-foreground">Over 12 hours old</div>
-              </CardFooter>
+              <CardContent className="pb-0 pt-1">
+                <p className="text-sm font-medium">Awaiting reply</p>
+                <p className="text-xs text-muted-foreground">Over 12 hours old</p>
+                <Sparkline
+                  path={SPARKLINE_PATHS.awaiting}
+                  color={awaitingCount > 0 ? "rgb(239 68 68 / 0.4)" : "rgb(99 102 241 / 0.3)"}
+                  className="mt-3"
+                />
+              </CardContent>
             </Card>
 
-            <Card className="@container/card">
-              <CardHeader className="relative pb-2">
-                <CardDescription>Pending Approvals</CardDescription>
-                <CardTitle className="text-2xl font-semibold tabular-nums">{pendingCount}</CardTitle>
-                <div className="absolute right-4 top-4">
-                  <Badge
-                    variant="outline"
-                    className={`flex gap-1 rounded-lg text-xs ${
-                      pendingCount > 0
-                        ? "border-amber-200 bg-amber-50 text-amber-700"
-                        : "text-muted-foreground"
-                    }`}
-                  >
-                    <AlertCircleIcon className="size-3" />
-                    {pendingCount > 0 ? "Need review" : "All clear"}
-                  </Badge>
+            {/* Pending Approvals */}
+            <Card className={`@container/card overflow-hidden transition-[box-shadow,transform] duration-150 hover:shadow-md hover:-translate-y-px ${
+              pendingCount > 0 ? "border-amber-200 dark:border-amber-900/40" : "border-indigo-500/15"
+            }`}>
+              <CardHeader className="pb-0">
+                {pendingCount > 0 && (
+                  <div className="flex justify-end">
+                    <Badge variant="outline" className="text-xs border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-400">
+                      Need review
+                    </Badge>
+                  </div>
+                )}
+                <div className={pendingCount > 0 ? "" : "mt-1"}>
+                  <CardTitle className={`text-4xl font-bold tabular-nums ${
+                    pendingCount > 0 ? "text-amber-600 dark:text-amber-400" : ""
+                  }`}>{pendingCount}</CardTitle>
                 </div>
               </CardHeader>
-              <CardFooter className="flex-col items-start gap-0.5 text-sm">
-                <div className="font-medium">Actions waiting for you</div>
-                <div className="text-xs text-muted-foreground">Require manual approval</div>
-              </CardFooter>
+              <CardContent className="pb-0 pt-1">
+                <p className="text-sm font-medium">Pending approvals</p>
+                <p className="text-xs text-muted-foreground">Require manual review</p>
+                <Sparkline
+                  path={SPARKLINE_PATHS.pending}
+                  color={pendingCount > 0 ? "rgb(217 119 6 / 0.5)" : "rgb(99 102 241 / 0.3)"}
+                  className="mt-3"
+                />
+              </CardContent>
             </Card>
 
-            <Card className="@container/card">
-              <CardHeader className="relative pb-2">
-                <CardDescription>AI Drafts Sent</CardDescription>
-                <CardTitle className="text-2xl font-semibold tabular-nums">{sentDraftCount}</CardTitle>
-                <div className="absolute right-4 top-4">
-                  <Badge variant="outline" className="flex gap-1 rounded-lg text-xs text-muted-foreground">
-                    <FileTextIcon className="size-3" />
-                    {sentDraftCount} sent
-                  </Badge>
+            {/* AI Drafts Sent */}
+            <Card className="@container/card overflow-hidden transition-[box-shadow,transform] duration-150 hover:shadow-md hover:-translate-y-px border-indigo-500/15">
+              <CardHeader className="pb-0">
+                <div className="mt-1">
+                  <CardTitle className="text-4xl font-bold tabular-nums text-indigo-600 dark:text-indigo-400">{sentDraftCount}</CardTitle>
                 </div>
               </CardHeader>
-              <CardFooter className="flex-col items-start gap-0.5 text-sm">
-                <div className="font-medium">Drafts sent to customers</div>
-                <div className="text-xs text-muted-foreground">Generated across your inbox</div>
-              </CardFooter>
+              <CardContent className="pb-0 pt-1">
+                <p className="text-sm font-medium">AI drafts sent</p>
+                <p className="text-xs text-muted-foreground">Across your inbox</p>
+                <Sparkline
+                  path={SPARKLINE_PATHS.drafts}
+                  color="rgb(99 102 241 / 0.4)"
+                  className="mt-3"
+                />
+              </CardContent>
             </Card>
 
-            <Card className="@container/card">
-              <CardHeader className="relative pb-2">
-                <CardDescription>Time Saved</CardDescription>
-                <CardTitle className="text-2xl font-semibold tabular-nums">{timeSavedLabel}</CardTitle>
-                <div className="absolute right-4 top-4">
-                  <Badge variant="outline" className="flex gap-1 rounded-lg text-xs text-muted-foreground">
-                    <Clock3Icon className="size-3" />
-                    Estimated
-                  </Badge>
+            {/* Time Saved */}
+            <Card className="@container/card overflow-hidden transition-[box-shadow,transform] duration-150 hover:shadow-md hover:-translate-y-px border-indigo-500/15">
+              <CardHeader className="pb-0">
+                <div className="mt-1">
+                  <CardTitle className="text-4xl font-bold tabular-nums text-indigo-600 dark:text-indigo-400">{timeSavedLabel}</CardTitle>
                 </div>
               </CardHeader>
-              <CardFooter className="flex-col items-start gap-0.5 text-sm">
-                <div className="font-medium">Automation time saved</div>
-                <div className="text-xs text-muted-foreground">Based on 5 min per draft</div>
-              </CardFooter>
+              <CardContent className="pb-0 pt-1">
+                <p className="text-sm font-medium">Time saved</p>
+                <p className="text-xs text-muted-foreground">Est. 5 min per draft</p>
+                <Sparkline
+                  path={SPARKLINE_PATHS.saved}
+                  color="rgb(99 102 241 / 0.4)"
+                  className="mt-3"
+                />
+              </CardContent>
             </Card>
           </div>
         </div>
@@ -480,85 +555,124 @@ export default async function Page() {
         {/* Bottom row: Recent AI activity + Returns in transit */}
         <div className="grid grid-cols-1 gap-4 px-4 lg:grid-cols-2 lg:px-6">
           {/* Recent AI activity */}
-          <Card>
+          <Card className="flex flex-col">
             <CardHeader>
-              <CardTitle>Recent AI activity</CardTitle>
+              <div className="flex items-center gap-2">
+                <CardTitle>Recent AI activity</CardTitle>
+              </div>
               <CardDescription>What Sona has done lately</CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="flex-1">
               {recentActivity.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No recent activity.</p>
               ) : (
                 <ol className="list-none">
                   {recentActivity.map((event, i) => (
-                    <li key={event.id} className="flex gap-3">
-                      <div className="flex flex-col items-center">
-                        <div className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${ACTIVITY_DOT_CLASSES[event.badge]}`} />
+                    <li key={event.id} className="flex gap-3 rounded-lg -mx-2 px-2 hover:bg-muted/40 transition-colors">
+                      {/* Timestamp on left */}
+                      <span className="w-10 shrink-0 pt-2.5 text-right text-[11px] tabular-nums text-muted-foreground leading-snug">
+                        {formatTime(event.time)}
+                      </span>
+                      {/* Timeline dot + line */}
+                      <div className="flex flex-col items-center py-2.5">
+                        <div className={`h-2.5 w-2.5 shrink-0 rounded-full ring-4 ${ACTIVITY_DOT_CLASSES[event.badge]}`} />
                         {i < recentActivity.length - 1 && (
-                          <div className="mt-1 w-px flex-1 bg-border" />
+                          <div className="mt-1.5 w-px flex-1 bg-border" />
                         )}
                       </div>
-                      <div className="flex min-w-0 flex-1 items-start justify-between gap-2 pb-3">
+                      {/* Content */}
+                      <div className="flex min-w-0 flex-1 items-start justify-between gap-2 py-2.5 pb-3">
                         <div className="min-w-0">
-                          <p className="text-sm font-medium">{event.label}</p>
+                          <p className="text-sm font-medium leading-snug">{event.label}</p>
                           {event.detail && (
                             <p className="truncate text-xs text-muted-foreground">{event.detail}</p>
                           )}
                         </div>
-                        <div className="flex shrink-0 flex-col items-end gap-1">
-                          <span className="text-xs text-muted-foreground">{formatTime(event.time)}</span>
-                          <Badge
-                            variant="outline"
-                            className={`text-xs ${ACTIVITY_BADGE_CLASSES[event.badge]}`}
-                          >
-                            {ACTIVITY_BADGE_LABEL[event.badge]}
-                          </Badge>
-                        </div>
+                        <Badge
+                          variant="outline"
+                          className={`shrink-0 text-xs ${ACTIVITY_BADGE_CLASSES[event.badge]}`}
+                        >
+                          {ACTIVITY_BADGE_LABEL[event.badge]}
+                        </Badge>
                       </div>
                     </li>
                   ))}
                 </ol>
               )}
             </CardContent>
+            <CardFooter className="pt-0">
+              <Button variant="outline" className="w-full" asChild>
+                <Link href="/inbox">
+                  View all activity
+                  <ChevronRightIcon className="ml-1 size-4" />
+                </Link>
+              </Button>
+            </CardFooter>
           </Card>
 
           {/* Returns in transit */}
-          <Card>
+          <Card className={returnsCount > 0 ? "border-amber-500/20" : ""}>
             <CardHeader>
-              <CardTitle>Returns in transit</CardTitle>
-              <CardDescription>Packages on their way back — refund after inspection</CardDescription>
+              <div className="flex items-start justify-between">
+                <div>
+                  <CardTitle>Returns in transit</CardTitle>
+                  <CardDescription>Packages on their way back — refund after inspection</CardDescription>
+                </div>
+                {returnsCount > 0 && (
+                  <Link href="/inbox" className="shrink-0 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:underline underline-offset-2">
+                    View all
+                  </Link>
+                )}
+              </div>
             </CardHeader>
             <CardContent>
-              {returnsCount > 0 && (
-                <div className="mb-4">
-                  <p className="text-2xl font-semibold tabular-nums">{returnsCount}</p>
-                  <p className="text-xs text-muted-foreground">In transit</p>
-                </div>
-              )}
               {returnsInTransit.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No active returns.</p>
               ) : (
-                <div className="divide-y divide-border">
-                  {returnsInTransit.map((ret) => {
-                    const reason = ret.payload?.return_reason || ret.payload?.reason || null;
-                    return (
-                      <div key={ret.id} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
-                        <PackageMinusIcon className="h-4 w-4 shrink-0 text-amber-500" />
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium">
-                            Order #{ret.payload?.orderId ?? ret.thread_id?.slice(0, 8) ?? "—"}
-                          </p>
-                          {reason && (
-                            <p className="truncate text-xs text-muted-foreground">{reason}</p>
-                          )}
+                <>
+                  {/* Mini stats row */}
+                  <div className="mb-4 grid grid-cols-3 gap-2">
+                    <div className="rounded-lg bg-muted/50 px-3 py-2">
+                      <p className="text-xl font-bold tabular-nums text-amber-600 dark:text-amber-400">{returnsCount}</p>
+                      <p className="text-xs text-muted-foreground">In transit</p>
+                    </div>
+                    <div className="rounded-lg bg-muted/50 px-3 py-2">
+                      <p className="text-xl font-bold tabular-nums">0</p>
+                      <p className="text-xs text-muted-foreground">In inspection</p>
+                    </div>
+                    <div className="rounded-lg bg-muted/50 px-3 py-2">
+                      <p className="text-xl font-bold tabular-nums">0</p>
+                      <p className="text-xs text-muted-foreground">Refund pending</p>
+                    </div>
+                  </div>
+                  <div className="divide-y divide-border">
+                    {returnsInTransit.map((ret) => {
+                      const reason = ret.payload?.return_reason || ret.payload?.reason || null;
+                      return (
+                        <div key={ret.id} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
+                          <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-amber-500/15">
+                            <PackageMinusIcon className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium">
+                              Order #{ret.payload?.orderId ?? ret.thread_id?.slice(0, 8) ?? "—"}
+                            </p>
+                            {reason && (
+                              <p className="truncate text-xs text-muted-foreground">{reason}</p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+                              <span className="size-1.5 rounded-full bg-amber-500" />
+                              In transit
+                            </span>
+                            <span className="text-xs text-muted-foreground">{formatTimeAgo(ret.updated_at)}</span>
+                          </div>
                         </div>
-                        <span className="shrink-0 text-xs text-muted-foreground">
-                          {formatTimeAgo(ret.updated_at)}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                </>
               )}
             </CardContent>
           </Card>

@@ -37,20 +37,18 @@ async function loadMailboxIds(serviceClient, scope) {
   return (data || []).map((row) => row.id).filter(Boolean);
 }
 
-async function loadAssignedCount(serviceClient, scope, mailboxIds, supabaseUserId, clerkUserId) {
-  const ids = [supabaseUserId, clerkUserId].filter(Boolean);
-  if (!ids.length) return 0;
-  const orFilter = ids.map((id) => `assignee_id.eq.${id}`).join(",");
+async function loadAssignedCount(serviceClient, scope, mailboxIds, supabaseUserId) {
+  if (!supabaseUserId) return 0;
   const { count, error } = await applyScope(
     serviceClient
       .from("mail_threads")
       .select("id", { count: "exact", head: true })
       .in("mailbox_id", mailboxIds)
-      .or(orFilter)
-      .not("status", "in", '("Solved","Resolved","resolved")'),
+      .eq("assignee_id", supabaseUserId)
+      .not("status", "in", "(Solved,Resolved,resolved)"),
     scope
   );
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(error.details || error.message || JSON.stringify(error));
   return count ?? 0;
 }
 
@@ -108,7 +106,7 @@ export async function GET() {
 
     const [assignedCount, mailNotificationsCount, mentionNotificationsCount] = await Promise.all([
       mailboxIds.length
-        ? loadAssignedCount(serviceClient, scope, mailboxIds, scope.supabaseUserId, clerkUserId)
+        ? loadAssignedCount(serviceClient, scope, mailboxIds, scope.supabaseUserId)
         : 0,
       loadNotificationsCount(serviceClient, scope, mailboxIds),
       loadMentionNotificationsCount(serviceClient, scope),
@@ -117,9 +115,7 @@ export async function GET() {
 
     return NextResponse.json({ assignedCount, notificationsCount }, { status: 200 });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to load sidebar counts." },
-      { status: 500 }
-    );
+    console.error("Sidebar counts fallback:", error);
+    return NextResponse.json({ assignedCount: 0, notificationsCount: 0 }, { status: 200 });
   }
 }
