@@ -48,11 +48,10 @@ export function parseIssueMetadataResponse(
       typeof parsed.issue_summary === "string" && parsed.issue_summary.trim()
         ? parsed.issue_summary.trim().slice(0, 500)
         : null;
-    const detected_product_id =
-      typeof parsed.detected_product_id === "string" &&
-      validProductIds.has(parsed.detected_product_id)
-        ? parsed.detected_product_id
-        : null;
+    // Accept both string and number (shop_products.id is bigint)
+    const rawId = parsed.detected_product_id;
+    const idStr = rawId != null ? String(rawId) : null;
+    const detected_product_id = idStr && validProductIds.has(idStr) ? idStr : null;
     return { issue_summary, detected_product_id };
   } catch {
     return { issue_summary: null, detected_product_id: null };
@@ -112,7 +111,8 @@ export async function generateIssueMetadata(
     { role: "user", content: ticketContent },
   ]);
 
-  const validProductIds = new Set(products.map((p: { id: string }) => p.id));
+  // Use String() to normalise bigint IDs from Postgres to strings for Set lookup
+  const validProductIds = new Set(products.map((p: { id: unknown }) => String(p.id)));
   const { issue_summary, detected_product_id } = parseIssueMetadataResponse(raw, validProductIds);
 
   const updates: Record<string, string | null> = {};
