@@ -106,10 +106,12 @@ export async function POST(_request, { params }) {
     return NextResponse.json({ error: "Could not generate summary." }, { status: 500 });
   }
 
-  await serviceClient
+  const { error: updateError } = await serviceClient
     .from("mail_threads")
     .update({ solution_summary })
     .eq("id", threadId);
+
+  if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 });
 
   return NextResponse.json({ solution_summary });
 }
