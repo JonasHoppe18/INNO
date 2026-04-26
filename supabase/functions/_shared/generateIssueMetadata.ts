@@ -73,13 +73,26 @@ export async function generateIssueMetadata(
     .maybeSingle();
   if (existing?.issue_summary) return;
 
-  const { data: products } = await supabase
-    .from("shop_products")
-    .select("id, title")
+  // Resolve the internal shop UUID from workspace_id
+  // deno-lint-ignore no-explicit-any
+  const { data: shop } = await (supabase as any)
+    .from("shops")
+    .select("id")
     .eq("workspace_id", workspaceId)
-    .limit(50);
+    .maybeSingle();
 
-  const productList = (products ?? [])
+  let products: { id: string; title: string }[] = [];
+  if (shop?.id) {
+    // deno-lint-ignore no-explicit-any
+    const { data } = await (supabase as any)
+      .from("shop_products")
+      .select("id, title")
+      .eq("shop_ref_id", shop.id)
+      .limit(50);
+    products = data ?? [];
+  }
+
+  const productList = products
     .map((p: { id: string; title: string }) => `- ID: ${p.id} | Name: "${p.title}"`)
     .join("\n");
 
@@ -99,7 +112,7 @@ export async function generateIssueMetadata(
     { role: "user", content: ticketContent },
   ]);
 
-  const validProductIds = new Set((products ?? []).map((p: { id: string }) => p.id));
+  const validProductIds = new Set(products.map((p: { id: string }) => p.id));
   const { issue_summary, detected_product_id } = parseIssueMetadataResponse(raw, validProductIds);
 
   const updates: Record<string, string | null> = {};
