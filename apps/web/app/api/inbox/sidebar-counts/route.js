@@ -19,6 +19,17 @@ function createServiceClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
+function isMissingMentionTable(error) {
+  const code = String(error?.code || "").toUpperCase();
+  const message = String(error?.message || "").toLowerCase();
+  return (
+    code === "42P01" ||
+    code === "PGRST205" ||
+    message.includes("workspace_member_notifications") ||
+    message.includes("relation") && message.includes("does not exist")
+  );
+}
+
 async function loadMailboxIds(serviceClient, scope) {
   const query = applyScope(serviceClient.from("mail_accounts").select("id"), scope);
   const { data, error } = await query;
@@ -70,7 +81,7 @@ async function loadMentionNotificationsCount(serviceClient, scope) {
     { workspaceColumn: "workspace_id", userColumn: null }
   );
   if (error) {
-    if (String(error?.code || "") === "42P01") return 0;
+    if (isMissingMentionTable(error)) return 0;
     throw new Error(error.message);
   }
   return count ?? 0;

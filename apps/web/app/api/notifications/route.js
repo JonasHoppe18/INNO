@@ -19,6 +19,17 @@ function createServiceClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
+function isMissingMentionTable(error) {
+  const code = String(error?.code || "").toUpperCase();
+  const message = String(error?.message || "").toLowerCase();
+  return (
+    code === "42P01" ||
+    code === "PGRST205" ||
+    message.includes("workspace_member_notifications") ||
+    (message.includes("relation") && message.includes("does not exist"))
+  );
+}
+
 function isUuid(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     String(value || "").trim()
@@ -83,7 +94,7 @@ async function loadMentionNotifications(serviceClient, scope, limit = 10) {
     { workspaceColumn: "workspace_id", userColumn: null }
   );
   if (error) {
-    if (String(error?.code || "") === "42P01") return [];
+    if (isMissingMentionTable(error)) return [];
     throw new Error(error.message);
   }
   return (data || []).map((row) => ({
@@ -182,7 +193,7 @@ export async function PATCH(request) {
       userColumn: null,
     });
     if (error) {
-      if (String(error?.code || "") === "42P01") {
+      if (isMissingMentionTable(error)) {
         return NextResponse.json({ marked: 0 }, { status: 200 });
       }
       throw new Error(error.message);
