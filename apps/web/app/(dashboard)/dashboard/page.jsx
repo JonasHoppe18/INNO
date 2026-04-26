@@ -171,7 +171,7 @@ async function loadRecentActivity(serviceClient, scope, shopId) {
         .from("thread_actions")
         .select("id, action_type, payload, created_at, status")
         .eq("shop_id", shopId)
-        .in("status", ["applied", "pending"])
+        .eq("status", "applied")
         .order("created_at", { ascending: false })
         .limit(10)
     : Promise.resolve({ data: [] });
@@ -191,7 +191,7 @@ async function loadRecentActivity(serviceClient, scope, shopId) {
     time: a.created_at,
     label: actionLabel(a.action_type),
     detail: a.payload?.orderId ? `Order #${a.payload.orderId}` : null,
-    badge: a.status === "applied" ? "approved" : "pending",
+    badge: "approved",
   }));
 
   return [...draftEvents, ...actionEvents]
@@ -347,7 +347,7 @@ export default async function Page() {
               <div className="flex items-center gap-2">
                 <CardTitle>Needs your attention</CardTitle>
                 {totalAttention > 0 && (
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-red-100 text-xs font-semibold text-red-600">
+                  <span className="flex h-5 min-w-5 px-1 items-center justify-center rounded-full bg-red-100 text-xs font-semibold text-red-600">
                     {totalAttention}
                   </span>
                 )}
