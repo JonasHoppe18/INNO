@@ -1,5 +1,6 @@
--- Seeds 16 default workspace_tags for every workspace that currently has 0 tags.
--- Safe to run multiple times: INSERT ... ON CONFLICT DO NOTHING is idempotent.
+-- Seeds 16 default workspace_tags for ALL workspaces.
+-- Workspaces can extend with their own tags on top.
+-- Safe to run multiple times: ON CONFLICT DO NOTHING is idempotent.
 
 INSERT INTO workspace_tags (workspace_id, name, color, category, ai_prompt, is_active)
 SELECT
@@ -29,7 +30,4 @@ CROSS JOIN (
     ('Complaint',       '#ef4444', 'Feedback', 'Customer is expressing general dissatisfaction without a specific actionable request.'),
     ('General',         '#64748b', 'Other',    'Does not fit any of the other categories.')
 ) AS t(name, color, category, ai_prompt)
-WHERE NOT EXISTS (
-  SELECT 1 FROM workspace_tags wt WHERE wt.workspace_id = w.id
-)
 ON CONFLICT (workspace_id, lower(name)) DO NOTHING;
