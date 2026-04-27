@@ -934,9 +934,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     let lastFetchAt = 0;
     const REFETCH_COOLDOWN_MS = 30_000;
 
-    const fetchInboxData = async () => {
+    const fetchInboxData = async (force = false) => {
       if (!active) return;
-      if (Date.now() - lastFetchAt < REFETCH_COOLDOWN_MS) return;
+      if (!force && Date.now() - lastFetchAt < REFETCH_COOLDOWN_MS) return;
       lastFetchAt = Date.now();
       try {
         const response = await fetch("/api/inbox/live", {
@@ -970,7 +970,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       window.addEventListener("focus", onFocus);
     }
 
-    refreshInboxDataRef.current = fetchInboxData;
+    refreshInboxDataRef.current = () => fetchInboxData(true);
 
     return () => {
       active = false;
