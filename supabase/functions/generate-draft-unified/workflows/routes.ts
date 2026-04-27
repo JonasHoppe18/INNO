@@ -6,14 +6,20 @@ import {
 } from "../../_shared/email-category.ts";
 import { buildAddressChangeDraft } from "./categories/address-change.ts";
 import { buildCancellationDraft } from "./categories/cancellation.ts";
+import { buildComplaintDraft } from "./categories/complaint.ts";
 import { buildExchangeDraft } from "./categories/exchange.ts";
+import { buildFraudDisputeDraft } from "./categories/fraud-dispute.ts";
 import { buildGeneralDraft } from "./categories/general.ts";
+import { buildGiftCardDraft } from "./categories/gift-card.ts";
+import { buildMissingItemDraft } from "./categories/missing-item.ts";
 import { buildPaymentDraft } from "./categories/payment.ts";
 import { buildProductDraft } from "./categories/product-question.ts";
 import { buildRefundDraft } from "./categories/refund.ts";
 import { buildReturnDraft } from "./categories/return.ts";
 import { buildTechnicalSupportDraft } from "./categories/technical-support.ts";
 import { buildTrackingDraft } from "./categories/tracking.ts";
+import { buildWarrantyDraft } from "./categories/warranty.ts";
+import { buildWrongItemDraft } from "./categories/wrong-item.ts";
 import type { WorkflowRoute, WorkflowSlug } from "./types.ts";
 
 const EMAIL_CATEGORY_SET = new Set<string>(EMAIL_CATEGORIES);
@@ -50,6 +56,18 @@ function categoryToWorkflow(category: EmailCategory): WorkflowSlug {
       return "refund";
     case "Address change":
       return "address_change";
+    case "Wrong item":
+      return "wrong_item";
+    case "Missing item":
+      return "missing_item";
+    case "Complaint":
+      return "complaint";
+    case "Fraud / dispute":
+      return "fraud_dispute";
+    case "Warranty":
+      return "warranty";
+    case "Gift card":
+      return "gift_card";
     default:
       return "general";
   }
@@ -76,6 +94,18 @@ export function buildWorkflowRoute(category: EmailCategory): WorkflowRoute {
       return buildRefundDraft(category);
     case "address_change":
       return buildAddressChangeDraft(category);
+    case "wrong_item":
+      return buildWrongItemDraft(category);
+    case "missing_item":
+      return buildMissingItemDraft(category);
+    case "complaint":
+      return buildComplaintDraft(category);
+    case "fraud_dispute":
+      return buildFraudDisputeDraft(category);
+    case "warranty":
+      return buildWarrantyDraft(category);
+    case "gift_card":
+      return buildGiftCardDraft(category);
     default:
       return buildGeneralDraft();
   }
