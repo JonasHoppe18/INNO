@@ -3,6 +3,8 @@ import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 
+export const dynamic = "force-dynamic";
+
 const SUPABASE_URL = (
   process.env.NEXT_PUBLIC_SUPABASE_URL ||
   process.env.EXPO_PUBLIC_SUPABASE_URL ||
@@ -28,6 +30,10 @@ function isMissingMentionTable(error) {
     message.includes("workspace_member_notifications") ||
     message.includes("relation") && message.includes("does not exist")
   );
+}
+
+function isDynamicServerUsageError(error) {
+  return String(error?.digest || "").toUpperCase() === "DYNAMIC_SERVER_USAGE";
 }
 
 async function loadMailboxIds(serviceClient, scope) {
@@ -115,7 +121,9 @@ export async function GET() {
 
     return NextResponse.json({ assignedCount, notificationsCount }, { status: 200 });
   } catch (error) {
-    console.error("Sidebar counts fallback:", error);
+    if (!isDynamicServerUsageError(error)) {
+      console.error("Sidebar counts fallback:", error);
+    }
     return NextResponse.json({ assignedCount: 0, notificationsCount: 0 }, { status: 200 });
   }
 }
