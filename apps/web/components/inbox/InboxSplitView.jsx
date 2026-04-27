@@ -114,6 +114,26 @@ const extractInboxSlugFromTags = (tags = []) => {
   return slug || null;
 };
 
+function FirstTagPill({ threadId, refreshTrigger }) {
+  const [tag, setTag] = useState(null);
+
+  useEffect(() => {
+    if (!threadId) return;
+    fetch(`/api/threads/${threadId}/tags`)
+      .then((response) => response.json())
+      .then((json) => setTag(json?.tags?.[0] ?? null))
+      .catch(() => null);
+  }, [threadId, refreshTrigger]);
+
+  if (!tag) return null;
+
+  return (
+    <span className="inline-flex items-center rounded-md border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-medium text-orange-600">
+      {tag.name}
+    </span>
+  );
+}
+
 
 const extractSenderFromThreadSnippet = (thread) => {
   const snippet = String(thread?.snippet || "").replace(/\s+/g, " ").trim();
@@ -163,6 +183,8 @@ const extractSenderFromThreadSnippet = (thread) => {
 };
 
 function InboxHeaderActions({
+  threadId,
+  tagsRefreshTrigger,
   ticketState,
   assignmentOptions,
   selectedAssignmentValue,
@@ -260,16 +282,6 @@ function InboxHeaderActions({
           ))}
         </SelectContent>
       </Select>
-      {selectedInboxLabel ? (
-        <button
-          type="button"
-          onClick={() => setInboxPickerOpen(true)}
-          className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 hover:border-amber-400 hover:bg-amber-100"
-          title="Change tag"
-        >
-          {selectedInboxLabel}
-        </button>
-      ) : null}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
@@ -289,6 +301,17 @@ function InboxHeaderActions({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      <FirstTagPill threadId={threadId} refreshTrigger={tagsRefreshTrigger} />
+      {selectedInboxLabel ? (
+        <button
+          type="button"
+          onClick={() => setInboxPickerOpen(true)}
+          className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 hover:border-amber-400 hover:bg-amber-100"
+          title="Change tag"
+        >
+          {selectedInboxLabel}
+        </button>
+      ) : null}
       <Dialog open={inboxPickerOpen} onOpenChange={setInboxPickerOpen}>
         <DialogContent className="sm:max-w-[460px]">
           <DialogHeader>
@@ -4031,6 +4054,8 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           headerActions={
             selectedThreadId ? (
               <InboxHeaderActions
+                threadId={selectedThreadId}
+                tagsRefreshTrigger={tagsRefreshTriggerByThread[selectedThreadId] || 0}
                 ticketState={selectedTicketState}
                 assignmentOptions={assignmentOptions}
                 selectedAssignmentValue={selectedAssignmentValue}

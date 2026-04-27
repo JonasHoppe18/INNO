@@ -3,14 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Sparkles, X, Plus } from "lucide-react";
 
-function hexToRgba(hex, alpha) {
-  if (!hex || !hex.startsWith("#")) return `rgba(100,100,100,${alpha})`;
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r},${g},${b},${alpha})`;
-}
-
 function SectionLabel({ children, isAI = false }) {
   return (
     <div className="flex items-center gap-1.5">
@@ -143,11 +135,7 @@ function ProductField({ value, availableProducts, onSave }) {
 function Tag({ tag, onRemove, isRemoving }) {
   return (
     <span
-      className="inline-flex items-center gap-1 pl-2.5 pr-1 py-[3px] rounded-full text-xs font-medium"
-      style={{
-        backgroundColor: hexToRgba(tag.color, 0.1),
-        color: tag.color,
-      }}
+      className="inline-flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 py-[3px] pl-2.5 pr-1 text-xs font-medium text-orange-600"
       title={tag.source === "ai" ? "Set by AI" : "Set manually"}
     >
       {tag.name}
@@ -155,7 +143,7 @@ function Tag({ tag, onRemove, isRemoving }) {
         type="button"
         onClick={() => onRemove(tag)}
         disabled={isRemoving}
-        className="ml-0.5 w-[18px] h-[18px] rounded-full inline-flex items-center justify-center hover:bg-black/10 active:scale-90 transition-[transform,background-color] duration-100 ease-out opacity-50 hover:opacity-100 disabled:opacity-30"
+        className="ml-0.5 inline-flex h-[18px] w-[18px] items-center justify-center rounded-full opacity-50 transition-[transform,background-color] duration-100 ease-out hover:bg-orange-200/60 hover:opacity-100 active:scale-90 disabled:opacity-30"
       >
         <X className="w-2.5 h-2.5" />
       </button>
@@ -250,7 +238,7 @@ function TagsSection({ threadId }) {
             <button
               type="button"
               onClick={() => setDropdownOpen((v) => !v)}
-              className="inline-flex items-center gap-0.5 px-2 py-[3px] rounded-full text-[11px] font-medium text-slate-400 border border-dashed border-slate-300 hover:border-slate-400 hover:text-slate-600 hover:bg-slate-50 active:scale-[0.97] transition-[transform,color,border-color,background-color] duration-150 ease-out"
+              className="inline-flex items-center gap-0.5 rounded-full border border-dashed border-orange-300 px-2 py-[3px] text-[11px] font-medium text-orange-600 transition-[transform,color,border-color,background-color] duration-150 ease-out hover:border-orange-400 hover:bg-orange-50 active:scale-[0.97]"
             >
               <Plus className="w-3 h-3" />
               Tag
