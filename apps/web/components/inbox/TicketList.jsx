@@ -32,6 +32,7 @@ export function TicketList({
   );
   const exitTimersRef = useRef(new Map());
   const prevThreadIdsRef = useRef(null);
+  const itemRefs = useRef({});
   const [newThreadIds, setNewThreadIds] = useState(new Set());
   const newTimersRef = useRef(new Map());
   const statusFilters = hideSolvedFilter
@@ -120,6 +121,38 @@ export function TicketList({
   );
 
   useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+      const tag = document.activeElement?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || document.activeElement?.isContentEditable) return;
+      e.preventDefault();
+
+      const activeThreads = renderedThreads.filter((item) => !item.isExiting);
+      if (!activeThreads.length) return;
+
+      const currentIndex = activeThreads.findIndex(
+        (item) => item.thread.id === selectedThreadId
+      );
+      let nextIndex;
+      if (e.key === "ArrowDown") {
+        nextIndex = currentIndex < activeThreads.length - 1 ? currentIndex + 1 : currentIndex;
+      } else {
+        nextIndex = currentIndex > 0 ? currentIndex - 1 : 0;
+      }
+      if (nextIndex === currentIndex && currentIndex !== -1) return;
+
+      const nextThread = activeThreads[nextIndex === -1 ? 0 : nextIndex].thread;
+      onSelectThread(nextThread.id);
+
+      const el = itemRefs.current[nextThread.id];
+      el?.scrollIntoView({ block: "nearest" });
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [renderedThreads, selectedThreadId, onSelectThread]);
+
+  useEffect(() => {
     if (!contextMenu) return undefined;
     const handleClose = () => setContextMenu(null);
     window.addEventListener("click", handleClose);
@@ -171,8 +204,8 @@ export function TicketList({
               const timestamp = getTimestamp(thread);
               const unreadCount = getUnreadCount(thread);
               return (
+                <div key={thread.id} ref={(el) => { itemRefs.current[thread.id] = el; }}>
                 <TicketListItem
-                  key={thread.id}
                   thread={thread}
                   isActive={thread.id === selectedThreadId}
                   status={uiState?.status || "New"}
@@ -193,6 +226,7 @@ export function TicketList({
                     });
                   }}
                 />
+                </div>
               );
             })}
           </div>

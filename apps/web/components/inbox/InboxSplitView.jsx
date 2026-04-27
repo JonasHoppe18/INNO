@@ -818,6 +818,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const savingDraftRef = useRef(false);
   const draftValueRef = useRef("");
   const selectedThreadIdRef = useRef(null);
+  const messagesCacheRef = useRef(new Map());
   const supabase = useClerkSupabase();
   const { user } = useUser();
   const router = useRouter();
@@ -1917,7 +1918,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     const base =
       Array.isArray(selectedThreadMessagesFromDb) && selectedThreadMessagesFromDb.length
         ? selectedThreadMessagesFromDb
-        : messagesByThread.get(selectedThreadId) || [];
+        : (messagesCacheRef.current.get(selectedThreadId) || messagesByThread.get(selectedThreadId) || []);
     const local = localSentMessagesByThread[selectedThreadId] || [];
     const byId = new Map();
     [...base, ...local].forEach((message) => {
@@ -1936,6 +1937,12 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     selectedThreadId,
     selectedThreadMessagesFromDb,
   ]);
+
+  useEffect(() => {
+    if (selectedThreadId && Array.isArray(selectedThreadMessagesFromDb) && selectedThreadMessagesFromDb.length) {
+      messagesCacheRef.current.set(selectedThreadId, selectedThreadMessagesFromDb);
+    }
+  }, [selectedThreadId, selectedThreadMessagesFromDb]);
 
   const threadMessages = useMemo(() => {
     return rawThreadMessages.filter((message) => {

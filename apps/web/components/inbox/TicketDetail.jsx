@@ -43,6 +43,7 @@ const APPROVAL_ACTION_TYPES = new Set([
   "forward_email",
   "create_return_case",
   "send_return_instructions",
+  "initiate_return",
 ]);
 
 const TRACKING_KEYWORD_PATTERN =
@@ -188,6 +189,7 @@ export function TicketDetail({
     forward_email: "Forward Email",
     create_return_case: "Create Return Case",
     send_return_instructions: "Send Return Instructions",
+    initiate_return: "Initiate Return",
     fulfill_exchange: "Fulfill Exchange",
     add_note: "Add Internal Note",
     add_tag: "Add Internal Tag",

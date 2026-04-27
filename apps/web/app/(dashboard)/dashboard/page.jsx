@@ -132,6 +132,7 @@ async function loadAwaitingThreads(serviceClient, scope, mailboxIds) {
       .in("mailbox_id", mailboxIds)
       .not("status", "in", '("Solved","Resolved","resolved")')
       .gt("unread_count", 0)
+      .or("classification_key.is.null,classification_key.neq.notification")
       .order("updated_at", { ascending: true })
       .limit(5),
     scope

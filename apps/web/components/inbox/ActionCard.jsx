@@ -125,6 +125,7 @@ function getActionStatusLabel(actionType = "") {
   if (normalizedAction === "forward_email") return "Forwarded";
   if (normalizedAction === "create_return_case") return "Return created";
   if (normalizedAction === "send_return_instructions") return "Instructions sent";
+  if (normalizedAction === "initiate_return") return "Return initiated";
   if (normalizedAction === "fulfill_exchange") return "Exchange fulfilled";
   if (normalizedAction === "add_note" || normalizedAction === "add_internal_note_or_tag") {
     return "Note added";
@@ -184,13 +185,14 @@ function getApproveButtonLabel({ actionType = "", actionName = "", payload = {},
   if (normalizedAction === "change_shipping_method") return "Approve shipping change";
   if (normalizedAction === "update_customer_contact") return "Approve contact update";
   if (normalizedAction === "send_return_instructions") return "Approve return instructions";
+  if (normalizedAction === "initiate_return") return "Approve return";
   if (normalizedAction === "fulfill_exchange") return "Fulfill exchange";
   if (normalizedAction === "forward_email") return "Approve forward";
   const fallback = String(actionName || "").trim();
   return fallback ? `Approve ${fallback.toLowerCase()}` : "Approve action";
 }
 
-function getImpactSummaryLines({ actionType = "", payload = {}, orderDisplayNumber = "", orderSummary = null }) {
+function getImpactSummaryLines({ actionType = "", payload = {}, orderDisplayNumber = "", orderSummary = null, detail = "" }) {
   const normalizedAction = String(actionType || "").trim().toLowerCase();
   const lines = [];
   if (normalizedAction === "cancel_order") {
@@ -204,6 +206,8 @@ function getImpactSummaryLines({ actionType = "", payload = {}, orderDisplayNumb
     lines.push("The return will be processed in Shopify.");
   } else if (normalizedAction === "send_return_instructions") {
     lines.push("Return instructions will be sent to the customer.");
+  } else if (normalizedAction === "initiate_return") {
+    lines.push("A return will be registered for this order.");
   } else if (normalizedAction === "fulfill_exchange") {
     const product = payload?.exchange_product_title;
     const variant = payload?.exchange_variant_title;
@@ -218,7 +222,8 @@ function getImpactSummaryLines({ actionType = "", payload = {}, orderDisplayNumb
   } else if (normalizedAction === "update_customer_contact") {
     lines.push("Customer contact details will be updated.");
   } else {
-    lines.push("This action will apply the requested change.");
+    const fallbackDetail = String(detail || "").trim();
+    lines.push(fallbackDetail || "This action will apply the requested change.");
   }
 
   if (orderDisplayNumber) {
@@ -358,8 +363,9 @@ export function ActionCard({
         payload,
         orderDisplayNumber,
         orderSummary,
+        detail,
       }),
-    [actionType, orderDisplayNumber, orderSummary, payload]
+    [actionType, detail, orderDisplayNumber, orderSummary, payload]
   );
   const proposedTitle = useMemo(() => {
     if (normalizedAction === "cancel_order" && orderDisplayNumber) {
