@@ -36,6 +36,17 @@ function isDynamicServerUsageError(error) {
   return String(error?.digest || "").toUpperCase() === "DYNAMIC_SERVER_USAGE";
 }
 
+function extractInboxSlugFromTags(tags = []) {
+  const list = Array.isArray(tags) ? tags : [];
+  for (const rawTag of list) {
+    const tag = String(rawTag || "").trim().toLowerCase();
+    if (!tag.startsWith("inbox:")) continue;
+    const slug = tag.slice("inbox:".length).trim();
+    if (slug) return slug;
+  }
+  return "";
+}
+
 async function loadMailboxIds(serviceClient, scope) {
   const query = applyScope(serviceClient.from("mail_accounts").select("id"), scope);
   const { data, error } = await query;
@@ -51,7 +62,8 @@ async function loadAssignedCount(serviceClient, scope, mailboxIds, supabaseUserI
       .select("id", { count: "exact", head: true })
       .in("mailbox_id", mailboxIds)
       .eq("assignee_id", supabaseUserId)
-      .not("status", "in", "(Solved,Resolved,resolved)"),
+      .gt("unread_count", 0)
+      .not("status", "in", "(Solved,solved,Resolved,resolved)"),
     scope
   );
   if (error) throw new Error(error.details || error.message || JSON.stringify(error));
@@ -91,6 +103,49 @@ async function loadMentionNotificationsCount(serviceClient, scope) {
   return count ?? 0;
 }
 
+async function loadWorkspaceInboxSlugs(serviceClient, scope) {
+  const { data, error } = await applyScope(
+    serviceClient.from("workspace_inboxes").select("slug"),
+    scope
+  );
+  if (error) {
+    if (/relation .*workspace_inboxes.* does not exist/i.test(String(error?.message || ""))) {
+      return [];
+    }
+    throw new Error(error.message);
+  }
+  return (Array.isArray(data) ? data : [])
+    .map((row) => String(row?.slug || "").trim().toLowerCase())
+    .filter(Boolean);
+}
+
+async function loadCustomInboxUnreadCounts(serviceClient, scope, mailboxIds, inboxSlugs) {
+  if (!mailboxIds.length || !inboxSlugs.length) return {};
+  const inboxTags = inboxSlugs.map((slug) => `inbox:${slug}`);
+  const { data, error } = await applyScope(
+    serviceClient
+      .from("mail_threads")
+      .select("tags, unread_count")
+      .in("mailbox_id", mailboxIds)
+      .gt("unread_count", 0)
+      .overlaps("tags", inboxTags),
+    scope
+  );
+  if (error) throw new Error(error.message);
+
+  const counts = {};
+  for (const slug of inboxSlugs) counts[slug] = 0;
+
+  for (const row of Array.isArray(data) ? data : []) {
+    const slug = extractInboxSlugFromTags(row?.tags || []);
+    if (!counts.hasOwnProperty(slug)) continue;
+    const unread = Number(row?.unread_count ?? 0);
+    if (unread > 0) counts[slug] += unread;
+  }
+
+  return counts;
+}
+
 export async function GET() {
   try {
     const { userId: clerkUserId, orgId } = await auth();
@@ -105,25 +160,38 @@ export async function GET() {
 
     const scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
     if (!scope.workspaceId && !scope.supabaseUserId) {
-      return NextResponse.json({ assignedCount: 0, notificationsCount: 0 }, { status: 200 });
+      return NextResponse.json(
+        { assignedCount: 0, notificationsCount: 0, customInboxUnreadCounts: {} },
+        { status: 200 }
+      );
     }
 
-    const mailboxIds = await loadMailboxIds(serviceClient, scope);
+    const [mailboxIds, inboxSlugs] = await Promise.all([
+      loadMailboxIds(serviceClient, scope),
+      loadWorkspaceInboxSlugs(serviceClient, scope),
+    ]);
 
-    const [assignedCount, mailNotificationsCount, mentionNotificationsCount] = await Promise.all([
+    const [assignedCount, mailNotificationsCount, mentionNotificationsCount, customInboxUnreadCounts] = await Promise.all([
       mailboxIds.length
         ? loadAssignedCount(serviceClient, scope, mailboxIds, scope.supabaseUserId)
         : 0,
       loadNotificationsCount(serviceClient, scope, mailboxIds),
       loadMentionNotificationsCount(serviceClient, scope),
+      loadCustomInboxUnreadCounts(serviceClient, scope, mailboxIds, inboxSlugs),
     ]);
     const notificationsCount = mailNotificationsCount + mentionNotificationsCount;
 
-    return NextResponse.json({ assignedCount, notificationsCount }, { status: 200 });
+    return NextResponse.json(
+      { assignedCount, notificationsCount, customInboxUnreadCounts },
+      { status: 200 }
+    );
   } catch (error) {
     if (!isDynamicServerUsageError(error)) {
       console.error("Sidebar counts fallback:", error);
     }
-    return NextResponse.json({ assignedCount: 0, notificationsCount: 0 }, { status: 200 });
+    return NextResponse.json(
+      { assignedCount: 0, notificationsCount: 0, customInboxUnreadCounts: {} },
+      { status: 200 }
+    );
   }
 }

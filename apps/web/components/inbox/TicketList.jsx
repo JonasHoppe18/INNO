@@ -166,7 +166,7 @@ export function TicketList({
   }, [contextMenu]);
 
   return (
-    <aside className="flex w-full flex-col border-r border-border bg-background lg:w-[clamp(18rem,20vw,24rem)] lg:min-w-[clamp(18rem,20vw,24rem)] lg:max-w-[clamp(18rem,20vw,24rem)] lg:flex-none">
+    <aside className="animate-view-enter flex w-full flex-col border-r border-border bg-background lg:w-[clamp(18rem,20vw,24rem)] lg:min-w-[clamp(18rem,20vw,24rem)] lg:max-w-[clamp(18rem,20vw,24rem)] lg:flex-none">
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">
         <Input
           value={filters.query}
@@ -198,7 +198,7 @@ export function TicketList({
       <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {renderedThreads.length ? (
           <div className="divide-y divide-border">
-            {renderedThreads.map(({ thread, isExiting }) => {
+            {renderedThreads.map(({ thread, isExiting }, index) => {
               const uiState = ticketStateByThread[thread.id];
               const customer = customerByThread[thread.id] || "Unknown sender";
               const timestamp = getTimestamp(thread);
@@ -216,6 +216,7 @@ export function TicketList({
                   priority={uiState?.priority}
                   isExiting={isExiting}
                   isNew={newThreadIds.has(String(thread.id))}
+                  mountIndex={index}
                   onSelect={(options) => onSelectThread(thread.id, options)}
                   onContextMenu={(event) => {
                     event.preventDefault();

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth, useOrganization, useUser } from "@clerk/nextjs";
 import { useTheme } from "next-themes";
+import { useSearchParams } from "next/navigation";
 import {
   Building2,
   Clock,
@@ -118,6 +119,74 @@ const routingSnapshot = (rows = []) =>
       mode: String(row.mode || "manual_approval"),
       forward_to_email: String(row.forward_to_email || "").trim().toLowerCase(),
       sort_order: Number(row.sort_order || 0),
+    }))
+  );
+
+const normalizeSenderRuleMatcherValue = (matcherType, matcherValue) => {
+  const raw = String(matcherValue || "").trim().toLowerCase();
+  if (!raw) return "";
+  if (matcherType === "email") {
+    return raw;
+  }
+  const domain = raw.replace(/^@+/, "");
+  return domain;
+};
+
+const normalizeSenderRuleDestinationType = (value) =>
+  String(value || "").trim().toLowerCase() === "inbox" ? "inbox" : "classification";
+
+const normalizeSenderRuleDestinationValue = (destinationType, destinationValue) => {
+  const raw = String(destinationValue || "").trim().toLowerCase();
+  if (!raw) return "";
+  if (destinationType === "inbox") {
+    return raw
+      .replace(/[^a-z0-9-_ ]+/g, "")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-+|-+$/g, "");
+  }
+  return raw.replace(/[^a-z0-9_]/g, "_").replace(/_+/g, "_").replace(/^_+|_+$/g, "");
+};
+
+const normalizeSenderRuleRows = (rows = []) =>
+  (Array.isArray(rows) ? rows : [])
+    .map((row) => {
+      const id = String(row?.id || "").trim();
+      const matcherType = String(row?.matcher_type || "").trim().toLowerCase() === "domain" ? "domain" : "email";
+      const matcherValue = normalizeSenderRuleMatcherValue(matcherType, row?.matcher_value || "");
+      const destinationType = normalizeSenderRuleDestinationType(
+        row?.destination_type ||
+          (String(row?.destination_key || "").startsWith("inbox:") ? "inbox" : "classification")
+      );
+      const rawDestinationValue =
+        row?.destination_value ||
+        (destinationType === "inbox"
+          ? String(row?.destination_key || "").replace(/^inbox:/i, "")
+          : row?.destination_key) ||
+        "notification";
+      const destinationValue = normalizeSenderRuleDestinationValue(destinationType, rawDestinationValue);
+      if (!id) return null;
+      return {
+        id,
+        matcher_type: matcherType,
+        matcher_value: matcherValue,
+        destination_type: destinationType,
+        destination_value: destinationValue,
+        is_active: Boolean(row?.is_active),
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => String(a.matcher_value || "").localeCompare(String(b.matcher_value || ""), "en", { sensitivity: "base" }));
+
+const senderRulesSnapshot = (rows = []) =>
+  JSON.stringify(
+    normalizeSenderRuleRows(rows).map((row) => ({
+      id: row.id,
+      matcher_type: row.matcher_type,
+      matcher_value: String(row.matcher_value || "").trim().toLowerCase(),
+      destination_type: normalizeSenderRuleDestinationType(row.destination_type),
+      destination_value: String(row.destination_value || "").trim().toLowerCase(),
+      is_active: Boolean(row.is_active),
     }))
   );
 
@@ -1175,6 +1244,11 @@ function EmailSettings({
   onUpdateRoutingRow,
   onAddRoutingCategory,
   onDeleteRoutingCategory,
+  senderRuleRows = [],
+  senderRuleInboxes = [],
+  onUpdateSenderRuleRow,
+  onAddSenderRule,
+  onDeleteSenderRule,
   canSave = false,
   onSaveChanges,
   onDiscardChanges,
@@ -1185,6 +1259,10 @@ function EmailSettings({
   const [draftSubject, setDraftSubject] = useState(subjectTemplate || "");
   const [draftBody, setDraftBody] = useState(bodyTextTemplate || "");
   const [addCategoryModalOpen, setAddCategoryModalOpen] = useState(false);
+  const [addSenderRuleModalOpen, setAddSenderRuleModalOpen] = useState(false);
+  const [newSenderMatcherType, setNewSenderMatcherType] = useState("email");
+  const [newSenderMatcherValue, setNewSenderMatcherValue] = useState("");
+  const [newSenderDestination, setNewSenderDestination] = useState("classification:notification");
   const [newCategoryLabel, setNewCategoryLabel] = useState("");
   const [signatureBuilderOpen, setSignatureBuilderOpen] = useState(false);
   const [signatureDraft, setSignatureDraft] = useState(DEFAULT_SIGNATURE_BUILDER);
@@ -1218,6 +1296,64 @@ function EmailSettings({
     setNewCategoryLabel("");
     setAddCategoryModalOpen(false);
   }, [newCategoryLabel, onAddRoutingCategory]);
+
+  const senderDestinationOptions = useMemo(() => {
+    const dynamicOptions = (routingRows || []).map((row) => ({
+      value: `classification:${String(row?.category_key || "").trim().toLowerCase()}`,
+      label: String(row?.label || row?.category_key || "").trim() || "Custom",
+    }));
+    const inboxOptions = (senderRuleInboxes || []).map((inbox) => {
+      const slug = String(inbox?.slug || "").trim().toLowerCase();
+      const name = String(inbox?.name || slug || "").trim();
+      return {
+        value: `inbox:${slug}`,
+        label: name ? `${name} (Inbox)` : `${slug} (Inbox)`,
+      };
+    });
+    const seen = new Set();
+    const merged = [
+      { value: "classification:notification", label: "Notifications" },
+      { value: "classification:support", label: "Support" },
+      ...dynamicOptions,
+      ...inboxOptions,
+    ].filter((option) => {
+      const value = String(option?.value || "").trim();
+      if (!value || seen.has(value)) return false;
+      seen.add(value);
+      return true;
+    });
+    return merged;
+  }, [routingRows, senderRuleInboxes]);
+
+  const handleCreateSenderRule = useCallback(() => {
+    const matcherType = String(newSenderMatcherType || "email").trim().toLowerCase() === "domain" ? "domain" : "email";
+    const matcherValue = String(newSenderMatcherValue || "").trim().toLowerCase();
+    const destinationToken = String(newSenderDestination || "").trim().toLowerCase();
+    if (!matcherValue || !destinationToken) return;
+    const [destinationTypeRaw, destinationValueRaw] = destinationToken.split(":", 2);
+    const destinationType =
+      destinationTypeRaw === "inbox" ? "inbox" : "classification";
+    const destinationValue =
+      destinationType === "inbox"
+        ? normalizeSenderRuleDestinationValue("inbox", destinationValueRaw)
+        : normalizeSenderRuleDestinationValue("classification", destinationValueRaw);
+    if (!destinationValue) return;
+    onAddSenderRule?.({
+      matcher_type: matcherType,
+      matcher_value: matcherValue,
+      destination_type: destinationType,
+      destination_value: destinationValue,
+    });
+    setNewSenderMatcherType("email");
+    setNewSenderMatcherValue("");
+    setNewSenderDestination("classification:notification");
+    setAddSenderRuleModalOpen(false);
+  }, [
+    newSenderDestination,
+    newSenderMatcherType,
+    newSenderMatcherValue,
+    onAddSenderRule,
+  ]);
 
   const handleSignatureDraftField = useCallback((field, value) => {
     setSignatureDraft((prev) => ({ ...prev, [field]: value }));
@@ -1524,6 +1660,182 @@ function EmailSettings({
             </div>
           </div>
         </div>
+
+        <div className="rounded-2xl border border-border bg-card p-6">
+          <div className="space-y-5">
+            <div className="max-w-3xl">
+              <h3 className="font-medium text-foreground">Sender Rules</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Route new inbound emails by exact sender email or sender domain.
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Exact email rules take precedence over domain rules. Only new incoming emails are affected.
+              </p>
+            </div>
+            <div className="space-y-3">
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={savingRouting}
+                  onClick={() => setAddSenderRuleModalOpen(true)}
+                >
+                  + Add sender rule
+                </Button>
+              </div>
+              <div className="overflow-x-auto rounded-xl border border-border">
+                <div>
+                  <div className="grid grid-cols-[1fr_1.6fr_1fr_90px_44px] items-center gap-3 border-b border-border px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    <span>Type</span>
+                    <span>Sender match</span>
+                    <span>Destination</span>
+                    <span className="text-right">Status</span>
+                    <span />
+                  </div>
+                  {senderRuleRows.map((row) => (
+                    (() => {
+                      const destinationType = normalizeSenderRuleDestinationType(row.destination_type);
+                      const destinationValueNormalized = normalizeSenderRuleDestinationValue(
+                        destinationType,
+                        row.destination_value
+                      );
+                      const destinationToken = `${destinationType}:${destinationValueNormalized}`;
+                      const hasDestination = senderDestinationOptions.some(
+                        (option) => String(option?.value || "").trim().toLowerCase() === destinationToken
+                      );
+                      const destinationOptions = hasDestination
+                        ? senderDestinationOptions
+                        : [
+                            {
+                              value: destinationToken,
+                              label:
+                                destinationType === "inbox"
+                                  ? `${destinationValueNormalized} (Inbox, deleted)`
+                                  : `${destinationValueNormalized} (inactive)`,
+                            },
+                            ...senderDestinationOptions,
+                          ];
+                      return (
+                    <div
+                      key={row.id}
+                      className="grid grid-cols-[1fr_1.6fr_1fr_90px_44px] items-center gap-3 border-b border-border px-4 py-3 last:border-b-0"
+                    >
+                      <Select
+                        value={row.matcher_type || "email"}
+                        onValueChange={(value) =>
+                          onUpdateSenderRuleRow?.({
+                            ...row,
+                            matcher_type: value === "domain" ? "domain" : "email",
+                          })
+                        }
+                        disabled={savingRouting}
+                      >
+                        <SelectTrigger className="h-9 border-transparent bg-transparent text-sm hover:border-[#E5E7EB] focus:border-[#E5E7EB] focus:ring-0">
+                          <SelectValue placeholder="Type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="email">Email</SelectItem>
+                          <SelectItem value="domain">Domain</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Input
+                        type="text"
+                        placeholder={row.matcher_type === "domain" ? "example.com" : "sender@example.com"}
+                        value={row.matcher_value || ""}
+                        onChange={(event) =>
+                          onUpdateSenderRuleRow?.({
+                            ...row,
+                            matcher_value: event.target.value,
+                          })
+                        }
+                        className="h-9 w-full border-transparent bg-transparent text-sm hover:border-[#E5E7EB] focus:border-[#E5E7EB] focus-visible:ring-0"
+                        disabled={savingRouting}
+                      />
+                      <Select
+                        value={destinationToken || "classification:notification"}
+                        onValueChange={(value) =>
+                          {
+                            const [nextTypeRaw, nextValueRaw] = String(value || "").split(":", 2);
+                            const nextType =
+                              nextTypeRaw === "inbox" ? "inbox" : "classification";
+                            const nextValue = normalizeSenderRuleDestinationValue(
+                              nextType,
+                              nextValueRaw
+                            );
+                            onUpdateSenderRuleRow?.({
+                              ...row,
+                              destination_type: nextType,
+                              destination_value: nextValue,
+                            });
+                          }
+                        }
+                        disabled={savingRouting}
+                      >
+                        <SelectTrigger className="h-9 border-transparent bg-transparent text-sm hover:border-[#E5E7EB] focus:border-[#E5E7EB] focus:ring-0">
+                          <SelectValue placeholder="Destination" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {destinationOptions.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={Boolean(row.is_active)}
+                          onClick={() =>
+                            onUpdateSenderRuleRow?.({
+                              ...row,
+                              is_active: !Boolean(row.is_active),
+                            })
+                          }
+                          disabled={savingRouting}
+                          className={cn(
+                            "relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-200",
+                            row.is_active ? "bg-emerald-500" : "bg-slate-200",
+                            savingRouting && "cursor-not-allowed opacity-70"
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              "inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200",
+                              row.is_active ? "translate-x-6" : "translate-x-1"
+                            )}
+                          />
+                        </button>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="text-slate-500 hover:text-red-600"
+                        disabled={savingRouting}
+                        onClick={() => onDeleteSenderRule?.(row)}
+                        title="Delete sender rule"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                      );
+                    })()
+                  ))}
+                  {!senderRuleRows.length ? (
+                    <p className="px-4 py-3 text-sm text-muted-foreground">
+                      No sender rules yet.
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                A sender rule override applies before AI/heuristic classification.
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
 
       <Dialog open={messageModalOpen} onOpenChange={setMessageModalOpen}>
@@ -1638,6 +1950,88 @@ function EmailSettings({
               disabled={!String(newCategoryLabel || "").trim()}
             >
               Create category
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={addSenderRuleModalOpen}
+        onOpenChange={(next) => {
+            setAddSenderRuleModalOpen(next);
+          if (!next) {
+            setNewSenderMatcherType("email");
+            setNewSenderMatcherValue("");
+            setNewSenderDestination("classification:notification");
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add sender rule</DialogTitle>
+            <DialogDescription>
+              Route future emails from a specific sender email or domain.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-slate-700">Type</label>
+              <Select value={newSenderMatcherType} onValueChange={setNewSenderMatcherType}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="email">Email</SelectItem>
+                  <SelectItem value="domain">Domain</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-slate-700">Match value</label>
+              <Input
+                value={newSenderMatcherValue}
+                onChange={(event) => setNewSenderMatcherValue(event.target.value)}
+                placeholder={newSenderMatcherType === "domain" ? "example.com" : "sender@example.com"}
+                autoFocus
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-slate-700">Destination</label>
+              <Select value={newSenderDestination} onValueChange={setNewSenderDestination}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select destination" />
+                </SelectTrigger>
+                <SelectContent>
+                  {senderDestinationOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setAddSenderRuleModalOpen(false);
+                setNewSenderMatcherType("email");
+                setNewSenderMatcherValue("");
+                setNewSenderDestination("classification:notification");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleCreateSenderRule}
+              disabled={
+                !String(newSenderMatcherValue || "").trim() ||
+                !String(newSenderDestination || "").trim()
+              }
+            >
+              Create rule
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1951,6 +2345,7 @@ function ProfileTab({ user, isLoaded }) {
 }
 
 export function SettingsPanel() {
+  const searchParams = useSearchParams();
   const supabase = useClerkSupabase();
   const { user, isLoaded } = useUser();
   const { orgId, orgRole } = useAuth();
@@ -1995,6 +2390,8 @@ export function SettingsPanel() {
   const [sendingSignatureTest, setSendingSignatureTest] = useState(false);
   const [savingAutoReply, setSavingAutoReply] = useState(false);
   const [emailRoutingRows, setEmailRoutingRows] = useState([]);
+  const [emailSenderRuleRows, setEmailSenderRuleRows] = useState([]);
+  const [workspaceInboxesForRules, setWorkspaceInboxesForRules] = useState([]);
   const [savingEmailRouting, setSavingEmailRouting] = useState(false);
   const [initialAutoReplyEnabled, setInitialAutoReplyEnabled] = useState(false);
   const [initialAutoReplyTriggerMode, setInitialAutoReplyTriggerMode] = useState("first_inbound_per_thread");
@@ -2014,6 +2411,18 @@ export function SettingsPanel() {
   const [initialSignatureIsActive, setInitialSignatureIsActive] = useState(true);
   const [initialSignatureTemplateHtml, setInitialSignatureTemplateHtml] = useState("");
   const [initialEmailRoutingRows, setInitialEmailRoutingRows] = useState([]);
+  const [initialEmailSenderRuleRows, setInitialEmailSenderRuleRows] = useState([]);
+
+  useEffect(() => {
+    const requestedTab = String(searchParams?.get("tab") || "").trim().toLowerCase();
+    if (!requestedTab) return;
+    const isValidTab = MENU_SECTIONS.some((section) =>
+      section.items.some((item) => item.key === requestedTab)
+    );
+    if (isValidTab) {
+      setActiveTab(requestedTab);
+    }
+  }, [searchParams]);
   const loadData = useCallback(async () => {
     if (!supabase) {
       setLoading(false);
@@ -2140,6 +2549,11 @@ export function SettingsPanel() {
         setMembers([]);
         setWorkspaceCurrentRole("");
         setCanManageWorkspaceMembers(false);
+        setEmailRoutingRows(normalizeRoutingRows([]));
+        setInitialEmailRoutingRows(normalizeRoutingRows([]));
+        setEmailSenderRuleRows(normalizeSenderRuleRows([]));
+        setInitialEmailSenderRuleRows(normalizeSenderRuleRows([]));
+        setWorkspaceInboxesForRules([]);
         return;
       }
 
@@ -2308,6 +2722,36 @@ export function SettingsPanel() {
         const fallbackRoutes = normalizeRoutingRows([]);
         setEmailRoutingRows(fallbackRoutes);
         setInitialEmailRoutingRows(fallbackRoutes);
+      }
+
+      const emailSenderRulesResponse = await fetch("/api/settings/email-sender-rules", {
+        method: "GET",
+        cache: "no-store",
+        credentials: "include",
+      }).catch(() => null);
+      if (emailSenderRulesResponse?.ok) {
+        const payload = await emailSenderRulesResponse.json().catch(() => ({}));
+        const rows = Array.isArray(payload?.rules) ? payload.rules : [];
+        const normalized = normalizeSenderRuleRows(rows);
+        setEmailSenderRuleRows(normalized);
+        setInitialEmailSenderRuleRows(normalized);
+      } else {
+        const fallbackRules = normalizeSenderRuleRows([]);
+        setEmailSenderRuleRows(fallbackRules);
+        setInitialEmailSenderRuleRows(fallbackRules);
+      }
+
+      const inboxesResponse = await fetch("/api/inboxes", {
+        method: "GET",
+        cache: "no-store",
+        credentials: "include",
+      }).catch(() => null);
+      if (inboxesResponse?.ok) {
+        const payload = await inboxesResponse.json().catch(() => ({}));
+        const inboxes = Array.isArray(payload?.inboxes) ? payload.inboxes : [];
+        setWorkspaceInboxesForRules(inboxes);
+      } else {
+        setWorkspaceInboxesForRules([]);
       }
 
     } catch (error) {
@@ -2585,6 +3029,66 @@ export function SettingsPanel() {
     setEmailRoutingRows((prev) => prev.filter((entry) => String(entry?.id || "") !== id));
   }, []);
 
+  const handleUpdateEmailSenderRuleRow = useCallback((row) => {
+    const rowId = String(row?.id || "").trim();
+    if (!rowId) return;
+    setEmailSenderRuleRows((prev) =>
+      prev.map((existing) =>
+        existing.id === rowId
+          ? {
+              ...existing,
+              matcher_type: String(row?.matcher_type || existing.matcher_type || "email") === "domain" ? "domain" : "email",
+              matcher_value: String(row?.matcher_value || ""),
+              destination_type: normalizeSenderRuleDestinationType(
+                row?.destination_type || existing.destination_type || "classification"
+              ),
+              destination_value: normalizeSenderRuleDestinationValue(
+                normalizeSenderRuleDestinationType(
+                  row?.destination_type || existing.destination_type || "classification"
+                ),
+                row?.destination_value || existing.destination_value || "notification"
+              ),
+              is_active: typeof row?.is_active === "boolean" ? row.is_active : Boolean(existing?.is_active),
+            }
+          : existing
+      )
+    );
+  }, []);
+
+  const handleAddEmailSenderRule = useCallback((rule) => {
+    const matcherType = String(rule?.matcher_type || "email").trim().toLowerCase() === "domain" ? "domain" : "email";
+    const matcherValue = String(rule?.matcher_value || "").trim().toLowerCase();
+    const destinationType = normalizeSenderRuleDestinationType(
+      rule?.destination_type || "classification"
+    );
+    const destinationValue = normalizeSenderRuleDestinationValue(
+      destinationType,
+      rule?.destination_value || "notification"
+    );
+    if (!matcherValue || !destinationValue) return;
+    const tempId = `tmp_sender_rule_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    setEmailSenderRuleRows((prev) =>
+      normalizeSenderRuleRows([
+        ...prev,
+        {
+          id: tempId,
+          matcher_type: matcherType,
+          matcher_value: matcherValue,
+          destination_type: destinationType,
+          destination_value: destinationValue,
+          is_active: true,
+        },
+      ])
+    );
+  }, []);
+
+  const handleDeleteEmailSenderRule = useCallback((row) => {
+    const id = String(row?.id || "").trim();
+    if (!id) return;
+    if (!window.confirm(`Delete sender rule "${row?.matcher_value || id}"?`)) return;
+    setEmailSenderRuleRows((prev) => prev.filter((entry) => String(entry?.id || "") !== id));
+  }, []);
+
   const handleSendSignatureTest = useCallback(async () => {
     if (sendingSignatureTest) return;
     setSendingSignatureTest(true);
@@ -2653,6 +3157,11 @@ export function SettingsPanel() {
     [emailRoutingRows, initialEmailRoutingRows]
   );
 
+  const hasSenderRulesChanges = useMemo(
+    () => senderRulesSnapshot(emailSenderRuleRows) !== senderRulesSnapshot(initialEmailSenderRuleRows),
+    [emailSenderRuleRows, initialEmailSenderRuleRows]
+  );
+
   const hasSignatureTemplateChanges = useMemo(() => {
     if (Boolean(signatureIsActive) !== Boolean(initialSignatureIsActive)) return true;
     if (String(signatureTemplateHtml || "") !== String(initialSignatureTemplateHtml || "")) return true;
@@ -2665,8 +3174,8 @@ export function SettingsPanel() {
   ]);
 
   const canSaveEmailSettings = useMemo(() => {
-    return hasAutoReplyChanges || hasRoutingChanges || hasSignatureTemplateChanges;
-  }, [hasAutoReplyChanges, hasRoutingChanges, hasSignatureTemplateChanges]);
+    return hasAutoReplyChanges || hasRoutingChanges || hasSenderRulesChanges || hasSignatureTemplateChanges;
+  }, [hasAutoReplyChanges, hasRoutingChanges, hasSenderRulesChanges, hasSignatureTemplateChanges]);
 
   const handleDiscardEmailSettings = useCallback(() => {
     setAutoReplyEnabled(Boolean(initialAutoReplyEnabled));
@@ -2681,6 +3190,7 @@ export function SettingsPanel() {
     setSignatureIsActive(Boolean(initialSignatureIsActive));
     setSignatureTemplateHtml(String(initialSignatureTemplateHtml || ""));
     setEmailRoutingRows(normalizeRoutingRows(initialEmailRoutingRows));
+    setEmailSenderRuleRows(normalizeSenderRuleRows(initialEmailSenderRuleRows));
   }, [
     initialAutoReplyBodyHtmlTemplate,
     initialAutoReplyBodyTextTemplate,
@@ -2694,6 +3204,7 @@ export function SettingsPanel() {
     initialSignatureIsActive,
     initialSignatureTemplateHtml,
     initialEmailRoutingRows,
+    initialEmailSenderRuleRows,
   ]);
 
   const handleSaveEmailSettings = useCallback(async () => {
@@ -2809,6 +3320,82 @@ export function SettingsPanel() {
         setEmailRoutingRows(persistedRows);
       }
 
+      if (hasSenderRulesChanges) {
+        const senderRuleRows = normalizeSenderRuleRows(emailSenderRuleRows);
+        const initialRows = normalizeSenderRuleRows(initialEmailSenderRuleRows);
+        const currentIds = new Set(senderRuleRows.map((row) => String(row.id)));
+        const deletedRows = initialRows.filter((row) => !currentIds.has(String(row.id)));
+
+        for (const row of deletedRows) {
+          const response = await fetch("/api/settings/email-sender-rules", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ id: row.id }),
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(payload?.error || "Could not delete sender rule.");
+          }
+        }
+
+        for (const row of senderRuleRows) {
+          const matcherType = String(row.matcher_type || "").trim().toLowerCase();
+          const matcherValue = String(row.matcher_value || "").trim().toLowerCase();
+          const destinationType = normalizeSenderRuleDestinationType(row.destination_type);
+          const destinationValue = normalizeSenderRuleDestinationValue(
+            destinationType,
+            row.destination_value
+          );
+          if (!matcherType || !matcherValue || !destinationType || !destinationValue) {
+            throw new Error("Sender rule requires matcher type, match value, and destination.");
+          }
+
+          const isTemporary = String(row.id).startsWith("tmp_sender_rule_");
+          const method = isTemporary ? "POST" : "PUT";
+          const requestBody = isTemporary
+            ? {
+                matcher_type: matcherType,
+                matcher_value: matcherValue,
+                destination_type: destinationType,
+                destination_value: destinationValue,
+                is_active: Boolean(row.is_active),
+              }
+            : {
+                id: row.id,
+                matcher_type: matcherType,
+                matcher_value: matcherValue,
+                destination_type: destinationType,
+                destination_value: destinationValue,
+                is_active: Boolean(row.is_active),
+              };
+
+          const response = await fetch("/api/settings/email-sender-rules", {
+            method,
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify(requestBody),
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(payload?.error || "Could not save sender rule.");
+          }
+        }
+
+        const refreshResponse = await fetch("/api/settings/email-sender-rules", {
+          method: "GET",
+          cache: "no-store",
+          credentials: "include",
+        });
+        const refreshPayload = await refreshResponse.json().catch(() => ({}));
+        if (!refreshResponse.ok) {
+          throw new Error(refreshPayload?.error || "Could not reload sender rules.");
+        }
+        const persistedRules = normalizeSenderRuleRows(refreshPayload?.rules || []);
+        setInitialEmailSenderRuleRows(persistedRules);
+        setEmailSenderRuleRows(persistedRules);
+      }
+
       if (hasAutoReplyChanges) {
         setInitialAutoReplyEnabled(Boolean(autoReplyEnabled));
         setInitialAutoReplyTriggerMode(String(autoReplyTriggerMode || "first_inbound_per_thread"));
@@ -2838,11 +3425,14 @@ export function SettingsPanel() {
     autoReplyTriggerMode,
     canSaveEmailSettings,
     emailRoutingRows,
+    emailSenderRuleRows,
     hasAutoReplyChanges,
     hasSignatureTemplateChanges,
     hasRoutingChanges,
+    hasSenderRulesChanges,
     handleSaveAutoReply,
     initialEmailRoutingRows,
+    initialEmailSenderRuleRows,
     signatureIsActive,
     signatureTemplateHtml,
     savingAutoReply,
@@ -2900,6 +3490,11 @@ export function SettingsPanel() {
             onUpdateRoutingRow={handleUpdateEmailRoutingRow}
             onAddRoutingCategory={handleAddEmailRoutingCategory}
             onDeleteRoutingCategory={handleDeleteEmailRoutingCategory}
+            senderRuleRows={emailSenderRuleRows}
+            senderRuleInboxes={workspaceInboxesForRules}
+            onUpdateSenderRuleRow={handleUpdateEmailSenderRuleRow}
+            onAddSenderRule={handleAddEmailSenderRule}
+            onDeleteSenderRule={handleDeleteEmailSenderRule}
             canSave={canSaveEmailSettings}
             onSaveChanges={handleSaveEmailSettings}
             onDiscardChanges={handleDiscardEmailSettings}

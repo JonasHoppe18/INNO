@@ -29,6 +29,7 @@ export function TicketListItem({
   priority,
   isExiting = false,
   isNew = false,
+  mountIndex = 0,
   onSelect,
   onContextMenu,
 }) {
@@ -62,15 +63,16 @@ export function TicketListItem({
       onContextMenu={(event) => onContextMenu?.(event)}
       className={cn(
         "relative flex w-full flex-col gap-1 px-4 py-3 text-left transition-colors duration-200 hover:bg-muted/50",
-        isNew && "animate-ticket-enter",
+        isNew ? "animate-ticket-enter" : !isExiting && "animate-list-item-enter",
         isActive && "bg-muted/50",
         isExiting && "pointer-events-none"
       )}
       style={{
+        animationDelay: !isNew && !isExiting && mountIndex > 0 ? `${Math.min(mountIndex, 8) * 28}ms` : undefined,
         transition:
-          "opacity 280ms cubic-bezier(0.4,0,1,1), transform 280ms cubic-bezier(0.4,0,1,1), max-height 280ms cubic-bezier(0.4,0,1,1), padding 280ms cubic-bezier(0.4,0,1,1)",
+          "opacity 200ms cubic-bezier(0.23,1,0.32,1), transform 200ms cubic-bezier(0.23,1,0.32,1), max-height 240ms cubic-bezier(0.23,1,0.32,1), padding 240ms cubic-bezier(0.23,1,0.32,1)",
         opacity: isExiting ? 0 : 1,
-        transform: isExiting ? "translateX(16px) scale(0.98)" : "translateX(0) scale(1)",
+        transform: isExiting ? "translateX(12px) scale(0.98)" : "translateX(0) scale(1)",
         maxHeight: isExiting ? "0px" : "220px",
         paddingTop: isExiting ? "0px" : undefined,
         paddingBottom: isExiting ? "0px" : undefined,

@@ -94,6 +94,7 @@ export function TicketDetail({
   onTicketStateChange,
   onOpenInsights,
   showThinkingCard = false,
+  isDraftFetching = false,
   draftValue,
   onDraftChange,
   onDraftBlur,
@@ -407,7 +408,7 @@ export function TicketDetail({
         className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         onScroll={(event) => onConversationScroll?.(event.currentTarget.scrollTop)}
       >
-        <div className="mx-auto w-full max-w-[900px] space-y-2.5 px-4 pb-4 pt-3">
+        <div key={thread.id} className="animate-detail-enter mx-auto w-full max-w-[900px] space-y-2.5 px-4 pb-4 pt-3">
           {orderUpdateError && !shouldShowActionCard ? (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
               {orderUpdateError}
@@ -666,7 +667,7 @@ export function TicketDetail({
             toLabel={toLabel}
             mentionUsers={mentionUsers}
             onBlur={() => onDraftBlur?.(thread?.id || null)}
-            isDraftLoading={showThinkingCard}
+            isDraftLoading={showThinkingCard || isDraftFetching}
             onGenerateDraft={onGenerateDraft}
             isGeneratingDraft={isGeneratingDraft}
             onRefineDraft={onRefineDraft}

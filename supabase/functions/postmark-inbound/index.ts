@@ -82,6 +82,23 @@ type WorkspaceEmailRoute = {
   is_active: boolean;
 };
 
+type WorkspaceEmailSenderRule = {
+  id: string;
+  workspace_id: string;
+  matcher_type: "email" | "domain";
+  matcher_value: string;
+  destination_type: "classification" | "inbox";
+  destination_value: string;
+  is_active: boolean;
+  updated_at: string | null;
+};
+
+type SenderRuleOverride = {
+  id: string;
+  destinationType: "classification" | "inbox";
+  destinationValue: string;
+};
+
 type RouteDecision = {
   category: string;
   mode: "manual_approval" | "auto_forward" | null;
@@ -238,6 +255,25 @@ function buildThreadTags(existingTags: unknown, category: EmailCategory): string
   return [category, ...other];
 }
 
+function normalizeInboxSlug(value: unknown): string {
+  return asString(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9-_ ]+/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function withInboxTag(existingTags: unknown, inboxSlug: string | null): string[] {
+  const list = Array.isArray(existingTags)
+    ? existingTags.map((tag) => String(tag || "").trim()).filter(Boolean)
+    : [];
+  const withoutInbox = list.filter((tag) => !tag.startsWith("inbox:"));
+  const normalizedSlug = normalizeInboxSlug(inboxSlug || "");
+  if (!normalizedSlug) return withoutInbox;
+  return [...withoutInbox, `inbox:${normalizedSlug}`];
+}
+
 async function lookupMailbox(slug: string): Promise<MailboxLookup | null> {
   if (!supabase) return null;
   const { data, error } = await supabase
@@ -306,6 +342,48 @@ function normalizeRouteMode(value: unknown): "manual_approval" | "auto_forward" 
   return asString(value).toLowerCase() === "auto_forward" ? "auto_forward" : "manual_approval";
 }
 
+function normalizeSenderMatcherType(value: unknown): "email" | "domain" | null {
+  const normalized = asString(value).toLowerCase();
+  if (normalized === "email") return "email";
+  if (normalized === "domain") return "domain";
+  return null;
+}
+
+function normalizeSenderDestinationType(value: unknown): "classification" | "inbox" | null {
+  const normalized = asString(value).toLowerCase();
+  if (normalized === "classification") return "classification";
+  if (normalized === "inbox") return "inbox";
+  return null;
+}
+
+function normalizeSenderMatcherValue(matcherType: "email" | "domain", value: unknown): string {
+  const normalized = asString(value).toLowerCase();
+  if (!normalized) return "";
+  if (matcherType === "email") {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized) ? normalized : "";
+  }
+  const domain = normalized.replace(/^@+/, "");
+  if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(domain)) return "";
+  if (domain.includes("..") || domain.startsWith(".") || domain.endsWith(".")) return "";
+  return domain;
+}
+
+function normalizeSenderDestinationValue(
+  destinationType: "classification" | "inbox",
+  value: unknown,
+): string {
+  if (destinationType === "classification") {
+    return normalizeRouteCategory(value);
+  }
+  return normalizeInboxSlug(value);
+}
+
+function extractDomain(value: string): string {
+  const normalized = asString(value).toLowerCase();
+  const parts = normalized.split("@");
+  return parts.length === 2 ? parts[1] : "";
+}
+
 function buildForwardActionKey(messageId: string | null, targetEmail: string): string {
   return `forward_email::${String(messageId || "unknown")}::${targetEmail.toLowerCase()}`;
 }
@@ -337,11 +415,144 @@ async function ensureWorkspaceRoutes(workspaceId: string | null): Promise<Worksp
     .filter((row): row is WorkspaceEmailRoute => Boolean(row?.id));
 }
 
+async function ensureWorkspaceInboxSlugs(workspaceId: string | null): Promise<Set<string>> {
+  if (!supabase || !workspaceId) return new Set();
+  const { data, error } = await supabase
+    .from("workspace_inboxes")
+    .select("slug")
+    .eq("workspace_id", workspaceId);
+  if (error) {
+    if (
+      /relation .*workspace_inboxes.* does not exist/i.test(
+        String((error as { message?: string })?.message || ""),
+      )
+    ) {
+      return new Set();
+    }
+    throw new Error(error.message);
+  }
+
+  const slugs = new Set<string>();
+  for (const row of Array.isArray(data) ? data : []) {
+    const slug = normalizeInboxSlug((row as { slug?: string | null })?.slug || "");
+    if (slug) slugs.add(slug);
+  }
+  return slugs;
+}
+
+async function ensureWorkspaceSenderRules(workspaceId: string | null): Promise<WorkspaceEmailSenderRule[]> {
+  if (!supabase || !workspaceId) return [];
+
+  const { data, error } = await supabase
+    .from("workspace_email_sender_rules")
+    .select(
+      "id, workspace_id, matcher_type, matcher_value, destination_type, destination_value, destination_key, is_active, updated_at",
+    )
+    .eq("workspace_id", workspaceId)
+    .eq("is_active", true)
+    .order("updated_at", { ascending: false })
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+
+  return (Array.isArray(data) ? data : [])
+    .map((row) => {
+      const matcherType = normalizeSenderMatcherType(row?.matcher_type);
+      if (!matcherType) return null;
+      const matcherValue = normalizeSenderMatcherValue(matcherType, row?.matcher_value);
+      if (!matcherValue) return null;
+      const rawDestinationType =
+        normalizeSenderDestinationType((row as { destination_type?: unknown })?.destination_type) ||
+        "classification";
+      const fallbackDestinationValue =
+        rawDestinationType === "classification"
+          ? normalizeRouteCategory((row as { destination_key?: unknown })?.destination_key)
+          : "";
+      const destinationValue = normalizeSenderDestinationValue(
+        rawDestinationType,
+        (row as { destination_value?: unknown })?.destination_value || fallbackDestinationValue,
+      );
+      if (!destinationValue) return null;
+      return {
+        id: asString(row?.id),
+        workspace_id: asString(row?.workspace_id),
+        matcher_type: matcherType,
+        matcher_value: matcherValue,
+        destination_type: rawDestinationType,
+        destination_value: destinationValue,
+        is_active: Boolean(row?.is_active),
+        updated_at: asString(row?.updated_at) || null,
+      } as WorkspaceEmailSenderRule;
+    })
+    .filter((row): row is WorkspaceEmailSenderRule => Boolean(row?.id && row?.is_active));
+}
+
+function resolveSenderRuleOverride(options: {
+  fromEmail: string;
+  rules: WorkspaceEmailSenderRule[];
+  routes: WorkspaceEmailRoute[];
+  inboxSlugs: Set<string>;
+}): SenderRuleOverride | null {
+  const fromEmail = asString(options.fromEmail).toLowerCase();
+  if (!fromEmail) return null;
+  const fromDomain = extractDomain(fromEmail);
+
+  const isValidDestination = (
+    destinationType: "classification" | "inbox",
+    destinationValue: string,
+  ) => {
+    if (destinationType === "inbox") {
+      return options.inboxSlugs.has(normalizeInboxSlug(destinationValue));
+    }
+    if (destinationValue === "support" || destinationValue === "notification") return true;
+    return options.routes.some((route) => {
+      return route.is_active && normalizeRouteCategory(route.category_key) === destinationValue;
+    });
+  };
+
+  for (const rule of options.rules) {
+    if (rule.matcher_type !== "email") continue;
+    const destinationType = rule.destination_type;
+    const destinationValue = normalizeSenderDestinationValue(
+      destinationType,
+      rule.destination_value,
+    );
+    if (!destinationValue || !isValidDestination(destinationType, destinationValue)) continue;
+    if (rule.matcher_value === fromEmail) {
+      return { id: rule.id, destinationType, destinationValue };
+    }
+  }
+
+  for (const rule of options.rules) {
+    if (rule.matcher_type !== "domain") continue;
+    const destinationType = rule.destination_type;
+    const destinationValue = normalizeSenderDestinationValue(
+      destinationType,
+      rule.destination_value,
+    );
+    if (!destinationValue || !isValidDestination(destinationType, destinationValue)) continue;
+    if (fromDomain && rule.matcher_value === fromDomain) {
+      return { id: rule.id, destinationType, destinationValue };
+    }
+  }
+
+  return null;
+}
+
 function decideRouteForClassification(
   classification: RoutingClassification,
   routes: WorkspaceEmailRoute[],
 ): RouteDecision {
   const category = normalizeRouteCategory(classification.category);
+  if (category === "notification") {
+    return {
+      category,
+      mode: null,
+      forwardToEmail: null,
+      shouldCreateApprovalAction: false,
+      shouldAutoForward: false,
+      isEffectiveSupport: false,
+    };
+  }
   if (category === "support") {
     return {
       category,
@@ -1284,6 +1495,26 @@ Deno.serve(async (req) => {
     console.warn("postmark-inbound: failed to load email routes", (error as Error)?.message || error);
     workspaceRoutes = [];
   }
+  let workspaceSenderRules: WorkspaceEmailSenderRule[] = [];
+  try {
+    workspaceSenderRules = await ensureWorkspaceSenderRules(mailbox.workspace_id);
+  } catch (error) {
+    console.warn(
+      "postmark-inbound: failed to load sender rules",
+      (error as Error)?.message || error,
+    );
+    workspaceSenderRules = [];
+  }
+  let workspaceInboxSlugs = new Set<string>();
+  try {
+    workspaceInboxSlugs = await ensureWorkspaceInboxSlugs(mailbox.workspace_id);
+  } catch (error) {
+    console.warn(
+      "postmark-inbound: failed to load workspace inboxes",
+      (error as Error)?.message || error,
+    );
+    workspaceInboxSlugs = new Set<string>();
+  }
   const activeRoutingCategories: RoutingTargetCategory[] = workspaceRoutes
     .filter((route) => route.is_active)
     .map((route) => ({
@@ -1325,6 +1556,36 @@ Deno.serve(async (req) => {
     };
   }
 
+  const senderRuleOverride = resolveSenderRuleOverride({
+    fromEmail,
+    rules: workspaceSenderRules,
+    routes: workspaceRoutes,
+    inboxSlugs: workspaceInboxSlugs,
+  });
+  const senderRuleTargetsInbox =
+    senderRuleOverride?.destinationType === "inbox";
+  const senderRuleInboxSlug = senderRuleTargetsInbox
+    ? normalizeInboxSlug(senderRuleOverride?.destinationValue || "")
+    : "";
+  if (senderRuleOverride && !senderRuleTargetsInbox) {
+    routingClassification = {
+      ...routingClassification,
+      category: senderRuleOverride.destinationValue,
+      confidence: 0.99,
+      reason: `sender_rule_override:${senderRuleOverride.id}`,
+      source: "fallback",
+    };
+  }
+  if (senderRuleTargetsInbox) {
+    routingClassification = {
+      ...routingClassification,
+      category: "support",
+      confidence: 0.99,
+      reason: `sender_rule_override:${senderRuleOverride.id}`,
+      source: "fallback",
+    };
+  }
+
   const routeDecision = decideRouteForClassification(routingClassification, workspaceRoutes);
   const inboxClassification = classifyInboxBucket({
     from: fromRaw,
@@ -1335,8 +1596,25 @@ Deno.serve(async (req) => {
       value: header?.Value ?? "",
     })),
   });
+  const classificationKey = senderRuleOverride
+    ? senderRuleTargetsInbox
+      ? "support"
+      : normalizeRouteCategory(senderRuleOverride.destinationValue)
+    : inboxClassification.bucket === "notification"
+      ? "notification"
+      : normalizeRouteCategory(routingClassification.category);
+  const classificationConfidence = senderRuleOverride
+    ? 0.99
+    : inboxClassification.bucket === "notification"
+      ? Math.min(1, Math.max(0.8, inboxClassification.score / 8))
+      : routingClassification.confidence;
+  const classificationReason = senderRuleOverride
+    ? `sender_rule_override:${senderRuleOverride.id}`
+    : inboxClassification.bucket === "notification"
+      ? inboxClassification.reason
+      : routingClassification.reason;
   let inboundCategory: EmailCategory = "General";
-  if (routeDecision.isEffectiveSupport && inboxClassification.bucket !== "notification") {
+  if (classificationKey === "support" && routeDecision.isEffectiveSupport) {
     try {
       inboundCategory = await categorizeEmail({
         subject,
@@ -1382,19 +1660,10 @@ Deno.serve(async (req) => {
         is_read: false,
         status: "new",
         priority: "normal",
-        tags: buildThreadTags([], inboundCategory),
-        classification_key:
-          inboxClassification.bucket === "notification"
-            ? "notification"
-            : normalizeRouteCategory(routingClassification.category),
-        classification_confidence:
-          inboxClassification.bucket === "notification"
-            ? Math.min(1, Math.max(0.8, inboxClassification.score / 8))
-            : routingClassification.confidence,
-        classification_reason:
-          inboxClassification.bucket === "notification"
-            ? inboxClassification.reason
-            : routingClassification.reason,
+        tags: withInboxTag(buildThreadTags([], inboundCategory), senderRuleInboxSlug || null),
+        classification_key: classificationKey,
+        classification_confidence: classificationConfidence,
+        classification_reason: classificationReason,
         updated_at: new Date().toISOString(),
       })
       .select("id, subject, unread_count")
@@ -1500,18 +1769,9 @@ Deno.serve(async (req) => {
       (shopifyContact.customerEmail || fromEmail || existingThread?.customer_email || "").toLowerCase() ||
       null,
     customer_last_inbound_at: receivedAt,
-    classification_key:
-      inboxClassification.bucket === "notification"
-        ? "notification"
-        : normalizeRouteCategory(routingClassification.category),
-    classification_confidence:
-      inboxClassification.bucket === "notification"
-        ? Math.min(1, Math.max(0.8, inboxClassification.score / 8))
-        : routingClassification.confidence,
-    classification_reason:
-      inboxClassification.bucket === "notification"
-        ? inboxClassification.reason
-        : routingClassification.reason,
+    classification_key: classificationKey,
+    classification_confidence: classificationConfidence,
+    classification_reason: classificationReason,
     updated_at: new Date().toISOString(),
   };
   if (!createdNewThread) {
@@ -1520,6 +1780,10 @@ Deno.serve(async (req) => {
   }
   if (shouldUpdateCategory) {
     updatePayload.tags = buildThreadTags(existingThread?.tags, inboundCategory);
+  }
+  if (senderRuleInboxSlug) {
+    const currentTags = updatePayload.tags ?? existingThread?.tags;
+    updatePayload.tags = withInboxTag(currentTags, senderRuleInboxSlug);
   }
   await supabase
     .from("mail_threads")

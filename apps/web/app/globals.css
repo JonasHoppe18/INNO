@@ -23,6 +23,69 @@
   }
 }
 
+@keyframes detail-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-detail-enter {
+  animation: detail-enter 220ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-detail-enter {
+    animation: none;
+  }
+}
+
+@keyframes list-item-enter {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-list-item-enter {
+  animation: list-item-enter 200ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-list-item-enter {
+    animation: none;
+  }
+}
+
+@keyframes view-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-view-enter {
+  animation: view-enter 180ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-view-enter {
+    animation: none;
+  }
+}
+
 @keyframes settings-tab-enter {
   from {
     opacity: 0;

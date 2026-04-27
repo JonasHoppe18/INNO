@@ -85,28 +85,31 @@ export async function GET(_request, context) {
       return NextResponse.json({ messages: [] }, { status: 200 });
     }
 
-    const mailboxIds = await loadMailboxIds(serviceClient, scope);
+    const [mailboxIds, relatedThreadIds] = await (async () => {
+      const ids = await loadMailboxIds(serviceClient, scope);
+      if (!ids.length) return [ids, [threadId]];
+      const related = await loadRelatedThreadIds(serviceClient, threadId, ids);
+      return [ids, related];
+    })();
+
     if (!mailboxIds.length) {
       return NextResponse.json({ messages: [] }, { status: 200 });
     }
 
-    const relatedThreadIds = await loadRelatedThreadIds(serviceClient, threadId, mailboxIds);
+    const buildMessagesQuery = (select) => {
+      let q = serviceClient
+        .from("mail_messages")
+        .select(select)
+        .in("mailbox_id", mailboxIds)
+        .order("received_at", { ascending: true, nullsLast: true });
+      return relatedThreadIds.length > 1
+        ? q.in("thread_id", relatedThreadIds)
+        : q.eq("thread_id", threadId);
+    };
 
-    let request = serviceClient
-      .from("mail_messages")
-      .select(
-        "id, user_id, mailbox_id, thread_id, provider_message_id, subject, snippet, body_text, body_html, clean_body_text, clean_body_html, quoted_body_text, quoted_body_html, from_name, from_email, extracted_customer_name, extracted_customer_email, extracted_customer_fields, sender_identity_source, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at, ai_draft_text"
-      )
-      .in("mailbox_id", mailboxIds)
-      .order("received_at", { ascending: true, nullsLast: true });
-
-    if (relatedThreadIds.length > 1) {
-      request = request.in("thread_id", relatedThreadIds);
-    } else {
-      request = request.eq("thread_id", threadId);
-    }
-
-    let { data: rows, error } = await request;
+    let { data: rows, error } = await buildMessagesQuery(
+      "id, user_id, mailbox_id, thread_id, provider_message_id, subject, snippet, body_text, body_html, clean_body_text, clean_body_html, quoted_body_text, quoted_body_html, from_name, from_email, extracted_customer_name, extracted_customer_email, extracted_customer_fields, sender_identity_source, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at, ai_draft_text"
+    );
 
     if (
       error &&
@@ -114,19 +117,9 @@ export async function GET(_request, context) {
         error.message || ""
       )
     ) {
-      let leanRequest = serviceClient
-        .from("mail_messages")
-        .select(
-          "id, user_id, mailbox_id, thread_id, subject, snippet, body_text, body_html, from_name, from_email, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at"
-        )
-        .in("mailbox_id", mailboxIds)
-        .order("received_at", { ascending: true, nullsLast: true });
-      if (relatedThreadIds.length > 1) {
-        leanRequest = leanRequest.in("thread_id", relatedThreadIds);
-      } else {
-        leanRequest = leanRequest.eq("thread_id", threadId);
-      }
-      const lean = await leanRequest;
+      const lean = await buildMessagesQuery(
+        "id, user_id, mailbox_id, thread_id, subject, snippet, body_text, body_html, from_name, from_email, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at"
+      );
       rows = lean.data;
       error = lean.error;
     }
@@ -134,9 +127,7 @@ export async function GET(_request, context) {
     if (error) throw new Error(error.message);
 
     const messages = Array.isArray(rows) ? rows : [];
-    const messageIds = messages
-      .map((row) => String(row?.id || "").trim())
-      .filter(Boolean);
+    const messageIds = messages.map((row) => String(row?.id || "").trim()).filter(Boolean);
 
     let attachments = [];
     if (messageIds.length) {

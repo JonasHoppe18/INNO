@@ -285,6 +285,7 @@ export function useThreadMessages(threadId, options = {}) {
   const [attachments, setAttachments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [fetchedThreadId, setFetchedThreadId] = useState(threadId || null);
   const seededKey = useMemo(() => makeListKey(seeded), [seeded]);
   const seededKeyRef = useRef(seededKey);
   const lastThreadIdRef = useRef(threadId || null);
@@ -324,6 +325,7 @@ export function useThreadMessages(threadId, options = {}) {
           }
           setData(rows);
           setAttachments(attachmentRows);
+          setFetchedThreadId(requestThreadId);
           return;
         }
       } catch (_serverFetchError) {
@@ -517,6 +519,7 @@ export function useThreadMessages(threadId, options = {}) {
       if (isStale()) return;
       const normalizedRows = Array.isArray(rows) ? rows : [];
       setData(normalizedRows);
+      setFetchedThreadId(requestThreadId);
 
       const messageIds = normalizedRows
         .map((row) => String(row?.id || "").trim())
@@ -578,7 +581,7 @@ export function useThreadMessages(threadId, options = {}) {
     setAttachments([]);
   }, [seeded, seededKey, threadId]);
 
-  return { data, attachments, loading, error, refresh: fetchMessages };
+  return { data, attachments, loading, error, refresh: fetchMessages, fetchedThreadId };
 }
 
 export function useThreadPreviewMessages(threadIds = [], options = {}) {

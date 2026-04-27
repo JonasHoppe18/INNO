@@ -149,15 +149,17 @@ export async function GET() {
       return NextResponse.json({ threads: [], messages: [], attachments: [] }, { status: 200 });
     }
 
-    const mailboxIds = await loadMailboxIds(serviceClient, scope);
+    const [mailboxIds, autoCloseDelayHours] = await Promise.all([
+      loadMailboxIds(serviceClient, scope),
+      loadAutoCloseDelayHours(serviceClient, scope).catch((error) => {
+        console.error("api/inbox/live loadAutoCloseDelayHours failed:", error?.message || error);
+        return DEFAULT_AUTO_CLOSE_DELAY_HOURS;
+      }),
+    ]);
     if (!mailboxIds.length) {
       return NextResponse.json({ threads: [], messages: [], attachments: [] }, { status: 200 });
     }
 
-    const autoCloseDelayHours = await loadAutoCloseDelayHours(serviceClient, scope).catch((error) => {
-      console.error("api/inbox/live loadAutoCloseDelayHours failed:", error?.message || error);
-      return DEFAULT_AUTO_CLOSE_DELAY_HOURS;
-    });
     await autoClosePendingThreads(serviceClient, scope, mailboxIds, autoCloseDelayHours).catch((error) => {
       console.error("api/inbox/live autoClosePendingThreads failed:", error?.message || error);
     });

@@ -25,6 +25,7 @@ import { toast } from "sonner";
 import { useCustomerLookup } from "@/hooks/useCustomerLookup";
 import { useSiteHeaderActions } from "@/components/site-header-actions";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -184,6 +185,7 @@ const extractSenderFromThreadSnippet = (thread) => {
 
 function InboxHeaderActions({
   threadId,
+  senderRuleSourceEmail,
   tagsRefreshTrigger,
   ticketState,
   assignmentOptions,
@@ -198,6 +200,7 @@ function InboxHeaderActions({
 }) {
   const [inboxPickerOpen, setInboxPickerOpen] = useState(false);
   const [inboxFilter, setInboxFilter] = useState("");
+  const [applySenderRule, setApplySenderRule] = useState(false);
   const destinationOptions = useMemo(
     () => [
       { value: "__all__", label: "All tickets", icon: Inbox },
@@ -229,6 +232,11 @@ function InboxHeaderActions({
     );
     return String(hit?.label || selectedInboxSlug).trim() || null;
   }, [inboxOptions, selectedDestinationValue, selectedInboxSlug]);
+  const normalizedSenderRuleEmail = useMemo(() => {
+    const value = String(senderRuleSourceEmail || "").trim().toLowerCase();
+    if (!value) return "";
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? value : "";
+  }, [senderRuleSourceEmail]);
   const statusStylesByStatus = {
     New: "bg-green-50 text-green-700 border-green-200",
     Open: "bg-blue-50 text-blue-700 border-blue-200",
@@ -312,7 +320,16 @@ function InboxHeaderActions({
           {selectedInboxLabel}
         </button>
       ) : null}
-      <Dialog open={inboxPickerOpen} onOpenChange={setInboxPickerOpen}>
+      <Dialog
+        open={inboxPickerOpen}
+        onOpenChange={(open) => {
+          setInboxPickerOpen(open);
+          if (!open) {
+            setApplySenderRule(false);
+            setInboxFilter("");
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-[460px]">
           <DialogHeader>
             <DialogTitle>Move conversation</DialogTitle>
@@ -332,13 +349,31 @@ function InboxHeaderActions({
                     key={option.value}
                     type="button"
                     onClick={() => {
+                      const ruleEmail = normalizedSenderRuleEmail;
+                      const shouldApplySenderRule = Boolean(applySenderRule && ruleEmail);
                       if (option.value === "__all__") {
-                        onInboxChange?.({ inboxSlug: null, classificationKey: "support" });
+                        onInboxChange?.({
+                          inboxSlug: null,
+                          classificationKey: "support",
+                          applySenderRule: shouldApplySenderRule,
+                          senderRuleEmail: ruleEmail,
+                        });
                       } else if (option.value === "__notifications__") {
-                        onInboxChange?.({ inboxSlug: null, classificationKey: "notification" });
+                        onInboxChange?.({
+                          inboxSlug: null,
+                          classificationKey: "notification",
+                          applySenderRule: shouldApplySenderRule,
+                          senderRuleEmail: ruleEmail,
+                        });
                       } else {
-                        onInboxChange?.({ inboxSlug: option.value, classificationKey: "support" });
+                        onInboxChange?.({
+                          inboxSlug: option.value,
+                          classificationKey: "support",
+                          applySenderRule: shouldApplySenderRule,
+                          senderRuleEmail: ruleEmail,
+                        });
                       }
+                      setApplySenderRule(false);
                       setInboxPickerOpen(false);
                     }}
                     className={`flex w-full cursor-pointer items-center gap-2 rounded px-3 py-2 text-left text-sm ${
@@ -356,6 +391,19 @@ function InboxHeaderActions({
                 <p className="px-3 py-2 text-sm text-muted-foreground">No inboxes found.</p>
               ) : null}
             </div>
+            {normalizedSenderRuleEmail ? (
+              <label className="flex cursor-pointer items-start gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-700">
+                <Checkbox
+                  checked={applySenderRule}
+                  onCheckedChange={(checked) => setApplySenderRule(Boolean(checked))}
+                  className="mt-0.5"
+                />
+                <span>
+                  Apply this destination for all future emails from{" "}
+                  <span className="font-medium">{normalizedSenderRuleEmail}</span>
+                </span>
+              </label>
+            ) : null}
           </div>
         </DialogContent>
       </Dialog>
@@ -852,6 +900,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     data: selectedThreadMessagesFromDb,
     attachments: selectedThreadAttachmentsFromDb,
     refresh: refreshSelectedThreadMessages,
+    fetchedThreadId: messagesFetchedForThreadId,
   } = useThreadMessages(selectedThreadId, {
     enabled: Boolean(selectedThreadId) && !String(selectedThreadId || "").startsWith("local-new-ticket-"),
   });
@@ -882,101 +931,50 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
 
   useEffect(() => {
     let active = true;
-    let polling = false;
-    let timerId = null;
-    let consecutiveFailures = 0;
+    let lastFetchAt = 0;
+    const REFETCH_COOLDOWN_MS = 30_000;
 
-    const BASE_POLL_MS = 15_000;
-    const HIDDEN_POLL_MS = 60_000;
-    const MAX_BACKOFF_MS = 60_000;
-
-    const scheduleNext = (ms) => {
+    const fetchInboxData = async () => {
       if (!active) return;
-      if (timerId) clearTimeout(timerId);
-      timerId = setTimeout(() => {
-        refreshInboxData().catch(() => null);
-      }, ms);
-    };
-
-    const refreshInboxData = async () => {
-      if (!active || polling) return;
-      if (typeof document !== "undefined" && document.visibilityState !== "visible") {
-        scheduleNext(HIDDEN_POLL_MS);
-        return;
-      }
-      polling = true;
+      if (Date.now() - lastFetchAt < REFETCH_COOLDOWN_MS) return;
+      lastFetchAt = Date.now();
       try {
         const response = await fetch("/api/inbox/live", {
           method: "GET",
           cache: "no-store",
           credentials: "include",
         });
-        if (!response.ok) {
-          consecutiveFailures += 1;
-          if (response.status === 401 || response.status === 403 || response.status === 404) {
-            scheduleNext(MAX_BACKOFF_MS);
-            return;
-          }
-          const backoffMs = Math.min(
-            BASE_POLL_MS * Math.max(1, 2 ** Math.min(consecutiveFailures, 3)),
-            MAX_BACKOFF_MS
-          );
-          scheduleNext(backoffMs);
-          return;
-        }
+        if (!response.ok || !active) return;
         const payload = await response.json().catch(() => null);
+        if (!active) return;
         const threadRows = Array.isArray(payload?.threads) ? payload.threads : [];
         const messageRows = Array.isArray(payload?.messages) ? payload.messages : [];
         const attachmentRows = Array.isArray(payload?.attachments) ? payload.attachments : [];
-        if (!active) return;
-        if (Array.isArray(threadRows)) {
-          setLiveThreads((prev) => {
-            if (threadRows.length > 0) return threadRows;
-            return prev.length > 0 ? prev : threadRows;
-          });
-        }
-        if (Array.isArray(messageRows)) {
-          setLiveMessages((prev) => {
-            if (messageRows.length > 0) return messageRows;
-            return prev.length > 0 ? prev : messageRows;
-          });
-        }
-        if (Array.isArray(attachmentRows)) {
-          setLiveAttachments(attachmentRows);
-        }
-        consecutiveFailures = 0;
-        scheduleNext(BASE_POLL_MS);
+        if (threadRows.length > 0) setLiveThreads(threadRows);
+        if (messageRows.length > 0) setLiveMessages(messageRows);
+        if (attachmentRows.length > 0) setLiveAttachments(attachmentRows);
       } catch {
-        consecutiveFailures += 1;
-        const backoffMs = Math.min(
-          BASE_POLL_MS * Math.max(1, 2 ** Math.min(consecutiveFailures, 3)),
-          MAX_BACKOFF_MS
-        );
-        scheduleNext(backoffMs);
-      } finally {
-        polling = false;
+        // realtime handles ongoing updates — no retry loop needed
       }
     };
 
-    scheduleNext(0);
+    // Initial load
+    fetchInboxData();
+
+    // Re-fetch on focus so stale data after a long idle gets refreshed
     const onFocus = () => {
-      if (!active || polling) return;
-      scheduleNext(0);
+      if (!active) return;
+      fetchInboxData();
     };
     if (typeof window !== "undefined") {
       window.addEventListener("focus", onFocus);
     }
 
-    // Expose refresh so realtime handlers can trigger an immediate poll
-    refreshInboxDataRef.current = () => {
-      if (!active || polling) return;
-      scheduleNext(0);
-    };
+    refreshInboxDataRef.current = fetchInboxData;
 
     return () => {
       active = false;
       refreshInboxDataRef.current = null;
-      if (timerId) clearTimeout(timerId);
       if (typeof window !== "undefined") {
         window.removeEventListener("focus", onFocus);
       }
@@ -1958,8 +1956,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
 
   const rawThreadMessages = useMemo(() => {
     if (!selectedThreadId) return [];
+    const dbDataIsForCurrentThread = messagesFetchedForThreadId === selectedThreadId;
     const base =
-      Array.isArray(selectedThreadMessagesFromDb) && selectedThreadMessagesFromDb.length
+      dbDataIsForCurrentThread && Array.isArray(selectedThreadMessagesFromDb) && selectedThreadMessagesFromDb.length
         ? selectedThreadMessagesFromDb
         : (messagesCacheRef.current.get(selectedThreadId) || messagesByThread.get(selectedThreadId) || []);
     const local = localSentMessagesByThread[selectedThreadId] || [];
@@ -2299,6 +2298,11 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         });
       });
   }, [supabase, selectedThreadId, pendingOrderUpdateByThread, threadMessages, mailboxEmails]);
+
+  useEffect(() => {
+    if (!selectedThreadId) return;
+    setComposerMode("reply");
+  }, [selectedThreadId]);
 
   useEffect(() => {
     if (!selectedThreadId) {
@@ -3180,6 +3184,8 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         "notification"
           ? "notification"
           : "support";
+      const shouldApplySenderRule = Boolean(destination?.applySenderRule);
+      const senderRuleEmail = String(destination?.senderRuleEmail || "").trim().toLowerCase();
       const previousThread =
         derivedThreads.find((thread) => thread.id === selectedThreadId) || null;
       const previousTags = previousThread?.tags || [];
@@ -3233,6 +3239,33 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           );
           toast.error(error.message || "Could not update inbox.");
         });
+
+      if (shouldApplySenderRule && senderRuleEmail) {
+        const senderRuleDestinationType = normalized ? "inbox" : "classification";
+        const senderRuleDestinationValue = normalized || nextClassificationKey;
+        fetch("/api/settings/email-sender-rules", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            matcher_type: "email",
+            matcher_value: senderRuleEmail,
+            destination_type: senderRuleDestinationType,
+            destination_value: senderRuleDestinationValue,
+            is_active: true,
+          }),
+        })
+          .then(async (response) => {
+            const data = await response.json().catch(() => null);
+            if (!response.ok) {
+              throw new Error(data?.error || "Could not save sender rule.");
+            }
+            toast.success(`Sender rule saved for ${senderRuleEmail}.`);
+          })
+          .catch((error) => {
+            toast.error(error.message || "Could not save sender rule.");
+          });
+      }
     },
     [derivedThreads, selectedThreadId]
   );
@@ -4031,6 +4064,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   return (
     <div className="flex h-full flex-1 flex-col overflow-hidden bg-sidebar lg:flex-row">
       <TicketList
+        key={activeView}
         threads={filteredThreads}
         selectedThreadId={selectedThreadId}
         ticketStateByThread={ticketStateByThread}
@@ -4059,6 +4093,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           onTicketStateChange={handleTicketStateChange}
           onOpenInsights={() => setInsightsOpen(true)}
           showThinkingCard={isDraftGenerating}
+          isDraftFetching={!draftReady && !isDraftGenerating && !isLocalThreadId(selectedThreadId)}
           draftValue={composerValue}
           onDraftChange={handleDraftChange}
           onDraftBlur={(threadId) =>
@@ -4109,6 +4144,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
             selectedThreadId ? (
               <InboxHeaderActions
                 threadId={selectedThreadId}
+                senderRuleSourceEmail={selectedThread?.customer_email || ""}
                 tagsRefreshTrigger={tagsRefreshTriggerByThread[selectedThreadId] || 0}
                 ticketState={selectedTicketState}
                 assignmentOptions={assignmentOptions}
