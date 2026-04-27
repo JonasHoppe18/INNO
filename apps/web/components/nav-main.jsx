@@ -88,6 +88,7 @@ export function NavMain({ items }) {
                   {hasChildren ? (
                     <div className="flex w-full items-center gap-2">
                       <Link
+                        prefetch
                         href={item.url}
                         className="flex flex-1 items-center gap-2 text-inherit no-underline"
                       >
@@ -96,7 +97,7 @@ export function NavMain({ items }) {
                       </Link>
                     </div>
                   ) : (
-                     <Link href={item.url} className="flex w-full items-center gap-2 text-inherit no-underline">
+                     <Link prefetch href={item.url} className="flex w-full items-center gap-2 text-inherit no-underline">
                        {item.icon && <item.icon className="h-4 w-4" />}
                        <span>{item.title}</span>
                      </Link>
@@ -107,6 +108,7 @@ export function NavMain({ items }) {
                     {item.children.map((child) => (
                       <Link
                         key={child.title}
+                        prefetch
                         href={child.url}
                         className={cn(
                           "flex items-center gap-2 rounded-lg px-2 py-1 text-sm text-muted-foreground no-underline hover:bg-muted hover:text-foreground",

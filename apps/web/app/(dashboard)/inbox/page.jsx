@@ -25,7 +25,8 @@ export default async function InboxPage({ searchParams }) {
       orgId,
       query,
       unreadOnly,
-      includeMessages: true,
+      // Keep route transitions fast: thread bodies are loaded on-demand in the client.
+      includeMessages: false,
       includeAttachments: false,
     });
     mailboxes = data.mailboxes;

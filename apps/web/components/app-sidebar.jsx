@@ -161,7 +161,7 @@ function InboxSection({
                 isAllTicketsActive && "bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground"
               )}
             >
-              <Link href="/inbox" className="flex min-w-0 flex-1 items-center gap-2 text-inherit no-underline">
+              <Link prefetch href="/inbox" className="flex min-w-0 flex-1 items-center gap-2 text-inherit no-underline">
                 <Inbox className="h-4 w-4 shrink-0" />
                 <span>All Tickets</span>
                 {allTicketsUnreadCount > 0 ? (
@@ -184,7 +184,7 @@ function InboxSection({
                     isNotificationsActive && "bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground"
                   )}
                 >
-                  <Link href="/inbox?view=notifications" className="flex w-full items-center gap-2 text-inherit no-underline">
+                  <Link prefetch href="/inbox?view=notifications" className="flex w-full items-center gap-2 text-inherit no-underline">
                     <Bell className="h-4 w-4 shrink-0" />
                     <span>Notifications</span>
                     {notificationsCount > 0 ? (
@@ -204,7 +204,7 @@ function InboxSection({
                     isAssignedActive && "bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground"
                   )}
                 >
-                  <Link href="/inbox?view=mine" className="flex w-full items-center gap-2 text-inherit no-underline">
+                  <Link prefetch href="/inbox?view=mine" className="flex w-full items-center gap-2 text-inherit no-underline">
                     <User className="h-4 w-4 shrink-0" />
                     <span>Assigned to me</span>
                     {assignedCount > 0 ? (
@@ -224,7 +224,7 @@ function InboxSection({
                     isResolvedActive && "bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground"
                   )}
                 >
-                  <Link href="/inbox?view=resolved" className="flex w-full items-center gap-2 text-inherit no-underline">
+                  <Link prefetch href="/inbox?view=resolved" className="flex w-full items-center gap-2 text-inherit no-underline">
                     <CheckCircle2 className="h-4 w-4 shrink-0" />
                     <span>Resolved</span>
                   </Link>
@@ -243,6 +243,7 @@ function InboxSection({
                       )}
                     >
                       <Link
+                        prefetch
                         href={`/inbox?view=${encodeURIComponent(`inbox:${slug}`)}`}
                         className="flex min-w-0 flex-1 items-center gap-2 text-inherit no-underline"
                       >
