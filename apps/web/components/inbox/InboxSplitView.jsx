@@ -1032,7 +1032,12 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           });
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          // Re-fetch after reconnect to catch events missed during disconnect
+          refreshInboxDataRef.current?.();
+        }
+      });
 
     return () => {
       try {
@@ -1107,7 +1112,11 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           });
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          refreshInboxDataRef.current?.();
+        }
+      });
 
     return () => {
       try {
