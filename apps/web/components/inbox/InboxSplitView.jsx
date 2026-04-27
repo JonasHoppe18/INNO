@@ -983,6 +983,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
 
   useEffect(() => {
     if (!supabase || !user?.id) return;
+    let hasSubscribedOnceRef = { current: false };
     const upsertThread = (incomingThread) => {
       const nextThreadId = String(incomingThread?.id || "").trim();
       if (!nextThreadId) return;
@@ -1034,8 +1035,12 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       )
       .subscribe((status) => {
         if (status === "SUBSCRIBED") {
-          // Re-fetch after reconnect to catch events missed during disconnect
-          refreshInboxDataRef.current?.();
+          if (hasSubscribedOnceRef.current) {
+            // Re-fetch after reconnect to catch events missed during disconnect
+            refreshInboxDataRef.current?.();
+          } else {
+            hasSubscribedOnceRef.current = true;
+          }
         }
       });
 
@@ -1051,6 +1056,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
 
   useEffect(() => {
     if (!supabase || !user?.id) return;
+    let hasSubscribedOnceRef = { current: false };
     const channel = supabase
       .channel(`inbox-message-updates:${user.id}`)
       .on(
@@ -1114,7 +1120,11 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       )
       .subscribe((status) => {
         if (status === "SUBSCRIBED") {
-          refreshInboxDataRef.current?.();
+          if (hasSubscribedOnceRef.current) {
+            refreshInboxDataRef.current?.();
+          } else {
+            hasSubscribedOnceRef.current = true;
+          }
         }
       });
 
