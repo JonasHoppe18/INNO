@@ -699,17 +699,14 @@ export function MessageBubble({
   const containsInlineImagePlaceholder =
     /\[[^\]]+\.(?:avif|bmp|gif|heic|heif|jpe?g|png|svg|tiff?|webp)\]/i.test(rawBodyForPlaceholderCheck) ||
     /\[cid:[^\]]+\]/i.test(rawBodyForPlaceholderCheck);
-  const cleanHtmlHasRenderableImage = /<img\b/i.test(String(safeCleanBodyHtml || ""));
   const bodyHtmlHasRenderableImage = /<img\b/i.test(String(safeBodyHtml || ""));
-  const cleanHtmlHasLink = /<a\b/i.test(String(safeCleanBodyHtml || ""));
   const bodyHtmlHasLink = /<a\b/i.test(String(safeBodyHtml || ""));
+  const cleanHtmlTextOnly = stripHtmlToText(safeCleanBodyHtml || "");
+  const hasCleanHtmlContent = Boolean(String(cleanHtmlTextOnly || "").trim());
   const shouldPreferFullBodyPreview =
     !isStructuredForm &&
-    (
-      (containsInlineImagePlaceholder && bodyHtmlHasRenderableImage) ||
-      (bodyHtmlHasRenderableImage && !cleanHtmlHasRenderableImage) ||
-      (bodyHtmlHasLink && !cleanHtmlHasLink)
-    );
+    !hasCleanHtmlContent &&
+    (containsInlineImagePlaceholder || bodyHtmlHasRenderableImage || bodyHtmlHasLink);
   const previewBodyHtml = shouldPreferFullBodyPreview ? safeBodyHtml : safeCleanBodyHtml;
   const previewHtml = isStructuredForm
     ? formattedStructuredHtml
