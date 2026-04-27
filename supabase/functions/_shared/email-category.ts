@@ -8,6 +8,12 @@ export const EMAIL_CATEGORIES = [
   "Cancellation",
   "Refund",
   "Address change",
+  "Wrong item",
+  "Missing item",
+  "Complaint",
+  "Fraud / dispute",
+  "Warranty",
+  "Gift card",
   "General",
 ] as const;
 
@@ -25,6 +31,102 @@ const CATEGORY_KEYWORDS: Array<{
   category: EmailCategory;
   patterns: Array<RegExp>;
 }> = [
+  // Most specific categories first to avoid collisions with generic keywords like "pakke"
+  {
+    category: "Wrong item",
+    patterns: [
+      /wrong\s+item/i,
+      /received\s+wrong/i,
+      /wrong\s+product/i,
+      /sent\s+me\s+the\s+wrong/i,
+      /incorrect\s+item/i,
+      /incorrect\s+product/i,
+      /not\s+what\s+i\s+ordered/i,
+      /forkert\s+vare/i,
+      /forkert\s+produkt/i,
+      /forkert\s+størrelse/i,
+      /fik\s+forkert/i,
+      /modtaget\s+forkert/i,
+    ],
+  },
+  {
+    category: "Missing item",
+    patterns: [
+      /missing\s+item/i,
+      /missing\s+product/i,
+      /item\s+missing/i,
+      /not\s+in\s+(the\s+)?package/i,
+      /not\s+in\s+(the\s+)?box/i,
+      /only\s+received\s+part/i,
+      /incomplete\s+order/i,
+      /manglende\s+vare/i,
+      /vare\s+mangler/i,
+      /mangler\s+i\s+pakken/i,
+      /ikke\s+inkluderet/i,
+      /pakken\s+manglede/i,
+    ],
+  },
+  {
+    category: "Warranty",
+    patterns: [
+      /\bwarranty\b/i,
+      /\bgaranti\b/i,
+      /under\s+warranty/i,
+      /warranty\s+claim/i,
+      /warranty\s+replacement/i,
+      /covered\s+by\s+warranty/i,
+      /inden\s+for\s+garanti/i,
+      /garantikrav/i,
+      /garantiperiode/i,
+    ],
+  },
+  {
+    category: "Gift card",
+    patterns: [
+      /gift\s+card/i,
+      /gift\s+voucher/i,
+      /\bgavekort\b/i,
+      /gift\s+card\s+balance/i,
+      /gift\s+card\s+code/i,
+      /redeem\s+(gift|voucher)/i,
+      /gift\s+card\s+not\s+working/i,
+      /gavekort\s+virker\s+ikke/i,
+      /gavekort\s+kode/i,
+      /indløse\s+gavekort/i,
+    ],
+  },
+  {
+    category: "Fraud / dispute",
+    patterns: [
+      /\bfraud\b/i,
+      /\bchargeback\b/i,
+      /unauthorized\s+(charge|payment|purchase)/i,
+      /didn'?t\s+(place|make)\s+this\s+order/i,
+      /not\s+my\s+(order|purchase)/i,
+      /stolen\s+(card|credit)/i,
+      /\bdispute\b/i,
+      /svindel/i,
+      /uautoriseret\s+(betaling|køb|træk)/i,
+      /har\s+ikke\s+bestilt/i,
+      /ikke\s+min\s+ordre/i,
+    ],
+  },
+  {
+    category: "Complaint",
+    patterns: [
+      /\bcomplaint\b/i,
+      /very\s+disappointed/i,
+      /extremely\s+frustrated/i,
+      /unacceptable/i,
+      /terrible\s+(service|experience)/i,
+      /worst\s+(service|experience)/i,
+      /\bklage\b/i,
+      /meget\s+skuffet/i,
+      /dybt\s+utilfreds/i,
+      /uacceptabelt/i,
+    ],
+  },
+  // Generic categories after specific ones
   {
     category: "Tracking",
     patterns: [
@@ -116,12 +218,9 @@ const CATEGORY_KEYWORDS: Array<{
       /damaged/i,
       /defective/i,
       /broken/i,
-      /wrong\s+item/i,
-      /received\s+wrong/i,
       /beskadiget/i,
       /defekt/i,
       /i stykker/i,
-      /forkert vare/i,
     ],
   },
   {
@@ -258,15 +357,23 @@ async function classifyWithOpenAI(
     "Categories:\n" +
     "- Tracking: Customer asks where their shipment is, wants tracking number, or reports a delivery problem.\n" +
     "- Return: Customer explicitly wants to send a product back.\n" +
-    "- Exchange: Customer wants to swap for a different size/color, or received the wrong item. Goal is replacement, not fixing.\n" +
+    "- Exchange: Customer wants to swap for a different size/color. Goal is a replacement variant, not correcting a fulfillment error.\n" +
+    "- Wrong item: Customer received a completely different product than what they ordered (fulfillment error). Different from Exchange — customer did not choose the wrong item, the shop shipped the wrong one.\n" +
+    "- Missing item: Customer's parcel arrived but one or more items were missing from the package. Different from Tracking — the parcel was delivered, something was just not inside.\n" +
     "- Technical support: Product is not working and customer wants help fixing it. Examples: won't power on, factory reset loop, Bluetooth won't connect, not charging, firmware issue. Customer is NOT requesting a return or swap — they want the product to work.\n" +
     "- Product question: Pre-purchase or general product information question.\n" +
     "- Payment: Billing, invoice, receipt, failed or double charge.\n" +
     "- Cancellation: Customer wants to cancel their order.\n" +
-    "- Refund: Customer wants their money back.\n" +
+    "- Refund: Customer wants their money back (and has not yet initiated a return).\n" +
     "- Address change: Customer needs to update the shipping address on an existing order.\n" +
+    "- Complaint: General dissatisfaction or frustration with no specific actionable request (not a return, refund, or exchange request — just expressing disappointment).\n" +
+    "- Fraud / dispute: Customer suspects unauthorized purchase, has filed or is threatening a chargeback, or reports that someone else made the purchase.\n" +
+    "- Warranty: Customer is claiming a product defect under warranty and expects coverage (replacement or repair under warranty terms). Different from Technical support — customer explicitly invokes warranty or asks about coverage.\n" +
+    "- Gift card: Gift card balance, activation, redemption, or code issue.\n" +
     "- General: Anything that does not fit the above categories.\n\n" +
-    "IMPORTANT: If a product is malfunctioning, not powering on, or has a hardware/firmware problem, classify as 'Technical support' — not 'Exchange' or 'Return'.\n\n" +
+    "IMPORTANT: If a product is malfunctioning, not powering on, or has a hardware/firmware problem and the customer wants it fixed (not returned), classify as 'Technical support'.\n" +
+    "IMPORTANT: If the customer received a different product than ordered, classify as 'Wrong item', not 'Exchange'.\n" +
+    "IMPORTANT: If the parcel arrived but something was missing inside, classify as 'Missing item', not 'Tracking'.\n\n" +
     'Return ONLY JSON: { "category": "<one of the categories above, verbatim>" }.';
 
   const userPrompt = `From: ${from || "(unknown)"}\nSubject: ${

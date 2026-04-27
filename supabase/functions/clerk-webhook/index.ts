@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std/http/server.ts";
 import { Webhook } from "https://esm.sh/svix@1";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { seedDefaultWorkspaceTags } from "../_shared/seedDefaultWorkspaceTags.ts";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -631,6 +632,8 @@ serve(async (req) => {
         });
         return new Response("Kunne ikke oprette workspace", { status: 500 });
       }
+      // deno-lint-ignore no-explicit-any
+      await seedDefaultWorkspaceTags(supabase as any, workspaceId);
     } else if (
       type === "organizationMembership.created" ||
       type === "organizationMembership.updated"

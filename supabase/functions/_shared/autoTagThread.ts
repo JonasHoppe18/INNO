@@ -1,4 +1,5 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { seedDefaultWorkspaceTags } from "./seedDefaultWorkspaceTags.ts";
 
 type SupabaseClient = ReturnType<typeof createClient>;
 
@@ -13,7 +14,7 @@ interface AutoTagParams {
 
 const OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions";
 
-async function callOpenAI(apiKey: string, messages: object[], responseFormat = true): Promise<string> {
+async function callOpenAI(apiKey: string, messages: object[]): Promise<string> {
   const res = await fetch(OPENAI_CHAT_URL, {
     method: "POST",
     headers: {
@@ -24,7 +25,7 @@ async function callOpenAI(apiKey: string, messages: object[], responseFormat = t
       model: "gpt-4o-mini",
       temperature: 0,
       max_tokens: 200,
-      ...(responseFormat ? { response_format: { type: "json_object" } } : {}),
+      response_format: { type: "json_object" },
       messages,
     }),
   });
@@ -33,10 +34,16 @@ async function callOpenAI(apiKey: string, messages: object[], responseFormat = t
   return data?.choices?.[0]?.message?.content ?? "";
 }
 
+interface WorkspaceTag {
+  id: string;
+  name: string;
+  ai_prompt: string | null;
+}
+
 export async function autoTagThread(params: AutoTagParams): Promise<void> {
   const { supabase, workspaceId, threadId, subject, body, openaiApiKey } = params;
 
-  // Skip if thread already has AI tags (inbound already tagged it, avoid double-tagging)
+  // Skip if thread already has AI tags to avoid double-tagging
   const { count: existing } = await supabase
     .from("thread_tag_assignments")
     .select("id", { count: "exact", head: true })
@@ -44,63 +51,30 @@ export async function autoTagThread(params: AutoTagParams): Promise<void> {
     .eq("source", "ai");
   if ((existing ?? 0) > 0) return;
 
-  const { data: workspaceTags } = await supabase
+  const queryTags = supabase
     .from("workspace_tags")
     .select("id, name, ai_prompt")
     .eq("workspace_id", workspaceId)
     .eq("is_active", true);
 
-  const ticketContent = `Subject: ${subject || "(none)"}\n\n${(body || "").slice(0, 1500)}`;
+  let result = await queryTags;
+  let workspaceTags: WorkspaceTag[] | null = (result.data as WorkspaceTag[]) ?? null;
 
-  // No workspace tags — generate one English tag and save it for future reuse
+  // Self-repair: seed default tags if workspace has none, then re-fetch
   if (!workspaceTags?.length) {
-    const raw = await callOpenAI(openaiApiKey, [
-      {
-        role: "system",
-        content:
-          "You are a support ticket classifier. Given a support ticket, return a single short English tag that best describes the topic (e.g. 'shipping', 'return', 'billing', 'product-question', 'account-issue'). Return JSON: { \"tag_name\": \"<name>\" }",
-      },
-      { role: "user", content: ticketContent },
-    ]);
-
-    let tagName: string | null = null;
-    try {
-      const parsed = JSON.parse(raw);
-      tagName = typeof parsed.tag_name === "string" ? parsed.tag_name.trim().slice(0, 50) : null;
-    } catch { /* ignore */ }
-    if (!tagName) return;
-
-    // Insert or reuse existing tag with this name
-    const { data: inserted } = await supabase
+    await seedDefaultWorkspaceTags(supabase, workspaceId);
+    result = await supabase
       .from("workspace_tags")
-      .upsert(
-        { workspace_id: workspaceId, name: tagName, color: "#64748b", category: "ai_generated", is_active: true },
-        { onConflict: "workspace_id,name", ignoreDuplicates: false },
-      )
-      .select("id")
-      .maybeSingle();
-
-    // If upsert didn't return (existing row), fetch it
-    let tagId = inserted?.id ?? null;
-    if (!tagId) {
-      const { data: found } = await supabase
-        .from("workspace_tags")
-        .select("id")
-        .eq("workspace_id", workspaceId)
-        .ilike("name", tagName)
-        .maybeSingle();
-      tagId = found?.id ?? null;
-    }
-
-    if (tagId) {
-      await supabase
-        .from("thread_tag_assignments")
-        .upsert({ thread_id: threadId, tag_id: tagId, source: "ai" }, { onConflict: "thread_id,tag_id", ignoreDuplicates: true });
-    }
-    return;
+      .select("id, name, ai_prompt")
+      .eq("workspace_id", workspaceId)
+      .eq("is_active", true);
+    workspaceTags = (result.data as WorkspaceTag[]) ?? null;
   }
 
-  // Workspace has tags — evaluate with per-tag prompts where available
+  if (!workspaceTags?.length) return;
+
+  const ticketContent = `Subject: ${subject || "(none)"}\n\n${(body || "").slice(0, 1500)}`;
+
   const tagList = workspaceTags
     .map((t) => {
       const rule = t.ai_prompt?.trim()
@@ -127,16 +101,14 @@ export async function autoTagThread(params: AutoTagParams): Promise<void> {
     const parsed = JSON.parse(raw);
     const validIds = new Set(workspaceTags.map((t) => t.id));
     tagIds = (Array.isArray(parsed.tag_ids) ? parsed.tag_ids : [])
-      .filter((id): id is string => typeof id === "string" && validIds.has(id))
+      .filter((id: unknown): id is string => typeof id === "string" && validIds.has(id))
       .slice(0, 2);
   } catch { /* ignore */ }
 
   if (tagIds.length) {
-    await supabase
+    const rows = tagIds.map((id) => ({ thread_id: threadId, tag_id: id, source: "ai" }));
+    await (supabase as any)
       .from("thread_tag_assignments")
-      .upsert(
-        tagIds.map((id) => ({ thread_id: threadId, tag_id: id, source: "ai" })),
-        { onConflict: "thread_id,tag_id", ignoreDuplicates: true },
-      );
+      .upsert(rows, { onConflict: "thread_id,tag_id", ignoreDuplicates: true });
   }
 }
