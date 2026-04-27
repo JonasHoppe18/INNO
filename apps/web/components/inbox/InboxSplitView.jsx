@@ -1802,15 +1802,25 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     return UNASSIGNED_ASSIGNEE_VALUE;
   }, [selectedTicketState?.assignee]);
   const unreadThreadCount = useMemo(() => {
-    return filteredThreads.filter((thread) => Number(thread?.unread_count ?? 0) > 0).length;
-  }, [filteredThreads]);
+    return filteredThreads.filter((thread) => {
+      const threadId = String(thread?.id || "").trim();
+      if (!threadId) return false;
+      if (readOverrides[threadId] || thread?.is_read) return false;
+      return Number(thread?.unread_count ?? 0) > 0;
+    }).length;
+  }, [filteredThreads, readOverrides]);
   const unreadByThread = useMemo(() => {
     const map = {};
     derivedThreads.forEach((thread) => {
-      map[thread.id] = Number(thread?.unread_count ?? 0);
+      const threadId = String(thread?.id || "").trim();
+      if (!threadId) return;
+      map[threadId] =
+        readOverrides[threadId] || thread?.is_read
+          ? 0
+          : Number(thread?.unread_count ?? 0);
     });
     return map;
-  }, [derivedThreads]);
+  }, [derivedThreads, readOverrides]);
 
   useEffect(() => {
     if (!selectedThreadId || isLocalThreadId(selectedThreadId)) return;
@@ -1879,9 +1889,18 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     const thread = derivedThreads.find((item) => item.id === selectedThreadId);
     if (!thread) return;
     const isNewSelection = lastAutoReadThreadIdRef.current !== selectedThreadId;
+    const hasUnreadMessages = Number(thread?.unread_count ?? 0) > 0;
+    const hasLocalReadOverride = Boolean(readOverrides[selectedThreadId]);
 
-    if (isNewSelection && !thread.is_read) {
+    if (hasUnreadMessages && !hasLocalReadOverride) {
       setReadOverrides((prev) => ({ ...prev, [selectedThreadId]: true }));
+      setLiveThreads((prev) =>
+        (prev || []).map((item) =>
+          String(item?.id || "") === String(selectedThreadId)
+            ? { ...item, unread_count: 0, is_read: true }
+            : item
+        )
+      );
       fetch("/api/inbox/thread-status", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -1895,7 +1914,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     }
 
     const currentState = ticketStateByThread[selectedThreadId];
-    if (isNewSelection && !thread.is_read && currentState?.status === "New") {
+    if (isNewSelection && (hasUnreadMessages || !thread.is_read) && currentState?.status === "New") {
       setTicketStateByThread((prev) => ({
         ...prev,
         [selectedThreadId]: {
@@ -1931,6 +1950,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     currentSupabaseUserId,
     derivedThreads,
     isLocalThreadId,
+    readOverrides,
     selectedThreadId,
     supabase,
     ticketStateByThread,
@@ -2934,11 +2954,45 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     router.push("/inbox/tickets");
   }, [router]);
 
+  const markThreadReadInstantly = useCallback(
+    (threadId) => {
+      const nextThreadId = String(threadId || "").trim();
+      if (!nextThreadId || isLocalThreadId(nextThreadId)) return;
+
+      const thread = derivedThreads.find((item) => String(item?.id || "").trim() === nextThreadId);
+      const hasUnreadMessages = Number(thread?.unread_count ?? 0) > 0;
+      const isMarkedRead = Boolean(thread?.is_read);
+      if (!hasUnreadMessages && isMarkedRead) return;
+
+      setReadOverrides((prev) => (prev[nextThreadId] ? prev : { ...prev, [nextThreadId]: true }));
+      setLiveThreads((prev) =>
+        (prev || []).map((item) =>
+          String(item?.id || "").trim() === nextThreadId
+            ? { ...item, unread_count: 0, is_read: true }
+            : item
+        )
+      );
+      window.dispatchEvent(new CustomEvent("sona:thread-read"));
+
+      fetch("/api/inbox/thread-status", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          threadId: nextThreadId,
+          isRead: true,
+          unreadCount: 0,
+        }),
+      }).catch(() => null);
+    },
+    [derivedThreads, isLocalThreadId]
+  );
+
   const openThreadInWorkspace = useCallback(
     (threadId, options = {}) => {
       const nextThreadId = String(threadId || "").trim();
       if (!nextThreadId) return;
       const shouldOpenInNewTab = Boolean(options?.newTab);
+      markThreadReadInstantly(nextThreadId);
 
       setOpenThreadIds((prev) => {
         if (prev.includes(nextThreadId)) return prev;
@@ -2959,7 +3013,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
 
       setSelectedThreadId(nextThreadId);
     },
-    [selectedThreadId]
+    [markThreadReadInstantly, selectedThreadId]
   );
 
   const closeThreadTab = useCallback(

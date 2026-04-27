@@ -23,12 +23,22 @@ export function NotificationBell() {
   const [notifications, setNotifications] = useState([])
   const [loading, setLoading] = useState(false)
 
-  const refreshCount = useCallback(() => {
-    fetch("/api/inbox/sidebar-counts", { credentials: "include" })
-      .then(r => r.json())
-      .then(d => setCount(d.notificationsCount ?? 0))
-      .catch(() => null)
+  const toMentionNotifications = useCallback((rows = []) => {
+    return (Array.isArray(rows) ? rows : []).filter((item) => {
+      const mentionId = String(item?.mention_id || "").trim()
+      return Boolean(item?.can_mark_read && mentionId)
+    })
   }, [])
+
+  const refreshCount = useCallback(() => {
+    fetch("/api/notifications", { credentials: "include" })
+      .then(r => r.json())
+      .then(d => {
+        const mentionNotifications = toMentionNotifications(d?.notifications ?? [])
+        setCount(mentionNotifications.length)
+      })
+      .catch(() => null)
+  }, [toMentionNotifications])
 
   const handleNotificationClick = (notification) => {
     const mentionId = String(notification?.mention_id || "").trim()
@@ -62,11 +72,30 @@ export function NotificationBell() {
   useEffect(() => {
     if (!open) return
     setLoading(true)
+    // Outlook-style: clear red dot immediately when opened.
+    setCount(0)
     fetch("/api/notifications", { credentials: "include" })
       .then(r => r.json())
-      .then(d => { setNotifications(d.notifications ?? []); setLoading(false) })
+      .then(d => {
+        const mentionNotifications = toMentionNotifications(d?.notifications ?? [])
+        setNotifications(mentionNotifications)
+        setLoading(false)
+
+        const mentionIds = mentionNotifications
+          .map((item) => String(item?.mention_id || "").trim())
+          .filter(Boolean)
+        if (!mentionIds.length) return
+
+        fetch("/api/notifications", {
+          method: "PATCH",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mention_ids: mentionIds }),
+          keepalive: true,
+        }).catch(() => null)
+      })
       .catch(() => setLoading(false))
-  }, [open])
+  }, [open, toMentionNotifications])
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
