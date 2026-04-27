@@ -11,6 +11,12 @@ export type WorkflowSlug =
   | "cancellation"
   | "refund"
   | "address_change"
+  | "wrong_item"
+  | "missing_item"
+  | "complaint"
+  | "fraud_dispute"
+  | "warranty"
+  | "gift_card"
   | "general";
 
 export type WorkflowRoute = {
