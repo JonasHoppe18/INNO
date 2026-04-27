@@ -982,7 +982,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   }, []);
 
   useEffect(() => {
-    if (!supabase || !user?.id) return;
+    if (!supabase || !user?.id || !currentSupabaseUserId) return;
     let hasSubscribedOnceRef = { current: false };
     const upsertThread = (incomingThread) => {
       const nextThreadId = String(incomingThread?.id || "").trim();
@@ -1006,7 +1006,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       .channel(`inbox-thread-updates:${user.id}`)
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "mail_threads" },
+        { event: "INSERT", schema: "public", table: "mail_threads", filter: `user_id=eq.${currentSupabaseUserId}` },
         (payload) => {
           upsertThread(payload?.new);
           // Trigger an immediate poll so the full thread list (with correct sorting/scope) refreshes
@@ -1015,7 +1015,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       )
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "mail_threads" },
+        { event: "UPDATE", schema: "public", table: "mail_threads", filter: `user_id=eq.${currentSupabaseUserId}` },
         (payload) => {
           upsertThread(payload?.new);
         }
@@ -1052,16 +1052,16 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       }
       supabase?.removeChannel?.(channel);
     };
-  }, [supabase, user?.id]);
+  }, [supabase, user?.id, currentSupabaseUserId]);
 
   useEffect(() => {
-    if (!supabase || !user?.id) return;
+    if (!supabase || !user?.id || !currentSupabaseUserId) return;
     let hasSubscribedOnceRef = { current: false };
     const channel = supabase
       .channel(`inbox-message-updates:${user.id}`)
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "mail_messages" },
+        { event: "INSERT", schema: "public", table: "mail_messages", filter: `user_id=eq.${currentSupabaseUserId}` },
         (payload) => {
           const nextMessage = payload?.new;
           const nextMessageId = String(nextMessage?.id || "").trim();
@@ -1085,7 +1085,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       )
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "mail_messages" },
+        { event: "UPDATE", schema: "public", table: "mail_messages", filter: `user_id=eq.${currentSupabaseUserId}` },
         (payload) => {
           const nextMessage = payload?.new;
           const nextMessageId = String(nextMessage?.id || "").trim();
@@ -1136,7 +1136,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       }
       supabase?.removeChannel?.(channel);
     };
-  }, [supabase, user?.id]);
+  }, [supabase, user?.id, currentSupabaseUserId]);
 
   useEffect(() => {
     draftValueRef.current = draftValue;
