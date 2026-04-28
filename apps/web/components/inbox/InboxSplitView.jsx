@@ -866,6 +866,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const [staleDraftByThread, setStaleDraftByThread] = useState({});
   const [markReturnReceivedLoadingByThread, setMarkReturnReceivedLoadingByThread] = useState({});
   const [refreshPendingActionByThread, setRefreshPendingActionByThread] = useState({});
+  // Shadow preview (v2 pipeline) — per thread
+  // Shape: { [threadId]: { loading: boolean, draft_text: string|null, confidence: number, sources: [], proposed_actions: [], error: string|null } }
+  const [v2PreviewByThread, setV2PreviewByThread] = useState({});
   const [insightsOpen, setInsightsOpen] = useState(false);
   const [translationModalOpen, setTranslationModalOpen] = useState(false);
   const [translationCache, setTranslationCache] = useState({});
@@ -2944,6 +2947,62 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     }
   }, []);
 
+  const handleRequestV2Preview = useCallback(async (threadId, messageId) => {
+    if (!threadId) return;
+    setV2PreviewByThread((prev) => ({
+      ...prev,
+      [threadId]: { loading: true, draft_text: null, confidence: 0, sources: [], proposed_actions: [], error: null },
+    }));
+    try {
+      const res = await fetch("/api/draft/preview-v2", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ thread_id: threadId, message_id: messageId ?? null }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload?.error || "Preview fejlede.");
+      setV2PreviewByThread((prev) => ({
+        ...prev,
+        [threadId]: {
+          loading: false,
+          draft_text: payload.draft_text ?? null,
+          confidence: payload.confidence ?? 0,
+          sources: payload.sources ?? [],
+          proposed_actions: payload.proposed_actions ?? [],
+          skipped: payload.skipped ?? false,
+          skip_reason: payload.skip_reason ?? null,
+          error: null,
+        },
+      }));
+    } catch (err) {
+      setV2PreviewByThread((prev) => ({
+        ...prev,
+        [threadId]: { loading: false, draft_text: null, confidence: 0, sources: [], proposed_actions: [], error: err?.message || "Preview fejlede." },
+      }));
+    }
+  }, []);
+
+  const handleAdoptV2Preview = useCallback((threadId) => {
+    const preview = v2PreviewByThread[threadId];
+    if (!preview?.draft_text) return;
+    setDraftValueByThread((prev) => ({ ...prev, [threadId]: preview.draft_text }));
+    setSystemDraftUneditedByThread((prev) => ({ ...prev, [threadId]: false }));
+    setV2PreviewByThread((prev) => {
+      const next = { ...prev };
+      delete next[threadId];
+      return next;
+    });
+  }, [v2PreviewByThread]);
+
+  const handleDismissV2Preview = useCallback((threadId) => {
+    setV2PreviewByThread((prev) => {
+      const next = { ...prev };
+      delete next[threadId];
+      return next;
+    });
+  }, []);
+
   const handleDraftChange = useCallback(
     (nextValue, threadIdOverride = null) => {
       const targetThreadId = String(threadIdOverride || selectedThreadId || "").trim();
@@ -4223,6 +4282,14 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           translationItems={translationCache[selectedThreadId]?.items || []}
           translationLoading={translationCache[selectedThreadId]?.loading || false}
           onRequestTranslation={() => fetchTranslationForThread(selectedThreadId)}
+          v2Preview={selectedThreadId ? v2PreviewByThread[selectedThreadId] || null : null}
+          onRequestV2Preview={() => {
+            const msgs = threadMessages || [];
+            const lastMsg = msgs[msgs.length - 1];
+            handleRequestV2Preview(selectedThreadId, lastMsg?.id ?? null);
+          }}
+          onAdoptV2Preview={() => handleAdoptV2Preview(selectedThreadId)}
+          onDismissV2Preview={() => handleDismissV2Preview(selectedThreadId)}
         />
       </div>
 
