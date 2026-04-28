@@ -39,10 +39,7 @@ async function loadUnreadCount(serviceClient, scope, mailboxIds) {
   const { data, error } = await query;
   if (error) throw new Error(error.message);
   const rows = Array.isArray(data) ? data : [];
-  return rows.reduce((sum, row) => {
-    const unread = Number(row?.unread_count ?? 0);
-    return sum + (Number.isFinite(unread) && unread > 0 ? unread : 0);
-  }, 0);
+  return rows.length;
 }
 
 export async function GET() {

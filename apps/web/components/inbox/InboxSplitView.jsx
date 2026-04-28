@@ -2002,6 +2002,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     });
   }, [
     localSentMessagesByThread,
+    messagesFetchedForThreadId,
     messagesByThread,
     selectedThreadId,
     selectedThreadMessagesFromDb,

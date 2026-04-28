@@ -98,12 +98,12 @@ export async function generateIssueMetadata(
   const ticketContent = `Subject: ${subject || "(none)"}\n\n${(body || "").slice(0, 1500)}`;
 
   const productInstruction = productList
-    ? `- "detected_product_id": The ID of the product from the list below that is mentioned in the ticket, or null if none matches clearly.\n\nAvailable products:\n${productList}`
+    ? `- "detected_product_id": The ID of the product from the list below that is explicitly named in the ticket. Prioritize matches in the subject line. If similar product names exist (e.g. "A-Rise" vs "A-Blaze"), only match the one the customer actually wrote — do not guess. Return null if no product is clearly named.\n\nAvailable products:\n${productList}`
     : '- "detected_product_id": null';
 
   const systemPrompt =
     `You are a support ticket analyzer. Given a support ticket, return JSON with:\n` +
-    `- "issue_summary": 1-2 English sentences describing what the customer wants or what the problem is. Be specific and concise.\n` +
+    `- "issue_summary": 1-2 English sentences describing the customer's PRIMARY request or problem. Focus on what they are asking for help with — not background context, product praise, or secondary mentions. If the customer wants a repair, refund, replacement, or other action, state that clearly.\n` +
     productInstruction;
 
   const raw = await callOpenAI(openaiApiKey, [
