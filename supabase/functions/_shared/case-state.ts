@@ -248,9 +248,9 @@ export function formatThreadHistoryForPrompt(
   history: Array<{ role: "customer" | "support"; text: string }>,
   options?: { maxMessages?: number; maxCharsPerMessage?: number; maxTokens?: number },
 ): string {
-  const maxMessages = Math.max(1, Number(options?.maxMessages ?? 6));
-  const maxCharsPerMessage = Math.max(80, Number(options?.maxCharsPerMessage ?? 240));
-  const maxTokens = Math.max(120, Number(options?.maxTokens ?? 420));
+  const maxMessages = Math.max(1, Number(options?.maxMessages ?? 12));
+  const maxCharsPerMessage = Math.max(80, Number(options?.maxCharsPerMessage ?? 1500));
+  const maxTokens = Math.max(120, Number(options?.maxTokens ?? 4500));
   if (!Array.isArray(history) || !history.length) return "";
 
   const compact = history
