@@ -1657,8 +1657,16 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         .select("user_id")
         .eq("clerk_user_id", user.id)
         .maybeSingle();
-      if (!active || error) return;
-      setCurrentSupabaseUserId(data?.user_id || null);
+      if (!active) return;
+      if (error) {
+        console.warn("InboxSplitView: failed to load supabase user id — realtime subscriptions will not activate", error);
+        return;
+      }
+      if (!data?.user_id) {
+        console.warn("InboxSplitView: no profile found for clerk user", user.id, "— realtime subscriptions will not activate");
+        return;
+      }
+      setCurrentSupabaseUserId(data.user_id);
     };
     loadCurrentSupabaseUserId().catch(() => null);
     return () => {
