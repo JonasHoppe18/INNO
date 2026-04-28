@@ -2875,7 +2875,36 @@ async function getAgentContext(
   };
 }
 
+// Hjælpefunktion: udfør ét fetch med AbortController timeout (25s) og
+// 1 automatisk retry med jitter (500-1500ms) ved 5xx-fejl fra OpenAI.
+async function fetchWithTimeoutAndRetry(
+  url: string,
+  options: RequestInit,
+): Promise<Response> {
+  const TIMEOUT_MS = 25_000;
+
+  const doFetch = async (): Promise<Response> => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS) as unknown as number;
+    try {
+      return await fetch(url, { ...options, signal: controller.signal });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  };
+
+  const resp = await doFetch();
+  // 1 retry ved 5xx — vent kort med jitter så vi ikke hammer OpenAI ved overbelastning
+  if (resp.status >= 500 && resp.status < 600) {
+    const jitter = 500 + Math.random() * 1000;
+    await new Promise<void>((r) => setTimeout(r, jitter));
+    return doFetch();
+  }
+  return resp;
+}
+
 // Brug JSON schema så vi altid får reply + automation actions.
+// OpenAI cacher automatisk de første 1024+ tokens i system-prompten (automatic prompt caching).
 async function callOpenAI(prompt: string, system?: string, model?: string): Promise<OpenAIResult> {
   if (!OPENAI_API_KEY) return { reply: null, actions: [] };
   const messages: any[] = [];
@@ -2891,7 +2920,7 @@ async function callOpenAI(prompt: string, system?: string, model?: string): Prom
     },
     max_tokens: 1800,
   };
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const res = await fetchWithTimeoutAndRetry("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${OPENAI_API_KEY}`,
@@ -3020,7 +3049,7 @@ async function callOpenAIWithImages(
     },
     max_tokens: 1800,
   };
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const res = await fetchWithTimeoutAndRetry("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${OPENAI_API_KEY}`,
