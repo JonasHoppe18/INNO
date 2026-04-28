@@ -68,31 +68,41 @@ export async function runRetriever(
 
   const allChunks = (rawChunks ?? []) as Array<Record<string, unknown>>;
 
-  // Separate past_ticket chunks (for few-shot) from regular knowledge
+  // source_type === "ticket" = historiske supporttickets brugt til few-shot
+  // Alle andre source_types (document, snippet) er regular knowledge
   const pastTicketChunks = allChunks
-    .filter((c) => c.kind === "past_ticket" && (c.similarity as number) > 0.5)
+    .filter((c) => c.source_type === "ticket" && (c.similarity as number) > 0.5)
     .slice(0, 3);
 
   const regularChunks: RetrievedChunk[] = allChunks
-    .filter((c) => c.kind !== "past_ticket")
+    .filter((c) => c.source_type !== "ticket")
     .slice(0, 8)
     .map((c) => ({
       id: c.id as string,
       content: c.content as string,
-      kind: c.kind as string,
-      source_label: (c.provider ?? c.kind ?? "knowledge") as string,
+      kind: (c.source_type as string) ?? "knowledge",
+      source_label: (c.source_provider ?? c.source_type ?? "knowledge") as string,
       similarity: c.similarity as number,
     }));
 
-  // Extract few-shot pairs from past_ticket chunks
-  // past_tickets store the agent reply as content, and customer_msg in metadata
+  // past_tickets: content = agent reply, metadata.customer_msg = kunde-besked
+  // Ældre imports kan have Q:/A: format i content — vi parser begge formater
   const pastTicketExamples = pastTicketChunks
     .map((c) => {
       const metadata = (c.metadata as Record<string, string>) ?? {};
-      return {
-        customer_msg: metadata.customer_msg ?? "",
-        agent_reply: (c.content as string) ?? "",
-      };
+      const content = (c.content as string) ?? "";
+      // Nyt format: customer_msg i metadata, agent reply i content
+      if (metadata.customer_msg) {
+        return { customer_msg: metadata.customer_msg, agent_reply: content };
+      }
+      // Gammelt format: "Q: ...\n...\n\nA: ..."
+      const aIndex = content.indexOf("\n\nA: ");
+      if (aIndex !== -1) {
+        const customerPart = content.slice(0, aIndex).replace(/^Q:\s*/i, "").trim();
+        const agentPart = content.slice(aIndex + 5).trim();
+        return { customer_msg: customerPart, agent_reply: agentPart };
+      }
+      return { customer_msg: "", agent_reply: content };
     })
     .filter((t) => t.agent_reply.length > 20);
 
