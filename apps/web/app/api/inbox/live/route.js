@@ -18,6 +18,9 @@ function createServiceClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
+const AUTO_CLOSE_THROTTLE_MS = 5 * 60 * 1000;
+const autoCloseLastRun = new Map();
+
 const DEFAULT_AUTO_CLOSE_DELAY_HOURS = 24 * 14;
 const MIN_AUTO_CLOSE_DELAY_HOURS = 1;
 const MAX_AUTO_CLOSE_DELAY_HOURS = 24 * 30;
@@ -160,9 +163,14 @@ export async function GET() {
       return NextResponse.json({ threads: [], messages: [], attachments: [] }, { status: 200 });
     }
 
-    await autoClosePendingThreads(serviceClient, scope, mailboxIds, autoCloseDelayHours).catch((error) => {
-      console.error("api/inbox/live autoClosePendingThreads failed:", error?.message || error);
-    });
+    const throttleKey = scope.workspaceId || scope.supabaseUserId;
+    const lastRun = autoCloseLastRun.get(throttleKey) || 0;
+    if (Date.now() - lastRun >= AUTO_CLOSE_THROTTLE_MS) {
+      autoCloseLastRun.set(throttleKey, Date.now());
+      await autoClosePendingThreads(serviceClient, scope, mailboxIds, autoCloseDelayHours).catch((error) => {
+        console.error("api/inbox/live autoClosePendingThreads failed:", error?.message || error);
+      });
+    }
 
     const [threads, messages] = await Promise.all([
       loadThreads(serviceClient, scope, mailboxIds).catch((error) => {

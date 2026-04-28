@@ -128,7 +128,8 @@ async function loadCustomInboxUnreadCounts(serviceClient, scope, mailboxIds, inb
       .select("tags, unread_count")
       .in("mailbox_id", mailboxIds)
       .gt("unread_count", 0)
-      .overlaps("tags", inboxTags),
+      .overlaps("tags", inboxTags)
+      .limit(500),
     scope
   );
   if (error) throw new Error(error.message);

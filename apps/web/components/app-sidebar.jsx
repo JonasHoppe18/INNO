@@ -200,37 +200,6 @@ function InboxSection({
           {!isCollapsed && (
             <>
               <SidebarMenuItem>
-                <div
-                  className={cn(
-                    "group flex items-center rounded-md px-2 py-1.5 pl-8 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-                    isNotificationsActive && "bg-accent text-accent-foreground",
-                    isPending && !isNotificationsActive && "opacity-60"
-                  )}
-                >
-                  <button
-                    type="button"
-                    onClick={() => navigateToView("/inbox?view=notifications")}
-                    className="flex min-w-0 flex-1 items-center gap-2 cursor-pointer text-inherit"
-                  >
-                    <Bell className="h-4 w-4 shrink-0" />
-                    <span>Notifications</span>
-                    {notificationsCount > 0 ? (
-                      <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded px-1.5 text-xs font-semibold leading-none text-muted-foreground tabular-nums">
-                        {notificationsCount > 99 ? "99+" : notificationsCount}
-                      </span>
-                    ) : null}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); handleConfigureNotifications?.() }}
-                    className="ml-1 flex-shrink-0 rounded p-1 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-opacity duration-150"
-                    title="Configure Notifications"
-                  >
-                    <Settings2 className="h-3 w-3" />
-                  </button>
-                </div>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
                 <SidebarMenuButton
                   tooltip="Assigned to me"
                   onClick={() => navigateToView("/inbox?view=mine")}
@@ -262,6 +231,37 @@ function InboxSection({
                   <CheckCircle2 className="h-4 w-4 shrink-0" />
                   <span>Resolved</span>
                 </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <div
+                  className={cn(
+                    "group flex items-center rounded-md px-2 py-1.5 pl-8 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                    isNotificationsActive && "bg-accent text-accent-foreground",
+                    isPending && !isNotificationsActive && "opacity-60"
+                  )}
+                >
+                  <button
+                    type="button"
+                    onClick={() => navigateToView("/inbox?view=notifications")}
+                    className="flex min-w-0 flex-1 items-center gap-2 cursor-pointer text-inherit"
+                  >
+                    <Bell className="h-4 w-4 shrink-0" />
+                    <span>Notifications</span>
+                    {notificationsCount > 0 ? (
+                      <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded px-1.5 text-xs font-semibold leading-none text-muted-foreground tabular-nums">
+                        {notificationsCount > 99 ? "99+" : notificationsCount}
+                      </span>
+                    ) : null}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); handleConfigureNotifications?.() }}
+                    className="ml-1 flex-shrink-0 rounded p-1 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-opacity duration-150"
+                    title="Configure Notifications"
+                  >
+                    <Settings2 className="h-3 w-3" />
+                  </button>
+                </div>
               </SidebarMenuItem>
               {customInboxes.map((inbox) => {
                 const slug = String(inbox?.slug || "")
