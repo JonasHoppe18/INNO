@@ -115,26 +115,28 @@ export async function runFactResolver(
     });
   }
 
-  // Tracking
-  if (plan.required_facts.includes("tracking")) {
-    try {
-      const tracking = await provider.getTracking(order.id);
-      if (tracking.length > 0 && tracking[0].status_text) {
-        facts.push({
-          label: "Tracking",
-          value:
-            `${tracking[0].carrier ?? ""}: ${tracking[0].status_text}`.trim(),
-        });
-        if (tracking[0].tracking_url) {
-          facts.push({
-            label: "Tracking URL",
-            value: tracking[0].tracking_url,
-          });
-        }
-      }
-    } catch {
-      // Tracking utilgængelig — ikke en blokerende fejl
+  // Tracking — altid relevant når vi har en ordre
+  // hent fra order.fulfillments (tilgængeligt via Shopify REST — getTracking er uimplementeret)
+  // getTracking() er uimplementeret (kræver Webshipper) — fulfillments er tilstrækkeligt
+  const fulfilledRows = (order.fulfillments ?? []).filter(
+    (f) => f.tracking_number || f.tracking_url,
+  );
+  if (fulfilledRows.length > 0) {
+    const f = fulfilledRows[0];
+    const parts = [
+      f.tracking_company,
+      f.tracking_number,
+      f.shipment_status ? `(${f.shipment_status})` : null,
+    ].filter(Boolean);
+    facts.push({
+      label: "Tracking",
+      value: parts.join(" — "),
+    });
+    if (f.tracking_url) {
+      facts.push({ label: "Tracking URL", value: f.tracking_url });
     }
+  } else if (order.fulfillment_status === null || order.fulfillment_status === "unfulfilled") {
+    facts.push({ label: "Tracking", value: "Ordren er endnu ikke afsendt" });
   }
 
   // Return eligibility (simpel 30-dages policy-check)
