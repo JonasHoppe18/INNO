@@ -16,6 +16,7 @@ export interface WriterInput {
   retrieved: RetrieverResult;
   facts: FactResolverResult;
   shop: Record<string, unknown>;
+  model?: string;
 }
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
@@ -31,9 +32,10 @@ const LANGUAGE_NAMES: Record<string, string> = {
 };
 
 export async function runWriter(
-  { plan, caseState, retrieved, facts, shop }: WriterInput,
+  { plan, caseState, retrieved, facts, shop, model }: WriterInput,
 ): Promise<WriterResult> {
-  const shopName = (shop as { name?: string }).name ?? "shop";
+  const resolvedModel = model ?? Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini";
+  const shopName = (shop as { name?: string }).name ?? "butikken";
   const persona =
     (shop as { persona_instructions?: string; instructions?: string })
       .persona_instructions ??
@@ -42,57 +44,105 @@ export async function runWriter(
 
   const langName = LANGUAGE_NAMES[caseState.language] ?? caseState.language;
 
-  // --- Few-shot block (kerne-mekanisme til tone-matching) ---
+  // --- Few-shot (primær tone-anker — placeres øverst så modellen ser det først) ---
   const fewShotBlock = retrieved.past_ticket_examples.length > 0
-    ? `# Sådan har vores team tidligere svaret på lignende henvendelser\n` +
+    ? `# Eksempler på hvordan ${shopName} support svarer
+Spejl PRÆCIS denne tone, længde og stil:
+
+` +
       retrieved.past_ticket_examples
         .map(
           (ex, i) =>
-            `[Eksempel ${i + 1}]\nKunde: "${ex.customer_msg.slice(0, 400)}"\nVores svar: "${ex.agent_reply.slice(0, 600)}"`,
+            `[Eksempel ${i + 1}]
+Kunde: "${ex.customer_msg.slice(0, 350)}"
+Support svarede: "${ex.agent_reply.slice(0, 500)}"`,
         )
         .join("\n\n")
     : "";
 
-  // --- Facts block ---
+  // --- Verificerede fakta (deterministiske — brug disse frem for viden) ---
   const factsBlock = facts.facts.length > 0
-    ? `# Verificerede fakta\n` +
-      facts.facts.map((f) => `- ${f.label}: ${f.value}`).join("\n")
+    ? `# Verificerede fakta (brug disse som kilde til faktuelle påstande)
+` + facts.facts.map((f) => `- ${f.label}: ${f.value}`).join("\n")
     : "";
 
-  // --- Open questions ---
+  // --- Hvad vi ved om samtalen hidtil ---
+  const decisionsMade = caseState.decisions_made.length > 0
+    ? `# Hvad er allerede tilbudt/besluttet i denne samtale
+` + caseState.decisions_made.map((d) => `- ${d.decision}`).join("\n")
+    : "";
+
+  const pendingAsks = caseState.pending_asks.length > 0
+    ? `# Vi venter stadig på fra kunden
+` + caseState.pending_asks.map((a) => `- ${a}`).join("\n")
+    : "";
+
+  // --- Åbne spørgsmål der SKAL besvares ---
   const openQBlock = caseState.open_questions.length > 0
-    ? `# Kundens åbne spørgsmål der skal besvares\n` +
-      caseState.open_questions.map((q) => `- ${q}`).join("\n")
+    ? `# Kundens åbne spørgsmål — ALLE skal besvares
+` + caseState.open_questions.map((q, i) => `${i + 1}. ${q}`).join("\n")
     : "";
 
-  // --- Knowledge block ---
+  // --- Viden fra vidensbase ---
   const knowledgeBlock = retrieved.chunks.length > 0
-    ? `# Relevant viden\n` +
+    ? `# Relevant viden fra vidensbasen
+` +
       retrieved.chunks
         .map(
           (c, i) =>
-            `[${i}] (${c.kind}, ${c.source_label})\n${c.content.slice(0, 700)}`,
+            `[kilde ${i}] ${c.source_label}
+${c.content.slice(0, 700)}`,
         )
         .join("\n\n")
     : "";
 
-  const systemPrompt =
-    `Du er en support-medarbejder for ${shopName}. ${persona}
+  const systemPrompt = `Du er en erfaren support-medarbejder for ${shopName}. ${persona}
 
-Regler:
-- Svar altid på ${langName}.
-- Spejl tonen og stilen i de historiske eksempler nøjagtigt.
-- Enhver faktuel påstand skal have en citation [source_index] fra vidensblokken.
-- Foreslå kun actions fra listen: ${plan.skills_to_consider.join(", ") || "ingen actions tilgængelige"}.
-- Returner KUN gyldigt JSON — ingen markdown, ingen forklaringer.`;
+SPROG: Svar KUN på ${langName}. Aldrig på andet sprog, selvom vidensbasen er på et andet sprog.
+
+DU ER ET MENNESKE: Skriv som en rigtig support-medarbejder — ikke som en AI. Ingen "Som AI kan jeg...", ingen unødvendige undskyldninger. Kom til sagen hurtigt.
+
+TONE: Spejl præcis den tone og stil der ses i eksemplerne. Hvis eksemplerne er uformelle, vær uformel. Hvis de er korte, vær kort.
+
+KVALITET:
+- Besvar ALLE kundens åbne spørgsmål
+- Brug kun verificerede fakta til faktuelle påstande om ordrer, levering og returnering
+- Citér vidensbase-kilden [kilde N] ved faktuelle påstande
+- Gentag ikke hvad der allerede er tilbudt/besluttet i samtalen
+- Spørg ikke om information vi allerede har eller allerede har bedt om
+- Hvis du ikke ved noget med sikkerhed — sig det ærligt og tilbyd at undersøge det
+- Hold svaret præcist og handlingsorienteret
+
+ACTIONS: Foreslå KUN actions der er direkte relevante for dette specifikke tilfælde.
+Tilgængelige actions: ${plan.skills_to_consider.join(", ") || "ingen"}
+
+Returner KUN gyldigt JSON — ingen markdown, ingen forklaring udenfor JSON.`;
 
   const userContent = [
     fewShotBlock,
     factsBlock,
+    decisionsMade,
+    pendingAsks,
     openQBlock,
     knowledgeBlock,
-    `# Samtalestate\nHovedintent: ${plan.primary_intent}\nSprog: ${caseState.language}`,
-    `# Output\nReturner JSON:\n{\n  "reply_draft": "...",\n  "citations": [{"claim": "...", "source_index": 0}],\n  "proposed_actions": []\n}`,
+    `# Sammenfatning af henvendelsen
+Intent: ${plan.primary_intent}
+Sprog: ${caseState.language} (${langName})
+${caseState.entities.order_numbers.length > 0 ? `Ordrenumre nævnt: ${caseState.entities.order_numbers.join(", ")}` : ""}
+${caseState.entities.products_mentioned.length > 0 ? `Produkter nævnt: ${caseState.entities.products_mentioned.join(", ")}` : ""}`,
+    `# Output format
+Returner JSON:
+{
+  "reply_draft": "Dit svar her — komplet og klar til at sende",
+  "citations": [{"claim": "den faktuelle påstand", "source_index": 0}],
+  "proposed_actions": [
+    {
+      "type": "action_type_her",
+      "reason": "kortfattet begrundelse",
+      "params": {}
+    }
+  ]
+}`,
   ].filter(Boolean).join("\n\n");
 
   try {
@@ -103,8 +153,8 @@ Regler:
         "Authorization": `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
       },
       body: JSON.stringify({
-        model: Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini",
-        temperature: 0.3,
+        model: resolvedModel,
+        temperature: 0.2,
         max_tokens: 1800,
         response_format: { type: "json_object" },
         messages: [

@@ -1,6 +1,7 @@
 // supabase/functions/generate-draft-v2/stages/fact-resolver.ts
 import { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { Plan } from "./planner.ts";
+import { CaseState } from "./case-state-updater.ts";
 import {
   createCommerceProvider,
 } from "../../_shared/integrations/commerce/index.ts";
@@ -18,12 +19,14 @@ export interface FactResolverResult {
 
 export interface FactResolverInput {
   plan: Plan;
+  caseState: CaseState;
+  thread: Record<string, unknown>;
   shop: Record<string, unknown>;
   supabase: SupabaseClient;
 }
 
 export async function runFactResolver(
-  { plan, shop, supabase }: FactResolverInput,
+  { plan, caseState, thread, shop, supabase }: FactResolverInput,
 ): Promise<FactResolverResult> {
   const facts: ResolvedFact[] = [];
 
@@ -50,67 +53,111 @@ export async function runFactResolver(
     api_version: creds.shopify_api_version ?? "2024-04",
   });
 
-  // Try order lookup by order number if we found one
-  let order: Order | null = null;
-  const orderNumbers = plan.required_facts.includes("order_state")
-    ? []
-    : [];
+  // Løs kundens email — prioritér fra case_state, thread, besked-afsender
+  const customerEmail =
+    caseState.entities.customer_email ||
+    (thread as { customer_email?: string }).customer_email ||
+    "";
 
-  // Get customer email from shop contact for order lookup
-  const shopEmail = (shop as { contact_email?: string }).contact_email;
-  if (shopEmail) {
+  let order: Order | null = null;
+
+  // Forsøg ordre-opslag på specifikt ordrenummer hvis vi har det
+  const orderNumbers = caseState.entities.order_numbers;
+  if (orderNumbers.length > 0) {
+    for (const raw of orderNumbers) {
+      const num = raw.replace(/^#/, "").trim();
+      try {
+        // Shopify order name lookup via listOrdersByEmail og filtrér
+        // (Shopify REST API kræver email + order name for præcis opslag)
+        if (customerEmail) {
+          const orders = await provider.listOrdersByEmail(customerEmail, 10);
+          const match = orders.find(
+            (o) => o.name === `#${num}` || o.name === num,
+          );
+          if (match) {
+            order = match;
+            break;
+          }
+        }
+      } catch (err) {
+        console.warn("[fact-resolver] Order number lookup failed:", err);
+      }
+    }
+  }
+
+  // Fallback: hent seneste ordre på kundens email
+  if (!order && customerEmail) {
     try {
-      const orders = await provider.listOrdersByEmail(shopEmail, 3);
+      const orders = await provider.listOrdersByEmail(customerEmail, 3);
       if (orders.length > 0) {
         order = orders[0];
       }
     } catch (err) {
-      console.warn("[fact-resolver] Order lookup failed:", err);
+      console.warn("[fact-resolver] Order lookup by email failed:", err);
     }
   }
 
-  if (order) {
+  if (!order) {
+    return { facts, order: null };
+  }
+
+  facts.push({
+    label: "Ordre",
+    value:
+      `${order.name} — Levering: ${order.fulfillment_status ?? "unfulfilled"}, Betaling: ${order.financial_status}`,
+  });
+
+  if (order.shipping_address) {
+    const a = order.shipping_address;
     facts.push({
-      label: "Ordre",
-      value:
-        `${order.name} — Levering: ${order.fulfillment_status ?? "unfulfilled"}, Betaling: ${order.financial_status}`,
+      label: "Leveringsadresse",
+      value: `${a.address1}, ${a.zip} ${a.city}, ${a.country}`,
     });
+  }
 
-    if (order.shipping_address) {
-      const a = order.shipping_address;
-      facts.push({
-        label: "Leveringsadresse",
-        value: `${a.address1}, ${a.zip} ${a.city}, ${a.country}`,
-      });
-    }
+  if (order.line_items?.length) {
+    facts.push({
+      label: "Produkter i ordre",
+      value: order.line_items.map((li) => `${li.title} ×${li.quantity}`)
+        .join(", "),
+    });
+  }
 
-    if (order.line_items?.length) {
-      facts.push({
-        label: "Produkter",
-        value: order.line_items.map((li) => `${li.title} ×${li.quantity}`)
-          .join(", "),
-      });
-    }
-
-    // Tracking facts
-    if (plan.required_facts.includes("tracking")) {
-      try {
-        const tracking = await provider.getTracking(order.id);
-        if (tracking.length > 0 && tracking[0].status_text) {
+  // Tracking
+  if (plan.required_facts.includes("tracking")) {
+    try {
+      const tracking = await provider.getTracking(order.id);
+      if (tracking.length > 0 && tracking[0].status_text) {
+        facts.push({
+          label: "Tracking",
+          value:
+            `${tracking[0].carrier ?? ""}: ${tracking[0].status_text}`.trim(),
+        });
+        if (tracking[0].tracking_url) {
           facts.push({
-            label: "Tracking",
-            value:
-              `${tracking[0].carrier ?? ""}: ${tracking[0].status_text}`.trim(),
+            label: "Tracking URL",
+            value: tracking[0].tracking_url,
           });
         }
-      } catch {
-        // Tracking unavailable — not a blocking error
       }
+    } catch {
+      // Tracking utilgængelig — ikke en blokerende fejl
     }
   }
 
-  // Suppress unused variable warning
-  void orderNumbers;
+  // Return eligibility (simpel 30-dages policy-check)
+  if (plan.required_facts.includes("return_eligibility") && order.created_at) {
+    const orderDate = new Date(order.created_at);
+    const daysSince = Math.floor(
+      (Date.now() - orderDate.getTime()) / (1000 * 60 * 60 * 24),
+    );
+    facts.push({
+      label: "Returret",
+      value: daysSince <= 30
+        ? `Ja — ordre er ${daysSince} dage gammel (inden for 30-dages returvindue)`
+        : `Nej — ordre er ${daysSince} dage gammel (uden for standard 30-dages returvindue)`,
+    });
+  }
 
   return { facts, order };
 }
