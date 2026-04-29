@@ -50,11 +50,16 @@ Schema:
 Rules:
 - primary_intent: classify by what the CUSTOMER IS ASKING FOR, not by order status
   - Customer asks to change address → address_change (even if order is already shipped/delivered)
-  - Customer asks about missing item → complaint
+  - Customer asks about missing item → complaint (e.g. "jeg modtog kun 1 i stedet for 2")
+  - Customer received wrong item → complaint
+  - Customer received defective/damaged item → complaint
+  - Customer wants replacement because of shop error (wrong item, missing item, defect) → exchange (NOT return)
+  - Customer says "ombytning" because of shop error → exchange
+  - Customer wants to return because they changed their mind / don't want it → return
   - Customer asks to cancel → cancel (even if already fulfilled)
 - sub_queries: 1-3 search queries in customer's language to find relevant knowledge
 - required_facts: only what's needed — order_state | tracking | return_eligibility | policy_excerpt | product_specs
-  - NEVER include return_eligibility for complaint, exchange, or missing/defective item cases — return windows do not apply
+  - NEVER include return_eligibility for: complaint, exchange, missing items, wrong items, defective items — return windows NEVER apply to shop errors
 - skills_to_consider: only actions relevant to intent — get_order | get_tracking | update_shipping_address | cancel_order | refund_order | create_exchange_request
 - language: ISO 639-1 code`;
 
