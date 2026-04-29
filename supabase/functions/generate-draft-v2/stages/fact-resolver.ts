@@ -228,8 +228,12 @@ export async function runFactResolver(
     facts.push({ label: "Tracking", value: "Ordren er endnu ikke afsendt" });
   }
 
+  // Return eligibility — ALDRIG for complaint/exchange/manglende/defekte varer
+  const NON_RETURN_INTENTS = ["complaint", "exchange", "thanks", "product_question"];
+  const isNonReturnCase = NON_RETURN_INTENTS.includes(plan.primary_intent);
+
   // Return eligibility (simpel 30-dages policy-check)
-  if (plan.required_facts.includes("return_eligibility") && order.created_at) {
+  if (plan.required_facts.includes("return_eligibility") && !isNonReturnCase && order.created_at) {
     const orderDate = new Date(order.created_at);
     const daysSince = Math.floor(
       (Date.now() - orderDate.getTime()) / (1000 * 60 * 60 * 24),
