@@ -8,7 +8,7 @@ import { runFactResolver } from "./stages/fact-resolver.ts";
 import { runActionDecision, ActionProposal } from "./stages/action-decision.ts";
 import { runWriter } from "./stages/writer.ts";
 import { runVerifier } from "./stages/verifier.ts";
-import { buildPinnedPolicyContext } from "../_shared/policy-context.ts";
+import { buildPinnedPolicyContext, PolicyIntent } from "../_shared/policy-context.ts";
 
 export interface PipelineInput {
   thread_id: string;
@@ -235,6 +235,22 @@ export async function runDraftV2Pipeline(input: PipelineInput): Promise<Pipeline
   // 8. Byg shop policy-kontekst deterministisk (pinned — altid med i prompten)
   const latestBody = (latestMessage.clean_content ?? latestMessage.content ?? "") as string;
   const subject = (thread.subject ?? "") as string;
+
+  // Map planner intent → PolicyIntent so policy block matches what the planner decided
+  const plannerIntentMap: Record<string, PolicyIntent> = {
+    tracking: "SHIPPING",
+    return: "RETURN",
+    refund: "REFUND",
+    exchange: "OTHER",   // exchange → OTHER suppresses return-specific rules
+    address_change: "OTHER",
+    cancel: "OTHER",
+    product_question: "OTHER",
+    complaint: "OTHER",
+    thanks: "OTHER",
+    other: "OTHER",
+  };
+  const intentOverride = plannerIntentMap[plan.primary_intent] ?? undefined;
+
   const policyContext = buildPinnedPolicyContext({
     subject,
     body: latestBody,
@@ -245,6 +261,7 @@ export async function runDraftV2Pipeline(input: PipelineInput): Promise<Pipeline
       policy_summary_json: (shop as Record<string, unknown>).policy_summary_json ?? null,
     },
     reservedTokens: 800,
+    intentOverride,
   });
 
   // 9. Skriv første draft med gpt-4o-mini
