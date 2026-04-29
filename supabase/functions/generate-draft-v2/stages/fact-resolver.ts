@@ -36,41 +36,49 @@ export async function runFactResolver(
   );
   if (!needsOrder) return { facts, order: null };
 
-  const shopId = (shop as { id: string }).id;
-  const { data: creds } = await supabase
-    .from("shops")
-    .select("shopify_domain, shopify_access_token, shopify_api_version")
-    .eq("id", shopId)
-    .single();
+  const s = shop as Record<string, unknown>;
+  // Use already-loaded shop credentials — no redundant DB query
+  const shopifyDomain = (s.shopify_domain as string) ?? null;
+  const shopifyToken = (s.shopify_access_token as string) ?? null;
+  const shopifyApiVersion = (s.shopify_api_version as string) ?? "2024-04";
 
-  if (!creds?.shopify_domain || !creds?.shopify_access_token) {
+  if (!shopifyDomain || !shopifyToken) {
+    console.warn("[fact-resolver] Missing Shopify credentials — skipping order lookup");
     return { facts, order: null };
   }
 
   const provider = createCommerceProvider({
     provider_type: "shopify",
-    shop_domain: creds.shopify_domain,
-    access_token: creds.shopify_access_token,
-    api_version: creds.shopify_api_version ?? "2024-04",
+    shop_domain: shopifyDomain,
+    access_token: shopifyToken,
+    api_version: shopifyApiVersion,
   });
 
   // Løs kundens email — prioritér fra case_state, thread, besked-afsender
+  const thread_ = thread as Record<string, unknown>;
   const customerEmail =
     caseState.entities.customer_email ||
-    (thread as { customer_email?: string }).customer_email ||
+    (thread_.customer_email as string) ||
+    (thread_.from_email as string) ||
     "";
+
+  const orderNumbers = caseState.entities.order_numbers;
+  console.log(`[fact-resolver] order_numbers=${JSON.stringify(orderNumbers)} customer_email=${customerEmail} required_facts=${JSON.stringify(plan.required_facts)}`);
 
   let order: Order | null = null;
 
   // 1. Direkte opslag på ordrenummer hvis kunden har nævnt det
-  const orderNumbers = caseState.entities.order_numbers;
   if (orderNumbers.length > 0) {
     for (const raw of orderNumbers) {
       try {
+        console.log(`[fact-resolver] Looking up order by name: ${raw}`);
         const found = await provider.getOrderByName(raw);
         if (found) {
           order = found;
+          console.log(`[fact-resolver] Found order: ${order.name} fulfillment=${order.fulfillment_status}`);
           break;
+        } else {
+          console.warn(`[fact-resolver] Order not found by name: ${raw}`);
         }
       } catch (err) {
         console.warn("[fact-resolver] Order name lookup failed:", err);
@@ -81,9 +89,11 @@ export async function runFactResolver(
   // 2. Fallback: hent seneste ordre på kundens email
   if (!order && customerEmail) {
     try {
+      console.log(`[fact-resolver] Falling back to email lookup: ${customerEmail}`);
       const orders = await provider.listOrdersByEmail(customerEmail, 3);
       if (orders.length > 0) {
         order = orders[0];
+        console.log(`[fact-resolver] Found order by email: ${order.name}`);
       }
     } catch (err) {
       console.warn("[fact-resolver] Order lookup by email failed:", err);
@@ -91,6 +101,7 @@ export async function runFactResolver(
   }
 
   if (!order) {
+    console.warn("[fact-resolver] No order found — returning empty facts");
     return { facts, order: null };
   }
 

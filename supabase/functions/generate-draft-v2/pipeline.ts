@@ -233,7 +233,7 @@ export async function runDraftV2Pipeline(input: PipelineInput): Promise<Pipeline
   }
 
   // 8. Byg shop policy-kontekst deterministisk (pinned — altid med i prompten)
-  const latestBody = (latestMessage.clean_content ?? latestMessage.content ?? "") as string;
+  const latestBody = (latestMessage.clean_body_text ?? latestMessage.body_text ?? "") as string;
   const subject = (thread.subject ?? "") as string;
 
   // Map planner intent → PolicyIntent so policy block matches what the planner decided
