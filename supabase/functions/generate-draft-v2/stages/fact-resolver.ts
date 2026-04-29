@@ -126,6 +126,10 @@ export async function runFactResolver(
 
   if (order.shipping_address) {
     const a = order.shipping_address;
+    const fullName = [a.first_name, a.last_name].filter(Boolean).join(" ");
+    if (fullName) {
+      facts.push({ label: "Kundenavn", value: fullName });
+    }
     facts.push({
       label: "Leveringsadresse",
       value: `${a.address1}, ${a.zip} ${a.city}, ${a.country}`,
