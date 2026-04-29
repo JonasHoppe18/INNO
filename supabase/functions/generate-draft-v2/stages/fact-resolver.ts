@@ -7,6 +7,7 @@ import {
 } from "../../_shared/integrations/commerce/index.ts";
 import type { Order } from "../../_shared/integrations/commerce/types.ts";
 import { fetchTrackingDetailsForOrders } from "../../_shared/tracking.ts";
+import { decryptShopifyToken } from "../../_shared/shopify-credentials.ts";
 
 export interface ResolvedFact {
   label: string;
@@ -37,21 +38,28 @@ export async function runFactResolver(
   if (!needsOrder) return { facts, order: null };
 
   const s = shop as Record<string, unknown>;
-  // Use already-loaded shop credentials — no redundant DB query
-  const shopifyDomain = (s.shopify_domain as string) ?? null;
-  const shopifyToken = (s.shopify_access_token as string) ?? null;
-  const shopifyApiVersion = (s.shopify_api_version as string) ?? "2024-04";
+  // shops table: shop_domain (plain) + access_token_encrypted (AES-GCM)
+  const shopDomain = (s.shop_domain as string) ?? null;
+  const encryptedToken = (s.access_token_encrypted as string) ?? null;
 
-  if (!shopifyDomain || !shopifyToken) {
-    console.warn("[fact-resolver] Missing Shopify credentials — skipping order lookup");
+  if (!shopDomain || !encryptedToken) {
+    console.warn("[fact-resolver] Missing Shopify credentials (shop_domain or access_token_encrypted) — skipping order lookup");
+    return { facts, order: null };
+  }
+
+  let shopifyToken: string;
+  try {
+    shopifyToken = await decryptShopifyToken(encryptedToken);
+  } catch (err) {
+    console.warn("[fact-resolver] Failed to decrypt Shopify token:", err);
     return { facts, order: null };
   }
 
   const provider = createCommerceProvider({
     provider_type: "shopify",
-    shop_domain: shopifyDomain,
+    shop_domain: shopDomain,
     access_token: shopifyToken,
-    api_version: shopifyApiVersion,
+    api_version: "2024-04",
   });
 
   // Løs kundens email — prioritér fra case_state, thread, besked-afsender
