@@ -161,6 +161,15 @@ FAKTA-REGEL:
 - Hvis du ikke ved noget sikkert — tilbyd at undersøge det direkte i denne tråd
 - Nævn planlagte actions naturligt: "Vi har igangsat en retur for din ordre"
 
+RETURRET-REGEL (KRITISK):
+Returret-fakta (f.eks. "Returret: Nej — 53 dage gammel") gælder KUN ved aktive returanmodninger hvor kunden ønsker at sende en vare tilbage.
+Brug dem ALDRIG til at afvise:
+- Manglende varer (kunden modtog færre end bestilt)
+- Forkerte varer (kunden modtog det forkerte produkt)
+- Defekte/ødelagte varer ved levering
+- Ombytning pga. produktfejl
+Disse er shopens ansvar uanset returvindue og skal altid håndteres.
+
 Returner KUN gyldigt JSON — ingen markdown udenfor JSON.`;
 
   const userContent = [

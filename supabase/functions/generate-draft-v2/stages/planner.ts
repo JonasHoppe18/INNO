@@ -50,6 +50,7 @@ Schema:
 Rules:
 - sub_queries: 1-3 search queries in customer's language to find relevant knowledge
 - required_facts: only what's needed — order_state | tracking | return_eligibility | policy_excerpt | product_specs
+  - NEVER include return_eligibility for complaint, exchange, or missing/defective item cases — return windows do not apply
 - skills_to_consider: only actions relevant to intent — get_order | get_tracking | update_shipping_address | cancel_order | refund_order | create_exchange_request
 - language: ISO 639-1 code`;
 
