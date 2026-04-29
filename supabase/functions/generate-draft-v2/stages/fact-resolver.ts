@@ -191,6 +191,17 @@ export async function runFactResolver(
           if (urlIdx >= 0) facts[urlIdx] = { label: "Tracking URL", value: tracking.trackingUrl };
           else facts.push({ label: "Tracking URL", value: tracking.trackingUrl });
         }
+        // Precise delivery timestamp — use this in the reply if available
+        if (tracking.snapshot?.deliveredAt) {
+          const d = new Date(tracking.snapshot.deliveredAt);
+          facts.push({
+            label: "Leveret tidspunkt",
+            value: d.toLocaleString("da-DK", {
+              day: "numeric", month: "long", hour: "2-digit", minute: "2-digit",
+              timeZone: "Europe/Copenhagen",
+            }),
+          });
+        }
         if (tracking.snapshot?.expectedDeliveryAt) {
           const eta = new Date(tracking.snapshot.expectedDeliveryAt);
           facts.push({
