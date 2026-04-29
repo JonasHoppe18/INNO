@@ -61,31 +61,23 @@ export async function runFactResolver(
 
   let order: Order | null = null;
 
-  // Forsøg ordre-opslag på specifikt ordrenummer hvis vi har det
+  // 1. Direkte opslag på ordrenummer hvis kunden har nævnt det
   const orderNumbers = caseState.entities.order_numbers;
   if (orderNumbers.length > 0) {
     for (const raw of orderNumbers) {
-      const num = raw.replace(/^#/, "").trim();
       try {
-        // Shopify order name lookup via listOrdersByEmail og filtrér
-        // (Shopify REST API kræver email + order name for præcis opslag)
-        if (customerEmail) {
-          const orders = await provider.listOrdersByEmail(customerEmail, 10);
-          const match = orders.find(
-            (o) => o.name === `#${num}` || o.name === num,
-          );
-          if (match) {
-            order = match;
-            break;
-          }
+        const found = await provider.getOrderByName(raw);
+        if (found) {
+          order = found;
+          break;
         }
       } catch (err) {
-        console.warn("[fact-resolver] Order number lookup failed:", err);
+        console.warn("[fact-resolver] Order name lookup failed:", err);
       }
     }
   }
 
-  // Fallback: hent seneste ordre på kundens email
+  // 2. Fallback: hent seneste ordre på kundens email
   if (!order && customerEmail) {
     try {
       const orders = await provider.listOrdersByEmail(customerEmail, 3);

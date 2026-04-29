@@ -100,6 +100,7 @@ export interface CommerceProvider {
 
   // --- Read operations ---
   getOrder(id: string): Promise<Order | null>;
+  getOrderByName(name: string): Promise<Order | null>;
   listOrdersByEmail(email: string, limit?: number): Promise<Order[]>;
   listOrdersByPhone(phone: string, limit?: number): Promise<Order[]>;
   getTracking(orderId: string): Promise<TrackingInfo[]>;

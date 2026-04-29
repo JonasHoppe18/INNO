@@ -168,6 +168,22 @@ export class ShopifyProvider implements CommerceProvider {
     }
   }
 
+  // GET /admin/api/{version}/orders.json?name=1234&status=any
+  // Shopify matches on order name (e.g. "#1234" or "1234")
+  async getOrderByName(name: string): Promise<Order | null> {
+    const normalized = name.replace(/^#/, '').trim();
+    const params = new URLSearchParams({ name: normalized, status: 'any', limit: '5' });
+    const payload = await this.fetch<{ orders?: RawShopifyOrder[] }>(
+      `orders.json?${params}`,
+    );
+    if (!Array.isArray(payload?.orders) || payload.orders.length === 0) return null;
+    // Shopify name filter is a prefix match — verify exact match
+    const exact = payload.orders.find(
+      (o) => o.name === `#${normalized}` || o.name === normalized,
+    );
+    return exact ? mapOrder(exact) : mapOrder(payload.orders[0]);
+  }
+
   // GET /admin/api/{version}/orders.json?email=...&status=any
   async listOrdersByEmail(email: string, limit = 50): Promise<Order[]> {
     const params = new URLSearchParams({
