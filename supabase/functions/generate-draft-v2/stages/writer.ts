@@ -166,14 +166,20 @@ FAKTA-REGEL:
 - Hvis du ikke ved noget sikkert — tilbyd at undersøge det direkte i denne tråd
 - Nævn planlagte actions naturligt: "Vi har igangsat en retur for din ordre"
 
-RETURRET-REGEL (KRITISK):
-Returret-fakta (f.eks. "Returret: Nej — 53 dage gammel") gælder KUN ved aktive returanmodninger hvor kunden ønsker at sende en vare tilbage.
-Brug dem ALDRIG til at afvise:
-- Manglende varer (kunden modtog færre end bestilt)
-- Forkerte varer (kunden modtog det forkerte produkt)
-- Defekte/ødelagte varer ved levering
-- Ombytning pga. produktfejl
-Disse er shopens ansvar uanset returvindue og skal altid håndteres.
+RETURRET-REGEL (KRITISK — følg altid):
+Returvinduet (f.eks. 30 dage) gælder KUN når kunden aktivt ønsker at RETURNERE en vare de ikke vil have.
+
+Det gælder ALDRIG for:
+- Manglende varer: "Jeg modtog kun 1 i stedet for 2" → shopens fejl, send den manglende
+- Forkert vare: kunden fik det forkerte produkt → shopens fejl, ret det
+- Defekt/ødelagt ved levering → shopens ansvar
+- Ombytning pga. produktfejl → shopens ansvar
+
+EKSEMPEL: Kunden skriver "Jeg modtog kun 1 AirPod i stedet for et par — jeg forventer ombytning."
+FORKERT svar: "Returneringen ligger uden for vores 30-dages returfrist."
+RIGTIGT svar: "Vi beklager at du kun modtog én AirPod. Vi undersøger sagen og sender dig en løsning hurtigst muligt."
+
+Nævn ALDRIG returvinduet i disse tilfælde — det er irrelevant og virker afvisende.
 
 Returner KUN gyldigt JSON — ingen markdown udenfor JSON.`;
 
