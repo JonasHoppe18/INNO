@@ -48,6 +48,10 @@ Schema:
 }
 
 Rules:
+- primary_intent: classify by what the CUSTOMER IS ASKING FOR, not by order status
+  - Customer asks to change address → address_change (even if order is already shipped/delivered)
+  - Customer asks about missing item → complaint
+  - Customer asks to cancel → cancel (even if already fulfilled)
 - sub_queries: 1-3 search queries in customer's language to find relevant knowledge
 - required_facts: only what's needed — order_state | tracking | return_eligibility | policy_excerpt | product_specs
   - NEVER include return_eligibility for complaint, exchange, or missing/defective item cases — return windows do not apply

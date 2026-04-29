@@ -97,9 +97,9 @@ Support svarede: "${ex.agent_reply.slice(0, 500)}"`,
 ` + caseState.pending_asks.map((a) => `- ${a}`).join("\n")
     : "";
 
-  // --- Åbne spørgsmål der SKAL besvares ---
+  // --- Åbne spørgsmål der SKAL besvares (primær driver for svaret) ---
   const openQBlock = caseState.open_questions.length > 0
-    ? `# Kundens åbne spørgsmål — ALLE skal besvares
+    ? `# Kundens åbne spørgsmål — DIT SVAR SKAL BESVARE DISSE (brug fakta til at informere svaret)
 ` + caseState.open_questions.map((q, i) => `${i + 1}. ${q}`).join("\n")
     : "";
 
@@ -156,6 +156,9 @@ KANAL-REGEL: Bed ALDRIG kunden om at "sende en email" — de er allerede her.
 URL-REGEL: Skriv URLs som plain text (https://...) — ALDRIG som markdown [tekst](url).
 
 FAKTA-REGEL:
+- Kundens spørgsmål/anmodning er ALTID udgangspunktet for svaret — fakta bruges til at BESVARE spørgsmålet, ikke til at erstatte det
+- Eksempel: Kunden beder om adresseændring → svar på OM det kan lade sig gøre baseret på ordrens status, ikke bare rapportér status
+- Eksempel: Ordre allerede leveret + kunden vil ændre adresse → "Desværre er ordren allerede leveret den [dato], så vi kan ikke ændre adressen"
 - Brug præcis dato og tid fra fakta når de er tilgængelige
 - Spørg ALDRIG om noget kunden allerede har oplyst
 - Hvis du ikke ved noget sikkert — tilbyd at undersøge det direkte i denne tråd
