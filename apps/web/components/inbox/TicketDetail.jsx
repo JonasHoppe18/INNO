@@ -717,14 +717,37 @@ export function TicketDetail({
                     Ny pipeline (preview)
                   </span>
                   <div className="flex items-center gap-2">
+                    {v2Preview.is_test_mode && (
+                      <span className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-700 font-medium">
+                        testmode
+                      </span>
+                    )}
+                    {v2Preview.routing_hint === "auto" && !v2Preview.is_test_mode ? (
+                      <span className="rounded bg-green-100 px-1.5 py-0.5 text-green-700 font-medium">
+                        auto
+                      </span>
+                    ) : v2Preview.routing_hint === "block" ? (
+                      <span className="rounded bg-red-100 px-1.5 py-0.5 text-red-700 font-medium">
+                        blokeret
+                      </span>
+                    ) : (
+                      <span className="rounded bg-violet-100 px-1.5 py-0.5 text-violet-600 font-medium">
+                        godkendelse
+                      </span>
+                    )}
                     <span className="text-violet-500">
-                      Confidence: {Math.round((v2Preview.confidence || 0) * 100)}%
+                      {Math.round((v2Preview.confidence || 0) * 100)}%
                     </span>
                     <button type="button" onClick={onDismissV2Preview} className="hover:opacity-70">
                       <X className="h-3.5 w-3.5 text-violet-400" />
                     </button>
                   </div>
                 </div>
+                {v2Preview.is_test_mode && (
+                  <p className="mb-2 rounded bg-amber-50 border border-amber-200 px-2 py-1 text-amber-700">
+                    Testmode: actions vises men udføres ikke i Shopify
+                  </p>
+                )}
                 <p className="mb-3 whitespace-pre-wrap rounded bg-white/60 p-2 text-gray-800 leading-relaxed">
                   {v2Preview.draft_text}
                 </p>

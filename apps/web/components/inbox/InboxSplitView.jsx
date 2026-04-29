@@ -2968,6 +2968,8 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           loading: false,
           draft_text: payload.draft_text ?? null,
           confidence: payload.confidence ?? 0,
+          routing_hint: payload.routing_hint ?? "review",
+          is_test_mode: payload.is_test_mode ?? false,
           sources: payload.sources ?? [],
           proposed_actions: payload.proposed_actions ?? [],
           skipped: payload.skipped ?? false,

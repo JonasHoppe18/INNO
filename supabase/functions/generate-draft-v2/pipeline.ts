@@ -5,7 +5,7 @@ import { updateCaseState } from "./stages/case-state-updater.ts";
 import { runPlanner } from "./stages/planner.ts";
 import { runRetriever } from "./stages/retriever.ts";
 import { runFactResolver } from "./stages/fact-resolver.ts";
-import { runActionDecision } from "./stages/action-decision.ts";
+import { runActionDecision, ActionProposal } from "./stages/action-decision.ts";
 import { runWriter } from "./stages/writer.ts";
 import { runVerifier } from "./stages/verifier.ts";
 import { buildPinnedPolicyContext } from "../_shared/policy-context.ts";
@@ -19,8 +19,9 @@ export interface PipelineInput {
 
 export interface PipelineResult {
   draft_text: string | null;
-  proposed_actions: unknown[];
+  proposed_actions: ActionProposal[];
   routing_hint: "auto" | "review" | "block";
+  is_test_mode: boolean;
   confidence: number;
   sources: Array<{ content: string; kind: string; source_label: string }>;
   skipped?: boolean;
@@ -29,6 +30,71 @@ export interface PipelineResult {
 
 const STRONG_MODEL = Deno.env.get("OPENAI_STRONG_MODEL") ?? "gpt-4o";
 const CONFIDENCE_ESCALATION_THRESHOLD = 0.6;
+
+// Maps action type to the automation flag that must be enabled for auto-execution.
+// Returns true if the action needs approval (flag is disabled or flag doesn't exist).
+function actionNeedsApproval(
+  type: string,
+  automation: { order_updates: boolean; cancel_orders: boolean; automatic_refunds: boolean },
+): boolean {
+  switch (type) {
+    case "update_shipping_address":
+    case "change_shipping_method":
+    case "hold_fulfillment":
+    case "release_fulfillment":
+    case "edit_line_items":
+    case "update_customer_contact":
+    case "initiate_return":
+      return !automation.order_updates;
+    case "cancel_order":
+      return !automation.cancel_orders;
+    case "refund_order":
+      return !automation.automatic_refunds;
+    case "create_exchange_request":
+      return true; // exchanges always need human approval
+    default:
+      // Low-risk annotation actions (add_note, add_tag) never need approval
+      if (["add_note", "add_tag", "lookup_order_status", "fetch_tracking"].includes(type)) {
+        return false;
+      }
+      return true; // unknown action types default to requiring approval
+  }
+}
+
+// Apply shop automation flags + test_mode to the raw action-decision result.
+// Returns updated proposals with correct requires_approval and the effective routing_hint.
+function applyAutomationConstraints(
+  proposals: ActionProposal[],
+  aiRoutingHint: "auto" | "review" | "block",
+  automation: { order_updates: boolean; cancel_orders: boolean; automatic_refunds: boolean },
+  isTestMode: boolean,
+): { proposals: ActionProposal[]; routing_hint: "auto" | "review" | "block" } {
+  if (aiRoutingHint === "block") {
+    return { proposals, routing_hint: "block" };
+  }
+
+  // Apply automation flags to each proposal
+  const updatedProposals = proposals.map((p) => ({
+    ...p,
+    requires_approval: p.requires_approval || actionNeedsApproval(p.type, automation),
+  }));
+
+  // Test mode: actions are shown but never executed in Shopify — always review
+  if (isTestMode) {
+    return {
+      proposals: updatedProposals,
+      routing_hint: "review",
+    };
+  }
+
+  // If any action needs approval (either by business logic or disabled flag), routing = review
+  if (updatedProposals.some((p) => p.requires_approval)) {
+    return { proposals: updatedProposals, routing_hint: "review" };
+  }
+
+  // All actions are approved by business logic AND automation flags — honour AI hint
+  return { proposals: updatedProposals, routing_hint: aiRoutingHint };
+}
 
 export async function runDraftV2Pipeline(input: PipelineInput): Promise<PipelineResult> {
   const { thread_id, shop_id, supabase } = input;
@@ -53,6 +119,7 @@ export async function runDraftV2Pipeline(input: PipelineInput): Promise<Pipeline
       draft_text: null,
       proposed_actions: [],
       routing_hint: "block",
+      is_test_mode: false,
       confidence: 0,
       sources: [],
       skipped: true,
@@ -66,6 +133,7 @@ export async function runDraftV2Pipeline(input: PipelineInput): Promise<Pipeline
       draft_text: null,
       proposed_actions: [],
       routing_hint: "block",
+      is_test_mode: false,
       confidence: 0,
       sources: [],
       skipped: true,
@@ -81,6 +149,7 @@ export async function runDraftV2Pipeline(input: PipelineInput): Promise<Pipeline
       draft_text: null,
       proposed_actions: [],
       routing_hint: "block",
+      is_test_mode: false,
       confidence: 0,
       sources: [],
       skipped: true,
@@ -88,8 +157,39 @@ export async function runDraftV2Pipeline(input: PipelineInput): Promise<Pipeline
     };
   }
 
-  // 3. Case state — LLM-baseret ekstraktion af intents, entities, åbne spørgsmål
-  const caseState = await updateCaseState({ thread, messages, shop, supabase });
+  // 3. Load automation flags + test_mode in parallel with case state
+  const workspaceId = (shop as Record<string, unknown>).workspace_id as string | null ?? null;
+
+  const [caseState, automationResult, testModeResult] = await Promise.all([
+    updateCaseState({ thread, messages, shop, supabase }),
+
+    // agent_automation flags: order_updates, cancel_orders, automatic_refunds
+    workspaceId
+      ? supabase
+          .from("agent_automation")
+          .select("order_updates,cancel_orders,automatic_refunds")
+          .eq("workspace_id", workspaceId)
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+
+    // test_mode lives on workspaces table
+    workspaceId
+      ? supabase
+          .from("workspaces")
+          .select("test_mode")
+          .eq("id", workspaceId)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+
+  const automation = {
+    order_updates: automationResult.data?.order_updates === true,
+    cancel_orders: automationResult.data?.cancel_orders === true,
+    automatic_refunds: automationResult.data?.automatic_refunds === true,
+  };
+  const isTestMode = testModeResult.data?.test_mode === true;
 
   // 4. Plan — bestem intent, hvad der skal hentes, hvilke facts der kræves
   const plan = await runPlanner({ caseState, latestMessage, shop });
@@ -103,7 +203,20 @@ export async function runDraftV2Pipeline(input: PipelineInput): Promise<Pipeline
   // 6. Deterministisk action-decision baseret på plan + caseState + facts
   const actionDecision = await runActionDecision({ plan, caseState, facts });
 
-  // 7. Byg shop policy-kontekst deterministisk (pinned — altid med i prompten)
+  // 7. Anvend shop automation-flags — overskriv requires_approval og routing_hint
+  const { proposals: finalProposals, routing_hint: effectiveRoutingHint } =
+    applyAutomationConstraints(
+      actionDecision.proposals,
+      actionDecision.routing_hint,
+      automation,
+      isTestMode,
+    );
+
+  if (isTestMode) {
+    console.log("[generate-draft-v2] workspace is in test_mode — actions will NOT mutate Shopify");
+  }
+
+  // 8. Byg shop policy-kontekst deterministisk (pinned — altid med i prompten)
   const latestBody = (latestMessage.clean_content ?? latestMessage.content ?? "") as string;
   const subject = (thread.subject ?? "") as string;
   const policyContext = buildPinnedPolicyContext({
@@ -118,21 +231,21 @@ export async function runDraftV2Pipeline(input: PipelineInput): Promise<Pipeline
     reservedTokens: 800,
   });
 
-  // 8. Skriv første draft med gpt-4o-mini
+  // 9. Skriv første draft med gpt-4o-mini
   const written = await runWriter({
     plan,
     caseState,
     retrieved,
     facts,
     shop,
-    actionProposals: actionDecision.proposals,
+    actionProposals: finalProposals,
     policyContext,
   });
 
-  // 9. Verificér grounding og kvalitet
+  // 10. Verificér grounding og kvalitet
   const verified = await runVerifier({
     draftText: written.draft_text,
-    proposedActions: actionDecision.proposals,
+    proposedActions: finalProposals,
     citations: written.citations,
     facts,
     retrievedChunks: retrieved.chunks,
@@ -141,7 +254,7 @@ export async function runDraftV2Pipeline(input: PipelineInput): Promise<Pipeline
   let finalDraft = written.draft_text;
   let finalConfidence = verified.confidence;
 
-  // 10. Eskalér til gpt-4o hvis verifier flagger lav confidence
+  // 11. Eskalér til gpt-4o hvis verifier flagger lav confidence
   if (verified.retry_with_stronger_model && !verified.block_send) {
     console.log(
       `[generate-draft-v2] confidence ${verified.confidence} < ${CONFIDENCE_ESCALATION_THRESHOLD} — re-running with ${STRONG_MODEL}`,
@@ -153,7 +266,7 @@ export async function runDraftV2Pipeline(input: PipelineInput): Promise<Pipeline
         retrieved,
         facts,
         shop,
-        actionProposals: actionDecision.proposals,
+        actionProposals: finalProposals,
         policyContext,
         model: STRONG_MODEL,
       });
@@ -161,7 +274,7 @@ export async function runDraftV2Pipeline(input: PipelineInput): Promise<Pipeline
       if (strongWritten.draft_text) {
         const strongVerified = await runVerifier({
           draftText: strongWritten.draft_text,
-          proposedActions: actionDecision.proposals,
+          proposedActions: finalProposals,
           citations: strongWritten.citations,
           facts,
           retrievedChunks: retrieved.chunks,
@@ -188,8 +301,9 @@ export async function runDraftV2Pipeline(input: PipelineInput): Promise<Pipeline
 
   return {
     draft_text: finalDraft,
-    proposed_actions: actionDecision.proposals,
-    routing_hint: actionDecision.routing_hint,
+    proposed_actions: finalProposals,
+    routing_hint: effectiveRoutingHint,
+    is_test_mode: isTestMode,
     confidence: finalConfidence,
     sources: retrieved.chunks.slice(0, 5).map((c) => ({
       content: c.content.slice(0, 200),
