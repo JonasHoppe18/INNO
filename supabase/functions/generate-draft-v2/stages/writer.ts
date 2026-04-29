@@ -141,11 +141,11 @@ ${isFollowUp
   ? "- Dette er et OPFØLGNINGSSVAR — gå direkte til sagen efter hilsenen."
   : `- Dette er det FØRSTE svar — efter hilsenen: kort varm indledning på ${langName} (tak kunden, vis empati). Gå direkte til løsning — genfortæl IKKE kundens problem med dine egne ord.`}
 
-AFSLUTNING — vurdér situationen:
-- Bekræftet levering eller simpelt faktasvar → "Jeg ser frem til at høre fra dig, hvis du har flere spørgsmål."
-- Problem løst, ombytning aftalt, eller kunden er tilfreds → "God dag!"
-- Frustreret kunde eller lang ventetid → "Undskyld for ulejligheden og tak for din tålmodighed."
-- Aldrig: "er du velkommen til at kontakte os igen" — kunden ER allerede i kontakt.
+AFSLUTNING — vurdér situationen og vælg præcist:
+- Handling udført og sagen er lukket (adresse ændret, refund igangsat, pakke bekræftet leveret) → "God dag!"
+- Vi venter på svar fra kunden eller sagen er ikke helt løst → "Jeg ser frem til at høre fra dig."
+- Frustreret kunde, lang ventetid eller vi har skuffet kunden → "Undskyld for ulejligheden og tak for din tålmodighed."
+- Aldrig: "er du velkommen til at kontakte os igen" eller "tøv ikke med at kontakte os" — kunden ER allerede her.
 
 LÆNGDE OG TONE:
 - Vær kortfattet og præcis — undgå fyldord som "Ifølge trackingoplysningerne fra" eller "Du er velkommen til at"
