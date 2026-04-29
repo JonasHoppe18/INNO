@@ -6,6 +6,7 @@ import {
   createCommerceProvider,
 } from "../../_shared/integrations/commerce/index.ts";
 import type { Order } from "../../_shared/integrations/commerce/types.ts";
+import { fetchTrackingDetailsForOrders } from "../../_shared/tracking.ts";
 
 export interface ResolvedFact {
   label: string;
@@ -115,27 +116,40 @@ export async function runFactResolver(
     });
   }
 
-  // Tracking — altid relevant når vi har en ordre
-  // hent fra order.fulfillments (tilgængeligt via Shopify REST — getTracking er uimplementeret)
-  // getTracking() er uimplementeret (kræver Webshipper) — fulfillments er tilstrækkeligt
-  const fulfilledRows = (order.fulfillments ?? []).filter(
-    (f) => f.tracking_number || f.tracking_url,
-  );
-  if (fulfilledRows.length > 0) {
-    const f = fulfilledRows[0];
-    const parts = [
-      f.tracking_company,
-      f.tracking_number,
-      f.shipment_status ? `(${f.shipment_status})` : null,
-    ].filter(Boolean);
-    facts.push({
-      label: "Tracking",
-      value: parts.join(" — "),
-    });
-    if (f.tracking_url) {
-      facts.push({ label: "Tracking URL", value: f.tracking_url });
+  // Tracking — brug eksisterende carrier-integration (PostNord, GLS, DAO, Bring, DHL, UPS)
+  if (order.fulfillment_status && order.fulfillment_status !== "unfulfilled") {
+    try {
+      const trackingResults = await fetchTrackingDetailsForOrders([order]);
+      const orderKey = String(order.id || order.name || "");
+      const tracking = orderKey ? trackingResults[orderKey] : null;
+
+      if (tracking?.statusText) {
+        facts.push({
+          label: "Tracking",
+          value: `${tracking.carrier}: ${tracking.statusText}`,
+        });
+        if (tracking.trackingUrl) {
+          facts.push({ label: "Tracking URL", value: tracking.trackingUrl });
+        }
+        if (tracking.snapshot?.expectedDeliveryAt) {
+          const eta = new Date(tracking.snapshot.expectedDeliveryAt);
+          facts.push({
+            label: "Forventet levering",
+            value: eta.toLocaleDateString("da-DK", { day: "numeric", month: "long" }),
+          });
+        }
+        if (tracking.snapshot?.pickupPoint?.name) {
+          const pp = tracking.snapshot.pickupPoint;
+          facts.push({
+            label: "Pakkeshop",
+            value: [pp.name, pp.address, pp.city].filter(Boolean).join(", "),
+          });
+        }
+      }
+    } catch (err) {
+      console.warn("[fact-resolver] Tracking lookup failed:", err);
     }
-  } else if (order.fulfillment_status === null || order.fulfillment_status === "unfulfilled") {
+  } else {
     facts.push({ label: "Tracking", value: "Ordren er endnu ikke afsendt" });
   }
 
