@@ -160,7 +160,7 @@ export async function runDraftV2Pipeline(input: PipelineInput): Promise<Pipeline
   // 3. Load automation flags + test_mode in parallel with case state
   const workspaceId = (shop as Record<string, unknown>).workspace_id as string | null ?? null;
 
-  const [caseState, automationResult, testModeResult] = await Promise.all([
+  const [caseState, automationResult, testModeResult, personaResult] = await Promise.all([
     updateCaseState({ thread, messages, shop, supabase }),
 
     // agent_automation flags: order_updates, cancel_orders, automatic_refunds
@@ -182,6 +182,15 @@ export async function runDraftV2Pipeline(input: PipelineInput): Promise<Pipeline
           .eq("id", workspaceId)
           .maybeSingle()
       : Promise.resolve({ data: null }),
+
+    // Shop's custom AI persona — webshoppen konfigurerer dette selv i indstillinger
+    workspaceId
+      ? supabase
+          .from("workspace_agent_settings")
+          .select("persona_instructions,persona_scenario")
+          .eq("workspace_id", workspaceId)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
   ]);
 
   const automation = {
@@ -190,6 +199,13 @@ export async function runDraftV2Pipeline(input: PipelineInput): Promise<Pipeline
     automatic_refunds: automationResult.data?.automatic_refunds === true,
   };
   const isTestMode = testModeResult.data?.test_mode === true;
+
+  // Webshoppen's eget AI-prompt — konfigureres i indstillinger under "Assistent"
+  const shopWithPersona = {
+    ...shop,
+    persona_instructions: personaResult.data?.persona_instructions ?? null,
+    persona_scenario: personaResult.data?.persona_scenario ?? null,
+  };
 
   // 4. Plan — bestem intent, hvad der skal hentes, hvilke facts der kræves
   const plan = await runPlanner({ caseState, latestMessage, shop });
@@ -237,7 +253,7 @@ export async function runDraftV2Pipeline(input: PipelineInput): Promise<Pipeline
     caseState,
     retrieved,
     facts,
-    shop,
+    shop: shopWithPersona,
     actionProposals: finalProposals,
     policyContext,
   });
@@ -265,7 +281,7 @@ export async function runDraftV2Pipeline(input: PipelineInput): Promise<Pipeline
         caseState,
         retrieved,
         facts,
-        shop,
+        shop: shopWithPersona,
         actionProposals: finalProposals,
         policyContext,
         model: STRONG_MODEL,
