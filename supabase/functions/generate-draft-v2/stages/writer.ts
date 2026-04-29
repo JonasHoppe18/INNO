@@ -3,11 +3,18 @@ import { Plan } from "./planner.ts";
 import { CaseState } from "./case-state-updater.ts";
 import { RetrieverResult } from "./retriever.ts";
 import { FactResolverResult } from "./fact-resolver.ts";
+import { ActionProposal } from "./action-decision.ts";
 
 export interface WriterResult {
   draft_text: string;
-  proposed_actions: unknown[];
+  proposed_actions: ActionProposal[];
   citations: Array<{ claim: string; source_index: number }>;
+}
+
+export interface PolicyContextInput {
+  policySummaryText: string;
+  policyRulesText: string;
+  policyExcerptText: string;
 }
 
 export interface WriterInput {
@@ -16,6 +23,8 @@ export interface WriterInput {
   retrieved: RetrieverResult;
   facts: FactResolverResult;
   shop: Record<string, unknown>;
+  actionProposals?: ActionProposal[];
+  policyContext?: PolicyContextInput;
   model?: string;
 }
 
@@ -32,7 +41,7 @@ const LANGUAGE_NAMES: Record<string, string> = {
 };
 
 export async function runWriter(
-  { plan, caseState, retrieved, facts, shop, model }: WriterInput,
+  { plan, caseState, retrieved, facts, shop, actionProposals, policyContext, model }: WriterInput,
 ): Promise<WriterResult> {
   const resolvedModel = model ?? Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini";
   const shopName = (shop as { name?: string }).name ?? "butikken";
@@ -66,7 +75,18 @@ Support svarede: "${ex.agent_reply.slice(0, 500)}"`,
 ` + facts.facts.map((f) => `- ${f.label}: ${f.value}`).join("\n")
     : "";
 
-  // --- Hvad vi ved om samtalen hidtil ---
+  // --- Shop policy (deterministisk — brug altid disse regler) ---
+  const policyBlock = policyContext
+    ? [
+        policyContext.policyRulesText,
+        policyContext.policySummaryText,
+        policyContext.policyExcerptText,
+      ]
+        .filter(Boolean)
+        .join("\n\n")
+    : "";
+
+  // --- Hvad er allerede besluttet/tilbudt i denne samtale ---
   const decisionsMade = caseState.decisions_made.length > 0
     ? `# Hvad er allerede tilbudt/besluttet i denne samtale
 ` + caseState.decisions_made.map((d) => `- ${d.decision}`).join("\n")
@@ -81,6 +101,15 @@ Support svarede: "${ex.agent_reply.slice(0, 500)}"`,
   const openQBlock = caseState.open_questions.length > 0
     ? `# Kundens åbne spørgsmål — ALLE skal besvares
 ` + caseState.open_questions.map((q, i) => `${i + 1}. ${q}`).join("\n")
+    : "";
+
+  // --- Foreslåede actions fra deterministisk action-decision ---
+  const actionsBlock = actionProposals && actionProposals.length > 0
+    ? `# Planlagte actions (deterministisk besluttet — nævn dem naturligt i svaret)
+` +
+      actionProposals
+        .map((a) => `- ${a.type}: ${a.reason}`)
+        .join("\n")
     : "";
 
   // --- Viden fra vidensbase ---
@@ -112,17 +141,17 @@ KVALITET:
 - Spørg ikke om information vi allerede har eller allerede har bedt om
 - Hvis du ikke ved noget med sikkerhed — sig det ærligt og tilbyd at undersøge det
 - Hold svaret præcist og handlingsorienteret
-
-ACTIONS: Foreslå KUN actions der er direkte relevante for dette specifikke tilfælde.
-Tilgængelige actions: ${plan.skills_to_consider.join(", ") || "ingen"}
+- Hvis der er planlagte actions, nævn dem naturligt som en del af svaret (f.eks. "Vi har igangsat en retur for din ordre")
 
 Returner KUN gyldigt JSON — ingen markdown, ingen forklaring udenfor JSON.`;
 
   const userContent = [
     fewShotBlock,
+    policyBlock,
     factsBlock,
     decisionsMade,
     pendingAsks,
+    actionsBlock,
     openQBlock,
     knowledgeBlock,
     `# Sammenfatning af henvendelsen
@@ -134,14 +163,7 @@ ${caseState.entities.products_mentioned.length > 0 ? `Produkter nævnt: ${caseSt
 Returner JSON:
 {
   "reply_draft": "Dit svar her — komplet og klar til at sende",
-  "citations": [{"claim": "den faktuelle påstand", "source_index": 0}],
-  "proposed_actions": [
-    {
-      "type": "action_type_her",
-      "reason": "kortfattet begrundelse",
-      "params": {}
-    }
-  ]
+  "citations": [{"claim": "den faktuelle påstand", "source_index": 0}]
 }`,
   ].filter(Boolean).join("\n\n");
 
@@ -170,13 +192,11 @@ Returner JSON:
 
     return {
       draft_text: parsed.reply_draft ?? "",
-      proposed_actions: Array.isArray(parsed.proposed_actions)
-        ? parsed.proposed_actions
-        : [],
+      proposed_actions: actionProposals ?? [],
       citations: Array.isArray(parsed.citations) ? parsed.citations : [],
     };
   } catch (err) {
     console.error("[writer] Error:", err);
-    return { draft_text: "", proposed_actions: [], citations: [] };
+    return { draft_text: "", proposed_actions: actionProposals ?? [], citations: [] };
   }
 }

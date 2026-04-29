@@ -35,10 +35,10 @@ export async function POST(request) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { thread_id, message_id, shop_id } = body;
-  if (!thread_id || !shop_id) {
+  const { thread_id, message_id } = body;
+  if (!thread_id) {
     return NextResponse.json(
-      { error: "thread_id and shop_id are required" },
+      { error: "thread_id is required" },
       { status: 400 },
     );
   }
@@ -51,15 +51,31 @@ export async function POST(request) {
     );
   }
 
-  // Verify caller has access to this shop
-  const { data: shopAccess } = await supabase
-    .from("shops")
-    .select("id")
-    .eq("id", shop_id)
+  // Resolve shop_id from thread (server-side — no need to pass from client)
+  const { data: thread } = await supabase
+    .from("mail_threads")
+    .select("id, shop_id, mail_account_id")
+    .eq("id", thread_id)
     .single();
 
-  if (!shopAccess) {
-    return NextResponse.json({ error: "Shop not found" }, { status: 404 });
+  if (!thread) {
+    return NextResponse.json({ error: "Thread not found" }, { status: 404 });
+  }
+
+  let shop_id = thread.shop_id;
+
+  // Fallback: resolve shop from mail_account if thread has no direct shop_id
+  if (!shop_id && thread.mail_account_id) {
+    const { data: account } = await supabase
+      .from("mail_accounts")
+      .select("shop_id")
+      .eq("id", thread.mail_account_id)
+      .single();
+    shop_id = account?.shop_id ?? null;
+  }
+
+  if (!shop_id) {
+    return NextResponse.json({ error: "Could not resolve shop for this thread" }, { status: 404 });
   }
 
   const startTime = Date.now();
@@ -102,6 +118,7 @@ export async function POST(request) {
           proposed_actions: result.proposed_actions ?? [],
           verifier_confidence: result.confidence ?? null,
           sources: result.sources ?? [],
+          routing_hint: result.routing_hint ?? "review",
           latency_ms,
           outcome: "pending",
           pipeline_version: "v2",
@@ -114,6 +131,7 @@ export async function POST(request) {
     return NextResponse.json({
       draft_text: result.draft_text ?? null,
       proposed_actions: result.proposed_actions ?? [],
+      routing_hint: result.routing_hint ?? "review",
       confidence: result.confidence ?? 0,
       sources: result.sources ?? [],
       latency_ms,
