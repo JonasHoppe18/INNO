@@ -105,10 +105,15 @@ export async function runFactResolver(
     return { facts, order: null };
   }
 
+  const fulfillmentStatusDa: Record<string, string> = {
+    fulfilled: "Afsendt (alle varer er afsendt)",
+    partial: "Delvist afsendt",
+    unfulfilled: "Ikke afsendt endnu",
+    restocked: "Returneret til lager",
+  };
   facts.push({
     label: "Ordre",
-    value:
-      `${order.name} — Levering: ${order.fulfillment_status ?? "unfulfilled"}, Betaling: ${order.financial_status}`,
+    value: `${order.name} — Status: ${fulfillmentStatusDa[order.fulfillment_status ?? ""] ?? order.fulfillment_status ?? "Ukendt"}, Betaling: ${order.financial_status}`,
   });
 
   if (order.shipping_address) {
@@ -127,20 +132,56 @@ export async function runFactResolver(
     });
   }
 
-  // Tracking — brug eksisterende carrier-integration (PostNord, GLS, DAO, Bring, DHL, UPS)
+  // Inject static tracking info from fulfillments as baseline (always available)
+  const firstFulfillment = order.fulfillments?.[0];
+  if (firstFulfillment?.tracking_number) {
+    const shipmentStatusDa: Record<string, string> = {
+      delivered: "Leveret",
+      in_transit: "Undervejs",
+      out_for_delivery: "Til levering i dag",
+      attempted_delivery: "Leveringsforsøg fejlede",
+      ready_for_pickup: "Klar til afhentning",
+      confirmed: "Bekræftet af fragtmand",
+      label_printed: "Afhentet af fragtmand",
+    };
+    const staticStatus = firstFulfillment.shipment_status
+      ? shipmentStatusDa[firstFulfillment.shipment_status] ?? firstFulfillment.shipment_status
+      : null;
+
+    facts.push({
+      label: "Tracking (fragtmand)",
+      value: [
+        firstFulfillment.tracking_company,
+        `Sporingsnummer: ${firstFulfillment.tracking_number}`,
+        staticStatus ? `Pakke-status fra Shopify: ${staticStatus}` : null,
+      ].filter(Boolean).join(" — "),
+    });
+    if (firstFulfillment.tracking_url) {
+      facts.push({ label: "Tracking URL", value: firstFulfillment.tracking_url });
+    }
+  }
+
+  // Live carrier lookup — enriches with precise delivery time/location if available
   if (order.fulfillment_status && order.fulfillment_status !== "unfulfilled") {
     try {
       const trackingResults = await fetchTrackingDetailsForOrders([order]);
       const orderKey = String(order.id || order.name || "");
       const tracking = orderKey ? trackingResults[orderKey] : null;
+      console.log(`[fact-resolver] Tracking lookup result for ${orderKey}: carrier=${tracking?.carrier} statusText=${tracking?.statusText}`);
 
       if (tracking?.statusText) {
-        facts.push({
-          label: "Tracking",
-          value: `${tracking.carrier}: ${tracking.statusText}`,
-        });
+        // Overwrite static tracking fact with live status
+        const existingIdx = facts.findIndex((f) => f.label === "Tracking (fragtmand)");
+        const liveValue = `${tracking.carrier}: ${tracking.statusText}`;
+        if (existingIdx >= 0) {
+          facts[existingIdx] = { label: "Tracking (fragtmand)", value: liveValue };
+        } else {
+          facts.push({ label: "Tracking (fragtmand)", value: liveValue });
+        }
         if (tracking.trackingUrl) {
-          facts.push({ label: "Tracking URL", value: tracking.trackingUrl });
+          const urlIdx = facts.findIndex((f) => f.label === "Tracking URL");
+          if (urlIdx >= 0) facts[urlIdx] = { label: "Tracking URL", value: tracking.trackingUrl };
+          else facts.push({ label: "Tracking URL", value: tracking.trackingUrl });
         }
         if (tracking.snapshot?.expectedDeliveryAt) {
           const eta = new Date(tracking.snapshot.expectedDeliveryAt);
@@ -158,9 +199,9 @@ export async function runFactResolver(
         }
       }
     } catch (err) {
-      console.warn("[fact-resolver] Tracking lookup failed:", err);
+      console.warn("[fact-resolver] Live tracking lookup failed:", err);
     }
-  } else {
+  } else if (!firstFulfillment) {
     facts.push({ label: "Tracking", value: "Ordren er endnu ikke afsendt" });
   }
 
