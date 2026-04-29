@@ -51,10 +51,10 @@ export async function POST(request) {
     );
   }
 
-  // Resolve shop_id from thread (server-side — no need to pass from client)
+  // Resolve shop_id via mail_accounts (mail_threads.mailbox_id = mail_accounts.id)
   const { data: thread } = await supabase
     .from("mail_threads")
-    .select("id, shop_id, mail_account_id")
+    .select("id, mailbox_id")
     .eq("id", thread_id)
     .single();
 
@@ -62,14 +62,12 @@ export async function POST(request) {
     return NextResponse.json({ error: "Thread not found" }, { status: 404 });
   }
 
-  let shop_id = thread.shop_id;
-
-  // Fallback: resolve shop from mail_account if thread has no direct shop_id
-  if (!shop_id && thread.mail_account_id) {
+  let shop_id = null;
+  if (thread.mailbox_id) {
     const { data: account } = await supabase
       .from("mail_accounts")
       .select("shop_id")
-      .eq("id", thread.mail_account_id)
+      .eq("id", thread.mailbox_id)
       .single();
     shop_id = account?.shop_id ?? null;
   }
