@@ -264,6 +264,8 @@ export async function runDraftV2Pipeline(input: PipelineInput): Promise<Pipeline
     intentOverride,
   });
 
+  const latestCustomerMessage = (latestMessage.clean_body_text ?? latestMessage.body_text ?? "") as string;
+
   // 9. Skriv første draft med gpt-4o-mini
   const written = await runWriter({
     plan,
@@ -271,6 +273,7 @@ export async function runDraftV2Pipeline(input: PipelineInput): Promise<Pipeline
     retrieved,
     facts,
     shop: shopWithPersona,
+    latestCustomerMessage,
     actionProposals: finalProposals,
     policyContext,
   });
@@ -299,6 +302,7 @@ export async function runDraftV2Pipeline(input: PipelineInput): Promise<Pipeline
         retrieved,
         facts,
         shop: shopWithPersona,
+        latestCustomerMessage,
         actionProposals: finalProposals,
         policyContext,
         model: STRONG_MODEL,

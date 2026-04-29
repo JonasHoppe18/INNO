@@ -23,6 +23,7 @@ export interface WriterInput {
   retrieved: RetrieverResult;
   facts: FactResolverResult;
   shop: Record<string, unknown>;
+  latestCustomerMessage?: string;
   actionProposals?: ActionProposal[];
   policyContext?: PolicyContextInput;
   model?: string;
@@ -41,7 +42,7 @@ const LANGUAGE_NAMES: Record<string, string> = {
 };
 
 export async function runWriter(
-  { plan, caseState, retrieved, facts, shop, actionProposals, policyContext, model }: WriterInput,
+  { plan, caseState, retrieved, facts, shop, latestCustomerMessage, actionProposals, policyContext, model }: WriterInput,
 ): Promise<WriterResult> {
   const resolvedModel = model ?? Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini";
   const shopName = (shop as { name?: string }).name ?? "butikken";
@@ -184,6 +185,10 @@ Returner KUN gyldigt JSON — ingen markdown udenfor JSON.`;
     actionsBlock,
     openQBlock,
     knowledgeBlock,
+    latestCustomerMessage
+      ? `# Kundens seneste besked (læs denne grundigt — brug alle detaljer kunden har givet)
+${latestCustomerMessage.slice(0, 1200)}`
+      : "",
     `# Sammenfatning af henvendelsen
 Intent: ${plan.primary_intent}
 Sprog: ${caseState.language} (${langName})
