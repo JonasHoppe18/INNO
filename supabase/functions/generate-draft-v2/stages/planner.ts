@@ -58,9 +58,9 @@ Rules:
   - Customer wants to return because they changed their mind / don't want it → return
   - Customer asks to cancel → cancel (even if already fulfilled)
 - sub_queries: 1-3 search queries to find relevant knowledge. Use DIFFERENT angles:
-  - Query 1: Customer's own words (what they describe)
-  - Query 2: Operational/product angle (e.g. "[product] defect production warranty replacement" for damage cases, "[product] return policy" for return cases)
-  - Query 3 (optional): Procedure angle (e.g. "how to handle [issue] step by step")
+  - Query 1: Customer's own words (what they describe), in customer's language
+  - Query 2: ALWAYS in English — operational/product angle (e.g. "[product] charging cable replacement", "[product] defect production warranty", "[product] return policy"). This ensures English knowledge base content is found regardless of customer language.
+  - Query 3 (optional): Procedure angle in English (e.g. "how to handle [issue]", "spare parts [product]")
   - CRITICAL for physical damage/defect: always include a query about the specific product + "defect" or "production issue" or "warranty replacement"
 - required_facts: only what's needed — order_state | tracking | return_eligibility | policy_excerpt | product_specs
   - NEVER include return_eligibility for: complaint, exchange, missing items, wrong items, defective items — return windows NEVER apply to shop errors
