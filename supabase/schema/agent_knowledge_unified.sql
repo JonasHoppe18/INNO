@@ -58,6 +58,7 @@ begin
     1 - (ak.embedding <=> query_embedding) as similarity
   from public.agent_knowledge ak
   where (filter_shop_id is null or ak.shop_id = filter_shop_id)
+    and ak.source_type != 'ticket'
   order by ak.embedding <=> query_embedding
   limit greatest(match_count, 1);
 end;

@@ -91,6 +91,7 @@ async function runQueryPair(
         .from("agent_knowledge")
         .select("id, content, source_type, source_provider, metadata")
         .eq("shop_id", shop_id)
+        .neq("source_type", "ticket")
         .textSearch("content", safeQuery, { type: "websearch" })
         .limit(15);
       if (error) {
