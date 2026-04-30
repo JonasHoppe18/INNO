@@ -685,10 +685,11 @@ export function TicketDetail({
                 type="button"
                 onClick={onRequestV2Preview}
                 disabled={v2Preview?.loading}
-                className="flex items-center gap-1.5 rounded-md border border-dashed border-violet-300 bg-violet-50 px-3 py-1.5 text-xs font-medium text-violet-700 hover:bg-violet-100 disabled:opacity-50"
+                title="Kør ny AI pipeline"
+                className="flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-muted-foreground/40 hover:text-violet-500 hover:bg-violet-50 disabled:opacity-30 transition-colors"
               >
-                <Sparkles className="h-3.5 w-3.5" />
-                Se hvad ny AI ville sige
+                <Sparkles className="h-3 w-3" />
+                V2
               </button>
             ) : v2Preview.loading ? (
               <div className="flex items-center gap-2 rounded-md border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-600">
@@ -704,7 +705,7 @@ export function TicketDetail({
               </div>
             ) : v2Preview.skipped ? (
               <div className="flex items-center justify-between rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-500">
-                <span>Ny pipeline: ingen svar genereret ({v2Preview.skip_reason || "skipped"})</span>
+                <span>V2: ingen svar genereret ({v2Preview.skip_reason || "skipped"})</span>
                 <button type="button" onClick={onDismissV2Preview} className="ml-2 hover:opacity-70">
                   <X className="h-3.5 w-3.5" />
                 </button>
