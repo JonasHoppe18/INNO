@@ -24,10 +24,10 @@ create index if not exists agent_knowledge_source_type_idx
 create index if not exists agent_knowledge_created_at_idx
   on public.agent_knowledge (created_at desc);
 
-create index if not exists agent_knowledge_embedding_idx
+create index if not exists agent_knowledge_embedding_hnsw_idx
   on public.agent_knowledge
-  using ivfflat (embedding vector_cosine_ops)
-  with (lists = 100);
+  using hnsw (embedding vector_cosine_ops)
+  with (m = 16, ef_construction = 64);
 
 create or replace function public.match_agent_knowledge(
   query_embedding vector(1536),
