@@ -655,7 +655,7 @@ export function TicketDetail({
             </div>
           </div>
         )}
-        <div className="px-3 pb-1.5">
+        <div className="relative px-3 pb-1.5">
           <Composer
             key={`${thread?.id || "thread"}:${composerMode}`}
             value={draftValue}
@@ -677,21 +677,22 @@ export function TicketDetail({
             onRefineDraft={onRefineDraft}
             isRefiningDraft={isRefiningDraft}
           />
+          {composerMode !== "note" && (!v2Preview || (!v2Preview.loading && !v2Preview.draft_text && !v2Preview.error)) && (
+            <button
+              type="button"
+              onClick={onRequestV2Preview}
+              disabled={v2Preview?.loading}
+              title="Kør ny AI pipeline"
+              className="absolute bottom-3 left-4 flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-muted-foreground/30 hover:text-violet-500 hover:bg-violet-50 disabled:opacity-30 transition-colors"
+            >
+              <Sparkles className="h-3 w-3" />
+              V2
+            </button>
+          )}
         </div>
-        {composerMode !== "note" && (
+        {composerMode !== "note" && v2Preview && (v2Preview.loading || v2Preview.draft_text || v2Preview.error || v2Preview.skipped) && (
           <div className="px-3 pb-3">
-            {!v2Preview || (!v2Preview.loading && !v2Preview.draft_text && !v2Preview.error) ? (
-              <button
-                type="button"
-                onClick={onRequestV2Preview}
-                disabled={v2Preview?.loading}
-                title="Kør ny AI pipeline"
-                className="flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-muted-foreground/40 hover:text-violet-500 hover:bg-violet-50 disabled:opacity-30 transition-colors"
-              >
-                <Sparkles className="h-3 w-3" />
-                V2
-              </button>
-            ) : v2Preview.loading ? (
+            {v2Preview.loading ? (
               <div className="flex items-center gap-2 rounded-md border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-600">
                 <Sparkles className="h-3.5 w-3.5 animate-pulse" />
                 Ny pipeline genererer svar…
@@ -710,7 +711,7 @@ export function TicketDetail({
                   <X className="h-3.5 w-3.5" />
                 </button>
               </div>
-            ) : (
+            ) : v2Preview.draft_text ? (
               <div className="rounded-md border border-violet-200 bg-violet-50 p-3 text-xs">
                 <div className="mb-2 flex items-center justify-between">
                   <span className="flex items-center gap-1.5 font-semibold text-violet-700">
@@ -737,7 +738,7 @@ export function TicketDetail({
                   Brug dette svar
                 </button>
               </div>
-            )}
+            ) : null}
           </div>
         )}
         </>
