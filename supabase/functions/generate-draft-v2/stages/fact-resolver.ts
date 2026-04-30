@@ -98,10 +98,21 @@ export async function runFactResolver(
   if (!order && customerEmail) {
     try {
       console.log(`[fact-resolver] Falling back to email lookup: ${customerEmail}`);
-      const orders = await provider.listOrdersByEmail(customerEmail, 3);
+      const orders = await provider.listOrdersByEmail(customerEmail, 5);
       if (orders.length > 0) {
-        order = orders[0];
-        console.log(`[fact-resolver] Found order by email: ${order.name}`);
+        // For tracking/shipping intent: prefer orders that are actually fulfilled (have tracking)
+        // rather than blindly taking the newest order which might be unfulfilled
+        const isTrackingIntent = plan.primary_intent === "tracking" ||
+          plan.required_facts.includes("tracking");
+        if (isTrackingIntent && orders.length > 1) {
+          const fulfilledOrder = orders.find(
+            (o) => o.fulfillment_status === "fulfilled" || o.fulfillment_status === "partial"
+          );
+          order = fulfilledOrder ?? orders[0];
+        } else {
+          order = orders[0];
+        }
+        console.log(`[fact-resolver] Found order by email: ${order.name} (fulfillment=${order.fulfillment_status})`);
       }
     } catch (err) {
       console.warn("[fact-resolver] Order lookup by email failed:", err);
