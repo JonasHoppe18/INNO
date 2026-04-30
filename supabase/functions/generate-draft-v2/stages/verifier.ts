@@ -36,7 +36,7 @@ const FALLBACK_RESULT: VerifierResult = {
 };
 
 export async function runVerifier(
-  { draftText, citations, facts, customerMessage, language }: VerifierInput,
+  { draftText, citations, facts, retrievedChunks, customerMessage, language }: VerifierInput,
 ): Promise<VerifierResult> {
   if (!draftText) {
     return {
@@ -52,7 +52,14 @@ export async function runVerifier(
 
   const factsText = facts.facts.length > 0
     ? facts.facts.map((f) => `${f.label}: ${f.value}`).join("\n")
-    : "No verified facts available.";
+    : "No order/tracking facts retrieved (knowledge-base-only response).";
+
+  const knowledgeText = retrievedChunks.length > 0
+    ? retrievedChunks
+        .slice(0, 5)
+        .map((c, i) => `[KB${i}] ${c.source_label}: ${c.content.slice(0, 400)}`)
+        .join("\n\n")
+    : "No knowledge base chunks retrieved.";
 
   const customerSnippet = customerMessage
     ? customerMessage.slice(0, 400)
@@ -65,8 +72,11 @@ export async function runVerifier(
     `## Customer message (what they asked)
 ${customerSnippet ?? "(not provided)"}
 
-## Verified facts (ground truth — only trust these)
+## Verified order/tracking facts
 ${factsText}
+
+## Knowledge base content used (treat as trusted source)
+${knowledgeText}
 
 ## Draft reply to audit (first 900 chars)
 "${draftText.slice(0, 900)}"
@@ -105,7 +115,7 @@ List any claim in the draft that directly contradicts a verified fact.
 Example: draft says "order is on its way" but fact says "fulfilled/delivered" = contradiction.
 
 **hallucinations** (array of strings)
-List any specific factual claim in the draft (dates, tracking numbers, addresses, product names) that is NOT supported by the verified facts.
+List any specific factual claim in the draft (dates, tracking numbers, addresses, product names) that is NOT supported by the verified facts OR the knowledge base content. Claims that come from the knowledge base are NOT hallucinations.
 
 **return_window_misapplied** (boolean)
 True if the draft mentions a return window/deadline in a context where it does NOT apply:
@@ -116,7 +126,7 @@ True if the draft mentions a return window/deadline in a context where it does N
 The return window only applies when the customer voluntarily wants to return an item they simply don't want.
 
 **grounded_claims_pct** (0-1)
-Fraction of factual claims in the draft that are supported by verified facts or citations.
+Fraction of factual claims in the draft that are supported by verified facts, knowledge base content, or citations.
 
 **confidence** (0-1)
 Overall quality confidence. Deduct:
