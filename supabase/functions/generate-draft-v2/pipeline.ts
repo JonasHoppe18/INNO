@@ -285,6 +285,16 @@ export async function runDraftV2Pipeline(input: PipelineInput): Promise<Pipeline
 
   const latestCustomerMessage = (latestMessage.clean_body_text ?? latestMessage.body_text ?? "") as string;
 
+  // Byg samtalehistorik fra messages — ekskludér den seneste besked (vises separat)
+  const conversationHistory = messages.slice(0, -1).map((m) => {
+    const msg = m as { clean_body_text?: string; body_text?: string; direction?: string; from_me?: boolean };
+    const isAgent = msg.direction === "outbound" || msg.from_me === true;
+    return {
+      role: isAgent ? "agent" as const : "customer" as const,
+      text: (msg.clean_body_text ?? msg.body_text ?? "") as string,
+    };
+  }).filter((m) => m.text.length > 0);
+
   // 9. Skriv første draft med gpt-4o-mini
   const written = await runWriter({
     plan,
@@ -293,6 +303,7 @@ export async function runDraftV2Pipeline(input: PipelineInput): Promise<Pipeline
     facts,
     shop: shopWithPersona,
     latestCustomerMessage,
+    conversationHistory,
     actionProposals: finalProposals,
     policyContext,
   });
@@ -304,6 +315,8 @@ export async function runDraftV2Pipeline(input: PipelineInput): Promise<Pipeline
     citations: written.citations,
     facts,
     retrievedChunks: retrieved.chunks,
+    customerMessage: latestCustomerMessage,
+    language: caseState.language,
   });
 
   let finalDraft = written.draft_text;
@@ -322,6 +335,7 @@ export async function runDraftV2Pipeline(input: PipelineInput): Promise<Pipeline
         facts,
         shop: shopWithPersona,
         latestCustomerMessage,
+        conversationHistory,
         actionProposals: finalProposals,
         policyContext,
         model: STRONG_MODEL,
@@ -334,6 +348,8 @@ export async function runDraftV2Pipeline(input: PipelineInput): Promise<Pipeline
           citations: strongWritten.citations,
           facts,
           retrievedChunks: retrieved.chunks,
+          customerMessage: latestCustomerMessage,
+          language: caseState.language,
         });
 
         if (strongVerified.confidence >= verified.confidence) {

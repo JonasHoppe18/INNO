@@ -1,6 +1,7 @@
 // supabase/functions/generate-draft-v2/stages/verifier.ts
 import { ResolvedFact } from "./fact-resolver.ts";
 import { RetrievedChunk } from "./retriever.ts";
+import { ActionProposal } from "./action-decision.ts";
 
 export interface VerifierResult {
   grounded_claims_pct: number;
@@ -9,19 +10,21 @@ export interface VerifierResult {
   confidence: number;
   block_send: boolean;
   retry_with_stronger_model: boolean;
+  issues: string[];
 }
 
 export interface VerifierInput {
   draftText: string;
-  proposedActions: unknown[];
+  proposedActions: ActionProposal[];
   citations: Array<{ claim: string; source_index: number }>;
   facts: { facts: ResolvedFact[] };
   retrievedChunks: RetrievedChunk[];
+  customerMessage?: string;
+  language?: string;
 }
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 
-// Returned when verifier itself fails — medium confidence, don't block
 const FALLBACK_RESULT: VerifierResult = {
   grounded_claims_pct: 0.7,
   contradictions: [],
@@ -29,10 +32,11 @@ const FALLBACK_RESULT: VerifierResult = {
   confidence: 0.7,
   block_send: false,
   retry_with_stronger_model: false,
+  issues: [],
 };
 
 export async function runVerifier(
-  { draftText, citations, facts }: VerifierInput,
+  { draftText, citations, facts, customerMessage, language }: VerifierInput,
 ): Promise<VerifierResult> {
   if (!draftText) {
     return {
@@ -42,39 +46,95 @@ export async function runVerifier(
       confidence: 0,
       block_send: true,
       retry_with_stronger_model: false,
+      issues: ["empty_draft"],
     };
   }
 
   const factsText = facts.facts.length > 0
-    ? facts.facts.map((f) => `- ${f.label}: ${f.value}`).join("\n")
-    : "Ingen verificerede fakta tilgængelige.";
+    ? facts.facts.map((f) => `${f.label}: ${f.value}`).join("\n")
+    : "No verified facts available.";
+
+  const customerSnippet = customerMessage
+    ? customerMessage.slice(0, 400)
+    : null;
 
   const systemPrompt =
-    `You are a quality verifier for AI-generated customer support replies. Output ONLY valid JSON.`;
+    `You are a strict quality auditor for AI-generated customer support replies. Output ONLY valid JSON. Be critical — your job is to catch issues before they reach the customer.`;
 
   const userPrompt =
-    `Draft reply (first 800 chars): "${draftText.slice(0, 800)}"
+    `## Customer message (what they asked)
+${customerSnippet ?? "(not provided)"}
 
-Verified facts:
+## Verified facts (ground truth — only trust these)
 ${factsText}
 
-Citations provided: ${citations.length}
+## Draft reply to audit (first 900 chars)
+"${draftText.slice(0, 900)}"
 
-Assess and output JSON:
+## Citations provided: ${citations.length}
+
+## Expected language: ${language ?? "auto-detect from customer message"}
+
+---
+
+Audit the draft on these dimensions and output JSON:
+
 {
-  "grounded_claims_pct": 0.9,
+  "answers_question": true,
+  "language_correct": true,
   "contradictions": [],
-  "policy_violations": [],
+  "hallucinations": [],
+  "return_window_misapplied": false,
+  "grounded_claims_pct": 0.9,
   "confidence": 0.85,
+  "issues": [],
   "block_send": false,
   "retry_with_stronger_model": false
 }
 
-Rules:
-- grounded_claims_pct: fraction of factual claims that have citations or match verified facts (0-1)
-- contradictions: list any claim that conflicts with a verified fact
-- confidence: overall quality score (0-1). Below 0.6 = set retry_with_stronger_model=true. Below 0.4 = set block_send=true.
-- block_send: true only for serious issues (contradictions, harmful content, completely off-topic)`;
+### Scoring rules
+
+**answers_question** (boolean)
+Does the reply directly address what the customer asked? A reply that only states order status when the customer asked WHY their package hasn't arrived = false.
+
+**language_correct** (boolean)
+Does the reply language match the customer's message language? Danish reply to an English question = false. If no customer message provided, set true.
+
+**contradictions** (array of strings)
+List any claim in the draft that directly contradicts a verified fact.
+Example: draft says "order is on its way" but fact says "fulfilled/delivered" = contradiction.
+
+**hallucinations** (array of strings)
+List any specific factual claim in the draft (dates, tracking numbers, addresses, product names) that is NOT supported by the verified facts.
+
+**return_window_misapplied** (boolean)
+True if the draft mentions a return window/deadline in a context where it does NOT apply:
+- Customer received wrong item
+- Customer received defective/damaged item
+- Customer received missing items from an order
+- Customer wants an exchange due to shop error
+The return window only applies when the customer voluntarily wants to return an item they simply don't want.
+
+**grounded_claims_pct** (0-1)
+Fraction of factual claims in the draft that are supported by verified facts or citations.
+
+**confidence** (0-1)
+Overall quality confidence. Deduct:
+- 0.3 if answers_question=false
+- 0.2 if language_correct=false
+- 0.15 per contradiction
+- 0.1 per hallucination
+- 0.2 if return_window_misapplied=true
+Start from 1.0 and subtract.
+
+**block_send** (boolean)
+True ONLY for: direct contradiction of facts, harmful/offensive content, completely wrong topic.
+
+**retry_with_stronger_model** (boolean)
+True if confidence < 0.65.
+
+**issues** (array of short strings)
+Machine-readable list of what went wrong. Use: answers_question_missing, wrong_language, contradiction, hallucination, return_window_misapplied, low_grounding`;
 
   try {
     const resp = await fetch(OPENAI_API_URL, {
@@ -84,9 +144,9 @@ Rules:
         "Authorization": `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
       },
       body: JSON.stringify({
-        model: Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini",
+        model: "gpt-4o-mini",
         temperature: 0,
-        max_tokens: 300,
+        max_tokens: 500,
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: systemPrompt },
@@ -97,7 +157,34 @@ Rules:
 
     if (!resp.ok) throw new Error(`Verifier API error: ${resp.status}`);
     const data = await resp.json();
-    return JSON.parse(data.choices[0].message.content);
+    const parsed = JSON.parse(data.choices[0].message.content);
+
+    const confidence = typeof parsed.confidence === "number"
+      ? Math.max(0, Math.min(1, parsed.confidence))
+      : 0.7;
+
+    const result: VerifierResult = {
+      grounded_claims_pct: parsed.grounded_claims_pct ?? 0.7,
+      contradictions: (parsed.contradictions ?? []).map((c: string) => ({
+        claim: c,
+        conflicting_fact: "",
+      })),
+      policy_violations: parsed.return_window_misapplied
+        ? ["return_window_misapplied"]
+        : [],
+      confidence,
+      block_send: parsed.block_send === true,
+      retry_with_stronger_model: parsed.retry_with_stronger_model === true || confidence < 0.65,
+      issues: Array.isArray(parsed.issues) ? parsed.issues : [],
+    };
+
+    if (result.issues.length > 0 || confidence < 0.8) {
+      console.log(
+        `[verifier] confidence=${confidence} issues=${result.issues.join(",")} contradictions=${parsed.contradictions?.length ?? 0} hallucinations=${parsed.hallucinations?.length ?? 0}`,
+      );
+    }
+
+    return result;
   } catch (err) {
     console.error("[verifier] Error:", err);
     return FALLBACK_RESULT;

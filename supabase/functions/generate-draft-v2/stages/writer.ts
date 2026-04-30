@@ -24,6 +24,7 @@ export interface WriterInput {
   facts: FactResolverResult;
   shop: Record<string, unknown>;
   latestCustomerMessage?: string;
+  conversationHistory?: Array<{ role: "customer" | "agent"; text: string }>;
   actionProposals?: ActionProposal[];
   policyContext?: PolicyContextInput;
   model?: string;
@@ -42,7 +43,7 @@ const LANGUAGE_NAMES: Record<string, string> = {
 };
 
 export async function runWriter(
-  { plan, caseState, retrieved, facts, shop, latestCustomerMessage, actionProposals, policyContext, model }: WriterInput,
+  { plan, caseState, retrieved, facts, shop, latestCustomerMessage, conversationHistory, actionProposals, policyContext, model }: WriterInput,
 ): Promise<WriterResult> {
   const resolvedModel = model ?? Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini";
   const shopName = (shop as { name?: string }).name ?? "butikken";
@@ -185,6 +186,15 @@ Nævn ALDRIG returvinduet i disse tilfælde — det er irrelevant og virker afvi
 
 Returner KUN gyldigt JSON — ingen markdown udenfor JSON.`;
 
+  // --- Samtalehistorik — de seneste udvekslinger i den aktuelle tråd ---
+  const historyBlock = conversationHistory && conversationHistory.length > 1
+    ? `# Samtalehistorik (den aktuelle tråd — se hvad der allerede er sagt og lovet)
+${conversationHistory
+    .slice(-6) // max 6 beskeder bagud
+    .map((m) => `[${m.role === "agent" ? "Support" : "Kunde"}]: ${m.text.slice(0, 600)}`)
+    .join("\n\n")}`
+    : "";
+
   const userContent = [
     fewShotBlock,
     policyBlock,
@@ -194,6 +204,7 @@ Returner KUN gyldigt JSON — ingen markdown udenfor JSON.`;
     actionsBlock,
     openQBlock,
     knowledgeBlock,
+    historyBlock,
     latestCustomerMessage
       ? `# Kundens seneste besked (læs denne grundigt — brug alle detaljer kunden har givet)
 ${latestCustomerMessage.slice(0, 1200)}`

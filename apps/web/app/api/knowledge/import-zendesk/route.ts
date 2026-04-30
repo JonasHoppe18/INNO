@@ -22,7 +22,6 @@ const OPENAI_EMBEDDING_MODEL =
   process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small";
 
 const SOURCE_PROVIDER = "zendesk";
-const SOURCE_TYPE = "ticket";
 const MAX_TICKETS = 200;
 const EMBED_BATCH_SIZE = 50;
 
@@ -72,12 +71,9 @@ function normalizeText(value: unknown) {
     .trim();
 }
 
-/** Format a ticket pair as a knowledge chunk */
-function buildContent(subject: string, customerBody: string, agentReply: string) {
-  const lines: string[] = [];
-  if (subject) lines.push(`Subject: ${subject}`, "");
-  lines.push("Customer question:", customerBody, "", "Correct answer:", agentReply);
-  return lines.join("\n").trim();
+/** The customer message (embedding source + few-shot display) */
+function buildCustomerMsg(subject: string, customerBody: string) {
+  return subject ? `${subject}\n${customerBody}`.trim() : customerBody.trim();
 }
 
 function ticketHash(ticketId: string) {
@@ -120,7 +116,7 @@ export async function GET() {
   if (!shopIds.length) return NextResponse.json({ count: 0 });
 
   const { count } = await supabase
-    .from("agent_knowledge")
+    .from("ticket_examples")
     .select("id", { count: "exact", head: true })
     .in("shop_id", shopIds)
     .eq("source_provider", SOURCE_PROVIDER);
@@ -245,59 +241,46 @@ export async function POST(req: Request) {
     return NextResponse.json({ imported: 0, skipped: 0, message: "No usable tickets found." });
   }
 
-  // Check which ticket IDs are already in the knowledge base (dedup)
-  const sourceIds = pairs.map((p) => ticketHash(p.ticketId));
-  const { data: existing } = await supabase
-    .from("agent_knowledge")
-    .select("source_id")
-    .eq("shop_id", shop.id)
-    .eq("source_provider", SOURCE_PROVIDER)
-    .in("source_id", sourceIds);
-
-  const existingIds = new Set((existing || []).map((r: any) => r.source_id));
-  const newPairs = pairs.filter((p) => !existingIds.has(ticketHash(p.ticketId)));
-
-  if (!newPairs.length) {
-    return NextResponse.json({ imported: 0, skipped: pairs.length, message: "All tickets already imported." });
-  }
-
-  // Embed in batches
-  const contents = newPairs.map((p) => buildContent(p.subject, p.customerBody, p.agentReply));
+  // Embed on customer message — semantic search must match similar customer questions, not agent replies
+  const customerMsgs = pairs.map((p) => buildCustomerMsg(p.subject, p.customerBody));
   const allEmbeddings: number[][] = [];
 
-  for (let i = 0; i < contents.length; i += EMBED_BATCH_SIZE) {
-    const batch = contents.slice(i, i + EMBED_BATCH_SIZE);
+  for (let i = 0; i < customerMsgs.length; i += EMBED_BATCH_SIZE) {
+    const batch = customerMsgs.slice(i, i + EMBED_BATCH_SIZE);
     const embeddings = await embedBatch(batch);
     allEmbeddings.push(...embeddings);
   }
 
-  // Insert into agent_knowledge
-  const rows = newPairs.map((pair, idx) => ({
+  const rows = pairs.map((pair, idx) => ({
     shop_id: shop.id,
     workspace_id: scope?.workspaceId ?? null,
-    source_type: SOURCE_TYPE,
     source_provider: SOURCE_PROVIDER,
-    source_id: ticketHash(pair.ticketId),
-    chunk_index: 0,
-    content: contents[idx],
+    external_ticket_id: pair.ticketId,
+    customer_msg: customerMsgs[idx],
+    agent_reply: pair.agentReply,
+    subject: pair.subject,
     embedding: allEmbeddings[idx],
-    metadata: {
-      ticket_id: pair.ticketId,
-      subject: pair.subject,
-    },
   }));
 
+  // Dedup enforced by DB constraint (shop_id, source_provider, external_ticket_id)
   const { error: insertError } = await supabase
-    .from("agent_knowledge")
-    .upsert(rows, { onConflict: "workspace_id,shop_id,source_provider,source_id,chunk_index", ignoreDuplicates: true });
+    .from("ticket_examples")
+    .upsert(rows, { onConflict: "shop_id,source_provider,external_ticket_id", ignoreDuplicates: true });
 
   if (insertError) {
     return NextResponse.json({ error: insertError.message }, { status: 500 });
   }
 
+  // Count how many were actually new (upsert with ignoreDuplicates skips existing)
+  const { count: totalCount } = await supabase
+    .from("ticket_examples")
+    .select("id", { count: "exact", head: true })
+    .eq("shop_id", shop.id)
+    .eq("source_provider", SOURCE_PROVIDER);
+
   return NextResponse.json({
-    imported: newPairs.length,
-    skipped: pairs.length - newPairs.length,
+    imported: rows.length,
+    total_in_db: totalCount ?? 0,
     total_fetched: pairs.length,
   });
 }
@@ -316,7 +299,7 @@ export async function DELETE(req: Request) {
   if (!shopIds.length) return NextResponse.json({ error: "No shop found" }, { status: 400 });
 
   const { error } = await supabase
-    .from("agent_knowledge")
+    .from("ticket_examples")
     .delete()
     .in("shop_id", shopIds)
     .eq("source_provider", SOURCE_PROVIDER);

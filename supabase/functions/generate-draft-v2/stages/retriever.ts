@@ -38,8 +38,6 @@ async function embedText(text: string): Promise<number[]> {
   return data.data[0].embedding;
 }
 
-// Sanitise query for Postgres websearch_to_tsquery — remove special operators
-// that could cause syntax errors in ts_query
 function sanitiseBm25Query(query: string): string {
   return query
     .replace(/[<>():!&|*\\]/g, " ")
@@ -48,44 +46,39 @@ function sanitiseBm25Query(query: string): string {
     .slice(0, 500);
 }
 
-// Reciprocal Rank Fusion over two ranked lists.
-// k=60 is the standard constant that dampens high-rank advantage.
+// Reciprocal Rank Fusion over multiple ranked lists.
+// k=60 dampens high-rank advantage.
 function rrfFusion(
-  vectorList: Array<Record<string, unknown>>,
-  bm25List: Array<Record<string, unknown>>,
+  lists: Array<Array<Record<string, unknown>>>,
   k = 60,
 ): Array<{ id: string; score: number; chunk: Record<string, unknown> }> {
   const scores = new Map<string, { score: number; chunk: Record<string, unknown> }>();
 
-  const addList = (list: Array<Record<string, unknown>>) => {
+  for (const list of lists) {
     list.forEach((item, rank) => {
       const id = item.id as string;
       const existing = scores.get(id) ?? { score: 0, chunk: item };
       existing.score += 1 / (k + rank + 1);
-      existing.chunk = item; // keep latest (same data anyway)
+      existing.chunk = item;
       scores.set(id, existing);
     });
-  };
-
-  addList(vectorList);
-  addList(bm25List);
+  }
 
   return [...scores.values()].sort((a, b) => b.score - a.score);
 }
 
-export async function runRetriever(
-  { plan, shop_id, supabase }: RetrieverInput,
-): Promise<RetrieverResult> {
-  const query = plan.sub_queries[0] ?? "";
-  if (!query) return { chunks: [], past_ticket_examples: [] };
-
-  // 1. Vector search + BM25 in parallel
+// Run vector + BM25 for a single query string. Returns two ranked lists.
+async function runQueryPair(
+  query: string,
+  shop_id: string,
+  supabase: SupabaseClient,
+): Promise<{ vector: Array<Record<string, unknown>>; bm25: Array<Record<string, unknown>> }> {
   const [vectorResult, bm25Result] = await Promise.allSettled([
     (async () => {
       const embedding = await embedText(query);
       const { data, error } = await supabase.rpc("match_agent_knowledge", {
         query_embedding: embedding,
-        match_count: 25,
+        match_count: 20,
         filter_shop_id: shop_id,
       });
       if (error) throw error;
@@ -99,7 +92,7 @@ export async function runRetriever(
         .select("id, content, source_type, source_provider, metadata")
         .eq("shop_id", shop_id)
         .textSearch("content", safeQuery, { type: "websearch" })
-        .limit(20);
+        .limit(15);
       if (error) {
         console.warn("[retriever] BM25 search error:", error.message);
         return [];
@@ -108,52 +101,85 @@ export async function runRetriever(
     })(),
   ]);
 
-  const vectorChunks = vectorResult.status === "fulfilled" ? vectorResult.value : [];
-  const bm25Chunks = bm25Result.status === "fulfilled" ? bm25Result.value : [];
+  return {
+    vector: vectorResult.status === "fulfilled" ? vectorResult.value : [],
+    bm25: bm25Result.status === "fulfilled" ? bm25Result.value : [],
+  };
+}
 
-  if (vectorResult.status === "rejected") {
-    console.error("[retriever] Vector search failed:", vectorResult.reason);
+export async function runRetriever(
+  { plan, shop_id, supabase }: RetrieverInput,
+): Promise<RetrieverResult> {
+  const queries = plan.sub_queries.filter(Boolean).slice(0, 3);
+  if (queries.length === 0) return { chunks: [], past_ticket_examples: [] };
+
+  // Run all queries + ticket lookup in parallel
+  const [queryPairs, ticketResult] = await Promise.all([
+    Promise.all(queries.map((q) => runQueryPair(q, shop_id, supabase))),
+    // Dedicated ticket_examples lookup via own RPC — separate vector index, typed columns
+    (async () => {
+      try {
+        const embedding = await embedText(queries[0]);
+        const intent = plan.primary_intent !== "other" ? plan.primary_intent : null;
+
+        // Try with intent filter first — more relevant tone examples
+        const { data, error } = await supabase.rpc("match_ticket_examples", {
+          query_embedding: embedding,
+          match_count: 3,
+          filter_shop_id: shop_id,
+          filter_intent: intent,
+        });
+        if (error) {
+          console.warn("[retriever] ticket_examples lookup error:", error.message);
+          return [];
+        }
+
+        // Fall back to no intent filter if shop has few labelled tickets
+        if ((!data || data.length === 0) && intent) {
+          const { data: fallback } = await supabase.rpc("match_ticket_examples", {
+            query_embedding: embedding,
+            match_count: 3,
+            filter_shop_id: shop_id,
+            filter_intent: null,
+          });
+          return (fallback ?? []) as Array<{ customer_msg: string; agent_reply: string; similarity: number }>;
+        }
+
+        return (data ?? []) as Array<{ customer_msg: string; agent_reply: string; similarity: number }>;
+      } catch (err) {
+        console.warn("[retriever] ticket_examples lookup failed:", err);
+        return [];
+      }
+    })(),
+  ]);
+
+  // Fuse knowledge chunks (policies, FAQs, product info) — tickets handled separately
+  const allLists: Array<Array<Record<string, unknown>>> = [];
+  for (const pair of queryPairs) {
+    if (pair.vector.length > 0) allLists.push(pair.vector);
+    if (pair.bm25.length > 0) allLists.push(pair.bm25);
   }
 
-  // 2. Fuse with RRF
-  const fused = rrfFusion(vectorChunks, bm25Chunks);
+  const fused = rrfFusion(allLists);
 
-  // 3. Split: past tickets (few-shot) vs regular knowledge
-  const pastTicketFused = fused
-    .filter((r) => r.chunk.source_type === "ticket" && (r.chunk.similarity as number ?? 0) > 0.45)
-    .slice(0, 3);
+  const regularChunks: RetrievedChunk[] = fused
+    .slice(0, 8)
+    .map((r) => ({
+      id: r.chunk.id as string,
+      content: r.chunk.content as string,
+      kind: (r.chunk.source_type as string) ?? "knowledge",
+      source_label: (r.chunk.source_provider ?? r.chunk.source_type ?? "knowledge") as string,
+      similarity: r.score,
+    }));
 
-  const regularFused = fused
-    .filter((r) => r.chunk.source_type !== "ticket")
-    .slice(0, 8);
+  // Past ticket examples — directly from typed ticket_examples table
+  const pastTicketExamples = ticketResult
+    .filter((t) => t.agent_reply && t.agent_reply.length > 20)
+    .map((t) => ({ customer_msg: t.customer_msg, agent_reply: t.agent_reply }));
 
-  const regularChunks: RetrievedChunk[] = regularFused.map((r) => ({
-    id: r.chunk.id as string,
-    content: r.chunk.content as string,
-    kind: (r.chunk.source_type as string) ?? "knowledge",
-    source_label: (r.chunk.source_provider ?? r.chunk.source_type ?? "knowledge") as string,
-    similarity: r.score,
-  }));
-
-  // 4. Past ticket examples — nyt format: customer_msg i metadata, agent reply i content
-  //    Bagudkompatibelt med gammel Q:/A: format
-  const pastTicketExamples = pastTicketFused
-    .map((r) => {
-      const c = r.chunk;
-      const metadata = (c.metadata as Record<string, string>) ?? {};
-      const content = (c.content as string) ?? "";
-      if (metadata.customer_msg) {
-        return { customer_msg: metadata.customer_msg, agent_reply: content };
-      }
-      const aIndex = content.indexOf("\n\nA: ");
-      if (aIndex !== -1) {
-        const customerPart = content.slice(0, aIndex).replace(/^Q:\s*/i, "").trim();
-        const agentPart = content.slice(aIndex + 5).trim();
-        return { customer_msg: customerPart, agent_reply: agentPart };
-      }
-      return { customer_msg: "", agent_reply: content };
-    })
-    .filter((t) => t.agent_reply.length > 20);
+  console.log(
+    `[retriever] queries=${queries.length} knowledge=${regularChunks.length} past_tickets=${pastTicketExamples.length}`,
+  );
 
   return {
     chunks: regularChunks,
