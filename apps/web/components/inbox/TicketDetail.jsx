@@ -129,6 +129,10 @@ export function TicketDetail({
   onRequestTranslation = null,
   detectedLanguage = null,
   tagsRefreshTrigger = 0,
+  v2Preview = null,
+  onRequestV2Preview = null,
+  onAdoptV2Preview = null,
+  onDismissV2Preview = null,
 }) {
   const [composerCollapsed, setComposerCollapsed] = useState(false);
   const [processReturnRestock, setProcessReturnRestock] = useState(true);
@@ -651,7 +655,7 @@ export function TicketDetail({
             </div>
           </div>
         )}
-        <div className="px-3 pb-1.5">
+        <div className="relative px-3 pb-1.5">
           <Composer
             key={`${thread?.id || "thread"}:${composerMode}`}
             value={draftValue}
@@ -673,7 +677,70 @@ export function TicketDetail({
             onRefineDraft={onRefineDraft}
             isRefiningDraft={isRefiningDraft}
           />
+          {composerMode !== "note" && (!v2Preview || (!v2Preview.loading && !v2Preview.draft_text && !v2Preview.error)) && (
+            <button
+              type="button"
+              onClick={onRequestV2Preview}
+              disabled={v2Preview?.loading}
+              title="Kør ny AI pipeline"
+              className="absolute bottom-3 left-4 flex items-center gap-1 rounded px-1.5 py-1 text-[11px] text-muted-foreground/30 hover:text-violet-500 hover:bg-violet-50 disabled:opacity-30 transition-colors"
+            >
+              <Sparkles className="h-3 w-3" />
+              V2
+            </button>
+          )}
         </div>
+        {composerMode !== "note" && v2Preview && (v2Preview.loading || v2Preview.draft_text || v2Preview.error || v2Preview.skipped) && (
+          <div className="px-3 pb-3">
+            {v2Preview.loading ? (
+              <div className="flex items-center gap-2 rounded-md border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-600">
+                <Sparkles className="h-3.5 w-3.5 animate-pulse" />
+                Ny pipeline genererer svar…
+              </div>
+            ) : v2Preview.error ? (
+              <div className="flex items-center justify-between rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+                <span>{v2Preview.error}</span>
+                <button type="button" onClick={onDismissV2Preview} className="ml-2 hover:opacity-70">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ) : v2Preview.skipped ? (
+              <div className="flex items-center justify-between rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-500">
+                <span>V2: ingen svar genereret ({v2Preview.skip_reason || "skipped"})</span>
+                <button type="button" onClick={onDismissV2Preview} className="ml-2 hover:opacity-70">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ) : v2Preview.draft_text ? (
+              <div className="rounded-md border border-violet-200 bg-violet-50 p-3 text-xs">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 font-semibold text-violet-700">
+                    <Sparkles className="h-3.5 w-3.5" />
+                    Ny pipeline (preview)
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-violet-500">
+                      Confidence: {Math.round((v2Preview.confidence || 0) * 100)}%
+                    </span>
+                    <button type="button" onClick={onDismissV2Preview} className="hover:opacity-70">
+                      <X className="h-3.5 w-3.5 text-violet-400" />
+                    </button>
+                  </div>
+                </div>
+                <p className="mb-3 whitespace-pre-wrap rounded bg-white/60 p-2 text-gray-800 leading-relaxed">
+                  {v2Preview.draft_text}
+                </p>
+                <button
+                  type="button"
+                  onClick={onAdoptV2Preview}
+                  className="rounded-md bg-violet-600 px-3 py-1.5 font-medium text-white hover:bg-violet-700"
+                >
+                  Brug dette svar
+                </button>
+              </div>
+            ) : null}
+          </div>
+        )}
         </>
       )}
     </section>

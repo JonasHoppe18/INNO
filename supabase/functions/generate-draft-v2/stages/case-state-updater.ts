@@ -1,0 +1,187 @@
+// supabase/functions/generate-draft-v2/stages/case-state-updater.ts
+import { SupabaseClient } from "jsr:@supabase/supabase-js@2";
+
+export interface CaseState {
+  intents: Array<{ type: string; confidence: number }>;
+  entities: {
+    order_numbers: string[];
+    customer_email: string;
+    products_mentioned: string[];
+    customer_country?: string;
+  };
+  decisions_made: Array<{ decision: string; timestamp: string }>;
+  open_questions: string[];
+  pending_asks: string[];
+  language: string;
+  last_updated_msg_id: string;
+}
+
+export interface CaseStateInput {
+  thread: Record<string, unknown>;
+  messages: Record<string, unknown>[];
+  shop: Record<string, unknown>;
+  supabase: SupabaseClient;
+}
+
+const DEFAULT_CASE_STATE: CaseState = {
+  intents: [],
+  entities: { order_numbers: [], customer_email: "", products_mentioned: [] },
+  decisions_made: [],
+  open_questions: [],
+  pending_asks: [],
+  language: "da",
+  last_updated_msg_id: "",
+};
+
+const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
+
+export async function updateCaseState(
+  { thread, messages, supabase }: CaseStateInput,
+): Promise<CaseState> {
+  const existing =
+    (thread as { case_state_json?: CaseState }).case_state_json ??
+    DEFAULT_CASE_STATE;
+
+  const latestMsg = messages[messages.length - 1] as {
+    clean_body_text?: string;
+    body_text?: string;
+    from_email?: string;
+    id?: string;
+    direction?: string;
+  };
+
+  // Byg en komprimeret samtale-historik til LLM (max 8 beskeder, 600 tegn per besked)
+  const recentMessages = messages.slice(-8).map((m) => {
+    const msg = m as {
+      clean_body_text?: string;
+      body_text?: string;
+      from_email?: string;
+      direction?: string;
+    };
+    const body = (msg.clean_body_text || msg.body_text || "").slice(0, 600);
+    const role = msg.direction === "outbound" ? "Agent" : "Kunde";
+    return `[${role}]: ${body}`;
+  }).join("\n\n");
+
+  const existingSummary = existing.open_questions.length > 0
+    ? `Åbne spørgsmål fra tidligere: ${existing.open_questions.join("; ")}`
+    : "";
+
+  const systemPrompt =
+    `Du er en support-analyse AI. Ekstraher struktureret information fra en support-samtale. Output KUN gyldigt JSON.`;
+
+  const userPrompt =
+    `Samtale:
+${recentMessages}
+
+${existingSummary}
+
+Ekstraher og output JSON:
+{
+  "primary_intent": "tracking|return|refund|exchange|address_change|product_question|complaint|thanks|other",
+  "language": "da|sv|de|en|nl|fr|no",
+  "order_numbers": ["#1234"],
+  "products_mentioned": ["produktnavn"],
+  "customer_country": "DK eller null",
+  "open_questions": ["Hvad er status på min pakke?"],
+  "pending_asks": ["Vi venter på ordrenummer fra kunden"],
+  "decisions_made": ["refund_offered", "replacement_sent"]
+}
+
+Regler:
+- open_questions: kundens ubesvarede spørgsmål fra samtalen
+- pending_asks: information vi har bedt kunden om men ikke modtaget
+- decisions_made: hvad agenten allerede har tilbudt/gjort
+- Kun inkludér det der faktisk er i samtalen`;
+
+  let llmResult: {
+    primary_intent?: string;
+    language?: string;
+    order_numbers?: string[];
+    products_mentioned?: string[];
+    customer_country?: string;
+    open_questions?: string[];
+    pending_asks?: string[];
+    decisions_made?: string[];
+  } = {};
+
+  try {
+    const resp = await fetch(OPENAI_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
+      },
+      body: JSON.stringify({
+        model: Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini",
+        temperature: 0,
+        max_tokens: 400,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+      }),
+    });
+
+    if (resp.ok) {
+      const data = await resp.json();
+      llmResult = JSON.parse(data.choices[0].message.content);
+    }
+  } catch (err) {
+    console.warn("[case-state-updater] LLM extraction failed, using regex fallback:", err);
+  }
+
+  // Regex fallback for order numbers — supplement LLM
+  const body = latestMsg?.clean_body_text ?? latestMsg?.body_text ?? "";
+  const regexOrderNumbers = body.match(/#?\b\d{4,6}\b/g) ?? [];
+
+  const mergedOrderNumbers = [
+    ...new Set([
+      ...existing.entities.order_numbers,
+      ...(llmResult.order_numbers ?? []),
+      ...regexOrderNumbers,
+    ]),
+  ];
+
+  // Brug eksisterende decisions som base, tilføj nye
+  const existingDecisionKeys = new Set(
+    existing.decisions_made.map((d) => d.decision),
+  );
+  const newDecisions = (llmResult.decisions_made ?? [])
+    .filter((d) => !existingDecisionKeys.has(d))
+    .map((d) => ({ decision: d, timestamp: new Date().toISOString() }));
+
+  const updated: CaseState = {
+    intents: llmResult.primary_intent
+      ? [{ type: llmResult.primary_intent, confidence: 0.9 }]
+      : existing.intents,
+    entities: {
+      order_numbers: mergedOrderNumbers,
+      customer_email: latestMsg?.from_email ?? existing.entities.customer_email,
+      products_mentioned: [
+        ...new Set([
+          ...existing.entities.products_mentioned,
+          ...(llmResult.products_mentioned ?? []),
+        ]),
+      ],
+      customer_country: llmResult.customer_country ?? existing.entities.customer_country,
+    },
+    decisions_made: [...existing.decisions_made, ...newDecisions],
+    open_questions: llmResult.open_questions ?? existing.open_questions,
+    pending_asks: llmResult.pending_asks ?? existing.pending_asks,
+    language: llmResult.language ?? existing.language,
+    last_updated_msg_id: (latestMsg?.id as string) ?? existing.last_updated_msg_id,
+  };
+
+  // Persist til thread (fire and forget — blokerer ikke pipeline)
+  supabase
+    .from("mail_threads")
+    .update({ case_state_json: updated })
+    .eq("id", (thread as { id: string }).id)
+    .then(({ error }) => {
+      if (error) console.warn("[case-state-updater] persist failed:", error);
+    });
+
+  return updated;
+}

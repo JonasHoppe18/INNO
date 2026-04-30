@@ -265,6 +265,8 @@ export function buildPinnedPolicyContext(options: {
   body: string;
   policies: PoliciesForPrompt;
   reservedTokens?: number;
+  /** Override auto-detection — pass planner intent when available */
+  intentOverride?: PolicyIntent;
 }): {
   intent: PolicyIntent;
   summary: PolicySummary;
@@ -276,7 +278,7 @@ export function buildPinnedPolicyContext(options: {
   policySummaryIncluded: boolean;
   policyExcerptIncluded: boolean;
 } {
-  const intent = detectPolicyIntent(options.subject, options.body);
+  const intent = options.intentOverride ?? detectPolicyIntent(options.subject, options.body);
   const rawSummary = options.policies?.policy_summary_json;
   const hasUsableSummary =
     rawSummary &&

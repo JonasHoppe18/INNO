@@ -289,15 +289,18 @@ async function fetchTicketConversation(
   if (!firstComment && !lastAgentReply) return null;
 
   const subject = String(ticket?.subject || `Ticket #${ticketId}`).trim();
-  const content = `Q: ${subject}\n${firstComment || "(No customer message)"}\n\nA: ${
-    lastAgentReply || "(No agent reply)"
-  }`;
+  // content = agent reply only (brugt til few-shot i writer)
+  // customer_msg gemmes i metadata og bruges som embedding-kilde så
+  // lignende kundespørgsmål matches semantisk
+  const customerMsg = `${subject}\n${firstComment || ""}`.trim();
 
   return {
-    content,
+    content: lastAgentReply || "",
+    embedOn: customerMsg,
     metadata: {
       external_ticket_id: String(ticketId),
       subject,
+      customer_msg: customerMsg,
       status: ticket?.status || null,
       url: ticket?.url || (ticket?.id ? `${baseUrl}/agent/tickets/${ticket.id}` : null),
       requester_id: requesterId,
@@ -464,13 +467,14 @@ async function fetchGorgiasConversation(
     "";
   if (!firstCustomer && !lastAgent) return null;
   const subject = String(ticket?.subject || `Ticket #${ticketId}`).trim();
+  const customerMsg = `${subject}\n${firstCustomer || ""}`.trim();
   return {
-    content: `Q: ${subject}\n${firstCustomer || "(No customer message)"}\n\nA: ${
-      lastAgent || "(No agent reply)"
-    }`,
+    content: lastAgent || "",
+    embedOn: customerMsg,
     metadata: {
       external_ticket_id: String(ticketId),
       subject,
+      customer_msg: customerMsg,
       status: ticket?.status || null,
       url: ticket?.url || null,
       source: "gorgias",
@@ -509,13 +513,14 @@ async function fetchFreshdeskConversation(
       .find((item: any) => item?.incoming === false && item?.body)?.body || "";
   if (!firstCustomer && !lastAgent) return null;
   const subject = String(ticket?.subject || `Ticket #${ticketId}`).trim();
+  const customerMsg = `${subject}\n${firstCustomer || ""}`.trim();
   return {
-    content: `Q: ${subject}\n${firstCustomer || "(No customer message)"}\n\nA: ${
-      lastAgent || "(No agent reply)"
-    }`,
+    content: lastAgent || "",
+    embedOn: customerMsg,
     metadata: {
       external_ticket_id: String(ticketId),
       subject,
+      customer_msg: customerMsg,
       status: ticket?.status || null,
       url: ticket?.url || null,
       source: "freshdesk",
@@ -611,7 +616,10 @@ export async function processImportJobBatch(serviceClient: any, job: KnowledgeIm
     }
 
     try {
-      const embedding = await embedText(record.content);
+      // Embed på kunde-beskeden (embedOn) så semantisk søgning matcher
+      // lignende kundespørgsmål — ikke på agent-svaret
+      const textToEmbed = (record as any).embedOn || record.content;
+      const embedding = await embedText(textToEmbed);
       const { error } = await serviceClient.from("agent_knowledge").insert({
         shop_id: job.shop_id,
         content: record.content,

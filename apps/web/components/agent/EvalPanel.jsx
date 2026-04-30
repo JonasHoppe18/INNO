@@ -222,8 +222,11 @@ function RunCard({ run, expanded, onToggle, onDelete }) {
           </span>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold">{run.run_label}</p>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-muted-foreground flex items-center gap-1.5 flex-wrap">
               {run.count} ticket{run.count !== 1 ? "s" : ""} · <span className="font-mono">{run.model}</span>
+              {run.pipeline_version === "v2" && (
+                <span className="inline-flex items-center rounded border border-violet-200 bg-violet-50 px-1.5 py-0 text-[10px] font-semibold text-violet-700">V2</span>
+              )}
               {run.created_at && ` · ${new Date(run.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`}
             </p>
           </div>
@@ -286,6 +289,7 @@ function RunCard({ run, expanded, onToggle, onDelete }) {
 let _emailCounter = 0;
 const EMPTY_EMAIL = () => ({ id: `email-${++_emailCounter}`, subject: "", body: "" });
 const MODELS = ["gpt-4o", "gpt-4o-mini"];
+const PIPELINES = [{ value: "legacy", label: "Legacy" }, { value: "v2", label: "V2 (ny)" }];
 
 export function EvalPanel({ fullPage = false }) {
   const [mode, setMode] = useState("zendesk");
@@ -296,6 +300,7 @@ export function EvalPanel({ fullPage = false }) {
   const [zendeskError, setZendeskError] = useState(null);
   const [runLabel, setRunLabel] = useState("");
   const [model, setModel] = useState("gpt-4o");
+  const [pipeline, setPipeline] = useState("legacy");
   const [running, setRunning] = useState(false);
   const [runError, setRunError] = useState(null);
   const [runs, setRuns] = useState([]);
@@ -366,8 +371,8 @@ export function EvalPanel({ fullPage = false }) {
     setRunError(null);
     try {
       const payload = mode === "zendesk"
-        ? { zendesk_tickets: zendeskTickets.filter((t) => selectedZendesk.has(t.id)), run_label: runLabel.trim(), model }
-        : { emails: emails.filter((e) => e.body.trim()).map((e) => ({ subject: e.subject, body: e.body })), run_label: runLabel.trim(), model };
+        ? { zendesk_tickets: zendeskTickets.filter((t) => selectedZendesk.has(t.id)), run_label: runLabel.trim(), model, pipeline }
+        : { emails: emails.filter((e) => e.body.trim()).map((e) => ({ subject: e.subject, body: e.body })), run_label: runLabel.trim(), model, pipeline };
 
       const res = await fetch("/api/eval/run", {
         method: "POST",
@@ -492,15 +497,23 @@ export function EvalPanel({ fullPage = false }) {
             value={runLabel}
             onChange={(e) => setRunLabel(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && canRun && !running && handleRun()}
-            placeholder='Label, e.g. "gpt-4o baseline"'
+            placeholder='Label, e.g. "v2 test"'
             className="flex-1 text-sm"
           />
           <Select value={model} onValueChange={setModel}>
-            <SelectTrigger className="w-36">
+            <SelectTrigger className="w-32">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               {MODELS.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={pipeline} onValueChange={setPipeline}>
+            <SelectTrigger className="w-28">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PIPELINES.map((p) => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
