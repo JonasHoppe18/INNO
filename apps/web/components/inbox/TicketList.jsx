@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -11,6 +12,9 @@ import { Switch } from "@/components/ui/switch";
 import { TicketListItem } from "@/components/inbox/TicketListItem";
 
 const STATUS_FILTERS = ["All", "New", "Open", "Pending", "Waiting", "Solved"];
+const CONTEXT_MENU_WIDTH_PX = 160;
+const CONTEXT_MENU_HEIGHT_PX = 84;
+const CONTEXT_MENU_GUTTER_PX = 8;
 export function TicketList({
   threads,
   selectedThreadId,
@@ -27,6 +31,7 @@ export function TicketList({
   hideSolvedFilter = false,
 }) {
   const [contextMenu, setContextMenu] = useState(null);
+  const [contextMenuRoot, setContextMenuRoot] = useState(null);
   const [renderedThreads, setRenderedThreads] = useState(
     (threads || []).map((thread) => ({ thread, isExiting: false }))
   );
@@ -165,6 +170,31 @@ export function TicketList({
     };
   }, [contextMenu]);
 
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    setContextMenuRoot(document.body);
+  }, []);
+
+  const contextMenuStyle =
+    contextMenu && typeof window !== "undefined"
+      ? {
+          left: Math.max(
+            CONTEXT_MENU_GUTTER_PX,
+            Math.min(
+              contextMenu.x,
+              window.innerWidth - CONTEXT_MENU_WIDTH_PX - CONTEXT_MENU_GUTTER_PX
+            )
+          ),
+          top: Math.max(
+            CONTEXT_MENU_GUTTER_PX,
+            Math.min(
+              contextMenu.y,
+              window.innerHeight - CONTEXT_MENU_HEIGHT_PX - CONTEXT_MENU_GUTTER_PX
+            )
+          ),
+        }
+      : undefined;
+
   return (
     <aside className="animate-view-enter flex w-full flex-col border-r border-border bg-background lg:w-[clamp(18rem,20vw,24rem)] lg:min-w-[clamp(18rem,20vw,24rem)] lg:max-w-[clamp(18rem,20vw,24rem)] lg:flex-none">
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">
@@ -247,33 +277,36 @@ export function TicketList({
           New ticket
         </button>
       </div>
-      {contextMenu ? (
-        <div
-          className="fixed z-50 min-w-[160px] rounded-md border border-border bg-popover p-1 shadow-lg"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-        >
-          <button
-            type="button"
-            onClick={() => {
-              onOpenInNewTab?.(contextMenu.threadId);
-              setContextMenu(null);
-            }}
-            className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-foreground hover:bg-muted"
-          >
-            Open in new tab
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              onDeleteThread?.(contextMenu.threadId);
-              setContextMenu(null);
-            }}
-            className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-red-500 hover:bg-red-500/10"
-          >
-            Delete
-          </button>
-        </div>
-      ) : null}
+      {contextMenu && contextMenuRoot
+        ? createPortal(
+            <div
+              className="fixed z-50 min-w-[160px] rounded-md border border-border bg-popover p-1 shadow-lg"
+              style={contextMenuStyle}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenInNewTab?.(contextMenu.threadId);
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-foreground hover:bg-muted"
+              >
+                Open in new tab
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onDeleteThread?.(contextMenu.threadId);
+                  setContextMenu(null);
+                }}
+                className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-red-500 hover:bg-red-500/10"
+              >
+                Delete
+              </button>
+            </div>,
+            contextMenuRoot
+          )
+        : null}
     </aside>
   );
 }
