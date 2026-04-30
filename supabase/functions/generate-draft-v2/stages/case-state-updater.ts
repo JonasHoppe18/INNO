@@ -132,9 +132,12 @@ Regler:
     console.warn("[case-state-updater] LLM extraction failed, using regex fallback:", err);
   }
 
-  // Regex fallback for order numbers — supplement LLM
-  const body = latestMsg?.clean_body_text ?? latestMsg?.body_text ?? "";
-  const regexOrderNumbers = body.match(/#?\b\d{4,6}\b/g) ?? [];
+  // Regex fallback for order numbers — scan ALL messages so order numbers from agent replies are captured too
+  const allBodies = messages.map((m) => {
+    const msg = m as { clean_body_text?: string; body_text?: string };
+    return msg.clean_body_text ?? msg.body_text ?? "";
+  }).join(" ");
+  const regexOrderNumbers = allBodies.match(/#?\b\d{4,6}\b/g) ?? [];
 
   const mergedOrderNumbers = [
     ...new Set([

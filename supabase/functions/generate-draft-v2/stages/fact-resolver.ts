@@ -149,6 +149,10 @@ export async function runFactResolver(
   if (firstFulfillment?.tracking_number) {
     const shipmentStatusDa: Record<string, string> = {
       delivered: "Leveret",
+      // GLS carrier-specific delivered codes
+      "delivd.no pod": "Leveret",
+      "delivd.pod": "Leveret",
+      delivd: "Leveret",
       in_transit: "Undervejs",
       out_for_delivery: "Til levering i dag",
       attempted_delivery: "Leveringsforsøg fejlede",
@@ -157,7 +161,7 @@ export async function runFactResolver(
       label_printed: "Afhentet af fragtmand",
     };
     const staticStatus = firstFulfillment.shipment_status
-      ? shipmentStatusDa[firstFulfillment.shipment_status] ?? firstFulfillment.shipment_status
+      ? shipmentStatusDa[String(firstFulfillment.shipment_status).toLowerCase()] ?? firstFulfillment.shipment_status
       : null;
 
     facts.push({
