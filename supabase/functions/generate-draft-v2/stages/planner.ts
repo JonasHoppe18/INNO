@@ -64,7 +64,10 @@ Rules:
   - CRITICAL for physical damage/defect: always include a query about the specific product + "defect" or "production issue" or "warranty replacement"
 - required_facts: only what's needed — order_state | tracking | return_eligibility | policy_excerpt | product_specs
   - NEVER include return_eligibility for: complaint, exchange, missing items, wrong items, defective items — return windows NEVER apply to shop errors
+  - For "thanks" intent: required_facts MUST be empty [] — never look up order or tracking for a thank-you message
+  - For "thanks" intent: sub_queries MUST be empty [] — no knowledge retrieval needed
 - skills_to_consider: only actions relevant to intent — get_order | get_tracking | update_shipping_address | cancel_order | refund_order | create_exchange_request
+  - For "thanks" intent: skills_to_consider MUST be empty []
 - language: ISO 639-1 code`;
 
   const userPrompt = `Customer message: "${body.slice(0, 800)}"
