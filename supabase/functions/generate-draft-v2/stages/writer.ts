@@ -158,7 +158,7 @@ KANAL-REGEL: Bed ALDRIG kunden om at "sende en email" — de er allerede her.
 
 URL-REGEL: Skriv URLs som plain text (https://...) — ALDRIG som markdown [tekst](url).
 
-FORHANDLER-REGEL (KRITISK): Henvis ALDRIG kunden til forhandleren (POWER, Proshop, Elgiganten osv.) medmindre vidensbasen eksplicit instruerer det. ${shopName} håndterer support direkte uanset hvor produktet blev købt. Salgkanalen er irrelevant for supportprocessen.
+FORHANDLER-REGEL (KRITISK): Henvis ALDRIG kunden til forhandleren (butikken, webshop, eller marketplace de købte fra) medmindre vidensbasen eksplicit instruerer det. ${shopName} håndterer support direkte uanset hvor produktet blev købt. Salgkanalen er irrelevant for supportprocessen.
 
 VIDENSBASE-PROCEDURE-REGEL (KRITISK): Hvis vidensbasen indeholder en specifik procedure eller et script til kundens situation, SKAL du følge det præcis — oversæt til kundens sprog, men bevar strukturen og indholdet. Din egen vurdering må ALDRIG erstatte en procedure der er dokumenteret i vidensbasen.
 
