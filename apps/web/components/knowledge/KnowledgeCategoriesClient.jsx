@@ -956,6 +956,20 @@ export function KnowledgeCategoriesClient() {
   const [createOpen, setCreateOpen] = useState(false);
   const [newLabel, setNewLabel] = useState("");
   const [creating, setCreating] = useState(false);
+  const [importingTickets, setImportingTickets] = useState(false);
+  const [ticketExamplesCount, setTicketExamplesCount] = useState(null);
+
+  const fetchTicketExamplesCount = useCallback(async () => {
+    try {
+      const res = await fetch("/api/knowledge/import-zendesk", { credentials: "include" });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) return;
+      const nextCount = Number(payload?.count);
+      if (Number.isFinite(nextCount)) setTicketExamplesCount(nextCount);
+    } catch {
+      // no-op
+    }
+  }, []);
 
   const fetchCategories = useCallback(async () => {
     setLoading(true);
@@ -974,6 +988,10 @@ export function KnowledgeCategoriesClient() {
     fetchCategories();
   }, [fetchCategories]);
 
+  useEffect(() => {
+    fetchTicketExamplesCount();
+  }, [fetchTicketExamplesCount]);
+
   const handleCreate = () => {
     const label = newLabel.trim();
     if (!label) return;
@@ -987,6 +1005,30 @@ export function KnowledgeCategoriesClient() {
     router.push(`/knowledge/${slug}?label=${encodeURIComponent(label)}&new=1`);
   };
 
+  const handleImportTickets = useCallback(async () => {
+    if (importingTickets) return;
+    setImportingTickets(true);
+    try {
+      const res = await fetch("/api/knowledge/import-zendesk", {
+        method: "POST",
+        credentials: "include",
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload?.error || "Could not import Zendesk tickets.");
+      }
+      const imported = Number(payload?.imported ?? 0);
+      const totalInDb = Number(payload?.total_in_db ?? 0);
+      if (Number.isFinite(totalInDb)) setTicketExamplesCount(totalInDb);
+      toast.success(`Imported ${imported} tickets to ticket_examples.`);
+    } catch (error) {
+      toast.error(error?.message || "Could not import Zendesk tickets.");
+    } finally {
+      setImportingTickets(false);
+      fetchTicketExamplesCount();
+    }
+  }, [fetchTicketExamplesCount, importingTickets]);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -996,10 +1038,12 @@ export function KnowledgeCategoriesClient() {
             Manage what your AI knows about your store
           </p>
         </div>
-        <Button onClick={() => setCreateOpen(true)} className="gap-1.5">
-          <Plus className="h-4 w-4" />
-          New category
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={() => setCreateOpen(true)} className="gap-1.5">
+            <Plus className="h-4 w-4" />
+            New category
+          </Button>
+        </div>
       </div>
 
       {loading ? (
@@ -1042,6 +1086,22 @@ export function KnowledgeCategoriesClient() {
       )}
 
       <Separator />
+      <div className="flex items-center justify-end gap-2">
+        {ticketExamplesCount !== null ? (
+          <p className="text-[11px] text-gray-400">
+            {ticketExamplesCount} imported ticket examples
+          </p>
+        ) : null}
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={handleImportTickets}
+          disabled={importingTickets}
+          className="h-7 px-2 text-[11px] text-gray-500 hover:text-gray-700"
+        >
+          {importingTickets ? "Importing..." : "Import tickets"}
+        </Button>
+      </div>
       <SavedRepliesSection />
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
