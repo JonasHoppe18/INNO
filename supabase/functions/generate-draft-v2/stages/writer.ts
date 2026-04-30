@@ -122,7 +122,7 @@ Support svarede: "${ex.agent_reply.slice(0, 500)}"`,
         .map(
           (c, i) =>
             `[kilde ${i}] ${c.source_label}
-${c.content.slice(0, 700)}`,
+${c.content.slice(0, 1200)}`,
         )
         .join("\n\n")
     : "";
