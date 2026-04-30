@@ -57,7 +57,11 @@ Rules:
   - Customer says "ombytning" because of shop error → exchange
   - Customer wants to return because they changed their mind / don't want it → return
   - Customer asks to cancel → cancel (even if already fulfilled)
-- sub_queries: 1-3 search queries in customer's language to find relevant knowledge
+- sub_queries: 1-3 search queries to find relevant knowledge. Use DIFFERENT angles:
+  - Query 1: Customer's own words (what they describe)
+  - Query 2: Operational/product angle (e.g. "[product] defect production warranty replacement" for damage cases, "[product] return policy" for return cases)
+  - Query 3 (optional): Procedure angle (e.g. "how to handle [issue] step by step")
+  - CRITICAL for physical damage/defect: always include a query about the specific product + "defect" or "production issue" or "warranty replacement"
 - required_facts: only what's needed — order_state | tracking | return_eligibility | policy_excerpt | product_specs
   - NEVER include return_eligibility for: complaint, exchange, missing items, wrong items, defective items — return windows NEVER apply to shop errors
 - skills_to_consider: only actions relevant to intent — get_order | get_tracking | update_shipping_address | cancel_order | refund_order | create_exchange_request
