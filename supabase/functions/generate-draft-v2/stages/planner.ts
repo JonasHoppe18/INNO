@@ -48,7 +48,8 @@ Schema:
 }
 
 Rules:
-- primary_intent: classify by what the CUSTOMER IS ASKING FOR, not by order status
+- primary_intent: classify ONLY by the content of the CURRENT customer message. Ignore previous open_questions and thread history for intent classification.
+  - Message is ONLY expressing gratitude ("thanks", "thank you", "appreciate", "tak", "mange tak", "gracias", "merci", "danke", any variant) → ALWAYS "thanks". Do NOT look at order numbers or prior context. A pure thank-you is ALWAYS "thanks".
   - Customer asks to change address → address_change (even if order is already shipped/delivered)
   - Customer asks about missing item → complaint (e.g. "jeg modtog kun 1 i stedet for 2")
   - Customer received wrong item → complaint
@@ -70,12 +71,13 @@ Rules:
   - For "thanks" intent: skills_to_consider MUST be empty []
 - language: ISO 639-1 code`;
 
-  const userPrompt = `Customer message: "${body.slice(0, 800)}"
+  const userPrompt = `Classify the CURRENT customer message ONLY — ignore prior thread context for intent.
 
-Case state:
-- Order numbers found: ${caseState.entities.order_numbers.join(", ") || "none"}
-- Language: ${caseState.language}
-- Open questions: ${caseState.open_questions.join("; ") || "none"}`;
+Current customer message: "${body.slice(0, 800)}"
+
+Thread context (for sub_queries and facts only — NOT for intent):
+- Order numbers in thread: ${caseState.entities.order_numbers.join(", ") || "none"}
+- Language: ${caseState.language}`;
 
   try {
     const resp = await fetch(OPENAI_API_URL, {
