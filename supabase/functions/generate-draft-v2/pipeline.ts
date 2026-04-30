@@ -10,11 +10,18 @@ import { runWriter } from "./stages/writer.ts";
 import { runVerifier } from "./stages/verifier.ts";
 import { buildPinnedPolicyContext, PolicyIntent } from "../_shared/policy-context.ts";
 
+export interface EvalPayload {
+  subject: string;
+  body: string;
+  from_email?: string;
+}
+
 export interface PipelineInput {
-  thread_id: string;
+  thread_id?: string;
   message_id?: string;
   shop_id: string;
   supabase: SupabaseClient;
+  eval_payload?: EvalPayload;
 }
 
 export interface PipelineResult {
@@ -97,38 +104,48 @@ function applyAutomationConstraints(
 }
 
 export async function runDraftV2Pipeline(input: PipelineInput): Promise<PipelineResult> {
-  const { thread_id, shop_id, supabase } = input;
+  const { thread_id, shop_id, supabase, eval_payload } = input;
 
-  // 1. Load context parallelt
-  const [threadResult, shopResult, messagesResult] = await Promise.all([
-    supabase.from("mail_threads").select("*").eq("id", thread_id).single(),
-    supabase.from("shops").select("*").eq("id", shop_id).single(),
-    supabase
-      .from("mail_messages")
-      .select("*")
-      .eq("thread_id", thread_id)
-      .order("created_at", { ascending: true }),
-  ]);
+  // 1. Load context — either from DB (normal) or from eval_payload (eval mode)
+  let thread: Record<string, unknown>;
+  let shop: Record<string, unknown>;
+  let messages: Record<string, unknown>[];
+  let latestMessage: Record<string, unknown>;
 
-  const thread = threadResult.data;
-  const shop = shopResult.data;
-  const messages = messagesResult.data ?? [];
+  if (eval_payload) {
+    // Eval mode: synthetic context from raw email data, no real thread needed
+    const shopResult = await supabase.from("shops").select("*").eq("id", shop_id).single();
+    if (!shopResult.data) {
+      return { draft_text: null, proposed_actions: [], routing_hint: "block", is_test_mode: false, confidence: 0, sources: [], skipped: true, skip_reason: "shop_not_found" };
+    }
+    shop = shopResult.data;
+    thread = { id: "eval", subject: eval_payload.subject, from_email: eval_payload.from_email ?? "eval@eval.internal" };
+    latestMessage = { id: "eval", clean_body_text: eval_payload.body, body_text: eval_payload.body, from_me: false, created_at: new Date().toISOString() };
+    messages = [latestMessage];
+  } else {
+    // Normal mode: load from DB
+    const [threadResult, shopResult, messagesResult] = await Promise.all([
+      supabase.from("mail_threads").select("*").eq("id", thread_id).single(),
+      supabase.from("shops").select("*").eq("id", shop_id).single(),
+      supabase.from("mail_messages").select("*").eq("thread_id", thread_id).order("created_at", { ascending: true }),
+    ]);
 
-  if (!thread || !shop) {
-    return {
-      draft_text: null,
-      proposed_actions: [],
-      routing_hint: "block",
-      is_test_mode: false,
-      confidence: 0,
-      sources: [],
-      skipped: true,
-      skip_reason: "thread_or_shop_not_found",
-    };
+    if (!threadResult.data || !shopResult.data) {
+      return { draft_text: null, proposed_actions: [], routing_hint: "block", is_test_mode: false, confidence: 0, sources: [], skipped: true, skip_reason: "thread_or_shop_not_found" };
+    }
+
+    thread = threadResult.data;
+    shop = shopResult.data;
+    messages = messagesResult.data ?? [];
+
+    if (messages.length === 0) {
+      return { draft_text: null, proposed_actions: [], routing_hint: "block", is_test_mode: false, confidence: 0, sources: [], skipped: true, skip_reason: "no_messages" };
+    }
+
+    latestMessage = messages[messages.length - 1];
   }
 
-  const latestMessage = messages[messages.length - 1];
-  if (!latestMessage) {
+  if (!latestMessage && !eval_payload) {
     return {
       draft_text: null,
       proposed_actions: [],
@@ -141,20 +158,22 @@ export async function runDraftV2Pipeline(input: PipelineInput): Promise<Pipeline
     };
   }
 
-  // 2. Gate
-  const gate = await runGate({ thread, latestMessage, shop });
-  if (!gate.should_process) {
-    console.log(`[generate-draft-v2] gate blocked: ${gate.reason}`);
-    return {
-      draft_text: null,
-      proposed_actions: [],
-      routing_hint: "block",
-      is_test_mode: false,
-      confidence: 0,
-      sources: [],
-      skipped: true,
-      skip_reason: gate.reason,
-    };
+  // 2. Gate — skipped in eval mode
+  if (!eval_payload) {
+    const gate = await runGate({ thread, latestMessage, shop });
+    if (!gate.should_process) {
+      console.log(`[generate-draft-v2] gate blocked: ${gate.reason}`);
+      return {
+        draft_text: null,
+        proposed_actions: [],
+        routing_hint: "block",
+        is_test_mode: false,
+        confidence: 0,
+        sources: [],
+        skipped: true,
+        skip_reason: gate.reason,
+      };
+    }
   }
 
   // 3. Load automation flags + test_mode in parallel with case state

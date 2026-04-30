@@ -70,6 +70,7 @@ export async function GET() {
       grouped[row.run_label] = {
         run_label: row.run_label,
         model: row.model,
+        pipeline_version: row.pipeline_version ?? "legacy",
         created_at: row.created_at,
         results: [],
       };

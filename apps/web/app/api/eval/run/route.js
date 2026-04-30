@@ -130,6 +130,43 @@ async function generateDraft(shopId, subject, emailBody) {
   return { draft, actions };
 }
 
+async function generateDraftV2(shopId, subject, emailBody) {
+  const endpoint = `${SUPABASE_URL}/functions/v1/generate-draft-v2`;
+  let res;
+  try {
+    res = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      },
+      body: JSON.stringify({
+        shop_id: shopId,
+        email_data: {
+          subject: subject || "",
+          body: emailBody,
+          from_email: "eval@eval.internal",
+        },
+      }),
+    });
+  } catch (fetchErr) {
+    throw new Error(`Could not reach generate-draft-v2: ${fetchErr.message}`);
+  }
+  const raw = await res.text();
+  let data;
+  try { data = JSON.parse(raw); } catch { data = {}; }
+  if (!res.ok) {
+    throw new Error(`generate-draft-v2 ${res.status}: ${data?.error || raw.slice(0, 200)}`);
+  }
+  const draft = String(data?.draft_text || "").trim();
+  if (!draft) {
+    throw new Error(`generate-draft-v2 returned no draft. Raw: ${raw.slice(0, 300)}`);
+  }
+  const actions = Array.isArray(data?.proposed_actions) ? data.proposed_actions : [];
+  const confidence = data?.confidence ?? null;
+  return { draft, actions, confidence };
+}
+
 export async function POST(req) {
   const { userId: clerkUserId, orgId } = await auth();
   if (!clerkUserId) {
@@ -137,7 +174,7 @@ export async function POST(req) {
   }
 
   const body = await req.json().catch(() => ({}));
-  const { emails, thread_ids, zendesk_tickets, run_label, model = "gpt-4o" } = body;
+  const { emails, thread_ids, zendesk_tickets, run_label, model = "gpt-4o", pipeline = "legacy" } = body;
 
   if (!run_label) {
     return NextResponse.json({ error: "run_label required" }, { status: 400 });
@@ -183,7 +220,9 @@ export async function POST(req) {
       const ticketSubject = email.subject?.trim() || null;
       if (!ticketBody) continue;
       try {
-        const { draft, actions } = await generateDraft(shop.id, ticketSubject, ticketBody);
+        const { draft, actions } = pipeline === "v2"
+          ? await generateDraftV2(shop.id, ticketSubject, ticketBody)
+          : await generateDraft(shop.id, ticketSubject, ticketBody);
         const scores = await judgeWithOpenAI(ticketBody, draft);
         const { data: inserted } = await supabase
           .from("eval_results")
@@ -192,6 +231,7 @@ export async function POST(req) {
             thread_id: null,
             run_label,
             model,
+            pipeline_version: pipeline,
             ticket_subject: ticketSubject,
             ticket_body: ticketBody.slice(0, 2000),
             draft_content: draft.slice(0, 2000),
@@ -228,7 +268,9 @@ export async function POST(req) {
         : ticketBody;
 
       try {
-        const { draft, actions } = await generateDraft(shop.id, ticketSubject, fullBody);
+        const { draft, actions } = pipeline === "v2"
+          ? await generateDraftV2(shop.id, ticketSubject, fullBody)
+          : await generateDraft(shop.id, ticketSubject, fullBody);
         const scores = await judgeWithOpenAI(fullBody, draft, humanReply);
         const { data: inserted } = await supabase
           .from("eval_results")
@@ -237,6 +279,7 @@ export async function POST(req) {
             thread_id: null,
             run_label,
             model,
+            pipeline_version: pipeline,
             ticket_subject: ticketSubject,
             ticket_body: ticketBody.slice(0, 2000),
             draft_content: draft.slice(0, 2000),
