@@ -265,9 +265,29 @@ const resolveInlineCidImages = (html, attachments = []) => {
   return removeUnresolvedCidImages(replaced);
 };
 
-const sanitizeEmailHtml = (value, attachments = []) => {
+function sanitizeInlineStyle(style = "") {
+  const raw = String(style || "").trim();
+  if (!raw || /expression\s*\(|javascript:/i.test(raw)) return "";
+  return raw
+    .split(";")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .filter((item) => {
+      const [name, ...rest] = item.split(":");
+      if (!name || !rest.length) return false;
+      const key = String(name || "").trim().toLowerCase();
+      const value = rest.join(":").trim();
+      if (!key || !value) return false;
+      if (/url\s*\(\s*javascript:/i.test(value)) return false;
+      return true;
+    })
+    .join("; ");
+}
+
+const sanitizeEmailHtml = (value, attachments = [], options = {}) => {
   if (!value) return "";
   const cidMap = buildCidAttachmentUrlMap(attachments);
+  const preserveInlineStyles = options?.preserveInlineStyles === true;
   const htmlWithResolvedInlineCids = resolveInlineCidImages(value, attachments);
   const sanitizedWithSafeImages = String(htmlWithResolvedInlineCids).replace(
     /<img\b[^>]*>/gi,
@@ -288,7 +308,10 @@ const sanitizeEmailHtml = (value, attachments = []) => {
 
       if (!isSafeAttachmentSrc) return "";
 
-      return `<img src="${escapeHtml(resolvedSrc)}" alt="Inline attachment image" loading="lazy">`;
+      const styleMatch = String(imgTag).match(/\sstyle=(['"])([\s\S]*?)\1/i);
+      const safeStyle = preserveInlineStyles ? sanitizeInlineStyle(styleMatch?.[2] || "") : "";
+      const styleAttr = safeStyle ? ` style="${escapeHtml(safeStyle)}"` : "";
+      return `<img src="${escapeHtml(resolvedSrc)}" alt="Inline attachment image" loading="lazy"${styleAttr}>`;
     }
   );
 
@@ -297,7 +320,11 @@ const sanitizeEmailHtml = (value, attachments = []) => {
     .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, "")
     .replace(/<link[\s\S]*?>/gi, "")
     .replace(/<\/?font[^>]*>/gi, "")
-    .replace(/\sstyle=(['"])[\s\S]*?\1/gi, "")
+    .replace(/\sstyle=(['"])([\s\S]*?)\1/gi, (_match, _quote, rawStyle) => {
+      if (!preserveInlineStyles) return "";
+      const safeStyle = sanitizeInlineStyle(rawStyle);
+      return safeStyle ? ` style="${escapeHtml(safeStyle)}"` : "";
+    })
     .replace(/\sclass=(['"])[\s\S]*?\1/gi, "")
     .replace(/<\/?(html|head|body|meta|title)[^>]*>/gi, "");
 
@@ -656,6 +683,9 @@ export function MessageBubble({
       ccList.length === 0 &&
       bccList.length === 0);
   const safeBodyHtml = sanitizeEmailHtml(message?.body_html || "", attachments);
+  const safeModalBodyHtml = sanitizeEmailHtml(message?.body_html || "", attachments, {
+    preserveInlineStyles: true,
+  });
   const { cleanBodyText, quotedBodyText, cleanBodyHtml, quotedBodyHtml } = deriveMessageBodies(message);
   const safeCleanBodyHtml = sanitizeEmailHtml(cleanBodyHtml || "", attachments);
   const safeQuotedBodyHtml = sanitizeEmailHtml(quotedBodyHtml || "", attachments);
@@ -751,7 +781,7 @@ export function MessageBubble({
       );
   const modalHtml = isStructuredForm
     ? formattedStructuredHtml
-    : safeBodyHtml;
+    : safeModalBodyHtml;
   const shouldShowBcc = isOutbound && bccList.length > 0;
 
   return (
