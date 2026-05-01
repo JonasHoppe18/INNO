@@ -126,6 +126,16 @@ function normalizeDestinationInput(body, existingRow = null) {
   };
 }
 
+function toLegacyDestinationKey(destinationType, destinationValue) {
+  const type = normalizeDestinationType(destinationType) || "classification";
+  const value =
+    type === "inbox"
+      ? normalizeInboxSlug(destinationValue)
+      : normalizeClassificationKey(destinationValue);
+  if (!value) return "";
+  return type === "inbox" ? `inbox:${value}` : value;
+}
+
 function formatRuleRow(row) {
   const destinationType = normalizeDestinationType(row?.destination_type) || "classification";
   const destinationValue =
@@ -139,10 +149,7 @@ function formatRuleRow(row) {
     destination_type: destinationType,
     destination_value: destinationValue,
     // Legacy compatibility for callers still expecting destination_key.
-    destination_key:
-      destinationType === "classification"
-        ? destinationValue
-        : `inbox:${destinationValue}`,
+    destination_key: toLegacyDestinationKey(destinationType, destinationValue),
     is_active: Boolean(row.is_active),
     updated_at: row.updated_at || null,
     created_at: row.created_at || null,
@@ -324,7 +331,7 @@ export async function POST(request) {
         .update({
           destination_type: destinationType,
           destination_value: destinationValue,
-          destination_key: destinationType === "classification" ? destinationValue : null,
+          destination_key: toLegacyDestinationKey(destinationType, destinationValue),
           is_active: typeof body?.is_active === "boolean" ? body.is_active : true,
           updated_at: nowIso,
         })
@@ -351,7 +358,7 @@ export async function POST(request) {
         matcher_value: matcherValue,
         destination_type: destinationType,
         destination_value: destinationValue,
-        destination_key: destinationType === "classification" ? destinationValue : null,
+        destination_key: toLegacyDestinationKey(destinationType, destinationValue),
         is_active: typeof body?.is_active === "boolean" ? body.is_active : true,
         created_at: nowIso,
         updated_at: nowIso,
@@ -496,10 +503,10 @@ export async function PUT(request) {
         matcher_value: nextMatcherValue,
         destination_type: nextDestination.destinationType,
         destination_value: nextDestination.destinationValue,
-        destination_key:
-          nextDestination.destinationType === "classification"
-            ? nextDestination.destinationValue
-            : null,
+        destination_key: toLegacyDestinationKey(
+          nextDestination.destinationType,
+          nextDestination.destinationValue
+        ),
         is_active:
           typeof body?.is_active === "boolean" ? body.is_active : Boolean(existing?.is_active),
         updated_at: new Date().toISOString(),

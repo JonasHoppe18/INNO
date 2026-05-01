@@ -841,6 +841,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const [selectedThreadId, setSelectedThreadId] = useState(null);
   const [openThreadIds, setOpenThreadIds] = useState([]);
   const [localNewThread, setLocalNewThread] = useState(null);
+  const [sentDraftStatsByThread, setSentDraftStatsByThread] = useState({});
   const [draftLogLoading, setDraftLogLoading] = useState(false);
   const [draftLogIdByThread, setDraftLogIdByThread] = useState({});
   const [ticketStateByThread, setTicketStateByThread] = useState({});
@@ -1466,7 +1467,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           return false;
         }
 
-        if (!activeView && inboxBucket === "notification") {
+        if (!activeView && (inboxBucket === "notification" || inboxSlug)) {
           return false;
         }
         if (activeView === "notifications" && inboxBucket !== "notification") {
@@ -1910,6 +1911,25 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     supabase,
     draftLogIdByThread,
   ]);
+
+  // Fetch sent draft edit stats for the selected thread (for AI badge display)
+  useEffect(() => {
+    if (!supabase || !selectedThreadId || isLocalThreadId(selectedThreadId)) return;
+    if (sentDraftStatsByThread[selectedThreadId]) return; // already fetched
+    supabase
+      .from("drafts")
+      .select("edit_classification, edit_delta_pct")
+      .eq("thread_id", selectedThreadId)
+      .eq("status", "sent")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data) {
+          setSentDraftStatsByThread((prev) => ({ ...prev, [selectedThreadId]: data }));
+        }
+      });
+  }, [selectedThreadId, supabase, isLocalThreadId]);
 
   useEffect(() => {
     if (isLocalThreadId(selectedThreadId)) return;
@@ -3635,7 +3655,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       }
       const nowIso = new Date().toISOString();
       const localMessageId = data?.message_id || `local-sent-${Date.now()}`;
-      const localBodyHtml = String(composeBody || "")
+      const localBodyText = String(data?.body_text || composeBody || "");
+      const localCleanBodyText = String(data?.clean_body_text || localBodyText || "");
+      const fallbackLocalBodyHtml = String(localCleanBodyText || "")
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
@@ -3654,6 +3676,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           }
         )
         .replace(/\n/g, "<br/>");
+      const localBodyHtml = String(data?.body_html || "").trim() || fallbackLocalBodyHtml;
+      const localCleanBodyHtml =
+        String(data?.clean_body_html || "").trim() || fallbackLocalBodyHtml;
       const redirectedTo =
         data?.redirected_to && typeof data.redirected_to === "string"
           ? [String(data.redirected_to)]
@@ -3675,8 +3700,10 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
             to_emails: localTo,
             cc_emails: localCc,
             bcc_emails: localBcc,
-            body_text: composeBody,
+            body_text: localBodyText,
             body_html: localBodyHtml,
+            clean_body_text: localCleanBodyText,
+            clean_body_html: localCleanBodyHtml,
             is_read: true,
             sent_at: nowIso,
             received_at: null,
@@ -4174,6 +4201,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           thread={selectedThread}
           messages={threadMessages}
           attachments={threadAttachments}
+          sentDraftStats={sentDraftStatsByThread[selectedThreadId] || null}
           customerLookup={customerLookup}
           threadOrderNumber={customerLookupParams.orderNumber || ""}
           mentionUsers={effectiveMentionUsers}

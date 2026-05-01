@@ -53,12 +53,12 @@ export async function runWriter(
     (shop as { instructions?: string }).instructions ??
     "";
 
-  const langName = LANGUAGE_NAMES[caseState.language] ?? caseState.language;
+  const langName = LANGUAGE_NAMES[plan.language] ?? plan.language;
 
   // --- Few-shot (primær tone-anker — placeres øverst så modellen ser det først) ---
   const fewShotBlock = retrieved.past_ticket_examples.length > 0
-    ? `# Eksempler på hvordan ${shopName} support svarer
-Spejl PRÆCIS denne tone, længde og stil:
+    ? `# Eksempler på lignende sager — brug som reference for BÅDE indhold og tone
+Disse viser hvad der er det rigtige svar i lignende situationer OG den rette tone og stil. Hvis et eksempel matcher kundens problem direkte, brug svaret som udgangspunkt — ikke kun stilen:
 
 ` +
       retrieved.past_ticket_examples
@@ -164,6 +164,8 @@ FORHANDLER-REGEL (KRITISK): Henvis ALDRIG kunden til forhandleren (butikken, web
 
 VIDENSBASE-PROCEDURE-REGEL (KRITISK): Hvis vidensbasen indeholder en specifik procedure eller et script til kundens situation, SKAL du følge det præcis — oversæt til kundens sprog, men bevar strukturen og indholdet. Din egen vurdering må ALDRIG erstatte en procedure der er dokumenteret i vidensbasen.
 
+GENTAGELSES-REGEL (KRITISK): Tjek samtalehistorikken INDEN du foreslår en løsning. Hvis en instruktion, fejlfindingsguide eller procedure allerede er sendt til kunden i denne tråd, og kunden siger den ikke virkede — GENTAG DEN ALDRIG. Anerkend i stedet at problemet fortsætter og eskaler: "Vi har videresendt dit screenshot til vores teknikere" / "Vi eskalerer sagen til vores team" er det rigtige svar, ikke de samme trin igen.
+
 VIDENSBASE-REGEL: Når du bruger trin eller guides fra vidensbasen, oversæt dem til kundens sprog. Fjern metadata-labels som "(Engelsk)", "(English)", "(Dansk)" og lignende — de er interne markeringer der ikke hører hjemme i kundens svar.
 
 FAKTA-REGEL:
@@ -217,7 +219,7 @@ ${latestCustomerMessage.slice(0, 1200)}`
       : "",
     `# Sammenfatning af henvendelsen
 Intent: ${plan.primary_intent}
-Sprog: ${caseState.language} (${langName})
+Sprog: ${plan.language} (${langName})
 ${caseState.entities.order_numbers.length > 0 ? `Ordrenumre nævnt: ${caseState.entities.order_numbers.join(", ")}` : ""}
 ${caseState.entities.products_mentioned.length > 0 ? `Produkter nævnt: ${caseState.entities.products_mentioned.join(", ")}` : ""}
 Kundens email: ${caseState.entities.customer_email || "ukendt"}`,

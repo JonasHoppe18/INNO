@@ -176,6 +176,7 @@ function stripTrailingSection(text = "", section = "") {
 export function stripTrailingComposedFooter(text = "", config = {}) {
   let next = normalizePlainText(text);
   next = stripTrailingSection(next, config?.templateTextFallback);
+  next = stripTrailingSection(next, config?.closingText);
   return next;
 }
 
@@ -186,21 +187,35 @@ export function plainTextToHtml(text = "") {
 export function composeEmailBodyWithSignature({ bodyText = "", bodyHtml = "", config = {} }) {
   const inputText = normalizePlainText(bodyText || stripHtmlToText(bodyHtml));
   const coreBodyText = stripTrailingComposedFooter(inputText, config);
+  const closingText = normalizePlainText(config?.closingText || "");
   const templateHtml = sanitizeEmailTemplateHtml(config?.templateHtml || "");
   const templateTextFallback = normalizePlainText(
     config?.templateTextFallback || htmlToPlainText(templateHtml)
   );
 
-  const textSections = [coreBodyText, templateTextFallback].filter(Boolean);
+  const bodyTextWithClosing = [coreBodyText, closingText].filter(Boolean).join("\n\n").trim();
+  const textSections = [bodyTextWithClosing, templateTextFallback].filter(Boolean);
   const finalBodyText = textSections.join("\n\n").trim();
 
   const baseHtml = asString(bodyHtml || "").trim() || plainTextToHtml(coreBodyText);
-  const finalBodyHtml = [baseHtml, templateHtml].filter(Boolean).join("<br/><br/>").trim();
+  const inputAlreadyIncludesClosing =
+    Boolean(closingText) && normalizePlainText(inputText).endsWith(closingText);
+  const bodyHtmlWithClosing = [
+    baseHtml,
+    closingText && !inputAlreadyIncludesClosing ? plainTextToHtml(closingText) : "",
+  ]
+    .filter(Boolean)
+    .join("<br/><br/>")
+    .trim();
+  const finalBodyHtml = [bodyHtmlWithClosing, templateHtml].filter(Boolean).join("<br/><br/>").trim();
 
   return {
     coreBodyText,
+    closingText,
     templateHtml,
     templateTextFallback,
+    bodyTextWithClosing,
+    bodyHtmlWithClosing,
     finalBodyText,
     finalBodyHtml,
   };
@@ -211,7 +226,7 @@ export async function loadEmailSignatureConfig(
   { workspaceId = null, userId = null, legacySignature = "" } = {}
 ) {
   const fallback = {
-    closingText: "",
+    closingText: normalizePlainText(legacySignature),
     templateHtml: "",
     templateTextFallback: "",
     isActive: false,
@@ -240,7 +255,7 @@ export async function loadEmailSignatureConfig(
       data?.template_text_fallback || htmlToPlainText(templateHtml)
     );
     return {
-      closingText: "",
+      closingText: normalizePlainText(legacySignature),
       templateHtml,
       templateTextFallback,
       isActive: true,

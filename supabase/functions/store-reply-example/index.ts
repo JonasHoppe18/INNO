@@ -1,5 +1,6 @@
-// Captures a sent support reply as a knowledge example for future AI draft retrieval.
+// Captures a sent support reply as a ticket example for future AI draft retrieval.
 // Called fire-and-forget from the web send route after a reply is successfully sent.
+// Stores into ticket_examples (not agent_knowledge) so v2 retriever finds it via match_ticket_examples.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const PROJECT_URL = Deno.env.get("SUPABASE_URL") ?? Deno.env.get("PROJECT_URL");
@@ -55,50 +56,41 @@ Deno.serve(async (req: Request) => {
   const customerMessageText = String(body.customer_message_text || "").trim();
   const subject = String(body.subject || "").trim();
   const workspaceId = String(body.workspace_id || "").trim() || null;
+  const intent = String(body.intent || "").trim() || null;
+  const language = String(body.language || "").trim() || null;
 
   if (!threadId || !shopId || !sentReplyText || !customerMessageText) {
     return new Response("Missing required fields", { status: 400 });
   }
 
-  // Avoid storing duplicate examples for the same thread
-  const { data: existing } = await supabase
-    .from("agent_knowledge")
-    .select("id")
-    .eq("shop_id", shopId)
-    .eq("source_type", "ticket")
-    .eq("source_provider", "sent_reply")
-    .filter("metadata->>'thread_id'", "eq", threadId)
-    .maybeSingle();
-
-  if (existing) {
-    return new Response(JSON.stringify({ ok: true, skipped: true }), { status: 200 });
-  }
-
+  // Embed on the customer message — retrieval finds similar customer situations
   const embedding = await createEmbedding(customerMessageText);
 
-  const content = `Customer:\n${customerMessageText}\n\nAgent reply:\n${sentReplyText}`;
-
-  const { error } = await supabase.from("agent_knowledge").insert({
-    shop_id: shopId,
-    source_type: "ticket",
-    source_provider: "sent_reply",
-    content,
-    embedding: embedding ?? null,
-    metadata: {
-      snippet_id: crypto.randomUUID(),
-      title: subject || "Sent reply",
-      thread_id: threadId,
+  const { error } = await supabase.from("ticket_examples").upsert(
+    {
+      shop_id: shopId,
       workspace_id: workspaceId,
-      chunk_index: 0,
-      chunk_count: 1,
-      sent_at: new Date().toISOString(),
+      source_provider: "sona_sent",
+      external_ticket_id: threadId,
+      customer_msg: customerMessageText,
+      agent_reply: sentReplyText,
+      subject: subject || null,
+      intent: intent,
+      language: language,
+      embedding: embedding ?? null,
+      imported_at: new Date().toISOString(),
     },
-  });
+    {
+      onConflict: "shop_id,source_provider,external_ticket_id",
+      ignoreDuplicates: false, // update agent_reply if re-sent (edited)
+    }
+  );
 
   if (error) {
     console.error("store-reply-example: insert failed", error.message);
     return new Response(JSON.stringify({ ok: false, error: error.message }), { status: 500 });
   }
 
+  console.log(`store-reply-example: stored example for thread ${threadId} shop ${shopId}`);
   return new Response(JSON.stringify({ ok: true }), { status: 200 });
 });

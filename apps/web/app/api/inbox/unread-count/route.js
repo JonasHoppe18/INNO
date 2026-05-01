@@ -25,21 +25,27 @@ async function loadMailboxIds(serviceClient, scope) {
   return (data || []).map((row) => row.id).filter(Boolean);
 }
 
+function hasCustomInboxTag(tags = []) {
+  return (Array.isArray(tags) ? tags : []).some((tag) =>
+    String(tag || "").trim().toLowerCase().startsWith("inbox:")
+  );
+}
+
 async function loadUnreadCount(serviceClient, scope, mailboxIds) {
   const query = applyScope(
     serviceClient
       .from("mail_threads")
-      .select("unread_count")
+      .select("unread_count, tags")
       .in("mailbox_id", mailboxIds)
       .gt("unread_count", 0)
-      // "All Tickets" excludes notification-classified threads.
+      // "All Tickets" excludes notification-classified and custom inbox threads.
       .or("classification_key.is.null,classification_key.neq.notification"),
     scope
   );
   const { data, error } = await query;
   if (error) throw new Error(error.message);
   const rows = Array.isArray(data) ? data : [];
-  return rows.length;
+  return rows.filter((row) => !hasCustomInboxTag(row?.tags)).length;
 }
 
 export async function GET() {

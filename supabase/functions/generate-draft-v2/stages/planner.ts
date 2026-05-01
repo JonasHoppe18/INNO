@@ -71,13 +71,26 @@ Rules:
   - For "thanks" intent: skills_to_consider MUST be empty []
 - language: ISO 639-1 code`;
 
+  const threadContextLines = [
+    `- Order numbers in thread: ${caseState.entities.order_numbers.join(", ") || "none"}`,
+    caseState.entities.products_mentioned.length > 0
+      ? `- Products discussed in thread: ${caseState.entities.products_mentioned.join(", ")}`
+      : null,
+    caseState.open_questions.length > 0
+      ? `- Open issues in thread (use for sub_queries): ${caseState.open_questions.join("; ")}`
+      : null,
+    caseState.pending_asks.length > 0
+      ? `- Pending context in thread: ${caseState.pending_asks.join("; ")}`
+      : null,
+  ].filter(Boolean).join("\n");
+
   const userPrompt = `Classify the CURRENT customer message ONLY — ignore prior thread context for intent.
 
 Current customer message: "${body.slice(0, 800)}"
 
-Thread context (for sub_queries and facts only — NOT for intent):
-- Order numbers in thread: ${caseState.entities.order_numbers.join(", ") || "none"}
-- Language: ${caseState.language}`;
+Thread context (for sub_queries and facts ONLY — do NOT use for intent classification):
+${threadContextLines}
+- Detected language of current message: detect from the current message above, ignore thread history language`;
 
   try {
     const resp = await fetch(OPENAI_API_URL, {

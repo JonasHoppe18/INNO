@@ -879,7 +879,7 @@ export async function POST(request, { params }) {
 
   let threadQuery = serviceClient
     .from("mail_threads")
-    .select("id, user_id, workspace_id, mailbox_id, provider, provider_thread_id, subject, snippet, classification_key, tags")
+    .select("id, user_id, workspace_id, mailbox_id, provider, provider_thread_id, subject, snippet, classification_key, tags, case_state_json")
     .eq("id", threadId);
   threadQuery = applyScope(threadQuery, scope);
   const { data: thread, error: threadError } = await threadQuery.maybeSingle();
@@ -925,7 +925,7 @@ export async function POST(request, { params }) {
 
   let inboundMessagesQuery = serviceClient
     .from("mail_messages")
-    .select("id, from_email, extracted_customer_email, provider_message_id, received_at, subject")
+    .select("id, from_email, extracted_customer_email, provider_message_id, received_at, subject, clean_body_text, snippet")
     .eq("thread_id", threadId)
     .not("received_at", "is", null)
     .order("received_at", { ascending: false })
@@ -982,6 +982,8 @@ export async function POST(request, { params }) {
   const coreBodyText = composed.coreBodyText;
   const finalBodyText = composed.finalBodyText;
   const finalBodyHtml = composed.finalBodyHtml || "";
+  const persistedBodyText = composed.bodyTextWithClosing || coreBodyText || bodyText || stripHtml(bodyHtml);
+  const persistedBodyHtml = composed.bodyHtmlWithClosing || bodyHtml || "";
 
   let providerMessageId = null;
   let sentFromEmail = mailbox.provider_email || null;
@@ -1135,7 +1137,7 @@ export async function POST(request, { params }) {
     return NextResponse.json({ error: message }, { status });
   }
 
-  const snippet = buildSnippet(finalBodyText);
+  const snippet = buildSnippet(persistedBodyText);
   const persistedProviderMessageId =
     providerMessageId || `sent-${mailbox.provider}-${threadId}-${Date.now()}`;
   let insertedMessage = null;
@@ -1148,10 +1150,10 @@ export async function POST(request, { params }) {
         provider_message_id: persistedProviderMessageId,
         subject,
         snippet,
-        body_text: finalBodyText,
-        body_html: finalBodyHtml || null,
-        clean_body_text: finalBodyText,
-        clean_body_html: finalBodyHtml || null,
+        body_text: persistedBodyText,
+        body_html: finalBodyHtml || persistedBodyHtml || null,
+        clean_body_text: persistedBodyText,
+        clean_body_html: persistedBodyHtml || null,
         quoted_body_text: null,
         quoted_body_html: null,
         from_name: sentFromName,
@@ -1185,10 +1187,10 @@ export async function POST(request, { params }) {
         provider_message_id: persistedProviderMessageId,
         subject,
         snippet,
-        body_text: finalBodyText,
-        body_html: finalBodyHtml || null,
-        clean_body_text: finalBodyText,
-        clean_body_html: finalBodyHtml || null,
+        body_text: persistedBodyText,
+        body_html: finalBodyHtml || persistedBodyHtml || null,
+        clean_body_text: persistedBodyText,
+        clean_body_html: persistedBodyHtml || null,
         quoted_body_text: null,
         quoted_body_html: null,
         from_name: sentFromName,
@@ -1221,10 +1223,10 @@ export async function POST(request, { params }) {
         provider_message_id: persistedProviderMessageId,
         subject,
         snippet,
-        body_text: finalBodyText,
-        body_html: finalBodyHtml || null,
-        clean_body_text: finalBodyText,
-        clean_body_html: finalBodyHtml || null,
+        body_text: persistedBodyText,
+        body_html: finalBodyHtml || persistedBodyHtml || null,
+        clean_body_text: persistedBodyText,
+        clean_body_html: persistedBodyHtml || null,
         quoted_body_text: null,
         quoted_body_html: null,
         from_name: sentFromName,
@@ -1479,8 +1481,9 @@ export async function POST(request, { params }) {
 
   // Store sent reply as a knowledge example for future AI draft retrieval (fire-and-forget)
   const shopIdForLearning = mailbox?.shop_id || null;
-  const customerTextForLearning = inboundMessage?.body_text || inboundMessage?.snippet || "";
-  if (learnFromEdits && shopIdForLearning && coreBodyText?.trim() && customerTextForLearning.trim() && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+  const customerTextForLearning = inboundMessage?.clean_body_text || inboundMessage?.snippet || "";
+  if (learnFromEdits && shopIdForLearning && coreBodyText?.trim() && customerTextForLearning.trim() && customerTextForLearning.trim().length >= 30 && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+    const caseState = thread?.case_state_json || null;
     fetch(`${SUPABASE_URL}/functions/v1/store-reply-example`, {
       method: "POST",
       headers: {
@@ -1494,6 +1497,8 @@ export async function POST(request, { params }) {
         sent_reply_text: coreBodyText,
         customer_message_text: customerTextForLearning,
         subject: thread?.subject || "",
+        intent: caseState?.intents?.[0]?.type || null,
+        language: caseState?.language || null,
       }),
     }).catch(() => null);
   }
@@ -1508,6 +1513,10 @@ export async function POST(request, { params }) {
       test_mode: isTestModeActive,
       simulated: shouldSimulateEmailOnly,
       redirected_to: testEmailAddress,
+      body_text: persistedBodyText,
+      body_html: finalBodyHtml || persistedBodyHtml || null,
+      clean_body_text: persistedBodyText,
+      clean_body_html: persistedBodyHtml || null,
       message:
         shouldSimulateEmailOnly
           ? "Email simulated: Test Mode is enabled and no Test Email Address is configured."

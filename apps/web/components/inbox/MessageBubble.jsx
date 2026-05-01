@@ -402,6 +402,8 @@ const formatStructuredFormText = (value, subjectLine = "") => {
 
 const EMAIL_BODY_CLASS =
   "max-w-none w-full min-w-0 break-words [overflow-wrap:anywhere] text-[14px] leading-[1.55] text-foreground font-[inherit] [&_*]:max-w-full [&_*]:min-w-0 [&_*]:break-words [&_*]:[overflow-wrap:anywhere] [&_*]:font-[inherit] [&_*]:text-[14px] [&_*]:leading-[1.55] [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-blue-700 dark:hover:[&_a]:text-blue-300 [&_img]:max-h-[340px] [&_img]:w-auto [&_img]:rounded-lg [&_img]:my-2 [&_img]:cursor-zoom-in [&_img]:transition-opacity [&_img]:duration-150 hover:[&_img]:opacity-90";
+const EMAIL_MODAL_BODY_CLASS =
+  "max-w-none w-full min-w-0 break-words [overflow-wrap:anywhere] text-[14px] leading-[1.55] text-foreground [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-blue-700 dark:hover:[&_a]:text-blue-300 [&_img]:!block [&_img]:!h-auto [&_img]:!max-h-[72px] [&_img]:!max-w-[170px] [&_img]:!object-contain [&_img]:!my-0 [&_td]:!align-middle";
 
 const IMAGE_FILENAME_RE = /\.(?:avif|bmp|gif|heic|heif|jpe?g|png|svg|tiff?|webp)$/i;
 
@@ -557,11 +559,41 @@ function ImageLightbox({ images, index, onClose, onNext, onPrev }) {
   );
 }
 
+function AiEditBadge({ editStats }) {
+  if (!editStats?.edit_classification) return null;
+  const { edit_classification, edit_delta_pct } = editStats;
+  const pct = edit_delta_pct != null ? Math.round(Math.abs(edit_delta_pct) * 100) : null;
+
+  if (edit_classification === "no_edit") {
+    return (
+      <span className="rounded-full border border-emerald-200 dark:border-emerald-500/40 bg-emerald-50 dark:bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+        AI-draft · sendt direkte
+      </span>
+    );
+  }
+  if (edit_classification === "minor_edit") {
+    return (
+      <span className="rounded-full border border-blue-200 dark:border-blue-500/40 bg-blue-50 dark:bg-blue-500/15 px-2 py-0.5 text-[11px] font-medium text-blue-700 dark:text-blue-300">
+        AI-draft · let redigeret{pct ? ` (${pct}%)` : ""}
+      </span>
+    );
+  }
+  if (edit_classification === "major_edit") {
+    return (
+      <span className="rounded-full border border-orange-200 dark:border-orange-500/40 bg-orange-50 dark:bg-orange-500/15 px-2 py-0.5 text-[11px] font-medium text-orange-700 dark:text-orange-300">
+        AI-draft · væsentligt redigeret{pct ? ` (${pct}%)` : ""}
+      </span>
+    );
+  }
+  return null;
+}
+
 export function MessageBubble({
   message,
   direction = "inbound",
   attachments = [],
   outboundSenderName,
+  editStats = null,
   translatedText = null,
   translationLoading = false,
   onRequestTranslation = null,
@@ -739,6 +771,7 @@ export function MessageBubble({
                   Draft
                 </span>
               ) : null}
+              {!isDraft && isOutbound ? <AiEditBadge editStats={editStats} /> : null}
             </div>
 
             <div
@@ -888,13 +921,13 @@ export function MessageBubble({
             <div className="mt-4 rounded-lg border border-border bg-muted/40 p-4">
               {modalHtml ? (
                 <div
-                  className={EMAIL_BODY_CLASS}
+                  className={EMAIL_MODAL_BODY_CLASS}
                   dangerouslySetInnerHTML={{ __html: modalHtml }}
                 />
               ) : (
                 <div
                   className={cn(
-                    EMAIL_BODY_CLASS,
+                    EMAIL_MODAL_BODY_CLASS,
                     shouldFormatRawPlainBody &&
                       "text-[14px] leading-6 text-foreground [&_*]:text-[14px] [&_*]:leading-6"
                   )}

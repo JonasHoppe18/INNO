@@ -18,6 +18,7 @@ export interface RetrieverResult {
 export interface RetrieverInput {
   plan: Plan;
   shop_id: string;
+  workspace_id?: string | null;
   supabase: SupabaseClient;
 }
 
@@ -109,13 +110,13 @@ async function runQueryPair(
 }
 
 export async function runRetriever(
-  { plan, shop_id, supabase }: RetrieverInput,
+  { plan, shop_id, workspace_id, supabase }: RetrieverInput,
 ): Promise<RetrieverResult> {
   const queries = plan.sub_queries.filter(Boolean).slice(0, 3);
   if (queries.length === 0) return { chunks: [], past_ticket_examples: [] };
 
-  // Run all queries + ticket lookup in parallel
-  const [queryPairs, ticketResult] = await Promise.all([
+  // Run all queries + ticket lookup + saved replies in parallel
+  const [queryPairs, ticketResult, savedRepliesResult] = await Promise.all([
     Promise.all(queries.map((q) => runQueryPair(q, shop_id, supabase))),
     // Dedicated ticket_examples lookup via own RPC — separate vector index, typed columns
     (async () => {
@@ -152,6 +153,45 @@ export async function runRetriever(
         return [];
       }
     })(),
+
+    // Saved replies — authoritative scripts for known situations, scoped to workspace
+    workspace_id
+      ? (async () => {
+          try {
+            const { data, error } = await supabase
+              .from("saved_replies")
+              .select("id, title, content")
+              .eq("workspace_id", workspace_id)
+              .eq("is_active", true)
+              .limit(20);
+            if (error) {
+              console.warn("[retriever] saved_replies lookup error:", error.message);
+              return [];
+            }
+
+            // Score each saved reply by keyword overlap with sub_queries
+            const allQueryWords = queries
+              .join(" ")
+              .toLowerCase()
+              .split(/\s+/)
+              .filter((w) => w.length > 3);
+
+            const scored = (data ?? []).map((reply) => {
+              const text = (reply.title + " " + reply.content).toLowerCase();
+              const score = allQueryWords.filter((w) => text.includes(w)).length;
+              return { ...reply, score };
+            });
+
+            return scored
+              .filter((r) => r.score > 0)
+              .sort((a, b) => b.score - a.score)
+              .slice(0, 3) as Array<{ id: string; title: string; content: string; score: number }>;
+          } catch (err) {
+            console.warn("[retriever] saved_replies lookup failed:", err);
+            return [];
+          }
+        })()
+      : Promise.resolve([] as Array<{ id: string; title: string; content: string; score: number }>),
   ]);
 
   // Fuse knowledge chunks (policies, FAQs, product info) — tickets handled separately
@@ -163,8 +203,19 @@ export async function runRetriever(
 
   const fused = rrfFusion(allLists);
 
+  // Saved reply chunks — highest priority (authoritative scripts from support team)
+  const savedReplyChunks: RetrievedChunk[] = savedRepliesResult.map((r) => ({
+    id: r.id,
+    content: r.content,
+    kind: "saved_reply",
+    source_label: `Saved Reply: ${r.title}`,
+    similarity: 1.0,
+  }));
+
+  // Regular knowledge chunks — fill remaining budget after saved replies
+  const knowledgeBudget = Math.max(5, 8 - savedReplyChunks.length);
   const regularChunks: RetrievedChunk[] = fused
-    .slice(0, 8)
+    .slice(0, knowledgeBudget)
     .map((r) => ({
       id: r.chunk.id as string,
       content: r.chunk.content as string,
@@ -173,17 +224,20 @@ export async function runRetriever(
       similarity: r.score,
     }));
 
+  // Saved replies first — writer sees them before generic knowledge
+  const allChunks = [...savedReplyChunks, ...regularChunks];
+
   // Past ticket examples — directly from typed ticket_examples table
   const pastTicketExamples = ticketResult
     .filter((t) => t.agent_reply && t.agent_reply.length > 20)
     .map((t) => ({ customer_msg: t.customer_msg, agent_reply: t.agent_reply }));
 
   console.log(
-    `[retriever] queries=${queries.length} knowledge=${regularChunks.length} past_tickets=${pastTicketExamples.length}`,
+    `[retriever] queries=${queries.length} saved_replies=${savedReplyChunks.length} knowledge=${regularChunks.length} past_tickets=${pastTicketExamples.length}`,
   );
 
   return {
-    chunks: regularChunks,
+    chunks: allChunks,
     past_ticket_examples: pastTicketExamples,
   };
 }

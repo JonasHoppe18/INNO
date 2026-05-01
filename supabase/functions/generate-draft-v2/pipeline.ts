@@ -231,7 +231,7 @@ export async function runDraftV2Pipeline(input: PipelineInput): Promise<Pipeline
 
   // 5. Retrieve + resolve facts parallelt (uafhængige)
   const [retrieved, facts] = await Promise.all([
-    runRetriever({ plan, shop_id, supabase }),
+    runRetriever({ plan, shop_id, workspace_id: workspaceId, supabase }),
     runFactResolver({ plan, caseState, thread, shop, supabase }),
   ]);
 

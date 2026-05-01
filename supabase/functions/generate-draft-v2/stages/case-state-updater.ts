@@ -137,13 +137,16 @@ Regler:
     const msg = m as { clean_body_text?: string; body_text?: string };
     return msg.clean_body_text ?? msg.body_text ?? "";
   }).join(" ");
-  const regexOrderNumbers = allBodies.match(/#?\b\d{4,6}\b/g) ?? [];
+  const regexOrderNumbers = allBodies.match(/#\d{4,6}\b/g) ?? [];
 
+  const strictOrderPattern = /^#\d{4,6}$/;
   const mergedOrderNumbers = [
     ...new Set([
-      ...existing.entities.order_numbers,
+      // Fresh extractions first — take priority over stale cache
       ...(llmResult.order_numbers ?? []),
       ...regexOrderNumbers,
+      // Existing only if properly formatted (filters out bare years like "2026")
+      ...existing.entities.order_numbers.filter((n) => strictOrderPattern.test(n)),
     ]),
   ];
 

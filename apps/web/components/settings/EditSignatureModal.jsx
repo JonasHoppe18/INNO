@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlignCenter, AlignLeft, AlignRight, GripVertical, Minus, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -331,6 +331,8 @@ function parseSignatureBuilderFromTemplate(templateHtml = "") {
 
 export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
   const supabase = useClerkSupabase();
+  const builderScrollRef = useRef(null);
+  const logoFileInputRef = useRef(null);
   const [signature, setSignature] = useState("");
   const [saving, setSaving] = useState(false);
   const [templateLoading, setTemplateLoading] = useState(false);
@@ -447,8 +449,14 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
     });
   }, []);
 
+  const handleLogoPickerOpen = useCallback(() => {
+    logoFileInputRef.current?.click();
+  }, []);
+
   const handleLogoUpload = useCallback((event) => {
     const file = event?.target?.files?.[0];
+    const scrollTop = builderScrollRef.current?.scrollTop ?? 0;
+    if (event?.target) event.target.value = "";
     if (!file) return;
     if (!String(file.type || "").toLowerCase().startsWith("image/")) {
       setLogoUploadError("Please upload an image file.");
@@ -467,6 +475,9 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
       }
       setLogoUploadError("");
       setBuilderDraft((prev) => ({ ...prev, logoUrl: result }));
+      requestAnimationFrame(() => {
+        if (builderScrollRef.current) builderScrollRef.current.scrollTop = scrollTop;
+      });
     };
     reader.onerror = () => setLogoUploadError("Could not read logo file.");
     reader.readAsDataURL(file);
@@ -654,16 +665,16 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
           }
         }}
       >
-        <DialogContent className="flex w-[95vw] max-w-6xl flex-col overflow-hidden" style={{ maxHeight: "90vh" }}>
-          <DialogHeader>
+        <DialogContent className="flex h-[calc(100vh-4rem)] max-h-[calc(100vh-4rem)] w-[95vw] max-w-6xl flex-col overflow-hidden p-0">
+          <DialogHeader className="flex-shrink-0 border-b border-slate-100 px-6 py-5 pr-12">
             <DialogTitle className="text-base">Signature Template Builder</DialogTitle>
             <DialogDescription className="text-sm text-slate-500">
               Build a visual footer and apply it to this team member.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            <div className="grid min-h-0 gap-6 md:grid-cols-[1.1fr_1fr]">
+          <div ref={builderScrollRef} className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+            <div className="grid min-h-0 gap-6 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
               {/* Left: controls */}
               <div className="space-y-4 pr-1 pb-1">
 
@@ -888,28 +899,34 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
                 {/* Logo */}
                 <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
                   <h4 className="text-sm font-semibold text-slate-900">Logo</h4>
-                  <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-3 transition-colors hover:border-slate-400 hover:bg-slate-100">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleLogoUpload}
-                      className="sr-only"
-                    />
-                    <span className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm">
+                  <input
+                    ref={logoFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleLogoUpload}
+                    className="hidden"
+                    tabIndex={-1}
+                  />
+                  <div className="flex items-center gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-3">
+                    <button
+                      type="button"
+                      onClick={handleLogoPickerOpen}
+                      className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition-colors hover:bg-slate-50"
+                    >
                       Choose file
-                    </span>
+                    </button>
                     <span className="text-xs text-slate-400">PNG, SVG, or JPG · max 5 MB</span>
-                  </label>
+                  </div>
                   {logoUploadError ? (
                     <p className="text-xs text-red-500">{logoUploadError}</p>
                   ) : null}
                   {builderDraft.logoUrl ? (
-                    <div className="flex items-center gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={builderDraft.logoUrl}
                         alt="Logo preview"
-                        className="h-10 w-auto rounded-md border border-slate-200"
+                        className="h-10 max-w-36 flex-shrink-0 rounded-md border border-slate-200 object-contain"
                       />
                       <button
                         type="button"
@@ -924,7 +941,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
               </div>
 
               {/* Right: preview */}
-              <div className="space-y-2.5 md:sticky md:top-0 self-start">
+              <div className="self-start space-y-2.5 md:sticky md:top-0">
                 <p className="text-xs font-medium text-slate-400 uppercase tracking-widest">Preview</p>
                 <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
                   <div className="border-b border-slate-100 bg-slate-50 px-4 py-3 text-xs text-slate-500">
@@ -941,7 +958,7 @@ export function EditSignatureModal({ open, onOpenChange, member, onSaved }) {
             </div>
           </div>
 
-          <DialogFooter className="mt-4 border-t border-slate-100 pt-3">
+          <DialogFooter className="flex-shrink-0 border-t border-slate-100 px-6 py-4">
             <p className="mr-auto text-xs text-slate-400">
               {hasBuilderChanges ? "Unsaved changes" : ""}
             </p>

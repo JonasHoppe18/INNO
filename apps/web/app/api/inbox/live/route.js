@@ -62,7 +62,7 @@ async function autoClosePendingThreads(serviceClient, scope, mailboxIds, autoClo
       .eq("status", "pending")
       .eq("unread_count", 0)
       .in("mailbox_id", mailboxIds)
-      .lt("last_message_at", cutoffIso),
+      .lt("updated_at", cutoffIso),
     scope
   );
   const { error } = await query;

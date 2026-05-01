@@ -133,6 +133,7 @@ export function TicketDetail({
   onRequestV2Preview = null,
   onAdoptV2Preview = null,
   onDismissV2Preview = null,
+  sentDraftStats = null,
 }) {
   const [composerCollapsed, setComposerCollapsed] = useState(false);
   const [processReturnRestock, setProcessReturnRestock] = useState(true);
@@ -524,6 +525,7 @@ export function TicketDetail({
                   direction={direction}
                   attachments={messageAttachments}
                   outboundSenderName={currentUserName}
+                  editStats={direction === "outbound" ? sentDraftStats : null}
                   translatedText={
                     (Array.isArray(translationItems) ? translationItems : []).find(
                       (item) => String(item?.id || "") === String(message?.id || "")
