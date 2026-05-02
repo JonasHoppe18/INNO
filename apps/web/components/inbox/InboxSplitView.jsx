@@ -1923,20 +1923,25 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   useEffect(() => {
     if (!supabase || !selectedThreadId || isLocalThreadId(selectedThreadId)) return;
     if (sentDraftStatsByThread[selectedThreadId]) return; // already fetched
+    let active = true;
+    const threadId = selectedThreadId;
     supabase
       .from("drafts")
       .select("edit_classification, edit_delta_pct")
-      .eq("thread_id", selectedThreadId)
+      .eq("thread_id", threadId)
       .eq("status", "sent")
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle()
       .then(({ data }) => {
-        if (data) {
-          setSentDraftStatsByThread((prev) => ({ ...prev, [selectedThreadId]: data }));
+        if (active && data) {
+          setSentDraftStatsByThread((prev) => ({ ...prev, [threadId]: data }));
         }
       });
-  }, [selectedThreadId, supabase, isLocalThreadId]);
+    return () => {
+      active = false;
+    };
+  }, [isLocalThreadId, selectedThreadId, sentDraftStatsByThread, supabase]);
 
   useEffect(() => {
     if (isLocalThreadId(selectedThreadId)) return;
@@ -2996,6 +3001,14 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
 
   const handleRequestV2Preview = useCallback(async (threadId, messageId) => {
     if (!threadId) return;
+    const customerContext = customerLookup
+      ? {
+        customer: customerLookup.customer || null,
+        orders: Array.isArray(customerLookup.orders)
+          ? customerLookup.orders.slice(0, 3)
+          : [],
+      }
+      : null;
     setV2PreviewByThread((prev) => ({
       ...prev,
       [threadId]: { loading: true, draft_text: null, confidence: 0, sources: [], proposed_actions: [], error: null },
@@ -3005,7 +3018,11 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ thread_id: threadId, message_id: messageId ?? null }),
+        body: JSON.stringify({
+          thread_id: threadId,
+          message_id: messageId ?? null,
+          customer_context: customerContext,
+        }),
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(payload?.error || "Preview fejlede.");
@@ -3030,7 +3047,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         [threadId]: { loading: false, draft_text: null, confidence: 0, sources: [], proposed_actions: [], error: err?.message || "Preview fejlede." },
       }));
     }
-  }, []);
+  }, [customerLookup]);
 
   const handleAdoptV2Preview = useCallback((threadId) => {
     const preview = v2PreviewByThread[threadId];

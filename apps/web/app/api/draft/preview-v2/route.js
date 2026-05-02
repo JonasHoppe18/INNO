@@ -35,7 +35,7 @@ export async function POST(request) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { thread_id, message_id } = body;
+  const { thread_id, message_id, customer_context } = body;
   if (!thread_id) {
     return NextResponse.json(
       { error: "thread_id is required" },
@@ -88,7 +88,7 @@ export async function POST(request) {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
         },
-        body: JSON.stringify({ thread_id, message_id, shop_id }),
+        body: JSON.stringify({ thread_id, message_id, shop_id, customer_context }),
       },
     );
 

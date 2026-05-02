@@ -25,17 +25,115 @@ export interface FactResolverInput {
   thread: Record<string, unknown>;
   shop: Record<string, unknown>;
   supabase: SupabaseClient;
+  customerContext?: Record<string, unknown> | null;
+}
+
+function orderFromCustomerContext(
+  customerContext?: Record<string, unknown> | null,
+): Order | null {
+  const orders = customerContext?.orders;
+  if (!Array.isArray(orders) || orders.length === 0) return null;
+
+  const raw = orders[0] as Record<string, unknown>;
+  const displayId = String(raw.id ?? raw.order_number ?? raw.name ?? "").trim();
+  if (!displayId) return null;
+
+  const shipping =
+    (raw.shippingAddress ?? raw.shipping_address ?? {}) as Record<
+      string,
+      unknown
+    >;
+  const tracking = (raw.tracking ?? {}) as Record<string, unknown>;
+  const items = Array.isArray(raw.items) ? raw.items : [];
+  const financialStatus = String(
+    raw.financialStatus ?? raw.financial_status ?? "",
+  )
+    .toLowerCase();
+  const fulfillmentStatus = String(
+    raw.fulfillmentStatus ?? raw.fulfillment_status ?? "",
+  ).toLowerCase();
+
+  return {
+    id: String(raw.adminId ?? raw.id ?? displayId),
+    order_number: displayId.replace(/^#/, ""),
+    name: displayId.startsWith("#") ? displayId : `#${displayId}`,
+    email: String(
+      (customerContext?.customer as Record<string, unknown>)?.email ?? "",
+    ),
+    financial_status: financialStatus.includes("refund")
+      ? "refunded"
+      : financialStatus || "paid",
+    fulfillment_status: fulfillmentStatus === "fulfilled"
+      ? "fulfilled"
+      : fulfillmentStatus || null,
+    cancelled_at: null,
+    closed_at: null,
+    created_at: String(
+      raw.placedAt ?? raw.created_at ?? new Date().toISOString(),
+    ),
+    updated_at: String(
+      raw.updated_at ?? raw.placedAt ?? new Date().toISOString(),
+    ),
+    total_price: String(raw.total ?? ""),
+    currency: String(raw.currency ?? ""),
+    shipping_address: {
+      address1: String(shipping.address1 ?? ""),
+      address2: String(shipping.address2 ?? ""),
+      city: String(shipping.city ?? ""),
+      zip: String(shipping.zip ?? ""),
+      country: String(shipping.country ?? ""),
+      first_name: String(shipping.name ?? "").split(/\s+/)[0] || undefined,
+      last_name: String(shipping.name ?? "").split(/\s+/).slice(1).join(" ") ||
+        undefined,
+    },
+    line_items: items.map((item, index) => ({
+      id: String(index),
+      title: String(item).replace(/^\d+x\s*/i, ""),
+      quantity: Number(String(item).match(/^(\d+)x/i)?.[1] ?? 1),
+      price: "",
+    })),
+    fulfillments: tracking.number
+      ? [{
+        id: "customer-context-tracking",
+        status: "success",
+        tracking_number: String(tracking.number),
+        tracking_url: tracking.url ? String(tracking.url) : undefined,
+        tracking_company: tracking.company
+          ? String(tracking.company)
+          : undefined,
+      }]
+      : [],
+  };
 }
 
 export async function runFactResolver(
-  { plan, caseState, thread, shop, supabase }: FactResolverInput,
+  { plan, caseState, thread, shop, supabase, customerContext }:
+    FactResolverInput,
 ): Promise<FactResolverResult> {
   const facts: ResolvedFact[] = [];
 
-  const needsOrder = plan.required_facts.some((f) =>
-    f === "order_state" || f === "tracking" || f === "return_eligibility"
-  );
+  const orderRelevantIntents = new Set([
+    "tracking",
+    "return",
+    "refund",
+    "exchange",
+    "complaint",
+    "address_change",
+    "cancel",
+  ]);
+  const needsOrder = orderRelevantIntents.has(plan.primary_intent) ||
+    plan.required_facts.some((f) =>
+      f === "order_state" || f === "tracking" || f === "return_eligibility"
+    );
   if (!needsOrder) return { facts, order: null };
+
+  const contextOrder = orderFromCustomerContext(customerContext);
+  if (contextOrder) {
+    console.log(
+      `[fact-resolver] Using customer_context order: ${contextOrder.name}`,
+    );
+    return buildFactsFromOrder(contextOrder, facts, plan);
+  }
 
   const s = shop as Record<string, unknown>;
   // shops table: shop_domain (plain) + access_token_encrypted (AES-GCM)
@@ -43,7 +141,9 @@ export async function runFactResolver(
   const encryptedToken = (s.access_token_encrypted as string) ?? null;
 
   if (!shopDomain || !encryptedToken) {
-    console.warn("[fact-resolver] Missing Shopify credentials (shop_domain or access_token_encrypted) — skipping order lookup");
+    console.warn(
+      "[fact-resolver] Missing Shopify credentials (shop_domain or access_token_encrypted) — skipping order lookup",
+    );
     return { facts, order: null };
   }
 
@@ -64,14 +164,19 @@ export async function runFactResolver(
 
   // Løs kundens email — prioritér fra case_state, thread, besked-afsender
   const thread_ = thread as Record<string, unknown>;
-  const customerEmail =
-    caseState.entities.customer_email ||
+  const customerEmail = caseState.entities.customer_email ||
     (thread_.customer_email as string) ||
     (thread_.from_email as string) ||
     "";
 
   const orderNumbers = caseState.entities.order_numbers;
-  console.log(`[fact-resolver] order_numbers=${JSON.stringify(orderNumbers)} customer_email=${customerEmail} required_facts=${JSON.stringify(plan.required_facts)}`);
+  console.log(
+    `[fact-resolver] order_numbers=${
+      JSON.stringify(orderNumbers)
+    } customer_email=${customerEmail} required_facts=${
+      JSON.stringify(plan.required_facts)
+    }`,
+  );
 
   let order: Order | null = null;
 
@@ -83,7 +188,9 @@ export async function runFactResolver(
         const found = await provider.getOrderByName(raw);
         if (found) {
           order = found;
-          console.log(`[fact-resolver] Found order: ${order.name} fulfillment=${order.fulfillment_status}`);
+          console.log(
+            `[fact-resolver] Found order: ${order.name} fulfillment=${order.fulfillment_status}`,
+          );
           break;
         } else {
           console.warn(`[fact-resolver] Order not found by name: ${raw}`);
@@ -97,7 +204,9 @@ export async function runFactResolver(
   // 2. Fallback: hent seneste ordre på kundens email
   if (!order && customerEmail) {
     try {
-      console.log(`[fact-resolver] Falling back to email lookup: ${customerEmail}`);
+      console.log(
+        `[fact-resolver] Falling back to email lookup: ${customerEmail}`,
+      );
       const orders = await provider.listOrdersByEmail(customerEmail, 5);
       if (orders.length > 0) {
         // For tracking/shipping intent: prefer orders that are actually fulfilled (have tracking)
@@ -106,13 +215,17 @@ export async function runFactResolver(
           plan.required_facts.includes("tracking");
         if (isTrackingIntent && orders.length > 1) {
           const fulfilledOrder = orders.find(
-            (o) => o.fulfillment_status === "fulfilled" || o.fulfillment_status === "partial"
+            (o) =>
+              o.fulfillment_status === "fulfilled" ||
+              o.fulfillment_status === "partial",
           );
           order = fulfilledOrder ?? orders[0];
         } else {
           order = orders[0];
         }
-        console.log(`[fact-resolver] Found order by email: ${order.name} (fulfillment=${order.fulfillment_status})`);
+        console.log(
+          `[fact-resolver] Found order by email: ${order.name} (fulfillment=${order.fulfillment_status})`,
+        );
       }
     } catch (err) {
       console.warn("[fact-resolver] Order lookup by email failed:", err);
@@ -124,6 +237,14 @@ export async function runFactResolver(
     return { facts, order: null };
   }
 
+  return buildFactsFromOrder(order, facts, plan);
+}
+
+async function buildFactsFromOrder(
+  order: Order,
+  facts: ResolvedFact[],
+  plan: Plan,
+): Promise<FactResolverResult> {
   const fulfillmentStatusDa: Record<string, string> = {
     fulfilled: "Afsendt (alle varer er afsendt)",
     partial: "Delvist afsendt",
@@ -132,7 +253,10 @@ export async function runFactResolver(
   };
   facts.push({
     label: "Ordre",
-    value: `${order.name} — Status: ${fulfillmentStatusDa[order.fulfillment_status ?? ""] ?? order.fulfillment_status ?? "Ukendt"}, Betaling: ${order.financial_status}`,
+    value: `${order.name} — Status: ${
+      fulfillmentStatusDa[order.fulfillment_status ?? ""] ??
+        order.fulfillment_status ?? "Ukendt"
+    }, Betaling: ${order.financial_status}`,
   });
 
   if (order.shipping_address) {
@@ -172,7 +296,9 @@ export async function runFactResolver(
       label_printed: "Afhentet af fragtmand",
     };
     const staticStatus = firstFulfillment.shipment_status
-      ? shipmentStatusDa[String(firstFulfillment.shipment_status).toLowerCase()] ?? firstFulfillment.shipment_status
+      ? shipmentStatusDa[
+        String(firstFulfillment.shipment_status).toLowerCase()
+      ] ?? firstFulfillment.shipment_status
       : null;
 
     facts.push({
@@ -184,7 +310,10 @@ export async function runFactResolver(
       ].filter(Boolean).join(" — "),
     });
     if (firstFulfillment.tracking_url) {
-      facts.push({ label: "Tracking URL", value: firstFulfillment.tracking_url });
+      facts.push({
+        label: "Tracking URL",
+        value: firstFulfillment.tracking_url,
+      });
     }
   }
 
@@ -194,21 +323,35 @@ export async function runFactResolver(
       const trackingResults = await fetchTrackingDetailsForOrders([order]);
       const orderKey = String(order.id || order.name || "");
       const tracking = orderKey ? trackingResults[orderKey] : null;
-      console.log(`[fact-resolver] Tracking lookup result for ${orderKey}: carrier=${tracking?.carrier} statusText=${tracking?.statusText}`);
+      console.log(
+        `[fact-resolver] Tracking lookup result for ${orderKey}: carrier=${tracking?.carrier} statusText=${tracking?.statusText}`,
+      );
 
       if (tracking?.statusText) {
         // Overwrite static tracking fact with live status
-        const existingIdx = facts.findIndex((f) => f.label === "Tracking (fragtmand)");
+        const existingIdx = facts.findIndex((f) =>
+          f.label === "Tracking (fragtmand)"
+        );
         const liveValue = `${tracking.carrier}: ${tracking.statusText}`;
         if (existingIdx >= 0) {
-          facts[existingIdx] = { label: "Tracking (fragtmand)", value: liveValue };
+          facts[existingIdx] = {
+            label: "Tracking (fragtmand)",
+            value: liveValue,
+          };
         } else {
           facts.push({ label: "Tracking (fragtmand)", value: liveValue });
         }
         if (tracking.trackingUrl) {
           const urlIdx = facts.findIndex((f) => f.label === "Tracking URL");
-          if (urlIdx >= 0) facts[urlIdx] = { label: "Tracking URL", value: tracking.trackingUrl };
-          else facts.push({ label: "Tracking URL", value: tracking.trackingUrl });
+          if (urlIdx >= 0) {
+            facts[urlIdx] = {
+              label: "Tracking URL",
+              value: tracking.trackingUrl,
+            };
+          } else {facts.push({
+              label: "Tracking URL",
+              value: tracking.trackingUrl,
+            });}
         }
         // Precise delivery timestamp — use this in the reply if available
         if (tracking.snapshot?.deliveredAt) {
@@ -216,7 +359,10 @@ export async function runFactResolver(
           facts.push({
             label: "Leveret tidspunkt",
             value: d.toLocaleString("da-DK", {
-              day: "numeric", month: "long", hour: "2-digit", minute: "2-digit",
+              day: "numeric",
+              month: "long",
+              hour: "2-digit",
+              minute: "2-digit",
               timeZone: "Europe/Copenhagen",
             }),
           });
@@ -225,7 +371,10 @@ export async function runFactResolver(
           const eta = new Date(tracking.snapshot.expectedDeliveryAt);
           facts.push({
             label: "Forventet levering",
-            value: eta.toLocaleDateString("da-DK", { day: "numeric", month: "long" }),
+            value: eta.toLocaleDateString("da-DK", {
+              day: "numeric",
+              month: "long",
+            }),
           });
         }
         if (tracking.snapshot?.pickupPoint?.name) {
@@ -244,11 +393,19 @@ export async function runFactResolver(
   }
 
   // Return eligibility — ALDRIG for complaint/exchange/manglende/defekte varer
-  const NON_RETURN_INTENTS = ["complaint", "exchange", "thanks", "product_question"];
+  const NON_RETURN_INTENTS = [
+    "complaint",
+    "exchange",
+    "thanks",
+    "product_question",
+  ];
   const isNonReturnCase = NON_RETURN_INTENTS.includes(plan.primary_intent);
 
   // Return eligibility (simpel 30-dages policy-check)
-  if (plan.required_facts.includes("return_eligibility") && !isNonReturnCase && order.created_at) {
+  if (
+    plan.required_facts.includes("return_eligibility") && !isNonReturnCase &&
+    order.created_at
+  ) {
     const orderDate = new Date(order.created_at);
     const daysSince = Math.floor(
       (Date.now() - orderDate.getTime()) / (1000 * 60 * 60 * 24),

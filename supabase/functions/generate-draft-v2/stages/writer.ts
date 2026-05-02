@@ -31,6 +31,28 @@ export interface WriterInput {
 }
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
+const OPENAI_RESPONSES_API_URL = "https://api.openai.com/v1/responses";
+
+const WRITER_RESPONSE_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    reply_draft: { type: "string" },
+    citations: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          claim: { type: "string" },
+          source_index: { type: "number" },
+        },
+        required: ["claim", "source_index"],
+      },
+    },
+  },
+  required: ["reply_draft", "citations"],
+};
 
 const LANGUAGE_NAMES: Record<string, string> = {
   da: "dansk",
@@ -42,16 +64,75 @@ const LANGUAGE_NAMES: Record<string, string> = {
   no: "norsk",
 };
 
+function shouldUseResponsesApi(model: string): boolean {
+  return /^gpt-5(?:\.|$|-)/.test(model);
+}
+
+function extractResponsesText(data: Record<string, unknown>): string {
+  const direct = (data as { output_text?: unknown }).output_text;
+  if (typeof direct === "string" && direct.trim()) return direct;
+
+  const output = (data as { output?: unknown }).output;
+  if (!Array.isArray(output)) return "";
+
+  const parts: string[] = [];
+  for (const item of output) {
+    const content = (item as { content?: unknown })?.content;
+    if (!Array.isArray(content)) continue;
+    for (const part of content) {
+      const text = (part as { text?: unknown })?.text;
+      if (typeof text === "string") parts.push(text);
+    }
+  }
+  return parts.join("").trim();
+}
+
+const SIGNOFF_LINE_RE =
+  /^(?:best regards|kind regards|warm regards|regards|sincerely|thanks|thank you|mvh|venlig hilsen|med venlig hilsen|de bedste hilsner|mange hilsner|hilsen)[,.!]?$/i;
+
+function stripGeneratedSignature(text: string): string {
+  const lines = text.replace(/\s+$/u, "").split("\n");
+  let end = lines.length - 1;
+  while (end >= 0 && !lines[end].trim()) end--;
+
+  const min = Math.max(0, end - 5);
+  for (let i = end; i >= min; i--) {
+    if (SIGNOFF_LINE_RE.test(lines[i].trim())) {
+      return lines.slice(0, i).join("\n").replace(/\s+$/u, "");
+    }
+  }
+
+  return text.trim();
+}
+
+function cleanDraftText(text: string): string {
+  return stripGeneratedSignature(text)
+    .replace(/\s+[—–]\s+/g, ", ")
+    .replace(/\s+([,.!?])/g, "$1")
+    .trim();
+}
+
 export async function runWriter(
-  { plan, caseState, retrieved, facts, shop, latestCustomerMessage, conversationHistory, actionProposals, policyContext, model }: WriterInput,
+  {
+    plan,
+    caseState,
+    retrieved,
+    facts,
+    shop,
+    latestCustomerMessage,
+    conversationHistory,
+    actionProposals,
+    policyContext,
+    model,
+  }: WriterInput,
 ): Promise<WriterResult> {
   const resolvedModel = model ?? Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini";
   const shopName = (shop as { name?: string }).name ?? "butikken";
   const persona =
     (shop as { persona_instructions?: string; instructions?: string })
       .persona_instructions ??
-    (shop as { instructions?: string }).instructions ??
-    "";
+      (shop as { instructions?: string }).instructions ??
+      "";
 
   const langName = LANGUAGE_NAMES[plan.language] ?? plan.language;
 
@@ -80,12 +161,12 @@ Support svarede: "${ex.agent_reply.slice(0, 500)}"`,
   // --- Shop policy (deterministisk — brug altid disse regler) ---
   const policyBlock = policyContext
     ? [
-        policyContext.policyRulesText,
-        policyContext.policySummaryText,
-        policyContext.policyExcerptText,
-      ]
-        .filter(Boolean)
-        .join("\n\n")
+      policyContext.policyRulesText,
+      policyContext.policySummaryText,
+      policyContext.policyExcerptText,
+    ]
+      .filter(Boolean)
+      .join("\n\n")
     : "";
 
   // --- Hvad er allerede besluttet/tilbudt i denne samtale ---
@@ -110,7 +191,13 @@ Support svarede: "${ex.agent_reply.slice(0, 500)}"`,
     ? `# Planlagte actions (deterministisk besluttet — nævn dem naturligt i svaret)
 ` +
       actionProposals
-        .map((a) => `- ${a.type}: ${a.reason}`)
+        .map((a) =>
+          `- ${a.type}: ${a.reason}${
+            a.requires_approval
+              ? " (kræver intern godkendelse — lov ikke kunden at handlingen allerede er udført)"
+              : ""
+          }`
+        )
         .join("\n")
     : "";
 
@@ -127,10 +214,15 @@ ${c.content.slice(0, 1200)}`,
         .join("\n\n")
     : "";
 
-  const isFollowUp = caseState.decisions_made.length > 0 || caseState.pending_asks.length > 0;
+  const isFollowUp = caseState.decisions_made.length > 0 ||
+    caseState.pending_asks.length > 0;
 
   const systemPrompt = `Du er en erfaren support-medarbejder for ${shopName}.
-${persona ? `\nBUTIKKENS EGNE INSTRUKTIONER (følg disse præcist):\n${persona}\n` : ""}
+${
+    persona
+      ? `\nBUTIKKENS EGNE INSTRUKTIONER (følg disse præcist):\n${persona}\n`
+      : ""
+  }
 SPROG (KRITISK): Svar altid på det sprog kunden selv bruger i deres besked. Se på kundens besked og match sproget præcist — hilsen, brødtekst og afslutning skal alle være på samme sprog. Bland aldrig sprog.
 
 DU ER ET MENNESKE: Ingen "Som AI kan jeg...", ingen unødvendige undskyldninger.
@@ -138,11 +230,13 @@ DU ER ET MENNESKE: Ingen "Som AI kan jeg...", ingen unødvendige undskyldninger.
 HILSEN: Start med den naturlige hilsen på kundens sprog + fornavn fra ordren eller kundens signatur. Kender du ikke navnet, brug blot den enkle hilsen på kundens sprog.
 
 ÅBNING:
-${plan.primary_intent === "thanks"
-  ? "- TAKSIGELSESSVAR — kunden siger blot tak. Skriv KUN 1-2 sætninger: bekræft at du er glad for at hjælpe, og ønsker dem en god dag. Ingen ordreinfo, ingen tracking, ingen ekstra detaljer."
-  : isFollowUp
-    ? "- OPFØLGNINGSSVAR — gå direkte til sagen efter hilsenen."
-    : "- FØRSTE svar — efter hilsenen: kort varm indledning (tak kunden, vis empati). Gå direkte til løsning — genfortæl IKKE kundens problem med dine egne ord."}
+${
+    plan.primary_intent === "thanks"
+      ? "- TAKSIGELSESSVAR — kunden siger blot tak. Skriv KUN 1-2 sætninger: bekræft at du er glad for at hjælpe, og ønsker dem en god dag. Ingen ordreinfo, ingen tracking, ingen ekstra detaljer."
+      : isFollowUp
+      ? "- OPFØLGNINGSSVAR — gå direkte til sagen efter hilsenen."
+      : "- FØRSTE svar — efter hilsenen: kort varm indledning (tak kunden, vis empati). Gå direkte til løsning — genfortæl IKKE kundens problem med dine egne ord."
+  }
 
 AFSLUTNING — vælg baseret på situationen, skriv på kundens sprog:
 - Handling udført og sagen er lukket → kort venlig afsked
@@ -155,10 +249,14 @@ LÆNGDE OG TONE:
 - Kom til sagen: "Din pakke blev leveret den 13. februar kl. 11:13" ikke "Ifølge GLS-data blev pakken leveret..."
 - Spejl tonen fra eksemplerne — uformel hvis eksemplerne er uformelle
 - Bekræft handlingen — forklar ikke den tekniske årsag bag medmindre kunden har spurgt: "Vi har opdateret adressen" ikke "Vi har opdateret adressen, da ordren endnu ikke er afsendt"
+- Brug almindelige sætninger og korte afsnit. Undgå tankestreger/em dashes i kundesvaret. Brug ikke nummererede lister eller bullets, medmindre kunden skal følge en egentlig trin-for-trin procedure.
+- Hvis en planlagt action kræver intern godkendelse, må du ikke love at refundering/annullering/ombytning allerede kan gennemføres. Skriv at sagen sendes til gennemgang/videre internt med de fundne ordreoplysninger.
 
 KANAL-REGEL: Bed ALDRIG kunden om at "sende en email" — de er allerede her.
 
 URL-REGEL: Skriv URLs som plain text (https://...) — ALDRIG som markdown [tekst](url).
+
+SIGNATUR-REGEL (KRITISK): Skriv ALDRIG signatur, navn, titel, teamnavn eller afsluttende sign-off som "Best regards", "Kind regards", "Regards", "Med venlig hilsen", "Mvh", "Support" osv. Kundens profil/signatur bliver automatisk tilføjet bagefter. Slut i stedet med den sidste relevante servicesætning.
 
 VIDENSBASE-PROCEDURE-REGEL (KRITISK): Hvis vidensbasen indeholder en specifik procedure eller et script til kundens situation, SKAL du følge det præcis — oversæt til kundens sprog, men bevar strukturen og indholdet. Din egen vurdering må ALDRIG erstatte en procedure der er dokumenteret i vidensbasen.
 
@@ -178,9 +276,11 @@ FAKTA-REGEL:
 KVALITETSTJEK FØR OUTPUT:
 - Svarer første indholdssætning på kundens konkrete spørgsmål eller næste nødvendige handling?
 - Har du fjernet interne labels, markdown, citations og procesforklaringer fra kundeteksten?
+- Spørger du kun efter oplysninger der faktisk mangler? Hvis ordren er fundet i verificerede fakta, må du ikke spørge efter ordrenummer eller ordre-email.
 - Er alle specifikke fakta enten fra verificerede fakta, vidensbase, policy eller kundens egen besked?
 - Er svaret kort nok til at kunne sendes uden redigering, men konkret nok til at kunden ved hvad der sker nu?
 - Hvis kunden er frustreret eller har oplevet en fejl, lyder svaret ansvarligt og handlingsorienteret fremfor defensivt?
+- Har du fjernet alle signaturer og afsluttende sign-offs, så profilen kan tilføje signaturen automatisk?
 
 RETURRET-REGEL (KRITISK — følg altid):
 Returvinduet (f.eks. 30 dage) gælder KUN når kunden aktivt ønsker at RETURNERE en vare de ikke vil have.
@@ -202,10 +302,16 @@ Returner KUN gyldigt JSON — ingen markdown udenfor JSON.`;
   // --- Samtalehistorik — de seneste udvekslinger i den aktuelle tråd ---
   const historyBlock = conversationHistory && conversationHistory.length > 1
     ? `# Samtalehistorik (den aktuelle tråd — se hvad der allerede er sagt og lovet)
-${conversationHistory
-    .slice(-6) // max 6 beskeder bagud
-    .map((m) => `[${m.role === "agent" ? "Support" : "Kunde"}]: ${m.text.slice(0, 600)}`)
-    .join("\n\n")}`
+${
+      conversationHistory
+        .slice(-6) // max 6 beskeder bagud
+        .map((m) =>
+          `[${m.role === "agent" ? "Support" : "Kunde"}]: ${
+            m.text.slice(0, 600)
+          }`
+        )
+        .join("\n\n")
+    }`
     : "";
 
   const userContent = [
@@ -225,8 +331,16 @@ ${latestCustomerMessage.slice(0, 1200)}`
     `# Sammenfatning af henvendelsen
 Intent: ${plan.primary_intent}
 Sprog: ${plan.language} (${langName})
-${caseState.entities.order_numbers.length > 0 ? `Ordrenumre nævnt: ${caseState.entities.order_numbers.join(", ")}` : ""}
-${caseState.entities.products_mentioned.length > 0 ? `Produkter nævnt: ${caseState.entities.products_mentioned.join(", ")}` : ""}
+${
+      caseState.entities.order_numbers.length > 0
+        ? `Ordrenumre nævnt: ${caseState.entities.order_numbers.join(", ")}`
+        : ""
+    }
+${
+      caseState.entities.products_mentioned.length > 0
+        ? `Produkter nævnt: ${caseState.entities.products_mentioned.join(", ")}`
+        : ""
+    }
 Kundens email: ${caseState.entities.customer_email || "ukendt"}`,
     `# Output format
 Returner JSON:
@@ -237,35 +351,69 @@ Returner JSON:
   ].filter(Boolean).join("\n\n");
 
   try {
-    const resp = await fetch(OPENAI_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
+    const useResponsesApi = shouldUseResponsesApi(resolvedModel);
+    const resp = await fetch(
+      useResponsesApi ? OPENAI_RESPONSES_API_URL : OPENAI_API_URL,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
+        },
+        body: JSON.stringify(
+          useResponsesApi
+            ? {
+              model: resolvedModel,
+              instructions: systemPrompt,
+              input: userContent,
+              reasoning: { effort: "minimal" },
+              max_output_tokens: 1800,
+              store: false,
+              text: {
+                format: {
+                  type: "json_schema",
+                  name: "support_reply_draft",
+                  strict: true,
+                  schema: WRITER_RESPONSE_SCHEMA,
+                },
+              },
+            }
+            : {
+              model: resolvedModel,
+              temperature: 0.2,
+              max_tokens: 1800,
+              response_format: { type: "json_object" },
+              messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userContent },
+              ],
+            },
+        ),
       },
-      body: JSON.stringify({
-        model: resolvedModel,
-        temperature: 0.2,
-        max_tokens: 1800,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userContent },
-        ],
-      }),
-    });
+    );
 
-    if (!resp.ok) throw new Error(`Writer API error: ${resp.status}`);
+    if (!resp.ok) {
+      const errorText = await resp.text().catch(() => "");
+      throw new Error(
+        `Writer API error: ${resp.status} ${errorText.slice(0, 500)}`,
+      );
+    }
     const data = await resp.json();
-    const parsed = JSON.parse(data.choices[0].message.content);
+    const content = useResponsesApi
+      ? extractResponsesText(data)
+      : data.choices?.[0]?.message?.content;
+    if (!content || typeof content !== "string") {
+      throw new Error(`Writer returned empty content for ${resolvedModel}`);
+    }
+    const parsed = JSON.parse(content);
 
     return {
-      draft_text: parsed.reply_draft ?? "",
+      draft_text: cleanDraftText(parsed.reply_draft ?? ""),
       proposed_actions: actionProposals ?? [],
       citations: Array.isArray(parsed.citations) ? parsed.citations : [],
     };
   } catch (err) {
     console.error("[writer] Error:", err);
-    return { draft_text: "", proposed_actions: actionProposals ?? [], citations: [] };
+    throw err;
   }
 }

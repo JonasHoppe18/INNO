@@ -40,7 +40,7 @@ export async function updateCaseState(
 ): Promise<CaseState> {
   const existing =
     (thread as { case_state_json?: CaseState }).case_state_json ??
-    DEFAULT_CASE_STATE;
+      DEFAULT_CASE_STATE;
 
   const latestMsg = messages[messages.length - 1] as {
     clean_body_text?: string;
@@ -70,8 +70,7 @@ export async function updateCaseState(
   const systemPrompt =
     `Du er en support-analyse AI. Ekstraher struktureret information fra en support-samtale. Output KUN gyldigt JSON.`;
 
-  const userPrompt =
-    `Samtale:
+  const userPrompt = `Samtale:
 ${recentMessages}
 
 ${existingSummary}
@@ -81,6 +80,7 @@ Ekstraher og output JSON:
   "primary_intent": "tracking|return|refund|exchange|address_change|product_question|complaint|thanks|other",
   "language": "da|sv|de|en|nl|fr|no",
   "order_numbers": ["#1234"],
+  "customer_email": "kunde@example.com eller tom streng",
   "products_mentioned": ["produktnavn"],
   "customer_country": "DK eller null",
   "open_questions": ["Hvad er status på min pakke?"],
@@ -98,6 +98,7 @@ Regler:
     primary_intent?: string;
     language?: string;
     order_numbers?: string[];
+    customer_email?: string;
     products_mentioned?: string[];
     customer_country?: string;
     open_questions?: string[];
@@ -129,7 +130,10 @@ Regler:
       llmResult = JSON.parse(data.choices[0].message.content);
     }
   } catch (err) {
-    console.warn("[case-state-updater] LLM extraction failed, using regex fallback:", err);
+    console.warn(
+      "[case-state-updater] LLM extraction failed, using regex fallback:",
+      err,
+    );
   }
 
   // Regex fallback for order numbers — scan ALL messages so order numbers from agent replies are captured too
@@ -138,6 +142,8 @@ Regler:
     return msg.clean_body_text ?? msg.body_text ?? "";
   }).join(" ");
   const regexOrderNumbers = allBodies.match(/#\d{4,6}\b/g) ?? [];
+  const regexEmails =
+    allBodies.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) ?? [];
 
   const strictOrderPattern = /^#\d{4,6}$/;
   const mergedOrderNumbers = [
@@ -146,7 +152,9 @@ Regler:
       ...(llmResult.order_numbers ?? []),
       ...regexOrderNumbers,
       // Existing only if properly formatted (filters out bare years like "2026")
-      ...existing.entities.order_numbers.filter((n) => strictOrderPattern.test(n)),
+      ...existing.entities.order_numbers.filter((n) =>
+        strictOrderPattern.test(n)
+      ),
     ]),
   ];
 
@@ -164,20 +172,25 @@ Regler:
       : existing.intents,
     entities: {
       order_numbers: mergedOrderNumbers,
-      customer_email: latestMsg?.from_email ?? existing.entities.customer_email,
+      customer_email: llmResult.customer_email ||
+        regexEmails[0] ||
+        latestMsg?.from_email ||
+        existing.entities.customer_email,
       products_mentioned: [
         ...new Set([
           ...existing.entities.products_mentioned,
           ...(llmResult.products_mentioned ?? []),
         ]),
       ],
-      customer_country: llmResult.customer_country ?? existing.entities.customer_country,
+      customer_country: llmResult.customer_country ??
+        existing.entities.customer_country,
     },
     decisions_made: [...existing.decisions_made, ...newDecisions],
     open_questions: llmResult.open_questions ?? existing.open_questions,
     pending_asks: llmResult.pending_asks ?? existing.pending_asks,
     language: llmResult.language ?? existing.language,
-    last_updated_msg_id: (latestMsg?.id as string) ?? existing.last_updated_msg_id,
+    last_updated_msg_id: (latestMsg?.id as string) ??
+      existing.last_updated_msg_id,
   };
 
   // Persist til thread (fire and forget — blokerer ikke pipeline)

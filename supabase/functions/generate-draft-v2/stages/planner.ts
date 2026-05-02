@@ -57,6 +57,7 @@ Rules:
   - Customer wants replacement because of shop error (wrong item, missing item, defect) → exchange (NOT return)
   - Customer says "ombytning" because of shop error → exchange
   - Customer wants to return because they changed their mind / don't want it → return
+  - Customer asks for money back, refund, reimbursement, or says they want their money back → refund, even if the reason is a defect or complaint
   - Customer asks to cancel → cancel (even if already fulfilled)
 - sub_queries: 1-3 search queries to find relevant knowledge. Use DIFFERENT angles:
   - Query 1: Customer's own words (what they describe), in customer's language
@@ -64,6 +65,7 @@ Rules:
   - Query 3 (optional): Procedure angle in English (e.g. "how to handle [issue]", "spare parts [product]")
   - CRITICAL for physical damage/defect: always include a query about the specific product + "defect" or "production issue" or "warranty replacement"
 - required_facts: only what's needed — order_state | tracking | return_eligibility | policy_excerpt | product_specs
+  - For refund, return, exchange, complaint about a purchased product, cancel, address_change, or tracking: include order_state so the system can look up the customer's order by email/order number
   - NEVER include return_eligibility for: complaint, exchange, missing items, wrong items, defective items — return windows NEVER apply to shop errors
   - For "thanks" intent: required_facts MUST be empty [] — never look up order or tracking for a thank-you message
   - For "thanks" intent: sub_queries MUST be empty [] — no knowledge retrieval needed
@@ -72,19 +74,26 @@ Rules:
 - language: ISO 639-1 code`;
 
   const threadContextLines = [
-    `- Order numbers in thread: ${caseState.entities.order_numbers.join(", ") || "none"}`,
+    `- Order numbers in thread: ${
+      caseState.entities.order_numbers.join(", ") || "none"
+    }`,
     caseState.entities.products_mentioned.length > 0
-      ? `- Products discussed in thread: ${caseState.entities.products_mentioned.join(", ")}`
+      ? `- Products discussed in thread: ${
+        caseState.entities.products_mentioned.join(", ")
+      }`
       : null,
     caseState.open_questions.length > 0
-      ? `- Open issues in thread (use for sub_queries): ${caseState.open_questions.join("; ")}`
+      ? `- Open issues in thread (use for sub_queries): ${
+        caseState.open_questions.join("; ")
+      }`
       : null,
     caseState.pending_asks.length > 0
       ? `- Pending context in thread: ${caseState.pending_asks.join("; ")}`
       : null,
   ].filter(Boolean).join("\n");
 
-  const userPrompt = `Classify the CURRENT customer message ONLY — ignore prior thread context for intent.
+  const userPrompt =
+    `Classify the CURRENT customer message ONLY — ignore prior thread context for intent.
 
 Current customer message: "${body.slice(0, 800)}"
 
