@@ -95,6 +95,7 @@ export function TicketDetail({
   onOpenInsights,
   showThinkingCard = false,
   isDraftFetching = false,
+  isConversationLoading = false,
   draftValue,
   onDraftChange,
   onDraftBlur,
@@ -414,12 +415,31 @@ export function TicketDetail({
         onScroll={(event) => onConversationScroll?.(event.currentTarget.scrollTop)}
       >
         <div key={thread.id} className="animate-detail-enter mx-auto w-full max-w-[900px] space-y-2.5 px-4 pb-4 pt-3">
+          {isConversationLoading && !messages.length ? (
+            <div className="space-y-3 pt-2" aria-label="Loading conversation">
+              <div className="mr-auto w-full max-w-[520px] rounded-2xl border border-border bg-white p-4 shadow-sm">
+                <div className="mb-3 h-3 w-32 rounded-full bg-muted animate-pulse" />
+                <div className="space-y-2">
+                  <div className="h-3 w-11/12 rounded-full bg-muted animate-pulse" />
+                  <div className="h-3 w-9/12 rounded-full bg-muted animate-pulse" />
+                  <div className="h-3 w-7/12 rounded-full bg-muted animate-pulse" />
+                </div>
+              </div>
+              <div className="ml-auto w-full max-w-[520px] rounded-2xl border border-border bg-white p-4 shadow-sm">
+                <div className="mb-3 h-3 w-28 rounded-full bg-muted animate-pulse" />
+                <div className="space-y-2">
+                  <div className="h-3 w-10/12 rounded-full bg-muted animate-pulse" />
+                  <div className="h-3 w-8/12 rounded-full bg-muted animate-pulse" />
+                </div>
+              </div>
+            </div>
+          ) : null}
           {orderUpdateError && !shouldShowActionCard ? (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
               {orderUpdateError}
             </div>
           ) : null}
-          {messages.map((message) => {
+          {!isConversationLoading || messages.length ? messages.map((message) => {
             const direction = isOutboundMessage(message, mailboxEmails) ? "outbound" : "inbound";
             const messageId = String(message?.id || "").trim();
             const persistedAttachments = attachments.filter(
@@ -543,7 +563,7 @@ export function TicketDetail({
                 ) : null}
               </div>
             );
-          })}
+          }) : null}
           {shouldShowActionCard && !actionCardInserted ? (
             <div className="ml-auto flex w-full max-w-[520px] justify-end">
               <ActionCard
@@ -657,6 +677,18 @@ export function TicketDetail({
             </div>
           </div>
         )}
+        {isConversationLoading && !messages.length ? (
+          <div className="px-3 pb-2">
+            <div className="mx-auto h-[170px] w-full max-w-[900px] rounded-3xl border border-border bg-card p-4 shadow-sm">
+              <div className="mb-4 h-3 w-40 rounded-full bg-muted animate-pulse" />
+              <div className="space-y-2">
+                <div className="h-3 w-full rounded-full bg-muted animate-pulse" />
+                <div className="h-3 w-10/12 rounded-full bg-muted animate-pulse" />
+                <div className="h-3 w-7/12 rounded-full bg-muted animate-pulse" />
+              </div>
+            </div>
+          </div>
+        ) : (
         <div className="relative px-3 pb-1.5">
           <Composer
             key={`${thread?.id || "thread"}:${composerMode}`}
@@ -692,6 +724,7 @@ export function TicketDetail({
             </button>
           )}
         </div>
+        )}
         {composerMode !== "note" && v2Preview && (v2Preview.loading || v2Preview.draft_text || v2Preview.error || v2Preview.skipped) && (
           <div className="px-3 pb-3">
             {v2Preview.loading ? (

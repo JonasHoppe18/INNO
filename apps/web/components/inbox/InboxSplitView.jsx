@@ -890,9 +890,10 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const lastAutoReadThreadIdRef = useRef(null);
   const tabStateHydratedRef = useRef(false);
   const draftLastSavedRef = useRef({});
-  const savingDraftRef = useRef(false);
+  const savingDraftThreadIdsRef = useRef(new Set());
   const draftValueRef = useRef("");
   const selectedThreadIdRef = useRef(null);
+  const lastAppliedRequestedThreadIdRef = useRef("");
   const messagesCacheRef = useRef(new Map());
   const supabase = useClerkSupabase();
   const { user } = useUser();
@@ -903,6 +904,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const {
     data: selectedThreadMessagesFromDb,
     attachments: selectedThreadAttachmentsFromDb,
+    loading: selectedThreadMessagesLoading,
     refresh: refreshSelectedThreadMessages,
     fetchedThreadId: messagesFetchedForThreadId,
   } = useThreadMessages(selectedThreadId, {
@@ -1544,11 +1546,16 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   }, [derivedThreads]);
 
   useEffect(() => {
-    if (!requestedThreadId) return;
+    if (!requestedThreadId) {
+      lastAppliedRequestedThreadIdRef.current = "";
+      return;
+    }
+    if (lastAppliedRequestedThreadIdRef.current === requestedThreadId) return;
     const validIds = new Set(
       derivedThreads.map((thread) => String(thread?.id || "").trim()).filter(Boolean)
     );
     if (!validIds.has(requestedThreadId)) return;
+    lastAppliedRequestedThreadIdRef.current = requestedThreadId;
     setOpenThreadIds((prev) => (prev.includes(requestedThreadId) ? prev : [requestedThreadId, ...prev]));
     setSelectedThreadId(requestedThreadId);
   }, [derivedThreads, requestedThreadId]);
@@ -2031,11 +2038,31 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     selectedThreadMessagesFromDb,
   ]);
 
+  const hasSelectedThreadMessageCache = useMemo(() => {
+    if (!selectedThreadId) return false;
+    return (
+      messagesCacheRef.current.has(selectedThreadId) ||
+      (messagesByThread.get(selectedThreadId) || []).length > 0
+    );
+  }, [messagesByThread, selectedThreadId]);
+
+  const isSelectedConversationLoading = Boolean(
+    selectedThreadId &&
+      !isLocalThreadId(selectedThreadId) &&
+      (selectedThreadMessagesLoading || messagesFetchedForThreadId !== selectedThreadId) &&
+      !hasSelectedThreadMessageCache
+  );
+
   useEffect(() => {
-    if (selectedThreadId && Array.isArray(selectedThreadMessagesFromDb) && selectedThreadMessagesFromDb.length) {
+    if (
+      selectedThreadId &&
+      messagesFetchedForThreadId === selectedThreadId &&
+      Array.isArray(selectedThreadMessagesFromDb) &&
+      selectedThreadMessagesFromDb.length
+    ) {
       messagesCacheRef.current.set(selectedThreadId, selectedThreadMessagesFromDb);
     }
-  }, [selectedThreadId, selectedThreadMessagesFromDb]);
+  }, [messagesFetchedForThreadId, selectedThreadId, selectedThreadMessagesFromDb]);
 
   const threadMessages = useMemo(() => {
     return rawThreadMessages.filter((message) => {
@@ -3403,7 +3430,8 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     const text = String(valueOverride ?? fallbackValue ?? "");
     const trimmed = text.trim();
     if (!trimmed) {
-      if (!immediate || savingDraftRef.current) return;
+      if (!immediate || savingDraftThreadIdsRef.current.has(threadId)) return;
+      savingDraftThreadIdsRef.current.add(threadId);
       let deleteSucceeded = false;
       try {
         const res = await fetch(`/api/threads/${threadId}/draft`, {
@@ -3412,6 +3440,8 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         deleteSucceeded = Boolean(res?.ok);
       } catch {
         // ignore delete draft errors in UI flow
+      } finally {
+        savingDraftThreadIdsRef.current.delete(threadId);
       }
       if (selectedThreadIdRef.current === threadId) {
         setActiveDraftId(null);
@@ -3436,8 +3466,8 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       return;
     }
     if (!immediate && trimmed === String(draftLastSavedRef.current[threadId] || "")) return;
-    if (savingDraftRef.current) return;
-    savingDraftRef.current = true;
+    if (savingDraftThreadIdsRef.current.has(threadId)) return;
+    savingDraftThreadIdsRef.current.add(threadId);
     try {
       const subject =
         derivedThreads.find((thread) => String(thread?.id || "").trim() === threadId)?.subject || "";
@@ -3460,7 +3490,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     } catch {
       // keep UI responsive; autosave retries on next change/interval
     } finally {
-      savingDraftRef.current = false;
+      savingDraftThreadIdsRef.current.delete(threadId);
     }
   }, [
     composerMode,
@@ -4211,6 +4241,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           onOpenInsights={() => setInsightsOpen(true)}
           showThinkingCard={isDraftGenerating}
           isDraftFetching={!draftReady && !isDraftGenerating && !isLocalThreadId(selectedThreadId)}
+          isConversationLoading={isSelectedConversationLoading}
           draftValue={composerValue}
           onDraftChange={handleDraftChange}
           onDraftBlur={(threadId) =>
