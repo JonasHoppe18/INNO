@@ -7,6 +7,14 @@ CREATE TABLE IF NOT EXISTS eval_results (
   ticket_subject TEXT,
   ticket_body TEXT,
   draft_content TEXT,
+  pipeline_version TEXT DEFAULT 'legacy',
+  proposed_actions JSONB,
+  human_reply TEXT,
+  zendesk_ticket_id TEXT,
+  verifier_confidence FLOAT,
+  sources JSONB,
+  routing_hint TEXT,
+  latency_ms INTEGER,
   correctness INT CHECK (correctness BETWEEN 1 AND 5),
   completeness INT CHECK (completeness BETWEEN 1 AND 5),
   tone INT CHECK (tone BETWEEN 1 AND 5),
@@ -19,3 +27,5 @@ CREATE TABLE IF NOT EXISTS eval_results (
 CREATE INDEX IF NOT EXISTS eval_results_shop_id_idx ON eval_results(shop_id);
 CREATE INDEX IF NOT EXISTS eval_results_run_label_idx ON eval_results(run_label);
 CREATE INDEX IF NOT EXISTS eval_results_created_at_idx ON eval_results(created_at DESC);
+CREATE INDEX IF NOT EXISTS eval_results_pipeline_version_idx ON eval_results(pipeline_version);
+CREATE INDEX IF NOT EXISTS eval_results_zendesk_ticket_id_idx ON eval_results(zendesk_ticket_id);

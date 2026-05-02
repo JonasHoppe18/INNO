@@ -22,6 +22,11 @@ export interface PipelineInput {
   shop_id: string;
   supabase: SupabaseClient;
   eval_payload?: EvalPayload;
+  eval_options?: {
+    writer_model?: string;
+    strong_model?: string;
+    disable_escalation?: boolean;
+  };
 }
 
 export interface PipelineResult {
@@ -104,7 +109,10 @@ function applyAutomationConstraints(
 }
 
 export async function runDraftV2Pipeline(input: PipelineInput): Promise<PipelineResult> {
-  const { thread_id, shop_id, supabase, eval_payload } = input;
+  const { thread_id, shop_id, supabase, eval_payload, eval_options } = input;
+  const writerModelOverride = eval_payload ? eval_options?.writer_model : undefined;
+  const strongModelOverride = eval_payload ? eval_options?.strong_model : undefined;
+  const disableEscalation = eval_payload ? eval_options?.disable_escalation === true : false;
 
   // 1. Load context — either from DB (normal) or from eval_payload (eval mode)
   let thread: Record<string, unknown>;
@@ -306,6 +314,7 @@ export async function runDraftV2Pipeline(input: PipelineInput): Promise<Pipeline
     conversationHistory,
     actionProposals: finalProposals,
     policyContext,
+    model: writerModelOverride,
   });
 
   // 10. Verificér grounding og kvalitet
@@ -323,9 +332,10 @@ export async function runDraftV2Pipeline(input: PipelineInput): Promise<Pipeline
   let finalConfidence = verified.confidence;
 
   // 11. Eskalér til gpt-4o hvis verifier flagger lav confidence
-  if (verified.retry_with_stronger_model && !verified.block_send) {
+  if (!disableEscalation && verified.retry_with_stronger_model && !verified.block_send) {
+    const escalationModel = strongModelOverride ?? STRONG_MODEL;
     console.log(
-      `[generate-draft-v2] confidence ${verified.confidence} < ${CONFIDENCE_ESCALATION_THRESHOLD} — re-running with ${STRONG_MODEL}`,
+      `[generate-draft-v2] confidence ${verified.confidence} < ${CONFIDENCE_ESCALATION_THRESHOLD} — re-running with ${escalationModel}`,
     );
     try {
       const strongWritten = await runWriter({
@@ -338,7 +348,7 @@ export async function runDraftV2Pipeline(input: PipelineInput): Promise<Pipeline
         conversationHistory,
         actionProposals: finalProposals,
         policyContext,
-        model: STRONG_MODEL,
+        model: escalationModel,
       });
 
       if (strongWritten.draft_text) {

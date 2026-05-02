@@ -13,7 +13,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { thread_id, message_id, shop_id, email_data } = await req.json();
+    const { thread_id, message_id, shop_id, email_data, eval_options } = await req.json();
 
     if (!shop_id || (!thread_id && !email_data)) {
       return new Response(
@@ -28,7 +28,14 @@ Deno.serve(async (req) => {
     );
 
     const startTime = Date.now();
-    const result = await runDraftV2Pipeline({ thread_id, message_id, shop_id, supabase, eval_payload: email_data });
+    const result = await runDraftV2Pipeline({
+      thread_id,
+      message_id,
+      shop_id,
+      supabase,
+      eval_payload: email_data,
+      eval_options,
+    });
     const latency_ms = Date.now() - startTime;
 
     console.log(`[generate-draft-v2] thread=${thread_id} latency=${latency_ms}ms skipped=${result.skipped ?? false}`);

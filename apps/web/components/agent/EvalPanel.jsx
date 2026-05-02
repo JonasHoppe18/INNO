@@ -2,13 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  ChevronDown,
   ChevronRight,
   ExternalLink,
   FlaskConical,
   Loader2,
   Play,
-  RefreshCw,
   Trash2,
   Zap,
 } from "lucide-react";
@@ -86,6 +84,8 @@ function EvalResultRow({ result }) {
   const [open, setOpen] = useState(false);
   const label = result.ticket_subject || (result.thread_id ? `Thread ${result.thread_id.slice(0, 8)}…` : "Email");
   const actions = Array.isArray(result.proposed_actions) ? result.proposed_actions : [];
+  const sources = Array.isArray(result.sources) ? result.sources : [];
+  const confidence = typeof result.verifier_confidence === "number" ? result.verifier_confidence : null;
   const dims = [
     ["Correctness",   result.correctness],
     ["Completeness",  result.completeness],
@@ -108,6 +108,11 @@ function EvalResultRow({ result }) {
         {actions.length > 0 && (
           <Badge variant="secondary" className="shrink-0 text-[10px]">
             {actions.length} action{actions.length !== 1 ? "s" : ""}
+          </Badge>
+        )}
+        {confidence != null && (
+          <Badge variant="outline" className="shrink-0 text-[10px]">
+            {Math.round(confidence * 100)}%
           </Badge>
         )}
         <ScoreBadge value={result.overall} />
@@ -135,6 +140,51 @@ function EvalResultRow({ result }) {
                     {actions.map((a, i) => <ActionBadge key={i} action={a} />)}
                   </div>
                 </div>
+              )}
+
+              {(confidence != null || result.routing_hint || result.latency_ms) && (
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  {confidence != null && (
+                    <div className="rounded-md border bg-card p-2">
+                      <p className="text-muted-foreground">Verifier</p>
+                      <p className="font-medium tabular-nums">{Math.round(confidence * 100)}%</p>
+                    </div>
+                  )}
+                  {result.routing_hint && (
+                    <div className="rounded-md border bg-card p-2">
+                      <p className="text-muted-foreground">Routing</p>
+                      <p className="font-medium">{result.routing_hint}</p>
+                    </div>
+                  )}
+                  {result.latency_ms != null && (
+                    <div className="rounded-md border bg-card p-2">
+                      <p className="text-muted-foreground">Latency</p>
+                      <p className="font-medium tabular-nums">{Math.round(result.latency_ms / 100) / 10}s</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {sources.length > 0 && (
+                <details className="group">
+                  <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground select-none">
+                    <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
+                    Sources used
+                  </summary>
+                  <div className="mt-1.5 space-y-1.5">
+                    {sources.map((source, i) => (
+                      <div key={`${source.source_label || "source"}-${i}`} className="rounded-md border bg-card p-2">
+                        <div className="mb-1 flex items-center gap-1.5">
+                          <Badge variant="outline" className="text-[10px] py-0">{source.kind || "source"}</Badge>
+                          <p className="truncate text-xs font-medium">{source.source_label || `Source ${i + 1}`}</p>
+                        </div>
+                        <p className="line-clamp-3 whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
+                          {source.content}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </details>
               )}
             </div>
 
@@ -288,19 +338,28 @@ function RunCard({ run, expanded, onToggle, onDelete }) {
 
 let _emailCounter = 0;
 const EMPTY_EMAIL = () => ({ id: `email-${++_emailCounter}`, subject: "", body: "" });
-const MODELS = ["gpt-4o", "gpt-4o-mini"];
-const PIPELINES = [{ value: "legacy", label: "Legacy" }, { value: "v2", label: "V2 (ny)" }];
+const MODEL_OPTIONS = [
+  { value: "gpt-4o-mini", label: "GPT-4o Mini" },
+  { value: "gpt-4o", label: "GPT-4o" },
+  { value: "gpt-5-mini", label: "GPT-5 Mini" },
+  { value: "gpt-5-nano", label: "GPT-5 Nano" },
+];
+const modelLabel = (value) => MODEL_OPTIONS.find((item) => item.value === value)?.label || value;
 
 export function EvalPanel({ fullPage = false }) {
-  const [mode, setMode] = useState("zendesk");
+  const [mode, setMode] = useState("examples");
   const [emails, setEmails] = useState([EMPTY_EMAIL()]);
+  const [ticketExamples, setTicketExamples] = useState([]);
+  const [selectedExamples, setSelectedExamples] = useState(new Set());
+  const [loadingExamples, setLoadingExamples] = useState(false);
+  const [examplesError, setExamplesError] = useState(null);
   const [zendeskTickets, setZendeskTickets] = useState([]);
   const [selectedZendesk, setSelectedZendesk] = useState(new Set());
   const [loadingZendesk, setLoadingZendesk] = useState(false);
   const [zendeskError, setZendeskError] = useState(null);
   const [runLabel, setRunLabel] = useState("");
-  const [model, setModel] = useState("gpt-4o");
-  const [pipeline, setPipeline] = useState("legacy");
+  const [model, setModel] = useState("gpt-4o-mini");
+  const [disableEscalation, setDisableEscalation] = useState(true);
   const [running, setRunning] = useState(false);
   const [runError, setRunError] = useState(null);
   const [runs, setRuns] = useState([]);
@@ -333,11 +392,31 @@ export function EvalPanel({ fullPage = false }) {
     } catch { /* silent */ }
   }, [expandedRun]);
 
+  const fetchTicketExamples = async () => {
+    setLoadingExamples(true);
+    setExamplesError(null);
+    try {
+      const res = await fetch("/api/eval/ticket-examples?limit=120", { credentials: "include" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Failed to fetch ticket examples");
+      setTicketExamples(data?.examples ?? []);
+      setSelectedExamples(new Set((data?.examples ?? []).map((t) => t.id)));
+    } catch (err) {
+      setExamplesError(err.message);
+    } finally {
+      setLoadingExamples(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchTicketExamples();
+  }, []);
+
   const fetchZendeskTickets = async () => {
     setLoadingZendesk(true);
     setZendeskError(null);
     try {
-      const res = await fetch("/api/eval/zendesk-tickets?limit=30", { credentials: "include" });
+      const res = await fetch("/api/eval/zendesk-tickets?limit=120", { credentials: "include" });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "Failed to fetch Zendesk tickets");
       setZendeskTickets(data?.tickets ?? []);
@@ -352,7 +431,14 @@ export function EvalPanel({ fullPage = false }) {
   const handleModeChange = (next) => {
     setMode(next);
     if (next === "zendesk" && zendeskTickets.length === 0) fetchZendeskTickets();
+    if (next === "examples" && ticketExamples.length === 0) fetchTicketExamples();
   };
+
+  const toggleExample = (id) => setSelectedExamples((prev) => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
 
   const toggleZendesk = (id) => setSelectedZendesk((prev) => {
     const next = new Set(prev);
@@ -371,8 +457,10 @@ export function EvalPanel({ fullPage = false }) {
     setRunError(null);
     try {
       const payload = mode === "zendesk"
-        ? { zendesk_tickets: zendeskTickets.filter((t) => selectedZendesk.has(t.id)), run_label: runLabel.trim(), model, pipeline }
-        : { emails: emails.filter((e) => e.body.trim()).map((e) => ({ subject: e.subject, body: e.body })), run_label: runLabel.trim(), model, pipeline };
+        ? { zendesk_tickets: zendeskTickets.filter((t) => selectedZendesk.has(t.id)), run_label: runLabel.trim(), model, strong_model: "gpt-4o", judge_model: "gpt-4o-mini", disable_escalation: disableEscalation, pipeline: "v2" }
+        : mode === "examples"
+          ? { zendesk_tickets: ticketExamples.filter((t) => selectedExamples.has(t.id)), run_label: runLabel.trim(), model, strong_model: "gpt-4o", judge_model: "gpt-4o-mini", disable_escalation: disableEscalation, pipeline: "v2" }
+          : { emails: emails.filter((e) => e.body.trim()).map((e) => ({ subject: e.subject, body: e.body })), run_label: runLabel.trim(), model, strong_model: "gpt-4o", judge_model: "gpt-4o-mini", disable_escalation: disableEscalation, pipeline: "v2" };
 
       const res = await fetch("/api/eval/run", {
         method: "POST",
@@ -394,6 +482,7 @@ export function EvalPanel({ fullPage = false }) {
 
   const canRun = runLabel.trim() && (
     (mode === "manual" && emails.some((e) => e.body.trim())) ||
+    (mode === "examples" && selectedExamples.size > 0) ||
     (mode === "zendesk" && selectedZendesk.size > 0)
   );
 
@@ -402,7 +491,7 @@ export function EvalPanel({ fullPage = false }) {
     <div className="space-y-4">
       {/* Mode toggle */}
       <div className="flex rounded-lg border bg-muted p-1 text-xs">
-        {[["zendesk", "Zendesk"], ["manual", "Manual"]].map(([val, label]) => (
+        {[["examples", "Examples"], ["zendesk", "Zendesk"], ["manual", "Manual"]].map(([val, label]) => (
           <button
             key={val}
             type="button"
@@ -445,6 +534,49 @@ export function EvalPanel({ fullPage = false }) {
           <button type="button" onClick={addEmail} className="text-xs text-muted-foreground hover:text-foreground">
             + Add email
           </button>
+        </div>
+      ) : mode === "examples" ? (
+        <div className="space-y-2">
+          {loadingExamples && (
+            <div className="flex items-center gap-2 py-3 text-xs text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Fetching ticket examples…
+            </div>
+          )}
+          {examplesError && <p className="text-xs text-destructive">{examplesError}</p>}
+          {!loadingExamples && !examplesError && ticketExamples.length === 0 && (
+            <p className="py-3 text-xs text-muted-foreground">No ticket examples found.</p>
+          )}
+          {ticketExamples.length > 0 && (
+            <>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">{selectedExamples.size} of {ticketExamples.length} selected</span>
+                <div className="flex gap-2 text-xs">
+                  <button type="button" onClick={() => setSelectedExamples(new Set(ticketExamples.map((t) => t.id)))} className="text-muted-foreground hover:text-foreground">All</button>
+                  <button type="button" onClick={() => setSelectedExamples(new Set())} className="text-muted-foreground hover:text-foreground">None</button>
+                  <button type="button" onClick={fetchTicketExamples} className="text-muted-foreground hover:text-foreground">Refresh</button>
+                </div>
+              </div>
+              <div className="max-h-[420px] overflow-y-auto rounded-lg border divide-y">
+                {ticketExamples.map((ticket) => (
+                  <label key={ticket.id} className="flex cursor-pointer items-start gap-3 px-3 py-2.5 hover:bg-muted/40 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={selectedExamples.has(ticket.id)}
+                      onChange={() => toggleExample(ticket.id)}
+                      className="mt-0.5 h-4 w-4 shrink-0 rounded border-input accent-primary cursor-pointer"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <p className="truncate text-xs font-medium">{ticket.subject || "(no subject)"}</p>
+                        {ticket.intent && <Badge variant="outline" className="shrink-0 text-[10px] py-0">{ticket.intent}</Badge>}
+                      </div>
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">{ticket.customer_body?.slice(0, 90)}…</p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       ) : (
         <div className="space-y-2">
@@ -492,30 +624,31 @@ export function EvalPanel({ fullPage = false }) {
 
       {/* Run controls */}
       <div className="space-y-2">
-        <div className="flex gap-2">
+        <div className="space-y-2">
           <Input
             value={runLabel}
             onChange={(e) => setRunLabel(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && canRun && !running && handleRun()}
-            placeholder='Label, e.g. "v2 test"'
+            placeholder={`Label, e.g. "${modelLabel(model)} smoke"`}
             className="flex-1 text-sm"
           />
           <Select value={model} onValueChange={setModel}>
-            <SelectTrigger className="w-32">
+            <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {MODELS.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+              {MODEL_OPTIONS.map((m) => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
             </SelectContent>
           </Select>
-          <Select value={pipeline} onValueChange={setPipeline}>
-            <SelectTrigger className="w-28">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {PIPELINES.map((p) => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={disableEscalation}
+              onChange={(e) => setDisableEscalation(e.target.checked)}
+              className="h-4 w-4 rounded border-input accent-primary"
+            />
+            Disable fallback escalation for clean model comparison
+          </label>
         </div>
         <Button
           onClick={handleRun}

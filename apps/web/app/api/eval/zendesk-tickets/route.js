@@ -98,15 +98,16 @@ export async function GET(req) {
 
   const authorization = `Basic ${Buffer.from(`${email}/token:${token}`).toString("base64")}`;
   const { searchParams } = new URL(req.url);
-  const limit = Math.min(Number(searchParams.get("limit") || "30"), 100);
+  const limit = Math.min(Number(searchParams.get("limit") || "30"), 150);
+  const zendeskPageSize = Math.min(limit, 100);
 
   // Fetch solved + closed tickets (Zendesk auto-closes solved tickets after a period)
   const [solvedRes, closedRes] = await Promise.all([
-    fetch(`${baseUrl}/api/v2/tickets.json?status=solved&sort_by=created_at&sort_order=desc&per_page=${limit}`, {
+    fetch(`${baseUrl}/api/v2/tickets.json?status=solved&sort_by=created_at&sort_order=desc&per_page=${zendeskPageSize}`, {
       headers: { Authorization: authorization, "Content-Type": "application/json" },
       cache: "no-store",
     }),
-    fetch(`${baseUrl}/api/v2/tickets.json?status=closed&sort_by=created_at&sort_order=desc&per_page=${limit}`, {
+    fetch(`${baseUrl}/api/v2/tickets.json?status=closed&sort_by=created_at&sort_order=desc&per_page=${zendeskPageSize}`, {
       headers: { Authorization: authorization, "Content-Type": "application/json" },
       cache: "no-store",
     }),
@@ -195,8 +196,8 @@ export async function GET(req) {
       created_at: ticket.created_at,
     });
 
-    if (results.length >= 25) break;
+    if (results.length >= limit) break;
   }
 
-  return NextResponse.json({ tickets: results });
+  return NextResponse.json({ tickets: results, fetched: results.length, requested: limit });
 }

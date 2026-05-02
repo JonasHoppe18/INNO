@@ -46,14 +46,15 @@ Return ONLY valid JSON, no markdown:
 
 const JUDGE_WITH_HUMAN_PROMPT = `You are an expert customer service quality evaluator.
 You will be given a customer support ticket, an AI-generated draft response, and the actual response a human support agent sent.
-Score the AI draft by comparing it to the human response on four dimensions, each from 1 to 5:
+Treat the human response as a strong reference answer, but not as something to copy blindly. Ignore signatures, greetings, and minor wording differences.
+Score whether the AI draft is send-ready compared with the human response on four dimensions, each from 1 to 5:
 
-- correctness: Does the AI correctly identify the issue and provide accurate information, like the human did?
-- completeness: Does the AI cover the same key points the human covered? Is anything important missing?
-- tone: Is the AI's tone as professional, empathetic, and warm as the human's?
-- actionability: Does the AI give the customer equally clear next steps as the human did?
+- correctness: Does the AI answer the customer's actual request and avoid unsupported facts?
+- completeness: Does the AI cover the same essential resolution/next-step points as the human reply, without adding irrelevant extras?
+- tone: Is the AI's tone appropriate for the customer's situation and at least as natural as the human reply?
+- actionability: Does the AI make the next step or outcome as clear as the human reply?
 
-overall: Your holistic score (1-5) — would a support manager prefer the AI draft or the human reply? 5 = AI is as good or better than the human.
+overall: Your holistic score (1-5) for sendability. 5 = the AI draft is as good as or better than the human reply and could be sent as-is. 3 = useful but needs edits. 1 = wrong or unsafe.
 
 Return ONLY valid JSON, no markdown:
 {
@@ -62,10 +63,16 @@ Return ONLY valid JSON, no markdown:
   "tone": <1-5>,
   "actionability": <1-5>,
   "overall": <1-5>,
-  "reasoning": "<1-2 sentences on how the AI draft compares to the human reply>"
+  "reasoning": "<1-2 sentences naming the concrete gap or why it is send-ready>"
 }`;
 
-async function judgeWithOpenAI(ticketBody, draftContent, humanReply = null) {
+const JUDGE_MODELS = new Set(["gpt-4o-mini", "gpt-4o", "gpt-5-mini", "gpt-5-nano"]);
+
+function normalizeJudgeModel(model) {
+  return JUDGE_MODELS.has(model) ? model : "gpt-4o-mini";
+}
+
+async function judgeWithOpenAI(ticketBody, draftContent, humanReply = null, judgeModel = "gpt-4o-mini") {
   const systemPrompt = humanReply ? JUDGE_WITH_HUMAN_PROMPT : JUDGE_SYSTEM_PROMPT;
   const userPrompt = humanReply
     ? `CUSTOMER TICKET:\n${ticketBody}\n\nHUMAN AGENT REPLY:\n${humanReply}\n\nAI DRAFT:\n${draftContent}`
@@ -74,7 +81,7 @@ async function judgeWithOpenAI(ticketBody, draftContent, humanReply = null) {
     method: "POST",
     headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: "gpt-4o-mini",
+      model: normalizeJudgeModel(judgeModel),
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
@@ -90,6 +97,7 @@ async function judgeWithOpenAI(ticketBody, draftContent, humanReply = null) {
 }
 
 async function generateDraft(shopId, subject, emailBody) {
+  const startTime = Date.now();
   const endpoint = `${SUPABASE_URL}/functions/v1/generate-draft-unified`;
   let res;
   try {
@@ -127,10 +135,11 @@ async function generateDraft(shopId, subject, emailBody) {
     throw new Error(`generate-draft-unified returned no reply. Raw: ${raw.slice(0, 300)}`);
   }
   const actions = Array.isArray(data?.actions) ? data.actions : [];
-  return { draft, actions };
+  return { draft, actions, confidence: null, sources: [], routingHint: null, latencyMs: Date.now() - startTime };
 }
 
-async function generateDraftV2(shopId, subject, emailBody) {
+async function generateDraftV2(shopId, subject, emailBody, options = {}) {
+  const startTime = Date.now();
   const endpoint = `${SUPABASE_URL}/functions/v1/generate-draft-v2`;
   let res;
   try {
@@ -146,6 +155,11 @@ async function generateDraftV2(shopId, subject, emailBody) {
           subject: subject || "",
           body: emailBody,
           from_email: "eval@eval.internal",
+        },
+        eval_options: {
+          writer_model: options.writerModel || undefined,
+          strong_model: options.strongModel || undefined,
+          disable_escalation: options.disableEscalation === true,
         },
       }),
     });
@@ -164,7 +178,10 @@ async function generateDraftV2(shopId, subject, emailBody) {
   }
   const actions = Array.isArray(data?.proposed_actions) ? data.proposed_actions : [];
   const confidence = data?.confidence ?? null;
-  return { draft, actions, confidence };
+  const sources = Array.isArray(data?.sources) ? data.sources : [];
+  const routingHint = data?.routing_hint ?? null;
+  const latencyMs = Number.isFinite(Number(data?.latency_ms)) ? Number(data.latency_ms) : Date.now() - startTime;
+  return { draft, actions, confidence, sources, routingHint, latencyMs };
 }
 
 export async function POST(req) {
@@ -174,7 +191,22 @@ export async function POST(req) {
   }
 
   const body = await req.json().catch(() => ({}));
-  const { emails, thread_ids, zendesk_tickets, run_label, model = "gpt-4o", pipeline = "legacy" } = body;
+  const {
+    emails,
+    thread_ids,
+    zendesk_tickets,
+    run_label,
+    model = "gpt-4o-mini",
+    strong_model = "gpt-4o",
+    judge_model = "gpt-4o-mini",
+    disable_escalation = false,
+    pipeline = "legacy",
+  } = body;
+  const v2Options = {
+    writerModel: model,
+    strongModel: strong_model,
+    disableEscalation: disable_escalation === true,
+  };
 
   if (!run_label) {
     return NextResponse.json({ error: "run_label required" }, { status: 400 });
@@ -220,10 +252,10 @@ export async function POST(req) {
       const ticketSubject = email.subject?.trim() || null;
       if (!ticketBody) continue;
       try {
-        const { draft, actions } = pipeline === "v2"
-          ? await generateDraftV2(shop.id, ticketSubject, ticketBody)
+        const { draft, actions, confidence, sources, routingHint, latencyMs } = pipeline === "v2"
+          ? await generateDraftV2(shop.id, ticketSubject, ticketBody, v2Options)
           : await generateDraft(shop.id, ticketSubject, ticketBody);
-        const scores = await judgeWithOpenAI(ticketBody, draft);
+        const scores = await judgeWithOpenAI(ticketBody, draft, null, judge_model);
         const { data: inserted } = await supabase
           .from("eval_results")
           .insert({
@@ -236,6 +268,10 @@ export async function POST(req) {
             ticket_body: ticketBody.slice(0, 2000),
             draft_content: draft.slice(0, 2000),
             proposed_actions: actions.length > 0 ? actions : null,
+            verifier_confidence: confidence,
+            sources: sources.length > 0 ? sources : null,
+            routing_hint: routingHint,
+            latency_ms: latencyMs,
             correctness: scores.correctness,
             completeness: scores.completeness,
             tone: scores.tone,
@@ -268,10 +304,10 @@ export async function POST(req) {
         : ticketBody;
 
       try {
-        const { draft, actions } = pipeline === "v2"
-          ? await generateDraftV2(shop.id, ticketSubject, fullBody)
+        const { draft, actions, confidence, sources, routingHint, latencyMs } = pipeline === "v2"
+          ? await generateDraftV2(shop.id, ticketSubject, fullBody, v2Options)
           : await generateDraft(shop.id, ticketSubject, fullBody);
-        const scores = await judgeWithOpenAI(fullBody, draft, humanReply);
+        const scores = await judgeWithOpenAI(fullBody, draft, humanReply, judge_model);
         const { data: inserted } = await supabase
           .from("eval_results")
           .insert({
@@ -284,6 +320,10 @@ export async function POST(req) {
             ticket_body: ticketBody.slice(0, 2000),
             draft_content: draft.slice(0, 2000),
             proposed_actions: actions.length > 0 ? actions : null,
+            verifier_confidence: confidence,
+            sources: sources.length > 0 ? sources : null,
+            routing_hint: routingHint,
+            latency_ms: latencyMs,
             human_reply: humanReply ? humanReply.slice(0, 2000) : null,
             zendesk_ticket_id: zendeskId || null,
             correctness: scores.correctness,
@@ -329,7 +369,7 @@ export async function POST(req) {
 
         if (!customerMsg?.body) { errors.push({ thread_id: threadId, error: "No customer message" }); continue; }
 
-        const scores = await judgeWithOpenAI(customerMsg.body, draftMsg.body);
+        const scores = await judgeWithOpenAI(customerMsg.body, draftMsg.body, null, judge_model);
         const { data: inserted } = await supabase
           .from("eval_results")
           .insert({
