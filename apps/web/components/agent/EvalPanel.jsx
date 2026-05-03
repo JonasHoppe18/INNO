@@ -344,7 +344,13 @@ const MODEL_OPTIONS = [
   { value: "gpt-5-mini", label: "GPT-5 Mini" },
   { value: "gpt-5-nano", label: "GPT-5 Nano" },
 ];
+const EVAL_BATCH_SIZE = 5;
 const modelLabel = (value) => MODEL_OPTIONS.find((item) => item.value === value)?.label || value;
+const chunkArray = (items, size) => {
+  const chunks = [];
+  for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size));
+  return chunks;
+};
 
 export function EvalPanel({ fullPage = false }) {
   const [mode, setMode] = useState("examples");
@@ -361,6 +367,7 @@ export function EvalPanel({ fullPage = false }) {
   const [model, setModel] = useState("gpt-4o-mini");
   const [disableEscalation, setDisableEscalation] = useState(true);
   const [running, setRunning] = useState(false);
+  const [runProgress, setRunProgress] = useState(null);
   const [runError, setRunError] = useState(null);
   const [runs, setRuns] = useState([]);
   const [loadingRuns, setLoadingRuns] = useState(true);
@@ -454,29 +461,59 @@ export function EvalPanel({ fullPage = false }) {
   const handleRun = async () => {
     if (!runLabel.trim()) return;
     setRunning(true);
+    setRunProgress(null);
     setRunError(null);
+    const currentRunLabel = runLabel.trim();
     try {
-      const payload = mode === "zendesk"
-        ? { zendesk_tickets: zendeskTickets.filter((t) => selectedZendesk.has(t.id)), run_label: runLabel.trim(), model, strong_model: "gpt-4o", judge_model: "gpt-4o-mini", disable_escalation: disableEscalation, pipeline: "v2" }
+      const basePayload = {
+        run_label: currentRunLabel,
+        model,
+        strong_model: "gpt-4o",
+        judge_model: "gpt-4o-mini",
+        disable_escalation: disableEscalation,
+        pipeline: "v2",
+      };
+      const selectedItems = mode === "zendesk"
+        ? zendeskTickets.filter((t) => selectedZendesk.has(t.id))
         : mode === "examples"
-          ? { zendesk_tickets: ticketExamples.filter((t) => selectedExamples.has(t.id)), run_label: runLabel.trim(), model, strong_model: "gpt-4o", judge_model: "gpt-4o-mini", disable_escalation: disableEscalation, pipeline: "v2" }
-          : { emails: emails.filter((e) => e.body.trim()).map((e) => ({ subject: e.subject, body: e.body })), run_label: runLabel.trim(), model, strong_model: "gpt-4o", judge_model: "gpt-4o-mini", disable_escalation: disableEscalation, pipeline: "v2" };
+          ? ticketExamples.filter((t) => selectedExamples.has(t.id))
+          : emails.filter((e) => e.body.trim()).map((e) => ({ subject: e.subject, body: e.body }));
+      const chunks = chunkArray(selectedItems, EVAL_BATCH_SIZE);
+      let totalScored = 0;
+      const allErrors = [];
 
-      const res = await fetch("/api/eval/run", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || "Eval failed");
+      for (let index = 0; index < chunks.length; index += 1) {
+        setRunProgress({ current: index + 1, total: chunks.length, scored: totalScored });
+        const payload = mode === "manual"
+          ? { ...basePayload, emails: chunks[index] }
+          : { ...basePayload, zendesk_tickets: chunks[index] };
+        const res = await fetch("/api/eval/run", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data?.error || `Eval failed on batch ${index + 1}/${chunks.length}`);
+        }
+        totalScored += Number(data?.scored || 0);
+        if (Array.isArray(data?.errors) && data.errors.length > 0) {
+          allErrors.push(...data.errors);
+        }
+      }
+      setRunProgress({ current: chunks.length, total: chunks.length, scored: totalScored });
       await fetchRuns();
-      setExpandedRun(runLabel.trim());
+      setExpandedRun(currentRunLabel);
       setRunLabel("");
+      if (allErrors.length > 0) {
+        setRunError(`${allErrors.length} tickets failed, ${totalScored} were scored. Open the run results for details.`);
+      }
     } catch (err) {
       setRunError(err.message);
     } finally {
       setRunning(false);
+      setRunProgress(null);
     }
   };
 
@@ -656,8 +693,17 @@ export function EvalPanel({ fullPage = false }) {
           className="w-full"
         >
           {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-          {running ? "Running…" : "Run eval"}
+          {running && runProgress
+            ? `Running batch ${runProgress.current}/${runProgress.total}…`
+            : running
+              ? "Running…"
+              : "Run eval"}
         </Button>
+        {running && runProgress && (
+          <p className="text-xs text-muted-foreground">
+            {runProgress.scored} scored so far. Large runs are processed in batches of {EVAL_BATCH_SIZE}.
+          </p>
+        )}
         {runError && <p className="text-xs text-destructive">{runError}</p>}
       </div>
     </div>
