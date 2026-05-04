@@ -980,8 +980,6 @@ export function InboxSplitView({
     useState({});
   // Shadow preview (v2 pipeline) — per thread
   // Shape: { [threadId]: { loading: boolean, draft_text: string|null, confidence: number, sources: [], proposed_actions: [], error: string|null } }
-  const [v2PreviewByThread, setV2PreviewByThread] = useState({});
-  const [adoptedV2PreviewByThread, setAdoptedV2PreviewByThread] = useState({});
   const [insightsOpen, setInsightsOpen] = useState(false);
   const [translationModalOpen, setTranslationModalOpen] = useState(false);
   const [translationCache, setTranslationCache] = useState({});
@@ -3388,152 +3386,6 @@ export function InboxSplitView({
     }
   }, []);
 
-  const handleRequestV2Preview = useCallback(
-    async (threadId, messageId) => {
-      if (!threadId) return;
-      let resolvedCustomerLookup = customerLookup;
-      if (
-        !resolvedCustomerLookup &&
-        (customerLookupParams.email ||
-          customerLookupParams.orderNumber ||
-          customerLookupParams.sourceMessageId)
-      ) {
-        try {
-          const lookupResponse = await fetch("/api/inbox/customer-lookup", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
-            body: JSON.stringify({
-              ...customerLookupParams,
-              forceRefresh: false,
-              debug: true,
-            }),
-          });
-          const lookupPayload = await lookupResponse.json().catch(() => null);
-          if (lookupResponse.ok && lookupPayload) {
-            resolvedCustomerLookup = lookupPayload;
-          }
-        } catch {
-          resolvedCustomerLookup = null;
-        }
-      }
-      const customerContext = resolvedCustomerLookup
-        ? {
-            customer: resolvedCustomerLookup.customer || null,
-            orders: Array.isArray(resolvedCustomerLookup.orders)
-              ? resolvedCustomerLookup.orders.slice(0, 3)
-              : [],
-          }
-        : null;
-      setV2PreviewByThread((prev) => ({
-        ...prev,
-        [threadId]: {
-          loading: true,
-          draft_text: null,
-          confidence: 0,
-          sources: [],
-          proposed_actions: [],
-          error: null,
-        },
-      }));
-      try {
-        const res = await fetch("/api/draft/preview-v2", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({
-            thread_id: threadId,
-            message_id: messageId ?? null,
-            customer_context: customerContext,
-          }),
-        });
-        const payload = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(payload?.error || "Preview fejlede.");
-        setV2PreviewByThread((prev) => ({
-          ...prev,
-          [threadId]: {
-            loading: false,
-            preview_id: payload.preview_id ?? null,
-            draft_text: payload.draft_text ?? null,
-            confidence: payload.confidence ?? 0,
-            routing_hint: payload.routing_hint ?? "review",
-            is_test_mode: payload.is_test_mode ?? false,
-            sources: payload.sources ?? [],
-            proposed_actions: payload.proposed_actions ?? [],
-            skipped: payload.skipped ?? false,
-            skip_reason: payload.skip_reason ?? null,
-            error: null,
-          },
-        }));
-      } catch (err) {
-        setV2PreviewByThread((prev) => ({
-          ...prev,
-          [threadId]: {
-            loading: false,
-            draft_text: null,
-            confidence: 0,
-            sources: [],
-            proposed_actions: [],
-            error: err?.message || "Preview fejlede.",
-          },
-        }));
-      }
-    },
-    [customerLookup, customerLookupParams],
-  );
-
-  const handleAdoptV2Preview = useCallback(
-    (threadId) => {
-      const preview = v2PreviewByThread[threadId];
-      if (!preview?.draft_text) return;
-      setDraftValueByThread((prev) => ({
-        ...prev,
-        [threadId]: preview.draft_text,
-      }));
-      setAdoptedV2PreviewByThread((prev) => ({
-        ...prev,
-        [threadId]: {
-          preview_id: preview.preview_id || null,
-          draft_text: preview.draft_text,
-        },
-      }));
-      setSystemDraftUneditedByThread((prev) => ({
-        ...prev,
-        [threadId]: false,
-      }));
-      setV2PreviewByThread((prev) => {
-        const next = { ...prev };
-        delete next[threadId];
-        return next;
-      });
-    },
-    [v2PreviewByThread],
-  );
-
-  const handleDismissV2Preview = useCallback(
-    (threadId) => {
-      const previewId = v2PreviewByThread[threadId]?.preview_id || null;
-      if (previewId) {
-        fetch("/api/draft/preview-v2", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({
-            thread_id: threadId,
-            preview_id: previewId,
-            outcome: "rejected",
-          }),
-        }).catch(() => null);
-      }
-      setV2PreviewByThread((prev) => {
-        const next = { ...prev };
-        delete next[threadId];
-        return next;
-      });
-    },
-    [v2PreviewByThread],
-  );
-
   const handleDraftChange = useCallback(
     (nextValue, threadIdOverride = null) => {
       const targetThreadId = String(
@@ -4226,8 +4078,7 @@ export function InboxSplitView({
           attachments: attachmentsPayload,
           sender_name: currentUserName,
           draft_message_id: draftMessage?.id || activeDraftId || null,
-          draft_preview_id:
-            adoptedV2PreviewByThread[selectedThreadId]?.preview_id || null,
+          draft_preview_id: null,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -5017,18 +4868,6 @@ export function InboxSplitView({
           onRequestTranslation={() =>
             fetchTranslationForThread(selectedThreadId)
           }
-          v2Preview={
-            selectedThreadId
-              ? v2PreviewByThread[selectedThreadId] || null
-              : null
-          }
-          onRequestV2Preview={() => {
-            const msgs = threadMessages || [];
-            const lastMsg = msgs[msgs.length - 1];
-            handleRequestV2Preview(selectedThreadId, lastMsg?.id ?? null);
-          }}
-          onAdoptV2Preview={() => handleAdoptV2Preview(selectedThreadId)}
-          onDismissV2Preview={() => handleDismissV2Preview(selectedThreadId)}
         />
       </div>
 

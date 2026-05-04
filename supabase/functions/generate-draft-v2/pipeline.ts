@@ -12,6 +12,7 @@ import {
   buildPinnedPolicyContext,
   PolicyIntent,
 } from "../_shared/policy-context.ts";
+import { loadImageAttachments } from "./stages/attachment-loader.ts";
 import {
   cleanupMixedLanguageDraft,
   mixedLanguageCheck,
@@ -412,6 +413,13 @@ export async function runDraftV2Pipeline(
 
   const latestCustomerMessage =
     (latestMessage.clean_body_text ?? latestMessage.body_text ?? "") as string;
+
+  // Hent billedvedhæftninger for seneste kundebesked (tom liste i eval-mode)
+  const latestMessageId = (latestMessage as Record<string, unknown>).id as string | undefined;
+  const imageAttachments = latestMessageId
+    ? await loadImageAttachments(supabase, latestMessageId)
+    : [];
+
   const replyLanguage = resolveReplyLanguage(
     latestCustomerMessage,
     plan.language || caseState.language,
@@ -444,6 +452,7 @@ export async function runDraftV2Pipeline(
     actionProposals: finalProposals,
     policyContext,
     model: writerModelOverride,
+    attachments: imageAttachments,
   });
 
   let languageCheckedWritten = written;
@@ -469,6 +478,7 @@ export async function runDraftV2Pipeline(
         actionProposals: finalProposals,
         policyContext,
         model: writerModelOverride,
+        attachments: imageAttachments,
         languageCorrectionInstruction:
           `Rewrite the full draft in ${replyLanguage} only. Preserve the same facts, meaning, asks, and next steps. Do not add new information. Remove or translate these foreign-language segments: ${
             initialLanguageCheck.foreignSegments.join(" | ")
@@ -540,6 +550,7 @@ export async function runDraftV2Pipeline(
         actionProposals: finalProposals,
         policyContext,
         model: escalationModel,
+        attachments: imageAttachments,
       });
 
       if (strongWritten.draft_text) {
@@ -581,6 +592,93 @@ export async function runDraftV2Pipeline(
     console.warn(
       `[generate-draft-v2] verifier blocked send — confidence: ${finalConfidence}`,
     );
+  }
+
+  // Persist til DB (kun i normal mode — ikke eval mode)
+  if (!eval_payload && thread_id && finalDraft) {
+    const ownerUserId = (shop as Record<string, unknown>).owner_user_id as string | null ?? null;
+    const nowIso = new Date().toISOString();
+
+    // 1. Gem draft tekst på den seneste inbound besked → composeren viser den
+    const latestInbound = messages
+      .filter((m) => !(m as Record<string, unknown>).from_me)
+      .at(-1) as Record<string, unknown> | undefined;
+
+    if (latestInbound?.id) {
+      supabase
+        .from("mail_messages")
+        .update({ ai_draft_text: finalDraft, updated_at: nowIso })
+        .eq("id", latestInbound.id as string)
+        .then(({ error }) => {
+          if (error) console.warn("[pipeline] ai_draft_text update failed:", error.message);
+        });
+    }
+
+    // 2. Gem proposed actions i thread_actions → action cards i inbox
+    if (finalProposals.length > 0) {
+      const order = facts.order;
+
+      // Superseder eksisterende pending actions for denne tråd
+      // før vi indsætter nye — undgår duplikater
+      await supabase
+        .from("thread_actions")
+        .update({ status: "superseded", updated_at: nowIso })
+        .eq("thread_id", thread_id)
+        .eq("status", "pending")
+        .then(({ error }) => {
+          if (error) console.warn("[pipeline] thread_actions supersede failed:", error.message);
+        });
+
+      for (const proposal of finalProposals) {
+        const status = isTestMode ? "approved_test_mode" : "pending";
+
+        const { error: insertError } = await supabase
+          .from("thread_actions")
+          .insert({
+            workspace_id: workspaceId,
+            user_id: ownerUserId ?? null,
+            thread_id,
+            action_type: proposal.type,
+            action_key: `${proposal.type}_${thread_id}_${nowIso}`,
+            status,
+            detail: proposal.reason,
+            payload: { ...proposal.params, _confidence: proposal.confidence },
+            order_id: order?.id ? String(order.id) : null,
+            order_number: order?.name ?? null,
+            source: "automation",
+            created_at: nowIso,
+            updated_at: nowIso,
+          });
+        if (insertError) console.warn("[pipeline] thread_actions insert failed:", insertError.message);
+      }
+    }
+
+    // 3. Log draft i drafts tabel → edit-distance tracking
+    // Superseder eksisterende pending drafts for denne tråd, indsætter ny
+    if (workspaceId && shop_id) {
+      supabase
+        .from("drafts")
+        .update({ status: "superseded" })
+        .eq("thread_id", thread_id)
+        .eq("workspace_id", workspaceId)
+        .eq("status", "pending")
+        .then(() => {
+          supabase
+            .from("drafts")
+            .insert({
+              shop_id,
+              workspace_id: workspaceId,
+              thread_id,
+              platform: "smtp",
+              status: "pending",
+              ai_draft_text: finalDraft,
+              created_at: nowIso,
+            })
+            .then(({ error }) => {
+              if (error) console.warn("[pipeline] drafts insert failed:", error.message);
+            });
+        });
+    }
   }
 
   return {

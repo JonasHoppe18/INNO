@@ -10,6 +10,7 @@ import {
   isVariantConflictingSource,
   resolveSalutationName,
 } from "./customer-context.ts";
+import { InlineImageAttachment } from "./attachment-loader.ts";
 
 export interface WriterResult {
   draft_text: string;
@@ -35,6 +36,7 @@ export interface WriterInput {
   policyContext?: PolicyContextInput;
   model?: string;
   languageCorrectionInstruction?: string;
+  attachments?: InlineImageAttachment[];
 }
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
@@ -445,6 +447,7 @@ export async function runWriter(
     policyContext,
     model,
     languageCorrectionInstruction,
+    attachments = [],
   }: WriterInput,
 ): Promise<WriterResult> {
   const resolvedModel = model ?? Deno.env.get("OPENAI_MODEL") ?? "gpt-5-mini";
@@ -593,15 +596,16 @@ ${c.content.slice(0, 1200)}`,
     caseState.pending_asks.length > 0;
 
   const systemPrompt = `Du er en erfaren support-medarbejder for ${shopName}.
-${
-    persona
-      ? `\nBUTIKKENS EGNE INSTRUKTIONER (følg disse præcist):\n${persona}\n`
-      : ""
-  }
-SPROG (KRITISK): Svar på ${replyLanguage} (${langName}). Dette er udledt fra kundens seneste rigtige besked og har højere prioritet end persona, vidensbase, tidligere tråd, landekode, formularlabels og eksempler. Hilsen, brødtekst og afslutning skal alle være på samme sprog. Bland aldrig sprog.
+
+SPROG (KRITISK — overtager alle andre instruktioner): Svar UDELUKKENDE på ${replyLanguage} (${langName}). Udledt fra kundens seneste besked — ingen persona, ingen vidensbase, ingen eksempler må ændre dette. Hilsen, brødtekst og afslutning skal alle være på nøjagtigt samme sprog. Bland aldrig sprog.
 ${
     languageCorrectionInstruction
       ? `\nSPROG-CORRECTION MODE (KRITISK): ${languageCorrectionInstruction}\n`
+      : ""
+  }
+${
+    persona
+      ? `\nBUTIKKENS EGNE INSTRUKTIONER (følg disse præcist, men aldrig på bekostning af sprogrestriktionen ovenfor):\n${persona}\n`
       : ""
   }
 
@@ -765,6 +769,34 @@ Returner JSON:
 
   try {
     const useResponsesApi = shouldUseResponsesApi(resolvedModel);
+    const hasImages = attachments.length > 0;
+
+    // Build user content — multi-modal when images are present
+    const chatUserContent = hasImages
+      ? [
+          { type: "text", text: userContent },
+          ...attachments.map((img) => ({
+            type: "image_url",
+            image_url: { url: img.dataUrl, detail: "auto" },
+          })),
+        ]
+      : userContent;
+
+    const responsesInput = hasImages
+      ? [
+          {
+            role: "user",
+            content: [
+              { type: "input_text", text: userContent },
+              ...attachments.map((img) => ({
+                type: "input_image",
+                image_url: img.dataUrl,
+              })),
+            ],
+          },
+        ]
+      : userContent;
+
     const resp = await fetch(
       useResponsesApi ? OPENAI_RESPONSES_API_URL : OPENAI_API_URL,
       {
@@ -778,7 +810,7 @@ Returner JSON:
             ? {
               model: resolvedModel,
               instructions: systemPrompt,
-              input: userContent,
+              input: responsesInput,
               reasoning: { effort: "minimal" },
               max_output_tokens: 1800,
               store: false,
@@ -798,7 +830,7 @@ Returner JSON:
               response_format: { type: "json_object" },
               messages: [
                 { role: "system", content: systemPrompt },
-                { role: "user", content: userContent },
+                { role: "user", content: chatUserContent },
               ],
             },
         ),

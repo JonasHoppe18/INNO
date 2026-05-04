@@ -27,13 +27,13 @@ export interface VerifierInput {
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 
 const FALLBACK_RESULT: VerifierResult = {
-  grounded_claims_pct: 0.7,
+  grounded_claims_pct: 0,
   contradictions: [],
   policy_violations: [],
-  confidence: 0.7,
+  confidence: 0,
   block_send: false,
-  retry_with_stronger_model: false,
-  issues: [],
+  retry_with_stronger_model: true,
+  issues: ["verifier_api_error"],
 };
 
 export async function runVerifier(
