@@ -1226,7 +1226,7 @@ async function triggerDraftForInbound(params: {
   headers: PostmarkHeader[];
 }) {
   if (!PROJECT_URL) throw new Error("PROJECT_URL mangler");
-  const endpoint = `${PROJECT_URL.replace(/\/$/, "")}/functions/v1/generate-draft-unified`;
+  const endpoint = `${PROJECT_URL.replace(/\/$/, "")}/functions/v1/generate-draft-v2`;
   const res = await fetch(endpoint, {
     method: "POST",
     headers: {
@@ -1236,25 +1236,13 @@ async function triggerDraftForInbound(params: {
     },
     body: JSON.stringify({
       shop_id: params.shopId,
-      provider: "smtp",
-      access_token: "",
-      email_data: {
-        messageId: params.messageId,
-        threadId: params.threadId,
-        subject: params.subject,
-        from: params.fromName && params.fromEmail ? `${params.fromName} <${params.fromEmail}>` : params.fromRaw,
-        fromEmail: params.fromEmail ?? "",
-        body: params.body,
-        headers: params.headers.map((header) => ({
-          name: header?.Name ?? "",
-          value: header?.Value ?? "",
-        })),
-      },
+      thread_id: params.threadId,
+      message_id: params.messageId,
     }),
   });
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(`generate-draft-unified fejlede ${res.status}: ${text}`);
+    throw new Error(`generate-draft-v2 fejlede ${res.status}: ${text}`);
   }
   return text ? JSON.parse(text) : null;
 }

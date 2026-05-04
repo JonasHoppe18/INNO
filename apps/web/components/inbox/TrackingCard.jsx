@@ -123,7 +123,8 @@ export function TrackingCard({ order = null, threadId = null }) {
   const trackingNumber = String(tracking?.number || "").trim();
   const trackingUrl = String(tracking?.url || "").trim();
   const carrier = getCarrierLabel(tracking?.company);
-  const orderLabel = String(order?.id || "").trim();
+  // Prefer display number (#4229) over internal Shopify ID
+  const orderLabel = String(order?.name || order?.orderNumber || order?.order_number || order?.id || "").trim().replace(/^#/, "");
 
   // Build timeline: prefer live snapshot events, fall back to stored logs
   const timeline = useMemo(() => {

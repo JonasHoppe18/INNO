@@ -24,6 +24,9 @@ const APPROVAL_ACTION_TYPES = new Set([
   "create_return_case",
   "send_return_instructions",
   "initiate_return",
+  "add_note",
+  "add_tag",
+  "add_internal_note_or_tag",
 ]);
 
 const TRACKING_KEYWORD_PATTERN =
@@ -282,13 +285,15 @@ export function TicketDetail({
       selectedOrderSummary?.tracking?.number || selectedOrderSummary?.tracking?.url
     );
     if (!hasTrackingData) return false;
-    // Never show tracking card for return/exchange tickets — the order tracking is not relevant
+    // Never show when an action card is pending — avoids visual clutter
+    if (shouldShowActionCard) return false;
+    // Never show for return/exchange/complaint tickets — tracking is not the focus
     const classKey = String(thread?.classification_key || "").toLowerCase();
-    const isReturnOrExchange = classKey === "return" || classKey === "exchange";
+    const isReturnOrExchange = classKey === "return" || classKey === "exchange" || classKey === "complaint";
     const tags = Array.isArray(thread?.tags) ? thread.tags : [];
     const hasReturnTag = tags.some((t) => /^return/i.test(String(t || "")));
     if (isReturnOrExchange || hasReturnTag) return false;
-    // Show for all tracking-categorised threads, or when the message looks like a tracking question
+    // Show only for explicitly tracking-tagged threads or clear tracking questions
     const threadIsTracking = tags.includes("Tracking");
     return threadIsTracking || messageLooksLikeTrackingQuestion(latestInboundCustomerMessage);
   }, [
@@ -297,6 +302,7 @@ export function TicketDetail({
     latestInboundCustomerMessage,
     selectedOrderSummary?.tracking?.number,
     selectedOrderSummary?.tracking?.url,
+    shouldShowActionCard,
   ]);
   const selectedCustomerEmail = String(customerLookup?.customer?.email || "").trim();
   let actionCardInserted = false;

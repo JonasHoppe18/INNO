@@ -221,6 +221,10 @@ function getImpactSummaryLines({ actionType = "", payload = {}, orderDisplayNumb
     lines.push("Shipping method on the order will be changed.");
   } else if (normalizedAction === "update_customer_contact") {
     lines.push("Customer contact details will be updated.");
+  } else if (normalizedAction === "add_note" || normalizedAction === "add_internal_note_or_tag") {
+    lines.push("An internal note will be added to the Shopify order.");
+  } else if (normalizedAction === "add_tag") {
+    lines.push("An internal tag will be added to the Shopify order.");
   } else {
     const fallbackDetail = String(detail || "").trim();
     lines.push(fallbackDetail || "This action will apply the requested change.");
@@ -337,8 +341,14 @@ export function ActionCard({
     [actionType, status, testMode]
   );
   const normalizedAction = String(actionType || "").trim().toLowerCase();
-  const resolvedOrderNumber =
-    String(orderSummary?.id || orderSummary?.orderNumber || fallbackOrderNumber || "").trim();
+  // Prefer display name (#4229) over internal ID — name/orderNumber before id
+  const resolvedOrderNumber = String(
+    orderSummary?.name ||
+    orderSummary?.orderNumber ||
+    orderSummary?.order_number ||
+    fallbackOrderNumber ||
+    ""
+  ).replace(/^#/, "").trim();
   const hasResolvedOrderNumber = Boolean(resolvedOrderNumber);
   const orderTitle = hasResolvedOrderNumber ? `Order #${resolvedOrderNumber}` : "";
   const orderDisplayNumber = getOrderDisplayNumber(orderSummary);

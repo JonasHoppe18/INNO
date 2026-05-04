@@ -1,5 +1,6 @@
 // supabase/functions/generate-draft-v2/stages/planner.ts
 import { CaseState } from "./case-state-updater.ts";
+import { resolveReplyLanguage } from "./language.ts";
 
 export interface Plan {
   primary_intent: string;
@@ -48,7 +49,15 @@ Schema:
 }
 
 Rules:
-- primary_intent: classify ONLY by the content of the CURRENT customer message. Ignore previous open_questions and thread history for intent classification.
+- SHORT CONFIRMATION DETECTION (check this FIRST before classifying intent):
+  If the current message is ≤60 characters AND is a simple confirmation or acknowledgement (e.g. "ja", "yes", "ok", "jep", "det er korrekt", "ja tak", "confirmed", "sounds good", "præcist", "det passer", "ja det er de", "perfekt", or any short affirmative in any language) — this is a CONFIRMATION RESPONSE to the previous agent question.
+  For confirmation messages:
+  - primary_intent: use the thread's most relevant open issue from pending_asks/open_questions (NOT the confirmation word itself). E.g. if pending was "address confirmation for cable replacement" → intent = "complaint" or "exchange"
+  - sub_queries: generate based on what should happen NEXT after this confirmation. E.g. address confirmed → ["send spare part customer confirmed address", "cable replacement shipment procedure", "how to ship spare part to customer"]
+  - required_facts: always ["order_state"] — we need the order to proceed
+  - skills_to_consider: what the confirmation enables — e.g. address confirmed → ["create_exchange_request", "add_note"]
+
+- primary_intent (for non-confirmation messages): classify ONLY by the content of the CURRENT customer message.
   - Message is ONLY expressing gratitude ("thanks", "thank you", "appreciate", "tak", "mange tak", "gracias", "merci", "danke", any variant) → ALWAYS "thanks". Do NOT look at order numbers or prior context. A pure thank-you is ALWAYS "thanks".
   - Customer asks to change address → address_change (even if order is already shipped/delivered)
   - Customer asks about missing item → complaint (e.g. "jeg modtog kun 1 i stedet for 2")
@@ -64,6 +73,7 @@ Rules:
   - Query 2: ALWAYS in English — operational/product angle (e.g. "[product] charging cable replacement", "[product] defect production warranty", "[product] return policy"). This ensures English knowledge base content is found regardless of customer language.
   - Query 3 (optional): Procedure angle in English (e.g. "how to handle [issue]", "spare parts [product]")
   - CRITICAL for physical damage/defect: always include a query about the specific product + "defect" or "production issue" or "warranty replacement"
+  - CRITICAL for technical symptoms: sub_queries must describe the SYMPTOM precisely, not generic keywords. "headset turns off unexpectedly after charging" not "dongle disconnected". "battery drains in 8 hours instead of 35" not "battery problem". Precise symptom queries surface the right troubleshooting content and avoid retrieving unrelated procedures like pairing guides.
 - required_facts: only what's needed — order_state | tracking | return_eligibility | policy_excerpt | product_specs
   - For refund, return, exchange, complaint about a purchased product, cancel, address_change, or tracking: include order_state so the system can look up the customer's order by email/order number
   - NEVER include return_eligibility for: complaint, exchange, missing items, wrong items, defective items — return windows NEVER apply to shop errors
@@ -71,7 +81,7 @@ Rules:
   - For "thanks" intent: sub_queries MUST be empty [] — no knowledge retrieval needed
 - skills_to_consider: only actions relevant to intent — get_order | get_tracking | update_shipping_address | cancel_order | refund_order | create_exchange_request
   - For "thanks" intent: skills_to_consider MUST be empty []
-- language: ISO 639-1 code`;
+- language: ISO 639-1 code. Supported: da, en, sv, de, fr, nl, no, fi, es, it`;
 
   const threadContextLines = [
     `- Order numbers in thread: ${
@@ -100,6 +110,7 @@ Current customer message: "${body.slice(0, 800)}"
 Thread context (for sub_queries and facts ONLY — do NOT use for intent classification):
 ${threadContextLines}
 - Detected language of current message: detect from the current message above, ignore thread history language`;
+  const deterministicLanguage = resolveReplyLanguage(body, caseState.language);
 
   try {
     const resp = await fetch(OPENAI_API_URL, {
@@ -109,7 +120,7 @@ ${threadContextLines}
         "Authorization": `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
       },
       body: JSON.stringify({
-        model: Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini",
+        model: Deno.env.get("OPENAI_MODEL") ?? "gpt-5-mini",
         temperature: 0,
         max_tokens: 300,
         response_format: { type: "json_object" },
@@ -123,9 +134,9 @@ ${threadContextLines}
     if (!resp.ok) throw new Error(`Planner API error: ${resp.status}`);
     const data = await resp.json();
     const parsed = JSON.parse(data.choices[0].message.content);
-    return { ...parsed, language: parsed.language ?? caseState.language };
+    return { ...parsed, language: deterministicLanguage || parsed.language };
   } catch (err) {
     console.error("[planner] Error:", err);
-    return FALLBACK_PLAN(caseState.language);
+    return FALLBACK_PLAN(deterministicLanguage || caseState.language);
   }
 }

@@ -11,7 +11,9 @@ export interface GateResult {
   reason: string;
 }
 
-export async function runGate({ latestMessage }: GateInput): Promise<GateResult> {
+export async function runGate(
+  { latestMessage }: GateInput,
+): Promise<GateResult> {
   const msg = latestMessage as {
     clean_body_text?: string;
     body_text?: string;
@@ -26,8 +28,7 @@ export async function runGate({ latestMessage }: GateInput): Promise<GateResult>
 
   // Skip auto-replies / delivery failures
   const lowerBody = body.toLowerCase();
-  const isAutoReply =
-    lowerBody.includes("mailer-daemon") ||
+  const isAutoReply = lowerBody.includes("mailer-daemon") ||
     lowerBody.includes("delivery status notification") ||
     lowerBody.includes("auto-reply") ||
     lowerBody.includes("out of office") ||

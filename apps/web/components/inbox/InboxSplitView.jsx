@@ -45,7 +45,17 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ArrowUpRight, Bell, CheckCircle, CheckCircle2, ChevronDown, Inbox, Plus, User, X } from "lucide-react";
+import {
+  ArrowUpRight,
+  Bell,
+  CheckCircle,
+  CheckCircle2,
+  ChevronDown,
+  Inbox,
+  Plus,
+  User,
+  X,
+} from "lucide-react";
 
 const DEFAULT_TICKET_STATE = {
   status: "New",
@@ -81,7 +91,10 @@ const UUID_REGEX =
 const isUuid = (value) => typeof value === "string" && UUID_REGEX.test(value);
 
 const getAssigneeLabel = (profile, fallbackValue) => {
-  const fullName = [profile?.first_name, profile?.last_name].filter(Boolean).join(" ").trim();
+  const fullName = [profile?.first_name, profile?.last_name]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
   if (fullName) return fullName;
   if (profile?.email) return profile.email;
   return String(fallbackValue || "Unknown user");
@@ -135,9 +148,10 @@ function FirstTagPill({ threadId, refreshTrigger }) {
   );
 }
 
-
 const extractSenderFromThreadSnippet = (thread) => {
-  const snippet = String(thread?.snippet || "").replace(/\s+/g, " ").trim();
+  const snippet = String(thread?.snippet || "")
+    .replace(/\s+/g, " ")
+    .trim();
   if (!snippet) return "";
 
   const looksInternal = (value = "") => {
@@ -151,10 +165,10 @@ const extractSenderFromThreadSnippet = (thread) => {
   };
 
   const fromHeaderMatch = snippet.match(
-    /(?:^|\s)From\s*:\s*([^<,\n]+?)\s*(?:<([^>]+)>)?(?=\s+(?:Sent|To|Subject)\s*:|$)/i
+    /(?:^|\s)From\s*:\s*([^<,\n]+?)\s*(?:<([^>]+)>)?(?=\s+(?:Sent|To|Subject)\s*:|$)/i,
   );
   const toHeaderMatch = snippet.match(
-    /(?:^|\s)To\s*:\s*([^<,\n]+?)\s*(?:<([^>]+)>)?(?=\s+(?:From|Sent|Subject)\s*:|$)/i
+    /(?:^|\s)To\s*:\s*([^<,\n]+?)\s*(?:<([^>]+)>)?(?=\s+(?:From|Sent|Subject)\s*:|$)/i,
   );
 
   const fromName = String(fromHeaderMatch?.[1] || "").trim();
@@ -170,7 +184,7 @@ const extractSenderFromThreadSnippet = (thread) => {
   }
 
   const nameMatch = snippet.match(
-    /(?:^|\s)(?:Name|Navn)\s*:\s*([^,:;|]+?)(?=\s+(?:Email|E-mail)\s*:|$)/i
+    /(?:^|\s)(?:Name|Navn)\s*:\s*([^,:;|]+?)(?=\s+(?:Email|E-mail)\s*:|$)/i,
   );
   if (nameMatch?.[1]) {
     const name = String(nameMatch[1]).trim();
@@ -205,12 +219,12 @@ function InboxHeaderActions({
     () => [
       { value: "__all__", label: "All tickets", icon: Inbox },
       { value: "__notifications__", label: "Notifications", icon: Bell },
-      ...((inboxOptions || []).map((option) => ({
+      ...(inboxOptions || []).map((option) => ({
         ...option,
         icon: Inbox,
-      }))),
+      })),
     ],
-    [inboxOptions]
+    [inboxOptions],
   );
   const selectedDestinationValue = useMemo(() => {
     if (selectedInboxBucket === "notification") return "__notifications__";
@@ -218,22 +232,31 @@ function InboxHeaderActions({
     return selectedInboxSlug;
   }, [selectedInboxBucket, selectedInboxSlug]);
   const filteredInboxOptions = useMemo(() => {
-    const query = String(inboxFilter || "").trim().toLowerCase();
+    const query = String(inboxFilter || "")
+      .trim()
+      .toLowerCase();
     if (!query) return destinationOptions;
     return destinationOptions.filter((option) =>
-      String(option?.label || "").toLowerCase().includes(query)
+      String(option?.label || "")
+        .toLowerCase()
+        .includes(query),
     );
   }, [destinationOptions, inboxFilter]);
   const selectedInboxLabel = useMemo(() => {
-    if (selectedDestinationValue === "__notifications__") return "Notifications";
+    if (selectedDestinationValue === "__notifications__")
+      return "Notifications";
     if (!selectedInboxSlug) return null;
     const hit = (inboxOptions || []).find(
-      (option) => String(option?.value || "").trim() === String(selectedInboxSlug || "").trim()
+      (option) =>
+        String(option?.value || "").trim() ===
+        String(selectedInboxSlug || "").trim(),
     );
     return String(hit?.label || selectedInboxSlug).trim() || null;
   }, [inboxOptions, selectedDestinationValue, selectedInboxSlug]);
   const normalizedSenderRuleEmail = useMemo(() => {
-    const value = String(senderRuleSourceEmail || "").trim().toLowerCase();
+    const value = String(senderRuleSourceEmail || "")
+      .trim()
+      .toLowerCase();
     if (!value) return "";
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? value : "";
   }, [senderRuleSourceEmail]);
@@ -248,8 +271,7 @@ function InboxHeaderActions({
   const statusLabel =
     ticketState.status === "Solved" ? "Resolved" : ticketState.status;
   const statusStyles =
-    statusStylesByStatus[ticketState.status] ||
-    statusStylesByStatus.Open;
+    statusStylesByStatus[ticketState.status] || statusStylesByStatus.Open;
   return (
     <div className="flex items-center gap-2">
       <Select
@@ -350,7 +372,9 @@ function InboxHeaderActions({
                     type="button"
                     onClick={() => {
                       const ruleEmail = normalizedSenderRuleEmail;
-                      const shouldApplySenderRule = Boolean(applySenderRule && ruleEmail);
+                      const shouldApplySenderRule = Boolean(
+                        applySenderRule && ruleEmail,
+                      );
                       if (option.value === "__all__") {
                         onInboxChange?.({
                           inboxSlug: null,
@@ -388,19 +412,25 @@ function InboxHeaderActions({
                 );
               })}
               {!filteredInboxOptions.length ? (
-                <p className="px-3 py-2 text-sm text-muted-foreground">No inboxes found.</p>
+                <p className="px-3 py-2 text-sm text-muted-foreground">
+                  No inboxes found.
+                </p>
               ) : null}
             </div>
             {normalizedSenderRuleEmail ? (
               <label className="flex cursor-pointer items-start gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-700">
                 <Checkbox
                   checked={applySenderRule}
-                  onCheckedChange={(checked) => setApplySenderRule(Boolean(checked))}
+                  onCheckedChange={(checked) =>
+                    setApplySenderRule(Boolean(checked))
+                  }
                   className="mt-0.5"
                 />
                 <span>
                   Apply this destination for all future emails from{" "}
-                  <span className="font-medium">{normalizedSenderRuleEmail}</span>
+                  <span className="font-medium">
+                    {normalizedSenderRuleEmail}
+                  </span>
                 </span>
               </label>
             ) : null}
@@ -428,7 +458,9 @@ function WorkspaceTabsRow({
           : "border-b border-border bg-background"
       }
     >
-      {inline ? <div className="absolute inset-y-0 left-0 z-10 w-2 bg-background" /> : null}
+      {inline ? (
+        <div className="absolute inset-y-0 left-0 z-10 w-2 bg-background" />
+      ) : null}
       <div
         className={
           inline
@@ -440,7 +472,8 @@ function WorkspaceTabsRow({
           const threadId = String(thread?.id || "").trim();
           if (!threadId) return null;
           const isActive = threadId === activeThreadId;
-          const subject = String(thread?.subject || "").trim() || "Untitled ticket";
+          const subject =
+            String(thread?.subject || "").trim() || "Untitled ticket";
           const unreadCount = Number(unreadByThread?.[threadId] || 0);
           return (
             <div
@@ -451,8 +484,8 @@ function WorkspaceTabsRow({
                     ? "-mb-px ml-2 rounded-t-[12px] rounded-b-none bg-background text-foreground"
                     : "rounded-t-[12px] rounded-b-none bg-muted/70 text-muted-foreground hover:bg-muted hover:text-foreground"
                   : isActive
-                  ? "-mb-px rounded-t-lg rounded-b-none border border-border border-b-0 bg-background text-foreground shadow-sm"
-                  : "rounded-t-lg rounded-b-none border border-border bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground"
+                    ? "-mb-px rounded-t-lg rounded-b-none border border-border border-b-0 bg-background text-foreground shadow-sm"
+                    : "rounded-t-lg rounded-b-none border border-border bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground"
               }`}
             >
               {isActive ? (
@@ -465,7 +498,9 @@ function WorkspaceTabsRow({
                 onClick={() => onSelectTab?.(threadId)}
                 className="flex min-w-0 flex-1 items-center gap-2 text-left"
               >
-                {unreadCount > 0 ? <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-500" /> : null}
+                {unreadCount > 0 ? (
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-500" />
+                ) : null}
                 <div className="min-w-0 pr-1">
                   <span className="block min-w-0 truncate text-[12px] font-semibold leading-[16px]">
                     {subject}
@@ -510,7 +545,7 @@ const extractOrderNumber = (value = "") => {
   if (!value) return null;
   const text = normalizeLookupText(value);
   const explicitMatch = text.match(
-    /\b(?:ordre|ordrenummer|order)\s*(?:nr\.?|number|no\.?)?\s*#?\s*(\d{3,})\b/i
+    /\b(?:ordre|ordrenummer|order)\s*(?:nr\.?|number|no\.?)?\s*#?\s*(\d{3,})\b/i,
   );
   if (explicitMatch?.[1]) return explicitMatch[1];
   const compactMatch = text.match(/\b(?:order|ordre)\s*#(\d{3,})\b/i);
@@ -547,7 +582,9 @@ const MOCK_ACTIONS = [
 ];
 
 const stripThreadSuffix = (value) =>
-  String(value || "").replace(/\s*\|thread_id:[a-z0-9-]+\s*/i, "").trim();
+  String(value || "")
+    .replace(/\s*\|thread_id:[a-z0-9-]+\s*/i, "")
+    .trim();
 
 const asString = (value) => (typeof value === "string" ? value.trim() : "");
 const isInternalNoteMessage = (message) =>
@@ -571,9 +608,17 @@ const parsePendingLogDetail = (value) => {
         asString(parsed?.reason) ||
         asString(parsed?.status);
       const actionType = asString(parsed?.actionType || parsed?.action) || null;
-      const payload = parsed?.payload && typeof parsed.payload === "object" ? parsed.payload : {};
+      const payload =
+        parsed?.payload && typeof parsed.payload === "object"
+          ? parsed.payload
+          : {};
       const threadId = asString(parsed?.thread_id || parsed?.threadId) || null;
-      return { detail: stripThreadSuffix(detail), actionType, payload, threadId };
+      return {
+        detail: stripThreadSuffix(detail),
+        actionType,
+        payload,
+        threadId,
+      };
     } catch {
       return { detail: raw, actionType: null, payload: {}, threadId: null };
     }
@@ -582,7 +627,11 @@ const parsePendingLogDetail = (value) => {
 };
 
 const isApprovalManagedActionType = (value = "") =>
-  APPROVAL_ACTION_TYPES.has(String(value || "").trim().toLowerCase());
+  APPROVAL_ACTION_TYPES.has(
+    String(value || "")
+      .trim()
+      .toLowerCase(),
+  );
 
 const isOrderUpdateAction = (log) => {
   const stepName = String(log?.step_name || "").toLowerCase();
@@ -599,8 +648,16 @@ const isOrderUpdateAction = (log) => {
 
   if (stepName.includes("shopify_action_applied")) return false;
   if (stepName.includes("shopify_action_failed")) return approvalSignals;
-  if (stepName.includes("shopify_action") || stepName.includes("shopify action")) {
-    if (status === "warning" || status === "pending" || status === "awaiting_approval") return true;
+  if (
+    stepName.includes("shopify_action") ||
+    stepName.includes("shopify action")
+  ) {
+    if (
+      status === "warning" ||
+      status === "pending" ||
+      status === "awaiting_approval"
+    )
+      return true;
     if (parsed.actionType) return true;
     if (parsed.payload && Object.keys(parsed.payload).length) return true;
     return approvalSignals;
@@ -628,7 +685,11 @@ const getDecisionFromLog = (log) => {
 
 const getDecisionFromActionStatus = (status = "") => {
   const normalized = String(status || "").toLowerCase();
-  if (normalized === "applied" || normalized === "approved" || normalized === "approved_test_mode") {
+  if (
+    normalized === "applied" ||
+    normalized === "approved" ||
+    normalized === "approved_test_mode"
+  ) {
     return "accepted";
   }
   if (normalized === "declined" || normalized === "denied") return "denied";
@@ -695,11 +756,17 @@ const includesAddressPart = (base = "", part = "") => {
   return normalizedBase.includes(normalizedPart);
 };
 
-const enrichAddressWithOrderContext = (candidate = "", shippingAddress = null) => {
+const enrichAddressWithOrderContext = (
+  candidate = "",
+  shippingAddress = null,
+) => {
   const base = String(candidate || "").trim();
   if (!base || !shippingAddress) return base;
 
-  const zipCity = [shippingAddress?.zip, shippingAddress?.city].filter(Boolean).join(" ").trim();
+  const zipCity = [shippingAddress?.zip, shippingAddress?.city]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
   const country = String(shippingAddress?.country || "").trim();
   const suffix = [];
   if (zipCity && !includesAddressPart(base, zipCity)) {
@@ -742,7 +809,9 @@ const formatPendingOrderUpdateDetail = ({
       typeof payload?.amount === "number"
         ? payload.amount
         : Number.parseFloat(String(payload?.amount || ""));
-    const currency = String(payload?.currency || payload?.currency_code || "").trim();
+    const currency = String(
+      payload?.currency || payload?.currency_code || "",
+    ).trim();
     if (Number.isFinite(amount)) {
       return `Sona wants to refund ${amount.toFixed(2)}${currency ? ` ${currency}` : ""}.`;
     }
@@ -755,20 +824,31 @@ const formatPendingOrderUpdateDetail = ({
     return base || "Sona wants to process the created return in Shopify.";
   }
   if (action === "change_shipping_method") {
-    const title = String(payload?.title || payload?.shipping_title || "").trim();
+    const title = String(
+      payload?.title || payload?.shipping_title || "",
+    ).trim();
     return title
       ? `Sona wants to change shipping method to: ${title}.`
       : base || "Sona wants to change the shipping method.";
   }
   if (action === "hold_or_release_fulfillment") {
-    const mode = String(payload?.mode || payload?.operation || "").toLowerCase();
+    const mode = String(
+      payload?.mode || payload?.operation || "",
+    ).toLowerCase();
     return mode === "release"
       ? "Sona wants to release fulfillment hold on this order."
       : base || "Sona wants to put this order on fulfillment hold.";
   }
   if (action === "edit_line_items") {
-    const summary = String(payload?.edit_summary || payload?.summary || payload?.requested_changes || "").trim();
-    return summary ? `Sona wants to edit line items: ${summary}` : base || "Sona wants to edit line items on this order.";
+    const summary = String(
+      payload?.edit_summary ||
+        payload?.summary ||
+        payload?.requested_changes ||
+        "",
+    ).trim();
+    return summary
+      ? `Sona wants to edit line items: ${summary}`
+      : base || "Sona wants to edit line items on this order.";
   }
   if (action === "update_customer_contact") {
     const email = String(payload?.email || "").trim();
@@ -789,11 +869,15 @@ const formatPendingOrderUpdateDetail = ({
   }
   if (action === "add_tag") {
     const tag = String(payload?.tag || "").trim();
-    return tag ? `Sona wants to add the tag: ${tag}.` : base || "Sona wants to add an internal tag.";
+    return tag
+      ? `Sona wants to add the tag: ${tag}.`
+      : base || "Sona wants to add an internal tag.";
   }
   if (action === "add_note" || action === "add_internal_note_or_tag") {
     const note = String(payload?.note || "").trim();
-    return note ? `Sona wants to add an internal note: ${note}` : base || "Sona wants to add an internal note.";
+    return note
+      ? `Sona wants to add an internal note: ${note}`
+      : base || "Sona wants to add an internal note.";
   }
 
   if (!base) return "Sona wants to apply an order update for this customer.";
@@ -817,11 +901,18 @@ const formatPendingOrderUpdateDetail = ({
     const candidate =
       extractAddressCandidate(stripHtml(draftText)) ||
       extractAddressCandidate(stripHtml(aiDraftText)) ||
-      outboundBodies.map((text) => extractAddressCandidate(text)).find(Boolean) ||
-      inboundBodies.map((text) => extractAddressCandidate(text)).find(Boolean) ||
+      outboundBodies
+        .map((text) => extractAddressCandidate(text))
+        .find(Boolean) ||
+      inboundBodies
+        .map((text) => extractAddressCandidate(text))
+        .find(Boolean) ||
       "";
     if (candidate) {
-      const enriched = enrichAddressWithOrderContext(candidate, orderShippingAddress);
+      const enriched = enrichAddressWithOrderContext(
+        candidate,
+        orderShippingAddress,
+      );
       return `Sona wants to update shipping address to: ${enriched}`;
     }
   }
@@ -832,7 +923,11 @@ const formatPendingOrderUpdateDetail = ({
   return "Sona wants to update the shipping address for this order.";
 };
 
-export function InboxSplitView({ messages = [], threads = [], attachments = [] }) {
+export function InboxSplitView({
+  messages = [],
+  threads = [],
+  attachments = [],
+}) {
   const DRAFT_WAIT_TIMEOUT_MS = 12_000;
   const TAB_STATE_STORAGE_PREFIX = "inbox-open-tabs";
   const [liveThreads, setLiveThreads] = useState(threads || []);
@@ -846,7 +941,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const [draftLogIdByThread, setDraftLogIdByThread] = useState({});
   const [ticketStateByThread, setTicketStateByThread] = useState({});
   const [readOverrides, setReadOverrides] = useState({});
-  const [localSentMessagesByThread, setLocalSentMessagesByThread] = useState({});
+  const [localSentMessagesByThread, setLocalSentMessagesByThread] = useState(
+    {},
+  );
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [composerMode, setComposerMode] = useState("reply");
   const [draftValue, setDraftValue] = useState("");
@@ -856,20 +953,35 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const [, setSignatureByThread] = useState({});
   const [activeDraftId, setActiveDraftId] = useState(null);
   const [isSending, setIsSending] = useState(false);
-  const [suppressAutoDraftByThread, setSuppressAutoDraftByThread] = useState({});
+  const [suppressAutoDraftByThread, setSuppressAutoDraftByThread] = useState(
+    {},
+  );
   const [proposalOnlyByThread, setProposalOnlyByThread] = useState({});
   const [draftReady, setDraftReady] = useState(false);
-  const [draftWaitTimedOutByThread, setDraftWaitTimedOutByThread] = useState({});
-  const [systemDraftUneditedByThread, setSystemDraftUneditedByThread] = useState({});
-  const [manualDraftGeneratingByThread, setManualDraftGeneratingByThread] = useState({});
-  const [refineDraftLoadingByThread, setRefineDraftLoadingByThread] = useState({});
-  const [tagsRefreshTriggerByThread, setTagsRefreshTriggerByThread] = useState({});
+  const [draftWaitTimedOutByThread, setDraftWaitTimedOutByThread] = useState(
+    {},
+  );
+  const [systemDraftUneditedByThread, setSystemDraftUneditedByThread] =
+    useState({});
+  const [manualDraftGeneratingByThread, setManualDraftGeneratingByThread] =
+    useState({});
+  const [refineDraftLoadingByThread, setRefineDraftLoadingByThread] = useState(
+    {},
+  );
+  const [tagsRefreshTriggerByThread, setTagsRefreshTriggerByThread] = useState(
+    {},
+  );
   const [staleDraftByThread, setStaleDraftByThread] = useState({});
-  const [markReturnReceivedLoadingByThread, setMarkReturnReceivedLoadingByThread] = useState({});
-  const [refreshPendingActionByThread, setRefreshPendingActionByThread] = useState({});
+  const [
+    markReturnReceivedLoadingByThread,
+    setMarkReturnReceivedLoadingByThread,
+  ] = useState({});
+  const [refreshPendingActionByThread, setRefreshPendingActionByThread] =
+    useState({});
   // Shadow preview (v2 pipeline) — per thread
   // Shape: { [threadId]: { loading: boolean, draft_text: string|null, confidence: number, sources: [], proposed_actions: [], error: string|null } }
   const [v2PreviewByThread, setV2PreviewByThread] = useState({});
+  const [adoptedV2PreviewByThread, setAdoptedV2PreviewByThread] = useState({});
   const [insightsOpen, setInsightsOpen] = useState(false);
   const [translationModalOpen, setTranslationModalOpen] = useState(false);
   const [translationCache, setTranslationCache] = useState({});
@@ -877,10 +989,14 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const [draftLogId, setDraftLogId] = useState(null);
   const sendingStartedAtRef = useRef(0);
   const [deletingThread, setDeletingThread] = useState(false);
-  const [pendingOrderUpdateByThread, setPendingOrderUpdateByThread] = useState({});
+  const [pendingOrderUpdateByThread, setPendingOrderUpdateByThread] = useState(
+    {},
+  );
   const [returnCaseByThread, setReturnCaseByThread] = useState({});
-  const [orderUpdateDecisionByThread, setOrderUpdateDecisionByThread] = useState({});
-  const [orderUpdateSubmittingByThread, setOrderUpdateSubmittingByThread] = useState({});
+  const [orderUpdateDecisionByThread, setOrderUpdateDecisionByThread] =
+    useState({});
+  const [orderUpdateSubmittingByThread, setOrderUpdateSubmittingByThread] =
+    useState({});
   const [orderUpdateErrorByThread, setOrderUpdateErrorByThread] = useState({});
   const [workspaceMembers, setWorkspaceMembers] = useState([]);
   const [currentSupabaseUserId, setCurrentSupabaseUserId] = useState(null);
@@ -900,7 +1016,8 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const router = useRouter();
   const searchParams = useSearchParams();
   const { setTitleContent } = useSiteHeaderActions();
-  const currentUserName = [user?.firstName, user?.lastName].filter(Boolean).join(" ") || "You";
+  const currentUserName =
+    [user?.firstName, user?.lastName].filter(Boolean).join(" ") || "You";
   const {
     data: selectedThreadMessagesFromDb,
     attachments: selectedThreadAttachmentsFromDb,
@@ -908,16 +1025,22 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     refresh: refreshSelectedThreadMessages,
     fetchedThreadId: messagesFetchedForThreadId,
   } = useThreadMessages(selectedThreadId, {
-    enabled: Boolean(selectedThreadId) && !String(selectedThreadId || "").startsWith("local-new-ticket-"),
+    enabled:
+      Boolean(selectedThreadId) &&
+      !String(selectedThreadId || "").startsWith("local-new-ticket-"),
   });
-  const refreshSelectedThreadMessagesRef = useRef(refreshSelectedThreadMessages);
+  const refreshSelectedThreadMessagesRef = useRef(
+    refreshSelectedThreadMessages,
+  );
   useEffect(() => {
     refreshSelectedThreadMessagesRef.current = refreshSelectedThreadMessages;
   }, [refreshSelectedThreadMessages]);
   const activeView = searchParams?.get("view") || "";
   const requestedThreadId = String(searchParams?.get("thread") || "").trim();
   const tabStateStorageKey = useMemo(() => {
-    const viewerId = String(currentSupabaseUserId || user?.id || "anonymous").trim();
+    const viewerId = String(
+      currentSupabaseUserId || user?.id || "anonymous",
+    ).trim();
     return `${TAB_STATE_STORAGE_PREFIX}:${viewerId}`;
   }, [currentSupabaseUserId, user?.id]);
 
@@ -953,9 +1076,15 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         if (!response.ok || !active) return;
         const payload = await response.json().catch(() => null);
         if (!active) return;
-        const threadRows = Array.isArray(payload?.threads) ? payload.threads : [];
-        const messageRows = Array.isArray(payload?.messages) ? payload.messages : [];
-        const attachmentRows = Array.isArray(payload?.attachments) ? payload.attachments : [];
+        const threadRows = Array.isArray(payload?.threads)
+          ? payload.threads
+          : [];
+        const messageRows = Array.isArray(payload?.messages)
+          ? payload.messages
+          : [];
+        const attachmentRows = Array.isArray(payload?.attachments)
+          ? payload.attachments
+          : [];
         if (threadRows.length > 0) setLiveThreads(threadRows);
         if (messageRows.length > 0) setLiveMessages(messageRows);
         if (attachmentRows.length > 0) setLiveAttachments(attachmentRows);
@@ -1012,19 +1141,29 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       .channel(`inbox-thread-updates:${user.id}`)
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "mail_threads", filter: `user_id=eq.${currentSupabaseUserId}` },
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "mail_threads",
+          filter: `user_id=eq.${currentSupabaseUserId}`,
+        },
         (payload) => {
           upsertThread(payload?.new);
           // Trigger an immediate poll so the full thread list (with correct sorting/scope) refreshes
           refreshInboxDataRef.current?.();
-        }
+        },
       )
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "mail_threads", filter: `user_id=eq.${currentSupabaseUserId}` },
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "mail_threads",
+          filter: `user_id=eq.${currentSupabaseUserId}`,
+        },
         (payload) => {
           upsertThread(payload?.new);
-        }
+        },
       )
       .on(
         "postgres_changes",
@@ -1035,9 +1174,11 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           setLiveThreads((prev) => {
             const existing = Array.isArray(prev) ? prev : [];
             if (!existing.length) return existing;
-            return existing.filter((thread) => String(thread?.id || "") !== deletedThreadId);
+            return existing.filter(
+              (thread) => String(thread?.id || "") !== deletedThreadId,
+            );
           });
-        }
+        },
       )
       .subscribe((status) => {
         if (status === "SUBSCRIBED") {
@@ -1067,14 +1208,23 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       .channel(`inbox-message-updates:${user.id}`)
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "mail_messages", filter: `user_id=eq.${currentSupabaseUserId}` },
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "mail_messages",
+          filter: `user_id=eq.${currentSupabaseUserId}`,
+        },
         (payload) => {
           const nextMessage = payload?.new;
           const nextMessageId = String(nextMessage?.id || "").trim();
           if (!nextMessageId) return;
           setLiveMessages((prev) => {
             const existing = Array.isArray(prev) ? prev : [];
-            if (existing.some((message) => String(message?.id || "") === nextMessageId)) {
+            if (
+              existing.some(
+                (message) => String(message?.id || "") === nextMessageId,
+              )
+            ) {
               return existing;
             }
             return [...existing, nextMessage];
@@ -1087,11 +1237,16 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           ) {
             refreshSelectedThreadMessagesRef.current?.().catch(() => null);
           }
-        }
+        },
       )
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "mail_messages", filter: `user_id=eq.${currentSupabaseUserId}` },
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "mail_messages",
+          filter: `user_id=eq.${currentSupabaseUserId}`,
+        },
         (payload) => {
           const nextMessage = payload?.new;
           const nextMessageId = String(nextMessage?.id || "").trim();
@@ -1106,7 +1261,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
             });
             return found ? updated : [...existing, nextMessage];
           });
-        }
+        },
       )
       .on(
         "postgres_changes",
@@ -1117,12 +1272,17 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           if (!nextAttachmentId) return;
           setLiveAttachments((prev) => {
             const existing = Array.isArray(prev) ? prev : [];
-            if (existing.some((attachment) => String(attachment?.id || "") === nextAttachmentId)) {
+            if (
+              existing.some(
+                (attachment) =>
+                  String(attachment?.id || "") === nextAttachmentId,
+              )
+            ) {
               return existing;
             }
             return [...existing, nextAttachment];
           });
-        }
+        },
       )
       .subscribe((status) => {
         if (status === "SUBSCRIBED") {
@@ -1152,12 +1312,14 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     selectedThreadIdRef.current = selectedThreadId;
   }, [selectedThreadId]);
 
-  const activeNoteValue = selectedThreadId ? noteValueByThread[selectedThreadId] || "" : "";
+  const activeNoteValue = selectedThreadId
+    ? noteValueByThread[selectedThreadId] || ""
+    : "";
   const composerValue = composerMode === "note" ? activeNoteValue : draftValue;
 
   const isLocalThreadId = useCallback(
     (threadId) => String(threadId || "").startsWith("local-new-ticket-"),
-    []
+    [],
   );
 
   const derivedThreads = useMemo(() => {
@@ -1172,7 +1334,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       derivedThreads
         .map((thread) => String(thread?.id || "").trim())
         .filter(Boolean),
-    [derivedThreads]
+    [derivedThreads],
   );
 
   const { data: previewMessages } = useThreadPreviewMessages(previewThreadIds, {
@@ -1222,7 +1384,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       const validIds = new Set(
         derivedThreads
           .map((thread) => String(thread?.id || "").trim())
-          .filter((threadId) => threadId && !isLocalThreadId(threadId))
+          .filter((threadId) => threadId && !isLocalThreadId(threadId)),
       );
       const savedOpenIds = Array.isArray(parsed?.openThreadIds)
         ? parsed.openThreadIds
@@ -1259,8 +1421,10 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       derivedThreads.forEach((thread) => {
         if (!thread?.id || isLocalThreadId(thread.id)) return;
         const normalizedStatus = normalizeStatus(thread.status) || "New";
-        const normalizedPriority = thread.priority ?? DEFAULT_TICKET_STATE.priority;
-        const normalizedAssignee = thread.assignee_id ?? DEFAULT_TICKET_STATE.assignee;
+        const normalizedPriority =
+          thread.priority ?? DEFAULT_TICKET_STATE.priority;
+        const normalizedAssignee =
+          thread.assignee_id ?? DEFAULT_TICKET_STATE.assignee;
         const existing = next[thread.id];
         if (
           existing &&
@@ -1297,7 +1461,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           const aTime = new Date(getMessageTimestamp(a)).getTime();
           const bTime = new Date(getMessageTimestamp(b)).getTime();
           return aTime - bTime;
-        })
+        }),
       );
     });
     return map;
@@ -1318,7 +1482,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           const aTime = new Date(getMessageTimestamp(a)).getTime();
           const bTime = new Date(getMessageTimestamp(b)).getTime();
           return aTime - bTime;
-        })
+        }),
       );
     });
     return map;
@@ -1337,12 +1501,21 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   const internalSenderNames = useMemo(() => {
     const names = new Set();
     (workspaceMembers || []).forEach((member) => {
-      const fullName = [member?.first_name, member?.last_name].filter(Boolean).join(" ").trim();
+      const fullName = [member?.first_name, member?.last_name]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
       if (fullName) names.add(fullName.toLowerCase());
-      const email = String(member?.email || "").trim().toLowerCase();
+      const email = String(member?.email || "")
+        .trim()
+        .toLowerCase();
       if (email) names.add(email);
     });
-    const currentName = [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim().toLowerCase();
+    const currentName = [user?.firstName, user?.lastName]
+      .filter(Boolean)
+      .join(" ")
+      .trim()
+      .toLowerCase();
     if (currentName) names.add(currentName);
     names.add("sona");
     names.add("sona ai");
@@ -1353,33 +1526,55 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     (message) => {
       if (!message) return false;
       if (message?.from_me === true) return true;
-      const senderEmail = String(message?.from_email || "").trim().toLowerCase();
-      const replyTarget = String(getReplyTargetEmail(message) || "").trim().toLowerCase();
-      const senderLabel = String(getSenderLabel(message) || "").trim().toLowerCase();
+      const senderEmail = String(message?.from_email || "")
+        .trim()
+        .toLowerCase();
+      const replyTarget = String(getReplyTargetEmail(message) || "")
+        .trim()
+        .toLowerCase();
+      const senderLabel = String(getSenderLabel(message) || "")
+        .trim()
+        .toLowerCase();
       const isMailboxEmail = (email = "") =>
-        mailboxEmails.some((candidate) => String(candidate || "").trim().toLowerCase() === email);
+        mailboxEmails.some(
+          (candidate) =>
+            String(candidate || "")
+              .trim()
+              .toLowerCase() === email,
+        );
       const isInternalDomain = (email = "") =>
         /@(acezone\.io|sona-ai\.dk)$/i.test(String(email || ""));
 
-      if (senderEmail && (isMailboxEmail(senderEmail) || isInternalDomain(senderEmail))) return true;
-      if (replyTarget && (isMailboxEmail(replyTarget) || isInternalDomain(replyTarget))) return true;
+      if (
+        senderEmail &&
+        (isMailboxEmail(senderEmail) || isInternalDomain(senderEmail))
+      )
+        return true;
+      if (
+        replyTarget &&
+        (isMailboxEmail(replyTarget) || isInternalDomain(replyTarget))
+      )
+        return true;
       if (senderLabel && internalSenderNames.has(senderLabel)) return true;
       return false;
     },
-    [internalSenderNames, mailboxEmails]
+    [internalSenderNames, mailboxEmails],
   );
 
   const isLikelyInternalIdentity = useCallback(
     (nameOrEmail = "") => {
-      const value = String(nameOrEmail || "").trim().toLowerCase();
+      const value = String(nameOrEmail || "")
+        .trim()
+        .toLowerCase();
       if (!value) return false;
       if (internalSenderNames.has(value)) return true;
       if (value.includes("acezone support")) return true;
       if (value.includes("support@acezone.io")) return true;
-      if (value.endsWith("@acezone.io") || value.endsWith("@sona-ai.dk")) return true;
+      if (value.endsWith("@acezone.io") || value.endsWith("@sona-ai.dk"))
+        return true;
       return false;
     },
-    [internalSenderNames]
+    [internalSenderNames],
   );
 
   const customerByThread = useMemo(() => {
@@ -1401,7 +1596,8 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       }
 
       const liveThreadMessages = messagesByThread.get(thread.id) || [];
-      const previewThreadMessages = previewMessagesByThread.get(thread.id) || [];
+      const previewThreadMessages =
+        previewMessagesByThread.get(thread.id) || [];
       const dedupedById = new Map();
       [...liveThreadMessages, ...previewThreadMessages].forEach((message) => {
         const key = String(message?.id || "").trim();
@@ -1411,19 +1607,25 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       const threadMessages = Array.from(dedupedById.values()).sort((a, b) => {
         const aTime = new Date(getMessageTimestamp(a)).getTime();
         const bTime = new Date(getMessageTimestamp(b)).getTime();
-        return (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
+        return (
+          (Number.isFinite(bTime) ? bTime : 0) -
+          (Number.isFinite(aTime) ? aTime : 0)
+        );
       });
 
       const latestExternalInbound =
         threadMessages.find(
           (message) =>
             !isLikelyInternalSender(message) &&
-            !isOutboundMessage(message, mailboxEmails)
+            !isOutboundMessage(message, mailboxEmails),
         ) || null;
       const latestExternalAny =
-        threadMessages.find((message) => !isLikelyInternalSender(message)) || null;
-      const externalCandidate = latestExternalInbound || latestExternalAny || null;
-      const senderFromMessages = getSenderLabel(externalCandidate || threadMessages[0]) || "";
+        threadMessages.find((message) => !isLikelyInternalSender(message)) ||
+        null;
+      const externalCandidate =
+        latestExternalInbound || latestExternalAny || null;
+      const senderFromMessages =
+        getSenderLabel(externalCandidate || threadMessages[0]) || "";
       const senderFallback = extractSenderFromThreadSnippet(thread);
       map[thread.id] =
         senderFromMessages && !/^unknown sender$/i.test(senderFromMessages)
@@ -1444,18 +1646,25 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     return derivedThreads
       .filter((thread) => {
         const threadId = String(thread?.id || "").trim();
-        const isRequestedThread = Boolean(requestedThreadId && threadId === requestedThreadId);
+        const isRequestedThread = Boolean(
+          requestedThreadId && threadId === requestedThreadId,
+        );
         if (isRequestedThread) return true;
 
-        const hasLocalState = Object.prototype.hasOwnProperty.call(ticketStateByThread, thread.id);
+        const hasLocalState = Object.prototype.hasOwnProperty.call(
+          ticketStateByThread,
+          thread.id,
+        );
         const uiState = hasLocalState
           ? ticketStateByThread[thread.id]
           : DEFAULT_TICKET_STATE;
         const effectiveAssignee = hasLocalState
-          ? uiState?.assignee ?? null
-          : thread.assignee_id ?? null;
+          ? (uiState?.assignee ?? null)
+          : (thread.assignee_id ?? null);
         const effectiveStatus = normalizeStatus(
-          (hasLocalState ? uiState?.status : null) || thread.status || DEFAULT_TICKET_STATE.status
+          (hasLocalState ? uiState?.status : null) ||
+            thread.status ||
+            DEFAULT_TICKET_STATE.status,
         );
         const inboxSlug = extractInboxSlugFromTags(thread?.tags || []);
         const isResolved = effectiveStatus === "Solved";
@@ -1500,7 +1709,8 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           const snippet = (thread.snippet || "").toLowerCase();
           const customer = (customerByThread[thread.id] || "").toLowerCase();
           const ticketNumber = Number(thread?.ticket_number);
-          const hasTicketNumber = Number.isFinite(ticketNumber) && ticketNumber > 0;
+          const hasTicketNumber =
+            Number.isFinite(ticketNumber) && ticketNumber > 0;
           const ticketRefDisplay = hasTicketNumber
             ? `t-${String(ticketNumber).padStart(6, "0")}`
             : "";
@@ -1521,9 +1731,15 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         return true;
       })
       .sort((a, b) => {
-        const aTs = Date.parse(a?.last_message_at || a?.updated_at || a?.created_at || 0);
-        const bTs = Date.parse(b?.last_message_at || b?.updated_at || b?.created_at || 0);
-        return (Number.isFinite(bTs) ? bTs : 0) - (Number.isFinite(aTs) ? aTs : 0);
+        const aTs = Date.parse(
+          a?.last_message_at || a?.updated_at || a?.created_at || 0,
+        );
+        const bTs = Date.parse(
+          b?.last_message_at || b?.updated_at || b?.created_at || 0,
+        );
+        return (
+          (Number.isFinite(bTs) ? bTs : 0) - (Number.isFinite(aTs) ? aTs : 0)
+        );
       });
   }, [
     activeView,
@@ -1539,8 +1755,14 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   useEffect(() => {
     setOpenThreadIds((prev) => {
       if (!prev.length) return prev;
-      const validIds = new Set(derivedThreads.map((thread) => String(thread?.id || "").trim()).filter(Boolean));
-      const next = prev.filter((threadId) => validIds.has(String(threadId || "").trim()));
+      const validIds = new Set(
+        derivedThreads
+          .map((thread) => String(thread?.id || "").trim())
+          .filter(Boolean),
+      );
+      const next = prev.filter((threadId) =>
+        validIds.has(String(threadId || "").trim()),
+      );
       return next.length === prev.length ? prev : next;
     });
   }, [derivedThreads]);
@@ -1552,11 +1774,15 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     }
     if (lastAppliedRequestedThreadIdRef.current === requestedThreadId) return;
     const validIds = new Set(
-      derivedThreads.map((thread) => String(thread?.id || "").trim()).filter(Boolean)
+      derivedThreads
+        .map((thread) => String(thread?.id || "").trim())
+        .filter(Boolean),
     );
     if (!validIds.has(requestedThreadId)) return;
     lastAppliedRequestedThreadIdRef.current = requestedThreadId;
-    setOpenThreadIds((prev) => (prev.includes(requestedThreadId) ? prev : [requestedThreadId, ...prev]));
+    setOpenThreadIds((prev) =>
+      prev.includes(requestedThreadId) ? prev : [requestedThreadId, ...prev],
+    );
     setSelectedThreadId(requestedThreadId);
   }, [derivedThreads, requestedThreadId]);
 
@@ -1584,14 +1810,21 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       setSelectedThreadId(openThreadIds[0] || null);
       return;
     }
-    const fallbackThreadId = filteredThreads[0]?.id || derivedThreads[0]?.id || null;
+    const fallbackThreadId =
+      filteredThreads[0]?.id || derivedThreads[0]?.id || null;
     if (!fallbackThreadId) {
       setSelectedThreadId(null);
       return;
     }
     setOpenThreadIds([fallbackThreadId]);
     setSelectedThreadId(fallbackThreadId);
-  }, [derivedThreads, filteredThreads, openThreadIds, selectedThreadId, tabStateReady]);
+  }, [
+    derivedThreads,
+    filteredThreads,
+    openThreadIds,
+    selectedThreadId,
+    tabStateReady,
+  ]);
 
   // Bug #5: When the user switches view/filter the selected thread may no longer
   // be visible in the list. Auto-advance to the first thread in the new view.
@@ -1608,7 +1841,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     const nextThread = filteredThreads[0];
     setOpenThreadIds((prev) => {
       const without = prev.filter((id) => id !== selectedThreadId);
-      return without.includes(nextThread.id) ? without : [nextThread.id, ...without];
+      return without.includes(nextThread.id)
+        ? without
+        : [nextThread.id, ...without];
     });
     setSelectedThreadId(nextThread.id);
   }, [derivedThreads, filteredThreads, selectedThreadId, tabStateReady]);
@@ -1629,9 +1864,15 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         persistedSelectedId && persistedOpenIds.includes(persistedSelectedId)
           ? persistedSelectedId
           : persistedOpenIds[0] || null,
-      };
+    };
     window.localStorage.setItem(tabStateStorageKey, JSON.stringify(payload));
-  }, [isLocalThreadId, openThreadIds, selectedThreadId, tabStateReady, tabStateStorageKey]);
+  }, [
+    isLocalThreadId,
+    openThreadIds,
+    selectedThreadId,
+    tabStateReady,
+    tabStateStorageKey,
+  ]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -1670,11 +1911,18 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         .maybeSingle();
       if (!active) return;
       if (error) {
-        console.warn("InboxSplitView: failed to load supabase user id — realtime subscriptions will not activate", error);
+        console.warn(
+          "InboxSplitView: failed to load supabase user id — realtime subscriptions will not activate",
+          error,
+        );
         return;
       }
       if (!data?.user_id) {
-        console.warn("InboxSplitView: no profile found for clerk user", user.id, "— realtime subscriptions will not activate");
+        console.warn(
+          "InboxSplitView: no profile found for clerk user",
+          user.id,
+          "— realtime subscriptions will not activate",
+        );
         return;
       }
       setCurrentSupabaseUserId(data.user_id);
@@ -1707,15 +1955,20 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   }, [user?.id]);
 
   const selectedThread = useMemo(
-    () => derivedThreads.find((thread) => thread.id === selectedThreadId) || null,
-    [derivedThreads, selectedThreadId]
+    () =>
+      derivedThreads.find((thread) => thread.id === selectedThreadId) || null,
+    [derivedThreads, selectedThreadId],
   );
   const openThreads = useMemo(() => {
     return openThreadIds
-      .map((threadId) => derivedThreads.find((thread) => thread.id === threadId) || null)
+      .map(
+        (threadId) =>
+          derivedThreads.find((thread) => thread.id === threadId) || null,
+      )
       .filter(Boolean);
   }, [derivedThreads, openThreadIds]);
-  const selectedTicketState = ticketStateByThread[selectedThreadId] || DEFAULT_TICKET_STATE;
+  const selectedTicketState =
+    ticketStateByThread[selectedThreadId] || DEFAULT_TICKET_STATE;
   const memberLookupById = useMemo(() => {
     const map = new Map();
     (workspaceMembers || []).forEach((member) => {
@@ -1766,7 +2019,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         const knownLabel = knownUserLabelById.get(String(value));
         return {
           value,
-          label: profile ? getAssigneeLabel(profile, value) : knownLabel || shortUserId(value),
+          label: profile
+            ? getAssigneeLabel(profile, value)
+            : knownLabel || shortUserId(value),
         };
       });
 
@@ -1785,7 +2040,10 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       .map((member) => {
         const userId = String(member?.user_id || "").trim();
         if (!userId) return null;
-        const fullName = [member?.first_name, member?.last_name].filter(Boolean).join(" ").trim();
+        const fullName = [member?.first_name, member?.last_name]
+          .filter(Boolean)
+          .join(" ")
+          .trim();
         const email = String(member?.email || "").trim();
         return {
           id: userId,
@@ -1796,7 +2054,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       .filter(Boolean)
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [workspaceMembers]);
-  const selectedInboxSlug = extractInboxSlugFromTags(selectedThread?.tags || []);
+  const selectedInboxSlug = extractInboxSlugFromTags(
+    selectedThread?.tags || [],
+  );
   const selectedInboxBucket = getInboxBucket(selectedThread);
 
   // Awaiting return: thread tagged awaiting_return and no active pending action card
@@ -1817,10 +2077,12 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           };
         })
         .filter(Boolean),
-    [workspaceInboxes]
+    [workspaceInboxes],
   );
   const assignmentOptions = useMemo(() => {
-    const combined = [{ value: UNASSIGNED_ASSIGNEE_VALUE, label: "Unassigned" }];
+    const combined = [
+      { value: UNASSIGNED_ASSIGNEE_VALUE, label: "Unassigned" },
+    ];
     assigneeOptions
       .filter((option) => option.value !== UNASSIGNED_ASSIGNEE_VALUE)
       .forEach((option) => {
@@ -1921,7 +2183,8 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
 
   // Fetch sent draft edit stats for the selected thread (for AI badge display)
   useEffect(() => {
-    if (!supabase || !selectedThreadId || isLocalThreadId(selectedThreadId)) return;
+    if (!supabase || !selectedThreadId || isLocalThreadId(selectedThreadId))
+      return;
     if (sentDraftStatsByThread[selectedThreadId]) return; // already fetched
     let active = true;
     const threadId = selectedThreadId;
@@ -1958,8 +2221,8 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         (prev || []).map((item) =>
           String(item?.id || "") === String(selectedThreadId)
             ? { ...item, unread_count: 0, is_read: true }
-            : item
-        )
+            : item,
+        ),
       );
       fetch("/api/inbox/thread-status", {
         method: "PATCH",
@@ -1974,7 +2237,11 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     }
 
     const currentState = ticketStateByThread[selectedThreadId];
-    if (isNewSelection && (hasUnreadMessages || !thread.is_read) && currentState?.status === "New") {
+    if (
+      isNewSelection &&
+      (hasUnreadMessages || !thread.is_read) &&
+      currentState?.status === "New"
+    ) {
       setTicketStateByThread((prev) => ({
         ...prev,
         [selectedThreadId]: {
@@ -2018,15 +2285,22 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
 
   const rawThreadMessages = useMemo(() => {
     if (!selectedThreadId) return [];
-    const dbDataIsForCurrentThread = messagesFetchedForThreadId === selectedThreadId;
+    const dbDataIsForCurrentThread =
+      messagesFetchedForThreadId === selectedThreadId;
     const base =
-      dbDataIsForCurrentThread && Array.isArray(selectedThreadMessagesFromDb) && selectedThreadMessagesFromDb.length
+      dbDataIsForCurrentThread &&
+      Array.isArray(selectedThreadMessagesFromDb) &&
+      selectedThreadMessagesFromDb.length
         ? selectedThreadMessagesFromDb
-        : (messagesCacheRef.current.get(selectedThreadId) || messagesByThread.get(selectedThreadId) || []);
+        : messagesCacheRef.current.get(selectedThreadId) ||
+          messagesByThread.get(selectedThreadId) ||
+          [];
     const local = localSentMessagesByThread[selectedThreadId] || [];
     const byId = new Map();
     [...base, ...local].forEach((message) => {
-      const key = message?.id || `${message?.thread_id || "thread"}:${message?.created_at || ""}`;
+      const key =
+        message?.id ||
+        `${message?.thread_id || "thread"}:${message?.created_at || ""}`;
       if (!key) return;
       byId.set(key, message);
     });
@@ -2053,9 +2327,10 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
 
   const isSelectedConversationLoading = Boolean(
     selectedThreadId &&
-      !isLocalThreadId(selectedThreadId) &&
-      (selectedThreadMessagesLoading || messagesFetchedForThreadId !== selectedThreadId) &&
-      !hasSelectedThreadMessageCache
+    !isLocalThreadId(selectedThreadId) &&
+    (selectedThreadMessagesLoading ||
+      messagesFetchedForThreadId !== selectedThreadId) &&
+    !hasSelectedThreadMessageCache,
   );
 
   useEffect(() => {
@@ -2065,9 +2340,16 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       Array.isArray(selectedThreadMessagesFromDb) &&
       selectedThreadMessagesFromDb.length
     ) {
-      messagesCacheRef.current.set(selectedThreadId, selectedThreadMessagesFromDb);
+      messagesCacheRef.current.set(
+        selectedThreadId,
+        selectedThreadMessagesFromDb,
+      );
     }
-  }, [messagesFetchedForThreadId, selectedThreadId, selectedThreadMessagesFromDb]);
+  }, [
+    messagesFetchedForThreadId,
+    selectedThreadId,
+    selectedThreadMessagesFromDb,
+  ]);
 
   const threadMessages = useMemo(() => {
     return rawThreadMessages.filter((message) => {
@@ -2090,15 +2372,18 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       rawThreadMessages
         .map((message) => String(message?.id || "").trim())
         .filter(Boolean),
-    [rawThreadMessages]
+    [rawThreadMessages],
   );
 
-  const { data: selectedThreadAttachments } = useThreadAttachments(selectedThreadMessageIds, {
-    enabled:
-      Boolean(selectedThreadId) &&
-      !String(selectedThreadId || "").startsWith("local-new-ticket-") &&
-      selectedThreadMessageIds.length > 0,
-  });
+  const { data: selectedThreadAttachments } = useThreadAttachments(
+    selectedThreadMessageIds,
+    {
+      enabled:
+        Boolean(selectedThreadId) &&
+        !String(selectedThreadId || "").startsWith("local-new-ticket-") &&
+        selectedThreadMessageIds.length > 0,
+    },
+  );
 
   const threadAttachments = useMemo(() => {
     if (!selectedThreadId) return [];
@@ -2112,13 +2397,16 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     ].forEach((attachment) => {
       const attachmentId = String(attachment?.id || "").trim();
       const attachmentMessageId = String(attachment?.message_id || "").trim();
-      if (!attachmentMessageId || !messageIdSet.has(attachmentMessageId)) return;
+      if (!attachmentMessageId || !messageIdSet.has(attachmentMessageId))
+        return;
       const dedupeKey =
         attachmentId ||
         [
           attachmentMessageId,
           String(attachment?.provider_attachment_id || "").trim(),
-          String(attachment?.filename || "").trim().toLowerCase(),
+          String(attachment?.filename || "")
+            .trim()
+            .toLowerCase(),
         ].join("::");
       if (!byId.has(dedupeKey)) byId.set(dedupeKey, attachment);
     });
@@ -2133,7 +2421,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
 
   const draftMessage = useMemo(() => {
     const reversed = [...rawThreadMessages].reverse();
-    return reversed.find((message) => message?.is_draft && message?.from_me) || null;
+    return (
+      reversed.find((message) => message?.is_draft && message?.from_me) || null
+    );
   }, [rawThreadMessages]);
 
   const aiDraft = useMemo(() => {
@@ -2158,8 +2448,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     const inboundWithOrder = inboundCandidates.find((message) => {
       const body = pickMessageBody(message);
       return (
-        extractOrderNumber(message?.subject || "") ||
-        extractOrderNumber(body)
+        extractOrderNumber(message?.subject || "") || extractOrderNumber(body)
       );
     });
     const inbound = inboundWithOrder || inboundCandidates[0] || null;
@@ -2174,7 +2463,12 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       threadId: selectedThreadId || null,
       sourceMessageId: inbound?.id || null,
     };
-  }, [mailboxEmails, selectedThread?.subject, selectedThreadId, threadMessages]);
+  }, [
+    mailboxEmails,
+    selectedThread?.subject,
+    selectedThreadId,
+    threadMessages,
+  ]);
 
   const {
     data: customerLookup,
@@ -2190,7 +2484,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         (Array.isArray(selectedThread?.tags) &&
           selectedThread.tags.includes("Tracking") &&
           !selectedThread.tags.some((t) => /^return/i.test(String(t || ""))) &&
-          !["return", "exchange"].includes(String(selectedThread?.classification_key || "").toLowerCase()))),
+          !["return", "exchange"].includes(
+            String(selectedThread?.classification_key || "").toLowerCase(),
+          ))),
   });
 
   const actions = useMemo(() => {
@@ -2209,16 +2505,17 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     const loadPendingOrderUpdate = async () => {
       const res = await fetch(
         `/api/threads/${encodeURIComponent(selectedThreadId)}/order-updates/accept`,
-        { method: "GET" }
+        { method: "GET" },
       ).catch(() => null);
       if (!active) return;
       if (!res?.ok) return;
       const payload = await res.json().catch(() => ({}));
       if (!active) return;
       const latestAction = payload?.action || null;
-      const latestReturnCase = payload?.returnCase && typeof payload.returnCase === "object"
-        ? payload.returnCase
-        : null;
+      const latestReturnCase =
+        payload?.returnCase && typeof payload.returnCase === "object"
+          ? payload.returnCase
+          : null;
       if (latestReturnCase) {
         setReturnCaseByThread((prev) => ({
           ...prev,
@@ -2234,9 +2531,11 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       }
       if (latestAction) {
         const normalizedStatus = String(
-          latestAction.normalizedStatus || latestAction.status || ""
+          latestAction.normalizedStatus || latestAction.status || "",
         ).toLowerCase();
-        const actionType = asString(latestAction.actionType || latestAction.action_type).toLowerCase();
+        const actionType = asString(
+          latestAction.actionType || latestAction.action_type,
+        ).toLowerCase();
         const actionPayload =
           latestAction?.payload && typeof latestAction.payload === "object"
             ? latestAction.payload
@@ -2288,13 +2587,19 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
             payload: actionPayload,
             createdAt: latestAction.createdAt || null,
             updatedAt: latestAction.updatedAt || latestAction.createdAt || null,
-            status: asString(latestAction.status || latestAction.normalizedStatus) || "pending",
+            status:
+              asString(latestAction.status || latestAction.normalizedStatus) ||
+              "pending",
             testMode: isTestModeAction,
             approvedBy: asString(latestAction.approvedBy) || "",
-            error: isFailedStatus ? asString(latestAction.error) || actionDetail : null,
+            error: isFailedStatus
+              ? asString(latestAction.error) || actionDetail
+              : null,
           },
         }));
-        const decisionFromAction = getDecisionFromActionStatus(latestAction.status);
+        const decisionFromAction = getDecisionFromActionStatus(
+          latestAction.status,
+        );
         setOrderUpdateDecisionByThread((prev) => {
           const next = { ...prev };
           if (decisionFromAction) next[selectedThreadId] = decisionFromAction;
@@ -2303,7 +2608,10 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         });
         setOrderUpdateErrorByThread((prev) => {
           const next = { ...prev };
-          if (String(latestAction.status || "").toLowerCase() === "failed" && latestAction.error) {
+          if (
+            String(latestAction.status || "").toLowerCase() === "failed" &&
+            latestAction.error
+          ) {
             next[selectedThreadId] = String(latestAction.error);
           } else {
             delete next[selectedThreadId];
@@ -2380,7 +2688,13 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           return next;
         });
       });
-  }, [supabase, selectedThreadId, pendingOrderUpdateByThread, threadMessages, mailboxEmails]);
+  }, [
+    supabase,
+    selectedThreadId,
+    pendingOrderUpdateByThread,
+    threadMessages,
+    mailboxEmails,
+  ]);
 
   useEffect(() => {
     if (!selectedThreadId) return;
@@ -2395,7 +2709,10 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       return;
     }
 
-    const hasThreadDraft = Object.prototype.hasOwnProperty.call(draftValueByThread, selectedThreadId);
+    const hasThreadDraft = Object.prototype.hasOwnProperty.call(
+      draftValueByThread,
+      selectedThreadId,
+    );
     if (hasThreadDraft) {
       setDraftValue(String(draftValueByThread[selectedThreadId] || ""));
       setDraftReady(true);
@@ -2405,7 +2722,8 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       setDraftReady(false);
     }
     setDraftWaitTimedOutByThread((prev) => {
-      if (prev[selectedThreadId] === false || !(selectedThreadId in prev)) return prev;
+      if (prev[selectedThreadId] === false || !(selectedThreadId in prev))
+        return prev;
       const next = { ...prev };
       next[selectedThreadId] = false;
       return next;
@@ -2420,7 +2738,12 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         return;
       }
       if (!selectedThreadId) return;
-      if (Object.prototype.hasOwnProperty.call(draftValueByThread, selectedThreadId)) {
+      if (
+        Object.prototype.hasOwnProperty.call(
+          draftValueByThread,
+          selectedThreadId,
+        )
+      ) {
         setDraftReady(true);
         return;
       }
@@ -2445,10 +2768,16 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         ...prev,
         [selectedThreadId]: proposalOnly,
       }));
-      const existingThreadDraft = String(draftValueByThread[selectedThreadId] || "");
+      const existingThreadDraft = String(
+        draftValueByThread[selectedThreadId] || "",
+      );
       const activeThreadDraft =
-        selectedThreadIdRef.current === selectedThreadId ? String(draftValueRef.current || "") : "";
-      const hasExistingLocalDraft = Boolean(existingThreadDraft.trim() || activeThreadDraft.trim());
+        selectedThreadIdRef.current === selectedThreadId
+          ? String(draftValueRef.current || "")
+          : "";
+      const hasExistingLocalDraft = Boolean(
+        existingThreadDraft.trim() || activeThreadDraft.trim(),
+      );
       if (proposalOnly && !draft) {
         // Guard: never clobber an existing local draft when server says proposal_only + no draft.
         // This can happen due timing/race between thread refreshes and draft fetches.
@@ -2536,7 +2865,8 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     if (suppressAutoDraftByThread[selectedThreadId]) return;
     // Allow overwriting an existing system draft that hasn't been edited by the agent,
     // so new customer messages replace stale auto-generated drafts.
-    if (draftValueRef.current && !systemDraftUneditedByThread[selectedThreadId]) return;
+    if (draftValueRef.current && !systemDraftUneditedByThread[selectedThreadId])
+      return;
     setDraftValue(aiDraft);
     setDraftValueByThread((prev) => ({
       ...prev,
@@ -2546,7 +2876,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       ...prev,
       [selectedThreadId]: true,
     }));
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- systemDraftUneditedByThread intentionally omitted: effect also sets it, adding it would cause an infinite loop
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- systemDraftUneditedByThread intentionally omitted: effect also sets it, adding it would cause an infinite loop
   }, [
     aiDraft,
     draftReady,
@@ -2581,7 +2911,8 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     if (!String(draftBody || "").trim()) return;
     // Allow overwriting an existing system draft that hasn't been edited by the agent,
     // so new customer messages replace stale auto-generated drafts.
-    if (draftValueRef.current && !systemDraftUneditedByThread[selectedThreadId]) return;
+    if (draftValueRef.current && !systemDraftUneditedByThread[selectedThreadId])
+      return;
     setDraftValue(draftBody);
     setDraftValueByThread((prev) => ({
       ...prev,
@@ -2591,12 +2922,8 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       ...prev,
       [selectedThreadId]: true,
     }));
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- systemDraftUneditedByThread intentionally omitted: effect also sets it, adding it would cause an infinite loop; suppressAutoDraftByThread intentionally omitted: we use draftLastSavedRef instead
-  }, [
-    draftMessage,
-    draftReady,
-    selectedThreadId,
-  ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- systemDraftUneditedByThread intentionally omitted: effect also sets it, adding it would cause an infinite loop; suppressAutoDraftByThread intentionally omitted: we use draftLastSavedRef instead
+  }, [draftMessage, draftReady, selectedThreadId]);
 
   // Ref that always holds the latest systemDraftUneditedByThread value so effects
   // can read it without needing it as a dependency.
@@ -2651,7 +2978,10 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       // Unedited system draft → clear immediately; generate-draft-unified will repopulate
       setDraftValue("");
       setDraftValueByThread((p) => ({ ...p, [selectedThreadId]: "" }));
-      setSystemDraftUneditedByThread((p) => ({ ...p, [selectedThreadId]: false }));
+      setSystemDraftUneditedByThread((p) => ({
+        ...p,
+        [selectedThreadId]: false,
+      }));
     } else {
       // Agent was editing → warn without destroying their work
       setStaleDraftByThread((p) => ({ ...p, [selectedThreadId]: true }));
@@ -2673,15 +3003,21 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     if (!selectedThreadId || isLocalThreadId(selectedThreadId)) return;
     if (markReturnReceivedLoadingByThread[selectedThreadId]) return;
     const threadId = selectedThreadId;
-    setMarkReturnReceivedLoadingByThread((prev) => ({ ...prev, [threadId]: true }));
+    setMarkReturnReceivedLoadingByThread((prev) => ({
+      ...prev,
+      [threadId]: true,
+    }));
     try {
       const res = await fetch(
         `/api/threads/${encodeURIComponent(threadId)}/exchange/mark-received`,
-        { method: "POST" }
+        { method: "POST" },
       ).catch(() => null);
       if (!res?.ok) return;
       // Trigger action re-fetch by bumping the refresh counter (re-uses existing loadPendingOrderUpdate)
-      setRefreshPendingActionByThread((prev) => ({ ...prev, [threadId]: (prev[threadId] || 0) + 1 }));
+      setRefreshPendingActionByThread((prev) => ({
+        ...prev,
+        [threadId]: (prev[threadId] || 0) + 1,
+      }));
     } finally {
       setMarkReturnReceivedLoadingByThread((prev) => {
         const next = { ...prev };
@@ -2691,284 +3027,335 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     }
   }, [selectedThreadId, isLocalThreadId, markReturnReceivedLoadingByThread]);
 
-  const handleGenerateDraft = useCallback(async (replyLanguage) => {
-    if (!selectedThreadId || isLocalThreadId(selectedThreadId)) return;
-    if (manualDraftGeneratingByThread[selectedThreadId]) return;
-    const threadId = selectedThreadId;
+  const handleGenerateDraft = useCallback(
+    async (replyLanguage) => {
+      if (!selectedThreadId || isLocalThreadId(selectedThreadId)) return;
+      if (manualDraftGeneratingByThread[selectedThreadId]) return;
+      const threadId = selectedThreadId;
 
-    setManualDraftGeneratingByThread((prev) => ({
-      ...prev,
-      [threadId]: true,
-    }));
-    setDraftWaitTimedOutByThread((prev) => ({
-      ...prev,
-      [threadId]: false,
-    }));
-    setSuppressAutoDraftByThread((prev) => {
-      if (!prev[threadId]) return prev;
-      const next = { ...prev };
-      delete next[threadId];
-      return next;
-    });
-
-    try {
-      const res = await fetch(`/api/threads/${threadId}/generate-draft`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(replyLanguage ? { reply_language: replyLanguage } : {}),
-      });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(payload?.error || "Could not generate draft.");
-      }
-
-      const signature = String(payload?.signature || "");
-      if (signature) {
-        setSignatureByThread((prev) => ({
-          ...prev,
-          [threadId]: signature,
-        }));
-      }
-
-      const draft = payload?.draft || null;
-      const proposalOnly = payload?.proposal_only === true;
-      setProposalOnlyByThread((prev) => ({
+      setManualDraftGeneratingByThread((prev) => ({
         ...prev,
-        [threadId]: proposalOnly,
+        [threadId]: true,
       }));
-      if (proposalOnly && !draft) {
-        const approvalRes = await fetch(
-          `/api/threads/${encodeURIComponent(threadId)}/order-updates/accept`,
-          { method: "GET" }
-        ).catch(() => null);
-        const approvalPayload = approvalRes?.ok
-          ? await approvalRes.json().catch(() => ({}))
-          : {};
-        const latestAction = approvalPayload?.action || null;
-        const latestReturnCase =
-          approvalPayload?.returnCase && typeof approvalPayload.returnCase === "object"
-            ? approvalPayload.returnCase
-            : null;
-        if (latestReturnCase) {
-          setReturnCaseByThread((prev) => ({
-            ...prev,
-            [threadId]: latestReturnCase,
-          }));
-        }
-        if (latestAction) {
-          const normalizedStatus = String(
-            latestAction.normalizedStatus || latestAction.status || ""
-          ).toLowerCase();
-          const actionType = asString(
-            latestAction.actionType || latestAction.action_type
-          ).toLowerCase();
-          const actionPayload =
-            latestAction?.payload && typeof latestAction.payload === "object"
-              ? latestAction.payload
-              : {};
-          const isTestModeAction =
-            latestAction?.testMode === true ||
-            normalizedStatus === "approved_test_mode" ||
-            actionPayload?.test_mode === true ||
-            actionPayload?.simulated === true;
-          const isFailedStatus = normalizedStatus === "failed";
-          const actionDetail = isFailedStatus
-            ? asString(latestAction?.error) ||
-              asString(latestAction?.detail) ||
-              "Order action could not be completed."
-            : asString(latestAction?.detail) ||
-              "Sona wants to apply an order update for this customer.";
-          setPendingOrderUpdateByThread((prev) => ({
-            ...prev,
-            [threadId]: {
-              id: String(latestAction.id || ""),
-              detail: actionDetail,
-              actionType: actionType || null,
-              payload: actionPayload,
-              createdAt: latestAction.createdAt || null,
-              updatedAt: latestAction.updatedAt || latestAction.createdAt || null,
-              status:
-                asString(latestAction.status || latestAction.normalizedStatus) || "pending",
-              testMode: isTestModeAction,
-              approvedBy: asString(latestAction.approvedBy) || "",
-              error: isFailedStatus ? asString(latestAction.error) || actionDetail : null,
-            },
-          }));
-          const decisionFromAction = getDecisionFromActionStatus(latestAction.status);
-          setOrderUpdateDecisionByThread((prev) => {
-            const next = { ...prev };
-            if (decisionFromAction) next[threadId] = decisionFromAction;
-            else delete next[threadId];
-            return next;
-          });
-          setOrderUpdateErrorByThread((prev) => {
-            const next = { ...prev };
-            if (String(latestAction.status || "").toLowerCase() === "failed" && latestAction.error) {
-              next[threadId] = String(latestAction.error);
-            } else {
-              delete next[threadId];
-            }
-            return next;
-          });
-        }
-        setSuppressAutoDraftByThread((prev) => ({
-          ...prev,
-          [threadId]: true,
-        }));
-        if (selectedThreadIdRef.current === threadId) {
-          setDraftValue("");
-        }
-        setDraftValueByThread((prev) => ({
-          ...prev,
-          [threadId]: "",
-        }));
-        if (selectedThreadIdRef.current === threadId) {
-          draftValueRef.current = "";
-        }
-        draftLastSavedRef.current[threadId] = "";
-        setSystemDraftUneditedByThread((prev) => ({
-          ...prev,
-          [threadId]: false,
-        }));
-        if (selectedThreadIdRef.current === threadId) {
-          setActiveDraftId(null);
-        }
-        toast.success("Action proposal created and is awaiting approval.");
-        return;
-      }
+      setDraftWaitTimedOutByThread((prev) => ({
+        ...prev,
+        [threadId]: false,
+      }));
       setSuppressAutoDraftByThread((prev) => {
         if (!prev[threadId]) return prev;
         const next = { ...prev };
         delete next[threadId];
         return next;
       });
-      const draftText = draft?.body_text || draft?.body_html || "";
-      if (draftText) {
-        if (selectedThreadIdRef.current === threadId) {
-          setDraftValue(draftText);
+
+      try {
+        const res = await fetch(`/api/threads/${threadId}/generate-draft`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            replyLanguage ? { reply_language: replyLanguage } : {},
+          ),
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(payload?.error || "Could not generate draft.");
         }
-        setDraftValueByThread((prev) => ({
-          ...prev,
-          [threadId]: draftText,
-        }));
-        if (selectedThreadIdRef.current === threadId) {
-          draftValueRef.current = draftText;
+
+        const signature = String(payload?.signature || "");
+        if (signature) {
+          setSignatureByThread((prev) => ({
+            ...prev,
+            [threadId]: signature,
+          }));
         }
-        setSystemDraftUneditedByThread((prev) => ({
+
+        const draft = payload?.draft || null;
+        const proposalOnly = payload?.proposal_only === true;
+        setProposalOnlyByThread((prev) => ({
           ...prev,
-          [threadId]: true,
+          [threadId]: proposalOnly,
         }));
-        setStaleDraftByThread((prev) => {
+        if (proposalOnly && !draft) {
+          const approvalRes = await fetch(
+            `/api/threads/${encodeURIComponent(threadId)}/order-updates/accept`,
+            { method: "GET" },
+          ).catch(() => null);
+          const approvalPayload = approvalRes?.ok
+            ? await approvalRes.json().catch(() => ({}))
+            : {};
+          const latestAction = approvalPayload?.action || null;
+          const latestReturnCase =
+            approvalPayload?.returnCase &&
+            typeof approvalPayload.returnCase === "object"
+              ? approvalPayload.returnCase
+              : null;
+          if (latestReturnCase) {
+            setReturnCaseByThread((prev) => ({
+              ...prev,
+              [threadId]: latestReturnCase,
+            }));
+          }
+          if (latestAction) {
+            const normalizedStatus = String(
+              latestAction.normalizedStatus || latestAction.status || "",
+            ).toLowerCase();
+            const actionType = asString(
+              latestAction.actionType || latestAction.action_type,
+            ).toLowerCase();
+            const actionPayload =
+              latestAction?.payload && typeof latestAction.payload === "object"
+                ? latestAction.payload
+                : {};
+            const isTestModeAction =
+              latestAction?.testMode === true ||
+              normalizedStatus === "approved_test_mode" ||
+              actionPayload?.test_mode === true ||
+              actionPayload?.simulated === true;
+            const isFailedStatus = normalizedStatus === "failed";
+            const actionDetail = isFailedStatus
+              ? asString(latestAction?.error) ||
+                asString(latestAction?.detail) ||
+                "Order action could not be completed."
+              : asString(latestAction?.detail) ||
+                "Sona wants to apply an order update for this customer.";
+            setPendingOrderUpdateByThread((prev) => ({
+              ...prev,
+              [threadId]: {
+                id: String(latestAction.id || ""),
+                detail: actionDetail,
+                actionType: actionType || null,
+                payload: actionPayload,
+                createdAt: latestAction.createdAt || null,
+                updatedAt:
+                  latestAction.updatedAt || latestAction.createdAt || null,
+                status:
+                  asString(
+                    latestAction.status || latestAction.normalizedStatus,
+                  ) || "pending",
+                testMode: isTestModeAction,
+                approvedBy: asString(latestAction.approvedBy) || "",
+                error: isFailedStatus
+                  ? asString(latestAction.error) || actionDetail
+                  : null,
+              },
+            }));
+            const decisionFromAction = getDecisionFromActionStatus(
+              latestAction.status,
+            );
+            setOrderUpdateDecisionByThread((prev) => {
+              const next = { ...prev };
+              if (decisionFromAction) next[threadId] = decisionFromAction;
+              else delete next[threadId];
+              return next;
+            });
+            setOrderUpdateErrorByThread((prev) => {
+              const next = { ...prev };
+              if (
+                String(latestAction.status || "").toLowerCase() === "failed" &&
+                latestAction.error
+              ) {
+                next[threadId] = String(latestAction.error);
+              } else {
+                delete next[threadId];
+              }
+              return next;
+            });
+          }
+          setSuppressAutoDraftByThread((prev) => ({
+            ...prev,
+            [threadId]: true,
+          }));
+          if (selectedThreadIdRef.current === threadId) {
+            setDraftValue("");
+          }
+          setDraftValueByThread((prev) => ({
+            ...prev,
+            [threadId]: "",
+          }));
+          if (selectedThreadIdRef.current === threadId) {
+            draftValueRef.current = "";
+          }
+          draftLastSavedRef.current[threadId] = "";
+          setSystemDraftUneditedByThread((prev) => ({
+            ...prev,
+            [threadId]: false,
+          }));
+          if (selectedThreadIdRef.current === threadId) {
+            setActiveDraftId(null);
+          }
+          toast.success("Action proposal created and is awaiting approval.");
+          return;
+        }
+        setSuppressAutoDraftByThread((prev) => {
           if (!prev[threadId]) return prev;
           const next = { ...prev };
           delete next[threadId];
           return next;
         });
-        if (draft?.id && selectedThreadIdRef.current === threadId) {
-          setActiveDraftId(draft.id);
-        }
-        // Persist generated draft immediately so a quick thread switch cannot lose it.
-        try {
-          const subject =
-            derivedThreads.find((thread) => String(thread?.id || "").trim() === threadId)?.subject || "";
-          const persistRes = await fetch(`/api/threads/${threadId}/draft`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              body_text: draftText,
-              subject,
-            }),
+        const draftText = draft?.body_text || draft?.body_html || "";
+        if (draftText) {
+          if (selectedThreadIdRef.current === threadId) {
+            setDraftValue(draftText);
+          }
+          setDraftValueByThread((prev) => ({
+            ...prev,
+            [threadId]: draftText,
+          }));
+          if (selectedThreadIdRef.current === threadId) {
+            draftValueRef.current = draftText;
+          }
+          setSystemDraftUneditedByThread((prev) => ({
+            ...prev,
+            [threadId]: true,
+          }));
+          setStaleDraftByThread((prev) => {
+            if (!prev[threadId]) return prev;
+            const next = { ...prev };
+            delete next[threadId];
+            return next;
           });
-          const persistPayload = await persistRes.json().catch(() => ({}));
-          if (persistRes?.ok) {
-            draftLastSavedRef.current[threadId] = draftText.trim();
-            if (persistPayload?.draft_id && selectedThreadIdRef.current === threadId) {
-              setActiveDraftId(persistPayload.draft_id);
+          if (draft?.id && selectedThreadIdRef.current === threadId) {
+            setActiveDraftId(draft.id);
+          }
+          // Persist generated draft immediately so a quick thread switch cannot lose it.
+          try {
+            const subject =
+              derivedThreads.find(
+                (thread) => String(thread?.id || "").trim() === threadId,
+              )?.subject || "";
+            const persistRes = await fetch(`/api/threads/${threadId}/draft`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                body_text: draftText,
+                subject,
+              }),
+            });
+            const persistPayload = await persistRes.json().catch(() => ({}));
+            if (persistRes?.ok) {
+              draftLastSavedRef.current[threadId] = draftText.trim();
+              if (
+                persistPayload?.draft_id &&
+                selectedThreadIdRef.current === threadId
+              ) {
+                setActiveDraftId(persistPayload.draft_id);
+              }
+            } else {
+              draftLastSavedRef.current[threadId] = "";
             }
-          } else {
+          } catch {
             draftLastSavedRef.current[threadId] = "";
           }
-        } catch {
-          draftLastSavedRef.current[threadId] = "";
+          toast.success("Draft generated.");
+          // Refresh tags after a short delay to let fire-and-forget auto-tagging complete
+          setTimeout(() => {
+            setTagsRefreshTriggerByThread((prev) => ({
+              ...prev,
+              [threadId]: (prev[threadId] || 0) + 1,
+            }));
+          }, 3000);
+        } else if (payload?.skipped) {
+          throw new Error(
+            payload?.explanation ||
+              payload?.reason ||
+              "Draft generation was skipped.",
+          );
+        } else {
+          throw new Error("Draft generation returned no content.");
         }
-        toast.success("Draft generated.");
-        // Refresh tags after a short delay to let fire-and-forget auto-tagging complete
-        setTimeout(() => {
-          setTagsRefreshTriggerByThread((prev) => ({
-            ...prev,
-            [threadId]: (prev[threadId] || 0) + 1,
-          }));
-        }, 3000);
-      } else if (payload?.skipped) {
-        throw new Error(payload?.explanation || payload?.reason || "Draft generation was skipped.");
-      } else {
-        throw new Error("Draft generation returned no content.");
-      }
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not generate draft.");
-    } finally {
-      setManualDraftGeneratingByThread((prev) => {
-        if (!prev[threadId]) return prev;
-        const next = { ...prev };
-        delete next[threadId];
-        return next;
-      });
-    }
-  }, [derivedThreads, isLocalThreadId, manualDraftGeneratingByThread, selectedThreadId]);
-
-  const handleRefineDraft = useCallback(async (userPrompt) => {
-    if (!selectedThreadId || isLocalThreadId(selectedThreadId)) return;
-    if (refineDraftLoadingByThread[selectedThreadId]) return;
-    const threadId = selectedThreadId;
-
-    setRefineDraftLoadingByThread((prev) => ({ ...prev, [threadId]: true }));
-
-    const currentDraft = String(draftValueByThread?.[threadId] || "").trim();
-    if (!userPrompt) {
-      setRefineDraftLoadingByThread((prev) => ({ ...prev, [threadId]: false }));
-      return;
-    }
-
-    try {
-      let refined = "";
-      if (currentDraft) {
-        const res = await fetch(`/api/threads/${threadId}/refine-draft`, {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ currentDraft, userPrompt }),
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : "Could not generate draft.",
+        );
+      } finally {
+        setManualDraftGeneratingByThread((prev) => {
+          if (!prev[threadId]) return prev;
+          const next = { ...prev };
+          delete next[threadId];
+          return next;
         });
-        const payload = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(payload?.error || "Could not refine draft.");
-        refined = String(payload?.draft || "").trim();
-      } else {
-        const res = await fetch(`/api/threads/${threadId}/generate-draft`, {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ user_instruction: userPrompt }),
-        });
-        const payload = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(payload?.error || "Could not generate draft.");
-        refined = String(payload?.draft?.body_text || payload?.draft?.rendered_body_text || "").trim();
       }
-      if (refined) {
-        if (selectedThreadIdRef.current === threadId) {
-          setDraftValue(refined);
+    },
+    [
+      derivedThreads,
+      isLocalThreadId,
+      manualDraftGeneratingByThread,
+      selectedThreadId,
+    ],
+  );
+
+  const handleRefineDraft = useCallback(
+    async (userPrompt) => {
+      if (!selectedThreadId || isLocalThreadId(selectedThreadId)) return;
+      if (refineDraftLoadingByThread[selectedThreadId]) return;
+      const threadId = selectedThreadId;
+
+      setRefineDraftLoadingByThread((prev) => ({ ...prev, [threadId]: true }));
+
+      const currentDraft = String(draftValueByThread?.[threadId] || "").trim();
+      if (!userPrompt) {
+        setRefineDraftLoadingByThread((prev) => ({
+          ...prev,
+          [threadId]: false,
+        }));
+        return;
+      }
+
+      try {
+        let refined = "";
+        if (currentDraft) {
+          const res = await fetch(`/api/threads/${threadId}/refine-draft`, {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ currentDraft, userPrompt }),
+          });
+          const payload = await res.json().catch(() => ({}));
+          if (!res.ok)
+            throw new Error(payload?.error || "Could not refine draft.");
+          refined = String(payload?.draft || "").trim();
+        } else {
+          const res = await fetch(`/api/threads/${threadId}/generate-draft`, {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ user_instruction: userPrompt }),
+          });
+          const payload = await res.json().catch(() => ({}));
+          if (!res.ok)
+            throw new Error(payload?.error || "Could not generate draft.");
+          refined = String(
+            payload?.draft?.body_text ||
+              payload?.draft?.rendered_body_text ||
+              "",
+          ).trim();
         }
-        setDraftValueByThread((prev) => ({ ...prev, [threadId]: refined }));
+        if (refined) {
+          if (selectedThreadIdRef.current === threadId) {
+            setDraftValue(refined);
+          }
+          setDraftValueByThread((prev) => ({ ...prev, [threadId]: refined }));
+        }
+      } catch (err) {
+        console.error("[handleRefineDraft]", err);
+        toast.error(
+          err instanceof Error ? err.message : "Could not refine draft.",
+        );
+      } finally {
+        setRefineDraftLoadingByThread((prev) => {
+          const next = { ...prev };
+          delete next[threadId];
+          return next;
+        });
       }
-    } catch (err) {
-      console.error("[handleRefineDraft]", err);
-      toast.error(err instanceof Error ? err.message : "Could not refine draft.");
-    } finally {
-      setRefineDraftLoadingByThread((prev) => {
-        const next = { ...prev };
-        delete next[threadId];
-        return next;
-      });
-    }
-  }, [selectedThreadId, isLocalThreadId, refineDraftLoadingByThread, draftValueByThread]);
+    },
+    [
+      selectedThreadId,
+      isLocalThreadId,
+      refineDraftLoadingByThread,
+      draftValueByThread,
+    ],
+  );
 
   const fetchTranslationForThread = useCallback(async (threadId) => {
     if (!threadId) return;
@@ -2979,7 +3366,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     try {
       const res = await fetch(
         `/api/inbox/threads/${encodeURIComponent(threadId)}/translation`,
-        { method: "GET", cache: "no-store", credentials: "include" }
+        { method: "GET", cache: "no-store", credentials: "include" },
       );
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(payload?.error || "Translation failed.");
@@ -2987,7 +3374,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         ...prev,
         [threadId]: {
           loading: false,
-          items: Array.isArray(payload?.conversation?.items) ? payload.conversation.items : [],
+          items: Array.isArray(payload?.conversation?.items)
+            ? payload.conversation.items
+            : [],
           draft: payload?.draft || null,
         },
       }));
@@ -2999,79 +3388,157 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     }
   }, []);
 
-  const handleRequestV2Preview = useCallback(async (threadId, messageId) => {
-    if (!threadId) return;
-    const customerContext = customerLookup
-      ? {
-        customer: customerLookup.customer || null,
-        orders: Array.isArray(customerLookup.orders)
-          ? customerLookup.orders.slice(0, 3)
-          : [],
+  const handleRequestV2Preview = useCallback(
+    async (threadId, messageId) => {
+      if (!threadId) return;
+      let resolvedCustomerLookup = customerLookup;
+      if (
+        !resolvedCustomerLookup &&
+        (customerLookupParams.email ||
+          customerLookupParams.orderNumber ||
+          customerLookupParams.sourceMessageId)
+      ) {
+        try {
+          const lookupResponse = await fetch("/api/inbox/customer-lookup", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({
+              ...customerLookupParams,
+              forceRefresh: false,
+              debug: true,
+            }),
+          });
+          const lookupPayload = await lookupResponse.json().catch(() => null);
+          if (lookupResponse.ok && lookupPayload) {
+            resolvedCustomerLookup = lookupPayload;
+          }
+        } catch {
+          resolvedCustomerLookup = null;
+        }
       }
-      : null;
-    setV2PreviewByThread((prev) => ({
-      ...prev,
-      [threadId]: { loading: true, draft_text: null, confidence: 0, sources: [], proposed_actions: [], error: null },
-    }));
-    try {
-      const res = await fetch("/api/draft/preview-v2", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          thread_id: threadId,
-          message_id: messageId ?? null,
-          customer_context: customerContext,
-        }),
-      });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(payload?.error || "Preview fejlede.");
+      const customerContext = resolvedCustomerLookup
+        ? {
+            customer: resolvedCustomerLookup.customer || null,
+            orders: Array.isArray(resolvedCustomerLookup.orders)
+              ? resolvedCustomerLookup.orders.slice(0, 3)
+              : [],
+          }
+        : null;
       setV2PreviewByThread((prev) => ({
         ...prev,
         [threadId]: {
-          loading: false,
-          draft_text: payload.draft_text ?? null,
-          confidence: payload.confidence ?? 0,
-          routing_hint: payload.routing_hint ?? "review",
-          is_test_mode: payload.is_test_mode ?? false,
-          sources: payload.sources ?? [],
-          proposed_actions: payload.proposed_actions ?? [],
-          skipped: payload.skipped ?? false,
-          skip_reason: payload.skip_reason ?? null,
+          loading: true,
+          draft_text: null,
+          confidence: 0,
+          sources: [],
+          proposed_actions: [],
           error: null,
         },
       }));
-    } catch (err) {
-      setV2PreviewByThread((prev) => ({
+      try {
+        const res = await fetch("/api/draft/preview-v2", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            thread_id: threadId,
+            message_id: messageId ?? null,
+            customer_context: customerContext,
+          }),
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(payload?.error || "Preview fejlede.");
+        setV2PreviewByThread((prev) => ({
+          ...prev,
+          [threadId]: {
+            loading: false,
+            preview_id: payload.preview_id ?? null,
+            draft_text: payload.draft_text ?? null,
+            confidence: payload.confidence ?? 0,
+            routing_hint: payload.routing_hint ?? "review",
+            is_test_mode: payload.is_test_mode ?? false,
+            sources: payload.sources ?? [],
+            proposed_actions: payload.proposed_actions ?? [],
+            skipped: payload.skipped ?? false,
+            skip_reason: payload.skip_reason ?? null,
+            error: null,
+          },
+        }));
+      } catch (err) {
+        setV2PreviewByThread((prev) => ({
+          ...prev,
+          [threadId]: {
+            loading: false,
+            draft_text: null,
+            confidence: 0,
+            sources: [],
+            proposed_actions: [],
+            error: err?.message || "Preview fejlede.",
+          },
+        }));
+      }
+    },
+    [customerLookup, customerLookupParams],
+  );
+
+  const handleAdoptV2Preview = useCallback(
+    (threadId) => {
+      const preview = v2PreviewByThread[threadId];
+      if (!preview?.draft_text) return;
+      setDraftValueByThread((prev) => ({
         ...prev,
-        [threadId]: { loading: false, draft_text: null, confidence: 0, sources: [], proposed_actions: [], error: err?.message || "Preview fejlede." },
+        [threadId]: preview.draft_text,
       }));
-    }
-  }, [customerLookup]);
+      setAdoptedV2PreviewByThread((prev) => ({
+        ...prev,
+        [threadId]: {
+          preview_id: preview.preview_id || null,
+          draft_text: preview.draft_text,
+        },
+      }));
+      setSystemDraftUneditedByThread((prev) => ({
+        ...prev,
+        [threadId]: false,
+      }));
+      setV2PreviewByThread((prev) => {
+        const next = { ...prev };
+        delete next[threadId];
+        return next;
+      });
+    },
+    [v2PreviewByThread],
+  );
 
-  const handleAdoptV2Preview = useCallback((threadId) => {
-    const preview = v2PreviewByThread[threadId];
-    if (!preview?.draft_text) return;
-    setDraftValueByThread((prev) => ({ ...prev, [threadId]: preview.draft_text }));
-    setSystemDraftUneditedByThread((prev) => ({ ...prev, [threadId]: false }));
-    setV2PreviewByThread((prev) => {
-      const next = { ...prev };
-      delete next[threadId];
-      return next;
-    });
-  }, [v2PreviewByThread]);
-
-  const handleDismissV2Preview = useCallback((threadId) => {
-    setV2PreviewByThread((prev) => {
-      const next = { ...prev };
-      delete next[threadId];
-      return next;
-    });
-  }, []);
+  const handleDismissV2Preview = useCallback(
+    (threadId) => {
+      const previewId = v2PreviewByThread[threadId]?.preview_id || null;
+      if (previewId) {
+        fetch("/api/draft/preview-v2", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            thread_id: threadId,
+            preview_id: previewId,
+            outcome: "rejected",
+          }),
+        }).catch(() => null);
+      }
+      setV2PreviewByThread((prev) => {
+        const next = { ...prev };
+        delete next[threadId];
+        return next;
+      });
+    },
+    [v2PreviewByThread],
+  );
 
   const handleDraftChange = useCallback(
     (nextValue, threadIdOverride = null) => {
-      const targetThreadId = String(threadIdOverride || selectedThreadId || "").trim();
+      const targetThreadId = String(
+        threadIdOverride || selectedThreadId || "",
+      ).trim();
       if (!targetThreadId) return;
       if (composerMode === "note") {
         setNoteValueByThread((prev) => ({
@@ -3095,7 +3562,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         };
       });
     },
-    [composerMode, selectedThreadId]
+    [composerMode, selectedThreadId],
   );
 
   const handleFiltersChange = (updates) => {
@@ -3116,18 +3583,22 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       const nextThreadId = String(threadId || "").trim();
       if (!nextThreadId || isLocalThreadId(nextThreadId)) return;
 
-      const thread = derivedThreads.find((item) => String(item?.id || "").trim() === nextThreadId);
+      const thread = derivedThreads.find(
+        (item) => String(item?.id || "").trim() === nextThreadId,
+      );
       const hasUnreadMessages = Number(thread?.unread_count ?? 0) > 0;
       const isMarkedRead = Boolean(thread?.is_read);
       if (!hasUnreadMessages && isMarkedRead) return;
 
-      setReadOverrides((prev) => (prev[nextThreadId] ? prev : { ...prev, [nextThreadId]: true }));
+      setReadOverrides((prev) =>
+        prev[nextThreadId] ? prev : { ...prev, [nextThreadId]: true },
+      );
       setLiveThreads((prev) =>
         (prev || []).map((item) =>
           String(item?.id || "").trim() === nextThreadId
             ? { ...item, unread_count: 0, is_read: true }
-            : item
-        )
+            : item,
+        ),
       );
       window.dispatchEvent(new CustomEvent("sona:thread-read"));
 
@@ -3141,7 +3612,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         }),
       }).catch(() => null);
     },
-    [derivedThreads, isLocalThreadId]
+    [derivedThreads, isLocalThreadId],
   );
 
   const openThreadInWorkspace = useCallback(
@@ -3170,7 +3641,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
 
       setSelectedThreadId(nextThreadId);
     },
-    [markThreadReadInstantly, selectedThreadId]
+    [markThreadReadInstantly, selectedThreadId],
   );
 
   const closeThreadTab = useCallback(
@@ -3178,20 +3649,23 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       const closingThreadId = String(threadId || "").trim();
       if (!closingThreadId) return;
       if (isLocalThreadId(closingThreadId)) {
-        setLocalNewThread((prev) => (prev?.id === closingThreadId ? null : prev));
+        setLocalNewThread((prev) =>
+          prev?.id === closingThreadId ? null : prev,
+        );
       }
       setOpenThreadIds((prev) => {
         const currentIndex = prev.indexOf(closingThreadId);
         if (currentIndex === -1) return prev;
         const next = prev.filter((id) => id !== closingThreadId);
         if (selectedThreadId === closingThreadId) {
-          const replacement = next[currentIndex] || next[currentIndex - 1] || null;
+          const replacement =
+            next[currentIndex] || next[currentIndex - 1] || null;
           setSelectedThreadId(replacement);
         }
         return next;
       });
     },
-    [isLocalThreadId, selectedThreadId]
+    [isLocalThreadId, selectedThreadId],
   );
 
   const handleCreateTicket = useCallback(() => {
@@ -3247,7 +3721,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           onAddTab={handleCreateTicket}
           inline
         />
-      </div>
+      </div>,
     );
     return () => setTitleContent(null);
   }, [
@@ -3267,92 +3741,116 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     }
   }, [activeView, filters.status]);
 
-  const handleTicketStateChange = useCallback((updates) => {
-    if (!selectedThreadId) return;
-    setTicketStateByThread((prev) => ({
-      ...prev,
-      [selectedThreadId]: {
-        ...prev[selectedThreadId],
-        ...updates,
-      },
-    }));
+  const handleTicketStateChange = useCallback(
+    (updates) => {
+      if (!selectedThreadId) return;
+      setTicketStateByThread((prev) => ({
+        ...prev,
+        [selectedThreadId]: {
+          ...prev[selectedThreadId],
+          ...updates,
+        },
+      }));
 
-    // When a ticket is resolved/closed it disappears from the current view —
-    // automatically advance to the next visible ticket instead of leaving an
-    // orphaned selection with nothing highlighted in the list.
-    if (updates.status === "Solved") {
-      // Trigger AI solution summary generation (fire-and-forget)
-      fetch(`/api/threads/${encodeURIComponent(selectedThreadId)}/solution-summary`, {
-        method: "POST",
-      }).catch(() => null);
+      // When a ticket is resolved/closed it disappears from the current view —
+      // automatically advance to the next visible ticket instead of leaving an
+      // orphaned selection with nothing highlighted in the list.
+      if (updates.status === "Solved") {
+        // Trigger AI solution summary generation (fire-and-forget)
+        fetch(
+          `/api/threads/${encodeURIComponent(selectedThreadId)}/solution-summary`,
+          {
+            method: "POST",
+          },
+        ).catch(() => null);
 
-      const currentIdx = filteredThreads.findIndex((t) => t.id === selectedThreadId);
-      const nextThread =
-        filteredThreads[currentIdx + 1] || filteredThreads[currentIdx - 1] || null;
-      setOpenThreadIds((prev) => {
-        const without = prev.filter((id) => id !== selectedThreadId);
-        if (!nextThread) return without;
-        return without.includes(nextThread.id) ? without : [nextThread.id, ...without];
-      });
-      setSelectedThreadId(nextThread?.id || null);
-    }
+        const currentIdx = filteredThreads.findIndex(
+          (t) => t.id === selectedThreadId,
+        );
+        const nextThread =
+          filteredThreads[currentIdx + 1] ||
+          filteredThreads[currentIdx - 1] ||
+          null;
+        setOpenThreadIds((prev) => {
+          const without = prev.filter((id) => id !== selectedThreadId);
+          if (!nextThread) return without;
+          return without.includes(nextThread.id)
+            ? without
+            : [nextThread.id, ...without];
+        });
+        setSelectedThreadId(nextThread?.id || null);
+      }
 
-    const payload = {};
-    if (typeof updates.status === "string") {
-      payload.status = updates.status;
-    }
-    if (typeof updates.priority === "string" || updates.priority === null) {
-      payload.priority = updates.priority;
-    }
-    if (typeof updates.assignee === "string" || updates.assignee === null) {
-      payload.assigneeId = updates.assignee;
-    }
-    if (!Object.keys(payload).length) return;
+      const payload = {};
+      if (typeof updates.status === "string") {
+        payload.status = updates.status;
+      }
+      if (typeof updates.priority === "string" || updates.priority === null) {
+        payload.priority = updates.priority;
+      }
+      if (typeof updates.assignee === "string" || updates.assignee === null) {
+        payload.assigneeId = updates.assignee;
+      }
+      if (!Object.keys(payload).length) return;
 
-    fetch("/api/inbox/thread-status", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        threadId: selectedThreadId,
-        ...payload,
-      }),
-    })
-      .then(async (response) => {
-        if (response.ok) return;
-        const data = await response.json().catch(() => null);
-        throw new Error(data?.error || "Could not update ticket status.");
+      fetch("/api/inbox/thread-status", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          threadId: selectedThreadId,
+          ...payload,
+        }),
       })
-      .catch((error) => {
-        toast.error(error.message || "Could not update ticket status.");
-      });
-  }, [filteredThreads, selectedThreadId]);
+        .then(async (response) => {
+          if (response.ok) return;
+          const data = await response.json().catch(() => null);
+          throw new Error(data?.error || "Could not update ticket status.");
+        })
+        .catch((error) => {
+          toast.error(error.message || "Could not update ticket status.");
+        });
+    },
+    [filteredThreads, selectedThreadId],
+  );
 
   const handleInboxChange = useCallback(
     (destination) => {
       if (!selectedThreadId) return;
       const normalized =
-        typeof destination?.inboxSlug === "string" ? destination.inboxSlug.trim() : "";
+        typeof destination?.inboxSlug === "string"
+          ? destination.inboxSlug.trim()
+          : "";
       const nextClassificationKey =
-        String(destination?.classificationKey || "support").trim().toLowerCase() ===
-        "notification"
+        String(destination?.classificationKey || "support")
+          .trim()
+          .toLowerCase() === "notification"
           ? "notification"
           : "support";
       const shouldApplySenderRule = Boolean(destination?.applySenderRule);
-      const senderRuleEmail = String(destination?.senderRuleEmail || "").trim().toLowerCase();
+      const senderRuleEmail = String(destination?.senderRuleEmail || "")
+        .trim()
+        .toLowerCase();
       const previousThread =
         derivedThreads.find((thread) => thread.id === selectedThreadId) || null;
       const previousTags = previousThread?.tags || [];
-      const previousClassificationKey = previousThread?.classification_key || null;
-      const previousClassificationConfidence = previousThread?.classification_confidence ?? null;
-      const previousClassificationReason = previousThread?.classification_reason || null;
+      const previousClassificationKey =
+        previousThread?.classification_key || null;
+      const previousClassificationConfidence =
+        previousThread?.classification_confidence ?? null;
+      const previousClassificationReason =
+        previousThread?.classification_reason || null;
       setLiveThreads((prev) =>
         (prev || []).map((thread) => {
           if (thread.id !== selectedThreadId) return thread;
           const tags = Array.isArray(thread.tags) ? thread.tags : [];
-          const withoutInbox = tags.filter((tag) => !String(tag || "").startsWith("inbox:"));
+          const withoutInbox = tags.filter(
+            (tag) => !String(tag || "").startsWith("inbox:"),
+          );
           return {
             ...thread,
-            tags: normalized ? [...withoutInbox, toInboxTag(normalized)] : withoutInbox,
+            tags: normalized
+              ? [...withoutInbox, toInboxTag(normalized)]
+              : withoutInbox,
             classification_key: nextClassificationKey,
             classification_confidence: 1,
             classification_reason:
@@ -3360,7 +3858,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
                 ? "manual_move_to_notifications"
                 : "manual_move_to_tickets",
           };
-        })
+        }),
       );
 
       fetch("/api/inbox/thread-status", {
@@ -3388,13 +3886,15 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
                 classification_confidence: previousClassificationConfidence,
                 classification_reason: previousClassificationReason,
               };
-            })
+            }),
           );
           toast.error(error.message || "Could not update inbox.");
         });
 
       if (shouldApplySenderRule && senderRuleEmail) {
-        const senderRuleDestinationType = normalized ? "inbox" : "classification";
+        const senderRuleDestinationType = normalized
+          ? "inbox"
+          : "classification";
         const senderRuleDestinationValue = normalized || nextClassificationKey;
         fetch("/api/settings/email-sender-rules", {
           method: "POST",
@@ -3420,7 +3920,7 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           });
       }
     },
-    [derivedThreads, selectedThreadId]
+    [derivedThreads, selectedThreadId],
   );
   const handleAssignmentChange = useCallback(
     (value) => {
@@ -3430,101 +3930,119 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         return;
       }
       if (selected.startsWith("user:")) {
-        handleTicketStateChange({ assignee: selected.slice("user:".length) || null });
+        handleTicketStateChange({
+          assignee: selected.slice("user:".length) || null,
+        });
       }
     },
-    [handleTicketStateChange]
+    [handleTicketStateChange],
   );
 
-  const saveThreadDraft = useCallback(async ({ immediate = false, valueOverride, threadIdOverride } = {}) => {
-    const threadId = String(threadIdOverride || selectedThreadId || "").trim();
-    if (!threadId) return;
-    if (isLocalThreadId(threadId)) return;
-    if (composerMode === "note") return;
-    if (!draftReady) return;
-    const fallbackValue =
-      threadId === selectedThreadIdRef.current ? draftValueRef.current : draftValueByThread[threadId] || "";
-    const text = String(valueOverride ?? fallbackValue ?? "");
-    const trimmed = text.trim();
-    if (!trimmed) {
-      if (!immediate || savingDraftThreadIdsRef.current.has(threadId)) return;
+  const saveThreadDraft = useCallback(
+    async ({ immediate = false, valueOverride, threadIdOverride } = {}) => {
+      const threadId = String(
+        threadIdOverride || selectedThreadId || "",
+      ).trim();
+      if (!threadId) return;
+      if (isLocalThreadId(threadId)) return;
+      if (composerMode === "note") return;
+      if (!draftReady) return;
+      const fallbackValue =
+        threadId === selectedThreadIdRef.current
+          ? draftValueRef.current
+          : draftValueByThread[threadId] || "";
+      const text = String(valueOverride ?? fallbackValue ?? "");
+      const trimmed = text.trim();
+      if (!trimmed) {
+        if (!immediate || savingDraftThreadIdsRef.current.has(threadId)) return;
+        savingDraftThreadIdsRef.current.add(threadId);
+        let deleteSucceeded = false;
+        try {
+          const res = await fetch(`/api/threads/${threadId}/draft`, {
+            method: "DELETE",
+          });
+          deleteSucceeded = Boolean(res?.ok);
+        } catch {
+          // ignore delete draft errors in UI flow
+        } finally {
+          savingDraftThreadIdsRef.current.delete(threadId);
+        }
+        if (selectedThreadIdRef.current === threadId) {
+          setActiveDraftId(null);
+          setDraftValue("");
+        }
+        setDraftValueByThread((prev) => ({
+          ...prev,
+          [threadId]: "",
+        }));
+        setSystemDraftUneditedByThread((prev) => ({
+          ...prev,
+          [threadId]: false,
+        }));
+        draftLastSavedRef.current[threadId] = "";
+        setSuppressAutoDraftByThread((prev) => ({
+          ...prev,
+          [threadId]: true,
+        }));
+        if (deleteSucceeded && threadId === selectedThreadIdRef.current) {
+          refreshSelectedThreadMessages?.().catch(() => null);
+        }
+        return;
+      }
+      if (
+        !immediate &&
+        trimmed === String(draftLastSavedRef.current[threadId] || "")
+      )
+        return;
+      if (savingDraftThreadIdsRef.current.has(threadId)) return;
       savingDraftThreadIdsRef.current.add(threadId);
-      let deleteSucceeded = false;
       try {
+        const subject =
+          derivedThreads.find(
+            (thread) => String(thread?.id || "").trim() === threadId,
+          )?.subject || "";
         const res = await fetch(`/api/threads/${threadId}/draft`, {
-          method: "DELETE",
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            body_text: text,
+            subject,
+          }),
         });
-        deleteSucceeded = Boolean(res?.ok);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data?.error || "Could not save draft.");
+        }
+        draftLastSavedRef.current[threadId] = trimmed;
+        if (data?.draft_id && selectedThreadIdRef.current === threadId) {
+          setActiveDraftId(data.draft_id);
+        }
       } catch {
-        // ignore delete draft errors in UI flow
+        // keep UI responsive; autosave retries on next change/interval
       } finally {
         savingDraftThreadIdsRef.current.delete(threadId);
       }
-      if (selectedThreadIdRef.current === threadId) {
-        setActiveDraftId(null);
-        setDraftValue("");
-      }
-      setDraftValueByThread((prev) => ({
-        ...prev,
-        [threadId]: "",
-      }));
-      setSystemDraftUneditedByThread((prev) => ({
-        ...prev,
-        [threadId]: false,
-      }));
-      draftLastSavedRef.current[threadId] = "";
-      setSuppressAutoDraftByThread((prev) => ({
-        ...prev,
-        [threadId]: true,
-      }));
-      if (deleteSucceeded && threadId === selectedThreadIdRef.current) {
-        refreshSelectedThreadMessages?.().catch(() => null);
-      }
-      return;
-    }
-    if (!immediate && trimmed === String(draftLastSavedRef.current[threadId] || "")) return;
-    if (savingDraftThreadIdsRef.current.has(threadId)) return;
-    savingDraftThreadIdsRef.current.add(threadId);
-    try {
-      const subject =
-        derivedThreads.find((thread) => String(thread?.id || "").trim() === threadId)?.subject || "";
-      const res = await fetch(`/api/threads/${threadId}/draft`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          body_text: text,
-          subject,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data?.error || "Could not save draft.");
-      }
-      draftLastSavedRef.current[threadId] = trimmed;
-      if (data?.draft_id && selectedThreadIdRef.current === threadId) {
-        setActiveDraftId(data.draft_id);
-      }
-    } catch {
-      // keep UI responsive; autosave retries on next change/interval
-    } finally {
-      savingDraftThreadIdsRef.current.delete(threadId);
-    }
-  }, [
-    composerMode,
-    draftReady,
-    draftValueByThread,
-    derivedThreads,
-    isLocalThreadId,
-    selectedThreadId,
-    refreshSelectedThreadMessages,
-  ]);
+    },
+    [
+      composerMode,
+      draftReady,
+      draftValueByThread,
+      derivedThreads,
+      isLocalThreadId,
+      selectedThreadId,
+      refreshSelectedThreadMessages,
+    ],
+  );
 
   const handleSelectThreadInWorkspace = useCallback(
     (threadId, options = {}) => {
-      saveThreadDraft({ immediate: true, valueOverride: draftValueRef.current });
+      saveThreadDraft({
+        immediate: true,
+        valueOverride: draftValueRef.current,
+      });
       openThreadInWorkspace(threadId, options);
     },
-    [openThreadInWorkspace, saveThreadDraft]
+    [openThreadInWorkspace, saveThreadDraft],
   );
 
   const handleOpenPreviousTicket = useCallback(
@@ -3534,14 +4052,17 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       handleSelectThreadInWorkspace(nextThreadId, { newTab: false });
       setInsightsOpen(false);
     },
-    [handleSelectThreadInWorkspace]
+    [handleSelectThreadInWorkspace],
   );
 
   useEffect(() => {
     if (isLocalThreadId(selectedThreadId)) return;
     if (!selectedThreadId || !draftReady) return;
     const timer = setInterval(() => {
-      saveThreadDraft({ immediate: false, valueOverride: draftValueRef.current });
+      saveThreadDraft({
+        immediate: false,
+        valueOverride: draftValueRef.current,
+      });
     }, 4000);
     return () => clearInterval(timer);
   }, [draftReady, isLocalThreadId, saveThreadDraft, selectedThreadId]);
@@ -3579,9 +4100,11 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       payload?.mode === "note" || composerMode === "note"
         ? "note"
         : payload?.mode === "forward" || composerMode === "forward"
-        ? "forward"
-        : "reply";
-    const composeBody = String(composeMode === "note" ? activeNoteValue : draftValue || "");
+          ? "forward"
+          : "reply";
+    const composeBody = String(
+      composeMode === "note" ? activeNoteValue : draftValue || "",
+    );
     if (!composeBody.trim()) {
       toast.error("Draft is empty.");
       return;
@@ -3592,8 +4115,8 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       composeMode === "note"
         ? "Saving note..."
         : composeMode === "forward"
-        ? "Forwarding email..."
-        : "Sending draft..."
+          ? "Forwarding email..."
+          : "Sending draft...",
     );
     try {
       if (composeMode === "note") {
@@ -3642,12 +4165,15 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         return;
       }
 
-      const rawAttachments = Array.isArray(payload?.attachments) ? payload.attachments : [];
+      const rawAttachments = Array.isArray(payload?.attachments)
+        ? payload.attachments
+        : [];
       const serializedAttachments = await Promise.all(
         rawAttachments.map(async (file) => {
           if (!file || typeof file.arrayBuffer !== "function") return null;
           const name = String(file.name || "").trim() || "attachment";
-          const mimeType = String(file.type || "").trim() || "application/octet-stream";
+          const mimeType =
+            String(file.type || "").trim() || "application/octet-stream";
           const sizeBytes = Number(file.size || 0);
           if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) return null;
           if (sizeBytes > 15 * 1024 * 1024) {
@@ -3657,12 +4183,17 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           const chunkSize = 0x8000;
           let binary = "";
           for (let index = 0; index < bytes.length; index += chunkSize) {
-            const chunk = bytes.subarray(index, Math.min(index + chunkSize, bytes.length));
+            const chunk = bytes.subarray(
+              index,
+              Math.min(index + chunkSize, bytes.length),
+            );
             binary += String.fromCharCode(...chunk);
           }
           const contentBase64 = btoa(binary);
           const deliveryMode =
-            String(file?.__innoDeliveryMode || "").trim().toLowerCase() === "inline"
+            String(file?.__innoDeliveryMode || "")
+              .trim()
+              .toLowerCase() === "inline"
               ? "inline"
               : "attachment";
           const normalizedContentId = String(file?.__innoContentId || "")
@@ -3677,9 +4208,10 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
             size_bytes: sizeBytes,
             content_base64: contentBase64,
             is_inline: deliveryMode === "inline",
-            content_id: deliveryMode === "inline" ? normalizedContentId || null : null,
+            content_id:
+              deliveryMode === "inline" ? normalizedContentId || null : null,
           };
-        })
+        }),
       );
       const attachmentsPayload = serializedAttachments.filter(Boolean);
 
@@ -3694,6 +4226,8 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           attachments: attachmentsPayload,
           sender_name: currentUserName,
           draft_message_id: draftMessage?.id || activeDraftId || null,
+          draft_preview_id:
+            adoptedV2PreviewByThread[selectedThreadId]?.preview_id || null,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -3703,27 +4237,27 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       const nowIso = new Date().toISOString();
       const localMessageId = data?.message_id || `local-sent-${Date.now()}`;
       const localBodyText = String(data?.body_text || composeBody || "");
-      const localCleanBodyText = String(data?.clean_body_text || localBodyText || "");
+      const localCleanBodyText = String(
+        data?.clean_body_text || localBodyText || "",
+      );
       const fallbackLocalBodyHtml = String(localCleanBodyText || "")
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
-        .replace(
-          /\[cid:([^\]]+)\]/gi,
-          (_match, rawCid = "") => {
-            const normalizedCid = String(rawCid || "")
-              .trim()
-              .replace(/^cid:/i, "")
-              .replace(/[^A-Za-z0-9._@-]+/g, "-")
-              .replace(/^-+|-+$/g, "")
-              .slice(0, 120);
-            return normalizedCid
-              ? `<img src="cid:${normalizedCid}" alt="Inline image">`
-              : "";
-          }
-        )
+        .replace(/\[cid:([^\]]+)\]/gi, (_match, rawCid = "") => {
+          const normalizedCid = String(rawCid || "")
+            .trim()
+            .replace(/^cid:/i, "")
+            .replace(/[^A-Za-z0-9._@-]+/g, "-")
+            .replace(/^-+|-+$/g, "")
+            .slice(0, 120);
+          return normalizedCid
+            ? `<img src="cid:${normalizedCid}" alt="Inline image">`
+            : "";
+        })
         .replace(/\n/g, "<br/>");
-      const localBodyHtml = String(data?.body_html || "").trim() || fallbackLocalBodyHtml;
+      const localBodyHtml =
+        String(data?.body_html || "").trim() || fallbackLocalBodyHtml;
       const localCleanBodyHtml =
         String(data?.clean_body_html || "").trim() || fallbackLocalBodyHtml;
       const redirectedTo =
@@ -3758,7 +4292,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
             attachments: attachmentsPayload.map((attachment, index) => ({
               id: `local-attachment-${Date.now()}-${index}`,
               message_id: localMessageId,
-              provider_attachment_id: attachment?.is_inline ? attachment?.content_id || null : null,
+              provider_attachment_id: attachment?.is_inline
+                ? attachment?.content_id || null
+                : null,
               filename: attachment.filename,
               mime_type: attachment.mime_type,
               size_bytes: attachment.size_bytes,
@@ -3767,23 +4303,28 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           },
         ],
       }));
-      const providerId = data?.provider_message_id ? ` (${data.provider_message_id})` : "";
+      const providerId = data?.provider_message_id
+        ? ` (${data.provider_message_id})`
+        : "";
       if (data?.simulated) {
         toast.success(
           data?.message ||
             "Email simulated: Test Mode is enabled and no Test Email Address is configured.",
-          { id: toastId }
+          { id: toastId },
         );
       } else if (data?.test_mode && data?.redirected_to) {
-        toast.success(`Reply sent to ${data.redirected_to} (Test Mode).${providerId}`, {
-          id: toastId,
-        });
+        toast.success(
+          `Reply sent to ${data.redirected_to} (Test Mode).${providerId}`,
+          {
+            id: toastId,
+          },
+        );
       } else {
         toast.success(
           composeMode === "forward"
             ? `Forward sent${providerId}.`
             : `Reply sent${providerId}.`,
-          { id: toastId }
+          { id: toastId },
         );
       }
       if (composeMode !== "note") {
@@ -3798,13 +4339,16 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           (prev || []).map((thread) =>
             thread?.id === selectedThreadId
               ? { ...thread, status: "pending", updated_at: nowIso }
-              : thread
-          )
+              : thread,
+          ),
         );
         fetch("/api/inbox/thread-status", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ threadId: selectedThreadId, status: "Pending" }),
+          body: JSON.stringify({
+            threadId: selectedThreadId,
+            status: "Pending",
+          }),
         }).catch(() => null);
       }
       if (selectedThreadIdRef.current === selectedThreadId) {
@@ -3814,6 +4358,11 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         ...prev,
         [selectedThreadId]: "",
       }));
+      setAdoptedV2PreviewByThread((prev) => {
+        const next = { ...prev };
+        delete next[selectedThreadId];
+        return next;
+      });
       setActiveDraftId(null);
       draftLastSavedRef.current[selectedThreadId] = "";
       setSystemDraftUneditedByThread((prev) => ({
@@ -3837,68 +4386,82 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
     }
   };
 
-  const deleteThreadById = useCallback(async (threadId) => {
-    if (!threadId || deletingThread) return;
-    if (isLocalThreadId(threadId)) {
-      setLocalNewThread(null);
-      setOpenThreadIds((prev) => prev.filter((openThreadId) => openThreadId !== threadId));
-      if (selectedThreadId === threadId) {
-        setSelectedThreadId(null);
+  const deleteThreadById = useCallback(
+    async (threadId) => {
+      if (!threadId || deletingThread) return;
+      if (isLocalThreadId(threadId)) {
+        setLocalNewThread(null);
+        setOpenThreadIds((prev) =>
+          prev.filter((openThreadId) => openThreadId !== threadId),
+        );
+        if (selectedThreadId === threadId) {
+          setSelectedThreadId(null);
+        }
+        setDraftValue("");
+        setDraftValueByThread((prev) => {
+          const next = { ...prev };
+          delete next[threadId];
+          return next;
+        });
+        setActiveDraftId(null);
+        return;
       }
-      setDraftValue("");
-      setDraftValueByThread((prev) => {
-        const next = { ...prev };
-        delete next[threadId];
-        return next;
-      });
-      setActiveDraftId(null);
-      return;
-    }
-    const confirmed = window.confirm("Are you sure you want to delete this ticket? This cannot be undone.");
-    if (!confirmed) return;
-    setDeletingThread(true);
-    try {
-      const res = await fetch(`/api/threads/${threadId}/delete`, {
-        method: "DELETE",
-      });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(payload?.error || "Could not delete ticket.");
-      }
-      toast.success("Ticket deleted.");
-      setOpenThreadIds((prev) => prev.filter((openThreadId) => openThreadId !== threadId));
-      if (selectedThreadId === threadId) {
-        setSelectedThreadId(null);
-      }
-      setDraftValue("");
-      setDraftValueByThread((prev) => {
-        const next = { ...prev };
-        delete next[threadId];
-        return next;
-      });
-      setLocalSentMessagesByThread((prev) => {
-        const next = { ...prev };
-        delete next[threadId];
-        return next;
-      });
-      setTicketStateByThread((prev) => {
-        const next = { ...prev };
-        delete next[threadId];
-        return next;
-      });
-      setLiveThreads((prev) =>
-        (prev || []).filter((thread) => String(thread?.id || "") !== String(threadId || ""))
+      const confirmed = window.confirm(
+        "Are you sure you want to delete this ticket? This cannot be undone.",
       );
-      setLiveMessages((prev) =>
-        (prev || []).filter((message) => String(message?.thread_id || "") !== String(threadId || ""))
-      );
-      setActiveDraftId(null);
-    } catch (error) {
-      toast.error(error?.message || "Could not delete ticket.");
-    } finally {
-      setDeletingThread(false);
-    }
-  }, [deletingThread, isLocalThreadId, selectedThreadId]);
+      if (!confirmed) return;
+      setDeletingThread(true);
+      try {
+        const res = await fetch(`/api/threads/${threadId}/delete`, {
+          method: "DELETE",
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(payload?.error || "Could not delete ticket.");
+        }
+        toast.success("Ticket deleted.");
+        setOpenThreadIds((prev) =>
+          prev.filter((openThreadId) => openThreadId !== threadId),
+        );
+        if (selectedThreadId === threadId) {
+          setSelectedThreadId(null);
+        }
+        setDraftValue("");
+        setDraftValueByThread((prev) => {
+          const next = { ...prev };
+          delete next[threadId];
+          return next;
+        });
+        setLocalSentMessagesByThread((prev) => {
+          const next = { ...prev };
+          delete next[threadId];
+          return next;
+        });
+        setTicketStateByThread((prev) => {
+          const next = { ...prev };
+          delete next[threadId];
+          return next;
+        });
+        setLiveThreads((prev) =>
+          (prev || []).filter(
+            (thread) => String(thread?.id || "") !== String(threadId || ""),
+          ),
+        );
+        setLiveMessages((prev) =>
+          (prev || []).filter(
+            (message) =>
+              String(message?.thread_id || "") !== String(threadId || ""),
+          ),
+        );
+        setActiveDraftId(null);
+      } catch (error) {
+        toast.error(error?.message || "Could not delete ticket.");
+      } finally {
+        setDeletingThread(false);
+      }
+    },
+    [deletingThread, isLocalThreadId, selectedThreadId],
+  );
 
   const handleDeleteThread = useCallback(() => {
     if (!selectedThreadId) return;
@@ -3929,31 +4492,40 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
       try {
         const nowIso = new Date().toISOString();
         const pendingId = String(pending.id || "").trim();
-        const pendingLooksLikeUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-          pendingId
+        const pendingLooksLikeUuid =
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+            pendingId,
+          );
+        const res = await fetch(
+          `/api/threads/${selectedThreadId}/order-updates/accept`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              decision: normalized === "accepted" ? "accepted" : "declined",
+              actionId: pendingLooksLikeUuid ? pendingId : null,
+              proposalLogId: pendingLooksLikeUuid ? null : pending.id || null,
+              proposalText: pending.detail || "",
+              payloadOverride:
+                options &&
+                typeof options === "object" &&
+                Object.keys(options).length
+                  ? options
+                  : null,
+            }),
+          },
         );
-        const res = await fetch(`/api/threads/${selectedThreadId}/order-updates/accept`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            decision: normalized === "accepted" ? "accepted" : "declined",
-            actionId: pendingLooksLikeUuid ? pendingId : null,
-            proposalLogId: pendingLooksLikeUuid ? null : pending.id || null,
-            proposalText: pending.detail || "",
-            payloadOverride:
-              options && typeof options === "object" && Object.keys(options).length
-                ? options
-                : null,
-          }),
-        });
         const payload = await res.json().catch(() => ({}));
         if (!res.ok) {
           throw new Error(payload?.error || "Could not update action.");
         }
-        if (normalized === "accepted" && (payload?.testMode || payload?.simulated)) {
+        if (
+          normalized === "accepted" &&
+          (payload?.testMode || payload?.simulated)
+        ) {
           const testModeMessage = String(
             payload?.message ||
-              "Action approved, but no changes were made because Test Mode is enabled."
+              "Action approved, but no changes were made because Test Mode is enabled.",
           );
           setPendingOrderUpdateByThread((prev) => ({
             ...prev,
@@ -3962,7 +4534,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
               detail: testModeMessage,
               actionType: pending.actionType || null,
               payload:
-                pending.payload && typeof pending.payload === "object" ? pending.payload : {},
+                pending.payload && typeof pending.payload === "object"
+                  ? pending.payload
+                  : {},
               createdAt: pending.createdAt || null,
               updatedAt: payload?.approvedAt || nowIso,
               status: "approved_test_mode",
@@ -3974,7 +4548,8 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         }
         if (payload?.blocked) {
           const blockedReason = String(
-            payload?.reason || "Action could not be applied because the order cannot be changed."
+            payload?.reason ||
+              "Action could not be applied because the order cannot be changed.",
           );
           setPendingOrderUpdateByThread((prev) => ({
             ...prev,
@@ -3982,7 +4557,10 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
               id: String(pending.id || ""),
               detail: blockedReason,
               actionType: pending.actionType || null,
-              payload: pending.payload && typeof pending.payload === "object" ? pending.payload : {},
+              payload:
+                pending.payload && typeof pending.payload === "object"
+                  ? pending.payload
+                  : {},
               createdAt: pending.createdAt || null,
               updatedAt: payload?.approvedAt || nowIso,
               status: "failed",
@@ -4001,9 +4579,12 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           });
 
           if (payload?.draftGenerated) {
-            const draftRes = await fetch(`/api/threads/${selectedThreadId}/draft`, {
-              method: "GET",
-            }).catch(() => null);
+            const draftRes = await fetch(
+              `/api/threads/${selectedThreadId}/draft`,
+              {
+                method: "GET",
+              },
+            ).catch(() => null);
             if (draftRes?.ok) {
               const draftPayload = await draftRes.json().catch(() => ({}));
               const draft = draftPayload?.draft || null;
@@ -4018,7 +4599,10 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
                   [selectedThreadId]: true,
                 }));
               }
-              if (draft?.id && selectedThreadIdRef.current === selectedThreadId) {
+              if (
+                draft?.id &&
+                selectedThreadIdRef.current === selectedThreadId
+              ) {
                 setActiveDraftId(draft.id);
               }
             }
@@ -4044,9 +4628,12 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
             [selectedThreadId]: {
               id: String(followUp.id || ""),
               detail: asString(followUp.detail) || "Process return in Shopify.",
-              actionType: asString(followUp.actionType || followUp.action_type) || null,
+              actionType:
+                asString(followUp.actionType || followUp.action_type) || null,
               payload:
-                followUp?.payload && typeof followUp.payload === "object" ? followUp.payload : {},
+                followUp?.payload && typeof followUp.payload === "object"
+                  ? followUp.payload
+                  : {},
               createdAt: followUp.createdAt || null,
               updatedAt: followUp.updatedAt || followUp.createdAt || null,
               status: "pending",
@@ -4065,7 +4652,10 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
               ...prev,
               [selectedThreadId]: {
                 ...pending,
-                status: payload?.testMode || payload?.simulated ? "approved_test_mode" : "applied",
+                status:
+                  payload?.testMode || payload?.simulated
+                    ? "approved_test_mode"
+                    : "applied",
                 detail: asString(payload?.detail) || pending.detail || "",
                 updatedAt: payload?.approvedAt || nowIso,
                 approvedBy: currentUserName,
@@ -4089,20 +4679,27 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
             toast.success(
               payload?.message ||
                 "Action approved, but no changes were made because Test Mode is enabled.",
-              { id: toastId }
+              { id: toastId },
             );
           } else {
             toast.success("Action approved and applied.", { id: toastId });
           }
           if (payload?.draftGenerated) {
-            const draftRes = await fetch(`/api/threads/${selectedThreadId}/draft`, {
-              method: "GET",
-            }).catch(() => null);
+            const draftRes = await fetch(
+              `/api/threads/${selectedThreadId}/draft`,
+              {
+                method: "GET",
+              },
+            ).catch(() => null);
             if (draftRes?.ok) {
               const draftPayload = await draftRes.json().catch(() => ({}));
               const draft = draftPayload?.draft || null;
               const sig = String(draftPayload?.signature || "");
-              const draftText = draft?.rendered_body_text || draft?.body_text || draft?.body_html || "";
+              const draftText =
+                draft?.rendered_body_text ||
+                draft?.body_text ||
+                draft?.body_html ||
+                "";
               if (draftText) {
                 if (selectedThreadIdRef.current === selectedThreadId) {
                   setDraftValue(draftText);
@@ -4111,13 +4708,26 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
                   draftValueRef.current = draftText;
                 }
                 draftLastSavedRef.current[selectedThreadId] = draftText.trim();
-                setDraftValueByThread((prev) => ({ ...prev, [selectedThreadId]: draftText }));
-                setSystemDraftUneditedByThread((prev) => ({ ...prev, [selectedThreadId]: true }));
+                setDraftValueByThread((prev) => ({
+                  ...prev,
+                  [selectedThreadId]: draftText,
+                }));
+                setSystemDraftUneditedByThread((prev) => ({
+                  ...prev,
+                  [selectedThreadId]: true,
+                }));
               }
-              if (draft?.id && selectedThreadIdRef.current === selectedThreadId) {
+              if (
+                draft?.id &&
+                selectedThreadIdRef.current === selectedThreadId
+              ) {
                 setActiveDraftId(draft.id);
               }
-              if (sig) setSignatureByThread((prev) => ({ ...prev, [selectedThreadId]: sig }));
+              if (sig)
+                setSignatureByThread((prev) => ({
+                  ...prev,
+                  [selectedThreadId]: sig,
+                }));
             }
           }
         } else {
@@ -4129,7 +4739,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           ...prev,
           [selectedThreadId]: message,
         }));
-        toast.error(error?.message || "Could not update action.", { id: toastId });
+        toast.error(error?.message || "Could not update action.", {
+          id: toastId,
+        });
       } finally {
         setOrderUpdateSubmittingByThread((prev) => ({
           ...prev,
@@ -4137,9 +4749,13 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         }));
       }
     },
-    [currentUserName, orderUpdateSubmittingByThread, pendingOrderUpdateByThread, selectedThreadId]
+    [
+      currentUserName,
+      orderUpdateSubmittingByThread,
+      pendingOrderUpdateByThread,
+      selectedThreadId,
+    ],
   );
-
 
   const getThreadTimestamp = (thread) => thread.last_message_at || "";
 
@@ -4161,7 +4777,8 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         draftText: draftValue,
         aiDraftText: aiDraft,
         threadMessages: rawThreadMessages,
-        orderShippingAddress: customerLookup?.orders?.[0]?.shippingAddress || null,
+        orderShippingAddress:
+          customerLookup?.orders?.[0]?.shippingAddress || null,
       }),
     };
   }, [
@@ -4174,21 +4791,24 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
   ]);
 
   const latestThreadMessage = useMemo(
-    () => (threadMessages.length ? threadMessages[threadMessages.length - 1] : null),
-    [threadMessages]
+    () =>
+      threadMessages.length ? threadMessages[threadMessages.length - 1] : null,
+    [threadMessages],
   );
   const latestMessageIsInbound = latestThreadMessage
     ? !isOutboundMessage(latestThreadMessage, mailboxEmails)
     : false;
   const hasDraftContentReady =
-    Boolean(draftMessage) || Boolean(aiDraft) || Boolean(String(draftValue || "").trim());
+    Boolean(draftMessage) ||
+    Boolean(aiDraft) ||
+    Boolean(String(draftValue || "").trim());
   const pendingDecisionForSelectedThread = selectedThreadId
     ? pendingOrderUpdateByThread[selectedThreadId]
     : null;
   const isWaitingForApproval =
     Boolean(pendingDecisionForSelectedThread) &&
     !["accepted", "denied"].includes(
-      String(orderUpdateDecisionByThread[selectedThreadId] || "").toLowerCase()
+      String(orderUpdateDecisionByThread[selectedThreadId] || "").toLowerCase(),
     );
 
   const isDraftGenerating =
@@ -4238,7 +4858,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         getTimestamp={getThreadTimestamp}
         getUnreadCount={getThreadUnreadCount}
         onCreateTicket={handleCreateTicket}
-        onOpenInNewTab={(threadId) => handleSelectThreadInWorkspace(threadId, { newTab: true })}
+        onOpenInNewTab={(threadId) =>
+          handleSelectThreadInWorkspace(threadId, { newTab: true })
+        }
         onDeleteThread={deleteThreadById}
         hideSolvedFilter={activeView === ""}
       />
@@ -4253,11 +4875,17 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           threadOrderNumber={customerLookupParams.orderNumber || ""}
           mentionUsers={effectiveMentionUsers}
           currentUserName={currentUserName}
-          ticketState={ticketStateByThread[selectedThreadId] || DEFAULT_TICKET_STATE}
+          ticketState={
+            ticketStateByThread[selectedThreadId] || DEFAULT_TICKET_STATE
+          }
           onTicketStateChange={handleTicketStateChange}
           onOpenInsights={() => setInsightsOpen(true)}
           showThinkingCard={isDraftGenerating}
-          isDraftFetching={!draftReady && !isDraftGenerating && !isLocalThreadId(selectedThreadId)}
+          isDraftFetching={
+            !draftReady &&
+            !isDraftGenerating &&
+            !isLocalThreadId(selectedThreadId)
+          }
           isConversationLoading={isSelectedConversationLoading}
           draftValue={composerValue}
           onDraftChange={handleDraftChange}
@@ -4266,38 +4894,52 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
               immediate: true,
               threadIdOverride: threadId,
               valueOverride:
-                String(threadId || "") === String(selectedThreadIdRef.current || "")
+                String(threadId || "") ===
+                String(selectedThreadIdRef.current || "")
                   ? draftValueRef.current
                   : draftValueByThread[String(threadId || "").trim()] || "",
-            })}
+            })
+          }
           draftLoaded={
             composerMode !== "note" &&
             Boolean(selectedThreadId) &&
             Boolean(draftValue.trim()) &&
             Boolean(systemDraftUneditedByThread[selectedThreadId])
           }
-          canSend={Boolean(selectedThreadId) && !isLocalThreadId(selectedThreadId)}
-          onSend={handleSendDraft}
-          pendingOrderUpdate={
-            selectedPendingOrderUpdate
+          canSend={
+            Boolean(selectedThreadId) && !isLocalThreadId(selectedThreadId)
           }
-          returnCase={selectedThreadId ? returnCaseByThread[selectedThreadId] || null : null}
+          onSend={handleSendDraft}
+          pendingOrderUpdate={selectedPendingOrderUpdate}
+          returnCase={
+            selectedThreadId
+              ? returnCaseByThread[selectedThreadId] || null
+              : null
+          }
           orderUpdateDecision={
-            selectedThreadId ? orderUpdateDecisionByThread[selectedThreadId] || null : null
+            selectedThreadId
+              ? orderUpdateDecisionByThread[selectedThreadId] || null
+              : null
           }
           onOrderUpdateDecision={handleOrderUpdateDecision}
           orderUpdateSubmitting={
-            selectedThreadId ? Boolean(orderUpdateSubmittingByThread[selectedThreadId]) : false
+            selectedThreadId
+              ? Boolean(orderUpdateSubmittingByThread[selectedThreadId])
+              : false
           }
           orderUpdateError={
-            selectedThreadId ? orderUpdateErrorByThread[selectedThreadId] || null : null
+            selectedThreadId
+              ? orderUpdateErrorByThread[selectedThreadId] || null
+              : null
           }
           isSending={isSending}
           composerMode={composerMode}
           onComposerModeChange={setComposerMode}
           mailboxEmails={mailboxEmails}
           isWorkspaceTestMode={isWorkspaceTestMode}
-          conversationScrollTop={selectedThreadId ? scrollPositionByThread[selectedThreadId] || 0 : 0}
+          conversationScrollTop={
+            selectedThreadId ? scrollPositionByThread[selectedThreadId] || 0 : 0
+          }
           onConversationScroll={(scrollTop) => {
             if (!selectedThreadId) return;
             setScrollPositionByThread((prev) => ({
@@ -4310,7 +4952,9 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
               <InboxHeaderActions
                 threadId={selectedThreadId}
                 senderRuleSourceEmail={selectedThread?.customer_email || ""}
-                tagsRefreshTrigger={tagsRefreshTriggerByThread[selectedThreadId] || 0}
+                tagsRefreshTrigger={
+                  tagsRefreshTriggerByThread[selectedThreadId] || 0
+                }
                 ticketState={selectedTicketState}
                 assignmentOptions={assignmentOptions}
                 selectedAssignmentValue={selectedAssignmentValue}
@@ -4338,12 +4982,20 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           detectedLanguage={selectedThread?.customer_language || null}
           onGenerateDraft={handleGenerateDraft}
           isGeneratingDraft={Boolean(
-            selectedThreadId && manualDraftGeneratingByThread[selectedThreadId]
+            selectedThreadId && manualDraftGeneratingByThread[selectedThreadId],
           )}
           onRefineDraft={handleRefineDraft}
-          isRefiningDraft={Boolean(refineDraftLoadingByThread[selectedThreadId])}
-          tagsRefreshTrigger={selectedThreadId ? (tagsRefreshTriggerByThread[selectedThreadId] || 0) : 0}
-          staleDraft={Boolean(selectedThreadId && staleDraftByThread[selectedThreadId])}
+          isRefiningDraft={Boolean(
+            refineDraftLoadingByThread[selectedThreadId],
+          )}
+          tagsRefreshTrigger={
+            selectedThreadId
+              ? tagsRefreshTriggerByThread[selectedThreadId] || 0
+              : 0
+          }
+          staleDraft={Boolean(
+            selectedThreadId && staleDraftByThread[selectedThreadId],
+          )}
           onDismissStaleDraft={() => {
             if (!selectedThreadId) return;
             setStaleDraftByThread((prev) => {
@@ -4355,12 +5007,21 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
           awaitingReturn={isAwaitingReturn}
           onMarkReturnReceived={handleMarkReturnReceived}
           markReturnReceivedLoading={Boolean(
-            selectedThreadId && markReturnReceivedLoadingByThread[selectedThreadId]
+            selectedThreadId &&
+            markReturnReceivedLoadingByThread[selectedThreadId],
           )}
           translationItems={translationCache[selectedThreadId]?.items || []}
-          translationLoading={translationCache[selectedThreadId]?.loading || false}
-          onRequestTranslation={() => fetchTranslationForThread(selectedThreadId)}
-          v2Preview={selectedThreadId ? v2PreviewByThread[selectedThreadId] || null : null}
+          translationLoading={
+            translationCache[selectedThreadId]?.loading || false
+          }
+          onRequestTranslation={() =>
+            fetchTranslationForThread(selectedThreadId)
+          }
+          v2Preview={
+            selectedThreadId
+              ? v2PreviewByThread[selectedThreadId] || null
+              : null
+          }
           onRequestV2Preview={() => {
             const msgs = threadMessages || [];
             const lastMsg = msgs[msgs.length - 1];
@@ -4390,7 +5051,11 @@ export function InboxSplitView({ messages = [], threads = [], attachments = [] }
         open={translationModalOpen}
         onOpenChange={(open) => {
           setTranslationModalOpen(open);
-          if (open && selectedThreadId && !translationCache[selectedThreadId]?.items?.length) {
+          if (
+            open &&
+            selectedThreadId &&
+            !translationCache[selectedThreadId]?.items?.length
+          ) {
             fetchTranslationForThread(selectedThreadId);
           }
         }}

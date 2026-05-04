@@ -12,10 +12,11 @@ import {
   normalizePlainText,
 } from "@/lib/server/email-signature";
 
-const SUPABASE_URL =
-  (process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    process.env.EXPO_PUBLIC_SUPABASE_URL ||
-    "").replace(/\/$/, "");
+const SUPABASE_URL = (
+  process.env.NEXT_PUBLIC_SUPABASE_URL ||
+  process.env.EXPO_PUBLIC_SUPABASE_URL ||
+  ""
+).replace(/\/$/, "");
 const SUPABASE_SERVICE_ROLE_KEY =
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
   process.env.SERVICE_ROLE_KEY ||
@@ -27,7 +28,8 @@ const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
 const MICROSOFT_CLIENT_ID = process.env.MICROSOFT_CLIENT_ID || "";
 const MICROSOFT_CLIENT_SECRET = process.env.MICROSOFT_CLIENT_SECRET || "";
 const MICROSOFT_TENANT_ID = process.env.MICROSOFT_TENANT_ID || "common";
-const POSTMARK_FROM_EMAIL = process.env.POSTMARK_FROM_EMAIL || "support@sona-ai.dk";
+const POSTMARK_FROM_EMAIL =
+  process.env.POSTMARK_FROM_EMAIL || "support@sona-ai.dk";
 const POSTMARK_FROM_NAME = process.env.POSTMARK_FROM_NAME || "Sona";
 
 function createServiceClient() {
@@ -37,7 +39,8 @@ function createServiceClient() {
 
 function normalizeEmailList(value) {
   if (!value) return [];
-  if (Array.isArray(value)) return value.filter(Boolean).map((item) => String(item).trim());
+  if (Array.isArray(value))
+    return value.filter(Boolean).map((item) => String(item).trim());
   if (typeof value === "string") {
     return value
       .split(",")
@@ -48,7 +51,10 @@ function normalizeEmailList(value) {
 }
 
 function stripHtml(html) {
-  return String(html || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  return String(html || "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 async function loadLegacyUserSignature(serviceClient, supabaseUserId) {
@@ -59,16 +65,23 @@ async function loadLegacyUserSignature(serviceClient, supabaseUserId) {
     .eq("user_id", supabaseUserId)
     .maybeSingle();
   if (error) {
-    console.warn("[threads/send] profile signature lookup failed", error.message);
+    console.warn(
+      "[threads/send] profile signature lookup failed",
+      error.message,
+    );
     return "";
   }
   return normalizePlainText(profile?.signature);
 }
 
 function buildSnippet(text, maxLength = 240) {
-  const cleaned = String(text || "").replace(/\s+/g, " ").trim();
+  const cleaned = String(text || "")
+    .replace(/\s+/g, " ")
+    .trim();
   if (!cleaned) return "";
-  return cleaned.length > maxLength ? `${cleaned.slice(0, maxLength).trim()}…` : cleaned;
+  return cleaned.length > maxLength
+    ? `${cleaned.slice(0, maxLength).trim()}…`
+    : cleaned;
 }
 
 function countWords(text) {
@@ -89,7 +102,8 @@ function summarizeDraftDiff(aiText, finalText) {
   const normalizedAi = ai.replace(/\s+/g, " ").trim().toLowerCase();
   const normalizedFinal = final.replace(/\s+/g, " ").trim().toLowerCase();
   const removedFluff =
-    /hope this email finds you well/i.test(ai) && !/hope this email finds you well/i.test(final);
+    /hope this email finds you well/i.test(ai) &&
+    !/hope this email finds you well/i.test(final);
   const addedNextSteps =
     /\b(next steps?|please|you can|we will)\b/i.test(final) &&
     !/\b(next steps?|please|you can|we will)\b/i.test(ai);
@@ -100,11 +114,14 @@ function summarizeDraftDiff(aiText, finalText) {
     final_words: finalWords,
     delta_words: delta,
     delta_pct: Number.isFinite(deltaPct) ? Number(deltaPct.toFixed(2)) : 0,
-    identical_normalized: Boolean(normalizedAi) && normalizedAi === normalizedFinal,
+    identical_normalized:
+      Boolean(normalizedAi) && normalizedAi === normalizedFinal,
     changed_materially:
       Boolean(normalizedAi) &&
       normalizedAi !== normalizedFinal &&
-      (Math.abs(delta) >= 5 || Math.abs(deltaPct) >= 0.15 || Math.abs(final.length - ai.length) >= 40),
+      (Math.abs(delta) >= 5 ||
+        Math.abs(deltaPct) >= 0.15 ||
+        Math.abs(final.length - ai.length) >= 40),
     removed_fluff: removedFluff,
     added_next_steps: addedNextSteps,
   };
@@ -134,8 +151,14 @@ function levenshtein(a, b) {
 }
 
 function classifyEdit(aiText, finalText, distance) {
-  const ai = String(aiText || "").replace(/\s+/g, " ").trim().toLowerCase();
-  const fin = String(finalText || "").replace(/\s+/g, " ").trim().toLowerCase();
+  const ai = String(aiText || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  const fin = String(finalText || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
   if (ai === fin) return "no_edit";
   const maxLen = Math.max(ai.length, fin.length, 1);
   return distance / maxLen < 0.15 ? "minor_edit" : "major_edit";
@@ -171,6 +194,73 @@ async function captureDraftEditFeedback({
   });
 }
 
+async function captureV2DraftPreviewFeedback({
+  serviceClient,
+  previewId,
+  threadId,
+  shopId,
+  finalText,
+  sentAt,
+}) {
+  if (!serviceClient || !previewId || !threadId || !shopId) return;
+
+  const { data: preview, error: previewError } = await serviceClient
+    .from("draft_previews")
+    .select("id, draft_text")
+    .eq("id", previewId)
+    .eq("thread_id", threadId)
+    .eq("shop_id", shopId)
+    .eq("pipeline_version", "v2")
+    .maybeSingle();
+
+  if (previewError || !preview?.id) {
+    if (previewError) {
+      console.warn(
+        "[threads/send] failed to load v2 draft preview",
+        previewError.message,
+      );
+    }
+    return;
+  }
+
+  const originalText = String(preview.draft_text || "");
+  const dist = originalText ? levenshtein(originalText, finalText) : null;
+  const editClass = originalText
+    ? classifyEdit(originalText, finalText, dist)
+    : null;
+  const maxLen = originalText
+    ? Math.max(
+        originalText.slice(0, 1000).length,
+        String(finalText || "").slice(0, 1000).length,
+        1,
+      )
+    : null;
+  const deltaPct =
+    dist !== null && maxLen !== null
+      ? Number((dist / maxLen).toFixed(4))
+      : null;
+  const outcome = editClass === "no_edit" ? "adopted" : "edited_then_adopted";
+
+  const { error } = await serviceClient
+    .from("draft_previews")
+    .update({
+      outcome,
+      final_sent_text: finalText || null,
+      edit_distance: dist,
+      edit_delta_pct: deltaPct,
+      edit_classification: editClass,
+      adopted_at: sentAt || new Date().toISOString(),
+      updated_at: sentAt || new Date().toISOString(),
+    })
+    .eq("id", preview.id);
+
+  if (error) {
+    console.warn(
+      "[threads/send] failed to update v2 draft preview feedback",
+      error.message,
+    );
+  }
+}
 
 function encodeBase64(bytes) {
   return Buffer.from(bytes).toString("base64");
@@ -221,7 +311,10 @@ function encryptToken(value) {
   const key = getAesKey();
   const iv = crypto.randomBytes(16);
   const cipher = crypto.createCipheriv("aes-256-cbc", key, iv);
-  const encrypted = Buffer.concat([cipher.update(value, "utf-8"), cipher.final()]);
+  const encrypted = Buffer.concat([
+    cipher.update(value, "utf-8"),
+    cipher.final(),
+  ]);
   return `${bytesToBase64(iv)}:${bytesToBase64(encrypted)}`;
 }
 
@@ -243,7 +336,10 @@ function decryptToken(value) {
         const encrypted = Buffer.from(base64ToBytes(dataB64));
         try {
           const decipher = crypto.createDecipheriv("aes-256-cbc", key, iv);
-          const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
+          const decrypted = Buffer.concat([
+            decipher.update(encrypted),
+            decipher.final(),
+          ]);
           return decrypted.toString("utf-8");
         } catch {
           return null;
@@ -279,13 +375,16 @@ async function refreshGmailToken(serviceClient, account) {
   });
   const payload = await res.json().catch(() => null);
   if (!res.ok) {
-    const message = payload?.error_description || payload?.error || `HTTP ${res.status}`;
+    const message =
+      payload?.error_description || payload?.error || `HTTP ${res.status}`;
     throw new Error(`Token refresh failed: ${message}`);
   }
   const nextAccessToken = payload?.access_token;
   const expiresIn = Number(payload?.expires_in ?? 0);
   if (!nextAccessToken) throw new Error("Missing Gmail access token");
-  const nextExpiresAt = new Date(Date.now() + Math.max(0, expiresIn) * 1000).toISOString();
+  const nextExpiresAt = new Date(
+    Date.now() + Math.max(0, expiresIn) * 1000,
+  ).toISOString();
   await serviceClient
     .from("mail_accounts")
     .update({
@@ -319,13 +418,16 @@ async function refreshOutlookToken(serviceClient, account) {
   });
   const payload = await res.json().catch(() => null);
   if (!res.ok) {
-    const message = payload?.error_description || payload?.error || `HTTP ${res.status}`;
+    const message =
+      payload?.error_description || payload?.error || `HTTP ${res.status}`;
     throw new Error(`Token refresh failed: ${message}`);
   }
   const nextAccessToken = payload?.access_token;
   const expiresIn = Number(payload?.expires_in ?? 0);
   if (!nextAccessToken) throw new Error("Missing Outlook access token");
-  const nextExpiresAt = new Date(Date.now() + Math.max(0, expiresIn) * 1000).toISOString();
+  const nextExpiresAt = new Date(
+    Date.now() + Math.max(0, expiresIn) * 1000,
+  ).toISOString();
   await serviceClient
     .from("mail_accounts")
     .update({
@@ -339,8 +441,11 @@ async function refreshOutlookToken(serviceClient, account) {
 async function getAccessToken(serviceClient, account) {
   const accessToken = decryptToken(account.access_token_enc);
   const expiresAt =
-    typeof account.token_expires_at === "string" ? Date.parse(account.token_expires_at) : NaN;
-  const expiresSoon = !Number.isFinite(expiresAt) || expiresAt - Date.now() <= 60_000;
+    typeof account.token_expires_at === "string"
+      ? Date.parse(account.token_expires_at)
+      : NaN;
+  const expiresSoon =
+    !Number.isFinite(expiresAt) || expiresAt - Date.now() <= 60_000;
   if (accessToken && !expiresSoon) return accessToken;
   if (account.provider === "gmail") {
     return await refreshGmailToken(serviceClient, account);
@@ -410,7 +515,9 @@ function parseCidMarker(raw = "") {
   let height = null;
   rest.forEach((segment) => {
     const [rawKey = "", rawValue = ""] = String(segment || "").split(":", 2);
-    const key = String(rawKey || "").trim().toLowerCase();
+    const key = String(rawKey || "")
+      .trim()
+      .toLowerCase();
     const value = normalizeImageDimension(rawValue);
     if (!value) return;
     if (key === "w") width = value;
@@ -431,7 +538,7 @@ function buildHtmlFromBodyTextWithInlineImages(bodyText = "") {
         const widthAttr = width ? ` width="${width}"` : "";
         const heightAttr = height ? ` height="${height}"` : "";
         return `<img src="cid:${escapeHtml(contentId)}" alt="Inline image"${widthAttr}${heightAttr}>`;
-      })
+      }),
     )
     .join("<br/>");
   return html.trim() || null;
@@ -444,18 +551,28 @@ function stripInlineCidMarkers(text = "") {
     .trim();
 }
 
-function buildRawEmail({ from, to, cc, bcc, subject, bodyText, bodyHtml, inReplyTo, attachments }) {
+function buildRawEmail({
+  from,
+  to,
+  cc,
+  bcc,
+  subject,
+  bodyText,
+  bodyHtml,
+  inReplyTo,
+  attachments,
+}) {
   const safeAttachments = Array.isArray(attachments) ? attachments : [];
   const hasHtml = Boolean(String(bodyHtml || "").trim());
   const inlineAttachments = hasHtml
     ? safeAttachments.filter(
         (attachment) =>
           attachment?.is_inline &&
-          normalizeContentId(attachment?.content_id || attachment?.filename)
+          normalizeContentId(attachment?.content_id || attachment?.filename),
       )
     : [];
   const regularAttachments = safeAttachments.filter(
-    (attachment) => !attachment?.is_inline || !hasHtml
+    (attachment) => !attachment?.is_inline || !hasHtml,
   );
   const hasAttachments = safeAttachments.length > 0;
   const headers = [];
@@ -469,8 +586,12 @@ function buildRawEmail({ from, to, cc, bcc, subject, bodyText, bodyHtml, inReply
 
   const plainBody = String(bodyText || "");
   const htmlBody = String(bodyHtml || "");
-  const plainBodyBase64 = chunkBase64(Buffer.from(plainBody, "utf-8").toString("base64"));
-  const htmlBodyBase64 = chunkBase64(Buffer.from(htmlBody, "utf-8").toString("base64"));
+  const plainBodyBase64 = chunkBase64(
+    Buffer.from(plainBody, "utf-8").toString("base64"),
+  );
+  const htmlBodyBase64 = chunkBase64(
+    Buffer.from(htmlBody, "utf-8").toString("base64"),
+  );
 
   if (!hasAttachments && !hasHtml) {
     headers.push(`Content-Type: text/plain; charset="UTF-8"`);
@@ -489,12 +610,16 @@ function buildRawEmail({ from, to, cc, bcc, subject, bodyText, bodyHtml, inReply
     lines.push("");
     lines.push(`--${mixedBoundary}`);
   } else {
-    lines.push(`Content-Type: multipart/alternative; boundary="${altBoundary}"`);
+    lines.push(
+      `Content-Type: multipart/alternative; boundary="${altBoundary}"`,
+    );
     lines.push("");
   }
 
   if (hasHtml && inlineAttachments.length) {
-    lines.push(`Content-Type: multipart/related; boundary="${relatedBoundary}"`);
+    lines.push(
+      `Content-Type: multipart/related; boundary="${relatedBoundary}"`,
+    );
     lines.push("");
     lines.push(`--${relatedBoundary}`);
   }
@@ -519,13 +644,17 @@ function buildRawEmail({ from, to, cc, bcc, subject, bodyText, bodyHtml, inReply
 
   if (hasHtml && inlineAttachments.length) {
     inlineAttachments.forEach((attachment, index) => {
-      const filename = String(attachment?.filename || "").trim() || `inline-${index + 1}`;
+      const filename =
+        String(attachment?.filename || "").trim() || `inline-${index + 1}`;
       const mimeType =
-        String(attachment?.mime_type || "").trim() || "application/octet-stream";
+        String(attachment?.mime_type || "").trim() ||
+        "application/octet-stream";
       const content = chunkBase64(sanitizeBase64(attachment?.content_base64));
       const contentId =
-        normalizeContentId(attachment?.content_id || attachment?.filename, `inline-${index + 1}`) ||
-        `inline-${index + 1}`;
+        normalizeContentId(
+          attachment?.content_id || attachment?.filename,
+          `inline-${index + 1}`,
+        ) || `inline-${index + 1}`;
       lines.push("");
       lines.push(`--${relatedBoundary}`);
       lines.push(`Content-Type: ${mimeType}; name="${filename}"`);
@@ -540,9 +669,11 @@ function buildRawEmail({ from, to, cc, bcc, subject, bodyText, bodyHtml, inReply
 
   if (hasAttachments) {
     regularAttachments.forEach((attachment, index) => {
-      const filename = String(attachment?.filename || "").trim() || `attachment-${index + 1}`;
+      const filename =
+        String(attachment?.filename || "").trim() || `attachment-${index + 1}`;
       const mimeType =
-        String(attachment?.mime_type || "").trim() || "application/octet-stream";
+        String(attachment?.mime_type || "").trim() ||
+        "application/octet-stream";
       const content = chunkBase64(sanitizeBase64(attachment?.content_base64));
       lines.push("");
       lines.push(`--${mixedBoundary}`);
@@ -567,7 +698,9 @@ function normalizeMessageId(value) {
 }
 
 function parseEmailDomain(email) {
-  const value = String(email || "").trim().toLowerCase();
+  const value = String(email || "")
+    .trim()
+    .toLowerCase();
   const atIndex = value.lastIndexOf("@");
   if (atIndex <= 0 || atIndex === value.length - 1) return null;
   return value.slice(atIndex + 1);
@@ -581,13 +714,19 @@ function buildFromAddress(name, email) {
 }
 
 function resolvePostmarkSender(mailbox, senderName) {
-  const safeSharedFromEmail = String(POSTMARK_FROM_EMAIL || "").trim().toLowerCase();
+  const safeSharedFromEmail = String(POSTMARK_FROM_EMAIL || "")
+    .trim()
+    .toLowerCase();
   if (!safeSharedFromEmail) {
     throw new Error("POSTMARK_FROM_EMAIL is missing.");
   }
 
-  const safeCustomFromEmail = String(mailbox?.from_email || "").trim().toLowerCase();
-  const safeSendingDomain = String(mailbox?.sending_domain || "").trim().toLowerCase();
+  const safeCustomFromEmail = String(mailbox?.from_email || "")
+    .trim()
+    .toLowerCase();
+  const safeSendingDomain = String(mailbox?.sending_domain || "")
+    .trim()
+    .toLowerCase();
   const customIsAllowed =
     mailbox?.sending_type === "custom" &&
     mailbox?.domain_status === "verified" &&
@@ -596,7 +735,9 @@ function resolvePostmarkSender(mailbox, senderName) {
     parseEmailDomain(safeCustomFromEmail) === safeSendingDomain;
 
   if (customIsAllowed) {
-    const resolvedName = String(senderName || "").trim() || String(mailbox?.from_name || "").trim();
+    const resolvedName =
+      String(senderName || "").trim() ||
+      String(mailbox?.from_name || "").trim();
     return {
       fromEmail: safeCustomFromEmail,
       fromDisplay: buildFromAddress(resolvedName, safeCustomFromEmail),
@@ -629,7 +770,8 @@ async function sendViaPostmark({
 }) {
   const headers = [];
   if (inReplyTo) headers.push({ Name: "In-Reply-To", Value: inReplyTo });
-  if (references?.length) headers.push({ Name: "References", Value: references.join(" ") });
+  if (references?.length)
+    headers.push({ Name: "References", Value: references.join(" ") });
 
   return await sendPostmarkEmail({
     From: fromDisplay,
@@ -641,29 +783,39 @@ async function sendViaPostmark({
     TextBody: textBody || undefined,
     HtmlBody: htmlBody || undefined,
     Headers: headers.length ? headers : undefined,
-    Attachments: Array.isArray(attachments) && attachments.length
-      ? attachments.map((attachment, index) => ({
-          Name: String(attachment?.filename || "").trim() || `attachment-${index + 1}`,
-          Content: sanitizeBase64(attachment?.content_base64),
-          ContentType: String(attachment?.mime_type || "").trim() || "application/octet-stream",
-          ContentID: attachment?.is_inline
-            ? normalizeContentId(attachment?.content_id || attachment?.filename, `inline-${index + 1}`) ||
-              undefined
-            : undefined,
-        }))
-      : undefined,
+    Attachments:
+      Array.isArray(attachments) && attachments.length
+        ? attachments.map((attachment, index) => ({
+            Name:
+              String(attachment?.filename || "").trim() ||
+              `attachment-${index + 1}`,
+            Content: sanitizeBase64(attachment?.content_base64),
+            ContentType:
+              String(attachment?.mime_type || "").trim() ||
+              "application/octet-stream",
+            ContentID: attachment?.is_inline
+              ? normalizeContentId(
+                  attachment?.content_id || attachment?.filename,
+                  `inline-${index + 1}`,
+                ) || undefined
+              : undefined,
+          }))
+        : undefined,
   });
 }
 
 async function sendGmail({ token, raw, threadId }) {
-  const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
+  const res = await fetch(
+    "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(threadId ? { raw, threadId } : { raw }),
     },
-    body: JSON.stringify(threadId ? { raw, threadId } : { raw }),
-  });
+  );
   const payload = await res.json().catch(() => null);
   if (!res.ok) {
     const message = payload?.error?.message || `Gmail API ${res.status}`;
@@ -679,11 +831,12 @@ async function sendOutlook({ token, message, useReply, replyMessageId }) {
       {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
-      }
+      },
     );
     const draft = await res.json().catch(() => null);
     if (!res.ok) {
-      const message = draft?.error?.message || `Graph createReply ${res.status}`;
+      const message =
+        draft?.error?.message || `Graph createReply ${res.status}`;
       throw new Error(message);
     }
     const draftId = draft?.id;
@@ -701,7 +854,7 @@ async function sendOutlook({ token, message, useReply, replyMessageId }) {
       {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
-      }
+      },
     );
     if (!sendRes.ok) {
       const text = await sendRes.text();
@@ -730,7 +883,7 @@ async function sendOutlook({ token, message, useReply, replyMessageId }) {
     {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
-    }
+    },
   );
   if (!sendRes.ok) {
     const text = await sendRes.text();
@@ -771,7 +924,9 @@ async function loadWorkspaceTestSettings(serviceClient, workspaceId) {
   if (error) {
     throw new Error(error.message);
   }
-  const testEmail = String(data?.test_email || "").trim().toLowerCase();
+  const testEmail = String(data?.test_email || "")
+    .trim()
+    .toLowerCase();
   return {
     testMode: Boolean(data?.test_mode),
     testEmail: testEmail || null,
@@ -781,34 +936,54 @@ async function loadWorkspaceTestSettings(serviceClient, workspaceId) {
 export async function POST(request, { params }) {
   const { userId: clerkUserId, orgId } = await auth();
   if (!clerkUserId) {
-    return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
+    return NextResponse.json(
+      { error: "You must be signed in." },
+      { status: 401 },
+    );
   }
 
   const serviceClient = createServiceClient();
   if (!serviceClient) {
     return NextResponse.json(
       { error: "Supabase service configuration is missing." },
-      { status: 500 }
+      { status: 500 },
     );
   }
 
   const threadId = params?.threadId;
   if (!threadId) {
-    return NextResponse.json({ error: "threadId is required." }, { status: 400 });
+    return NextResponse.json(
+      { error: "threadId is required." },
+      { status: 400 },
+    );
   }
 
   const body = await request.json().catch(() => ({}));
   const requestedBodyText = String(body?.body_text || "").trim();
   const requestedBodyHtml = String(body?.body_html || "").trim();
   const senderName = String(body?.sender_name || "").trim();
+  const draftPreviewId =
+    typeof body?.draft_preview_id === "string"
+      ? body.draft_preview_id.trim()
+      : null;
   const draftMessageId =
-    typeof body?.draft_message_id === "string" ? body.draft_message_id.trim() : null;
+    typeof body?.draft_message_id === "string"
+      ? body.draft_message_id.trim()
+      : null;
   if (!requestedBodyText && !requestedBodyHtml) {
-    return NextResponse.json({ error: "body_text is required." }, { status: 400 });
+    return NextResponse.json(
+      { error: "body_text is required." },
+      { status: 400 },
+    );
   }
-  const requestedAttachments = Array.isArray(body?.attachments) ? body.attachments : [];
+  const requestedAttachments = Array.isArray(body?.attachments)
+    ? body.attachments
+    : [];
   if (requestedAttachments.length > 10) {
-    return NextResponse.json({ error: "Maximum 10 attachments per reply." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Maximum 10 attachments per reply." },
+      { status: 400 },
+    );
   }
   const attachmentsPayload = [];
   for (const attachment of requestedAttachments) {
@@ -821,28 +996,41 @@ export async function POST(request, { params }) {
     const contentId = isInline
       ? normalizeContentId(
           attachment?.content_id || attachment?.contentId,
-          filename || `inline-${attachmentsPayload.length + 1}`
+          filename || `inline-${attachmentsPayload.length + 1}`,
         )
       : null;
-    if (!filename || !contentBase64 || !Number.isFinite(sizeBytes) || sizeBytes <= 0) {
-      return NextResponse.json({ error: "Invalid attachment payload." }, { status: 400 });
+    if (
+      !filename ||
+      !contentBase64 ||
+      !Number.isFinite(sizeBytes) ||
+      sizeBytes <= 0
+    ) {
+      return NextResponse.json(
+        { error: "Invalid attachment payload." },
+        { status: 400 },
+      );
     }
     if (isInline && !contentId) {
       return NextResponse.json(
-        { error: `Inline attachment "${filename}" is missing a valid content_id.` },
-        { status: 400 }
+        {
+          error: `Inline attachment "${filename}" is missing a valid content_id.`,
+        },
+        { status: 400 },
       );
     }
     if (sizeBytes > 15 * 1024 * 1024) {
       return NextResponse.json(
         { error: `Attachment "${filename}" exceeds the 15 MB limit.` },
-        { status: 400 }
+        { status: 400 },
       );
     }
     try {
       sanitizeBase64(contentBase64);
     } catch {
-      return NextResponse.json({ error: `Attachment "${filename}" has invalid content.` }, { status: 400 });
+      return NextResponse.json(
+        { error: `Attachment "${filename}" has invalid content.` },
+        { status: 400 },
+      );
     }
     attachmentsPayload.push({
       filename,
@@ -862,24 +1050,35 @@ export async function POST(request, { params }) {
   }
   const supabaseUserId = scope?.supabaseUserId ?? null;
   if (!scope?.workspaceId && !supabaseUserId) {
-    return NextResponse.json({ error: "Could not resolve user scope." }, { status: 401 });
+    return NextResponse.json(
+      { error: "Could not resolve user scope." },
+      { status: 401 },
+    );
   }
   let testSettings = { testMode: false, testEmail: null };
   if (scope?.workspaceId) {
     try {
-      testSettings = await loadWorkspaceTestSettings(serviceClient, scope.workspaceId);
+      testSettings = await loadWorkspaceTestSettings(
+        serviceClient,
+        scope.workspaceId,
+      );
     } catch (error) {
       return NextResponse.json(
         { error: error?.message || "Could not load workspace test settings." },
-        { status: 500 }
+        { status: 500 },
       );
     }
   }
-  const legacySignature = await loadLegacyUserSignature(serviceClient, supabaseUserId);
+  const legacySignature = await loadLegacyUserSignature(
+    serviceClient,
+    supabaseUserId,
+  );
 
   let threadQuery = serviceClient
     .from("mail_threads")
-    .select("id, user_id, workspace_id, mailbox_id, provider, provider_thread_id, subject, snippet, classification_key, tags, case_state_json")
+    .select(
+      "id, user_id, workspace_id, mailbox_id, provider, provider_thread_id, subject, snippet, classification_key, tags, case_state_json",
+    )
     .eq("id", threadId);
   threadQuery = applyScope(threadQuery, scope);
   const { data: thread, error: threadError } = await threadQuery.maybeSingle();
@@ -890,11 +1089,12 @@ export async function POST(request, { params }) {
   let mailboxQuery = serviceClient
     .from("mail_accounts")
     .select(
-      "id, user_id, workspace_id, shop_id, provider, provider_email, access_token_enc, refresh_token_enc, token_expires_at, status, smtp_host, smtp_port, smtp_secure, smtp_username_enc, smtp_password_enc, smtp_status, sending_type, sending_domain, domain_status, from_email, from_name"
+      "id, user_id, workspace_id, shop_id, provider, provider_email, access_token_enc, refresh_token_enc, token_expires_at, status, smtp_host, smtp_port, smtp_secure, smtp_username_enc, smtp_password_enc, smtp_status, sending_type, sending_domain, domain_status, from_email, from_name",
     )
     .eq("id", thread.mailbox_id);
   mailboxQuery = applyScope(mailboxQuery, scope);
-  const { data: mailbox, error: mailboxError } = await mailboxQuery.maybeSingle();
+  const { data: mailbox, error: mailboxError } =
+    await mailboxQuery.maybeSingle();
   if (mailboxError || !mailbox) {
     return NextResponse.json({ error: "Mailbox not found." }, { status: 404 });
   }
@@ -910,7 +1110,11 @@ export async function POST(request, { params }) {
   const draftDestinationSetting = "sona_inbox";
 
   let aiDraftText = "";
-  if (learnFromEdits && draftDestinationSetting === "sona_inbox" && (scope?.workspaceId || supabaseUserId)) {
+  if (
+    learnFromEdits &&
+    draftDestinationSetting === "sona_inbox" &&
+    (scope?.workspaceId || supabaseUserId)
+  ) {
     let aiQuery = serviceClient
       .from("mail_messages")
       .select("ai_draft_text")
@@ -925,28 +1129,38 @@ export async function POST(request, { params }) {
 
   let inboundMessagesQuery = serviceClient
     .from("mail_messages")
-    .select("id, from_email, extracted_customer_email, provider_message_id, received_at, subject, clean_body_text, snippet")
+    .select(
+      "id, from_email, extracted_customer_email, provider_message_id, received_at, subject, clean_body_text, snippet",
+    )
     .eq("thread_id", threadId)
     .not("received_at", "is", null)
     .order("received_at", { ascending: false })
     .limit(5);
   inboundMessagesQuery = applyScope(inboundMessagesQuery, scope);
   const { data: inboundMessages } = await inboundMessagesQuery;
-  const inboundMessage = Array.isArray(inboundMessages) ? inboundMessages[0] : null;
+  const inboundMessage = Array.isArray(inboundMessages)
+    ? inboundMessages[0]
+    : null;
 
   const fallbackReplyTarget = getReplyTargetEmail(inboundMessage);
   const fallbackTo = fallbackReplyTarget ? [fallbackReplyTarget] : [];
   const toEmails = normalizeEmailList(body?.to_emails);
   const ccEmails = normalizeEmailList(body?.cc_emails);
   const bccEmails = normalizeEmailList(body?.bcc_emails);
-  const hasExplicitTo = Object.prototype.hasOwnProperty.call(body || {}, "to_emails");
+  const hasExplicitTo = Object.prototype.hasOwnProperty.call(
+    body || {},
+    "to_emails",
+  );
   const finalTo = toEmails.length
     ? toEmails
     : hasExplicitTo || mailbox.provider === "smtp"
-    ? []
-    : fallbackTo;
+      ? []
+      : fallbackTo;
   const isTestModeActive = Boolean(testSettings?.testMode);
-  const testEmailAddress = String(testSettings?.testEmail || "").trim().toLowerCase() || null;
+  const testEmailAddress =
+    String(testSettings?.testEmail || "")
+      .trim()
+      .toLowerCase() || null;
   const shouldSimulateEmailOnly = isTestModeActive && !testEmailAddress;
   if (!finalTo.length && !shouldSimulateEmailOnly) {
     return NextResponse.json({ error: "Missing recipient." }, { status: 400 });
@@ -963,15 +1177,16 @@ export async function POST(request, { params }) {
   const subject = subjectRaw.toLowerCase().startsWith("re:")
     ? subjectRaw
     : subjectRaw
-    ? `Re: ${subjectRaw}`
-    : "Re:";
+      ? `Re: ${subjectRaw}`
+      : "Re:";
   const signatureConfig = await loadEmailSignatureConfig(serviceClient, {
     workspaceId: scope?.workspaceId || mailbox?.workspace_id || null,
     shopId: mailbox?.shop_id || null,
     userId: supabaseUserId,
     legacySignature,
   });
-  const generatedBodyHtmlFromText = buildHtmlFromBodyTextWithInlineImages(requestedBodyText);
+  const generatedBodyHtmlFromText =
+    buildHtmlFromBodyTextWithInlineImages(requestedBodyText);
   const bodyText = stripInlineCidMarkers(requestedBodyText);
   const bodyHtml = requestedBodyHtml || generatedBodyHtmlFromText || "";
   const composed = composeEmailBodyWithSignature({
@@ -982,7 +1197,11 @@ export async function POST(request, { params }) {
   const coreBodyText = composed.coreBodyText;
   const finalBodyText = composed.finalBodyText;
   const finalBodyHtml = composed.finalBodyHtml || "";
-  const persistedBodyText = composed.bodyTextWithClosing || coreBodyText || bodyText || stripHtml(bodyHtml);
+  const persistedBodyText =
+    composed.bodyTextWithClosing ||
+    coreBodyText ||
+    bodyText ||
+    stripHtml(bodyHtml);
   const persistedBodyHtml = composed.bodyHtmlWithClosing || bodyHtml || "";
 
   let providerMessageId = null;
@@ -1040,23 +1259,23 @@ export async function POST(request, { params }) {
     } else {
       const token = await getAccessToken(serviceClient, mailbox);
       if (mailbox.provider === "gmail") {
-      const raw = buildRawEmail({
-        from: mailbox.provider_email,
-        to: deliveryTo,
-        cc: deliveryCc,
-        bcc: deliveryBcc,
-        subject,
-        bodyText: finalBodyText,
-        bodyHtml: finalBodyHtml || null,
-        inReplyTo: inboundMessage?.provider_message_id || null,
-        attachments: attachmentsPayload,
-      });
-      const payload = await sendGmail({
-        token,
-        raw,
-        threadId: thread.provider_thread_id || undefined,
-      });
-      providerMessageId = payload?.id || null;
+        const raw = buildRawEmail({
+          from: mailbox.provider_email,
+          to: deliveryTo,
+          cc: deliveryCc,
+          bcc: deliveryBcc,
+          subject,
+          bodyText: finalBodyText,
+          bodyHtml: finalBodyHtml || null,
+          inReplyTo: inboundMessage?.provider_message_id || null,
+          attachments: attachmentsPayload,
+        });
+        const payload = await sendGmail({
+          token,
+          raw,
+          threadId: thread.provider_thread_id || undefined,
+        });
+        providerMessageId = payload?.id || null;
       } else if (mailbox.provider === "outlook") {
         const message = {
           subject,
@@ -1064,9 +1283,15 @@ export async function POST(request, { params }) {
             contentType: finalBodyHtml ? "HTML" : "Text",
             content: finalBodyHtml || finalBodyText,
           },
-          toRecipients: deliveryTo.map((email) => ({ emailAddress: { address: email } })),
-          ccRecipients: deliveryCc.map((email) => ({ emailAddress: { address: email } })),
-          bccRecipients: deliveryBcc.map((email) => ({ emailAddress: { address: email } })),
+          toRecipients: deliveryTo.map((email) => ({
+            emailAddress: { address: email },
+          })),
+          ccRecipients: deliveryCc.map((email) => ({
+            emailAddress: { address: email },
+          })),
+          bccRecipients: deliveryBcc.map((email) => ({
+            emailAddress: { address: email },
+          })),
           internetMessageHeaders: inboundMessage?.provider_message_id
             ? [
                 {
@@ -1081,7 +1306,9 @@ export async function POST(request, { params }) {
             contentType: attachment.mime_type,
             contentBytes: attachment.content_base64,
             isInline: attachment?.is_inline === true,
-            contentId: attachment?.is_inline ? attachment.content_id || undefined : undefined,
+            contentId: attachment?.is_inline
+              ? attachment.content_id || undefined
+              : undefined,
           })),
         };
         const useReply =
@@ -1117,9 +1344,16 @@ export async function POST(request, { params }) {
     });
     const message = error?.message || `Send failed (${mailbox.provider}).`;
     const lowerMessage = String(message).toLowerCase();
-    if (lowerMessage.includes("pending approval") && lowerMessage.includes("domain")) {
+    if (
+      lowerMessage.includes("pending approval") &&
+      lowerMessage.includes("domain")
+    ) {
       const recipientDomains = [...deliveryTo, ...deliveryCc, ...deliveryBcc]
-        .map((email) => String(email || "").trim().toLowerCase())
+        .map((email) =>
+          String(email || "")
+            .trim()
+            .toLowerCase(),
+        )
         .filter(Boolean)
         .map((email) => email.split("@")[1] || "")
         .filter(Boolean);
@@ -1130,7 +1364,7 @@ export async function POST(request, { params }) {
           recipient_domains: Array.from(new Set(recipientDomains)),
           from_domain: String(sentFromEmail || "").split("@")[1] || null,
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
     const status = /refresh/i.test(message) ? 401 : 500;
@@ -1258,7 +1492,7 @@ export async function POST(request, { params }) {
         error:
           "Email was sent, but we could not persist it in the thread. Please refresh and try again.",
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 
@@ -1267,10 +1501,14 @@ export async function POST(request, { params }) {
       .from("mail_attachments")
       .delete()
       .eq("message_id", insertedMessage.id);
-    clearExistingAttachmentsQuery = applyScope(clearExistingAttachmentsQuery, scope, {
-      workspaceColumn: null,
-      userColumn: "user_id",
-    });
+    clearExistingAttachmentsQuery = applyScope(
+      clearExistingAttachmentsQuery,
+      scope,
+      {
+        workspaceColumn: null,
+        userColumn: "user_id",
+      },
+    );
     await clearExistingAttachmentsQuery;
 
     if (attachmentsPayload.length) {
@@ -1279,12 +1517,14 @@ export async function POST(request, { params }) {
         mailbox_id: mailbox.id,
         message_id: insertedMessage.id,
         provider: mailbox.provider,
-        provider_attachment_id: attachment?.is_inline ? attachment?.content_id || null : null,
+        provider_attachment_id: attachment?.is_inline
+          ? attachment?.content_id || null
+          : null,
         filename: attachment.filename,
         mime_type: attachment.mime_type,
         size_bytes: attachment.size_bytes,
         storage_path: `inline:${attachment.mime_type};base64,${sanitizeBase64(
-          attachment.content_base64
+          attachment.content_base64,
         )}`,
         created_at: nowIso,
       }));
@@ -1299,9 +1539,10 @@ export async function POST(request, { params }) {
         });
         return NextResponse.json(
           {
-            error: "Email was sent, but attachments could not be saved. Please try again.",
+            error:
+              "Email was sent, but attachments could not be saved. Please try again.",
           },
-          { status: 500 }
+          { status: 500 },
         );
       }
     }
@@ -1344,7 +1585,10 @@ export async function POST(request, { params }) {
     .update({ status: "superseded", updated_at: nowIso })
     .eq("thread_id", threadId)
     .eq("status", "pending");
-  supersedePendingActionsQuery = applyScope(supersedePendingActionsQuery, scope);
+  supersedePendingActionsQuery = applyScope(
+    supersedePendingActionsQuery,
+    scope,
+  );
   await supersedePendingActionsQuery;
 
   // Tag exchange threads as awaiting_return on first outbound reply
@@ -1353,21 +1597,32 @@ export async function POST(request, { params }) {
   const threadTags = Array.isArray(thread.tags) ? thread.tags : [];
   const isExchangeThread = threadClassKey === "exchange";
   const alreadyAwaitingReturn = threadTags.includes("awaiting_return");
-  const updatedTags = isExchangeThread && !alreadyAwaitingReturn
-    ? [...threadTags, "awaiting_return"]
-    : threadTags;
+  const updatedTags =
+    isExchangeThread && !alreadyAwaitingReturn
+      ? [...threadTags, "awaiting_return"]
+      : threadTags;
 
   let updateThreadQuery = serviceClient
     .from("mail_threads")
     .update({
       snippet,
       subject: thread.subject ? thread.subject : subject,
-      tags: isExchangeThread && !alreadyAwaitingReturn ? updatedTags : undefined,
+      tags:
+        isExchangeThread && !alreadyAwaitingReturn ? updatedTags : undefined,
       updated_at: nowIso,
     })
     .eq("id", threadId);
   updateThreadQuery = applyScope(updateThreadQuery, scope);
   await updateThreadQuery;
+
+  await captureV2DraftPreviewFeedback({
+    serviceClient,
+    previewId: draftPreviewId,
+    threadId,
+    shopId: mailbox.shop_id || null,
+    finalText: coreBodyText,
+    sentAt: nowIso,
+  });
 
   const draftThreadKeys = [thread.provider_thread_id, threadId].filter(Boolean);
   if (draftThreadKeys.length) {
@@ -1379,12 +1634,19 @@ export async function POST(request, { params }) {
       .eq("status", "pending")
       .order("created_at", { ascending: false });
     if (scope?.workspaceId) {
-      pendingDraftsQuery = pendingDraftsQuery.eq("workspace_id", scope.workspaceId);
+      pendingDraftsQuery = pendingDraftsQuery.eq(
+        "workspace_id",
+        scope.workspaceId,
+      );
     }
-    const { data: pendingDraftRows, error: pendingDraftsLookupError } = await pendingDraftsQuery;
+    const { data: pendingDraftRows, error: pendingDraftsLookupError } =
+      await pendingDraftsQuery;
 
     if (pendingDraftsLookupError) {
-      console.warn("[threads/send] failed to lookup pending drafts", pendingDraftsLookupError.message);
+      console.warn(
+        "[threads/send] failed to lookup pending drafts",
+        pendingDraftsLookupError.message,
+      );
     } else if (Array.isArray(pendingDraftRows) && pendingDraftRows.length) {
       const latestDraftId = pendingDraftRows[0]?.id ?? null;
       const staleDraftIds = pendingDraftRows
@@ -1399,14 +1661,23 @@ export async function POST(request, { params }) {
           .eq("id", latestDraftId)
           .maybeSingle();
         const savedAiText = draftRow?.ai_draft_text || aiDraftText || null;
-        const dist = savedAiText ? levenshtein(savedAiText, coreBodyText) : null;
-        const editClass = savedAiText ? classifyEdit(savedAiText, coreBodyText, dist) : null;
+        const dist = savedAiText
+          ? levenshtein(savedAiText, coreBodyText)
+          : null;
+        const editClass = savedAiText
+          ? classifyEdit(savedAiText, coreBodyText, dist)
+          : null;
         const maxLen = savedAiText
-          ? Math.max(savedAiText.slice(0, 1000).length, String(coreBodyText || "").slice(0, 1000).length, 1)
+          ? Math.max(
+              savedAiText.slice(0, 1000).length,
+              String(coreBodyText || "").slice(0, 1000).length,
+              1,
+            )
           : null;
-        const deltaPct = dist !== null && maxLen !== null
-          ? Number((dist / maxLen).toFixed(4))
-          : null;
+        const deltaPct =
+          dist !== null && maxLen !== null
+            ? Number((dist / maxLen).toFixed(4))
+            : null;
 
         let sentDraftQuery = serviceClient
           .from("drafts")
@@ -1430,7 +1701,10 @@ export async function POST(request, { params }) {
           .update({ status: "superseded" })
           .in("id", staleDraftIds);
         if (scope?.workspaceId) {
-          supersedeDraftsQuery = supersedeDraftsQuery.eq("workspace_id", scope.workspaceId);
+          supersedeDraftsQuery = supersedeDraftsQuery.eq(
+            "workspace_id",
+            scope.workspaceId,
+          );
         }
         await supersedeDraftsQuery;
       }
@@ -1463,7 +1737,7 @@ export async function POST(request, { params }) {
               tag_id: id,
               source: "ai",
             })),
-            { onConflict: "thread_id,tag_id", ignoreDuplicates: true }
+            { onConflict: "thread_id,tag_id", ignoreDuplicates: true },
           );
         }
 
@@ -1481,8 +1755,17 @@ export async function POST(request, { params }) {
 
   // Store sent reply as a knowledge example for future AI draft retrieval (fire-and-forget)
   const shopIdForLearning = mailbox?.shop_id || null;
-  const customerTextForLearning = inboundMessage?.clean_body_text || inboundMessage?.snippet || "";
-  if (learnFromEdits && shopIdForLearning && coreBodyText?.trim() && customerTextForLearning.trim() && customerTextForLearning.trim().length >= 30 && SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+  const customerTextForLearning =
+    inboundMessage?.clean_body_text || inboundMessage?.snippet || "";
+  if (
+    learnFromEdits &&
+    shopIdForLearning &&
+    coreBodyText?.trim() &&
+    customerTextForLearning.trim() &&
+    customerTextForLearning.trim().length >= 30 &&
+    SUPABASE_URL &&
+    SUPABASE_SERVICE_ROLE_KEY
+  ) {
     const caseState = thread?.case_state_json || null;
     fetch(`${SUPABASE_URL}/functions/v1/store-reply-example`, {
       method: "POST",
@@ -1517,13 +1800,12 @@ export async function POST(request, { params }) {
       body_html: finalBodyHtml || persistedBodyHtml || null,
       clean_body_text: persistedBodyText,
       clean_body_html: persistedBodyHtml || null,
-      message:
-        shouldSimulateEmailOnly
-          ? "Email simulated: Test Mode is enabled and no Test Email Address is configured."
-          : isTestModeActive
+      message: shouldSimulateEmailOnly
+        ? "Email simulated: Test Mode is enabled and no Test Email Address is configured."
+        : isTestModeActive
           ? `Email sent to ${testEmailAddress} because Test Mode is enabled.`
           : null,
     },
-    { status: 200 }
+    { status: 200 },
   );
 }

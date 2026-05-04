@@ -112,6 +112,10 @@ export async function runFactResolver(
 ): Promise<FactResolverResult> {
   const facts: ResolvedFact[] = [];
 
+  // Inventory lookup for product_question intent when products are mentioned
+  const needsInventory = plan.primary_intent === "product_question" &&
+    caseState.entities.products_mentioned.length > 0;
+
   const orderRelevantIntents = new Set([
     "tracking",
     "return",
@@ -125,7 +129,43 @@ export async function runFactResolver(
     plan.required_facts.some((f) =>
       f === "order_state" || f === "tracking" || f === "return_eligibility"
     );
-  if (!needsOrder) return { facts, order: null };
+  if (!needsOrder && !needsInventory) return { facts, order: null };
+
+  // --- Inventory lookup (product_question intent) ---
+  if (needsInventory && !needsOrder) {
+    const s2 = shop as Record<string, unknown>;
+    const shopDomain2 = (s2.shop_domain as string) ?? null;
+    const encryptedToken2 = (s2.access_token_encrypted as string) ?? null;
+    if (shopDomain2 && encryptedToken2) {
+      try {
+        const shopifyToken2 = await decryptShopifyToken(encryptedToken2);
+        const provider2 = createCommerceProvider({
+          provider_type: "shopify",
+          shop_domain: shopDomain2,
+          access_token: shopifyToken2,
+          api_version: "2024-04",
+        }) as unknown as { searchProductInventory?: (q: string) => Promise<Array<{ title: string; variant: string; available: boolean; quantity: number }>> };
+
+        if (typeof provider2.searchProductInventory === "function") {
+          for (const product of caseState.entities.products_mentioned.slice(0, 3)) {
+            const results = await provider2.searchProductInventory(product);
+            if (results.length > 0) {
+              const allUnavailable = results.every((r) => !r.available);
+              const summary = allUnavailable
+                ? `Udsolgt (${results[0].title})`
+                : results.map((r) =>
+                  `${r.title}${r.variant !== "Default Title" ? ` – ${r.variant}` : ""}: ${r.available ? `${r.quantity} på lager` : "Udsolgt"}`
+                ).join(", ");
+              facts.push({ label: "Lagerstatus", value: summary });
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("[fact-resolver] Inventory lookup failed:", err);
+      }
+    }
+    return { facts, order: null };
+  }
 
   const contextOrder = orderFromCustomerContext(customerContext);
   if (contextOrder) {
@@ -252,12 +292,15 @@ async function buildFactsFromOrder(
     restocked: "Returneret til lager",
   };
   facts.push({
-    label: "Ordre",
+    label: "Ordre fundet",
     value: `${order.name} — Status: ${
       fulfillmentStatusDa[order.fulfillment_status ?? ""] ??
         order.fulfillment_status ?? "Ukendt"
     }, Betaling: ${order.financial_status}`,
   });
+  if (order.email) {
+    facts.push({ label: "Kunde-email kendt", value: order.email });
+  }
 
   if (order.shipping_address) {
     const a = order.shipping_address;
@@ -265,10 +308,22 @@ async function buildFactsFromOrder(
     if (fullName) {
       facts.push({ label: "Kundenavn", value: fullName });
     }
-    facts.push({
-      label: "Leveringsadresse",
-      value: `${a.address1}, ${a.zip} ${a.city}, ${a.country}`,
-    });
+    if (a.address1 || a.zip || a.city || a.country) {
+      facts.push({
+        label: "Leveringsadresse kendt",
+        value:
+          "Ja — må kun gengives ved adresse-, tracking- eller leveringsspørgsmål",
+      });
+    }
+    if (
+      plan.primary_intent === "address_change" ||
+      plan.primary_intent === "tracking"
+    ) {
+      facts.push({
+        label: "Leveringsadresse",
+        value: `${a.address1}, ${a.zip} ${a.city}, ${a.country}`,
+      });
+    }
   }
 
   if (order.line_items?.length) {

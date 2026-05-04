@@ -1,5 +1,6 @@
 // supabase/functions/generate-draft-v2/stages/case-state-updater.ts
 import { SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { resolveReplyLanguage } from "./language.ts";
 
 export interface CaseState {
   intents: Array<{ type: string; confidence: number }>;
@@ -58,7 +59,7 @@ export async function updateCaseState(
       from_email?: string;
       direction?: string;
     };
-    const body = (msg.clean_body_text || msg.body_text || "").slice(0, 600);
+    const body = (msg.clean_body_text || msg.body_text || "").slice(0, 2000);
     const role = msg.direction === "outbound" ? "Agent" : "Kunde";
     return `[${role}]: ${body}`;
   }).join("\n\n");
@@ -78,7 +79,7 @@ ${existingSummary}
 Ekstraher og output JSON:
 {
   "primary_intent": "tracking|return|refund|exchange|address_change|product_question|complaint|thanks|other",
-  "language": "da|sv|de|en|nl|fr|no",
+  "language": "da|sv|de|en|nl|fr|no|fi|es|it",
   "order_numbers": ["#1234"],
   "customer_email": "kunde@example.com eller tom streng",
   "products_mentioned": ["produktnavn"],
@@ -89,9 +90,10 @@ Ekstraher og output JSON:
 }
 
 Regler:
-- open_questions: kundens ubesvarede spørgsmål fra samtalen
-- pending_asks: information vi har bedt kunden om men ikke modtaget
-- decisions_made: hvad agenten allerede har tilbudt/gjort
+- open_questions: kundens ubesvarede spørgsmål fra samtalen. Fjern et spørgsmål så snart agenten har besvaret det.
+- pending_asks: information eller bekræftelse vi HAR BEDT kunden om, men ENDNU IKKE modtaget svar på. Fjern straks når kunden har svaret — selv med et kort "ja", "ok" eller "det er korrekt".
+- decisions_made: hvad agenten allerede har tilbudt, gjort, eller hvad kunden har bekræftet. Eksempler: "cable_replacement_initiated", "address_confirmed: Højrupvej 48 5750 Ringe", "warranty_replacement_offered", "refund_offered". Inkludér bekræftede kundeoplysninger som en del af decisions_made så næste svar ved hvad der allerede er på plads.
+- Vigtigste regel: Når kunden bekræfter noget vi har spurgt om (adresse, ordrenummer, situation), skal pending_asks være TOM og decisions_made skal indeholde hvad der nu er bekræftet.
 - Kun inkludér det der faktisk er i samtalen`;
 
   let llmResult: {
@@ -114,7 +116,7 @@ Regler:
         "Authorization": `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
       },
       body: JSON.stringify({
-        model: Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini",
+        model: Deno.env.get("OPENAI_MODEL") ?? "gpt-5-mini",
         temperature: 0,
         max_tokens: 400,
         response_format: { type: "json_object" },
@@ -137,11 +139,17 @@ Regler:
   }
 
   // Regex fallback for order numbers — scan ALL messages so order numbers from agent replies are captured too
-  const allBodies = messages.map((m) => {
-    const msg = m as { clean_body_text?: string; body_text?: string };
-    return msg.clean_body_text ?? msg.body_text ?? "";
-  }).join(" ");
+  const allBodies = [
+    String((thread as { subject?: unknown }).subject ?? ""),
+    ...messages.map((m) => {
+      const msg = m as { clean_body_text?: string; body_text?: string };
+      return msg.clean_body_text ?? msg.body_text ?? "";
+    }),
+  ].join(" ");
   const regexOrderNumbers = allBodies.match(/#\d{4,6}\b/g) ?? [];
+  const keywordOrderNumbers = [...allBodies.matchAll(
+    /\b(?:order|ordre|command|bestilling)\s*#?\s*(\d{3,8})\b/gi,
+  )].map((match) => `#${match[1]}`);
   const regexEmails =
     allBodies.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) ?? [];
 
@@ -151,6 +159,7 @@ Regler:
       // Fresh extractions first — take priority over stale cache
       ...(llmResult.order_numbers ?? []),
       ...regexOrderNumbers,
+      ...keywordOrderNumbers,
       // Existing only if properly formatted (filters out bare years like "2026")
       ...existing.entities.order_numbers.filter((n) =>
         strictOrderPattern.test(n)
@@ -188,7 +197,10 @@ Regler:
     decisions_made: [...existing.decisions_made, ...newDecisions],
     open_questions: llmResult.open_questions ?? existing.open_questions,
     pending_asks: llmResult.pending_asks ?? existing.pending_asks,
-    language: llmResult.language ?? existing.language,
+    language: resolveReplyLanguage(
+      latestMsg?.clean_body_text ?? latestMsg?.body_text ?? "",
+      llmResult.language ?? existing.language,
+    ),
     last_updated_msg_id: (latestMsg?.id as string) ??
       existing.last_updated_msg_id,
   };

@@ -1,12 +1,21 @@
 // supabase/functions/generate-draft-v2/stages/action-decision.ts
 //
-// Deterministisk action-decision stage.
-// Regler køres over plan + case_state + facts — ingen LLM til kernelogik.
-// LLM bruges kun som fallback til edge cases der ikke matcher nogen regel.
+// Action-decision stage — bestemmer hvilke Shopify-actions der skal foreslås.
+//
+// Arkitektur:
+//   1. Deterministiske regler (plan + facts + shopConfig) — ingen LLM
+//   2. KB-baserede overrides (retrieved chunks) — tolker shop-specifikke procedurer
+//   3. LLM fallback — kun til edge cases der ikke er dækket af regler
+//
+// Per-shop tilpasning sker via ShopActionConfig (læst fra shops.action_config JSONB).
+// Nye webshops får fornuftige defaults — ingen kodeændringer nødvendige ved onboarding.
 //
 import { Plan } from "./planner.ts";
 import { CaseState } from "./case-state-updater.ts";
 import { FactResolverResult } from "./fact-resolver.ts";
+import { RetrieverResult } from "./retriever.ts";
+
+// ─── Typer ────────────────────────────────────────────────────────────────────
 
 export interface ActionProposal {
   type: string;
@@ -21,154 +30,356 @@ export interface ActionDecisionResult {
   routing_hint: "auto" | "review" | "block";
 }
 
+// Per-shop action konfiguration — læst fra shops.action_config JSONB.
+// Alle felter er valgfrie med fornuftige defaults.
+export interface ShopActionConfig {
+  // Hvordan håndteres reservedels-anmodninger (kabler, dongler, ørepuder osv.)?
+  // "office"  → sendes fra kontoret — tilføj note til ordre, ingen Shopify exchange (AceZone-model)
+  // "shopify" → opret Shopify exchange (standard for de fleste shops)
+  // "manual"  → ingen automatisk action, ruter til menneskelig vurdering
+  spare_parts_workflow?: "office" | "shopify" | "manual";
+
+  // Nøgleord der identificerer reservedele for denne shop.
+  // Supplerer den generelle SPARE_PART_RE regex.
+  spare_part_keywords?: string[];
+
+  // Hvordan håndteres produktombytninger (ikke reservedele)?
+  // "shopify" → create_exchange_request (default)
+  // "manual"  → routing til menneske, ingen action
+  exchange_workflow?: "shopify" | "manual";
+
+  // Kræves der foto/dokumentation FØR defekt-sag behandles?
+  defect_requires_photo?: boolean;
+
+  // Kan adresseændringer udføres automatisk (uden godkendelse)?
+  address_change_auto?: boolean;
+
+  // Maksimalt antal dage fra ordredato hvor refund kan foreslås.
+  // 0 = altid kræv godkendelse (default), 30 = auto inden for 30 dage.
+  refund_auto_days?: number;
+
+  // Actions der er deaktiverede for denne shop (fx fordi integrationen ikke understøtter dem).
+  disabled_actions?: string[];
+}
+
 export interface ActionDecisionInput {
   plan: Plan;
   caseState: CaseState;
   facts: FactResolverResult;
+  retrieved: RetrieverResult;       // KB-chunks til at tolke shop-specifikke procedurer
+  shopConfig: ShopActionConfig;     // Per-shop konfiguration
 }
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 
-// Deterministiske regler — køres i prioriteret rækkefølge.
-// Returnerer det første sæt forslag der matcher.
+// ─── Hjælpefunktioner ─────────────────────────────────────────────────────────
+
+// Standard reservedels-nøgleord — gælder på tværs af headset-shops.
+// Suppleres af shopConfig.spare_part_keywords per shop.
+const DEFAULT_SPARE_PART_RE =
+  /\b(cable|kabel|ladekabel|usb.?c|dongle|ear.?pad|cushion|ørepude|pude|spare.?part|reservedel|charging.?cable|ladestik)\b/i;
+
+function isSparePartRequest(
+  plan: Plan,
+  caseState: CaseState,
+  shopConfig: ShopActionConfig,
+): boolean {
+  const context = [
+    ...caseState.entities.products_mentioned,
+    ...caseState.open_questions,
+    ...plan.sub_queries,
+  ].join(" ");
+
+  if (DEFAULT_SPARE_PART_RE.test(context)) return true;
+
+  if (shopConfig.spare_part_keywords?.length) {
+    const shopRe = new RegExp(
+      shopConfig.spare_part_keywords.map((k) =>
+        k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+      ).join("|"),
+      "i",
+    );
+    if (shopRe.test(context)) return true;
+  }
+
+  return false;
+}
+
+// Tjek om retrieved KB-chunks indikerer office-forsendelse
+// (KB siger eksplicit at noget ikke må gå via Shopify).
+const KB_OFFICE_RE =
+  /from.*office|office.*ship|not.*through.*shopify|not.*shopify|spare.*part.*office|send.*from.*our.*office/i;
+
+function kbSaysOfficeShipment(retrieved: RetrieverResult): boolean {
+  return retrieved.chunks.some((c) => KB_OFFICE_RE.test(c.content));
+}
+
+function isActionDisabled(
+  type: string,
+  shopConfig: ShopActionConfig,
+): boolean {
+  return shopConfig.disabled_actions?.includes(type) ?? false;
+}
+
+function alreadyDecided(
+  keys: Set<string>,
+  ...decisionKeys: string[]
+): boolean {
+  return decisionKeys.some((k) => keys.has(k));
+}
+
+// ─── Deterministiske regler ───────────────────────────────────────────────────
+
 function applyDeterministicRules(
   plan: Plan,
   caseState: CaseState,
   facts: FactResolverResult,
+  retrieved: RetrieverResult,
+  shopConfig: ShopActionConfig,
 ): ActionProposal[] {
-  const proposals: ActionProposal[] = [];
   const order = facts.order;
-
-  // Byg et hurtigt opslag på facts-labels
   const factMap: Record<string, string> = {};
-  for (const f of facts.facts) {
-    factMap[f.label] = f.value;
-  }
-
-  // Hvad er allerede besluttet/tilbudt i denne samtale
-  const decidedKeys = new Set(caseState.decisions_made.map((d) => d.decision));
-
+  for (const f of facts.facts) factMap[f.label] = f.value;
+  const decided = new Set(caseState.decisions_made.map((d) => d.decision));
   const intent = plan.primary_intent;
 
-  // ── 1. Ren informationshenvendelse — ingen action ──────────────────────────
-  if (["tracking", "product_question", "thanks", "other"].includes(intent)) {
-    return []; // Writeren svarer, ingen action nødvendig
+  // ── 1. Ren information — ingen action nødvendig ────────────────────────────
+  // Writer henter fakta og KB og svarer direkte.
+  if (["tracking", "product_question", "thanks"].includes(intent)) {
+    return [];
   }
 
-  // ── 2. Returanmodning ──────────────────────────────────────────────────────
-  if (intent === "return" && order) {
-    const eligibility = factMap["Returret"] ?? "";
-    const alreadyOffered = decidedKeys.has("return_offered") ||
-      decidedKeys.has("initiate_return");
-
-    if (alreadyOffered) return []; // Undgå gentagelse
-
-    if (eligibility.startsWith("Ja")) {
-      proposals.push({
-        type: "initiate_return",
-        confidence: "high",
-        reason: `Ordren er inden for returvinduet (${eligibility})`,
-        params: { order_id: order.id, order_name: order.name },
-        requires_approval: false,
-      });
+  // ── 2. Adresseændring ──────────────────────────────────────────────────────
+  if (intent === "address_change") {
+    if (alreadyDecided(decided, "address_changed", "update_shipping_address")) {
+      return []; // Allerede håndteret
     }
-    // Hvis ikke returret → ingen action, writer forklarer politikken
-    return proposals;
-  }
+    if (!order) return []; // Ingen ordre — writer beder om ordrenummer
 
-  // ── 3. Refusionsanmodning ──────────────────────────────────────────────────
-  if (intent === "refund" && order) {
-    if (decidedKeys.has("refund_offered") || decidedKeys.has("refund_order")) {
-      return [];
-    }
-    if (
-      order.financial_status === "paid" ||
-      order.financial_status === "partially_paid"
-    ) {
-      proposals.push({
-        type: "refund_order",
-        confidence: "medium",
-        reason: "Kunden anmoder om refundering på betalt ordre",
-        params: { order_id: order.id, order_name: order.name },
-        requires_approval: true,
-      });
-    }
-    return proposals;
-  }
-
-  // ── 4. Adresseændring ──────────────────────────────────────────────────────
-  if (intent === "address_change" && order) {
     if (
       order.fulfillment_status === null ||
       order.fulfillment_status === "unfulfilled"
     ) {
-      proposals.push({
-        type: "update_shipping_address",
-        confidence: "high",
-        reason: "Ordren er ikke afsendt — adressen kan stadig ændres",
-        params: { order_id: order.id },
-        requires_approval: false,
-      });
-    } else {
-      // Ordren er afsendt — vi kan ikke ændre adressen, writer forklarer
+      if (!isActionDisabled("update_shipping_address", shopConfig)) {
+        return [{
+          type: "update_shipping_address",
+          confidence: "high",
+          reason: "Ordren er ikke afsendt — adressen kan ændres",
+          params: { order_id: order.id, order_name: order.name },
+          requires_approval: !(shopConfig.address_change_auto ?? false),
+        }];
+      }
     }
-    return proposals;
+    // Afsendt → ingen action, writer forklarer at det er for sent
+    return [];
+  }
+
+  // ── 3. Returanmodning ──────────────────────────────────────────────────────
+  if (intent === "return") {
+    if (alreadyDecided(decided, "return_offered", "initiate_return")) return [];
+    if (!order) return [];
+
+    const eligibility = factMap["Returret"] ?? "";
+    if (eligibility.startsWith("Ja") && !isActionDisabled("initiate_return", shopConfig)) {
+      return [{
+        type: "initiate_return",
+        confidence: "high",
+        reason: `Ordre inden for returvinduet: ${eligibility}`,
+        params: { order_id: order.id, order_name: order.name },
+        requires_approval: false,
+      }];
+    }
+    // Uden for returvindue eller mangler returret-fakta → ingen action, writer forklarer
+    return [];
+  }
+
+  // ── 4. Refusionsanmodning ──────────────────────────────────────────────────
+  if (intent === "refund") {
+    if (alreadyDecided(decided, "refund_offered", "refund_order")) return [];
+    if (!order) return [];
+    if (isActionDisabled("refund_order", shopConfig)) return [];
+
+    if (order.financial_status === "refunded") return []; // Allerede refunderet
+
+    if (
+      order.financial_status === "paid" ||
+      order.financial_status === "partially_paid"
+    ) {
+      // Auto-approve check: er ordren inden for shopConfig.refund_auto_days?
+      const autoDays = shopConfig.refund_auto_days ?? 0;
+      let requiresApproval = true;
+      if (autoDays > 0 && order.created_at) {
+        const daysSince = Math.floor(
+          (Date.now() - new Date(order.created_at).getTime()) / 86_400_000,
+        );
+        requiresApproval = daysSince > autoDays;
+      }
+
+      return [{
+        type: "refund_order",
+        confidence: "medium",
+        reason: "Kunden anmoder om refundering på betalt ordre",
+        params: { order_id: order.id, order_name: order.name },
+        requires_approval: requiresApproval,
+      }];
+    }
+    return [];
   }
 
   // ── 5. Annullering ─────────────────────────────────────────────────────────
-  if (intent === "cancel" && order) {
-    if (decidedKeys.has("cancel_order") || decidedKeys.has("cancellation_offered")) {
-      return [];
-    }
+  if (intent === "cancel") {
+    if (alreadyDecided(decided, "cancel_order", "cancellation_offered")) return [];
+    if (!order) return [];
+    if (isActionDisabled("cancel_order", shopConfig)) return [];
+
+    if (order.cancelled_at) return []; // Allerede annulleret
+
     if (
-      !order.cancelled_at &&
-      (order.fulfillment_status === null ||
-        order.fulfillment_status === "unfulfilled")
+      order.fulfillment_status === null ||
+      order.fulfillment_status === "unfulfilled"
     ) {
-      proposals.push({
+      return [{
         type: "cancel_order",
         confidence: "medium",
-        reason: "Kunden ønsker annullering og ordren er ikke afsendt endnu",
+        reason: "Kunden ønsker annullering og ordren er endnu ikke afsendt",
         params: { order_id: order.id, order_name: order.name },
         requires_approval: true,
-      });
+      }];
     }
-    return proposals;
+    // Afsendt → ingen annullering mulig, writer forklarer
+    return [];
   }
 
-  // ── 6. Exchange ────────────────────────────────────────────────────────────
-  if (intent === "exchange" && order) {
-    proposals.push({
-      type: "create_exchange_request",
-      confidence: "low",
-      reason: "Kunden ønsker ombytning — kræver menneskelig vurdering",
-      params: { order_id: order.id },
-      requires_approval: true,
-    });
-    return proposals;
+  // ── 6. Exchange (ombytning) ────────────────────────────────────────────────
+  if (intent === "exchange") {
+    if (alreadyDecided(decided, "exchange_offered", "create_exchange_request")) return [];
+
+    // Bestem workflow: KB > shopConfig > default (shopify)
+    const officeFromKB = kbSaysOfficeShipment(retrieved);
+    const sparePartDetected = isSparePartRequest(plan, caseState, shopConfig);
+    const sparePartsWorkflow = shopConfig.spare_parts_workflow ?? "shopify";
+    const exchangeWorkflow = shopConfig.exchange_workflow ?? "shopify";
+
+    // Kræv BEGGE: spare part detekteret OG office-workflow (KB eller shop config).
+    // Forhindrer falsk positiv når KB har "office"-chunks men klagen ikke handler om reservedele.
+    const useOfficeFlow = sparePartDetected &&
+      (officeFromKB || sparePartsWorkflow === "office");
+    const useManualFlow = !useOfficeFlow &&
+      (sparePartDetected && sparePartsWorkflow === "manual") ||
+      exchangeWorkflow === "manual";
+
+    if (useOfficeFlow) {
+      // Reservedel sendes fra kontoret — add_note, ingen Shopify exchange
+      const noteText = order
+        ? `Spare part requested — ship from office. Order: ${order.name}`
+        : "Spare part requested — ship from office (no order found)";
+      return [{
+        type: "add_note",
+        confidence: "high",
+        reason: officeFromKB
+          ? "KB instruerer office-forsendelse — ikke Shopify exchange"
+          : "Reservedel detekteret — sendes fra kontoret per shop-konfiguration",
+        params: {
+          order_id: order?.id ?? null,
+          note: noteText,
+        },
+        requires_approval: false,
+      }];
+    }
+
+    if (useManualFlow || !order) {
+      // Manuel håndtering — ingen automatisk action, routing til menneske
+      return [];
+    }
+
+    if (!isActionDisabled("create_exchange_request", shopConfig)) {
+      return [{
+        type: "create_exchange_request",
+        confidence: "medium",
+        reason: "Kunden ønsker ombytning af produkt",
+        params: { order_id: order.id, order_name: order.name },
+        requires_approval: true,
+      }];
+    }
+    return [];
   }
 
   // ── 7. Klage ───────────────────────────────────────────────────────────────
   if (intent === "complaint") {
-    // Klag håndteres altid af menneske — ingen auto-action
+    if (alreadyDecided(decided, "complaint_handled", "create_exchange_request", "refund_offered")) {
+      return [];
+    }
+    if (!order) return []; // Writer beder om ordreinfo/dokumentation
+
+    // Reservedels-klage (ødelagt kabel, dongle osv.) — samme logik som exchange.
+    // VIGTIGT: for klager tjekker vi KUN kundens egne ord (open_questions),
+    // IKKE plan.sub_queries som kan indeholde produkt-specifikke ord fra planner.
+    const officeFromKB = kbSaysOfficeShipment(retrieved);
+    const sparePartsWorkflow = shopConfig.spare_parts_workflow ?? "shopify";
+    // Tjek kundens egne ord: products_mentioned + open_questions (IKKE sub_queries — de er planner-infererede)
+    const customerWordsOnly = [
+      ...caseState.entities.products_mentioned,
+      ...caseState.open_questions,
+    ].join(" ");
+    const sparePartInCustomerWords = DEFAULT_SPARE_PART_RE.test(customerWordsOnly) ||
+      (shopConfig.spare_part_keywords?.some((k) =>
+        new RegExp(k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(customerWordsOnly)
+      ) ?? false);
+
+    if (sparePartInCustomerWords && (officeFromKB || sparePartsWorkflow === "office")) {
+      return [{
+        type: "add_note",
+        confidence: "high",
+        reason: officeFromKB
+          ? "KB instruerer office-forsendelse — ikke Shopify exchange"
+          : "Reservedel detekteret — sendes fra kontoret per shop-konfiguration",
+        params: {
+          order_id: order.id,
+          note: `Spare part complaint — ship replacement from office. Order: ${order.name}`,
+        },
+        requires_approval: false,
+      }];
+    }
+
+    // Generel klage (manglende vare, forkert vare, defekt produkt)
+    // → foreslå exchange så mennesket kan se og godkende
+    if (!isActionDisabled("create_exchange_request", shopConfig)) {
+      return [{
+        type: "create_exchange_request",
+        confidence: "low",
+        reason: "Klage over produkt — kræver menneskelig vurdering og godkendelse",
+        params: { order_id: order.id, order_name: order.name },
+        requires_approval: true,
+      }];
+    }
     return [];
   }
 
-  return proposals;
+  return [];
 }
 
-// LLM fallback for edge cases der ikke matchede deterministiske regler.
-// Bruges KUN hvis primary_intent er "other" og plan.skills_to_consider ikke er tom.
+// ─── LLM fallback ─────────────────────────────────────────────────────────────
+// Bruges til "other"-intent med skills_to_consider, eller når deterministiske
+// regler ikke producerede forslag men planner identificerede relevante skills.
+
 async function llmFallbackActions(
   plan: Plan,
   caseState: CaseState,
   facts: FactResolverResult,
+  shopConfig: ShopActionConfig,
 ): Promise<ActionProposal[]> {
-  if (plan.skills_to_consider.length === 0) return [];
-  if (plan.primary_intent !== "other") return [];
+  const allowedSkills = plan.skills_to_consider.filter(
+    (s) => !isActionDisabled(s, shopConfig),
+  );
+  if (allowedSkills.length === 0) return [];
 
-  const factsText = facts.facts.map((f) => `- ${f.label}: ${f.value}`).join("\n");
-  const openQText = caseState.open_questions.join("; ");
+  const factsText = facts.facts.length > 0
+    ? facts.facts.map((f) => `- ${f.label}: ${f.value}`).join("\n")
+    : "Ingen verificerede fakta tilgængelige";
+  const context = [
+    ...caseState.open_questions,
+    ...caseState.pending_asks,
+  ].join("; ") || "Ingen åbne spørgsmål";
 
   try {
     const resp = await fetch(OPENAI_API_URL, {
@@ -178,38 +389,38 @@ async function llmFallbackActions(
         "Authorization": `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
       },
       body: JSON.stringify({
-        model: Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini",
+        model: Deno.env.get("OPENAI_MODEL") ?? "gpt-5-mini",
         temperature: 0,
-        max_tokens: 300,
+        max_tokens: 400,
         response_format: { type: "json_object" },
         messages: [
           {
             role: "system",
             content:
-              `Du er en support action-beslutter. Output KUN gyldigt JSON. Vær konservativ — foreslå kun actions du er sikker på er relevante.`,
+              `You are a conservative support action selector. Only suggest actions you are highly confident are needed. Empty list is always safe. Output valid JSON only.`,
           },
           {
             role: "user",
-            content: `Kundens spørgsmål: ${openQText}
+            content: `Customer situation: ${context}
 
-Verificerede fakta:
+Verified order facts:
 ${factsText}
 
-Tilgængelige actions: ${plan.skills_to_consider.join(", ")}
+Available actions for this shop: ${allowedSkills.join(", ")}
 
-Returner JSON:
+Return JSON:
 {
   "proposals": [
     {
-      "type": "action_type",
+      "type": "<action_type from available actions>",
       "confidence": "high|medium|low",
-      "reason": "kort begrundelse",
+      "reason": "<short reason in Danish>",
       "requires_approval": true
     }
   ]
 }
 
-Returnér kun actions der er direkte relevante. Tom liste er OK.`,
+Only include actions directly necessary. Empty proposals array is fine.`,
           },
         ],
       }),
@@ -218,21 +429,30 @@ Returnér kun actions der er direkte relevante. Tom liste er OK.`,
     if (!resp.ok) return [];
     const data = await resp.json();
     const parsed = JSON.parse(data.choices[0].message.content);
-    return Array.isArray(parsed?.proposals)
-      ? parsed.proposals.map((p: Record<string, unknown>) => ({
-        type: p.type ?? "unknown",
-        confidence: (p.confidence ?? "low") as "high" | "medium" | "low",
-        reason: p.reason ?? "",
+    if (!Array.isArray(parsed?.proposals)) return [];
+
+    return parsed.proposals
+      .filter((p: Record<string, unknown>) =>
+        typeof p.type === "string" &&
+        allowedSkills.includes(p.type) &&
+        !isActionDisabled(String(p.type), shopConfig)
+      )
+      .map((p: Record<string, unknown>) => ({
+        type: String(p.type),
+        confidence: (["high", "medium", "low"].includes(String(p.confidence))
+          ? p.confidence
+          : "low") as "high" | "medium" | "low",
+        reason: String(p.reason ?? ""),
         params: {},
         requires_approval: p.requires_approval !== false,
-      }))
-      : [];
+      }));
   } catch {
     return [];
   }
 }
 
-// Bestem routing baseret på forslag + plan.
+// ─── Routing ──────────────────────────────────────────────────────────────────
+
 function computeRoutingHint(
   proposals: ActionProposal[],
   plan: Plan,
@@ -241,28 +461,42 @@ function computeRoutingHint(
   if (plan.primary_intent === "complaint") return "review";
   if (plan.primary_intent === "exchange") return "review";
 
-  // Actions med requires_approval → review
+  // Actions med godkendelseskrav → review
   if (proposals.some((p) => p.requires_approval)) return "review";
 
-  // Lav-confidence actions → review
+  // Lav-confidence → review
   if (proposals.some((p) => p.confidence === "low")) return "review";
 
-  // Ingen problematiske actions → auto er mulig (verificeren sætter endeligt)
+  // Ingen actions eller alle er high-confidence uden approval → auto er mulig
   return "auto";
 }
 
-export async function runActionDecision(
-  { plan, caseState, facts }: ActionDecisionInput,
-): Promise<ActionDecisionResult> {
-  // 1. Prøv deterministiske regler først
-  let proposals = applyDeterministicRules(plan, caseState, facts);
+// ─── Indgang ──────────────────────────────────────────────────────────────────
 
-  // 2. LLM fallback kun hvis ingen regler matchede og intent er "other"
-  if (proposals.length === 0) {
-    proposals = await llmFallbackActions(plan, caseState, facts);
+export async function runActionDecision(
+  { plan, caseState, facts, retrieved, shopConfig }: ActionDecisionInput,
+): Promise<ActionDecisionResult> {
+  // 1. Deterministiske regler med per-shop config og KB-overrides
+  let proposals = applyDeterministicRules(
+    plan, caseState, facts, retrieved, shopConfig,
+  );
+
+  // 2. LLM fallback:
+  //    a) intent er "other" og planner har identificeret relevante skills
+  //    b) ELLER: deterministiske regler gav ingen forslag men der er skills at overveje
+  const shouldUseLlmFallback = proposals.length === 0 &&
+    plan.skills_to_consider.length > 0 &&
+    !["tracking", "product_question", "thanks"].includes(plan.primary_intent);
+
+  if (shouldUseLlmFallback) {
+    proposals = await llmFallbackActions(plan, caseState, facts, shopConfig);
   }
 
   const routing_hint = computeRoutingHint(proposals, plan);
+
+  console.log(
+    `[action-decision] intent=${plan.primary_intent} proposals=${proposals.map((p) => p.type).join(",")||"none"} routing=${routing_hint}`,
+  );
 
   return { proposals, routing_hint };
 }

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
-import { resolveAuthScope } from "@/lib/server/workspace-auth";
+import { listScopedShops, resolveAuthScope } from "@/lib/server/workspace-auth";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -12,10 +12,235 @@ const SUPABASE_SERVICE_ROLE_KEY =
   process.env.SERVICE_ROLE_KEY ||
   process.env.SUPABASE_SERVICE_KEY ||
   "";
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
+const SAVED_REPLY_KNOWLEDGE_PROVIDER = "saved_reply";
 
 function createServiceClient() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null;
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+}
+
+function stripHtmlForKnowledge(value = "") {
+  return String(value || "")
+    .replace(/<\s*br\s*\/?>/gi, "\n")
+    .replace(/<\/p\s*>/gi, "\n")
+    .replace(/<\/div\s*>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/\s+\n/g, "\n")
+    .replace(/\n\s+/g, "\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function normalizeMatchText(value = "") {
+  return stripHtmlForKnowledge(value)
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9æøåäöüß]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function uniqueBy(items, keyFn) {
+  const seen = new Set();
+  const out = [];
+  for (const item of items) {
+    const key = keyFn(item);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
+}
+
+async function embedKnowledgeText(text) {
+  if (!OPENAI_API_KEY) {
+    throw new Error("OPENAI_API_KEY is required to index saved replies.");
+  }
+  const response = await fetch("https://api.openai.com/v1/embeddings", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "text-embedding-3-small",
+      input: String(text || "").slice(0, 8000),
+    }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.error?.message || "Could not embed saved reply.");
+  }
+  return payload?.data?.[0]?.embedding;
+}
+
+function savedReplyKnowledgeContent(reply) {
+  return [
+    `Saved reply: ${asString(reply?.title)}`,
+    reply?.category ? `Category: ${asString(reply.category)}` : "",
+    "",
+    stripHtmlForKnowledge(reply?.content),
+  ].filter(Boolean).join("\n");
+}
+
+async function fetchShopProductCandidates(serviceClient, shopId) {
+  const { data, error } = await serviceClient
+    .from("agent_knowledge")
+    .select("source_provider, metadata")
+    .eq("shop_id", shopId)
+    .in("source_provider", ["shopify_product", "shopify_variant", "manual_text"])
+    .limit(1000);
+  if (error) {
+    console.warn("[saved-replies] product metadata lookup failed:", error.message);
+    return [];
+  }
+  const candidates = (Array.isArray(data) ? data : [])
+    .map((row) => {
+      const meta = row?.metadata && typeof row.metadata === "object" ? row.metadata : {};
+      const provider = asString(row?.source_provider).toLowerCase();
+      const productId = asString(meta.product_id);
+      const productTitle = asString(
+        meta.product_title || (provider === "shopify_product" ? meta.title : "")
+      );
+      const variantId = asString(meta.variant_id);
+      const variantTitle = asString(meta.variant_title);
+      if (!productId && !productTitle) return null;
+      return {
+        product_id: productId || null,
+        product_title: productTitle || null,
+        variant_id: variantId || null,
+        variant_title: variantTitle || null,
+      };
+    })
+    .filter(Boolean);
+  return uniqueBy(
+    candidates,
+    (item) => `${item.product_id || item.product_title}|${item.variant_id || item.variant_title || ""}`,
+  );
+}
+
+function matchSavedReplyProductMetadata(reply, candidates) {
+  const text = normalizeMatchText(`${reply?.title || ""}\n${reply?.category || ""}\n${reply?.content || ""}`);
+  let best = null;
+
+  for (const candidate of candidates) {
+    const productTitle = normalizeMatchText(candidate.product_title || "");
+    const variantTitle = normalizeMatchText(candidate.variant_title || "");
+    let score = 0;
+    if (productTitle && text.includes(productTitle)) score += 5;
+    if (variantTitle && variantTitle !== "default title" && text.includes(variantTitle)) score += 4;
+
+    const productTokens = productTitle
+      .split(" ")
+      .filter((token) => token.length >= 3);
+    const variantTokens = variantTitle
+      .split(" ")
+      .filter((token) => token.length >= 3 && token !== "default" && token !== "title");
+    score += productTokens.filter((token) => text.includes(token)).length;
+    score += variantTokens.filter((token) => text.includes(token)).length * 1.5;
+
+    if (score > 0 && (!best || score > best.score)) {
+      best = { candidate, score };
+    }
+  }
+
+  if (!best || best.score < 3) {
+    return {
+      applies_to: "generic",
+      product_match_confidence: 0,
+    };
+  }
+
+  const confidence = Math.min(1, Number((best.score / 8).toFixed(2)));
+  return {
+    applies_to: confidence >= 0.45 ? "product_specific" : "generic",
+    product_match_confidence: confidence,
+    product_id: best.candidate.product_id,
+    product_title: best.candidate.product_title,
+    variant_id: best.candidate.variant_id,
+    variant_title: best.candidate.variant_title,
+  };
+}
+
+async function deleteSavedReplyKnowledge(serviceClient, workspaceId, savedReplyId) {
+  const { error } = await serviceClient
+    .from("agent_knowledge")
+    .delete()
+    .eq("workspace_id", workspaceId)
+    .eq("source_provider", SAVED_REPLY_KNOWLEDGE_PROVIDER)
+    .eq("source_id", String(savedReplyId));
+  if (error) {
+    console.warn("[saved-replies] knowledge delete failed:", error.message);
+  }
+}
+
+async function syncSavedReplyKnowledge(serviceClient, scope, reply) {
+  if (!reply?.id || !scope?.workspaceId) return;
+  if (!reply.is_active) {
+    await deleteSavedReplyKnowledge(serviceClient, scope.workspaceId, reply.id);
+    return;
+  }
+
+  const shops = await listScopedShops(serviceClient, scope, {
+    fields: "id, workspace_id, shop_name, shop_domain",
+  });
+  if (!shops.length) return;
+
+  const content = savedReplyKnowledgeContent(reply);
+  if (!content) return;
+  const embedding = await embedKnowledgeText(content);
+  const nowIso = new Date().toISOString();
+
+  for (const shop of shops) {
+    const candidates = await fetchShopProductCandidates(serviceClient, shop.id);
+    const productMetadata = matchSavedReplyProductMetadata(reply, candidates);
+    const row = {
+      workspace_id: scope.workspaceId,
+      shop_id: shop.id,
+      content,
+      source_type: "snippet",
+      source_provider: SAVED_REPLY_KNOWLEDGE_PROVIDER,
+      source_id: String(reply.id),
+      chunk_index: 0,
+      metadata: {
+        saved_reply_id: String(reply.id),
+        title: asString(reply.title),
+        category: toNullableString(reply.category),
+        is_active: Boolean(reply.is_active),
+        source_kind: "saved_reply",
+        indexed_from: "saved_replies",
+        updated_at: reply.updated_at || nowIso,
+        ...productMetadata,
+      },
+      embedding,
+    };
+    const { error } = await serviceClient
+      .from("agent_knowledge")
+      .upsert(row, {
+        onConflict: "workspace_id,shop_id,source_provider,source_id,chunk_index",
+      });
+    if (error) {
+      console.warn("[saved-replies] knowledge upsert failed:", error.message);
+    }
+  }
+}
+
+async function safeSyncSavedReplyKnowledge(serviceClient, scope, reply) {
+  try {
+    await syncSavedReplyKnowledge(serviceClient, scope, reply);
+  } catch (error) {
+    console.warn(
+      "[saved-replies] knowledge sync failed:",
+      error instanceof Error ? error.message : error,
+    );
+  }
 }
 
 function asString(value, fallback = "") {
@@ -455,7 +680,10 @@ export async function POST(request) {
       );
     }
 
-    return NextResponse.json({ reply: formatSavedReply(data) }, { status: 201 });
+    const reply = formatSavedReply(data);
+    await safeSyncSavedReplyKnowledge(serviceClient, scope, reply);
+
+    return NextResponse.json({ reply }, { status: 201 });
   } catch (error) {
     if (isSavedReplyImageValidationError(error)) {
       return NextResponse.json(
@@ -603,7 +831,10 @@ export async function PUT(request) {
       );
     }
 
-    return NextResponse.json({ reply: formatSavedReply(data) }, { status: 200 });
+    const reply = formatSavedReply(data);
+    await safeSyncSavedReplyKnowledge(serviceClient, scope, reply);
+
+    return NextResponse.json({ reply }, { status: 200 });
   } catch (error) {
     if (isMissingTableError(error)) {
       return NextResponse.json(
@@ -679,6 +910,8 @@ export async function DELETE(request) {
         { status: 500 }
       );
     }
+
+    await deleteSavedReplyKnowledge(serviceClient, scope.workspaceId, id);
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {

@@ -371,6 +371,39 @@ export class ShopifyProvider implements CommerceProvider {
     });
   }
 
+  // --- Inventory lookup ---
+
+  // Search products by title and return inventory status per variant.
+  // Used by fact_resolver when customer asks about product availability.
+  async searchProductInventory(
+    query: string,
+  ): Promise<Array<{ title: string; variant: string; available: boolean; quantity: number }>> {
+    try {
+      const encoded = encodeURIComponent(query.slice(0, 100));
+      const payload = await this.fetch<{ products?: Array<Record<string, unknown>> }>(
+        `products.json?title=${encoded}&limit=5&fields=id,title,variants`,
+      );
+      const products = payload?.products ?? [];
+      const results: Array<{ title: string; variant: string; available: boolean; quantity: number }> = [];
+      for (const product of products) {
+        const title = String(product.title ?? "");
+        const variants = Array.isArray(product.variants) ? product.variants : [];
+        for (const v of variants) {
+          const qty = Number(v.inventory_quantity ?? 0);
+          results.push({
+            title,
+            variant: String(v.title ?? "Default"),
+            available: qty > 0,
+            quantity: qty,
+          });
+        }
+      }
+      return results;
+    } catch {
+      return [];
+    }
+  }
+
   // --- Capability check ---
 
   // Shopify supports all defined action types.

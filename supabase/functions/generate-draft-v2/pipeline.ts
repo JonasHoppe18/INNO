@@ -5,13 +5,18 @@ import { updateCaseState } from "./stages/case-state-updater.ts";
 import { runPlanner } from "./stages/planner.ts";
 import { runRetriever } from "./stages/retriever.ts";
 import { runFactResolver } from "./stages/fact-resolver.ts";
-import { ActionProposal, runActionDecision } from "./stages/action-decision.ts";
+import { ActionProposal, runActionDecision, ShopActionConfig } from "./stages/action-decision.ts";
 import { runWriter } from "./stages/writer.ts";
 import { runVerifier } from "./stages/verifier.ts";
 import {
   buildPinnedPolicyContext,
   PolicyIntent,
 } from "../_shared/policy-context.ts";
+import {
+  cleanupMixedLanguageDraft,
+  mixedLanguageCheck,
+  resolveReplyLanguage,
+} from "./stages/language.ts";
 
 export interface EvalPayload {
   subject: string;
@@ -39,12 +44,18 @@ export interface PipelineResult {
   routing_hint: "auto" | "review" | "block";
   is_test_mode: boolean;
   confidence: number;
-  sources: Array<{ content: string; kind: string; source_label: string }>;
+  sources: Array<{
+    content: string;
+    kind: string;
+    source_label: string;
+    usable_as?: string;
+    risk_flags?: string[];
+  }>;
   skipped?: boolean;
   skip_reason?: string;
 }
 
-const STRONG_MODEL = Deno.env.get("OPENAI_STRONG_MODEL") ?? "gpt-4o";
+const STRONG_MODEL = Deno.env.get("OPENAI_STRONG_MODEL") ?? "gpt-5";
 const CONFIDENCE_ESCALATION_THRESHOLD = 0.6;
 
 // Maps action type to the automation flag that must be enabled for auto-execution.
@@ -310,10 +321,19 @@ export async function runDraftV2Pipeline(
 
   // 4. Plan — bestem intent, hvad der skal hentes, hvilke facts der kræves
   const plan = await runPlanner({ caseState, latestMessage, shop });
+  const latestBody =
+    (latestMessage.clean_body_text ?? latestMessage.body_text ?? "") as string;
 
   // 5. Retrieve + resolve facts parallelt (uafhængige)
   const [retrieved, facts] = await Promise.all([
-    runRetriever({ plan, shop_id, workspace_id: workspaceId, supabase }),
+    runRetriever({
+      plan,
+      shop_id,
+      workspace_id: workspaceId,
+      customerMessage: latestBody,
+      shop,
+      supabase,
+    }),
     runFactResolver({
       plan,
       caseState,
@@ -324,8 +344,21 @@ export async function runDraftV2Pipeline(
     }),
   ]);
 
-  // 6. Deterministisk action-decision baseret på plan + caseState + facts
-  const actionDecision = await runActionDecision({ plan, caseState, facts });
+  // 6. Deterministisk action-decision med per-shop config + KB-overrides
+  // Læs shop action_config (JSONB) — giver per-shop tilpasning uden kodeændringer.
+  const rawActionConfig = (shop as Record<string, unknown>).action_config;
+  const shopActionConfig: ShopActionConfig =
+    (rawActionConfig && typeof rawActionConfig === "object" && !Array.isArray(rawActionConfig))
+      ? rawActionConfig as ShopActionConfig
+      : {};
+
+  const actionDecision = await runActionDecision({
+    plan,
+    caseState,
+    facts,
+    retrieved,          // KB-chunks til at tolke shop-specifikke procedurer
+    shopConfig: shopActionConfig,
+  });
 
   // 7. Anvend shop automation-flags — overskriv requires_approval og routing_hint
   const { proposals: finalProposals, routing_hint: effectiveRoutingHint } =
@@ -343,8 +376,6 @@ export async function runDraftV2Pipeline(
   }
 
   // 8. Byg shop policy-kontekst deterministisk (pinned — altid med i prompten)
-  const latestBody =
-    (latestMessage.clean_body_text ?? latestMessage.body_text ?? "") as string;
   const subject = (thread.subject ?? "") as string;
 
   // Map planner intent → PolicyIntent so policy block matches what the planner decided
@@ -381,6 +412,10 @@ export async function runDraftV2Pipeline(
 
   const latestCustomerMessage =
     (latestMessage.clean_body_text ?? latestMessage.body_text ?? "") as string;
+  const replyLanguage = resolveReplyLanguage(
+    latestCustomerMessage,
+    plan.language || caseState.language,
+  );
 
   // Byg samtalehistorik fra messages — ekskludér den seneste besked (vises separat)
   const conversationHistory = messages.slice(0, -1).map((m) => {
@@ -397,7 +432,7 @@ export async function runDraftV2Pipeline(
     };
   }).filter((m) => m.text.length > 0);
 
-  // 9. Skriv første draft med gpt-4o-mini
+  // 9. Skriv første draft med gpt-5-mini
   const written = await runWriter({
     plan,
     caseState,
@@ -411,21 +446,80 @@ export async function runDraftV2Pipeline(
     model: writerModelOverride,
   });
 
+  let languageCheckedWritten = written;
+  const initialLanguageCheck = mixedLanguageCheck(
+    languageCheckedWritten.draft_text,
+    replyLanguage,
+  );
+  if (!initialLanguageCheck.ok) {
+    console.warn(
+      `[generate-draft-v2] mixed language detected before verifier: expected=${replyLanguage} foreign=${
+        initialLanguageCheck.detectedForeignLanguages.join(",")
+      } segments=${initialLanguageCheck.foreignSegments.join(" | ")}`,
+    );
+    try {
+      const correctionWritten = await runWriter({
+        plan,
+        caseState,
+        retrieved,
+        facts,
+        shop: shopWithPersona,
+        latestCustomerMessage,
+        conversationHistory,
+        actionProposals: finalProposals,
+        policyContext,
+        model: writerModelOverride,
+        languageCorrectionInstruction:
+          `Rewrite the full draft in ${replyLanguage} only. Preserve the same facts, meaning, asks, and next steps. Do not add new information. Remove or translate these foreign-language segments: ${
+            initialLanguageCheck.foreignSegments.join(" | ")
+          }`,
+      });
+      if (correctionWritten.draft_text) {
+        languageCheckedWritten = correctionWritten;
+      }
+    } catch (err) {
+      console.warn(
+        "[generate-draft-v2] language correction retry failed:",
+        err,
+      );
+    }
+  }
+
+  const retryLanguageCheck = mixedLanguageCheck(
+    languageCheckedWritten.draft_text,
+    replyLanguage,
+  );
+  if (!retryLanguageCheck.ok) {
+    languageCheckedWritten = {
+      ...languageCheckedWritten,
+      draft_text: cleanupMixedLanguageDraft(
+        languageCheckedWritten.draft_text,
+        replyLanguage,
+      ),
+    };
+  }
+
   // 10. Verificér grounding og kvalitet
   const verified = await runVerifier({
-    draftText: written.draft_text,
+    draftText: languageCheckedWritten.draft_text,
     proposedActions: finalProposals,
-    citations: written.citations,
+    citations: languageCheckedWritten.citations,
     facts,
     retrievedChunks: retrieved.chunks,
     customerMessage: latestCustomerMessage,
-    language: caseState.language,
+    language: replyLanguage,
   });
 
-  let finalDraft = written.draft_text;
+  let finalDraft = languageCheckedWritten.draft_text;
   let finalConfidence = verified.confidence;
+  let finalRoutingHint = effectiveRoutingHint;
 
-  // 11. Eskalér til gpt-4o hvis verifier flagger lav confidence
+  if (!mixedLanguageCheck(finalDraft, replyLanguage).ok) {
+    finalConfidence = Math.min(finalConfidence, 0.62);
+    finalRoutingHint = "review";
+  }
+
+  // 11. Eskalér til gpt-5 hvis verifier flagger lav confidence
   if (
     !disableEscalation && verified.retry_with_stronger_model &&
     !verified.block_send
@@ -449,19 +543,30 @@ export async function runDraftV2Pipeline(
       });
 
       if (strongWritten.draft_text) {
+        let strongDraftText = strongWritten.draft_text;
+        if (!mixedLanguageCheck(strongDraftText, replyLanguage).ok) {
+          strongDraftText = cleanupMixedLanguageDraft(
+            strongDraftText,
+            replyLanguage,
+          );
+        }
         const strongVerified = await runVerifier({
-          draftText: strongWritten.draft_text,
+          draftText: strongDraftText,
           proposedActions: finalProposals,
           citations: strongWritten.citations,
           facts,
           retrievedChunks: retrieved.chunks,
           customerMessage: latestCustomerMessage,
-          language: caseState.language,
+          language: replyLanguage,
         });
 
         if (strongVerified.confidence >= verified.confidence) {
-          finalDraft = strongWritten.draft_text;
+          finalDraft = strongDraftText;
           finalConfidence = strongVerified.confidence;
+          if (!mixedLanguageCheck(finalDraft, replyLanguage).ok) {
+            finalConfidence = Math.min(finalConfidence, 0.62);
+            finalRoutingHint = "review";
+          }
           console.log(
             `[generate-draft-v2] strong model improved confidence: ${verified.confidence} → ${strongVerified.confidence}`,
           );
@@ -481,13 +586,15 @@ export async function runDraftV2Pipeline(
   return {
     draft_text: finalDraft,
     proposed_actions: finalProposals,
-    routing_hint: effectiveRoutingHint,
+    routing_hint: finalRoutingHint,
     is_test_mode: isTestMode,
     confidence: finalConfidence,
     sources: retrieved.chunks.slice(0, 5).map((c) => ({
       content: c.content.slice(0, 200),
       kind: c.kind,
       source_label: c.source_label,
+      usable_as: c.usable_as,
+      risk_flags: c.risk_flags,
     })),
   };
 }
