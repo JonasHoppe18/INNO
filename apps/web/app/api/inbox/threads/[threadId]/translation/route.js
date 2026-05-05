@@ -263,7 +263,7 @@ async function buildConversationTranslation({
   const { data: rows, error } = await serviceClient
     .from("mail_messages")
     .select(
-      "id, provider_message_id, from_me, body_text, body_html, received_at, sent_at, created_at, updated_at"
+      "id, provider_message_id, from_me, clean_body_text, body_text, body_html, received_at, sent_at, created_at, updated_at"
     )
     .eq("thread_id", threadId)
     .eq("is_draft", false)
@@ -273,7 +273,7 @@ async function buildConversationTranslation({
 
   const sourceItems = (Array.isArray(rows) ? rows : [])
     .map((row) => {
-      const text = asString(row?.body_text) || stripHtml(row?.body_html || "");
+      const text = asString(row?.clean_body_text) || asString(row?.body_text) || stripHtml(row?.body_html || "");
       if (!text) return null;
       return {
         id: String(row.id),

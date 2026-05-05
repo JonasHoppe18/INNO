@@ -823,7 +823,27 @@ export function MessageBubble({
                   if (attachment) openLightbox(attachment);
                 }}
               >
-                {!isStructuredForm && previewBodyHtml ? (
+                {!isOutbound && showTranslation ? (
+                  translationLoading ? (
+                    <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
+                      <span className="inline-block h-3 w-3 animate-spin rounded-full border border-muted-foreground/40 border-t-foreground/80" />
+                      Translating…
+                    </div>
+                  ) : translatedText ? (
+                    <p className="whitespace-pre-wrap text-[14px] leading-[1.55] text-foreground">
+                      {translatedText}
+                    </p>
+                  ) : (
+                    <>
+                      {!isStructuredForm && previewBodyHtml ? (
+                        <div className={EMAIL_BODY_CLASS} dangerouslySetInnerHTML={{ __html: previewBodyHtml }} />
+                      ) : (
+                        <div className={EMAIL_BODY_CLASS} dangerouslySetInnerHTML={{ __html: previewHtml }} />
+                      )}
+                      <p className="mt-2 text-[12px] text-muted-foreground">Translation not available.</p>
+                    </>
+                  )
+                ) : !isStructuredForm && previewBodyHtml ? (
                   <div
                     className={EMAIL_BODY_CLASS}
                     dangerouslySetInnerHTML={{ __html: previewBodyHtml }}
@@ -872,23 +892,6 @@ export function MessageBubble({
               </div>
             ) : null}
 
-            {!isOutbound && showTranslation && (
-              <div className="rounded-xl border border-border bg-muted px-4 py-3">
-                {translationLoading ? (
-                  <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
-                    <span className="inline-block h-3 w-3 animate-spin rounded-full border border-muted-foreground/40 border-t-foreground/80" />
-                    Translating…
-                  </div>
-                ) : translatedText ? (
-                  <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-foreground">
-                    {translatedText}
-                  </p>
-                ) : (
-                  <p className="text-[12px] text-muted-foreground">Translation not available.</p>
-                )}
-              </div>
-            )}
-
             {!isInternalNote ? (
               <div className="flex flex-wrap items-center gap-3 px-1 text-sm font-medium text-muted-foreground">
                 <button
@@ -906,7 +909,7 @@ export function MessageBubble({
                     className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-[12px] opacity-0 transition-opacity hover:bg-muted group-hover/bubble:opacity-100"
                   >
                     <Globe className="h-3.5 w-3.5" />
-                    <span>{showTranslation ? "Hide translation" : "Show translation"}</span>
+                    <span>{showTranslation ? "Show original" : "Translate"}</span>
                   </button>
                 )}
               </div>

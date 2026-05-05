@@ -622,10 +622,11 @@ ${
       : "- FØRSTE svar — efter hilsenen: kort varm indledning (tak kunden, vis empati). Gå direkte til løsning — genfortæl IKKE kundens problem med dine egne ord."
   }
 
-AFSLUTNING — vælg baseret på situationen, skriv på kundens sprog:
-- Handling udført og sagen er lukket → kort venlig afsked
-- Vi venter på svar fra kunden eller sagen er ikke løst → udtryk at du ser frem til at høre fra dem
-- Frustreret kunde, lang ventetid eller vi har skuffet kunden → undskyld for ulejligheden og tak for tålmodigheden
+AFSLUTNING — vurdér altid situationen, skriv på kundens sprog:
+- Konkrete trin givet, afventer resultat fra kunden: "Jeg ser frem til at høre fra dig."
+- Problemet løst eller ombytning aftalt: "God dag!"
+- Frustreret kunde eller lang ventetid: "Undskyld for ulejligheden og tak for din tålmodighed."
+- Brug KUN "Jeg ser frem til at høre fra dig" hvis du aktivt afventer kundens svar — fx vi har bedt om billeder, oplysninger eller afventer resultat af troubleshooting. Brug den ALDRIG som standard-afslutning.
 - Aldrig: "er du velkommen til at kontakte os igen" — kunden er allerede i kontakt.
 
 LÆNGDE OG TONE:
