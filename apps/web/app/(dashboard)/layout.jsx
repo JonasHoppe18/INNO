@@ -76,9 +76,13 @@ export default async function DashboardLayout({ children }) {
   }
 
   let sidebarUser = null;
-  const client = await clerkClient();
-  const user = await client.users.getUser(userId);
-  sidebarUser = mapClerkUser(user);
+  try {
+    const client = await clerkClient();
+    const user = await client.users.getUser(userId);
+    sidebarUser = mapClerkUser(user);
+  } catch (_err) {
+    // fail open — sidebar renders without user info
+  }
   const cookieStore = await cookies();
   const sidebarCookie = cookieStore.get("sidebar_state")?.value;
   const defaultSidebarOpen = sidebarCookie === "false" ? false : true;

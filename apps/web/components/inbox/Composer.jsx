@@ -399,6 +399,7 @@ export function Composer({
   const [refineOpen, setRefineOpen] = useState(false);
   const [refinePrompt, setRefinePrompt] = useState("");
   const [refineError, setRefineError] = useState("");
+  const [isDragOver, setIsDragOver] = useState(false);
   const [composerHeightPx, setComposerHeightPx] = useState(MIN_COMPOSER_HEIGHT_PX);
   const composerContainerRef = useRef(null);
   const resizeStateRef = useRef(null);
@@ -622,6 +623,37 @@ export function Composer({
           )
       )
     );
+  };
+
+  const handleDragOver = (event) => {
+    if (isNote || disabled) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (event) => {
+    if (!composerContainerRef.current?.contains(event.relatedTarget)) {
+      setIsDragOver(false);
+    }
+  };
+
+  const handleDrop = (event) => {
+    event.preventDefault();
+    setIsDragOver(false);
+    if (isNote || disabled) return;
+    const files = Array.from(event.dataTransfer.files || []);
+    if (!files.length) return;
+    setAttachments((prev) => {
+      const next = [...prev];
+      files.forEach((file) => {
+        const key = `${file.name}:${file.size}:${file.lastModified}`;
+        if (!next.some((item) => `${item.name}:${item.size}:${item.lastModified}` === key)) {
+          next.push(file);
+        }
+      });
+      return next;
+    });
   };
 
   const getMentionContext = (text, caret) => {
@@ -1066,18 +1098,31 @@ export function Composer({
           from { opacity: 0; transform: translateY(-6px); }
           to   { opacity: 1; transform: translateY(0);    }
         }
+        @keyframes attachment-pill-in {
+          from { opacity: 0; transform: scale(0.95) translateY(2px); }
+          to   { opacity: 1; transform: scale(1) translateY(0);       }
+        }
       `}</style>
       <div
         ref={composerContainerRef}
-        className={`mx-auto flex w-full max-w-[900px] flex-col overflow-hidden rounded-3xl border border-border bg-card shadow-sm ${
-          disabled ? "opacity-60" : ""
-        }`}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        className={`relative mx-auto flex w-full max-w-[900px] flex-col overflow-hidden rounded-3xl border bg-card shadow-sm transition-colors ${
+          isDragOver ? "border-violet-400 shadow-violet-200/50 dark:shadow-violet-900/40" : "border-border"
+        } ${disabled ? "opacity-60" : ""}`}
         style={{
           height: `${composerHeightPx}px`,
           minHeight: `${MIN_COMPOSER_HEIGHT_PX}px`,
           maxHeight: `${Math.round(MAX_COMPOSER_VIEWPORT_RATIO * 100)}vh`,
         }}
       >
+        {isDragOver ? (
+          <div className="pointer-events-none absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 rounded-3xl bg-violet-50/90 dark:bg-violet-900/40 backdrop-blur-[1px]">
+            <Paperclip className="h-6 w-6 text-violet-500" />
+            <span className="text-[13px] font-medium text-violet-600 dark:text-violet-400">Drop to attach</span>
+          </div>
+        ) : null}
         <div
           role="separator"
           aria-orientation="horizontal"
@@ -1228,26 +1273,6 @@ export function Composer({
             >
               Remove
             </button>
-          </div>
-        ) : null}
-        {visibleAttachmentPills.length ? (
-          <div className="mb-1 flex flex-wrap items-center gap-2 px-3 text-[12px]">
-            {visibleAttachmentPills.map((file) => (
-              <span
-                key={`${file.name}:${file.size}:${file.lastModified}`}
-                className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/50 px-2 py-1 text-foreground"
-              >
-                <span className="max-w-[220px] truncate">{file.name}</span>
-                <button
-                  type="button"
-                  onClick={() => removeAttachment(file)}
-                  className="text-muted-foreground hover:text-foreground"
-                  aria-label={`Remove ${file.name}`}
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </span>
-            ))}
           </div>
         ) : null}
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -1468,7 +1493,30 @@ export function Composer({
                 })}
               </div>
             ) : null}
-            {null}
+            {visibleAttachmentPills.length ? (
+              <div className="mt-3 flex flex-wrap items-center gap-2 pb-1 text-[12px]">
+                {visibleAttachmentPills.map((file) => (
+                  <span
+                    key={`${file.name}:${file.size}:${file.lastModified}`}
+                    className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-muted px-2.5 py-1 text-foreground shadow-[0_1px_1px_rgba(0,0,0,0.03)]"
+                    style={{
+                      animation: "attachment-pill-in 160ms cubic-bezier(0.23,1,0.32,1) both",
+                    }}
+                  >
+                    <Paperclip className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span className="max-w-[220px] truncate">{file.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeAttachment(file)}
+                      className="-mr-0.5 rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-background/80 hover:text-foreground"
+                      aria-label={`Remove ${file.name}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            ) : null}
           </div>
           <div className="sticky bottom-0 z-10 flex items-center justify-between border-t border-border bg-card px-3 py-1.5 text-[12px] text-muted-foreground">
             <div className="flex items-center gap-2">

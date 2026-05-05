@@ -1983,13 +1983,6 @@ Deno.serve(async (req) => {
           customerEmail: shopifyContact.customerEmail || fromEmail,
           draftMessageId: draftOutcome?.draftId ? String(draftOutcome.draftId) : null,
         });
-        await supabase.from("agent_logs").insert({
-          draft_id: draftId ?? null,
-          step_name: "draft_created",
-          step_detail: `Email draft created.|thread_id:${threadId}`,
-          status: "success",
-          created_at: new Date().toISOString(),
-        });
       }
     }
   } catch (error) {

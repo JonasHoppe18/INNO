@@ -91,16 +91,56 @@ export function CustomerTab({ data, loading, error, onRefresh, lookupParams, onO
     );
   }
 
+  const previousTickets = Array.isArray(data?.previousTickets) ? data.previousTickets : [];
+
   if (!data?.customer && !data?.orders?.length) {
-    const source = data?.source ? String(data.source).trim() : "datakilden";
+    const source = data?.source ? String(data.source).trim() : "Shopify";
     return (
-      <div className="space-y-4 text-sm text-slate-500">
-        <div className="flex items-center justify-between">
-          <span>{`We couldn't find a customer in ${source} for this conversation.`}</span>
+      <div className="space-y-5">
+        <div className="flex items-center justify-between text-sm text-slate-500">
+          <span>{`No customer found in ${source}.`}</span>
           <Button variant="outline" size="sm" onClick={onRefresh}>
             Refresh
           </Button>
         </div>
+        {previousTickets.length > 0 && (
+          <div className="space-y-2">
+            <div className="text-[11px] font-medium text-slate-400">Previous tickets</div>
+            {previousTickets.map((ticket) => {
+              const threadId = String(ticket?.thread_id || "").trim();
+              const lastActivity = formatTimestamp(ticket?.last_message_at);
+              return (
+                <button
+                  key={threadId || `${ticket?.ticket_number || "no-number"}-${ticket?.subject || ""}`}
+                  type="button"
+                  onClick={() => {
+                    if (!threadId) return;
+                    onOpenTicket?.(threadId);
+                  }}
+                  className="w-full rounded-lg border border-slate-200 bg-white p-3 text-left transition hover:border-slate-300 hover:bg-slate-50"
+                  disabled={!threadId}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div
+                      className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-[0.06em] ${
+                        formatTicketRef(ticket?.ticket_number) !== "No ticket ID"
+                          ? "bg-slate-100 font-mono font-medium text-slate-500"
+                          : "text-slate-400"
+                      }`}
+                    >
+                      {formatTicketRef(ticket?.ticket_number)}
+                    </div>
+                    <div className="text-[11px] text-slate-400">{formatTicketStatus(ticket?.status)}</div>
+                  </div>
+                  <div className="mt-1 line-clamp-2 text-[13px] font-medium text-slate-900">
+                    {String(ticket?.subject || "").trim() || "Untitled ticket"}
+                  </div>
+                  <div className="mt-1 text-[11px] text-slate-400">{lastActivity || "—"}</div>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
   }
@@ -121,7 +161,6 @@ export function CustomerTab({ data, loading, error, onRefresh, lookupParams, onO
   const totalSpent = totals.length ? totals.reduce((sum, value) => sum + value, 0) : null;
   const currency = orders.find((order) => order?.currency)?.currency || null;
   const initials = getInitials(customer?.name, customer?.email);
-  const previousTickets = Array.isArray(data?.previousTickets) ? data.previousTickets : [];
 
   return (
     <div className="space-y-5">

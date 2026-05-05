@@ -2477,8 +2477,7 @@ export function InboxSplitView({
     ...customerLookupParams,
     enabled:
       Boolean(selectedThreadId) &&
-      (insightsOpen ||
-        Boolean(pendingOrderUpdateByThread[selectedThreadId]) ||
+      (Boolean(pendingOrderUpdateByThread[selectedThreadId]) ||
         (Array.isArray(selectedThread?.tags) &&
           selectedThread.tags.includes("Tracking") &&
           !selectedThread.tags.some((t) => /^return/i.test(String(t || ""))) &&

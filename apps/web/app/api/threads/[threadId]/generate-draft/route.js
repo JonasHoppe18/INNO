@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
-import { getEffectiveSenderEmail, getEffectiveSenderName } from "@/lib/inbox/sender";
 import { autoTagThread } from "@/lib/ai/autoTagThread";
 import {
   composeEmailBodyWithSignature,
@@ -191,25 +190,13 @@ export async function POST(_request, { params }) {
     return NextResponse.json({ error: "No inbound message found for this thread." }, { status: 404 });
   }
 
-  const provider = String(thread.provider || "smtp").trim() || "smtp";
   const messageBody =
     String(inboundMessage.clean_body_text || "").trim() ||
     String(inboundMessage.body_text || "").trim() ||
     stripHtml(inboundMessage.body_html || "");
   const messageSubject = String(inboundMessage.subject || thread.subject || "").trim();
-  const fromEmail = String(getEffectiveSenderEmail(inboundMessage) || "").trim();
-  const fromName = String(getEffectiveSenderName(inboundMessage) || "").trim();
-  const fromRaw = fromName && fromEmail ? `${fromName} <${fromEmail}>` : fromEmail || fromName;
 
-  const body = await _request.json().catch(() => ({}));
-  const replyLanguage = typeof body?.reply_language === "string"
-    ? body.reply_language.trim().toLowerCase().slice(0, 2)
-    : null;
-  const userInstruction = typeof body?.user_instruction === "string" && body.user_instruction.trim()
-    ? body.user_instruction.trim()
-    : null;
-
-  const endpoint = `${SUPABASE_URL}/functions/v1/generate-draft-unified`;
+  const endpoint = `${SUPABASE_URL}/functions/v1/generate-draft-v2`;
   const response = await fetch(endpoint, {
     method: "POST",
     headers: {
@@ -218,22 +205,8 @@ export async function POST(_request, { params }) {
       Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
     },
     body: JSON.stringify({
+      thread_id: threadId,
       shop_id: effectiveMailbox.shop_id,
-      provider,
-      force_process: true,
-      ...(replyLanguage ? { reply_language: replyLanguage } : {}),
-      ...(userInstruction ? { user_instruction: userInstruction } : {}),
-      email_data: {
-        messageId: inboundMessage.provider_message_id || null,
-        threadId: provider === "smtp" ? thread.id : thread.provider_thread_id || thread.id,
-        subject: messageSubject,
-        from: fromRaw || null,
-        fromEmail: fromEmail || null,
-        body: messageBody,
-        rawBody: String(inboundMessage.body_text || "").trim() || null,
-        rawBodyHtml: String(inboundMessage.body_html || "").trim() || null,
-        headers: [],
-      },
     }),
   });
 
@@ -276,7 +249,7 @@ export async function POST(_request, { params }) {
       ? ""
       : draft?.body_text ||
         draft?.body_html ||
-    (String(payload?.reply || "").trim() ? String(payload.reply).trim() : "");
+    (String(payload?.draft_text || "").trim() ? String(payload.draft_text).trim() : "");
 
   // Auto-tagging ved draft-generering (fire-and-forget)
   const workspaceIdForTags = scope?.workspaceId || thread?.workspace_id || null;
@@ -317,7 +290,7 @@ export async function POST(_request, { params }) {
     {
       ok: true,
       skipped: Boolean(payload?.skipped),
-      reason: payload?.reason || null,
+      reason: payload?.skip_reason || null,
       explanation: payload?.explanation || null,
       signature: signatureConfig.closingText || "",
       proposal_only: proposalOnly,

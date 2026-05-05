@@ -31,7 +31,7 @@ async function resolveAndVerifyThread(serviceClient, threadId, clerkUserId, orgI
   const { data: thread, error } = await applyScope(
     serviceClient
       .from("mail_threads")
-      .select("id, workspace_id, classification_key, issue_summary, solution_summary, detected_product_id")
+      .select("id, workspace_id, classification_key, issue_summary, solution_summary, detected_product_id, status")
       .eq("id", threadId)
       .maybeSingle(),
     scope
@@ -90,6 +90,7 @@ export async function GET(_request, { params }) {
     issue_summary: thread.issue_summary ?? null,
     solution_summary: thread.solution_summary ?? null,
     classification_key: thread.classification_key ?? null,
+    status: thread.status ?? null,
     detected_product,
     available_products,
   });

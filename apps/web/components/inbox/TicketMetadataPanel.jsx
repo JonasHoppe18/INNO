@@ -335,12 +335,18 @@ export function TicketMetadataPanel({ threadId }) {
         <TagsSection threadId={threadId} />
       </div>
       <div className="pt-4 border-t border-slate-100">
-        <EditableTextField
-          label="Solution"
-          value={metadata?.solution_summary}
-          onSave={(v) => handleSave("solution_summary", v)}
-          placeholder="Generated when ticket is solved"
-        />
+        {(() => {
+          const status = String(metadata?.status ?? "").toLowerCase();
+          const isSolved = status === "solved" || status === "resolved";
+          return (
+            <EditableTextField
+              label="Solution"
+              value={isSolved ? metadata?.solution_summary : null}
+              onSave={(v) => handleSave("solution_summary", v)}
+              placeholder={isSolved ? "Click to edit" : "Generated when ticket is solved"}
+            />
+          );
+        })()}
       </div>
     </div>
   );

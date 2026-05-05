@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
+import { useCustomerLookup } from "@/hooks/useCustomerLookup";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ActionsTimeline } from "@/components/inbox/ActionsTimeline";
 import { CustomerTab } from "@/components/inbox/CustomerTab";
-import { X } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { ChevronRight, ExternalLink, Truck, X } from "lucide-react";
 import { TicketMetadataPanel } from "@/components/inbox/TicketMetadataPanel";
 
 const asString = (value) => (typeof value === "string" ? value.trim() : "");
@@ -208,6 +210,21 @@ export function SonaInsightsModal({
   const [containerEl, setContainerEl] = useState(null);
   const [sonaLogOpen, setSonaLogOpen] = useState(false);
 
+  const {
+    data: internalLookup,
+    loading: internalLookupLoading,
+    error: internalLookupError,
+    refresh: internalLookupRefresh,
+  } = useCustomerLookup({
+    ...customerLookupParams,
+    enabled: open && Boolean(customerLookupParams?.threadId),
+  });
+
+  const effectiveLookup = customerLookup ?? internalLookup;
+  const effectiveLookupLoading = customerLookup != null ? customerLookupLoading : internalLookupLoading;
+  const effectiveLookupError = customerLookup != null ? customerLookupError : internalLookupError;
+  const effectiveRefresh = onCustomerRefresh ?? internalLookupRefresh;
+
   useEffect(() => {
     let active = true;
     const fetchLogs = async () => {
@@ -255,7 +272,9 @@ export function SonaInsightsModal({
       if (raw === "thread_action_declined") return "Action Declined";
       if (raw === "thread_action_failed") return "Action Failed";
       if (raw === "context") return "Context";
-      if (raw === "draft_created") return "Draft Created";
+      if (raw === "draft_intent_assessed") return "Understood the request";
+      if (raw === "draft_context_loaded") return "Order context";
+      if (raw === "draft_created") return "Generated draft";
       if (raw === "postmark_inbound_draft_created") return "Draft Created";
       return raw
         .replace(/_/g, " ")
@@ -281,6 +300,24 @@ export function SonaInsightsModal({
         if (chunks.length) return chunks.join(" | ");
         if (events.length) return `Recent events: ${events.join(" → ")}`;
         return parsed?.detail || "Loaded live tracking status.";
+      }
+      if (step === "draft_intent_assessed") {
+        const parts = [];
+        if (parsed?.primary_intent) parts.push(parsed.primary_intent.replace(/_/g, " "));
+        if (parsed?.language) parts.push(`Language: ${parsed.language.toUpperCase()}`);
+        if (typeof parsed?.confidence === "number") parts.push(`${Math.round(parsed.confidence * 100)}% confidence`);
+        return parts.join(" · ") || "Intent assessed.";
+      }
+      if (step === "draft_context_loaded") {
+        if (parsed?.order_found && parsed?.order_number) return `Order ${parsed.order_number} found`;
+        if (parsed?.order_found) return "Order found";
+        return "No order context";
+      }
+      if (step === "draft_created") {
+        const parts = [];
+        if (typeof parsed?.confidence === "number") parts.push(`Confidence: ${Math.round(parsed.confidence * 100)}%`);
+        if (parsed?.routing_hint) parts.push(`Routing: ${parsed.routing_hint}`);
+        return parts.join(" · ") || "Draft generated.";
       }
       if (step === "postmark_inbound_draft_created" || step === "draft_created") {
         return "Forwarded email draft created.";
@@ -322,10 +359,28 @@ export function SonaInsightsModal({
       if (parsed.orderId && !parsed.detail) return `Order ${parsed.orderId}`;
       return parsed.detail || "";
     };
-    const parsedLogs = logs.map((log) => ({
-      log,
-      parsed: parseLogDetail(log.step_detail),
-    }));
+    const DEBUG_STEP_NAMES = new Set([
+      "workflow_routing",
+      "thread_context_gate",
+      "workflow_routing_override",
+      "legacy_case_state",
+      "workflow_action_policy",
+      "workflow_action_policy_final",
+      "workflow_action_order_context",
+      "return_process_followup_action_filter",
+      "v2_action_decision",
+      "v2_reply_generation",
+      "carrier_preferences",
+      "customer_lookup",
+      "customer_lookup_failed",
+    ]);
+
+    const parsedLogs = logs
+      .filter((log) => !DEBUG_STEP_NAMES.has(String(log?.step_name || "").toLowerCase()))
+      .map((log) => ({
+        log,
+        parsed: parseLogDetail(log.step_detail),
+      }));
 
     const trackingFocused = parsedLogs.some(({ log, parsed }) => {
       const step = String(log?.step_name || "").toLowerCase();
@@ -359,6 +414,25 @@ export function SonaInsightsModal({
         status: log.status,
       };
     });
+  }, [logs]);
+
+  const trackingInfo = useMemo(() => {
+    const trackingLog = logs.find(
+      (log) => String(log?.step_name || "").toLowerCase() === "carrier_tracking"
+    );
+    if (!trackingLog) return null;
+    const parsed = parseLogDetail(trackingLog.step_detail);
+    if (!parsed?.trackingCarrier && !parsed?.trackingNumber && !parsed?.trackingStatus) return null;
+    return parsed;
+  }, [logs]);
+
+  const draftSources = useMemo(() => {
+    const createdLog = logs.find(
+      (log) => String(log?.step_name || "").toLowerCase() === "draft_created"
+    );
+    if (!createdLog) return [];
+    const parsed = parseLogDetail(createdLog.step_detail);
+    return Array.isArray(parsed?.sources) ? parsed.sources : [];
   }, [logs]);
 
   useEffect(() => {
@@ -409,6 +483,55 @@ export function SonaInsightsModal({
                 <TicketMetadataPanel threadId={threadId} />
               </div>
 
+              {trackingInfo && (
+                <div className="rounded-2xl border border-border bg-card/90 p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Truck className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                    <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400/80">
+                      Tracking
+                    </span>
+                    {trackingInfo.trackingStatus && (
+                      <span className="ml-auto rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-600">
+                        {normalizeTrackingStatusLabel(trackingInfo.trackingStatus)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="space-y-1">
+                    {trackingInfo.trackingCarrier && (
+                      <div className="text-[13px] font-semibold text-slate-800">
+                        {trackingInfo.trackingCarrier}
+                      </div>
+                    )}
+                    {trackingInfo.trackingNumber && (
+                      <div className="text-[12px] text-slate-500">
+                        {trackingInfo.trackingUrl ? (
+                          <a
+                            href={trackingInfo.trackingUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 hover:underline text-slate-600"
+                          >
+                            #{trackingInfo.trackingNumber}
+                            <ExternalLink className="h-3 w-3" />
+                          </a>
+                        ) : (
+                          `#${trackingInfo.trackingNumber}`
+                        )}
+                      </div>
+                    )}
+                    {trackingInfo.trackingEvents?.length > 0 && (
+                      <div className="mt-2 space-y-0.5">
+                        {trackingInfo.trackingEvents.slice(0, 2).map((event, i) => (
+                          <div key={i} className="text-[11px] text-slate-400">
+                            {event}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <button
                 type="button"
                 onClick={() => setSonaLogOpen(true)}
@@ -435,7 +558,30 @@ export function SonaInsightsModal({
                     {logsLoading || (draftLoading && !timelineItems.length) ? (
                       <div className="text-sm text-muted-foreground py-4 text-center">Loading…</div>
                     ) : timelineItems.length ? (
-                      <ActionsTimeline items={timelineItems} />
+                      <>
+                        <ActionsTimeline items={timelineItems} />
+                        {draftSources.length > 0 && (
+                          <details className="group mt-4">
+                            <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground select-none">
+                              <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
+                              Sources used
+                            </summary>
+                            <div className="mt-2 space-y-1.5">
+                              {draftSources.map((source, i) => (
+                                <div key={i} className="rounded-md border bg-card p-2">
+                                  <div className="mb-1 flex items-center gap-1.5">
+                                    <Badge variant="outline" className="text-[10px] py-0">{source.kind || "source"}</Badge>
+                                    <p className="truncate text-xs font-medium">{source.source_label || `Source ${i + 1}`}</p>
+                                  </div>
+                                  <p className="line-clamp-3 whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
+                                    {source.content}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        )}
+                      </>
                     ) : (
                       <div className="text-sm text-muted-foreground py-4 text-center">
                         No actions recorded for this conversation.
@@ -448,10 +594,10 @@ export function SonaInsightsModal({
           </TabsContent>
           <TabsContent value="customer" className="min-w-0 flex-1 overflow-y-auto">
             <CustomerTab
-              data={customerLookup}
-              loading={customerLookupLoading}
-              error={customerLookupError}
-              onRefresh={onCustomerRefresh}
+              data={effectiveLookup}
+              loading={effectiveLookupLoading}
+              error={effectiveLookupError}
+              onRefresh={effectiveRefresh}
               lookupParams={customerLookupParams}
               onOpenTicket={onOpenTicket}
             />

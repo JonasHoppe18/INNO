@@ -41,6 +41,7 @@ export interface PipelineInput {
 
 export interface PipelineResult {
   draft_text: string | null;
+  draft_id?: string;
   proposed_actions: ActionProposal[];
   routing_hint: "auto" | "review" | "block";
   is_test_mode: boolean;
@@ -147,6 +148,8 @@ export async function runDraftV2Pipeline(
     eval_payload,
     eval_options,
   } = input;
+  const draftId = crypto.randomUUID();
+
   const writerModelOverride = eval_payload
     ? eval_options?.writer_model
     : undefined;
@@ -325,6 +328,23 @@ export async function runDraftV2Pipeline(
   const latestBody =
     (latestMessage.clean_body_text ?? latestMessage.body_text ?? "") as string;
 
+  if (!eval_payload && thread_id) {
+    supabase.from("agent_logs").insert({
+      draft_id: draftId,
+      step_name: "draft_intent_assessed",
+      step_detail: JSON.stringify({
+        thread_id,
+        primary_intent: plan.primary_intent,
+        language: plan.language,
+        confidence: plan.confidence,
+      }),
+      status: "info",
+      created_at: new Date().toISOString(),
+    }).then(({ error }) => {
+      if (error) console.warn("[pipeline] draft_intent_assessed log failed:", error.message);
+    });
+  }
+
   // 5. Retrieve + resolve facts parallelt (uafhængige)
   const [retrieved, facts] = await Promise.all([
     runRetriever({
@@ -344,6 +364,23 @@ export async function runDraftV2Pipeline(
       customerContext: customer_context,
     }),
   ]);
+
+  if (!eval_payload && thread_id) {
+    supabase.from("agent_logs").insert({
+      draft_id: draftId,
+      step_name: "draft_context_loaded",
+      step_detail: JSON.stringify({
+        thread_id,
+        order_found: !!facts.order,
+        order_number: facts.order?.name ?? null,
+        facts_count: facts.facts?.length ?? 0,
+      }),
+      status: facts.order ? "success" : "info",
+      created_at: new Date().toISOString(),
+    }).then(({ error }) => {
+      if (error) console.warn("[pipeline] draft_context_loaded log failed:", error.message);
+    });
+  }
 
   // 6. Deterministisk action-decision med per-shop config + KB-overrides
   // Læs shop action_config (JSONB) — giver per-shop tilpasning uden kodeændringer.
@@ -666,6 +703,7 @@ export async function runDraftV2Pipeline(
           supabase
             .from("drafts")
             .insert({
+              id: draftId,
               shop_id,
               workspace_id: workspaceId,
               thread_id,
@@ -679,10 +717,32 @@ export async function runDraftV2Pipeline(
             });
         });
     }
+
+    // 4. Log pipeline completion → "What did Sona do?" timeline
+    const finalSourcesForLog = retrieved.chunks.slice(0, 5).map((c) => ({
+      content: c.content.slice(0, 300),
+      kind: c.kind,
+      source_label: c.source_label,
+    }));
+    supabase.from("agent_logs").insert({
+      draft_id: draftId,
+      step_name: "draft_created",
+      step_detail: JSON.stringify({
+        thread_id,
+        confidence: finalConfidence,
+        routing_hint: finalRoutingHint,
+        sources: finalSourcesForLog,
+      }),
+      status: "success",
+      created_at: nowIso,
+    }).then(({ error }) => {
+      if (error) console.warn("[pipeline] draft_created log failed:", error.message);
+    });
   }
 
   return {
     draft_text: finalDraft,
+    draft_id: eval_payload ? undefined : draftId,
     proposed_actions: finalProposals,
     routing_hint: finalRoutingHint,
     is_test_mode: isTestMode,
