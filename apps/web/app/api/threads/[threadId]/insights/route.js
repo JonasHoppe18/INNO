@@ -107,6 +107,22 @@ export async function GET(_request, { params }) {
     draftLogs = Array.isArray(data) ? data : [];
   }
 
+  const { data: threadDraftLogsRaw } = await serviceClient
+    .from("agent_logs")
+    .select("id, draft_id, step_name, step_detail, status, created_at")
+    .in("step_name", [
+      "draft_intent_assessed",
+      "draft_context_loaded",
+      "draft_created",
+      "postmark_inbound_draft_created",
+    ])
+    .order("created_at", { ascending: false })
+    .limit(400);
+  const threadDraftLogs = (Array.isArray(threadDraftLogsRaw) ? threadDraftLogsRaw : []).filter((row) => {
+    const parsedThreadId = extractThreadIdFromDetail(row?.step_detail);
+    return parsedThreadId ? threadKeySet.has(String(parsedThreadId)) : false;
+  });
+
   const { data: actionLogsRaw } = await serviceClient
     .from("agent_logs")
     .select("id, draft_id, step_name, step_detail, status, created_at")
@@ -156,7 +172,7 @@ export async function GET(_request, { params }) {
   });
 
   const mergedById = new Map();
-  for (const row of [...draftLogs, ...actionLogs, ...threadActionLogs]) {
+  for (const row of [...draftLogs, ...threadDraftLogs, ...actionLogs, ...threadActionLogs]) {
     if (!row?.id) continue;
     mergedById.set(String(row.id), row);
   }

@@ -99,7 +99,7 @@ function actionNeedsApproval(
 
 // Apply shop automation flags + test_mode to the raw action-decision result.
 // Returns updated proposals with correct requires_approval and the effective routing_hint.
-function applyAutomationConstraints(
+export function applyAutomationConstraints(
   proposals: ActionProposal[],
   aiRoutingHint: "auto" | "review" | "block",
   automation: {
@@ -135,6 +135,13 @@ function applyAutomationConstraints(
 
   // All actions are approved by business logic AND automation flags — honour AI hint
   return { proposals: updatedProposals, routing_hint: aiRoutingHint };
+}
+
+export function shouldDeferDraftUntilActionDecision(
+  proposals: ActionProposal[],
+  routingHint: "auto" | "review" | "block",
+): boolean {
+  return proposals.length > 0 && routingHint === "review";
 }
 
 export async function runDraftV2Pipeline(
@@ -413,6 +420,106 @@ export async function runDraftV2Pipeline(
     );
   }
 
+  const shouldWaitForActionDecision = shouldDeferDraftUntilActionDecision(
+    finalProposals,
+    effectiveRoutingHint,
+  );
+
+  if (shouldWaitForActionDecision) {
+    if (!eval_payload && thread_id) {
+      const ownerUserId =
+        (shop as Record<string, unknown>).owner_user_id as string | null ??
+          null;
+      const nowIso = new Date().toISOString();
+      const order = facts.order;
+      const draftThreadKey =
+        (thread as Record<string, unknown>).provider_thread_id as string | null ??
+          thread_id;
+
+      await supabase
+        .from("thread_actions")
+        .update({ status: "superseded", updated_at: nowIso })
+        .eq("thread_id", thread_id)
+        .eq("status", "pending")
+        .then(({ error }) => {
+          if (error) console.warn("[pipeline] thread_actions supersede failed:", error.message);
+        });
+
+      let firstActionId: string | null = null;
+      for (const proposal of finalProposals) {
+        const { data: insertedAction, error: insertError } = await supabase
+          .from("thread_actions")
+          .insert({
+            workspace_id: workspaceId,
+            user_id: ownerUserId ?? null,
+            thread_id,
+            action_type: proposal.type,
+            action_key: `${proposal.type}_${thread_id}_${nowIso}`,
+            status: "pending",
+            detail: proposal.reason,
+            payload: { ...proposal.params, _confidence: proposal.confidence },
+            order_id: order?.id ? String(order.id) : null,
+            order_number: order?.name ?? null,
+            source: "automation",
+            created_at: nowIso,
+            updated_at: nowIso,
+          })
+          .select("id")
+          .maybeSingle();
+        if (insertError) {
+          console.warn("[pipeline] thread_actions insert failed:", insertError.message);
+        }
+        if (!firstActionId && insertedAction?.id) {
+          firstActionId = String(insertedAction.id);
+        }
+      }
+
+      if (workspaceId && shop_id) {
+        await supabase
+          .from("drafts")
+          .update({ status: "superseded" })
+          .eq("thread_id", draftThreadKey)
+          .eq("workspace_id", workspaceId)
+          .eq("status", "pending");
+
+        const { error: draftInsertError } = await supabase
+          .from("drafts")
+          .insert({
+            id: draftId,
+            shop_id,
+            workspace_id: workspaceId,
+            thread_id: draftThreadKey,
+            platform: "smtp",
+            status: "pending",
+            kind: "internal_recommendation",
+            execution_state: "pending_approval",
+            source_action_id: firstActionId,
+            ai_draft_text: null,
+            created_at: nowIso,
+          });
+        if (draftInsertError) {
+          console.warn("[pipeline] drafts insert failed:", draftInsertError.message);
+        }
+      }
+    }
+
+    return {
+      draft_text: null,
+      draft_id: eval_payload ? undefined : draftId,
+      proposed_actions: finalProposals,
+      routing_hint: effectiveRoutingHint,
+      is_test_mode: isTestMode,
+      confidence: plan.confidence,
+      sources: retrieved.chunks.slice(0, 5).map((c) => ({
+        content: c.content.slice(0, 200),
+        kind: c.kind,
+        source_label: c.source_label,
+        usable_as: c.usable_as,
+        risk_flags: c.risk_flags,
+      })),
+    };
+  }
+
   // 8. Byg shop policy-kontekst deterministisk (pinned — altid med i prompten)
   const subject = (thread.subject ?? "") as string;
 
@@ -631,17 +738,27 @@ export async function runDraftV2Pipeline(
     );
   }
 
+  const deferDraftUntilActionDecision = shouldDeferDraftUntilActionDecision(
+    finalProposals,
+    finalRoutingHint,
+  );
+
   // Persist til DB (kun i normal mode — ikke eval mode)
   if (!eval_payload && thread_id && finalDraft) {
-    const ownerUserId = (shop as Record<string, unknown>).owner_user_id as string | null ?? null;
+    const ownerUserId =
+      (shop as Record<string, unknown>).owner_user_id as string | null ?? null;
     const nowIso = new Date().toISOString();
+    const draftThreadKey =
+      (thread as Record<string, unknown>).provider_thread_id as string | null ??
+        thread_id;
 
-    // 1. Gem draft tekst på den seneste inbound besked → composeren viser den
+    // 1. Gem draft tekst på den seneste inbound besked → composeren viser den.
+    // Ved action approval må kundesvaret først genereres efter approve/decline.
     const latestInbound = messages
       .filter((m) => !(m as Record<string, unknown>).from_me)
       .at(-1) as Record<string, unknown> | undefined;
 
-    if (latestInbound?.id) {
+    if (latestInbound?.id && !deferDraftUntilActionDecision) {
       supabase
         .from("mail_messages")
         .update({ ai_draft_text: finalDraft, updated_at: nowIso })
@@ -667,7 +784,11 @@ export async function runDraftV2Pipeline(
         });
 
       for (const proposal of finalProposals) {
-        const status = isTestMode ? "approved_test_mode" : "pending";
+        const status = deferDraftUntilActionDecision
+          ? "pending"
+          : isTestMode
+          ? "approved_test_mode"
+          : "pending";
 
         const { error: insertError } = await supabase
           .from("thread_actions")
@@ -693,29 +814,32 @@ export async function runDraftV2Pipeline(
     // 3. Log draft i drafts tabel → edit-distance tracking
     // Superseder eksisterende pending drafts for denne tråd, indsætter ny
     if (workspaceId && shop_id) {
-      supabase
+      await supabase
         .from("drafts")
         .update({ status: "superseded" })
-        .eq("thread_id", thread_id)
+        .eq("thread_id", draftThreadKey)
         .eq("workspace_id", workspaceId)
-        .eq("status", "pending")
-        .then(() => {
-          supabase
-            .from("drafts")
-            .insert({
-              id: draftId,
-              shop_id,
-              workspace_id: workspaceId,
-              thread_id,
-              platform: "smtp",
-              status: "pending",
-              ai_draft_text: finalDraft,
-              created_at: nowIso,
-            })
-            .then(({ error }) => {
-              if (error) console.warn("[pipeline] drafts insert failed:", error.message);
-            });
+        .eq("status", "pending");
+
+      const { error: draftInsertError } = await supabase
+        .from("drafts")
+        .insert({
+          id: draftId,
+          shop_id,
+          workspace_id: workspaceId,
+          thread_id: draftThreadKey,
+          platform: "smtp",
+          status: "pending",
+          kind: deferDraftUntilActionDecision
+            ? "internal_recommendation"
+            : "final_customer_reply",
+          execution_state: deferDraftUntilActionDecision
+            ? "pending_approval"
+            : "no_action",
+          ai_draft_text: deferDraftUntilActionDecision ? null : finalDraft,
+          created_at: nowIso,
         });
+      if (draftInsertError) console.warn("[pipeline] drafts insert failed:", draftInsertError.message);
     }
 
     // 4. Log pipeline completion → "What did Sona do?" timeline
@@ -741,7 +865,7 @@ export async function runDraftV2Pipeline(
   }
 
   return {
-    draft_text: finalDraft,
+    draft_text: deferDraftUntilActionDecision ? null : finalDraft,
     draft_id: eval_payload ? undefined : draftId,
     proposed_actions: finalProposals,
     routing_hint: finalRoutingHint,

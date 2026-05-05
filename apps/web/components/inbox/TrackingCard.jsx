@@ -111,7 +111,7 @@ function getTrackingStatusLabel({ tracking = null, order = null, timeline = [] }
   return "Tracking available";
 }
 
-export function TrackingCard({ order = null, threadId = null }) {
+export function TrackingCard({ order = null, threadId = null, fullWidth = false }) {
   const [open, setOpen] = useState(false);
   // Live snapshot fetched directly from carrier API
   const [liveDetail, setLiveDetail] = useState(null);
@@ -219,7 +219,11 @@ export function TrackingCard({ order = null, threadId = null }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="group inline-flex w-fit min-w-[220px] max-w-[360px] items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3.5 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 text-left"
+        className={`group inline-flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3.5 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 text-left ${
+          fullWidth
+            ? "w-full min-w-0 max-w-none"
+            : "w-full min-w-0 max-w-none sm:w-fit sm:min-w-[220px] sm:max-w-[360px]"
+        }`}
       >
         <CarrierLogo carrier={carrier} className="h-8 w-8" />
         <div className="min-w-0 flex-1">

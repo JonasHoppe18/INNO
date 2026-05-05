@@ -76,7 +76,7 @@ async function fetchPeriodMetrics(serviceClient, scope, since, until) {
 
   let qualityQ = serviceClient
     .from("drafts")
-    .select("edit_classification, edit_delta_pct")
+    .select("thread_id, edit_classification, edit_delta_pct")
     .eq("status", "sent")
     .not("edit_classification", "is", null);
   if (since) qualityQ = qualityQ.gte("created_at", since);
@@ -137,11 +137,111 @@ async function fetchPeriodMetrics(serviceClient, scope, since, until) {
   const qualityData = Array.isArray(qualityResult.data) ? qualityResult.data : [];
   const qualityTotal = qualityData.length;
   let no_edit = 0, minor_edit = 0, major_edit = 0;
-  for (const row of qualityData) {
-    if (row.edit_classification === "no_edit") no_edit++;
-    else if (row.edit_classification === "minor_edit") minor_edit++;
-    else if (row.edit_classification === "major_edit") major_edit++;
+  let editDeltaSum = 0;
+  let editDeltaCount = 0;
+  const qualityThreadIds = Array.from(
+    new Set(
+      qualityData
+        .map((row) => String(row?.thread_id || "").trim())
+        .filter(Boolean),
+    ),
+  );
+  const tagRowsByThreadId = {};
+  if (qualityThreadIds.length > 0) {
+    const { data: qualityTagRows } = await serviceClient
+      .from("thread_tag_assignments")
+      .select("thread_id, workspace_tags(name, color)")
+      .in("thread_id", qualityThreadIds);
+    for (const row of qualityTagRows ?? []) {
+      const threadId = String(row?.thread_id || "").trim();
+      const tagName = String(row?.workspace_tags?.name || "").trim();
+      if (!threadId || !tagName) continue;
+      if (!tagRowsByThreadId[threadId]) tagRowsByThreadId[threadId] = [];
+      tagRowsByThreadId[threadId].push({
+        name: tagName,
+        color: row.workspace_tags?.color || null,
+      });
+    }
   }
+  const qualityByTag = {};
+  const ensureTagQuality = (tag) => {
+    const name = String(tag?.name || "Unknown").trim() || "Unknown";
+    if (!qualityByTag[name]) {
+      qualityByTag[name] = {
+        tag: name,
+        color: tag?.color || null,
+        total: 0,
+        no_edit: 0,
+        minor_edit: 0,
+        major_edit: 0,
+        edit_delta_sum: 0,
+        edit_delta_count: 0,
+      };
+    }
+    if (!qualityByTag[name].color && tag?.color) qualityByTag[name].color = tag.color;
+    return qualityByTag[name];
+  };
+  for (const row of qualityData) {
+    const cls = row.edit_classification;
+    const parsedDeltaPct = Number(row.edit_delta_pct);
+    const deltaPct = Number.isFinite(parsedDeltaPct) ? parsedDeltaPct : null;
+    if (row.edit_classification === "no_edit") {
+      no_edit++;
+      editDeltaSum += 0;
+      editDeltaCount++;
+    } else if (row.edit_classification === "minor_edit") {
+      minor_edit++;
+    } else if (row.edit_classification === "major_edit") {
+      major_edit++;
+    }
+
+    if (row.edit_classification !== "no_edit") {
+      if (Number.isFinite(deltaPct)) {
+        editDeltaSum += deltaPct;
+        editDeltaCount++;
+      }
+    }
+
+    const threadId = String(row?.thread_id || "").trim();
+    const rowTags = tagRowsByThreadId[threadId]?.length
+      ? tagRowsByThreadId[threadId]
+      : [{ name: "Unknown", color: null }];
+    for (const tag of rowTags) {
+      const bucket = ensureTagQuality(tag);
+      bucket.total++;
+      if (cls === "no_edit") {
+        bucket.no_edit++;
+        bucket.edit_delta_sum += 0;
+        bucket.edit_delta_count++;
+      } else if (cls === "minor_edit") {
+        bucket.minor_edit++;
+      } else if (cls === "major_edit") {
+        bucket.major_edit++;
+      }
+      if (cls !== "no_edit" && deltaPct !== null) {
+        bucket.edit_delta_sum += deltaPct;
+        bucket.edit_delta_count++;
+      }
+    }
+  }
+  const qualityByTagList = Object.values(qualityByTag)
+    .map((bucket) => ({
+      tag: bucket.tag,
+      color: bucket.color,
+      total: bucket.total,
+      no_edit: bucket.no_edit,
+      minor_edit: bucket.minor_edit,
+      major_edit: bucket.major_edit,
+      no_edit_pct: bucket.total > 0 ? Math.round((bucket.no_edit / bucket.total) * 100) : 0,
+      avg_edited_pct: bucket.edit_delta_count > 0
+        ? Math.round((bucket.edit_delta_sum / bucket.edit_delta_count) * 100)
+        : null,
+    }))
+    .sort((a, b) => {
+      const editedDelta = (b.avg_edited_pct ?? -1) - (a.avg_edited_pct ?? -1);
+      if (editedDelta !== 0) return editedDelta;
+      return b.total - a.total;
+    });
 
   // Actions
   const actions = Array.isArray(actionsResult.data) ? actionsResult.data : [];
@@ -187,6 +287,8 @@ async function fetchPeriodMetrics(serviceClient, scope, since, until) {
       no_edit_pct: qualityTotal > 0 ? Math.round((no_edit / qualityTotal) * 100) : 0,
       minor_edit_pct: qualityTotal > 0 ? Math.round((minor_edit / qualityTotal) * 100) : 0,
       major_edit_pct: qualityTotal > 0 ? Math.round((major_edit / qualityTotal) * 100) : 0,
+      avg_edited_pct: editDeltaCount > 0 ? Math.round((editDeltaSum / editDeltaCount) * 100) : null,
+      by_tag: qualityByTagList,
     },
   };
 }
@@ -235,9 +337,16 @@ export async function GET(request) {
     return NextResponse.json({
       period,
       tickets_total: current.tickets_total,
-      drafts_total: current.drafts_generated,   // used for time-saved calculation
-      drafts_made: current.drafts_made,          // new KPI
-      time_saved_minutes: current.drafts_generated * 5, // base value; frontend overrides with user setting
+      drafts_total: current.drafts_generated,
+      drafts_made: current.drafts_made,
+      edited_before_send_pct: current.draft_quality.total > 0
+        ? Math.round(
+          ((current.draft_quality.minor_edit + current.draft_quality.major_edit) /
+            current.draft_quality.total) * 100,
+        )
+        : 0,
+      edited_before_send_count: current.draft_quality.minor_edit + current.draft_quality.major_edit,
+      tracked_sent_drafts: current.draft_quality.total,
       volume_by_day: current.volume_by_day,
       ticket_types: current.ticket_types,
       actions: current.actions,

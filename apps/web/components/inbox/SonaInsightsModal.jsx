@@ -8,6 +8,8 @@ import { CustomerTab } from "@/components/inbox/CustomerTab";
 import { Badge } from "@/components/ui/badge";
 import { ChevronRight, ExternalLink, Truck, X } from "lucide-react";
 import { TicketMetadataPanel } from "@/components/inbox/TicketMetadataPanel";
+import { TrackingCard } from "@/components/inbox/TrackingCard";
+import { SonaLogo } from "@/components/ui/SonaLogo";
 
 const asString = (value) => (typeof value === "string" ? value.trim() : "");
 const DISPLAY_TIMEZONE = "Europe/Copenhagen";
@@ -50,6 +52,7 @@ const parseLogDetail = (value) => {
         asString(parsed?.reason) ||
         asString(parsed?.status);
       return {
+        ...parsed,
         detail: stripThreadMeta(detail),
         threadId: asString(parsed?.thread_id || parsed?.threadId) || null,
         orderId:
@@ -224,6 +227,10 @@ export function SonaInsightsModal({
   const effectiveLookupLoading = customerLookup != null ? customerLookupLoading : internalLookupLoading;
   const effectiveLookupError = customerLookup != null ? customerLookupError : internalLookupError;
   const effectiveRefresh = onCustomerRefresh ?? internalLookupRefresh;
+  const trackingOrder = useMemo(() => {
+    const orders = Array.isArray(effectiveLookup?.orders) ? effectiveLookup.orders : [];
+    return orders.find((order) => order?.tracking?.number || order?.tracking?.url) || null;
+  }, [effectiveLookup?.orders]);
 
   useEffect(() => {
     let active = true;
@@ -434,6 +441,9 @@ export function SonaInsightsModal({
     const parsed = parseLogDetail(createdLog.step_detail);
     return Array.isArray(parsed?.sources) ? parsed.sources : [];
   }, [logs]);
+  const latestTimelineItem = timelineItems.length
+    ? timelineItems[timelineItems.length - 1]
+    : null;
 
   useEffect(() => {
     if (open) return;
@@ -483,7 +493,11 @@ export function SonaInsightsModal({
                 <TicketMetadataPanel threadId={threadId} />
               </div>
 
-              {trackingInfo && (
+              {trackingOrder ? (
+                <div className="w-full">
+                  <TrackingCard order={trackingOrder} threadId={threadId} fullWidth />
+                </div>
+              ) : trackingInfo ? (
                 <div className="rounded-2xl border border-border bg-card/90 p-4 space-y-3">
                   <div className="flex items-center gap-2">
                     <Truck className="h-3.5 w-3.5 text-slate-400 shrink-0" />
@@ -530,29 +544,39 @@ export function SonaInsightsModal({
                     )}
                   </div>
                 </div>
-              )}
+              ) : null}
 
               <button
                 type="button"
                 onClick={() => setSonaLogOpen(true)}
-                className="flex items-center gap-2 text-xs font-medium text-slate-400 hover:text-slate-600 active:scale-[0.98] transition-[transform,color] duration-150 ease-out"
+                className="group flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition-[border-color,box-shadow,transform,background-color] duration-150 ease-out hover:border-slate-300 hover:bg-slate-50 hover:shadow-md active:scale-[0.99]"
               >
-                <svg
-                  className="w-3.5 h-3.5"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                </svg>
-                What did Sona do?
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white">
+                  <SonaLogo size={28} className="h-7 w-7" speed={logsLoading ? "working" : "idle"} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-slate-900">
+                    Sona activity
+                  </span>
+                  <span className="mt-0.5 block truncate text-xs text-slate-500">
+                    {logsLoading
+                      ? "Loading decisions and sources..."
+                      : timelineItems.length
+                        ? `${timelineItems.length} step${timelineItems.length === 1 ? "" : "s"} recorded${
+                          latestTimelineItem?.title ? ` · Latest: ${latestTimelineItem.title}` : ""
+                        }`
+                        : "No decisions or sources recorded yet"}
+                  </span>
+                </span>
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-300 transition-colors group-hover:bg-slate-100 group-hover:text-slate-500">
+                  <ChevronRight className="h-4 w-4" />
+                </span>
               </button>
 
               <Dialog open={sonaLogOpen} onOpenChange={setSonaLogOpen}>
                 <DialogContent className="max-w-lg max-h-[80vh] flex flex-col gap-0 p-0 overflow-hidden">
                   <DialogHeader className="px-6 pt-6 pb-4 border-b border-border shrink-0">
-                    <DialogTitle>What did Sona do?</DialogTitle>
+                    <DialogTitle>Sona activity</DialogTitle>
                   </DialogHeader>
                   <div className="overflow-y-auto flex-1 px-6 py-5">
                     {logsLoading || (draftLoading && !timelineItems.length) ? (

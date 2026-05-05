@@ -6,14 +6,8 @@ import {
   AlertCircleIcon,
   CheckCircle2Icon,
   ChevronRightIcon,
-  Clock3Icon,
   InboxIcon,
-  MessageCircleIcon,
-  PackageIcon,
   PackageMinusIcon,
-  SendIcon,
-  SparklesIcon,
-  TimerIcon,
 } from "lucide-react";
 
 import DashboardGreeting from "@/components/dashboard/DashboardGreeting";
@@ -43,15 +37,6 @@ const SUPABASE_SERVICE_ROLE_KEY =
 function createServiceClient() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null;
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-}
-
-function formatTimeSaved(totalMinutes) {
-  if (!totalMinutes) return "0h";
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  if (hours === 0) return `${minutes}m`;
-  if (minutes === 0) return `${hours}h`;
-  return `${hours}h ${minutes}m`;
 }
 
 function Sparkline({ path, color, className = "" }) {
@@ -196,9 +181,21 @@ async function loadRecentActivity(serviceClient, scope, shopId) {
   const draftsPromise = applyScope(
     serviceClient
       .from("drafts")
-      .select("id, created_at, customer_email, subject, status")
+      .select("id, draft_id, message_id, created_at, customer_email, subject, status")
       .eq("status", "sent")
       .order("created_at", { ascending: false })
+      .limit(10),
+    scope
+  );
+
+  const sentMessagesPromise = applyScope(
+    serviceClient
+      .from("mail_messages")
+      .select("id, subject, to_emails, sent_at, created_at")
+      .eq("from_me", true)
+      .eq("is_draft", false)
+      .not("sent_at", "is", null)
+      .order("sent_at", { ascending: false })
       .limit(10),
     scope
   );
@@ -213,7 +210,18 @@ async function loadRecentActivity(serviceClient, scope, shopId) {
         .limit(10)
     : Promise.resolve({ data: [] });
 
-  const [draftsResult, actionsResult] = await Promise.all([draftsPromise, actionsPromise]);
+  const [draftsResult, sentMessagesResult, actionsResult] = await Promise.all([
+    draftsPromise,
+    sentMessagesPromise,
+    actionsPromise,
+  ]);
+
+  const sentDraftMessageIds = new Set(
+    (draftsResult.data ?? [])
+      .flatMap((d) => [d.draft_id, d.message_id])
+      .map((id) => String(id || "").trim())
+      .filter(Boolean),
+  );
 
   const draftEvents = (draftsResult.data ?? []).map((d) => ({
     id: `draft-${d.id}`,
@@ -223,6 +231,19 @@ async function loadRecentActivity(serviceClient, scope, shopId) {
     badge: "sent",
   }));
 
+  const sentMessageEvents = (sentMessagesResult.data ?? [])
+    .filter((message) => !sentDraftMessageIds.has(String(message.id || "").trim()))
+    .map((message) => ({
+      id: `message-${message.id}`,
+      time: message.sent_at || message.created_at,
+      label: "Reply sent",
+      detail:
+        message.subject ||
+        (Array.isArray(message.to_emails) ? message.to_emails[0] : null) ||
+        "—",
+      badge: "sent",
+    }));
+
   const actionEvents = (actionsResult.data ?? []).map((a) => ({
     id: `action-${a.id}`,
     time: a.created_at,
@@ -231,9 +252,9 @@ async function loadRecentActivity(serviceClient, scope, shopId) {
     badge: "approved",
   }));
 
-  return [...draftEvents, ...actionEvents]
+  return [...draftEvents, ...sentMessageEvents, ...actionEvents]
     .sort((a, b) => new Date(b.time) - new Date(a.time))
-    .slice(0, 10);
+    .slice(0, 5);
 }
 
 const ACTIVITY_BADGE_CLASSES = {
@@ -283,7 +304,7 @@ export default async function Page() {
 
       let draftQuery = serviceClient
         .from("drafts")
-        .select("id, created_at, customer_email, subject, status")
+        .select("id, created_at, customer_email, subject, status, edit_classification")
         .order("created_at", { ascending: false });
       if (shopId) {
         draftQuery = draftQuery.eq("shop_id", shopId);
@@ -335,9 +356,15 @@ export default async function Page() {
   }
 
   const sentDraftCount = drafts.filter((d) => d.status === "sent").length;
-  const totalDrafts = drafts.length;
-  const timeSavedMinutes = totalDrafts * 5;
-  const timeSavedLabel = totalDrafts === 0 ? "0h" : formatTimeSaved(timeSavedMinutes);
+  const trackedSentDrafts = drafts.filter(
+    (d) => d.status === "sent" && d.edit_classification,
+  );
+  const editedSentDrafts = trackedSentDrafts.filter(
+    (d) => d.edit_classification !== "no_edit",
+  ).length;
+  const editedBeforeSendPct = trackedSentDrafts.length
+    ? Math.round((editedSentDrafts / trackedSentDrafts.length) * 100)
+    : 0;
 
   const attentionItems = [
     pendingCount > 0 && {
@@ -533,16 +560,20 @@ export default async function Page() {
               </CardContent>
             </Card>
 
-            {/* Time Saved */}
+            {/* Edited Before Send */}
             <Card className="@container/card overflow-hidden transition-[box-shadow,transform] duration-150 hover:shadow-md hover:-translate-y-px border-indigo-500/15">
               <CardHeader className="pb-0">
                 <div className="mt-1">
-                  <CardTitle className="text-4xl font-bold tabular-nums text-indigo-600 dark:text-indigo-400">{timeSavedLabel}</CardTitle>
+                  <CardTitle className="text-4xl font-bold tabular-nums text-indigo-600 dark:text-indigo-400">{editedBeforeSendPct}%</CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="pb-0 pt-1">
-                <p className="text-sm font-medium">Time saved</p>
-                <p className="text-xs text-muted-foreground">Est. 5 min per draft</p>
+                <p className="text-sm font-medium">Edited before send</p>
+                <p className="text-xs text-muted-foreground">
+                  {trackedSentDrafts.length
+                    ? `${editedSentDrafts} of ${trackedSentDrafts.length} tracked drafts`
+                    : "No tracked sent drafts yet"}
+                </p>
                 <Sparkline
                   path={SPARKLINE_PATHS.saved}
                   color="rgb(99 102 241 / 0.4)"

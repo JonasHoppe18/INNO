@@ -1630,9 +1630,14 @@ export async function POST(request, { params }) {
       .from("drafts")
       .select("id, created_at")
       .in("thread_id", draftThreadKeys)
-      .eq("platform", mailbox.provider)
       .eq("status", "pending")
       .order("created_at", { ascending: false });
+    const draftPlatforms = Array.from(
+      new Set([mailbox.provider, "smtp"].map((value) => String(value || "").trim()).filter(Boolean)),
+    );
+    if (draftPlatforms.length) {
+      pendingDraftsQuery = pendingDraftsQuery.in("platform", draftPlatforms);
+    }
     if (scope?.workspaceId) {
       pendingDraftsQuery = pendingDraftsQuery.eq(
         "workspace_id",

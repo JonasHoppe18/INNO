@@ -2152,7 +2152,12 @@ export function InboxSplitView({
         setDraftLogLoading(false);
         return;
       }
-      const nextId = typeof data?.id === "number" ? data.id : null;
+      const nextId =
+        typeof data?.id === "string" && data.id.trim()
+          ? data.id
+          : typeof data?.id === "number"
+            ? data.id
+            : null;
       setDraftLogId(nextId);
       if (nextId) {
         setDraftLogIdByThread((prev) => {
@@ -2424,12 +2429,19 @@ export function InboxSplitView({
     );
   }, [rawThreadMessages]);
 
+  const latestRealMessage = useMemo(() => {
+    const reversed = [...rawThreadMessages].reverse();
+    return reversed.find((message) => !message?.is_draft) || null;
+  }, [rawThreadMessages]);
+  const latestRealMessageIsOutbound = Boolean(latestRealMessage?.from_me);
+
   const aiDraft = useMemo(() => {
     if (draftMessage) return "";
+    if (latestRealMessageIsOutbound) return "";
     const reversed = [...rawThreadMessages].reverse();
     const match = reversed.find((message) => message.ai_draft_text?.trim());
     return match?.ai_draft_text?.trim() || "";
-  }, [draftMessage, rawThreadMessages]);
+  }, [draftMessage, latestRealMessageIsOutbound, rawThreadMessages]);
 
   // Count of real inbound messages — used to detect when a new customer message arrives.
   const inboundMessageCount = useMemo(
@@ -2882,6 +2894,25 @@ export function InboxSplitView({
     selectedThreadId,
     suppressAutoDraftByThread,
   ]);
+
+  useEffect(() => {
+    if (!selectedThreadId || !draftReady || !latestRealMessageIsOutbound) return;
+    if (!draftValueRef.current) return;
+    if (!systemDraftUneditedRef.current[selectedThreadId]) return;
+    setDraftValue("");
+    setDraftValueByThread((prev) => ({
+      ...prev,
+      [selectedThreadId]: "",
+    }));
+    setSystemDraftUneditedByThread((prev) => ({
+      ...prev,
+      [selectedThreadId]: false,
+    }));
+    setSuppressAutoDraftByThread((prev) => ({
+      ...prev,
+      [selectedThreadId]: true,
+    }));
+  }, [draftReady, latestRealMessageIsOutbound, selectedThreadId]);
 
   useEffect(() => {
     if (!selectedThreadId) return;

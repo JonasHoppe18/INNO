@@ -5,11 +5,9 @@ import {
   AlertTriangle,
   BarChart2Icon,
   CheckCircle2,
-  Clock3Icon,
   Edit3,
   FileText,
   InboxIcon,
-  Pencil,
   Zap,
 } from "lucide-react";
 import {
@@ -20,7 +18,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   Table,
@@ -52,14 +49,6 @@ const ACTION_LABELS = {
   hold_fulfillment: "Hold Fulfillment",
   create_return: "Create Return",
 };
-
-function formatTimeSaved(minutes) {
-  if (!minutes) return "0 min";
-  if (minutes < 60) return `${minutes} min`;
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return m > 0 ? `${h}h ${m}m` : `${h}h`;
-}
 
 function DeltaBadge({ current, previous }) {
   if (previous == null || previous === 0) return null;
@@ -144,6 +133,51 @@ function ActionProgressBar({ applied, total }) {
   );
 }
 
+function TagQualityTable({ rows = [] }) {
+  const visibleRows = rows.slice(0, 8);
+  if (!visibleRows.length) return null;
+  return (
+    <div className="mt-6 overflow-hidden rounded-lg border">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-muted/40">
+            <TableHead className="font-semibold">Tag</TableHead>
+            <TableHead className="text-right font-semibold">Drafts</TableHead>
+            <TableHead className="text-right font-semibold">Avg. edited</TableHead>
+            <TableHead className="text-right font-semibold">Sent as-is</TableHead>
+            <TableHead className="text-right font-semibold">Major edits</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {visibleRows.map((row) => (
+            <TableRow key={row.tag} className="transition-colors hover:bg-muted/30">
+              <TableCell className="font-medium">
+                <span className="inline-flex min-w-0 items-center gap-2">
+                  <span
+                    className="h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: row.color || "#94a3b8" }}
+                  />
+                  <span className="truncate">{row.tag}</span>
+                </span>
+              </TableCell>
+              <TableCell className="text-right tabular-nums">{row.total}</TableCell>
+              <TableCell className="text-right tabular-nums">
+                {row.avg_edited_pct ?? 0}%
+              </TableCell>
+              <TableCell className="text-right tabular-nums text-emerald-700">
+                {row.no_edit_pct}% ({row.no_edit})
+              </TableCell>
+              <TableCell className="text-right tabular-nums text-rose-700">
+                {row.major_edit}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
 function LoadingRows({ cols = 4, rows = 3 }) {
   return Array.from({ length: rows }).map((_, i) => (
     <TableRow key={i} className="animate-pulse">
@@ -181,21 +215,6 @@ export default function AnalyticsPage() {
     }
   }
 
-  const [minutesPerDraft, setMinutesPerDraft] = useState(() => {
-    if (typeof window === "undefined") return 5;
-    const n = parseInt(localStorage.getItem("sona_minutes_per_draft") ?? "", 10);
-    return n >= 1 && n <= 60 ? n : 5;
-  });
-  const [editingMins, setEditingMins] = useState(false);
-
-  function saveMinsPerDraft(val) {
-    const n = parseInt(val, 10);
-    if (!n || n < 1 || n > 60) return;
-    setMinutesPerDraft(n);
-    localStorage.setItem("sona_minutes_per_draft", String(n));
-    setEditingMins(false);
-  }
-
   const fetchData = useCallback((p) => {
     setLoading(true);
     setError(null);
@@ -215,37 +234,16 @@ export default function AnalyticsPage() {
 
   const actions = data?.actions ?? null;
   const quality = data?.draft_quality ?? null;
-  const timeSavedMinutes = (data?.drafts_total ?? 0) * minutesPerDraft;
-
-  const timeSavedDescription = loading ? null : (
-    <span className="flex items-center gap-1 text-xs text-muted-foreground">
-      {data?.drafts_total ?? 0} drafts ×{" "}
-      {editingMins ? (
-        <Input
-          type="number"
-          min={1}
-          max={60}
-          defaultValue={minutesPerDraft}
-          className="h-5 w-12 px-1 py-0 text-xs"
-          autoFocus
-          onBlur={(e) => saveMinsPerDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") saveMinsPerDraft(e.currentTarget.value);
-            if (e.key === "Escape") setEditingMins(false);
-          }}
-        />
-      ) : (
-        <button
-          onClick={() => setEditingMins(true)}
-          className="inline-flex items-center gap-0.5 underline-offset-2 hover:underline"
-        >
-          {minutesPerDraft} min
-          <Pencil className="size-2.5 opacity-50" />
-        </button>
-      )}{" "}
-      estimated
-    </span>
-  );
+  const editedBeforeSendPct = data?.edited_before_send_pct ?? 0;
+  const editedBeforeSendCount =
+    data?.edited_before_send_count ??
+    ((quality?.minor_edit ?? 0) + (quality?.major_edit ?? 0));
+  const trackedSentDrafts = data?.tracked_sent_drafts ?? quality?.total ?? 0;
+  const editedBeforeSendDescription = loading
+    ? ""
+    : trackedSentDrafts
+      ? `${editedBeforeSendCount} of ${trackedSentDrafts} tracked sent drafts`
+      : "No tracked sent drafts yet";
 
   return (
     <div className="@container/main flex flex-1 flex-col gap-6 p-4 md:p-6">
@@ -305,11 +303,10 @@ export default function AnalyticsPage() {
           }
         />
         <StatCard
-          title="Time Saved"
-          value={loading ? "—" : formatTimeSaved(timeSavedMinutes)}
-          descriptionNode={timeSavedDescription}
-          description=""
-          icon={Clock3Icon}
+          title="Edited Before Send"
+          value={loading ? "—" : `${editedBeforeSendPct}%`}
+          description={editedBeforeSendDescription}
+          icon={Edit3}
           accentClass="bg-emerald-500 text-emerald-700"
         />
         <StatCard
@@ -467,18 +464,23 @@ export default function AnalyticsPage() {
               </CardDescription>
             </div>
             {quality?.total ? (
-              <Badge
-                variant="outline"
-                className={
-                  quality.no_edit_pct >= 60
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                    : quality.no_edit_pct >= 30
-                    ? "border-amber-200 bg-amber-50 text-amber-700"
-                    : "border-rose-200 bg-rose-50 text-rose-700"
-                }
-              >
-                {quality.no_edit_pct}% accepted as-is
-              </Badge>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700">
+                  {quality.avg_edited_pct ?? 0}% edited on average
+                </Badge>
+                <Badge
+                  variant="outline"
+                  className={
+                    quality.no_edit_pct >= 60
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                      : quality.no_edit_pct >= 30
+                      ? "border-amber-200 bg-amber-50 text-amber-700"
+                      : "border-rose-200 bg-rose-50 text-rose-700"
+                  }
+                >
+                  {quality.no_edit_pct}% accepted as-is
+                </Badge>
+              </div>
             ) : null}
           </div>
         </CardHeader>
@@ -496,32 +498,35 @@ export default function AnalyticsPage() {
               No sent drafts with edit tracking in this period.
             </div>
           ) : (
-            <div className="grid gap-5 @xl/main:grid-cols-3">
-              <QualityBar
-                label="No edits"
-                pct={quality.no_edit_pct}
-                count={quality.no_edit}
-                total={quality.total}
-                colorClass="bg-emerald-500"
-                icon={CheckCircle2}
-              />
-              <QualityBar
-                label="Minor edits"
-                pct={quality.minor_edit_pct}
-                count={quality.minor_edit}
-                total={quality.total}
-                colorClass="bg-amber-400"
-                icon={Edit3}
-              />
-              <QualityBar
-                label="Major edits"
-                pct={quality.major_edit_pct}
-                count={quality.major_edit}
-                total={quality.total}
-                colorClass="bg-rose-500"
-                icon={AlertTriangle}
-              />
-            </div>
+            <>
+              <div className="grid gap-5 @xl/main:grid-cols-3">
+                <QualityBar
+                  label="No edits"
+                  pct={quality.no_edit_pct}
+                  count={quality.no_edit}
+                  total={quality.total}
+                  colorClass="bg-emerald-500"
+                  icon={CheckCircle2}
+                />
+                <QualityBar
+                  label="Minor edits"
+                  pct={quality.minor_edit_pct}
+                  count={quality.minor_edit}
+                  total={quality.total}
+                  colorClass="bg-amber-400"
+                  icon={Edit3}
+                />
+                <QualityBar
+                  label="Major edits"
+                  pct={quality.major_edit_pct}
+                  count={quality.major_edit}
+                  total={quality.total}
+                  colorClass="bg-rose-500"
+                  icon={AlertTriangle}
+                />
+              </div>
+              <TagQualityTable rows={quality.by_tag || []} />
+            </>
           )}
         </CardContent>
       </Card>
