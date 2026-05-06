@@ -337,11 +337,19 @@ function applyDeterministicRules(
     }
 
     if (!isActionDisabled("create_exchange_request", shopConfig)) {
+      const exchangeVariantId = inferExchangeVariantId(order);
+      if (!String(exchangeVariantId || "").trim()) {
+        return [];
+      }
       return [{
         type: "create_exchange_request",
         confidence: "medium",
         reason: "Kunden ønsker ombytning af produkt",
-        params: { order_id: order.id, order_name: order.name },
+        params: {
+          order_id: order.id,
+          order_name: order.name,
+          exchange_variant_id: String(exchangeVariantId),
+        },
         requires_approval: true,
       }];
     }
@@ -402,12 +410,20 @@ function applyDeterministicRules(
     // Generel klage (manglende vare, forkert vare, defekt produkt)
     // → foreslå exchange så mennesket kan se og godkende
     if (!isActionDisabled("create_exchange_request", shopConfig)) {
+      const exchangeVariantId = inferExchangeVariantId(order);
+      if (!String(exchangeVariantId || "").trim()) {
+        return [];
+      }
       return [{
         type: "create_exchange_request",
         confidence: "low",
         reason:
           "Klage over produkt — kræver menneskelig vurdering og godkendelse",
-        params: { order_id: order.id, order_name: order.name },
+        params: {
+          order_id: order.id,
+          order_name: order.name,
+          exchange_variant_id: String(exchangeVariantId),
+        },
         requires_approval: true,
       }];
     }
@@ -512,6 +528,26 @@ function computeRoutingHint(
 
   // Ingen actions eller alle er high-confidence uden approval → auto er mulig
   return "auto";
+}
+
+function inferExchangeVariantId(order: unknown): string {
+  const record = (order || {}) as Record<string, unknown>;
+  const direct =
+    record.exchange_variant_id ||
+    record.exchangeVariantId ||
+    record.variant_id ||
+    record.variantId ||
+    "";
+  if (String(direct || "").trim()) return String(direct);
+  const lineItems = Array.isArray(record.line_items) ? record.line_items : [];
+  const variantIds = Array.from(
+    new Set(
+      lineItems
+        .map((item) => String((item as Record<string, unknown>)?.variant_id || "").trim())
+        .filter(Boolean),
+    ),
+  );
+  return variantIds.length === 1 ? variantIds[0] : "";
 }
 
 // ─── Indgang ──────────────────────────────────────────────────────────────────

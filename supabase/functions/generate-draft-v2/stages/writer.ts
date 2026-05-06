@@ -499,15 +499,24 @@ Intet sikkert kundenavn til hilsenen. Start med en naturlig neutral hilsen på k
   // --- Few-shot (primær tone-anker — placeres øverst så modellen ser det først) ---
   const fewShotBlock = retrieved.past_ticket_examples.length > 0
     ? `# Eksempler på lignende sager — brug som reference for BÅDE indhold og tone
-Disse viser hvad der er det rigtige svar i lignende situationer OG den rette tone og stil. Hvis et eksempel matcher kundens problem direkte, brug svaret som udgangspunkt — ikke kun stilen:
+Disse viser hvad der er det rigtige svar i lignende situationer OG den rette tone og stil. "Korrigeret" betyder at medarbejderen omskrev Sonas udkast markant — det er det stærkeste signal om hvad der forventes. "Bekræftet" betyder Sonas udkast var næsten korrekt:
 
 ` +
       retrieved.past_ticket_examples
         .map(
-          (ex, i) =>
-            `[Eksempel ${i + 1}]
+          (ex, i) => {
+            const isHeavilyCorrected = ex.csat_score !== null && ex.csat_score < 60;
+            const label = ex.csat_score === null
+              ? ""
+              : isHeavilyCorrected
+              ? " [Korrigeret — medarbejder omskrev Sonas svar markant]"
+              : ex.csat_score >= 90
+              ? " [Bekræftet — Sonas svar var næsten korrekt]"
+              : "";
+            return `[Eksempel ${i + 1}${label}]
 Kunde: "${ex.customer_msg.slice(0, 350)}"
-Support svarede: "${ex.agent_reply.slice(0, 500)}"`,
+Support svarede: "${ex.agent_reply.slice(0, 500)}"`;
+          },
         )
         .join("\n\n")
     : "";

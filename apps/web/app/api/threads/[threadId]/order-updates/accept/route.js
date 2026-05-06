@@ -3790,6 +3790,50 @@ export async function POST(request, { params }) {
     );
   }
 
+  if (
+    normalizedActionType === "create_exchange_request" &&
+    !normalizeExchangePayload(payloadForExecution).exchangeVariantId
+  ) {
+    const nowIso = new Date().toISOString();
+    const missingVariantReason =
+      "Exchange requires a replacement variant before it can be created in Shopify.";
+    const actionKey = actionRecord?.action_key
+      ? String(actionRecord.action_key)
+      : buildActionKey(normalizedActionType, order.id, payloadForExecution);
+    if (actionRecord?.id) {
+      await serviceClient
+        .from("thread_actions")
+        .update({
+          status: "failed",
+          detail: missingVariantReason,
+          payload: payloadForExecution,
+          action_type: normalizedActionType,
+          action_key: actionKey,
+          order_id: String(order.id),
+          order_number: order.order_number ? String(order.order_number) : null,
+          decided_at: nowIso,
+          decided_by: clerkUserId,
+          decision_reason: decisionReason || null,
+          updated_at: nowIso,
+          error: missingVariantReason,
+        })
+        .eq("id", actionRecord.id);
+    }
+    return NextResponse.json(
+      {
+        ok: true,
+        blocked: true,
+        applied: false,
+        action: normalizedActionType,
+        orderId: String(order.id),
+        orderNumber: order.order_number ?? null,
+        reason: missingVariantReason,
+        draftGenerated: false,
+      },
+      { status: 200 }
+    );
+  }
+
   let updateResult = null;
   try {
     updateResult = await executeShopifyAction({

@@ -54,7 +54,7 @@ const DEFAULT_AUTOMATION = {
   cancelOrders: false,
   automaticRefunds: false,
   historicInboxAccess: false,
-  learnFromEdits: false,
+  learnFromEdits: true,
   autoDraftEnabled: false,
   draftDestination: "sona_inbox",
   minConfidence: 0.6,

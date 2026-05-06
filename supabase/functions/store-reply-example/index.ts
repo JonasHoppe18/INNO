@@ -58,10 +58,19 @@ Deno.serve(async (req: Request) => {
   const workspaceId = String(body.workspace_id || "").trim() || null;
   const intent = String(body.intent || "").trim() || null;
   const language = String(body.language || "").trim() || null;
+  const editDeltaPct = typeof body.edit_delta_pct === "number" ? body.edit_delta_pct : null;
 
   if (!threadId || !shopId || !sentReplyText || !customerMessageText) {
     return new Response("Missing required fields", { status: 400 });
   }
+
+  // Convert edit_delta_pct → csat_score:
+  // 0 = no edits (Sona was perfect) → 100
+  // 1 = complete rewrite → 0
+  // null = no AI draft to compare against → null
+  const csatScore = editDeltaPct !== null
+    ? Math.round((1 - Math.min(editDeltaPct, 1)) * 100)
+    : null;
 
   // Embed on the customer message — retrieval finds similar customer situations
   const embedding = await createEmbedding(customerMessageText);
@@ -77,6 +86,7 @@ Deno.serve(async (req: Request) => {
       subject: subject || null,
       intent: intent,
       language: language,
+      csat_score: csatScore,
       embedding: embedding ?? null,
       imported_at: new Date().toISOString(),
     },

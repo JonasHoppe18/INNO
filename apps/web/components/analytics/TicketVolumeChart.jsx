@@ -16,7 +16,7 @@ import {
 const chartConfig = {
   count: {
     label: "Tickets",
-    color: "hsl(var(--chart-1))",
+    color: "#6366f1",
   },
 };
 

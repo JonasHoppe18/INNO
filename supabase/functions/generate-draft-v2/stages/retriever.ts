@@ -21,7 +21,7 @@ export interface RetrievedChunk {
 
 export interface RetrieverResult {
   chunks: RetrievedChunk[];
-  past_ticket_examples: Array<{ customer_msg: string; agent_reply: string }>;
+  past_ticket_examples: Array<{ customer_msg: string; agent_reply: string; csat_score: number | null }>;
 }
 
 export interface RetrieverInput {
@@ -378,7 +378,7 @@ export async function runRetriever(
     ...plan.sub_queries.filter(Boolean),
     ...buildFallbackQueries(plan, customerMessage, shop),
   ]).slice(0, 5);
-  if (queries.length === 0) return { chunks: [], past_ticket_examples: [] };
+  if (queries.length === 0) return { chunks: [], past_ticket_examples: [] as Array<{ customer_msg: string; agent_reply: string; csat_score: number | null }> };
 
   // Run knowledge queries + ticket lookup in parallel. Saved replies are indexed
   // into agent_knowledge with source_provider='saved_reply', so they use the same
@@ -401,6 +401,7 @@ export async function runRetriever(
             agent_reply: string;
             subject?: string;
             intent?: string;
+            csat_score: number | null;
             similarity: number;
             score: number;
           }
@@ -437,6 +438,7 @@ export async function runRetriever(
                 agent_reply: string;
                 subject?: string;
                 intent?: string;
+                csat_score?: number | null;
                 similarity: number;
               };
               const text = `${
@@ -450,7 +452,13 @@ export async function runRetriever(
               const issueTerms = extractIssueTerms(queryText);
               const lexicalScore = overlapCount(text, productTerms) * 0.12 +
                 overlapCount(text, issueTerms) * 0.08;
-              const score = Number(item.similarity || 0) + lexicalScore;
+              // Boost heavily-corrected examples — low csat_score means the shop
+              // had to rewrite Sona's draft significantly, making it a richer learning signal.
+              const csatScore = typeof item.csat_score === "number" ? item.csat_score : null;
+              const correctionBoost = csatScore !== null
+                ? ((100 - csatScore) / 100) * 0.15
+                : 0;
+              const score = Number(item.similarity || 0) + lexicalScore + correctionBoost;
               const existing = resultMap.get(String(item.id));
               if (!existing || score > existing.score) {
                 resultMap.set(String(item.id), {
@@ -458,6 +466,7 @@ export async function runRetriever(
                   agent_reply: item.agent_reply,
                   subject: item.subject,
                   intent: item.intent,
+                  csat_score: csatScore,
                   similarity: item.similarity,
                   score,
                 });
@@ -472,7 +481,12 @@ export async function runRetriever(
             item.score >= 0.45
           )
           .sort((a, b) => b.score - a.score)
-          .slice(0, 3);
+          .slice(0, 3)
+          .map((item) => ({
+            customer_msg: item.customer_msg,
+            agent_reply: item.agent_reply,
+            csat_score: item.csat_score,
+          }));
       } catch (err) {
         console.warn("[retriever] ticket_examples lookup failed:", err);
         return [];
@@ -539,7 +553,7 @@ export async function runRetriever(
   // Past ticket examples — directly from typed ticket_examples table
   const pastTicketExamples = ticketResult
     .filter((t) => t.agent_reply && t.agent_reply.length > 20)
-    .map((t) => ({ customer_msg: t.customer_msg, agent_reply: t.agent_reply }));
+    .map((t) => ({ customer_msg: t.customer_msg, agent_reply: t.agent_reply, csat_score: t.csat_score ?? null }));
 
   console.log(
     `[retriever] queries=${queries.length} knowledge=${regularChunks.length} saved_reply_knowledge=${

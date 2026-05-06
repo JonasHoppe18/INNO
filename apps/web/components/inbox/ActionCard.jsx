@@ -192,6 +192,18 @@ function getApproveButtonLabel({ actionType = "", actionName = "", payload = {},
   return fallback ? `Approve ${fallback.toLowerCase()}` : "Approve action";
 }
 
+function getActionValidationError({ actionType = "", payload = {} }) {
+  const normalizedAction = String(actionType || "").trim().toLowerCase();
+  if (normalizedAction !== "create_exchange_request") return "";
+  const variantId =
+    payload?.exchange_variant_id ??
+    payload?.exchangeVariantId ??
+    payload?.variant_id ??
+    payload?.variantId;
+  if (String(variantId || "").trim()) return "";
+  return "Exchange approval needs a replacement variant. Create this exchange manually in Shopify or regenerate after the replacement item is known.";
+}
+
 function getImpactSummaryLines({ actionType = "", payload = {}, orderDisplayNumber = "", orderSummary = null, detail = "" }) {
   const normalizedAction = String(actionType || "").trim().toLowerCase();
   const lines = [];
@@ -365,6 +377,10 @@ export function ActionCard({
   const approveButtonLabel = useMemo(
     () => getApproveButtonLabel({ actionType, actionName, payload, orderSummary }),
     [actionName, actionType, orderSummary, payload]
+  );
+  const validationError = useMemo(
+    () => getActionValidationError({ actionType, payload }),
+    [actionType, payload]
   );
   const impactSummaryLines = useMemo(
     () =>
@@ -585,6 +601,11 @@ export function ActionCard({
         </div>
 
         {error ? <div className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</div> : null}
+        {validationError ? (
+          <div className="mt-2 text-xs text-amber-700 dark:text-amber-400">
+            {validationError}
+          </div>
+        ) : null}
         {extraContent ? <div className="mt-2">{extraContent}</div> : null}
       </div>
 
@@ -601,7 +622,7 @@ export function ActionCard({
           type="button"
           className="inline-flex items-center gap-1 rounded-md bg-violet-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
           onClick={onApprove}
-          disabled={loading}
+          disabled={loading || Boolean(validationError)}
         >
           <CheckCircle2 className="h-3.5 w-3.5" />
           {loading ? "Applying..." : approveButtonLabel}

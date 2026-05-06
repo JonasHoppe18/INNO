@@ -103,7 +103,7 @@ export const DEFAULT_AUTOMATION: Automation = {
   cancel_orders: false,
   automatic_refunds: false,
   historic_inbox_access: false,
-  learn_from_edits: false,
+  learn_from_edits: true,
   draft_destination: "sona_inbox",
 };
 

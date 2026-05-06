@@ -9,13 +9,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-const FALLBACK_COLORS = [
-  "hsl(var(--chart-1))",
-  "hsl(var(--chart-2))",
-  "hsl(var(--chart-3))",
-  "hsl(var(--chart-4))",
-  "hsl(var(--chart-5))",
-];
+const SONA_COLORS = ["#6366f1", "#2BC8B7", "#8b5cf6", "#38bdf8", "#64748b"];
 
 function formatTag(tag) {
   if (!tag) return "";
@@ -39,7 +33,7 @@ export function TicketTypesChart({ data = [] }) {
     <div className="space-y-4">
       <div className="space-y-3">
         {visibleRows.slice(0, 8).map((row, index) => {
-          const color = row.color || FALLBACK_COLORS[index % FALLBACK_COLORS.length];
+          const color = SONA_COLORS[index % SONA_COLORS.length];
           const share = total > 0 ? Math.round((row.count / total) * 100) : 0;
           return (
             <div key={row.tag} className="grid grid-cols-[minmax(120px,180px)_1fr_64px] items-center gap-3 text-sm">
@@ -75,7 +69,7 @@ export function TicketTypesChart({ data = [] }) {
           </TableHeader>
           <TableBody>
             {visibleRows.map((row, index) => {
-              const color = row.color || FALLBACK_COLORS[index % FALLBACK_COLORS.length];
+              const color = SONA_COLORS[index % SONA_COLORS.length];
               return (
                 <TableRow key={row.tag} className="transition-colors hover:bg-muted/30">
                   <TableCell className="font-medium">

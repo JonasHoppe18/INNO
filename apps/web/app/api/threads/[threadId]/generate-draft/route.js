@@ -48,8 +48,53 @@ function isProposalOnlyDraftMeta(meta) {
   return kind !== "final_customer_reply";
 }
 
+function isProposalOnlyPayload(payload) {
+  const routingHint = String(payload?.routing_hint || "").trim().toLowerCase();
+  const proposedActions = Array.isArray(payload?.proposed_actions)
+    ? payload.proposed_actions
+    : [];
+  return proposedActions.length > 0 && routingHint === "review";
+}
+
 function stripHtml(html) {
   return String(html || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function extractPayloadDraftText(payload) {
+  const candidates = [
+    payload?.draft_text,
+    payload?.draftText,
+    payload?.reply_draft,
+    payload?.reply,
+    payload?.message,
+    payload?.draft?.body_text,
+    payload?.draft?.body_html,
+    payload?.draft?.draft_text,
+    payload?.draft?.reply_draft,
+  ];
+  for (const candidate of candidates) {
+    const value = String(candidate || "").trim();
+    if (value) return value;
+  }
+  return "";
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function loadLatestAiDraftText(serviceClient, scope, threadId) {
+  const { data } = await applyScope(
+    serviceClient
+      .from("mail_messages")
+      .select("ai_draft_text, updated_at")
+      .eq("thread_id", threadId)
+      .not("ai_draft_text", "is", null)
+      .order("updated_at", { ascending: false, nullsLast: true })
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    scope
+  );
+  return String(data?.ai_draft_text || "").trim();
 }
 
 async function loadLegacyUserSignature(serviceClient, supabaseUserId) {
@@ -230,7 +275,9 @@ export async function POST(_request, { params }) {
     scope,
     thread.provider_thread_id || threadId
   );
-  const proposalOnly = isProposalOnlyDraftMeta(latestPendingDraftMeta);
+  const proposalOnly =
+    isProposalOnlyDraftMeta(latestPendingDraftMeta) ||
+    isProposalOnlyPayload(payload);
   const { data: draft } = await applyScope(
     serviceClient
       .from("mail_messages")
@@ -243,13 +290,32 @@ export async function POST(_request, { params }) {
       .maybeSingle(),
     scope
   );
+  let latestAiDraftText = await loadLatestAiDraftText(serviceClient, scope, threadId);
 
-  const aiDraftText =
+  let aiDraftText =
     proposalOnly
       ? ""
       : draft?.body_text ||
         draft?.body_html ||
-    (String(payload?.draft_text || "").trim() ? String(payload.draft_text).trim() : "");
+        extractPayloadDraftText(payload) ||
+        latestAiDraftText;
+  if (!proposalOnly && !aiDraftText && !payload?.skipped) {
+    await sleep(350);
+    latestAiDraftText = await loadLatestAiDraftText(serviceClient, scope, threadId);
+    aiDraftText = latestAiDraftText;
+  }
+  if (!proposalOnly && !draft && !aiDraftText && !payload?.skipped) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Draft generation returned no content.",
+        routing_hint: payload?.routing_hint || null,
+        confidence: payload?.confidence ?? null,
+        proposed_actions: payload?.proposed_actions || [],
+      },
+      { status: 502 }
+    );
+  }
 
   // Auto-tagging ved draft-generering (fire-and-forget)
   const workspaceIdForTags = scope?.workspaceId || thread?.workspace_id || null;

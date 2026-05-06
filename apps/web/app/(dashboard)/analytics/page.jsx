@@ -1,20 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
-  ArrowDownRight,
-  ArrowUpRight,
   BarChart2Icon,
   Bot,
   CalendarDays,
   CheckCircle2,
-  Clock3,
   Gauge,
-  InboxIcon,
   ListFilter,
   MousePointerClick,
-  Sparkles,
   Ticket,
   Zap,
 } from "lucide-react";
@@ -105,93 +100,8 @@ function formatDateLabel(value, fallback) {
   });
 }
 
-function delta(current, previous, inverse = false) {
-  if (current == null || previous == null || previous === 0) return null;
-  const value = Math.round(((current - previous) / previous) * 100);
-  if (value === 0) return null;
-  const positive = inverse ? value < 0 : value > 0;
-  return { value, positive };
-}
-
-function DeltaPill({ current, previous, inverse = false }) {
-  const item = delta(current, previous, inverse);
-  if (!item) return null;
-  const Icon = item.value > 0 ? ArrowUpRight : ArrowDownRight;
-  return (
-    <span
-      className={
-        item.positive
-          ? "inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700"
-          : "inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-700"
-      }
-    >
-      <Icon className="size-3" />
-      {Math.abs(item.value)}%
-    </span>
-  );
-}
-
 function LoadingBlock({ className = "h-24" }) {
   return <Skeleton className={className} />;
-}
-
-function MetricCard({
-  title,
-  value,
-  detail,
-  icon: Icon,
-  tone = "slate",
-  loading,
-  current,
-  previous,
-  inverseDelta = false,
-  periodLabel,
-}) {
-  const toneClass = {
-    blue: "bg-blue-50 text-blue-700 ring-blue-100",
-    emerald: "bg-emerald-50 text-emerald-700 ring-emerald-100",
-    amber: "bg-amber-50 text-amber-700 ring-amber-100",
-    rose: "bg-rose-50 text-rose-700 ring-rose-100",
-    violet: "bg-violet-50 text-violet-700 ring-violet-100",
-    slate: "bg-slate-50 text-slate-700 ring-slate-100",
-  }[tone];
-
-  return (
-    <Card className="overflow-hidden rounded-lg transition-shadow hover:shadow-sm">
-      <CardHeader className="space-y-0 pb-3">
-        <div className="flex items-center justify-between gap-3">
-          <CardDescription className="text-[11px] font-semibold uppercase tracking-wide">
-            {title}
-          </CardDescription>
-          {Icon ? (
-            <span className={`inline-flex size-8 items-center justify-center rounded-md ring-1 ${toneClass}`}>
-              <Icon className="size-4" />
-            </span>
-          ) : null}
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        {loading ? (
-          <LoadingBlock className="h-8" />
-        ) : (
-          <div className="flex items-baseline gap-2">
-            <p className="text-2xl font-semibold tabular-nums tracking-normal">{value}</p>
-            <DeltaPill current={current} previous={previous} inverse={inverseDelta} />
-          </div>
-        )}
-        <p className="min-h-4 text-xs text-muted-foreground">{loading ? "" : detail}</p>
-      </CardContent>
-      {periodLabel ? <PeriodFootnote label={periodLabel} /> : null}
-    </Card>
-  );
-}
-
-function PeriodFootnote({ label }) {
-  return (
-    <div className="border-t bg-muted/25 px-5 py-3 text-xs text-muted-foreground">
-      {label}
-    </div>
-  );
 }
 
 function EmptyState({ icon: Icon = ListFilter, children }) {
@@ -199,6 +109,52 @@ function EmptyState({ icon: Icon = ListFilter, children }) {
     <div className="flex min-h-[160px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed text-sm text-muted-foreground">
       <Icon className="size-7 opacity-30" />
       {children}
+    </div>
+  );
+}
+
+function MiniStat({ label, value, detail, tone = "indigo" }) {
+  const toneClass = {
+    indigo: "border-indigo-100 bg-indigo-50/70 text-indigo-700",
+    teal: "border-teal-100 bg-teal-50/70 text-teal-700",
+    amber: "border-amber-100 bg-amber-50/70 text-amber-700",
+    rose: "border-rose-100 bg-rose-50/70 text-rose-700",
+    slate: "border-slate-200 bg-slate-50 text-slate-700",
+  }[tone];
+
+  return (
+    <div className={`rounded-lg border p-3 ${toneClass}`}>
+      <p className="text-[11px] font-semibold uppercase tracking-wide opacity-75">{label}</p>
+      <p className="mt-1 text-2xl font-semibold tabular-nums tracking-normal">{value}</p>
+      {detail ? <p className="mt-1 text-xs opacity-75">{detail}</p> : null}
+    </div>
+  );
+}
+
+function ViewTabs({ active, onChange }) {
+  const items = [
+    ["overview", "Overview"],
+    ["workload", "Workload"],
+    ["topics", "Topics"],
+    ["sona", "Sona"],
+    ["diagnostics", "Diagnostics"],
+  ];
+  return (
+    <div className="flex flex-wrap gap-1 rounded-lg border bg-background p-1">
+      {items.map(([value, label]) => (
+        <button
+          key={value}
+          type="button"
+          onClick={() => onChange(value)}
+          className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+            active === value
+              ? "bg-indigo-50 text-indigo-700 shadow-sm"
+              : "text-muted-foreground hover:bg-muted hover:text-foreground"
+          }`}
+        >
+          {label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -213,7 +169,7 @@ function BucketBars({ rows = [], valueFormatter = formatPercent }) {
           <span className="truncate text-muted-foreground">{row.label}</span>
           <div className="h-7 overflow-hidden rounded-md bg-muted">
             <div
-              className="flex h-full min-w-8 items-center justify-end rounded-md bg-teal-600 px-2 text-[11px] font-semibold text-white transition-[width] duration-200"
+              className="flex h-full min-w-8 items-center justify-end rounded-md bg-indigo-600 px-2 text-[11px] font-semibold text-white transition-[width] duration-200"
               style={{ width: `${Math.max(6, ((row.count || 0) / max) * 100)}%` }}
             >
               {row.count ? valueFormatter(row.pct) : ""}
@@ -228,10 +184,10 @@ function BucketBars({ rows = [], valueFormatter = formatPercent }) {
 
 function ActionFunnel({ actions, loading }) {
   const rows = [
-    { label: "Suggested", value: actions?.total ?? 0, tone: "bg-slate-500" },
-    { label: "Pending", value: actions?.pending ?? 0, tone: "bg-amber-500" },
-    { label: "Applied", value: actions?.applied ?? 0, tone: "bg-emerald-600" },
-    { label: "Failed / declined", value: actions?.declined ?? 0, tone: "bg-rose-500" },
+    { label: "Suggested", value: actions?.total ?? 0, tone: "bg-indigo-500" },
+    { label: "Pending", value: actions?.pending ?? 0, tone: "bg-amber-400" },
+    { label: "Applied", value: actions?.applied ?? 0, tone: "bg-teal-500" },
+    { label: "Failed / declined", value: actions?.declined ?? 0, tone: "bg-rose-400" },
   ];
   const max = Math.max(...rows.map((row) => row.value), 1);
 
@@ -266,9 +222,9 @@ function QualityBars({ quality, loading }) {
   }
 
   const rows = [
-    { label: "Accepted as-is", value: quality.no_edit, pct: quality.no_edit_pct, tone: "bg-emerald-600" },
-    { label: "Minor edits", value: quality.minor_edit, pct: quality.minor_edit_pct, tone: "bg-amber-500" },
-    { label: "Major edits", value: quality.major_edit, pct: quality.major_edit_pct, tone: "bg-rose-500" },
+    { label: "Accepted as-is", value: quality.no_edit, pct: quality.no_edit_pct, tone: "bg-teal-500" },
+    { label: "Minor edits", value: quality.minor_edit, pct: quality.minor_edit_pct, tone: "bg-indigo-500" },
+    { label: "Major edits", value: quality.major_edit, pct: quality.major_edit_pct, tone: "bg-rose-400" },
   ];
 
   return (
@@ -471,6 +427,7 @@ function DateRangeControl({ period, range, onPreset, onRangeChange }) {
 export default function AnalyticsPage() {
   const [period, setPeriod] = useState("30");
   const [dateRange, setDateRange] = useState({ start: "", end: "" });
+  const [activeView, setActiveView] = useState("overview");
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -509,38 +466,35 @@ export default function AnalyticsPage() {
   const support = data?.support ?? {};
   const quality = data?.draft_quality ?? {};
   const actions = data?.actions ?? {};
-  const previous = data?.previous ?? {};
-  const aiScore = useMemo(() => {
-    const draftQuality = data?.draft_quality;
-    if (!draftQuality?.total) return null;
-    return Math.max(
-      0,
-      Math.round((draftQuality.no_edit_pct || 0) - (draftQuality.major_edit_pct || 0) * 0.5),
-    );
-  }, [data]);
   const activePeriodLabel = periodLabel(period, dateRange);
 
   return (
     <div className="@container/main flex flex-1 flex-col gap-5 p-4 md:p-6">
-      <div className="flex flex-col gap-3 @xl/main:flex-row @xl/main:items-center @xl/main:justify-between">
-        <div className="flex items-center gap-3">
-          <span className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+      <div className="flex flex-col gap-3 @xl/main:flex-row @xl/main:items-start @xl/main:justify-between">
+        <div className="flex items-start gap-3">
+          <span className="flex size-10 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 ring-1 ring-indigo-100">
             <BarChart2Icon className="size-4" />
           </span>
           <div>
             <h1 className="text-xl font-semibold leading-tight">Analytics</h1>
-            <p className="text-sm text-muted-foreground">Support efficiency and Sona AI performance</p>
+            <p className="text-sm text-muted-foreground">
+              One overview for support load, customer topics, and Sona performance.
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">{activePeriodLabel}</p>
           </div>
         </div>
-        <DateRangeControl
-          period={period}
-          range={dateRange}
-          onPreset={(value) => {
-            setPeriod(value);
-            setDateRange({ start: "", end: "" });
-          }}
-          onRangeChange={setDateRange}
-        />
+        <div className="flex flex-col items-start gap-2 @xl/main:items-end">
+          <DateRangeControl
+            period={period}
+            range={dateRange}
+            onPreset={(value) => {
+              setPeriod(value);
+              setDateRange({ start: "", end: "" });
+            }}
+            onRangeChange={setDateRange}
+          />
+          <ViewTabs active={activeView} onChange={setActiveView} />
+        </div>
       </div>
 
       {error ? (
@@ -550,60 +504,99 @@ export default function AnalyticsPage() {
         </div>
       ) : null}
 
-      <div className="grid gap-4 @xl/main:grid-cols-2 @5xl/main:grid-cols-4">
-        <MetricCard
-          title="Created tickets"
-          value={formatNumber(support.created_tickets)}
-          detail={`${formatNumber(support.unsolved_tickets)} currently unresolved`}
-          icon={InboxIcon}
-          tone="blue"
-          loading={loading}
-          current={support.created_tickets}
-          previous={previous.tickets_total}
-          periodLabel={activePeriodLabel}
-        />
-        <MetricCard
-          title="First reply median"
-          value={formatDuration(support.first_reply_time_median_min)}
-          detail={`${formatPercent(support.reply_coverage_pct)} of tickets have reply timing`}
-          icon={Clock3}
-          tone="amber"
-          loading={loading}
-          current={support.first_reply_time_median_min}
-          previous={previous.first_reply_time_median_min}
-          inverseDelta
-          periodLabel={activePeriodLabel}
-        />
-        <MetricCard
-          title="AI accepted as-is"
-          value={formatPercent(quality.no_edit_pct)}
-          detail={`${formatNumber(quality.no_edit)} of ${formatNumber(quality.total)} tracked sent drafts`}
-          icon={Sparkles}
-          tone="emerald"
-          loading={loading}
-          current={quality.no_edit_pct}
-          previous={previous.ai_accepted_pct}
-          periodLabel={activePeriodLabel}
-        />
-        <MetricCard
-          title="Automation applied"
-          value={formatPercent(actions.completion_pct)}
-          detail={`${formatNumber(actions.applied)} applied · ${formatNumber(actions.pending)} pending`}
-          icon={Zap}
-          tone="violet"
-          loading={loading}
-          current={actions.completion_pct}
-          previous={previous.actions_completion_pct}
-          periodLabel={activePeriodLabel}
-        />
-      </div>
+      {activeView === "overview" ? (
+      <div className="grid gap-4 @5xl/main:grid-cols-12" id="overview">
+        <Card className="rounded-lg @5xl/main:col-span-7">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-base">Support snapshot</CardTitle>
+            <CardDescription>
+              The fastest read on workload: volume, open tickets, and customer wait time.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-3 @2xl/main:grid-cols-3">
+              <MiniStat
+                label="Tickets created"
+                value={loading ? "—" : formatNumber(support.created_tickets)}
+                detail="New support tickets"
+                tone="indigo"
+              />
+              <MiniStat
+                label="Unresolved"
+                value={loading ? "—" : formatNumber(support.unsolved_tickets)}
+                detail={`${formatNumber(support.solved_tickets)} solved`}
+                tone="rose"
+              />
+              <MiniStat
+                label="First reply"
+                value={loading ? "—" : formatDuration(support.first_reply_time_median_min)}
+                detail="Median wait time"
+                tone="amber"
+              />
+            </div>
+            <div className="rounded-lg border p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold">Ticket volume</p>
+                  <p className="text-xs text-muted-foreground">Notification noise is excluded.</p>
+                </div>
+                {!loading ? (
+                  <Badge variant="outline" className="rounded-md">
+                    {formatNumber(data?.tickets_total ?? 0)} total
+                  </Badge>
+                ) : null}
+              </div>
+              {loading ? (
+                <LoadingBlock className="h-[220px]" />
+              ) : (
+                <TicketVolumeChart data={data?.volume_by_day ?? []} periodDays={period} />
+              )}
+            </div>
+          </CardContent>
+        </Card>
 
-      <div className="grid gap-4 @5xl/main:grid-cols-[1.5fr_1fr]">
+        <Card className="rounded-lg @5xl/main:col-span-5">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-base">Sona performance</CardTitle>
+            <CardDescription>
+              Whether Sona is reducing work or creating review effort.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-3 @xl/main:grid-cols-2">
+              <MiniStat
+                label="Accepted as-is"
+                value={loading ? "—" : formatPercent(quality.no_edit_pct)}
+                detail={`${formatNumber(quality.no_edit)} sent directly`}
+                tone="teal"
+              />
+              <MiniStat
+                label="Actions applied"
+                value={loading ? "—" : formatNumber(actions.applied)}
+                detail={`${formatNumber(actions.pending)} pending`}
+                tone="indigo"
+              />
+            </div>
+            <div className="rounded-lg border p-4">
+              <p className="mb-3 text-sm font-semibold">Draft quality</p>
+              <QualityBars quality={quality} loading={loading} />
+            </div>
+            <div className="rounded-lg border p-4">
+              <p className="mb-3 text-sm font-semibold">Automation funnel</p>
+              <ActionFunnel actions={actions} loading={loading} />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+      ) : null}
+
+      {activeView === "workload" ? (
+      <div className="space-y-4" id="workload">
         <Card className="rounded-lg">
           <CardHeader className="flex flex-row items-start justify-between gap-4">
             <div>
               <CardTitle className="text-base">Ticket volume</CardTitle>
-              <CardDescription>Created tickets over the selected period</CardDescription>
+              <CardDescription>Support tickets created over the selected period. Notification noise is excluded.</CardDescription>
             </div>
             {!loading ? (
               <Badge variant="outline" className="rounded-md">
@@ -612,83 +605,51 @@ export default function AnalyticsPage() {
             ) : null}
           </CardHeader>
           <CardContent>
-            {loading ? <LoadingBlock className="h-[220px]" /> : <TicketVolumeChart data={data?.volume_by_day ?? []} periodDays={period} />}
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-lg">
-          <CardHeader>
-            <CardTitle className="text-base">Executive read</CardTitle>
-            <CardDescription>What matters operationally right now</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
             {loading ? (
-              <LoadingBlock className="h-36" />
+              <LoadingBlock className="h-[260px]" />
             ) : (
-              <>
-                <div className="rounded-lg border p-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Solved tickets</span>
-                    <span className="font-semibold tabular-nums">{formatNumber(support.solved_tickets)}</span>
-                  </div>
-                  <div className="mt-2 flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">One-touch tickets</span>
-                    <span className="font-semibold tabular-nums">{formatPercent(support.one_touch_pct)}</span>
-                  </div>
-                </div>
-                <div className="rounded-lg border p-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">AI score</span>
-                    <span className="font-semibold tabular-nums">{aiScore == null ? "Not tracked" : `${aiScore}/100`}</span>
-                  </div>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    Based on accepted-as-is rate minus major-edit pressure.
-                  </p>
-                </div>
-                <div className="rounded-lg border p-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Major edit rate</span>
-                    <span className="font-semibold tabular-nums">{formatPercent(quality.major_edit_pct)}</span>
-                  </div>
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    Categories below show where Sona needs better context or policies.
-                  </p>
-                </div>
-              </>
+              <TicketVolumeChart data={data?.volume_by_day ?? []} periodDays={period} />
             )}
           </CardContent>
         </Card>
-      </div>
-
-      <div className="grid gap-4 @5xl/main:grid-cols-2">
+        <div className="grid gap-4 @5xl/main:grid-cols-2">
         <Card className="rounded-lg">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <Gauge className="size-4" />
-              Reply speed
+              <Gauge className="size-4 text-indigo-600" />
+              First reply speed
             </CardTitle>
-            <CardDescription>Tickets by first public reply time</CardDescription>
+            <CardDescription>How quickly customers receive the first response.</CardDescription>
           </CardHeader>
-          <CardContent>{loading ? <LoadingBlock className="h-48" /> : <BucketBars rows={support.first_reply_brackets ?? []} />}</CardContent>
+          <CardContent>
+            {loading ? <LoadingBlock className="h-48" /> : <BucketBars rows={support.first_reply_brackets ?? []} />}
+          </CardContent>
         </Card>
 
         <Card className="rounded-lg">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <CheckCircle2 className="size-4" />
+              <CheckCircle2 className="size-4 text-teal-600" />
               Resolution time
             </CardTitle>
-            <CardDescription>Where solved tickets land by full resolution time</CardDescription>
+            <CardDescription>How long solved tickets took from creation to completion.</CardDescription>
           </CardHeader>
-          <CardContent>{loading ? <LoadingBlock className="h-48" /> : <BucketBars rows={support.resolution_brackets ?? []} />}</CardContent>
+          <CardContent>
+            {loading ? <LoadingBlock className="h-48" /> : <BucketBars rows={support.resolution_brackets ?? []} />}
+          </CardContent>
         </Card>
+        </div>
       </div>
+      ) : null}
 
-      <div className="grid gap-4 @5xl/main:grid-cols-[1.1fr_0.9fr]">
+      {activeView === "topics" ? (
+      <div id="topics" className="grid gap-4 @5xl/main:grid-cols-[1.1fr_0.9fr]">
         <Card className="rounded-lg">
           <CardHeader>
-            <CardTitle className="text-base">Ticket categories</CardTitle>
-            <CardDescription>Issue, product, and request distribution from ticket tags</CardDescription>
+            <CardTitle className="text-base">Customer topics</CardTitle>
+            <CardDescription>
+              The issue types, products, and request types creating the most support load.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {loading ? <LoadingBlock className="h-[320px]" /> : <TicketTypesChart data={data?.ticket_types ?? []} />}
@@ -697,47 +658,47 @@ export default function AnalyticsPage() {
 
         <Card className="rounded-lg">
           <CardHeader>
-            <CardTitle className="text-base">Agent reply load</CardTitle>
-            <CardDescription>Tickets by number of agent replies</CardDescription>
+            <CardTitle className="text-base">Replies needed per ticket</CardTitle>
+            <CardDescription>Whether tickets are handled in one touch or need back-and-forth.</CardDescription>
           </CardHeader>
           <CardContent>
             {loading ? <LoadingBlock className="h-48" /> : <BucketBars rows={support.agent_reply_brackets ?? []} />}
-            <div className="mt-4 rounded-lg border p-3">
-              <p className="text-sm text-muted-foreground">Average agent replies</p>
-              <p className="mt-1 text-2xl font-semibold tabular-nums">
-                {support.agent_replies_average == null ? "Not tracked" : support.agent_replies_average}
-              </p>
-            </div>
+            <MiniStat
+              label="Average replies"
+              value={support.agent_replies_average == null ? "Not tracked" : support.agent_replies_average}
+              detail="Agent replies per ticket"
+              tone="slate"
+            />
           </CardContent>
         </Card>
       </div>
+      ) : null}
 
-      <div className="grid gap-4 @5xl/main:grid-cols-2">
+      {activeView === "sona" ? (
+      <div id="sona" className="grid gap-4 @5xl/main:grid-cols-2">
         <Card className="rounded-lg">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <Bot className="size-4" />
-              AI draft quality
+              <Bot className="size-4 text-violet-600" />
+              Draft quality
             </CardTitle>
-            <CardDescription>How much agents edit Sona before sending</CardDescription>
+            <CardDescription>How much agents edit Sona drafts before sending them.</CardDescription>
           </CardHeader>
           <CardContent>
             <QualityBars quality={quality} loading={loading} />
           </CardContent>
         </Card>
-
         <Card className="rounded-lg">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <MousePointerClick className="size-4" />
-              Automation funnel
+              <MousePointerClick className="size-4 text-indigo-600" />
+              Actions completed by Sona
             </CardTitle>
-            <CardDescription>Suggested actions through applied or declined outcomes</CardDescription>
+            <CardDescription>Suggested operational actions from recommendation to completion.</CardDescription>
           </CardHeader>
           <CardContent>
-            <ActionFunnel actions={actions} loading={loading} />
             {!loading && actions?.by_type?.length ? (
-              <div className="mt-5 overflow-hidden rounded-lg border">
+              <div className="overflow-hidden rounded-lg border">
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/40">
@@ -752,109 +713,116 @@ export default function AnalyticsPage() {
                       <TableRow key={row.type} className="hover:bg-muted/30">
                         <TableCell className="font-medium">{ACTION_LABELS[row.type] ?? row.type}</TableCell>
                         <TableCell className="text-right tabular-nums">{row.total}</TableCell>
-                        <TableCell className="text-right tabular-nums text-emerald-700">{row.applied}</TableCell>
+                        <TableCell className="text-right tabular-nums text-teal-700">{row.applied}</TableCell>
                         <TableCell className="text-right tabular-nums text-amber-700">{row.pending}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
               </div>
-            ) : null}
+            ) : loading ? (
+              <LoadingBlock className="h-48" />
+            ) : (
+              <EmptyState icon={Zap}>No AI actions in this period.</EmptyState>
+            )}
           </CardContent>
         </Card>
-      </div>
 
-      <Card className="rounded-lg">
-        <CardHeader>
-          <CardTitle className="text-base">AI problem categories</CardTitle>
-          <CardDescription>Tags ranked by major-edit pressure and average edit percentage</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <LoadingBlock className="h-48" />
-          ) : !quality?.by_tag?.length ? (
-            <EmptyState icon={Bot}>No tagged draft quality data in this period.</EmptyState>
-          ) : (
-            <div className="overflow-hidden rounded-lg border">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/40">
-                    <TableHead>Category</TableHead>
-                    <TableHead className="text-right">Tracked drafts</TableHead>
-                    <TableHead className="text-right">Accepted as-is</TableHead>
-                    <TableHead className="text-right">Major edit rate</TableHead>
-                    <TableHead className="text-right">Avg. edited</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {quality.by_tag.slice(0, 10).map((row) => (
-                    <TableRow key={row.tag} className="hover:bg-muted/30">
-                      <TableCell className="font-medium">
-                        <span className="inline-flex min-w-0 items-center gap-2">
-                          <span
-                            className="size-2.5 shrink-0 rounded-sm"
-                            style={{ backgroundColor: row.color || "#64748b" }}
-                          />
-                          <span className="truncate">{row.tag}</span>
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">{row.total}</TableCell>
-                      <TableCell className="text-right tabular-nums text-emerald-700">{row.no_edit_pct}%</TableCell>
-                      <TableCell className="text-right tabular-nums text-rose-700">{row.major_edit_pct}%</TableCell>
-                      <TableCell className="text-right tabular-nums">{row.avg_edited_pct ?? 0}%</TableCell>
+        <Card className="rounded-lg @5xl/main:col-span-2">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Bot className="size-4 text-violet-600" />
+              Where Sona needs improvement
+            </CardTitle>
+            <CardDescription>Categories with the highest edit pressure.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <LoadingBlock className="h-48" />
+            ) : !quality?.by_tag?.length ? (
+              <EmptyState icon={Bot}>No tagged draft quality data in this period.</EmptyState>
+            ) : (
+              <div className="overflow-hidden rounded-lg border">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/40">
+                      <TableHead>Category</TableHead>
+                      <TableHead className="text-right">Drafts</TableHead>
+                      <TableHead className="text-right">Major edits</TableHead>
+                      <TableHead className="text-right">Avg. edited</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-4 @5xl/main:grid-cols-2">
-        <Card className="rounded-lg">
-          <CardHeader>
-            <CardTitle className="text-base">Tickets driving first reply median</CardTitle>
-            <CardDescription>Slowest first replies in the selected period</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <LoadingBlock className="h-48" />
-            ) : (
-              <TicketDrillTable rows={support.slow_first_reply_tickets ?? []} metricLabel="First reply" />
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-lg">
-          <CardHeader>
-            <CardTitle className="text-base">Tickets driving resolution time</CardTitle>
-            <CardDescription>Slowest solved tickets by full resolution duration</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <LoadingBlock className="h-48" />
-            ) : (
-              <TicketDrillTable rows={support.slow_resolution_tickets ?? []} metricLabel="Resolution" />
+                  </TableHeader>
+                  <TableBody>
+                    {quality.by_tag.slice(0, 8).map((row) => (
+                      <TableRow key={row.tag} className="hover:bg-muted/30">
+                        <TableCell className="font-medium">
+                          <span className="inline-flex min-w-0 items-center gap-2">
+                            <span className="size-2.5 shrink-0 rounded-sm bg-indigo-500" />
+                            <span className="truncate">{row.tag}</span>
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">{row.total}</TableCell>
+                        <TableCell className="text-right tabular-nums">{row.major_edit_pct}%</TableCell>
+                        <TableCell className="text-right tabular-nums">{row.avg_edited_pct ?? 0}%</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             )}
           </CardContent>
         </Card>
       </div>
+      ) : null}
 
-      <Card className="rounded-lg">
-        <CardHeader>
-          <CardTitle className="text-base">Data coverage</CardTitle>
-          <CardDescription>How much of the period can support reliable analytics</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <DataCoverage coverage={data?.coverage} loading={loading} />
-          <div className="mt-4 grid gap-3 @2xl/main:grid-cols-3">
-            <UnsupportedMetric label="Reopened tickets" />
-            <UnsupportedMetric label="First resolution median" />
-            <UnsupportedMetric label="Group / assignee stations average" />
+      {activeView === "diagnostics" ? (
+      <div id="diagnostics" className="space-y-4">
+          <div className="grid gap-4 @5xl/main:grid-cols-2">
+            <Card className="rounded-lg">
+              <CardHeader>
+                <CardTitle className="text-base">Tickets slowing first reply time</CardTitle>
+                <CardDescription>The slowest first replies in the selected period.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {loading ? (
+                  <LoadingBlock className="h-48" />
+                ) : (
+                  <TicketDrillTable rows={support.slow_first_reply_tickets ?? []} metricLabel="First reply" />
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="rounded-lg">
+              <CardHeader>
+                <CardTitle className="text-base">Tickets slowing resolution time</CardTitle>
+                <CardDescription>The slowest solved tickets by full resolution duration.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {loading ? (
+                  <LoadingBlock className="h-48" />
+                ) : (
+                  <TicketDrillTable rows={support.slow_resolution_tickets ?? []} metricLabel="Resolution" />
+                )}
+              </CardContent>
+            </Card>
           </div>
-        </CardContent>
-      </Card>
+
+          <Card className="rounded-lg">
+            <CardHeader>
+              <CardTitle className="text-base">Tracking coverage</CardTitle>
+              <CardDescription>Shows how much of the selected period has enough data to support reliable analytics.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <DataCoverage coverage={data?.coverage} loading={loading} />
+              <div className="mt-4 grid gap-3 @2xl/main:grid-cols-3">
+                <UnsupportedMetric label="Reopened tickets" />
+                <UnsupportedMetric label="First resolution median" />
+                <UnsupportedMetric label="Group / assignee stations average" />
+              </div>
+            </CardContent>
+          </Card>
+      </div>
+      ) : null}
     </div>
   );
 }

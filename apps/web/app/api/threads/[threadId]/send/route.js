@@ -1647,6 +1647,8 @@ export async function POST(request, { params }) {
     const { data: pendingDraftRows, error: pendingDraftsLookupError } =
       await pendingDraftsQuery;
 
+    let editDeltaPct = null;
+
     if (pendingDraftsLookupError) {
       console.warn(
         "[threads/send] failed to lookup pending drafts",
@@ -1683,6 +1685,7 @@ export async function POST(request, { params }) {
           dist !== null && maxLen !== null
             ? Number((dist / maxLen).toFixed(4))
             : null;
+        editDeltaPct = deltaPct;
 
         let sentDraftQuery = serviceClient
           .from("drafts")
@@ -1787,6 +1790,7 @@ export async function POST(request, { params }) {
         subject: thread?.subject || "",
         intent: caseState?.intents?.[0]?.type || null,
         language: caseState?.language || null,
+        edit_delta_pct: typeof editDeltaPct === "number" ? editDeltaPct : null,
       }),
     }).catch(() => null);
   }
