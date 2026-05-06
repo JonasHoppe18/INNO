@@ -2788,9 +2788,7 @@ export function InboxSplitView({
         return;
       }
       const cachedDraftPayload = draftCacheRef.current.get(selectedThreadId);
-      if (cachedDraftPayload) {
-        draftCacheRef.current.delete(selectedThreadId);
-      }
+      draftCacheRef.current.delete(selectedThreadId);
       const res = cachedDraftPayload
         ? { ok: true, json: async () => cachedDraftPayload }
         : await fetch(`/api/threads/${selectedThreadId}/draft`, {
