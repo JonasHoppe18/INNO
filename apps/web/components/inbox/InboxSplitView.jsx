@@ -1010,6 +1010,7 @@ export function InboxSplitView({
   const selectedThreadIdRef = useRef(null);
   const lastAppliedRequestedThreadIdRef = useRef("");
   const messagesCacheRef = useRef(new Map());
+  const prefetchingRef = useRef(new Set());
   const supabase = useClerkSupabase();
   const { user } = useUser();
   const router = useRouter();
@@ -3975,6 +3976,29 @@ export function InboxSplitView({
     [handleSelectThreadInWorkspace],
   );
 
+  const handlePrefetchThread = useCallback((threadId) => {
+    if (!threadId || isLocalThreadId(threadId)) return;
+    if (messagesCacheRef.current.has(threadId)) return;
+    if (prefetchingRef.current.has(threadId)) return;
+
+    prefetchingRef.current.add(threadId);
+    fetch(`/api/inbox/threads/${encodeURIComponent(threadId)}/messages`, {
+      method: "GET",
+      credentials: "include",
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((payload) => {
+        const rows = Array.isArray(payload?.messages) ? payload.messages : [];
+        if (rows.length) {
+          messagesCacheRef.current.set(threadId, rows);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        prefetchingRef.current.delete(threadId);
+      });
+  }, [isLocalThreadId]);
+
   useEffect(() => {
     if (isLocalThreadId(selectedThreadId)) return;
     if (!selectedThreadId || !draftReady) return;
@@ -4772,6 +4796,7 @@ export function InboxSplitView({
         ticketStateByThread={ticketStateByThread}
         customerByThread={customerByThread}
         onSelectThread={handleSelectThreadInWorkspace}
+        onPrefetchThread={handlePrefetchThread}
         filters={filters}
         onFiltersChange={handleFiltersChange}
         getTimestamp={getThreadTimestamp}
