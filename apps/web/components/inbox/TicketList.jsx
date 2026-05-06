@@ -43,6 +43,7 @@ export function TicketList({
   onOpenInNewTab,
   onDeleteThread,
   hideSolvedFilter = false,
+  onPrefetchThread,
 }) {
   const [contextMenu, setContextMenu] = useState(null);
   const [contextMenuRoot, setContextMenuRoot] = useState(null);
@@ -340,6 +341,7 @@ export function TicketList({
                   isNew={newThreadIds.has(String(thread.id))}
                   mountIndex={index}
                   onSelect={(options) => onSelectThread(thread.id, options)}
+                  onPrefetch={onPrefetchThread ? () => onPrefetchThread(thread.id) : undefined}
                   onContextMenu={(event) => {
                     event.preventDefault();
                     setContextMenu({
