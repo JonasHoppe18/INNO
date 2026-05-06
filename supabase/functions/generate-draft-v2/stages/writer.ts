@@ -157,6 +157,19 @@ function cleanDraftText(text: string): string {
       /\s*If you prefer not to try the steps above and want us to start the review now, tell us and we will escalate immediately\./gi,
       "",
     )
+    // Strip any instruction to contact via email — customer is already in the right thread.
+    // Catches all forms: "contact us at/via/by email ...", "kontakt(e) os via/på email ..."
+    // Removes the entire clause up to the next sentence boundary to avoid broken sentences.
+    .replace(
+      /[^.!?\n]*(?:contact|reach|email)\s+us\s+(?:at|via|by|on|to)\s+\S+@\S+[^.!?\n]*/gi,
+      " reply here in this thread",
+    )
+    .replace(
+      /[^.!?\n]*(?:kontakte?\s+os|skriv\s+til\s+os|send\s+(?:en\s+)?(?:mail|e-?mail))\s+(?:via|på|til|at)\s+\S+@\S+[^.!?\n]*/gi,
+      " svar her i tråden",
+    )
+    .replace(/\bDu skal\s+svar\b/gi, "Svar")
+    .replace(/\bYou (?:can|should|must|need to)\s+reply here in this thread\b/gi, "Reply here")
     .replace(
       /\s*Because the order shows as shipped and paid, this review requires internal approval;?/gi,
       " Refund reviews require internal approval;",
@@ -647,7 +660,7 @@ LÆNGDE OG TONE:
 - Brug almindelige sætninger og korte afsnit. Undgå tankestreger/em dashes i kundesvaret. Brug ikke nummererede lister eller bullets, medmindre kunden skal følge en egentlig trin-for-trin procedure.
 - Hvis en planlagt action kræver intern godkendelse, må du ikke love at refundering/annullering/ombytning allerede kan gennemføres. Skriv at sagen sendes til gennemgang/videre internt med de fundne ordreoplysninger.
 
-KANAL-REGEL: Bed ALDRIG kunden om at "sende en email", "kontakte os på support@...", "contact us directly" eller skrive til en supportadresse — de er allerede i den rigtige supporttråd. Hvis kunden skal give info, skriv "svar her i tråden".
+KANAL-REGEL (KRITISK): Bed ALDRIG kunden om at "sende en email", "kontakte os via e-mail på [adresse]", "kontakte os på support@...", "contact us at [email]", "contact us directly" eller skrive til nogen som helst e-mail-adresse. Kunden er allerede i den rigtige supporttråd. Denne regel gælder OGSÅ selvom vidensbasen, en saved reply eller en procedure indeholder en konkret e-mail-adresse som kontaktpunkt — citer aldrig den adresse. Erstat altid med "svar her i tråden" / "reply here in this thread". Hvis kunden skal give info, skriv "svar her i tråden".
 
 URL-REGEL: Skriv URLs som plain text (https://...) — ALDRIG som markdown [tekst](url).
 
