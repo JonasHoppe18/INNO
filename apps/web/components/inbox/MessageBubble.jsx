@@ -594,21 +594,14 @@ function AiEditBadge({ editStats }) {
   if (edit_classification === "no_edit") {
     return (
       <span className="rounded-full border border-emerald-200 dark:border-emerald-500/40 bg-emerald-50 dark:bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
-        AI-draft · sendt direkte
+        0% edited
       </span>
     );
   }
-  if (edit_classification === "minor_edit") {
+  if (pct != null) {
     return (
-      <span className="rounded-full border border-blue-200 dark:border-blue-500/40 bg-blue-50 dark:bg-blue-500/15 px-2 py-0.5 text-[11px] font-medium text-blue-700 dark:text-blue-300">
-        AI-draft · let redigeret{pct ? ` (${pct}%)` : ""}
-      </span>
-    );
-  }
-  if (edit_classification === "major_edit") {
-    return (
-      <span className="rounded-full border border-orange-200 dark:border-orange-500/40 bg-orange-50 dark:bg-orange-500/15 px-2 py-0.5 text-[11px] font-medium text-orange-700 dark:text-orange-300">
-        AI-draft · væsentligt redigeret{pct ? ` (${pct}%)` : ""}
+      <span className="rounded-full border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+        {pct}% edited
       </span>
     );
   }
