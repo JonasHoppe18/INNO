@@ -1011,6 +1011,7 @@ export function InboxSplitView({
   const lastAppliedRequestedThreadIdRef = useRef("");
   const messagesCacheRef = useRef(new Map());
   const prefetchingRef = useRef(new Set());
+  const draftCacheRef = useRef(new Map());
   const supabase = useClerkSupabase();
   const { user } = useUser();
   const router = useRouter();
@@ -2786,9 +2787,15 @@ export function InboxSplitView({
         setDraftReady(true);
         return;
       }
-      const res = await fetch(`/api/threads/${selectedThreadId}/draft`, {
-        method: "GET",
-      }).catch(() => null);
+      const cachedDraftPayload = draftCacheRef.current.get(selectedThreadId);
+      if (cachedDraftPayload) {
+        draftCacheRef.current.delete(selectedThreadId);
+      }
+      const res = cachedDraftPayload
+        ? { ok: true, json: async () => cachedDraftPayload }
+        : await fetch(`/api/threads/${selectedThreadId}/draft`, {
+            method: "GET",
+          }).catch(() => null);
       if (!active) return;
       if (!res?.ok) {
         setDraftReady(true);
@@ -3978,25 +3985,46 @@ export function InboxSplitView({
 
   const handlePrefetchThread = useCallback((threadId) => {
     if (!threadId || isLocalThreadId(threadId)) return;
-    if (messagesCacheRef.current.has(threadId)) return;
-    if (prefetchingRef.current.has(threadId)) return;
 
-    prefetchingRef.current.add(threadId);
-    fetch(`/api/inbox/threads/${encodeURIComponent(threadId)}/messages`, {
-      method: "GET",
-      credentials: "include",
-    })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((payload) => {
-        const rows = Array.isArray(payload?.messages) ? payload.messages : [];
-        if (rows.length) {
-          messagesCacheRef.current.set(threadId, rows);
-        }
+    // Prefetch messages
+    if (!messagesCacheRef.current.has(threadId) && !prefetchingRef.current.has(threadId)) {
+      prefetchingRef.current.add(threadId);
+      fetch(`/api/inbox/threads/${encodeURIComponent(threadId)}/messages`, {
+        method: "GET",
+        credentials: "include",
       })
-      .catch(() => {})
-      .finally(() => {
-        prefetchingRef.current.delete(threadId);
-      });
+        .then((res) => (res.ok ? res.json() : null))
+        .then((payload) => {
+          const rows = Array.isArray(payload?.messages) ? payload.messages : [];
+          if (rows.length) {
+            messagesCacheRef.current.set(threadId, rows);
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          prefetchingRef.current.delete(threadId);
+        });
+    }
+
+    // Prefetch draft
+    const draftKey = `draft:${threadId}`;
+    if (!draftCacheRef.current.has(threadId) && !prefetchingRef.current.has(draftKey)) {
+      prefetchingRef.current.add(draftKey);
+      fetch(`/api/threads/${encodeURIComponent(threadId)}/draft`, {
+        method: "GET",
+        credentials: "include",
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((payload) => {
+          if (payload) {
+            draftCacheRef.current.set(threadId, payload);
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          prefetchingRef.current.delete(draftKey);
+        });
+    }
   }, [isLocalThreadId]);
 
   useEffect(() => {
