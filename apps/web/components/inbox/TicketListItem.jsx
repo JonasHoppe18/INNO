@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatMessageTime } from "@/components/inbox/inbox-utils";
@@ -32,6 +33,7 @@ export function TicketListItem({
   mountIndex = 0,
   onSelect,
   onContextMenu,
+  onPrefetch,
 }) {
   const isUnread = (unreadCount ?? 0) > 0;
   const hasAiDraft = Boolean(
@@ -50,6 +52,19 @@ export function TicketListItem({
     : "No ticket ID";
   const hasTicketNumber = ticketRef !== "No ticket ID";
 
+  const prefetchTimerRef = useRef(null);
+
+  const handleMouseEnter = () => {
+    if (!onPrefetch) return;
+    prefetchTimerRef.current = setTimeout(() => {
+      onPrefetch();
+    }, 80);
+  };
+
+  const handleMouseLeave = () => {
+    clearTimeout(prefetchTimerRef.current);
+  };
+
   return (
     <button
       type="button"
@@ -61,6 +76,8 @@ export function TicketListItem({
             })
       }
       onContextMenu={(event) => onContextMenu?.(event)}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
       className={cn(
         "relative flex w-full flex-col gap-1 px-4 py-3 text-left transition-colors duration-200 hover:bg-muted/50",
         isNew ? "animate-ticket-enter" : !isExiting && "animate-list-item-enter",
