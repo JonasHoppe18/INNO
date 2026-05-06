@@ -2,16 +2,30 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Input } from "@/components/ui/input";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { TicketListItem } from "@/components/inbox/TicketListItem";
+import { ArrowDownUp, Filter } from "lucide-react";
 
-const STATUS_FILTERS = ["All", "New", "Open", "Pending", "Waiting", "Solved"];
+const STATUS_FILTERS = [
+  { value: "All", label: "All" },
+  { value: "New", label: "New" },
+  { value: "Open", label: "Open" },
+  { value: "Pending", label: "Pending" },
+  { value: "Waiting", label: "Waiting" },
+  { value: "Solved", label: "Solved" },
+];
+const SORT_OPTIONS = [
+  { value: "newest_activity", label: "Newest activity" },
+  { value: "newest_updated", label: "Newest updated" },
+  { value: "oldest_updated", label: "Oldest updated" },
+];
 const CONTEXT_MENU_WIDTH_PX = 160;
 const CONTEXT_MENU_HEIGHT_PX = 84;
 const CONTEXT_MENU_GUTTER_PX = 8;
@@ -40,9 +54,25 @@ export function TicketList({
   const itemRefs = useRef({});
   const [newThreadIds, setNewThreadIds] = useState(new Set());
   const newTimersRef = useRef(new Map());
-  const statusFilters = hideSolvedFilter
-    ? STATUS_FILTERS.filter((option) => option !== "Solved")
+  const statusOptions = hideSolvedFilter
+    ? STATUS_FILTERS.filter((option) => option.value !== "Solved")
     : STATUS_FILTERS;
+  const selectedStatuses = Array.isArray(filters.statuses)
+    ? filters.statuses
+    : filters.status && filters.status !== "All"
+        ? [filters.status]
+        : [];
+  const activeFilterCount =
+    selectedStatuses.length + (filters.unreadsOnly ? 1 : 0);
+  const selectedSortLabel =
+    SORT_OPTIONS.find((option) => option.value === (filters.sortBy || "newest_activity"))
+      ?.label || "Newest activity";
+  const handleStatusToggle = (status, checked) => {
+    const next = checked
+      ? [...new Set([...selectedStatuses, status])]
+      : selectedStatuses.filter((value) => value !== status);
+    onFiltersChange({ statuses: next, status: "All" });
+  };
 
   useEffect(() => {
     const currentIds = new Set((threads || []).map((t) => String(t?.id || "")).filter(Boolean));
@@ -197,33 +227,95 @@ export function TicketList({
 
   return (
     <aside className="animate-view-enter flex w-full flex-col border-r border-border bg-background lg:w-[clamp(18rem,20vw,24rem)] lg:min-w-[clamp(18rem,20vw,24rem)] lg:max-w-[clamp(18rem,20vw,24rem)] lg:flex-none">
-      <div className="flex items-center gap-2 border-b border-border px-3 py-2">
-        <Input
-          value={filters.query}
-          onChange={(event) => onFiltersChange({ query: event.target.value })}
-          placeholder="Search..."
-          className="h-8 flex-1 text-[13px]"
-        />
-        <Select
-          value={filters.status}
-          onValueChange={(value) => onFiltersChange({ status: value })}
-        >
-          <SelectTrigger className="h-8 w-[90px] shrink-0 text-[13px]">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            {statusFilters.map((option) => (
-              <SelectItem key={option} value={option}>
-                {option}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Switch
-          checked={filters.unreadsOnly}
-          onCheckedChange={(checked) => onFiltersChange({ unreadsOnly: checked })}
-          title="Unread only"
-        />
+      <div className="border-b border-border px-3 py-2">
+        <div className="flex items-center gap-1.5">
+          <Input
+            value={filters.query}
+            onChange={(event) => onFiltersChange({ query: event.target.value })}
+            placeholder="Search..."
+            className="h-8 min-w-0 flex-1 text-[13px]"
+          />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className={`relative flex h-8 w-9 shrink-0 items-center justify-center rounded-md border text-muted-foreground ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ${
+                  activeFilterCount
+                    ? "border-primary/35 bg-primary/10 text-primary"
+                    : "border-input bg-background"
+                }`}
+                title="Filters"
+              >
+                <Filter className="h-4 w-4" />
+                {activeFilterCount ? (
+                  <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground">
+                    {activeFilterCount}
+                  </span>
+                ) : null}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuLabel className="text-xs text-muted-foreground">
+                Status
+              </DropdownMenuLabel>
+              <DropdownMenuCheckboxItem
+                checked={selectedStatuses.length === 0}
+                onSelect={(event) => event.preventDefault()}
+                onCheckedChange={() =>
+                  onFiltersChange({ statuses: [], status: "All" })
+                }
+              >
+                All
+              </DropdownMenuCheckboxItem>
+              {statusOptions
+                .filter((option) => option.value !== "All")
+                .map((option) => (
+                  <DropdownMenuCheckboxItem
+                    key={option.value}
+                    checked={selectedStatuses.includes(option.value)}
+                    onSelect={(event) => event.preventDefault()}
+                    onCheckedChange={(checked) =>
+                      handleStatusToggle(option.value, checked)
+                    }
+                  >
+                    {option.label}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuCheckboxItem
+                checked={filters.unreadsOnly}
+                onSelect={(event) => event.preventDefault()}
+                onCheckedChange={(checked) =>
+                  onFiltersChange({ unreadsOnly: checked })
+                }
+              >
+                Unread only
+              </DropdownMenuCheckboxItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="flex h-8 max-w-[128px] shrink-0 items-center gap-1.5 rounded-md border border-input bg-background px-2.5 text-[13px] text-muted-foreground ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                title={`Sort: ${selectedSortLabel}`}
+              >
+                <ArrowDownUp className="h-4 w-4 shrink-0" />
+                <span className="truncate">{selectedSortLabel.replace(" activity", "")}</span>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              {SORT_OPTIONS.map((option) => (
+                <DropdownMenuItem
+                  key={option.value}
+                  onClick={() => onFiltersChange({ sortBy: option.value })}
+                >
+                  {option.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {renderedThreads.length ? (

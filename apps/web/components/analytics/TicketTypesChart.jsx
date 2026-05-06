@@ -1,14 +1,5 @@
 "use client";
 
-import { useState } from "react";
-import { Cell, Pie, PieChart, Sector } from "recharts";
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-  ChartLegend,
-  ChartLegendContent,
-} from "@/components/ui/chart";
 import {
   Table,
   TableBody,
@@ -18,7 +9,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-const COLORS = [
+const FALLBACK_COLORS = [
   "hsl(var(--chart-1))",
   "hsl(var(--chart-2))",
   "hsl(var(--chart-3))",
@@ -31,134 +22,75 @@ function formatTag(tag) {
   return tag.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function renderActiveShape(props) {
-  const {
-    cx, cy,
-    innerRadius, outerRadius,
-    startAngle, endAngle,
-    fill,
-    payload,
-    percent,
-  } = props;
-
-  return (
-    <g>
-      <Sector
-        cx={cx}
-        cy={cy}
-        innerRadius={innerRadius}
-        outerRadius={outerRadius + 8}
-        startAngle={startAngle}
-        endAngle={endAngle}
-        fill={fill}
-      />
-      <text
-        x={cx}
-        y={cy - 10}
-        textAnchor="middle"
-        dominantBaseline="middle"
-        style={{ fontSize: 13, fontWeight: 600, fill: "currentColor" }}
-      >
-        {formatTag(payload.tag)}
-      </text>
-      <text
-        x={cx}
-        y={cy + 10}
-        textAnchor="middle"
-        dominantBaseline="middle"
-        style={{ fontSize: 11, fill: "var(--muted-foreground)" }}
-      >
-        {payload.count} · {Math.round(percent * 100)}%
-      </text>
-    </g>
-  );
-}
-
 export function TicketTypesChart({ data = [] }) {
-  const [activeIndex, setActiveIndex] = useState(null);
-
   if (!data.length) {
     return (
-      <div className="flex min-h-[200px] items-center justify-center text-sm text-muted-foreground">
-        No ticket categories yet — ticket tags will appear here.
+      <div className="flex min-h-[240px] items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
+        No ticket categories yet. Tags will appear here when tickets are classified.
       </div>
     );
   }
 
-  const total = data.reduce((sum, d) => sum + d.count, 0);
-  // Show top 8, group the rest as "Other"
-  const top = data.slice(0, 8);
-  const rest = data.slice(8);
-  const chartData =
-    rest.length > 0
-      ? [
-          ...top,
-          { tag: "Other", count: rest.reduce((s, d) => s + d.count, 0) },
-        ]
-      : top;
-
-  const config = Object.fromEntries(
-    chartData.map((d, i) => [
-      d.tag,
-      { label: formatTag(d.tag), color: COLORS[i % COLORS.length] },
-    ])
-  );
+  const total = data.reduce((sum, row) => sum + (row.count || 0), 0);
+  const max = Math.max(...data.map((row) => row.count || 0), 1);
+  const visibleRows = data.slice(0, 14);
 
   return (
-    <div className="flex flex-col gap-4">
-      <ChartContainer config={config} className="h-[260px] w-full">
-        <PieChart>
-          <ChartTooltip content={<ChartTooltipContent nameKey="tag" hideLabel />} />
-          <Pie
-            data={chartData}
-            dataKey="count"
-            nameKey="tag"
-            innerRadius="55%"
-            outerRadius="80%"
-            paddingAngle={2}
-            activeIndex={activeIndex ?? undefined}
-            activeShape={activeIndex !== null ? renderActiveShape : undefined}
-            onMouseEnter={(_, index) => setActiveIndex(index)}
-            onMouseLeave={() => setActiveIndex(null)}
-          >
-            {chartData.map((entry, index) => (
-              <Cell
-                key={entry.tag}
-                fill={COLORS[index % COLORS.length]}
-                stroke="transparent"
-                className="cursor-pointer"
-              />
-            ))}
-          </Pie>
-          <ChartLegend content={<ChartLegendContent nameKey="tag" />} />
-        </PieChart>
-      </ChartContainer>
+    <div className="space-y-4">
+      <div className="space-y-3">
+        {visibleRows.slice(0, 8).map((row, index) => {
+          const color = row.color || FALLBACK_COLORS[index % FALLBACK_COLORS.length];
+          const share = total > 0 ? Math.round((row.count / total) * 100) : 0;
+          return (
+            <div key={row.tag} className="grid grid-cols-[minmax(120px,180px)_1fr_64px] items-center gap-3 text-sm">
+              <span className="flex min-w-0 items-center gap-2 font-medium">
+                <span className="size-2.5 shrink-0 rounded-sm" style={{ backgroundColor: color }} />
+                <span className="truncate">{formatTag(row.tag)}</span>
+              </span>
+              <div className="h-7 overflow-hidden rounded-md bg-muted">
+                <div
+                  className="flex h-full min-w-8 items-center justify-end rounded-md px-2 text-[11px] font-semibold text-white"
+                  style={{
+                    width: `${Math.max(5, ((row.count || 0) / max) * 100)}%`,
+                    backgroundColor: color,
+                  }}
+                >
+                  {share}%
+                </div>
+              </div>
+              <span className="text-right font-medium tabular-nums">{row.count}</span>
+            </div>
+          );
+        })}
+      </div>
 
       <div className="overflow-hidden rounded-lg border">
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/40">
               <TableHead className="font-semibold">Category</TableHead>
-              <TableHead className="text-right font-semibold">Count</TableHead>
+              <TableHead className="text-right font-semibold">Tickets</TableHead>
               <TableHead className="text-right font-semibold">Share</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {data.map((row, i) => (
-              <TableRow key={row.tag} className="transition-colors hover:bg-muted/30">
-                <TableCell className="flex items-center gap-2 font-medium">
-                  <span
-                    className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
-                    style={{ backgroundColor: COLORS[i % COLORS.length] }}
-                  />
-                  {formatTag(row.tag)}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">{row.count}</TableCell>
-                <TableCell className="text-right tabular-nums text-muted-foreground">
-                  {total > 0 ? Math.round((row.count / total) * 100) : 0}%
-                </TableCell>
-              </TableRow>
-            ))}
+            {visibleRows.map((row, index) => {
+              const color = row.color || FALLBACK_COLORS[index % FALLBACK_COLORS.length];
+              return (
+                <TableRow key={row.tag} className="transition-colors hover:bg-muted/30">
+                  <TableCell className="font-medium">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="size-2.5 shrink-0 rounded-sm" style={{ backgroundColor: color }} />
+                      <span className="truncate">{formatTag(row.tag)}</span>
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{row.count}</TableCell>
+                  <TableCell className="text-right tabular-nums text-muted-foreground">
+                    {total > 0 ? Math.round((row.count / total) * 100) : 0}%
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </div>

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
-import { resolveAuthScope, resolveScopedShop } from "@/lib/server/workspace-auth";
+import { resolveAuthScope } from "@/lib/server/workspace-auth";
 
 export const runtime = "nodejs";
 
@@ -43,8 +43,9 @@ export async function GET() {
     if (!serviceClient) return NextResponse.json({ error: "Service client unavailable" }, { status: 500 });
 
     const scope = await resolveAuthScope(serviceClient, { clerkUserId: userId, orgId });
-    const shop = await resolveScopedShop(serviceClient, scope);
-    if (!shop) return NextResponse.json({ categories: [] });
+    if (!scope?.workspaceId && !scope?.supabaseUserId) {
+      return NextResponse.json({ categories: [], auto_send_intents: [] });
+    }
 
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 

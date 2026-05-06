@@ -65,8 +65,9 @@ const DEFAULT_TICKET_STATE = {
 
 const DEFAULT_FILTERS = {
   query: "",
-  status: "All",
+  statuses: [],
   unreadsOnly: false,
+  sortBy: "newest_activity",
 };
 
 const STATUS_OPTIONS = ["New", "Open", "Pending", "Waiting", "Solved"];
@@ -1644,11 +1645,6 @@ export function InboxSplitView({
     return derivedThreads
       .filter((thread) => {
         const threadId = String(thread?.id || "").trim();
-        const isRequestedThread = Boolean(
-          requestedThreadId && threadId === requestedThreadId,
-        );
-        if (isRequestedThread) return true;
-
         const hasLocalState = Object.prototype.hasOwnProperty.call(
           ticketStateByThread,
           thread.id,
@@ -1696,10 +1692,18 @@ export function InboxSplitView({
           const targetInbox = activeView.slice("inbox:".length);
           if (!targetInbox || inboxSlug !== targetInbox) return false;
         }
-        if (filters.status !== "All" && effectiveStatus !== filters.status) {
+        const selectedStatuses = Array.isArray(filters.statuses)
+          ? filters.statuses
+          : filters.status && filters.status !== "All"
+              ? [filters.status]
+              : [];
+        if (selectedStatuses.length && !selectedStatuses.includes(effectiveStatus)) {
           return false;
         }
-        const unreadCount = thread.unread_count ?? 0;
+        const unreadCount =
+          readOverrides[threadId] || thread?.is_read
+            ? 0
+            : Number(thread?.unread_count ?? 0);
         if (filters.unreadsOnly && unreadCount === 0) return false;
         if (filters.query) {
           const query = filters.query.toLowerCase();
@@ -1729,15 +1733,21 @@ export function InboxSplitView({
         return true;
       })
       .sort((a, b) => {
-        const aTs = Date.parse(
-          a?.last_message_at || a?.updated_at || a?.created_at || 0,
-        );
-        const bTs = Date.parse(
-          b?.last_message_at || b?.updated_at || b?.created_at || 0,
-        );
-        return (
-          (Number.isFinite(bTs) ? bTs : 0) - (Number.isFinite(aTs) ? aTs : 0)
-        );
+        const getTs = (thread) => {
+          const value =
+            filters.sortBy === "oldest_updated" ||
+            filters.sortBy === "newest_updated"
+              ? thread?.updated_at || thread?.last_message_at || thread?.created_at || 0
+              : thread?.last_message_at || thread?.updated_at || thread?.created_at || 0;
+          const parsed = Date.parse(value);
+          return Number.isFinite(parsed) ? parsed : 0;
+        };
+        const aTs = getTs(a);
+        const bTs = getTs(b);
+        if (filters.sortBy === "oldest_updated") {
+          return aTs - bTs;
+        }
+        return bTs - aTs;
       });
   }, [
     activeView,
@@ -1745,7 +1755,7 @@ export function InboxSplitView({
     customerByThread,
     derivedThreads,
     filters,
-    requestedThreadId,
+    readOverrides,
     ticketStateByThread,
     user?.id,
   ]);
@@ -1804,12 +1814,28 @@ export function InboxSplitView({
   useEffect(() => {
     if (!tabStateReady) return;
     if (openThreadIds.length) {
-      if (selectedThreadId && openThreadIds.includes(selectedThreadId)) return;
-      setSelectedThreadId(openThreadIds[0] || null);
+      const visibleOpenThreadIds = openThreadIds.filter((threadId) =>
+        filteredThreads.some((thread) => thread.id === threadId),
+      );
+      if (selectedThreadId && visibleOpenThreadIds.includes(selectedThreadId)) return;
+      if (visibleOpenThreadIds.length) {
+        setSelectedThreadId(visibleOpenThreadIds[0] || null);
+        return;
+      }
+      if (!filteredThreads.length) {
+        setSelectedThreadId(null);
+        return;
+      }
+      const nextThreadId = filteredThreads[0]?.id || null;
+      setOpenThreadIds((prev) =>
+        nextThreadId && !prev.includes(nextThreadId)
+          ? [nextThreadId, ...prev]
+          : prev,
+      );
+      setSelectedThreadId(nextThreadId);
       return;
     }
-    const fallbackThreadId =
-      filteredThreads[0]?.id || derivedThreads[0]?.id || null;
+    const fallbackThreadId = filteredThreads[0]?.id || null;
     if (!fallbackThreadId) {
       setSelectedThreadId(null);
       return;
@@ -1831,7 +1857,10 @@ export function InboxSplitView({
   useEffect(() => {
     if (!tabStateReady) return;
     if (!selectedThreadId) return;
-    if (!filteredThreads.length) return;
+    if (!filteredThreads.length) {
+      setSelectedThreadId(null);
+      return;
+    }
     const isInDerived = derivedThreads.some((t) => t.id === selectedThreadId);
     if (!isInDerived) return;
     const isVisible = filteredThreads.some((t) => t.id === selectedThreadId);
@@ -3618,10 +3647,19 @@ export function InboxSplitView({
   ]);
 
   useEffect(() => {
-    if (activeView === "" && filters.status === "Solved") {
-      setFilters((prev) => ({ ...prev, status: "All" }));
+    const selectedStatuses = Array.isArray(filters.statuses)
+      ? filters.statuses
+      : filters.status && filters.status !== "All"
+          ? [filters.status]
+          : [];
+    if (activeView === "" && selectedStatuses.includes("Solved")) {
+      setFilters((prev) => ({
+        ...prev,
+        statuses: selectedStatuses.filter((status) => status !== "Solved"),
+        status: "All",
+      }));
     }
-  }, [activeView, filters.status]);
+  }, [activeView, filters.status, filters.statuses]);
 
   const handleTicketStateChange = useCallback(
     (updates) => {
