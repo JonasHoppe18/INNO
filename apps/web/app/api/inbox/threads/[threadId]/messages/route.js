@@ -142,7 +142,12 @@ export async function GET(_request, context) {
       attachments = Array.isArray(attachmentRows) ? attachmentRows : [];
     }
 
-    return NextResponse.json({ messages, attachments }, { status: 200 });
+    return NextResponse.json({ messages, attachments }, {
+      status: 200,
+      headers: {
+        "Cache-Control": "private, max-age=30, stale-while-revalidate=60",
+      },
+    });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to load thread messages." },
