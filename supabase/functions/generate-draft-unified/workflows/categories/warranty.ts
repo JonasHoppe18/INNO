@@ -15,14 +15,15 @@ export function buildWarrantyDraft(category: EmailCategory): WorkflowRoute {
       "- Bekræft at du har modtaget kunden garanti-henvendelse.\n" +
       "- Udtryk forståelse for at produktet ikke lever op til forventningerne.\n\n" +
       "STEP 2 — Indhent dokumentation (KUN hvis ikke allerede givet):\n" +
-      "- Ordrebekræftelse eller kvittering (til verificering af købsdato)\n" +
-      "- Beskrivelse af defekten — hvad er konkret galt?\n" +
-      "- Foto eller video af fejlen (hvis relevant for produkttypen)\n" +
-      "- Stil MAKSIMALT ét samlet spørgsmål.\n\n" +
-      "STEP 3 — Henvis til garantibetingelser:\n" +
-      "- Brug garantiperioden fra POLITIKKER (fx 'Vi tilbyder X års garanti på vores produkter').\n" +
-      "- Hvis garantiperioden ikke fremgår af POLITIKKER: skriv 'Vi gennemgår din sag og vender tilbage med næste skridt.'\n" +
-      "- Giv ALDRIG løfter om erstatning eller refund uden at have verificeret dækning.\n\n" +
+      "- Ordrenummer eller kvittering (til verificering af køb og dato) — dette er det vigtigste\n" +
+      "- Foto eller video af fejlen (hvis relevant)\n" +
+      "- Stil MAKSIMALT ét samlet spørgsmål med alle manglende felter samlet.\n" +
+      "- Spørg ALDRIG om noget kunden allerede har oplyst.\n\n" +
+      "STEP 3 — Afslut med konkret næste skridt:\n" +
+      "- Hvis dokumentation mangler (ordrenummer, foto): bed om det nu — aldrig 'vi gennemgår internt og vender tilbage'.\n" +
+      "- Hvis dokumentation er modtaget: bekræft at sagen behandles — 'Vi behandler din garanti-sag og vender tilbage med næste skridt hurtigst muligt.'\n" +
+      "- Brug garantiperioden fra POLITIKKER hvis den fremgår (fx 'Vi tilbyder X års garanti').\n" +
+      "- Giv ALDRIG løfter om erstatning eller refund uden verificeret dækning.\n\n" +
       "FORESLÅ IKKE teknisk troubleshooting — kunden har eksplicit invokeret garantien og ønsker ikke en DIY-løsning.",
     ],
     systemRules: [

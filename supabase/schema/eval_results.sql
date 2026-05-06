@@ -20,7 +20,16 @@ CREATE TABLE IF NOT EXISTS eval_results (
   tone INT CHECK (tone BETWEEN 1 AND 5),
   actionability INT CHECK (actionability BETWEEN 1 AND 5),
   overall INT CHECK (overall BETWEEN 1 AND 5),
+  overall_10 INT CHECK (overall_10 BETWEEN 1 AND 10),
+  send_ready BOOLEAN,
+  primary_gap TEXT,
+  missing_for_10 JSONB,
+  likely_root_cause TEXT,
   reasoning TEXT,
+  action_decision JSONB,
+  post_action_reply TEXT,
+  post_action_quality JSONB,
+  post_action_decided_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -29,3 +38,6 @@ CREATE INDEX IF NOT EXISTS eval_results_run_label_idx ON eval_results(run_label)
 CREATE INDEX IF NOT EXISTS eval_results_created_at_idx ON eval_results(created_at DESC);
 CREATE INDEX IF NOT EXISTS eval_results_pipeline_version_idx ON eval_results(pipeline_version);
 CREATE INDEX IF NOT EXISTS eval_results_zendesk_ticket_id_idx ON eval_results(zendesk_ticket_id);
+CREATE INDEX IF NOT EXISTS eval_results_overall_10_idx ON eval_results(overall_10);
+CREATE INDEX IF NOT EXISTS eval_results_likely_root_cause_idx ON eval_results(likely_root_cause);
+CREATE INDEX IF NOT EXISTS eval_results_post_action_decided_at_idx ON eval_results(post_action_decided_at DESC);

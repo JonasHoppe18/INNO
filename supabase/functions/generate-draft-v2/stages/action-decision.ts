@@ -14,6 +14,7 @@ import { Plan } from "./planner.ts";
 import { CaseState } from "./case-state-updater.ts";
 import { FactResolverResult } from "./fact-resolver.ts";
 import { RetrieverResult } from "./retriever.ts";
+import { callOpenAIJson } from "./openai-json.ts";
 
 // ─── Typer ────────────────────────────────────────────────────────────────────
 
@@ -66,11 +67,31 @@ export interface ActionDecisionInput {
   plan: Plan;
   caseState: CaseState;
   facts: FactResolverResult;
-  retrieved: RetrieverResult;       // KB-chunks til at tolke shop-specifikke procedurer
-  shopConfig: ShopActionConfig;     // Per-shop konfiguration
+  retrieved: RetrieverResult; // KB-chunks til at tolke shop-specifikke procedurer
+  shopConfig: ShopActionConfig; // Per-shop konfiguration
 }
 
-const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
+const ACTION_DECISION_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    proposals: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          type: { type: "string" },
+          confidence: { type: "string", enum: ["high", "medium", "low"] },
+          reason: { type: "string" },
+          requires_approval: { type: "boolean" },
+        },
+        required: ["type", "confidence", "reason", "requires_approval"],
+      },
+    },
+  },
+  required: ["proposals"],
+};
 
 // ─── Hjælpefunktioner ─────────────────────────────────────────────────────────
 
@@ -145,7 +166,23 @@ function applyDeterministicRules(
 
   // ── 1. Ren information — ingen action nødvendig ────────────────────────────
   // Writer henter fakta og KB og svarer direkte.
-  if (["tracking", "product_question", "thanks"].includes(intent)) {
+  if (["tracking", "product_question", "thanks", "other"].includes(intent)) {
+    return [];
+  }
+
+  // ── Guard: Replacement/warranty allerede arrangeret ────────────────────────
+  // Hvis decisions_made indeholder en beslutning om garanti-erstatning/ombytning,
+  // er sagen allerede håndteret — foreslå IKKE en ny exchange/refund action.
+  // Dette forhindrer regression hvor en simpel bekræftelse fejlagtigt udløser
+  // create_exchange_request fordi planner klassificerer bekræftelsen som complaint/exchange.
+  const replacementAlreadyArranged = [...decided].some((d) =>
+    /warranty[_\s]?replacement|replacement[_\s]?offered|manual[_\s]?order|exchange[_\s]?offer|erstatning/i
+      .test(d)
+  );
+  if (
+    replacementAlreadyArranged &&
+    ["complaint", "exchange", "refund"].includes(intent)
+  ) {
     return [];
   }
 
@@ -180,7 +217,10 @@ function applyDeterministicRules(
     if (!order) return [];
 
     const eligibility = factMap["Returret"] ?? "";
-    if (eligibility.startsWith("Ja") && !isActionDisabled("initiate_return", shopConfig)) {
+    if (
+      eligibility.startsWith("Ja") &&
+      !isActionDisabled("initiate_return", shopConfig)
+    ) {
       return [{
         type: "initiate_return",
         confidence: "high",
@@ -228,7 +268,9 @@ function applyDeterministicRules(
 
   // ── 5. Annullering ─────────────────────────────────────────────────────────
   if (intent === "cancel") {
-    if (alreadyDecided(decided, "cancel_order", "cancellation_offered")) return [];
+    if (alreadyDecided(decided, "cancel_order", "cancellation_offered")) {
+      return [];
+    }
     if (!order) return [];
     if (isActionDisabled("cancel_order", shopConfig)) return [];
 
@@ -252,7 +294,9 @@ function applyDeterministicRules(
 
   // ── 6. Exchange (ombytning) ────────────────────────────────────────────────
   if (intent === "exchange") {
-    if (alreadyDecided(decided, "exchange_offered", "create_exchange_request")) return [];
+    if (
+      alreadyDecided(decided, "exchange_offered", "create_exchange_request")
+    ) return [];
 
     // Bestem workflow: KB > shopConfig > default (shopify)
     const officeFromKB = kbSaysOfficeShipment(retrieved);
@@ -265,7 +309,7 @@ function applyDeterministicRules(
     const useOfficeFlow = sparePartDetected &&
       (officeFromKB || sparePartsWorkflow === "office");
     const useManualFlow = !useOfficeFlow &&
-      (sparePartDetected && sparePartsWorkflow === "manual") ||
+        (sparePartDetected && sparePartsWorkflow === "manual") ||
       exchangeWorkflow === "manual";
 
     if (useOfficeFlow) {
@@ -306,7 +350,14 @@ function applyDeterministicRules(
 
   // ── 7. Klage ───────────────────────────────────────────────────────────────
   if (intent === "complaint") {
-    if (alreadyDecided(decided, "complaint_handled", "create_exchange_request", "refund_offered")) {
+    if (
+      alreadyDecided(
+        decided,
+        "complaint_handled",
+        "create_exchange_request",
+        "refund_offered",
+      )
+    ) {
       return [];
     }
     if (!order) return []; // Writer beder om ordreinfo/dokumentation
@@ -321,12 +372,18 @@ function applyDeterministicRules(
       ...caseState.entities.products_mentioned,
       ...caseState.open_questions,
     ].join(" ");
-    const sparePartInCustomerWords = DEFAULT_SPARE_PART_RE.test(customerWordsOnly) ||
+    const sparePartInCustomerWords =
+      DEFAULT_SPARE_PART_RE.test(customerWordsOnly) ||
       (shopConfig.spare_part_keywords?.some((k) =>
-        new RegExp(k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(customerWordsOnly)
+        new RegExp(k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(
+          customerWordsOnly,
+        )
       ) ?? false);
 
-    if (sparePartInCustomerWords && (officeFromKB || sparePartsWorkflow === "office")) {
+    if (
+      sparePartInCustomerWords &&
+      (officeFromKB || sparePartsWorkflow === "office")
+    ) {
       return [{
         type: "add_note",
         confidence: "high",
@@ -335,7 +392,8 @@ function applyDeterministicRules(
           : "Reservedel detekteret — sendes fra kontoret per shop-konfiguration",
         params: {
           order_id: order.id,
-          note: `Spare part complaint — ship replacement from office. Order: ${order.name}`,
+          note:
+            `Spare part complaint — ship replacement from office. Order: ${order.name}`,
         },
         requires_approval: false,
       }];
@@ -347,7 +405,8 @@ function applyDeterministicRules(
       return [{
         type: "create_exchange_request",
         confidence: "low",
-        reason: "Klage over produkt — kræver menneskelig vurdering og godkendelse",
+        reason:
+          "Klage over produkt — kræver menneskelig vurdering og godkendelse",
         params: { order_id: order.id, order_name: order.name },
         requires_approval: true,
       }];
@@ -382,26 +441,13 @@ async function llmFallbackActions(
   ].join("; ") || "Ingen åbne spørgsmål";
 
   try {
-    const resp = await fetch(OPENAI_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
-      },
-      body: JSON.stringify({
-        model: Deno.env.get("OPENAI_MODEL") ?? "gpt-5-mini",
-        temperature: 0,
-        max_tokens: 400,
-        response_format: { type: "json_object" },
-        messages: [
-          {
-            role: "system",
-            content:
-              `You are a conservative support action selector. Only suggest actions you are highly confident are needed. Empty list is always safe. Output valid JSON only.`,
-          },
-          {
-            role: "user",
-            content: `Customer situation: ${context}
+    const parsed = await callOpenAIJson<
+      { proposals?: Record<string, unknown>[] }
+    >({
+      model: Deno.env.get("OPENAI_MODEL") ?? "gpt-5-mini",
+      systemPrompt:
+        `You are a conservative support action selector. Only suggest actions you are highly confident are needed. Empty list is always safe. Output valid JSON only.`,
+      userPrompt: `Customer situation: ${context}
 
 Verified order facts:
 ${factsText}
@@ -421,14 +467,11 @@ Return JSON:
 }
 
 Only include actions directly necessary. Empty proposals array is fine.`,
-          },
-        ],
-      }),
+      maxTokens: 500,
+      schema: ACTION_DECISION_SCHEMA,
+      schemaName: "draft_v2_action_decision",
     });
 
-    if (!resp.ok) return [];
-    const data = await resp.json();
-    const parsed = JSON.parse(data.choices[0].message.content);
     if (!Array.isArray(parsed?.proposals)) return [];
 
     return parsed.proposals
@@ -478,7 +521,11 @@ export async function runActionDecision(
 ): Promise<ActionDecisionResult> {
   // 1. Deterministiske regler med per-shop config og KB-overrides
   let proposals = applyDeterministicRules(
-    plan, caseState, facts, retrieved, shopConfig,
+    plan,
+    caseState,
+    facts,
+    retrieved,
+    shopConfig,
   );
 
   // 2. LLM fallback:
@@ -495,7 +542,9 @@ export async function runActionDecision(
   const routing_hint = computeRoutingHint(proposals, plan);
 
   console.log(
-    `[action-decision] intent=${plan.primary_intent} proposals=${proposals.map((p) => p.type).join(",")||"none"} routing=${routing_hint}`,
+    `[action-decision] intent=${plan.primary_intent} proposals=${
+      proposals.map((p) => p.type).join(",") || "none"
+    } routing=${routing_hint}`,
   );
 
   return { proposals, routing_hint };

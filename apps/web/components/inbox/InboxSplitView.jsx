@@ -3388,7 +3388,7 @@ export function InboxSplitView({
   const fetchTranslationForThread = useCallback(async (threadId) => {
     if (!threadId) return;
     setTranslationCache((prev) => {
-      if (prev[threadId]?.items?.length || prev[threadId]?.loading) return prev;
+      if (prev[threadId]?.loading) return prev;
       return { ...prev, [threadId]: { loading: true, items: [], draft: null } };
     });
     try {

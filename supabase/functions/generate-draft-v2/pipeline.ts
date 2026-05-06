@@ -5,7 +5,11 @@ import { updateCaseState } from "./stages/case-state-updater.ts";
 import { runPlanner } from "./stages/planner.ts";
 import { runRetriever } from "./stages/retriever.ts";
 import { runFactResolver } from "./stages/fact-resolver.ts";
-import { ActionProposal, runActionDecision, ShopActionConfig } from "./stages/action-decision.ts";
+import {
+  ActionProposal,
+  runActionDecision,
+  ShopActionConfig,
+} from "./stages/action-decision.ts";
 import { runWriter } from "./stages/writer.ts";
 import { runVerifier } from "./stages/verifier.ts";
 import {
@@ -23,6 +27,7 @@ export interface EvalPayload {
   subject: string;
   body: string;
   from_email?: string;
+  conversation_history?: string;
 }
 
 export interface PipelineInput {
@@ -39,6 +44,14 @@ export interface PipelineInput {
   };
 }
 
+export interface KnowledgeGap {
+  gap_type: "missing_procedure" | "missing_policy" | "low_kb_coverage" | "low_grounding";
+  intent: string;
+  suggested_title: string;
+  suggested_content_hint: string;
+  tickets_affected?: number;
+}
+
 export interface PipelineResult {
   draft_text: string | null;
   draft_id?: string;
@@ -53,12 +66,164 @@ export interface PipelineResult {
     usable_as?: string;
     risk_flags?: string[];
   }>;
+  knowledge_gaps: KnowledgeGap[];
   skipped?: boolean;
   skip_reason?: string;
 }
 
-const STRONG_MODEL = Deno.env.get("OPENAI_STRONG_MODEL") ?? "gpt-5";
+const STRONG_MODEL = Deno.env.get("OPENAI_STRONG_MODEL") ?? "gpt-5-mini";
+const SIMPLE_MODEL = Deno.env.get("OPENAI_SIMPLE_MODEL") ?? "gpt-4o-mini";
 const CONFIDENCE_ESCALATION_THRESHOLD = 0.6;
+
+// Simple intents get gpt-4o-mini — cheaper, fast enough for straightforward replies.
+// Everything else uses gpt-5-mini.
+const SIMPLE_INTENTS = new Set(["thanks", "tracking"]);
+
+function resolveWriterModel(
+  intent: string,
+  hasOrderFacts: boolean,
+  overrideModel?: string,
+): string {
+  if (overrideModel) return overrideModel;
+  // tracking only qualifies as simple when we actually found the order —
+  // otherwise there's nothing to report and the model needs to improvise.
+  if (intent === "thanks") return SIMPLE_MODEL;
+  if (intent === "tracking" && hasOrderFacts) return SIMPLE_MODEL;
+  return Deno.env.get("OPENAI_MODEL") ?? "gpt-5-mini";
+}
+
+const INTENT_GAP_SUGGESTIONS: Record<string, { title: string; hint: string }> = {
+  exchange: {
+    title: "Procedure: Warranty replacement — confirmation response",
+    hint: "Describe what happens after a customer confirms their details for a warranty replacement: we create an order and send a tracking link. Include expected delivery time and what the customer should expect.",
+  },
+  refund: {
+    title: "Procedure: Refund process",
+    hint: "Describe what happens when a refund is approved: processing time, payment method, when the customer receives the money.",
+  },
+  return: {
+    title: "Procedure: Return process",
+    hint: "Describe the return process step-by-step: who pays for shipping, how the item is returned, when the customer receives a refund or replacement.",
+  },
+  tracking: {
+    title: "Procedure: Shipping and delivery",
+    hint: "Describe what happens if a package is delayed or delivered incorrectly. Include expected delivery time and when we escalate to the carrier.",
+  },
+  complaint: {
+    title: "Procedure: Complaint handling",
+    hint: "Describe how we handle complaints: what is offered to the customer, when we escalate, what the acceptable response is for strong dissatisfaction.",
+  },
+  technical_support: {
+    title: "Procedure: Technical support — troubleshooting steps",
+    hint: "Add complete step-by-step troubleshooting guides for your products. Include ALL steps — incomplete guides produce poor answers.",
+  },
+  warranty: {
+    title: "Procedure: Warranty handling",
+    hint: "Describe the warranty process: what information is required (order number, photo), what is offered (replacement/refund), what the warranty period is.",
+  },
+  cancel: {
+    title: "Procedure: Cancellation process",
+    hint: "Describe when an order can be cancelled, what happens to the payment, and what is communicated to the customer.",
+  },
+};
+
+function detectKnowledgeGaps(
+  intent: string,
+  verifierIssues: string[],
+  groundedClaimsPct: number,
+  chunkCount: number,
+  policyChunkCount: number,
+): KnowledgeGap[] {
+  const gaps: KnowledgeGap[] = [];
+  const suggestion = INTENT_GAP_SUGGESTIONS[intent];
+
+  // No relevant KB chunks at all for this intent
+  if (chunkCount === 0 && !["thanks", "other"].includes(intent)) {
+    gaps.push({
+      gap_type: "low_kb_coverage",
+      intent,
+      suggested_title: suggestion?.title ?? `Procedure: ${intent}`,
+      suggested_content_hint: suggestion?.hint ??
+        `Add knowledge about how to handle '${intent}' inquiries.`,
+    });
+    return gaps;
+  }
+
+  // Reply missing commitment AND doesn't answer the question — missing procedure
+  if (
+    verifierIssues.includes("no_commitment") &&
+    verifierIssues.includes("answers_question_missing") &&
+    suggestion
+  ) {
+    gaps.push({
+      gap_type: "missing_procedure",
+      intent,
+      suggested_title: suggestion.title,
+      suggested_content_hint: suggestion.hint,
+    });
+  }
+
+  // Low grounding — AI guessing instead of using KB
+  if (groundedClaimsPct < 0.45 && chunkCount < 3) {
+    gaps.push({
+      gap_type: "low_grounding",
+      intent,
+      suggested_title: suggestion?.title ?? `More detail needed: ${intent}`,
+      suggested_content_hint: suggestion?.hint ??
+        `Sona made claims not backed by the knowledge base. Add more specific information about '${intent}'.`,
+    });
+  }
+
+  // Missing policy for intents that require one
+  if (
+    policyChunkCount === 0 &&
+    ["refund", "return", "exchange", "warranty", "cancel"].includes(intent)
+  ) {
+    gaps.push({
+      gap_type: "missing_policy",
+      intent,
+      suggested_title: `Policy: ${intent === "refund" ? "Refund policy" : intent === "return" ? "Return policy" : intent === "warranty" ? "Warranty terms" : "Cancellation policy"}`,
+      suggested_content_hint:
+        `Add your official policy for '${intent}' so Sona can cite it correctly in replies.`,
+    });
+  }
+
+  return gaps;
+}
+
+function parseEvalConversationHistory(
+  history?: string,
+): Record<string, unknown>[] {
+  const text = String(history || "").trim();
+  if (!text) return [];
+
+  const messages: Record<string, unknown>[] = [];
+  const pattern = /(?:^|\n)(Customer|Kunde|Agent|Support):\s*/gi;
+  const matches = [...text.matchAll(pattern)];
+  if (!matches.length) return [];
+
+  for (let i = 0; i < matches.length; i++) {
+    const match = matches[i];
+    const next = matches[i + 1];
+    const role = String(match[1] || "").toLowerCase();
+    const start = (match.index ?? 0) + match[0].length;
+    const end = next?.index ?? text.length;
+    const body = text.slice(start, end).trim();
+    if (!body) continue;
+    const isAgent = role === "agent" || role === "support";
+    messages.push({
+      id: `eval-history-${i}`,
+      clean_body_text: body,
+      body_text: body,
+      from_me: isAgent,
+      direction: isAgent ? "outbound" : "inbound",
+      created_at: new Date(Date.now() - (matches.length - i) * 1000)
+        .toISOString(),
+    });
+  }
+
+  return messages;
+}
 
 // Maps action type to the automation flag that must be enabled for auto-execution.
 // Returns true if the action needs approval (flag is disabled or flag doesn't exist).
@@ -189,6 +354,7 @@ export async function runDraftV2Pipeline(
         sources: [],
         skipped: true,
         skip_reason: "shop_not_found",
+        knowledge_gaps: [],
       };
     }
     shop = shopResult.data;
@@ -204,7 +370,10 @@ export async function runDraftV2Pipeline(
       from_me: false,
       created_at: new Date().toISOString(),
     };
-    messages = [latestMessage];
+    messages = [
+      ...parseEvalConversationHistory(eval_payload.conversation_history),
+      latestMessage,
+    ];
   } else {
     // Normal mode: load from DB
     const [threadResult, shopResult, messagesResult] = await Promise.all([
@@ -224,6 +393,7 @@ export async function runDraftV2Pipeline(
         sources: [],
         skipped: true,
         skip_reason: "thread_or_shop_not_found",
+        knowledge_gaps: [],
       };
     }
 
@@ -241,6 +411,7 @@ export async function runDraftV2Pipeline(
         sources: [],
         skipped: true,
         skip_reason: "no_messages",
+        knowledge_gaps: [],
       };
     }
 
@@ -254,6 +425,7 @@ export async function runDraftV2Pipeline(
       routing_hint: "block",
       is_test_mode: false,
       confidence: 0,
+      knowledge_gaps: [],
       sources: [],
       skipped: true,
       skip_reason: "no_messages",
@@ -274,6 +446,7 @@ export async function runDraftV2Pipeline(
         sources: [],
         skipped: true,
         skip_reason: gate.reason,
+        knowledge_gaps: [],
       };
     }
   }
@@ -348,7 +521,12 @@ export async function runDraftV2Pipeline(
       status: "info",
       created_at: new Date().toISOString(),
     }).then(({ error }) => {
-      if (error) console.warn("[pipeline] draft_intent_assessed log failed:", error.message);
+      if (error) {
+        console.warn(
+          "[pipeline] draft_intent_assessed log failed:",
+          error.message,
+        );
+      }
     });
   }
 
@@ -385,7 +563,12 @@ export async function runDraftV2Pipeline(
       status: facts.order ? "success" : "info",
       created_at: new Date().toISOString(),
     }).then(({ error }) => {
-      if (error) console.warn("[pipeline] draft_context_loaded log failed:", error.message);
+      if (error) {
+        console.warn(
+          "[pipeline] draft_context_loaded log failed:",
+          error.message,
+        );
+      }
     });
   }
 
@@ -393,7 +576,8 @@ export async function runDraftV2Pipeline(
   // Læs shop action_config (JSONB) — giver per-shop tilpasning uden kodeændringer.
   const rawActionConfig = (shop as Record<string, unknown>).action_config;
   const shopActionConfig: ShopActionConfig =
-    (rawActionConfig && typeof rawActionConfig === "object" && !Array.isArray(rawActionConfig))
+    (rawActionConfig && typeof rawActionConfig === "object" &&
+        !Array.isArray(rawActionConfig))
       ? rawActionConfig as ShopActionConfig
       : {};
 
@@ -401,7 +585,7 @@ export async function runDraftV2Pipeline(
     plan,
     caseState,
     facts,
-    retrieved,          // KB-chunks til at tolke shop-specifikke procedurer
+    retrieved, // KB-chunks til at tolke shop-specifikke procedurer
     shopConfig: shopActionConfig,
   });
 
@@ -420,10 +604,17 @@ export async function runDraftV2Pipeline(
     );
   }
 
+  const latestCustomerMessage =
+    (latestMessage.clean_body_text ?? latestMessage.body_text ?? "") as string;
+  const replyLanguage = resolveReplyLanguage(
+    latestCustomerMessage,
+    plan.language || caseState.language,
+  );
+
   const shouldWaitForActionDecision = shouldDeferDraftUntilActionDecision(
     finalProposals,
     effectiveRoutingHint,
-  );
+  ) && !eval_payload;
 
   if (shouldWaitForActionDecision) {
     if (!eval_payload && thread_id) {
@@ -433,7 +624,9 @@ export async function runDraftV2Pipeline(
       const nowIso = new Date().toISOString();
       const order = facts.order;
       const draftThreadKey =
-        (thread as Record<string, unknown>).provider_thread_id as string | null ??
+        (thread as Record<string, unknown>).provider_thread_id as
+          | string
+          | null ??
           thread_id;
 
       await supabase
@@ -442,7 +635,12 @@ export async function runDraftV2Pipeline(
         .eq("thread_id", thread_id)
         .eq("status", "pending")
         .then(({ error }) => {
-          if (error) console.warn("[pipeline] thread_actions supersede failed:", error.message);
+          if (error) {
+            console.warn(
+              "[pipeline] thread_actions supersede failed:",
+              error.message,
+            );
+          }
         });
 
       let firstActionId: string | null = null;
@@ -467,7 +665,10 @@ export async function runDraftV2Pipeline(
           .select("id")
           .maybeSingle();
         if (insertError) {
-          console.warn("[pipeline] thread_actions insert failed:", insertError.message);
+          console.warn(
+            "[pipeline] thread_actions insert failed:",
+            insertError.message,
+          );
         }
         if (!firstActionId && insertedAction?.id) {
           firstActionId = String(insertedAction.id);
@@ -498,7 +699,10 @@ export async function runDraftV2Pipeline(
             created_at: nowIso,
           });
         if (draftInsertError) {
-          console.warn("[pipeline] drafts insert failed:", draftInsertError.message);
+          console.warn(
+            "[pipeline] drafts insert failed:",
+            draftInsertError.message,
+          );
         }
       }
     }
@@ -510,6 +714,7 @@ export async function runDraftV2Pipeline(
       routing_hint: effectiveRoutingHint,
       is_test_mode: isTestMode,
       confidence: plan.confidence,
+      knowledge_gaps: [],
       sources: retrieved.chunks.slice(0, 5).map((c) => ({
         content: c.content.slice(0, 200),
         kind: c.kind,
@@ -555,19 +760,13 @@ export async function runDraftV2Pipeline(
     intentOverride,
   });
 
-  const latestCustomerMessage =
-    (latestMessage.clean_body_text ?? latestMessage.body_text ?? "") as string;
-
   // Hent billedvedhæftninger for seneste kundebesked (tom liste i eval-mode)
-  const latestMessageId = (latestMessage as Record<string, unknown>).id as string | undefined;
+  const latestMessageId = (latestMessage as Record<string, unknown>).id as
+    | string
+    | undefined;
   const imageAttachments = latestMessageId
     ? await loadImageAttachments(supabase, latestMessageId)
     : [];
-
-  const replyLanguage = resolveReplyLanguage(
-    latestCustomerMessage,
-    plan.language || caseState.language,
-  );
 
   // Byg samtalehistorik fra messages — ekskludér den seneste besked (vises separat)
   const conversationHistory = messages.slice(0, -1).map((m) => {
@@ -584,7 +783,13 @@ export async function runDraftV2Pipeline(
     };
   }).filter((m) => m.text.length > 0);
 
-  // 9. Skriv første draft med gpt-5-mini
+  // 9. Skriv første draft — simple intents bruger gpt-4o-mini, resten gpt-5-mini
+  const firstPassModel = resolveWriterModel(
+    plan.primary_intent,
+    !!facts.order,
+    writerModelOverride,
+  );
+  console.log(`[generate-draft-v2] writer model: ${firstPassModel} (intent=${plan.primary_intent})`);
   const written = await runWriter({
     plan,
     caseState,
@@ -595,7 +800,7 @@ export async function runDraftV2Pipeline(
     conversationHistory,
     actionProposals: finalProposals,
     policyContext,
-    model: writerModelOverride,
+    model: firstPassModel,
     attachments: imageAttachments,
   });
 
@@ -621,7 +826,7 @@ export async function runDraftV2Pipeline(
         conversationHistory,
         actionProposals: finalProposals,
         policyContext,
-        model: writerModelOverride,
+        model: firstPassModel,
         attachments: imageAttachments,
         languageCorrectionInstruction:
           `Rewrite the full draft in ${replyLanguage} only. Preserve the same facts, meaning, asks, and next steps. Do not add new information. Remove or translate these foreign-language segments: ${
@@ -673,7 +878,7 @@ export async function runDraftV2Pipeline(
     finalRoutingHint = "review";
   }
 
-  // 11. Eskalér til gpt-5 hvis verifier flagger lav confidence
+  // 11. Eskalér til gpt-5-mini hvis verifier flagger lav confidence
   if (
     !disableEscalation && verified.retry_with_stronger_model &&
     !verified.block_send
@@ -738,10 +943,28 @@ export async function runDraftV2Pipeline(
     );
   }
 
+  const policyChunkCount = retrieved.chunks.filter((c) =>
+    c.usable_as === "policy"
+  ).length;
+  const knowledgeGaps = detectKnowledgeGaps(
+    plan.primary_intent,
+    verified.issues,
+    verified.grounded_claims_pct,
+    retrieved.chunks.length,
+    policyChunkCount,
+  );
+  if (knowledgeGaps.length > 0) {
+    console.log(
+      `[generate-draft-v2] knowledge gaps detected: ${
+        knowledgeGaps.map((g) => g.gap_type + "/" + g.intent).join(", ")
+      }`,
+    );
+  }
+
   const deferDraftUntilActionDecision = shouldDeferDraftUntilActionDecision(
     finalProposals,
     finalRoutingHint,
-  );
+  ) && !eval_payload;
 
   // Persist til DB (kun i normal mode — ikke eval mode)
   if (!eval_payload && thread_id && finalDraft) {
@@ -764,7 +987,12 @@ export async function runDraftV2Pipeline(
         .update({ ai_draft_text: finalDraft, updated_at: nowIso })
         .eq("id", latestInbound.id as string)
         .then(({ error }) => {
-          if (error) console.warn("[pipeline] ai_draft_text update failed:", error.message);
+          if (error) {
+            console.warn(
+              "[pipeline] ai_draft_text update failed:",
+              error.message,
+            );
+          }
         });
     }
 
@@ -780,7 +1008,12 @@ export async function runDraftV2Pipeline(
         .eq("thread_id", thread_id)
         .eq("status", "pending")
         .then(({ error }) => {
-          if (error) console.warn("[pipeline] thread_actions supersede failed:", error.message);
+          if (error) {
+            console.warn(
+              "[pipeline] thread_actions supersede failed:",
+              error.message,
+            );
+          }
         });
 
       for (const proposal of finalProposals) {
@@ -807,7 +1040,12 @@ export async function runDraftV2Pipeline(
             created_at: nowIso,
             updated_at: nowIso,
           });
-        if (insertError) console.warn("[pipeline] thread_actions insert failed:", insertError.message);
+        if (insertError) {
+          console.warn(
+            "[pipeline] thread_actions insert failed:",
+            insertError.message,
+          );
+        }
       }
     }
 
@@ -839,7 +1077,12 @@ export async function runDraftV2Pipeline(
           ai_draft_text: deferDraftUntilActionDecision ? null : finalDraft,
           created_at: nowIso,
         });
-      if (draftInsertError) console.warn("[pipeline] drafts insert failed:", draftInsertError.message);
+      if (draftInsertError) {
+        console.warn(
+          "[pipeline] drafts insert failed:",
+          draftInsertError.message,
+        );
+      }
     }
 
     // 4. Log pipeline completion → "What did Sona do?" timeline
@@ -853,6 +1096,7 @@ export async function runDraftV2Pipeline(
       step_name: "draft_created",
       step_detail: JSON.stringify({
         thread_id,
+        intent: plan.primary_intent,
         confidence: finalConfidence,
         routing_hint: finalRoutingHint,
         sources: finalSourcesForLog,
@@ -860,8 +1104,31 @@ export async function runDraftV2Pipeline(
       status: "success",
       created_at: nowIso,
     }).then(({ error }) => {
-      if (error) console.warn("[pipeline] draft_created log failed:", error.message);
+      if (error) {
+        console.warn("[pipeline] draft_created log failed:", error.message);
+      }
     });
+
+    // 5. Log knowledge gaps → webshoppen ser hvad der mangler
+    if (knowledgeGaps.length > 0) {
+      supabase.from("agent_logs").insert({
+        draft_id: draftId,
+        step_name: "knowledge_gap_detected",
+        step_detail: JSON.stringify({
+          thread_id,
+          shop_id,
+          gaps: knowledgeGaps,
+          confidence: finalConfidence,
+          intent: plan.primary_intent,
+        }),
+        status: "warning",
+        created_at: nowIso,
+      }).then(({ error }) => {
+        if (error) {
+          console.warn("[pipeline] knowledge_gap log failed:", error.message);
+        }
+      });
+    }
   }
 
   return {
@@ -871,6 +1138,7 @@ export async function runDraftV2Pipeline(
     routing_hint: finalRoutingHint,
     is_test_mode: isTestMode,
     confidence: finalConfidence,
+    knowledge_gaps: knowledgeGaps,
     sources: retrieved.chunks.slice(0, 5).map((c) => ({
       content: c.content.slice(0, 200),
       kind: c.kind,

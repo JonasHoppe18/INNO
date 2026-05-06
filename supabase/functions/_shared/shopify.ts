@@ -528,7 +528,7 @@ function extractNextPageInfo(linkHeader: string): string | null {
 // Samler et kort resume af op til 5 ordrer til prompts
 export function buildOrderSummary(orders: ShopifyOrder[]): string {
   if (!orders?.length) {
-    return "Ingen relaterede ordrer fundet.\n";
+    return "Ingen relaterede ordrer fundet. Afsenderens e-mailadresse gav ingen match i Shopify — der er ingen ordredata at slå op. Spørg kunden direkte om ordrenummer eller kvittering/købsbevis. Lov IKKE at gennemgå ordredetaljer internt, da der ikke eksisterer nogen.\n";
   }
   let summary = `Kunden har ${orders.length} relevante ordre(r):\n`;
   for (const order of orders.slice(0, 5)) {

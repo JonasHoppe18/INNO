@@ -9,6 +9,8 @@ import {
   Play,
   Trash2,
   Zap,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -29,22 +31,22 @@ import { Separator } from "@/components/ui/separator";
 function ScoreBadge({ value }) {
   if (value == null) return null;
   const variant =
-    value >= 4 ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
-    value === 3 ? "bg-amber-50 text-amber-700 border-amber-200" :
+    value >= 9 ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+    value >= 7 ? "bg-amber-50 text-amber-700 border-amber-200" :
     "bg-red-50 text-red-600 border-red-200";
   return (
     <span className={`inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-semibold tabular-nums ${variant}`}>
-      {value}/5
+      {value}/10
     </span>
   );
 }
 
 function ScoreBar({ label, value }) {
   if (value == null) return null;
-  const pct = Math.round((value / 5) * 100);
+  const pct = Math.round((value / 10) * 100);
   const color =
-    value >= 4 ? "bg-emerald-500" :
-    value === 3 ? "bg-amber-400" :
+    value >= 9 ? "bg-emerald-500" :
+    value >= 7 ? "bg-amber-400" :
     "bg-red-400";
   return (
     <div className="flex items-center gap-3">
@@ -57,15 +59,75 @@ function ScoreBar({ label, value }) {
   );
 }
 
+function scoreTone(value) {
+  if (value == null) {
+    return {
+      border: "border-border",
+      bg: "bg-muted/30",
+      text: "text-muted-foreground",
+      label: "Not scored",
+    };
+  }
+  if (value >= 9) {
+    return {
+      border: "border-emerald-200",
+      bg: "bg-emerald-50",
+      text: "text-emerald-700",
+      label: "Send-ready",
+    };
+  }
+  if (value >= 7) {
+    return {
+      border: "border-amber-200",
+      bg: "bg-amber-50",
+      text: "text-amber-700",
+      label: "Needs polish",
+    };
+  }
+  return {
+    border: "border-red-200",
+    bg: "bg-red-50",
+    text: "text-red-600",
+    label: "Needs work",
+  };
+}
+
+function QualitySummary({ dims, overall }) {
+  const tone = scoreTone(overall);
+  return (
+    <div className={`rounded-xl border ${tone.border} ${tone.bg} p-3`}>
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Quality</p>
+          <p className={`mt-1 text-3xl font-semibold tabular-nums ${tone.text}`}>{overall ?? "—"}</p>
+        </div>
+        <Badge variant="outline" className={`bg-background text-[10px] ${tone.text}`}>
+          {tone.label}
+        </Badge>
+      </div>
+      <div className="space-y-2 rounded-lg border bg-background/80 p-3">
+        {dims.map(([lbl, val]) => (
+          <ScoreBar key={lbl} label={lbl} value={val} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── Action badge ─────────────────────────────────────────────────────────────
 
 const ACTION_LABELS = {
   cancel_order:             "Cancel order",
   refund:                   "Refund",
+  refund_order:             "Refund order",
   update_shipping_address:  "Update address",
   send_return_instructions: "Return instructions",
+  create_exchange_request:  "Create exchange",
   exchange:                 "Exchange",
   hold_fulfillment:         "Hold fulfillment",
+  initiate_return:          "Initiate return",
+  add_note:                 "Add note",
+  add_tag:                  "Add tag",
 };
 
 function ActionBadge({ action }) {
@@ -78,21 +140,241 @@ function ActionBadge({ action }) {
   );
 }
 
+function score10(result, key) {
+  if (key === "overall" && typeof result.overall_10 === "number") {
+    return result.overall_10;
+  }
+  const value = result[key];
+  if (typeof value !== "number") return null;
+  return Math.max(1, Math.min(10, Math.round(value * 2)));
+}
+
+function persistedActionDecision(result) {
+  const stored = result?.action_decision && typeof result.action_decision === "object"
+    ? result.action_decision
+    : null;
+  const decision = String(stored?.decision || "").toLowerCase();
+  if (decision !== "approved" && decision !== "rejected") return null;
+  return stored;
+}
+
+function EvalActionPreview({ action, result, onQualityUpdate }) {
+  const initialDecision = persistedActionDecision(result);
+  const [decisionState, setDecisionState] = useState(initialDecision?.decision || "proposed");
+  const [decisionLoading, setDecisionLoading] = useState(false);
+  const [decisionError, setDecisionError] = useState(null);
+  const [postActionReply, setPostActionReply] = useState(String(result?.post_action_reply || "").trim());
+  const [simulationNote, setSimulationNote] = useState(String(initialDecision?.simulated_internal_note || "").trim());
+  const actionType = String(action?.type || "");
+  const actionName = ACTION_LABELS[actionType] || "Review action";
+  const payload = action?.params && typeof action.params === "object" ? action.params : {};
+  const orderName = payload.order_name || payload.order_number || payload.orderNumber || "";
+  const isApproved = decisionState === "approved";
+  const isRejected = decisionState === "rejected";
+  const resultId = result?.id;
+  const resultActionDecision = result?.action_decision;
+  const resultPostActionReply = result?.post_action_reply;
+  const resultPostActionDecidedAt = result?.post_action_decided_at;
+
+  useEffect(() => {
+    const stored = persistedActionDecision({
+      action_decision: resultActionDecision,
+      post_action_reply: resultPostActionReply,
+    });
+    setDecisionState(stored?.decision || "proposed");
+    setPostActionReply(String(resultPostActionReply || "").trim());
+    setSimulationNote(String(stored?.simulated_internal_note || "").trim());
+  }, [resultId, resultActionDecision, resultPostActionDecidedAt, resultPostActionReply]);
+
+  const decide = async (nextDecision) => {
+    setDecisionLoading(true);
+    setDecisionError(null);
+    try {
+      const res = await fetch("/api/eval/action-decision", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          eval_result_id: resultId || "",
+          decision: nextDecision,
+          action,
+          subject: result?.ticket_subject || "",
+          ticket_body: result?.ticket_body || "",
+          human_reply: result?.human_reply || "",
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Could not simulate action decision");
+      const storedDecision = data?.action_decision && typeof data.action_decision === "object"
+        ? data.action_decision
+        : {
+          decision: nextDecision,
+          action,
+          test_mode: true,
+          simulated_internal_note: data?.simulated_internal_note || "",
+          decided_at: data?.decided_at || new Date().toISOString(),
+        };
+      const reply = String(data?.reply || "").trim();
+      const note = String(storedDecision?.simulated_internal_note || data?.simulated_internal_note || "").trim();
+      setDecisionState(storedDecision?.decision || nextDecision);
+      setPostActionReply(reply);
+      setSimulationNote(note);
+      onQualityUpdate?.({
+        ...(data?.quality ? {
+          ...data.quality,
+          reasoning: data.quality.reasoning || `Scored after ${nextDecision} action preview.`,
+        } : {}),
+        action_decision: storedDecision,
+        post_action_reply: reply,
+        post_action_quality: data?.quality || null,
+        post_action_decided_at: data?.decided_at || storedDecision?.decided_at || null,
+      });
+    } catch (err) {
+      setDecisionError(err.message);
+    } finally {
+      setDecisionLoading(false);
+    }
+  };
+
+  return (
+    <div className="overflow-hidden rounded-xl border bg-background shadow-sm">
+      <div className="flex items-center justify-between gap-3 border-b bg-muted/25 px-3 py-2.5">
+        <div className="flex min-w-0 items-center gap-2">
+          {isApproved ? (
+            <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+          ) : isRejected ? (
+            <XCircle className="h-4 w-4 shrink-0 text-muted-foreground" />
+          ) : (
+            <Zap className="h-4 w-4 shrink-0 text-violet-600" />
+          )}
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold">{actionName}</p>
+            <p className="text-xs text-muted-foreground">
+              Test simulation · {action?.requires_approval ? "approval required" : "no approval required"}
+            </p>
+          </div>
+        </div>
+        <Badge variant={isApproved ? "default" : isRejected ? "secondary" : "outline"} className="shrink-0 text-[10px]">
+          {isApproved ? "Approved test" : isRejected ? "Rejected" : "Awaiting review"}
+        </Badge>
+      </div>
+      <div className="space-y-3 p-3">
+        <div className={`rounded-lg border p-3 ${
+          isApproved
+            ? "border-emerald-200 bg-emerald-50/60"
+            : isRejected
+              ? "border-border bg-muted/40"
+              : "border-violet-200 bg-violet-50/40"
+        }`}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-foreground">{actionName}</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {action?.reason || "Review the proposed action before generating the final customer reply."}
+              </p>
+            </div>
+            {orderName ? (
+              <Badge variant="outline" className="shrink-0 bg-background text-[10px]">
+                {String(orderName).startsWith("#") ? orderName : `#${orderName}`}
+              </Badge>
+            ) : null}
+          </div>
+          {!isApproved && !isRejected ? (
+            <div className="mt-3 flex justify-end gap-2 border-t pt-3">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => decide("rejected")}
+                disabled={decisionLoading}
+              >
+                Reject
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => decide("approved")}
+                disabled={decisionLoading}
+                className="bg-violet-600 text-white hover:bg-violet-700"
+              >
+                {decisionLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                Approve
+              </Button>
+            </div>
+          ) : (
+            <div className="mt-3 flex items-center gap-2 border-t pt-3 text-xs text-muted-foreground">
+              {isApproved ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> : <XCircle className="h-3.5 w-3.5" />}
+              {isApproved ? "Approved in eval. Shopify was not mutated." : "Rejected in eval. No action was taken."}
+            </div>
+          )}
+        </div>
+
+        <div className="grid gap-2 rounded-lg border bg-muted/20 p-2 text-xs sm:grid-cols-3">
+          <div>
+            <p className="text-muted-foreground">Confidence</p>
+            <p className="font-medium">{action?.confidence || "unknown"}</p>
+          </div>
+          <div>
+            <p className="text-muted-foreground">Approval</p>
+            <p className="font-medium">{action?.requires_approval ? "Required" : "Not required"}</p>
+          </div>
+          <div>
+            <p className="text-muted-foreground">Action type</p>
+            <p className="font-mono text-[11px]">{actionType}</p>
+          </div>
+        </div>
+        {decisionError && <p className="text-xs text-destructive">{decisionError}</p>}
+        {postActionReply && (
+          <div className="rounded-xl border bg-card p-3 shadow-sm">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Customer reply preview
+              </p>
+              <Badge variant="outline" className="text-[10px]">
+                after {isRejected ? "reject" : "approve"}
+              </Badge>
+            </div>
+            <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{postActionReply}</p>
+            {simulationNote && (
+              <p className="mt-3 rounded-md bg-muted/70 px-2 py-1.5 text-xs text-muted-foreground">
+                {simulationNote}
+              </p>
+            )}
+          </div>
+        )}
+        {Object.keys(payload).length > 0 && (
+          <details className="rounded-md border bg-card p-2 text-xs">
+            <summary className="cursor-pointer select-none font-medium text-muted-foreground">
+              Action payload
+            </summary>
+            <pre className="mt-2 max-h-44 overflow-auto whitespace-pre-wrap break-words rounded bg-muted p-2 font-mono text-[11px] text-muted-foreground">
+              {JSON.stringify(payload, null, 2)}
+            </pre>
+          </details>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Result row ───────────────────────────────────────────────────────────────
 
 function EvalResultRow({ result }) {
   const [open, setOpen] = useState(false);
-  const label = result.ticket_subject || (result.thread_id ? `Thread ${result.thread_id.slice(0, 8)}…` : "Email");
-  const actions = Array.isArray(result.proposed_actions) ? result.proposed_actions : [];
-  const sources = Array.isArray(result.sources) ? result.sources : [];
-  const confidence = typeof result.verifier_confidence === "number" ? result.verifier_confidence : null;
+  const [displayResult, setDisplayResult] = useState(result);
+  const label = displayResult.ticket_subject || (displayResult.thread_id ? `Thread ${displayResult.thread_id.slice(0, 8)}…` : "Email");
+  const actions = Array.isArray(displayResult.proposed_actions) ? displayResult.proposed_actions : [];
+  const sources = Array.isArray(displayResult.sources) ? displayResult.sources : [];
+  const confidence = typeof displayResult.verifier_confidence === "number" ? displayResult.verifier_confidence : null;
   const dims = [
-    ["Correctness",   result.correctness],
-    ["Completeness",  result.completeness],
-    ["Tone",          result.tone],
-    ["Actionability", result.actionability],
-    ["Overall",       result.overall],
+    ["Correctness",   score10(displayResult, "correctness")],
+    ["Completeness",  score10(displayResult, "completeness")],
+    ["Tone",          score10(displayResult, "tone")],
+    ["Actionability", score10(displayResult, "actionability")],
+    ["Overall",       score10(displayResult, "overall")],
   ];
+  const missingFor10 = Array.isArray(displayResult.missing_for_10) ? displayResult.missing_for_10 : [];
+  const overall10 = score10(displayResult, "overall");
 
   return (
     <div className="border-b last:border-0">
@@ -115,34 +397,81 @@ function EvalResultRow({ result }) {
             {Math.round(confidence * 100)}%
           </Badge>
         )}
-        <ScoreBadge value={result.overall} />
+        {displayResult.send_ready === true && (
+          <Badge className="shrink-0 bg-emerald-600 text-[10px] text-white hover:bg-emerald-600">
+            Send-ready
+          </Badge>
+        )}
+        <ScoreBadge value={overall10} />
       </div>
 
       {open && (
         <div className="border-t bg-muted/20 px-4 pb-4 pt-3">
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,720px)_minmax(320px,1fr)]">
             {/* Left: scores */}
             <div className="space-y-3">
-              <div className="rounded-lg border bg-card p-3 space-y-2">
-                {dims.map(([lbl, val]) => (
-                  <ScoreBar key={lbl} label={lbl} value={val} />
-                ))}
-              </div>
+              <QualitySummary dims={dims} overall={overall10} />
 
-              {result.reasoning && (
-                <p className="text-xs text-muted-foreground italic leading-relaxed">{result.reasoning}</p>
-              )}
-
-              {actions.length > 0 && (
-                <div className="space-y-1.5">
-                  <p className="text-xs font-medium">Proposed actions</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {actions.map((a, i) => <ActionBadge key={i} action={a} />)}
-                  </div>
+              {displayResult.reasoning && (
+                <div className="rounded-xl border bg-card p-3">
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Judge note</p>
+                  <p className="text-sm leading-relaxed text-foreground">{displayResult.reasoning}</p>
                 </div>
               )}
 
-              {(confidence != null || result.routing_hint || result.latency_ms) && (
+              {(displayResult.primary_gap || displayResult.likely_root_cause || missingFor10.length > 0) && (
+                <div className="rounded-xl border bg-card p-3 text-xs">
+                  <div className="mb-2 flex flex-wrap items-center gap-1.5">
+                    {displayResult.likely_root_cause && (
+                      <Badge variant="outline" className="text-[10px]">
+                        root: {displayResult.likely_root_cause}
+                      </Badge>
+                    )}
+                    {displayResult.primary_gap && (
+                      <Badge variant="secondary" className="text-[10px]">
+                        gap: {displayResult.primary_gap}
+                      </Badge>
+                    )}
+                  </div>
+                  {missingFor10.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="font-semibold text-foreground">Missing for 10/10</p>
+                      {missingFor10.map((item, index) => (
+                        <p key={`${item}-${index}`} className="text-muted-foreground">- {item}</p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {actions.length > 0 && (
+                <div className="space-y-2 rounded-xl border bg-card p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold">Action simulation</p>
+                      <p className="text-xs text-muted-foreground">Approve or reject in eval without changing Shopify.</p>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {actions.map((a, i) => <ActionBadge key={i} action={a} />)}
+                    </div>
+                  </div>
+                  {actions.map((action, index) => (
+                    <EvalActionPreview
+                      key={`${action.type || "action"}-${index}`}
+                      action={action}
+                      result={displayResult}
+                      onQualityUpdate={(quality) =>
+                        setDisplayResult((current) => ({
+                          ...current,
+                          ...quality,
+                        }))
+                      }
+                    />
+                  ))}
+                </div>
+              )}
+
+              {(confidence != null || displayResult.routing_hint || displayResult.latency_ms) && (
                 <div className="grid grid-cols-3 gap-2 text-xs">
                   {confidence != null && (
                     <div className="rounded-md border bg-card p-2">
@@ -150,16 +479,16 @@ function EvalResultRow({ result }) {
                       <p className="font-medium tabular-nums">{Math.round(confidence * 100)}%</p>
                     </div>
                   )}
-                  {result.routing_hint && (
+                  {displayResult.routing_hint && (
                     <div className="rounded-md border bg-card p-2">
                       <p className="text-muted-foreground">Routing</p>
-                      <p className="font-medium">{result.routing_hint}</p>
+                      <p className="font-medium">{displayResult.routing_hint}</p>
                     </div>
                   )}
-                  {result.latency_ms != null && (
+                  {displayResult.latency_ms != null && (
                     <div className="rounded-md border bg-card p-2">
                       <p className="text-muted-foreground">Latency</p>
-                      <p className="font-medium tabular-nums">{Math.round(result.latency_ms / 100) / 10}s</p>
+                      <p className="font-medium tabular-nums">{Math.round(displayResult.latency_ms / 100) / 10}s</p>
                     </div>
                   )}
                 </div>
@@ -190,41 +519,41 @@ function EvalResultRow({ result }) {
 
             {/* Right: content */}
             <div className="space-y-2">
-              {result.ticket_body && (
-                <details className="group">
-                  <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground select-none">
+              {displayResult.ticket_body && (
+                <details className="group rounded-xl border bg-card p-3" open>
+                  <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground select-none">
                     <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
                     Customer email
                   </summary>
-                  <div className="mt-1.5 rounded-md border bg-card p-3">
-                    <p className="whitespace-pre-wrap text-xs leading-relaxed">{result.ticket_body}</p>
+                  <div className="mt-2 max-h-60 overflow-auto rounded-lg bg-muted/30 p-3">
+                    <p className="whitespace-pre-wrap text-sm leading-relaxed">{displayResult.ticket_body}</p>
                   </div>
                 </details>
               )}
 
-              {result.draft_content && (
-                <details className="group">
-                  <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground select-none">
+              {displayResult.draft_content && (
+                <details className="group rounded-xl border bg-card p-3">
+                  <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground select-none">
                     <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
                     Sona draft
                   </summary>
-                  <div className="mt-1.5 rounded-md border bg-card p-3">
-                    <p className="whitespace-pre-wrap text-xs leading-relaxed">{result.draft_content}</p>
+                  <div className="mt-2 max-h-60 overflow-auto rounded-lg bg-muted/30 p-3">
+                    <p className="whitespace-pre-wrap text-sm leading-relaxed">{displayResult.draft_content}</p>
                   </div>
                 </details>
               )}
 
-              {result.human_reply && (
-                <details className="group">
-                  <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground select-none">
+              {displayResult.human_reply && (
+                <details className="group rounded-xl border bg-card p-3">
+                  <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground select-none">
                     <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
                     <span className="flex items-center gap-1.5">
                       Human reply
                       <Badge variant="outline" className="text-[10px] py-0">Zendesk</Badge>
                     </span>
                   </summary>
-                  <div className="mt-1.5 rounded-md border bg-card p-3">
-                    <p className="whitespace-pre-wrap text-xs leading-relaxed">{result.human_reply}</p>
+                  <div className="mt-2 max-h-60 overflow-auto rounded-lg bg-muted/30 p-3">
+                    <p className="whitespace-pre-wrap text-sm leading-relaxed">{displayResult.human_reply}</p>
                   </div>
                 </details>
               )}
@@ -242,10 +571,12 @@ function RunCard({ run, expanded, onToggle, onDelete }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  const overall = run.averages.overall;
+  const overall = typeof run.averages.overall_10 === "number"
+    ? run.averages.overall_10
+    : Math.round((run.averages.overall || 0) * 2);
   const scoreColor =
-    overall >= 4 ? "text-emerald-700 bg-emerald-50 border-emerald-200" :
-    overall === 3 ? "text-amber-700 bg-amber-50 border-amber-200" :
+    overall >= 9 ? "text-emerald-700 bg-emerald-50 border-emerald-200" :
+    overall >= 7 ? "text-amber-700 bg-amber-50 border-amber-200" :
     "text-red-600 bg-red-50 border-red-200";
 
   const handleDelete = async (e) => {
@@ -273,7 +604,7 @@ function RunCard({ run, expanded, onToggle, onDelete }) {
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold">{run.run_label}</p>
             <p className="text-xs text-muted-foreground flex items-center gap-1.5 flex-wrap">
-              {run.count} ticket{run.count !== 1 ? "s" : ""} · <span className="font-mono">{run.model}</span>
+              {run.count} ticket{run.count !== 1 ? "s" : ""} · {run.send_ready_count ?? 0} send-ready · <span className="font-mono">{run.model}</span>
               {run.pipeline_version === "v2" && (
                 <span className="inline-flex items-center rounded border border-violet-200 bg-violet-50 px-1.5 py-0 text-[10px] font-semibold text-violet-700">V2</span>
               )}
@@ -281,9 +612,14 @@ function RunCard({ run, expanded, onToggle, onDelete }) {
             </p>
           </div>
           <div className="hidden shrink-0 items-center gap-4 sm:flex">
-            {[["Corr", run.averages.correctness], ["Comp", run.averages.completeness], ["Tone", run.averages.tone], ["Act", run.averages.actionability]].map(([abbr, val]) => (
+            {[
+              ["Corr", (run.averages.correctness || 0) * 2],
+              ["Comp", (run.averages.completeness || 0) * 2],
+              ["Tone", (run.averages.tone || 0) * 2],
+              ["Act", (run.averages.actionability || 0) * 2],
+            ].map(([abbr, val]) => (
               <div key={abbr} className="text-center">
-                <p className="text-xs font-medium tabular-nums">{val}</p>
+                <p className="text-xs font-medium tabular-nums">{Math.round(val * 10) / 10}</p>
                 <p className="text-[10px] text-muted-foreground">{abbr}</p>
               </div>
             ))}
@@ -365,10 +701,11 @@ export function EvalPanel({ fullPage = false }) {
   const [zendeskError, setZendeskError] = useState(null);
   const [runLabel, setRunLabel] = useState("");
   const [model, setModel] = useState("gpt-4o-mini");
-  const [disableEscalation, setDisableEscalation] = useState(true);
+  const [disableEscalation, setDisableEscalation] = useState(false);
   const [running, setRunning] = useState(false);
   const [runProgress, setRunProgress] = useState(null);
   const [runError, setRunError] = useState(null);
+  const [runErrors, setRunErrors] = useState([]);
   const [runs, setRuns] = useState([]);
   const [loadingRuns, setLoadingRuns] = useState(true);
   const [expandedRun, setExpandedRun] = useState(null);
@@ -463,12 +800,13 @@ export function EvalPanel({ fullPage = false }) {
     setRunning(true);
     setRunProgress(null);
     setRunError(null);
+    setRunErrors([]);
     const currentRunLabel = runLabel.trim();
     try {
       const basePayload = {
         run_label: currentRunLabel,
         model,
-        strong_model: "gpt-4o",
+        strong_model: "gpt-5",
         judge_model: "gpt-4o-mini",
         disable_escalation: disableEscalation,
         pipeline: "v2",
@@ -507,7 +845,10 @@ export function EvalPanel({ fullPage = false }) {
       setExpandedRun(currentRunLabel);
       setRunLabel("");
       if (allErrors.length > 0) {
-        setRunError(`${allErrors.length} tickets failed, ${totalScored} were scored. Open the run results for details.`);
+        setRunErrors(allErrors);
+        const firstError = allErrors[0];
+        const firstLabel = firstError?.subject || firstError?.thread_id || "Ticket";
+        setRunError(`${allErrors.length} ticket${allErrors.length === 1 ? "" : "s"} failed, ${totalScored} were scored. First error: ${firstLabel}: ${firstError?.error || "Unknown error"}`);
       }
     } catch (err) {
       setRunError(err.message);
@@ -677,14 +1018,17 @@ export function EvalPanel({ fullPage = false }) {
               {MODEL_OPTIONS.map((m) => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
             </SelectContent>
           </Select>
-          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <label className="flex items-start gap-2 rounded-lg border bg-muted/20 p-2 text-xs text-muted-foreground">
             <input
               type="checkbox"
-              checked={disableEscalation}
-              onChange={(e) => setDisableEscalation(e.target.checked)}
-              className="h-4 w-4 rounded border-input accent-primary"
+              checked={!disableEscalation}
+              onChange={(e) => setDisableEscalation(!e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-input accent-primary"
             />
-            Disable fallback escalation for clean model comparison
+            <span>
+              <span className="block font-medium text-foreground">Use production retry</span>
+              <span>Runs the same strong-model fallback as the ticket flow when verifier confidence is low.</span>
+            </span>
           </label>
         </div>
         <Button
@@ -697,7 +1041,7 @@ export function EvalPanel({ fullPage = false }) {
             ? `Running batch ${runProgress.current}/${runProgress.total}…`
             : running
               ? "Running…"
-              : "Run eval"}
+              : "Run ticket simulation"}
         </Button>
         {running && runProgress && (
           <p className="text-xs text-muted-foreground">
@@ -705,6 +1049,16 @@ export function EvalPanel({ fullPage = false }) {
           </p>
         )}
         {runError && <p className="text-xs text-destructive">{runError}</p>}
+        {runErrors.length > 0 && (
+          <div className="max-h-48 overflow-auto rounded-md border border-destructive/30 bg-destructive/5 p-2 text-xs">
+            {runErrors.map((item, index) => (
+              <div key={`${item.subject || item.thread_id || "error"}-${index}`} className="border-b border-destructive/10 py-1 last:border-0">
+                <p className="font-medium text-destructive">{item.subject || item.thread_id || `Ticket ${index + 1}`}</p>
+                <p className="break-words text-destructive/80">{item.error || "Unknown error"}</p>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -737,23 +1091,31 @@ export function EvalPanel({ fullPage = false }) {
   // ── Full page ────────────────────────────────────────────────────────────
   if (fullPage) {
     return (
-      <div className="flex h-screen flex-col overflow-hidden bg-background">
+      <div className="flex h-screen flex-col overflow-hidden bg-muted/10">
         {/* Body — two panes that fill remaining height */}
         <div className="flex min-h-0 flex-1">
           {/* Left: results */}
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-5">
-            <div className="mb-4 flex items-center gap-2">
-              <p className="text-sm font-semibold">Runs</p>
+            <div className="mx-auto flex w-full max-w-[1180px] flex-col">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-base font-semibold">Eval runs</p>
+                <p className="text-xs text-muted-foreground">Review model quality, proposed actions, and post-approval replies.</p>
+              </div>
               {runs.length > 0 && (
-                <span className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground">{runs.length}</span>
+                <span className="rounded-full border bg-background px-2 py-0.5 text-xs text-muted-foreground">{runs.length}</span>
               )}
             </div>
             {resultsSection}
+            </div>
           </div>
 
           {/* Right: config sidebar */}
-          <div className="hidden w-[380px] shrink-0 overflow-y-auto border-l bg-muted/30 px-5 py-5 lg:block">
-            <p className="mb-4 text-sm font-semibold">New run</p>
+          <div className="hidden w-[390px] shrink-0 overflow-y-auto border-l bg-background px-5 py-5 lg:block">
+            <div className="mb-4">
+              <p className="text-base font-semibold">New run</p>
+              <p className="text-xs text-muted-foreground">Select tickets, choose model, run simulation.</p>
+            </div>
             {inputSection}
           </div>
         </div>

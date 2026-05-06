@@ -83,15 +83,23 @@ export async function GET() {
     const n = run.results.length;
     const avg = (key) =>
       Math.round((run.results.reduce((s, r) => s + (r[key] || 0), 0) / n) * 10) / 10;
+    const rootCauses = run.results.reduce((acc, row) => {
+      const key = String(row.likely_root_cause || "unknown");
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
     return {
       ...run,
       count: n,
+      send_ready_count: run.results.filter((row) => row.send_ready === true).length,
+      root_causes: rootCauses,
       averages: {
         correctness: avg("correctness"),
         completeness: avg("completeness"),
         tone: avg("tone"),
         actionability: avg("actionability"),
         overall: avg("overall"),
+        overall_10: avg("overall_10"),
       },
     };
   });

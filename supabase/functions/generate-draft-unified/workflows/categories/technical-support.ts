@@ -30,8 +30,9 @@ export function buildTechnicalSupportDraft(category: EmailCategory): WorkflowRou
     systemRules: [
       "Never suggest return_order, create_exchange_request, refund_order, or cancel_order as a first response in the technical support workflow.",
       "NEVER end a first-reply with a warranty replacement offer. Only offer replacement in follow-up replies after the customer confirms troubleshooting failed.",
-      "Never close with hollow troubleshooting follow-up phrases like 'Giv besked om fejlfindingen' or 'Lad mig vide om du har prøvet trinene'. A warm close like 'Jeg ser frem til at høre fra dig' is fine.",
+      "Never close with hollow follow-up phrases like 'Giv besked om fejlfindingen' or 'Lad mig vide om du har prøvet trinene'. Only use 'Jeg ser frem til at høre fra dig' if you are actively waiting for the customer to try steps and report back — never as a default close.",
       "Never ask the customer what troubleshooting steps they have already tried. Always give the steps directly.",
+      "PHYSICAL DEFECT WITH NO TROUBLESHOOTING: If the issue is a physical defect (broken, delaminated, cracked, missing part) and there are no applicable troubleshooting steps in the knowledge base, do NOT say 'I'll review internally and get back to you'. Instead, ask directly for the ordernumber or proof of purchase to assess warranty coverage.",
       "NEVER replace a detailed numbered procedure from the knowledge base with a vague reference to 'the user manual', 'the pairing guide', or 'our instructions'. Always include the full steps inline in the reply.",
     ],
     allowedActionTypes: [

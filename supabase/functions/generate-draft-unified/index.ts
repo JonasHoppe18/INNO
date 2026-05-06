@@ -5006,6 +5006,11 @@ Deno.serve(async (req) => {
         const orderIsUnfulfilled = rawFulfillmentStatus === "" || rawFulfillmentStatus === "null" || rawFulfillmentStatus === "unfulfilled" || rawFulfillmentStatus === "partial";
         const emailBodyLower = (emailData.body || "").toLowerCase();
         const isShippingQuestion = /\b(leveret|levering|leveringen|afsend|afsendt|fragt|forsendelse|sporing|tracke|tracking|forventes|hvornår|ship|delivery|shipping|when will|dispatch)\b/.test(emailBodyLower);
+        const noOrders = !context.orders?.length;
+        const isWarrantyOrDefectQuestion = /\b(warranty|garanti|defect|defekt|broken|ødelagt|glue|lim|delaminate|delamination|quality|kvalitet|repair|reparation|replace|erstat|erstatning|spare|reservedel|fault|fejl|damage|beskadig)\b/.test(emailBodyLower);
+        if (noOrders && isWarrantyOrDefectQuestion) {
+          return "NO ORDER FOUND — MANDATORY: No customer or order was found in Shopify for this sender's email address. There are NO order details to look up or review internally. You MUST ask the customer for their order number or proof of purchase in this reply. Do NOT write 'I'll check your order details', 'I'll review this internally', 'I'll look into this', or any phrase suggesting you will look something up. Write exactly two things: (1) confirm the issue can be handled, (2) ask for order number or proof of purchase. Example: 'To get this sorted, could you share your order number or proof of purchase?'";
+        }
         if (selectedOrder && orderIsUnfulfilled && isShippingQuestion) {
           const _persona = context.persona.instructions || "";
           const _openerPhrase = /tak for din besked/i.test(_persona)
@@ -5469,12 +5474,19 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         "15. NEVER INCLUDE PHONE NUMBERS IN YOUR REPLY: Do not include any phone number in your reply — not from the customer's message, not from the knowledge base, not from anywhere. Phone numbers do not belong in support emails. If the customer included their own number, it is theirs to use — never repeat it back as if it is a contact number they should call.",
         "16. NEVER INVENT PRODUCT AVAILABILITY OR POLICIES: Do not state that a product, part, or service 'cannot be purchased', 'is not available', or 'is not sold separately' unless this is explicitly stated in the pinned policy or knowledge base. If you do not know, say you will look into it — never fabricate a negative answer.",
         "17. NEVER REFER THE CUSTOMER TO A THIRD PARTY: You are the customer's ONLY support channel. Never tell the customer to contact a distributor, manufacturer, wholesaler, repair center, supplier, or any external company or organization. If the problem requires a warranty claim or repair, you handle it — not the customer. Do not write phrases like 'kontakt [company]', 'reach out to [company]', 'contact [brand]', or 'get in touch with [partner]'.",
+        "18. NEVER COMMIT TO REVIEWING INTERNALLY AND GETTING BACK: Do NOT write phrases like 'I'll review this internally', 'I'll check this with our team', 'I'll look into this and get back to you', 'I'll follow up shortly', 'What I'll do now: I'll check...', or any variation that defers the decision to an unnamed internal review. There are only TWO valid paths: (1) If you have enough information — commit to the action directly: 'We will send you replacement earpads under warranty.' (2) If information is missing — ask for exactly what you need now in this reply: 'Could you share your order number or proof of purchase so we can assess warranty coverage?' A third path of vague internal review does not exist.",
         "END OF HARD CONSTRAINTS.",
         "",
         "EXAMPLE — no order data, product bought from third-party retailer:",
         "Customer: 'My headset from ProShop is broken and won't turn on.'",
         "CORRECT reply: 'Hej [name], send en kopi af kvitteringen fra ProShop, så ser vi hvad vi kan gøre.'",
         "WRONG reply (never write this): 'Hej [name], Jeg kan godt forstå at det er frustrerende. Vi vil gerne hjælpe. Send kvittering, så kan vi finde en løsning. Vi ser frem til at høre fra dig.' — Wrong because: empathy opener restates the problem, filler phrase, hollow closing.",
+        "END OF EXAMPLE.",
+        "",
+        "EXAMPLE — no customer/order found in Shopify, customer asks about warranty or replacement:",
+        "Context: No customer found in Shopify. No order number in email. Customer sent a photo of a defective product.",
+        "CORRECT reply: 'Hi there, thanks for reaching out and for the photo. To assess whether this is covered under warranty, could you share your order number or proof of purchase?'",
+        "WRONG reply (never write this): 'Hi there, thanks for reaching out. Yes, the earpads can be replaced. I'll check your order details and get back to you with the next step shortly. I look forward to hearing from you.' — Wrong because: there are NO order details to check — no customer was found in Shopify. Promising to check something that does not exist is incorrect. Ask the customer for their order number directly instead.",
         "END OF EXAMPLE.",
         "",
         "EXAMPLE — technical issue, product defect:",

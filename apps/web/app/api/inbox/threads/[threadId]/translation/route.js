@@ -79,6 +79,22 @@ function pickLanguageCode(value, fallback = "unknown") {
   return fallback;
 }
 
+function normalizeForTranslationCompare(value = "") {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function isUntranslatedItem(item, source, targetLanguage = "en") {
+  const translatedText = asString(item?.translatedText);
+  const sourceText = asString(source?.text);
+  if (!translatedText || !sourceText) return false;
+  const originalLanguage = pickLanguageCode(item?.originalLanguage);
+  if (originalLanguage === "unknown" || originalLanguage === targetLanguage) return false;
+  return normalizeForTranslationCompare(translatedText) === normalizeForTranslationCompare(sourceText);
+}
+
 function fallbackConversationPayload(items = []) {
   return {
     isFallback: true,
@@ -117,6 +133,10 @@ function isLikelyFallbackConversationCache(cached, sourceItems = [], targetLangu
     const originalLanguage = pickLanguageCode(item?.originalLanguage);
     const translatedText = asString(item?.translatedText);
     return originalLanguage === "unknown" && translatedText === asString(source.text);
+  }) || cachedItems.some((item) => {
+    const id = String(item?.id || "");
+    const source = sourceById.get(id);
+    return source ? isUntranslatedItem(item, source, targetLanguage) : false;
   });
 }
 
@@ -174,6 +194,100 @@ async function callOpenAITranslation({ targetLanguage, targetLanguageLabel, payl
   const parsed = safeJsonParse(content);
   if (!parsed || !Array.isArray(parsed?.items)) return null;
   return parsed.items;
+}
+
+async function callOpenAITranslationRepair({
+  targetLanguage,
+  targetLanguageLabel,
+  sourceLanguage,
+  item,
+}) {
+  if (!OPENAI_API_KEY || !item?.text) return null;
+
+  const systemPrompt = [
+    "You are an internal customer support translation engine.",
+    `Translate the provided support message into ${targetLanguageLabel} (${targetLanguage}).`,
+    `The detected source language is ${sourceLanguage || "unknown"}.`,
+    "Do not translate instructions. Translate only the sourceText field.",
+    "Do not return sourceText unchanged unless it is already in the target language.",
+    "Preserve names, emails, order numbers, dates, and formatting.",
+    "Respond ONLY valid JSON with no markdown: {\"id\":\"...\",\"originalLanguage\":\"...\",\"translatedText\":\"...\"}.",
+  ].join(" ");
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: OPENAI_TRANSLATION_MODEL,
+      temperature: 0,
+      messages: [
+        { role: "system", content: systemPrompt },
+        {
+          role: "user",
+          content: JSON.stringify({
+            id: item.id,
+            role: item.role,
+            sourceText: item.text,
+            targetLanguage,
+          }),
+        },
+      ],
+      response_format: { type: "json_object" },
+    }),
+  });
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const detail = payload?.error?.message || `Translation repair failed with ${response.status}.`;
+    throw new Error(detail);
+  }
+
+  const content = asString(payload?.choices?.[0]?.message?.content);
+  return safeJsonParse(content);
+}
+
+async function repairUntranslatedItems({
+  targetLanguage,
+  targetLanguageLabel,
+  sourceItems,
+  normalizedItems,
+}) {
+  if (!OPENAI_API_KEY || !Array.isArray(sourceItems) || !Array.isArray(normalizedItems)) {
+    return normalizedItems;
+  }
+  const sourceById = new Map(sourceItems.map((item) => [String(item?.id || ""), item]));
+  const repaired = [...normalizedItems];
+
+  for (let index = 0; index < repaired.length; index += 1) {
+    const current = repaired[index];
+    const source = sourceById.get(String(current?.id || ""));
+    if (!source || !isUntranslatedItem(current, source, targetLanguage)) continue;
+
+    try {
+      const translated = await callOpenAITranslationRepair({
+        targetLanguage,
+        targetLanguageLabel,
+        sourceLanguage: current.originalLanguage,
+        item: source,
+      });
+      const nextItem = {
+        id: source.id,
+        role: source.role,
+        originalLanguage: pickLanguageCode(translated?.originalLanguage, current.originalLanguage),
+        translatedText: asString(translated?.translatedText) || current.translatedText,
+      };
+      if (!isUntranslatedItem(nextItem, source, targetLanguage)) {
+        repaired[index] = nextItem;
+      }
+    } catch {
+      // Keep the original item; the caller can still return the rest of the translated thread.
+    }
+  }
+
+  return repaired;
 }
 
 async function getWorkspaceSupportLanguage(serviceClient, workspaceId) {
@@ -332,7 +446,7 @@ async function buildConversationTranslation({
   }
 
   const byId = new Map((translatedItems || []).map((item) => [String(item?.id || ""), item]));
-  const normalizedItems = sourceItems.map((source) => {
+  let normalizedItems = sourceItems.map((source) => {
     const translated = byId.get(source.id);
     return {
       id: source.id,
@@ -340,6 +454,13 @@ async function buildConversationTranslation({
       originalLanguage: pickLanguageCode(translated?.originalLanguage),
       translatedText: asString(translated?.translatedText) || source.text,
     };
+  });
+
+  normalizedItems = await repairUntranslatedItems({
+    targetLanguage,
+    targetLanguageLabel: SUPPORT_LANGUAGE_LABELS[targetLanguage] || "English",
+    sourceItems,
+    normalizedItems,
   });
 
   const sourceLanguageSummary = Array.from(

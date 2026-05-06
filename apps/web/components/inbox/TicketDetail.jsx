@@ -85,6 +85,46 @@ function messageLooksLikeSatisfactionClosure(message = null) {
   return true;
 }
 
+function normalizeTranslationCompare(value = "") {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function stripMessageHtml(value = "") {
+  return String(value || "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/\s+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function getMessageTranslationText(message = null, translationItems = []) {
+  const item = (Array.isArray(translationItems) ? translationItems : []).find(
+    (candidate) => String(candidate?.id || "") === String(message?.id || "")
+  );
+  const translatedText = String(item?.translatedText || "").trim();
+  if (!translatedText) return null;
+  const originalLanguage = String(item?.originalLanguage || "").trim().toLowerCase();
+  const sourceText = String(
+    message?.clean_body_text ||
+      message?.body_text ||
+      message?.snippet ||
+      stripMessageHtml(message?.body_html || "")
+  ).trim();
+  const looksUnchanged =
+    originalLanguage &&
+    originalLanguage !== "unknown" &&
+    sourceText &&
+    normalizeTranslationCompare(translatedText) === normalizeTranslationCompare(sourceText);
+  return looksUnchanged ? null : translatedText;
+}
+
 export function TicketDetail({
   thread,
   messages,
@@ -548,11 +588,7 @@ export function TicketDetail({
                   attachments={messageAttachments}
                   outboundSenderName={currentUserName}
                   editStats={direction === "outbound" ? sentDraftStats : null}
-                  translatedText={
-                    (Array.isArray(translationItems) ? translationItems : []).find(
-                      (item) => String(item?.id || "") === String(message?.id || "")
-                    )?.translatedText || null
-                  }
+                  translatedText={getMessageTranslationText(message, translationItems)}
                   translationLoading={translationLoading}
                   onRequestTranslation={onRequestTranslation}
                 />

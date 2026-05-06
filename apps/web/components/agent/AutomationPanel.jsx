@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAgentAutomation } from "@/hooks/useAgentAutomation";
+import { AutopilotReadinessSection } from "@/components/agent/AutopilotReadinessSection";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -502,6 +503,8 @@ export function AutomationPanel({ children = null }) {
                 </div>
               }
             />
+
+            <AutopilotReadinessSection autoDraftEnabled={isAutoDraftEnabled} />
 
             <SettingsSection
               title="AI Permissions"

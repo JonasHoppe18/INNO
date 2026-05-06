@@ -283,6 +283,15 @@ export function SonaInsightsModal({
       if (raw === "draft_context_loaded") return "Order context";
       if (raw === "draft_created") return "Generated draft";
       if (raw === "postmark_inbound_draft_created") return "Draft Created";
+      if (raw === "draft_edit_feedback_captured") return "Draft edited";
+      if (raw === "send_smtp_success") return "Reply sent";
+      if (raw === "send_smtp_fail" || raw === "send_reply_failed") return "Reply failed";
+      if (raw === "email_simulated_test_mode") return "Email simulated";
+      if (raw === "action_feedback_captured") return "Action feedback";
+      if (raw === "shopify_action_approved_test_mode") return "Action approved in test mode";
+      if (raw === "forward_email_applied") return "Email forwarded";
+      if (raw === "forward_email_failed") return "Forward failed";
+      if (raw === "product search") return "Product Search";
       return raw
         .replace(/_/g, " ")
         .replace(/\bpostmark\b/gi, "Postmark")
@@ -328,6 +337,31 @@ export function SonaInsightsModal({
       }
       if (step === "postmark_inbound_draft_created" || step === "draft_created") {
         return "Forwarded email draft created.";
+      }
+      if (step === "draft_edit_feedback_captured") {
+        const changed = parsed?.changed_materially === true || parsed?.diff_summary?.changed_materially === true;
+        const eventType = parsed?.event_type ? String(parsed.event_type).replace(/_/g, " ") : "draft update";
+        return changed ? `AI draft edited materially (${eventType}).` : `AI draft saved with minor or no edits (${eventType}).`;
+      }
+      if (step === "send_smtp_success") {
+        const parts = ["Reply sent via Postmark"];
+        if (parsed?.from_mode) parts.push(`sender: ${String(parsed.from_mode).replace(/_/g, " ")}`);
+        if (parsed?.redirected_to) parts.push(`test: ${parsed.redirected_to}`);
+        return parts.join(" · ");
+      }
+      if (step === "send_smtp_fail" || step === "send_reply_failed") {
+        return parsed?.detail || parsed?.error || "Reply could not be sent.";
+      }
+      if (step === "email_simulated_test_mode") {
+        return parsed?.intended_to ? `Test mode email simulated for ${parsed.intended_to}` : "Email simulated in test mode.";
+      }
+      if (step === "action_feedback_captured") {
+        const action = parsed?.action_type ? String(parsed.action_type).replace(/_/g, " ") : "action";
+        const decision = parsed?.decision ? String(parsed.decision) : "recorded";
+        return `${action}: ${decision}`;
+      }
+      if (step === "product search") {
+        return parsed.detail || "Searched product context.";
       }
       if (step === "context") {
         return parsed.detail || "Loaded store context.";

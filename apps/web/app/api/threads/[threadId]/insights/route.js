@@ -37,6 +37,33 @@ function extractThreadIdFromDetail(value = "") {
   return match?.[1] || null;
 }
 
+const THREAD_SCOPED_STEP_NAMES = [
+  "draft_intent_assessed",
+  "draft_context_loaded",
+  "draft_created",
+  "postmark_inbound_draft_created",
+  "draft_edit_feedback_captured",
+  "send_smtp_success",
+  "send_smtp_fail",
+  "send_reply_failed",
+  "email_simulated_test_mode",
+  "action_feedback_captured",
+  "shopify_action",
+  "shopify_action_failed",
+  "shopify_action_applied",
+  "shopify_action_declined",
+  "shopify_action_blocked",
+  "shopify_action_approved_test_mode",
+  "forward_email_applied",
+  "forward_email_failed",
+  "carrier_tracking",
+  "Carrier Tracking",
+  "Shopify Lookup",
+  "Shopify Action",
+  "Product Search",
+  "Context",
+];
+
 export async function GET(_request, { params }) {
   const { userId: clerkUserId, orgId } = await auth();
   if (!clerkUserId) {
@@ -107,18 +134,13 @@ export async function GET(_request, { params }) {
     draftLogs = Array.isArray(data) ? data : [];
   }
 
-  const { data: threadDraftLogsRaw } = await serviceClient
+  const { data: threadScopedLogsRaw } = await serviceClient
     .from("agent_logs")
     .select("id, draft_id, step_name, step_detail, status, created_at")
-    .in("step_name", [
-      "draft_intent_assessed",
-      "draft_context_loaded",
-      "draft_created",
-      "postmark_inbound_draft_created",
-    ])
+    .in("step_name", THREAD_SCOPED_STEP_NAMES)
     .order("created_at", { ascending: false })
-    .limit(400);
-  const threadDraftLogs = (Array.isArray(threadDraftLogsRaw) ? threadDraftLogsRaw : []).filter((row) => {
+    .limit(800);
+  const threadScopedLogs = (Array.isArray(threadScopedLogsRaw) ? threadScopedLogsRaw : []).filter((row) => {
     const parsedThreadId = extractThreadIdFromDetail(row?.step_detail);
     return parsedThreadId ? threadKeySet.has(String(parsedThreadId)) : false;
   });
@@ -172,7 +194,7 @@ export async function GET(_request, { params }) {
   });
 
   const mergedById = new Map();
-  for (const row of [...draftLogs, ...threadDraftLogs, ...actionLogs, ...threadActionLogs]) {
+  for (const row of [...draftLogs, ...threadScopedLogs, ...actionLogs, ...threadActionLogs]) {
     if (!row?.id) continue;
     mergedById.set(String(row.id), row);
   }

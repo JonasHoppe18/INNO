@@ -3,6 +3,7 @@ import { ResolvedFact } from "./fact-resolver.ts";
 import { RetrievedChunk } from "./retriever.ts";
 import { ActionProposal } from "./action-decision.ts";
 import { mixedLanguageCheck } from "./language.ts";
+import { callOpenAIJson } from "./openai-json.ts";
 
 export interface VerifierResult {
   grounded_claims_pct: number;
@@ -24,7 +25,40 @@ export interface VerifierInput {
   language?: string;
 }
 
-const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
+const VERIFIER_MODEL = Deno.env.get("OPENAI_VERIFIER_MODEL") ??
+  Deno.env.get("OPENAI_MODEL") ??
+  "gpt-5-mini";
+
+const VERIFIER_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    answers_question: { type: "boolean" },
+    language_correct: { type: "boolean" },
+    contradictions: { type: "array", items: { type: "string" } },
+    hallucinations: { type: "array", items: { type: "string" } },
+    return_window_misapplied: { type: "boolean" },
+    commits_to_next_step: { type: "boolean" },
+    grounded_claims_pct: { type: "number" },
+    confidence: { type: "number" },
+    issues: { type: "array", items: { type: "string" } },
+    block_send: { type: "boolean" },
+    retry_with_stronger_model: { type: "boolean" },
+  },
+  required: [
+    "answers_question",
+    "language_correct",
+    "contradictions",
+    "hallucinations",
+    "return_window_misapplied",
+    "commits_to_next_step",
+    "grounded_claims_pct",
+    "confidence",
+    "issues",
+    "block_send",
+    "retry_with_stronger_model",
+  ],
+};
 
 const FALLBACK_RESULT: VerifierResult = {
   grounded_claims_pct: 0,
@@ -37,8 +71,15 @@ const FALLBACK_RESULT: VerifierResult = {
 };
 
 export async function runVerifier(
-  { draftText, citations, facts, retrievedChunks, customerMessage, language }:
-    VerifierInput,
+  {
+    draftText,
+    proposedActions,
+    citations,
+    facts,
+    retrievedChunks,
+    customerMessage,
+    language,
+  }: VerifierInput,
 ): Promise<VerifierResult> {
   if (!draftText) {
     return {
@@ -139,49 +180,74 @@ Overall quality confidence. Deduct:
 Start from 1.0 and subtract.
 
 **block_send** (boolean)
-True ONLY for: direct contradiction of facts, harmful/offensive content, completely wrong topic.
+True ONLY for: direct contradiction of facts, harmful/offensive content, completely wrong topic, OR when commits_to_next_step=false AND the draft is clearly about a warranty replacement / exchange / refund situation where the customer has already confirmed their details and no concrete order creation or refund timeline is stated (e.g., draft says "Vi sender dig et nyt" without "Vi opretter en ordre").
+
+**commits_to_next_step** (boolean)
+Does the reply commit to a CONCRETE next action or clearly describe what happens now?
+TRUE: "Vi opretter en ordre til dig", "Vi sender tracking-link", "Vi kontakter dig i juli med faktura", "Vi returnerer beløbet inden for X dage"
+FALSE: "vi vender tilbage", "du vil høre fra os", "I'll review this and follow up", "vi undersøger sagen internt"
+Only applies when the customer's situation calls for a concrete next step (warranty, exchange, refund, confirmed address). For informational replies (tracking status, product questions) this can be true even without a commitment.
+Deduct 0.1 from confidence if commits_to_next_step=false and the intent is clearly warranty/exchange/return/refund/complaint.
 
 **retry_with_stronger_model** (boolean)
 True if confidence < 0.65 or mixed_language is present.
 
 **issues** (array of short strings)
-Machine-readable list of what went wrong. Use: answers_question_missing, wrong_language, mixed_language, contradiction, hallucination, return_window_misapplied, low_grounding`;
+Machine-readable list of what went wrong. Use: answers_question_missing, wrong_language, mixed_language, contradiction, hallucination, return_window_misapplied, low_grounding, no_commitment`;
 
   try {
-    const resp = await fetch(OPENAI_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-5-mini",
-        temperature: 0,
-        max_tokens: 500,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-      }),
+    const parsed = await callOpenAIJson<{
+      grounded_claims_pct?: number;
+      contradictions?: string[];
+      hallucinations?: string[];
+      return_window_misapplied?: boolean;
+      commits_to_next_step?: boolean;
+      confidence?: number;
+      block_send?: boolean;
+      retry_with_stronger_model?: boolean;
+      issues?: string[];
+    }>({
+      model: VERIFIER_MODEL,
+      systemPrompt,
+      userPrompt,
+      maxTokens: 700,
+      schema: VERIFIER_SCHEMA,
+      schemaName: "draft_v2_verifier",
     });
 
-    if (!resp.ok) throw new Error(`Verifier API error: ${resp.status}`);
-    const data = await resp.json();
-    const parsed = JSON.parse(data.choices[0].message.content);
-
-    const confidence = typeof parsed.confidence === "number"
+    let confidence = typeof parsed.confidence === "number"
       ? Math.max(0, Math.min(1, parsed.confidence))
       : 0.7;
+
+    // Apply commitment penalty if verifier flagged it (catches vague "vi vender tilbage" replies)
+    if (parsed.commits_to_next_step === false) {
+      confidence = Math.max(0, confidence - 0.2);
+    }
 
     const languageCheck = mixedLanguageCheck(draftText, language);
     const issues = Array.isArray(parsed.issues) ? parsed.issues : [];
     if (!languageCheck.ok && !issues.includes("mixed_language")) {
       issues.push("mixed_language");
     }
+    if (parsed.commits_to_next_step === false && !issues.includes("no_commitment")) {
+      issues.push("no_commitment");
+    }
     const finalConfidence = languageCheck.ok
       ? confidence
       : Math.min(confidence, 0.62);
+
+    const commitmentRequiredActions = new Set([
+      "refund_order",
+      "create_exchange_request",
+      "initiate_return",
+      "send_return_instructions",
+      "create_return_with_label",
+    ]);
+    const hasCommitmentRequiredAction = proposedActions?.some((a) =>
+      commitmentRequiredActions.has(a.type)
+    ) ?? false;
+    const needsRetryForCommitment = issues.includes("no_commitment") &&
+      hasCommitmentRequiredAction;
 
     const result: VerifierResult = {
       grounded_claims_pct: parsed.grounded_claims_pct ?? 0.7,
@@ -195,7 +261,7 @@ Machine-readable list of what went wrong. Use: answers_question_missing, wrong_l
       confidence: finalConfidence,
       block_send: parsed.block_send === true,
       retry_with_stronger_model: parsed.retry_with_stronger_model === true ||
-        finalConfidence < 0.65 || !languageCheck.ok,
+        finalConfidence < 0.65 || !languageCheck.ok || needsRetryForCommitment,
       issues,
     };
 

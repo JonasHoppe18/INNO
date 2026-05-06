@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  AlertTriangle,
   Bold as BoldIcon,
   Italic as ItalicIcon,
   Underline as UnderlineIcon,
@@ -949,6 +950,74 @@ function SavedRepliesSection() {
   );
 }
 
+const GAP_TYPE_LABELS = {
+  missing_procedure: "Missing procedure",
+  missing_policy: "Missing policy",
+  low_kb_coverage: "No knowledge",
+  low_grounding: "Insufficient knowledge",
+};
+
+function KnowledgeGapsSection({ onCreateCategory }) {
+  const [gaps, setGaps] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/knowledge/gaps", { credentials: "include" })
+      .then((r) => r.json())
+      .then((data) => setGaps(data?.gaps ?? []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading || gaps.length === 0) return null;
+
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+        <h2 className="text-[13px] font-semibold text-amber-900">
+          Sona needs more knowledge — {gaps.length} {gaps.length === 1 ? "gap" : "gaps"} detected in the last 30 days
+        </h2>
+      </div>
+      <p className="text-[12px] text-amber-700 leading-relaxed">
+        Sona identified tickets it couldn&apos;t answer optimally because knowledge is missing. Add the topics below to improve future replies.
+      </p>
+      <div className="space-y-2">
+        {gaps.map((gap, i) => (
+          <div
+            key={i}
+            className="flex items-start justify-between gap-3 rounded-md bg-white border border-amber-100 px-3 py-2.5"
+          >
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] font-medium text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
+                  {GAP_TYPE_LABELS[gap.gap_type] ?? gap.gap_type}
+                </span>
+                {gap.tickets_affected > 1 && (
+                  <span className="text-[11px] text-gray-500">
+                    {gap.tickets_affected} tickets affected
+                  </span>
+                )}
+              </div>
+              <p className="text-[12px] font-medium text-gray-900 mt-1">{gap.suggested_title}</p>
+              <p className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">{gap.suggested_content_hint}</p>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="shrink-0 h-7 px-2.5 text-[11px] border-amber-200 text-amber-800 hover:bg-amber-50"
+              onClick={() => onCreateCategory(gap.suggested_title)}
+            >
+              <Plus className="h-3 w-3 mr-1" />
+              Add
+            </Button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function KnowledgeCategoriesClient() {
   const router = useRouter();
   const [categories, setCategories] = useState([]);
@@ -992,17 +1061,40 @@ export function KnowledgeCategoriesClient() {
     fetchTicketExamplesCount();
   }, [fetchTicketExamplesCount]);
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     const label = newLabel.trim();
-    if (!label) return;
+    if (!label || creating) return;
     const slug = label
       .toLowerCase()
       .replace(/[^a-z0-9æøå\s-]/g, "")
       .replace(/\s+/g, "-")
-      .replace(/-+/g, "-");
-    setCreateOpen(false);
-    setNewLabel("");
-    router.push(`/knowledge/${slug}?label=${encodeURIComponent(label)}&new=1`);
+      .replace(/-+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    setCreating(true);
+    try {
+      const res = await fetch("/api/knowledge/categories", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label, slug }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload?.error || "Could not create category.");
+      }
+      const category = payload?.category || { slug, label, icon: "Tag", description: "", count: 0 };
+      setCategories((prev) => {
+        const filtered = prev.filter((item) => item.slug !== category.slug);
+        return [...filtered, category];
+      });
+      setCreateOpen(false);
+      setNewLabel("");
+      router.push(`/knowledge/${category.slug}?label=${encodeURIComponent(category.label || label)}`);
+    } catch (error) {
+      toast.error(error?.message || "Could not create category.");
+    } finally {
+      setCreating(false);
+    }
   };
 
   const handleImportTickets = useCallback(async () => {
@@ -1029,6 +1121,11 @@ export function KnowledgeCategoriesClient() {
     }
   }, [fetchTicketExamplesCount, importingTickets]);
 
+  const handleCreateFromGap = useCallback((suggestedTitle) => {
+    setNewLabel(suggestedTitle);
+    setCreateOpen(true);
+  }, []);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -1045,6 +1142,8 @@ export function KnowledgeCategoriesClient() {
           </Button>
         </div>
       </div>
+
+      <KnowledgeGapsSection onCreateCategory={handleCreateFromGap} />
 
       {loading ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -1117,6 +1216,7 @@ export function KnowledgeCategoriesClient() {
                 value={newLabel}
                 onChange={(e) => setNewLabel(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleCreate()}
+                disabled={creating}
                 autoFocus
               />
             </div>

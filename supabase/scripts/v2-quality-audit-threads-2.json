@@ -1,0 +1,813 @@
+{
+  "generated_at": "2026-05-06T08:13:38.923Z",
+  "summary": {
+    "source": "threads",
+    "limit": 15,
+    "judged": 11,
+    "errors": 0,
+    "skipped_b2b": 4,
+    "average_score_10": 7.45,
+    "median_score_10": 7,
+    "ten_out_of_ten": 0,
+    "send_ready": 0,
+    "root_causes": {
+      "intent": 6,
+      "action_decision": 2,
+      "policy": 1,
+      "language": 1,
+      "facts": 1
+    },
+    "primary_gaps": {
+      "tracking link commitment": 1,
+      "next step clarity": 1,
+      "return process details": 1,
+      "lack of refund process details": 1,
+      "missing delivery details": 1,
+      "warranty process": 1,
+      "next-level troubleshooting": 1,
+      "tone": 1,
+      "delivery confirmation": 1,
+      "tracking status specificity": 1,
+      "lack of specific next steps": 1
+    }
+  },
+  "results": [
+    {
+      "ticket": {
+        "id": "4f52c3ef-3009-4657-b885-13d7e06641e8",
+        "subject": "Re: [AceZone] Re: New customer message on 14 February 2026 at 17:09",
+        "customerBody": "Zoe Paul\n68 Tanners Drive\nUnit K427104\nMilton Keynes,\nmk14 5bp\n________________________________",
+        "source": "threads"
+      },
+      "draft": "Hi Zoe,\n\nThanks for your message. We’ve updated the shipping address to:\nZoe Paul\n68 Tanners Drive\nUnit K427104\nMilton Keynes\nMK14 5BP\nUnited Kingdom\n\nWe’ll proceed with your order using this address. You’ll receive a tracking link by email as soon as the package ships.\n\nI look forward to hearing from you.",
+      "qa": {
+        "correctness": 8,
+        "completeness": 7,
+        "tone": 8,
+        "actionability": 7,
+        "overall_10": 7,
+        "send_ready": false,
+        "primary_gap": "tracking link commitment",
+        "missing_for_10": [
+          "specific tracking link commitment after shipping"
+        ],
+        "likely_root_cause": "intent",
+        "reasoning": "The response lacks a commitment to provide a tracking link after the order ships, which is essential for completeness."
+      },
+      "v2": {
+        "confidence": 0.56,
+        "routing_hint": "review",
+        "proposed_actions": [],
+        "sources": [
+          {
+            "content": "Saved reply: Address - Company Address + Phone + Email\nAceZone International ApS\nNordre Fasanvej 113, 2 th.\n2000 Frederiksberg\nDenmark\n+45 20 68 30 58\nsupport@acezone.io",
+            "kind": "snippet",
+            "source_label": "saved_reply: Address - Company Address + Phone + Email",
+            "usable_as": "saved_reply",
+            "risk_flags": []
+          },
+          {
+            "content": "Saved reply: Shipping -  Customer organizes shipping\nDescription: For when the customer must pay for shipping from us to them.\nYou will need to organise collection at our address, between 13:30 and 16",
+            "kind": "snippet",
+            "source_label": "saved_reply: Shipping -  Customer organizes shipping",
+            "usable_as": "saved_reply",
+            "risk_flags": [
+              "strong_claim"
+            ]
+          },
+          {
+            "content": "Saved reply: Customer - Personal Information / Details\nCould you please provide me with the following information:\nFull name\nFull address (postal code important)\nPhone number\nEmail address",
+            "kind": "snippet",
+            "source_label": "saved_reply: Customer - Personal Information / Details",
+            "usable_as": "saved_reply",
+            "risk_flags": [
+              "asks_for_extra_fields"
+            ]
+          },
+          {
+            "content": "Policy: Shipping\n\nHandle: shipping-policy\n\nPublic URL: https://shop-acezone.myshopify.com/62517575926/policies/27762393334\n\nContent:\nWe process your order as quickly as possible. All orders are fulfil",
+            "kind": "document",
+            "source_label": "shopify_policy: Shipping",
+            "usable_as": "policy",
+            "risk_flags": []
+          },
+          {
+            "content": "Make sure that the customer provides their order number if Sona cannot find the order through e-mail on Shopify.\n\nProvide tracking link for the customer to follow. If there has been an unusual long ti",
+            "kind": "snippet",
+            "source_label": "manual_text: When does my order arrive? / Where is my order?",
+            "usable_as": "background",
+            "risk_flags": [
+              "asks_for_extra_fields"
+            ]
+          }
+        ]
+      },
+      "latency_ms": 24386
+    },
+    {
+      "ticket": {
+        "id": "19e7a52c-78c7-4657-9905-fe9534d5e7e2",
+        "subject": "Payout for May 6, 2026 (kr1,932.86 DKK)",
+        "customerBody": "May 6, 2026\n\nkr1,932.86 DKK will be deposited to your bank account in 1–2\nbusiness days.\n-----------------------------------------------------------------\n\nView payout\n\nView payout\n\n( https://shop-acezone.myshopify.com/admin/payments/payouts/150736109891 )\n\n\n\n\nPayout #150736109891 - May 6, 2026\n\nCharges\n\nkr1,932.86 DKK\n\nRefunds\n\nkr0.00 DKK\n\nAdjustments\n\nkr0.00 DKK\n\n\n\nTotal\n\nkr1,932.86 DKK\n\nⓘ\n\nLearn more about payouts\n( https://help.shopify.com/en/manual/payments/shopify-payments/getting-paid-with-shopify-payments )\n.\n\nShopping Bag\n\nShopping Bag\n\n15‍1 O'Con‍nor Str‍eet,\nGro‍und fl‍oor, Ot‍tawa ON, K2P 2L8\n\nStop receiving payout emails\n( https://shop-acezone.myshopify.com/admin/settings/payments )",
+        "source": "threads"
+      },
+      "draft": "Thanks for getting in touch. I can see the payout notification for kr1,932.86 DKK (Payout #150736109891) dated May 6, 2026. The deposit typically lands in the bank account in 1–2 business days after this notification.\n\nIf you need me to check the status with our payment provider because it hasn’t arrived after 2 business days, let me know and I’ll look into it right away.\n\nI look forward to hearing from you.",
+      "qa": {
+        "correctness": 10,
+        "completeness": 8,
+        "tone": 9,
+        "actionability": 8,
+        "overall_10": 8,
+        "send_ready": false,
+        "primary_gap": "next step clarity",
+        "missing_for_10": [
+          "specific next step if payout is delayed beyond 2 business days"
+        ],
+        "likely_root_cause": "action_decision",
+        "reasoning": "The response is accurate and polite but lacks a clear commitment to follow up if the payout is delayed, which is essential for full completeness."
+      },
+      "v2": {
+        "confidence": 0.6499999999999999,
+        "routing_hint": "review",
+        "proposed_actions": [],
+        "sources": [
+          {
+            "content": "Saved reply: Shipping -  Customer organizes shipping\nDescription: For when the customer must pay for shipping from us to them.\nYou will need to organise collection at our address, between 13:30 and 16",
+            "kind": "snippet",
+            "source_label": "saved_reply: Shipping -  Customer organizes shipping",
+            "usable_as": "saved_reply",
+            "risk_flags": [
+              "strong_claim"
+            ]
+          },
+          {
+            "content": "Saved reply: Address - Company Address + Phone + Email\nAceZone International ApS\nNordre Fasanvej 113, 2 th.\n2000 Frederiksberg\nDenmark\n+45 20 68 30 58\nsupport@acezone.io",
+            "kind": "snippet",
+            "source_label": "saved_reply: Address - Company Address + Phone + Email",
+            "usable_as": "saved_reply",
+            "risk_flags": []
+          },
+          {
+            "content": "If the customer is covered by warranty, we send a spare dongle from the office and not from Shopify.\nIf the customer isn't under warranty, we figure out a solution with the sales team.\n\nIMPORTANT: Do ",
+            "kind": "snippet",
+            "source_label": "manual_text: My dongle is broken.",
+            "usable_as": "background",
+            "risk_flags": [
+              "strong_claim"
+            ]
+          },
+          {
+            "content": "Policy: Terms of service\n\nHandle: terms-of-service\n\nPublic URL: https://shop-acezone.myshopify.com/62517575926/policies/27762360566\n\nContent:\nThese terms and conditions apply to private consumers' pur",
+            "kind": "document",
+            "source_label": "shopify_policy: Terms of service",
+            "usable_as": "policy",
+            "risk_flags": []
+          },
+          {
+            "content": "Make sure that the customer provides their order number if Sona cannot find the order through e-mail on Shopify.\n\nProvide tracking link for the customer to follow. If there has been an unusual long ti",
+            "kind": "snippet",
+            "source_label": "manual_text: When does my order arrive? / Where is my order?",
+            "usable_as": "background",
+            "risk_flags": [
+              "asks_for_extra_fields"
+            ]
+          }
+        ]
+      },
+      "latency_ms": 20606
+    },
+    {
+      "ticket": {
+        "id": "4c65ef02-1a70-4dff-8b11-23caec8a49e8",
+        "subject": "New customer message on 5 May 2026 at 23:41",
+        "customerBody": "You received a new message from your online store's contact form.\n\nCountry Code:\nDE\n\nName:\nLukas Juelshøj\n\nEmail:\nLukasbj2002@icloud.com\n\nCompany / Team:\n\nYour Country:\nDanmark\n\nIf Applicable, Place Of Purchase And Order Number:\nDate 26-04-2026 country Denmark Order #4350\n\nWhat Is Your Request Regarding?:\nA-Spire Wireless\n\nWhat Do You Need Help With?:\nOther\n\nBody:\nDear AceZone Support,\n\nI am writing to request a return and refund for my recently\npurchased A-Spire Wireless headset (Order #4350).\n\nAfter testing the product, I have decided that it does not meet\nmy expectations. Specifically, I am not satisfied with the\noverall feel and comfort of the headset. At times, it feels like\nthere are pressure points or “spikes,” which makes it\nuncomfortable to wear for longer sessions. Additionally, I have\nexperienced that the battery seems to drain relatively quickly.\n\nI am also not fully satisfied with the microphone quality, as it\ndoes not consistently perform at the level I expected.\n\nBased on these factors, I would like to proceed with a return and\nrefund in accordance with your 30-day return policy. Please let\nme know the next steps and confirm whether my return request is\napproved.\n\nThank you for your assistance.\n\nKind regards,\nLukas",
+        "source": "threads"
+      },
+      "draft": "Hi Lukas,\n\nThanks for reaching out. I’m sorry the A-Spire Wireless isn’t meeting your expectations.\n\nWe can start your return for order #4350. Please send the headset and all accessories in original condition to:\nAceZone International ApS, Øster Allé 56, 5th floor, 2100 København Ø, Denmark.\nInclude “Order #4350” inside the parcel.\n\nOnce the package is received and inspected, we’ll issue the refund to your original payment method. You’ll get a confirmation by email.\n\nI look forward to hearing from you.",
+      "qa": {
+        "correctness": 8,
+        "completeness": 7,
+        "tone": 9,
+        "actionability": 8,
+        "overall_10": 7,
+        "send_ready": false,
+        "primary_gap": "return process details",
+        "missing_for_10": [
+          "confirmation of return approval and next steps"
+        ],
+        "likely_root_cause": "policy",
+        "reasoning": "The response lacks confirmation of the return request approval and does not outline the next steps clearly, which is essential for a complete and actionable reply."
+      },
+      "v2": {
+        "confidence": 0.7,
+        "routing_hint": "review",
+        "proposed_actions": [],
+        "sources": [
+          {
+            "content": "To do a factory reset on the A-Spire Wireless:\n\n1. Turn the headset off.\n\n2. Press and hold power button for 15 seconds.\n\n3. A voice prompt will tell you a factory reset has been made.\n\nPlease note th",
+            "kind": "snippet",
+            "source_label": "manual_text: My microphone sounds like its \"pulsating\" for A-blaze",
+            "usable_as": "background",
+            "risk_flags": [
+              "retailer_specific"
+            ]
+          },
+          {
+            "content": "To do a factory reset on the A-Spire Wireless:\n\n1. Turn the headset off.\n\n2. Press and hold power button for 15 seconds.\n\n3. A voice prompt will tell you a factory reset has been made.\n\nPlease note th",
+            "kind": "snippet",
+            "source_label": "manual_text: My microphone sounds like its \"pulsating\" for A-spire Wireless?",
+            "usable_as": "background",
+            "risk_flags": [
+              "retailer_specific"
+            ]
+          },
+          {
+            "content": "Thank you for reaching out to us.\n\nThe advertise longest battery life time is under the least power consuming conditions.\n\nThis means without ANC.\nWith a neutral EQ with no boost of low frequencies.\nO",
+            "kind": "snippet",
+            "source_label": "manual_text: A-Spire Wireless battery life",
+            "usable_as": "background",
+            "risk_flags": [
+              "retailer_specific"
+            ]
+          },
+          {
+            "content": "Saved reply: Pair A-Spire Wireless to Dongle\nTo reconnect the headset to the dongle:\n1. Reset the dongle by holding down the button until the LED turns purple.\n2. Remove the dongle.\n3. Turn your heads",
+            "kind": "snippet",
+            "source_label": "saved_reply: Pair A-Spire Wireless to Dongle",
+            "usable_as": "saved_reply",
+            "risk_flags": [
+              "retailer_specific"
+            ]
+          },
+          {
+            "content": "Saved reply: A-Spire Wireless - Uninstall/reinstall USB drivers + factory reset\nWith the headset powered on and connected to your PC via USB-C cable, open the Device Manager window on your PC.\n- Find ",
+            "kind": "snippet",
+            "source_label": "saved_reply: A-Spire Wireless - Uninstall/reinstall USB drivers + factory reset",
+            "usable_as": "saved_reply",
+            "risk_flags": [
+              "retailer_specific"
+            ]
+          }
+        ]
+      },
+      "latency_ms": 27794
+    },
+    {
+      "ticket": {
+        "id": "5989bf8a-81a8-44d7-8f71-f01e22c468ce",
+        "subject": "Re: [AceZone] Re: New customer message on 8 April 2026 at 05:34",
+        "customerBody": "Hello, The product is being returned to the address provided. It has been labeled as instructed. The tracking number is 1Z0H94310361294539 Thank you, Eric On Apr 8, 2026, at 9:35 AM, AceZone Support (Support) &lt;support@acezone.io&gt; wrote: Hi Eric, &nbsp; Thank you for reaching out! &nbsp; I am very sorry to hear that you aren't pleased with our product. &nbsp; I'd be more than happy to assist you in trying to solve the issues you are having. &nbsp; If you are simply looking to return the order, please follow these instructions: &nbsp; For US returns, please mark the package as \"AceZone Product Returns #5578 \" and send it to the following address: Prep Partners 49 Innovation Drive Rochester NH 03867 &nbsp; Once sent, please attach a tracking link for us to forward to our warehouse partner 🙂 &nbsp; When received, we will issue the refund. &nbsp; Have a lovely day. &nbsp; Venlig Hilsen / Kind Regards, &nbsp; Elias Knudsen Support Associate Acezone.io This email is a service from AceZone. Delivered by Zendesk On April 8, 2026 at 3:34:55 AM UTC, Pint Scalps 7i pint_scalps.7i@icloud.com wrote: New customer message on 8 April 2026 at 05:34 ul, ol { margin: 0 0 0 24px; } dd { text-indent: -3em; } .apple-link a { color: inherit !important; text-decoration: none !important; } .mail-body > tbody > tr > td { padding-top: 0px !important; } .mail-body__content > tbody > tr > td { border-radius: 0px; border-top: 0px !important; border-right: 0px !important; border-left: 0px !important; } .mail-section > tbody > tr > td:first-child { padding-left: 20px !important; } .mail-section > tbody > tr > td:last-child { padding-right: 20px !important; } .mail-help-center > tbody > tr > td:first-child { padding-left: 20px !important; } .mail-help-center > tbody > tr > td:last-child { padding-right: 20px !important; } body { padding: 0px; margin: 0px !important; } body { height: 100%; width: 100%; } img { border: 0px; height: auto; line-height: 0; outline: medium; text-decoration: none; vertical-align: top; } .ReadMsgBody { width: 100%; } .ExternalClass { width: 100%; } .ExternalClass { line-height: 100%; } body { -webkit-text-size-adjust: 100%; } body { font-size: 14px; font-weight: 400; line-height: 20px; text-transform: initial; letter-spacing: initial; color: rgb(32, 34, 35); font-family: -apple-system, BlinkMacSystemFont, \"San Francisco\", \"Segoe UI\", Roboto, \"Helvetica Neue\", sans-serif; } a:hover { text-decoration: none; } a:active { text-decoration: none; } a:visited { text-decoration: none; } .mail-button:hover { background-color: rgb(0, 118, 88); border-color: rgb(0, 118, 88); } .mail-body__content { padding: 0px !important; border-left: 0px !important; border-right: 0px !important; border-top: medium !important; border-radius: 0px !important; width: 100% !important; max-width: none !important; margin-top: 0px !important; } .container.section { margin-top: 16px !important; } .banner-container { margin-top: 8px !important; } .main-action-cell { float: none !important; margin-right: 0px !important; } .secondary-action-cell { text-align: center; width: 100%; } .row.content { width: 100% !important; padding: 20px !important; } .customer-info__item { display: block; width: 100% !important; } .subtotal-spacer { display: none; } .banner-alert__table { margin-top: 16px !important; margin-bottom: 16px !important; } You received a new message from your online store's contact form. Country Code: DE Name: Eric Zigler Email: pint_scalps.7i@icloud.com Company / Team: Your Country: United States If Applicable, Place Of Purchase And Order Number: Acezone website What Is Your Request Regarding?: A-Blaze What Do You Need Help With?: Other Body: Hello, I am requesting a return. I should've purchased the device via Amazon.com — it would have been easier to return than having to explain myself to you directly. I understand now attempting to support the company by buying direct was a mistake. I am not pleased with the device. For one, the USB dongle doesn't connect successfully. I have upgraded the firmware without success. Further, the degraded sound quality when connected via Bluetooth is very disappointing. I no longer want this headset and would like to return it. Eric Zigler Order number: 4170 pint_scalps.7i@icloud.com [VZ6Y4E-WG50E]",
+        "source": "threads"
+      },
+      "draft": "Hi Eric,\n\nThank you for providing the tracking number. Once the package is received, we'll issue the refund.\n\nHave a great day.",
+      "qa": {
+        "correctness": 8,
+        "completeness": 5,
+        "tone": 8,
+        "actionability": 6,
+        "overall_10": 5,
+        "send_ready": false,
+        "primary_gap": "lack of refund process details",
+        "missing_for_10": [
+          "specifics on refund timeline and process"
+        ],
+        "likely_root_cause": "intent",
+        "reasoning": "The response acknowledges the tracking number but lacks details on the refund process and timeline, making it incomplete."
+      },
+      "v2": {
+        "confidence": 0.85,
+        "routing_hint": "review",
+        "proposed_actions": [],
+        "sources": [
+          {
+            "content": "Return for swap if nothing works (ask for customers personal details and create a return label for them to return the headset - ALPI for out of country packages, PostNord usually for domestic orders).",
+            "kind": "snippet",
+            "source_label": "manual_text: Why is my audio quality bad for A-blaze? (Cracking)",
+            "usable_as": "procedure",
+            "risk_flags": []
+          },
+          {
+            "content": "Saved reply: A-Spire Wireless - Update Firmware Windows App\nSearch for AceZone Firmware Updater on the Microsoft Store, and download the app. Then:\n1. Make sure your headset is powered on , and that i",
+            "kind": "snippet",
+            "source_label": "saved_reply: A-Spire Wireless - Update Firmware Windows App",
+            "usable_as": "saved_reply",
+            "risk_flags": []
+          },
+          {
+            "content": "l packaging and components are included in the return.\n\n2. Book and print a return label (you may pick any courier which ships directly to our office address) and tape it securely to the face of the s",
+            "kind": "snippet",
+            "source_label": "manual_text: I want a refund/I wish to return the product",
+            "usable_as": "background",
+            "risk_flags": []
+          },
+          {
+            "content": "Saved reply: Return - Policy and Instructions\nAs per our policy, we accept returns within our 30-day return period, even if the product has been opened and briefly tested. Since the headset has been u",
+            "kind": "snippet",
+            "source_label": "saved_reply: Return - Policy and Instructions",
+            "usable_as": "policy",
+            "risk_flags": []
+          },
+          {
+            "content": "To update your A-Spire you must use the AceZone iOS/Android app (iOS App Store or Google Play Store). We recommend using an Android device to update the firmware if possible, as sometimes the iOS app ",
+            "kind": "snippet",
+            "source_label": "manual_text: Why does my headset A-Spire not play audio?",
+            "usable_as": "background",
+            "risk_flags": [
+              "strong_claim",
+              "retailer_specific"
+            ]
+          }
+        ]
+      },
+      "latency_ms": 16143
+    },
+    {
+      "ticket": {
+        "id": "59e9b0db-70de-407b-b9a0-735817fab0cf",
+        "subject": "Der er nyt om din PostNord-pakke",
+        "customerBody": "Hej, der er nyt om din PostNord-pakke!\n--------------------------------------\n\nDin pakke 00073215400561160733 fra Matthis Raun Rehné leveres hos dig den 6.5.\n\nEr din adresse tilmeldt en Modtagerflex-aftale, så leverer vi pakken uden at forstyrre dig, på det aftalte sted. Har Matthis Raun Rehné sendt pakken med levering til et bestemt sted på din adresse, afleverer vi den der. Bemærk, at vi lægger små pakker i din postkasse.\n\nDu kan følge pakken på *Track & Trace* ( https://tracking.postnord.com/dk/?id=781c167f:0007:75a4:3215:e891:13dbab581961597b:400561160733 ).\n\nPostNord forbinder Danmark – én pakke ad gangen. Til dig. Til dem du holder af. Til tiden.\n\nHold nemt styr på dine pakkeleveringer og -returneringer med PostNord-appen.\nHent appen her:\n\n( https://geo.itunes.apple.com/se/app/postnord/id396871673?mt=8 )\n\n( https://play.google.com/store/apps/details?id=se.postnord.private )\n\nwww.postnord.dk ( https://www.postnord.dk/ )",
+        "source": "threads"
+      },
+      "draft": "Hej\n\nTak for din tilbagemelding. Din pakke 00073215400561160733 er planlagt til levering den 6.5. Du kan følge den live via PostNord her: https://tracking.postnord.com/dk/?id=781c167f:0007:75a4:3215:e891:13dbab581961597b:400561160733\n\nUndskyld for ulejligheden og tak for din tålmodighed.",
+      "qa": {
+        "correctness": 10,
+        "completeness": 9,
+        "tone": 9,
+        "actionability": 10,
+        "overall_10": 9,
+        "send_ready": false,
+        "primary_gap": "missing delivery details",
+        "missing_for_10": [
+          "specific delivery time on 6.5"
+        ],
+        "likely_root_cause": "intent",
+        "reasoning": "The response is accurate and actionable but lacks the specific delivery time for the package on the scheduled date."
+      },
+      "v2": {
+        "confidence": 0.39999999999999997,
+        "routing_hint": "review",
+        "proposed_actions": [],
+        "sources": [
+          {
+            "content": "Saved reply: A-Rise Repair Instructions\nCategory: Return for Repair\nExcellent. Here are the instructions to send it to us:\n1. Pack the headset securely, preferably with the carry case. Here are approx",
+            "kind": "snippet",
+            "source_label": "saved_reply: A-Rise Repair Instructions",
+            "usable_as": "saved_reply",
+            "risk_flags": []
+          },
+          {
+            "content": "Saved reply: Shipping -  Customer organizes shipping\nDescription: For when the customer must pay for shipping from us to them.\nYou will need to organise collection at our address, between 13:30 and 16",
+            "kind": "snippet",
+            "source_label": "saved_reply: Shipping -  Customer organizes shipping",
+            "usable_as": "saved_reply",
+            "risk_flags": [
+              "strong_claim"
+            ]
+          },
+          {
+            "content": "Policy: Shipping\n\nHandle: shipping-policy\n\nPublic URL: https://shop-acezone.myshopify.com/62517575926/policies/27762393334\n\nContent:\nWe process your order as quickly as possible. All orders are fulfil",
+            "kind": "document",
+            "source_label": "shopify_policy: Shipping",
+            "usable_as": "policy",
+            "risk_flags": []
+          },
+          {
+            "content": "Saved reply: Acezone App - A-Spire Default EQ Profil\nDescription: Explains that AceZone app defaults to AZ Gaming EQ profile on load regardless of which preset is saved to the headset.\nI believe that ",
+            "kind": "snippet",
+            "source_label": "saved_reply: Acezone App - A-Spire Default EQ Profil",
+            "usable_as": "saved_reply",
+            "risk_flags": []
+          },
+          {
+            "content": "Saved reply: Address - Company Address + Phone + Email\nAceZone International ApS\nNordre Fasanvej 113, 2 th.\n2000 Frederiksberg\nDenmark\n+45 20 68 30 58\nsupport@acezone.io",
+            "kind": "snippet",
+            "source_label": "saved_reply: Address - Company Address + Phone + Email",
+            "usable_as": "saved_reply",
+            "risk_flags": []
+          }
+        ]
+      },
+      "latency_ms": 17439
+    },
+    {
+      "ticket": {
+        "id": "993fdb1b-cb1b-4f80-b74b-84d0225f7dbb",
+        "subject": "Re: [AceZone] Re: New customer message on 2 May 2026 at 03.17",
+        "customerBody": "Or could it be time to get a new headset after 2 years? I feel like  the\nsound got a bit worse vs when I got it 2 years ago.  🫠\n\nDen tirs. 5. maj 2026 kl. 20.29 skrev Simon Dec <simondec2021@gmail.com>:",
+        "source": "threads"
+      },
+      "draft": "Hi there,\n\nThanks for reaching out, I get how frustrating it feels when sound quality seems to slip over time.\n\nBefore deciding on a new headset, try these quick checks to rule out easy fixes:\n- Disable Windows sound enhancements: Press Win+R → type mmsys.cpl → Enter → Playback tab → right‑click your headset → Properties → Enhancements → tick “Disable all enhancements” → Apply. Then go to the Spatial sound tab and set it to Off → Apply.\n- Check Windows balance: In the same Properties window, confirm Left/Right levels are equal.\n- Power cycle and reconnect the headset, and ensure there’s no wireless interference (move dongle closer/USB front port, avoid hubs, remove other 2.4 GHz devices nearby).\n\nIf these steps don’t bring the sound back to what you expect, we’ll go ahead with a warranty review.\n\nI look forward to hearing how it goes.",
+      "qa": {
+        "correctness": 8,
+        "completeness": 7,
+        "tone": 9,
+        "actionability": 7,
+        "overall_10": 7,
+        "send_ready": false,
+        "primary_gap": "warranty process",
+        "missing_for_10": [
+          "commitment to warranty review and next steps"
+        ],
+        "likely_root_cause": "action_decision",
+        "reasoning": "The response provides troubleshooting steps but lacks a clear commitment to initiate a warranty review if the issue persists."
+      },
+      "v2": {
+        "confidence": 0.6499999999999999,
+        "routing_hint": "review",
+        "proposed_actions": [],
+        "sources": [
+          {
+            "content": "This usually seems like a faulty headset, try factory resetting the headset, and check the windows system settings to see if somehow the headset was set to play more in one earcup than the other. If i",
+            "kind": "snippet",
+            "source_label": "manual_text: Why am I only hearing audio in 1 earcup for A-blaze?",
+            "usable_as": "procedure",
+            "risk_flags": []
+          },
+          {
+            "content": "This usually seems like a faulty headset, try factory resetting the headset, and check the windows system settings to see if somehow the headset was set to play more in one earcup than the other. If i",
+            "kind": "snippet",
+            "source_label": "manual_text: Why am I only hearing audio in 1 earcup for A-Spire Wireless?",
+            "usable_as": "procedure",
+            "risk_flags": []
+          },
+          {
+            "content": "This usually seems like a faulty headset, try factory resetting the headset, and check the windows system settings to see if somehow the headset was set to play more in one earcup than the other. If i",
+            "kind": "snippet",
+            "source_label": "manual_text: Why am I hearing weird noises in 1 earcup for A-Spire Wireless?",
+            "usable_as": "procedure",
+            "risk_flags": []
+          },
+          {
+            "content": "This usually seems like a faulty headset, try factory resetting the headset, and check the windows system settings to see if somehow the headset was set to play more in one earcup than the other. If i",
+            "kind": "snippet",
+            "source_label": "manual_text: Why am I hearing weird noises in 1 earcup For A-blaze?",
+            "usable_as": "procedure",
+            "risk_flags": []
+          },
+          {
+            "content": "We use a very strong ANC for our headsets, this results in a faint \"windy\"/hissing-like sound in your ears.",
+            "kind": "snippet",
+            "source_label": "manual_text: Why is my audio quality bad for A-Blaze? (Hissing)",
+            "usable_as": "background",
+            "risk_flags": []
+          }
+        ]
+      },
+      "latency_ms": 26752
+    },
+    {
+      "ticket": {
+        "id": "66f53691-0bd4-4aa7-819e-69c066151a6a",
+        "subject": "Re: [AceZone] Re: New customer message on 4 May 2026 at 12:21",
+        "customerBody": "HI,\n\nI applied this fix but unfortunately, I just had another instance where it disconnects and reconnects mid game again. Are there any other fixes I could possibly try?\n\nBest regards,\nNathan\n________________________________\nVan: AceZone Support (Support) <support@acezone.io>\nVerzonden: maandag 4 mei 2026 12:29\nAan: Nathan Segers <nathan.segers@hotmail.com>\nOnderwerp: [AceZone] Re: New customer message on 4 May 2026 at 12:21\n\nHi Nathan,\n\nThank you for reaching out.\n\nIt seems that something may be interfering with your connection.\nCould you inform me of how you have the dongle set up? - Is it placed at the back or top of your PC, and how far away are you sitting?\n\nI recommend doing a factory reset of the headset + resetting dongle:\n\nTo do a factory reset on the A-Blaze:\n\n\n  1.  Turn the headset off.\n  2.  Press and hold power button for 15 seconds.\n  3.  A voice prompt will tell you a factory reset has been made.\n\n\nPlease note that this will delete all saved Bluetooth connections from your headset, including your phone/PC and dongle. You should also delete the headset from your phone/PC's saved devices, as well as delete it from the AceZone app before pairing again. We'll need to re-pair the headset and the dongle:\n\n\n  1.  Plug the dongle into your PC.\n  2.  Reset the dongle by holding down the button until the LED turns purple.\n  3.  Remove the dongle.\n  4.  Turn your headset on, and make sure no cables are connected.\n  5.  Hold the Noise Cancelling mode button (right next to the power button) for 4 seconds to enable pairing mode.\n  6.  Plug the dongle back in. The LED will blink blue/red.\n  7.  Pairing will happen automatically. The LED will turn blue when the pairing is done.\n\n\nMake sure that when you are using dongle connection, try to disable bluetooth on your mobile device if you have had it connected previously.\nFurthermore, please open your Mobile App and disable Standby Timer under System Settings 🙂\n\nLet me know if any of these methods worked out!\n\nHave a lovely day.\n\n________________________________\nVenlig Hilsen / Kind Regards,\n\n[AceZone Logo]\nElias Knudsen\nSupport Associate\nAcezone.io<http://acezone.io/>\n\nThis email is a service from AceZone. Delivered by Zendesk<https://www.zendesk.com/support/?utm_campaign=text&utm_content=AceZone&utm_medium=poweredbyzendesk&utm_source=email-notification>",
+        "source": "threads"
+      },
+      "draft": "Hi Nathan,\n\nThanks for your feedback. Since the issue persists, let's try reinstalling the USB drivers and performing another factory reset. Here’s how:\n\n1. With the headset connected to your PC via USB-C, open the Device Manager on your PC.\n2. Find the headset under 'Sound, video and game controllers', right-click it, and uninstall the drivers.\n3. Unplug the headset and then plug it back into the same USB port.\n\nAfter this, perform a factory reset:\n\n1. Turn the headset off.\n2. Press and hold the power button for 15 seconds until you hear a voice prompt confirming the reset.\n3. Delete the headset from your phone/PC's saved devices and the AceZone app.\n\nThen, re-pair the headset and dongle:\n\n1. Plug the dongle into your PC.\n2. Reset the dongle by holding down the button until the LED turns purple.\n3. Remove the dongle.\n4. Turn your headset on, ensuring no cables are connected.\n5. Hold the Noise Cancelling mode button for 4 seconds to enable pairing mode.\n6. Plug the dongle back in. The LED will blink blue/red and turn blue when pairing is complete.\n\nIf these steps don't resolve the issue, we'll go ahead with a warranty review.\n\nI look forward to hearing from you.",
+      "qa": {
+        "correctness": 9,
+        "completeness": 8,
+        "tone": 9,
+        "actionability": 8,
+        "overall_10": 8,
+        "send_ready": false,
+        "primary_gap": "next-level troubleshooting",
+        "missing_for_10": [
+          "specific next steps if the issue persists after the suggested fixes"
+        ],
+        "likely_root_cause": "intent",
+        "reasoning": "The response is mostly correct and actionable but lacks a clear next step if the issue continues, which is crucial for technical support."
+      },
+      "v2": {
+        "confidence": 0.6499999999999999,
+        "routing_hint": "review",
+        "proposed_actions": [],
+        "sources": [
+          {
+            "content": "Saved reply: A-Spire Wireless - Uninstall/reinstall USB drivers + factory reset\nWith the headset powered on and connected to your PC via USB-C cable, open the Device Manager window on your PC.\n- Find ",
+            "kind": "snippet",
+            "source_label": "saved_reply: A-Spire Wireless - Uninstall/reinstall USB drivers + factory reset",
+            "usable_as": "saved_reply",
+            "risk_flags": [
+              "retailer_specific"
+            ]
+          },
+          {
+            "content": "To do a factory reset on the A-Spire Wireless:\n\n1. Turn the headset off.\n\n2. Press and hold power button for 15 seconds.\n\n3. A voice prompt will tell you a factory reset has been made.\n\nPlease note th",
+            "kind": "snippet",
+            "source_label": "manual_text: My headset powers off at random intervals for A-blaze, why?",
+            "usable_as": "background",
+            "risk_flags": [
+              "retailer_specific"
+            ]
+          },
+          {
+            "content": "To do a factory reset on the A-Spire Wireless:\n\n1. Turn the headset off.\n\n2. Press and hold power button for 15 seconds.\n\n3. A voice prompt will tell you a factory reset has been made.\n\nPlease note th",
+            "kind": "snippet",
+            "source_label": "manual_text: My microphone sounds like its \"pulsating\" for A-blaze",
+            "usable_as": "background",
+            "risk_flags": [
+              "retailer_specific"
+            ]
+          },
+          {
+            "content": "To do a factory reset on the A-Spire Wireless:\n\n1. Turn the headset off.\n\n2. Press and hold power button for 15 seconds.\n\n3. A voice prompt will tell you a factory reset has been made.\n\nPlease note th",
+            "kind": "snippet",
+            "source_label": "manual_text: Why is my audio quality bad for A-blaze? (Cracking)",
+            "usable_as": "background",
+            "risk_flags": [
+              "retailer_specific"
+            ]
+          },
+          {
+            "content": "To do a factory reset on the A-Spire Wireless:\n\n1. Turn the headset off.\n\n2. Press and hold power button for 15 seconds.\n\n3. A voice prompt will tell you a factory reset has been made.\n\nPlease note th",
+            "kind": "snippet",
+            "source_label": "manual_text: Why am I hearing weird noises in 1 earcup For A-blaze?",
+            "usable_as": "background",
+            "risk_flags": [
+              "retailer_specific"
+            ]
+          }
+        ]
+      },
+      "latency_ms": 28448
+    },
+    {
+      "ticket": {
+        "id": "dd6bcea3-3b78-4389-b810-36dc775e23ab",
+        "subject": "Re: [AceZone] Re: Fwd: [AceZone] Re: Issue with connection",
+        "customerBody": "Hey!\n\nI have finally received my headset. But the second I put it on my head and\nturned it on I heard a constant sort of rumbling sound, almost like someone\nis blowing air in my left ear. It's definitely different from before I sent\nit, but equally as distracting, and in the same ear.\n\nIs this something you're aware of, and is there anything I'm doing wrong?\nThe sound persists regardless of whether it's connected to my PC by cable,\nbluetooth, or not connected at all. It rises in volume for a few seconds,\nthen gradually goes down to a low rumble, before rising again.\n\nI didn't have this issue when I first got the headset, and not with the\nstand-in headset I loaned.\n\nIf you could be so kind as to give me a list of things to check, I'll get\nstraight to it.\n\nBest regards,\nSimen Valhaug.\n\nOn Fri, 1 May 2026, 09:09 AceZone Support (Support), <support@acezone.io>\nwrote:",
+        "source": "threads"
+      },
+      "draft": "Hi Simen,\n\nThanks for reaching out, and sorry you’re experiencing that rumbling in the left ear. Let’s run through a full checklist to rule out settings and a reset issue:\n\n1) Factory reset the headset\n- Power the headset on, then hold the power button for 15 seconds until the voice prompt confirms a factory reset. Power it off and back on.\n\n2) Balance and enhancements (Windows)\n- Right‑click the speaker icon → Sound settings → select the headset → Device properties → Additional device properties → Levels → Balance. Ensure Left/Right are both 100 and equal.\n- In the same properties window, under Enhancements/Advanced, disable any sound effects or enhancements (Voice Clarity, Loudness, etc.).\n\n3) App and third‑party filters\n- If you use Discord, disable KRISP and any noise suppression/voice enhancement. Close other audio apps that may apply processing.\n\n4) Clean connectors and test sources\n- If using the cable, reseat it firmly at both ends and try another cable/port if available.\n- Test on another device (phone, second PC) with Bluetooth and with cable to compare.\n\n5) Dongle reset (if you use our USB dongle)\n- Plug the dongle in. Hold its button until the LED turns purple to reset it, then re‑pair if needed.\n\nIf the rumble persists after these steps—especially since it appears even when not connected—this points to a fault in that earcup. We’ll proceed with a warranty review and arrange a swap. I’m ready to move forward based on your result.\n\nI look forward to hearing how it goes.",
+      "qa": {
+        "correctness": 10,
+        "completeness": 10,
+        "tone": 9,
+        "actionability": 10,
+        "overall_10": 9,
+        "send_ready": false,
+        "primary_gap": "tone",
+        "missing_for_10": [
+          "a more empathetic acknowledgment of the customer's frustration"
+        ],
+        "likely_root_cause": "language",
+        "reasoning": "The response is factually accurate and includes all necessary troubleshooting steps, but could benefit from a slightly more empathetic tone to enhance customer experience."
+      },
+      "v2": {
+        "confidence": 0.6499999999999999,
+        "routing_hint": "review",
+        "proposed_actions": [],
+        "sources": [
+          {
+            "content": "This usually seems like a faulty headset, try factory resetting the headset, and check the windows system settings to see if somehow the headset was set to play more in one earcup than the other. If i",
+            "kind": "snippet",
+            "source_label": "manual_text: Why am I only hearing audio in 1 earcup for A-blaze?",
+            "usable_as": "procedure",
+            "risk_flags": []
+          },
+          {
+            "content": "This usually seems like a faulty headset, try factory resetting the headset, and check the windows system settings to see if somehow the headset was set to play more in one earcup than the other. If i",
+            "kind": "snippet",
+            "source_label": "manual_text: Why am I only hearing audio in 1 earcup for A-Spire Wireless?",
+            "usable_as": "procedure",
+            "risk_flags": []
+          },
+          {
+            "content": "Saved reply: A-Rise Repair Instructions\nCategory: Return for Repair\nExcellent. Here are the instructions to send it to us:\n1. Pack the headset securely, preferably with the carry case. Here are approx",
+            "kind": "snippet",
+            "source_label": "saved_reply: A-Rise Repair Instructions",
+            "usable_as": "saved_reply",
+            "risk_flags": []
+          },
+          {
+            "content": "This usually seems like a faulty headset, try factory resetting the headset, and check the windows system settings to see if somehow the headset was set to play more in one earcup than the other. If i",
+            "kind": "snippet",
+            "source_label": "manual_text: Why am I hearing weird noises in 1 earcup for A-Spire Wireless?",
+            "usable_as": "procedure",
+            "risk_flags": []
+          },
+          {
+            "content": "This usually seems like a faulty headset, try factory resetting the headset, and check the windows system settings to see if somehow the headset was set to play more in one earcup than the other. If i",
+            "kind": "snippet",
+            "source_label": "manual_text: Why am I hearing weird noises in 1 earcup For A-blaze?",
+            "usable_as": "procedure",
+            "risk_flags": []
+          }
+        ]
+      },
+      "latency_ms": 28435
+    },
+    {
+      "ticket": {
+        "id": "e19e3593-8042-456a-8770-a0d8fb456fa1",
+        "subject": "Shipment Notification",
+        "customerBody": "&nbsp; &nbsp; Shipping Pre-Advise &nbsp; A shipment has been dispatched to you on behalf of &nbsp;Justin Megsmith The tracking reference for this shipment is 1Z4X4F259199813345. Shipment Information From Justin Megsmith To AceZone International ApS Description Headset Number of Pieces 1 Weight 2.00 Ship date 05-05-2026 Senders Reference JUSTIN-ACEZONE-REPAIR Receivers Reference AWB Number 1Z4X4F259199813345 Track Link Click Here! Message &nbsp; Shipment information If you would like to track the progress of your shipment, please click on the tracking&nbsp;link above which will take you to the online tracking service. Tracking may not be available until the shipment have been collected and scanned into the carrier network. &nbsp; Please do not reply &mdash; this is an automated e-mail. &nbsp;",
+        "source": "threads"
+      },
+      "draft": "Hi there, thanks for reaching out. We’ve received the shipment pre-advice for your headset with tracking 1Z4X4F259199813345. We’ll monitor it and confirm as soon as it’s delivered to our office. In the meantime, you can follow the status using the carrier’s tracking link. I look forward to hearing from you.",
+      "qa": {
+        "correctness": 8,
+        "completeness": 7,
+        "tone": 8,
+        "actionability": 7,
+        "overall_10": 7,
+        "send_ready": false,
+        "primary_gap": "delivery confirmation",
+        "missing_for_10": [
+          "specific delivery status and date/time"
+        ],
+        "likely_root_cause": "facts",
+        "reasoning": "The response lacks specific delivery details and does not confirm the delivery date/time, which is essential for tracking status inquiries."
+      },
+      "v2": {
+        "confidence": 0.45,
+        "routing_hint": "review",
+        "proposed_actions": [],
+        "sources": [
+          {
+            "content": "Saved reply: A-Rise Repair Instructions\nCategory: Return for Repair\nExcellent. Here are the instructions to send it to us:\n1. Pack the headset securely, preferably with the carry case. Here are approx",
+            "kind": "snippet",
+            "source_label": "saved_reply: A-Rise Repair Instructions",
+            "usable_as": "saved_reply",
+            "risk_flags": []
+          },
+          {
+            "content": "Make sure that the customer provides their order number if Sona cannot find the order through e-mail on Shopify.\n\nProvide tracking link for the customer to follow. If there has been an unusual long ti",
+            "kind": "snippet",
+            "source_label": "manual_text: When does my order arrive? / Where is my order?",
+            "usable_as": "background",
+            "risk_flags": [
+              "asks_for_extra_fields"
+            ]
+          },
+          {
+            "content": "Saved reply: Shipping -  Customer organizes shipping\nDescription: For when the customer must pay for shipping from us to them.\nYou will need to organise collection at our address, between 13:30 and 16",
+            "kind": "snippet",
+            "source_label": "saved_reply: Shipping -  Customer organizes shipping",
+            "usable_as": "saved_reply",
+            "risk_flags": [
+              "strong_claim"
+            ]
+          },
+          {
+            "content": "Policy: Shipping\n\nHandle: shipping-policy\n\nPublic URL: https://shop-acezone.myshopify.com/62517575926/policies/27762393334\n\nContent:\nWe process your order as quickly as possible. All orders are fulfil",
+            "kind": "document",
+            "source_label": "shopify_policy: Shipping",
+            "usable_as": "policy",
+            "risk_flags": []
+          },
+          {
+            "content": "Return for swap if nothing works (ask for customers personal details and create a return label for them to return the headset - ALPI for out of country packages, PostNord usually for domestic orders).",
+            "kind": "snippet",
+            "source_label": "manual_text: Why is my audio quality bad for A-Spire Wireless? (Cracking)",
+            "usable_as": "procedure",
+            "risk_flags": []
+          }
+        ]
+      },
+      "latency_ms": 27779
+    },
+    {
+      "ticket": {
+        "id": "0453f629-1b03-45f5-b66a-a8f65354a10d",
+        "subject": "Shipment Notification",
+        "customerBody": "&nbsp; &nbsp; Shipping Pre-Advise &nbsp; A shipment has been dispatched to you on behalf of &nbsp;Marlon Hormes The tracking reference for this shipment is 1Z4X4F259191261965. Shipment Information From Marlon Hormes To AceZone International ApS Description Headset Number of Pieces 1 Weight 1.00 Ship date 05-05-2026 Senders Reference MARLON-ACEZONE Receivers Reference AWB Number 1Z4X4F259191261965 Track Link Click Here! Message &nbsp; Shipment information If you would like to track the progress of your shipment, please click on the tracking&nbsp;link above which will take you to the online tracking service. Tracking may not be available until the shipment have been collected and scanned into the carrier network. &nbsp; Please do not reply &mdash; this is an automated e-mail. &nbsp;",
+        "source": "threads"
+      },
+      "draft": "Hi,\n\nYour shipment with the tracking reference 1Z4X4F259191261965 has been dispatched. You can track its progress using this link: https://gls-group.eu/EU/en/parcel-tracking?match=1Z4X4F259191261965. Please note that tracking may not be available until the shipment has been collected and scanned into the carrier network.\n\nHave a lovely day!",
+      "qa": {
+        "correctness": 10,
+        "completeness": 9,
+        "tone": 9,
+        "actionability": 10,
+        "overall_10": 9,
+        "send_ready": false,
+        "primary_gap": "tracking status specificity",
+        "missing_for_10": [
+          "specific delivery date/time"
+        ],
+        "likely_root_cause": "intent",
+        "reasoning": "The response is accurate and actionable but lacks the specific delivery date/time for a perfect score."
+      },
+      "v2": {
+        "confidence": 0.85,
+        "routing_hint": "review",
+        "proposed_actions": [],
+        "sources": [
+          {
+            "content": "Saved reply: Shipping -  Customer organizes shipping\nDescription: For when the customer must pay for shipping from us to them.\nYou will need to organise collection at our address, between 13:30 and 16",
+            "kind": "snippet",
+            "source_label": "saved_reply: Shipping -  Customer organizes shipping",
+            "usable_as": "saved_reply",
+            "risk_flags": [
+              "strong_claim"
+            ]
+          },
+          {
+            "content": "Make sure that the customer provides their order number if Sona cannot find the order through e-mail on Shopify.\n\nProvide tracking link for the customer to follow. If there has been an unusual long ti",
+            "kind": "snippet",
+            "source_label": "manual_text: When does my order arrive? / Where is my order?",
+            "usable_as": "background",
+            "risk_flags": [
+              "asks_for_extra_fields"
+            ]
+          },
+          {
+            "content": "Saved reply: A-Rise Repair Instructions\nCategory: Return for Repair\nExcellent. Here are the instructions to send it to us:\n1. Pack the headset securely, preferably with the carry case. Here are approx",
+            "kind": "snippet",
+            "source_label": "saved_reply: A-Rise Repair Instructions",
+            "usable_as": "saved_reply",
+            "risk_flags": []
+          },
+          {
+            "content": "Policy: Shipping\n\nHandle: shipping-policy\n\nPublic URL: https://shop-acezone.myshopify.com/62517575926/policies/27762393334\n\nContent:\nWe process your order as quickly as possible. All orders are fulfil",
+            "kind": "document",
+            "source_label": "shopify_policy: Shipping",
+            "usable_as": "policy",
+            "risk_flags": []
+          },
+          {
+            "content": "Saved reply: A-Live price request\nThank you for reaching out to us! 😊️\nThe A-Live headset is exclusively available for B2B sales. Pricing varies based on factors such as order quantity and specific r",
+            "kind": "snippet",
+            "source_label": "saved_reply: A-Live price request",
+            "usable_as": "saved_reply",
+            "risk_flags": []
+          }
+        ]
+      },
+      "latency_ms": 17512
+    },
+    {
+      "ticket": {
+        "id": "e98019be-36cf-4660-8258-1a31246bf75f",
+        "subject": "Subject: Case #5882 – UPS fortollingskrav 1031 NOK (A‑Spire Wireless erstatning)",
+        "customerBody": "UPS-sporingsnr.: V59 21X 68 1093 3388\nUPS/ACEZONE-ref.: ACEZONE19031257\nDette headsettet er reklamasjons sak og jeg betalte ikke for det.\nHilsen Marie Frøge",
+        "source": "threads"
+      },
+      "draft": "Hej Marie,\n\nTak for din tilbagemelding. Jeg kan bekræfte, at UPS-sporingsnummeret V59 21X 68 1093 3388 hører til din sag (ref. ACEZONE19031257), og at dette er en reklamation hvor du ikke har betalt.\n\nVi følger forsendelsen og opdaterer dig, så snart headsettet er registreret hos os og næste skridt i reklamationssagen er igangsat. Undskyld for ulejligheden og tak for din tålmodighed.",
+      "qa": {
+        "correctness": 8,
+        "completeness": 6,
+        "tone": 8,
+        "actionability": 5,
+        "overall_10": 6,
+        "send_ready": false,
+        "primary_gap": "lack of specific next steps",
+        "missing_for_10": [
+          "specific next steps in the claims process"
+        ],
+        "likely_root_cause": "intent",
+        "reasoning": "The response lacks specific next steps regarding the claims process and does not confirm the creation of an order or provide a tracking link."
+      },
+      "v2": {
+        "confidence": 0.6499999999999999,
+        "routing_hint": "review",
+        "proposed_actions": [],
+        "sources": [
+          {
+            "content": "Saved reply: A-Rise Repair Instructions\nCategory: Return for Repair\nExcellent. Here are the instructions to send it to us:\n1. Pack the headset securely, preferably with the carry case. Here are approx",
+            "kind": "snippet",
+            "source_label": "saved_reply: A-Rise Repair Instructions",
+            "usable_as": "saved_reply",
+            "risk_flags": []
+          },
+          {
+            "content": "Saved reply: Return - Policy and Instructions\nAs per our policy, we accept returns within our 30-day return period, even if the product has been opened and briefly tested. Since the headset has been u",
+            "kind": "snippet",
+            "source_label": "saved_reply: Return - Policy and Instructions",
+            "usable_as": "policy",
+            "risk_flags": []
+          },
+          {
+            "content": "Hello [name],\n\nThank you for reaching out to our support.\nI am sorry to hear the our headset does not meet your expectations.\n\nWe need data from you as follows:\nPlace of purchase:\nDate of purchase:\nFu",
+            "kind": "snippet",
+            "source_label": "manual_text: I would like to return my headphones, as they unfortunately do not meet my expectations.",
+            "usable_as": "policy",
+            "risk_flags": [
+              "asks_for_extra_fields"
+            ]
+          },
+          {
+            "content": "As per our policy, we accept returns within our 30-day return period, even if the product has been opened and briefly tested. Since the headset has been unsealed and worn, it can no longer be sold as ",
+            "kind": "snippet",
+            "source_label": "manual_text: I want a refund/I wish to return the product",
+            "usable_as": "policy",
+            "risk_flags": []
+          },
+          {
+            "content": "Physically damaged A-Spire headset — known production defect\n\nPROCEDURE — USE THIS SCRIPT TO RESPOND:\nWe are sorry to hear that the plastic in your headset did not hold up.\n\nIn order to initiate a Ret",
+            "kind": "snippet",
+            "source_label": "manual_text: My headset has a physical crack",
+            "usable_as": "procedure",
+            "risk_flags": [
+              "asks_for_extra_fields",
+              "strong_claim",
+              "retailer_specific"
+            ]
+          }
+        ]
+      },
+      "latency_ms": 24836
+    }
+  ]
+}

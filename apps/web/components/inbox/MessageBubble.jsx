@@ -627,14 +627,18 @@ export function MessageBubble({
 }) {
   const [selectedAttachment, setSelectedAttachment] = useState(null);
   const [viewEmailOpen, setViewEmailOpen] = useState(false);
-  const [showTranslation, setShowTranslation] = useState(false);
+  const [showOriginal, setShowOriginal] = useState(false);
   const isOutbound = direction === "outbound";
 
+  // Show translation as soon as data is available (unless user clicked "Show original")
+  const showTranslation = !isOutbound && Boolean(translatedText) && !showOriginal;
+
   const handleToggleTranslation = () => {
-    if (!showTranslation && !translatedText) {
+    if (translatedText) {
+      setShowOriginal((prev) => !prev);
+    } else {
       onRequestTranslation?.();
     }
-    setShowTranslation((prev) => !prev);
   };
 
   const normalizedOutboundSenderName = String(outboundSenderName || "").trim().toLowerCase();
@@ -823,26 +827,15 @@ export function MessageBubble({
                   if (attachment) openLightbox(attachment);
                 }}
               >
-                {!isOutbound && showTranslation ? (
-                  translationLoading ? (
-                    <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
-                      <span className="inline-block h-3 w-3 animate-spin rounded-full border border-muted-foreground/40 border-t-foreground/80" />
-                      Translating…
-                    </div>
-                  ) : translatedText ? (
-                    <p className="whitespace-pre-wrap text-[14px] leading-[1.55] text-foreground">
-                      {translatedText}
-                    </p>
-                  ) : (
-                    <>
-                      {!isStructuredForm && previewBodyHtml ? (
-                        <div className={EMAIL_BODY_CLASS} dangerouslySetInnerHTML={{ __html: previewBodyHtml }} />
-                      ) : (
-                        <div className={EMAIL_BODY_CLASS} dangerouslySetInnerHTML={{ __html: previewHtml }} />
-                      )}
-                      <p className="mt-2 text-[12px] text-muted-foreground">Translation not available.</p>
-                    </>
-                  )
+                {showTranslation ? (
+                  <p className="whitespace-pre-wrap text-[14px] leading-[1.55] text-foreground">
+                    {translatedText}
+                  </p>
+                ) : !isOutbound && translationLoading ? (
+                  <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
+                    <span className="inline-block h-3 w-3 animate-spin rounded-full border border-muted-foreground/40 border-t-foreground/80" />
+                    Translating…
+                  </div>
                 ) : !isStructuredForm && previewBodyHtml ? (
                   <div
                     className={EMAIL_BODY_CLASS}

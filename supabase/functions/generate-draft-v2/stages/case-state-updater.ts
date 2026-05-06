@@ -1,6 +1,7 @@
 // supabase/functions/generate-draft-v2/stages/case-state-updater.ts
 import { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { resolveReplyLanguage } from "./language.ts";
+import { callOpenAIJson } from "./openai-json.ts";
 
 export interface CaseState {
   intents: Array<{ type: string; confidence: number }>;
@@ -34,7 +35,48 @@ const DEFAULT_CASE_STATE: CaseState = {
   last_updated_msg_id: "",
 };
 
-const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
+const CASE_STATE_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    primary_intent: {
+      type: "string",
+      enum: [
+        "tracking",
+        "return",
+        "refund",
+        "exchange",
+        "address_change",
+        "product_question",
+        "complaint",
+        "thanks",
+        "other",
+      ],
+    },
+    language: {
+      type: "string",
+      enum: ["da", "sv", "de", "en", "nl", "fr", "no", "fi", "es", "it"],
+    },
+    order_numbers: { type: "array", items: { type: "string" } },
+    customer_email: { type: "string" },
+    products_mentioned: { type: "array", items: { type: "string" } },
+    customer_country: { type: ["string", "null"] },
+    open_questions: { type: "array", items: { type: "string" } },
+    pending_asks: { type: "array", items: { type: "string" } },
+    decisions_made: { type: "array", items: { type: "string" } },
+  },
+  required: [
+    "primary_intent",
+    "language",
+    "order_numbers",
+    "customer_email",
+    "products_mentioned",
+    "customer_country",
+    "open_questions",
+    "pending_asks",
+    "decisions_made",
+  ],
+};
 
 export async function updateCaseState(
   { thread, messages, supabase }: CaseStateInput,
@@ -94,7 +136,15 @@ Regler:
 - pending_asks: information eller bekræftelse vi HAR BEDT kunden om, men ENDNU IKKE modtaget svar på. Fjern straks når kunden har svaret — selv med et kort "ja", "ok" eller "det er korrekt".
 - decisions_made: hvad agenten allerede har tilbudt, gjort, eller hvad kunden har bekræftet. Eksempler: "cable_replacement_initiated", "address_confirmed: Højrupvej 48 5750 Ringe", "warranty_replacement_offered", "refund_offered". Inkludér bekræftede kundeoplysninger som en del af decisions_made så næste svar ved hvad der allerede er på plads.
 - Vigtigste regel: Når kunden bekræfter noget vi har spurgt om (adresse, ordrenummer, situation), skal pending_asks være TOM og decisions_made skal indeholde hvad der nu er bekræftet.
-- Kun inkludér det der faktisk er i samtalen`;
+- Kun inkludér det der faktisk er i samtalen
+
+AGENT-FORPLIGTELSER (KRITISK): Læs alle [Agent]-beskeder grundigt og fang hvad agenten har lovet eller arrangeret. Tilføj til decisions_made:
+- Hvis agenten skriver at de opretter en back-order eller reserverer en vare → "back_order_placed" eller "back_order_placed_invoice_in_[måned]"
+- Hvis agenten skriver at forsendelse er arrangeret / lager er kontaktet og sender ASAP → "shipping_arranged_asap"
+- Hvis agenten skriver at de har bedt lager oprette en manuel ordre → "manual_order_requested_awaiting_tracking"
+- Hvis agenten skriver at de venter på tracking fra lager → "awaiting_tracking_from_warehouse"
+- Hvis agenten beder en tredjepart om noget specifikt (API-kode, manifest, data) og forklarer hvorfor → "context:[opsummér årsagen i 5-8 ord]"
+- Formål: writer ved hvad der ALLEREDE er arrangeret og besvarer kundens opfølgningsspørgsmål om den aftale — ikke starter forfra`;
 
   let llmResult: {
     primary_intent?: string;
@@ -109,28 +159,14 @@ Regler:
   } = {};
 
   try {
-    const resp = await fetch(OPENAI_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
-      },
-      body: JSON.stringify({
-        model: Deno.env.get("OPENAI_MODEL") ?? "gpt-5-mini",
-        temperature: 0,
-        max_tokens: 400,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-      }),
+    llmResult = await callOpenAIJson<typeof llmResult>({
+      model: Deno.env.get("OPENAI_MODEL") ?? "gpt-5-mini",
+      systemPrompt,
+      userPrompt,
+      maxTokens: 700,
+      schema: CASE_STATE_SCHEMA,
+      schemaName: "draft_v2_case_state",
     });
-
-    if (resp.ok) {
-      const data = await resp.json();
-      llmResult = JSON.parse(data.choices[0].message.content);
-    }
   } catch (err) {
     console.warn(
       "[case-state-updater] LLM extraction failed, using regex fallback:",
@@ -205,14 +241,22 @@ Regler:
       existing.last_updated_msg_id,
   };
 
-  // Persist til thread (fire and forget — blokerer ikke pipeline)
-  supabase
-    .from("mail_threads")
-    .update({ case_state_json: updated })
-    .eq("id", (thread as { id: string }).id)
-    .then(({ error }) => {
-      if (error) console.warn("[case-state-updater] persist failed:", error);
-    });
+  const threadId = (thread as { id?: string }).id;
+  // Persist til thread (fire and forget — blokerer ikke pipeline).
+  // Eval-mode uses the synthetic id "eval"; do not try to write it to a UUID column.
+  if (
+    threadId &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      .test(threadId)
+  ) {
+    supabase
+      .from("mail_threads")
+      .update({ case_state_json: updated })
+      .eq("id", threadId)
+      .then(({ error }) => {
+        if (error) console.warn("[case-state-updater] persist failed:", error);
+      });
+  }
 
   return updated;
 }

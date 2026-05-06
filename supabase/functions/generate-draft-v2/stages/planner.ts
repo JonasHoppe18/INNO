@@ -1,6 +1,7 @@
 // supabase/functions/generate-draft-v2/stages/planner.ts
 import { CaseState } from "./case-state-updater.ts";
 import { resolveReplyLanguage } from "./language.ts";
+import { callOpenAIJson } from "./openai-json.ts";
 
 export interface Plan {
   primary_intent: string;
@@ -17,8 +18,6 @@ export interface PlannerInput {
   shop: Record<string, unknown>;
 }
 
-const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
-
 const FALLBACK_PLAN = (language: string): Plan => ({
   primary_intent: "other",
   sub_queries: [],
@@ -27,6 +26,43 @@ const FALLBACK_PLAN = (language: string): Plan => ({
   confidence: 0.3,
   language,
 });
+
+const PLANNER_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    primary_intent: {
+      type: "string",
+      enum: [
+        "tracking",
+        "return",
+        "refund",
+        "exchange",
+        "address_change",
+        "product_question",
+        "complaint",
+        "thanks",
+        "other",
+      ],
+    },
+    sub_queries: { type: "array", items: { type: "string" } },
+    required_facts: { type: "array", items: { type: "string" } },
+    skills_to_consider: { type: "array", items: { type: "string" } },
+    confidence: { type: "number" },
+    language: {
+      type: "string",
+      enum: ["da", "en", "sv", "de", "fr", "nl", "no", "fi", "es", "it"],
+    },
+  },
+  required: [
+    "primary_intent",
+    "sub_queries",
+    "required_facts",
+    "skills_to_consider",
+    "confidence",
+    "language",
+  ],
+};
 
 export async function runPlanner(
   { caseState, latestMessage, shop }: PlannerInput,
@@ -52,6 +88,8 @@ Rules:
 - SHORT CONFIRMATION DETECTION (check this FIRST before classifying intent):
   If the current message is ≤60 characters AND is a simple confirmation or acknowledgement (e.g. "ja", "yes", "ok", "jep", "det er korrekt", "ja tak", "confirmed", "sounds good", "præcist", "det passer", "ja det er de", "perfekt", or any short affirmative in any language) — this is a CONFIRMATION RESPONSE to the previous agent question.
   For confirmation messages:
+  KRITISK EXCEPTION: If the confirmation is about "verifying personal details / address for a warranty or replacement already offered" — i.e. the customer says something like "ja det er stadig de oplysninger", "yes those details are still correct", "ja det passer", "those are still my details" — then set primary_intent = "other". The replacement was already arranged by the previous agent; the writer only needs to confirm we are proceeding. Do NOT set intent to "complaint" or "exchange" — that would trigger a new exchange action proposal which is wrong since we already committed.
+  For all other confirmation messages:
   - primary_intent: use the thread's most relevant open issue from pending_asks/open_questions (NOT the confirmation word itself). E.g. if pending was "address confirmation for cable replacement" → intent = "complaint" or "exchange"
   - sub_queries: generate based on what should happen NEXT after this confirmation. E.g. address confirmed → ["send spare part customer confirmed address", "cable replacement shipment procedure", "how to ship spare part to customer"]
   - required_facts: always ["order_state"] — we need the order to proceed
@@ -111,29 +149,17 @@ Thread context (for sub_queries and facts ONLY — do NOT use for intent classif
 ${threadContextLines}
 - Detected language of current message: detect from the current message above, ignore thread history language`;
   const deterministicLanguage = resolveReplyLanguage(body, caseState.language);
+  const model = Deno.env.get("OPENAI_MODEL") ?? "gpt-5-mini";
 
   try {
-    const resp = await fetch(OPENAI_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
-      },
-      body: JSON.stringify({
-        model: Deno.env.get("OPENAI_MODEL") ?? "gpt-5-mini",
-        temperature: 0,
-        max_tokens: 300,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-      }),
+    const parsed = await callOpenAIJson<Plan>({
+      model,
+      systemPrompt,
+      userPrompt,
+      maxTokens: 500,
+      schema: PLANNER_SCHEMA,
+      schemaName: "draft_v2_plan",
     });
-
-    if (!resp.ok) throw new Error(`Planner API error: ${resp.status}`);
-    const data = await resp.json();
-    const parsed = JSON.parse(data.choices[0].message.content);
     return { ...parsed, language: deterministicLanguage || parsed.language };
   } catch (err) {
     console.error("[planner] Error:", err);

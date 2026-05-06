@@ -48,6 +48,11 @@ function isPlausibleName(value: string): boolean {
     /^(email|company|your country|country|country code|body|what is|if applicable|order|ordre|n\/a|none)$/i
       .test(name)
   ) return false;
+  // Reject team/department labels (e.g. "Kundeservice-teamet", "Support Team")
+  if (
+    /^(kundeservice|support.?team|customer.?service|after.?sales|sav\b|service|team\b)/i
+      .test(name)
+  ) return false;
   return /[A-Za-zÆØÅæøåÄÖÜäöüßÉéÈèÁáÀàÍíÓóÚúÑñ]/.test(name);
 }
 
@@ -60,10 +65,18 @@ function extractFormName(messageText: string): string {
   return isPlausibleName(name) ? name : "";
 }
 
+// Markers that indicate the start of quoted/forwarded content in an email.
+// We strip everything from the first such marker so we only read the sender's new text.
+const QUOTE_START_RE =
+  /\n(?:[-—]{3,}|Aktiveret |On .{5,}wrote:|Den .{5,}skrev:|-----\s*Original|From:\s|Fra:\s|De:\s)/i;
+
 function extractSignatureName(messageText: string): string {
   const text = stripHtml(messageText);
   const bodyMatch = text.match(/(?:^|\n|\b)Body:\s*([\s\S]+)$/i);
-  const body = bodyMatch?.[1] ?? text;
+  const rawBody = bodyMatch?.[1] ?? text;
+  // Strip quoted/forwarded content so we only look at the sender's own text
+  const quoteIdx = rawBody.search(QUOTE_START_RE);
+  const body = quoteIdx > 0 ? rawBody.slice(0, quoteIdx) : rawBody;
   const lines = body
     .split("\n")
     .map((line) => cleanNameCandidate(line))
@@ -72,8 +85,10 @@ function extractSignatureName(messageText: string): string {
 
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i];
+    // Capture 1-3 name words after the closing phrase, stopping before quote
+    // markers (Fra:, From:, Sent:, <email>) that indicate forwarded content on the same line.
     const inline = line.match(
-      /(?:kind regards|best regards|regards|venlig hilsen|med venlig hilsen|mvh|hilsen|hälsningar|vänliga hälsningar)[,\s]+(.+)$/i,
+      /(?:kind regards|best regards|regards|venlig hilsen|med venlig hilsen|mvh|hilsen|hälsningar|vänliga hälsningar)[,\s]+([A-Za-zÆØÅæøåÄÖÜäöüßÉéÈèÁáÀàÍíÓóÚúÑñ\-]{2,30}(?:\s+[A-Za-zÆØÅæøåÄÖÜäöüßÉéÈèÁáÀàÍíÓóÚúÑñ\-]{1,30}){0,2})/i,
     );
     if (inline && isPlausibleName(inline[1])) {
       return cleanNameCandidate(inline[1]);

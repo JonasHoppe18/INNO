@@ -1,0 +1,245 @@
+{
+  "generated_at": "2026-05-06T07:06:37.224Z",
+  "summary": {
+    "source": "zendesk",
+    "limit": 8,
+    "judged": 3,
+    "errors": 0,
+    "skipped_b2b": 3,
+    "average_score_10": 7.33,
+    "median_score_10": 7,
+    "ten_out_of_ten": 0,
+    "send_ready": 0,
+    "root_causes": {
+      "intent": 3
+    },
+    "primary_gaps": {
+      "tracking status": 1,
+      "invoice timing": 1,
+      "lack of commitment to create an order": 1
+    }
+  },
+  "results": [
+    {
+      "ticket": {
+        "id": "5883",
+        "subject": "Subject: Case #5882 – UPS fortollingskrav 1031 NOK (A‑Spire Wireless erstatning)",
+        "customerBody": "UPS-sporingsnr.: V59 21X 68 1093 3388 UPS/ACEZONE-ref.: ACEZONE19031257 Dette headsettet er reklamasjons sak og jeg betalte ikke for det. Hilsen Marie Frøge",
+        "humanReply": "Hej Marie, Tak for din besked. Jeg er usikker på, hvad dette handler om? 😅 Kan du venligst give mig dit ordrenummer, eller hvem du har været i kontakt med, hvis du har fået tilsendt et headset? Tusind tak! Venlig Hilsen / Kind Regards, Elias Knudsen Support Associate Acezone.io",
+        "conversationHistory": "",
+        "source": "zendesk"
+      },
+      "draft": "Hej Marie,\n\nTak fordi du kontakter os. Vi beklager besværet.\n\nTak for UPS-sporingsnummer og reference. Vi matcher sagen som en reklamation og sørger for, at du ikke bliver opkrævet for reparation eller håndtering.\n\nVi går videre med at få headsettet ind til vurdering via UPS-referencen ACEZONE19031257. Så snart vi har modtaget og registreret pakken på værkstedet, giver vi en statusopdatering på næste skridt.\n\nUndskyld for ulejligheden og tak for din tålmodighed.",
+      "qa": {
+        "correctness": 8,
+        "completeness": 7,
+        "tone": 8,
+        "actionability": 7,
+        "overall_10": 7,
+        "send_ready": false,
+        "primary_gap": "tracking status",
+        "missing_for_10": [
+          "specific delivery status and date/time"
+        ],
+        "likely_root_cause": "intent",
+        "reasoning": "The response lacks specific delivery status and date/time, which is essential for tracking inquiries."
+      },
+      "v2": {
+        "confidence": 0.85,
+        "routing_hint": "review",
+        "proposed_actions": [],
+        "sources": [
+          {
+            "content": "Saved reply: A-Rise Repair Instructions\nCategory: Return for Repair\nExcellent. Here are the instructions to send it to us:\n1. Pack the headset securely, preferably with the carry case. Here are approx",
+            "kind": "snippet",
+            "source_label": "saved_reply: A-Rise Repair Instructions",
+            "usable_as": "saved_reply",
+            "risk_flags": []
+          },
+          {
+            "content": "Saved reply: Return - Policy and Instructions\nAs per our policy, we accept returns within our 30-day return period, even if the product has been opened and briefly tested. Since the headset has been u",
+            "kind": "snippet",
+            "source_label": "saved_reply: Return - Policy and Instructions",
+            "usable_as": "policy",
+            "risk_flags": []
+          },
+          {
+            "content": "Hello [name],\n\nThank you for reaching out to our support.\nI am sorry to hear the our headset does not meet your expectations.\n\nWe need data from you as follows:\nPlace of purchase:\nDate of purchase:\nFu",
+            "kind": "snippet",
+            "source_label": "manual_text: I would like to return my headphones, as they unfortunately do not meet my expectations.",
+            "usable_as": "policy",
+            "risk_flags": [
+              "asks_for_extra_fields"
+            ]
+          },
+          {
+            "content": "Physically damaged A-Spire headset — known production defect\n\nPROCEDURE — USE THIS SCRIPT TO RESPOND:\nWe are sorry to hear that the plastic in your headset did not hold up.\n\nIn order to initiate a Ret",
+            "kind": "snippet",
+            "source_label": "manual_text: My headset has a physical crack",
+            "usable_as": "procedure",
+            "risk_flags": [
+              "asks_for_extra_fields",
+              "strong_claim",
+              "retailer_specific"
+            ]
+          },
+          {
+            "content": "l packaging and components are included in the return.\n\n2. Book and print a return label (you may pick any courier which ships directly to our office address) and tape it securely to the face of the s",
+            "kind": "snippet",
+            "source_label": "manual_text: I want a refund/I wish to return the product",
+            "usable_as": "background",
+            "risk_flags": []
+          }
+        ]
+      },
+      "latency_ms": 35179
+    },
+    {
+      "ticket": {
+        "id": "5881",
+        "subject": "",
+        "customerBody": "那我需要预约一对备用耳机套，有货了请联系我谢谢 发自我的iPhone ------------------ Original ------------------ From: AceZone Support (Support) &lt;support@acezone.io&gt; Date: Tue,May 5,2026 8:09 PM To: kajjjsmspk &lt;1038064860@qq.com&gt; Subject: Re: [AceZone] Re: Can the headphones with delaminated glue be repaired under warranty or can I purchase a headphone case? ![]( https://acezone.zendesk.com/attachments ... Hi again, Due to the current situation, I can log this in our system as a \"Back Order\" and issue you an invoice in July once they return in stock 🙂 I can get back to you by that time to collect all the information needed. Have a lovely day! Venlig Hilsen / Kind Regards, Elias Knudsen Support Associate Acezone.io This email is a service from AceZone. Delivered by Zendesk",
+        "humanReply": "I have logged this in our system. Once they are back in stock, I will contact you as soon as possible! 😃 Thank you and have a great day. Venlig Hilsen / Kind Regards, Elias Knudsen Support Associate Acezone.io",
+        "conversationHistory": "Customer: Can the headphones with delaminated glue be repaired under warranty or can I purchase a headphone case? 发自我的iPhone\n\nAgent: Hi there, Thanks for reaching out, and sorry about the delaminated ear pad. Yes, this can be reviewed under warranty. Regarding spare ear pads, unfortunately, we are currently out of stock. However, we can place a back-order for you, which we expect to fulfill by July. As for a headphone case: we don’t currently sell spare parts or accessories like a separate carry case. I look forward to hearing from you 🙂 Venlig Hilsen / Kind Regards, Elias Knudsen Support Associate Acezone.io\n\nCustomer: OK， May I ask where I can pay this fee And how should the address be filled in? 发自我的iPhone ------------------ Original ------------------ From: AceZone Support (Support) &lt;support@acezone.io&gt; Date: Tue,May 5,2026 7:57 PM To: kajjjsmspk &lt;1038064860@qq.com&gt; Subject: Re: [AceZone] Re: Can the headphones with delaminated glue be repaired under warranty or can I purchase a headphone case? ![]( https://acezone.zendesk.com/attachments ... Hi there, Thanks for reaching out, and sorry about the delaminated ear pad. Yes, this can be reviewed under warranty. Regarding spare ear pads, unfortunately, we are currently out of stock. However, we can place a back-order for you, which we expect to fulfill by July. As for a headphone case: we don’t currently sell spare parts or accessories like a separate carry case. I look forward to hearing from you 🙂 Venlig Hilsen / Kind Regards, Elias Knudsen Support Associate Acezone.io This email is a service from AceZone. Delivered by Zendesk\n\nAgent: Hi again, Due to the current situation, I can log this in our system as a \"Back Order\" and issue you an invoice in July once they return in stock 🙂 I can get back to you by that time to collect all the information needed. Have a lovely day! Venlig Hilsen / Kind Regards, Elias Knudsen Support Associate Acezone.io",
+        "source": "zendesk"
+      },
+      "draft": "Hi Elias,\n\nThanks for your reply. We’ll place a back-order for a pair of replacement ear pads and contact you in July when they’re back in stock. At that time, we’ll send you the invoice and collect the delivery details directly in this thread, you don’t need to do anything now.\n\nRegarding the delaminated ear pad under warranty: we can review this as a warranty case. Once you receive the new pads, if the issue persists or you’d still like a warranty repair assessment, let us know here and we’ll proceed with the next steps.\n\nI’ll be in touch in July with the invoice and address form. Sorry for the inconvenience, and thank you for your patience.",
+      "qa": {
+        "correctness": 9,
+        "completeness": 8,
+        "tone": 9,
+        "actionability": 8,
+        "overall_10": 8,
+        "send_ready": false,
+        "primary_gap": "invoice timing",
+        "missing_for_10": [
+          "specific date for invoice issuance"
+        ],
+        "likely_root_cause": "intent",
+        "reasoning": "The draft is mostly accurate but lacks a specific date for when the invoice will be issued, which is crucial for clarity."
+      },
+      "v2": {
+        "confidence": 0.55,
+        "routing_hint": "review",
+        "proposed_actions": [],
+        "sources": [
+          {
+            "content": "If a customer wants to make a warranty claim ie. a broken headset, missing cable/dongle, or broken ear pads, we require an order number or proof of purchase in order to verify the warranty.\n\nFurthermo",
+            "kind": "snippet",
+            "source_label": "manual_text: Order Number / Proof Of Purchase needed to make a warranty claim.",
+            "usable_as": "background",
+            "risk_flags": [
+              "asks_for_extra_fields",
+              "retailer_specific"
+            ]
+          },
+          {
+            "content": "Saved reply: A-Rise Repair Instructions\nCategory: Return for Repair\nExcellent. Here are the instructions to send it to us:\n1. Pack the headset securely, preferably with the carry case. Here are approx",
+            "kind": "snippet",
+            "source_label": "saved_reply: A-Rise Repair Instructions",
+            "usable_as": "saved_reply",
+            "risk_flags": []
+          },
+          {
+            "content": "Product: Ear pads\n\nVendor: Shop AceZone\n\nTags: accessories\n\nDescription:\nSpare Ear Pads for AceZone Headsets ⚠️ Note: When ordering, please write in the comment field at checkout which headset you nee",
+            "kind": "document",
+            "source_label": "shopify_product: Ear pads",
+            "usable_as": "background",
+            "risk_flags": []
+          },
+          {
+            "content": "Product: Ear pads\nVariant: Default Title\nDescription: Spare Ear Pads for AceZone Headsets ⚠️ Note: When ordering, please write in the comment field at checkout which headset you need ear pads for. Off",
+            "kind": "document",
+            "source_label": "shopify_variant",
+            "usable_as": "background",
+            "risk_flags": []
+          },
+          {
+            "content": "Product: A-Spire\n\nVendor: Shop Acezone\n\nType: Headphones & Headsets\n\nDescription:\nThe A-Spire is a premium gaming headset, equipped with cutting-edge Advanced Hybrid Active Noise Cancellation (ANC) ta",
+            "kind": "document",
+            "source_label": "shopify_product: A-Spire",
+            "usable_as": "background",
+            "risk_flags": []
+          }
+        ]
+      },
+      "latency_ms": 30836
+    },
+    {
+      "ticket": {
+        "id": "5864",
+        "subject": "Sv: vedr order 2728",
+        "customerBody": "Hej. Det er pænt af jer, mange tak. Tommy Bue Tårnvej 10 2th 2610 Rødovre tlf : 27 69 73 78 email : Tommybue@hotmail.com Hav en dejlig dag. Venlig hilsen Tommy Bue Fra: AceZone Support &lt;support@acezone.io&gt; Sendt: 4. maj 2026 15:08 Til: tommy b &lt;tommybue@hotmail.com&gt; Emne: Re: vedr order 2728 Hej Tommy, Tak for din besked. Jeg er ked af at høre, at plastikken på headsettet er gået i stykker. Venligst udfyld denne form: - Full name - Full address (postal code important) - Phone number - Email address Med disse kan vi sende et nyt under garanti. Hav en fantastisk dag! On Thu, 30 Apr 2026 at 20:11, tommy b &lt; tommybue@hotmail.com &gt; wrote: Hej. Skriver vedr. et sæt A-Spire Wireless, som jeg har købt af Sebastian, som fortsat er under reklamationsret. Desværre fik headsettet, ud af det blå, en mindre revne i plastikken, som desværre nu er blevet så slemt at det ikke kan bruges. Da det har været et dyrt headset har jeg været meget forsigtig med det. Jeg kan se på nettet, at jeg ikke er den eneste der har fået denne fejl med plastikhængslet og da headsettet er under 1 år gammelt og under reklamationsret, håber jeg at i kan hjælpe. Se evt. Vedhæftet billede. Venlig hilsen Tommy Bue -- Kind regards Support Team Acezone.io",
+        "humanReply": "Hej Tommy, Jeg har nu oprettet en manuel ordre til dig 🙂 Så snart at vores lagerpartner har konfirmeret og håndteret ordren, vender jeg tilbage med et tracking link! Hav en fantastisk dag. Venlig Hilsen / Kind Regards, Elias Knudsen Support Associate Acezone.io",
+        "conversationHistory": "",
+        "source": "zendesk"
+      },
+      "draft": "Hej Tommy,\n\nTak for din besked. Vi opretter en ordre til dig og sender et tracking-link, så snart vores lagerpartner har behandlet og sendt den afsted.\n\nGod dag!",
+      "qa": {
+        "correctness": 8,
+        "completeness": 7,
+        "tone": 9,
+        "actionability": 8,
+        "overall_10": 7,
+        "send_ready": false,
+        "primary_gap": "lack of commitment to create an order",
+        "missing_for_10": [
+          "explicit confirmation of order creation"
+        ],
+        "likely_root_cause": "intent",
+        "reasoning": "The draft lacks a clear commitment to creating the order, which is essential for warranty confirmation."
+      },
+      "v2": {
+        "confidence": 0.3,
+        "routing_hint": "review",
+        "proposed_actions": [],
+        "sources": [
+          {
+            "content": "Return for swap if nothing works (ask for customers personal details and create a return label for them to return the headset - ALPI for out of country packages, PostNord usually for domestic orders).",
+            "kind": "snippet",
+            "source_label": "manual_text: Why is my audio quality bad for A-Spire Wireless? (Cracking)",
+            "usable_as": "procedure",
+            "risk_flags": []
+          },
+          {
+            "content": "Saved reply: Acezone App - Connect A-Spire Wireless\nTo connect your A-Spire Wireless to the AceZone iOS/Android app:\nNOTE!: if you have previously connected the headset to your phone, but are no longe",
+            "kind": "snippet",
+            "source_label": "saved_reply: Acezone App - Connect A-Spire Wireless",
+            "usable_as": "saved_reply",
+            "risk_flags": [
+              "retailer_specific"
+            ]
+          },
+          {
+            "content": "Saved reply: Pair A-Spire Wireless to Dongle\nTo reconnect the headset to the dongle:\n1. Reset the dongle by holding down the button until the LED turns purple.\n2. Remove the dongle.\n3. Turn your heads",
+            "kind": "snippet",
+            "source_label": "saved_reply: Pair A-Spire Wireless to Dongle",
+            "usable_as": "saved_reply",
+            "risk_flags": [
+              "retailer_specific"
+            ]
+          },
+          {
+            "content": "To do a factory reset on the A-Spire Wireless:\n\n1. Turn the headset off.\n\n2. Press and hold power button for 15 seconds.\n\n3. A voice prompt will tell you a factory reset has been made.\n\nPlease note th",
+            "kind": "snippet",
+            "source_label": "manual_text: Why is my audio quality bad for A-Spire Wireless? (Cracking)",
+            "usable_as": "background",
+            "risk_flags": [
+              "retailer_specific"
+            ]
+          },
+          {
+            "content": "To do a factory reset on the A-Spire Wireless:\n\n1. Turn the headset off.\n\n2. Press and hold power button for 15 seconds.\n\n3. A voice prompt will tell you a factory reset has been made.\n\nPlease note th",
+            "kind": "snippet",
+            "source_label": "manual_text: Why is my audio quality bad for A-blaze? (Cracking)",
+            "usable_as": "background",
+            "risk_flags": [
+              "retailer_specific"
+            ]
+          }
+        ]
+      },
+      "latency_ms": 18394
+    }
+  ]
+}
