@@ -1191,10 +1191,13 @@ export async function runDraftV2Pipeline(
     finalRoutingHint = "review";
   }
 
-  // 11. Eskalér til gpt-5-mini hvis verifier flagger lav confidence
+  // 11. Eskalér til stærkere model — kun for høj-risiko intents hvor fejl er dyre.
+  // Tracking, thanks og address_change eskaleres aldrig — cost/quality tradeoff er ikke det værd.
+  const HIGH_RISK_INTENTS = new Set(["refund", "return", "exchange", "warranty", "complaint", "cancel"]);
+  const intentQualifiesForEscalation = HIGH_RISK_INTENTS.has(plan.primary_intent);
   if (
     !disableEscalation && verified.retry_with_stronger_model &&
-    !verified.block_send
+    !verified.block_send && intentQualifiesForEscalation
   ) {
     const escalationModel = strongModelOverride ?? STRONG_MODEL;
     console.log(

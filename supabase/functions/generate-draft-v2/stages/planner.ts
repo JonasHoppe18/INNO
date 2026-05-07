@@ -149,7 +149,7 @@ Thread context (for sub_queries and facts ONLY — do NOT use for intent classif
 ${threadContextLines}
 - Detected language of current message: detect from the current message above, ignore thread history language`;
   const deterministicLanguage = resolveReplyLanguage(body, caseState.language);
-  const model = Deno.env.get("OPENAI_MODEL") ?? "gpt-5-mini";
+  const model = Deno.env.get("OPENAI_EXTRACT_MODEL") ?? "gpt-4o-mini";
 
   try {
     const parsed = await callOpenAIJson<Plan>({

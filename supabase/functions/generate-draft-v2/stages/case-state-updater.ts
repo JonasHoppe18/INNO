@@ -160,7 +160,7 @@ AGENT-FORPLIGTELSER (KRITISK): Læs alle [Agent]-beskeder grundigt og fang hvad 
 
   try {
     llmResult = await callOpenAIJson<typeof llmResult>({
-      model: Deno.env.get("OPENAI_MODEL") ?? "gpt-5-mini",
+      model: Deno.env.get("OPENAI_EXTRACT_MODEL") ?? "gpt-4o-mini",
       systemPrompt,
       userPrompt,
       maxTokens: 700,
