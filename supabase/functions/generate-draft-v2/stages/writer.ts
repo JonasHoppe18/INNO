@@ -165,7 +165,7 @@ function cleanDraftText(text: string): string {
       " reply here in this thread",
     )
     .replace(
-      /[^.!?\n]*(?:kontakte?\s+os|skriv\s+til\s+os|send\s+(?:en\s+)?(?:mail|e-?mail))\s+(?:via|på|til|at)\s+\S+@\S+[^.!?\n]*/gi,
+      /[^.!?\n]*(?:kontakte?\s+os|skriv\s+til\s+os|send\s+(?:en\s+)?(?:mail|e-?mail))[^.!?\n]*\S+@\S+[^.!?\n]*/gi,
       " svar her i tråden",
     )
     .replace(/\bDu skal\s+svar\b/gi, "Svar")

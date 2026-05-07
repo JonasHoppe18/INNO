@@ -49,11 +49,11 @@ const SAME_CHANNEL_ESCALATION_LINE_PATTERNS = [
   /\bcontact us via e-?mail\b/i,
   /\bcontact us by e-?mail\b/i,
   /\bskriv til\s+\S+@\S+/i,
-  /\bkontakt os på\s+\S+@\S+/i,
+  /\bkontakte?\s+os\s+(?:via\s+e-?mail\s+)?på\s+\S+@\S+/i,
   /\bsend os en e-?mail\b/i,
   /\bskriv til os på e-?mail\b/i,
   /\bskriv til os via e-?mail\b/i,
-  /\bkontakt os via e-?mail\b/i,
+  /\bkontakte?\s+os\s+via\s+e-?mail\b/i,
 ];
 
 const REDUNDANT_IN_THREAD_NOTIFICATION_LINE_PATTERNS = [
@@ -205,11 +205,11 @@ export function guardSameChannelEscalation(options: {
       next = next.replace(/\bcontact us via e-?mail\b/gi, inThreadPhrase);
       next = next.replace(/\bcontact us by e-?mail\b/gi, inThreadPhrase);
       next = next.replace(/\bskriv til\s+\S+@\S+\b/gi, inThreadPhrase);
-      next = next.replace(/\bkontakt os på\s+\S+@\S+\b/gi, inThreadPhrase);
+      next = next.replace(/\bkontakte?\s+os\s+(?:via\s+e-?mail\s+)?på\s+\S+@\S+/gi, inThreadPhrase);
       next = next.replace(/\bsend os en e-?mail\b/gi, inThreadPhrase);
       next = next.replace(/\bskriv til os på e-?mail\b/gi, inThreadPhrase);
       next = next.replace(/\bskriv til os via e-?mail\b/gi, inThreadPhrase);
-      next = next.replace(/\bkontakt os via e-?mail\b/gi, inThreadPhrase);
+      next = next.replace(/\bkontakte?\s+os\s+via\s+e-?mail(?:\s+på\s+\S+@\S+)?/gi, inThreadPhrase);
       next = next.replace(/\s{2,}/g, " ").trim();
       return next;
     }

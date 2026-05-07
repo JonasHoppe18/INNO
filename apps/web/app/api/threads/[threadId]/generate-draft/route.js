@@ -292,17 +292,30 @@ export async function POST(_request, { params }) {
   );
   let latestAiDraftText = await loadLatestAiDraftText(serviceClient, scope, threadId);
 
+  // Fresh payload always wins over any stored draft — the user explicitly requested regeneration.
+  const freshPayloadText = !proposalOnly && !payload?.skipped ? extractPayloadDraftText(payload) : "";
   let aiDraftText =
     proposalOnly
       ? ""
-      : draft?.body_text ||
+      : freshPayloadText ||
+        draft?.body_text ||
         draft?.body_html ||
-        extractPayloadDraftText(payload) ||
         latestAiDraftText;
   if (!proposalOnly && !aiDraftText && !payload?.skipped) {
     await sleep(350);
     latestAiDraftText = await loadLatestAiDraftText(serviceClient, scope, threadId);
     aiDraftText = latestAiDraftText;
+  }
+  // When fresh payload rewrites an existing stored draft, update it in DB so subsequent
+  // loads (GET /draft) don't serve the stale version.
+  if (freshPayloadText && draft?.id) {
+    await applyScope(
+      serviceClient
+        .from("mail_messages")
+        .update({ body_text: freshPayloadText, body_html: null, ai_draft_text: freshPayloadText, updated_at: new Date().toISOString() })
+        .eq("id", draft.id),
+      scope
+    ).catch(() => {});
   }
   if (!proposalOnly && !draft && !aiDraftText && !payload?.skipped) {
     return NextResponse.json(
@@ -362,7 +375,8 @@ export async function POST(_request, { params }) {
       proposal_only: proposalOnly,
       draft_kind: latestPendingDraftMeta?.kind || null,
       // Keep persisted drafts visible even when a proposal action is pending.
-      draft: draft
+      // If fresh payload text was produced, use it — even if a stored draft exists.
+      draft: (draft && !freshPayloadText)
         ? (() => {
             const rendered = composeEmailBodyWithSignature({
               bodyText: draft.body_text || "",
