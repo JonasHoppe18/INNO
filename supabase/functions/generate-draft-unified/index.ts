@@ -3412,7 +3412,8 @@ function enforceReturnChannelGuard(options: {
       /contact us at\s+\S+@\S+/.test(lower) ||
       /send os en e-?mail/.test(lower) ||
       /skriv .* e-?mail/.test(lower) ||
-      /kontakt os på\s+\S+@\S+/.test(lower) ||
+      /kontakte?\s+os\s+(?:via\s+e-?mail\s+)?på\s+\S+@\S+/.test(lower) ||
+      /kontakte?\s+os\s+via\s+e-?mail/.test(lower) ||
       /skriv til\s+\S+@\S+/.test(lower)
     ) {
       return false;
@@ -3728,7 +3729,8 @@ function stripSupportEscalationLines(text: string): string {
     const lower = line.toLowerCase();
     if (
       /support@\S+/.test(lower) ||
-      /kontakt os på\s+\S+@\S+/.test(lower) ||
+      /kontakte?\s+os\s+(?:via\s+e-?mail\s+)?på\s+\S+@\S+/.test(lower) ||
+      /kontakte?\s+os\s+via\s+e-?mail/.test(lower) ||
       /contact us at\s+\S+@\S+/.test(lower) ||
       /send us (an )?e-?mail/.test(lower) ||
       /email us/.test(lower)
@@ -3762,6 +3764,9 @@ function hardEnforceInThreadChannel(text: string, languageHint?: string | null):
     next = next.replace(/\bemail us\b/gi, inThreadPhrase);
     next = next.replace(/\bcontact us via e-?mail\b/gi, inThreadPhrase);
     next = next.replace(/\bcontact us by e-?mail\b/gi, inThreadPhrase);
+    next = next.replace(/\bkontakte?\s+os\s+(?:via\s+e-?mail\s+)?på\s+\S+@\S+/gi, inThreadPhrase);
+    next = next.replace(/\bkontakte?\s+os\s+via\s+e-?mail(?:\s+på\s+\S+@\S+)?/gi, inThreadPhrase);
+    next = next.replace(/\bkontakt os på\s+\S+@\S+/gi, inThreadPhrase);
     next = next.replace(/\s{2,}/g, " ").trimEnd();
     if (next !== before) replaced += 1;
     return next;
@@ -5474,6 +5479,7 @@ Afslut ikke med signatur – signaturen tilføjes automatisk senere.`;
         "15. NEVER INCLUDE PHONE NUMBERS IN YOUR REPLY: Do not include any phone number in your reply — not from the customer's message, not from the knowledge base, not from anywhere. Phone numbers do not belong in support emails. If the customer included their own number, it is theirs to use — never repeat it back as if it is a contact number they should call.",
         "16. NEVER INVENT PRODUCT AVAILABILITY OR POLICIES: Do not state that a product, part, or service 'cannot be purchased', 'is not available', or 'is not sold separately' unless this is explicitly stated in the pinned policy or knowledge base. If you do not know, say you will look into it — never fabricate a negative answer.",
         "17. NEVER REFER THE CUSTOMER TO A THIRD PARTY: You are the customer's ONLY support channel. Never tell the customer to contact a distributor, manufacturer, wholesaler, repair center, supplier, or any external company or organization. If the problem requires a warranty claim or repair, you handle it — not the customer. Do not write phrases like 'kontakt [company]', 'reach out to [company]', 'contact [brand]', or 'get in touch with [partner]'.",
+        "19. KANAL-REGEL (KRITISK): Bed ALDRIG kunden om at sende en e-mail, kontakte os via e-mail på [adresse], kontakte os på support@..., eller skrive til nogen som helst e-mail-adresse — heller ikke selvom vidensbasen eller en procedure indeholder en konkret e-mail-adresse som kontaktpunkt. Kunden er allerede i den rigtige supporttråd. Citer ALDRIG en e-mail-adresse som kontaktpunkt. Erstat altid med 'svar her i tråden' / 'reply here in this thread'. NEVER write: 'contact us at [email]', 'email us at [address]', 'kontakt os via e-mail på [adresse]', 'kontakte os via e-mail på [adresse]', or any phrase that directs the customer to send an email to a specific address.",
         "18. NEVER COMMIT TO REVIEWING INTERNALLY AND GETTING BACK: Do NOT write phrases like 'I'll review this internally', 'I'll check this with our team', 'I'll look into this and get back to you', 'I'll follow up shortly', 'What I'll do now: I'll check...', or any variation that defers the decision to an unnamed internal review. There are only TWO valid paths: (1) If you have enough information — commit to the action directly: 'We will send you replacement earpads under warranty.' (2) If information is missing — ask for exactly what you need now in this reply: 'Could you share your order number or proof of purchase so we can assess warranty coverage?' A third path of vague internal review does not exist.",
         "END OF HARD CONSTRAINTS.",
         "",
