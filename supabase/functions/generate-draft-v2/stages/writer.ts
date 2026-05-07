@@ -591,8 +591,11 @@ Disse viser hvad der er det rigtige svar i lignende situationer OG den rette ton
               : ex.csat_score >= 90
               ? " [Bekræftet — Sonas svar var næsten korrekt]"
               : "";
+            const contextBlock = ex.conversation_context
+              ? `Tidligere i samtalen:\n${ex.conversation_context.slice(0, 400)}\n`
+              : "";
             return `[Eksempel ${i + 1}${label}]
-Kunde: "${ex.customer_msg.slice(0, 350)}"
+${contextBlock}Kunde: "${ex.customer_msg.slice(0, 350)}"
 Support svarede: "${ex.agent_reply.slice(0, 500)}"`;
           },
         )

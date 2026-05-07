@@ -21,7 +21,12 @@ export interface RetrievedChunk {
 
 export interface RetrieverResult {
   chunks: RetrievedChunk[];
-  past_ticket_examples: Array<{ customer_msg: string; agent_reply: string; csat_score: number | null }>;
+  past_ticket_examples: Array<{
+    customer_msg: string;
+    agent_reply: string;
+    csat_score: number | null;
+    conversation_context: string | null;
+  }>;
 }
 
 export interface RetrieverInput {
@@ -439,6 +444,7 @@ export async function runRetriever(
                 subject?: string;
                 intent?: string;
                 csat_score?: number | null;
+                conversation_context?: string | null;
                 similarity: number;
               };
               const text = `${
@@ -467,6 +473,7 @@ export async function runRetriever(
                   subject: item.subject,
                   intent: item.intent,
                   csat_score: csatScore,
+                  conversation_context: item.conversation_context ?? null,
                   similarity: item.similarity,
                   score,
                 });
@@ -486,6 +493,7 @@ export async function runRetriever(
             customer_msg: item.customer_msg,
             agent_reply: item.agent_reply,
             csat_score: item.csat_score,
+            conversation_context: item.conversation_context ?? null,
           }));
       } catch (err) {
         console.warn("[retriever] ticket_examples lookup failed:", err);

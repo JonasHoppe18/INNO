@@ -1128,6 +1128,33 @@ export async function POST(request, { params }) {
     ? inboundMessages[0]
     : null;
 
+  // Load recent thread messages (both directions) for conversation context
+  let threadMessagesQuery = serviceClient
+    .from("mail_messages")
+    .select("from_me, clean_body_text, snippet, created_at")
+    .eq("thread_id", threadId)
+    .order("created_at", { ascending: false })
+    .limit(7);
+  threadMessagesQuery = applyScope(threadMessagesQuery, scope);
+  const { data: recentThreadMessages } = await threadMessagesQuery;
+
+  // Build compact conversation context from the last 3 exchanges (excl. the current reply)
+  const conversationContext = (() => {
+    const msgs = Array.isArray(recentThreadMessages)
+      ? [...recentThreadMessages].reverse() // oldest first
+      : [];
+    // Exclude the latest inbound (that's the customer_msg we store separately)
+    const context = msgs.slice(0, -1).slice(-6);
+    if (context.length === 0) return null;
+    return context
+      .map((m) => {
+        const role = m.from_me ? "Support" : "Kunde";
+        const text = String(m.clean_body_text || m.snippet || "").trim().slice(0, 250);
+        return `[${role}]: ${text}`;
+      })
+      .join("\n");
+  })();
+
   const fallbackReplyTarget = getReplyTargetEmail(inboundMessage);
   const fallbackTo = fallbackReplyTarget ? [fallbackReplyTarget] : [];
   const toEmails = normalizeEmailList(body?.to_emails);
@@ -1776,6 +1803,7 @@ export async function POST(request, { params }) {
         workspace_id: scope?.workspaceId || null,
         sent_reply_text: coreBodyText,
         customer_message_text: customerTextForLearning,
+        conversation_context: conversationContext || null,
         subject: thread?.subject || "",
         intent: caseState?.intents?.[0]?.type || null,
         language: caseState?.language || null,

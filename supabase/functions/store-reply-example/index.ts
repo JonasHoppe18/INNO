@@ -54,6 +54,9 @@ Deno.serve(async (req: Request) => {
   const shopId = String(body.shop_id || "").trim();
   const sentReplyText = String(body.sent_reply_text || "").trim();
   const customerMessageText = String(body.customer_message_text || "").trim();
+  const conversationContext = typeof body.conversation_context === "string"
+    ? body.conversation_context.trim() || null
+    : null;
   const subject = String(body.subject || "").trim();
   const workspaceId = String(body.workspace_id || "").trim() || null;
   const intent = String(body.intent || "").trim() || null;
@@ -72,8 +75,12 @@ Deno.serve(async (req: Request) => {
     ? Math.round((1 - Math.min(editDeltaPct, 1)) * 100)
     : null;
 
-  // Embed on the customer message — retrieval finds similar customer situations
-  const embedding = await createEmbedding(customerMessageText);
+  // Embed on context + customer message for better multi-turn retrieval.
+  // Including prior conversation improves similarity matching for follow-up tickets.
+  const embedInput = conversationContext
+    ? `${conversationContext}\n[Kunde]: ${customerMessageText}`.slice(0, 4000)
+    : customerMessageText;
+  const embedding = await createEmbedding(embedInput);
 
   const { error } = await supabase.from("ticket_examples").upsert(
     {
@@ -83,6 +90,7 @@ Deno.serve(async (req: Request) => {
       external_ticket_id: threadId,
       customer_msg: customerMessageText,
       agent_reply: sentReplyText,
+      conversation_context: conversationContext,
       subject: subject || null,
       intent: intent,
       language: language,
