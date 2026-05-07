@@ -102,12 +102,59 @@ function maybeAddress(text: string): string {
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
+  // Try to find a multi-line address block after "address it to:" / "send to:" / "please address it to:"
+  const normalised = String(text || "").replace(/\s+/g, " ");
+  const blockMatch = normalised.match(
+    /(?:address(?:ed)?\s+it\s+to|please\s+send\s+to|ship\s+to|return\s+to|send\s+(?:the\s+)?(?:goods|package|product|parcel|item)\s+to)\s*:?\s*([A-ZÆØÅ][^.]{10,200}?\b(?:denmark|germany|uk|sweden|norway|netherlands|france|spain|usa|canada)\b)/i,
+  );
+  if (blockMatch) return blockMatch[1].replace(/\s+/g, " ").trim().slice(0, 400);
+
+  // Fallback: first line that looks like a physical address (street number, postal code, country)
   const candidate = lines.find((line) =>
-    /\b(street|st\.?|road|rd\.?|ave\.?|avenue|boulevard|blvd|drive|dr\.?|city|zip|postal|dk-|usa|denmark|suite|unit|building|address)\b/i.test(
+    /\b(street|st\.?|road|rd\.?|ave\.?|avenue|boulevard|blvd|drive|dr\.?|vej|gade|allé|alle|fasanvej|stræde|plads|city|zip|postal|dk-|\bdk\b|usa|denmark|suite|unit|building|address|\d{4,5}\s+[A-ZÆØÅ])\b/i.test(
       line,
     ),
   );
   return candidate || "";
+}
+
+// Extract a multi-line return address block from raw policy text (up to 4 lines after a trigger phrase).
+function extractReturnAddressBlock(text: string): string {
+  const lines = String(text || "").split("\n").map((l) => l.trim()).filter(Boolean);
+  const triggerRe = /(?:address(?:ed)?\s+it\s+to|please\s+(?:send|address|ship)\s+(?:it\s+)?to|send\s+(?:the\s+)?(?:package|goods|item|product|parcel)\s+to|send\s+to|return\s+address)\s*:?\s*$/i;
+  // Also handle inline trigger like "address it to: Acme Corp\nStreet 1\n..."
+  const inlineRe = /(?:address(?:ed)?\s+it\s+to|please\s+(?:send|address|ship)\s+(?:it\s+)?to|return\s+address)\s*:?\s*(.+)/i;
+
+  for (let i = 0; i < lines.length; i++) {
+    // Inline match on same line
+    const inlineMatch = lines[i].match(inlineRe);
+    if (inlineMatch) {
+      const firstLine = inlineMatch[1].trim();
+      const addressLines = [firstLine];
+      for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
+        const next = lines[j].trim();
+        // Stop if we hit something that looks like a new sentence or instruction
+        if (/^[A-Z].*[.!?]$/.test(next) && next.length > 60) break;
+        if (/^\d+\.|^step\s+\d/i.test(next)) break;
+        addressLines.push(next);
+      }
+      const result = addressLines.join(", ").replace(/,\s*,/g, ",").trim();
+      if (result.length > 10) return result.slice(0, 400);
+    }
+    // Trigger on its own line, address starts on next line
+    if (triggerRe.test(lines[i])) {
+      const addressLines: string[] = [];
+      for (let j = i + 1; j < Math.min(i + 6, lines.length); j++) {
+        const next = lines[j].trim();
+        if (/^[A-Z].*[.!?]$/.test(next) && next.length > 60) break;
+        if (/^\d+\.|^step\s+\d/i.test(next)) break;
+        addressLines.push(next);
+      }
+      const result = addressLines.join(", ").trim();
+      if (result.length > 10) return result.slice(0, 400);
+    }
+  }
+  return "";
 }
 
 export function buildHeuristicPolicySummary(input: {
@@ -211,7 +258,8 @@ function policyRulesBlock(intent: PolicyIntent) {
 
   if (intent === "RETURN" || intent === "REFUND") {
     lines.push(
-      "- RETURNS - CHANNEL RULE: If store policy says 'contact us via email' or shows an email address, do NOT tell the customer to email that address if the customer is already emailing us in this thread/inbox. Treat it as a requirement: ask for the required return details (order number, name used at purchase, reason) and confirm return conditions (return window, sealed/unused requirements, who pays return shipping). Only direct the customer to a specific email address if they are using the wrong channel or if the store explicitly requires a different dedicated return email than this inbox.",
+      "- RETURNS - CHANNEL RULE: If store policy says 'contact us via email' or shows an email address, do NOT tell the customer to email that address. The customer is already in the right support thread. Never mention an email address in the reply. Instead: (1) If the policy shows a physical return address or step-by-step return procedure, provide those directly — include the full return address from return_address or POLICY EXCERPTS, packaging instructions, and shipping instructions. (2) If the required return details (order number, name at purchase, reason) are NOT yet known from the verified facts or customer message, ask for the specific missing detail(s) first. (3) If all details ARE already known and a return address exists in the policy, give the complete return instructions now — do not ask for information already provided.",
+      "- RETURNS - ADDRESS RULE: When return_address in POLICY SUMMARY is non-empty, you MUST include it verbatim in the reply so the customer knows where to ship the item. Format it clearly as the destination address. Also include packaging and courier instructions if present in POLICY EXCERPTS.",
       "- RETURNS - CONTINUATION RULE: If the customer says they already received the replacement/new item and asks how to send the old item back, answer with practical return logistics directly. Do not ask again for order number or name when the order is already known. Do not mention who pays return shipping unless the customer asks about shipping cost or the approved context explicitly requires it for this continuation.",
       "- DEFECT/REPLACEMENT RETURN RULE: For defect, warranty, or replacement-related return continuations, use defect_return_shipping_rule if it exists. If it is unspecified, do not claim who pays return shipping.",
     );
@@ -297,9 +345,15 @@ export function buildPinnedPolicyContext(options: {
         termsPolicy: options.policies.policy_terms,
       });
 
+  // Fallback: if JSON had an empty return_address but raw policy text exists, try to extract it
+  if (!mergedSummary.return_address && options.policies.policy_refund) {
+    const extracted = extractReturnAddressBlock(options.policies.policy_refund);
+    if (extracted) mergedSummary.return_address = extracted;
+  }
+
   const rules = policyRulesBlock(intent);
   const summaryText = summaryBlock(mergedSummary);
-  const reserved = Math.max(200, Math.min(Number(options.reservedTokens || 600), 1200));
+  const reserved = Math.max(200, Math.min(Number(options.reservedTokens || 600), 2000));
 
   let excerptText = "";
   if (intent !== "OTHER") {

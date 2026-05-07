@@ -2218,29 +2218,24 @@ export function InboxSplitView({
   ]);
 
   // Fetch sent draft edit stats for the selected thread (for AI badge display)
+  // Uses an API route with service client to bypass RLS on the drafts table.
   useEffect(() => {
-    if (!supabase || !selectedThreadId || isLocalThreadId(selectedThreadId))
-      return;
+    if (!selectedThreadId || isLocalThreadId(selectedThreadId)) return;
     if (sentDraftStatsByThread[selectedThreadId]) return; // already fetched
     let active = true;
     const threadId = selectedThreadId;
-    supabase
-      .from("drafts")
-      .select("edit_classification, edit_delta_pct")
-      .eq("thread_id", threadId)
-      .eq("status", "sent")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (active && data) {
+    fetch(`/api/threads/${threadId}/draft-stats`)
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => {
+        if (active && data?.edit_classification) {
           setSentDraftStatsByThread((prev) => ({ ...prev, [threadId]: data }));
         }
-      });
+      })
+      .catch(() => null);
     return () => {
       active = false;
     };
-  }, [isLocalThreadId, selectedThreadId, sentDraftStatsByThread, supabase]);
+  }, [isLocalThreadId, selectedThreadId, sentDraftStatsByThread]);
 
   useEffect(() => {
     if (isLocalThreadId(selectedThreadId)) return;
@@ -4204,6 +4199,16 @@ export function InboxSplitView({
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(data?.error || "Could not send reply.");
+      }
+      // Set edit badge directly from send response — no separate DB query needed
+      if (data?.edit_classification && selectedThreadId) {
+        setSentDraftStatsByThread((prev) => ({
+          ...prev,
+          [selectedThreadId]: {
+            edit_classification: data.edit_classification,
+            edit_delta_pct: data.edit_delta_pct ?? null,
+          },
+        }));
       }
       const nowIso = new Date().toISOString();
       const localMessageId = data?.message_id || `local-sent-${Date.now()}`;

@@ -593,14 +593,14 @@ function AiEditBadge({ editStats }) {
 
   if (edit_classification === "no_edit") {
     return (
-      <span className="rounded-full border border-emerald-200 dark:border-emerald-500/40 bg-emerald-50 dark:bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
-        0% edited
+      <span className="ml-auto text-[11px] text-muted-foreground/60">
+        sent as-is
       </span>
     );
   }
   if (pct != null) {
     return (
-      <span className="rounded-full border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+      <span className="ml-auto text-[11px] text-muted-foreground/60">
         {pct}% edited
       </span>
     );

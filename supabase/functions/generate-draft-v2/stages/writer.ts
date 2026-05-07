@@ -210,14 +210,23 @@ function cleanDraftText(text: string): string {
       "",
     )
     // Strip any instruction to contact via email — customer is already in the right thread.
-    // Catches all forms: "contact us at/via/by email ...", "kontakt(e) os via/på email ..."
-    // Removes the entire clause up to the next sentence boundary without inserting a language-specific phrase.
+    // General form: any sentence that tells the customer to contact us AND contains an email address.
     .replace(
-      /[^.!?\n]*(?:contact|reach|email)\s+us\s+(?:at|via|by|on|to)\s+\S+@\S+[^.!?\n]*/gi,
+      /[^.!?\n]*(?:contact|reach|email)\s+us[^.!?\n]*\S+@\S+[^.!?\n]*/gi,
       "",
     )
     .replace(
-      /[^.!?\n]*(?:kontakte?\s+os|skriv\s+til\s+os|send\s+(?:en\s+)?(?:mail|e-?mail))\s+(?:via|på|til|at)\s+\S+@\S+[^.!?\n]*/gi,
+      /[^.!?\n]*(?:kontakte?\s+os|skriv\s+til\s+os|send\s+(?:en\s+)?(?:mail|e-?mail)\s+til\s+os)[^.!?\n]*\S+@\S+[^.!?\n]*/gi,
+      "",
+    )
+    // Strip any remaining sentence that contains an @email address in a contact-instruction context.
+    // "via/på/til" (Danish) or "at/to" (English) immediately before or near an email address.
+    .replace(
+      /[^.!?\n]*(?:via|på|til)\s+(?:e-?mail\s+)?[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}[^.!?\n]*/gi,
+      "",
+    )
+    .replace(
+      /[^.!?\n]*(?:\bat\b|\bto\b)\s+[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}[^.!?\n]*/gi,
       "",
     )
     .replace(
@@ -497,6 +506,55 @@ ${
 Hvis missing_required_fields er "none", må du ikke stille kunden et informationsspørgsmål. Skriv i stedet hvad vi gør nu eller at vi vender tilbage med næste skridt.`;
 }
 
+async function runPostActionRefundWriter(
+  amountDisplay: string,
+  orderName: string,
+  language: string,
+  greeting: string,
+  closing: string,
+): Promise<string> {
+  const amountClause = amountDisplay && !/^0[,.]?0*\s/.test(amountDisplay)
+    ? `Amount refunded: ${amountDisplay}`
+    : "";
+
+  const systemPrompt =
+    `You write 2-sentence post-action support confirmations. Output ONLY the 2 sentences — no greeting, no closing, no signature, no extra words.`;
+
+  const userPrompt =
+    `A refund has been executed in Shopify. Write exactly 2 sentences in language "${language}":
+1. State the refund is done (past tense). Include "${orderName}"${amountClause ? ` and "${amountDisplay}"` : ""}.
+2. Say the amount will appear back on their account within 3-5 business days (use natural phrasing for "${language}").
+
+Output: the 2 sentences only.`;
+
+  try {
+    const resp = await fetch(OPENAI_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        temperature: 0,
+        max_tokens: 120,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+      }),
+    });
+    if (!resp.ok) throw new Error(`post-action writer status ${resp.status}`);
+    const data = await resp.json();
+    const body = (data.choices?.[0]?.message?.content ?? "").trim();
+    if (!body) throw new Error("empty post-action body");
+    return `${greeting}\n\n${body}\n\n${closing}`;
+  } catch (err) {
+    console.warn("[writer] post-action fallback:", err);
+    return "";
+  }
+}
+
 export async function runWriter(
   {
     plan,
@@ -640,6 +698,22 @@ Support svarede: "${ex.agent_reply.slice(0, 500)}"`;
         .join("\n")
     : "";
   const actionAmountDisplay = formatActionAmountDisplay(actionResult, replyLanguage);
+  // If the action returned amount=0 (e.g. cancellation flow that triggers a Shopify refund internally),
+  // try to recover the real order total from facts so the confirmation can cite the correct amount.
+  const actionAmountIsZero = !actionAmountDisplay ||
+    /^0[,.]?0*\s*/.test(actionAmountDisplay.trim());
+  const fallbackAmountFromFacts = actionAmountIsZero
+    ? (() => {
+        const orderTotal = facts.facts.find((f) =>
+          /total|price|amount|beløb|pris/i.test(f.label)
+        )?.value ?? "";
+        return orderTotal;
+      })()
+    : "";
+  const resolvedAmountDisplay = actionAmountIsZero && fallbackAmountFromFacts
+    ? fallbackAmountFromFacts
+    : actionAmountDisplay;
+
   const actionResultBlock = actionResult
     ? `# POST-ACTION RESULT MODE (primær opgave for dette svar)
 Kundens sag er allerede godkendt og handlingen er allerede udført i Shopify. Svaret er derfor en kort bekræftelse til kunden, ikke et forslag, en vurdering eller en ny supportproces.
@@ -647,19 +721,20 @@ Kundens sag er allerede godkendt og handlingen er allerede udført i Shopify. Sv
 - action_type: ${String(actionResult.action_type || "")}
 - outcome: ${String(actionResult.outcome || "executed")}
 - order_name: ${String(actionResult.order_name || actionResult.order_number || "")}
-- amount: ${String(actionResult.amount || "")}
-- amount_display: ${actionAmountDisplay}
+- amount_display: ${resolvedAmountDisplay || "(ukendt — brug ordretotal fra Verificerede fakta hvis tilgængelig)"}
 - currency: ${String(actionResult.currency || "")}
 - detail: ${String(actionResult.detail || "")}
 
 Regler for post-action-svaret:
 - Svar på samme sprog som kunden.
-- Brug afsluttet handling-sprog. Skriv at handlingen ER udført, ikke at den kan udføres, bliver behandlet eller vil ske senere.
-- Bekræft kun den udførte handling og de relevante fakta ovenfor.
+- Brug PRÆTERITUM (datid/perfektum) — handlingen ER UDFØRT. Aldrig "vil blive", "kan", "behandles" eller "igangsat".
+- Bekræft kun den udførte handling og de relevante fakta ovenfor. Hold svaret kort: 2-3 sætninger max.
 - Ingen signatur, ingen "kontakt os hvis..."-standardlinje, ingen support-email.
 - Ingen "tak for din besked" eller generisk varm indledning efter hilsenen — gå direkte til resultatet.
-- Forbudte betydninger: "vi kan refundere", "vi har tilbudt en refusion", "vi har igangsat en refusion", "vil blive refunderet", "vil blive tilbageført", "vi behandler refunderingen", "hurtigst muligt", "din anmodning er blevet behandlet", "sagen sendes videre", "venter på godkendelse".
-- Hvis action_type er refund_order: skriv at beløbet i amount_display er refunderet for ordren, og at beløbet går tilbage til den oprindelige betalingsmetode. Lov ikke en præcis bankdato medmindre den står eksplicit i facts.`
+- FORBUDTE ord og formuleringer (brug ingen af disse): "vi har tilbudt", "tilbudt en refundering", "vi kan refundere", "vi har igangsat", "vil blive refunderet", "vil blive tilbageført", "vi behandler", "hurtigst muligt", "din anmodning er blevet behandlet", "sagen sendes videre", "venter på godkendelse", "nemt annullere og sikre".
+- Hvis action_type indeholder "refund" eller "cancel": (1) Skriv at beløbet (amount_display) ER refunderet og går tilbage til den oprindelige betalingsmetode. (2) Skriv at det typisk tager 3-5 hverdage at se beløbet på kontoen — dette er standard bankbehandlingstid og må altid inkluderes i refund-bekræftelser. (3) Hvis amount_display er 0 eller tom, find ordretotalen fra Verificerede fakta og brug den i stedet.
+- Eksempel på korrekt refund-bekræftelse (dansk): "Beløbet på [X] er blevet refunderet for din ordre [#N]. Du burde se det tilbage på din konto inden for 3-5 hverdage."
+- Eksempel på korrekt refund-bekræftelse (engelsk): "A refund of [X] has been processed for your order [#N]. You should see it back in your account within 3-5 business days."`
     : "";
 
   // --- Viden fra vidensbase ---
@@ -687,6 +762,40 @@ ${c.content.slice(0, c.usable_as === "procedure" ? 2500 : 1500)}`,
         .join("\n\n")
     : "";
 
+  // --- Focused post-action draft for refund/cancel — uses a minimal LLM call ---
+  if (actionResult && /refund|cancel/i.test(String(actionResult.action_type || ""))) {
+    const orderName = String(
+      actionResult.order_name || actionResult.order_number || "",
+    );
+    const closingByLang: Record<string, string> = {
+      da: "God dag!",
+      sv: "Ha en bra dag!",
+      no: "Ha en fin dag!",
+      de: "Auf Wiedersehen!",
+      nl: "Fijne dag!",
+      fr: "Bonne journée !",
+      en: "Have a great day!",
+    };
+    const closing = closingByLang[replyLanguage] ?? "Have a great day!";
+    const greetingLine = salutationName.name
+      ? `${greetingPrefix(replyLanguage)} ${salutationName.name},`
+      : `${greetingPrefix(replyLanguage)},`;
+    const postActionDraft = await runPostActionRefundWriter(
+      resolvedAmountDisplay,
+      orderName,
+      replyLanguage,
+      greetingLine,
+      closing,
+    );
+    if (postActionDraft) {
+      return {
+        draft_text: postActionDraft,
+        proposed_actions: actionProposals ?? [],
+        citations: [],
+      };
+    }
+  }
+
   const isFollowUp = caseState.decisions_made.length > 0 ||
     caseState.pending_asks.length > 0;
 
@@ -700,7 +809,7 @@ ${
   }
 ${
     actionResult
-      ? "\nPOST-ACTION MODE (KRITISK): Handlingens resultat er allerede udført. Skriv et kundesvar der bekræfter det afsluttede resultat i datid/perfektum. Brug ikke fremtid, mulighed, intern behandling eller ny approval. Denne regel overstyrer normal åbning, planlagte actions, knowledge base og persona.\n"
+      ? "\nPOST-ACTION MODE (KRITISK): Handlingens resultat er allerede udført i Shopify. Skriv KUN en kort bekræftelse (2-3 sætninger) i datid/perfektum. ALDRIG: fremtid, 'vil blive', 'kan', 'tilbudt', 'igangsat', 'behandles'. For refund: inkluder altid beløb + '3-5 hverdage'. Denne regel overstyrer alt andet.\n"
       : ""
   }
 ${
@@ -740,7 +849,7 @@ LÆNGDE OG TONE:
 - Brug almindelige sætninger og korte afsnit. Undgå tankestreger/em dashes i kundesvaret. Brug ikke nummererede lister eller bullets, medmindre kunden skal følge en egentlig trin-for-trin procedure.
 - Hvis en planlagt action kræver intern godkendelse, må du ikke love at refundering/annullering/ombytning allerede kan gennemføres. Skriv at sagen sendes til gennemgang/videre internt med de fundne ordreoplysninger.
 
-KANAL-REGEL (KRITISK): Bed ALDRIG kunden om at "sende en email", "kontakte os via e-mail på [adresse]", "kontakte os på support@...", "contact us at [email]", "contact us directly" eller skrive til nogen som helst e-mail-adresse. Kunden er allerede i den rigtige supporttråd. Denne regel gælder OGSÅ selvom vidensbasen, en saved reply eller en procedure indeholder en konkret e-mail-adresse som kontaktpunkt — citer aldrig den adresse. Erstat altid med "svar her i tråden" / "reply here in this thread". Hvis kunden skal give info, skriv "svar her i tråden".
+KANAL-REGEL (KRITISK): Bed ALDRIG kunden om at "sende en email", "kontakte os via e-mail på [adresse]", "kontakte os på support@...", "contact us at [email]", "contact us directly" eller skrive til nogen som helst e-mail-adresse. Kunden er allerede i den rigtige supporttråd — de skriver ALLEREDE til os. Denne regel gælder OGSÅ selvom vidensbasen, en saved reply eller en procedure indeholder en konkret e-mail-adresse som kontaktpunkt — citer aldrig den adresse og referér aldrig til den. Nævn heller ikke email-adressen som et alternativ. Hvis en procedure siger "kontakt os på X@Y.dk" skal du i stedet: (1) give de konkrete retur-/sags-instriktioner fra proceduren, og (2) afslut med "svar her i tråden" hvis kunden skal bekræfte noget. Skriv aldrig et email-domæne (@) i svaret til kunden.
 
 URL-REGEL: Skriv URLs som plain text (https://...) — ALDRIG som markdown [tekst](url).
 

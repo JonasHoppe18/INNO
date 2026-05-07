@@ -117,16 +117,12 @@ function detectPostActionDraftIssues(
   if (actionType === "refund_order") {
     const amountDisplay = String(actionResult.amount_display || "").trim() ||
       formatActionAmountForLanguage(actionResult, replyLanguage);
-    const hasAmount = Boolean(String(actionResult.amount || amountDisplay).trim());
-    const mentionsOriginalPaymentMethod =
-      /\boprindelig(?:e)?\s+betalingsmetode\b/i.test(draftText) ||
-      /\boriginal\s+payment\s+method\b/i.test(draftText) ||
-      /\bursprunglig(?:a)?\s+betalnings(?:metod|sätt)\b/i.test(draftText) ||
-      /\bursprüngliche(?:n)?\s+zahlungs(?:art|methode)\b/i.test(draftText);
-    if (hasAmount && !mentionsOriginalPaymentMethod) {
-      issues.push("refund result does not mention return to original payment method");
-    }
-    if (amountDisplay && !draftText.includes(amountDisplay)) {
+    // Only flag missing amount when the refund has a non-zero amount to report
+    const numericAmount = parseFloat(
+      String(actionResult.amount || "0").replace(/[^0-9.,]/g, "").replace(",", "."),
+    );
+    const hasAmount = Number.isFinite(numericAmount) && numericAmount > 0 && Boolean(amountDisplay);
+    if (hasAmount && !draftText.includes(amountDisplay)) {
       issues.push("refund result does not use the exact formatted refund amount");
     }
   }
@@ -940,7 +936,7 @@ export async function runDraftV2Pipeline(
         const { error: draftInsertError } = await supabase
           .from("drafts")
           .insert({
-            id: draftId,
+            draft_id: draftId,
             shop_id,
             workspace_id: workspaceId,
             thread_id: draftThreadKey,
@@ -1010,7 +1006,7 @@ export async function runDraftV2Pipeline(
       policy_summary_json:
         (shop as Record<string, unknown>).policy_summary_json ?? null,
     },
-    reservedTokens: 800,
+    reservedTokens: ["RETURN", "REFUND"].includes(intentOverride ?? "") ? 1400 : 800,
     intentOverride,
   });
 
@@ -1380,7 +1376,7 @@ export async function runDraftV2Pipeline(
       const { error: draftInsertError } = await supabase
         .from("drafts")
         .insert({
-          id: draftId,
+          draft_id: draftId,
           shop_id,
           workspace_id: workspaceId,
           thread_id: draftThreadKey,

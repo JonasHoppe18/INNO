@@ -1099,22 +1099,8 @@ export async function POST(request, { params }) {
     return NextResponse.json({ error: "Mailbox not found." }, { status: 404 });
   }
 
-  let automationQuery = serviceClient
-    .from("agent_automation")
-    .select("learn_from_edits,draft_destination")
-    .order("updated_at", { ascending: false })
-    .limit(1);
-  automationQuery = applyScope(automationQuery, scope);
-  const { data: automationSettings } = await automationQuery.maybeSingle();
-  const learnFromEdits = automationSettings?.learn_from_edits === true;
-  const draftDestinationSetting = "sona_inbox";
-
   let aiDraftText = "";
-  if (
-    learnFromEdits &&
-    draftDestinationSetting === "sona_inbox" &&
-    (scope?.workspaceId || supabaseUserId)
-  ) {
+  if (scope?.workspaceId || supabaseUserId) {
     let aiQuery = serviceClient
       .from("mail_messages")
       .select("ai_draft_text")
@@ -1624,13 +1610,20 @@ export async function POST(request, { params }) {
     sentAt: nowIso,
   });
 
+  let editDeltaPct = null;
+  let editClassification = null;
+
   const draftThreadKeys = [thread.provider_thread_id, threadId].filter(Boolean);
   if (draftThreadKeys.length) {
+    // Include recently-superseded drafts to handle the race condition where the
+    // pipeline supersedes a draft in the same second the user hits send.
+    const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
     let pendingDraftsQuery = serviceClient
       .from("drafts")
-      .select("id, created_at")
+      .select("id, created_at, status")
       .in("thread_id", draftThreadKeys)
-      .eq("status", "pending")
+      .in("status", ["pending", "superseded"])
+      .gte("created_at", twoMinutesAgo)
       .order("created_at", { ascending: false });
     const draftPlatforms = Array.from(
       new Set([mailbox.provider, "smtp"].map((value) => String(value || "").trim()).filter(Boolean)),
@@ -1638,16 +1631,15 @@ export async function POST(request, { params }) {
     if (draftPlatforms.length) {
       pendingDraftsQuery = pendingDraftsQuery.in("platform", draftPlatforms);
     }
-    if (scope?.workspaceId) {
-      pendingDraftsQuery = pendingDraftsQuery.eq(
-        "workspace_id",
-        scope.workspaceId,
-      );
+    // Use the thread's own workspace_id rather than the session scope — draft
+    // belongs to the thread, and the user may be scoped to a different workspace
+    // in their Clerk session (e.g. viewing a Sona ticket while in Acezone scope).
+    const draftWorkspaceId = thread?.workspace_id ?? scope?.workspaceId ?? null;
+    if (draftWorkspaceId) {
+      pendingDraftsQuery = pendingDraftsQuery.eq("workspace_id", draftWorkspaceId);
     }
     const { data: pendingDraftRows, error: pendingDraftsLookupError } =
       await pendingDraftsQuery;
-
-    let editDeltaPct = null;
 
     if (pendingDraftsLookupError) {
       console.warn(
@@ -1686,6 +1678,7 @@ export async function POST(request, { params }) {
             ? Number((dist / maxLen).toFixed(4))
             : null;
         editDeltaPct = deltaPct;
+        editClassification = editClass;
 
         let sentDraftQuery = serviceClient
           .from("drafts")
@@ -1697,8 +1690,8 @@ export async function POST(request, { params }) {
             edit_classification: editClass,
           })
           .eq("id", latestDraftId);
-        if (scope?.workspaceId) {
-          sentDraftQuery = sentDraftQuery.eq("workspace_id", scope.workspaceId);
+        if (draftWorkspaceId) {
+          sentDraftQuery = sentDraftQuery.eq("workspace_id", draftWorkspaceId);
         }
         await sentDraftQuery;
       }
@@ -1708,11 +1701,8 @@ export async function POST(request, { params }) {
           .from("drafts")
           .update({ status: "superseded" })
           .in("id", staleDraftIds);
-        if (scope?.workspaceId) {
-          supersedeDraftsQuery = supersedeDraftsQuery.eq(
-            "workspace_id",
-            scope.workspaceId,
-          );
+        if (draftWorkspaceId) {
+          supersedeDraftsQuery = supersedeDraftsQuery.eq("workspace_id", draftWorkspaceId);
         }
         await supersedeDraftsQuery;
       }
@@ -1766,7 +1756,6 @@ export async function POST(request, { params }) {
   const customerTextForLearning =
     inboundMessage?.clean_body_text || inboundMessage?.snippet || "";
   if (
-    learnFromEdits &&
     shopIdForLearning &&
     coreBodyText?.trim() &&
     customerTextForLearning.trim() &&
@@ -1809,6 +1798,8 @@ export async function POST(request, { params }) {
       body_html: finalBodyHtml || persistedBodyHtml || null,
       clean_body_text: persistedBodyText,
       clean_body_html: persistedBodyHtml || null,
+      edit_delta_pct: typeof editDeltaPct === "number" ? editDeltaPct : null,
+      edit_classification: editClassification,
       message: shouldSimulateEmailOnly
         ? "Email simulated: Test Mode is enabled and no Test Email Address is configured."
         : isTestModeActive
