@@ -403,10 +403,13 @@ function extractAddressCandidate(body: string) {
     .map((line) => line.trim())
     .filter(Boolean);
   const joined = lines.join(" ");
-  if (!/\b(address|ship to|street|road|avenue|ave|city|zip|postal|state|province|country|apo|fpo|dpo)\b/i.test(joined)) {
+  if (!/\b(address|adresse|leveringsadresse|ship to|send(?:es)? til|street|road|avenue|ave|city|by|zip|postal|postnummer|state|province|country|land|apo|fpo|dpo)\b/i.test(joined)) {
     return null;
   }
-  const contentLines = lines.filter((line) => !/^(?:hello|hi|hej|dear|thanks|thank you|tak)\b[,!.\s]*.*$/i.test(line));
+  const contentLines = lines.filter((line) =>
+    !/^(?:hello|hi|hej|dear|thanks|thank you|tak|mvh|venlig hilsen)\b[,!.\s]*.*$/i.test(line) &&
+    !/\b(?:kan i|can you|jeg har|i have|ordren|order|det er)\b/i.test(line)
+  );
   const fieldValue = (patterns: RegExp[]) => {
     for (const line of contentLines) {
       for (const pattern of patterns) {
@@ -417,10 +420,19 @@ function extractAddressCandidate(body: string) {
     return "";
   };
   const streetLikeLines = contentLines.filter((line) =>
-    /^(?!.*\b(?:city|state|zip(?: code)?|postal code|country|phone|name)\s*:).*(?:\d+[A-Za-z0-9 -]{0,8}\s+)?(?:street|st\.?|road|rd\.?|avenue|ave\.?|boulevard|blvd|drive|dr\.?|lane|ln\.?|way|apartment|apt|suite|unit|floor|sal)\b/i
+    /^(?!.*\b(?:city|by|state|zip(?: code)?|postal code|postnummer|country|land|phone|telefon|name|navn)\s*:).*(?:\d+[A-Za-z0-9 -]{0,8}\s+)?(?:street|st\.?|road|rd\.?|avenue|ave\.?|boulevard|blvd|drive|dr\.?|lane|ln\.?|way|apartment|apt|suite|unit|floor|sal|vej|gade|all[eé]|plads|stræde|vaenge|vænge)\b/i
       .test(line) ||
-    /^(?:address|street|address1|address 1)\s*:/i.test(line)
+    /\b[A-Za-zÆØÅæøåÄÖÜäöüß .'-]+(?:vej|gade|all[eé]|plads|stræde|vaenge|vænge)\s+\d+[A-Za-z0-9 ,.-]*$/i
+      .test(line) ||
+    /^(?:address|adresse|street|address1|address 1)\s*:/i.test(line)
   );
+  const zipCityLine = contentLines.find((line) => /^[A-Z]{0,3}-?\d{3,10}\s+\S.+$/i.test(line)) || "";
+  const zipCityMatch = zipCityLine.match(/^([A-Z]{0,3}-?\d{3,10})\s+(.+)$/i);
+  const streetIndex = streetLikeLines.length ? contentLines.indexOf(streetLikeLines[0]) : -1;
+  const possibleName = streetIndex > 0 ? normalizeCandidate(contentLines[streetIndex - 1] || "") : "";
+  const countryLine = contentLines.find((line) =>
+    /^(?:danmark|denmark|sverige|sweden|norge|norway|germany|tyskland|us|usa|united states)$/i.test(line)
+  ) || "";
   // Inline US address: "1539 Jacaranda St Rialto, CA 92376"
   // Street suffix used as split point: everything up to and including the suffix is address1,
   // everything after is city (until the ", STATE ZIP" portion).
@@ -433,16 +445,16 @@ function extractAddressCandidate(body: string) {
   })();
 
   const address1 = fieldValue([
-    /^(?:address1|address 1|address|street)\s*:\s*(.+)$/i,
+    /^(?:address1|address 1|address|adresse|street)\s*:\s*(.+)$/i,
   ]) || normalizeCandidate(streetLikeLines[0] || "") || inlineUSAddr?.address1 || "";
   const address2 = fieldValue([
     /^(?:address2|address 2|suite|unit|apartment|apt)\s*:\s*(.+)$/i,
   ]) || normalizeCandidate(streetLikeLines[1] || "");
-  const city = fieldValue([/^(?:city|town)\s*:\s*(.+)$/i]) || inlineUSAddr?.city || "";
-  const zip = fieldValue([/^(?:zip(?: code)?|postal code|postcode|post code)\s*:\s*(.+)$/i]) || inlineUSAddr?.zip || "";
-  const country = fieldValue([/^(?:country)\s*:\s*(.+)$/i]) || inlineUSAddr?.country || "";
-  const phone = fieldValue([/^(?:phone|telephone|mobile)\s*:\s*(.+)$/i]);
-  const name = fieldValue([/^(?:name|full name|recipient)\s*:\s*(.+)$/i]);
+  const city = fieldValue([/^(?:city|town|by)\s*:\s*(.+)$/i]) || zipCityMatch?.[2]?.trim() || inlineUSAddr?.city || "";
+  const zip = fieldValue([/^(?:zip(?: code)?|postal code|postcode|post code|postnummer)\s*:\s*(.+)$/i]) || zipCityMatch?.[1]?.trim() || inlineUSAddr?.zip || "";
+  const country = fieldValue([/^(?:country|land)\s*:\s*(.+)$/i]) || normalizeCandidate(countryLine) || inlineUSAddr?.country || "";
+  const phone = fieldValue([/^(?:phone|telephone|mobile|telefon)\s*:\s*(.+)$/i]);
+  const name = fieldValue([/^(?:name|full name|recipient|navn|modtager)\s*:\s*(.+)$/i]) || possibleName;
   if (!address1) return null;
   return {
     name,

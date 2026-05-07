@@ -138,6 +138,7 @@ export function TicketDetail({
   onOpenInsights,
   showThinkingCard = false,
   isDraftFetching = false,
+  isPostApprovalDraftLoading = false,
   isConversationLoading = false,
   draftValue,
   onDraftChange,
@@ -743,7 +744,7 @@ export function TicketDetail({
             toLabel={toLabel}
             mentionUsers={mentionUsers}
             onBlur={() => onDraftBlur?.(thread?.id || null)}
-            isDraftLoading={showThinkingCard || isDraftFetching}
+            isDraftLoading={showThinkingCard || isDraftFetching || isPostApprovalDraftLoading}
             onGenerateDraft={onGenerateDraft}
             isGeneratingDraft={isGeneratingDraft}
             onRefineDraft={onRefineDraft}

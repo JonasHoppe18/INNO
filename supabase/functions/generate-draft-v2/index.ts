@@ -21,6 +21,7 @@ Deno.serve(async (req) => {
       email_data,
       eval_options,
       customer_context,
+      action_result,
     } = await req.json();
 
     if (!shop_id || (!thread_id && !email_data)) {
@@ -50,6 +51,7 @@ Deno.serve(async (req) => {
       eval_payload: email_data,
       eval_options,
       customer_context,
+      action_result,
     });
     const latency_ms = Date.now() - startTime;
 

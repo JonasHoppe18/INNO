@@ -410,7 +410,7 @@ const shouldSuppressTrackingEnrichment = (options: {
   return staleTrackingHistory && nonTrackingCurrentAsk;
 };
 
-const SAME_THREAD_RETURN_CONTACT_RE = /\b(?:contact us(?: via| by)? e-?mail|email us|write to us at|support@\S+|notify us of your return|kontakt os(?: via| på)? e-?mail|skriv til os(?: på)? e-?mail|giv os besked om din retur)\b/i;
+const SAME_THREAD_RETURN_CONTACT_RE = /\b(?:contact us(?: via| by)? e-?mail(?:\s+(?:at|on|to)\s+\S+@\S+)?|email us|write to us at|support@\S+|notify us of your return|kontakt os(?: via| på)? e-?mail(?:\s+(?:på|til)\s+\S+@\S+)?|skriv til os(?: på| via)? e-?mail|giv os besked om din retur)\b/i;
 
 const filterRedundantSameThreadReturnContactActions = (options: {
   actions: AutomationAction[];
@@ -3729,9 +3729,10 @@ function stripSupportEscalationLines(text: string): string {
     const lower = line.toLowerCase();
     if (
       /support@\S+/.test(lower) ||
-      /kontakte?\s+os\s+(?:via\s+e-?mail\s+)?på\s+\S+@\S+/.test(lower) ||
-      /kontakte?\s+os\s+via\s+e-?mail/.test(lower) ||
+      /kontakt os på\s+\S+@\S+/.test(lower) ||
+      /kontakt os via e-?mail\s+(?:på|til)\s+\S+@\S+/.test(lower) ||
       /contact us at\s+\S+@\S+/.test(lower) ||
+      /contact us(?: via| by)? e-?mail\s+(?:at|on|to)\s+\S+@\S+/.test(lower) ||
       /send us (an )?e-?mail/.test(lower) ||
       /email us/.test(lower)
     ) {
@@ -3760,13 +3761,14 @@ function hardEnforceInThreadChannel(text: string, languageHint?: string | null):
     next = next.replace(/\bsupport@\S+\b/gi, inThreadPhrase);
     next = next.replace(/\bcontact us at\s+\S+@\S+\b/gi, inThreadPhrase);
     next = next.replace(/\bwrite to us at\s+\S+@\S+\b/gi, inThreadPhrase);
+    next = next.replace(/\bcontact us(?: via| by)? e-?mail\s+(?:at|on|to)\s+\S+@\S+\b/gi, inThreadPhrase);
     next = next.replace(/\bsend (?:us|an) (?:an )?e-?mail\b/gi, inThreadPhrase);
     next = next.replace(/\bemail us\b/gi, inThreadPhrase);
     next = next.replace(/\bcontact us via e-?mail\b/gi, inThreadPhrase);
     next = next.replace(/\bcontact us by e-?mail\b/gi, inThreadPhrase);
-    next = next.replace(/\bkontakte?\s+os\s+(?:via\s+e-?mail\s+)?på\s+\S+@\S+/gi, inThreadPhrase);
-    next = next.replace(/\bkontakte?\s+os\s+via\s+e-?mail(?:\s+på\s+\S+@\S+)?/gi, inThreadPhrase);
-    next = next.replace(/\bkontakt os på\s+\S+@\S+/gi, inThreadPhrase);
+    next = next.replace(/\bkontakt os via e-?mail\s+(?:på|til)\s+\S+@\S+\b/gi, inThreadPhrase);
+    next = next.replace(/\bkontakt os på\s+\S+@\S+\b/gi, inThreadPhrase);
+    next = next.replace(/\s+(?:at|on|to|på|til)\s+\S+@\S+\b/gi, "");
     next = next.replace(/\s{2,}/g, " ").trimEnd();
     if (next !== before) replaced += 1;
     return next;

@@ -734,6 +734,34 @@ function buildBlockedActionDetail(actionType = "", blockedReason = "") {
   return String(blockedReason || "Order is Fulfilled and cannot be changed").trim();
 }
 
+function inferCustomerFirstNameFromText(value = "") {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  const patterns = [
+    /(?:^|\n)\s*(?:mvh|vh|venlig hilsen|bedste hilsner|hilsen|kind regards|best regards|regards)\s*\n\s*([A-ZÆØÅ][A-Za-zÆØÅæøå'-]{1,40})\b/i,
+    /(?:^|\n)\s*([A-ZÆØÅ][A-Za-zÆØÅæøå'-]{1,40})\s*$/m,
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) return match[1].trim();
+  }
+  return "";
+}
+
+function resolveCustomerFirstName(customerFirstName, customerMessage) {
+  const explicit = String(customerFirstName || "").trim();
+  if (explicit && !/^there$/i.test(explicit) && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(explicit)) {
+    return explicit.split(/\s+/)[0];
+  }
+  return inferCustomerFirstNameFromText(customerMessage);
+}
+
+function buildGreetingLine({ isDanish, customerName }) {
+  const name = String(customerName || "").trim();
+  if (isDanish) return name ? `Hej ${name}` : "Hej";
+  return name ? `Hi ${name},` : "Hi,";
+}
+
 async function generateBlockedActionDraft({
   actionType,
   blockedReason,
@@ -741,7 +769,7 @@ async function generateBlockedActionDraft({
   customerMessage,
   orderName,
 }) {
-  const customerName = (customerFirstName || "there").trim() || "there";
+  const customerName = resolveCustomerFirstName(customerFirstName, customerMessage);
   const orderRef = String(orderName || "").trim();
   const isDanish = /[æøå]|\b(hej|ordren|adresse|ændre|kan|ikke|venlig|hilsen)\b/i.test(
     String(customerMessage || "")
@@ -760,7 +788,7 @@ async function generateBlockedActionDraft({
         : "This order is canceled, so we unfortunately cannot update the shipping address.";
     if (isDanish) {
       return [
-        `Hej ${customerName},`,
+        buildGreetingLine({ isDanish: true, customerName }),
         "",
         orderRef ? `${orderRef}: ${blockedActionLineDa}` : blockedActionLineDa,
         "",
@@ -772,7 +800,7 @@ async function generateBlockedActionDraft({
       ].join("\n");
     }
     return [
-      `Hi ${customerName},`,
+      buildGreetingLine({ isDanish: false, customerName }),
       "",
       orderRef ? `${orderRef}: ${blockedActionLineEn}` : blockedActionLineEn,
       "",
@@ -781,6 +809,32 @@ async function generateBlockedActionDraft({
         : "If you still want the item, please place a new order.",
       "",
       "Have a great day.",
+    ].join("\n");
+  }
+
+  if (
+    actionType === "cancel_order" &&
+    (reasonLower.includes("fulfilled") || reasonLower.includes("shipped"))
+  ) {
+    if (isDanish) {
+      return [
+        buildGreetingLine({ isDanish: true, customerName }),
+        "",
+        `Vi kan desværre ikke annullere ${orderRef || "ordren"}, da den allerede er afsendt.`,
+        "",
+        "Hvis du ikke ønsker at beholde varen, kan du svare her, så hjælper vi dig videre med returneringen.",
+        "",
+        "God dag!",
+      ].join("\n");
+    }
+    return [
+      buildGreetingLine({ isDanish: false, customerName }),
+      "",
+      `We unfortunately cannot cancel ${orderRef || "your order"} because it has already been shipped.`,
+      "",
+      "If you do not want to keep the item, reply here and we will help you with the return.",
+      "",
+      "Have a good day.",
     ].join("\n");
   }
 
@@ -793,6 +847,8 @@ async function generateBlockedActionDraft({
     "Do not invent actions and do not claim any update/cancellation was completed.",
     "Never write phrases equivalent to 'I have updated' or 'I have cancelled' in this context.",
     "Never mention tracking number, tracking link, or shipment status unless explicitly provided in the prompt.",
+    "Never tell the customer to contact this support email address; they are already writing in this thread.",
+    "Do not include email addresses, phone numbers, URLs, or new contact channels unless explicitly provided as the next step.",
     "Do not include any signature. Signature is added later by the app.",
   ].join(" ");
 
@@ -800,7 +856,7 @@ async function generateBlockedActionDraft({
     `Action type: ${actionType}`,
     `Blocked reason: ${blockedReason}`,
     orderName ? `Order reference: ${orderName}` : "",
-    `Customer first name: ${customerName}`,
+    `Customer first name: ${customerName || "(unknown)"}`,
     "Customer message:",
     customerMessage || "(empty)",
     "Write only the reply body text.",
@@ -884,6 +940,89 @@ function buildActionConfirmationSentence(actionType, orderRef, isDanish) {
     : `Your request${orEn} has been processed.`;
 }
 
+function formatShippingAddressInline(address = {}) {
+  if (!address || typeof address !== "object") return "";
+  const parts = [
+    address.address1,
+    address.address2,
+    [address.zip || address.postal_code || address.postcode, address.city].filter(Boolean).join(" ").trim(),
+    address.country,
+  ]
+    .map((part) => String(part || "").trim())
+    .filter(Boolean);
+  return parts.join(", ");
+}
+
+function extractRefundTransaction(payload = {}) {
+  const executionResult =
+    payload?.execution_result && typeof payload.execution_result === "object"
+      ? payload.execution_result
+      : {};
+  const refund = executionResult?.refund && typeof executionResult.refund === "object"
+    ? executionResult.refund
+    : {};
+  const transactions = Array.isArray(refund?.transactions)
+    ? refund.transactions
+    : Array.isArray(payload?.transactions)
+    ? payload.transactions
+    : [];
+  return transactions.find((transaction) => asNumber(transaction?.amount) > 0) || null;
+}
+
+function formatRefundAmountForReply(payload = {}, isDanish = false) {
+  const transaction = extractRefundTransaction(payload);
+  const amount = asNumber(transaction?.amount ?? payload?.amount);
+  if (!amount) return "";
+  const currency = asString(transaction?.currency || payload?.currency || payload?.currency_code || "DKK") || "DKK";
+  try {
+    return new Intl.NumberFormat(isDanish ? "da-DK" : "en-US", {
+      style: "currency",
+      currency,
+    }).format(amount);
+  } catch {
+    return `${amount.toFixed(2)} ${currency}`;
+  }
+}
+
+function buildActionResultForDraft({ actionType, order, payload = {}, detail = "" }) {
+  const refundTransaction = extractRefundTransaction(payload);
+  const amount = asNumber(refundTransaction?.amount ?? payload?.amount);
+  const currency = asString(refundTransaction?.currency || payload?.currency || payload?.currency_code || "");
+  return {
+    action_type: actionType,
+    outcome: "executed",
+    order_id: order?.id ? String(order.id) : "",
+    order_name: asString(order?.name) || (order?.order_number ? `#${order.order_number}` : ""),
+    order_number: order?.order_number ? String(order.order_number) : "",
+    detail,
+    ...(amount ? { amount: amount.toFixed(2) } : {}),
+    ...(currency ? { currency } : {}),
+  };
+}
+
+async function generatePostActionDraftV2({ threadId, shopId, actionResult }) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !threadId || !shopId) {
+    return null;
+  }
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/generate-draft-v2`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+    },
+    body: JSON.stringify({
+      thread_id: threadId,
+      shop_id: shopId,
+      action_result: actionResult,
+    }),
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(payload?.error || `generate-draft-v2 returned ${response.status}`);
+  }
+  return payload?.draft_text || null;
+}
+
 async function generateActionOutcomeDraft({
   actionType,
   outcome,
@@ -892,8 +1031,8 @@ async function generateActionOutcomeDraft({
   customerMessage,
   orderName,
   decisionReason,
+  payload,
 }) {
-  const customerName = (customerFirstName || "there").trim() || "there";
   const orderRef = String(orderName || "").trim();
   const note = String(decisionReason || "").trim();
 
@@ -908,8 +1047,48 @@ async function generateActionOutcomeDraft({
     .join("\n")
     .trim();
 
+  const customerName = resolveCustomerFirstName(customerFirstName, messageBodyText);
   const isConfirmedOutcome = outcome === "executed" || outcome === "approved_test_mode";
   const orEn = orderRef ? ` for order ${orderRef}` : "";
+  const isDanish = /\b(hej|ordre|levering|adresse|mvh|tak|kan i|ændre)\b/i.test(messageBodyText);
+  const actionKey = String(actionType || "").toLowerCase();
+
+  if (isConfirmedOutcome && actionKey === "cancel_order") {
+    const greeting = buildGreetingLine({ isDanish, customerName });
+    const sentence = isDanish
+      ? `Vi har annulleret ordre ${orderRef || "din ordre"}.`
+      : `We have cancelled order ${orderRef || "your order"}.`;
+    const closing = isDanish ? "God dag!" : "Have a good day.";
+    return [greeting, "", sentence, "", closing].join("\n");
+  }
+
+  if (isConfirmedOutcome && actionKey === "refund_order") {
+    const greeting = buildGreetingLine({ isDanish, customerName });
+    const amount = formatRefundAmountForReply(payload, isDanish);
+    const sentence = isDanish
+      ? `Vi har refunderet ${amount || "beløbet"}${orderRef ? ` for ordre ${orderRef}` : ""}.`
+      : `We have refunded ${amount || "the amount"}${orderRef ? ` for order ${orderRef}` : ""}.`;
+    const timing = isDanish
+      ? "Beløbet bliver tilbageført til den oprindelige betalingsmetode."
+      : "The amount will be returned to the original payment method.";
+    const closing = isDanish ? "God dag!" : "Have a good day.";
+    return [greeting, "", sentence, "", timing, "", closing].join("\n");
+  }
+
+  const shippingAddress = payload?.shipping_address ?? payload?.shippingAddress;
+  const addressInline = formatShippingAddressInline(shippingAddress);
+  if (
+    isConfirmedOutcome &&
+    actionKey === "update_shipping_address" &&
+    addressInline
+  ) {
+    const greeting = buildGreetingLine({ isDanish, customerName });
+    const sentence = isDanish
+      ? `Vi har opdateret leveringsadressen til ${addressInline}${orderRef ? ` for din ordre ${orderRef}` : ""}.`
+      : `We have updated the shipping address to ${addressInline}${orderRef ? ` for your order ${orderRef}` : ""}.`;
+    const closing = isDanish ? "God dag!" : "Have a good day.";
+    return [greeting, "", sentence, "", closing].join("\n");
+  }
 
   // Build the core facts deterministically in English — AI only translates, never invents
   const confirmationEn = isConfirmedOutcome
@@ -918,7 +1097,7 @@ async function generateActionOutcomeDraft({
 
   // Fallback when no OpenAI key: English only
   if (!OPENAI_API_KEY) {
-    const greeting = `Hi ${customerName},`;
+    const greeting = buildGreetingLine({ isDanish: false, customerName });
     const closing = "Let us know if there is anything else we can help with.";
     return [greeting, "", confirmationEn, "", closing].join("\n");
   }
@@ -926,10 +1105,10 @@ async function generateActionOutcomeDraft({
   const systemPrompt = [
     "You are Sona, a customer support assistant writing a short outcome confirmation email.",
     "Reply in the EXACT SAME LANGUAGE as the customer message below.",
-    `The customer's first name is: ${customerName}.`,
+    `The customer's first name is: ${customerName || "(unknown)"}.`,
     `The outcome to communicate is: "${confirmationEn}"`,
     "Write exactly three parts separated by blank lines:",
-    "1. A greeting line using the customer's name.",
+    "1. A greeting line using the customer's name when available. If the name is unknown, use only a neutral greeting, never 'there'.",
     "2. The outcome sentence — translate it to the customer's language, do not change its meaning or add anything.",
     "3. A single short closing line offering further help.",
     "Do not add signatures, filler phrases like 'thank you for your patience', or any extra sentences.",
@@ -1035,6 +1214,10 @@ async function finalizeActionDecisionDraft({
       customerMessage: inbound.bodyText,
       orderName,
       decisionReason,
+      payload:
+        actionRecord?.payload && typeof actionRecord.payload === "object"
+          ? actionRecord.payload
+          : {},
     }));
   if (!bodyText) return null;
   const draftMessageId = await upsertThreadDraft({
@@ -2143,6 +2326,89 @@ async function getPrimaryFulfillmentOrderId({ domain, token, orderId }) {
   return asNumber(list[0]?.id);
 }
 
+async function buildCalculatedRefund({ domain, token, orderId, payload = {} }) {
+  const requestedAmount = asNumber(payload?.amount);
+  const orderResult = await shopifyRequest({
+    domain,
+    token,
+    path: `/orders/${encodeURIComponent(
+      String(orderId)
+    )}.json?fields=id,name,currency,financial_status,fulfillment_status,line_items`,
+  });
+  if (!orderResult.response.ok || !orderResult.payload?.order) {
+    return orderResult;
+  }
+
+  const order = orderResult.payload.order;
+  const lineItems = Array.isArray(order?.line_items) ? order.line_items : [];
+  const refundLineItems = lineItems
+    .map((lineItem) => {
+      const quantity = asNumber(lineItem?.current_quantity ?? lineItem?.quantity);
+      const lineItemId = asNumber(lineItem?.id);
+      if (!lineItemId || !quantity || quantity <= 0) return null;
+      const fulfillmentStatus = String(lineItem?.fulfillment_status || "").trim().toLowerCase();
+      return {
+        line_item_id: lineItemId,
+        quantity,
+        restock_type: fulfillmentStatus ? "no_restock" : "cancel",
+      };
+    })
+    .filter(Boolean);
+
+  const calculateBody = {
+    refund: {
+      ...(refundLineItems.length ? { refund_line_items: refundLineItems } : {}),
+      shipping: { full_refund: true },
+    },
+  };
+  const calculateResult = await shopifyRequest({
+    domain,
+    token,
+    path: `/orders/${encodeURIComponent(String(orderId))}/refunds/calculate.json`,
+    method: "POST",
+    body: calculateBody,
+  });
+  if (!calculateResult.response.ok || !calculateResult.payload?.refund) {
+    return calculateResult;
+  }
+
+  const calculatedRefund = calculateResult.payload.refund;
+  const calculatedTransactions = Array.isArray(calculatedRefund?.transactions)
+    ? calculatedRefund.transactions
+    : [];
+  const transactions = calculatedTransactions
+    .map((transaction) => {
+      const parentId = asNumber(transaction?.parent_id);
+      const calculatedAmount = asNumber(transaction?.amount);
+      const amount = requestedAmount || calculatedAmount;
+      if (!parentId || !amount || amount <= 0) return null;
+      return {
+        parent_id: parentId,
+        kind: "refund",
+        amount: amount.toFixed(2),
+        ...(asString(transaction?.gateway) ? { gateway: asString(transaction.gateway) } : {}),
+        ...(asString(transaction?.currency) ? { currency: asString(transaction.currency) } : {}),
+      };
+    })
+    .filter(Boolean);
+
+  if (!transactions.length) {
+    throw Object.assign(new Error("Shopify returned no refundable transaction for this order."), {
+      status: 400,
+    });
+  }
+
+  return {
+    response: { ok: true, status: 200 },
+    payload: {
+      refund: {
+        ...calculatedRefund,
+        transactions,
+      },
+    },
+  };
+}
+
 async function executeShopifyAction({ domain, token, actionType, orderId, payload = {}, order }) {
   switch (actionType) {
     case "update_shipping_address": {
@@ -2150,7 +2416,7 @@ async function executeShopifyAction({ domain, token, actionType, orderId, payloa
       const inferredAddress =
         shippingAddress && typeof shippingAddress === "object"
           ? shippingAddress
-          : parseAddressFromText(payload?.detailText || "") || null;
+          : null;
       if (!inferredAddress || typeof inferredAddress !== "object") {
         throw Object.assign(new Error("Could not parse shipping address payload."), { status: 400 });
       }
@@ -2181,18 +2447,31 @@ async function executeShopifyAction({ domain, token, actionType, orderId, payloa
       });
     }
     case "refund_order": {
-      const amount = asNumber(payload?.amount);
-      const currency = asString(payload?.currency || payload?.currency_code);
       const reason = asString(payload?.reason);
       const note = asString(payload?.note);
-      const transactions = amount
-        ? [
-            {
-              kind: "refund",
-              amount: amount.toFixed(2),
-              ...(currency ? { currency } : {}),
-            },
-          ]
+      const calculated = await buildCalculatedRefund({ domain, token, orderId, payload });
+      if (!calculated.response.ok) return calculated;
+      const calculatedRefund = calculated.payload?.refund || {};
+      const refundLineItems = Array.isArray(calculatedRefund?.refund_line_items)
+        ? calculatedRefund.refund_line_items
+            .map((item) => ({
+              line_item_id: asNumber(item?.line_item_id),
+              quantity: asNumber(item?.quantity),
+              ...(asNumber(item?.location_id) ? { location_id: asNumber(item.location_id) } : {}),
+              ...(asString(item?.restock_type) ? { restock_type: asString(item.restock_type) } : {}),
+            }))
+            .filter((item) => item.line_item_id && item.quantity)
+        : [];
+      const refundShippingLines = Array.isArray(calculatedRefund?.refund_shipping_lines)
+        ? calculatedRefund.refund_shipping_lines
+            .map((line) => ({
+              shipping_line_id: asNumber(line?.shipping_line_id),
+              amount: asString(line?.amount),
+            }))
+            .filter((line) => line.shipping_line_id && line.amount)
+        : [];
+      const transactions = Array.isArray(calculatedRefund?.transactions)
+        ? calculatedRefund.transactions
         : [];
       return await shopifyRequest({
         domain,
@@ -2204,7 +2483,9 @@ async function executeShopifyAction({ domain, token, actionType, orderId, payloa
             notify: true,
             ...(note ? { note } : {}),
             ...(reason ? { reason } : {}),
-            ...(transactions.length ? { transactions } : {}),
+            ...(refundLineItems.length ? { refund_line_items: refundLineItems } : {}),
+            ...(refundShippingLines.length ? { refund_shipping_lines: refundShippingLines } : {}),
+            transactions,
           },
         },
       });
@@ -3508,16 +3789,13 @@ export async function POST(request, { params }) {
     !payloadForExecution?.shipping_address &&
     !payloadForExecution?.shippingAddress
   ) {
-    const proposedAddress = parseAddressFromText(detailText);
-    if (proposedAddress) {
-      payloadForExecution = {
-        ...payloadForExecution,
-        shipping_address: {
-          ...(order.shipping_address || {}),
-          ...proposedAddress,
-        },
-      };
-    }
+    return NextResponse.json(
+      {
+        error:
+          "Address update approval is missing a structured shipping_address payload. Regenerate the draft/action before approving.",
+      },
+      { status: 400 }
+    );
   }
 
   if (workspaceTestSettings.testMode) {
@@ -4018,6 +4296,46 @@ export async function POST(request, { params }) {
       );
     }
 
+    const nowIso = new Date().toISOString();
+    const actionKey = actionRecord?.action_key
+      ? String(actionRecord.action_key)
+      : buildActionKey(normalizedActionType, order.id, payloadForExecution);
+    const errorMessage = typeof rawMessage === "string" ? rawMessage : JSON.stringify(rawMessage);
+    if (actionRecord?.id) {
+      await serviceClient
+        .from("thread_actions")
+        .update({
+          status: "failed",
+          detail: detailText || `Could not execute ${normalizedActionType}.`,
+          payload: payloadForExecution,
+          action_type: normalizedActionType,
+          action_key: actionKey,
+          order_id: String(order.id),
+          order_number: order.order_number ? String(order.order_number) : null,
+          decided_at: nowIso,
+          decided_by: clerkUserId,
+          decision_reason: decisionReason || null,
+          updated_at: nowIso,
+          error: errorMessage,
+        })
+        .eq("id", actionRecord.id);
+    }
+    await serviceClient.from("agent_logs").insert({
+      draft_id: null,
+      step_name: "shopify_action_failed",
+      step_detail: JSON.stringify({
+        thread_id: threadId,
+        action: normalizedActionType,
+        order_id: String(order.id),
+        order_number: order.order_number ?? null,
+        detail: detailText || null,
+        status_code: statusCode,
+        raw: errorMessage,
+      }),
+      status: "error",
+      created_at: nowIso,
+    });
+
     return NextResponse.json({ error: String(rawMessage) }, { status: statusCode });
   }
 
@@ -4223,19 +4541,17 @@ export async function POST(request, { params }) {
     }
   }
 
-  const appliedDraftText = await finalizeActionDecisionDraft({
-    serviceClient,
-    scope,
-    thread,
-    actionRecord,
-    actionType: normalizedActionType,
-    outcome: "executed",
-    outcomeDetail: detailText || `The ${normalizedActionType.replace(/_/g, " ")} action has been completed.`,
-    executionState: "executed",
-    orderName: asString(order?.name) || asString(order?.order_number),
-    decisionReason,
+  const appliedDraftText = await generatePostActionDraftV2({
+    threadId,
+    shopId: shopRow.id,
+    actionResult: buildActionResultForDraft({
+      actionType: normalizedActionType,
+      order,
+      payload: actionRowPayload,
+      detail: detailText || `The ${normalizedActionType.replace(/_/g, " ")} action has been completed.`,
+    }),
   }).catch((error) => {
-    console.warn("order-updates/accept: failed to generate applied draft", error?.message || error);
+    console.warn("order-updates/accept: failed to generate post-action draft via v2", error?.message || error);
     return null;
   });
 

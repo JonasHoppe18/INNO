@@ -22,7 +22,7 @@ type ValidateActionDecisionInput = {
   blockRedundantSameThreadReturnContactActions?: boolean;
 };
 
-const SAME_THREAD_RETURN_CONTACT_RE = /\b(?:contact us(?: via| by)? e-?mail|email us|write to us at|support@\S+|notify us of your return|kontakt os(?: via| på)? e-?mail|skriv til os(?: på)? e-?mail|giv os besked om din retur)\b/i;
+const SAME_THREAD_RETURN_CONTACT_RE = /\b(?:contact us(?: via| by)? e-?mail(?:\s+(?:at|on|to)\s+\S+@\S+)?|email us|write to us at|support@\S+|notify us of your return|kontakt os(?: via| på)? e-?mail(?:\s+(?:på|til)\s+\S+@\S+)?|skriv til os(?: på| via)? e-?mail|giv os besked om din retur)\b/i;
 
 const LOW_RISK_ACTIONS = new Set([
   "add_note",

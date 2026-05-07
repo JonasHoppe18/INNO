@@ -37,6 +37,7 @@ export interface WriterInput {
   model?: string;
   languageCorrectionInstruction?: string;
   attachments?: InlineImageAttachment[];
+  actionResult?: Record<string, unknown> | null;
 }
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
@@ -75,6 +76,57 @@ const LANGUAGE_NAMES: Record<string, string> = {
   es: "spansk",
   it: "italiensk",
 };
+
+const LANGUAGE_LOCALES: Record<string, string> = {
+  da: "da-DK",
+  sv: "sv-SE",
+  de: "de-DE",
+  en: "en-US",
+  nl: "nl-NL",
+  fr: "fr-FR",
+  no: "nb-NO",
+  fi: "fi-FI",
+  es: "es-ES",
+  it: "it-IT",
+};
+
+function actionResultValue(
+  actionResult: Record<string, unknown> | null,
+  key: string,
+): string {
+  const value = actionResult?.[key];
+  return typeof value === "string" || typeof value === "number"
+    ? String(value).trim()
+    : "";
+}
+
+function formatActionAmountDisplay(
+  actionResult: Record<string, unknown> | null,
+  replyLanguage: string,
+): string {
+  const explicitDisplay = actionResultValue(actionResult, "amount_display");
+  if (explicitDisplay) return explicitDisplay;
+
+  const amountText = actionResultValue(actionResult, "amount");
+  if (!amountText) return "";
+  const normalizedAmount = amountText.includes(",")
+    ? amountText.replace(/\./g, "").replace(",", ".")
+    : amountText;
+  const amount = Number(normalizedAmount);
+  if (!Number.isFinite(amount)) return amountText;
+
+  const currency = actionResultValue(actionResult, "currency") ||
+    actionResultValue(actionResult, "currency_code") ||
+    "DKK";
+  try {
+    return new Intl.NumberFormat(LANGUAGE_LOCALES[replyLanguage] ?? "en-US", {
+      style: "currency",
+      currency,
+    }).format(amount);
+  } catch {
+    return `${amountText} ${currency}`.trim();
+  }
+}
 
 function shouldUseResponsesApi(model: string): boolean {
   return /^gpt-5(?:\.|$|-)/.test(model);
@@ -159,17 +211,15 @@ function cleanDraftText(text: string): string {
     )
     // Strip any instruction to contact via email — customer is already in the right thread.
     // Catches all forms: "contact us at/via/by email ...", "kontakt(e) os via/på email ..."
-    // Removes the entire clause up to the next sentence boundary to avoid broken sentences.
+    // Removes the entire clause up to the next sentence boundary without inserting a language-specific phrase.
     .replace(
       /[^.!?\n]*(?:contact|reach|email)\s+us\s+(?:at|via|by|on|to)\s+\S+@\S+[^.!?\n]*/gi,
-      " reply here in this thread",
+      "",
     )
     .replace(
-      /[^.!?\n]*(?:kontakte?\s+os|skriv\s+til\s+os|send\s+(?:en\s+)?(?:mail|e-?mail))[^.!?\n]*\S+@\S+[^.!?\n]*/gi,
-      " svar her i tråden",
+      /[^.!?\n]*(?:kontakte?\s+os|skriv\s+til\s+os|send\s+(?:en\s+)?(?:mail|e-?mail))\s+(?:via|på|til|at)\s+\S+@\S+[^.!?\n]*/gi,
+      "",
     )
-    .replace(/\bDu skal\s+svar\b/gi, "Svar")
-    .replace(/\bYou (?:can|should|must|need to)\s+reply here in this thread\b/gi, "Reply here")
     .replace(
       /\s*Because the order shows as shipped and paid, this review requires internal approval;?/gi,
       " Refund reviews require internal approval;",
@@ -461,6 +511,7 @@ export async function runWriter(
     model,
     languageCorrectionInstruction,
     attachments = [],
+    actionResult = null,
   }: WriterInput,
 ): Promise<WriterResult> {
   const resolvedModel = model ?? Deno.env.get("OPENAI_MODEL") ?? "gpt-5-mini";
@@ -588,6 +639,28 @@ Support svarede: "${ex.agent_reply.slice(0, 500)}"`;
         )
         .join("\n")
     : "";
+  const actionAmountDisplay = formatActionAmountDisplay(actionResult, replyLanguage);
+  const actionResultBlock = actionResult
+    ? `# POST-ACTION RESULT MODE (primær opgave for dette svar)
+Kundens sag er allerede godkendt og handlingen er allerede udført i Shopify. Svaret er derfor en kort bekræftelse til kunden, ikke et forslag, en vurdering eller en ny supportproces.
+
+- action_type: ${String(actionResult.action_type || "")}
+- outcome: ${String(actionResult.outcome || "executed")}
+- order_name: ${String(actionResult.order_name || actionResult.order_number || "")}
+- amount: ${String(actionResult.amount || "")}
+- amount_display: ${actionAmountDisplay}
+- currency: ${String(actionResult.currency || "")}
+- detail: ${String(actionResult.detail || "")}
+
+Regler for post-action-svaret:
+- Svar på samme sprog som kunden.
+- Brug afsluttet handling-sprog. Skriv at handlingen ER udført, ikke at den kan udføres, bliver behandlet eller vil ske senere.
+- Bekræft kun den udførte handling og de relevante fakta ovenfor.
+- Ingen signatur, ingen "kontakt os hvis..."-standardlinje, ingen support-email.
+- Ingen "tak for din besked" eller generisk varm indledning efter hilsenen — gå direkte til resultatet.
+- Forbudte betydninger: "vi kan refundere", "vi har tilbudt en refusion", "vi har igangsat en refusion", "vil blive refunderet", "vil blive tilbageført", "vi behandler refunderingen", "hurtigst muligt", "din anmodning er blevet behandlet", "sagen sendes videre", "venter på godkendelse".
+- Hvis action_type er refund_order: skriv at beløbet i amount_display er refunderet for ordren, og at beløbet går tilbage til den oprindelige betalingsmetode. Lov ikke en præcis bankdato medmindre den står eksplicit i facts.`
+    : "";
 
   // --- Viden fra vidensbase ---
   const knowledgeBlock = chunksForPrompt.length > 0
@@ -626,6 +699,11 @@ ${
       : ""
   }
 ${
+    actionResult
+      ? "\nPOST-ACTION MODE (KRITISK): Handlingens resultat er allerede udført. Skriv et kundesvar der bekræfter det afsluttede resultat i datid/perfektum. Brug ikke fremtid, mulighed, intern behandling eller ny approval. Denne regel overstyrer normal åbning, planlagte actions, knowledge base og persona.\n"
+      : ""
+  }
+${
     persona
       ? `\nBUTIKKENS EGNE INSTRUKTIONER (følg disse præcist, men aldrig på bekostning af sprogrestriktionen ovenfor):\n${persona}\n`
       : ""
@@ -637,7 +715,9 @@ HILSEN: Brug hilsenavn-blokken som sandhed. Kundens eget navn i seneste formular
 
 ÅBNING:
 ${
-    plan.primary_intent === "thanks"
+    actionResult
+      ? "- POST-ACTION SVAR — efter hilsenen: gå direkte til bekræftelsen af den udførte handling. Ingen tak-for-besked, ingen empatiåbning, ingen begrundelse."
+      : plan.primary_intent === "thanks"
       ? "- TAKSIGELSESSVAR — kunden siger blot tak. Skriv KUN 1-2 sætninger: bekræft at du er glad for at hjælpe, og ønsker dem en god dag. Ingen ordreinfo, ingen tracking, ingen ekstra detaljer."
       : isFollowUp
       ? "- OPFØLGNINGSSVAR — gå direkte til sagen efter hilsenen."
@@ -668,7 +748,7 @@ SIGNATUR-REGEL (KRITISK): Skriv ALDRIG signatur, navn, titel, teamnavn eller afs
 
 VIDENSBASE-PROCEDURE-REGEL (KRITISK): Hvis vidensbasen indeholder en specifik procedure eller et script til kundens situation, SKAL du følge det præcis — oversæt til kundens sprog, men bevar strukturen og indholdet. Din egen vurdering må ALDRIG erstatte en procedure der er dokumenteret i vidensbasen.
 
-TILSTAND-REGEL (KRITISK): Brug ALDRIG datid ("vi har sendt", "vi har refunderet", "vi har opdateret") for handlinger der ikke eksplicit fremgår af "Planlagte actions" eller er bekræftet i "Verificerede fakta". Brug nutid/fremtid for det der sker nu: "Vi sender dig", "Vi sørger for", "Vi går videre med". Datid er kun korrekt for handlinger der allerede er registreret som gennemført — fx en leveret pakke med dato.
+TILSTAND-REGEL (KRITISK): Brug ALDRIG datid ("vi har sendt", "vi har refunderet", "vi har opdateret") for handlinger der ikke eksplicit fremgår af "Planlagte actions", "POST-ACTION RESULT MODE" eller er bekræftet i "Verificerede fakta". Brug nutid/fremtid for det der sker nu: "Vi sender dig", "Vi sørger for", "Vi går videre med". Datid er korrekt når handlingen allerede er registreret som gennemført — fx en leveret pakke med dato eller en udført post-action handling.
 
 BEKRÆFTELSES-REGEL (KRITISK): Når kunden bekræfter noget vi har spurgt om (adresse, oplysninger, situation) med et kort "ja", "ok", "det er korrekt" eller lignende, er svaret enkelt og handlingsorienteret: bekræft hvad der sker nu og hvornår. Genbrug ikke priser, betingelser eller emner der ikke er relevante for det kunden netop bekræftede. Eksempel: kunden bekræfter adresse → "Vi sender dig et nyt kabel til [adresse] hurtigst muligt."
 
@@ -783,6 +863,7 @@ ${
     infoRequirementsBlock,
     decisionsMade,
     pendingAsks,
+    actionResultBlock,
     actionsBlock,
     openQBlock,
     knowledgeBlock,

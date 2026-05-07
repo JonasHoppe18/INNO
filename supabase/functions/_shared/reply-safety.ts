@@ -40,6 +40,7 @@ const SAME_CHANNEL_ESCALATION_LINE_PATTERNS = [
   /support@\S+/i,
   /\bcontact us at\s+\S+@\S+/i,
   /\bwrite to us at\s+\S+@\S+/i,
+  /\bcontact us(?: via| by)? e-?mail\s+(?:at|on|to)\s+\S+@\S+/i,
   /\bsend (?:us|an) (?:an )?e-?mail\b/i,
   /\bemail us\b/i,
   /\breply by e-?mail\b/i,
@@ -49,7 +50,8 @@ const SAME_CHANNEL_ESCALATION_LINE_PATTERNS = [
   /\bcontact us via e-?mail\b/i,
   /\bcontact us by e-?mail\b/i,
   /\bskriv til\s+\S+@\S+/i,
-  /\bkontakte?\s+os\s+(?:via\s+e-?mail\s+)?på\s+\S+@\S+/i,
+  /\bkontakt os på\s+\S+@\S+/i,
+  /\bkontakt os via e-?mail\s+(?:på|til)\s+\S+@\S+/i,
   /\bsend os en e-?mail\b/i,
   /\bskriv til os på e-?mail\b/i,
   /\bskriv til os via e-?mail\b/i,
@@ -196,6 +198,7 @@ export function guardSameChannelEscalation(options: {
       next = next.replace(/\bsupport@\S+\b/gi, inThreadPhrase);
       next = next.replace(/\bcontact us at\s+\S+@\S+\b/gi, inThreadPhrase);
       next = next.replace(/\bwrite to us at\s+\S+@\S+\b/gi, inThreadPhrase);
+      next = next.replace(/\bcontact us(?: via| by)? e-?mail\s+(?:at|on|to)\s+\S+@\S+\b/gi, inThreadPhrase);
       next = next.replace(/\bsend (?:us|an) (?:an )?e-?mail\b/gi, inThreadPhrase);
       next = next.replace(/\bemail us\b/gi, inThreadPhrase);
       next = next.replace(/\breply by e-?mail\b/gi, inThreadPhrase);
@@ -205,11 +208,13 @@ export function guardSameChannelEscalation(options: {
       next = next.replace(/\bcontact us via e-?mail\b/gi, inThreadPhrase);
       next = next.replace(/\bcontact us by e-?mail\b/gi, inThreadPhrase);
       next = next.replace(/\bskriv til\s+\S+@\S+\b/gi, inThreadPhrase);
-      next = next.replace(/\bkontakte?\s+os\s+(?:via\s+e-?mail\s+)?på\s+\S+@\S+/gi, inThreadPhrase);
+      next = next.replace(/\bkontakt os på\s+\S+@\S+\b/gi, inThreadPhrase);
+      next = next.replace(/\bkontakt os via e-?mail\s+(?:på|til)\s+\S+@\S+\b/gi, inThreadPhrase);
       next = next.replace(/\bsend os en e-?mail\b/gi, inThreadPhrase);
       next = next.replace(/\bskriv til os på e-?mail\b/gi, inThreadPhrase);
       next = next.replace(/\bskriv til os via e-?mail\b/gi, inThreadPhrase);
-      next = next.replace(/\bkontakte?\s+os\s+via\s+e-?mail(?:\s+på\s+\S+@\S+)?/gi, inThreadPhrase);
+      next = next.replace(/\bkontakt os via e-?mail\b/gi, inThreadPhrase);
+      next = next.replace(/\s+(?:at|on|to|på|til)\s+\S+@\S+\b/gi, "");
       next = next.replace(/\s{2,}/g, " ").trim();
       return next;
     }

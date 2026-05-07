@@ -36,6 +36,7 @@ export interface PipelineInput {
   shop_id: string;
   supabase: SupabaseClient;
   customer_context?: Record<string, unknown> | null;
+  action_result?: Record<string, unknown> | null;
   eval_payload?: EvalPayload;
   eval_options?: {
     writer_model?: string;
@@ -78,6 +79,94 @@ const CONFIDENCE_ESCALATION_THRESHOLD = 0.6;
 // Simple intents get gpt-4o-mini — cheaper, fast enough for straightforward replies.
 // Everything else uses gpt-5-mini.
 const SIMPLE_INTENTS = new Set(["thanks", "tracking"]);
+
+function detectPostActionDraftIssues(
+  draftText: string,
+  actionResult: Record<string, unknown> | null,
+  replyLanguage = "en",
+): string[] {
+  if (!actionResult) return [];
+  const text = String(draftText || "").toLowerCase();
+  const actionType = String(actionResult.action_type || "");
+  const issues: string[] = [];
+
+  const pendingLanguagePatterns: Array<[RegExp, string]> = [
+    [/\b(?:kan|kunne)\s+refundere\b/i, "uses refund capability language instead of completed refund language"],
+    [/\bcan\s+refund\b/i, "uses refund capability language instead of completed refund language"],
+    [/\b(?:vil|will|skal)\s+(?:refundere|refund)\b/i, "uses future refund language instead of completed refund language"],
+    [/\bvil\s+blive\s+refunderet\b/i, "uses future refund language instead of completed refund language"],
+    [/\bvil\s+blive\s+tilbageført\b/i, "uses future payment-return language instead of direct original-payment-method confirmation"],
+    [/\bwill\s+be\s+refunded\b/i, "uses future refund language instead of completed refund language"],
+    [/\bwill\s+be\s+(?:returned|credited)\b/i, "uses future payment-return language instead of direct original-payment-method confirmation"],
+    [/\b(?:igangsat|påbegyndt|startet)\s+(?:en\s+)?(?:refusion|refundering)\b/i, "uses initiated-refund language instead of completed refund language"],
+    [/\b(?:initiated|started)\s+(?:a\s+)?refund\b/i, "uses initiated-refund language instead of completed refund language"],
+    [/\b(?:tilbudt|offered)\s+(?:en\s+)?(?:refusion|refund)\b/i, "uses offered-refund language instead of completed refund language"],
+    [/\b(?:har|have|has)\s+(?:allerede\s+)?(?:tilbudt|offered)\b/i, "uses offered-action language instead of completed action language"],
+    [/\bbliver\s+behandlet\b/i, "uses pending processing language"],
+    [/\bbehandles\s+hurtigst\s+muligt\b/i, "uses pending processing language"],
+    [/\bhurtigst\s+muligt\b/i, "uses generic pending-speed language"],
+    [/\bas\s+soon\s+as\s+possible\b/i, "uses generic pending-speed language"],
+    [/\b(?:anmodning|request)[\s\S]{0,80}(?:behandlet|processed)\b/i, "uses vague request-processed language"],
+    [/\b(?:sendes|sent)\s+(?:videre|for\s+review|to\s+review)\b/i, "uses internal handoff language"],
+    [/\b(?:venter|waiting|awaiting)\s+(?:på\s+)?(?:godkendelse|approval)\b/i, "uses approval-pending language"],
+  ];
+  for (const [pattern, reason] of pendingLanguagePatterns) {
+    if (pattern.test(text)) issues.push(reason);
+  }
+
+  if (actionType === "refund_order") {
+    const amountDisplay = String(actionResult.amount_display || "").trim() ||
+      formatActionAmountForLanguage(actionResult, replyLanguage);
+    const hasAmount = Boolean(String(actionResult.amount || amountDisplay).trim());
+    const mentionsOriginalPaymentMethod =
+      /\boprindelig(?:e)?\s+betalingsmetode\b/i.test(draftText) ||
+      /\boriginal\s+payment\s+method\b/i.test(draftText) ||
+      /\bursprunglig(?:a)?\s+betalnings(?:metod|sätt)\b/i.test(draftText) ||
+      /\bursprüngliche(?:n)?\s+zahlungs(?:art|methode)\b/i.test(draftText);
+    if (hasAmount && !mentionsOriginalPaymentMethod) {
+      issues.push("refund result does not mention return to original payment method");
+    }
+    if (amountDisplay && !draftText.includes(amountDisplay)) {
+      issues.push("refund result does not use the exact formatted refund amount");
+    }
+  }
+
+  return Array.from(new Set(issues));
+}
+
+function formatActionAmountForLanguage(
+  actionResult: Record<string, unknown>,
+  replyLanguage: string,
+): string {
+  const amountText = String(actionResult.amount || "").trim();
+  if (!amountText) return "";
+  const normalizedAmount = amountText.includes(",")
+    ? amountText.replace(/\./g, "").replace(",", ".")
+    : amountText;
+  const amount = Number(normalizedAmount);
+  if (!Number.isFinite(amount)) return "";
+  const currency = String(actionResult.currency || actionResult.currency_code || "DKK").trim() || "DKK";
+  const locales: Record<string, string> = {
+    da: "da-DK",
+    sv: "sv-SE",
+    de: "de-DE",
+    en: "en-US",
+    nl: "nl-NL",
+    fr: "fr-FR",
+    no: "nb-NO",
+    fi: "fi-FI",
+    es: "es-ES",
+    it: "it-IT",
+  };
+  try {
+    return new Intl.NumberFormat(locales[replyLanguage] ?? "en-US", {
+      style: "currency",
+      currency,
+    }).format(amount);
+  } catch {
+    return "";
+  }
+}
 
 function resolveWriterModel(
   intent: string,
@@ -309,6 +398,50 @@ export function shouldDeferDraftUntilActionDecision(
   return proposals.length > 0 && routingHint === "review";
 }
 
+function parseReplacementShippingAddress(message = "", existingShipping = {}) {
+  const lines = String(message || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (!lines.join(" ").match(/\b(?:address|adresse|leveringsadresse|shipping address)\b/i)) {
+    return null;
+  }
+  const contentLines = lines.filter((line) =>
+    !/^(?:hello|hi|hej|dear|thanks|thank you|tak|mvh|venlig hilsen)\b[,!.\s]*.*$/i.test(line) &&
+    !/\b(?:kan i|can you|jeg har|i have|ordren|order|det er)\b/i.test(line)
+  );
+  const streetLine = contentLines.find((line) =>
+    /\b[A-Za-zÆØÅæøåÄÖÜäöüß .'-]+(?:vej|gade|all[eé]|plads|stræde|vaenge|vænge)\s+\d+[A-Za-z0-9 ,.-]*$/i
+      .test(line) ||
+    /\b\d+[A-Za-z0-9 -]{0,8}\s+(?:street|st\.?|road|rd\.?|avenue|ave\.?|boulevard|blvd|drive|dr\.?|lane|ln\.?)\b/i
+      .test(line)
+  );
+  const zipCityLine = contentLines.find((line) => /^[A-Z]{0,3}-?\d{3,10}\s+\S.+$/i.test(line)) || "";
+  const zipCityMatch = zipCityLine.match(/^([A-Z]{0,3}-?\d{3,10})\s+(.+)$/i);
+  if (!streetLine || !zipCityMatch) return null;
+  const streetIndex = contentLines.indexOf(streetLine);
+  const possibleName = streetIndex > 0 ? String(contentLines[streetIndex - 1] || "").trim() : "";
+  const countryLine = contentLines.find((line) =>
+    /^(?:danmark|denmark|sverige|sweden|norge|norway|germany|tyskland|us|usa|united states)$/i.test(line)
+  ) || "";
+  const existing = existingShipping && typeof existingShipping === "object"
+    ? existingShipping as Record<string, unknown>
+    : {};
+  const existingName = [existing.first_name, existing.last_name]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .join(" ");
+  return {
+    name: possibleName || existingName || null,
+    address1: streetLine,
+    address2: null,
+    zip: zipCityMatch[1].trim(),
+    city: zipCityMatch[2].trim(),
+    country: countryLine || String(existing.country || ""),
+    phone: String(existing.phone || "") || null,
+  };
+}
+
 export async function runDraftV2Pipeline(
   input: PipelineInput,
 ): Promise<PipelineResult> {
@@ -317,6 +450,7 @@ export async function runDraftV2Pipeline(
     shop_id,
     supabase,
     customer_context,
+    action_result,
     eval_payload,
     eval_options,
   } = input;
@@ -331,6 +465,11 @@ export async function runDraftV2Pipeline(
   const disableEscalation = eval_payload
     ? eval_options?.disable_escalation === true
     : false;
+  const postActionResult =
+    action_result && typeof action_result === "object" &&
+      typeof (action_result as Record<string, unknown>).action_type === "string"
+      ? action_result as Record<string, unknown>
+      : null;
 
   // 1. Load context — either from DB (normal) or from eval_payload (eval mode)
   let thread: Record<string, unknown>;
@@ -416,6 +555,28 @@ export async function runDraftV2Pipeline(
     }
 
     latestMessage = messages[messages.length - 1];
+    if (postActionResult) {
+      const latestInboundMessage = messages
+        .filter((m) => {
+          const row = m as Record<string, unknown>;
+          return row.direction !== "outbound" && row.from_me !== true;
+        })
+        .at(-1);
+      if (!latestInboundMessage) {
+        return {
+          draft_text: null,
+          proposed_actions: [],
+          routing_hint: "block",
+          is_test_mode: false,
+          confidence: 0,
+          knowledge_gaps: [],
+          sources: [],
+          skipped: true,
+          skip_reason: "no_inbound_message_for_action_result",
+        };
+      }
+      latestMessage = latestInboundMessage;
+    }
   }
 
   if (!latestMessage && !eval_payload) {
@@ -433,7 +594,7 @@ export async function runDraftV2Pipeline(
   }
 
   // 2. Gate — skipped in eval mode
-  if (!eval_payload) {
+  if (!eval_payload && !postActionResult) {
     const gate = await runGate({ thread, latestMessage, shop });
     if (!gate.should_process) {
       console.log(`[generate-draft-v2] gate blocked: ${gate.reason}`);
@@ -504,9 +665,39 @@ export async function runDraftV2Pipeline(
   };
 
   // 4. Plan — bestem intent, hvad der skal hentes, hvilke facts der kræves
-  const plan = await runPlanner({ caseState, latestMessage, shop });
+  let plan = await runPlanner({ caseState, latestMessage, shop });
+  if (postActionResult) {
+    const actionType = String(postActionResult.action_type || "");
+    const actionIntentMap: Record<string, string> = {
+      refund_order: "refund",
+      cancel_order: "cancel",
+      update_shipping_address: "address_change",
+      create_exchange_request: "exchange",
+      fulfill_exchange: "exchange",
+    };
+    plan = {
+      ...plan,
+      primary_intent: actionIntentMap[actionType] ?? plan.primary_intent,
+      skills_to_consider: [],
+      confidence: 1,
+    };
+  }
   const latestBody =
     (latestMessage.clean_body_text ?? latestMessage.body_text ?? "") as string;
+  if (
+    plan.primary_intent !== "address_change" &&
+    /\b(?:ændre|skifte|rette|opdatere|change|update|correct)\b[\s\S]{0,120}\b(?:adresse|leveringsadresse|shipping address|address)\b/i
+      .test(`${latestMessage.subject || ""}\n${latestBody}`) &&
+    /\b(?:adresse|leveringsadresse|shipping address|address)\b/i.test(latestBody)
+  ) {
+    plan = {
+      ...plan,
+      primary_intent: "address_change",
+      required_facts: Array.from(new Set([...(plan.required_facts || []), "order_state"])),
+      skills_to_consider: Array.from(new Set([...(plan.skills_to_consider || []), "update_shipping_address"])),
+      confidence: Math.max(Number(plan.confidence || 0), 0.9),
+    };
+  }
 
   if (!eval_payload && thread_id) {
     supabase.from("agent_logs").insert({
@@ -587,16 +778,53 @@ export async function runDraftV2Pipeline(
     facts,
     retrieved, // KB-chunks til at tolke shop-specifikke procedurer
     shopConfig: shopActionConfig,
+    customerMessage: latestBody,
   });
 
   // 7. Anvend shop automation-flags — overskriv requires_approval og routing_hint
-  const { proposals: finalProposals, routing_hint: effectiveRoutingHint } =
+  let { proposals: finalProposals, routing_hint: effectiveRoutingHint } =
     applyAutomationConstraints(
       actionDecision.proposals,
       actionDecision.routing_hint,
       automation,
       isTestMode,
     );
+  if (postActionResult) {
+    finalProposals = [];
+    effectiveRoutingHint = "auto";
+  }
+  if (
+    finalProposals.length === 0 &&
+    plan.primary_intent === "address_change" &&
+    facts.order &&
+    (facts.order.fulfillment_status === null || facts.order.fulfillment_status === "unfulfilled")
+  ) {
+    const shippingAddress = parseReplacementShippingAddress(
+      latestBody,
+      facts.order.shipping_address || {},
+    );
+    if (shippingAddress?.address1 && shippingAddress?.city && shippingAddress?.zip) {
+      const fallbackProposal: ActionProposal = {
+        type: "update_shipping_address",
+        confidence: "high",
+        reason: "Ordren er ikke afsendt — adressen kan ændres",
+        params: {
+          order_id: facts.order.id,
+          order_name: facts.order.name,
+          shipping_address: shippingAddress,
+        },
+        requires_approval: true,
+      };
+      const constrained = applyAutomationConstraints(
+        [fallbackProposal],
+        "review",
+        automation,
+        isTestMode,
+      );
+      finalProposals = constrained.proposals;
+      effectiveRoutingHint = constrained.routing_hint;
+    }
+  }
 
   if (isTestMode) {
     console.log(
@@ -769,7 +997,11 @@ export async function runDraftV2Pipeline(
     : [];
 
   // Byg samtalehistorik fra messages — ekskludér den seneste besked (vises separat)
-  const conversationHistory = messages.slice(0, -1).map((m) => {
+  const latestMessageIdForHistory = (latestMessage as Record<string, unknown>).id;
+  const conversationHistory = messages.filter((m) => {
+    if (!latestMessageIdForHistory) return m !== latestMessage;
+    return (m as Record<string, unknown>).id !== latestMessageIdForHistory;
+  }).map((m) => {
     const msg = m as {
       clean_body_text?: string;
       body_text?: string;
@@ -802,6 +1034,7 @@ export async function runDraftV2Pipeline(
     policyContext,
     model: firstPassModel,
     attachments: imageAttachments,
+    actionResult: postActionResult,
   });
 
   let languageCheckedWritten = written;
@@ -828,6 +1061,7 @@ export async function runDraftV2Pipeline(
         policyContext,
         model: firstPassModel,
         attachments: imageAttachments,
+        actionResult: postActionResult,
         languageCorrectionInstruction:
           `Rewrite the full draft in ${replyLanguage} only. Preserve the same facts, meaning, asks, and next steps. Do not add new information. Remove or translate these foreign-language segments: ${
             initialLanguageCheck.foreignSegments.join(" | ")
@@ -856,6 +1090,52 @@ export async function runDraftV2Pipeline(
         replyLanguage,
       ),
     };
+  }
+
+  const postActionIssues = detectPostActionDraftIssues(
+    languageCheckedWritten.draft_text,
+    postActionResult,
+    replyLanguage,
+  );
+  if (postActionIssues.length > 0) {
+    console.warn(
+      `[generate-draft-v2] post-action draft retry: ${postActionIssues.join("; ")}`,
+    );
+    try {
+      const correctionWritten = await runWriter({
+        plan,
+        caseState,
+        retrieved,
+        facts,
+        shop: shopWithPersona,
+        latestCustomerMessage,
+        conversationHistory,
+        actionProposals: finalProposals,
+        policyContext,
+        model: firstPassModel,
+        attachments: imageAttachments,
+        actionResult: postActionResult,
+        languageCorrectionInstruction:
+          `Rewrite the full draft as a completed post-action confirmation in ${replyLanguage}. The Shopify action has already been executed. Fix these issues: ${postActionIssues.join("; ")}. Use completed-result wording only. For refunds, state that the amount was refunded for the order and that it returns to the original payment method. Do not say the refund can be done, will be processed, is handled as soon as possible, or that the request was merely processed. Do not add a signature or support email.`,
+      });
+      if (correctionWritten.draft_text) {
+        languageCheckedWritten = correctionWritten;
+        if (!mixedLanguageCheck(languageCheckedWritten.draft_text, replyLanguage).ok) {
+          languageCheckedWritten = {
+            ...languageCheckedWritten,
+            draft_text: cleanupMixedLanguageDraft(
+              languageCheckedWritten.draft_text,
+              replyLanguage,
+            ),
+          };
+        }
+      }
+    } catch (err) {
+      console.warn(
+        "[generate-draft-v2] post-action correction retry failed:",
+        err,
+      );
+    }
   }
 
   // 10. Verificér grounding og kvalitet
@@ -900,6 +1180,7 @@ export async function runDraftV2Pipeline(
         policyContext,
         model: escalationModel,
         attachments: imageAttachments,
+        actionResult: postActionResult,
       });
 
       if (strongWritten.draft_text) {

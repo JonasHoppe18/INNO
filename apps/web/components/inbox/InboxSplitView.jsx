@@ -966,6 +966,8 @@ export function InboxSplitView({
     useState({});
   const [manualDraftGeneratingByThread, setManualDraftGeneratingByThread] =
     useState({});
+  const [postApprovalDraftLoadingByThread, setPostApprovalDraftLoadingByThread] =
+    useState({});
   const [refineDraftLoadingByThread, setRefineDraftLoadingByThread] = useState(
     {},
   );
@@ -4458,6 +4460,50 @@ export function InboxSplitView({
         return next;
       });
       const toastId = toast.loading("Applying action...");
+      const loadGeneratedDraft = async (threadId) => {
+        for (let attempt = 0; attempt < 6; attempt += 1) {
+          const draftRes = await fetch(`/api/threads/${threadId}/draft`, {
+            method: "GET",
+          }).catch(() => null);
+          if (draftRes?.ok) {
+            const draftPayload = await draftRes.json().catch(() => ({}));
+            const draft = draftPayload?.draft || null;
+            const sig = String(draftPayload?.signature || "");
+            const draftText =
+              draft?.rendered_body_text ||
+              draft?.body_text ||
+              draft?.body_html ||
+              "";
+            if (draftText) {
+              if (selectedThreadIdRef.current === threadId) {
+                setDraftValue(draftText);
+                draftValueRef.current = draftText;
+              }
+              draftLastSavedRef.current[threadId] = draftText.trim();
+              setDraftValueByThread((prev) => ({
+                ...prev,
+                [threadId]: draftText,
+              }));
+              setSystemDraftUneditedByThread((prev) => ({
+                ...prev,
+                [threadId]: true,
+              }));
+              if (draft?.id && selectedThreadIdRef.current === threadId) {
+                setActiveDraftId(draft.id);
+              }
+              if (sig) {
+                setSignatureByThread((prev) => ({
+                  ...prev,
+                  [threadId]: sig,
+                }));
+              }
+              return true;
+            }
+          }
+          await new Promise((resolve) => setTimeout(resolve, 450 + attempt * 250));
+        }
+        return false;
+      };
       try {
         const nowIso = new Date().toISOString();
         const pendingId = String(pending.id || "").trim();
@@ -4548,33 +4594,15 @@ export function InboxSplitView({
           });
 
           if (payload?.draftGenerated) {
-            const draftRes = await fetch(
-              `/api/threads/${selectedThreadId}/draft`,
-              {
-                method: "GET",
-              },
-            ).catch(() => null);
-            if (draftRes?.ok) {
-              const draftPayload = await draftRes.json().catch(() => ({}));
-              const draft = draftPayload?.draft || null;
-              const draftText = draft?.body_text || draft?.body_html || "";
-              if (draftText) {
-                if (selectedThreadIdRef.current === selectedThreadId) {
-                  setDraftValue(draftText);
-                }
-                draftLastSavedRef.current[selectedThreadId] = draftText.trim();
-                setSystemDraftUneditedByThread((prev) => ({
-                  ...prev,
-                  [selectedThreadId]: true,
-                }));
-              }
-              if (
-                draft?.id &&
-                selectedThreadIdRef.current === selectedThreadId
-              ) {
-                setActiveDraftId(draft.id);
-              }
-            }
+            setPostApprovalDraftLoadingByThread((prev) => ({
+              ...prev,
+              [selectedThreadId]: true,
+            }));
+            await loadGeneratedDraft(selectedThreadId);
+            setPostApprovalDraftLoadingByThread((prev) => ({
+              ...prev,
+              [selectedThreadId]: false,
+            }));
           }
 
           toast.error(blockedReason, { id: toastId });
@@ -4654,50 +4682,15 @@ export function InboxSplitView({
             toast.success("Action approved and applied.", { id: toastId });
           }
           if (payload?.draftGenerated) {
-            const draftRes = await fetch(
-              `/api/threads/${selectedThreadId}/draft`,
-              {
-                method: "GET",
-              },
-            ).catch(() => null);
-            if (draftRes?.ok) {
-              const draftPayload = await draftRes.json().catch(() => ({}));
-              const draft = draftPayload?.draft || null;
-              const sig = String(draftPayload?.signature || "");
-              const draftText =
-                draft?.rendered_body_text ||
-                draft?.body_text ||
-                draft?.body_html ||
-                "";
-              if (draftText) {
-                if (selectedThreadIdRef.current === selectedThreadId) {
-                  setDraftValue(draftText);
-                }
-                if (selectedThreadIdRef.current === selectedThreadId) {
-                  draftValueRef.current = draftText;
-                }
-                draftLastSavedRef.current[selectedThreadId] = draftText.trim();
-                setDraftValueByThread((prev) => ({
-                  ...prev,
-                  [selectedThreadId]: draftText,
-                }));
-                setSystemDraftUneditedByThread((prev) => ({
-                  ...prev,
-                  [selectedThreadId]: true,
-                }));
-              }
-              if (
-                draft?.id &&
-                selectedThreadIdRef.current === selectedThreadId
-              ) {
-                setActiveDraftId(draft.id);
-              }
-              if (sig)
-                setSignatureByThread((prev) => ({
-                  ...prev,
-                  [selectedThreadId]: sig,
-                }));
-            }
+            setPostApprovalDraftLoadingByThread((prev) => ({
+              ...prev,
+              [selectedThreadId]: true,
+            }));
+            await loadGeneratedDraft(selectedThreadId);
+            setPostApprovalDraftLoadingByThread((prev) => ({
+              ...prev,
+              [selectedThreadId]: false,
+            }));
           }
         } else {
           toast.success("Order update denied.", { id: toastId });
@@ -4713,6 +4706,10 @@ export function InboxSplitView({
         });
       } finally {
         setOrderUpdateSubmittingByThread((prev) => ({
+          ...prev,
+          [selectedThreadId]: false,
+        }));
+        setPostApprovalDraftLoadingByThread((prev) => ({
           ...prev,
           [selectedThreadId]: false,
         }));
@@ -4856,6 +4853,9 @@ export function InboxSplitView({
             !isDraftGenerating &&
             !isLocalThreadId(selectedThreadId)
           }
+          isPostApprovalDraftLoading={Boolean(
+            selectedThreadId && postApprovalDraftLoadingByThread[selectedThreadId],
+          )}
           isConversationLoading={isSelectedConversationLoading}
           draftValue={composerValue}
           onDraftChange={handleDraftChange}

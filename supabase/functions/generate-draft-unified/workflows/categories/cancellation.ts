@@ -10,10 +10,11 @@ export function buildCancellationDraft(category: EmailCategory): WorkflowRoute {
     systemHint:
       "Workflow er Cancellation: prioriter cancel_order og undgå refund-flow medmindre kunden specifikt beder om refund.",
     promptBlocks: [
-      "CANCELLATION FOCUS:\n- Afgør først om ordren er annullerbar.\n- Hvis den allerede er sendt/fuldført, forklar kort begrænsningen og næste trin.",
+      "CANCELLATION FOCUS:\n- First determine whether the order can still be cancelled.\n- If the order has already shipped/fulfilled, briefly explain the limitation and the next step in the customer's language.\n- If the next step is a return, never direct the customer to email or contact a support address. They are already in the correct support thread. If customer input is needed, ask them to respond in this thread, phrased naturally in the customer's language.",
     ],
     systemRules: [
       "Prioriter cancel_order over refund_order i cancellation-workflow.",
+      "When cancellation is blocked because the order has shipped/fulfilled: do not include a support email address or tell the customer to contact support by email. Use this thread as the channel, phrased naturally in the customer's language.",
     ],
     allowedActionTypes: [
       "cancel_order",
@@ -25,4 +26,3 @@ export function buildCancellationDraft(category: EmailCategory): WorkflowRoute {
     ],
   };
 }
-

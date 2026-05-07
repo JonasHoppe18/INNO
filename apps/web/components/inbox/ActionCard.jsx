@@ -142,11 +142,14 @@ function getResultModalTitle({ actionType = "", actionName = "", status = "compl
   return actionName || "Action";
 }
 
-function getStatusPillClasses(status = "completed") {
+function getStatusPillClasses(status = "completed", actionType = "") {
   if (status === "failed") return "bg-red-100 dark:bg-red-500/15 text-red-600 dark:text-red-400";
   if (status === "simulated") return "bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400";
   if (status === "executing") return "bg-blue-100 dark:bg-blue-500/15 text-blue-700 dark:text-blue-400";
-  return "bg-muted text-muted-foreground";
+  const normalizedAction = String(actionType || "").trim().toLowerCase();
+  if (normalizedAction === "cancel_order") return "bg-red-100 dark:bg-red-500/15 text-red-600 dark:text-red-400";
+  if (normalizedAction === "refund_order") return "bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400";
+  return "bg-green-100 dark:bg-green-500/15 text-green-700 dark:text-green-400";
 }
 
 function getResultStatusText({ status = "completed", actionType = "", testMode = false }) {
@@ -432,7 +435,7 @@ export function ActionCard({
             <button
               type="button"
               onClick={() => setShowApprovedDetail(true)}
-              className="ml-3 inline-flex h-8 w-8 flex-none items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+              className="ml-3 inline-flex h-8 w-8 flex-none items-center justify-center rounded-md text-muted-foreground transition-colors transition-transform hover:bg-accent hover:text-accent-foreground active:scale-90"
               aria-label={`View ${actionName} details`}
             >
               <ChevronRight className="h-5 w-5" />
@@ -440,24 +443,24 @@ export function ActionCard({
           </div>
         </div>
         <Dialog open={showApprovedDetail} onOpenChange={setShowApprovedDetail}>
-          <DialogContent className="sm:max-w-[560px] [&>button]:hidden">
+          <DialogContent className="sm:max-w-[560px] [&>button]:hidden data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 duration-200">
             <DialogHeader className="space-y-0">
               <div className="flex items-start justify-between gap-3">
                 <DialogTitle className="flex items-center gap-1.5 text-xl font-medium text-foreground">
-                  <span className="inline-flex h-10 w-10 items-center justify-center">
-                    <Image src={shopifyLogo} alt="" className="h-14 w-14 object-contain" />
+                  <span className="inline-flex h-8 w-8 items-center justify-center">
+                    <Image src={shopifyLogo} alt="" className="h-12 w-12 object-contain" />
                   </span>
                   <span>{resultModalTitle}</span>
                 </DialogTitle>
                 <div className="flex items-center gap-3">
-                  <span className={`rounded px-2.5 py-1 text-xs font-medium ${getStatusPillClasses(status)}`}>
+                  <span className={`rounded px-2.5 py-1 text-xs font-medium ${getStatusPillClasses(status, actionType)}`}>
                     {resultStatusText}
                   </span>
                   <DialogClose
-                    className="inline-flex h-5 w-5 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors transition-transform hover:bg-accent hover:text-foreground active:scale-90"
                     aria-label="Close"
                   >
-                    <X className="h-3.5 w-3.5" />
+                    <X className="h-4 w-4" />
                   </DialogClose>
                 </div>
               </div>

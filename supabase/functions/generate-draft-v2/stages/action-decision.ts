@@ -69,6 +69,7 @@ export interface ActionDecisionInput {
   facts: FactResolverResult;
   retrieved: RetrieverResult; // KB-chunks til at tolke shop-specifikke procedurer
   shopConfig: ShopActionConfig; // Per-shop konfiguration
+  customerMessage?: string;
 }
 
 const ACTION_DECISION_SCHEMA = {
@@ -149,6 +150,81 @@ function alreadyDecided(
   return decisionKeys.some((k) => keys.has(k));
 }
 
+function normalizeCandidate(value: string): string {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function extractReplacementShippingAddress(
+  message: string,
+  existingShipping: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | null {
+  const lines = String(message || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const joined = lines.join(" ");
+  if (
+    !/\b(address|adresse|leveringsadresse|ship to|send(?:es)? til|street|road|avenue|ave|city|by|zip|postal|postnummer|country|land)\b/i
+      .test(joined)
+  ) {
+    return null;
+  }
+
+  const contentLines = lines.filter((line) =>
+    !/^(?:hello|hi|hej|dear|thanks|thank you|tak|mvh|venlig hilsen)\b[,!.\s]*.*$/i.test(line) &&
+    !/\b(?:kan i|can you|jeg har|i have|ordren|order|det er)\b/i.test(line)
+  );
+  const fieldValue = (patterns: RegExp[]) => {
+    for (const line of contentLines) {
+      for (const pattern of patterns) {
+        const match = line.match(pattern);
+        if (match?.[1]) return normalizeCandidate(match[1]);
+      }
+    }
+    return "";
+  };
+  const streetLikeLines = contentLines.filter((line) =>
+    /^(?!.*\b(?:city|by|zip(?: code)?|postal code|postnummer|country|land|phone|telefon|name|navn)\s*:).*(?:\d+[A-Za-z0-9 -]{0,8}\s+)?(?:street|st\.?|road|rd\.?|avenue|ave\.?|boulevard|blvd|drive|dr\.?|lane|ln\.?|way|apartment|apt|suite|unit|floor|sal|vej|gade|all[eé]|plads|stræde|vaenge|vænge)\b/i
+      .test(line) ||
+    /\b[A-Za-zÆØÅæøåÄÖÜäöüß .'-]+(?:vej|gade|all[eé]|plads|stræde|vaenge|vænge)\s+\d+[A-Za-z0-9 ,.-]*$/i
+      .test(line) ||
+    /^(?:address|adresse|street|address1|address 1)\s*:/i.test(line)
+  );
+  const zipCityLine = contentLines.find((line) => /^[A-Z]{0,3}-?\d{3,10}\s+\S.+$/i.test(line)) || "";
+  const zipCityMatch = zipCityLine.match(/^([A-Z]{0,3}-?\d{3,10})\s+(.+)$/i);
+  const streetIndex = streetLikeLines.length ? contentLines.indexOf(streetLikeLines[0]) : -1;
+  const possibleName = streetIndex > 0 ? normalizeCandidate(contentLines[streetIndex - 1] || "") : "";
+  const countryLine = contentLines.find((line) =>
+    /^(?:danmark|denmark|sverige|sweden|norge|norway|germany|tyskland|us|usa|united states)$/i.test(line)
+  ) || "";
+
+  const address1 = fieldValue([
+    /^(?:address1|address 1|address|adresse|street)\s*:\s*(.+)$/i,
+  ]) || normalizeCandidate(streetLikeLines[0] || "");
+  if (!address1) return null;
+
+  const existing = existingShipping || {};
+  const existingName = [
+    existing.first_name,
+    existing.last_name,
+  ].map((value) => String(value || "").trim()).filter(Boolean).join(" ");
+
+  return {
+    name: fieldValue([/^(?:name|full name|recipient|navn|modtager)\s*:\s*(.+)$/i]) ||
+      possibleName || existingName || null,
+    address1,
+    address2: fieldValue([/^(?:address2|address 2|suite|unit|apartment|apt)\s*:\s*(.+)$/i]) ||
+      normalizeCandidate(streetLikeLines[1] || "") || null,
+    zip: fieldValue([/^(?:zip(?: code)?|postal code|postcode|post code|postnummer)\s*:\s*(.+)$/i]) ||
+      zipCityMatch?.[1]?.trim() || "",
+    city: fieldValue([/^(?:city|town|by)\s*:\s*(.+)$/i]) || zipCityMatch?.[2]?.trim() || "",
+    country: fieldValue([/^(?:country|land)\s*:\s*(.+)$/i]) || normalizeCandidate(countryLine) ||
+      String(existing.country || ""),
+    phone: fieldValue([/^(?:phone|telephone|mobile|telefon)\s*:\s*(.+)$/i]) ||
+      String(existing.phone || "") || null,
+  };
+}
+
 // ─── Deterministiske regler ───────────────────────────────────────────────────
 
 function applyDeterministicRules(
@@ -157,6 +233,7 @@ function applyDeterministicRules(
   facts: FactResolverResult,
   retrieved: RetrieverResult,
   shopConfig: ShopActionConfig,
+  customerMessage = "",
 ): ActionProposal[] {
   const order = facts.order;
   const factMap: Record<string, string> = {};
@@ -198,11 +275,22 @@ function applyDeterministicRules(
       order.fulfillment_status === "unfulfilled"
     ) {
       if (!isActionDisabled("update_shipping_address", shopConfig)) {
+        const shippingAddress = extractReplacementShippingAddress(
+          customerMessage,
+          order.shipping_address as Record<string, unknown> | null | undefined,
+        );
+        if (!shippingAddress?.address1 || !shippingAddress?.city || !shippingAddress?.zip) {
+          return [];
+        }
         return [{
           type: "update_shipping_address",
           confidence: "high",
           reason: "Ordren er ikke afsendt — adressen kan ændres",
-          params: { order_id: order.id, order_name: order.name },
+          params: {
+            order_id: order.id,
+            order_name: order.name,
+            shipping_address: shippingAddress,
+          },
           requires_approval: !(shopConfig.address_change_auto ?? false),
         }];
       }
@@ -553,7 +641,7 @@ function inferExchangeVariantId(order: unknown): string {
 // ─── Indgang ──────────────────────────────────────────────────────────────────
 
 export async function runActionDecision(
-  { plan, caseState, facts, retrieved, shopConfig }: ActionDecisionInput,
+  { plan, caseState, facts, retrieved, shopConfig, customerMessage = "" }: ActionDecisionInput,
 ): Promise<ActionDecisionResult> {
   // 1. Deterministiske regler med per-shop config og KB-overrides
   let proposals = applyDeterministicRules(
@@ -562,6 +650,7 @@ export async function runActionDecision(
     facts,
     retrieved,
     shopConfig,
+    customerMessage,
   );
 
   // 2. LLM fallback:
