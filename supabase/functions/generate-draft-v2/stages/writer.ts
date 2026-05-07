@@ -172,45 +172,7 @@ function stripGeneratedSignature(text: string): string {
 function cleanDraftText(text: string): string {
   return stripGeneratedSignature(text)
     .replace(/\s+[—–]\s+/g, ", ")
-    .replace(
-      /\bordrenummer\s+eller\s+(?:den\s+)?ordre-?email\b/gi,
-      "ordrenummer eller hvor headsettet er købt",
-    )
-    .replace(
-      /\bordrenummer\s+eller\s+(?:den\s+)?e-?mail,\s*ordren\s+er\s+bestilt\s+på(?:\s*\([^)]*\))?/gi,
-      "ordrenummer eller hvor headsettet er købt",
-    )
-    .replace(
-      /\bordrenummer\s+eller\s+(?:den\s+)?e-?mail\s+ordren\s+er\s+(?:placeret|lavet|bestilt)\s+(?:under|på)\b/gi,
-      "ordrenummer eller hvor headsettet er købt",
-    )
-    .replace(
-      /\bordrenummer\s+eller\s+(?:den\s+)?e-?mail,\s*ordren\s+er\s+(?:placeret|lavet|bestilt)\s+(?:under|på)\b/gi,
-      "ordrenummer eller hvor headsettet er købt",
-    )
-    .replace(
-      /\border number\s+or\s+(?:the\s+)?order email\b/gi,
-      "order number or where the headset was purchased",
-    )
-    .replace(
-      /Når vi har den oplysning, beder vi dig om at vedhæfte et billede af skaden/gi,
-      "Vedhæft også et billede af skaden",
-    )
-    .replace(
-      /Vi kan herefter bede om (?:et|en) (?:klart )?(?:foto|billede|video) af skaden til dokumentation, hvis det er nødvendigt\./gi,
-      "Vedhæft også et klart foto af skaden, så vi kan dokumentere sagen.",
-    )
-    .replace(
-      /Når vi har den oplysning, åbner vi en garanti\/ombytningssag og beder eventuelt om (?:et|en) (?:klart )?(?:foto|billede|video) af skaden til dokumentation\./gi,
-      "Vedhæft også et klart foto af skaden, så vi kan dokumentere sagen og åbne en garanti-/ombytningssag.",
-    )
-    .replace(/\bReturn for Swap\/warranty-sag\b/g, "garanti-/ombytningssag")
-    .replace(
-      /\s*If you prefer not to try the steps above and want us to start the review now, tell us and we will escalate immediately\./gi,
-      "",
-    )
     // Strip any instruction to contact via email — customer is already in the right thread.
-    // General form: any sentence that tells the customer to contact us AND contains an email address.
     .replace(
       /[^.!?\n]*(?:contact|reach|email)\s+us[^.!?\n]*\S+@\S+[^.!?\n]*/gi,
       "",
@@ -219,8 +181,6 @@ function cleanDraftText(text: string): string {
       /[^.!?\n]*(?:kontakte?\s+os|skriv\s+til\s+os|send\s+(?:en\s+)?(?:mail|e-?mail)\s+til\s+os)[^.!?\n]*\S+@\S+[^.!?\n]*/gi,
       "",
     )
-    // Strip any remaining sentence that contains an @email address in a contact-instruction context.
-    // "via/på/til" (Danish) or "at/to" (English) immediately before or near an email address.
     .replace(
       /[^.!?\n]*(?:via|på|til)\s+(?:e-?mail\s+)?[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}[^.!?\n]*/gi,
       "",
@@ -228,10 +188,6 @@ function cleanDraftText(text: string): string {
     .replace(
       /[^.!?\n]*(?:\bat\b|\bto\b)\s+[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}[^.!?\n]*/gi,
       "",
-    )
-    .replace(
-      /\s*Because the order shows as shipped and paid, this review requires internal approval;?/gi,
-      " Refund reviews require internal approval;",
     )
     .replace(/\s+([,.!?])/g, "$1")
     .trim();
