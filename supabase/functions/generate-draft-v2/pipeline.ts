@@ -134,6 +134,32 @@ function detectPostActionDraftIssues(
   return Array.from(new Set(issues));
 }
 
+function cleanupPostActionDraftText(
+  draftText: string,
+  actionResult: Record<string, unknown> | null,
+  replyLanguage: string,
+): string {
+  if (!actionResult || String(actionResult.action_type || "") !== "refund_order") {
+    return draftText;
+  }
+  if (replyLanguage === "da") {
+    return draftText
+      .replace(
+        /\b(?:beløbet|refusionen|det)\s+vil\s+blive\s+tilbageført\s+til\s+den\s+oprindelige\s+betalingsmetode\b/gi,
+        "beløbet går tilbage til den oprindelige betalingsmetode",
+      )
+      .replace(/\bog\s+beløbet\s+går/gi, "og beløbet går")
+      .replace(/(^|\n)beløbet går/g, (match) => match.replace("beløbet", "Beløbet"));
+  }
+  if (replyLanguage === "en") {
+    return draftText.replace(
+      /\b(?:the\s+amount|the\s+refund|it)\s+will\s+be\s+(?:returned|credited)\s+to\s+the\s+original\s+payment\s+method\b/gi,
+      "the amount goes back to the original payment method",
+    );
+  }
+  return draftText;
+}
+
 function formatActionAmountForLanguage(
   actionResult: Record<string, unknown>,
   replyLanguage: string,
@@ -1092,14 +1118,15 @@ export async function runDraftV2Pipeline(
     };
   }
 
-  const postActionIssues = detectPostActionDraftIssues(
-    languageCheckedWritten.draft_text,
-    postActionResult,
-    replyLanguage,
-  );
-  if (postActionIssues.length > 0) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const postActionIssues = detectPostActionDraftIssues(
+      languageCheckedWritten.draft_text,
+      postActionResult,
+      replyLanguage,
+    );
+    if (postActionIssues.length === 0) break;
     console.warn(
-      `[generate-draft-v2] post-action draft retry: ${postActionIssues.join("; ")}`,
+      `[generate-draft-v2] post-action draft retry ${attempt}: ${postActionIssues.join("; ")}`,
     );
     try {
       const correctionWritten = await runWriter({
@@ -1116,7 +1143,7 @@ export async function runDraftV2Pipeline(
         attachments: imageAttachments,
         actionResult: postActionResult,
         languageCorrectionInstruction:
-          `Rewrite the full draft as a completed post-action confirmation in ${replyLanguage}. The Shopify action has already been executed. Fix these issues: ${postActionIssues.join("; ")}. Use completed-result wording only. For refunds, state that the amount was refunded for the order and that it returns to the original payment method. Do not say the refund can be done, will be processed, is handled as soon as possible, or that the request was merely processed. Do not add a signature or support email.`,
+          `Rewrite the full draft as a completed post-action confirmation in ${replyLanguage}. The Shopify action has already been executed. Fix these issues: ${postActionIssues.join("; ")}. Use completed-result wording only. For refunds, state that the exact formatted amount was refunded for the order and that the amount goes back to the original payment method. Do not say the refund was initiated, offered, can be done, will be refunded, will be returned, will be processed, is handled as soon as possible, or that the request was merely processed. Do not add a signature or support email.`,
       });
       if (correctionWritten.draft_text) {
         languageCheckedWritten = correctionWritten;
@@ -1136,6 +1163,16 @@ export async function runDraftV2Pipeline(
         err,
       );
     }
+  }
+  if (postActionResult) {
+    languageCheckedWritten = {
+      ...languageCheckedWritten,
+      draft_text: cleanupPostActionDraftText(
+        languageCheckedWritten.draft_text,
+        postActionResult,
+        replyLanguage,
+      ),
+    };
   }
 
   // 10. Verificér grounding og kvalitet
