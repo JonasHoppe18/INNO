@@ -380,6 +380,35 @@ function applyDeterministicRules(
     return [];
   }
 
+  // ── 5b. Faktura / ordrebekræftelse gensendelse ────────────────────────────
+  // Håndteres som "other" intent — kunden beder om et dokument, ikke penge tilbage.
+  if (intent === "other") {
+    const msg = String(
+      (caseState.open_questions ?? []).join(" ") + " " +
+      (plan.sub_queries ?? []).join(" "),
+    ).toLowerCase();
+    const INVOICE_RE =
+      /\b(faktura|invoice|receipt|kvittering|ordrebekræftelse|order confirmation|resend|gensend|eftersend)\b/i;
+    const bodyText = String(
+      plan.sub_queries?.join(" ") ?? "",
+    ).toLowerCase();
+    // Tjek selve sub_queries (planner har allerede læst body og lavet queries)
+    if (
+      INVOICE_RE.test(msg) || INVOICE_RE.test(bodyText)
+    ) {
+      if (order && !alreadyDecided(decided, "resend_confirmation_or_invoice")) {
+        return [{
+          type: "resend_confirmation_or_invoice",
+          confidence: "high",
+          reason: "Kunden beder om gensendelse af faktura eller ordrebekræftelse",
+          params: { order_id: order.id, order_name: order.name },
+          requires_approval: false,
+        }];
+      }
+    }
+    return [];
+  }
+
   // ── 6. Exchange (ombytning) ────────────────────────────────────────────────
   if (intent === "exchange") {
     if (

@@ -97,6 +97,7 @@ Rules:
 
 - primary_intent (for non-confirmation messages): classify ONLY by the content of the CURRENT customer message.
   - Message is ONLY expressing gratitude ("thanks", "thank you", "appreciate", "tak", "mange tak", "gracias", "merci", "danke", any variant) → ALWAYS "thanks". Do NOT look at order numbers or prior context. A pure thank-you is ALWAYS "thanks".
+  - Customer asks for invoice, receipt, order confirmation, faktura, kvittering, or asks to have an email/confirmation resent → ALWAYS "other". Even if they mention an order number. This is NEVER "refund".
   - Customer asks to change address → address_change (even if order is already shipped/delivered)
   - Customer asks about missing item → complaint (e.g. "jeg modtog kun 1 i stedet for 2")
   - Customer received wrong item → complaint
@@ -104,7 +105,7 @@ Rules:
   - Customer wants replacement because of shop error (wrong item, missing item, defect) → exchange (NOT return)
   - Customer says "ombytning" because of shop error → exchange
   - Customer wants to return because they changed their mind / don't want it → return
-  - Customer asks for money back, refund, reimbursement, or says they want their money back → refund, even if the reason is a defect or complaint
+  - Customer asks for money back, refund, reimbursement, or says they want their money back → refund, even if the reason is a defect or complaint. NEVER classify as refund if the customer only asks for an invoice/receipt/faktura.
   - Customer asks to cancel → cancel (even if already fulfilled)
 - sub_queries: 1-3 search queries to find relevant knowledge. Use DIFFERENT angles:
   - Query 1: Customer's own words (what they describe), in customer's language
