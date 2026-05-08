@@ -44,20 +44,20 @@ function formatXLabel(date, periodDays) {
   return d.toLocaleDateString("en-US", { weekday: "short", day: "numeric" });
 }
 
-export function TicketVolumeChart({ data = [], periodDays = "30" }) {
+export function TicketVolumeChart({ data = [], periodDays = "30", compact = false }) {
   const useWeeks = periodDays === "all";
   const chartData = useWeeks ? groupByWeek(data) : data;
 
   if (!chartData.length) {
     return (
-      <div className="flex min-h-[200px] items-center justify-center text-sm text-muted-foreground">
+      <div className={`flex ${compact ? "min-h-[64px]" : "min-h-[200px]"} items-center justify-center text-sm text-muted-foreground`}>
         No ticket data for this period.
       </div>
     );
   }
 
   return (
-    <ChartContainer config={chartConfig} className="min-h-[200px] w-full">
+    <ChartContainer config={chartConfig} className={`${compact ? "min-h-[64px]" : "min-h-[200px]"} w-full`}>
       <BarChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
         <CartesianGrid vertical={false} stroke="hsl(var(--border))" />
         <XAxis
@@ -80,7 +80,15 @@ export function TicketVolumeChart({ data = [], periodDays = "30" }) {
           cursor={{ fill: "hsl(var(--muted))", radius: 4 }}
           content={<ChartTooltipContent hideLabel={false} />}
         />
-        <Bar dataKey="count" fill="var(--color-count)" radius={[4, 4, 0, 0]} maxBarSize={40} />
+        <Bar
+          dataKey="count"
+          fill="var(--color-count)"
+          radius={[4, 4, 0, 0]}
+          maxBarSize={compact ? 32 : 40}
+          isAnimationActive
+          animationDuration={520}
+          animationEasing="ease-out"
+        />
       </BarChart>
     </ChartContainer>
   );

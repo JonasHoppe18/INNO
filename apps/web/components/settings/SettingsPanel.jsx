@@ -5,6 +5,7 @@ import { useAuth, useOrganization, useUser } from "@clerk/nextjs";
 import { useTheme } from "next-themes";
 import { useSearchParams } from "next/navigation";
 import {
+  Bot,
   Building2,
   Clock,
   CreditCard,
@@ -223,10 +224,78 @@ function StoreTeamRow({ icon: Icon, label, description, value, editing, children
   );
 }
 
+function AiPromptModal({ value, onChange, onSave, saving }) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(value);
+
+  const handleOpen = () => {
+    setDraft(value);
+    setOpen(true);
+  };
+
+  const handleSave = async () => {
+    onChange(draft);
+    await onSave(draft);
+    setOpen(false);
+  };
+
+  const preview = value
+    ? `${value.slice(0, 55)}${value.length > 55 ? "…" : ""}`
+    : "Not configured";
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={handleOpen}
+        className="flex items-center gap-4 border-b border-border/80 py-5 w-full text-left hover:bg-muted/40 transition-colors -mx-6 px-6"
+      >
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
+          <Bot className="h-4 w-4 text-primary" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-foreground">AI Prompt</p>
+          <p className="text-xs text-muted-foreground">Describe your brand, products and tone of voice.</p>
+        </div>
+        <span className={`shrink-0 text-sm font-medium ${value ? "text-slate-500" : "text-muted-foreground/50"}`}>
+          {preview}
+        </span>
+      </button>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>AI Prompt</DialogTitle>
+            <DialogDescription>
+              Describe your brand and how your AI support agent should sound. This is the primary instruction the AI reads before every reply.
+            </DialogDescription>
+          </DialogHeader>
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder={`Example:\nWe are [brand], a Danish webshop selling [products]. Our tone is friendly and direct — we get to the point fast. Replies should be max 4 sentences. We always write in the customer's language.`}
+            rows={8}
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm leading-relaxed placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring resize-none"
+            autoFocus
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? "Saving…" : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 function GeneralTab({
   shopDomain,
   teamName,
   onTeamNameChange,
+  aiPrompt,
+  onAiPromptChange,
   testMode,
   onTestModeChange,
   testEmail,
@@ -314,6 +383,20 @@ function GeneralTab({
               className="h-9 text-sm"
             />
           </StoreTeamRow>
+          <AiPromptModal
+            value={aiPrompt}
+            onChange={onAiPromptChange}
+            saving={saving}
+            onSave={async (newPrompt) => {
+              onAiPromptChange(newPrompt);
+              await fetch("/api/persona", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({ instructions: newPrompt }),
+              });
+            }}
+          />
           <StoreTeamRow
             icon={Globe}
             label="Support language"
@@ -2357,6 +2440,8 @@ export function SettingsPanel() {
   const [shopDomain, setShopDomain] = useState("");
   const [teamName, setTeamName] = useState("Sona Team");
   const [initialTeamName, setInitialTeamName] = useState("Sona Team");
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [initialAiPrompt, setInitialAiPrompt] = useState("");
   const [testMode, setTestMode] = useState(false);
   const [initialTestMode, setInitialTestMode] = useState(false);
   const [testEmail, setTestEmail] = useState("");
@@ -2605,11 +2690,10 @@ export function SettingsPanel() {
       }
 
       if (workspaceId) {
-        const testModeResponse = await fetch("/api/settings/test-mode", {
-          method: "GET",
-          cache: "no-store",
-          credentials: "include",
-        }).catch(() => null);
+        const [testModeResponse, personaResponse] = await Promise.all([
+          fetch("/api/settings/test-mode", { method: "GET", cache: "no-store", credentials: "include" }).catch(() => null),
+          fetch("/api/persona", { method: "GET", cache: "no-store", credentials: "include" }).catch(() => null),
+        ]);
         if (testModeResponse?.ok) {
           const testModePayload = await testModeResponse.json().catch(() => ({}));
           const resolvedTestMode = Boolean(testModePayload?.test_mode);
@@ -2628,6 +2712,12 @@ export function SettingsPanel() {
           setInitialSupportLanguage(resolvedSupportLanguage);
           setCloseSuggestionDelayHours(resolvedCloseSuggestionDelayHours);
           setInitialCloseSuggestionDelayHours(resolvedCloseSuggestionDelayHours);
+        }
+        if (personaResponse?.ok) {
+          const personaPayload = await personaResponse.json().catch(() => ({}));
+          const resolved = String(personaPayload?.instructions || "").trim();
+          setAiPrompt(resolved);
+          setInitialAiPrompt(resolved);
         }
       }
 
@@ -2773,7 +2863,8 @@ export function SettingsPanel() {
       String(testEmail || "").trim() !== String(initialTestEmail || "").trim() ||
       normalizeSupportLanguage(supportLanguage) !== normalizeSupportLanguage(initialSupportLanguage) ||
       normalizeCloseSuggestionDelayHours(closeSuggestionDelayHours) !==
-        normalizeCloseSuggestionDelayHours(initialCloseSuggestionDelayHours),
+        normalizeCloseSuggestionDelayHours(initialCloseSuggestionDelayHours) ||
+      String(aiPrompt || "").trim() !== String(initialAiPrompt || "").trim(),
     [
       closeSuggestionDelayHours,
       initialCloseSuggestionDelayHours,
@@ -2794,6 +2885,7 @@ export function SettingsPanel() {
     setSaving(true);
     try {
       const nextTeamName = String(teamName || "").trim() || "Sona Team";
+      const nextAiPrompt = String(aiPrompt || "").trim();
       const nextTestMode = Boolean(testMode);
       const nextTestEmail = String(testEmail || "").trim() || null;
       const nextSupportLanguage = normalizeSupportLanguage(supportLanguage, "en");
@@ -2839,6 +2931,18 @@ export function SettingsPanel() {
       } else {
         throw new Error("No workspace or shop found to save team name.");
       }
+      // Save AI Prompt if changed
+      if (nextAiPrompt !== String(initialAiPrompt || "").trim()) {
+        await fetch("/api/persona", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ instructions: nextAiPrompt }),
+        });
+        setAiPrompt(nextAiPrompt);
+        setInitialAiPrompt(nextAiPrompt);
+      }
+
       setTeamName(nextTeamName);
       setInitialTeamName(nextTeamName);
       setTestMode(nextTestMode);
@@ -2882,7 +2986,9 @@ export function SettingsPanel() {
     setCloseSuggestionDelayHours(
       String(normalizeCloseSuggestionDelayHours(initialCloseSuggestionDelayHours))
     );
+    setAiPrompt(String(initialAiPrompt || ""));
   }, [
+    initialAiPrompt,
     initialCloseSuggestionDelayHours,
     initialSupportLanguage,
     initialTeamName,
@@ -3509,6 +3615,8 @@ export function SettingsPanel() {
             shopDomain={shopDomain}
             teamName={teamName}
             onTeamNameChange={setTeamName}
+            aiPrompt={aiPrompt}
+            onAiPromptChange={setAiPrompt}
             testMode={testMode}
             onTestModeChange={setTestMode}
             testEmail={testEmail}
