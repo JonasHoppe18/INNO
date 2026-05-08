@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { resolveAuthScope } from "@/lib/server/workspace-auth";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const SUPABASE_BASE_URL = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").replace(/\/$/, "");
 const SUPABASE_SERVICE_KEY =

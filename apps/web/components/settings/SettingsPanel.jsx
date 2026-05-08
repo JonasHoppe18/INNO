@@ -2868,6 +2868,7 @@ export function SettingsPanel() {
     [
       closeSuggestionDelayHours,
       initialCloseSuggestionDelayHours,
+      initialAiPrompt,
       initialSupportLanguage,
       initialTeamName,
       teamName,
@@ -2875,6 +2876,7 @@ export function SettingsPanel() {
       testMode,
       initialTestEmail,
       testEmail,
+      aiPrompt,
       supportLanguage,
     ]
   );
@@ -2966,7 +2968,9 @@ export function SettingsPanel() {
       setSaving(false);
     }
   }, [
+    aiPrompt,
     canSave,
+    initialAiPrompt,
     saving,
     shopId,
     supabase,
