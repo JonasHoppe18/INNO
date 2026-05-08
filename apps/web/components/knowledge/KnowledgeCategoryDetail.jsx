@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { StickySaveBar } from "@/components/ui/sticky-save-bar";
@@ -117,15 +118,19 @@ function SnippetCard({ snippet, onEdit, onDelete }) {
   );
 }
 
+const VALID_USABLE_AS = ["policy", "procedure", "saved_reply", "tone_example", "background"];
+
 function SnippetModal({ open, onClose, onSave, shopId, categorySlug, productId, productTitle, initial }) {
   const [title, setTitle] = useState(initial?.title || "");
   const [content, setContent] = useState(initial?.content || "");
+  const [usableAs, setUsableAs] = useState(initial?.usable_as || "");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (open) {
       setTitle(initial?.title || "");
       setContent(initial?.content || "");
+      setUsableAs(initial?.usable_as || "");
     }
   }, [open, initial]);
 
@@ -138,6 +143,7 @@ function SnippetModal({ open, onClose, onSave, shopId, categorySlug, productId, 
         title: title.trim(),
         content: content.trim(),
         category: categorySlug,
+        ...(usableAs ? { usable_as: usableAs } : {}),
         ...(productId ? { product_id: productId, product_title: productTitle } : {}),
       };
       if (initial?.snippet_id) {
@@ -181,11 +187,34 @@ function SnippetModal({ open, onClose, onSave, shopId, categorySlug, productId, 
           <div className="space-y-1.5">
             <Label>Title</Label>
             <Input
-              placeholder="e.g. Firmware update A-Spire"
+              placeholder="e.g. Firmware update guide, Return policy exception"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               autoFocus
             />
+          </div>
+          <div className="space-y-1.5">
+            <Label>
+              Knowledge type
+              <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                — controls how the AI uses this content
+              </span>
+            </Label>
+            <Select
+              value={usableAs || "auto"}
+              onValueChange={(val) => setUsableAs(val === "auto" ? "" : val)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Auto-detect" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">Auto-detect — let the AI classify</SelectItem>
+                <SelectItem value="fact">FAQ / Product info — use as authoritative fact</SelectItem>
+                <SelectItem value="procedure">Procedure — follow these steps exactly</SelectItem>
+                <SelectItem value="policy">Policy — authoritative rule (highest priority)</SelectItem>
+                <SelectItem value="tone_example">Tone example — style reference only</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1.5">
             <Label>Content</Label>
@@ -193,7 +222,7 @@ function SnippetModal({ open, onClose, onSave, shopId, categorySlug, productId, 
               placeholder={categoryMeta?.placeholder || "Describe the answer to a question customers typically ask..."}
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              rows={8}
+              rows={7}
               className="resize-none text-sm"
             />
             <p className="text-xs text-muted-foreground">

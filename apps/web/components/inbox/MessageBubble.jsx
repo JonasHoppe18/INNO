@@ -591,13 +591,7 @@ function AiEditBadge({ editStats }) {
   const { edit_classification, edit_delta_pct } = editStats;
   const pct = edit_delta_pct != null ? Math.round(Math.abs(edit_delta_pct) * 100) : null;
 
-  if (edit_classification === "no_edit") {
-    return (
-      <span className="ml-auto text-[11px] text-muted-foreground/60">
-        sent as-is
-      </span>
-    );
-  }
+  if (edit_classification === "no_edit") return null;
   if (pct != null) {
     return (
       <span className="ml-auto text-[11px] text-muted-foreground/60">

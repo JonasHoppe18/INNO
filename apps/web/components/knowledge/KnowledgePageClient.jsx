@@ -373,6 +373,7 @@ export function KnowledgePageClient() {
   const [snippetModalOpen, setSnippetModalOpen] = useState(false);
   const [snippetTitle, setSnippetTitle] = useState("");
   const [snippetContent, setSnippetContent] = useState("");
+  const [snippetUsableAs, setSnippetUsableAs] = useState("");
   const [historyProvider, setHistoryProvider] = useState(null);
   const [zendeskImportCount, setZendeskImportCount] = useState(null);
   const [zendeskImporting, setZendeskImporting] = useState(false);
@@ -569,6 +570,7 @@ export function KnowledgePageClient() {
 
       if (error) throw error;
       const rows = Array.isArray(data) ? data : [];
+      const VALID_USABLE_AS_LOAD = ["policy", "procedure", "fact", "saved_reply", "tone_example", "background"];
       const grouped = new Map();
       for (const row of rows) {
         const metadata = row?.metadata && typeof row.metadata === "object" ? row.metadata : {};
@@ -579,12 +581,17 @@ export function KnowledgePageClient() {
           title: "",
           created_at: null,
           source_provider: String(row?.source_provider || ""),
+          usable_as: null,
           chunks: [],
         };
         if (!existing.title) {
           existing.title =
             String(metadata?.title || metadata?.file_name || "").trim() ||
             (row?.source_provider === "manual_text" ? "Untitled snippet" : "Uploaded File");
+        }
+        if (!existing.usable_as) {
+          const raw = String(metadata?.usable_as || "").trim();
+          existing.usable_as = VALID_USABLE_AS_LOAD.includes(raw) ? raw : null;
         }
         if (!existing.created_at || String(row?.created_at || "") > String(existing.created_at || "")) {
           existing.created_at = row?.created_at || null;
@@ -606,6 +613,7 @@ export function KnowledgePageClient() {
           title: snippet.title,
           created_at: snippet.created_at,
           source_provider: snippet.source_provider,
+          usable_as: snippet.usable_as || null,
           content: snippet.source_provider === "manual_text" ? stitchedContent : "",
         };
       });
@@ -779,6 +787,7 @@ export function KnowledgePageClient() {
       title: String(snippet?.title || "Untitled snippet"),
       created_at: snippet?.created_at || null,
       source_provider: String(snippet?.source_provider || ""),
+      usable_as: snippet?.usable_as || null,
       row_count: null,
     }));
     const csvItems = (csvImportBatches || []).map((batch) => ({
@@ -842,6 +851,7 @@ export function KnowledgePageClient() {
     setSnippetMode("text");
     setSnippetTitle("");
     setSnippetContent("");
+    setSnippetUsableAs("");
     setPdfFile(null);
     setPdfTitle("");
   };
@@ -956,6 +966,7 @@ export function KnowledgePageClient() {
     setSnippetMode("text");
     setSnippetTitle(draft?.title || String(snippet?.title || ""));
     setSnippetContent(draft?.content || String(snippet?.content || ""));
+    setSnippetUsableAs(String(snippet?.usable_as || ""));
     setPdfFile(null);
     setPdfTitle("");
     setSnippetModalOpen(true);
@@ -1032,6 +1043,7 @@ export function KnowledgePageClient() {
           shop_id: shopId,
           title,
           content,
+          usable_as: snippetUsableAs || undefined,
         }),
       });
       const payload = await response.json().catch(() => ({}));
@@ -2034,10 +2046,20 @@ export function KnowledgePageClient() {
                             ) : (
                               <p className="truncate text-sm font-medium text-foreground">{item.title}</p>
                             )}
-                            <p className="text-xs text-muted-foreground">
+                            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                               {item.kind === "csv_import"
                                 ? `${Number(item.row_count || 0)} rows · ${formatDate(item.created_at)}`
                                 : formatDate(item.created_at)}
+                              {item.kind === "snippet" && item.usable_as ? (
+                                <span className="inline-flex items-center rounded-sm border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                                  {item.usable_as === "fact" && "FAQ / Product info"}
+                                  {item.usable_as === "procedure" && "Procedure"}
+                                  {item.usable_as === "policy" && "Policy"}
+                                  {item.usable_as === "saved_reply" && "Saved reply"}
+                                  {item.usable_as === "tone_example" && "Tone example"}
+                                  {item.usable_as === "background" && "Background"}
+                                </span>
+                              ) : null}
                             </p>
                           </div>
                           {item.kind === "snippet" && item.source_provider === "manual_text" ? (
@@ -2546,6 +2568,39 @@ export function KnowledgePageClient() {
                     onChange={(event) => setSnippetTitle(event.target.value)}
                     placeholder="Reset Guide"
                   />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="snippet-usable-as">
+                    Knowledge type
+                    <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                      — controls how the AI uses this content
+                    </span>
+                  </Label>
+                  <Select
+                    value={snippetUsableAs || "auto"}
+                    onValueChange={(val) => setSnippetUsableAs(val === "auto" ? "" : val)}
+                  >
+                    <SelectTrigger id="snippet-usable-as" className="w-full">
+                      <SelectValue placeholder="Auto-detect" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="auto">
+                        Auto-detect — let the AI classify
+                      </SelectItem>
+                      <SelectItem value="fact">
+                        FAQ / Product info — use as authoritative fact
+                      </SelectItem>
+                      <SelectItem value="procedure">
+                        Procedure — follow these steps exactly
+                      </SelectItem>
+                      <SelectItem value="policy">
+                        Policy — authoritative rule (highest priority)
+                      </SelectItem>
+                      <SelectItem value="tone_example">
+                        Tone example — style reference only
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="snippet-content">Content</Label>

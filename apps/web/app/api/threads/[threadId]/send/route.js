@@ -1642,15 +1642,11 @@ export async function POST(request, { params }) {
 
   const draftThreadKeys = [thread.provider_thread_id, threadId].filter(Boolean);
   if (draftThreadKeys.length) {
-    // Include recently-superseded drafts to handle the race condition where the
-    // pipeline supersedes a draft in the same second the user hits send.
-    const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
     let pendingDraftsQuery = serviceClient
       .from("drafts")
       .select("id, created_at, status")
       .in("thread_id", draftThreadKeys)
       .in("status", ["pending", "superseded"])
-      .gte("created_at", twoMinutesAgo)
       .order("created_at", { ascending: false });
     const draftPlatforms = Array.from(
       new Set([mailbox.provider, "smtp"].map((value) => String(value || "").trim()).filter(Boolean)),

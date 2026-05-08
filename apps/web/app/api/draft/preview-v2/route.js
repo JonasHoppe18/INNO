@@ -35,7 +35,9 @@ export async function POST(request) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { thread_id, message_id, customer_context } = body;
+  // eval_mode: true → pass email_data directly to the edge function so the gate is
+  // skipped. Used by the fine-tuning page to test any ticket regardless of its state.
+  const { thread_id, message_id, customer_context, eval_mode, email_data } = body;
   if (!thread_id) {
     return NextResponse.json(
       { error: "thread_id is required" },
@@ -82,7 +84,10 @@ export async function POST(request) {
   const startTime = Date.now();
 
   try {
-    // Call generate-draft-v2 edge function
+    // Call generate-draft-v2 edge function.
+    // In eval_mode we pass email_data instead of thread_id — the pipeline skips the gate
+    // and does not persist anything to the DB, making it safe for testing closed/agent-replied tickets.
+    const useEvalMode = eval_mode === true && email_data && typeof email_data.body === "string";
     const edgeResp = await fetch(
       `${SUPABASE_FUNCTIONS_URL}/generate-draft-v2`,
       {
@@ -91,12 +96,11 @@ export async function POST(request) {
           "Content-Type": "application/json",
           Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
         },
-        body: JSON.stringify({
-          thread_id,
-          message_id,
-          shop_id,
-          customer_context,
-        }),
+        body: JSON.stringify(
+          useEvalMode
+            ? { shop_id, email_data }
+            : { thread_id, message_id, shop_id, customer_context }
+        ),
       },
     );
 
@@ -149,7 +153,9 @@ export async function POST(request) {
       routing_hint: result.routing_hint ?? "review",
       is_test_mode: result.is_test_mode ?? false,
       confidence: result.confidence ?? 0,
+      intent: result.intent ?? null,
       sources: result.sources ?? [],
+      knowledge_gaps: result.knowledge_gaps ?? [],
       latency_ms,
       skipped: result.skipped ?? false,
       skip_reason: result.skip_reason ?? null,

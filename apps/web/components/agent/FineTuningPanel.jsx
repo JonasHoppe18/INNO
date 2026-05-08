@@ -14,13 +14,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useAgentPersonaConfig } from "@/hooks/useAgentPersonaConfig";
 import {
+  AlertTriangle,
   Bold,
+  BookOpen,
   Bot,
   CheckCircle2,
+  ChevronRight,
+  Clock,
   Heading1,
   Heading2,
   Heading3,
-  Inbox,
   Italic,
   Link2,
   List,
@@ -103,11 +106,10 @@ export function useFineTuningPanelActions() {
 }
 
 export function FineTuningPanel({ children }) {
-  const { persona, loading, saving, error, save, refresh, test, testPersona } =
+  const { persona, loading, error, refresh, test, testPersona } =
     useAgentPersonaConfig();
 
   const [instructions, setInstructions] = useState("");
-  const [dirty, setDirty] = useState(false);
 
   const [selectedModel, setSelectedModel] = useState("gpt-4o-mini");
   const [actionMode, setActionMode] = useState("automatic");
@@ -120,6 +122,7 @@ export function FineTuningPanel({ children }) {
   const [threadPickerOpen, setThreadPickerOpen] = useState(false);
   // Draft result from real pipeline or simplified persona-test
   const [simDraft, setSimDraft] = useState(null);
+  const [simPipelineDebug, setSimPipelineDebug] = useState(null);
   const [simLoading, setSimLoading] = useState(false);
   const [simError, setSimError] = useState(null);
 
@@ -139,21 +142,8 @@ export function FineTuningPanel({ children }) {
   }, [test?.error]);
 
   useEffect(() => {
-    setInstructions(persona?.instructions || DEFAULT_INSTRUCTIONS);
-    setDirty(false);
+    setInstructions(persona?.instructions || "");
   }, [persona?.instructions]);
-
-
-  const handleChange = (event) => {
-    setInstructions(event.target.value);
-    setDirty(true);
-  };
-
-  const handleSave = useCallback(() => {
-    save({ instructions })
-      .then(() => setDirty(false))
-      .catch(() => null);
-  }, [instructions, save]);
 
   const handleRefresh = useCallback(() => refresh().catch(() => null), [refresh]);
 
@@ -252,23 +242,43 @@ export function FineTuningPanel({ children }) {
     if (!activeSimulation?.body) return;
     setApprovalDecision(null);
     setSimDraft(null);
+    setSimPipelineDebug(null);
     setSimError(null);
 
-    // If a real inbox ticket is selected, use the full generate-draft pipeline
+    // If a real inbox ticket is selected, use the full v2 pipeline via preview-v2
     if (simThreadId) {
       setSimLoading(true);
       try {
-        const res = await fetch(`/api/threads/${simThreadId}/generate-draft`, {
+        // Always use eval_mode so the gate is bypassed — the fine-tuning page is
+        // for testing only and should work on any ticket regardless of its state.
+        const res = await fetch(`/api/draft/preview-v2`, {
           method: "POST",
+          headers: { "Content-Type": "application/json" },
           credentials: "include",
+          body: JSON.stringify({
+            thread_id: simThreadId,
+            eval_mode: true,
+            email_data: {
+              subject: simSubject,
+              body: simBody,
+              from_email: simFrom || undefined,
+            },
+          }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data?.error || "Draft generation failed.");
         const text =
-          data?.draft?.rendered_body_text ||
-          data?.draft?.body_text ||
-          (data?.skipped ? `Skipped: ${data?.reason || "no reason given"}` : "");
+          data?.draft_text ||
+          (data?.skipped ? `Skipped: ${data?.skip_reason || "no reason given"}` : "");
         setSimDraft(text || "No draft was generated.");
+        setSimPipelineDebug({
+          sources: data?.sources || [],
+          confidence: data?.confidence ?? null,
+          routing_hint: data?.routing_hint || null,
+          intent: data?.intent || null,
+          knowledge_gaps: data?.knowledge_gaps || [],
+          latency_ms: data?.latency_ms || null,
+        });
       } catch (err) {
         setSimError(err instanceof Error ? err.message : "Draft generation failed.");
       } finally {
@@ -291,12 +301,9 @@ export function FineTuningPanel({ children }) {
   const contextValue = useMemo(
     () => ({
       refresh: handleRefresh,
-      save: handleSave,
       loading,
-      saving,
-      dirty,
     }),
-    [handleRefresh, handleSave, loading, saving, dirty]
+    [handleRefresh, loading]
   );
 
   return (
@@ -311,7 +318,7 @@ export function FineTuningPanel({ children }) {
                 label="Instructions"
                 description="Describe how the AI should behave, open and close its replies, and what it can promise. The AI understands context — you can write conditional rules."
                 value={instructions}
-                onChange={handleChange}
+                onChange={setInstructions}
                 selectedModel={selectedModel}
                 onSelectedModelChange={setSelectedModel}
                 placeholder={`Examples:
@@ -333,9 +340,6 @@ export function FineTuningPanel({ children }) {
               <div className="flex items-center gap-2 border-b border-gray-100 bg-sidebar px-4 py-2 text-xs font-medium text-slate-600">
                 <Shield className="h-3.5 w-3.5 text-slate-500" />
                 Simulation mode — no real-world impact. The AI will not send emails or update live orders.
-                {dirty && (
-                  <span className="ml-auto text-amber-600">Save instructions first to include changes in simulation.</span>
-                )}
               </div>
 
               <div className="flex items-center gap-2 border-b border-gray-100 bg-sidebar px-4 py-3">
@@ -387,7 +391,7 @@ export function FineTuningPanel({ children }) {
                       <input
                         type="text"
                         value={simSubject}
-                        onChange={(e) => { setSimSubject(e.target.value); setSimDraft(null); setSimThreadId(null); }}
+                        onChange={(e) => { setSimSubject(e.target.value); setSimDraft(null); setSimPipelineDebug(null); setSimThreadId(null); }}
                         placeholder="Subject line..."
                         className="w-full bg-transparent text-xl font-semibold tracking-tight text-slate-900 placeholder:text-slate-300 focus:outline-none"
                       />
@@ -419,7 +423,7 @@ export function FineTuningPanel({ children }) {
                         <textarea
                           ref={bodyTextareaRef}
                           value={simBody}
-                          onChange={(e) => { setSimBody(e.target.value); setSimDraft(null); setSimThreadId(null); }}
+                          onChange={(e) => { setSimBody(e.target.value); setSimDraft(null); setSimPipelineDebug(null); setSimThreadId(null); }}
                           placeholder="Write the customer's message here, or pick a ticket from your inbox…"
                           style={{ minHeight: "80px", overflow: "hidden" }}
                           className="mt-3 w-full resize-none bg-transparent text-sm leading-relaxed text-slate-700 placeholder:text-slate-300 focus:outline-none"
@@ -496,6 +500,11 @@ export function FineTuningPanel({ children }) {
                         </div>
                       </div>
 
+                      {/* Pipeline trace — shown after a real v2 run */}
+                      {simPipelineDebug && !isSimLoading && (
+                        <PipelineTrace debug={simPipelineDebug} />
+                      )}
+
                     </div>
                   </div>
               </div>
@@ -503,19 +512,6 @@ export function FineTuningPanel({ children }) {
           </div>
         </CardContent>
       </Card>
-      {dirty ? (
-        <div className="fixed bottom-4 right-6 z-50 flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-lg">
-          <span className="text-xs text-slate-600">Unsaved changes</span>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving}
-            className="inline-flex items-center rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-black disabled:opacity-50"
-          >
-            {saving ? "Saving..." : "Save"}
-          </button>
-        </div>
-      ) : null}
       <EvalPanel />
       <ThreadPickerModal
         open={threadPickerOpen}
@@ -527,10 +523,159 @@ export function FineTuningPanel({ children }) {
           setSimThreadId(ticket.id || null);
           setApprovalDecision(null);
           setSimDraft(null);
+          setSimPipelineDebug(null);
           setSimError(null);
         }}
       />
     </FineTuningPanelContext.Provider>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+const USABLE_AS_META = {
+  policy:       { label: "Policy",           color: "bg-red-50 text-red-700 border-red-200" },
+  procedure:    { label: "Procedure",        color: "bg-blue-50 text-blue-700 border-blue-200" },
+  fact:         { label: "FAQ / Product info", color: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+  tone_example: { label: "Tone example",     color: "bg-purple-50 text-purple-700 border-purple-200" },
+  background:   { label: "Background",       color: "bg-slate-100 text-slate-600 border-slate-200" },
+  saved_reply:  { label: "Saved reply",      color: "bg-indigo-50 text-indigo-700 border-indigo-200" },
+  ignore:       { label: "Ignored",          color: "bg-slate-100 text-slate-400 border-slate-200" },
+};
+
+const INTENT_LABELS = {
+  return: "Return",
+  refund: "Refund",
+  exchange: "Exchange",
+  tracking: "Tracking",
+  cancel: "Cancel",
+  warranty: "Warranty",
+  complaint: "Complaint",
+  technical_support: "Tech support",
+  product_question: "Product question",
+  address_change: "Address change",
+  thanks: "Thanks",
+  other: "Other",
+};
+
+function PipelineTrace({ debug }) {
+  const { sources = [], confidence, routing_hint, intent, knowledge_gaps = [], latency_ms } = debug;
+  const [expanded, setExpanded] = useState(new Set());
+
+  function toggle(i) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.has(i) ? next.delete(i) : next.add(i);
+      return next;
+    });
+  }
+
+  const confidencePct = confidence != null ? Math.round(confidence * 100) : null;
+  const confidenceColor =
+    confidencePct == null ? "text-slate-400" :
+    confidencePct >= 80 ? "text-emerald-600" :
+    confidencePct >= 60 ? "text-amber-600" :
+    "text-red-600";
+
+  const routingStyle =
+    routing_hint === "auto"   ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+    routing_hint === "review" ? "bg-amber-50 text-amber-700 border-amber-200" :
+    routing_hint === "block"  ? "bg-red-50 text-red-700 border-red-200" :
+    "bg-slate-100 text-slate-600 border-slate-200";
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+      {/* Header row */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-3 py-2">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-slate-500">Pipeline trace</span>
+          {intent && (
+            <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-0.5 text-xs font-medium text-slate-700">
+              {INTENT_LABELS[intent] ?? intent}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {confidencePct != null && (
+            <span className={`text-xs font-semibold ${confidenceColor}`}>
+              {confidencePct}% confidence
+            </span>
+          )}
+          {routing_hint && (
+            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${routingStyle}`}>
+              {routing_hint}
+            </span>
+          )}
+          {latency_ms != null && (
+            <span className="flex items-center gap-1 text-xs text-slate-400">
+              <Clock className="h-3 w-3" />
+              {(latency_ms / 1000).toFixed(1)}s
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Sources */}
+      <div className="p-3">
+        <p className="mb-2 flex items-center gap-1 text-xs font-medium text-slate-500">
+          <BookOpen className="h-3.5 w-3.5" />
+          Sources retrieved ({sources.length})
+        </p>
+        {sources.length === 0 ? (
+          <p className="text-xs text-slate-400 italic">No knowledge chunks retrieved for this ticket.</p>
+        ) : (
+          <div className="space-y-1.5">
+            {sources.map((src, i) => {
+              const tag = USABLE_AS_META[src.usable_as] ?? { label: src.usable_as || "—", color: "bg-slate-100 text-slate-500 border-slate-200" };
+              const isOpen = expanded.has(i);
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => toggle(i)}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-left shadow-sm transition hover:border-slate-300 hover:shadow-none"
+                >
+                  <div className="flex items-center gap-2">
+                    <ChevronRight
+                      className={`h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform ${isOpen ? "rotate-90" : ""}`}
+                    />
+                    <p className="min-w-0 flex-1 truncate text-xs font-medium text-slate-700">
+                      {src.source_label || "Unknown source"}
+                    </p>
+                    <span className={`inline-flex shrink-0 items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${tag.color}`}>
+                      {tag.label}
+                    </span>
+                  </div>
+                  {isOpen && src.content && (
+                    <p className="mt-2 border-t border-slate-100 pt-2 text-xs leading-relaxed text-slate-500">
+                      {src.content}
+                    </p>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Knowledge gaps */}
+      {knowledge_gaps.length > 0 && (
+        <div className="border-t border-slate-200 p-3">
+          <p className="mb-2 flex items-center gap-1 text-xs font-medium text-amber-600">
+            <AlertTriangle className="h-3.5 w-3.5" />
+            Knowledge gaps ({knowledge_gaps.length})
+          </p>
+          <div className="space-y-1.5">
+            {knowledge_gaps.map((gap, i) => (
+              <div key={i} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                <p className="text-xs font-semibold text-amber-800">{gap.suggested_title}</p>
+                <p className="mt-0.5 text-xs leading-relaxed text-amber-700">{gap.suggested_content_hint}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

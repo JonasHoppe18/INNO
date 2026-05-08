@@ -387,19 +387,22 @@ export async function GET(request: Request) {
 
     // Deduplicate by snippet_id, take first chunk (chunk_index 0)
     const seen = new Set<string>();
-    const snippets: Array<{ snippet_id: string; title: string; content: string; category: string | null; product_id: string | null }> = [];
+    const VALID_USABLE_AS = ["policy", "procedure", "fact", "saved_reply", "tone_example", "background"];
+    const snippets: Array<{ snippet_id: string; title: string; content: string; category: string | null; product_id: string | null; usable_as: string | null }> = [];
     for (const row of rows || []) {
       const meta = row.metadata as any;
       const snippetId = meta?.snippet_id as string | undefined;
       if (!snippetId || seen.has(snippetId)) continue;
       if ((meta?.chunk_index ?? 0) !== 0) continue;
       seen.add(snippetId);
+      const rawUsableAs = String(meta?.usable_as || "").trim();
       snippets.push({
         snippet_id: snippetId,
         title: String(meta?.title || ""),
         content: String(row.content || ""),
         category: (meta?.category as string) || null,
         product_id: (meta?.product_id as string) || null,
+        usable_as: VALID_USABLE_AS.includes(rawUsableAs) ? rawUsableAs : null,
       });
     }
 
@@ -549,6 +552,9 @@ export async function POST(request: Request) {
     const category = String(payload?.category || "").trim() || null;
     const productId = String(payload?.product_id || "").trim() || null;
     const productTitle = String(payload?.product_title || "").trim() || null;
+    const VALID_USABLE_AS_POST = ["policy", "procedure", "fact", "saved_reply", "tone_example", "background"];
+    const rawUsableAsPost = String(payload?.usable_as || "").trim();
+    const usableAs = VALID_USABLE_AS_POST.includes(rawUsableAsPost) ? rawUsableAsPost : null;
     if (!title || !content) {
       return NextResponse.json({ error: "title and content are required." }, { status: 400 });
     }
@@ -563,6 +569,7 @@ export async function POST(request: Request) {
         title,
         category,
         product_id: productId,
+        usable_as: usableAs,
       })
     );
     const snippetId = makeSnippetId();
@@ -578,6 +585,7 @@ export async function POST(request: Request) {
         workspace_id: scope.workspaceId,
         snippet_id: snippetId,
         title,
+        ...(usableAs ? { usable_as: usableAs } : {}),
         ...(category ? { category } : {}),
         ...(productId ? { product_id: productId, product_title: productTitle } : {}),
       },
@@ -638,6 +646,9 @@ export async function PUT(request: Request) {
     const category = String(payload?.category || "").trim() || null;
     const productId = String(payload?.product_id || "").trim() || null;
     const productTitle = String(payload?.product_title || "").trim() || null;
+    const VALID_USABLE_AS_PUT = ["policy", "procedure", "fact", "saved_reply", "tone_example", "background"];
+    const rawUsableAsPut = String(payload?.usable_as || "").trim();
+    const usableAs = VALID_USABLE_AS_PUT.includes(rawUsableAsPut) ? rawUsableAsPut : null;
 
     if (!snippetId || !title || !content) {
       return NextResponse.json({ error: "id, title and content are required." }, { status: 400 });
@@ -680,6 +691,7 @@ export async function PUT(request: Request) {
         workspace_id: scope.workspaceId,
         snippet_id: snippetId,
         title,
+        ...(usableAs ? { usable_as: usableAs } : {}),
         ...(category ? { category } : {}),
         ...(productId ? { product_id: productId, product_title: productTitle } : {}),
       },

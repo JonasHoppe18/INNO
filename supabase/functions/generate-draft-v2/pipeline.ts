@@ -60,6 +60,7 @@ export interface PipelineResult {
   routing_hint: "auto" | "review" | "block";
   is_test_mode: boolean;
   confidence: number;
+  intent?: string;
   sources: Array<{
     content: string;
     kind: string;
@@ -964,6 +965,7 @@ export async function runDraftV2Pipeline(
       routing_hint: effectiveRoutingHint,
       is_test_mode: isTestMode,
       confidence: plan.confidence,
+      intent: plan.primary_intent,
       knowledge_gaps: [],
       sources: retrieved.chunks.slice(0, 5).map((c) => ({
         content: c.content.slice(0, 200),
@@ -1455,6 +1457,7 @@ export async function runDraftV2Pipeline(
     routing_hint: finalRoutingHint,
     is_test_mode: isTestMode,
     confidence: finalConfidence,
+    intent: plan.primary_intent,
     knowledge_gaps: knowledgeGaps,
     sources: retrieved.chunks.slice(0, 5).map((c) => ({
       content: c.content.slice(0, 200),

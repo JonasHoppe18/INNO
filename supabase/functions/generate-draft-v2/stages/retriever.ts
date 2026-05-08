@@ -12,6 +12,7 @@ export interface RetrievedChunk {
   usable_as:
     | "policy"
     | "procedure"
+    | "fact"
     | "saved_reply"
     | "tone_example"
     | "background"
@@ -302,6 +303,17 @@ function classifyKnowledgeSource(input: {
     usable_as = "ignore";
   }
 
+  // Explicit classification set by shop admin in KB management UI takes priority over heuristic.
+  const VALID_USABLE_AS: RetrievedChunk["usable_as"][] = [
+    "policy", "procedure", "fact", "saved_reply", "tone_example", "background", "ignore",
+  ];
+  const explicitUsableAs = typeof input.metadata?.usable_as === "string"
+    ? input.metadata.usable_as as RetrievedChunk["usable_as"]
+    : null;
+  if (explicitUsableAs && VALID_USABLE_AS.includes(explicitUsableAs)) {
+    usable_as = explicitUsableAs;
+  }
+
   return { usable_as, risk_flags: [...new Set(riskFlags)] };
 }
 
@@ -553,7 +565,8 @@ export async function runRetriever(
           ? 0.04
           : 0) +
         (chunk.usable_as === "saved_reply" ? 0.06 : 0) +
-        (chunk.usable_as === "policy" ? 0.02 : 0);
+        (chunk.usable_as === "policy" ? 0.02 : 0) +
+        (chunk.usable_as === "fact" ? 0.02 : 0);
       return score(b) - score(a);
     })
     .slice(0, knowledgeBudget);

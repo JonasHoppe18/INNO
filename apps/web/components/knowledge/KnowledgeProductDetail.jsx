@@ -23,6 +23,22 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+const VALID_USABLE_AS = ["policy", "procedure", "fact", "tone_example"];
+
+const USABLE_AS_BADGE = {
+  fact:         { label: "FAQ / Product info", color: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+  procedure:    { label: "Procedure",          color: "bg-blue-50 text-blue-700 border-blue-200" },
+  policy:       { label: "Policy",             color: "bg-red-50 text-red-700 border-red-200" },
+  tone_example: { label: "Tone example",       color: "bg-purple-50 text-purple-700 border-purple-200" },
+};
 
 function SnippetCard({ snippet, onEdit, onDelete }) {
   const [expanded, setExpanded] = useState(false);
@@ -43,6 +59,11 @@ function SnippetCard({ snippet, onEdit, onDelete }) {
           className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-150 ${expanded ? "rotate-180" : ""}`}
         />
         <span className="text-sm font-medium flex-1 truncate">{snippet.title}</span>
+        {snippet.usable_as && USABLE_AS_BADGE[snippet.usable_as] && (
+          <span className={`shrink-0 inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${USABLE_AS_BADGE[snippet.usable_as].color}`}>
+            {USABLE_AS_BADGE[snippet.usable_as].label}
+          </span>
+        )}
         <div
           className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100"
           onClick={(e) => e.stopPropagation()}
@@ -105,12 +126,14 @@ function SnippetList({ snippets, onEdit, onDelete, onAdd }) {
 function SnippetModal({ open, onClose, onSave, shopId, productId, productTitle, initial }) {
   const [title, setTitle] = useState(initial?.title || "");
   const [content, setContent] = useState(initial?.content || "");
+  const [usableAs, setUsableAs] = useState(initial?.usable_as || "");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (open) {
       setTitle(initial?.title || "");
       setContent(initial?.content || "");
+      setUsableAs(VALID_USABLE_AS.includes(initial?.usable_as) ? initial.usable_as : "");
     }
   }, [open, initial]);
 
@@ -125,6 +148,7 @@ function SnippetModal({ open, onClose, onSave, shopId, productId, productTitle, 
         category: "product-questions",
         product_id: productId,
         product_title: productTitle,
+        ...(usableAs ? { usable_as: usableAs } : {}),
       };
       if (initial?.snippet_id) {
         const res = await fetch("/api/knowledge/snippets", {
@@ -172,12 +196,30 @@ function SnippetModal({ open, onClose, onSave, shopId, productId, productTitle, 
             />
           </div>
           <div className="space-y-1.5">
+            <Label>Knowledge type</Label>
+            <Select
+              value={usableAs || "auto"}
+              onValueChange={(val) => setUsableAs(val === "auto" ? "" : val)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">Auto-detect — let the AI classify</SelectItem>
+                <SelectItem value="fact">FAQ / Product info — use as authoritative fact</SelectItem>
+                <SelectItem value="procedure">Procedure — follow these steps exactly</SelectItem>
+                <SelectItem value="policy">Policy — authoritative rule (highest priority)</SelectItem>
+                <SelectItem value="tone_example">Tone example — style reference only</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
             <Label>Content</Label>
             <Textarea
               placeholder="Describe the answer precisely. The AI uses this directly to answer customers asking about this product."
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              rows={8}
+              rows={7}
               className="resize-none text-sm"
             />
             <p className="text-xs text-muted-foreground">

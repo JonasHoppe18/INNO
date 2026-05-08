@@ -167,22 +167,26 @@ export async function GET(req) {
 
     if (conversation.length < 2) continue;
 
-    // Last customer message = what we're replying to
-    const lastCustomerIdx = conversation.map((c, i) => (c.role === "customer" ? i : -1)).filter((i) => i >= 0).pop();
-    if (lastCustomerIdx === undefined) continue;
-    const lastCustomerMessage = conversation[lastCustomerIdx];
+    // Find the first customer message + matching agent reply for a clean ground-truth pair.
+    // Using the FIRST exchange avoids ambiguity in multi-turn tickets where the last
+    // customer message might have no corresponding agent reply (e.g. ticket closed mid-thread),
+    // and ensures human_reply always responds to customer_body.
+    const firstCustomerIdx = conversation.findIndex((c) => c.role === "customer");
+    if (firstCustomerIdx === -1) continue;
 
-    // First substantive agent reply
-    const agentMessage = conversation.find((c) => c.role === "agent");
+    // Agent reply must come AFTER the first customer message
+    const agentMessage = conversation.slice(firstCustomerIdx + 1).find((c) => c.role === "agent");
     if (!agentMessage) continue;
 
-    // Everything before the last customer message = conversation history
-    const priorMessages = conversation.slice(0, lastCustomerIdx);
-    const conversationHistory = priorMessages.length > 0
-      ? priorMessages.map((m) => `${m.role === "customer" ? "Customer" : "Agent"}: ${m.body}`).join("\n\n")
+    // Everything after the first customer+agent exchange = subsequent turns captured as history
+    // so the pipeline can see the full context when relevant
+    const firstAgentIdx = conversation.indexOf(agentMessage);
+    const subsequentMessages = conversation.slice(firstAgentIdx + 1);
+    const conversationHistory = subsequentMessages.length > 0
+      ? subsequentMessages.map((m) => `${m.role === "customer" ? "Customer" : "Agent"}: ${m.body}`).join("\n\n")
       : null;
 
-    const customerBody = lastCustomerMessage.body;
+    const customerBody = conversation[firstCustomerIdx].body;
     const agentBody = agentMessage.body;
 
     if (!customerBody || !agentBody) continue;

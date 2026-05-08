@@ -700,12 +700,13 @@ Regler for post-action-svaret:
   const knowledgeBlock = chunksForPrompt.length > 0
     ? `# Relevant viden fra vidensbasen med kildepolitik
 Kildepolitik:
-- policy: autoritativ regel fra webshoppen/Shopify policy.
-- procedure: følg processen, men spørg kun om felter fra missing_required_fields.
+- policy: autoritativ regel fra webshoppen/Shopify policy — følg altid.
+- procedure: følg processen præcist, men spørg kun om felter fra missing_required_fields.
+- fact: autoritativt produktfakta eller direkte svar — behandl som verificeret sandhed og brug direkte i svaret. Opfind ikke tal, specs eller kompatibilitet der ikke fremgår eksplicit.
 - saved_reply: brug som tone/struktur eller genvej, men den må ikke overrule verificerede fakta, policy eller missing_required_fields.
 - tone_example/background: brug kun som kontekst, ikke som sandhed eller proces.
 - ignore: må ikke bruges i kundesvaret.
-- risk_flags=strong_claim: formulér forsigtigt, medmindre samme claim støttes af policy.
+- risk_flags=strong_claim: formulér forsigtigt, medmindre samme claim støttes af policy eller fact.
 - risk_flags=asks_for_extra_fields: kopier aldrig de ekstra feltkrav; brug kun missing_required_fields.
 
 ` +
@@ -716,7 +717,7 @@ Kildepolitik:
             `[kilde ${i}] ${c.source_label}
 usable_as: ${c.usable_as}
 risk_flags: ${c.risk_flags.length ? c.risk_flags.join(", ") : "none"}
-${c.content.slice(0, c.usable_as === "procedure" ? 2500 : 1500)}`,
+${c.content.slice(0, (c.usable_as === "procedure" || c.usable_as === "fact") ? 2500 : 1500)}`,
         )
         .join("\n\n")
     : "";
@@ -778,6 +779,8 @@ ABSOLUTTE REGLER:
 - Datid kun for handlinger der allerede er udført. Nutid/fremtid for det der sker nu.
 - Følg KB-procedurer præcist når de eksisterer — din vurdering erstatter ikke en dokumenteret procedure.
 - URLs som plain text (https://...) — aldrig markdown [tekst](url).
+- Kald ALDRIG kundens problem for "produktionsfejl", "fabriksfejl", "production defect" eller lignende intern klassifikation — brug kundens egne ord eller neutralt ("fejlen du oplever", "problemet med dit [produkt]", "skaden"). Gå direkte til løsningen.
+- Følg terminologiinstruktioner fra vidensbasen (policy-chunks) ABSOLUT — de har højere prioritet end din generelle sproglige prior.
 
 Returner KUN gyldigt JSON.
 

@@ -31,7 +31,9 @@ export async function GET() {
     }
 
     const scope = await resolveAuthScope(serviceClient, { clerkUserId: userId, orgId });
-    const shop = await resolveScopedShop(serviceClient, scope);
+    const shop = await resolveScopedShop(serviceClient, scope, undefined, {
+      allowSingleScopedFallback: true,
+    }).catch(() => null);
     if (!shop) return NextResponse.json({ gaps: [] });
 
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
