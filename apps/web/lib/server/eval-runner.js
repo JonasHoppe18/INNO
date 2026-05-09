@@ -250,7 +250,7 @@ async function generateDraftV2(shopId, subject, emailBody, options = {}) {
       `generate-draft-v2 ${res.status}: ${data?.error || raw.slice(0, 200)}`,
     );
   }
-  const draft = String(data?.reply || "").trim();
+  const draft = String(data?.reply || data?.draft_text || "").trim();
   if (!draft) {
     throw new Error(
       `generate-draft-v2 returned no reply. Raw: ${raw.slice(0, 300)}`,
