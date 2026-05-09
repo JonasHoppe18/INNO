@@ -1085,6 +1085,7 @@ export function EvalPanel({ fullPage = false }) {
         {running && runProgress && (
           <p className="text-xs text-muted-foreground">
             Status: {runProgress.status}. {runProgress.errorCount > 0 ? `${runProgress.errorCount} errors so far.` : ""}
+            {runProgress.lastError ? ` Last error: ${runProgress.lastError}` : ""}
           </p>
         )}
         {runError && <p className="text-xs text-destructive">{runError}</p>}
