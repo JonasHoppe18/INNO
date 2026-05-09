@@ -192,7 +192,7 @@ async function generateDraft(shopId, subject, emailBody) {
       }`,
     );
   }
-  const draft = String(data?.reply || "").trim();
+  const draft = String(data?.reply || data?.draft_text || "").trim();
   if (!draft) {
     throw new Error(
       `generate-draft-unified returned no reply. Raw: ${raw.slice(0, 300)}`,
