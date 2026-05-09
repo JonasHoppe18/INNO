@@ -15,7 +15,7 @@ import {
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
@@ -680,13 +680,7 @@ const MODEL_OPTIONS = [
   { value: "gpt-5-mini", label: "GPT-5 Mini" },
   { value: "gpt-5-nano", label: "GPT-5 Nano" },
 ];
-const EVAL_BATCH_SIZE = 5;
 const modelLabel = (value) => MODEL_OPTIONS.find((item) => item.value === value)?.label || value;
-const chunkArray = (items, size) => {
-  const chunks = [];
-  for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size));
-  return chunks;
-};
 
 export function EvalPanel({ fullPage = false }) {
   const [mode, setMode] = useState("examples");
@@ -706,6 +700,7 @@ export function EvalPanel({ fullPage = false }) {
   const [runProgress, setRunProgress] = useState(null);
   const [runError, setRunError] = useState(null);
   const [runErrors, setRunErrors] = useState([]);
+  const [activeJobId, setActiveJobId] = useState(null);
   const [runs, setRuns] = useState([]);
   const [loadingRuns, setLoadingRuns] = useState(true);
   const [expandedRun, setExpandedRun] = useState(null);
@@ -722,6 +717,56 @@ export function EvalPanel({ fullPage = false }) {
   }, []);
 
   useEffect(() => { fetchRuns(); }, [fetchRuns]);
+
+  const updateRunProgress = useCallback((job) => {
+    if (!job) return;
+    setRunProgress({
+      processed: Number(job.processed_items || 0),
+      total: Number(job.total_items || 0),
+      status: String(job.status || "queued"),
+      errorCount: Number(job.error_count || 0),
+      lastError: job.last_error || null,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!activeJobId) return undefined;
+    let isActive = true;
+
+    const pollJob = async () => {
+      try {
+        const res = await fetch(`/api/eval/run?job_id=${activeJobId}`, { credentials: "include" });
+        const data = await res.json().catch(() => ({}));
+        const job = Array.isArray(data?.jobs) ? data.jobs[0] : null;
+        if (!isActive) return;
+        if (job) {
+          updateRunProgress(job);
+          if (job.status === "completed") {
+            setRunning(false);
+            setActiveJobId(null);
+            await fetchRuns();
+            setExpandedRun(job.run_label);
+            if (Number(job.error_count || 0) > 0) {
+              setRunError(job.last_error || "Some tickets failed during evaluation.");
+            }
+          } else if (job.status === "failed") {
+            setRunning(false);
+            setActiveJobId(null);
+            setRunError(job.last_error || "Eval job failed.");
+          }
+        }
+      } catch {
+        // ignore polling errors
+      }
+    };
+
+    pollJob();
+    const interval = setInterval(pollJob, 3000);
+    return () => {
+      isActive = false;
+      clearInterval(interval);
+    };
+  }, [activeJobId, fetchRuns, updateRunProgress]);
 
   const deleteRun = useCallback(async (runLabel) => {
     try {
@@ -816,45 +861,39 @@ export function EvalPanel({ fullPage = false }) {
         : mode === "examples"
           ? ticketExamples.filter((t) => selectedExamples.has(t.id))
           : emails.filter((e) => e.body.trim()).map((e) => ({ subject: e.subject, body: e.body }));
-      const chunks = chunkArray(selectedItems, EVAL_BATCH_SIZE);
-      let totalScored = 0;
-      const allErrors = [];
+      const payload = mode === "manual"
+        ? { ...basePayload, emails: selectedItems }
+        : mode === "examples"
+          ? { ...basePayload, zendesk_tickets: selectedItems }
+          : { ...basePayload, zendesk_tickets: selectedItems };
+      const res = await fetch("/api/eval/run", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || "Eval job creation failed.");
+      }
 
-      for (let index = 0; index < chunks.length; index += 1) {
-        setRunProgress({ current: index + 1, total: chunks.length, scored: totalScored });
-        const payload = mode === "manual"
-          ? { ...basePayload, emails: chunks[index] }
-          : { ...basePayload, zendesk_tickets: chunks[index] };
-        const res = await fetch("/api/eval/run", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          throw new Error(data?.error || `Eval failed on batch ${index + 1}/${chunks.length}`);
-        }
-        totalScored += Number(data?.scored || 0);
-        if (Array.isArray(data?.errors) && data.errors.length > 0) {
-          allErrors.push(...data.errors);
-        }
+      if (!data?.job?.id) {
+        throw new Error("Eval job was created without an id.");
       }
-      setRunProgress({ current: chunks.length, total: chunks.length, scored: totalScored });
-      await fetchRuns();
-      setExpandedRun(currentRunLabel);
+
+      updateRunProgress(data.job);
+      setActiveJobId(data.job.id);
+      void fetch("/api/eval/run/worker", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ job_id: data.job.id, max_batches: 2 }),
+      }).catch(() => null);
       setRunLabel("");
-      if (allErrors.length > 0) {
-        setRunErrors(allErrors);
-        const firstError = allErrors[0];
-        const firstLabel = firstError?.subject || firstError?.thread_id || "Ticket";
-        setRunError(`${allErrors.length} ticket${allErrors.length === 1 ? "" : "s"} failed, ${totalScored} were scored. First error: ${firstLabel}: ${firstError?.error || "Unknown error"}`);
-      }
     } catch (err) {
       setRunError(err.message);
-    } finally {
       setRunning(false);
-      setRunProgress(null);
+      setActiveJobId(null);
     }
   };
 
@@ -1038,14 +1077,14 @@ export function EvalPanel({ fullPage = false }) {
         >
           {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
           {running && runProgress
-            ? `Running batch ${runProgress.current}/${runProgress.total}…`
+            ? `Processing ${runProgress.processed}/${runProgress.total}…`
             : running
-              ? "Running…"
+              ? "Starting…"
               : "Run ticket simulation"}
         </Button>
         {running && runProgress && (
           <p className="text-xs text-muted-foreground">
-            {runProgress.scored} scored so far. Large runs are processed in batches of {EVAL_BATCH_SIZE}.
+            Status: {runProgress.status}. {runProgress.errorCount > 0 ? `${runProgress.errorCount} errors so far.` : ""}
           </p>
         )}
         {runError && <p className="text-xs text-destructive">{runError}</p>}
