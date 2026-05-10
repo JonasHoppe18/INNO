@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ChevronRight,
   ExternalLink,
@@ -704,6 +704,7 @@ export function EvalPanel({ fullPage = false }) {
   const [runs, setRuns] = useState([]);
   const [loadingRuns, setLoadingRuns] = useState(true);
   const [expandedRun, setExpandedRun] = useState(null);
+  const lastWorkerKickRef = useRef(0);
 
   const fetchRuns = useCallback(async () => {
     setLoadingRuns(true);
@@ -741,6 +742,20 @@ export function EvalPanel({ fullPage = false }) {
         if (!isActive) return;
         if (job) {
           updateRunProgress(job);
+          const processed = Number(job.processed_items || 0);
+          const total = Number(job.total_items || 0);
+          if (job.status === "running" && processed < total) {
+            const now = Date.now();
+            if (now - lastWorkerKickRef.current > 2500) {
+              lastWorkerKickRef.current = now;
+              void fetch("/api/eval/run/worker", {
+                method: "POST",
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ job_id: job.id, max_batches: 2 }),
+              }).catch(() => null);
+            }
+          }
           if (job.status === "completed") {
             setRunning(false);
             setActiveJobId(null);
