@@ -152,17 +152,27 @@ function extractResponsesText(data: Record<string, unknown>): string {
 }
 
 const SIGNOFF_LINE_RE =
-  /^(?:best regards|kind regards|warm regards|regards|sincerely|thanks|thank you|mvh|venlig hilsen|med venlig hilsen|de bedste hilsner|mange hilsner|hilsen)[,.!]?$/i;
+  /^(?:best regards|kind regards|warm regards|all the best|regards|with warm regards|sincerely|yours sincerely|cheers|thanks|thank you|mvh|venlig hilsen|med venlig hilsen|de bedste hilsner|mange hilsner|hilsen|god dag|have a great day|ha en god dag|auf wiedersehen|bonne journée|fijne dag)[,.!]?$/i;
+
+// Matches shop/team name signature lines like "AceZone Support", "The AceZone Team", "Support-teamet"
+const SHOP_SIGNATURE_LINE_RE =
+  /^(?:the\s+\w+\s+team|[A-Z][a-zA-Z]+ Support|[A-Z][a-zA-Z]+ Kundeservice|Support.?teamet|Customer Service Team|Kundeservice)$/i;
 
 function stripGeneratedSignature(text: string): string {
   const lines = text.replace(/\s+$/u, "").split("\n");
   let end = lines.length - 1;
+  // Skip trailing blank lines
   while (end >= 0 && !lines[end].trim()) end--;
 
-  const min = Math.max(0, end - 5);
+  const min = Math.max(0, end - 6);
   for (let i = end; i >= min; i--) {
-    if (SIGNOFF_LINE_RE.test(lines[i].trim())) {
+    const trimmed = lines[i].trim();
+    if (SIGNOFF_LINE_RE.test(trimmed)) {
       return lines.slice(0, i).join("\n").replace(/\s+$/u, "");
+    }
+    // Also strip shop-name signature lines — keep scanning upward
+    if (SHOP_SIGNATURE_LINE_RE.test(trimmed)) {
+      continue; // keep looking for the signoff line above this
     }
   }
 
@@ -394,9 +404,7 @@ function buildInfoRequirementsBlock(
         "defect_documentation: foto/video der dokumenterer fejlen eller skaden",
       );
     }
-    if ((hasOrderReference || signals.hasPurchasePlace) && !signals.hasPhone) {
-      missing.push("phone_number: telefonnummer til return/warranty-processen");
-    }
+    // Telefonnummer er IKKE påkrævet — fjernet da det skaber forvirring og ikke bruges i workflow
   } else if (policyReturnLike) {
     // Policy returns/refunds are not defect claims. Do not ask for defect photos or phone
     // unless a shop-specific policy explicitly requires it.
@@ -781,6 +789,11 @@ ABSOLUTTE REGLER:
 - URLs som plain text (https://...) — aldrig markdown [tekst](url).
 - Kald ALDRIG kundens problem for "produktionsfejl", "fabriksfejl", "production defect" eller lignende intern klassifikation — brug kundens egne ord eller neutralt ("fejlen du oplever", "problemet med dit [produkt]", "skaden"). Gå direkte til løsningen.
 - Følg terminologiinstruktioner fra vidensbasen (policy-chunks) ABSOLUT — de har højere prioritet end din generelle sproglige prior.
+- ALDRIG "sender videre til teamet", "videregiver til vores salgsteam", "forward your inquiry", "I will pass along", "I'll connect you with" — tag handlingen NU eller forklar præcist hvad der mangler. Kunden behøver ikke vide hvem internt der håndterer det.
+- ALDRIG "I will send you the invoice shortly" / "sender fakturaen om lidt" — enten er handlingen allerede udført (skriv det i datid), eller det er ikke muligt (forklar det ærligt).
+- ALDRIG "vi vender tilbage" eller "vi vil undersøge" uden en konkret handling nu. Svar afslutter sagen med enten et konkret svar, en klar proces, eller en specifik ting vi venter på fra kunden.
+- TEKNISK TROUBLESHOOTING: Giv ALTID specifikke troubleshooting-trin FØR du nævner ombytning, garanti-vurdering eller exchange. Afslut med: "Løser trinene ikke problemet, hjælper vi selvfølgelig med en ombytningssag." Foreslå ALDRIG ombytning som FØRSTE skridt ved tekniske problemer (lyd, forbindelse, firmware, app).
+- Spørg ALDRIG efter telefonnummer — det bruges ikke i vores support-workflow. Brug ordrenummer og email.
 
 Returner KUN gyldigt JSON.
 

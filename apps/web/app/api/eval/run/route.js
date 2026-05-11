@@ -211,7 +211,8 @@ export async function POST(request) {
       },
       body: JSON.stringify({
         job_id: job.id,
-        max_batches: 2,
+        max_batches: 10,
+        batch_size: 10,
         chain: true,
       }),
     }).catch(() => null);

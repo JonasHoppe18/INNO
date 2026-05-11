@@ -96,6 +96,31 @@ const ACTION_DECISION_SCHEMA = {
 
 // ─── Hjælpefunktioner ─────────────────────────────────────────────────────────
 
+// Genkender tekniske symptomer — bruges til at undgå at foreslå exchange på første kontakt
+// for problemer der kan løses med troubleshooting.
+const TECHNICAL_ISSUE_RE =
+  /\b(connect|pair|pairing|dongle|firmware|app|sound|audio|lyd|bluetooth|usb|static|dropout|crackling|noise|battery|charging|mic|microphone|lag|delay|forbind|lydudfald|støj|opladning|batteri|mikrofon|app|disconnect|afkobl|tilslut|fejl|problem|not work|virker\s+ikke|duer\s+ikke|fejlfind|virker\s+ikke|stutter|stuttering)\b/i;
+
+function isTechnicalIssue(
+  customerMessage: string,
+  plan: Plan,
+): boolean {
+  return TECHNICAL_ISSUE_RE.test(customerMessage) ||
+    plan.sub_queries.some((q) => TECHNICAL_ISSUE_RE.test(q));
+}
+
+// Er der allerede forsøgt troubleshooting i denne samtale?
+// Tjekker pending_asks og decisions_made for tegn på at vi allerede har givet trin.
+function hasAlreadyTroubleshot(caseState: CaseState): boolean {
+  const allContext = [
+    ...caseState.decisions_made.map((d) => d.decision),
+    ...caseState.pending_asks,
+    ...caseState.open_questions,
+  ].join(" ");
+  return /troubleshoot|fejlfind|trin|steps|reset|nulstil|firmware|update|opdater|prøv\s+disse|try\s+the|follow|fulgte|forsøgt|already\s+tried|allerede\s+prøvet/i
+    .test(allContext);
+}
+
 // Standard reservedels-nøgleord — gælder på tværs af headset-shops.
 // Suppleres af shopConfig.spare_part_keywords per shop.
 const DEFAULT_SPARE_PART_RE =
@@ -415,6 +440,17 @@ function applyDeterministicRules(
       alreadyDecided(decided, "exchange_offered", "create_exchange_request")
     ) return [];
 
+    // Guard: foreslå IKKE exchange på første kontakt hvis det er et teknisk problem.
+    // Troubleshooting skal altid forsøges først — exchange foreslås kun når troubleshooting er forsøgt.
+    // Undtagelse: fysisk skade (broken, cracked, fallen off) = troubleshooting giver ikke mening.
+    const hasPhysicalDamage =
+      /\b(broken|broke|crack|cracked|fallen\s+off|fell\s+off|physical|bent|ødelagt|knækket|revne|knæk|bøjet|faldet\s+af|beskadiget)\b/i
+        .test(customerMessage);
+    if (isTechnicalIssue(customerMessage, plan) && !hasPhysicalDamage && !hasAlreadyTroubleshot(caseState)) {
+      // Lad writer give troubleshooting-trin fra KB i stedet for at springe til exchange
+      return [];
+    }
+
     // Bestem workflow: KB > shopConfig > default (shopify)
     const officeFromKB = kbSaysOfficeShipment(retrieved);
     const sparePartDetected = isSparePartRequest(plan, caseState, shopConfig);
@@ -522,6 +558,21 @@ function applyDeterministicRules(
         },
         requires_approval: false,
       }];
+    }
+
+    // Guard: foreslå IKKE exchange på første kontakt for tekniske problemer.
+    // Fx lyd-udfald, forbindelsesproblemer, app-problemer osv. → troubleshooting først.
+    // Undtagelse: fysisk skade (broken, cracked) → exchange kan foreslås.
+    const hasPhysicalDamageComplaint =
+      /\b(broken|broke|crack|cracked|fallen\s+off|fell\s+off|physical|bent|ødelagt|knækket|revne|knæk|bøjet|faldet\s+af|beskadiget)\b/i
+        .test(customerMessage);
+    if (
+      isTechnicalIssue(customerMessage, plan) &&
+      !hasPhysicalDamageComplaint &&
+      !hasAlreadyTroubleshot(caseState) &&
+      !sparePartInCustomerWords
+    ) {
+      return []; // Writer giver troubleshooting-trin fra KB
     }
 
     // Generel klage (manglende vare, forkert vare, defekt produkt)

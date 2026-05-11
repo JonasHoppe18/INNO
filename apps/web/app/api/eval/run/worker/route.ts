@@ -12,6 +12,7 @@ import {
 } from "@/lib/server/eval-runner";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 const EVAL_WORKER_SECRET =
   process.env.EVAL_RUN_WORKER_SECRET ||
@@ -290,8 +291,8 @@ export async function POST(request: Request) {
     ? Math.max(1, Math.min(Number(body?.max_batches) || 3, 10))
     : Math.max(1, Math.min(Number(body?.max_batches) || 2, 5));
   const batchSize = internalAuthorized
-    ? Math.max(1, Math.min(Number(body?.batch_size) || 4, 10))
-    : Math.max(1, Math.min(Number(body?.batch_size) || 3, 6));
+    ? Math.max(1, Math.min(Number(body?.batch_size) || 10, 20))
+    : Math.max(1, Math.min(Number(body?.batch_size) || 6, 10));
 
   let scope: { workspaceId: string | null; supabaseUserId: string | null } | null = null;
   if (!internalAuthorized) {
@@ -419,14 +420,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, processed: 0, job: finishedJob });
   }
 
-  let processed = 0;
-  let errorCount = 0;
-  let lastError: string | null = null;
-
-  for (const item of slice) {
-    try {
+  const results = await Promise.allSettled(
+    slice.map((item) => {
       if (mode === "manual") {
-        await scoreEmail({
+        return scoreEmail({
           shopId,
           runLabel,
           model,
@@ -437,7 +434,7 @@ export async function POST(request: Request) {
           v2Options,
         });
       } else if (mode === "zendesk") {
-        await scoreZendesk({
+        return scoreZendesk({
           shopId,
           runLabel,
           model,
@@ -448,7 +445,7 @@ export async function POST(request: Request) {
           v2Options,
         });
       } else if (mode === "threads") {
-        await scoreThread({
+        return scoreThread({
           shopId,
           runLabel,
           model,
@@ -457,11 +454,17 @@ export async function POST(request: Request) {
           threadId: String(item || ""),
         });
       }
-    } catch (error) {
+      return Promise.resolve();
+    })
+  );
+
+  const processed = results.length;
+  let errorCount = 0;
+  let lastError: string | null = null;
+  for (const result of results) {
+    if (result.status === "rejected") {
       errorCount += 1;
-      lastError = error instanceof Error ? error.message : "Unknown worker error.";
-    } finally {
-      processed += 1;
+      lastError = result.reason instanceof Error ? result.reason.message : "Unknown worker error.";
     }
   }
 
