@@ -254,11 +254,12 @@ function AnalyticsHeader({ period, range, onPreset, onRangeChange, activeTab, on
             key={tab.id}
             type="button"
             onClick={() => onTabChange(tab.id)}
-            className={`px-4 py-2.5 text-sm font-medium transition-colors ${
+            className={`px-4 py-2.5 text-sm font-medium ${
               activeTab === tab.id
                 ? "-mb-px border-b-2 border-[#6366f1] text-foreground"
                 : "text-muted-foreground hover:text-foreground"
             }`}
+            style={{ transition: "color 150ms cubic-bezier(0.23, 1, 0.32, 1), border-color 150ms cubic-bezier(0.23, 1, 0.32, 1)" }}
           >
             {tab.label}
           </button>
@@ -901,6 +902,17 @@ function AnalyticsMotionStyles() {
         animation: analytics-enter 280ms cubic-bezier(0.23, 1, 0.32, 1) both;
       }
 
+      .analytics-stat-card {
+        animation: analytics-enter 280ms cubic-bezier(0.23, 1, 0.32, 1) both;
+        transition: transform 150ms cubic-bezier(0.23, 1, 0.32, 1), box-shadow 150ms cubic-bezier(0.23, 1, 0.32, 1);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.04);
+      }
+
+      .analytics-stat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.05);
+      }
+
       .analytics-pressable {
         transition:
           transform 150ms cubic-bezier(0.23, 1, 0.32, 1),
@@ -942,18 +954,21 @@ function AnalyticsMotionStyles() {
   );
 }
 
-function SonaStatCard({ value, label, sub, accent = false, loading }) {
+function SonaStatCard({ value, label, sub, accent = false, loading, style }) {
+  const isPlaceholder = value === "Collecting data";
   return (
-    <div className="rounded-xl border bg-background p-5 text-center">
+    <div className="analytics-stat-card rounded-xl border bg-background p-5 text-center" style={style}>
       {loading ? (
         <Skeleton className="mx-auto mt-1 h-9 w-20" />
+      ) : isPlaceholder ? (
+        <p className="mt-3 text-sm font-medium text-muted-foreground/50">Collecting data</p>
       ) : (
         <p className={`text-3xl font-extrabold tracking-tight tabular-nums ${accent ? "text-[#6366f1]" : ""}`}>
           {value}
         </p>
       )}
-      <p className="mt-2 text-xs text-muted-foreground">{label}</p>
-      {sub ? (
+      <p className={`text-xs text-muted-foreground ${isPlaceholder ? "mt-2" : "mt-2"}`}>{label}</p>
+      {sub && !isPlaceholder ? (
         <p className={`mt-1 text-xs font-medium ${accent ? "text-[#6366f1]" : "text-muted-foreground"}`}>
           {sub}
         </p>
@@ -962,7 +977,7 @@ function SonaStatCard({ value, label, sub, accent = false, loading }) {
   );
 }
 
-function SupportStatCard({ label, value, change, sub, loading }) {
+function SupportStatCard({ label, value, change, sub, loading, style }) {
   const toneClass =
     change?.tone === "good"
       ? "text-green-600"
@@ -970,7 +985,7 @@ function SupportStatCard({ label, value, change, sub, loading }) {
         ? "text-amber-600"
         : "text-muted-foreground";
   return (
-    <div className="rounded-xl border bg-background p-5">
+    <div className="analytics-stat-card rounded-xl border bg-background p-5" style={style}>
       <p className="text-xs text-muted-foreground">{label}</p>
       {loading ? (
         <Skeleton className="mt-3 h-8 w-24" />
@@ -1012,6 +1027,7 @@ function OverviewTab({ data, loading, onDrilldown, drilldownKey }) {
                 : undefined
             }
             accent={hasEnoughDraftQuality}
+            style={{ animationDelay: "0ms" }}
           />
           <SonaStatCard
             loading={loading}
@@ -1023,12 +1039,14 @@ function OverviewTab({ data, loading, onDrilldown, drilldownKey }) {
             label="Avg. edit effort"
             sub={hasEnoughDraftQuality ? "Lower is better" : undefined}
             accent={hasEnoughDraftQuality}
+            style={{ animationDelay: "40ms" }}
           />
           <SonaStatCard
             loading={loading}
             value={formatNumber(impact.actionsHandled ?? 0)}
             label="Workflows handled"
             sub={`of ${formatNumber(impact.actionsSuggested ?? 0)} suggested`}
+            style={{ animationDelay: "80ms" }}
           />
           <SonaStatCard
             loading={loading}
@@ -1036,6 +1054,7 @@ function OverviewTab({ data, loading, onDrilldown, drilldownKey }) {
             label="Automation rate"
             sub="of suggested actions"
             accent
+            style={{ animationDelay: "120ms" }}
           />
         </div>
       </div>
@@ -1050,6 +1069,7 @@ function OverviewTab({ data, loading, onDrilldown, drilldownKey }) {
             label="Support requests"
             value={formatNumber(summary.supportTickets)}
             change={formatChange(summary.supportTicketsChangePct)}
+            style={{ animationDelay: "160ms" }}
           />
           <SupportStatCard
             loading={loading}
@@ -1060,12 +1080,14 @@ function OverviewTab({ data, loading, onDrilldown, drilldownKey }) {
                 : formatDuration(summary.medianFirstReplyMinutes)
             }
             change={formatChange(summary.medianFirstReplyChangePct, { inverse: true })}
+            style={{ animationDelay: "200ms" }}
           />
           <SupportStatCard
             loading={loading}
             label="Sona-assisted tickets"
             value={formatNumber(summary.sonaAssistedTickets)}
             sub={`${formatNumber(summary.sonaAssistedReplies)} reply drafts created`}
+            style={{ animationDelay: "240ms" }}
           />
         </div>
       </div>
@@ -1353,7 +1375,7 @@ export default function AnalyticsPage() {
   const hasData = useMemo(() => Boolean(data && !error), [data, error]);
 
   return (
-    <div className="@container/main flex flex-1 flex-col">
+    <div className="@container/main flex flex-1 flex-col bg-sidebar">
       <AnalyticsMotionStyles />
       <AnalyticsHeader
         period={period}

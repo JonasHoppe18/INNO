@@ -1,8 +1,8 @@
 "use client";
 
 import {
-  Bar,
-  BarChart,
+  Area,
+  AreaChart,
   CartesianGrid,
   XAxis,
   YAxis,
@@ -24,7 +24,6 @@ function groupByWeek(data) {
   const weekMap = {};
   for (const { date, count } of data) {
     const d = new Date(date);
-    // ISO week start (Monday)
     const day = d.getDay() || 7;
     const monday = new Date(d);
     monday.setDate(d.getDate() - (day - 1));
@@ -50,22 +49,28 @@ export function TicketVolumeChart({ data = [], periodDays = "30", compact = fals
 
   if (!chartData.length) {
     return (
-      <div className={`flex ${compact ? "min-h-[64px]" : "min-h-[200px]"} items-center justify-center text-sm text-muted-foreground`}>
+      <div className={`flex ${compact ? "min-h-[48px]" : "min-h-[120px]"} items-center justify-center text-sm text-muted-foreground`}>
         No ticket data for this period.
       </div>
     );
   }
 
   return (
-    <ChartContainer config={chartConfig} className={`${compact ? "min-h-[64px]" : "min-h-[200px]"} w-full`}>
-      <BarChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
-        <CartesianGrid vertical={false} stroke="hsl(var(--border))" />
+    <ChartContainer config={chartConfig} className={`${compact ? "h-[48px]" : "h-[150px] lg:h-[180px]"} w-full`}>
+      <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
+        <defs>
+          <linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#6366f1" stopOpacity={0.18} />
+            <stop offset="100%" stopColor="#6366f1" stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid vertical={false} stroke="#ececf1" />
         <XAxis
           dataKey="date"
           tickLine={false}
           axisLine={false}
-          tickMargin={8}
-          tick={{ fontSize: 12 }}
+          tickMargin={10}
+          tick={{ fontSize: 11, fill: "#b4b4c0" }}
           tickFormatter={(v) => formatXLabel(v, periodDays)}
           interval="preserveStartEnd"
         />
@@ -73,23 +78,34 @@ export function TicketVolumeChart({ data = [], periodDays = "30", compact = fals
           tickLine={false}
           axisLine={false}
           tickMargin={8}
-          tick={{ fontSize: 12 }}
+          tick={{ fontSize: 11, fill: "#b4b4c0" }}
           allowDecimals={false}
+          width={24}
         />
         <ChartTooltip
-          cursor={{ fill: "hsl(var(--muted))", radius: 4 }}
-          content={<ChartTooltipContent hideLabel={false} />}
+          cursor={{ stroke: "#6366f1", strokeWidth: 1, strokeDasharray: "4 4" }}
+          content={
+            <ChartTooltipContent
+              hideLabel={false}
+              labelFormatter={(label) =>
+                new Date(label).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+              }
+            />
+          }
         />
-        <Bar
+        <Area
           dataKey="count"
-          fill="var(--color-count)"
-          radius={[4, 4, 0, 0]}
-          maxBarSize={compact ? 32 : 40}
+          type="monotone"
+          stroke="#6366f1"
+          strokeWidth={2}
+          fill="url(#areaGradient)"
+          dot={false}
+          activeDot={{ r: 4, fill: "#6366f1", strokeWidth: 0 }}
           isAnimationActive
           animationDuration={380}
           animationEasing="ease-out"
         />
-      </BarChart>
+      </AreaChart>
     </ChartContainer>
   );
 }
