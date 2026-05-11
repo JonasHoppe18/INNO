@@ -52,29 +52,6 @@ const PERIOD_OPTIONS = [
   { value: "this_month", label: "This month" },
 ];
 
-const SUMMARY_META = {
-  support_tickets: {
-    icon: Inbox,
-    label: "Support requests",
-    description: "Real customer support volume",
-  },
-  first_reply: {
-    icon: Gauge,
-    label: "First reply time",
-    description: "Median customer wait",
-  },
-  sona_assisted: {
-    icon: Sparkles,
-    label: "Sona-assisted tickets",
-    description: "Tickets Sona helped with",
-  },
-  no_minor_edits: {
-    icon: CheckCircle2,
-    label: "Average edit",
-    description: "How much Sona drafts change",
-  },
-};
-
 const sectionMotionStyle = (index) => ({ animationDelay: `${index * 45}ms` });
 
 function formatNumber(value) {
@@ -291,7 +268,6 @@ function AnalyticsHeader({ period, range, onPreset, onRangeChange, activeTab, on
   );
 }
 
-
 function SectionHeading({ title, subtitle, action }) {
   return (
     <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -357,7 +333,6 @@ function DraftQualityStack({ impact, onDrilldown, activeKey }) {
     </div>
   );
 }
-
 
 function SonaMetricButton({ label, value, sub, active, onClick }) {
   return (
@@ -512,7 +487,6 @@ function ImpactStat({ label, value, sub, onClick, active = false }) {
     </div>
   );
 }
-
 
 function HorizontalBarList({ items = [], emptyTitle, emptyDescription, onSelect, activeKey }) {
   if (!items.length) {
