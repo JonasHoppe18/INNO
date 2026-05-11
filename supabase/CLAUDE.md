@@ -11,9 +11,12 @@ agent_logs            → Struktureret event-logging (step_detail JSON)
 shops                 → Shopify-butikker + policy/tone felter
 agent_automation      → Permissions og automation-flags per shop
 agent_knowledge       → Embedding-backed vidensbase (chunks + metadata)
+knowledge_categories  → Kategoriseret knowledge-struktur
 shop_products         → Synkede Shopify-produkter
 retrieval_traces      → Sporing af retrieval-resultater
+shop_action_config    → Per-shop konfiguration af action-typer
 mail_accounts         → Mailbox-konfiguration (bundet til shop via shop_id)
+eval_runs             → Kørte eval-batches med scores og diagnostik
 workspaces            → Org-niveau tenancy (under migration)
 workspace_members     → Medlemmer i workspace
 workspace_email_routes → Email-routing per workspace
@@ -24,7 +27,7 @@ workspace_email_routes → Email-routing per workspace
 2. `postmark-inbound`: dedup, spam-filter, parse clean/quoted tekst, thread-matching via `In-Reply-To`/`References`
 3. Skriv til `mail_threads`, `mail_messages`, `mail_attachments`
 4. Klassificering + tags
-5. Trigger `generate-draft-unified`
+5. Trigger `generate-draft-v2`
 6. LLM returnerer draft + strukturerede action-forslag i ét kald
 7. Deterministisk validering via `agent_automation` flags — model-forslag vs. system-tilladelse
 8. Action ender i én af: `auto_executed` | `pending_approval` | `blocked` | `approved_test_mode`

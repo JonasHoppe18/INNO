@@ -142,10 +142,10 @@ function getPeriodButtonLabel(period, range) {
 
 function EmptyAnalyticsState({ icon: Icon = ListFilter, title, children, action }) {
   return (
-    <div className="flex min-h-[150px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed bg-muted/15 p-5 text-center">
-      <Icon className="size-6 text-muted-foreground/45" />
-      <p className="text-sm font-medium">{title}</p>
-      {children ? <p className="max-w-sm text-xs leading-5 text-muted-foreground">{children}</p> : null}
+    <div className="flex min-h-[100px] flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed p-5 text-center">
+      <Icon className="size-4 text-muted-foreground/40" />
+      <p className="text-sm font-medium text-muted-foreground">{title}</p>
+      {children ? <p className="max-w-sm text-xs leading-5 text-muted-foreground/70">{children}</p> : null}
       {action ? <div className="pt-2">{action}</div> : null}
     </div>
   );
@@ -155,7 +155,14 @@ function LoadingCard({ className = "h-40" }) {
   return <Skeleton className={className} />;
 }
 
-function AnalyticsHeader({ period, range, onPreset, onRangeChange }) {
+const TABS = [
+  { id: "overview", label: "Overview" },
+  { id: "sona-impact", label: "Sona Impact" },
+  { id: "topics", label: "Topics" },
+  { id: "tickets", label: "Tickets" },
+];
+
+function AnalyticsHeader({ period, range, onPreset, onRangeChange, activeTab, onTabChange }) {
   const startRef = useRef(null);
   const endRef = useRef(null);
 
@@ -165,12 +172,12 @@ function AnalyticsHeader({ period, range, onPreset, onRangeChange }) {
   };
 
   return (
-    <div className="border-b bg-background px-4 py-5 md:px-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+    <div className="border-b bg-background px-4 md:px-6">
+      <div className="flex flex-col gap-4 pt-5 lg:flex-row lg:items-start lg:justify-between">
         <div className="max-w-2xl">
           <h1 className="text-2xl font-semibold tracking-tight">Analytics</h1>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">
-            Support performance, customer issues and Sona value.
+            Support performance and Sona value.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -264,6 +271,22 @@ function AnalyticsHeader({ period, range, onPreset, onRangeChange }) {
           </button>
         </div>
       </div>
+      <div className="flex">
+        {TABS.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => onTabChange(tab.id)}
+            className={`px-4 py-2.5 text-sm font-medium transition-colors ${
+              activeTab === tab.id
+                ? "-mb-px border-b-2 border-[#6366f1] text-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -285,24 +308,22 @@ function MetricCard({ id, label, value, description, change, icon: Icon, loading
         selected ? "border-foreground/30 bg-background ring-1 ring-foreground/10" : ""
       }`}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="rounded-xl bg-muted/45 p-2.5">
-          <Icon className="size-4 text-muted-foreground" />
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          <Icon className="size-3.5 shrink-0 text-muted-foreground/50" />
+          <p className="text-xs font-medium text-muted-foreground">{label}</p>
         </div>
-        <ChevronRight className="size-4 text-muted-foreground opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
+        <ChevronRight className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity duration-150 group-hover:opacity-60" />
       </div>
-      <p className="mt-5 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-        {label}
-      </p>
       {loading ? (
-        <Skeleton className="mt-2 h-9 w-28" />
+        <Skeleton className="mt-5 h-9 w-28" />
       ) : (
-        <p className="mt-2 text-3xl font-semibold tracking-tight tabular-nums">{value}</p>
+        <p className="mt-5 text-3xl font-semibold tracking-tight tabular-nums">{value}</p>
       )}
       <p className="mt-1 text-xs text-muted-foreground">{description}</p>
       {change ? (
         <div className={`mt-4 inline-flex items-center gap-1 text-xs font-medium ${toneClass}`}>
-          {ChangeIcon ? <ChangeIcon className="size-3.5" /> : null}
+          {ChangeIcon ? <ChangeIcon className="size-3" /> : null}
           {change.label}
         </div>
       ) : null}
@@ -346,10 +367,7 @@ function PeriodSummaryCards({ data, loading, drilldownKey, onDrilldown }) {
 
   return (
     <section className="analytics-section space-y-4" style={sectionMotionStyle(0)}>
-      <SectionHeading
-        title="This period at a glance"
-        subtitle="Executive snapshot for the selected period."
-      />
+      <SectionHeading title="This period at a glance" />
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {cards.map((card) => (
           <MetricCard
@@ -414,7 +432,7 @@ function DraftQualityStack({ impact, onDrilldown, activeKey }) {
             key={row.label}
             type="button"
             onClick={() => onDrilldown(row.key, row.label)}
-            className={`analytics-pressable rounded-xl border border-border/70 bg-background/70 p-3 text-left hover:bg-background ${
+            className={`analytics-pressable rounded-xl border bg-muted/30 p-3 text-left hover:bg-muted/50 ${
               activeKey === row.key ? "ring-1 ring-foreground/15" : ""
             }`}
           >
@@ -433,10 +451,7 @@ function DraftQualityStack({ impact, onDrilldown, activeKey }) {
 
 function SonaImpactSection({ data, loading, onDrilldown, drilldownKey }) {
   const impact = data?.sonaImpact ?? {};
-  const summary = data?.summary ?? {};
   const hasEnoughDraftQuality = (impact.trackedSentDrafts || 0) >= 3;
-  const assistedTickets = impact.aiAssistedTickets ?? summary.sonaAssistedTickets ?? 0;
-  const draftsCreated = impact.draftsCreated ?? impact.draftsGenerated ?? 0;
   const draftQualityTotal = impact.draftQualityTotal || ((impact.trackedSentDrafts || 0) + (impact.rejectedDrafts ?? impact.rejected ?? 0));
   const readiness = impact.autopilotReadiness ?? {};
   const averageEditEffort = impact.averageEditEffort ?? {};
@@ -449,185 +464,165 @@ function SonaImpactSection({ data, loading, onDrilldown, drilldownKey }) {
     : "Collecting data";
 
   return (
-    <section className="analytics-section space-y-4" style={sectionMotionStyle(1)}>
+    <section className="analytics-section space-y-5" style={sectionMotionStyle(3)}>
       <SectionHeading
-        title="Sona Impact"
-        subtitle="AI performance, workflow trust and autopilot readiness."
+        title="Sona AI Impact"
+        subtitle="Draft quality, workflow automation, and where AI performs best."
       />
-      <Card className="overflow-hidden rounded-2xl border-[#9B99FE]/35 bg-[radial-gradient(circle_at_top_left,rgba(155,153,254,0.18),transparent_34%),radial-gradient(circle_at_top_right,rgba(124,109,242,0.10),transparent_30%),linear-gradient(135deg,rgba(250,249,255,0.98),rgba(247,246,255,0.88)_52%,hsl(var(--background))_80%)] shadow-sm shadow-[#9B99FE]/5">
-        <CardHeader className="p-6 pb-4">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <CardTitle className="flex items-center text-lg">
-                Sona value this period
+
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <SonaMetricButton
+          label="Autopilot readiness"
+          value={readiness.label || "Collecting data"}
+          sub={readiness.description || "Needs more sent drafts"}
+          active={drilldownKey === "no_minor_edits"}
+          onClick={() => onDrilldown("no_minor_edits", "Autopilot readiness")}
+        />
+        <SonaMetricButton
+          label="Average edit effort"
+          value={averageEdit}
+          sub={averageEditEffort.averageEditDistance != null ? `${formatNumber(averageEditEffort.averageEditDistance)} chars avg.` : "More sent drafts needed"}
+          active={drilldownKey === "highest_edit_pct"}
+          onClick={() => onDrilldown("highest_edit_pct", "Highest draft edits")}
+        />
+        <SonaMetricButton
+          label="Workflow approval"
+          value={formatPercent(workflowApproval.approvalRate ?? impact.actionApprovalRate)}
+          sub={`${formatNumber(workflowApproval.actionsHandled ?? impact.actionsHandled ?? 0)} of ${formatNumber(workflowApproval.actionsSuggested ?? impact.actionsSuggested ?? 0)} handled`}
+          active={drilldownKey?.startsWith?.("action:")}
+          onClick={() => onDrilldown("action:all", "Sona workflows")}
+        />
+        <SonaMetricButton
+          label="Estimated work assisted"
+          value={estimatedWork.label || "Collecting data"}
+          sub={estimatedWork.calculationNote ? "Drafts + handled workflows" : "Needs activity data"}
+          active={false}
+        />
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
+        <Card className="rounded-2xl shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-start justify-between gap-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Bot className="size-4 text-[#7C6DF2]" />
+                AI Draft Quality
               </CardTitle>
-              <CardDescription className="mt-3 max-w-2xl text-[15px] leading-6">
-                How much Sona output needs review, and which areas are closest to autopilot testing.
-              </CardDescription>
+              <Badge variant="outline" className="rounded-md">
+                {hasEnoughDraftQuality ? "Quality signal" : "Collecting data"}
+              </Badge>
             </div>
-            <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
-              <SonaMetricButton
-                label="Autopilot readiness"
-                value={readiness.label || "Collecting data"}
-                sub={readiness.description || "Needs more sent drafts"}
-                active={drilldownKey === "no_minor_edits"}
-                onClick={() => onDrilldown("no_minor_edits", "Autopilot readiness")}
-              />
-              <SonaMetricButton
-                label="Average edit effort"
-                value={averageEdit}
-                sub={averageEditEffort.averageEditDistance != null ? `${formatNumber(averageEditEffort.averageEditDistance)} chars avg.` : "More sent drafts needed"}
-                active={drilldownKey === "highest_edit_pct"}
-                onClick={() => onDrilldown("highest_edit_pct", "Highest draft edits")}
-              />
-              <SonaMetricButton
-                label="Workflow approval"
-                value={formatPercent(workflowApproval.approvalRate ?? impact.actionApprovalRate)}
-                sub={`${formatNumber(workflowApproval.actionsHandled ?? impact.actionsHandled ?? 0)} of ${formatNumber(workflowApproval.actionsSuggested ?? impact.actionsSuggested ?? 0)} handled`}
-                active={drilldownKey?.startsWith?.("action:")}
-                onClick={() => onDrilldown("action:all", "Sona workflows")}
-              />
-              <SonaMetricButton
-                label="Estimated work assisted"
-                value={estimatedWork.label || "Collecting data"}
-                sub={estimatedWork.calculationNote ? "Drafts + handled workflows" : "Needs activity data"}
-                active={false}
-              />
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-5 px-6 pb-6">
-          <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
-            <Card className="rounded-2xl border-[#9B99FE]/25 bg-[linear-gradient(135deg,rgba(155,153,254,0.08),rgba(255,255,255,0.78)_46%,rgba(124,109,242,0.04))] shadow-none">
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Bot className="size-4 text-[#7C6DF2]" />
-                  AI Draft Quality
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-5">
-                {loading ? (
-                  <LoadingCard className="h-64" />
-                ) : (
-                  <>
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <p className="text-sm font-medium">Draft Quality Breakdown</p>
-                        <p className="text-xs text-muted-foreground">{formatNumber(draftQualityTotal)} tracked draft outcomes</p>
-                      </div>
-                      <Badge variant="outline" className="rounded-md">{hasEnoughDraftQuality ? "Quality signal" : "Collecting data"}</Badge>
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-4">
-                      <ImpactStat label="Sent as-is" value={formatRate(impact.sentAsIs || 0, draftQualityTotal)} sub={`${formatNumber(impact.sentAsIs || 0)} drafts`} onClick={() => onDrilldown("sent_as_is", "Sent as-is")} active={drilldownKey === "sent_as_is"} />
-                      <ImpactStat label="Minor edits" value={formatRate(impact.minorEdits || 0, draftQualityTotal)} sub={`${formatNumber(impact.minorEdits || 0)} drafts`} onClick={() => onDrilldown("minor_edits", "Minor edits")} active={drilldownKey === "minor_edits"} />
-                      <ImpactStat label="Major edits" value={formatRate(impact.majorEdits || 0, draftQualityTotal)} sub={`${formatNumber(impact.majorEdits || 0)} drafts`} onClick={() => onDrilldown("major_edits", "Major edits")} active={drilldownKey === "major_edits"} />
-                      <ImpactStat label="Rejected" value={formatRate(impact.rejectedDrafts ?? impact.rejected ?? 0, draftQualityTotal)} sub={`${formatNumber(impact.rejectedDrafts ?? impact.rejected ?? 0)} drafts`} onClick={() => onDrilldown("rejected_drafts", "Rejected drafts")} active={drilldownKey === "rejected_drafts"} />
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-2">
+            <CardDescription>{formatNumber(draftQualityTotal)} tracked draft outcomes</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            {loading ? (
+              <LoadingCard className="h-48" />
+            ) : (
+              <>
+                <DraftQualityStack impact={impact} onDrilldown={onDrilldown} activeKey={drilldownKey} />
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => onDrilldown("highest_edit_pct", "Highest draft edits")}
+                    className={`analytics-pressable rounded-xl border bg-muted/30 p-3 text-left hover:bg-muted/50 ${
+                      drilldownKey === "highest_edit_pct" ? "ring-1 ring-foreground/15" : ""
+                    }`}
+                  >
+                    <p className="text-xs font-medium text-muted-foreground">Average edit</p>
+                    <p className="mt-1.5 text-2xl font-semibold tabular-nums">{averageEdit}</p>
+                  </button>
+                  <div className="rounded-xl border bg-muted/30 p-3">
+                    <p className="text-xs font-medium text-muted-foreground">Avg. edit distance</p>
+                    <p className="mt-1.5 text-2xl font-semibold tabular-nums">
+                      {hasEnoughDraftQuality && impact.averageEditDistance != null ? `${formatNumber(impact.averageEditDistance)} chars` : "Collecting data"}
+                    </p>
+                  </div>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-2xl shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Zap className="size-4 text-[#7C6DF2]" />
+              Workflow Automation
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {loading ? (
+              <LoadingCard className="h-48" />
+            ) : (
+              <>
+                <div className="grid grid-cols-3 gap-2">
+                  <ImpactStat label="Approval rate" value={formatPercent(impact.actionApprovalRate)} />
+                  <ImpactStat label="Handled rate" value={formatPercent(impact.actionHandledRate ?? impact.actionApprovalRate)} />
+                  <ImpactStat label="Suggested" value={impact.actionsSuggested} sub={`${formatNumber(impact.actionsHandled ?? 0)} handled`} />
+                </div>
+                {impact.topActionTypes?.length ? (
+                  <div className="space-y-2">
+                    {impact.topActionTypes.map((row) => (
                       <button
+                        key={row.key}
                         type="button"
-                        onClick={() => onDrilldown("highest_edit_pct", "Highest draft edits")}
-                        className={`analytics-pressable rounded-xl border border-[#9B99FE]/20 bg-white/64 p-3 text-left hover:bg-white/88 ${
-                          drilldownKey === "highest_edit_pct" ? "ring-1 ring-[#9B99FE]/30" : ""
+                        onClick={() => onDrilldown(row.key, row.label)}
+                        className={`analytics-pressable grid w-full grid-cols-[1fr_auto] gap-3 rounded-xl border border-transparent bg-muted/20 p-3 text-left hover:bg-muted/40 ${
+                          drilldownKey === row.key ? "border-foreground/20 ring-1 ring-foreground/10" : ""
                         }`}
                       >
-                        <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Average edit</p>
-                        <p className="mt-2 text-2xl font-semibold tabular-nums">{averageEdit}</p>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium">{row.label}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {formatNumber(row.suggested)} suggested · {formatNumber(row.handled)} handled
+                          </p>
+                        </div>
+                        <Badge variant="outline" className="rounded-md tabular-nums">
+                          {formatPercent(row.approvalRate)}
+                        </Badge>
                       </button>
-                      <div className="rounded-xl border border-[#9B99FE]/20 bg-white/64 p-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Avg. edit distance</p>
-                        <p className="mt-2 text-2xl font-semibold tabular-nums">
-                          {hasEnoughDraftQuality && impact.averageEditDistance != null ? `${formatNumber(impact.averageEditDistance)} chars` : "Collecting data"}
-                        </p>
-                      </div>
-                    </div>
-                    <DraftQualityStack impact={impact} onDrilldown={onDrilldown} activeKey={drilldownKey} />
-                  </>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-2xl border-[#9B99FE]/25 bg-[linear-gradient(135deg,rgba(155,153,254,0.08),rgba(255,255,255,0.82)_58%,rgba(124,109,242,0.04))] shadow-none">
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Zap className="size-4 text-[#7C6DF2]" />
-                  Workflow Impact
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {loading ? (
-                  <LoadingCard className="h-64" />
+                    ))}
+                  </div>
                 ) : (
-                  <>
-                    <div className="grid grid-cols-3 gap-2">
-                      <ImpactStat label="Approval rate" value={formatPercent(impact.actionApprovalRate)} />
-                      <ImpactStat label="Handled rate" value={formatPercent(impact.actionHandledRate ?? impact.actionApprovalRate)} />
-                      <ImpactStat label="Suggested" value={impact.actionsSuggested} sub={`${formatNumber(impact.actionsHandled ?? 0)} handled`} />
-                    </div>
-                    {impact.topActionTypes?.length ? (
-                      <div className="space-y-2">
-                        {impact.topActionTypes.map((row) => (
-                          <button
-                            key={row.key}
-                            type="button"
-                            onClick={() => onDrilldown(row.key, row.label)}
-                            className={`analytics-pressable grid w-full grid-cols-[1fr_auto] gap-3 rounded-xl border border-transparent bg-white/58 p-3 text-left hover:bg-white/78 ${
-                              drilldownKey === row.key ? "border-[#9B99FE]/40 ring-1 ring-[#9B99FE]/25" : ""
-                            }`}
-                          >
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-medium">{row.label}</p>
-                              <p className="mt-1 text-xs text-muted-foreground">
-                                {formatNumber(row.suggested)} suggested · {formatNumber(row.handled)} handled
-                              </p>
-                            </div>
-                            <Badge variant="outline" className="rounded-md tabular-nums">
-                              {formatPercent(row.approvalRate)}
-                            </Badge>
-                          </button>
-                        ))}
-                      </div>
-                    ) : (
-                      <EmptyAnalyticsState icon={Zap} title="No Sona actions yet">
-                        Suggested workflows appear here.
-                      </EmptyAnalyticsState>
-                    )}
-                  </>
+                  <EmptyAnalyticsState icon={Zap} title="No Sona actions yet">
+                    Suggested workflows appear here.
+                  </EmptyAnalyticsState>
                 )}
-              </CardContent>
-            </Card>
-          </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
-          <Card className="rounded-2xl border-[#9B99FE]/20 bg-[linear-gradient(135deg,rgba(155,153,254,0.07),rgba(124,109,242,0.05),rgba(255,255,255,0.82))] shadow-none">
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <TrendingUp className="size-4 text-[#7C6DF2]" />
-                Sona Performance Insights
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <LoadingCard className="h-52" />
-              ) : (
-                <SonaPerformanceInsights impact={impact} onDrilldown={onDrilldown} drilldownKey={drilldownKey} />
-              )}
-            </CardContent>
-          </Card>
-          <Card className="rounded-2xl border-[#9B99FE]/20 bg-white/70 shadow-none">
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Gauge className="size-4 text-[#7C6DF2]" />
-                Autopilot Candidates
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <LoadingCard className="h-52" />
-              ) : (
-                <AutopilotCandidates impact={impact} onDrilldown={onDrilldown} drilldownKey={drilldownKey} />
-              )}
-            </CardContent>
-          </Card>
+      <Card className="rounded-2xl shadow-sm">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <TrendingUp className="size-4 text-[#7C6DF2]" />
+            AI Performance Insights
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <LoadingCard className="h-52" />
+          ) : (
+            <SonaPerformanceInsights impact={impact} onDrilldown={onDrilldown} drilldownKey={drilldownKey} />
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="rounded-2xl shadow-sm">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Gauge className="size-4 text-[#7C6DF2]" />
+            Autopilot Candidates
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <LoadingCard className="h-52" />
+          ) : (
+            <AutopilotCandidates impact={impact} onDrilldown={onDrilldown} drilldownKey={drilldownKey} />
+          )}
         </CardContent>
       </Card>
     </section>
@@ -640,12 +635,12 @@ function SonaMetricButton({ label, value, sub, active, onClick }) {
       type="button"
       onClick={onClick}
       disabled={!onClick}
-      className={`analytics-pressable rounded-2xl bg-white/72 px-4 py-3 text-left shadow-sm ring-1 ring-[#9B99FE]/20 hover:bg-white/90 ${
-        active ? "ring-2 ring-[#9B99FE]/35" : ""
-      } ${!onClick ? "cursor-default hover:bg-white/72" : ""}`}
+      className={`analytics-pressable rounded-2xl border bg-background px-4 py-3 text-left shadow-sm hover:bg-muted/40 ${
+        active ? "border-foreground/25 ring-1 ring-foreground/10" : ""
+      } ${!onClick ? "cursor-default hover:bg-background" : ""}`}
     >
-      <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">{label}</p>
-      <p className="mt-1 text-2xl font-semibold tabular-nums">{value}</p>
+      <p className="text-xs font-medium text-muted-foreground">{label}</p>
+      <p className="mt-1.5 text-2xl font-semibold tabular-nums">{value}</p>
       <p className="mt-1 text-xs text-muted-foreground">{sub}</p>
     </button>
   );
@@ -732,8 +727,8 @@ function AutopilotCandidates({ impact, onDrilldown, drilldownKey }) {
                 key={`${group.key}-${row.key}`}
                 type="button"
                 onClick={() => onDrilldown(row.key, row.label)}
-                className={`analytics-pressable w-full rounded-xl border border-transparent bg-white/52 p-3 text-left hover:bg-white/80 ${
-                  drilldownKey === row.key ? "border-[#9B99FE]/40 ring-1 ring-[#9B99FE]/25" : ""
+                className={`analytics-pressable w-full rounded-xl border border-transparent bg-muted/30 p-3 text-left hover:bg-muted/50 ${
+                  drilldownKey === row.key ? "border-foreground/20 ring-1 ring-foreground/10" : ""
                 }`}
               >
                 <div className="flex items-center justify-between gap-3">
@@ -767,8 +762,8 @@ function SonaInsightList({ title, rows, valueKey, valueLabel, onDrilldown, drill
           key={`${title}-${row.key}`}
           type="button"
           onClick={() => onDrilldown(row.key, row.category)}
-          className={`analytics-pressable flex w-full items-center justify-between gap-3 rounded-xl border border-transparent bg-white/52 p-2.5 text-left hover:bg-white/80 ${
-            drilldownKey === row.key ? "border-[#9B99FE]/40 ring-1 ring-[#9B99FE]/25" : ""
+          className={`analytics-pressable flex w-full items-center justify-between gap-3 rounded-xl border border-transparent bg-muted/30 p-2.5 text-left hover:bg-muted/50 ${
+            drilldownKey === row.key ? "border-foreground/20 ring-1 ring-foreground/10" : ""
           }`}
         >
           <span className="min-w-0 truncate text-sm">{row.category}</span>
@@ -794,8 +789,8 @@ function SonaWorkflowList({ title, rows, onDrilldown, drilldownKey }) {
           key={`${title}-${row.group}-${row.key}`}
           type="button"
           onClick={() => onDrilldown(row.key, row.label)}
-          className={`analytics-pressable flex w-full items-center justify-between gap-3 rounded-xl border border-transparent bg-white/52 p-2.5 text-left hover:bg-white/80 ${
-            drilldownKey === row.key ? "border-[#9B99FE]/40 ring-1 ring-[#9B99FE]/25" : ""
+          className={`analytics-pressable flex w-full items-center justify-between gap-3 rounded-xl border border-transparent bg-muted/30 p-2.5 text-left hover:bg-muted/50 ${
+            drilldownKey === row.key ? "border-foreground/20 ring-1 ring-foreground/10" : ""
           }`}
         >
           <span className="min-w-0 truncate text-sm">{row.label}</span>
@@ -811,7 +806,7 @@ function SonaWorkflowList({ title, rows, onDrilldown, drilldownKey }) {
 function ImpactStat({ label, value, sub, onClick, active = false }) {
   const content = (
     <>
-      <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">{label}</p>
+      <p className="text-xs font-medium text-muted-foreground">{label}</p>
       <p className="mt-2 text-2xl font-semibold tabular-nums">{typeof value === "number" ? formatNumber(value) : value}</p>
       {sub ? <p className="mt-1 text-xs text-muted-foreground">{sub}</p> : null}
     </>
@@ -821,8 +816,8 @@ function ImpactStat({ label, value, sub, onClick, active = false }) {
       <button
         type="button"
         onClick={onClick}
-        className={`analytics-pressable rounded-xl border border-[#9B99FE]/20 bg-white/64 p-3 text-left hover:bg-white/88 ${
-          active ? "ring-1 ring-[#9B99FE]/30" : ""
+        className={`analytics-pressable rounded-xl border bg-muted/30 p-3 text-left hover:bg-muted/50 ${
+          active ? "ring-1 ring-foreground/15" : ""
         }`}
       >
         {content}
@@ -830,7 +825,7 @@ function ImpactStat({ label, value, sub, onClick, active = false }) {
     );
   }
   return (
-    <div className="rounded-xl border border-[#9B99FE]/20 bg-white/64 p-3">
+    <div className="rounded-xl border bg-muted/30 p-3">
       {content}
     </div>
   );
@@ -841,24 +836,24 @@ function SupportVolumeSection({ data, loading, onDrilldown, drilldownKey }) {
   const change = formatChange(volume.changePct);
 
   return (
-    <section className="analytics-section space-y-3" style={sectionMotionStyle(3)}>
-      <SectionHeading title="Support Volume" subtitle="Ticket influx over time." />
+    <section className="analytics-section space-y-4" style={sectionMotionStyle(1)}>
+      <SectionHeading title="Support Volume" subtitle="Ticket influx over the selected period." />
       <Card className="rounded-2xl shadow-sm">
-        <CardHeader className="pb-2">
+        <CardHeader className="pb-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <CardTitle className="text-base">Tickets over time</CardTitle>
-              <CardDescription>{volume.note ? "Filtered to support requests." : null}</CardDescription>
+              {volume.note ? <CardDescription>Filtered to support requests.</CardDescription> : null}
             </div>
             <button
               type="button"
               onClick={() => onDrilldown("support_tickets", "Support tickets")}
-              className={`analytics-pressable rounded-xl border bg-background px-3 py-2 text-left hover:bg-muted/30 sm:min-w-48 ${
-                drilldownKey === "support_tickets" ? "border-foreground/30 ring-1 ring-foreground/10" : ""
+              className={`analytics-pressable rounded-xl border bg-muted/30 px-3 py-2 text-left hover:bg-muted/50 sm:min-w-48 ${
+                drilldownKey === "support_tickets" ? "border-foreground/25 ring-1 ring-foreground/10" : ""
               }`}
             >
-              <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Support requests</p>
-              <p className="mt-1 text-2xl font-semibold">{formatNumber(volume.total)}</p>
+              <p className="text-xs font-medium text-muted-foreground">Support requests</p>
+              <p className="mt-1.5 text-2xl font-semibold">{formatNumber(volume.total)}</p>
               <p className={`mt-1 text-xs ${change.tone === "muted" ? "text-muted-foreground" : change.tone === "good" ? "text-teal-700" : "text-amber-700"}`}>
                 {change.label}
               </p>
@@ -867,9 +862,9 @@ function SupportVolumeSection({ data, loading, onDrilldown, drilldownKey }) {
         </CardHeader>
         <CardContent className="pt-0">
           {loading ? (
-            <LoadingCard className="h-[72px]" />
+            <LoadingCard className="h-52" />
           ) : (
-            <TicketVolumeChart data={volume.series ?? []} periodDays={volume.grouping ?? "day"} compact />
+            <TicketVolumeChart data={volume.series ?? []} periodDays={volume.grouping ?? "day"} />
           )}
         </CardContent>
       </Card>
@@ -888,25 +883,25 @@ function HorizontalBarList({ items = [], emptyTitle, emptyDescription, onSelect,
 
   const max = Math.max(...items.map((item) => item.count || 0), 1);
   return (
-    <div className="space-y-2.5">
+    <div className="space-y-1">
       {items.map((item) => (
         <button
           key={item.key}
           title={item.fullLabel || item.label}
           type="button"
           onClick={() => onSelect?.(item.key, item.label)}
-          className={`analytics-pressable grid w-full grid-cols-[minmax(0,1fr)_64px] items-center gap-3 rounded-xl border border-transparent p-2 text-left hover:bg-muted/40 ${
+          className={`analytics-pressable grid w-full grid-cols-[minmax(0,1fr)_56px] items-center gap-3 rounded-xl border border-transparent px-2.5 py-2 text-left hover:bg-muted/40 ${
             activeKey === item.key ? "border-foreground/20 bg-muted/45 ring-1 ring-foreground/10" : ""
           }`}
         >
           <div className="min-w-0">
-            <div className="mb-1.5 flex items-center justify-between gap-3">
-              <span className="truncate text-sm font-medium">{item.label}</span>
-              <span className="shrink-0 text-xs text-muted-foreground">{formatPercent(item.pct)}</span>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <span className="truncate text-sm">{item.label}</span>
+              <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{formatPercent(item.pct)}</span>
             </div>
-            <div className="h-2 overflow-hidden rounded-full bg-muted">
+            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
               <div
-                className="analytics-bar h-full rounded-full bg-foreground/75"
+                className="analytics-bar h-full rounded-full bg-foreground/60"
                 style={{
                   width: `${Math.max(4, ((item.count || 0) / max) * 100)}%`,
                   backgroundColor: item.color || undefined,
@@ -1038,48 +1033,46 @@ function StrengthsWeakSpotsSection({ data, loading, onDrilldown, drilldownKey })
 
 function TopicPerformanceCard({ icon: Icon, title, rows = [], loading, emptyTitle, onDrilldown, drilldownKey, emphasis = false }) {
   return (
-    <Card className={`rounded-2xl shadow-sm ${emphasis ? "border-amber-200 bg-[linear-gradient(135deg,rgba(254,243,199,0.72),hsl(var(--background))_72%)]" : ""}`}>
+    <Card className="rounded-2xl shadow-sm">
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
-          <Icon className={`size-4 ${emphasis ? "text-amber-700" : "text-muted-foreground"}`} />
+          <Icon className={`size-4 ${emphasis ? "text-amber-600" : "text-muted-foreground"}`} />
           {title}
         </CardTitle>
         {emphasis ? (
-          <CardDescription>High volume plus slower replies.</CardDescription>
+          <CardDescription>High volume and slower response.</CardDescription>
         ) : null}
       </CardHeader>
       <CardContent>
         {loading ? (
-          <LoadingCard className="h-56" />
+          <LoadingCard className="h-48" />
         ) : rows.length ? (
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {rows.map((row) => (
               <button
                 key={`${title}-${row.key}`}
                 type="button"
                 onClick={() => onDrilldown(row.key, row.topic)}
-                className={`analytics-pressable w-full rounded-xl border bg-background/85 p-3 text-left hover:bg-background ${
-                  emphasis ? "border-amber-200" : ""
-                } ${
-                  drilldownKey === row.key ? "ring-1 ring-foreground/15" : ""
+                className={`analytics-pressable w-full rounded-xl border border-transparent p-3 text-left hover:bg-muted/40 ${
+                  drilldownKey === row.key ? "border-foreground/15 bg-muted/40 ring-1 ring-foreground/10" : ""
                 }`}
               >
                 <div className="flex items-center justify-between gap-3">
                   <p className="min-w-0 truncate text-sm font-medium">{row.topic}</p>
                   <Badge variant="outline" className="shrink-0 rounded-md tabular-nums" title="Tickets in selected period">
-                    {formatNumber(row.count)} tickets
+                    {formatNumber(row.count)}
                   </Badge>
                 </div>
-                <div className="mt-2 flex items-center justify-between gap-3 text-xs text-muted-foreground">
-                  <span>Median first reply</span>
-                  <span className="font-medium text-foreground">{formatDuration(row.medianFirstReplyMinutes)}</span>
+                <div className="mt-1.5 flex items-center justify-between gap-3 text-xs">
+                  <span className="text-muted-foreground">Median first reply</span>
+                  <span className={`font-semibold tabular-nums ${emphasis ? "text-amber-700" : "text-foreground"}`}>{formatDuration(row.medianFirstReplyMinutes)}</span>
                 </div>
               </button>
             ))}
           </div>
         ) : (
           <EmptyAnalyticsState icon={Gauge} title={emptyTitle}>
-            Needs tagged tickets with inbound and outbound messages.
+            Needs tagged tickets with response times.
           </EmptyAnalyticsState>
         )}
       </CardContent>
@@ -1160,7 +1153,7 @@ function AnalyticsDrilldownTable({ data, drilldown }) {
   }, [drilldown.key]);
 
   return (
-    <section className="analytics-section space-y-3" style={sectionMotionStyle(6)}>
+    <section className="analytics-section space-y-3" style={sectionMotionStyle(5)}>
       <SectionHeading
         title={drilldown.key === "all" ? "Tickets behind the numbers" : `Showing tickets for: ${title}`}
         subtitle={`${formatNumber(tickets.length)} matching tickets. Showing ${formatNumber(visibleTickets.length)}.`}
@@ -1192,7 +1185,7 @@ function AnalyticsDrilldownTable({ data, drilldown }) {
                 </TableHeader>
                 <TableBody>
                   {visibleTickets.map((ticket) => (
-                    <TableRow key={ticket.id} className="h-14 transition-colors hover:bg-muted/25">
+                    <TableRow key={ticket.id} className="h-11 transition-colors hover:bg-muted/25">
                       <TableCell className="whitespace-nowrap">
                         <a href={ticket.url} className="font-mono text-sm font-semibold text-indigo-700 underline-offset-2 transition-colors hover:text-indigo-900 hover:underline">
                           #{ticket.ticketNumber || String(ticket.id).slice(0, 8)}
@@ -1254,7 +1247,7 @@ function CoverageFooter({ data }) {
       <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
         {rows.map(([label, value]) => (
           <div key={label} className="rounded-md border bg-muted/10 p-2.5">
-            <p className="text-[10px] font-semibold uppercase tracking-widest">{label}</p>
+            <p className="text-xs font-medium text-muted-foreground">{label}</p>
             <p className="mt-1 text-lg font-semibold text-foreground">{formatPercent(value)}</p>
           </div>
         ))}
@@ -1269,7 +1262,7 @@ function AnalyticsMotionStyles() {
       @keyframes analytics-enter {
         from {
           opacity: 0;
-          transform: translateY(10px);
+          transform: translateY(8px);
         }
         to {
           opacity: 1;
@@ -1280,7 +1273,7 @@ function AnalyticsMotionStyles() {
       @keyframes analytics-swap {
         from {
           opacity: 0.72;
-          transform: translateY(4px);
+          transform: translateY(3px);
         }
         to {
           opacity: 1;
@@ -1289,32 +1282,28 @@ function AnalyticsMotionStyles() {
       }
 
       .analytics-section {
-        animation: analytics-enter 360ms cubic-bezier(0.23, 1, 0.32, 1) both;
+        animation: analytics-enter 280ms cubic-bezier(0.23, 1, 0.32, 1) both;
       }
 
       .analytics-pressable {
         transition:
-          transform 160ms cubic-bezier(0.23, 1, 0.32, 1),
-          box-shadow 220ms cubic-bezier(0.23, 1, 0.32, 1),
-          border-color 180ms ease-out,
-          background-color 180ms ease-out;
-      }
-
-      .analytics-pressable:hover {
-        transform: translateY(-1px);
+          transform 150ms cubic-bezier(0.23, 1, 0.32, 1),
+          box-shadow 200ms cubic-bezier(0.23, 1, 0.32, 1),
+          border-color 150ms ease-out,
+          background-color 150ms ease-out;
       }
 
       .analytics-pressable:active {
-        transform: translateY(0) scale(0.99);
+        transform: scale(0.98);
       }
 
       .analytics-bar,
       .analytics-stack-segment {
-        transition: width 520ms cubic-bezier(0.23, 1, 0.32, 1);
+        transition: width 380ms cubic-bezier(0.23, 1, 0.32, 1);
       }
 
       .analytics-table-swap {
-        animation: analytics-swap 240ms cubic-bezier(0.23, 1, 0.32, 1) both;
+        animation: analytics-swap 200ms cubic-bezier(0.23, 1, 0.32, 1) both;
       }
 
       @media (prefers-reduced-motion: reduce) {
@@ -1329,7 +1318,6 @@ function AnalyticsMotionStyles() {
           transition: none;
         }
 
-        .analytics-pressable:hover,
         .analytics-pressable:active {
           transform: none;
         }
@@ -1403,7 +1391,7 @@ export default function AnalyticsPage() {
         onRangeChange={setDateRange}
       />
 
-      <main className="flex flex-1 flex-col gap-8 p-4 md:p-6">
+      <main className="flex flex-1 flex-col gap-6 p-4 md:p-6">
         {error ? (
           <div className="flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
             <AlertTriangle className="size-4 shrink-0" />
@@ -1420,9 +1408,9 @@ export default function AnalyticsPage() {
 
         {hasData || loading ? (
           <>
-            <SonaImpactSection data={data} loading={loading} onDrilldown={handleDrilldown} drilldownKey={drilldown.key} />
-            <TopicsProblemAreasSection data={data} loading={loading} onDrilldown={handleDrilldown} drilldownKey={drilldown.key} />
             <SupportVolumeSection data={data} loading={loading} onDrilldown={handleDrilldown} drilldownKey={drilldown.key} />
+            <TopicsProblemAreasSection data={data} loading={loading} onDrilldown={handleDrilldown} drilldownKey={drilldown.key} />
+            <SonaImpactSection data={data} loading={loading} onDrilldown={handleDrilldown} drilldownKey={drilldown.key} />
             <StrengthsWeakSpotsSection data={data} loading={loading} onDrilldown={handleDrilldown} drilldownKey={drilldown.key} />
             <div id="analytics-drilldown">
               <AnalyticsDrilldownTable data={data} drilldown={drilldown} />

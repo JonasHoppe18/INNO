@@ -34,8 +34,7 @@ Første kunde kører stadig i test-mode mens draft-kvaliteten forbedres.
 - Commit tidligt og hyppigt med meningsfulde beskeder — actions er destruktive
 
 ## Hvad vi fokuserer på nu
-Draft-kvaliteten er ikke god nok til at første kunde kan gå i produktion.
-Prioritet: forbedre svar-kvalitet og bygge et eval-system der måler det objektivt mod rigtige tickets fra kunden.
+Eval-systemet er bygget og kørende. Prioritet er nu at bruge eval-resultaterne aktivt til at forbedre draft-kvaliteten og få første kunde i produktion.
 
 ## Kendte svagheder
 - Tenancy-migration er ikke komplet — workspace-scoping kan være inkonsistent
@@ -54,9 +53,13 @@ Prioritet: forbedre svar-kvalitet og bygge et eval-system der måler det objekti
 **Action types:** UI understøtter langt flere actions end dokumenteret (exchange, return, shipping method, hold fulfillment osv.)
 
 ## Seneste ændringer
-- callOpenAI max_tokens hævet til 1800 (fix — kun callOpenAIWithImages var opdateret første gang)
-- isTrivialTicket bruger nu orders + matchedSubjectNumber (ikke threadId som er upålidelig)
-- case_state fejl logger nu til reasoningLogs (synlig i UI)
+- Eval-system bygget: `eval_runs` tabel, EvalPanel UI, worker-baseret kørsel via `/api/eval/run`
+- Knowledge kategorier tilføjet (`knowledge_categories` tabel + UI)
+- Draft edit-statistik: `/api/threads/[id]/draft-stats` tracker redigeringer inden send
+- Analytics dashboard tilføjet (TicketVolumeChart, overview API)
+- Fine-tuning pipeline tilføjet (FineTuningPanel + `/api/fine-tuning`)
+- `shop_action_config` tabel tilføjet — per-shop konfiguration af action-typer
+- Knowledge gaps + snippets API tilføjet til at identificere og udfylde huller
 
 ## Deploy
 Postmark-inbound skal altid deployes med `--no-verify-jwt`

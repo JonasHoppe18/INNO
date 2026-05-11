@@ -86,7 +86,7 @@ export function TicketVolumeChart({ data = [], periodDays = "30", compact = fals
           radius={[4, 4, 0, 0]}
           maxBarSize={compact ? 32 : 40}
           isAnimationActive
-          animationDuration={520}
+          animationDuration={380}
           animationEasing="ease-out"
         />
       </BarChart>
