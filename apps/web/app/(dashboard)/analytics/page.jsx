@@ -1469,6 +1469,185 @@ function OverviewTab({ data, loading, onDrilldown, drilldownKey }) {
   );
 }
 
+function SonaImpactTab({ data, loading, onDrilldown, drilldownKey }) {
+  const impact = data?.sonaImpact ?? {};
+  const hasEnoughDraftQuality = (impact.trackedSentDrafts || 0) >= 3;
+  const draftQualityTotal =
+    impact.draftQualityTotal ||
+    ((impact.trackedSentDrafts || 0) + (impact.rejectedDrafts ?? impact.rejected ?? 0));
+  const readiness = impact.autopilotReadiness ?? {};
+  const averageEditEffort = impact.averageEditEffort ?? {};
+  const workflowApproval = impact.workflowApproval ?? {};
+  const estimatedWork = impact.estimatedWorkAssisted ?? {};
+  const averageEdit =
+    hasEnoughDraftQuality && averageEditEffort.averageEditPct != null
+      ? formatPercent(averageEditEffort.averageEditPct)
+      : hasEnoughDraftQuality && impact.averageEditPct != null
+      ? formatPercent(impact.averageEditPct)
+      : "Collecting data";
+
+  return (
+    <div className="analytics-section flex flex-col gap-5">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <SonaMetricButton
+          label="Autopilot readiness"
+          value={readiness.label || "Collecting data"}
+          sub={readiness.description || "Needs more sent drafts"}
+          active={drilldownKey === "no_minor_edits"}
+          onClick={() => onDrilldown("no_minor_edits", "Autopilot readiness")}
+        />
+        <SonaMetricButton
+          label="Average edit effort"
+          value={averageEdit}
+          sub={
+            averageEditEffort.averageEditDistance != null
+              ? `${formatNumber(averageEditEffort.averageEditDistance)} chars avg.`
+              : "More sent drafts needed"
+          }
+          active={drilldownKey === "highest_edit_pct"}
+          onClick={() => onDrilldown("highest_edit_pct", "Highest draft edits")}
+        />
+        <SonaMetricButton
+          label="Workflow approval"
+          value={formatPercent(workflowApproval.approvalRate ?? impact.actionApprovalRate)}
+          sub={`${formatNumber(workflowApproval.actionsHandled ?? impact.actionsHandled ?? 0)} of ${formatNumber(workflowApproval.actionsSuggested ?? impact.actionsSuggested ?? 0)} handled`}
+          active={drilldownKey?.startsWith?.("action:")}
+          onClick={() => onDrilldown("action:all", "Sona workflows")}
+        />
+        <SonaMetricButton
+          label="Estimated work assisted"
+          value={estimatedWork.label || "Collecting data"}
+          sub={estimatedWork.calculationNote ? "Drafts + handled workflows" : "Needs activity data"}
+          active={false}
+        />
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
+        <Card className="rounded-2xl shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-start justify-between gap-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Bot className="size-4 text-[#7C6DF2]" />
+                AI Draft Quality
+              </CardTitle>
+              <Badge variant="outline" className="rounded-md">
+                {hasEnoughDraftQuality ? "Quality signal" : "Collecting data"}
+              </Badge>
+            </div>
+            <CardDescription>{formatNumber(draftQualityTotal)} tracked draft outcomes</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            {loading ? (
+              <LoadingCard className="h-48" />
+            ) : (
+              <>
+                <DraftQualityStack impact={impact} onDrilldown={onDrilldown} activeKey={drilldownKey} />
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => onDrilldown("highest_edit_pct", "Highest draft edits")}
+                    className={`analytics-pressable rounded-xl border bg-muted/30 p-3 text-left hover:bg-muted/50 ${
+                      drilldownKey === "highest_edit_pct" ? "ring-1 ring-foreground/15" : ""
+                    }`}
+                  >
+                    <p className="text-xs font-medium text-muted-foreground">Average edit</p>
+                    <p className="mt-1.5 text-2xl font-semibold tabular-nums">{averageEdit}</p>
+                  </button>
+                  <div className="rounded-xl border bg-muted/30 p-3">
+                    <p className="text-xs font-medium text-muted-foreground">Avg. edit distance</p>
+                    <p className="mt-1.5 text-2xl font-semibold tabular-nums">
+                      {hasEnoughDraftQuality && impact.averageEditDistance != null
+                        ? `${formatNumber(impact.averageEditDistance)} chars`
+                        : "Collecting data"}
+                    </p>
+                  </div>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-2xl shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Zap className="size-4 text-[#7C6DF2]" />
+              Workflow Automation
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {loading ? (
+              <LoadingCard className="h-48" />
+            ) : (
+              <>
+                <div className="grid grid-cols-3 gap-2">
+                  <ImpactStat label="Approval rate" value={formatPercent(impact.actionApprovalRate)} />
+                  <ImpactStat
+                    label="Handled rate"
+                    value={formatPercent(impact.actionHandledRate ?? impact.actionApprovalRate)}
+                  />
+                  <ImpactStat
+                    label="Suggested"
+                    value={impact.actionsSuggested}
+                    sub={`${formatNumber(impact.actionsHandled ?? 0)} handled`}
+                  />
+                </div>
+                {impact.topActionTypes?.length ? (
+                  <div className="space-y-2">
+                    {impact.topActionTypes.map((row) => (
+                      <button
+                        key={row.key}
+                        type="button"
+                        onClick={() => onDrilldown(row.key, row.label)}
+                        className={`analytics-pressable grid w-full grid-cols-[1fr_auto] gap-3 rounded-xl border border-transparent bg-muted/20 p-3 text-left hover:bg-muted/40 ${
+                          drilldownKey === row.key ? "border-foreground/20 ring-1 ring-foreground/10" : ""
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium">{row.label}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {formatNumber(row.suggested)} suggested · {formatNumber(row.handled)} handled
+                          </p>
+                        </div>
+                        <Badge variant="outline" className="rounded-md tabular-nums">
+                          {formatPercent(row.approvalRate)}
+                        </Badge>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyAnalyticsState icon={Zap} title="No Sona actions yet">
+                    Suggested workflows appear here.
+                  </EmptyAnalyticsState>
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card className="rounded-2xl shadow-sm">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <TrendingUp className="size-4 text-[#7C6DF2]" />
+            AI Performance Insights
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <LoadingCard className="h-52" />
+          ) : (
+            <SonaPerformanceInsights
+              impact={impact}
+              onDrilldown={onDrilldown}
+              drilldownKey={drilldownKey}
+            />
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 export default function AnalyticsPage() {
   const [period, setPeriod] = useState("30");
   const [dateRange, setDateRange] = useState({ start: "", end: "" });
