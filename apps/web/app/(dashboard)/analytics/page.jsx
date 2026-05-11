@@ -1648,6 +1648,37 @@ function SonaImpactTab({ data, loading, onDrilldown, drilldownKey }) {
   );
 }
 
+function TopicsTab({ data, loading, onDrilldown, drilldownKey }) {
+  return (
+    <div className="analytics-section flex flex-col gap-6">
+      <TopicsProblemAreasSection
+        data={data}
+        loading={loading}
+        onDrilldown={onDrilldown}
+        drilldownKey={drilldownKey}
+      />
+      <StrengthsWeakSpotsSection
+        data={data}
+        loading={loading}
+        onDrilldown={onDrilldown}
+        drilldownKey={drilldownKey}
+      />
+    </div>
+  );
+}
+
+function TicketsTab({ data, drilldown }) {
+  return (
+    <div className="analytics-section flex flex-col gap-6">
+      <div id="analytics-drilldown">
+        <AnalyticsDrilldownTable data={data} drilldown={drilldown} />
+      </div>
+      <PreviousSystemComparisonSection data={data} />
+      <CoverageFooter data={data} />
+    </div>
+  );
+}
+
 export default function AnalyticsPage() {
   const [period, setPeriod] = useState("30");
   const [dateRange, setDateRange] = useState({ start: "", end: "" });
