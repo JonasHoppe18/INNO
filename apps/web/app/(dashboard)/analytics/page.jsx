@@ -1326,6 +1326,149 @@ function AnalyticsMotionStyles() {
   );
 }
 
+function SonaStatCard({ value, label, sub, accent = false, loading }) {
+  return (
+    <div className="rounded-xl border bg-background p-5 text-center">
+      {loading ? (
+        <Skeleton className="mx-auto mt-1 h-9 w-20" />
+      ) : (
+        <p className={`text-3xl font-extrabold tracking-tight tabular-nums ${accent ? "text-[#6366f1]" : ""}`}>
+          {value}
+        </p>
+      )}
+      <p className="mt-2 text-xs text-muted-foreground">{label}</p>
+      {sub ? (
+        <p className={`mt-1 text-xs font-medium ${accent ? "text-[#6366f1]" : "text-muted-foreground"}`}>
+          {sub}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function SupportStatCard({ label, value, change, sub, loading }) {
+  const toneClass =
+    change?.tone === "good"
+      ? "text-green-600"
+      : change?.tone === "watch"
+        ? "text-amber-600"
+        : "text-muted-foreground";
+  return (
+    <div className="rounded-xl border bg-background p-5">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      {loading ? (
+        <Skeleton className="mt-3 h-8 w-24" />
+      ) : (
+        <p className="mt-2 text-2xl font-bold tracking-tight tabular-nums">{value}</p>
+      )}
+      {change ? (
+        <p className={`mt-2 text-xs font-medium ${toneClass}`}>{change.label}</p>
+      ) : sub ? (
+        <p className="mt-2 text-xs text-muted-foreground">{sub}</p>
+      ) : null}
+    </div>
+  );
+}
+
+function OverviewTab({ data, loading, onDrilldown, drilldownKey }) {
+  const summary = data?.summary ?? {};
+  const impact = data?.sonaImpact ?? {};
+  const volume = data?.volume ?? {};
+  const draftQualityTotal =
+    impact.draftQualityTotal ||
+    ((impact.trackedSentDrafts || 0) + (impact.rejected ?? impact.rejectedDrafts ?? 0));
+  const hasEnoughDraftQuality = (impact.trackedSentDrafts || 0) >= 3;
+
+  return (
+    <div className="analytics-section flex flex-col gap-6">
+      <div>
+        <p className="mb-2.5 text-xs font-semibold uppercase tracking-widest text-muted-foreground/50">
+          Sona AI
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <SonaStatCard
+            loading={loading}
+            value={hasEnoughDraftQuality ? formatNumber(impact.sentAsIs || 0) : "Collecting data"}
+            label="Drafts sent as-is"
+            sub={
+              hasEnoughDraftQuality && draftQualityTotal > 0
+                ? `${formatPercent(((impact.sentAsIs || 0) / draftQualityTotal) * 100)} of sent drafts`
+                : undefined
+            }
+            accent={hasEnoughDraftQuality}
+          />
+          <SonaStatCard
+            loading={loading}
+            value={
+              hasEnoughDraftQuality && impact.averageEditPct != null
+                ? formatPercent(impact.averageEditPct)
+                : "Collecting data"
+            }
+            label="Avg. edit effort"
+            sub={hasEnoughDraftQuality ? "Lower is better" : undefined}
+            accent={hasEnoughDraftQuality}
+          />
+          <SonaStatCard
+            loading={loading}
+            value={formatNumber(impact.actionsHandled ?? 0)}
+            label="Workflows handled"
+            sub={`of ${formatNumber(impact.actionsSuggested ?? 0)} suggested`}
+          />
+          <SonaStatCard
+            loading={loading}
+            value={formatPercent(impact.actionApprovalRate)}
+            label="Automation rate"
+            sub="of suggested actions"
+            accent
+          />
+        </div>
+      </div>
+
+      <div>
+        <p className="mb-2.5 text-xs font-semibold uppercase tracking-widest text-muted-foreground/50">
+          Support
+        </p>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <SupportStatCard
+            loading={loading}
+            label="Support requests"
+            value={formatNumber(summary.supportTickets)}
+            change={formatChange(summary.supportTicketsChangePct)}
+          />
+          <SupportStatCard
+            loading={loading}
+            label="Median first reply"
+            value={
+              summary.firstReplyDataQuality === "limited"
+                ? "Limited"
+                : formatDuration(summary.medianFirstReplyMinutes)
+            }
+            change={formatChange(summary.medianFirstReplyChangePct, { inverse: true })}
+          />
+          <SupportStatCard
+            loading={loading}
+            label="Sona-assisted tickets"
+            value={formatNumber(summary.sonaAssistedTickets)}
+            sub={`${formatNumber(summary.sonaAssistedReplies)} reply drafts created`}
+          />
+        </div>
+      </div>
+
+      <div className="rounded-xl border bg-background p-5">
+        <div className="mb-4 flex items-baseline justify-between gap-3">
+          <p className="text-sm font-semibold">Tickets over time</p>
+          <p className="text-xs text-muted-foreground">by {volume.grouping || "day"}</p>
+        </div>
+        {loading ? (
+          <Skeleton className="h-52" />
+        ) : (
+          <TicketVolumeChart data={volume.series ?? []} periodDays={volume.grouping ?? "day"} />
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function AnalyticsPage() {
   const [period, setPeriod] = useState("30");
   const [dateRange, setDateRange] = useState({ start: "", end: "" });
