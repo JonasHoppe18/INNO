@@ -577,7 +577,14 @@ export async function runDraftV2Pipeline(
       };
     }
 
-    latestMessage = messages[messages.length - 1];
+    // Brug altid seneste inbound-besked som base — aldrig et outbound draft
+    const latestInboundForBase = messages
+      .filter((m) => {
+        const row = m as Record<string, unknown>;
+        return row.direction !== "outbound" && row.from_me !== true;
+      })
+      .at(-1);
+    latestMessage = latestInboundForBase ?? messages[messages.length - 1];
     if (postActionResult) {
       const latestInboundMessage = messages
         .filter((m) => {

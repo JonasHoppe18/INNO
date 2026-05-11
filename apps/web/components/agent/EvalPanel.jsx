@@ -733,6 +733,8 @@ export function EvalPanel({ fullPage = false }) {
   useEffect(() => {
     if (!activeJobId) return undefined;
     let isActive = true;
+    let lastSeenProcessed = -1;
+    let lastProgressAt = Date.now();
 
     const pollJob = async () => {
       try {
@@ -744,9 +746,15 @@ export function EvalPanel({ fullPage = false }) {
           updateRunProgress(job);
           const processed = Number(job.processed_items || 0);
           const total = Number(job.total_items || 0);
+          if (processed !== lastSeenProcessed) {
+            lastSeenProcessed = processed;
+            lastProgressAt = Date.now();
+          }
+          // Kick worker kun hvis jobbet er stalled (ingen fremgang i 30s) — ikke ved hvert poll
           if (job.status === "running" && processed < total) {
+            const stalledMs = Date.now() - lastProgressAt;
             const now = Date.now();
-            if (now - lastWorkerKickRef.current > 2500) {
+            if (stalledMs > 30000 && now - lastWorkerKickRef.current > 30000) {
               lastWorkerKickRef.current = now;
               void fetch("/api/eval/run/worker", {
                 method: "POST",
