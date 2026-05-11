@@ -165,6 +165,13 @@ export async function POST(request) {
     return NextResponse.json({ error: "No shop found for this account" }, { status: 400 });
   }
 
+  // Ryd gamle results for dette label så gentagede kørsler ikke stakker op
+  await supabase
+    .from("eval_results")
+    .delete()
+    .eq("shop_id", shop.id)
+    .eq("run_label", run_label);
+
   const payload = {
     items,
     options: {

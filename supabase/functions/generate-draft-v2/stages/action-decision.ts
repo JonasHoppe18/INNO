@@ -111,14 +111,20 @@ function isTechnicalIssue(
 
 // Er der allerede forsøgt troubleshooting i denne samtale?
 // Tjekker pending_asks og decisions_made for tegn på at vi allerede har givet trin.
-function hasAlreadyTroubleshot(caseState: CaseState): boolean {
+function hasAlreadyTroubleshot(caseState: CaseState, customerMessage = ""): boolean {
   const allContext = [
     ...caseState.decisions_made.map((d) => d.decision),
     ...caseState.pending_asks,
     ...caseState.open_questions,
   ].join(" ");
-  return /troubleshoot|fejlfind|trin|steps|reset|nulstil|firmware|update|opdater|prøv\s+disse|try\s+the|follow|fulgte|forsøgt|already\s+tried|allerede\s+prøvet/i
-    .test(allContext);
+  const contextMatch =
+    /troubleshoot|fejlfind|trin|steps|reset|nulstil|firmware|update|opdater|prøv\s+disse|try\s+the|follow|fulgte|forsøgt|already\s+tried|allerede\s+prøvet/i
+      .test(allContext);
+  // Fang eksplicit "jeg har prøvet alt" i selve kundebeskedens tekst
+  const messageMatch =
+    /\b(already\s+tried|tried\s+all|tried\s+every|tried\s+the\s+steps|done\s+everything|followed\s+all|allerede\s+prøvet|prøvet\s+alle?|fulgt\s+alle?|gjort\s+alt|har\s+prøvet\s+alt|tried\s+all\s+the\s+steps|tried\s+all\s+your|tried\s+everything)\b/i
+      .test(customerMessage);
+  return contextMatch || messageMatch;
 }
 
 // Standard reservedels-nøgleord — gælder på tværs af headset-shops.
@@ -417,9 +423,9 @@ function applyDeterministicRules(
     const bodyText = String(
       plan.sub_queries?.join(" ") ?? "",
     ).toLowerCase();
-    // Tjek selve sub_queries (planner har allerede læst body og lavet queries)
+    // Tjek sub_queries, open_questions OG selve kundebeskedens tekst direkte
     if (
-      INVOICE_RE.test(msg) || INVOICE_RE.test(bodyText)
+      INVOICE_RE.test(msg) || INVOICE_RE.test(bodyText) || INVOICE_RE.test(customerMessage)
     ) {
       if (order && !alreadyDecided(decided, "resend_confirmation_or_invoice")) {
         return [{
@@ -446,7 +452,7 @@ function applyDeterministicRules(
     const hasPhysicalDamage =
       /\b(broken|broke|crack|cracked|fallen\s+off|fell\s+off|physical|bent|ødelagt|knækket|revne|knæk|bøjet|faldet\s+af|beskadiget)\b/i
         .test(customerMessage);
-    if (isTechnicalIssue(customerMessage, plan) && !hasPhysicalDamage && !hasAlreadyTroubleshot(caseState)) {
+    if (isTechnicalIssue(customerMessage, plan) && !hasPhysicalDamage && !hasAlreadyTroubleshot(caseState, customerMessage)) {
       // Lad writer give troubleshooting-trin fra KB i stedet for at springe til exchange
       return [];
     }
@@ -569,7 +575,7 @@ function applyDeterministicRules(
     if (
       isTechnicalIssue(customerMessage, plan) &&
       !hasPhysicalDamageComplaint &&
-      !hasAlreadyTroubleshot(caseState) &&
+      !hasAlreadyTroubleshot(caseState, customerMessage) &&
       !sparePartInCustomerWords
     ) {
       return []; // Writer giver troubleshooting-trin fra KB
