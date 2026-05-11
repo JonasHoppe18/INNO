@@ -1333,6 +1333,7 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [drilldown, setDrilldown] = useState({ key: "all", title: "All support tickets" });
+  const [activeTab, setActiveTab] = useState("overview");
 
   const fetchData = useCallback((p, range) => {
     if (range.start && range.end && range.end < range.start) {
@@ -1374,6 +1375,7 @@ export default function AnalyticsPage() {
   const handleDrilldown = (key, title) => {
     if (!key) return;
     setDrilldown({ key, title: title || key });
+    setActiveTab("tickets");
     requestAnimationFrame(() => {
       document.getElementById("analytics-drilldown")?.scrollIntoView({ block: "start", behavior: "smooth" });
     });
@@ -1382,13 +1384,15 @@ export default function AnalyticsPage() {
   const hasData = useMemo(() => Boolean(data && !error), [data, error]);
 
   return (
-    <div className="@container/main flex flex-1 flex-col bg-muted/10">
+    <div className="@container/main flex flex-1 flex-col">
       <AnalyticsMotionStyles />
       <AnalyticsHeader
         period={period}
         range={dateRange}
         onPreset={handlePreset}
         onRangeChange={setDateRange}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
       />
 
       <main className="flex flex-1 flex-col gap-6 p-4 md:p-6">
@@ -1399,25 +1403,18 @@ export default function AnalyticsPage() {
           </div>
         ) : null}
 
-        <PeriodSummaryCards
-          data={data}
-          loading={loading}
-          drilldownKey={drilldown.key}
-          onDrilldown={handleDrilldown}
-        />
-
-        {hasData || loading ? (
-          <>
-            <SupportVolumeSection data={data} loading={loading} onDrilldown={handleDrilldown} drilldownKey={drilldown.key} />
-            <TopicsProblemAreasSection data={data} loading={loading} onDrilldown={handleDrilldown} drilldownKey={drilldown.key} />
-            <SonaImpactSection data={data} loading={loading} onDrilldown={handleDrilldown} drilldownKey={drilldown.key} />
-            <StrengthsWeakSpotsSection data={data} loading={loading} onDrilldown={handleDrilldown} drilldownKey={drilldown.key} />
-            <div id="analytics-drilldown">
-              <AnalyticsDrilldownTable data={data} drilldown={drilldown} />
-            </div>
-            <CoverageFooter data={data} />
-          </>
-        ) : null}
+        {activeTab === "overview" && (
+          <OverviewTab data={data} loading={loading} onDrilldown={handleDrilldown} drilldownKey={drilldown.key} />
+        )}
+        {activeTab === "sona-impact" && (hasData || loading) && (
+          <SonaImpactTab data={data} loading={loading} onDrilldown={handleDrilldown} drilldownKey={drilldown.key} />
+        )}
+        {activeTab === "topics" && (hasData || loading) && (
+          <TopicsTab data={data} loading={loading} onDrilldown={handleDrilldown} drilldownKey={drilldown.key} />
+        )}
+        {activeTab === "tickets" && (
+          <TicketsTab data={data} drilldown={drilldown} />
+        )}
       </main>
     </div>
   );
