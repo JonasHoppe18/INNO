@@ -5,7 +5,6 @@ import {
   AlertTriangle,
   ArrowDownRight,
   ArrowUpRight,
-  Bot,
   CalendarDays,
   CheckCircle2,
   ChevronRight,
@@ -16,10 +15,8 @@ import {
   Inbox,
   ListFilter,
   PackageSearch,
-  Sparkles,
   Table2,
   TrendingUp,
-  Zap,
 } from "lucide-react";
 
 import { TicketVolumeChart } from "@/components/analytics/TicketVolumeChart";
@@ -134,7 +131,7 @@ function LoadingCard({ className = "h-40" }) {
 
 const TABS = [
   { id: "overview", label: "Overview" },
-  { id: "sona-impact", label: "Sona Impact" },
+  { id: "support", label: "Support" },
   { id: "topics", label: "Topics" },
   { id: "tickets", label: "Tickets" },
 ];
@@ -281,213 +278,6 @@ function SectionHeading({ title, subtitle, action }) {
   );
 }
 
-function DraftQualityStack({ impact, onDrilldown, activeKey }) {
-  const total = impact?.draftQualityTotal || ((impact?.trackedSentDrafts || 0) + (impact?.rejectedDrafts ?? impact?.rejected ?? 0));
-  const rows = [
-    { key: "sent_as_is", label: "Sent as-is", value: impact?.sentAsIs || 0, className: "bg-[#9B99FE]" },
-    { key: "minor_edits", label: "Minor edits", value: impact?.minorEdits || 0, className: "bg-[#7C6DF2]" },
-    { key: "major_edits", label: "Major edits", value: impact?.majorEdits || 0, className: "bg-amber-500" },
-    { key: "rejected_drafts", label: "Rejected", value: impact?.rejected || 0, className: "bg-rose-500" },
-  ];
-
-  if (total < 3) {
-    return (
-      <EmptyAnalyticsState icon={Bot} title="Not enough sent draft data yet">
-        Quality appears after more Sona drafts are sent.
-      </EmptyAnalyticsState>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="flex h-3 overflow-hidden rounded-full bg-muted">
-        {rows.map((row) => (
-          <button
-            key={`${row.label}-${row.value}`}
-            type="button"
-            onClick={() => onDrilldown(row.key, row.label)}
-            className={`analytics-stack-segment ${row.className}`}
-            style={{ width: `${Math.max(row.value ? 4 : 0, (row.value / total) * 100)}%` }}
-            title={`${row.label}: ${row.value}`}
-          />
-        ))}
-      </div>
-      <div className="grid gap-2 sm:grid-cols-4">
-        {rows.map((row) => (
-          <button
-            key={row.label}
-            type="button"
-            onClick={() => onDrilldown(row.key, row.label)}
-            className={`analytics-pressable rounded-xl border bg-muted/30 p-3 text-left hover:bg-muted/50 ${
-              activeKey === row.key ? "ring-1 ring-foreground/15" : ""
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <span className={`size-2.5 rounded-full ${row.className}`} />
-              <span className="text-xs font-medium text-muted-foreground">{row.label}</span>
-            </div>
-            <p className="mt-2 text-xl font-semibold">{formatPercent((row.value / total) * 100)}</p>
-            <p className="text-xs text-muted-foreground">{formatNumber(row.value)} drafts</p>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function SonaMetricButton({ label, value, sub, active, onClick }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={!onClick}
-      className={`analytics-pressable rounded-2xl border bg-background px-4 py-3 text-left shadow-sm hover:bg-muted/40 ${
-        active ? "border-foreground/25 ring-1 ring-foreground/10" : ""
-      } ${!onClick ? "cursor-default hover:bg-background" : ""}`}
-    >
-      <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      <p className="mt-1.5 text-2xl font-semibold tabular-nums">{value}</p>
-      <p className="mt-1 text-xs text-muted-foreground">{sub}</p>
-    </button>
-  );
-}
-
-function SonaPerformanceInsights({ impact, onDrilldown, drilldownKey }) {
-  const best = impact.bestPerformingCategories ?? [];
-  const review = impact.needsReviewCategories ?? [];
-  const assisted = impact.mostAssistedTopics ?? [];
-  const workflows = [
-    ...(impact.bestWorkflowTypes ?? []).map((row) => ({ ...row, group: "best" })),
-    ...(impact.needsReviewWorkflowTypes ?? []).map((row) => ({ ...row, group: "review" })),
-  ];
-
-  if (!best.length && !review.length && !assisted.length && !workflows.length) {
-    return (
-      <EmptyAnalyticsState icon={Sparkles} title="More sent drafts are needed">
-        Category-level AI performance appears after more Sona drafts are sent.
-      </EmptyAnalyticsState>
-    );
-  }
-
-  return (
-    <div className="grid gap-4 lg:grid-cols-4">
-      <SonaInsightList
-        title="Where Sona performs best"
-        rows={best}
-        valueKey="noMinorEditRate"
-        valueLabel="no/minor edit"
-        onDrilldown={onDrilldown}
-        drilldownKey={drilldownKey}
-      />
-      <SonaInsightList
-        title="Where Sona needs review"
-        rows={review}
-        valueKey="needsReviewRate"
-        valueLabel="review"
-        onDrilldown={onDrilldown}
-        drilldownKey={drilldownKey}
-      />
-      <SonaInsightList
-        title="Most assisted topics"
-        rows={assisted}
-        valueKey="assistedTickets"
-        valueLabel="tickets"
-        onDrilldown={onDrilldown}
-        drilldownKey={drilldownKey}
-        countValue
-      />
-      <SonaWorkflowList
-        title="Workflow approval"
-        rows={workflows}
-        onDrilldown={onDrilldown}
-        drilldownKey={drilldownKey}
-      />
-    </div>
-  );
-}
-
-
-function SonaInsightList({ title, rows, valueKey, valueLabel, onDrilldown, drilldownKey, countValue = false }) {
-  if (!rows?.length) {
-    return <EmptyAnalyticsState title={title}>Collecting data.</EmptyAnalyticsState>;
-  }
-
-  return (
-    <div className="space-y-2">
-      <p className="text-sm font-medium">{title}</p>
-      {rows.slice(0, 5).map((row) => (
-        <button
-          key={`${title}-${row.key}`}
-          type="button"
-          onClick={() => onDrilldown(row.key, row.category)}
-          className={`analytics-pressable flex w-full items-center justify-between gap-3 rounded-xl border border-transparent bg-muted/30 p-2.5 text-left hover:bg-muted/50 ${
-            drilldownKey === row.key ? "border-foreground/20 ring-1 ring-foreground/10" : ""
-          }`}
-        >
-          <span className="min-w-0 truncate text-sm">{row.category}</span>
-          <span className="shrink-0 text-xs font-medium text-muted-foreground">
-            {countValue ? formatNumber(row[valueKey]) : formatPercent(row[valueKey])} {valueLabel}
-          </span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function SonaWorkflowList({ title, rows, onDrilldown, drilldownKey }) {
-  if (!rows?.length) {
-    return <EmptyAnalyticsState title={title}>Collecting data.</EmptyAnalyticsState>;
-  }
-
-  return (
-    <div className="space-y-2">
-      <p className="text-sm font-medium">{title}</p>
-      {rows.slice(0, 5).map((row) => (
-        <button
-          key={`${title}-${row.group}-${row.key}`}
-          type="button"
-          onClick={() => onDrilldown(row.key, row.label)}
-          className={`analytics-pressable flex w-full items-center justify-between gap-3 rounded-xl border border-transparent bg-muted/30 p-2.5 text-left hover:bg-muted/50 ${
-            drilldownKey === row.key ? "border-foreground/20 ring-1 ring-foreground/10" : ""
-          }`}
-        >
-          <span className="min-w-0 truncate text-sm">{row.label}</span>
-          <span className="shrink-0 text-xs font-medium text-muted-foreground">
-            {formatPercent(row.approvalRate)} approval
-          </span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function ImpactStat({ label, value, sub, onClick, active = false }) {
-  const content = (
-    <>
-      <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      <p className="mt-2 text-2xl font-semibold tabular-nums">{typeof value === "number" ? formatNumber(value) : value}</p>
-      {sub ? <p className="mt-1 text-xs text-muted-foreground">{sub}</p> : null}
-    </>
-  );
-  if (onClick) {
-    return (
-      <button
-        type="button"
-        onClick={onClick}
-        className={`analytics-pressable rounded-xl border bg-muted/30 p-3 text-left hover:bg-muted/50 ${
-          active ? "ring-1 ring-foreground/15" : ""
-        }`}
-      >
-        {content}
-      </button>
-    );
-  }
-  return (
-    <div className="rounded-xl border bg-muted/30 p-3">
-      {content}
-    </div>
-  );
-}
 
 function HorizontalBarList({ items = [], emptyTitle, emptyDescription, onSelect, activeKey }) {
   if (!items.length) {
@@ -538,7 +328,9 @@ function TopicsProblemAreasSection({ data, loading, onDrilldown, drilldownKey })
 
   return (
     <section className="analytics-section space-y-4" style={sectionMotionStyle(2)}>
-      <SectionHeading title="Topics & Problem Areas" subtitle="What customers contact you about." />
+      <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground/50">
+        Topics &amp; Problem Areas
+      </p>
       <div className="grid gap-5 xl:grid-cols-3">
         <TopicCard
           icon={ListFilter}
@@ -607,10 +399,9 @@ function StrengthsWeakSpotsSection({ data, loading, onDrilldown, drilldownKey })
 
   return (
     <section className="analytics-section space-y-4" style={sectionMotionStyle(4)}>
-      <SectionHeading
-        title="Strengths & Weak Spots"
-        subtitle="Response patterns across topics."
-      />
+      <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground/50">
+        Strengths &amp; Weak Spots
+      </p>
       <div className="grid gap-5 xl:grid-cols-3">
         <TopicPerformanceCard
           icon={CheckCircle2}
@@ -1005,10 +796,11 @@ function OverviewTab({ data, loading, onDrilldown, drilldownKey }) {
   const summary = data?.summary ?? {};
   const impact = data?.sonaImpact ?? {};
   const volume = data?.volume ?? {};
-  const draftQualityTotal =
-    impact.draftQualityTotal ||
-    ((impact.trackedSentDrafts || 0) + (impact.rejected ?? impact.rejectedDrafts ?? 0));
+  const topics = data?.topics ?? {};
   const hasEnoughDraftQuality = (impact.trackedSentDrafts || 0) >= 3;
+  const draftQualityTotal = impact.draftQualityTotal || ((impact.trackedSentDrafts || 0) + (impact.rejected ?? impact.rejectedDrafts ?? 0));
+  const estimatedWork = impact.estimatedWorkAssisted ?? {};
+  const topRequestTypes = (topics.requestTypes ?? []).slice(0, 4);
 
   return (
     <div className="analytics-section flex flex-col gap-6">
@@ -1019,33 +811,25 @@ function OverviewTab({ data, loading, onDrilldown, drilldownKey }) {
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <SonaStatCard
             loading={loading}
-            value={hasEnoughDraftQuality ? formatNumber(impact.sentAsIs || 0) : "Collecting data"}
-            label="Drafts sent as-is"
-            sub={
-              hasEnoughDraftQuality && draftQualityTotal > 0
-                ? `${formatPercent(((impact.sentAsIs || 0) / draftQualityTotal) * 100)} of sent drafts`
-                : undefined
-            }
-            accent={hasEnoughDraftQuality}
+            value={estimatedWork.label || "Collecting data"}
+            label="Time saved this period"
+            sub={estimatedWork.label ? "Drafts + handled workflows" : "Needs more activity"}
+            accent={!!estimatedWork.label}
             style={{ animationDelay: "0ms" }}
           />
           <SonaStatCard
             loading={loading}
-            value={
-              hasEnoughDraftQuality && impact.averageEditPct != null
-                ? formatPercent(impact.averageEditPct)
-                : "Collecting data"
-            }
-            label="Avg. edit effort"
-            sub={hasEnoughDraftQuality ? "Lower is better" : undefined}
+            value={hasEnoughDraftQuality ? formatNumber(impact.sentAsIs || 0) : "Collecting data"}
+            label="Drafts sent as-is"
+            sub={hasEnoughDraftQuality && draftQualityTotal > 0 ? `${formatPercent(((impact.sentAsIs || 0) / draftQualityTotal) * 100)} of sent drafts` : undefined}
             accent={hasEnoughDraftQuality}
             style={{ animationDelay: "40ms" }}
           />
           <SonaStatCard
             loading={loading}
-            value={formatNumber(impact.actionsHandled ?? 0)}
-            label="Workflows handled"
-            sub={`of ${formatNumber(impact.actionsSuggested ?? 0)} suggested`}
+            value={hasEnoughDraftQuality && impact.averageEditPct != null ? formatPercent(impact.averageEditPct) : "Collecting data"}
+            label="Avg. edit effort"
+            sub={hasEnoughDraftQuality ? "Lower is better" : undefined}
             style={{ animationDelay: "80ms" }}
           />
           <SonaStatCard
@@ -1073,26 +857,22 @@ function OverviewTab({ data, loading, onDrilldown, drilldownKey }) {
           />
           <SupportStatCard
             loading={loading}
-            label="Median first reply"
-            value={
-              summary.firstReplyDataQuality === "limited"
-                ? "Limited"
-                : formatDuration(summary.medianFirstReplyMinutes)
-            }
-            change={formatChange(summary.medianFirstReplyChangePct, { inverse: true })}
+            label="Unsolved tickets"
+            value={formatNumber(summary.unsolvedTickets)}
+            change={formatChange(summary.unsolvedTicketsChangePct, { inverse: true })}
             style={{ animationDelay: "200ms" }}
           />
           <SupportStatCard
             loading={loading}
-            label="Sona-assisted tickets"
-            value={formatNumber(summary.sonaAssistedTickets)}
-            sub={`${formatNumber(summary.sonaAssistedReplies)} reply drafts created`}
+            label="Median first reply"
+            value={summary.firstReplyDataQuality === "limited" ? "Limited" : formatDuration(summary.medianFirstReplyMinutes)}
+            change={formatChange(summary.medianFirstReplyChangePct, { inverse: true })}
             style={{ animationDelay: "240ms" }}
           />
         </div>
       </div>
 
-      <div className="rounded-xl border bg-background p-5">
+      <div className="rounded-xl border bg-background p-5" style={sectionMotionStyle(3)}>
         <div className="mb-4 flex items-baseline justify-between gap-3">
           <p className="text-sm font-semibold">Tickets over time</p>
           <p className="text-xs text-muted-foreground">by {volume.grouping || "day"}</p>
@@ -1103,185 +883,25 @@ function OverviewTab({ data, loading, onDrilldown, drilldownKey }) {
           <TicketVolumeChart data={volume.series ?? []} periodDays={volume.grouping ?? "day"} />
         )}
       </div>
-    </div>
-  );
-}
 
-function SonaImpactTab({ data, loading, onDrilldown, drilldownKey }) {
-  const impact = data?.sonaImpact ?? {};
-  const hasEnoughDraftQuality = (impact.trackedSentDrafts || 0) >= 3;
-  const draftQualityTotal =
-    impact.draftQualityTotal ||
-    ((impact.trackedSentDrafts || 0) + (impact.rejectedDrafts ?? impact.rejected ?? 0));
-  const readiness = impact.autopilotReadiness ?? {};
-  const averageEditEffort = impact.averageEditEffort ?? {};
-  const workflowApproval = impact.workflowApproval ?? {};
-  const estimatedWork = impact.estimatedWorkAssisted ?? {};
-  const averageEdit =
-    hasEnoughDraftQuality && averageEditEffort.averageEditPct != null
-      ? formatPercent(averageEditEffort.averageEditPct)
-      : hasEnoughDraftQuality && impact.averageEditPct != null
-      ? formatPercent(impact.averageEditPct)
-      : "Collecting data";
-
-  return (
-    <div className="analytics-section flex flex-col gap-5">
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <SonaMetricButton
-          label="Autopilot readiness"
-          value={readiness.label || "Collecting data"}
-          sub={readiness.description || "Needs more sent drafts"}
-          active={drilldownKey === "no_minor_edits"}
-          onClick={() => onDrilldown("no_minor_edits", "Autopilot readiness")}
-        />
-        <SonaMetricButton
-          label="Average edit effort"
-          value={averageEdit}
-          sub={
-            averageEditEffort.averageEditDistance != null
-              ? `${formatNumber(averageEditEffort.averageEditDistance)} chars avg.`
-              : "More sent drafts needed"
-          }
-          active={drilldownKey === "highest_edit_pct"}
-          onClick={() => onDrilldown("highest_edit_pct", "Highest draft edits")}
-        />
-        <SonaMetricButton
-          label="Workflow approval"
-          value={formatPercent(workflowApproval.approvalRate ?? impact.actionApprovalRate)}
-          sub={`${formatNumber(workflowApproval.actionsHandled ?? impact.actionsHandled ?? 0)} of ${formatNumber(workflowApproval.actionsSuggested ?? impact.actionsSuggested ?? 0)} handled`}
-          active={drilldownKey?.startsWith?.("action:")}
-          onClick={() => onDrilldown("action:all", "Sona workflows")}
-        />
-        <SonaMetricButton
-          label="Estimated work assisted"
-          value={estimatedWork.label || "Collecting data"}
-          sub={estimatedWork.calculationNote ? "Drafts + handled workflows" : "Needs activity data"}
-          active={false}
-        />
-      </div>
-
-      <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
-        <Card className="rounded-2xl shadow-sm">
-          <CardHeader className="pb-3">
-            <div className="flex items-start justify-between gap-3">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Bot className="size-4 text-[#7C6DF2]" />
-                AI Draft Quality
-              </CardTitle>
-              <Badge variant="outline" className="rounded-md">
-                {hasEnoughDraftQuality ? "Quality signal" : "Collecting data"}
-              </Badge>
-            </div>
-            <CardDescription>{formatNumber(draftQualityTotal)} tracked draft outcomes</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            {loading ? (
-              <LoadingCard className="h-48" />
-            ) : (
-              <>
-                <DraftQualityStack impact={impact} onDrilldown={onDrilldown} activeKey={drilldownKey} />
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() => onDrilldown("highest_edit_pct", "Highest draft edits")}
-                    className={`analytics-pressable rounded-xl border bg-muted/30 p-3 text-left hover:bg-muted/50 ${
-                      drilldownKey === "highest_edit_pct" ? "ring-1 ring-foreground/15" : ""
-                    }`}
-                  >
-                    <p className="text-xs font-medium text-muted-foreground">Average edit</p>
-                    <p className="mt-1.5 text-2xl font-semibold tabular-nums">{averageEdit}</p>
-                  </button>
-                  <div className="rounded-xl border bg-muted/30 p-3">
-                    <p className="text-xs font-medium text-muted-foreground">Avg. edit distance</p>
-                    <p className="mt-1.5 text-2xl font-semibold tabular-nums">
-                      {hasEnoughDraftQuality && impact.averageEditDistance != null
-                        ? `${formatNumber(impact.averageEditDistance)} chars`
-                        : "Collecting data"}
-                    </p>
-                  </div>
-                </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-2xl shadow-sm">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Zap className="size-4 text-[#7C6DF2]" />
-              Workflow Automation
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {loading ? (
-              <LoadingCard className="h-48" />
-            ) : (
-              <>
-                <div className="grid grid-cols-3 gap-2">
-                  <ImpactStat label="Approval rate" value={formatPercent(impact.actionApprovalRate)} />
-                  <ImpactStat
-                    label="Handled rate"
-                    value={formatPercent(impact.actionHandledRate ?? impact.actionApprovalRate)}
-                  />
-                  <ImpactStat
-                    label="Suggested"
-                    value={impact.actionsSuggested}
-                    sub={`${formatNumber(impact.actionsHandled ?? 0)} handled`}
-                  />
-                </div>
-                {impact.topActionTypes?.length ? (
-                  <div className="space-y-2">
-                    {impact.topActionTypes.map((row) => (
-                      <button
-                        key={row.key}
-                        type="button"
-                        onClick={() => onDrilldown(row.key, row.label)}
-                        className={`analytics-pressable grid w-full grid-cols-[1fr_auto] gap-3 rounded-xl border border-transparent bg-muted/20 p-3 text-left hover:bg-muted/40 ${
-                          drilldownKey === row.key ? "border-foreground/20 ring-1 ring-foreground/10" : ""
-                        }`}
-                      >
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium">{row.label}</p>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            {formatNumber(row.suggested)} suggested · {formatNumber(row.handled)} handled
-                          </p>
-                        </div>
-                        <Badge variant="outline" className="rounded-md tabular-nums">
-                          {formatPercent(row.approvalRate)}
-                        </Badge>
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <EmptyAnalyticsState icon={Zap} title="No Sona actions yet">
-                    Suggested workflows appear here.
-                  </EmptyAnalyticsState>
-                )}
-              </>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card className="rounded-2xl shadow-sm">
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <TrendingUp className="size-4 text-[#7C6DF2]" />
-            AI Performance Insights
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+      {(loading || topRequestTypes.length > 0) && (
+        <div style={sectionMotionStyle(4)}>
+          <p className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground/50">
+            Top Request Types
+          </p>
           {loading ? (
-            <LoadingCard className="h-52" />
+            <LoadingCard className="h-32" />
           ) : (
-            <SonaPerformanceInsights
-              impact={impact}
-              onDrilldown={onDrilldown}
-              drilldownKey={drilldownKey}
+            <HorizontalBarList
+              items={topRequestTypes}
+              emptyTitle="No tagged tickets yet"
+              emptyDescription="Request types appear after tickets are tagged."
+              onSelect={onDrilldown}
+              activeKey={drilldownKey}
             />
           )}
-        </CardContent>
-      </Card>
+        </div>
+      )}
     </div>
   );
 }
@@ -1313,6 +933,172 @@ function TicketsTab({ data, drilldown }) {
       </div>
       <PreviousSystemComparisonSection data={data} />
       <CoverageFooter data={data} />
+    </div>
+  );
+}
+
+function SupportKpiCard({ label, value, sub, loading, accent = false, style }) {
+  const isPlaceholder = !value || value === "Collecting data" || value === "-";
+  return (
+    <div className="analytics-stat-card rounded-xl border bg-background p-5 text-center" style={style}>
+      {loading ? (
+        <Skeleton className="mx-auto mt-1 h-8 w-20" />
+      ) : isPlaceholder ? (
+        <p className="mt-2 text-sm font-medium text-muted-foreground/40">Collecting data</p>
+      ) : (
+        <p className={`text-3xl font-bold tracking-tight tabular-nums ${accent ? "text-[#6366f1]" : ""}`}>
+          {value}
+        </p>
+      )}
+      <p className={`text-xs text-muted-foreground ${isPlaceholder ? "mt-2" : "mt-2"}`}>{label}</p>
+      {sub && !isPlaceholder ? (
+        <p className="mt-1 text-xs text-muted-foreground/70">{sub}</p>
+      ) : null}
+    </div>
+  );
+}
+
+function TimeBracketChart({ brackets, loading, emptyTitle }) {
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        {[0, 1, 2, 3, 4].map((i) => (
+          <div key={i} className="grid grid-cols-[76px_1fr_36px_44px] items-center gap-2.5">
+            <Skeleton className="h-3 w-full" />
+            <Skeleton className="h-1.5 w-full" />
+            <Skeleton className="h-3 w-full" />
+            <Skeleton className="h-3 w-full" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+  if (!brackets?.length) {
+    return <EmptyAnalyticsState icon={Gauge} title={emptyTitle}>Collecting data.</EmptyAnalyticsState>;
+  }
+  const max = Math.max(...brackets.map((b) => b.count), 1);
+  return (
+    <div className="space-y-2.5">
+      {brackets.map((bracket) => {
+        const isNoReply = bracket.key === "no_reply";
+        return (
+          <div key={bracket.key} className="grid grid-cols-[76px_1fr_36px_44px] items-center gap-2.5">
+            <span className={`text-right text-xs tabular-nums ${isNoReply ? "font-medium text-amber-600" : "text-muted-foreground"}`}>
+              {bracket.label}
+            </span>
+            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+              <div
+                className="analytics-bar h-full rounded-full"
+                style={{
+                  width: `${Math.max(bracket.count ? 3 : 0, (bracket.count / max) * 100)}%`,
+                  backgroundColor: isNoReply ? "rgb(251 191 36)" : "#6366f1",
+                  opacity: 0.75,
+                }}
+              />
+            </div>
+            <span className="text-right text-xs font-semibold tabular-nums">{formatPercent(bracket.pct)}</span>
+            <span className="text-right text-xs tabular-nums text-muted-foreground/60">
+              {formatNumber(bracket.count)}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function SupportTab({ data, loading }) {
+  const kpis = data?.supportKpis ?? {};
+
+  return (
+    <div className="analytics-section flex flex-col gap-6">
+      <div>
+        <p className="mb-2.5 text-xs font-semibold uppercase tracking-widest text-muted-foreground/50">
+          Tickets
+        </p>
+        <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-5">
+          <SupportKpiCard loading={loading} label="Created tickets" value={formatNumber(kpis.createdTickets)} style={{ animationDelay: "0ms" }} />
+          <SupportKpiCard loading={loading} label="Unsolved tickets" value={formatNumber(kpis.unsolvedTickets)} style={{ animationDelay: "40ms" }} />
+          <SupportKpiCard loading={loading} label="Solved tickets" value={formatNumber(kpis.solvedTickets)} style={{ animationDelay: "80ms" }} />
+          <SupportKpiCard
+            loading={loading}
+            label="One-touch tickets"
+            value={kpis.solvedTickets > 0 ? formatPercent(kpis.oneTouchRate) : "Collecting data"}
+            sub={kpis.solvedTickets > 0 ? `${formatNumber(kpis.oneTouchTickets)} of ${formatNumber(kpis.solvedTickets)} solved` : undefined}
+            accent={kpis.solvedTickets > 0}
+            style={{ animationDelay: "120ms" }}
+          />
+          <SupportKpiCard
+            loading={loading}
+            label="Reopened tickets"
+            value="Collecting data"
+            style={{ animationDelay: "160ms" }}
+          />
+        </div>
+      </div>
+
+      <div>
+        <p className="mb-4 text-xs font-semibold uppercase tracking-widest text-muted-foreground/50">
+          Response &amp; Resolution Time
+        </p>
+        <div className="grid gap-5 xl:grid-cols-2">
+          <Card className="rounded-2xl shadow-sm">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-semibold">Tickets by first reply time</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <TimeBracketChart
+                brackets={kpis.firstReplyBrackets}
+                loading={loading}
+                emptyTitle="No first reply data yet"
+              />
+            </CardContent>
+          </Card>
+          <Card className="rounded-2xl shadow-sm">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-semibold">Tickets by full resolution time</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <TimeBracketChart
+                brackets={kpis.resolutionBrackets}
+                loading={loading}
+                emptyTitle="No resolution time data yet"
+              />
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      <div>
+        <p className="mb-4 text-xs font-semibold uppercase tracking-widest text-muted-foreground/50">
+          Median Times
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="analytics-stat-card rounded-xl border bg-background p-5 text-center" style={{ animationDelay: "200ms" }}>
+            {loading ? (
+              <Skeleton className="mx-auto mt-1 h-8 w-24" />
+            ) : (
+              <p className="text-3xl font-bold tracking-tight tabular-nums">
+                {formatDuration(kpis.medianFirstReplyMinutes)}
+              </p>
+            )}
+            <p className="mt-2 text-xs text-muted-foreground">First reply time median</p>
+          </div>
+          <div className="analytics-stat-card rounded-xl border bg-background p-5 text-center" style={{ animationDelay: "240ms" }}>
+            {loading ? (
+              <Skeleton className="mx-auto mt-1 h-8 w-24" />
+            ) : kpis.medianResolutionMinutes != null ? (
+              <p className="text-3xl font-bold tracking-tight tabular-nums">
+                {formatDuration(kpis.medianResolutionMinutes)}
+              </p>
+            ) : (
+              <p className="mt-2 text-sm font-medium text-muted-foreground/40">Collecting data</p>
+            )}
+            <p className="mt-2 text-xs text-muted-foreground">Full resolution time median</p>
+            <p className="mt-1 text-xs text-muted-foreground/50">Time from open to solved</p>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1397,11 +1183,11 @@ export default function AnalyticsPage() {
         {activeTab === "overview" && (
           <OverviewTab data={data} loading={loading} onDrilldown={handleDrilldown} drilldownKey={drilldown.key} />
         )}
-        {activeTab === "sona-impact" && (hasData || loading) && (
-          <SonaImpactTab data={data} loading={loading} onDrilldown={handleDrilldown} drilldownKey={drilldown.key} />
-        )}
         {activeTab === "topics" && (hasData || loading) && (
           <TopicsTab data={data} loading={loading} onDrilldown={handleDrilldown} drilldownKey={drilldown.key} />
+        )}
+        {activeTab === "support" && (hasData || loading) && (
+          <SupportTab data={data} loading={loading} />
         )}
         {activeTab === "tickets" && (
           <TicketsTab data={data} drilldown={drilldown} />

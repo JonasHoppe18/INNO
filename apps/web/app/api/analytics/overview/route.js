@@ -163,6 +163,45 @@ function normalizeStatus(status) {
   return String(status || "").trim().toLowerCase();
 }
 
+function computeFirstReplyBrackets(minutesArray, totalTickets) {
+  const counts = { no_reply: 0, "0_1h": 0, "1_8h": 0, "8_24h": 0, over_24h: 0 };
+  for (const m of minutesArray) {
+    if (m <= 60) counts["0_1h"]++;
+    else if (m <= 480) counts["1_8h"]++;
+    else if (m <= 1440) counts["8_24h"]++;
+    else counts.over_24h++;
+  }
+  counts.no_reply = Math.max(0, totalTickets - minutesArray.length);
+  const total = Math.max(totalTickets, 1);
+  return [
+    { key: "no_reply", label: "No reply", count: counts.no_reply, pct: pct(counts.no_reply, total) },
+    { key: "0_1h", label: "0–1 hrs", count: counts["0_1h"], pct: pct(counts["0_1h"], total) },
+    { key: "1_8h", label: "1–8 hrs", count: counts["1_8h"], pct: pct(counts["1_8h"], total) },
+    { key: "8_24h", label: "8–24 hrs", count: counts["8_24h"], pct: pct(counts["8_24h"], total) },
+    { key: "over_24h", label: ">24 hrs", count: counts.over_24h, pct: pct(counts.over_24h, total) },
+  ];
+}
+
+function computeResolutionBrackets(minutesArray) {
+  if (!minutesArray.length) return [];
+  const counts = { "0_5h": 0, "5_24h": 0, "1_7d": 0, "7_30d": 0, over_30d: 0 };
+  for (const m of minutesArray) {
+    if (m <= 300) counts["0_5h"]++;
+    else if (m <= 1440) counts["5_24h"]++;
+    else if (m <= 10080) counts["1_7d"]++;
+    else if (m <= 43200) counts["7_30d"]++;
+    else counts.over_30d++;
+  }
+  const total = minutesArray.length;
+  return [
+    { key: "0_5h", label: "0–5 hrs", count: counts["0_5h"], pct: pct(counts["0_5h"], total) },
+    { key: "5_24h", label: "5–24 hrs", count: counts["5_24h"], pct: pct(counts["5_24h"], total) },
+    { key: "1_7d", label: "1–7 days", count: counts["1_7d"], pct: pct(counts["1_7d"], total) },
+    { key: "7_30d", label: "7–30 days", count: counts["7_30d"], pct: pct(counts["7_30d"], total) },
+    { key: "over_30d", label: ">30 days", count: counts.over_30d, pct: pct(counts.over_30d, total) },
+  ];
+}
+
 function isSolvedThread(thread) {
   return SOLVED_STATUSES.has(normalizeStatus(thread?.status));
 }
@@ -449,9 +488,11 @@ async function fetchPeriodMetrics(serviceClient, scope, since, until) {
   const resolutionByThreadId = {};
   const topicReplyMinutes = {};
   const firstReplyMinutes = [];
+  const resolutionMinutes = [];
   let repliedTickets = 0;
   let totalAgentReplies = 0;
   let solvedTickets = 0;
+  let oneTouchTickets = 0;
 
   for (const thread of threadRows) {
     const key = grouping === "month" ? monthKey(thread.created_at) : grouping === "week" ? weekKey(thread.created_at) : dateKey(thread.created_at);
@@ -489,7 +530,11 @@ async function fetchPeriodMetrics(serviceClient, scope, since, until) {
 
     if (isSolvedThread(thread)) {
       const proxyResolution = minutesBetween(thread.created_at, thread.updated_at);
-      if (proxyResolution != null) resolutionByThreadId[thread.id] = proxyResolution;
+      if (proxyResolution != null) {
+        resolutionByThreadId[thread.id] = proxyResolution;
+        resolutionMinutes.push(proxyResolution);
+      }
+      if (outboundMessages.length === 1) oneTouchTickets++;
     }
   }
 
@@ -793,7 +838,11 @@ async function fetchPeriodMetrics(serviceClient, scope, since, until) {
   return {
     supportTickets: threadRows.length,
     solvedTickets,
+    oneTouchTickets,
+    firstReplyMinutes,
+    resolutionMinutes,
     medianFirstReplyMinutes: median(firstReplyMinutes),
+    medianResolutionMinutes: median(resolutionMinutes),
     responseTimeTrackedTickets: repliedTickets,
     totalAgentReplies,
     drafts,
@@ -839,6 +888,9 @@ async function fetchPeriodMetrics(serviceClient, scope, since, until) {
 
 function buildStructuredPayload({ windowInfo, current, previous }) {
   const supportTicketsChangePct = previous ? changePct(current.supportTickets, previous.supportTickets) : null;
+  const currentUnsolved = current.supportTickets - current.solvedTickets;
+  const previousUnsolved = previous ? previous.supportTickets - previous.solvedTickets : null;
+  const unsolvedTicketsChangePct = previousUnsolved != null ? changePct(currentUnsolved, previousUnsolved) : null;
   const medianFirstReplyChangePct = previous
     ? changePct(current.medianFirstReplyMinutes ?? NaN, previous.medianFirstReplyMinutes ?? NaN)
     : null;
@@ -894,6 +946,9 @@ function buildStructuredPayload({ windowInfo, current, previous }) {
     summary: {
       supportTickets: current.supportTickets,
       supportTicketsChangePct,
+      unsolvedTickets: currentUnsolved,
+      unsolvedTicketsChangePct,
+      solvedTickets: current.solvedTickets,
       medianFirstReplyMinutes: current.medianFirstReplyMinutes,
       medianFirstReplyChangePct,
       firstReplyDataQuality:
@@ -1005,6 +1060,19 @@ function buildStructuredPayload({ windowInfo, current, previous }) {
       byKey: current.byKey,
     },
     coverage: current.coverage,
+    supportKpis: {
+      createdTickets: current.supportTickets,
+      solvedTickets: current.solvedTickets,
+      unsolvedTickets: current.supportTickets - current.solvedTickets,
+      oneTouchTickets: current.oneTouchTickets,
+      oneTouchRate: pct(current.oneTouchTickets, current.solvedTickets),
+      reopenedTickets: null,
+      reopenedRate: null,
+      medianFirstReplyMinutes: current.medianFirstReplyMinutes,
+      medianResolutionMinutes: current.medianResolutionMinutes,
+      firstReplyBrackets: computeFirstReplyBrackets(current.firstReplyMinutes, current.supportTickets),
+      resolutionBrackets: computeResolutionBrackets(current.resolutionMinutes),
+    },
 
     // Legacy fields kept while other internal consumers migrate to the structured payload.
     tickets_total: current.supportTickets,
