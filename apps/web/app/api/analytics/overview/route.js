@@ -208,7 +208,10 @@ function isSolvedThread(thread) {
 
 function isSupportThread(thread) {
   const classification = String(thread?.classification_key || "").trim().toLowerCase();
-  return !NOISE_CLASSIFICATIONS.has(classification);
+  if (NOISE_CLASSIFICATIONS.has(classification)) return false;
+  const tags = Array.isArray(thread?.tags) ? thread.tags : [];
+  if (tags.some((tag) => String(tag).startsWith("inbox:"))) return false;
+  return true;
 }
 
 function asTimestamp(row) {
@@ -384,7 +387,7 @@ async function fetchPeriodMetrics(serviceClient, scope, since, until) {
   let threadsQ = serviceClient
     .from("mail_threads")
     .select(
-      "id, provider_thread_id, ticket_number, subject, customer_email, status, classification_key, issue_summary, solution_summary, detected_product_id, created_at, updated_at",
+      "id, provider_thread_id, ticket_number, subject, customer_email, status, classification_key, tags, issue_summary, solution_summary, detected_product_id, created_at, updated_at",
     )
     .lt("created_at", until);
   if (since) threadsQ = threadsQ.gte("created_at", since);

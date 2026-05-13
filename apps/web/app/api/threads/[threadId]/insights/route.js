@@ -110,7 +110,7 @@ export async function GET(_request, { params }) {
   if (threadKeys.length) {
     let draftsQuery = serviceClient
       .from("drafts")
-      .select("id")
+      .select("draft_id")
       .in("thread_id", threadKeys)
       .order("created_at", { ascending: false })
       .limit(100);
@@ -121,7 +121,7 @@ export async function GET(_request, { params }) {
     const { data: draftsData } = await draftsQuery;
     draftIdRows = Array.isArray(draftsData) ? draftsData : [];
   }
-  const draftIds = draftIdRows.map((row) => row?.id).filter(Boolean);
+  const draftIds = draftIdRows.map((row) => row?.draft_id).filter(Boolean);
 
   let draftLogs = [];
   if (draftIds.length) {

@@ -292,6 +292,7 @@ export function SonaInsightsModal({
       if (raw === "forward_email_applied") return "Email forwarded";
       if (raw === "forward_email_failed") return "Forward failed";
       if (raw === "product search") return "Product Search";
+      if (raw === "knowledge_gap_detected") return "Needs more knowledge";
       return raw
         .replace(/_/g, " ")
         .replace(/\bpostmark\b/gi, "Postmark")
@@ -362,6 +363,22 @@ export function SonaInsightsModal({
       }
       if (step === "product search") {
         return parsed.detail || "Searched product context.";
+      }
+      if (step === "knowledge_gap_detected") {
+        const gaps = Array.isArray(parsed?.gaps) ? parsed.gaps : [];
+        if (!gaps.length) return "Sona lacks knowledge to answer this question well.";
+        const gapTypeLabels = {
+          missing_procedure: "Missing procedure",
+          missing_policy: "Missing policy",
+          low_kb_coverage: "No knowledge found",
+          low_grounding: "Low KB coverage",
+        };
+        return gaps
+          .map((g) => {
+            const label = gapTypeLabels[g.gap_type] || g.gap_type;
+            return g.suggested_title ? `${label}: ${g.suggested_title}` : label;
+          })
+          .join("\n");
       }
       if (step === "context") {
         return parsed.detail || "Loaded store context.";
@@ -475,6 +492,15 @@ export function SonaInsightsModal({
     const parsed = parseLogDetail(createdLog.step_detail);
     return Array.isArray(parsed?.sources) ? parsed.sources : [];
   }, [logs]);
+
+  const knowledgeGaps = useMemo(() => {
+    const gapLog = logs.find(
+      (log) => String(log?.step_name || "").toLowerCase() === "knowledge_gap_detected"
+    );
+    if (!gapLog) return [];
+    const parsed = parseLogDetail(gapLog.step_detail);
+    return Array.isArray(parsed?.gaps) ? parsed.gaps : [];
+  }, [logs]);
   const latestTimelineItem = timelineItems.length
     ? timelineItems[timelineItems.length - 1]
     : null;
@@ -579,6 +605,23 @@ export function SonaInsightsModal({
                   </div>
                 </div>
               ) : null}
+
+              {knowledgeGaps.length > 0 && (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-semibold uppercase tracking-widest text-amber-600/80">
+                      Needs knowledge
+                    </span>
+                  </div>
+                  <div className="space-y-1">
+                    {knowledgeGaps.map((gap, i) => (
+                      <div key={i} className="text-xs text-amber-800 leading-snug">
+                        {gap.suggested_title || gap.gap_type}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <button
                 type="button"

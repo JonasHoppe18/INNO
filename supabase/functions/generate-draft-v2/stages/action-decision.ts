@@ -181,6 +181,13 @@ function alreadyDecided(
   return decisionKeys.some((k) => keys.has(k));
 }
 
+function photoConfirmed(caseState: CaseState): boolean {
+  return caseState.decisions_made.some((d) =>
+    /photo[_\s]?confirmed|photo[_\s]?received|photos[_\s]?provided|billede[_\s]?modtaget|documentation[_\s]?received/i
+      .test(d.decision)
+  );
+}
+
 function normalizeCandidate(value: string): string {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
@@ -457,6 +464,11 @@ function applyDeterministicRules(
       return [];
     }
 
+    // Guard: shop kræver foto/dokumentation FØR exchange foreslås
+    if (shopConfig.defect_requires_photo && !photoConfirmed(caseState)) {
+      return []; // Writer beder om billeder — exchange foreslås i næste runde
+    }
+
     // Bestem workflow: KB > shopConfig > default (shopify)
     const officeFromKB = kbSaysOfficeShipment(retrieved);
     const sparePartDetected = isSparePartRequest(plan, caseState, shopConfig);
@@ -579,6 +591,11 @@ function applyDeterministicRules(
       !sparePartInCustomerWords
     ) {
       return []; // Writer giver troubleshooting-trin fra KB
+    }
+
+    // Guard: shop kræver foto/dokumentation FØR exchange foreslås
+    if (shopConfig.defect_requires_photo && !photoConfirmed(caseState)) {
+      return []; // Writer beder om billeder — exchange foreslås i næste runde
     }
 
     // Generel klage (manglende vare, forkert vare, defekt produkt)
