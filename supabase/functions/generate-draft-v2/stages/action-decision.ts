@@ -265,7 +265,7 @@ function extractReplacementShippingAddress(
 
 // ─── Deterministiske regler ───────────────────────────────────────────────────
 
-function applyDeterministicRules(
+export function applyDeterministicRules(
   plan: Plan,
   caseState: CaseState,
   facts: FactResolverResult,
@@ -297,6 +297,20 @@ function applyDeterministicRules(
   if (
     replacementAlreadyArranged &&
     ["complaint", "exchange", "refund"].includes(intent)
+  ) {
+    return [];
+  }
+
+  // ── Guard: pending asks — vi venter på information fra kunden ──────────────
+  // Hvis pending_asks ikke er tom, er vi i informationsindsamlings-mode.
+  // Action-decision må ikke foreslå resolution-actions (exchange, refund, return)
+  // før vi har fået den afventede information. Writer håndterer opfølgningen.
+  const RESOLUTION_INTENTS = new Set([
+    "exchange", "complaint", "refund", "return", "cancel",
+  ]);
+  if (
+    caseState.pending_asks.length > 0 &&
+    RESOLUTION_INTENTS.has(intent)
   ) {
     return [];
   }

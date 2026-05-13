@@ -1,4 +1,4 @@
-import { assertEquals } from "jsr:@std/assert@1";
+import { assertEquals, assertNotEquals } from "jsr:@std/assert@1";
 import {
   applyAutomationConstraints,
   shouldDeferDraftUntilActionDecision,
@@ -52,4 +52,96 @@ Deno.test("shouldDeferDraftUntilActionDecision defers only action review flows",
   assertEquals(shouldDeferDraftUntilActionDecision([proposal()], "review"), true);
   assertEquals(shouldDeferDraftUntilActionDecision([proposal()], "auto"), false);
   assertEquals(shouldDeferDraftUntilActionDecision([], "review"), false);
+});
+
+Deno.test("action-decision: returns [] when pending_asks is non-empty", async () => {
+  const { applyDeterministicRules } = await import(
+    "./stages/action-decision.ts"
+  );
+
+  const plan = {
+    primary_intent: "exchange",
+    sub_queries: [],
+    required_facts: [],
+    skills_to_consider: [],
+    confidence: 0.9,
+    language: "da",
+  };
+
+  const caseState = {
+    intents: [{ type: "exchange", confidence: 0.9 }],
+    entities: { order_numbers: [], customer_email: "", products_mentioned: [] },
+    decisions_made: [],
+    open_questions: [],
+    pending_asks: ["photo of the damage"],
+    language: "da",
+    last_updated_msg_id: "msg-1",
+  };
+
+  const facts = {
+    order: {
+      id: "gid://shopify/Order/123",
+      name: "#1234",
+      fulfillment_status: null,
+      financial_status: "paid",
+      line_items: [{ variant_id: "456" }],
+    },
+    facts: [],
+  };
+
+  const retrieved = { chunks: [], past_ticket_examples: [] };
+  const shopConfig = {};
+  const customerMessage = "headset is broken";
+
+  const result = applyDeterministicRules(
+    plan, caseState, facts, retrieved, shopConfig, customerMessage
+  );
+
+  assertEquals(result, [], "should return no actions when pending_asks is non-empty");
+});
+
+Deno.test("action-decision: proposes exchange when pending_asks is empty", async () => {
+  const { applyDeterministicRules } = await import(
+    "./stages/action-decision.ts"
+  );
+
+  const plan = {
+    primary_intent: "exchange",
+    sub_queries: [],
+    required_facts: [],
+    skills_to_consider: [],
+    confidence: 0.9,
+    language: "da",
+  };
+
+  const caseState = {
+    intents: [{ type: "exchange", confidence: 0.9 }],
+    entities: { order_numbers: [], customer_email: "", products_mentioned: [] },
+    decisions_made: [],
+    open_questions: [],
+    pending_asks: [],
+    language: "da",
+    last_updated_msg_id: "msg-2",
+  };
+
+  const facts = {
+    order: {
+      id: "gid://shopify/Order/123",
+      name: "#1234",
+      fulfillment_status: null,
+      financial_status: "paid",
+      line_items: [{ variant_id: "456" }],
+    },
+    facts: [],
+  };
+
+  const retrieved = { chunks: [], past_ticket_examples: [] };
+  const shopConfig = {};
+  const customerMessage = "headset is physically broken";
+
+  const result = applyDeterministicRules(
+    plan, caseState, facts, retrieved, shopConfig, customerMessage
+  );
+
+  assertNotEquals(result.length, 0, "should propose exchange when no pending asks");
 });
