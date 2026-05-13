@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Close the 4 real gaps between Sona's current pipeline and production best-practice for AI customer support agents, enabling 10/10 responses and actions across all webshops.
+**Goal:** Close the 3 real gaps between Sona's current pipeline and production best-practice for AI customer support agents, enabling 10/10 responses and actions across all webshops.
 
 **Architecture:** Each task is independently deployable with no dependency on the others. Tasks are ordered by impact — do them in order. Hybrid retrieval (BM25 + vector + RRF) and procedure-type handling in the writer are already implemented and do not need changes.
 
@@ -17,7 +17,7 @@
 | `pending_asks` not used as gate in action-decision | ❌ Not implemented |
 | Action config UI (defect_requires_photo, spare_parts_workflow etc.) | ❌ Not implemented |
 | KB freshness monitoring | ❌ Not implemented |
-| Action-level confidence thresholds | ❌ Not implemented |
+| Automation on/off per action | ✅ Already implemented (agent_automation table + AutomationPanel toggles, default OFF) |
 | Hybrid retrieval (BM25 + vector + RRF) | ✅ Already implemented |
 | Procedure-type chunks handled by writer | ✅ Already implemented |
 
@@ -721,185 +721,9 @@ git commit -m "feat(kb): add freshness tracking with stale indicator in KB manag
 
 ---
 
-## Task 5: Action-level confidence thresholds
+## Note: Automation on/off is already solved
 
-**What:** Allow shops to configure per-action approval thresholds — e.g. auto-approve refunds under 50 DKK, always gate exchanges. Currently `requires_approval` is hardcoded per action type.
-
-**Files:**
-- Modify: `supabase/functions/generate-draft-v2/stages/action-decision.ts`
-- Modify: `apps/web/app/api/action-config/route.js`
-- Modify: `apps/web/hooks/useActionConfig.js`
-- Modify: `apps/web/components/agent/AutomationPanel.jsx`
-
----
-
-- [ ] **Step 5.1: Extend `ShopActionConfig` type**
-
-In `supabase/functions/generate-draft-v2/stages/action-decision.ts`, extend the interface:
-
-```typescript
-export interface ActionThreshold {
-  auto_approve_under_amount?: number; // DKK/EUR — for refund_order only
-  always_require_approval?: boolean;  // override everything, always gate
-}
-
-export interface ShopActionConfig {
-  // ... existing fields ...
-  action_thresholds?: Partial<Record<string, ActionThreshold>>;
-}
-```
-
-- [ ] **Step 5.2: Write failing test for threshold logic**
-
-Add to `pipeline_test.ts`:
-
-```typescript
-Deno.test("action-decision: auto-approves small refund when under threshold", async () => {
-  const { applyDeterministicRules } = await import("./stages/action-decision.ts");
-
-  const plan = {
-    primary_intent: "refund",
-    sub_queries: [],
-    required_facts: [],
-    skills_to_consider: [],
-    confidence: 0.9,
-    language: "da",
-  };
-
-  const caseState = {
-    intents: [{ type: "refund", confidence: 0.9 }],
-    entities: { order_numbers: ["#1234"], customer_email: "test@test.com", products_mentioned: [] },
-    decisions_made: [],
-    open_questions: [],
-    pending_asks: [],
-    language: "da",
-    last_updated_msg_id: "msg-1",
-  };
-
-  const facts = {
-    order: {
-      id: "gid://shopify/Order/123",
-      name: "#1234",
-      fulfillment_status: null,
-      financial_status: "paid",
-      created_at: new Date().toISOString(),
-      total_price: "45.00",
-    },
-    facts: [{ label: "Returret", value: "Ja — inden for returvinduet" }],
-  };
-
-  const shopConfig = {
-    action_thresholds: {
-      refund_order: { auto_approve_under_amount: 100 },
-    },
-  };
-
-  const result = applyDeterministicRules(
-    plan, caseState, facts, { chunks: [], past_ticket_examples: [] }, shopConfig, "refund please"
-  );
-
-  assertEquals(result.length, 1);
-  assertEquals(result[0].type, "refund_order");
-  assertEquals(result[0].requires_approval, false, "should auto-approve refund under threshold");
-});
-```
-
-- [ ] **Step 5.3: Implement threshold check in refund block**
-
-In `action-decision.ts` refund block (around line 360), replace the `requiresApproval` logic:
-
-```typescript
-    // Threshold-based approval: check action_thresholds config first
-    const refundThreshold = shopConfig.action_thresholds?.refund_order;
-    let requiresApproval = true;
-
-    if (refundThreshold?.always_require_approval) {
-      requiresApproval = true;
-    } else if (
-      refundThreshold?.auto_approve_under_amount != null &&
-      order.total_price != null
-    ) {
-      const amount = parseFloat(String(order.total_price).replace(",", "."));
-      requiresApproval = amount > refundThreshold.auto_approve_under_amount;
-    } else {
-      // Fall back to existing refund_auto_days logic
-      const autoDays = shopConfig.refund_auto_days ?? 0;
-      if (autoDays > 0 && order.created_at) {
-        const daysSince = Math.floor(
-          (Date.now() - new Date(order.created_at).getTime()) / 86_400_000,
-        );
-        requiresApproval = daysSince > autoDays;
-      }
-    }
-```
-
-- [ ] **Step 5.4: Run tests**
-
-```bash
-deno test supabase/functions/generate-draft-v2/pipeline_test.ts --allow-net --allow-env 2>&1 | grep -E "(PASS|FAIL|threshold)"
-```
-
-Expected: all tests PASS.
-
-- [ ] **Step 5.5: Extend action-config API to include thresholds**
-
-In `apps/web/app/api/action-config/route.js`, add `"action_thresholds"` to `ALLOWED_KEYS`:
-
-```javascript
-const ALLOWED_KEYS = [
-  "defect_requires_photo",
-  "spare_parts_workflow",
-  "exchange_workflow",
-  "action_thresholds",  // add this
-];
-```
-
-- [ ] **Step 5.6: Add refund threshold control to Claim handling UI**
-
-In the `SettingsSection` for Claim handling in `AutomationPanel.jsx`, add after the exchange_workflow select:
-
-```jsx
-<Separator />
-
-<div className="space-y-2">
-  <h3 className="text-sm font-semibold text-slate-900">Auto-approve refunds under</h3>
-  <p className="text-xs text-slate-500">
-    Refunds below this amount are automatically approved. Set to 0 to always require approval.
-  </p>
-  <div className="flex items-center gap-2 max-w-xs">
-    <Input
-      type="number"
-      min={0}
-      value={
-        actionConfig.action_thresholds?.refund_order?.auto_approve_under_amount ?? 0
-      }
-      onChange={(e) =>
-        updateActionConfig("action_thresholds", {
-          ...(actionConfig.action_thresholds ?? {}),
-          refund_order: {
-            ...(actionConfig.action_thresholds?.refund_order ?? {}),
-            auto_approve_under_amount: Number(e.target.value),
-          },
-        })
-      }
-      disabled={actionConfigLoading || actionConfigSaving}
-      className="bg-white"
-    />
-    <span className="text-sm text-slate-500">DKK</span>
-  </div>
-</div>
-```
-
-- [ ] **Step 5.7: Commit**
-
-```bash
-git add supabase/functions/generate-draft-v2/stages/action-decision.ts \
-        supabase/functions/generate-draft-v2/pipeline_test.ts \
-        apps/web/app/api/action-config/route.js \
-        apps/web/hooks/useActionConfig.js \
-        apps/web/components/agent/AutomationPanel.jsx
-git commit -m "feat(pipeline): action-level approval thresholds configurable per shop"
-```
+Per-action automation (order updates, cancellations, refunds) is already handled by the `agent_automation` table and the "AI Permissions" toggles in AutomationPanel. Default is OFF for all. No changes needed here.
 
 ---
 
@@ -910,13 +734,12 @@ git commit -m "feat(pipeline): action-level approval thresholds configurable per
 - ✅ Action config UI — Task 2
 - ✅ AceZone immediate setup — Task 3
 - ✅ KB freshness monitoring — Task 4
-- ✅ Action-level thresholds — Task 5
+- ✅ Automation on/off — already implemented (agent_automation + AutomationPanel), default OFF
 - ✅ Hybrid retrieval — already implemented, no task needed
 - ✅ Procedure-type handling — already implemented, no task needed
 
 **Placeholder scan:** No TBDs or incomplete sections. All code blocks are complete.
 
 **Type consistency:**
-- `ShopActionConfig` extended in Task 5 Step 5.1 — referenced in Task 2 API route which only allows string keys (no type mismatch)
 - `applyDeterministicRules` signature unchanged across all tasks
-- `useActionConfig` hook `update(key, value)` used consistently in Task 2 and Task 5 UI steps
+- `useActionConfig` hook `update(key, value)` used consistently in Task 2 UI steps
