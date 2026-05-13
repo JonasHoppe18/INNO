@@ -465,6 +465,54 @@ function parseReplacementShippingAddress(message = "", existingShipping = {}) {
   };
 }
 
+function buildCustomerHistorySummary(
+  priorThreads: Array<Record<string, unknown>>,
+): string {
+  const count = priorThreads.length;
+  const daysSince = (dateStr: unknown): number | null => {
+    if (!dateStr) return null;
+    const ms = Date.now() - new Date(String(dateStr)).getTime();
+    return Math.floor(ms / 86_400_000);
+  };
+
+  // Saml intenttyper på tværs af tidligere tråde
+  const intentCounts: Record<string, number> = {};
+  for (const t of priorThreads) {
+    const key = String(t.classification_key || "other");
+    intentCounts[key] = (intentCounts[key] ?? 0) + 1;
+  }
+  const topIntents = Object.entries(intentCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([k, n]) => n > 1 ? `${k} (${n}x)` : k);
+
+  // Gentagen samme intent = tegn på uløst problem
+  const maxIntentCount = Math.max(...Object.values(intentCounts));
+  const repeatedIssue = maxIntentCount >= 2;
+
+  const mostRecent = priorThreads[0];
+  const daysSinceLast = daysSince(mostRecent?.last_message_at);
+  const recentStatus = String(mostRecent?.status || "");
+  const recentSubject = String(mostRecent?.subject || "").slice(0, 80);
+  const recentSolution = mostRecent?.solution_summary
+    ? String(mostRecent.solution_summary).slice(0, 120)
+    : null;
+
+  const lines = [
+    `Tidligere kontakter: ${count} ${count === 1 ? "sag" : "sager"}`,
+    daysSinceLast !== null
+      ? `Seneste sag: "${recentSubject}" (${daysSinceLast} dage siden, ${recentStatus})`
+      : `Seneste sag: "${recentSubject}"`,
+    recentSolution ? `Seneste løsning: ${recentSolution}` : null,
+    topIntents.length ? `Emner: ${topIntents.join(", ")}` : null,
+    repeatedIssue
+      ? `⚠ Tilbagevendende problem — kunden har kontaktet os flere gange om samme emne.`
+      : null,
+  ].filter(Boolean);
+
+  return lines.join("\n");
+}
+
 export async function runDraftV2Pipeline(
   input: PipelineInput,
 ): Promise<PipelineResult> {
@@ -646,7 +694,9 @@ export async function runDraftV2Pipeline(
   const workspaceId =
     (shop as Record<string, unknown>).workspace_id as string | null ?? null;
 
-  const [caseState, automationResult, testModeResult, personaResult] =
+  const customerEmail = (thread as Record<string, unknown>).customer_email as string | null ?? null;
+
+  const [caseState, automationResult, testModeResult, personaResult, priorThreadsResult] =
     await Promise.all([
       updateCaseState({ thread, messages, shop, supabase }),
 
@@ -678,6 +728,18 @@ export async function runDraftV2Pipeline(
           .eq("workspace_id", workspaceId)
           .maybeSingle()
         : Promise.resolve({ data: null }),
+
+      // Kundehistorik — tidligere tråde fra samme email for denne shop
+      customerEmail && workspaceId
+        ? supabase
+          .from("mail_threads")
+          .select("id, subject, status, classification_key, last_message_at, solution_summary")
+          .eq("workspace_id", workspaceId)
+          .ilike("customer_email", customerEmail)
+          .neq("id", thread_id)
+          .order("last_message_at", { ascending: false })
+          .limit(8)
+        : Promise.resolve({ data: null }),
     ]);
 
   const automation = {
@@ -693,6 +755,12 @@ export async function runDraftV2Pipeline(
     persona_instructions: personaResult.data?.persona_instructions ?? null,
     persona_scenario: personaResult.data?.persona_scenario ?? null,
   };
+
+  // Byg kundehistorik-oversigt til writer
+  const priorThreads = Array.isArray(priorThreadsResult?.data) ? priorThreadsResult.data : [];
+  const customerHistory: string | null = priorThreads.length > 0
+    ? buildCustomerHistorySummary(priorThreads)
+    : null;
 
   // 4. Plan — bestem intent, hvad der skal hentes, hvilke facts der kræves
   let plan = await runPlanner({ caseState, latestMessage, shop });
@@ -1066,6 +1134,7 @@ export async function runDraftV2Pipeline(
     model: firstPassModel,
     attachments: imageAttachments,
     actionResult: postActionResult,
+    customerHistory: customerHistory ?? undefined,
   });
 
   let languageCheckedWritten = written;

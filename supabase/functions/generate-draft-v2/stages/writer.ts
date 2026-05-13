@@ -38,6 +38,7 @@ export interface WriterInput {
   languageCorrectionInstruction?: string;
   attachments?: InlineImageAttachment[];
   actionResult?: Record<string, unknown> | null;
+  customerHistory?: string;
 }
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
@@ -534,6 +535,7 @@ export async function runWriter(
     languageCorrectionInstruction,
     attachments = [],
     actionResult = null,
+    customerHistory,
   }: WriterInput,
 ): Promise<WriterResult> {
   const resolvedModel = model ?? Deno.env.get("OPENAI_MODEL") ?? "gpt-5-mini";
@@ -815,6 +817,11 @@ AFSLUTNING — brug situationens kontekst:
 - Undtagelse: Kunden udtrykker tydeligt frustration eller sorg (defekt, tabte data, ulykke) → ét kort empatisk ord er OK: "Det lyder frustrerende —" eller "Det er ærgerligt at høre."
 - Tracking og simple admin-sager: gå STRAKS til svaret. Ingen indledning.
 
+KUNDEHISTORIK (brug aktivt hvis tilgængelig):
+- Gentaget problem (⚠ markering): Anerkend at kunden har haft problemet før. Vær mere direkte og løsningsorienteret — spring standard-forklaringer over, kunden kender dem.
+- Første kontakt: Ingen ændring i tone.
+- Brug ALDRIG historikken til at antyde at kunden er besværlig — brug den til at spare kunden for at gentage sig selv.
+
 SAMTALE-FASE (følg dette præcist):
 - Første svar (ingen historik, ingen decisions_made): Giv komplet forklaring med alle relevante trin og kontekst.
 - Opfølgningssvar (samtalehistorik til stede, decisions_made er ikke tom): Skriv KORTERE. Kunden kender allerede situationen. Gå direkte til det nye punkt. Gentag aldrig hvad der allerede er aftalt.
@@ -867,6 +874,11 @@ ${
     }`
     : "";
 
+  const customerHistoryBlock = customerHistory
+    ? `# Kundehistorik (tidligere kontakter fra samme kunde)
+${customerHistory}`
+    : "";
+
   const userContent = [
     fewShotBlock,
     policyBlock,
@@ -880,6 +892,7 @@ ${
     actionsBlock,
     openQBlock,
     knowledgeBlock,
+    customerHistoryBlock,
     historyBlock,
     latestCustomerMessage
       ? `# Kundens seneste besked (læs denne grundigt — brug alle detaljer kunden har givet)
