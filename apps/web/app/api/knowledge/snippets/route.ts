@@ -331,6 +331,7 @@ async function insertKnowledgeChunks(options: {
         chunk_count: chunks.length,
       },
       embedding,
+      last_verified_at: new Date().toISOString(),
     });
     if (error) throw new Error(`Could not insert knowledge chunk: ${error.message}`);
   }
@@ -368,7 +369,7 @@ export async function GET(request: Request) {
 
     let query = (serviceClient as any)
       .from("agent_knowledge")
-      .select("content, metadata")
+      .select("content, metadata, last_verified_at")
       .eq("shop_id", shop.id)
       .eq("source_provider", "manual_text");
 
@@ -388,7 +389,9 @@ export async function GET(request: Request) {
     // Deduplicate by snippet_id, take first chunk (chunk_index 0)
     const seen = new Set<string>();
     const VALID_USABLE_AS = ["policy", "procedure", "fact", "saved_reply", "tone_example", "background"];
-    const snippets: Array<{ snippet_id: string; title: string; content: string; category: string | null; product_id: string | null; usable_as: string | null }> = [];
+    const STALE_DAYS = 30;
+    const staleThreshold = new Date(Date.now() - STALE_DAYS * 86400 * 1000);
+    const snippets: Array<{ snippet_id: string; title: string; content: string; category: string | null; product_id: string | null; usable_as: string | null; is_stale: boolean }> = [];
     for (const row of rows || []) {
       const meta = row.metadata as any;
       const snippetId = meta?.snippet_id as string | undefined;
@@ -403,6 +406,9 @@ export async function GET(request: Request) {
         category: (meta?.category as string) || null,
         product_id: (meta?.product_id as string) || null,
         usable_as: VALID_USABLE_AS.includes(rawUsableAs) ? rawUsableAs : null,
+        is_stale: row.last_verified_at
+          ? new Date(row.last_verified_at) < staleThreshold
+          : true,
       });
     }
 

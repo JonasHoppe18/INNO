@@ -563,7 +563,7 @@ export function KnowledgePageClient() {
 
       const { data, error } = await supabase
         .from("agent_knowledge")
-        .select("id, content, metadata, created_at, source_provider, source_type")
+        .select("id, content, metadata, created_at, source_provider, source_type, last_verified_at")
         .eq("shop_id", currentShopId)
         .in("source_provider", ["manual_text", "pdf_upload", "image_upload"])
         .order("created_at", { ascending: false });
@@ -580,6 +580,7 @@ export function KnowledgePageClient() {
           id: snippetId,
           title: "",
           created_at: null,
+          last_verified_at: null,
           source_provider: String(row?.source_provider || ""),
           usable_as: null,
           chunks: [],
@@ -596,12 +597,20 @@ export function KnowledgePageClient() {
         if (!existing.created_at || String(row?.created_at || "") > String(existing.created_at || "")) {
           existing.created_at = row?.created_at || null;
         }
+        // Track earliest last_verified_at across chunks (most stale chunk determines entry freshness)
+        if (row?.last_verified_at) {
+          if (!existing.last_verified_at || String(row.last_verified_at) < String(existing.last_verified_at)) {
+            existing.last_verified_at = row.last_verified_at;
+          }
+        }
         existing.chunks.push({
           index: getChunkIndex(row),
           content: String(row?.content || ""),
         });
         grouped.set(snippetId, existing);
       }
+      const STALE_DAYS_UI = 30;
+      const staleThresholdUi = new Date(Date.now() - STALE_DAYS_UI * 86400 * 1000);
       const prepared = Array.from(grouped.values()).map((snippet) => {
         const sortedChunks = (snippet.chunks || [])
           .slice()
@@ -612,6 +621,10 @@ export function KnowledgePageClient() {
           id: snippet.id,
           title: snippet.title,
           created_at: snippet.created_at,
+          last_verified_at: snippet.last_verified_at || null,
+          is_stale: snippet.last_verified_at
+            ? new Date(snippet.last_verified_at) < staleThresholdUi
+            : true,
           source_provider: snippet.source_provider,
           usable_as: snippet.usable_as || null,
           content: snippet.source_provider === "manual_text" ? stitchedContent : "",
@@ -788,6 +801,7 @@ export function KnowledgePageClient() {
       created_at: snippet?.created_at || null,
       source_provider: String(snippet?.source_provider || ""),
       usable_as: snippet?.usable_as || null,
+      is_stale: Boolean(snippet?.is_stale),
       row_count: null,
     }));
     const csvItems = (csvImportBatches || []).map((batch) => ({
@@ -2044,7 +2058,14 @@ export function KnowledgePageClient() {
                                 {item.title}
                               </button>
                             ) : (
-                              <p className="truncate text-sm font-medium text-foreground">{item.title}</p>
+                              <div className="flex min-w-0 items-center gap-2">
+                                <p className="truncate text-sm font-medium text-foreground">{item.title}</p>
+                                {item.kind === "snippet" && item.is_stale && (
+                                  <span className="shrink-0 rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                                    Needs review
+                                  </span>
+                                )}
+                              </div>
                             )}
                             <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                               {item.kind === "csv_import"
