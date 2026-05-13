@@ -766,6 +766,11 @@ ${c.content.slice(0, (c.usable_as === "procedure" || c.usable_as === "fact") ? 2
 
   const isFollowUp = caseState.decisions_made.length > 0 ||
     caseState.pending_asks.length > 0;
+  const conversationTurn = conversationHistory ? conversationHistory.length : 0;
+  const isLateInConversation = conversationTurn >= 4;
+  const isConfirmationReply = caseState.decisions_made.length > 0 &&
+    caseState.open_questions.length === 0 &&
+    caseState.pending_asks.length === 0;
 
   const systemPrompt = `Du er en supportmedarbejder for ${shopName}.
 ${
@@ -809,6 +814,12 @@ AFSLUTNING — brug situationens kontekst:
 - Start direkte med svaret. Eksempel: "Din faktura er nu sendt til..." ikke "Tak fordi du kontakter os. Vi er kede af at høre..."
 - Undtagelse: Kunden udtrykker tydeligt frustration eller sorg (defekt, tabte data, ulykke) → ét kort empatisk ord er OK: "Det lyder frustrerende —" eller "Det er ærgerligt at høre."
 - Tracking og simple admin-sager: gå STRAKS til svaret. Ingen indledning.
+
+SAMTALE-FASE (følg dette præcist):
+- Første svar (ingen historik, ingen decisions_made): Giv komplet forklaring med alle relevante trin og kontekst.
+- Opfølgningssvar (samtalehistorik til stede, decisions_made er ikke tom): Skriv KORTERE. Kunden kender allerede situationen. Gå direkte til det nye punkt. Gentag aldrig hvad der allerede er aftalt.
+- Bekræftelsessvar (decisions_made ikke tom, ingen åbne spørgsmål, ingen pending_asks): Anerkend kort og bekræft næste skridt. Max 2-3 sætninger. Ingen genforklaring af processen — kunden ved allerede.
+- Sent i samtalen (4+ beskeder i historikken): Skriv som en kollega der kender sagen godt. Kort og direkte. Ingen formel indramning.
 
 TONE:
 - Kortfattet og præcis. Kom til sagen: "Din pakke bliver leveret inden kl. 18" ikke "Ifølge trackingdata..."
@@ -877,6 +888,15 @@ ${latestCustomerMessage.slice(0, 1200)}`
     `# Sammenfatning af henvendelsen
 Intent: ${plan.primary_intent}
 Sprog: ${replyLanguage} (${langName})
+Samtale-fase: ${
+      isConfirmationReply
+        ? "BEKRÆFTELSE — max 2-3 sætninger, ingen genforklaring"
+        : isLateInConversation
+        ? `SENT I SAMTALEN (${conversationTurn} beskeder) — kort og direkte, kunden kender konteksten`
+        : isFollowUp
+        ? `OPFØLGNING (turn ${conversationTurn}) — kortere end første svar, undgå gentagelser`
+        : "FØRSTE SVAR — giv komplet forklaring"
+    }
 ${
       caseState.entities.order_numbers.length > 0
         ? `Ordrenumre nævnt: ${caseState.entities.order_numbers.join(", ")}`
