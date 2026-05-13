@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAgentAutomation } from "@/hooks/useAgentAutomation";
+import { useActionConfig } from "@/hooks/useActionConfig";
 import { AutopilotReadinessSection } from "@/components/agent/AutopilotReadinessSection";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -189,6 +190,16 @@ export function AutomationPanel({ children = null }) {
   const [local, setLocal] = useState(settings || {});
   const [returnSettings, setReturnSettings] = useState(DEFAULT_RETURN_SETTINGS);
   const [initialReturnSettings, setInitialReturnSettings] = useState(DEFAULT_RETURN_SETTINGS);
+  const {
+    config: actionConfig,
+    loading: actionConfigLoading,
+    saving: actionConfigSaving,
+    error: actionConfigError,
+    isDirty: actionConfigDirty,
+    update: updateActionConfig,
+    save: saveActionConfig,
+    reset: resetActionConfig,
+  } = useActionConfig();
   const [returnsLoading, setReturnsLoading] = useState(true);
   const [returnsSeededNotice, setReturnsSeededNotice] = useState(false);
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
@@ -270,7 +281,7 @@ export function AutomationPanel({ children = null }) {
       const returnsDirty =
         returnSettingsSnapshot(returnSettings) !== returnSettingsSnapshot(initialReturnSettings);
 
-      if (Object.keys(updates).length === 0 && !returnsDirty) {
+      if (Object.keys(updates).length === 0 && !returnsDirty && !actionConfigDirty) {
         toast.success("Nothing to save.", { id: toastId });
         return;
       }
@@ -306,11 +317,14 @@ export function AutomationPanel({ children = null }) {
         setReturnSettings(next);
         setInitialReturnSettings(next);
       }
+      if (actionConfigDirty) {
+        await saveActionConfig();
+      }
       toast.success("Saved.", { id: toastId });
     } catch (_) {
       toast.error("Could not save changes.", { id: toastId });
     }
-  }, [initialReturnSettings, local, returnSettings, save, settings]);
+  }, [actionConfigDirty, initialReturnSettings, local, returnSettings, save, saveActionConfig, settings]);
 
   // dirty bruges både af header knappen og lokale CTA'er.
   const dirty = useMemo(() => {
@@ -321,8 +335,8 @@ export function AutomationPanel({ children = null }) {
       Boolean(local?.autoDraftEnabled) !== Boolean(settings?.autoDraftEnabled);
     const returnsDirty =
       returnSettingsSnapshot(returnSettings) !== returnSettingsSnapshot(initialReturnSettings);
-    return baseDirty || draftDirty || returnsDirty;
-  }, [initialReturnSettings, local, returnSettings, settings]);
+    return baseDirty || draftDirty || returnsDirty || actionConfigDirty;
+  }, [actionConfigDirty, initialReturnSettings, local, returnSettings, settings]);
 
   useEffect(() => {
     dirtyRef.current = dirty;
@@ -434,7 +448,8 @@ export function AutomationPanel({ children = null }) {
   const handleResetLocal = useCallback(() => {
     setLocal(settings || {});
     setReturnSettings(initialReturnSettings || DEFAULT_RETURN_SETTINGS);
-  }, [initialReturnSettings, settings]);
+    resetActionConfig();
+  }, [initialReturnSettings, resetActionConfig, settings]);
 
   const handleConfirmLeave = useCallback(() => {
     if (pendingHref) {
@@ -630,6 +645,84 @@ export function AutomationPanel({ children = null }) {
                     </p>
                   )}
                 </div>
+              </div>
+            </SettingsSection>
+
+            <SettingsSection
+              title="Claim handling"
+              description="Configure how Sona handles warranty claims, spare parts, and exchanges. Applied to all tickets for this store."
+            >
+              <div className="space-y-6">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-0.5">
+                    <h3 className="text-sm font-semibold text-slate-900">
+                      Require photos for defect claims
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      When enabled, Sona asks for photos before proposing an exchange or replacement.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={Boolean(actionConfig.defect_requires_photo)}
+                    onCheckedChange={(checked) =>
+                      updateActionConfig("defect_requires_photo", checked)
+                    }
+                    disabled={actionConfigLoading || actionConfigSaving}
+                  />
+                </div>
+
+                <Separator />
+
+                <div className="space-y-2">
+                  <h3 className="text-sm font-semibold text-slate-900">Spare parts</h3>
+                  <p className="text-xs text-slate-500">
+                    How should Sona handle requests for replacement parts (cables, ear pads, accessories)?
+                  </p>
+                  <Select
+                    value={actionConfig.spare_parts_workflow ?? "shopify"}
+                    onValueChange={(value) =>
+                      updateActionConfig("spare_parts_workflow", value)
+                    }
+                    disabled={actionConfigLoading || actionConfigSaving}
+                  >
+                    <SelectTrigger className="max-w-xs bg-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="office">Send from office</SelectItem>
+                      <SelectItem value="shopify">Create exchange in Shopify</SelectItem>
+                      <SelectItem value="manual">Route to team for review</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <Separator />
+
+                <div className="space-y-2">
+                  <h3 className="text-sm font-semibold text-slate-900">Exchange requests</h3>
+                  <p className="text-xs text-slate-500">
+                    How should Sona handle product exchange requests (not spare parts)?
+                  </p>
+                  <Select
+                    value={actionConfig.exchange_workflow ?? "shopify"}
+                    onValueChange={(value) =>
+                      updateActionConfig("exchange_workflow", value)
+                    }
+                    disabled={actionConfigLoading || actionConfigSaving}
+                  >
+                    <SelectTrigger className="max-w-xs bg-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="shopify">Create exchange request in Shopify</SelectItem>
+                      <SelectItem value="manual">Route to team for review</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {actionConfigError && (
+                  <p className="text-xs text-destructive">{actionConfigError.message}</p>
+                )}
               </div>
             </SettingsSection>
 
