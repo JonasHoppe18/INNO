@@ -550,6 +550,25 @@ function PreviousSystemComparisonSection({ data }) {
   );
 }
 
+const STATUS_STYLES = {
+  new: "bg-blue-50 text-blue-700 border-blue-200",
+  open: "bg-blue-50 text-blue-700 border-blue-200",
+  pending: "bg-amber-50 text-amber-700 border-amber-200",
+  solved: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  closed: "bg-muted text-muted-foreground border-border",
+  hold: "bg-purple-50 text-purple-700 border-purple-200",
+};
+
+function TicketStatusBadge({ status }) {
+  const key = (status || "").toLowerCase();
+  const cls = STATUS_STYLES[key] ?? "bg-muted text-muted-foreground border-border";
+  return (
+    <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium capitalize ${cls}`}>
+      {status}
+    </span>
+  );
+}
+
 function AnalyticsDrilldownTable({ data, drilldown }) {
   const [showAll, setShowAll] = useState(false);
   const tickets = data?.drilldowns?.byKey?.[drilldown.key] ?? data?.drilldowns?.defaultTickets ?? [];
@@ -578,38 +597,48 @@ function AnalyticsDrilldownTable({ data, drilldown }) {
             <div className="overflow-x-auto">
               <Table key={drilldown.key} className="analytics-table-swap">
                 <TableHeader>
-                  <TableRow className="border-b bg-background hover:bg-background">
-                    <TableHead className="min-w-28">Ticket</TableHead>
-                    <TableHead className="min-w-64">Subject</TableHead>
-                    <TableHead className="min-w-44">Customer</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="min-w-40">Request type</TableHead>
-                    <TableHead className="min-w-36">Product</TableHead>
-                    <TableHead>Created</TableHead>
-                    <TableHead>Updated</TableHead>
-                    <TableHead>First reply</TableHead>
-                    <TableHead>Sona usage</TableHead>
+                  <TableRow className="border-b bg-muted/30 hover:bg-muted/30">
+                    <TableHead className="min-w-[100px] text-xs font-semibold uppercase tracking-wide text-muted-foreground/70">Ticket</TableHead>
+                    <TableHead className="min-w-64 text-xs font-semibold uppercase tracking-wide text-muted-foreground/70">Subject</TableHead>
+                    <TableHead className="min-w-44 text-xs font-semibold uppercase tracking-wide text-muted-foreground/70">Customer</TableHead>
+                    <TableHead className="text-xs font-semibold uppercase tracking-wide text-muted-foreground/70">Status</TableHead>
+                    <TableHead className="min-w-40 text-xs font-semibold uppercase tracking-wide text-muted-foreground/70">Request type</TableHead>
+                    <TableHead className="min-w-36 text-xs font-semibold uppercase tracking-wide text-muted-foreground/70">Product</TableHead>
+                    <TableHead className="text-xs font-semibold uppercase tracking-wide text-muted-foreground/70">Created</TableHead>
+                    <TableHead className="text-xs font-semibold uppercase tracking-wide text-muted-foreground/70">Updated</TableHead>
+                    <TableHead className="text-xs font-semibold uppercase tracking-wide text-muted-foreground/70">First reply</TableHead>
+                    <TableHead className="min-w-[140px] text-xs font-semibold uppercase tracking-wide text-muted-foreground/70">Sona usage</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {visibleTickets.map((ticket) => (
-                    <TableRow key={ticket.id} className="h-11 transition-colors hover:bg-muted/25">
+                    <TableRow key={ticket.id} className="group h-12 transition-colors hover:bg-muted/20">
                       <TableCell className="whitespace-nowrap">
-                        <a href={ticket.url} className="font-mono text-sm font-semibold text-indigo-700 underline-offset-2 transition-colors hover:text-indigo-900 hover:underline">
+                        <a href={ticket.url} className="font-mono text-sm font-semibold text-indigo-600 underline-offset-2 transition-colors hover:text-indigo-800 hover:underline">
                           #{ticket.ticketNumber || String(ticket.id).slice(0, 8)}
                         </a>
                       </TableCell>
-                      <TableCell className="max-w-80 truncate text-sm">{ticket.subject}</TableCell>
-                      <TableCell className="max-w-56 truncate text-sm text-muted-foreground">{ticket.customer}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="rounded-md capitalize">{ticket.status}</Badge>
+                      <TableCell className="max-w-80 text-sm">
+                        <span className="line-clamp-1">{ticket.subject}</span>
                       </TableCell>
-                      <TableCell className="max-w-44 truncate text-sm">{ticket.requestType}</TableCell>
-                      <TableCell className="max-w-40 truncate text-sm text-muted-foreground">{ticket.product || "-"}</TableCell>
-                      <TableCell className="whitespace-nowrap text-sm text-muted-foreground">{formatDate(ticket.createdAt)}</TableCell>
-                      <TableCell className="whitespace-nowrap text-sm text-muted-foreground">{formatDate(ticket.updatedAt)}</TableCell>
-                      <TableCell className="whitespace-nowrap text-sm">{formatDuration(ticket.firstReplyMinutes)}</TableCell>
-                      <TableCell className="whitespace-nowrap text-sm">{ticket.sonaUsage}</TableCell>
+                      <TableCell className="max-w-56 text-sm text-muted-foreground">
+                        <span className="line-clamp-1">{ticket.customer}</span>
+                      </TableCell>
+                      <TableCell>
+                        <TicketStatusBadge status={ticket.status} />
+                      </TableCell>
+                      <TableCell className="max-w-44 text-sm">
+                        <span className="line-clamp-1">{ticket.requestType}</span>
+                      </TableCell>
+                      <TableCell className="max-w-40 text-sm text-muted-foreground">
+                        <span className="line-clamp-1">{ticket.product || <span className="text-muted-foreground/40">—</span>}</span>
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-sm tabular-nums text-muted-foreground">{formatDate(ticket.createdAt)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-sm tabular-nums text-muted-foreground">{formatDate(ticket.updatedAt)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-sm tabular-nums">
+                        {ticket.firstReplyMinutes != null ? formatDuration(ticket.firstReplyMinutes) : <span className="text-muted-foreground/40">—</span>}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-sm text-muted-foreground">{ticket.sonaUsage}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

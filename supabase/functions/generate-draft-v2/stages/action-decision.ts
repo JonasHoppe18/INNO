@@ -167,10 +167,17 @@ function kbSaysOfficeShipment(retrieved: RetrieverResult): boolean {
   return retrieved.chunks.some((c) => KB_OFFICE_RE.test(c.content));
 }
 
+const GLOBALLY_DISABLED_ACTIONS = new Set([
+  "create_exchange_request",
+  "refund_order",
+  "initiate_return",
+]);
+
 function isActionDisabled(
   type: string,
   shopConfig: ShopActionConfig,
 ): boolean {
+  if (GLOBALLY_DISABLED_ACTIONS.has(type)) return true;
   return shopConfig.disabled_actions?.includes(type) ?? false;
 }
 

@@ -56,7 +56,13 @@ function approvalReasonForAction(type: string, automation?: Automation | null): 
     return "automatic_refunds_disabled";
   }
   if (normalized === "create_exchange_request") {
-    return "exchange_requires_approval";
+    return "exchange_disabled";
+  }
+  if (normalized === "refund_order") {
+    return "refund_disabled";
+  }
+  if (normalized === "initiate_return") {
+    return "return_disabled";
   }
   return null;
 }
@@ -105,6 +111,10 @@ export function validateActionDecision(
       continue;
     }
     const approvalReason = approvalReasonForAction(type, input.automation);
+    if (approvalReason === "exchange_disabled" || approvalReason === "refund_disabled" || approvalReason === "return_disabled") {
+      removed.push({ type, reason: approvalReason });
+      continue;
+    }
     allowedActions.push({
       ...action,
       orderId: resolvedOrderId,
