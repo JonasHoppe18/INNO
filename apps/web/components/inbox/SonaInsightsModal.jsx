@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { SonaActivityContent } from "@/components/inbox/SonaActivityContent";
 import { CustomerTab } from "@/components/inbox/CustomerTab";
-import { Badge } from "@/components/ui/badge";
 import { ChevronRight, ExternalLink, Truck, X } from "lucide-react";
 import { TicketMetadataPanel } from "@/components/inbox/TicketMetadataPanel";
 import { TrackingCard } from "@/components/inbox/TrackingCard";
@@ -200,7 +199,6 @@ export function SonaInsightsModal({
   actions,
   draftId,
   threadId,
-  draftLoading = false,
   customerLookup,
   customerLookupLoading,
   customerLookupError,
@@ -266,220 +264,6 @@ export function SonaInsightsModal({
     };
   }, [draftId, open, threadId]);
 
-  const timelineItems = useMemo(() => {
-    const formatTitle = (value, parsed) => {
-      const raw = String(value || "").toLowerCase();
-      if (!raw) return "Activity";
-      if (raw === "carrier_tracking" || raw === "carrier tracking") return "Carrier Tracking";
-      if (raw === "shopify_lookup") return "Shopify Lookup";
-      if (raw === "shopify_action") return "Shopify Action";
-      if (raw === "shopify_action_applied") return "Shopify Action Applied";
-      if (raw === "shopify_action_declined") return "Shopify Action Declined";
-      if (raw === "shopify_action_blocked") return "Shopify Action Blocked";
-      if (raw === "thread_action_pending") return "Approval Required";
-      if (raw === "thread_action_applied") {
-        if (parsed?.action === "fetch_tracking") return "Tracking Action";
-        if (parsed?.action === "lookup_order_status") return "Order Status Action";
-        return "Action Approved";
-      }
-      if (raw === "thread_action_declined") return "Action Declined";
-      if (raw === "thread_action_failed") return "Action Failed";
-      if (raw === "context") return "Context";
-      if (raw === "draft_intent_assessed") return "Understood the request";
-      if (raw === "draft_context_loaded") return "Order context";
-      if (raw === "draft_created") return "Generated draft";
-      if (raw === "postmark_inbound_draft_created") return "Draft Created";
-      if (raw === "draft_edit_feedback_captured") return "Draft edited";
-      if (raw === "send_smtp_success") return "Reply sent";
-      if (raw === "send_smtp_fail" || raw === "send_reply_failed") return "Reply failed";
-      if (raw === "email_simulated_test_mode") return "Email simulated";
-      if (raw === "action_feedback_captured") return "Action feedback";
-      if (raw === "shopify_action_approved_test_mode") return "Action approved in test mode";
-      if (raw === "forward_email_applied") return "Email forwarded";
-      if (raw === "forward_email_failed") return "Forward failed";
-      if (raw === "product search") return "Product Search";
-      if (raw === "knowledge_gap_detected") return "Needs more knowledge";
-      return raw
-        .replace(/_/g, " ")
-        .replace(/\bpostmark\b/gi, "Postmark")
-        .replace(/\bai\b/gi, "AI")
-        .replace(/\b\w/g, (char) => char.toUpperCase());
-    };
-    const formatDetail = (parsed, name, status) => {
-      if (!parsed) return "";
-      const step = String(name || "").toLowerCase();
-      if (step === "carrier_tracking" || step === "carrier tracking") {
-        const statusLabel = normalizeTrackingStatusLabel(parsed?.trackingStatus);
-        const chunks = [
-          parsed?.trackingCarrier ? `${parsed.trackingCarrier}` : "",
-          statusLabel || "",
-          parsed?.trackingNumber ? `#${parsed.trackingNumber}` : "",
-          parsed?.trackingUrl || "",
-        ].filter(Boolean);
-        const events = Array.isArray(parsed?.trackingEvents) ? parsed.trackingEvents : [];
-        if (chunks.length && events.length) {
-          return `${chunks.join(" | ")}\nRecent events: ${events.join(" → ")}`;
-        }
-        if (chunks.length) return chunks.join(" | ");
-        if (events.length) return `Recent events: ${events.join(" → ")}`;
-        return parsed?.detail || "Loaded live tracking status.";
-      }
-      if (step === "draft_intent_assessed") {
-        const parts = [];
-        if (parsed?.primary_intent) parts.push(parsed.primary_intent.replace(/_/g, " "));
-        if (parsed?.language) parts.push(`Language: ${parsed.language.toUpperCase()}`);
-        if (typeof parsed?.confidence === "number") parts.push(`${Math.round(parsed.confidence * 100)}% confidence`);
-        return parts.join(" · ") || "Intent assessed.";
-      }
-      if (step === "draft_context_loaded") {
-        if (parsed?.order_found && parsed?.order_number) return `Order ${parsed.order_number} found`;
-        if (parsed?.order_found) return "Order found";
-        return "No order context";
-      }
-      if (step === "draft_created") {
-        const parts = [];
-        if (typeof parsed?.confidence === "number") parts.push(`Confidence: ${Math.round(parsed.confidence * 100)}%`);
-        if (parsed?.routing_hint) parts.push(`Routing: ${parsed.routing_hint}`);
-        return parts.join(" · ") || "Draft generated.";
-      }
-      if (step === "postmark_inbound_draft_created" || step === "draft_created") {
-        return "Forwarded email draft created.";
-      }
-      if (step === "draft_edit_feedback_captured") {
-        const changed = parsed?.changed_materially === true || parsed?.diff_summary?.changed_materially === true;
-        const eventType = parsed?.event_type ? String(parsed.event_type).replace(/_/g, " ") : "draft update";
-        return changed ? `AI draft edited materially (${eventType}).` : `AI draft saved with minor or no edits (${eventType}).`;
-      }
-      if (step === "send_smtp_success") {
-        const parts = ["Reply sent via Postmark"];
-        if (parsed?.from_mode) parts.push(`sender: ${String(parsed.from_mode).replace(/_/g, " ")}`);
-        if (parsed?.redirected_to) parts.push(`test: ${parsed.redirected_to}`);
-        return parts.join(" · ");
-      }
-      if (step === "send_smtp_fail" || step === "send_reply_failed") {
-        return parsed?.detail || parsed?.error || "Reply could not be sent.";
-      }
-      if (step === "email_simulated_test_mode") {
-        return parsed?.intended_to ? `Test mode email simulated for ${parsed.intended_to}` : "Email simulated in test mode.";
-      }
-      if (step === "action_feedback_captured") {
-        const action = parsed?.action_type ? String(parsed.action_type).replace(/_/g, " ") : "action";
-        const decision = parsed?.decision ? String(parsed.decision) : "recorded";
-        return `${action}: ${decision}`;
-      }
-      if (step === "product search") {
-        return parsed.detail || "Searched product context.";
-      }
-      if (step === "knowledge_gap_detected") {
-        const gaps = Array.isArray(parsed?.gaps) ? parsed.gaps : [];
-        if (!gaps.length) return "Sona lacks knowledge to answer this question well.";
-        const gapTypeLabels = {
-          missing_procedure: "Missing procedure",
-          missing_policy: "Missing policy",
-          low_kb_coverage: "No knowledge found",
-          low_grounding: "Low KB coverage",
-        };
-        return gaps
-          .map((g) => {
-            const label = gapTypeLabels[g.gap_type] || g.gap_type;
-            return g.suggested_title ? `${label}: ${g.suggested_title}` : label;
-          })
-          .join("\n");
-      }
-      if (step === "context") {
-        return parsed.detail || "Loaded store context.";
-      }
-      if (step === "shopify_lookup") {
-        return parsed.detail || (parsed.orderId ? `Found order ${parsed.orderId}` : "Order found.");
-      }
-      if (
-        step === "shopify_action" ||
-        step === "shopify_action_applied" ||
-        step === "shopify_action_declined" ||
-        step === "shopify_action_blocked"
-      ) {
-        let detail = parsed.detail || (parsed.orderId ? `Order ${parsed.orderId}` : "");
-        if (step === "shopify_action" && String(status || "").toLowerCase() === "warning") {
-          detail = detail
-            .replace(/^updated shipping address to\s*/i, "Requested shipping address change to ")
-            .replace(/^updated shipping address\b/i, "Requested shipping address change")
-            .replace(/^cancelled order\b/i, "Requested order cancellation")
-            .replace(/^refunded order\b/i, "Requested refund");
-        }
-        if (!detail && step === "shopify_action_blocked") {
-          return "Requested change was blocked and not applied.";
-        }
-        return detail || "Shopify action event.";
-      }
-      if (step.startsWith("thread_action_")) {
-        if (parsed?.action === "fetch_tracking") {
-          return "Tracking lookup executed.";
-        }
-        if (parsed?.action === "lookup_order_status") {
-          return "Order status lookup executed.";
-        }
-        return parsed.detail || "Order action event.";
-      }
-      if (parsed.orderId && !parsed.detail) return `Order ${parsed.orderId}`;
-      return parsed.detail || "";
-    };
-    const DEBUG_STEP_NAMES = new Set([
-      "workflow_routing",
-      "thread_context_gate",
-      "workflow_routing_override",
-      "legacy_case_state",
-      "workflow_action_policy",
-      "workflow_action_policy_final",
-      "workflow_action_order_context",
-      "return_process_followup_action_filter",
-      "v2_action_decision",
-      "v2_reply_generation",
-      "carrier_preferences",
-      "customer_lookup",
-      "customer_lookup_failed",
-    ]);
-
-    const parsedLogs = logs
-      .filter((log) => !DEBUG_STEP_NAMES.has(String(log?.step_name || "").toLowerCase()))
-      .map((log) => ({
-        log,
-        parsed: parseLogDetail(log.step_detail),
-      }));
-
-    const trackingFocused = parsedLogs.some(({ log, parsed }) => {
-      const step = String(log?.step_name || "").toLowerCase();
-      return (
-        step === "carrier_tracking" ||
-        parsed?.action === "fetch_tracking" ||
-        step === "order_status_action"
-      );
-    });
-
-    const visibleLogs = trackingFocused
-      ? parsedLogs.filter(({ log }) => {
-          const step = String(log?.step_name || "").toLowerCase();
-          if (step === "context") return false;
-          if (step.startsWith("shopify_action")) return false;
-          if (step === "carrier_preferences") return false;
-          return true;
-        })
-      : parsedLogs;
-
-    return visibleLogs.map(({ log, parsed }) => {
-      return {
-        id: String(log.id),
-        title: formatTitle(log.step_name, parsed),
-        statusLabel: formatDetail(parsed, log.step_name, log.status),
-        timestamp: new Date(log.created_at).toLocaleTimeString("en-GB", {
-          hour: "2-digit",
-          minute: "2-digit",
-          timeZone: DISPLAY_TIMEZONE,
-        }),
-        status: log.status,
-      };
-    });
-  }, [logs]);
-
   const trackingInfo = useMemo(() => {
     const trackingLog = logs.find(
       (log) => String(log?.step_name || "").toLowerCase() === "carrier_tracking"
@@ -490,15 +274,6 @@ export function SonaInsightsModal({
     return parsed;
   }, [logs]);
 
-  const draftSources = useMemo(() => {
-    const createdLog = logs.find(
-      (log) => String(log?.step_name || "").toLowerCase() === "draft_created"
-    );
-    if (!createdLog) return [];
-    const parsed = parseLogDetail(createdLog.step_detail);
-    return Array.isArray(parsed?.sources) ? parsed.sources : [];
-  }, [logs]);
-
   const knowledgeGaps = useMemo(() => {
     const gapLog = logs.find(
       (log) => String(log?.step_name || "").toLowerCase() === "knowledge_gap_detected"
@@ -507,10 +282,6 @@ export function SonaInsightsModal({
     const parsed = parseLogDetail(gapLog.step_detail);
     return Array.isArray(parsed?.gaps) ? parsed.gaps : [];
   }, [logs]);
-  const latestTimelineItem = timelineItems.length
-    ? timelineItems[timelineItems.length - 1]
-    : null;
-
   useEffect(() => {
     if (open) return;
     if (!containerEl || typeof document === "undefined") return;
