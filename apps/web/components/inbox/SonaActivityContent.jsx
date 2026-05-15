@@ -5,10 +5,10 @@ import { ChevronRight, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ── Expandable row ──────────────────────────────────────────────
-function ExpandItem({ title, preview, right, children, borderClass }) {
+function ExpandItem({ title, preview, right, children }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className={cn("overflow-hidden rounded-xl border bg-card", borderClass)}>
+    <div className={cn("overflow-hidden rounded-xl border bg-card")}>
       <button
         className="flex w-full cursor-pointer items-center gap-2.5 px-3.5 py-2.5 text-left transition-colors hover:bg-muted/60 active:bg-muted"
         onClick={() => setOpen((v) => !v)}
@@ -80,7 +80,7 @@ function SectionLabel({ children, count, countClass }) {
 }
 
 // ── "Add to KB" inline form ─────────────────────────────────────
-function AddToKbForm({ gap, shopId, onSaved }) {
+function AddToKbForm({ gap, shopId, onSaved, onCancel }) {
   const [title, setTitle] = useState(gap.suggested_title ?? "");
   const [content, setContent] = useState(gap.suggested_content_hint ?? "");
   const [saving, setSaving] = useState(false);
@@ -114,19 +114,20 @@ function AddToKbForm({ gap, shopId, onSaved }) {
         className="w-full rounded-md border border-border bg-muted px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
         placeholder="Title"
         value={title}
-        onChange={(e) => setTitle(e.target.value)}
+        onChange={(e) => { setTitle(e.target.value); setError(null); }}
       />
       <textarea
         className="h-20 w-full resize-none rounded-md border border-border bg-muted px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
         placeholder="Describe the policy or procedure…"
         value={content}
-        onChange={(e) => setContent(e.target.value)}
+        onChange={(e) => { setContent(e.target.value); setError(null); }}
       />
       {error && <p className="text-[11px] text-destructive">{error}</p>}
       <div className="flex justify-end gap-2">
         <button
-          className="rounded-md px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
-          onClick={onSaved}
+          disabled={saving}
+          className="rounded-md px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+          onClick={onCancel}
         >
           Cancel
         </button>
@@ -143,7 +144,7 @@ function AddToKbForm({ gap, shopId, onSaved }) {
 }
 
 // ── Main component ──────────────────────────────────────────────
-export default function SonaActivityContent({ diagnostic, shopId }) {
+export function SonaActivityContent({ diagnostic, shopId }) {
   const [addingGapId, setAddingGapId] = useState(null);
   const [savedGapIds, setSavedGapIds] = useState(new Set());
 
@@ -188,11 +189,11 @@ export default function SonaActivityContent({ diagnostic, shopId }) {
               <ExpandItem
                 key={chunk.id ?? i}
                 title={chunk.title}
-                preview={`"${chunk.content.slice(0, 60)}…"`}
+                preview={`"${(chunk.content ?? "").slice(0, 60)}…"`}
                 right={<ScorePill score={chunk.score} />}
               >
                 <p className="mb-2.5 whitespace-pre-wrap text-xs leading-relaxed text-foreground/80">
-                  {chunk.content}
+                  {chunk.content ?? ""}
                 </p>
                 <div className="flex flex-wrap gap-3">
                   {chunk.usable_as && (
@@ -221,7 +222,7 @@ export default function SonaActivityContent({ diagnostic, shopId }) {
               <ExpandItem
                 key={i}
                 title={ticket.subject ?? `Previous email ${i + 1}`}
-                preview={`"${ticket.customer_msg.slice(0, 60)}…"`}
+                preview={`"${(ticket.customer_msg ?? "").slice(0, 60)}…"`}
                 right={
                   <span className="rounded-md border border-border bg-muted px-1.5 py-0.5 text-[11px] font-semibold text-muted-foreground">
                     {ticket.score?.toFixed(2)}
@@ -232,13 +233,13 @@ export default function SonaActivityContent({ diagnostic, shopId }) {
                   <div>
                     <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Customer</p>
                     <p className="whitespace-pre-wrap rounded-md border border-border bg-background px-2.5 py-2 text-xs leading-relaxed text-foreground/80">
-                      {ticket.customer_msg}
+                      {ticket.customer_msg ?? ""}
                     </p>
                   </div>
                   <div>
                     <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Your reply</p>
                     <p className="whitespace-pre-wrap rounded-md border border-border bg-background px-2.5 py-2 text-xs leading-relaxed text-foreground/80">
-                      {ticket.agent_reply}
+                      {ticket.agent_reply ?? ""}
                     </p>
                   </div>
                 </div>
@@ -283,6 +284,7 @@ export default function SonaActivityContent({ diagnostic, shopId }) {
                         setSavedGapIds((prev) => new Set([...prev, gapId]));
                         setAddingGapId(null);
                       }}
+                      onCancel={() => setAddingGapId(null)}
                     />
                   ) : (
                     <button
