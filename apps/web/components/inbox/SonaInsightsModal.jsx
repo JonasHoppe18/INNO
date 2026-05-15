@@ -4,6 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ActionsTimeline } from "@/components/inbox/ActionsTimeline";
+import { SonaActivityContent } from "@/components/inbox/SonaActivityContent";
 import { CustomerTab } from "@/components/inbox/CustomerTab";
 import { Badge } from "@/components/ui/badge";
 import { ChevronRight, ExternalLink, Truck, X } from "lucide-react";
@@ -212,6 +213,7 @@ export function SonaInsightsModal({
   const [logsLoading, setLogsLoading] = useState(false);
   const [containerEl, setContainerEl] = useState(null);
   const [sonaLogOpen, setSonaLogOpen] = useState(false);
+  const [diagnostic, setDiagnostic] = useState(null);
 
   const {
     data: internalLookup,
@@ -233,6 +235,10 @@ export function SonaInsightsModal({
   }, [effectiveLookup?.orders]);
 
   useEffect(() => {
+    setDiagnostic(null);
+  }, [threadId]);
+
+  useEffect(() => {
     let active = true;
     const fetchLogs = async () => {
       if (!open || !threadId) {
@@ -251,6 +257,7 @@ export function SonaInsightsModal({
       } else {
         const payload = await res.json().catch(() => ({}));
         setLogs(Array.isArray(payload?.logs) ? payload.logs : []);
+        setDiagnostic(payload?.diagnostic ?? null);
       }
       setLogsLoading(false);
     };
@@ -637,12 +644,20 @@ export function SonaInsightsModal({
                   </span>
                   <span className="mt-0.5 block truncate text-xs text-slate-500">
                     {logsLoading
-                      ? "Loading decisions and sources..."
-                      : timelineItems.length
-                        ? `${timelineItems.length} step${timelineItems.length === 1 ? "" : "s"} recorded${
-                          latestTimelineItem?.title ? ` · Latest: ${latestTimelineItem.title}` : ""
-                        }`
-                        : "No decisions or sources recorded yet"}
+                      ? "Loading…"
+                      : diagnostic
+                        ? [
+                            diagnostic.kb_chunks?.length
+                              ? `${diagnostic.kb_chunks.length} source${diagnostic.kb_chunks.length !== 1 ? "s" : ""}`
+                              : null,
+                            diagnostic.ticket_examples?.length
+                              ? `${diagnostic.ticket_examples.length} example${diagnostic.ticket_examples.length !== 1 ? "s" : ""}`
+                              : null,
+                            diagnostic.knowledge_gaps?.length
+                              ? `${diagnostic.knowledge_gaps.length} gap${diagnostic.knowledge_gaps.length !== 1 ? "s" : ""}`
+                              : null,
+                          ].filter(Boolean).join(" · ") || "View details"
+                        : "No activity recorded yet"}
                   </span>
                 </span>
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-300 transition-colors group-hover:bg-slate-100 group-hover:text-slate-500">
@@ -656,37 +671,13 @@ export function SonaInsightsModal({
                     <DialogTitle>Sona activity</DialogTitle>
                   </DialogHeader>
                   <div className="overflow-y-auto flex-1 px-6 py-5">
-                    {logsLoading || (draftLoading && !timelineItems.length) ? (
-                      <div className="text-sm text-muted-foreground py-4 text-center">Loading…</div>
-                    ) : timelineItems.length ? (
-                      <>
-                        <ActionsTimeline items={timelineItems} />
-                        {draftSources.length > 0 && (
-                          <details className="group mt-4">
-                            <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground select-none">
-                              <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
-                              Sources used
-                            </summary>
-                            <div className="mt-2 space-y-1.5">
-                              {draftSources.map((source, i) => (
-                                <div key={i} className="rounded-md border bg-card p-2">
-                                  <div className="mb-1 flex items-center gap-1.5">
-                                    <Badge variant="outline" className="text-[10px] py-0">{source.kind || "source"}</Badge>
-                                    <p className="truncate text-xs font-medium">{source.source_label || `Source ${i + 1}`}</p>
-                                  </div>
-                                  <p className="line-clamp-3 whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
-                                    {source.content}
-                                  </p>
-                                </div>
-                              ))}
-                            </div>
-                          </details>
-                        )}
-                      </>
+                    {logsLoading ? (
+                      <p className="py-4 text-center text-sm text-muted-foreground">Loading…</p>
                     ) : (
-                      <div className="text-sm text-muted-foreground py-4 text-center">
-                        No actions recorded for this conversation.
-                      </div>
+                      <SonaActivityContent
+                        diagnostic={diagnostic}
+                        shopId={customerLookup?.shop_id ?? null}
+                      />
                     )}
                   </div>
                 </DialogContent>
