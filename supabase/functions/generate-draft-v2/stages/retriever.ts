@@ -25,6 +25,8 @@ export interface RetrieverResult {
   past_ticket_examples: Array<{
     customer_msg: string;
     agent_reply: string;
+    subject: string | null;
+    score: number;
     csat_score: number | null;
     conversation_context: string | null;
   }>;
@@ -395,7 +397,7 @@ export async function runRetriever(
     ...plan.sub_queries.filter(Boolean),
     ...buildFallbackQueries(plan, customerMessage, shop),
   ]).slice(0, 5);
-  if (queries.length === 0) return { chunks: [], past_ticket_examples: [] as Array<{ customer_msg: string; agent_reply: string; csat_score: number | null }> };
+  if (queries.length === 0) return { chunks: [], past_ticket_examples: [] };
 
   // Run knowledge queries + ticket lookup in parallel. Saved replies are indexed
   // into agent_knowledge with source_provider='saved_reply', so they use the same
@@ -419,6 +421,7 @@ export async function runRetriever(
             subject?: string;
             intent?: string;
             csat_score: number | null;
+            conversation_context: string | null;
             similarity: number;
             score: number;
           }
@@ -504,6 +507,8 @@ export async function runRetriever(
           .map((item) => ({
             customer_msg: item.customer_msg,
             agent_reply: item.agent_reply,
+            subject: item.subject ?? null,
+            score: item.score,
             csat_score: item.csat_score,
             conversation_context: item.conversation_context ?? null,
           }));
@@ -574,7 +579,14 @@ export async function runRetriever(
   // Past ticket examples — directly from typed ticket_examples table
   const pastTicketExamples = ticketResult
     .filter((t) => t.agent_reply && t.agent_reply.length > 20)
-    .map((t) => ({ customer_msg: t.customer_msg, agent_reply: t.agent_reply, csat_score: t.csat_score ?? null }));
+    .map((t) => ({
+      customer_msg: t.customer_msg,
+      agent_reply: t.agent_reply,
+      subject: t.subject ?? null,
+      score: t.score,
+      csat_score: t.csat_score ?? null,
+      conversation_context: t.conversation_context ?? null,
+    }));
 
   console.log(
     `[retriever] queries=${queries.length} knowledge=${regularChunks.length} saved_reply_knowledge=${
