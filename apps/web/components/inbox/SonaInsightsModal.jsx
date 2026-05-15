@@ -3,7 +3,6 @@ import { useCustomerLookup } from "@/hooks/useCustomerLookup";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ActionsTimeline } from "@/components/inbox/ActionsTimeline";
 import { SonaActivityContent } from "@/components/inbox/SonaActivityContent";
 import { CustomerTab } from "@/components/inbox/CustomerTab";
 import { Badge } from "@/components/ui/badge";
