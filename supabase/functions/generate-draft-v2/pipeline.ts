@@ -10,6 +10,7 @@ import {
   runActionDecision,
   ShopActionConfig,
 } from "./stages/action-decision.ts";
+import { buildRetrievalLogPayload } from "./stages/retrieval-log.ts";
 import { runWriter } from "./stages/writer.ts";
 import { runVerifier } from "./stages/verifier.ts";
 import {
@@ -858,6 +859,19 @@ export async function runDraftV2Pipeline(
           error.message,
         );
       }
+    });
+
+    const logPayload = buildRetrievalLogPayload(
+      thread_id,
+      retrieved.chunks,
+      retrieved.past_ticket_examples,
+    );
+    supabase.from("agent_logs").insert({
+      draft_id: draftId,
+      ...logPayload,
+      created_at: new Date().toISOString(),
+    }).then(({ error }) => {
+      if (error) console.warn("[pipeline] retrieval_completed log failed:", error.message);
     });
   }
 
