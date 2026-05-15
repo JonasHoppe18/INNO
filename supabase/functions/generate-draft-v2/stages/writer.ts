@@ -292,7 +292,7 @@ function extractMessageSignals(messageText: string) {
     /\b(disappointed|unhappy|not satisfied|does not meet|didn't meet|utilfreds|ikke tilfreds|skuffet|meet my expectations|wore .* once|only wore)\b/i
       .test(messageText);
   const hasPurchasePlace =
-    /\b(købt|købssted|purchased|forhandler|retailer|gamebox|official website|webshop|acezone)\b/i
+    /\b(place of purchase|købt|købssted|purchase|purchased|forhandler|retailer|gamebox|official website|webshop|acezone)\b/i
       .test(messageText);
   const hasAccessoryRequest =
     /\b(dongle|usb-c|usb c|charging cable|charger|cable|ear pads?|earpads?|lade\s*kabel|ladekabel|kabel|oplader|reservedel|spare part)\b/i
