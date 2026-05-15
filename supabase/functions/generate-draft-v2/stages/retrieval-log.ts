@@ -18,6 +18,7 @@ export function buildRetrievalLogPayload(
       thread_id,
       kb_chunks: chunks.slice(0, 8).map((c) => ({
         id: c.id,
+        // title aliased from source_label for UI display
         title: c.source_label,
         content: c.content.slice(0, 600),
         score: c.similarity,
