@@ -54,6 +54,7 @@ function buildReasoning(intent, kb_chunks, knowledge_gaps) {
     const titles = knowledge_gaps
       .slice(0, 2)
       .map((g) => g.suggested_title || g.gap_type)
+      .filter(Boolean)
       .join(" and ");
     parts.push(`Missing information about: ${titles}.`);
   }
@@ -61,7 +62,7 @@ function buildReasoning(intent, kb_chunks, knowledge_gaps) {
 }
 
 function parseDiagnostic(logs) {
-  const find = (stepName) => logs.find((l) => l.step_name === stepName);
+  const find = (stepName) => logs.findLast((l) => l.step_name === stepName);
 
   const intentLog = find("draft_intent_assessed");
   const retrievalLog = find("retrieval_completed");
@@ -84,6 +85,8 @@ function parseDiagnostic(logs) {
 const THREAD_SCOPED_STEP_NAMES = [
   "draft_intent_assessed",
   "draft_context_loaded",
+  "retrieval_completed",
+  "knowledge_gap_detected",
   "draft_created",
   "postmark_inbound_draft_created",
   "draft_edit_feedback_captured",
