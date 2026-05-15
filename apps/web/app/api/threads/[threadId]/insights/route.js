@@ -37,6 +37,50 @@ function extractThreadIdFromDetail(value = "") {
   return match?.[1] || null;
 }
 
+function safeParseJson(value) {
+  if (!value) return null;
+  try { return JSON.parse(value); } catch { return null; }
+}
+
+function buildReasoning(intent, kb_chunks, knowledge_gaps) {
+  if (!intent) return null;
+  const parts = [`Classified as "${intent}".`];
+  if (kb_chunks.length > 0) {
+    parts.push(`Retrieved ${kb_chunks.length} knowledge chunk${kb_chunks.length !== 1 ? "s" : ""}.`);
+  } else {
+    parts.push("No matching knowledge found in the knowledge base.");
+  }
+  if (knowledge_gaps.length > 0) {
+    const titles = knowledge_gaps
+      .slice(0, 2)
+      .map((g) => g.suggested_title || g.gap_type)
+      .join(" and ");
+    parts.push(`Missing information about: ${titles}.`);
+  }
+  return parts.join(" ");
+}
+
+function parseDiagnostic(logs) {
+  const find = (stepName) => logs.find((l) => l.step_name === stepName);
+
+  const intentLog = find("draft_intent_assessed");
+  const retrievalLog = find("retrieval_completed");
+  const gapLog = find("knowledge_gap_detected");
+
+  const intentDetail = safeParseJson(intentLog?.step_detail);
+  const retrievalDetail = safeParseJson(retrievalLog?.step_detail);
+  const gapDetail = safeParseJson(gapLog?.step_detail);
+
+  const intent = intentDetail?.primary_intent ?? null;
+  const kb_chunks = retrievalDetail?.kb_chunks ?? [];
+  const ticket_examples = retrievalDetail?.ticket_examples ?? [];
+  const knowledge_gaps = gapDetail?.gaps ?? [];
+
+  const reasoning = buildReasoning(intent, kb_chunks, knowledge_gaps);
+
+  return { reasoning, intent, kb_chunks, ticket_examples, knowledge_gaps };
+}
+
 const THREAD_SCOPED_STEP_NAMES = [
   "draft_intent_assessed",
   "draft_context_loaded",
@@ -204,5 +248,6 @@ export async function GET(_request, { params }) {
     return (Number.isFinite(aTs) ? aTs : 0) - (Number.isFinite(bTs) ? bTs : 0);
   });
 
-  return NextResponse.json({ logs }, { status: 200 });
+  const diagnostic = parseDiagnostic(logs);
+  return NextResponse.json({ logs, diagnostic }, { status: 200 });
 }
