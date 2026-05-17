@@ -19,8 +19,8 @@ import {
   TrendingUp,
 } from "lucide-react";
 
-import { exportAnalyticsToExcel } from "@/utils/export-analytics";
 import { TicketVolumeChart } from "@/components/analytics/TicketVolumeChart";
+import { exportAnalyticsToExcel } from "@/utils/export-analytics";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -1189,10 +1189,14 @@ export default function AnalyticsPage() {
     });
   };
 
-  const handleExport = useCallback(() => {
+  const handleExport = useCallback(async () => {
     if (!data) return;
-    const periodLabel = getPeriodButtonLabel(period, dateRange);
-    exportAnalyticsToExcel(data, periodLabel);
+    try {
+      const periodLabel = getPeriodButtonLabel(period, dateRange);
+      await exportAnalyticsToExcel(data, periodLabel);
+    } catch (err) {
+      setError("Export failed: " + (err?.message || "unknown error"));
+    }
   }, [data, period, dateRange]);
 
   const hasData = useMemo(() => Boolean(data && !error), [data, error]);
@@ -1208,7 +1212,7 @@ export default function AnalyticsPage() {
         activeTab={activeTab}
         onTabChange={setActiveTab}
         onExport={handleExport}
-        exportDisabled={!data || loading}
+        exportDisabled={!data || loading || Boolean(error)}
       />
 
       <main className="flex flex-1 flex-col gap-6 p-4 md:p-6">
