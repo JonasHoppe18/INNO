@@ -152,6 +152,8 @@ export async function exportAnalyticsToExcel(data, periodLabel) {
   // Sheet 5: Ticket list
   const tickets = data?.drilldowns?.defaultTickets ?? [];
   const ticketRows = [
+    ["Note: Shows most recent tickets for the selected period. Filters applied in the UI are not reflected here."],
+    [],
     [
       "Ticket #",
       "Subject",
