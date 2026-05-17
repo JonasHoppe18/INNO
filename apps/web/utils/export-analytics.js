@@ -16,10 +16,11 @@ function slugify(value) {
 }
 
 export async function exportAnalyticsToExcel(data, periodLabel) {
-  const XLSX = (await import("xlsx")).default;
+  const mod = await import("xlsx");
+  const XLSX = mod.default ?? mod;
 
   const wb = XLSX.utils.book_new();
-  const filename = `sona-analytics-${slugify(periodLabel)}.xlsx`;
+  const filename = `sona-analytics-${slugify(periodLabel) || "export"}.xlsx`;
 
   // Sheet 1: Overview
   const summary = data?.summary ?? {};
