@@ -19,6 +19,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 
+import { exportAnalyticsToExcel } from "@/utils/export-analytics";
 import { TicketVolumeChart } from "@/components/analytics/TicketVolumeChart";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -136,7 +137,7 @@ const TABS = [
   { id: "tickets", label: "Tickets" },
 ];
 
-function AnalyticsHeader({ period, range, onPreset, onRangeChange, activeTab, onTabChange }) {
+function AnalyticsHeader({ period, range, onPreset, onRangeChange, activeTab, onTabChange, onExport, exportDisabled }) {
   const startRef = useRef(null);
   const endRef = useRef(null);
 
@@ -236,12 +237,13 @@ function AnalyticsHeader({ period, range, onPreset, onRangeChange, activeTab, on
           </Popover>
           <button
             type="button"
-            disabled
-            title="CSV export is prepared for a later release."
-            className="inline-flex h-9 items-center gap-2 rounded-lg border bg-muted/40 px-3 text-sm font-medium text-muted-foreground"
+            onClick={onExport}
+            disabled={exportDisabled}
+            title="Export analytics data to Excel"
+            className="inline-flex h-9 items-center gap-2 rounded-lg border bg-background px-3 text-sm font-medium shadow-sm transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Download className="size-4" />
-            Export CSV
+            Export Excel
           </button>
         </div>
       </div>
@@ -1187,6 +1189,12 @@ export default function AnalyticsPage() {
     });
   };
 
+  const handleExport = useCallback(() => {
+    if (!data) return;
+    const periodLabel = getPeriodButtonLabel(period, dateRange);
+    exportAnalyticsToExcel(data, periodLabel);
+  }, [data, period, dateRange]);
+
   const hasData = useMemo(() => Boolean(data && !error), [data, error]);
 
   return (
@@ -1199,6 +1207,8 @@ export default function AnalyticsPage() {
         onRangeChange={setDateRange}
         activeTab={activeTab}
         onTabChange={setActiveTab}
+        onExport={handleExport}
+        exportDisabled={!data || loading}
       />
 
       <main className="flex flex-1 flex-col gap-6 p-4 md:p-6">
