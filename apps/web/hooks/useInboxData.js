@@ -61,6 +61,11 @@ const SUPABASE_TEMPLATE =
 const makeListKey = (list = [], key = "id") =>
   list.map((item) => item?.[key] ?? "").join("|");
 
+const PREVIEW_MESSAGE_CHUNK_SIZE = 20;
+const PREVIEW_MESSAGES_PER_THREAD = 3;
+const PREVIEW_MESSAGE_MIN_LIMIT = 30;
+const PREVIEW_MESSAGE_MAX_LIMIT = 80;
+
 const resolveScope = async ({ supabase, user, getToken, logLabel }) => {
   const metadataUuid = user?.publicMetadata?.supabase_uuid;
   let supabaseUserId = isValidUuid(metadataUuid) ? metadataUuid : null;
@@ -590,19 +595,30 @@ export function useThreadPreviewMessages(threadIds = [], options = {}) {
   const { getToken } = useAuth();
   const { user } = useUser();
 
-  const normalizedThreadIds = useMemo(
-    () => Array.from(new Set((threadIds || []).filter(Boolean))),
+  const threadKey = useMemo(
+    () =>
+      Array.from(new Set((threadIds || []).filter(Boolean)))
+        .join("|"),
     [threadIds]
   );
-  const threadKey = useMemo(() => normalizedThreadIds.join("|"), [normalizedThreadIds]);
+  const normalizedThreadIds = useMemo(
+    () => (threadKey ? threadKey.split("|") : []),
+    [threadKey]
+  );
 
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const fetchTokenRef = useRef(0);
 
   const fetchMessages = useCallback(async () => {
+    const requestToken = fetchTokenRef.current + 1;
+    fetchTokenRef.current = requestToken;
+    const isStale = () => fetchTokenRef.current !== requestToken;
+
     if (!supabase || !normalizedThreadIds.length) {
       setData([]);
+      setLoading(false);
       return;
     }
     setLoading(true);
@@ -614,10 +630,14 @@ export function useThreadPreviewMessages(threadIds = [], options = {}) {
         getToken,
         logLabel: "useThreadPreviewMessages",
       });
-      const chunkSize = 40;
+      if (isStale()) return;
       const allRows = [];
-      for (let index = 0; index < normalizedThreadIds.length; index += chunkSize) {
-        const chunk = normalizedThreadIds.slice(index, index + chunkSize);
+      for (let index = 0; index < normalizedThreadIds.length; index += PREVIEW_MESSAGE_CHUNK_SIZE) {
+        const chunk = normalizedThreadIds.slice(index, index + PREVIEW_MESSAGE_CHUNK_SIZE);
+        const limit = Math.min(
+          Math.max(chunk.length * PREVIEW_MESSAGES_PER_THREAD, PREVIEW_MESSAGE_MIN_LIMIT),
+          PREVIEW_MESSAGE_MAX_LIMIT
+        );
         let request = supabase
           .from("mail_messages")
           .select(
@@ -625,21 +645,25 @@ export function useThreadPreviewMessages(threadIds = [], options = {}) {
           )
           .in("thread_id", chunk)
           .order("received_at", { ascending: false, nullsLast: true })
-          .limit(Math.max(chunk.length * 20, 500));
+          .limit(limit);
         request = applyClientScope(request, scope);
         const { data: rows, error: queryError } = await request;
+        if (isStale()) return;
         if (queryError) throw queryError;
         if (Array.isArray(rows) && rows.length) {
           allRows.push(...rows);
         }
       }
+      if (isStale()) return;
       setData(allRows);
     } catch (err) {
-      setError(err instanceof Error ? err : new Error("Could not load preview messages."));
+      if (!isStale()) {
+        setError(err instanceof Error ? err : new Error("Could not load preview messages."));
+      }
     } finally {
-      setLoading(false);
+      if (!isStale()) setLoading(false);
     }
-  }, [getToken, normalizedThreadIds, supabase, user]);
+  }, [getToken, normalizedThreadIds, supabase, threadKey, user]);
 
   useEffect(() => {
     if (!enabled) return;

@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import { Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatMessageTime } from "@/components/inbox/inbox-utils";
@@ -18,8 +18,9 @@ const CLASSIFICATION_LABELS = {
   job: "Job",
   invoice: "Invoice",
 };
+const PREFETCH_HOVER_DELAY_MS = 220;
 
-export function TicketListItem({
+function TicketListItemComponent({
   thread,
   isActive,
   status,
@@ -58,12 +59,19 @@ export function TicketListItem({
     if (!onPrefetch) return;
     prefetchTimerRef.current = setTimeout(() => {
       onPrefetch();
-    }, 80);
+    }, PREFETCH_HOVER_DELAY_MS);
   };
 
   const handleMouseLeave = () => {
     clearTimeout(prefetchTimerRef.current);
   };
+
+  useEffect(
+    () => () => {
+      clearTimeout(prefetchTimerRef.current);
+    },
+    [],
+  );
 
   return (
     <button
@@ -138,3 +146,19 @@ export function TicketListItem({
     </button>
   );
 }
+
+export const TicketListItem = memo(
+  TicketListItemComponent,
+  (prev, next) =>
+    prev.thread === next.thread &&
+    prev.isActive === next.isActive &&
+    prev.status === next.status &&
+    prev.customerLabel === next.customerLabel &&
+    prev.timestamp === next.timestamp &&
+    prev.unreadCount === next.unreadCount &&
+    prev.assignee === next.assignee &&
+    prev.priority === next.priority &&
+    prev.isExiting === next.isExiting &&
+    prev.isNew === next.isNew &&
+    prev.mountIndex === next.mountIndex,
+);

@@ -62,7 +62,6 @@ export function useCustomerLookup({
             threadId,
             sourceMessageId,
             forceRefresh,
-            debug: true,
           }),
         });
         const payload = await response.json().catch(() => ({}));

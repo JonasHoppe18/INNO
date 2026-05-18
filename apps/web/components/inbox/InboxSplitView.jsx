@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { TicketList } from "@/components/inbox/TicketList";
 import { TicketDetail } from "@/components/inbox/TicketDetail";
 import { SonaInsightsModal } from "@/components/inbox/SonaInsightsModal";
@@ -88,6 +95,10 @@ const APPROVAL_ACTION_TYPES = new Set([
 ]);
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const PREVIEW_CUSTOMER_LOOKUP_LIMIT = 30;
+const SECONDARY_THREAD_FETCH_DELAY_MS = 250;
+const DRAFT_FETCH_DELAY_MS = 150;
+const firstTagCache = new Map();
 
 const isUuid = (value) => typeof value === "string" && UUID_REGEX.test(value);
 
@@ -134,10 +145,24 @@ function FirstTagPill({ threadId, refreshTrigger }) {
 
   useEffect(() => {
     if (!threadId) return;
+    const cacheKey = `${threadId}:${refreshTrigger || 0}`;
+    if (firstTagCache.has(cacheKey)) {
+      setTag(firstTagCache.get(cacheKey));
+      return;
+    }
+    let active = true;
     fetch(`/api/threads/${threadId}/tags`)
       .then((response) => response.json())
-      .then((json) => setTag(json?.tags?.[0] ?? null))
+      .then((json) => {
+        if (!active) return;
+        const nextTag = json?.tags?.[0] ?? null;
+        firstTagCache.set(cacheKey, nextTag);
+        setTag(nextTag);
+      })
       .catch(() => null);
+    return () => {
+      active = false;
+    };
   }, [threadId, refreshTrigger]);
 
   if (!tag) return null;
@@ -1233,13 +1258,14 @@ export function InboxSplitView({
             }
             return [...existing, nextMessage];
           });
-          // New AI draft for the selected thread: refresh API data so draftMessage picks it up
+          // New AI draft for the selected thread: liveMessages already contains
+          // the row, so just drop stale prefetched message cache.
           if (
             nextMessage?.is_draft &&
             nextMessage?.from_me &&
             String(nextMessage?.thread_id || "") === selectedThreadIdRef.current
           ) {
-            refreshSelectedThreadMessagesRef.current?.().catch(() => null);
+            messagesCacheRef.current.delete(String(nextMessage.thread_id || ""));
           }
         },
       )
@@ -1320,6 +1346,23 @@ export function InboxSplitView({
     ? noteValueByThread[selectedThreadId] || ""
     : "";
   const composerValue = composerMode === "note" ? activeNoteValue : draftValue;
+  const deferredFilterQuery = useDeferredValue(filters.query);
+  const effectiveFilters = useMemo(
+    () => ({
+      query: deferredFilterQuery,
+      statuses: filters.statuses,
+      status: filters.status,
+      unreadsOnly: filters.unreadsOnly,
+      sortBy: filters.sortBy,
+    }),
+    [
+      deferredFilterQuery,
+      filters.sortBy,
+      filters.status,
+      filters.statuses,
+      filters.unreadsOnly,
+    ],
+  );
 
   const isLocalThreadId = useCallback(
     (threadId) => String(threadId || "").startsWith("local-new-ticket-"),
@@ -1336,6 +1379,18 @@ export function InboxSplitView({
   const previewThreadIds = useMemo(
     () =>
       derivedThreads
+        .filter((thread) => {
+          const customerName = String(thread?.customer_name || "").trim();
+          const customerEmail = String(thread?.customer_email || "").trim();
+          if (customerName && !/^unknown sender$/i.test(customerName)) {
+            return false;
+          }
+          if (customerEmail && !/^unknown sender$/i.test(customerEmail)) {
+            return false;
+          }
+          return true;
+        })
+        .slice(0, PREVIEW_CUSTOMER_LOOKUP_LIMIT)
         .map((thread) => String(thread?.id || "").trim())
         .filter(Boolean),
     [derivedThreads],
@@ -1344,6 +1399,7 @@ export function InboxSplitView({
   const { data: previewMessages } = useThreadPreviewMessages(previewThreadIds, {
     enabled: previewThreadIds.length > 0,
   });
+  const deferredPreviewMessages = useDeferredValue(previewMessages);
 
   useEffect(() => {
     setReadOverrides((prev) => {
@@ -1474,7 +1530,7 @@ export function InboxSplitView({
 
   const previewMessagesByThread = useMemo(() => {
     const map = new Map();
-    (previewMessages || []).forEach((message) => {
+    (deferredPreviewMessages || []).forEach((message) => {
       const threadId = String(message?.thread_id || "").trim();
       if (!threadId) return;
       if (!map.has(threadId)) map.set(threadId, []);
@@ -1491,7 +1547,7 @@ export function InboxSplitView({
       );
     });
     return map;
-  }, [previewMessages]);
+  }, [deferredPreviewMessages]);
 
   const mailboxEmails = useMemo(() => {
     const emails = new Set();
@@ -1698,10 +1754,10 @@ export function InboxSplitView({
           const targetInbox = activeView.slice("inbox:".length);
           if (!targetInbox || inboxSlug !== targetInbox) return false;
         }
-        const selectedStatuses = Array.isArray(filters.statuses)
-          ? filters.statuses
-          : filters.status && filters.status !== "All"
-              ? [filters.status]
+        const selectedStatuses = Array.isArray(effectiveFilters.statuses)
+          ? effectiveFilters.statuses
+          : effectiveFilters.status && effectiveFilters.status !== "All"
+              ? [effectiveFilters.status]
               : [];
         if (selectedStatuses.length && !selectedStatuses.includes(effectiveStatus)) {
           return false;
@@ -1710,9 +1766,9 @@ export function InboxSplitView({
           readOverrides[threadId] || thread?.is_read
             ? 0
             : Number(thread?.unread_count ?? 0);
-        if (filters.unreadsOnly && unreadCount === 0) return false;
-        if (filters.query) {
-          const query = filters.query.toLowerCase();
+        if (effectiveFilters.unreadsOnly && unreadCount === 0) return false;
+        if (effectiveFilters.query) {
+          const query = effectiveFilters.query.toLowerCase();
           const subject = (thread.subject || "").toLowerCase();
           const snippet = (thread.snippet || "").toLowerCase();
           const customer = (customerByThread[thread.id] || "").toLowerCase();
@@ -1741,8 +1797,8 @@ export function InboxSplitView({
       .sort((a, b) => {
         const getTs = (thread) => {
           const value =
-            filters.sortBy === "oldest_updated" ||
-            filters.sortBy === "newest_updated"
+            effectiveFilters.sortBy === "oldest_updated" ||
+            effectiveFilters.sortBy === "newest_updated"
               ? thread?.updated_at || thread?.last_message_at || thread?.created_at || 0
               : thread?.last_message_at || thread?.updated_at || thread?.created_at || 0;
           const parsed = Date.parse(value);
@@ -1750,7 +1806,7 @@ export function InboxSplitView({
         };
         const aTs = getTs(a);
         const bTs = getTs(b);
-        if (filters.sortBy === "oldest_updated") {
+        if (effectiveFilters.sortBy === "oldest_updated") {
           return aTs - bTs;
         }
         return bTs - aTs;
@@ -1760,7 +1816,7 @@ export function InboxSplitView({
     currentSupabaseUserId,
     customerByThread,
     derivedThreads,
-    filters,
+    effectiveFilters,
     readOverrides,
     ticketStateByThread,
     user?.id,
@@ -1813,9 +1869,12 @@ export function InboxSplitView({
     } else {
       next.delete("thread");
     }
-    const newUrl = `${window.location.pathname}?${next.toString()}`;
-    router.replace(newUrl, { scroll: false });
-  }, [selectedThreadId, router]);
+    const queryString = next.toString();
+    const newUrl = queryString
+      ? `${window.location.pathname}?${queryString}`
+      : window.location.pathname;
+    window.history.replaceState(window.history.state, "", newUrl);
+  }, [selectedThreadId]);
 
   useEffect(() => {
     if (!tabStateReady) return;
@@ -2226,16 +2285,19 @@ export function InboxSplitView({
     if (sentDraftStatsByThread[selectedThreadId]) return; // already fetched
     let active = true;
     const threadId = selectedThreadId;
-    fetch(`/api/threads/${threadId}/draft-stats`)
-      .then((res) => res.ok ? res.json() : null)
-      .then((data) => {
-        if (active && data?.edit_classification) {
-          setSentDraftStatsByThread((prev) => ({ ...prev, [threadId]: data }));
-        }
-      })
-      .catch(() => null);
+    const timerId = setTimeout(() => {
+      fetch(`/api/threads/${threadId}/draft-stats`)
+        .then((res) => res.ok ? res.json() : null)
+        .then((data) => {
+          if (active && data?.edit_classification) {
+            setSentDraftStatsByThread((prev) => ({ ...prev, [threadId]: data }));
+          }
+        })
+        .catch(() => null);
+    }, SECONDARY_THREAD_FETCH_DELAY_MS);
     return () => {
       active = false;
+      clearTimeout(timerId);
     };
   }, [isLocalThreadId, selectedThreadId, sentDraftStatsByThread]);
 
@@ -2679,9 +2741,12 @@ export function InboxSplitView({
       });
     };
 
-    loadPendingOrderUpdate().catch(() => null);
+    const timerId = setTimeout(() => {
+      loadPendingOrderUpdate().catch(() => null);
+    }, SECONDARY_THREAD_FETCH_DELAY_MS);
     return () => {
       active = false;
+      clearTimeout(timerId);
     };
   }, [
     isLocalThreadId,
@@ -2895,9 +2960,12 @@ export function InboxSplitView({
       }
       setDraftReady(true);
     };
-    loadDraft();
+    const timerId = setTimeout(() => {
+      loadDraft();
+    }, DRAFT_FETCH_DELAY_MS);
     return () => {
       active = false;
+      clearTimeout(timerId);
     };
   }, [draftValueByThread, isLocalThreadId, selectedThreadId]);
 
@@ -3884,6 +3952,23 @@ export function InboxSplitView({
       const text = String(valueOverride ?? fallbackValue ?? "");
       const trimmed = text.trim();
       if (!trimmed) {
+        const hasKnownServerDraft =
+          Boolean(String(draftLastSavedRef.current[threadId] || "").trim()) ||
+          (threadId === selectedThreadIdRef.current && Boolean(activeDraftId));
+        if (!hasKnownServerDraft) {
+          if (selectedThreadIdRef.current === threadId) {
+            setActiveDraftId(null);
+            setDraftValue("");
+          }
+          setDraftValueByThread((prev) =>
+            prev?.[threadId] === "" ? prev : { ...prev, [threadId]: "" },
+          );
+          setSystemDraftUneditedByThread((prev) =>
+            prev?.[threadId] === false ? prev : { ...prev, [threadId]: false },
+          );
+          draftLastSavedRef.current[threadId] = "";
+          return;
+        }
         if (!immediate || savingDraftThreadIdsRef.current.has(threadId)) return;
         savingDraftThreadIdsRef.current.add(threadId);
         let deleteSucceeded = false;
@@ -3954,6 +4039,7 @@ export function InboxSplitView({
       }
     },
     [
+      activeDraftId,
       composerMode,
       draftReady,
       draftValueByThread,
@@ -4008,25 +4094,8 @@ export function InboxSplitView({
         });
     }
 
-    // Prefetch draft
-    const draftKey = `draft:${threadId}`;
-    if (!draftCacheRef.current.has(threadId) && !prefetchingRef.current.has(draftKey)) {
-      prefetchingRef.current.add(draftKey);
-      fetch(`/api/threads/${encodeURIComponent(threadId)}/draft`, {
-        method: "GET",
-        credentials: "include",
-      })
-        .then((res) => (res.ok ? res.json() : null))
-        .then((payload) => {
-          if (payload) {
-            draftCacheRef.current.set(threadId, payload);
-          }
-        })
-        .catch(() => {})
-        .finally(() => {
-          prefetchingRef.current.delete(draftKey);
-        });
-    }
+    // Draft loading is intentionally left to actual selection. Hovering through
+    // the list used to start draft requests for many tickets the user never opened.
   }, [isLocalThreadId]);
 
   useEffect(() => {

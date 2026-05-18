@@ -299,9 +299,8 @@ export function SonaInsightsModal({
       }`}
       aria-hidden={!open}
     >
-      <div
-        className={`flex h-full min-w-0 flex-col gap-4 overflow-hidden ${open ? "p-3 lg:p-4" : "p-0"}`}
-      >
+      {open ? (
+      <div className="flex h-full min-w-0 flex-col gap-4 overflow-hidden p-3 lg:p-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Sona Insights</h2>
           <Button
@@ -466,6 +465,7 @@ export function SonaInsightsModal({
           </TabsContent>
         </Tabs>
       </div>
+      ) : null}
     </aside>
   );
 }
