@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, forwardRef, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowDownRight,
   ArrowUpRight,
   CalendarDays,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
   Database,
   Download,
@@ -15,8 +16,10 @@ import {
   Inbox,
   ListFilter,
   PackageSearch,
+  Search,
   Table2,
   TrendingUp,
+  X,
 } from "lucide-react";
 
 import { TicketVolumeChart } from "@/components/analytics/TicketVolumeChart";
@@ -571,21 +574,249 @@ function TicketStatusBadge({ status }) {
   );
 }
 
+const FilterTriggerButton = forwardRef(function FilterTriggerButton({ label, isActive, ...props }, ref) {
+  return (
+    <button
+      ref={ref}
+      type="button"
+      className="group/ft inline-flex items-center gap-1 rounded px-0.5 py-0.5 hover:bg-muted/60"
+      {...props}
+    >
+      <span className={`text-xs font-semibold uppercase tracking-wide ${isActive ? "text-[#6366f1]" : "text-muted-foreground/60 group-hover/ft:text-muted-foreground"}`}>
+        {label}
+      </span>
+      <ChevronDown className={`size-3 shrink-0 transition-colors ${isActive ? "text-[#6366f1]" : "text-muted-foreground/30 group-hover/ft:text-muted-foreground/60"}`} />
+    </button>
+  );
+});
+
+function CheckboxFilterPopover({ label, values, selected, onChange }) {
+  const allSelected = selected.length === 0;
+
+  const toggle = (val) => {
+    if (allSelected) {
+      onChange(values.filter((v) => v !== val));
+    } else {
+      const next = selected.includes(val)
+        ? selected.filter((v) => v !== val)
+        : [...selected, val];
+      onChange(next.length === values.length ? [] : next);
+    }
+  };
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <FilterTriggerButton label={label} isActive={!allSelected} />
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-52 p-2">
+        <label className="mb-1.5 flex cursor-pointer items-center gap-2 rounded-md border-b px-2 pb-2.5 pt-1 text-sm font-medium hover:bg-muted/60">
+          <input
+            type="checkbox"
+            checked={allSelected}
+            onChange={() => onChange([])}
+            className="rounded"
+          />
+          Select all
+        </label>
+        <div className="max-h-52 space-y-0.5 overflow-y-auto">
+          {values.map((v) => (
+            <label key={v} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted/60">
+              <input
+                type="checkbox"
+                checked={allSelected || selected.includes(v)}
+                onChange={() => toggle(v)}
+                className="rounded"
+              />
+              <span className="capitalize">{v}</span>
+            </label>
+          ))}
+        </div>
+        {!allSelected ? (
+          <button
+            type="button"
+            onClick={() => onChange([])}
+            className="mt-1.5 w-full rounded-md border border-dashed px-2 py-1 text-xs text-muted-foreground hover:border-foreground/30 hover:text-foreground"
+          >
+            Clear filter
+          </button>
+        ) : null}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function TextFilterPopover({ label, value, onChange, placeholder }) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <FilterTriggerButton label={label} isActive={Boolean(value)} />
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-60 p-2">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
+          <input
+            type="text"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={placeholder}
+            autoFocus
+            className="h-8 w-full rounded-md border bg-background pl-8 pr-8 text-sm placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-foreground/20"
+          />
+          {value ? (
+            <button
+              type="button"
+              onClick={() => onChange("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 hover:bg-muted"
+            >
+              <X className="size-3.5 text-muted-foreground" />
+            </button>
+          ) : null}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function DateRangeFilterPopover({ label, value, onChange }) {
+  const isActive = Boolean(value.start || value.end);
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <FilterTriggerButton label={label} isActive={isActive} />
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-56 p-3">
+        <div className="space-y-2">
+          <div>
+            <p className="mb-1 text-xs text-muted-foreground">From</p>
+            <input
+              type="date"
+              value={value.start}
+              onChange={(e) => onChange({ ...value, start: e.target.value })}
+              className="h-8 w-full rounded-md border bg-background px-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-foreground/20"
+            />
+          </div>
+          <div>
+            <p className="mb-1 text-xs text-muted-foreground">To</p>
+            <input
+              type="date"
+              value={value.end}
+              min={value.start || undefined}
+              onChange={(e) => onChange({ ...value, end: e.target.value })}
+              className="h-8 w-full rounded-md border bg-background px-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-foreground/20"
+            />
+          </div>
+          {isActive ? (
+            <button
+              type="button"
+              onClick={() => onChange({ start: "", end: "" })}
+              className="w-full rounded-md border border-dashed px-2 py-1 text-xs text-muted-foreground hover:border-foreground/30 hover:text-foreground"
+            >
+              Clear filter
+            </button>
+          ) : null}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function AnalyticsDrilldownTable({ data, drilldown }) {
-  const [showAll, setShowAll] = useState(false);
+  const [ticketSearch, setTicketSearch] = useState("");
+  const [subjectSearch, setSubjectSearch] = useState("");
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState([]);
+  const [requestTypeFilter, setRequestTypeFilter] = useState([]);
+  const [productFilter, setProductFilter] = useState([]);
+  const [createdFilter, setCreatedFilter] = useState({ start: "", end: "" });
+  const [updatedFilter, setUpdatedFilter] = useState({ start: "", end: "" });
+  const [firstReplyFilter, setFirstReplyFilter] = useState([]);
+
   const tickets = data?.drilldowns?.byKey?.[drilldown.key] ?? data?.drilldowns?.defaultTickets ?? [];
   const title = drilldown.title || "All support tickets";
-  const visibleTickets = showAll ? tickets : tickets.slice(0, 10);
 
   useEffect(() => {
-    setShowAll(false);
+    setTicketSearch("");
+    setSubjectSearch("");
+    setCustomerSearch("");
+    setStatusFilter([]);
+    setRequestTypeFilter([]);
+    setProductFilter([]);
+    setCreatedFilter({ start: "", end: "" });
+    setUpdatedFilter({ start: "", end: "" });
+    setFirstReplyFilter([]);
   }, [drilldown.key]);
+
+  const statuses = useMemo(() => [...new Set(tickets.map((t) => t.status).filter(Boolean))].sort(), [tickets]);
+  const requestTypes = useMemo(() => [...new Set(tickets.map((t) => t.requestType).filter(Boolean))].sort(), [tickets]);
+  const products = useMemo(() => [...new Set(tickets.map((t) => t.product).filter(Boolean))].sort(), [tickets]);
+  const firstReplyLabels = useMemo(() => {
+    const labels = tickets.map((t) => t.firstReplyMinutes != null ? formatDuration(t.firstReplyMinutes) : "No reply");
+    return [...new Set(labels)].sort();
+  }, [tickets]);
+
+  const filteredTickets = useMemo(() => {
+    return tickets.filter((ticket) => {
+      if (ticketSearch) {
+        const q = ticketSearch.toLowerCase();
+        if (!String(ticket.ticketNumber || "").includes(q) && !String(ticket.id || "").toLowerCase().includes(q)) return false;
+      }
+      if (subjectSearch && !(ticket.subject || "").toLowerCase().includes(subjectSearch.toLowerCase())) return false;
+      if (customerSearch && !(ticket.customer || "").toLowerCase().includes(customerSearch.toLowerCase())) return false;
+      if (statusFilter.length > 0 && !statusFilter.includes(ticket.status)) return false;
+      if (requestTypeFilter.length > 0 && !requestTypeFilter.includes(ticket.requestType)) return false;
+      if (productFilter.length > 0 && !productFilter.includes(ticket.product)) return false;
+      if (createdFilter.start || createdFilter.end) {
+        const d = ticket.createdAt ? new Date(ticket.createdAt) : null;
+        if (!d || Number.isNaN(d.getTime())) return false;
+        if (createdFilter.start && d < new Date(`${createdFilter.start}T00:00:00`)) return false;
+        if (createdFilter.end && d > new Date(`${createdFilter.end}T23:59:59`)) return false;
+      }
+      if (updatedFilter.start || updatedFilter.end) {
+        const d = ticket.updatedAt ? new Date(ticket.updatedAt) : null;
+        if (!d || Number.isNaN(d.getTime())) return false;
+        if (updatedFilter.start && d < new Date(`${updatedFilter.start}T00:00:00`)) return false;
+        if (updatedFilter.end && d > new Date(`${updatedFilter.end}T23:59:59`)) return false;
+      }
+      if (firstReplyFilter.length > 0) {
+        const label = ticket.firstReplyMinutes != null ? formatDuration(ticket.firstReplyMinutes) : "No reply";
+        if (!firstReplyFilter.includes(label)) return false;
+      }
+      return true;
+    });
+  }, [tickets, ticketSearch, subjectSearch, customerSearch, statusFilter, requestTypeFilter, productFilter, createdFilter, updatedFilter, firstReplyFilter]);
+
+  const hasActiveFilters = ticketSearch || subjectSearch || customerSearch ||
+    statusFilter.length > 0 || requestTypeFilter.length > 0 || productFilter.length > 0 ||
+    createdFilter.start || createdFilter.end || updatedFilter.start || updatedFilter.end ||
+    firstReplyFilter.length > 0;
+
+  const clearAllFilters = () => {
+    setTicketSearch("");
+    setSubjectSearch("");
+    setCustomerSearch("");
+    setStatusFilter([]);
+    setRequestTypeFilter([]);
+    setProductFilter([]);
+    setCreatedFilter({ start: "", end: "" });
+    setUpdatedFilter({ start: "", end: "" });
+    setFirstReplyFilter([]);
+  };
 
   return (
     <section className="analytics-section space-y-3" style={sectionMotionStyle(5)}>
       <SectionHeading
         title={drilldown.key === "all" ? "Tickets behind the numbers" : `Showing tickets for: ${title}`}
-        subtitle={`${formatNumber(tickets.length)} matching tickets. Showing ${formatNumber(visibleTickets.length)}.`}
+        action={hasActiveFilters ? (
+          <button
+            type="button"
+            onClick={clearAllFilters}
+            className="flex items-center gap-1.5 rounded-md border border-dashed px-2.5 py-1.5 text-xs text-muted-foreground hover:border-foreground/30 hover:text-foreground"
+          >
+            <X className="size-3" />
+            Clear all filters
+          </button>
+        ) : null}
       />
       <Card className="rounded-2xl shadow-sm">
         <CardContent className="p-0">
@@ -600,23 +831,43 @@ function AnalyticsDrilldownTable({ data, drilldown }) {
               <Table key={drilldown.key} className="analytics-table-swap">
                 <TableHeader>
                   <TableRow className="border-b border-border/60 bg-muted/25 hover:bg-muted/25">
-                    <TableHead className="min-w-[100px] py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground/60">Ticket</TableHead>
-                    <TableHead className="min-w-64 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground/60">Subject</TableHead>
-                    <TableHead className="min-w-44 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground/60">Customer</TableHead>
-                    <TableHead className="py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground/60">Status</TableHead>
-                    <TableHead className="min-w-40 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground/60">Request type</TableHead>
-                    <TableHead className="min-w-36 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground/60">Product</TableHead>
-                    <TableHead className="py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground/60">Created</TableHead>
-                    <TableHead className="py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground/60">Updated</TableHead>
-                    <TableHead className="py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground/60">First reply</TableHead>
-                    <TableHead className="min-w-[140px] py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground/60">Sona usage</TableHead>
+                    <TableHead className="min-w-[100px] py-3">
+                      <TextFilterPopover label="Ticket" value={ticketSearch} onChange={setTicketSearch} placeholder="Search ticket #…" />
+                    </TableHead>
+                    <TableHead className="min-w-64 py-3">
+                      <TextFilterPopover label="Subject" value={subjectSearch} onChange={setSubjectSearch} placeholder="Search subject…" />
+                    </TableHead>
+                    <TableHead className="min-w-44 py-3">
+                      <TextFilterPopover label="Customer" value={customerSearch} onChange={setCustomerSearch} placeholder="Search customer…" />
+                    </TableHead>
+                    <TableHead className="py-3">
+                      <CheckboxFilterPopover label="Status" values={statuses} selected={statusFilter} onChange={setStatusFilter} />
+                    </TableHead>
+                    <TableHead className="min-w-40 py-3">
+                      <CheckboxFilterPopover label="Request type" values={requestTypes} selected={requestTypeFilter} onChange={setRequestTypeFilter} />
+                    </TableHead>
+                    <TableHead className="min-w-36 py-3">
+                      <CheckboxFilterPopover label="Product" values={products} selected={productFilter} onChange={setProductFilter} />
+                    </TableHead>
+                    <TableHead className="py-3">
+                      <DateRangeFilterPopover label="Created" value={createdFilter} onChange={setCreatedFilter} />
+                    </TableHead>
+                    <TableHead className="py-3">
+                      <DateRangeFilterPopover label="Updated" value={updatedFilter} onChange={setUpdatedFilter} />
+                    </TableHead>
+                    <TableHead className="py-3">
+                      <CheckboxFilterPopover label="First reply" values={firstReplyLabels} selected={firstReplyFilter} onChange={setFirstReplyFilter} />
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {visibleTickets.map((ticket) => (
+                  {filteredTickets.length ? filteredTickets.map((ticket) => (
                     <TableRow key={ticket.id} className="group border-border/40 transition-colors hover:bg-muted/30">
                       <TableCell className="whitespace-nowrap">
-                        <a href={ticket.url} className="font-mono text-sm font-semibold text-indigo-600 underline-offset-2 transition-colors hover:text-indigo-800 hover:underline">
+                        <a
+                          href={ticket.url}
+                          className="inline-flex items-center rounded-md bg-indigo-50 px-2 py-0.5 font-mono text-xs font-medium text-indigo-600 ring-1 ring-inset ring-indigo-600/20 transition-colors hover:bg-indigo-100"
+                        >
                           #{ticket.ticketNumber || String(ticket.id).slice(0, 8)}
                         </a>
                       </TableCell>
@@ -640,23 +891,23 @@ function AnalyticsDrilldownTable({ data, drilldown }) {
                       <TableCell className="whitespace-nowrap text-sm tabular-nums">
                         {ticket.firstReplyMinutes != null ? formatDuration(ticket.firstReplyMinutes) : <span className="text-muted-foreground/40">—</span>}
                       </TableCell>
-                      <TableCell className="whitespace-nowrap text-sm text-muted-foreground">{ticket.sonaUsage}</TableCell>
                     </TableRow>
-                  ))}
+                  )) : (
+                    <TableRow>
+                      <TableCell colSpan={9} className="py-10 text-center">
+                        <p className="text-sm text-muted-foreground">No tickets match the current filters.</p>
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
-              {tickets.length > 10 ? (
-                <div className="flex items-center justify-between border-t bg-muted/10 px-4 py-3">
+              {hasActiveFilters ? (
+                <div className="border-t bg-muted/10 px-4 py-2.5">
                   <p className="text-xs text-muted-foreground">
-                    {showAll ? `Showing all ${formatNumber(tickets.length)} tickets.` : `Showing first 10 of ${formatNumber(tickets.length)} tickets.`}
+                    {filteredTickets.length < tickets.length
+                      ? `${formatNumber(filteredTickets.length)} of ${formatNumber(tickets.length)} tickets`
+                      : `${formatNumber(tickets.length)} tickets`}
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => setShowAll((value) => !value)}
-                    className="analytics-pressable rounded-md border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted"
-                  >
-                    {showAll ? "Show first 10" : "View all"}
-                  </button>
                 </div>
               ) : null}
             </div>
