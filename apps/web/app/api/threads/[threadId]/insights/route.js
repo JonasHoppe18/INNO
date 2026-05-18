@@ -68,7 +68,7 @@ function buildReasoning(intent, confidence, orderNumber, kb_chunks, knowledge_ga
   if (orderNumber) parts.push(`Found order #${orderNumber}.`);
   if (kb_chunks.length > 0) {
     const topTitles = kb_chunks.slice(0, 2).map((c) => c.title).filter(Boolean);
-    const remainder = kb_chunks.length - topTitles.length;
+    const remainder = kb_chunks.length - 2;
     if (topTitles.length > 0) {
       const listed = topTitles.map((t) => `"${t}"`).join(" and ");
       const more = remainder > 0 ? ` and ${remainder} more source${remainder !== 1 ? "s" : ""}` : "";
