@@ -42,44 +42,81 @@ function safeParseJson(value) {
   try { return JSON.parse(value); } catch { return null; }
 }
 
-function buildReasoning(intent, kb_chunks, knowledge_gaps) {
+const INTENT_LABELS = {
+  tracking:         "a shipment tracking request",
+  return:           "a return request",
+  refund:           "a refund request",
+  exchange:         "an exchange request",
+  address_change:   "a shipping address change",
+  product_question: "a product question",
+  complaint:        "a complaint",
+  thanks:           "a thank-you message",
+  update:           "a status update",
+  other:            "a general inquiry",
+};
+
+function buildReasoning(intent, confidence, orderNumber, kb_chunks, knowledge_gaps) {
   if (!intent) return null;
-  const parts = [`Classified as "${intent}".`];
+
+  // Sentence 1: classification
+  const label = INTENT_LABELS[intent] ?? intent;
+  const lowConf = typeof confidence === "number" && confidence < 0.75;
+  const s1 = `Classified as ${label}${lowConf ? " (low confidence)" : ""}.`;
+
+  // Sentence 2: order + sources
+  const parts = [];
+  if (orderNumber) parts.push(`Found order #${orderNumber}.`);
   if (kb_chunks.length > 0) {
-    parts.push(`Retrieved ${kb_chunks.length} knowledge chunk${kb_chunks.length !== 1 ? "s" : ""}.`);
+    const topTitles = kb_chunks.slice(0, 2).map((c) => c.title).filter(Boolean);
+    const remainder = kb_chunks.length - topTitles.length;
+    if (topTitles.length > 0) {
+      const listed = topTitles.map((t) => `"${t}"`).join(" and ");
+      const more = remainder > 0 ? ` and ${remainder} more source${remainder !== 1 ? "s" : ""}` : "";
+      parts.push(`Used ${listed}${more}.`);
+    } else {
+      parts.push(`Retrieved ${kb_chunks.length} knowledge source${kb_chunks.length !== 1 ? "s" : ""}.`);
+    }
   } else {
     parts.push("No matching knowledge found in the knowledge base.");
   }
+
+  // Sentence 3: knowledge gaps (optional)
+  let s3 = "";
   if (knowledge_gaps.length > 0) {
     const titles = knowledge_gaps
       .slice(0, 2)
       .map((g) => g.suggested_title || g.gap_type)
       .filter(Boolean)
       .join(" and ");
-    parts.push(`Missing information about: ${titles}.`);
+    if (titles) s3 = `Missing information about: ${titles}.`;
   }
-  return parts.join(" ");
+
+  return [s1, ...parts, s3].filter(Boolean).join(" ");
 }
 
 function parseDiagnostic(logs) {
   const find = (stepName) => logs.findLast((l) => l.step_name === stepName);
 
-  const intentLog = find("draft_intent_assessed");
-  const retrievalLog = find("retrieval_completed");
-  const gapLog = find("knowledge_gap_detected");
+  const intentLog       = find("draft_intent_assessed");
+  const contextLog      = find("draft_context_loaded");
+  const retrievalLog    = find("retrieval_completed");
+  const gapLog          = find("knowledge_gap_detected");
 
-  const intentDetail = safeParseJson(intentLog?.step_detail);
+  const intentDetail    = safeParseJson(intentLog?.step_detail);
+  const contextDetail   = safeParseJson(contextLog?.step_detail);
   const retrievalDetail = safeParseJson(retrievalLog?.step_detail);
-  const gapDetail = safeParseJson(gapLog?.step_detail);
+  const gapDetail       = safeParseJson(gapLog?.step_detail);
 
-  const intent = intentDetail?.primary_intent ?? null;
-  const kb_chunks = retrievalDetail?.kb_chunks ?? [];
+  const intent          = intentDetail?.primary_intent ?? null;
+  const confidence      = typeof intentDetail?.confidence === "number" ? intentDetail.confidence : null;
+  const orderNumber     = contextDetail?.order_number ?? null;
+  const kb_chunks       = retrievalDetail?.kb_chunks ?? [];
   const ticket_examples = retrievalDetail?.ticket_examples ?? [];
-  const knowledge_gaps = gapDetail?.gaps ?? [];
+  const knowledge_gaps  = gapDetail?.gaps ?? [];
 
-  const reasoning = buildReasoning(intent, kb_chunks, knowledge_gaps);
+  const reasoning = buildReasoning(intent, confidence, orderNumber, kb_chunks, knowledge_gaps);
 
-  return { reasoning, intent, kb_chunks, ticket_examples, knowledge_gaps };
+  return { reasoning, intent, confidence, orderNumber, kb_chunks, ticket_examples, knowledge_gaps };
 }
 
 const THREAD_SCOPED_STEP_NAMES = [
