@@ -599,22 +599,22 @@ function AnalyticsDrilldownTable({ data, drilldown }) {
             <div className="overflow-x-auto">
               <Table key={drilldown.key} className="analytics-table-swap">
                 <TableHeader>
-                  <TableRow className="border-b bg-muted/30 hover:bg-muted/30">
-                    <TableHead className="min-w-[100px] text-xs font-semibold uppercase tracking-wide text-muted-foreground/70">Ticket</TableHead>
-                    <TableHead className="min-w-64 text-xs font-semibold uppercase tracking-wide text-muted-foreground/70">Subject</TableHead>
-                    <TableHead className="min-w-44 text-xs font-semibold uppercase tracking-wide text-muted-foreground/70">Customer</TableHead>
-                    <TableHead className="text-xs font-semibold uppercase tracking-wide text-muted-foreground/70">Status</TableHead>
-                    <TableHead className="min-w-40 text-xs font-semibold uppercase tracking-wide text-muted-foreground/70">Request type</TableHead>
-                    <TableHead className="min-w-36 text-xs font-semibold uppercase tracking-wide text-muted-foreground/70">Product</TableHead>
-                    <TableHead className="text-xs font-semibold uppercase tracking-wide text-muted-foreground/70">Created</TableHead>
-                    <TableHead className="text-xs font-semibold uppercase tracking-wide text-muted-foreground/70">Updated</TableHead>
-                    <TableHead className="text-xs font-semibold uppercase tracking-wide text-muted-foreground/70">First reply</TableHead>
-                    <TableHead className="min-w-[140px] text-xs font-semibold uppercase tracking-wide text-muted-foreground/70">Sona usage</TableHead>
+                  <TableRow className="border-b border-border/60 bg-muted/25 hover:bg-muted/25">
+                    <TableHead className="min-w-[100px] py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground/60">Ticket</TableHead>
+                    <TableHead className="min-w-64 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground/60">Subject</TableHead>
+                    <TableHead className="min-w-44 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground/60">Customer</TableHead>
+                    <TableHead className="py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground/60">Status</TableHead>
+                    <TableHead className="min-w-40 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground/60">Request type</TableHead>
+                    <TableHead className="min-w-36 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground/60">Product</TableHead>
+                    <TableHead className="py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground/60">Created</TableHead>
+                    <TableHead className="py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground/60">Updated</TableHead>
+                    <TableHead className="py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground/60">First reply</TableHead>
+                    <TableHead className="min-w-[140px] py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground/60">Sona usage</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {visibleTickets.map((ticket) => (
-                    <TableRow key={ticket.id} className="group h-12 transition-colors hover:bg-muted/20">
+                    <TableRow key={ticket.id} className="group border-border/40 transition-colors hover:bg-muted/30">
                       <TableCell className="whitespace-nowrap">
                         <a href={ticket.url} className="font-mono text-sm font-semibold text-indigo-600 underline-offset-2 transition-colors hover:text-indigo-800 hover:underline">
                           #{ticket.ticketNumber || String(ticket.id).slice(0, 8)}
@@ -962,8 +962,6 @@ function TicketsTab({ data, drilldown }) {
       <div id="analytics-drilldown">
         <AnalyticsDrilldownTable data={data} drilldown={drilldown} />
       </div>
-      <PreviousSystemComparisonSection data={data} />
-      <CoverageFooter data={data} />
     </div>
   );
 }
