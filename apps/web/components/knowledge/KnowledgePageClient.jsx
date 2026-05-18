@@ -563,7 +563,7 @@ export function KnowledgePageClient() {
 
       const { data, error } = await supabase
         .from("agent_knowledge")
-        .select("id, content, metadata, created_at, source_provider, source_type, last_verified_at")
+        .select("id, content, metadata, created_at, source_provider, source_type")
         .eq("shop_id", currentShopId)
         .in("source_provider", ["manual_text", "pdf_upload", "image_upload"])
         .order("created_at", { ascending: false });
@@ -580,7 +580,6 @@ export function KnowledgePageClient() {
           id: snippetId,
           title: "",
           created_at: null,
-          last_verified_at: null,
           source_provider: String(row?.source_provider || ""),
           usable_as: null,
           chunks: [],
@@ -597,20 +596,12 @@ export function KnowledgePageClient() {
         if (!existing.created_at || String(row?.created_at || "") > String(existing.created_at || "")) {
           existing.created_at = row?.created_at || null;
         }
-        // Track earliest last_verified_at across chunks (most stale chunk determines entry freshness)
-        if (row?.last_verified_at) {
-          if (!existing.last_verified_at || String(row.last_verified_at) < String(existing.last_verified_at)) {
-            existing.last_verified_at = row.last_verified_at;
-          }
-        }
         existing.chunks.push({
           index: getChunkIndex(row),
           content: String(row?.content || ""),
         });
         grouped.set(snippetId, existing);
       }
-      const STALE_DAYS_UI = 30;
-      const staleThresholdUi = new Date(Date.now() - STALE_DAYS_UI * 86400 * 1000);
       const prepared = Array.from(grouped.values()).map((snippet) => {
         const sortedChunks = (snippet.chunks || [])
           .slice()
@@ -621,10 +612,8 @@ export function KnowledgePageClient() {
           id: snippet.id,
           title: snippet.title,
           created_at: snippet.created_at,
-          last_verified_at: snippet.last_verified_at || null,
-          is_stale: snippet.last_verified_at
-            ? new Date(snippet.last_verified_at) < staleThresholdUi
-            : true,
+          last_verified_at: null,
+          is_stale: false,
           source_provider: snippet.source_provider,
           usable_as: snippet.usable_as || null,
           content: snippet.source_provider === "manual_text" ? stitchedContent : "",
