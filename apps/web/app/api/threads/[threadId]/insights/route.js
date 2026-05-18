@@ -142,7 +142,7 @@ export async function GET(_request, { params }) {
 
   let threadQuery = serviceClient
     .from("mail_threads")
-    .select("id, provider_thread_id")
+    .select("id, provider_thread_id, workspace_id")
     .eq("id", threadId);
   threadQuery = applyScope(threadQuery, scope);
   const { data: thread, error: threadError } = await threadQuery.maybeSingle();
@@ -181,12 +181,16 @@ export async function GET(_request, { params }) {
     draftLogs = Array.isArray(data) ? data : [];
   }
 
-  const { data: threadScopedLogsRaw } = await serviceClient
+  let threadScopedQuery = serviceClient
     .from("agent_logs")
     .select("id, draft_id, step_name, step_detail, status, created_at")
     .in("step_name", THREAD_SCOPED_STEP_NAMES)
     .order("created_at", { ascending: false })
     .limit(800);
+  if (thread.workspace_id) {
+    threadScopedQuery = threadScopedQuery.eq("workspace_id", thread.workspace_id);
+  }
+  const { data: threadScopedLogsRaw } = await threadScopedQuery;
   const threadScopedLogs = (Array.isArray(threadScopedLogsRaw) ? threadScopedLogsRaw : []).filter((row) => {
     const parsedThreadId = extractThreadIdFromDetail(row?.step_detail);
     return parsedThreadId ? threadKeySet.has(String(parsedThreadId)) : false;

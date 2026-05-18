@@ -800,7 +800,7 @@ export async function runDraftV2Pipeline(
 
   if (!eval_payload && thread_id) {
     supabase.from("agent_logs").insert({
-      draft_id: draftId,
+      workspace_id: workspaceId ?? null,
       step_name: "draft_intent_assessed",
       step_detail: JSON.stringify({
         thread_id,
@@ -842,7 +842,7 @@ export async function runDraftV2Pipeline(
 
   if (!eval_payload && thread_id) {
     supabase.from("agent_logs").insert({
-      draft_id: draftId,
+      workspace_id: workspaceId ?? null,
       step_name: "draft_context_loaded",
       step_detail: JSON.stringify({
         thread_id,
@@ -867,7 +867,7 @@ export async function runDraftV2Pipeline(
       retrieved.past_ticket_examples,
     );
     supabase.from("agent_logs").insert({
-      draft_id: draftId,
+      workspace_id: workspaceId ?? null,
       ...logPayload,
       created_at: new Date().toISOString(),
     }).then(({ error }) => {
@@ -1501,7 +1501,7 @@ export async function runDraftV2Pipeline(
       source_label: c.source_label,
     }));
     supabase.from("agent_logs").insert({
-      draft_id: draftId,
+      workspace_id: workspaceId ?? null,
       step_name: "draft_created",
       step_detail: JSON.stringify({
         thread_id,
@@ -1521,7 +1521,7 @@ export async function runDraftV2Pipeline(
     // 5. Log knowledge gaps → webshoppen ser hvad der mangler
     if (knowledgeGaps.length > 0) {
       supabase.from("agent_logs").insert({
-        draft_id: draftId,
+        workspace_id: workspaceId ?? null,
         step_name: "knowledge_gap_detected",
         step_detail: JSON.stringify({
           thread_id,
