@@ -941,6 +941,7 @@ export function InboxSplitView({
   const [draftLogLoading, setDraftLogLoading] = useState(false);
   const [draftLogIdByThread, setDraftLogIdByThread] = useState({});
   const [ticketStateByThread, setTicketStateByThread] = useState({});
+  const pendingUpdateThreadIds = useRef(new Set());
   const [readOverrides, setReadOverrides] = useState({});
   const [localSentMessagesByThread, setLocalSentMessagesByThread] = useState(
     {},
@@ -1423,6 +1424,7 @@ export function InboxSplitView({
       const next = { ...prev };
       derivedThreads.forEach((thread) => {
         if (!thread?.id || isLocalThreadId(thread.id)) return;
+        if (pendingUpdateThreadIds.current.has(thread.id)) return;
         const normalizedStatus = normalizeStatus(thread.status) || "New";
         const normalizedPriority =
           thread.priority ?? DEFAULT_TICKET_STATE.priority;
@@ -3716,11 +3718,13 @@ export function InboxSplitView({
       }
       if (!Object.keys(payload).length) return;
 
+      const pendingThreadId = selectedThreadId;
+      pendingUpdateThreadIds.current.add(pendingThreadId);
       fetch("/api/inbox/thread-status", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          threadId: selectedThreadId,
+          threadId: pendingThreadId,
           ...payload,
         }),
       })
@@ -3731,6 +3735,9 @@ export function InboxSplitView({
         })
         .catch((error) => {
           toast.error(error.message || "Could not update ticket status.");
+        })
+        .finally(() => {
+          pendingUpdateThreadIds.current.delete(pendingThreadId);
         });
     },
     [filteredThreads, selectedThreadId],
