@@ -78,6 +78,11 @@ function makeSnippetId() {
   }
 }
 
+function asChunkIndex(value: unknown) {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function decodePdfString(input: string) {
   let out = "";
   for (let i = 0; i < input.length; i += 1) {
@@ -369,7 +374,7 @@ export async function GET(request: Request) {
 
     let query = (serviceClient as any)
       .from("agent_knowledge")
-      .select("content, metadata, last_verified_at")
+      .select("id, source_id, content, metadata, last_verified_at, chunk_index")
       .eq("shop_id", shop.id)
       .eq("source_provider", "manual_text");
 
@@ -394,14 +399,14 @@ export async function GET(request: Request) {
     const snippets: Array<{ snippet_id: string; title: string; content: string; category: string | null; product_id: string | null; usable_as: string | null; is_stale: boolean }> = [];
     for (const row of rows || []) {
       const meta = row.metadata as any;
-      const snippetId = meta?.snippet_id as string | undefined;
+      const snippetId = String(meta?.snippet_id || row.source_id || row.id || "").trim();
       if (!snippetId || seen.has(snippetId)) continue;
-      if ((meta?.chunk_index ?? 0) !== 0) continue;
+      if (asChunkIndex(meta?.chunk_index ?? row.chunk_index) !== 0) continue;
       seen.add(snippetId);
       const rawUsableAs = String(meta?.usable_as || "").trim();
       snippets.push({
         snippet_id: snippetId,
-        title: String(meta?.title || ""),
+        title: String(meta?.title || "").trim() || "Untitled snippet",
         content: String(row.content || ""),
         category: (meta?.category as string) || null,
         product_id: (meta?.product_id as string) || null,
