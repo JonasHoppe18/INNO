@@ -1,14 +1,20 @@
 type EmailHeader = { name: string; value: string };
 
-const SUBJECT_PATTERNS = [
-  /unsubscribe/i,
-  /newsletter/i,
+// Broad terms — tested against subject line ONLY to avoid false positives
+// on customer emails that mention "sale" or "discount" in their message body.
+const SUBJECT_ONLY_PATTERNS = [
   /\bpromo\b/i,
   /\bpromotion\b/i,
   /\bmarketing\b/i,
   /\bdiscount\b/i,
   /\bsale\b/i,
   /\bemail preferences\b/i,
+];
+
+// Safe to test against combined text — these signals are reliable even in body/footer context.
+const COMBINED_PATTERNS = [
+  /unsubscribe/i,
+  /newsletter/i,
 ];
 
 const SENDER_PATTERNS = [
@@ -53,8 +59,11 @@ export function shouldSkipInboxMessage({
   const normalizedHeaders = normalizeHeaders(headers);
   if (normalizedHeaders["list-unsubscribe"]) return true;
 
+  const subjectOnly = (subject ?? "").toLowerCase();
+  if (SUBJECT_ONLY_PATTERNS.some((pattern) => pattern.test(subjectOnly))) return true;
+
   const combined = `${subject ?? ""}\n${snippet ?? ""}\n${body ?? ""}`.toLowerCase();
-  if (SUBJECT_PATTERNS.some((pattern) => pattern.test(combined))) return true;
+  if (COMBINED_PATTERNS.some((pattern) => pattern.test(combined))) return true;
 
   const fromLower = (from ?? "").toLowerCase();
   if (SENDER_PATTERNS.some((pattern) => pattern.test(fromLower))) return true;
