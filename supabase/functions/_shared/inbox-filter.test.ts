@@ -78,3 +78,14 @@ Deno.test("marketing in subject filters promotional email", () => {
     true,
   );
 });
+
+Deno.test("promo in body does not filter customer asking about promo code", () => {
+  assertEquals(
+    shouldSkipInboxMessage({
+      from: "customer@example.com",
+      subject: "Issue with my order",
+      body: "I applied a promo code at checkout but it didn't work.",
+    }),
+    false,
+  );
+});
