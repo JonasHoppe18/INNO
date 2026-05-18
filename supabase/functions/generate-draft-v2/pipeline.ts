@@ -78,9 +78,6 @@ const STRONG_MODEL = Deno.env.get("OPENAI_STRONG_MODEL") ?? "gpt-5-mini";
 const SIMPLE_MODEL = Deno.env.get("OPENAI_SIMPLE_MODEL") ?? "gpt-4o-mini";
 const CONFIDENCE_ESCALATION_THRESHOLD = 0.6;
 
-// Simple intents get gpt-4o-mini — cheaper, fast enough for straightforward replies.
-// Everything else uses gpt-5-mini.
-const SIMPLE_INTENTS = new Set(["thanks", "tracking"]);
 
 function detectPostActionDraftIssues(
   draftText: string,

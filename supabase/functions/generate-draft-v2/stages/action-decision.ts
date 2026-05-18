@@ -348,7 +348,7 @@ export function applyDeterministicRules(
 
   // ── 1. Ren information — ingen action nødvendig ────────────────────────────
   // Writer henter fakta og KB og svarer direkte.
-  if (["tracking", "product_question", "thanks", "other"].includes(intent)) {
+  if (["tracking", "product_question", "thanks", "update", "other"].includes(intent)) {
     return [];
   }
 
@@ -861,7 +861,7 @@ export async function runActionDecision(
   //    b) ELLER: deterministiske regler gav ingen forslag men der er skills at overveje
   const shouldUseLlmFallback = proposals.length === 0 &&
     plan.skills_to_consider.length > 0 &&
-    !["tracking", "product_question", "thanks"].includes(plan.primary_intent);
+    !["tracking", "product_question", "thanks", "update"].includes(plan.primary_intent);
 
   if (shouldUseLlmFallback) {
     proposals = await llmFallbackActions(plan, caseState, facts, shopConfig);

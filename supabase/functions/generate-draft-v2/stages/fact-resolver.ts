@@ -452,6 +452,7 @@ async function buildFactsFromOrder(
     "complaint",
     "exchange",
     "thanks",
+    "update",
     "product_question",
   ];
   const isNonReturnCase = NON_RETURN_INTENTS.includes(plan.primary_intent);

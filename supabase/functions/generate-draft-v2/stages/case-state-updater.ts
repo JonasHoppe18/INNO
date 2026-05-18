@@ -50,6 +50,7 @@ const CASE_STATE_SCHEMA = {
         "product_question",
         "complaint",
         "thanks",
+        "update",
         "other",
       ],
     },
@@ -120,7 +121,7 @@ ${existingSummary}
 
 Ekstraher og output JSON:
 {
-  "primary_intent": "tracking|return|refund|exchange|address_change|product_question|complaint|thanks|other",
+  "primary_intent": "tracking|return|refund|exchange|address_change|product_question|complaint|thanks|update|other",
   "language": "da|sv|de|en|nl|fr|no|fi|es|it",
   "order_numbers": ["#1234"],
   "customer_email": "kunde@example.com eller tom streng",
