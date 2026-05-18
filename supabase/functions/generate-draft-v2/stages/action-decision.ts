@@ -270,6 +270,65 @@ function extractReplacementShippingAddress(
   };
 }
 
+// ─── LLM adresse-ekstraktion (fallback når regex-parser fejler) ──────────────
+
+async function extractAddressWithLLM(
+  message: string,
+  existingShipping: Record<string, unknown> | null | undefined,
+): Promise<Record<string, unknown> | null> {
+  const existing = existingShipping || {};
+  const fallbackCountry = String(existing.country || "");
+  const existingName = [existing.first_name, existing.last_name]
+    .map((v) => String(v || "").trim())
+    .filter(Boolean)
+    .join(" ");
+
+  const schema = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      address1: { type: "string" },
+      address2: { type: "string" },
+      city: { type: "string" },
+      zip: { type: "string" },
+      country: { type: "string" },
+      name: { type: "string" },
+      phone: { type: "string" },
+    },
+    required: ["address1", "address2", "city", "zip", "country", "name", "phone"],
+  };
+
+  try {
+    const parsed = await callOpenAIJson<Record<string, string>>({
+      model: Deno.env.get("OPENAI_EXTRACT_MODEL") ?? "gpt-4o-mini",
+      systemPrompt:
+        `Extract the new shipping address from the customer message. Return empty string for fields you cannot determine. Use the existing fallback values where indicated.`,
+      userPrompt:
+        `Customer message: "${message.slice(0, 600)}"
+Existing recipient name (fallback if no name in message): "${existingName}"
+Existing country (fallback if no country in message): "${fallbackCountry}"
+
+Extract the shipping address the customer wants to use. Return JSON with: address1, address2 (empty string if none), city, zip, country, name (empty string if unknown), phone (empty string if unknown).`,
+      maxTokens: 200,
+      schema,
+      schemaName: "address_extraction",
+    });
+
+    if (!parsed?.address1 || !parsed?.city || !parsed?.zip) return null;
+    return {
+      address1: parsed.address1,
+      address2: parsed.address2 || null,
+      city: parsed.city,
+      zip: parsed.zip,
+      country: parsed.country || fallbackCountry,
+      name: parsed.name || existingName || null,
+      phone: parsed.phone || String(existing.phone || "") || null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 // ─── Deterministiske regler ───────────────────────────────────────────────────
 
 export function applyDeterministicRules(
@@ -279,6 +338,7 @@ export function applyDeterministicRules(
   retrieved: RetrieverResult,
   shopConfig: ShopActionConfig,
   customerMessage = "",
+  preExtractedAddress: Record<string, unknown> | null = null,
 ): ActionProposal[] {
   const order = facts.order;
   const factMap: Record<string, string> = {};
@@ -334,10 +394,7 @@ export function applyDeterministicRules(
       order.fulfillment_status === "unfulfilled"
     ) {
       if (!isActionDisabled("update_shipping_address", shopConfig)) {
-        const shippingAddress = extractReplacementShippingAddress(
-          customerMessage,
-          order.shipping_address as Record<string, unknown> | null | undefined,
-        );
+        const shippingAddress = preExtractedAddress;
         if (!shippingAddress?.address1 || !shippingAddress?.city || !shippingAddress?.zip) {
           return [];
         }
@@ -767,6 +824,27 @@ function inferExchangeVariantId(order: unknown): string {
 export async function runActionDecision(
   { plan, caseState, facts, retrieved, shopConfig, customerMessage = "" }: ActionDecisionInput,
 ): Promise<ActionDecisionResult> {
+  // Pre-ekstraher adresse for address_change intent: regex → LLM fallback.
+  // Gøres her (async context) så applyDeterministicRules forbliver synkron.
+  let preExtractedAddress: Record<string, unknown> | null = null;
+  if (plan.primary_intent === "address_change" && facts.order) {
+    const regexResult = extractReplacementShippingAddress(
+      customerMessage,
+      facts.order.shipping_address as Record<string, unknown> | null | undefined,
+    );
+    if (regexResult?.address1 && regexResult?.city && regexResult?.zip) {
+      preExtractedAddress = regexResult;
+    } else {
+      preExtractedAddress = await extractAddressWithLLM(
+        customerMessage,
+        facts.order.shipping_address as Record<string, unknown> | null | undefined,
+      );
+      if (preExtractedAddress) {
+        console.log("[action-decision] address extracted via LLM fallback");
+      }
+    }
+  }
+
   // 1. Deterministiske regler med per-shop config og KB-overrides
   let proposals = applyDeterministicRules(
     plan,
@@ -775,6 +853,7 @@ export async function runActionDecision(
     retrieved,
     shopConfig,
     customerMessage,
+    preExtractedAddress,
   );
 
   // 2. LLM fallback:
