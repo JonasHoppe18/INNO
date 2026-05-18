@@ -53,6 +53,8 @@ const PERIOD_OPTIONS = [
   { value: "this_month", label: "This month" },
 ];
 
+const EMPTY_TICKETS = [];
+
 const sectionMotionStyle = (index) => ({ animationDelay: `${index * 45}ms` });
 
 function formatNumber(value) {
@@ -732,7 +734,7 @@ function AnalyticsDrilldownTable({ data, drilldown }) {
   const [updatedFilter, setUpdatedFilter] = useState({ start: "", end: "" });
   const [firstReplyFilter, setFirstReplyFilter] = useState([]);
 
-  const tickets = data?.drilldowns?.byKey?.[drilldown.key] ?? data?.drilldowns?.defaultTickets ?? [];
+  const tickets = data?.drilldowns?.byKey?.[drilldown.key] ?? data?.drilldowns?.defaultTickets ?? EMPTY_TICKETS;
   const title = drilldown.title || "All support tickets";
 
   useEffect(() => {
