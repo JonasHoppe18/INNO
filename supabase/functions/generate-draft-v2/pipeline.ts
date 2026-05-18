@@ -200,7 +200,7 @@ function resolveWriterModel(
   if (overrideModel) return overrideModel;
   // tracking only qualifies as simple when we actually found the order —
   // otherwise there's nothing to report and the model needs to improvise.
-  if (intent === "thanks") return SIMPLE_MODEL;
+  if (intent === "thanks" || intent === "update") return SIMPLE_MODEL;
   if (intent === "tracking" && hasOrderFacts) return SIMPLE_MODEL;
   return Deno.env.get("OPENAI_MODEL") ?? "gpt-5-mini";
 }
@@ -251,7 +251,7 @@ function detectKnowledgeGaps(
   const suggestion = INTENT_GAP_SUGGESTIONS[intent];
 
   // No relevant KB chunks at all for this intent
-  if (chunkCount === 0 && !["thanks", "other"].includes(intent)) {
+  if (chunkCount === 0 && !["thanks", "update", "other"].includes(intent)) {
     gaps.push({
       gap_type: "low_kb_coverage",
       intent,
@@ -1080,6 +1080,7 @@ export async function runDraftV2Pipeline(
     product_question: "OTHER",
     complaint: "OTHER",
     thanks: "OTHER",
+    update: "OTHER",
     other: "OTHER",
   };
   const intentOverride = plannerIntentMap[plan.primary_intent] ?? undefined;

@@ -42,6 +42,7 @@ const PLANNER_SCHEMA = {
         "product_question",
         "complaint",
         "thanks",
+        "update",
         "other",
       ],
     },
@@ -76,7 +77,7 @@ export async function runPlanner(
 
 Schema:
 {
-  "primary_intent": "tracking|return|refund|exchange|address_change|product_question|complaint|thanks|other",
+  "primary_intent": "tracking|return|refund|exchange|address_change|product_question|complaint|thanks|update|other",
   "sub_queries": ["query 1"],
   "required_facts": ["order_state"],
   "skills_to_consider": ["get_order"],
@@ -97,6 +98,7 @@ Rules:
 
 - primary_intent (for non-confirmation messages): classify ONLY by the content of the CURRENT customer message.
   - Message is ONLY expressing gratitude ("thanks", "thank you", "appreciate", "tak", "mange tak", "gracias", "merci", "danke", any variant) → ALWAYS "thanks". Do NOT look at order numbers or prior context. A pure thank-you is ALWAYS "thanks".
+  - Message is a pure status update with no open problem — customer confirms package arrived, issue resolved itself, or just provides a heads-up with nothing to act on → ALWAYS "update". Like "thanks", do NOT look at order context. A pure update is always "update".
   - Customer asks for invoice, receipt, order confirmation, faktura, kvittering, or asks to have an email/confirmation resent → ALWAYS "other". Even if they mention an order number. This is NEVER "refund".
   - Customer asks to change address → address_change (even if order is already shipped/delivered)
   - Customer asks about missing item → complaint (e.g. "jeg modtog kun 1 i stedet for 2")
@@ -118,8 +120,11 @@ Rules:
   - NEVER include return_eligibility for: complaint, exchange, missing items, wrong items, defective items — return windows NEVER apply to shop errors
   - For "thanks" intent: required_facts MUST be empty [] — never look up order or tracking for a thank-you message
   - For "thanks" intent: sub_queries MUST be empty [] — no knowledge retrieval needed
+  - For "update" intent: required_facts MUST be empty [] — no order lookup needed
+  - For "update" intent: sub_queries MUST be empty [] — no knowledge retrieval needed
 - skills_to_consider: only actions relevant to intent — get_order | get_tracking | update_shipping_address | cancel_order | refund_order | create_exchange_request
   - For "thanks" intent: skills_to_consider MUST be empty []
+  - For "update" intent: skills_to_consider MUST be empty []
 - language: ISO 639-1 code. Supported: da, en, sv, de, fr, nl, no, fi, es, it`;
 
   const threadContextLines = [
