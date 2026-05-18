@@ -351,7 +351,7 @@ export async function GET(request: Request) {
 
   let scope: { workspaceId: string | null; supabaseUserId: string | null };
   try {
-    scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId }, { requireExplicitWorkspace: true });
+    scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || "Could not resolve scope." }, { status: 500 });
   }
