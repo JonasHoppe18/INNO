@@ -227,6 +227,9 @@ async function generateDraftV2(shopId, subject, emailBody, options = {}) {
           body: emailBody,
           from_email: "eval@eval.internal",
           conversation_history: options.conversationHistory || undefined,
+          // Exclude the source ticket from few-shot retrieval so eval scores
+          // reflect real generalisation, not data leakage.
+          source_thread_id: options.sourceThreadId || undefined,
         },
         eval_options: {
           writer_model: options.writerModel || undefined,

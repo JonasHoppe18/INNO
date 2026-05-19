@@ -39,6 +39,9 @@ export interface RetrieverInput {
   customerMessage?: string;
   shop?: Record<string, unknown>;
   supabase: SupabaseClient;
+  // Eval mode: exclude this ticket's own stored reply from few-shot examples
+  // to prevent the model from trivially finding the correct answer in the KB.
+  excludeExternalTicketId?: string;
 }
 
 async function embedText(text: string): Promise<number[]> {
@@ -410,7 +413,7 @@ async function runQueryPair(
 }
 
 export async function runRetriever(
-  { plan, shop_id, workspace_id, customerMessage, shop, supabase }:
+  { plan, shop_id, workspace_id, customerMessage, shop, supabase, excludeExternalTicketId }:
     RetrieverInput,
 ): Promise<RetrieverResult> {
   const queries = uniqueStrings([
@@ -418,6 +421,19 @@ export async function runRetriever(
     ...buildFallbackQueries(plan, customerMessage, shop),
   ]).slice(0, 5);
   if (queries.length === 0) return { chunks: [], past_ticket_examples: [] };
+
+  // Resolve which ticket_examples ids to exclude (eval data-leakage prevention).
+  const excludedTicketExampleIds = new Set<number>();
+  if (excludeExternalTicketId) {
+    const { data: excludeRows } = await supabase
+      .from("ticket_examples")
+      .select("id")
+      .eq("shop_id", shop_id)
+      .eq("external_ticket_id", excludeExternalTicketId);
+    for (const row of excludeRows ?? []) {
+      if (typeof row.id === "number") excludedTicketExampleIds.add(row.id);
+    }
+  }
 
   // Run knowledge queries + ticket lookup in parallel. Saved replies are indexed
   // into agent_knowledge with source_provider='saved_reply', so they use the same
@@ -500,6 +516,8 @@ export async function runRetriever(
                 ? ((100 - csatScore) / 100) * 0.15
                 : 0;
               const score = Number(item.similarity || 0) + lexicalScore + correctionBoost;
+              // Skip tickets that are the source of this eval run
+              if (excludedTicketExampleIds.has(item.id)) continue;
               const existing = resultMap.get(String(item.id));
               if (!existing || score > existing.score) {
                 resultMap.set(String(item.id), {

@@ -29,6 +29,9 @@ export interface EvalPayload {
   body: string;
   from_email?: string;
   conversation_history?: string;
+  // When set, the retriever excludes this ticket from few-shot examples to
+  // prevent data leakage where the AI finds its own correct answer in the KB.
+  source_thread_id?: string;
 }
 
 export interface PipelineInput {
@@ -826,6 +829,7 @@ export async function runDraftV2Pipeline(
       customerMessage: latestBody,
       shop,
       supabase,
+      excludeExternalTicketId: eval_payload?.source_thread_id ?? undefined,
     }),
     runFactResolver({
       plan,
