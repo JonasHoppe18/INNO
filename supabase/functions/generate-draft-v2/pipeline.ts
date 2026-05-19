@@ -947,9 +947,25 @@ export async function runDraftV2Pipeline(
 
   const latestCustomerMessage =
     (latestMessage.clean_body_text ?? latestMessage.body_text ?? "") as string;
+
+  // Combine recent inbound messages for language detection — the latest message
+  // alone may be too short (e.g. "Here is the receipt:") to score reliably.
+  // Final fallback is "en": we should reply in the customer's language, not the shop's.
+  const recentInboundForLanguage = messages
+    .filter((m) => {
+      const row = m as Record<string, unknown>;
+      return row.direction !== "outbound" && row.from_me !== true;
+    })
+    .slice(-3)
+    .map((m) => {
+      const row = m as Record<string, unknown>;
+      return ((row.clean_body_text ?? row.body_text ?? "") as string);
+    })
+    .filter((t) => t.length > 0)
+    .join(" ");
   const replyLanguage = resolveReplyLanguage(
-    latestCustomerMessage,
-    plan.language || caseState.language,
+    recentInboundForLanguage || latestCustomerMessage,
+    "en",
   );
 
   const shouldWaitForActionDecision = shouldDeferDraftUntilActionDecision(

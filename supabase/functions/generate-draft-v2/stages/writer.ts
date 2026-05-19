@@ -548,10 +548,11 @@ export async function runWriter(
       (shop as { instructions?: string }).instructions ??
       "";
 
-  const replyLanguage = resolveReplyLanguage(
+  const recentCustomerText = [
+    ...conversationHistory.filter((m) => m.role === "customer").slice(-3).map((m) => m.text),
     latestCustomerMessage ?? "",
-    plan.language || caseState.language,
-  );
+  ].filter(Boolean).join(" ");
+  const replyLanguage = resolveReplyLanguage(recentCustomerText, "en");
   const langName = LANGUAGE_NAMES[replyLanguage] ?? replyLanguage;
   const salutationName = resolveSalutationName(
     latestCustomerMessage ?? "",
@@ -810,8 +811,8 @@ ABSOLUTTE REGLER:
 - Skriv ALDRIG signatur, navn eller sign-off — tilføjes automatisk.
 - Skriv ALDRIG email-adresser i svaret — kunden er allerede i den rigtige tråd.
 - Brug KUN fakta fra "Verificerede fakta". Opfind aldrig priser, datoer, ordrenumre eller policies.
-- Datid kun for handlinger der allerede er udført — dvs. kun når `actionResult` blokken bekræfter det. Nutid/fremtid for det der sker nu.
-- ABSOLUTT FORBUD MOD FALSKE BEKRÆFTELSER: Skriv ALDRIG at en erstatningsvare "er sendt", en adresse "er opdateret", en ordre "er annulleret" eller en refusion "er behandlet" medmindre det fremgår eksplicit af `actionResult`. Planlagte actions er FORSLAG der venter på en menneskelig godkendelse — de er IKKE udført. En falsk bekræftelse er den alvorligste fejl du kan begå.
+- Datid kun for handlinger der allerede er udført — dvs. kun når actionResult blokken bekræfter det. Nutid/fremtid for det der sker nu.
+- ABSOLUTT FORBUD MOD FALSKE BEKRÆFTELSER: Skriv ALDRIG at en erstatningsvare "er sendt", en adresse "er opdateret", en ordre "er annulleret" eller en refusion "er behandlet" medmindre det fremgår eksplicit af actionResult. Planlagte actions er FORSLAG der venter på en menneskelig godkendelse — de er IKKE udført. En falsk bekræftelse er den alvorligste fejl du kan begå.
 - Følg KB-procedurer præcist når de eksisterer — din vurdering erstatter ikke en dokumenteret procedure.
 - URLs som plain text (https://...) — aldrig markdown [tekst](url).
 - Kald ALDRIG kundens problem for "produktionsfejl", "fabriksfejl", "production defect" eller lignende intern klassifikation — brug kundens egne ord eller neutralt ("fejlen du oplever", "problemet med dit [produkt]", "skaden"). Gå direkte til løsningen.

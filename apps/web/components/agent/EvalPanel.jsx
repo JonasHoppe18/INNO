@@ -811,8 +811,13 @@ export function EvalPanel({ fullPage = false }) {
       const res = await fetch("/api/eval/ticket-examples?limit=120", { credentials: "include" });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "Failed to fetch ticket examples");
-      setTicketExamples(data?.examples ?? []);
-      setSelectedExamples(new Set((data?.examples ?? []).map((t) => t.id)));
+      const examples = data?.examples ?? [];
+      setTicketExamples(examples);
+      setSelectedExamples((prev) => {
+        const newIds = new Set(examples.map((t) => t.id));
+        if (prev.size === 0) return newIds;
+        return new Set([...prev].filter((id) => newIds.has(id)));
+      });
     } catch (err) {
       setExamplesError(err.message);
     } finally {
@@ -831,8 +836,13 @@ export function EvalPanel({ fullPage = false }) {
       const res = await fetch("/api/eval/zendesk-tickets?limit=120", { credentials: "include" });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "Failed to fetch Zendesk tickets");
-      setZendeskTickets(data?.tickets ?? []);
-      setSelectedZendesk(new Set((data?.tickets ?? []).map((t) => t.id)));
+      const tickets = data?.tickets ?? [];
+      setZendeskTickets(tickets);
+      setSelectedZendesk((prev) => {
+        const newIds = new Set(tickets.map((t) => t.id));
+        if (prev.size === 0) return newIds;
+        return new Set([...prev].filter((id) => newIds.has(id)));
+      });
     } catch (err) {
       setZendeskError(err.message);
     } finally {
