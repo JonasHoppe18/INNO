@@ -56,17 +56,42 @@ function stripHtml(html: string): string {
     .trim();
 }
 
-function splitIntoChunks(text: string, size = 1200, overlap = 200) {
+function splitIntoSemanticChunks(text: string, maxChars = 2400, minChars = 150): string[] {
   const normalized = normalizeWhitespace(text);
   if (!normalized) return [];
-  const chunks: string[] = [];
-  let start = 0;
-  while (start < normalized.length) {
-    const end = Math.min(normalized.length, start + size);
-    chunks.push(normalized.slice(start, end).trim());
-    if (end >= normalized.length) break;
-    start = Math.max(0, end - overlap);
+
+  // Split on section headers (##, numbered sections) or double newlines
+  const sections = normalized
+    .split(/\n(?=#{1,3}\s|\d+\.\s)|\n\n+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length >= minChars);
+
+  if (sections.length <= 1) {
+    // No clear section boundaries — fall back to character overlap chunking
+    const chunks: string[] = [];
+    let start = 0;
+    while (start < normalized.length) {
+      const end = Math.min(normalized.length, start + maxChars);
+      const chunk = normalized.slice(start, end).trim();
+      if (chunk) chunks.push(chunk);
+      if (end >= normalized.length) break;
+      start = Math.max(0, end - 200);
+    }
+    return chunks.filter(Boolean);
   }
+
+  // Merge short consecutive sections and split oversized ones
+  const chunks: string[] = [];
+  let buffer = "";
+  for (const section of sections) {
+    if (buffer && (buffer.length + section.length + 2) > maxChars) {
+      chunks.push(buffer.trim());
+      buffer = section;
+    } else {
+      buffer = buffer ? `${buffer}\n\n${section}` : section;
+    }
+  }
+  if (buffer.trim().length >= minChars) chunks.push(buffer.trim());
   return chunks.filter(Boolean);
 }
 
@@ -312,7 +337,7 @@ async function insertKnowledgeChunks(options: {
   maxChunks?: number;
 }) {
   const limit = Number(options.maxChunks || 10);
-  const chunks = splitIntoChunks(options.content, 1200, 200).slice(0, Math.max(1, limit));
+  const chunks = splitIntoSemanticChunks(options.content, 2400, 150).slice(0, Math.max(1, limit));
   console.info(
     JSON.stringify({
       event: "knowledge.snippet.embedded",
@@ -393,7 +418,7 @@ export async function GET(request: Request) {
     // Deduplicate by snippet_id, take first chunk (chunk_index 0)
     const seen = new Set<string>();
     const VALID_USABLE_AS = ["policy", "procedure", "fact", "saved_reply", "tone_example", "background"];
-    const snippets: Array<{ snippet_id: string; title: string; content: string; category: string | null; product_id: string | null; usable_as: string | null; is_stale: boolean }> = [];
+    const snippets: Array<{ snippet_id: string; title: string; content: string; category: string | null; product_id: string | null; usable_as: string | null; is_stale: boolean; products: string[]; issue_types: string[] }> = [];
     for (const row of rows || []) {
       const meta = row.metadata as any;
       const snippetId = String(meta?.snippet_id || row.source_id || row.id || "").trim();
@@ -409,6 +434,8 @@ export async function GET(request: Request) {
         product_id: (meta?.product_id as string) || null,
         usable_as: VALID_USABLE_AS.includes(rawUsableAs) ? rawUsableAs : null,
         is_stale: false,
+        products: Array.isArray(meta?.products) ? (meta.products as string[]) : [],
+        issue_types: Array.isArray(meta?.issue_types) ? (meta.issue_types as string[]) : [],
       });
     }
 
@@ -561,6 +588,12 @@ export async function POST(request: Request) {
     const VALID_USABLE_AS_POST = ["policy", "procedure", "fact", "saved_reply", "tone_example", "background"];
     const rawUsableAsPost = String(payload?.usable_as || "").trim();
     const usableAs = VALID_USABLE_AS_POST.includes(rawUsableAsPost) ? rawUsableAsPost : null;
+    const products = Array.isArray(payload?.products)
+      ? (payload.products as unknown[]).map((p) => String(p).toLowerCase().trim()).filter(Boolean)
+      : [];
+    const issueTypes = Array.isArray(payload?.issue_types)
+      ? (payload.issue_types as unknown[]).map((t) => String(t).toLowerCase().trim()).filter(Boolean)
+      : [];
     if (!title || !content) {
       return NextResponse.json({ error: "title and content are required." }, { status: 400 });
     }
@@ -594,6 +627,8 @@ export async function POST(request: Request) {
         ...(usableAs ? { usable_as: usableAs } : {}),
         ...(category ? { category } : {}),
         ...(productId ? { product_id: productId, product_title: productTitle } : {}),
+        ...(products.length ? { products } : {}),
+        ...(issueTypes.length ? { issue_types: issueTypes } : {}),
       },
     });
     console.info(
@@ -655,6 +690,12 @@ export async function PUT(request: Request) {
     const VALID_USABLE_AS_PUT = ["policy", "procedure", "fact", "saved_reply", "tone_example", "background"];
     const rawUsableAsPut = String(payload?.usable_as || "").trim();
     const usableAs = VALID_USABLE_AS_PUT.includes(rawUsableAsPut) ? rawUsableAsPut : null;
+    const products = Array.isArray(payload?.products)
+      ? (payload.products as unknown[]).map((p) => String(p).toLowerCase().trim()).filter(Boolean)
+      : [];
+    const issueTypes = Array.isArray(payload?.issue_types)
+      ? (payload.issue_types as unknown[]).map((t) => String(t).toLowerCase().trim()).filter(Boolean)
+      : [];
 
     if (!snippetId || !title || !content) {
       return NextResponse.json({ error: "id, title and content are required." }, { status: 400 });
@@ -700,6 +741,8 @@ export async function PUT(request: Request) {
         ...(usableAs ? { usable_as: usableAs } : {}),
         ...(category ? { category } : {}),
         ...(productId ? { product_id: productId, product_title: productTitle } : {}),
+        ...(products.length ? { products } : {}),
+        ...(issueTypes.length ? { issue_types: issueTypes } : {}),
       },
     });
 
