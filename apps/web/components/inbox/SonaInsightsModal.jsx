@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useCustomerLookup } from "@/hooks/useCustomerLookup";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -208,9 +208,9 @@ export function SonaInsightsModal({
 }) {
   const [logs, setLogs] = useState([]);
   const [logsLoading, setLogsLoading] = useState(false);
-  const [containerEl, setContainerEl] = useState(null);
+  const containerElRef = useRef(null);
   const containerRef = useCallback((node) => {
-    setContainerEl((current) => (current === node ? current : node));
+    containerElRef.current = node;
   }, []);
   const [sonaLogOpen, setSonaLogOpen] = useState(false);
   const [diagnostic, setDiagnostic] = useState(null);
@@ -287,12 +287,13 @@ export function SonaInsightsModal({
   }, [logs]);
   useEffect(() => {
     if (open) return;
+    const containerEl = containerElRef.current;
     if (!containerEl || typeof document === "undefined") return;
     const activeEl = document.activeElement;
     if (activeEl && containerEl.contains(activeEl) && typeof activeEl.blur === "function") {
       activeEl.blur();
     }
-  }, [containerEl, open]);
+  }, [open]);
 
   return (
     <aside

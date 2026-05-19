@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Component, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Package, Sparkles, TriangleAlert, X } from "lucide-react";
 import { MessageBubble, MessageRenderBoundary } from "@/components/inbox/MessageBubble";
@@ -43,6 +43,37 @@ const QUESTION_SIGNAL_PATTERN =
   /(?:\?|\b(?:can|could|would|should|how|what|why|where|when|hvor|hvornår|hvordan|hvad|hvorfor|kan|skal)\b)/i;
 const OPEN_ISSUE_PATTERN =
   /\b(?:problem|issue|doesn'?t|does not|not\s+work(?:ing)?|still|however|but|cost|price|who\s+needs\s+to\s+pay|hvem\s+skal\s+betale)\b/i;
+
+class TicketRenderBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error) {
+    console.error("[TicketRenderBoundary] failed to render section", {
+      section: this.props.section,
+      resetKey: this.props.resetKey,
+      error,
+    });
+  }
+
+  componentDidUpdate(prevProps) {
+    if (prevProps.resetKey !== this.props.resetKey && this.state.hasError) {
+      this.setState({ hasError: false });
+    }
+  }
+
+  render() {
+    if (!this.state.hasError) return this.props.children;
+    if (this.props.fallback) return this.props.fallback;
+    return null;
+  }
+}
 
 function getLatestInboundCustomerMessage(messages = [], mailboxEmails = []) {
   const rows = Array.isArray(messages) ? messages : [];
@@ -443,10 +474,16 @@ export function TicketDetail({
           >
             {threadTicketRef}
           </div>
-          {headerActions ? <div className="flex shrink-0 items-center gap-2">{headerActions}</div> : null}
+          {headerActions ? (
+            <TicketRenderBoundary section="headerActions" resetKey={`${thread?.id || ""}:header`}>
+              <div className="flex shrink-0 items-center gap-2">{headerActions}</div>
+            </TicketRenderBoundary>
+          ) : null}
         </div>
         <div className="flex items-center gap-2">
-          {rightHeaderActions}
+          <TicketRenderBoundary section="rightHeaderActions" resetKey={`${thread?.id || ""}:rightHeader`}>
+            {rightHeaderActions}
+          </TicketRenderBoundary>
         </div>
       </header>
 
@@ -550,37 +587,41 @@ export function TicketDetail({
               <div key={message.id} className="space-y-3">
                 {shouldInsertActionCardBeforeMessage ? (
                   <div className="ml-auto flex w-full max-w-[520px] justify-end">
-                  <ActionCard
-                  status={pendingUpdateState}
-                  testMode={isApprovedInTestMode}
-                  actionName={pendingActionTitle}
-                  actionType={pendingOrderUpdate?.actionType || ""}
-                  detail={pendingOrderUpdate?.detail || ""}
-                  payload={pendingOrderUpdate?.payload || {}}
-                  orderSummary={selectedOrderSummary}
-                  fallbackOrderNumber={threadOrderNumber}
-                  customerEmail={selectedCustomerEmail}
-                  approvedAt={pendingOrderUpdate?.updatedAt || pendingOrderUpdate?.createdAt || ""}
-                  approvedBy={pendingOrderUpdate?.approvedBy || ""}
-                  error={orderUpdateError || ""}
-                  loading={Boolean(orderUpdateSubmitting)}
-                  extraContent={processReturnExtraContent}
-                  onApprove={() =>
-                        onOrderUpdateDecision?.(
-                          "accepted",
-                          isProcessReturnAction ? { restock: processReturnRestock } : undefined
-                        )
-                      }
-                      onDecline={() => onOrderUpdateDecision?.("denied")}
-                    />
+                    <TicketRenderBoundary section="inlineActionCard" resetKey={`${thread?.id || ""}:${pendingOrderUpdate?.id || "action"}`}>
+                      <ActionCard
+                        status={pendingUpdateState}
+                        testMode={isApprovedInTestMode}
+                        actionName={pendingActionTitle}
+                        actionType={pendingOrderUpdate?.actionType || ""}
+                        detail={pendingOrderUpdate?.detail || ""}
+                        payload={pendingOrderUpdate?.payload || {}}
+                        orderSummary={selectedOrderSummary}
+                        fallbackOrderNumber={threadOrderNumber}
+                        customerEmail={selectedCustomerEmail}
+                        approvedAt={pendingOrderUpdate?.updatedAt || pendingOrderUpdate?.createdAt || ""}
+                        approvedBy={pendingOrderUpdate?.approvedBy || ""}
+                        error={orderUpdateError || ""}
+                        loading={Boolean(orderUpdateSubmitting)}
+                        extraContent={processReturnExtraContent}
+                        onApprove={() =>
+                          onOrderUpdateDecision?.(
+                            "accepted",
+                            isProcessReturnAction ? { restock: processReturnRestock } : undefined
+                          )
+                        }
+                        onDecline={() => onOrderUpdateDecision?.("denied")}
+                      />
+                    </TicketRenderBoundary>
                   </div>
                 ) : null}
                 {isDraft ? (
                   <div className="ml-auto w-full max-w-[520px]">
-                    <ThinkingCard
-                      data={thinkingData}
-                      onClick={() => onOpenInsights?.(true)}
-                    />
+                    <TicketRenderBoundary section="thinkingCard" resetKey={`${thread?.id || ""}:${messageId}:thinking`}>
+                      <ThinkingCard
+                        data={thinkingData}
+                        onClick={() => onOpenInsights?.(true)}
+                      />
+                    </TicketRenderBoundary>
                   </div>
                 ) : null}
                 <MessageRenderBoundary messageId={messageId || message?.id}>
@@ -599,7 +640,9 @@ export function TicketDetail({
                   latestInboundCustomerMessageId &&
                   String(message?.id || "") === latestInboundCustomerMessageId ? (
                   <div className="ml-auto flex w-full max-w-[520px] justify-end">
-                    <TrackingCard order={selectedOrderSummary} threadId={thread?.id || null} />
+                    <TicketRenderBoundary section="trackingCard" resetKey={`${thread?.id || ""}:tracking`}>
+                      <TrackingCard order={selectedOrderSummary} threadId={thread?.id || null} />
+                    </TicketRenderBoundary>
                   </div>
                 ) : null}
               </div>
@@ -607,29 +650,31 @@ export function TicketDetail({
           }) : null}
           {shouldShowActionCard && !actionCardInserted ? (
             <div className="ml-auto flex w-full max-w-[520px] justify-end">
-              <ActionCard
-                status={pendingUpdateState}
-                testMode={isApprovedInTestMode}
-                actionName={pendingActionTitle}
-                actionType={pendingOrderUpdate?.actionType || ""}
-                detail={pendingOrderUpdate.detail || ""}
-                payload={pendingOrderUpdate?.payload || {}}
-                orderSummary={selectedOrderSummary}
-                fallbackOrderNumber={threadOrderNumber}
-                customerEmail={selectedCustomerEmail}
-                approvedAt={pendingOrderUpdate?.updatedAt || pendingOrderUpdate?.createdAt || ""}
-                approvedBy={pendingOrderUpdate?.approvedBy || ""}
-                error={orderUpdateError || ""}
-                loading={Boolean(orderUpdateSubmitting)}
-                extraContent={processReturnExtraContent}
-                onApprove={() =>
-                  onOrderUpdateDecision?.(
-                    "accepted",
-                    isProcessReturnAction ? { restock: processReturnRestock } : undefined
-                  )
-                }
-                onDecline={() => onOrderUpdateDecision?.("denied")}
-              />
+              <TicketRenderBoundary section="trailingActionCard" resetKey={`${thread?.id || ""}:${pendingOrderUpdate?.id || "action"}`}>
+                <ActionCard
+                  status={pendingUpdateState}
+                  testMode={isApprovedInTestMode}
+                  actionName={pendingActionTitle}
+                  actionType={pendingOrderUpdate?.actionType || ""}
+                  detail={pendingOrderUpdate.detail || ""}
+                  payload={pendingOrderUpdate?.payload || {}}
+                  orderSummary={selectedOrderSummary}
+                  fallbackOrderNumber={threadOrderNumber}
+                  customerEmail={selectedCustomerEmail}
+                  approvedAt={pendingOrderUpdate?.updatedAt || pendingOrderUpdate?.createdAt || ""}
+                  approvedBy={pendingOrderUpdate?.approvedBy || ""}
+                  error={orderUpdateError || ""}
+                  loading={Boolean(orderUpdateSubmitting)}
+                  extraContent={processReturnExtraContent}
+                  onApprove={() =>
+                    onOrderUpdateDecision?.(
+                      "accepted",
+                      isProcessReturnAction ? { restock: processReturnRestock } : undefined
+                    )
+                  }
+                  onDecline={() => onOrderUpdateDecision?.("denied")}
+                />
+              </TicketRenderBoundary>
             </div>
           ) : null}
         </div>
@@ -731,27 +776,37 @@ export function TicketDetail({
           </div>
         ) : (
         <div className="relative px-3 pb-1.5">
-          <Composer
-            key={`${thread?.id || "thread"}:${composerMode}`}
-            value={draftValue}
-            onChange={(nextValue) => onDraftChange?.(nextValue, thread?.id || null)}
-            collapsed={composerCollapsed}
-            onToggleCollapse={() => setComposerCollapsed((prev) => !prev)}
-            draftLoaded={draftLoaded}
-            canSend={canSend}
-            onSend={onSend}
-            isSending={isSending}
-            mode={composerMode}
-            onModeChange={onComposerModeChange}
-            toLabel={toLabel}
-            mentionUsers={mentionUsers}
-            onBlur={() => onDraftBlur?.(thread?.id || null)}
-            isDraftLoading={showThinkingCard || isDraftFetching || isPostApprovalDraftLoading}
-            onGenerateDraft={onGenerateDraft}
-            isGeneratingDraft={isGeneratingDraft}
-            onRefineDraft={onRefineDraft}
-            isRefiningDraft={isRefiningDraft}
-          />
+          <TicketRenderBoundary
+            section="composer"
+            resetKey={`${thread?.id || ""}:${composerMode}:composer`}
+            fallback={
+              <div className="mx-auto w-full max-w-[900px] rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                Composer could not be rendered for this ticket.
+              </div>
+            }
+          >
+            <Composer
+              key={`${thread?.id || "thread"}:${composerMode}`}
+              value={draftValue}
+              onChange={(nextValue) => onDraftChange?.(nextValue, thread?.id || null)}
+              collapsed={composerCollapsed}
+              onToggleCollapse={() => setComposerCollapsed((prev) => !prev)}
+              draftLoaded={draftLoaded}
+              canSend={canSend}
+              onSend={onSend}
+              isSending={isSending}
+              mode={composerMode}
+              onModeChange={onComposerModeChange}
+              toLabel={toLabel}
+              mentionUsers={mentionUsers}
+              onBlur={() => onDraftBlur?.(thread?.id || null)}
+              isDraftLoading={showThinkingCard || isDraftFetching || isPostApprovalDraftLoading}
+              onGenerateDraft={onGenerateDraft}
+              isGeneratingDraft={isGeneratingDraft}
+              onRefineDraft={onRefineDraft}
+              isRefiningDraft={isRefiningDraft}
+            />
+          </TicketRenderBoundary>
         </div>
         )}
         </>

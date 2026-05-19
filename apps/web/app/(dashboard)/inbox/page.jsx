@@ -2,7 +2,7 @@ import Link from "next/link";
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { InboxPageClient } from "@/components/inbox/InboxPageClient";
+import { InboxPageClientOnly } from "@/components/inbox/InboxPageClientOnly";
 import { loadInboxData } from "@/lib/server/inbox-data";
 
 export default async function InboxPage({ searchParams }) {
@@ -53,5 +53,5 @@ export default async function InboxPage({ searchParams }) {
     );
   }
 
-  return <InboxPageClient threads={threads} messages={messages} attachments={attachments} />;
+  return <InboxPageClientOnly threads={threads} messages={messages} attachments={attachments} />;
 }
