@@ -120,10 +120,19 @@ function SnippetCard({ snippet, onEdit, onDelete }) {
 
 const VALID_USABLE_AS = ["policy", "procedure", "saved_reply", "tone_example", "background"];
 
+const ISSUE_TYPE_OPTIONS = [
+  "connectivity", "factory_reset", "audio", "battery", "firmware",
+  "microphone", "pairing", "physical_damage", "return", "refund",
+  "shipping", "tracking", "product_specs", "general",
+];
+
 function SnippetModal({ open, onClose, onSave, shopId, categorySlug, productId, productTitle, initial }) {
   const [title, setTitle] = useState(initial?.title || "");
   const [content, setContent] = useState(initial?.content || "");
   const [usableAs, setUsableAs] = useState(initial?.usable_as || "");
+  const [products, setProducts] = useState(initial?.products || []);
+  const [issueTypes, setIssueTypes] = useState(initial?.issue_types || []);
+  const [tagSuggestLoading, setTagSuggestLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -131,8 +140,29 @@ function SnippetModal({ open, onClose, onSave, shopId, categorySlug, productId, 
       setTitle(initial?.title || "");
       setContent(initial?.content || "");
       setUsableAs(initial?.usable_as || "");
+      setProducts(initial?.products || []);
+      setIssueTypes(initial?.issue_types || []);
     }
   }, [open, initial]);
+
+  const fetchTagSuggestions = async () => {
+    if (!content || content.length < 30) return;
+    setTagSuggestLoading(true);
+    try {
+      const res = await fetch("/api/knowledge/tag-suggest", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content, shop_id: shopId }),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (Array.isArray(data.products)) setProducts((prev) => [...new Set([...prev, ...data.products])]);
+      if (Array.isArray(data.issue_types)) setIssueTypes((prev) => [...new Set([...prev, ...data.issue_types])]);
+    } catch { /* ignore */ } finally {
+      setTagSuggestLoading(false);
+    }
+  };
 
   const handleSave = async () => {
     if (!title.trim() || !content.trim()) return;
@@ -145,6 +175,8 @@ function SnippetModal({ open, onClose, onSave, shopId, categorySlug, productId, 
         category: categorySlug,
         ...(usableAs ? { usable_as: usableAs } : {}),
         ...(productId ? { product_id: productId, product_title: productTitle } : {}),
+        ...(products.length ? { products } : {}),
+        ...(issueTypes.length ? { issue_types: issueTypes } : {}),
       };
       if (initial?.snippet_id) {
         const res = await fetch("/api/knowledge/snippets", {
@@ -228,6 +260,69 @@ function SnippetModal({ open, onClose, onSave, shopId, categorySlug, productId, 
             <p className="text-xs text-muted-foreground">
               Be precise and specific — the AI uses this directly to answer customers.
             </p>
+          </div>
+
+          {/* Tag fields */}
+          <div className="space-y-3 border-t pt-3">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs font-medium text-gray-700">Tags (hjælper AI med at finde den rigtige viden)</Label>
+              <button
+                type="button"
+                onClick={fetchTagSuggestions}
+                disabled={tagSuggestLoading || !content}
+                className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-40 transition-opacity"
+              >
+                {tagSuggestLoading ? "Analyserer..." : "Foreslå automatisk"}
+              </button>
+            </div>
+
+            {/* Products */}
+            <div className="space-y-1.5">
+              <Label className="text-[11px] text-gray-500">Produkter</Label>
+              {products.length > 0 && (
+                <div className="flex flex-wrap gap-1 mb-1">
+                  {products.map((p) => (
+                    <span key={p} className="flex items-center gap-0.5 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-800">
+                      {p}
+                      <button type="button" onClick={() => setProducts((prev) => prev.filter((x) => x !== p))} className="ml-0.5 hover:text-blue-600">×</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <Input
+                placeholder="Tilføj produkt og tryk Enter (fx a-blaze)"
+                className="h-7 text-xs"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    const val = e.currentTarget.value.trim().toLowerCase();
+                    if (val && !products.includes(val)) setProducts((prev) => [...prev, val]);
+                    e.currentTarget.value = "";
+                  }
+                }}
+              />
+            </div>
+
+            {/* Issue types */}
+            <div className="space-y-1.5">
+              <Label className="text-[11px] text-gray-500">Issue types</Label>
+              <div className="flex flex-wrap gap-1">
+                {ISSUE_TYPE_OPTIONS.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setIssueTypes((prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t])}
+                    className={`rounded-full px-2 py-0.5 text-xs border transition-colors ${
+                      issueTypes.includes(t)
+                        ? "bg-green-100 border-green-400 text-green-800"
+                        : "bg-gray-50 border-gray-300 text-gray-500 hover:border-gray-400"
+                    }`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
         <DialogFooter>
