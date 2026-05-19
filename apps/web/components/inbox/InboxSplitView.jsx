@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Component,
   useCallback,
   useDeferredValue,
   useEffect,
@@ -69,6 +70,41 @@ const DEFAULT_TICKET_STATE = {
   assignee: null,
   priority: null,
 };
+
+class InboxContentBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error) {
+    console.error("[InboxContentBoundary] failed to render ticket", {
+      resetKey: this.props.resetKey,
+      error,
+    });
+  }
+
+  componentDidUpdate(prevProps) {
+    if (prevProps.resetKey !== this.props.resetKey && this.state.hasError) {
+      this.setState({ hasError: false });
+    }
+  }
+
+  render() {
+    if (!this.state.hasError) return this.props.children;
+    return (
+      <section className="flex min-h-0 flex-1 items-center justify-center bg-sidebar px-6 text-center">
+        <div className="max-w-md rounded-lg border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">
+          This ticket hit a rendering error. Select another ticket and come back, or refresh the page.
+        </div>
+      </section>
+    );
+  }
+}
 
 const DEFAULT_FILTERS = {
   query: "",
@@ -3857,32 +3893,34 @@ export function InboxSplitView({
 
   useEffect(() => {
     setTitleContent(
-      <div className="flex min-w-0 flex-1 items-center">
-        <div className="hidden h-10 shrink-0 items-center justify-end gap-3 bg-background px-3 lg:flex lg:w-[clamp(18rem,20vw,24rem)] lg:min-w-[clamp(18rem,20vw,24rem)] lg:max-w-[clamp(18rem,20vw,24rem)]">
-          <button
-            type="button"
-            onClick={handleViewAllTickets}
-            className="inline-flex items-center gap-1 text-[13px] font-medium text-muted-foreground transition hover:text-foreground"
-          >
-            View all
-            <ArrowUpRight className="h-3.5 w-3.5" />
-          </button>
-          {unreadThreadCount > 0 ? (
-            <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-sm bg-muted px-1.5 text-[11px] font-semibold text-muted-foreground">
-              {unreadThreadCount}
-            </span>
-          ) : null}
+      <InboxContentBoundary resetKey={`tabs:${selectedThreadId || "no-thread"}`}>
+        <div className="flex min-w-0 flex-1 items-center">
+          <div className="hidden h-10 shrink-0 items-center justify-end gap-3 bg-background px-3 lg:flex lg:w-[clamp(18rem,20vw,24rem)] lg:min-w-[clamp(18rem,20vw,24rem)] lg:max-w-[clamp(18rem,20vw,24rem)]">
+            <button
+              type="button"
+              onClick={handleViewAllTickets}
+              className="inline-flex items-center gap-1 text-[13px] font-medium text-muted-foreground transition hover:text-foreground"
+            >
+              View all
+              <ArrowUpRight className="h-3.5 w-3.5" />
+            </button>
+            {unreadThreadCount > 0 ? (
+              <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-sm bg-muted px-1.5 text-[11px] font-semibold text-muted-foreground">
+                {unreadThreadCount}
+              </span>
+            ) : null}
+          </div>
+          <WorkspaceTabsRow
+            tabs={openThreads}
+            activeThreadId={selectedThreadId}
+            unreadByThread={unreadByThread}
+            onSelectTab={setSelectedThreadId}
+            onCloseTab={closeThreadTab}
+            onAddTab={handleCreateTicket}
+            inline
+          />
         </div>
-        <WorkspaceTabsRow
-          tabs={openThreads}
-          activeThreadId={selectedThreadId}
-          unreadByThread={unreadByThread}
-          onSelectTab={setSelectedThreadId}
-          onCloseTab={closeThreadTab}
-          onAddTab={handleCreateTicket}
-          inline
-        />
-      </div>,
+      </InboxContentBoundary>,
     );
     return () => setTitleContent(null);
   }, [
@@ -5094,7 +5132,8 @@ export function InboxSplitView({
       />
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-sidebar">
-        <TicketDetail
+        <InboxContentBoundary resetKey={selectedThreadId || "no-thread"}>
+          <TicketDetail
           thread={selectedThread}
           messages={threadMessages}
           attachments={threadAttachments}
@@ -5248,23 +5287,26 @@ export function InboxSplitView({
           onRequestTranslation={() =>
             fetchTranslationForThread(selectedThreadId)
           }
-        />
+          />
+        </InboxContentBoundary>
       </div>
 
-      <SonaInsightsModal
-        open={insightsOpen}
-        onOpenChange={setInsightsOpen}
-        actions={actions}
-        draftId={draftLogId}
-        threadId={selectedThread?.id || null}
-        draftLoading={draftLogLoading}
-        customerLookup={customerLookup}
-        customerLookupLoading={customerLookupLoading}
-        customerLookupError={customerLookupError}
-        onCustomerRefresh={refreshCustomerLookup}
-        customerLookupParams={customerLookupParams}
-        onOpenTicket={handleOpenPreviousTicket}
-      />
+      <InboxContentBoundary resetKey={`insights:${selectedThreadId || "no-thread"}`}>
+        <SonaInsightsModal
+          open={insightsOpen}
+          onOpenChange={setInsightsOpen}
+          actions={actions}
+          draftId={draftLogId}
+          threadId={selectedThread?.id || null}
+          draftLoading={draftLogLoading}
+          customerLookup={customerLookup}
+          customerLookupLoading={customerLookupLoading}
+          customerLookupError={customerLookupError}
+          onCustomerRefresh={refreshCustomerLookup}
+          customerLookupParams={customerLookupParams}
+          onOpenTicket={handleOpenPreviousTicket}
+        />
+      </InboxContentBoundary>
 
       <TranslationModal
         open={translationModalOpen}

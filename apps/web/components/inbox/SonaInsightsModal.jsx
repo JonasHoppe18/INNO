@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useCustomerLookup } from "@/hooks/useCustomerLookup";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -209,6 +209,9 @@ export function SonaInsightsModal({
   const [logs, setLogs] = useState([]);
   const [logsLoading, setLogsLoading] = useState(false);
   const [containerEl, setContainerEl] = useState(null);
+  const containerRef = useCallback((node) => {
+    setContainerEl((current) => (current === node ? current : node));
+  }, []);
   const [sonaLogOpen, setSonaLogOpen] = useState(false);
   const [diagnostic, setDiagnostic] = useState(null);
 
@@ -293,7 +296,7 @@ export function SonaInsightsModal({
 
   return (
     <aside
-      ref={setContainerEl}
+      ref={containerRef}
       className={`flex h-full min-w-0 flex-none flex-col overflow-hidden border-l border-border bg-background transition-[width] duration-200 ease-linear ${
         open ? "w-[clamp(20rem,24vw,28rem)]" : "w-0"
       }`}
