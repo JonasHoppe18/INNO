@@ -145,43 +145,46 @@ export async function POST(request: Request) {
   let skipped = 0;
   let errors = 0;
 
-  for (const chunk of chunks) {
+  const toProcess = chunks.filter((chunk) => {
     const meta = chunk.metadata ?? {};
     const hasProducts = Array.isArray(meta.products) && (meta.products as string[]).length > 0;
     const hasIssueTypes = Array.isArray(meta.issue_types) && (meta.issue_types as string[]).length > 0;
-
-    // Skip if already fully tagged
-    if (hasProducts && hasIssueTypes) {
-      skipped += 1;
-      continue;
-    }
-
     const content = String(chunk.content || "").trim();
-    if (content.length < 20) {
+    if ((hasProducts && hasIssueTypes) || content.length < 20) {
       skipped += 1;
-      continue;
+      return false;
     }
+    return true;
+  });
 
-    try {
-      const { products, issue_types } = await suggestTags(content, productNames);
-
-      // Merge new tags with existing metadata — don't overwrite already-set tags
-      const updatedMeta = {
-        ...meta,
-        products: hasProducts ? meta.products : products,
-        issue_types: hasIssueTypes ? meta.issue_types : issue_types,
-      };
-
-      const { error: updateError } = await serviceClient
-        .from("agent_knowledge")
-        .update({ metadata: updatedMeta })
-        .eq("id", chunk.id);
-
-      if (updateError) throw new Error(updateError.message);
-      tagged += 1;
-    } catch {
-      errors += 1;
-    }
+  // Process in parallel batches of 8 to avoid timeout
+  const BATCH_SIZE = 8;
+  for (let i = 0; i < toProcess.length; i += BATCH_SIZE) {
+    const batch = toProcess.slice(i, i + BATCH_SIZE);
+    await Promise.all(
+      batch.map(async (chunk) => {
+        const meta = chunk.metadata ?? {};
+        const hasProducts = Array.isArray(meta.products) && (meta.products as string[]).length > 0;
+        const hasIssueTypes = Array.isArray(meta.issue_types) && (meta.issue_types as string[]).length > 0;
+        const content = String(chunk.content || "").trim();
+        try {
+          const { products, issue_types } = await suggestTags(content, productNames);
+          const updatedMeta = {
+            ...meta,
+            products: hasProducts ? meta.products : products,
+            issue_types: hasIssueTypes ? meta.issue_types : issue_types,
+          };
+          const { error: updateError } = await serviceClient
+            .from("agent_knowledge")
+            .update({ metadata: updatedMeta })
+            .eq("id", chunk.id);
+          if (updateError) throw new Error(updateError.message);
+          tagged += 1;
+        } catch {
+          errors += 1;
+        }
+      })
+    );
   }
 
   return NextResponse.json({
