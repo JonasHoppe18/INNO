@@ -171,6 +171,14 @@ const GLOBALLY_DISABLED_ACTIONS = new Set([
   "create_exchange_request",
   "refund_order",
   "initiate_return",
+  "add_internal_note_or_tag",
+  "add_note",
+  "add_tag",
+  "resend_confirmation_or_invoice",
+  "change_shipping_method",
+  "hold_or_release_fulfillment",
+  "edit_line_items",
+  "update_customer_contact",
 ]);
 
 function isActionDisabled(
@@ -512,7 +520,7 @@ export function applyDeterministicRules(
     if (
       INVOICE_RE.test(msg) || INVOICE_RE.test(bodyText) || INVOICE_RE.test(customerMessage)
     ) {
-      if (order && !alreadyDecided(decided, "resend_confirmation_or_invoice")) {
+      if (order && !alreadyDecided(decided, "resend_confirmation_or_invoice") && !isActionDisabled("resend_confirmation_or_invoice", shopConfig)) {
         return [{
           type: "resend_confirmation_or_invoice",
           confidence: "high",
@@ -561,7 +569,7 @@ export function applyDeterministicRules(
         (sparePartDetected && sparePartsWorkflow === "manual") ||
       exchangeWorkflow === "manual";
 
-    if (useOfficeFlow) {
+    if (useOfficeFlow && !isActionDisabled("add_note", shopConfig)) {
       // Reservedel sendes fra kontoret — add_note, ingen Shopify exchange
       const noteText = order
         ? `Spare part requested — ship from office. Order: ${order.name}`
@@ -639,7 +647,8 @@ export function applyDeterministicRules(
 
     if (
       sparePartInCustomerWords &&
-      (officeFromKB || sparePartsWorkflow === "office")
+      (officeFromKB || sparePartsWorkflow === "office") &&
+      !isActionDisabled("add_note", shopConfig)
     ) {
       return [{
         type: "add_note",

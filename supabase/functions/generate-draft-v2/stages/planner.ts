@@ -94,7 +94,7 @@ Rules:
   - primary_intent: use the thread's most relevant open issue from pending_asks/open_questions (NOT the confirmation word itself). E.g. if pending was "address confirmation for cable replacement" → intent = "complaint" or "exchange"
   - sub_queries: generate based on what should happen NEXT after this confirmation. E.g. address confirmed → ["send spare part customer confirmed address", "cable replacement shipment procedure", "how to ship spare part to customer"]
   - required_facts: always ["order_state"] — we need the order to proceed
-  - skills_to_consider: what the confirmation enables — e.g. address confirmed → ["create_exchange_request", "add_note"]
+  - skills_to_consider: what the confirmation enables — e.g. address confirmed → ["update_shipping_address"]
 
 - primary_intent (for non-confirmation messages): classify ONLY by the content of the CURRENT customer message.
   - Message is ONLY expressing gratitude ("thanks", "thank you", "appreciate", "tak", "mange tak", "gracias", "merci", "danke", any variant) → ALWAYS "thanks". Do NOT look at order numbers or prior context. A pure thank-you is ALWAYS "thanks".

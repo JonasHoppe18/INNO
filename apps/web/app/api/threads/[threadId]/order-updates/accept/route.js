@@ -984,13 +984,13 @@ function formatRefundAmountForReply(payload = {}, isDanish = false) {
   }
 }
 
-function buildActionResultForDraft({ actionType, order, payload = {}, detail = "" }) {
+function buildActionResultForDraft({ actionType, order, payload = {}, detail = "", outcome = "executed" }) {
   const refundTransaction = extractRefundTransaction(payload);
   const amount = asNumber(refundTransaction?.amount ?? payload?.amount);
   const currency = asString(refundTransaction?.currency || payload?.currency || payload?.currency_code || "");
   return {
     action_type: actionType,
-    outcome: "executed",
+    outcome,
     order_id: order?.id ? String(order.id) : "",
     order_name: asString(order?.name) || (order?.order_number ? `#${order.order_number}` : ""),
     order_number: order?.order_number ? String(order.order_number) : "",
@@ -3001,17 +3001,32 @@ export async function POST(request, { params }) {
       created_at: nowIso,
     });
 
-    const declinedDraftText = await finalizeActionDecisionDraft({
-      serviceClient,
-      scope,
-      thread,
-      actionRecord,
-      actionType: asString(actionRecord?.action_type || ""),
-      outcome: "declined",
-      outcomeDetail: actionRecord?.detail || proposalText || "The proposed action was not approved.",
-      executionState: "no_action",
-      orderName: asString(actionRecord?.order_number || ""),
-      decisionReason,
+    let declinedShopId = null;
+    try {
+      let declinedShopQuery = serviceClient
+        .from("shops")
+        .select("id")
+        .eq("platform", "shopify")
+        .is("uninstalled_at", null)
+        .order("created_at", { ascending: false })
+        .limit(1);
+      declinedShopQuery = applyScope(declinedShopQuery, scope, {
+        workspaceColumn: "workspace_id",
+        userColumn: "owner_user_id",
+      });
+      const { data: declinedShop } = await declinedShopQuery.maybeSingle();
+      declinedShopId = declinedShop?.id ?? null;
+    } catch {}
+
+    const declinedDraftText = await generatePostActionDraftV2({
+      threadId,
+      shopId: declinedShopId,
+      actionResult: buildActionResultForDraft({
+        actionType: asString(actionRecord?.action_type || ""),
+        order: null,
+        detail: actionRecord?.detail || proposalText || "",
+        outcome: "declined",
+      }),
     }).catch((error) => {
       console.warn("order-updates/accept: failed to generate declined draft", error?.message || error);
       return null;
@@ -3402,22 +3417,6 @@ export async function POST(request, { params }) {
           "Reply here if you have any questions.",
         ].join("\n");
 
-    // Save as draft in thread — agent reviews and sends manually (no editing required)
-    await finalizeActionDecisionDraft({
-      serviceClient,
-      scope,
-      thread,
-      actionRecord,
-      actionType: normalizedActionType,
-      outcome: "executed",
-      outcomeDetail: returnInstructionsDraft,
-      executionState: "executed",
-      orderName: orderRef || null,
-      decisionReason,
-      preferredText: returnInstructionsDraft,
-    }).catch((err) => {
-      console.warn("order-updates/accept: failed to generate return instructions draft", err?.message || err);
-    });
 
     const returnCase = await upsertReturnCase({
       serviceClient,
@@ -3878,17 +3877,16 @@ export async function POST(request, { params }) {
       created_at: nowIso,
     });
 
-    const testModeDraftText = await finalizeActionDecisionDraft({
-      serviceClient,
-      scope,
-      thread,
-      actionRecord,
-      actionType: normalizedActionType,
-      outcome: "approved_test_mode",
-      outcomeDetail: detailText || `The ${normalizedActionType.replace(/_/g, " ")} action has been completed.`,
-      executionState: "validated_not_executed",
-      orderName: asString(order?.name) || asString(order?.order_number),
-      decisionReason,
+    const testModeDraftText = await generatePostActionDraftV2({
+      threadId,
+      shopId: shopRow.id,
+      actionResult: buildActionResultForDraft({
+        actionType: normalizedActionType,
+        order,
+        payload: actionRowPayload,
+        detail: detailText || `The ${normalizedActionType.replace(/_/g, " ")} action has been completed.`,
+        outcome: "executed",
+      }),
     }).catch((error) => {
       console.warn("order-updates/accept: failed to generate approved_test_mode draft", error?.message || error);
       return null;
@@ -4549,6 +4547,7 @@ export async function POST(request, { params }) {
       order,
       payload: actionRowPayload,
       detail: detailText || `The ${normalizedActionType.replace(/_/g, " ")} action has been completed.`,
+      outcome: "executed",
     }),
   }).catch((error) => {
     console.warn("order-updates/accept: failed to generate post-action draft via v2", error?.message || error);

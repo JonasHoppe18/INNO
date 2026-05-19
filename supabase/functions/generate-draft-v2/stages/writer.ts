@@ -683,12 +683,29 @@ Support svarede: "${ex.agent_reply.slice(0, 500)}"`;
     ? fallbackAmountFromFacts
     : actionAmountDisplay;
 
+  const actionOutcome = String(actionResult?.outcome || "executed");
   const actionResultBlock = actionResult
-    ? `# POST-ACTION RESULT MODE (primær opgave for dette svar)
+    ? actionOutcome === "declined"
+      ? `# POST-ACTION RESULT MODE — AFVIST (primær opgave for dette svar)
+En medarbejder har gennemgået kundens anmodning og valgt IKKE at udføre handlingen. Skriv et kort, venligt svar til kunden der forklarer situationen.
+
+- action_type: ${String(actionResult.action_type || "")}
+- order_name: ${String(actionResult.order_name || actionResult.order_number || "")}
+- detail: ${String(actionResult.detail || "")}
+
+Regler for afvist-svaret:
+- Svar på samme sprog som kunden.
+- Hold svaret kort: 2-3 sætninger max.
+- Ingen signatur, ingen "kontakt os hvis..."-standardlinje, ingen support-email.
+- Ingen "tak for din besked" eller generisk varm indledning efter hilsenen — gå direkte til svaret.
+- Hvis action_type er "cancel_order": forklar at ordren allerede er afsendt og derfor ikke kan annulleres. Henvis kunden til at sende den retur når den ankommer.
+- Hvis action_type er "update_shipping_address": forklar at ordren allerede er afsendt og adressen ikke kan ændres.
+- Brug ikke "desværre" mere end én gang. Vær direkte og hjælpsom.`
+      : `# POST-ACTION RESULT MODE (primær opgave for dette svar)
 Kundens sag er allerede godkendt og handlingen er allerede udført i Shopify. Svaret er derfor en kort bekræftelse til kunden, ikke et forslag, en vurdering eller en ny supportproces.
 
 - action_type: ${String(actionResult.action_type || "")}
-- outcome: ${String(actionResult.outcome || "executed")}
+- outcome: ${actionOutcome}
 - order_name: ${String(actionResult.order_name || actionResult.order_number || "")}
 - amount_display: ${resolvedAmountDisplay || "(ukendt — brug ordretotal fra Verificerede fakta hvis tilgængelig)"}
 - currency: ${String(actionResult.currency || "")}
