@@ -110,6 +110,7 @@ export async function POST(request: Request) {
   try {
     const shop = await resolveScopedShop(serviceClient, scope, requestedShopId || undefined, {
       fields: "id, product_overview",
+      allowSingleScopedFallback: true,
     }) as { id?: string; product_overview?: string } | null;
     if (!shop?.id) {
       return NextResponse.json({ error: "Shop not found." }, { status: 404 });
