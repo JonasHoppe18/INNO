@@ -109,6 +109,20 @@ const STOP_WORDS = new Set([
   "ordrenummer",
 ]);
 
+const INTENT_TO_ISSUE_TYPES: Record<string, string[]> = {
+  tracking: ["tracking", "shipping"],
+  return: ["return"],
+  refund: ["refund", "return"],
+  exchange: ["return", "physical_damage", "connectivity"],
+  complaint: ["physical_damage", "connectivity", "audio", "battery", "firmware"],
+  product_question: ["product_specs", "connectivity", "audio", "firmware", "battery"],
+  address_change: ["shipping"],
+  cancel: ["return"],
+  other: [],
+  thanks: [],
+  update: [],
+};
+
 function stripHtml(text: string): string {
   return String(text || "")
     .replace(/<[^>]+>/g, " ")
@@ -371,6 +385,8 @@ async function runQueryPair(
   query: string,
   shop_id: string,
   supabase: SupabaseClient,
+  filterProducts?: string[],
+  filterIssueTypes?: string[],
 ): Promise<
   {
     vector: Array<Record<string, unknown>>;
@@ -384,6 +400,8 @@ async function runQueryPair(
         query_embedding: embedding,
         match_count: 20,
         filter_shop_id: shop_id,
+        filter_products: filterProducts?.length ? filterProducts : null,
+        filter_issue_types: filterIssueTypes?.length ? filterIssueTypes : null,
       });
       if (error) throw error;
       return (data ?? []) as Array<Record<string, unknown>>;
@@ -396,6 +414,7 @@ async function runQueryPair(
         .select("id, content, source_type, source_provider, metadata")
         .eq("shop_id", shop_id)
         .neq("source_type", "ticket")
+        .neq("source_provider", "saved_reply")
         .textSearch("content", safeQuery, { type: "websearch" })
         .limit(15);
       if (error) {
@@ -422,6 +441,11 @@ export async function runRetriever(
   ]).slice(0, 5);
   if (queries.length === 0) return { chunks: [], past_ticket_examples: [] };
 
+  const filterProducts = extractMentionedProductTerms(customerMessage || "", shop);
+  const intentIssueTypes = INTENT_TO_ISSUE_TYPES[plan.primary_intent] ?? [];
+  const detectedIssueTypes = extractIssueTerms(customerMessage || "");
+  const filterIssueTypes = uniqueStrings([...intentIssueTypes, ...detectedIssueTypes]);
+
   // Resolve which ticket_examples ids to exclude (eval data-leakage prevention).
   const excludedTicketExampleIds = new Set<number>();
   if (excludeExternalTicketId) {
@@ -439,7 +463,19 @@ export async function runRetriever(
   // into agent_knowledge with source_provider='saved_reply', so they use the same
   // metadata/product retrieval path as other knowledge.
   const [queryPairs, ticketResult] = await Promise.all([
-    Promise.all(queries.map((q) => runQueryPair(q, shop_id, supabase))),
+    (async () => {
+      const filtered = await Promise.all(
+        queries.map((q) => runQueryPair(q, shop_id, supabase, filterProducts, filterIssueTypes)),
+      );
+      const totalHits = filtered.reduce(
+        (sum, p) => sum + p.vector.length + p.bm25.length, 0,
+      );
+      if (totalHits === 0 && (filterProducts.length > 0 || filterIssueTypes.length > 0)) {
+        console.log("[retriever] metadata filter returned 0 results — falling back to unfiltered search");
+        return Promise.all(queries.map((q) => runQueryPair(q, shop_id, supabase)));
+      }
+      return filtered;
+    })(),
     // Dedicated ticket_examples lookup via own RPC — separate vector index, typed columns
     (async () => {
       try {
@@ -567,7 +603,7 @@ export async function runRetriever(
   const fused = rrfFusion(allLists);
 
   // Knowledge chunks include saved replies indexed into agent_knowledge.
-  const knowledgeBudget = 8;
+  const knowledgeBudget = 4;
   const queryText = `${queries.join(" ")} ${customerMessage || ""}`;
   const productTerms = extractMentionedProductTerms(queryText, shop);
   const issueTerms = extractIssueTerms(queryText);
@@ -639,8 +675,8 @@ export async function runRetriever(
     .filter((chunk, _i, arr) => {
       if (arr.length === 0) return true;
       const topSimilarity = arr[0].similarity;
-      // Always include at least 3 results; after that require >= 40% of top score
-      return _i < 3 || chunk.similarity >= topSimilarity * 0.4;
+      // Always include at least 3 results; after that require >= 60% of top score
+      return _i < 3 || chunk.similarity >= topSimilarity * 0.6;
     })
     .slice(0, knowledgeBudget);
 
