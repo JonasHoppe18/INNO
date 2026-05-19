@@ -384,6 +384,7 @@ export function KnowledgePageClient() {
   const [snippetIssueTypes, setSnippetIssueTypes] = useState([]);
   const [tagSuggestions, setTagSuggestions] = useState({ products: [], issue_types: [] });
   const [tagSuggestLoading, setTagSuggestLoading] = useState(false);
+  const [bulkTagging, setBulkTagging] = useState(false);
   const [historyProvider, setHistoryProvider] = useState(null);
   const [zendeskImportCount, setZendeskImportCount] = useState(null);
   const [zendeskImporting, setZendeskImporting] = useState(false);
@@ -2057,6 +2058,35 @@ export function KnowledgePageClient() {
                 <CardDescription>Primary source for product facts, manuals, and troubleshooting guides.</CardDescription>
               </div>
               <div className="flex shrink-0 items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={async () => {
+                    if (!shopId || bulkTagging) return;
+                    setBulkTagging(true);
+                    try {
+                      const res = await fetch("/api/knowledge/bulk-tag", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ shop_id: shopId }),
+                      });
+                      const data = await res.json();
+                      if (!res.ok) throw new Error(data?.error || "Bulk tag failed.");
+                      toast.success(`Auto-tagging done: ${data.tagged} tagged, ${data.skipped} already tagged, ${data.errors} errors.`);
+                      await loadSnippets();
+                    } catch (err) {
+                      toast.error(err instanceof Error ? err.message : "Auto-tag failed.");
+                    } finally {
+                      setBulkTagging(false);
+                    }
+                  }}
+                  disabled={!shopId || bulkTagging}
+                  className="gap-1.5 text-gray-600"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${bulkTagging ? "animate-spin" : ""}`} />
+                  {bulkTagging ? "Tagger..." : "Auto-tag alle"}
+                </Button>
                 <Button
                   type="button"
                   size="sm"
