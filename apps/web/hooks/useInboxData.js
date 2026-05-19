@@ -288,6 +288,7 @@ export function useThreadMessages(threadId, options = {}) {
 
   const [data, setData] = useState(seeded);
   const [attachments, setAttachments] = useState([]);
+  const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [fetchedThreadId, setFetchedThreadId] = useState(threadId || null);
@@ -315,7 +316,7 @@ export function useThreadMessages(threadId, options = {}) {
       // Prefer server-side scoped fetch for thread bodies.
       // This avoids client-side scope/RLS mismatches on older rows.
       try {
-        const response = await fetch(`/api/inbox/threads/${threadId}/messages`, {
+        const response = await fetch(`/api/inbox/threads/${threadId}/detail`, {
           method: "GET",
           cache: "no-store",
           credentials: "include",
@@ -325,6 +326,7 @@ export function useThreadMessages(threadId, options = {}) {
           if (isStale()) return;
           const rows = Array.isArray(payload?.messages) ? payload.messages : [];
           const attachmentRows = Array.isArray(payload?.attachments) ? payload.attachments : [];
+          setDetail(payload && typeof payload === "object" ? payload : null);
           if (!rows.length) {
             console.warn("[useThreadMessages] tomt server-resultat for tråd:", threadId);
           }
@@ -524,6 +526,7 @@ export function useThreadMessages(threadId, options = {}) {
       if (isStale()) return;
       const normalizedRows = Array.isArray(rows) ? rows : [];
       setData(normalizedRows);
+      setDetail(null);
       setFetchedThreadId(requestThreadId);
 
       const messageIds = normalizedRows
@@ -568,6 +571,7 @@ export function useThreadMessages(threadId, options = {}) {
     if (!threadId) {
       setData((prev) => (prev?.length ? [] : prev));
       setAttachments((prev) => (prev?.length ? [] : prev));
+      setDetail(null);
       return;
     }
     // Only reset when switching thread. Don't keep clearing when seeded is empty,
@@ -575,6 +579,7 @@ export function useThreadMessages(threadId, options = {}) {
     seededKeyRef.current = seededKey;
     setData(seeded);
     setAttachments([]);
+    setDetail(null);
   }, [seeded, seededKey, threadId]);
 
   useEffect(() => {
@@ -584,9 +589,10 @@ export function useThreadMessages(threadId, options = {}) {
     seededKeyRef.current = seededKey;
     setData(seeded);
     setAttachments([]);
+    setDetail(null);
   }, [seeded, seededKey, threadId]);
 
-  return { data, attachments, loading, error, refresh: fetchMessages, fetchedThreadId };
+  return { data, attachments, detail, loading, error, refresh: fetchMessages, fetchedThreadId };
 }
 
 export function useThreadPreviewMessages(threadIds = [], options = {}) {

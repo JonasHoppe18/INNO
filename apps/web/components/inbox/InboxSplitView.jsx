@@ -1050,6 +1050,7 @@ export function InboxSplitView({
   const {
     data: selectedThreadMessagesFromDb,
     attachments: selectedThreadAttachmentsFromDb,
+    detail: selectedThreadDetail,
     loading: selectedThreadMessagesLoading,
     refresh: refreshSelectedThreadMessages,
     fetchedThreadId: messagesFetchedForThreadId,
@@ -2213,6 +2214,119 @@ export function InboxSplitView({
   }, [derivedThreads, readOverrides]);
 
   useEffect(() => {
+    if (!selectedThreadId || messagesFetchedForThreadId !== selectedThreadId) return;
+    if (!selectedThreadDetail || typeof selectedThreadDetail !== "object") return;
+
+    const detailDraftStats = selectedThreadDetail.draftStats || null;
+    if (detailDraftStats?.edit_classification) {
+      setSentDraftStatsByThread((prev) =>
+        prev[selectedThreadId] ? prev : { ...prev, [selectedThreadId]: detailDraftStats },
+      );
+    }
+
+    const detailDraftPayload = selectedThreadDetail.draft || null;
+    if (detailDraftPayload && typeof detailDraftPayload === "object") {
+      setSignatureByThread((prev) => ({
+        ...prev,
+        [selectedThreadId]: String(detailDraftPayload.signature || ""),
+      }));
+      setProposalOnlyByThread((prev) => ({
+        ...prev,
+        [selectedThreadId]: detailDraftPayload.proposal_only === true,
+      }));
+      const draft = detailDraftPayload.draft || null;
+      if (draft?.id) setActiveDraftId(draft.id);
+      if (
+        !Object.prototype.hasOwnProperty.call(draftValueByThread, selectedThreadId)
+      ) {
+        const draftText = draft?.body_text || draft?.body_html || "";
+        setDraftValue(draftText);
+        setDraftValueByThread((prev) => ({
+          ...prev,
+          [selectedThreadId]: draftText,
+        }));
+        setSystemDraftUneditedByThread((prev) => ({
+          ...prev,
+          [selectedThreadId]: Boolean(draftText),
+        }));
+        draftLastSavedRef.current[selectedThreadId] = String(draftText || "").trim();
+      }
+      setDraftReady(true);
+    }
+
+    const detailOrderUpdate = selectedThreadDetail.orderUpdate || null;
+    const latestReturnCase = detailOrderUpdate?.returnCase || null;
+    if (latestReturnCase) {
+      setReturnCaseByThread((prev) => ({
+        ...prev,
+        [selectedThreadId]: latestReturnCase,
+      }));
+    }
+    const latestAction = detailOrderUpdate?.action || null;
+    if (!latestAction) return;
+
+    const normalizedStatus = String(
+      latestAction.normalizedStatus || latestAction.status || "",
+    ).toLowerCase();
+    const actionType = asString(latestAction.actionType || latestAction.action_type).toLowerCase();
+    const actionPayload =
+      latestAction?.payload && typeof latestAction.payload === "object"
+        ? latestAction.payload
+        : {};
+    const shouldShowActionCardForType =
+      isApprovalManagedActionType(actionType) ||
+      normalizedStatus === "pending" ||
+      normalizedStatus === "awaiting_approval" ||
+      normalizedStatus === "requires_approval";
+    if (!shouldShowActionCardForType) return;
+
+    const isTestModeAction =
+      latestAction?.testMode === true ||
+      normalizedStatus === "approved_test_mode" ||
+      actionPayload?.test_mode === true ||
+      actionPayload?.simulated === true;
+    const isFailedStatus = normalizedStatus === "failed";
+    const actionDetail = isFailedStatus
+      ? asString(latestAction?.error) ||
+        asString(latestAction?.detail) ||
+        "Order action could not be completed."
+      : asString(latestAction?.detail) ||
+        "Sona wants to apply an order update for this customer.";
+
+    setPendingOrderUpdateByThread((prev) => ({
+      ...prev,
+      [selectedThreadId]: {
+        id: String(latestAction.id || ""),
+        detail: actionDetail,
+        actionType: actionType || null,
+        payload: actionPayload,
+        createdAt: latestAction.createdAt || null,
+        updatedAt: latestAction.updatedAt || latestAction.createdAt || null,
+        status:
+          asString(latestAction.status || latestAction.normalizedStatus) ||
+          "pending",
+        testMode: isTestModeAction,
+        approvedBy: asString(latestAction.approvedBy) || "",
+        error: isFailedStatus
+          ? asString(latestAction.error) || actionDetail
+          : null,
+      },
+    }));
+    const decisionFromAction = getDecisionFromActionStatus(latestAction.status);
+    setOrderUpdateDecisionByThread((prev) => {
+      const next = { ...prev };
+      if (decisionFromAction) next[selectedThreadId] = decisionFromAction;
+      else delete next[selectedThreadId];
+      return next;
+    });
+  }, [
+    draftValueByThread,
+    messagesFetchedForThreadId,
+    selectedThreadDetail,
+    selectedThreadId,
+  ]);
+
+  useEffect(() => {
     if (!selectedThreadId || isLocalThreadId(selectedThreadId)) return;
     let active = true;
     const fetchDraftLogId = async () => {
@@ -2282,6 +2396,16 @@ export function InboxSplitView({
   // Uses an API route with service client to bypass RLS on the drafts table.
   useEffect(() => {
     if (!selectedThreadId || isLocalThreadId(selectedThreadId)) return;
+    if (
+      selectedThreadMessagesLoading &&
+      messagesFetchedForThreadId !== selectedThreadId
+    )
+      return;
+    if (
+      messagesFetchedForThreadId === selectedThreadId &&
+      selectedThreadDetail?.draftStats
+    )
+      return;
     if (sentDraftStatsByThread[selectedThreadId]) return; // already fetched
     let active = true;
     const threadId = selectedThreadId;
@@ -2299,7 +2423,14 @@ export function InboxSplitView({
       active = false;
       clearTimeout(timerId);
     };
-  }, [isLocalThreadId, selectedThreadId, sentDraftStatsByThread]);
+  }, [
+    isLocalThreadId,
+    messagesFetchedForThreadId,
+    selectedThreadDetail,
+    selectedThreadId,
+    selectedThreadMessagesLoading,
+    sentDraftStatsByThread,
+  ]);
 
   useEffect(() => {
     if (isLocalThreadId(selectedThreadId)) return;
@@ -2476,6 +2607,7 @@ export function InboxSplitView({
       enabled:
         Boolean(selectedThreadId) &&
         !String(selectedThreadId || "").startsWith("local-new-ticket-") &&
+        messagesFetchedForThreadId !== selectedThreadId &&
         selectedThreadMessageIds.length > 0,
     },
   );
@@ -2601,6 +2733,16 @@ export function InboxSplitView({
   useEffect(() => {
     if (!selectedThreadId) return;
     if (isLocalThreadId(selectedThreadId)) return;
+    if (
+      selectedThreadMessagesLoading &&
+      messagesFetchedForThreadId !== selectedThreadId
+    )
+      return;
+    if (
+      messagesFetchedForThreadId === selectedThreadId &&
+      selectedThreadDetail?.orderUpdate
+    )
+      return;
 
     let active = true;
     const loadPendingOrderUpdate = async () => {
@@ -2750,7 +2892,10 @@ export function InboxSplitView({
     };
   }, [
     isLocalThreadId,
+    messagesFetchedForThreadId,
+    selectedThreadDetail,
     selectedThreadId,
+    selectedThreadMessagesLoading,
     // eslint-disable-next-line react-hooks/exhaustive-deps -- manual refresh trigger from mark-received
     refreshPendingActionByThread[selectedThreadId],
   ]);
@@ -2961,13 +3106,32 @@ export function InboxSplitView({
       setDraftReady(true);
     };
     const timerId = setTimeout(() => {
+      if (
+        selectedThreadMessagesLoading &&
+        messagesFetchedForThreadId !== selectedThreadId
+      )
+        return;
+      if (
+        messagesFetchedForThreadId === selectedThreadId &&
+        selectedThreadDetail?.draft
+      ) {
+        setDraftReady(true);
+        return;
+      }
       loadDraft();
     }, DRAFT_FETCH_DELAY_MS);
     return () => {
       active = false;
       clearTimeout(timerId);
     };
-  }, [draftValueByThread, isLocalThreadId, selectedThreadId]);
+  }, [
+    draftValueByThread,
+    isLocalThreadId,
+    messagesFetchedForThreadId,
+    selectedThreadDetail,
+    selectedThreadId,
+    selectedThreadMessagesLoading,
+  ]);
 
   useEffect(() => {
     if (!selectedThreadId || !draftReady || !aiDraft) return;
@@ -3611,7 +3775,7 @@ export function InboxSplitView({
         if (!prev.length) return [nextThreadId];
 
         const currentIndex = prev.indexOf(selectedThreadId);
-        if (shouldOpenInNewTab || currentIndex === -1 || !selectedThreadId) {
+        if (shouldOpenInNewTab) {
           const next = [...prev];
           const insertAt = currentIndex === -1 ? next.length : currentIndex + 1;
           next.splice(insertAt, 0, nextThreadId);
@@ -3619,7 +3783,8 @@ export function InboxSplitView({
         }
 
         const next = [...prev];
-        next[currentIndex] = nextThreadId;
+        next[currentIndex === -1 || !selectedThreadId ? 0 : currentIndex] =
+          nextThreadId;
         return Array.from(new Set(next));
       });
 
