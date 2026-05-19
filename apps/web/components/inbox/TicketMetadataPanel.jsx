@@ -3,6 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Sparkles, X, Plus } from "lucide-react";
 
+const metadataCache = new Map();
+const assignedTagsCache = new Map();
+let availableTagsCache = null;
+
 function SectionLabel({ children, isAI = false }) {
   return (
     <div className="flex items-center gap-1.5">
@@ -161,15 +165,30 @@ function TagsSection({ threadId }) {
 
   const fetchAssigned = useCallback(async () => {
     if (!threadId) return;
+    if (assignedTagsCache.has(threadId)) {
+      setAssignedTags(assignedTagsCache.get(threadId));
+      return;
+    }
     const res = await fetch(`/api/threads/${threadId}/tags`).catch(() => null);
     const json = await res?.json().catch(() => ({}));
-    if (res?.ok) setAssignedTags(json.tags ?? []);
+    if (res?.ok) {
+      const tags = json.tags ?? [];
+      assignedTagsCache.set(threadId, tags);
+      setAssignedTags(tags);
+    }
   }, [threadId]);
 
   const fetchAvailable = useCallback(async () => {
+    if (availableTagsCache) {
+      setAvailableTags(availableTagsCache);
+      return;
+    }
     const res = await fetch("/api/settings/tags").catch(() => null);
     const json = await res?.json().catch(() => ({}));
-    if (res?.ok) setAvailableTags((json.tags ?? []).filter((t) => t.is_active));
+    if (res?.ok) {
+      availableTagsCache = (json.tags ?? []).filter((t) => t.is_active);
+      setAvailableTags(availableTagsCache);
+    }
   }, []);
 
   useEffect(() => {
@@ -199,9 +218,13 @@ function TagsSection({ threadId }) {
     }).catch(() => null);
     const json = await res?.json().catch(() => ({}));
     if (res?.ok) {
-      setAssignedTags((prev) =>
-        prev.some((t) => t.id === json.tag.id) ? prev : [...prev, json.tag]
-      );
+      setAssignedTags((prev) => {
+        const next = prev.some((t) => t.id === json.tag.id)
+          ? prev
+          : [...prev, json.tag];
+        assignedTagsCache.set(threadId, next);
+        return next;
+      });
     }
     setAdding(null);
   }, [adding, threadId]);
@@ -214,7 +237,11 @@ function TagsSection({ threadId }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ tag_id: tag.id }),
     }).catch(() => null);
-    setAssignedTags((prev) => prev.filter((t) => t.id !== tag.id));
+    setAssignedTags((prev) => {
+      const next = prev.filter((t) => t.id !== tag.id);
+      assignedTagsCache.set(threadId, next);
+      return next;
+    });
     setRemoving(null);
   }, [removing, threadId]);
 
@@ -275,11 +302,19 @@ export function TicketMetadataPanel({ threadId }) {
 
   const fetchMetadata = useCallback(async () => {
     if (!threadId) return;
+    if (metadataCache.has(threadId)) {
+      setMetadata(metadataCache.get(threadId));
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch(`/api/threads/${encodeURIComponent(threadId)}/metadata`);
       const json = await res.json().catch(() => ({}));
-      if (res.ok) setMetadata(json);
+      if (res.ok) {
+        metadataCache.set(threadId, json);
+        setMetadata(json);
+      }
     } finally {
       setLoading(false);
     }
@@ -302,9 +337,13 @@ export function TicketMetadataPanel({ threadId }) {
         if (!prev) return prev;
         if (field === "detected_product_id") {
           const product = (prev.available_products ?? []).find((p) => p.id === value) ?? null;
-          return { ...prev, detected_product: product };
+          const next = { ...prev, detected_product: product };
+          metadataCache.set(threadId, next);
+          return next;
         }
-        return { ...prev, [field]: value };
+        const next = { ...prev, [field]: value };
+        metadataCache.set(threadId, next);
+        return next;
       });
     }
   }, [threadId]);

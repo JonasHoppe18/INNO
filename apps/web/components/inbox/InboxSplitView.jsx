@@ -305,6 +305,7 @@ function InboxHeaderActions({
         onValueChange={(value) => onTicketStateChange({ status: value })}
       >
         <SelectTrigger
+          aria-label="Ticket status"
           className={`h-auto w-auto cursor-pointer gap-1.5 rounded-md border px-3 py-1 text-xs font-medium ${statusStyles}`}
         >
           {ticketState.status === "Solved" ? (
@@ -326,7 +327,10 @@ function InboxHeaderActions({
         value={selectedAssignmentValue || UNASSIGNED_ASSIGNEE_VALUE}
         onValueChange={(value) => onAssignmentChange?.(value)}
       >
-        <SelectTrigger className="h-auto w-auto cursor-pointer gap-1.5 rounded-md border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100">
+        <SelectTrigger
+          aria-label="Ticket assignee"
+          className="h-auto w-auto cursor-pointer gap-1.5 rounded-md border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100"
+        >
           <User className="h-3.5 w-3.5" />
           <SelectValue placeholder="Assignee" />
         </SelectTrigger>
@@ -342,6 +346,7 @@ function InboxHeaderActions({
         <DropdownMenuTrigger asChild>
           <button
             type="button"
+            aria-label="More ticket actions"
             className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:border-gray-300"
           >
             More
@@ -397,6 +402,10 @@ function InboxHeaderActions({
                     key={option.value}
                     type="button"
                     onClick={() => {
+                      if (isActive) {
+                        setInboxPickerOpen(false);
+                        return;
+                      }
                       const ruleEmail = normalizedSenderRuleEmail;
                       const shouldApplySenderRule = Boolean(
                         applySenderRule && ruleEmail,
@@ -405,6 +414,7 @@ function InboxHeaderActions({
                         onInboxChange?.({
                           inboxSlug: null,
                           classificationKey: "support",
+                          destinationLabel: option.label,
                           applySenderRule: shouldApplySenderRule,
                           senderRuleEmail: ruleEmail,
                         });
@@ -412,6 +422,7 @@ function InboxHeaderActions({
                         onInboxChange?.({
                           inboxSlug: null,
                           classificationKey: "notification",
+                          destinationLabel: option.label,
                           applySenderRule: shouldApplySenderRule,
                           senderRuleEmail: ruleEmail,
                         });
@@ -419,6 +430,7 @@ function InboxHeaderActions({
                         onInboxChange?.({
                           inboxSlug: option.value,
                           classificationKey: "support",
+                          destinationLabel: option.label,
                           applySenderRule: shouldApplySenderRule,
                           senderRuleEmail: ruleEmail,
                         });
@@ -426,14 +438,21 @@ function InboxHeaderActions({
                       setApplySenderRule(false);
                       setInboxPickerOpen(false);
                     }}
-                    className={`flex w-full cursor-pointer items-center gap-2 rounded px-3 py-2 text-left text-sm ${
+                    className={`flex w-full cursor-pointer items-center gap-2 rounded px-3 py-2 text-left text-sm transition-colors duration-150 ${
                       isActive
                         ? "bg-gray-900 text-white"
                         : "text-gray-700 hover:bg-gray-100"
                     }`}
                   >
                     <OptionIcon className="h-4 w-4 shrink-0" />
-                    {option.label}
+                    <span className="min-w-0 flex-1 truncate">
+                      {option.label}
+                    </span>
+                    {isActive ? (
+                      <span className="text-xs font-medium opacity-80">
+                        Current
+                      </span>
+                    ) : null}
                   </button>
                 );
               })}
@@ -1880,51 +1899,38 @@ export function InboxSplitView({
   useEffect(() => {
     if (!tabStateReady) return;
     if (openThreadIds.length) {
+      if (selectedThreadId && openThreadIds.includes(selectedThreadId)) return;
       const visibleOpenThreadIds = openThreadIds.filter((threadId) =>
         filteredThreads.some((thread) => thread.id === threadId),
       );
-      if (selectedThreadId && visibleOpenThreadIds.includes(selectedThreadId)) return;
       if (visibleOpenThreadIds.length) {
         setSelectedThreadId(visibleOpenThreadIds[0] || null);
         return;
       }
-      if (!filteredThreads.length) {
-        setSelectedThreadId(null);
-        return;
-      }
-      const nextThreadId = filteredThreads[0]?.id || null;
-      setOpenThreadIds((prev) =>
-        nextThreadId && !prev.includes(nextThreadId)
-          ? [nextThreadId, ...prev]
-          : prev,
-      );
-      setSelectedThreadId(nextThreadId);
+      setSelectedThreadId(openThreadIds[0] || null);
       return;
     }
-    const fallbackThreadId = filteredThreads[0]?.id || null;
-    if (!fallbackThreadId) {
+    if (!filteredThreads.length) {
       setSelectedThreadId(null);
       return;
     }
+    const fallbackThreadId = filteredThreads[0]?.id || null;
     setOpenThreadIds([fallbackThreadId]);
     setSelectedThreadId(fallbackThreadId);
   }, [
-    derivedThreads,
     filteredThreads,
     openThreadIds,
     selectedThreadId,
     tabStateReady,
   ]);
 
-  // Bug #5: When the user switches view/filter the selected thread may no longer
-  // be visible in the list. Auto-advance to the first thread in the new view.
-  // Guard: only act when the thread exists in derivedThreads (otherwise the
-  // deletion handler above takes care of it).
+  // Keep filter/view changes from making the conversation pane feel empty when
+  // the user still has the current ticket open in the workspace tabs.
   useEffect(() => {
     if (!tabStateReady) return;
     if (!selectedThreadId) return;
+    if (openThreadIds.includes(selectedThreadId)) return;
     if (!filteredThreads.length) {
-      setSelectedThreadId(null);
       return;
     }
     const isInDerived = derivedThreads.some((t) => t.id === selectedThreadId);
@@ -1939,7 +1945,13 @@ export function InboxSplitView({
         : [nextThread.id, ...without];
     });
     setSelectedThreadId(nextThread.id);
-  }, [derivedThreads, filteredThreads, selectedThreadId, tabStateReady]);
+  }, [
+    derivedThreads,
+    filteredThreads,
+    openThreadIds,
+    selectedThreadId,
+    tabStateReady,
+  ]);
 
   useEffect(() => {
     if (!tabStateReady) return;
@@ -4035,7 +4047,9 @@ export function InboxSplitView({
       })
         .then(async (response) => {
           const data = await response.json().catch(() => null);
-          if (response.ok && data?.thread?.id) return;
+          if (response.ok && data?.thread?.id) {
+            return;
+          }
           throw new Error(data?.error || "Could not update inbox.");
         })
         .catch((error) => {
@@ -4169,10 +4183,7 @@ export function InboxSplitView({
         }
         return;
       }
-      if (
-        !immediate &&
-        trimmed === String(draftLastSavedRef.current[threadId] || "")
-      )
+      if (trimmed === String(draftLastSavedRef.current[threadId] || ""))
         return;
       if (savingDraftThreadIdsRef.current.has(threadId)) return;
       savingDraftThreadIdsRef.current.add(threadId);
@@ -4238,11 +4249,12 @@ export function InboxSplitView({
 
   const handlePrefetchThread = useCallback((threadId) => {
     if (!threadId || isLocalThreadId(threadId)) return;
+    if (String(threadId) === String(selectedThreadIdRef.current || "")) return;
 
-    // Prefetch messages
+    // Prefetch the same detail payload used by the selected thread view.
     if (!messagesCacheRef.current.has(threadId) && !prefetchingRef.current.has(threadId)) {
       prefetchingRef.current.add(threadId);
-      fetch(`/api/inbox/threads/${encodeURIComponent(threadId)}/messages`, {
+      fetch(`/api/inbox/threads/${encodeURIComponent(threadId)}/detail`, {
         method: "GET",
         credentials: "include",
       })
@@ -4251,6 +4263,9 @@ export function InboxSplitView({
           const rows = Array.isArray(payload?.messages) ? payload.messages : [];
           if (rows.length) {
             messagesCacheRef.current.set(threadId, rows);
+          }
+          if (payload?.draft && typeof payload.draft === "object") {
+            draftCacheRef.current.set(threadId, payload.draft);
           }
         })
         .catch(() => {})

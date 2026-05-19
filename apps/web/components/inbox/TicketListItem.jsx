@@ -18,7 +18,7 @@ const CLASSIFICATION_LABELS = {
   job: "Job",
   invoice: "Invoice",
 };
-const PREFETCH_HOVER_DELAY_MS = 220;
+const PREFETCH_HOVER_DELAY_MS = 700;
 
 function TicketListItemComponent({
   thread,
@@ -87,7 +87,7 @@ function TicketListItemComponent({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       className={cn(
-        "relative flex w-full flex-col gap-1 px-4 py-3 text-left transition-colors duration-200 hover:bg-muted/50",
+        "relative flex w-full flex-col gap-1 px-4 py-3 text-left transition-colors duration-150 hover:bg-muted/50",
         isNew ? "animate-ticket-enter" : !isExiting && "animate-list-item-enter",
         isActive && "bg-muted/50",
         isExiting && "pointer-events-none"
@@ -107,7 +107,7 @@ function TicketListItemComponent({
     >
       <span
         className={cn(
-          "absolute left-0 top-0 h-full w-[3px] rounded-r transition-all",
+          "absolute left-0 top-0 h-full w-[3px] rounded-r transition-[background-color,opacity] duration-150",
           isActive ? "bg-primary" : isUnread ? "bg-indigo-400" : "bg-transparent"
         )}
       />
