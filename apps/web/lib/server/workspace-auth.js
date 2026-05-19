@@ -1,54 +1,76 @@
+import { cache } from "react";
+
 export async function resolveAuthScope(
   serviceClient,
   { clerkUserId, orgId },
   { requireExplicitWorkspace = false } = {}
 ) {
-  const { data: profile, error: profileError } = await serviceClient
-    .from("profiles")
-    .select("user_id")
-    .eq("clerk_user_id", clerkUserId)
-    .maybeSingle();
-  if (profileError) throw new Error(profileError.message);
-
-  const supabaseUserId = profile?.user_id ?? null;
+  let supabaseUserId = null;
   let workspaceId = null;
 
   if (orgId) {
-    const { data: workspace, error: workspaceError } = await serviceClient
-      .from("workspaces")
-      .select("id")
-      .eq("clerk_org_id", orgId)
-      .maybeSingle();
-    if (workspaceError) throw new Error(workspaceError.message);
-    workspaceId = workspace?.id ?? null;
-  }
+    // profiles and workspaces are independent — run in parallel
+    const [profileResult, workspaceResult] = await Promise.all([
+      serviceClient
+        .from("profiles")
+        .select("user_id")
+        .eq("clerk_user_id", clerkUserId)
+        .maybeSingle(),
+      serviceClient
+        .from("workspaces")
+        .select("id")
+        .eq("clerk_org_id", orgId)
+        .maybeSingle(),
+    ]);
+    if (profileResult.error) throw new Error(profileResult.error.message);
+    if (workspaceResult.error) throw new Error(workspaceResult.error.message);
+    supabaseUserId = profileResult.data?.user_id ?? null;
+    workspaceId = workspaceResult.data?.id ?? null;
+  } else {
+    // profiles and workspace_members are independent — run in parallel
+    const membershipQuery = requireExplicitWorkspace
+      ? serviceClient
+          .from("workspace_members")
+          .select("workspace_id")
+          .eq("clerk_user_id", clerkUserId)
+          .order("created_at", { ascending: false })
+          .limit(2)
+      : serviceClient
+          .from("workspace_members")
+          .select("workspace_id")
+          .eq("clerk_user_id", clerkUserId)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
-  if (!workspaceId) {
-    let membershipQuery = serviceClient
-      .from("workspace_members")
-      .select("workspace_id")
-      .eq("clerk_user_id", clerkUserId)
-      .order("created_at", { ascending: false });
+    const [profileResult, membershipResult] = await Promise.all([
+      serviceClient
+        .from("profiles")
+        .select("user_id")
+        .eq("clerk_user_id", clerkUserId)
+        .maybeSingle(),
+      membershipQuery,
+    ]);
+    if (profileResult.error) throw new Error(profileResult.error.message);
+    if (membershipResult.error) throw new Error(membershipResult.error.message);
+
+    supabaseUserId = profileResult.data?.user_id ?? null;
 
     if (requireExplicitWorkspace) {
-      const { data: memberships, error: membershipsError } = await membershipQuery.limit(2);
-      if (membershipsError) throw new Error(membershipsError.message);
-      const rows = Array.isArray(memberships) ? memberships : [];
+      const rows = Array.isArray(membershipResult.data) ? membershipResult.data : [];
       if (rows.length > 1) {
         throw new Error("Ambiguous workspace scope. Select a workspace explicitly.");
       }
       workspaceId = rows[0]?.workspace_id ?? null;
     } else {
-      const { data: membership, error: membershipError } = await membershipQuery
-        .limit(1)
-        .maybeSingle();
-      if (membershipError) throw new Error(membershipError.message);
-      workspaceId = membership?.workspace_id ?? null;
+      workspaceId = membershipResult.data?.workspace_id ?? null;
     }
   }
 
   return { supabaseUserId, workspaceId };
 }
+
+export const resolveAuthScopeCached = cache(resolveAuthScope);
 
 export function applyScope(query, scope, { workspaceColumn = "workspace_id", userColumn = "user_id" } = {}) {
   if (scope?.workspaceId && workspaceColumn) {
