@@ -146,6 +146,7 @@ async function scoreZendesk({
       ? await generateDraftV2(shopId, ticketSubject, ticketBody, {
         ...v2Options,
         conversationHistory,
+        sourceThreadId: zendeskId || undefined,
       })
       : await generateDraft(
         shopId,
