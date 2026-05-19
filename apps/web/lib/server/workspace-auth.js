@@ -1,5 +1,3 @@
-import { cache } from "react";
-
 export async function resolveAuthScope(
   serviceClient,
   { clerkUserId, orgId },
@@ -26,6 +24,19 @@ export async function resolveAuthScope(
     if (workspaceResult.error) throw new Error(workspaceResult.error.message);
     supabaseUserId = profileResult.data?.user_id ?? null;
     workspaceId = workspaceResult.data?.id ?? null;
+
+    // Fallback: if org exists but workspace row not yet provisioned, try membership
+    if (!workspaceId) {
+      const { data: membership, error: membershipError } = await serviceClient
+        .from("workspace_members")
+        .select("workspace_id")
+        .eq("clerk_user_id", clerkUserId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (membershipError) throw new Error(membershipError.message);
+      workspaceId = membership?.workspace_id ?? null;
+    }
   } else {
     // profiles and workspace_members are independent — run in parallel
     const membershipQuery = requireExplicitWorkspace
@@ -69,8 +80,6 @@ export async function resolveAuthScope(
 
   return { supabaseUserId, workspaceId };
 }
-
-export const resolveAuthScopeCached = cache(resolveAuthScope);
 
 export function applyScope(query, scope, { workspaceColumn = "workspace_id", userColumn = "user_id" } = {}) {
   if (scope?.workspaceId && workspaceColumn) {
