@@ -39,6 +39,7 @@ export interface WriterInput {
   attachments?: InlineImageAttachment[];
   actionResult?: Record<string, unknown> | null;
   customerHistory?: string;
+  nonImageAttachmentsMeta?: string;
 }
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
@@ -536,6 +537,7 @@ export async function runWriter(
     attachments = [],
     actionResult = null,
     customerHistory,
+    nonImageAttachmentsMeta,
   }: WriterInput,
 ): Promise<WriterResult> {
   const resolvedModel = model ?? Deno.env.get("OPENAI_MODEL") ?? "gpt-5-mini";
@@ -808,7 +810,8 @@ ABSOLUTTE REGLER:
 - Skriv ALDRIG signatur, navn eller sign-off — tilføjes automatisk.
 - Skriv ALDRIG email-adresser i svaret — kunden er allerede i den rigtige tråd.
 - Brug KUN fakta fra "Verificerede fakta". Opfind aldrig priser, datoer, ordrenumre eller policies.
-- Datid kun for handlinger der allerede er udført. Nutid/fremtid for det der sker nu.
+- Datid kun for handlinger der allerede er udført — dvs. kun når `actionResult` blokken bekræfter det. Nutid/fremtid for det der sker nu.
+- ABSOLUTT FORBUD MOD FALSKE BEKRÆFTELSER: Skriv ALDRIG at en erstatningsvare "er sendt", en adresse "er opdateret", en ordre "er annulleret" eller en refusion "er behandlet" medmindre det fremgår eksplicit af `actionResult`. Planlagte actions er FORSLAG der venter på en menneskelig godkendelse — de er IKKE udført. En falsk bekræftelse er den alvorligste fejl du kan begå.
 - Følg KB-procedurer præcist når de eksisterer — din vurdering erstatter ikke en dokumenteret procedure.
 - URLs som plain text (https://...) — aldrig markdown [tekst](url).
 - Kald ALDRIG kundens problem for "produktionsfejl", "fabriksfejl", "production defect" eller lignende intern klassifikation — brug kundens egne ord eller neutralt ("fejlen du oplever", "problemet med dit [produkt]", "skaden"). Gå direkte til løsningen.
@@ -909,6 +912,9 @@ ${customerHistory}`
 
   const userContent = [
     fewShotBlock,
+    // Conversation history placed early so the model processes prior context
+    // before KB content — critical for follow-up messages and multi-turn threads.
+    historyBlock,
     policyBlock,
     factsBlock,
     salutationBlock,
@@ -921,10 +927,13 @@ ${customerHistory}`
     openQBlock,
     knowledgeBlock,
     customerHistoryBlock,
-    historyBlock,
     latestCustomerMessage
       ? `# Kundens seneste besked (læs denne grundigt — brug alle detaljer kunden har givet)
-${latestCustomerMessage.slice(0, 1200)}`
+${latestCustomerMessage.slice(0, 1200)}${
+          nonImageAttachmentsMeta
+            ? `\n\n[Kunden har vedhæftet: ${nonImageAttachmentsMeta}. Anerkend at du kan se det i dit svar, men analyser ikke indholdet da du ikke kan læse det — behandl det som dokumentation kunden har sendt.]`
+            : ""
+        }`
       : "",
     `# Sammenfatning af henvendelsen
 Intent: ${plan.primary_intent}

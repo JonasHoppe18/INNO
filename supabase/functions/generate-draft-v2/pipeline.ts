@@ -1103,9 +1103,37 @@ export async function runDraftV2Pipeline(
   const latestMessageId = (latestMessage as Record<string, unknown>).id as
     | string
     | undefined;
-  const imageAttachments = latestMessageId
-    ? await loadImageAttachments(supabase, latestMessageId)
-    : [];
+  const [imageAttachments, allAttachmentRows] = await Promise.all([
+    latestMessageId ? loadImageAttachments(supabase, latestMessageId) : Promise.resolve([]),
+    latestMessageId
+      ? supabase
+        .from("mail_attachments")
+        .select("filename, mime_type, size_bytes")
+        .eq("message_id", latestMessageId)
+        .then(({ data }) => (data ?? []) as Array<{ filename: string; mime_type: string; size_bytes: number }>)
+      : Promise.resolve([]),
+  ]);
+  // Build a human-readable summary of non-image attachments so the writer knows
+  // about videos, PDFs, etc. even though they cannot be analysed by vision.
+  const nonImageAttachmentsMeta: string = allAttachmentRows.length > 0
+    ? (() => {
+        const parts = allAttachmentRows.map((a) => {
+          const name = a.filename || "fil";
+          const mime = String(a.mime_type || "").toLowerCase();
+          const type = mime.startsWith("video/")
+            ? "video"
+            : mime.startsWith("audio/")
+            ? "lydfil"
+            : mime === "application/pdf"
+            ? "PDF"
+            : mime.startsWith("image/")
+            ? "billede"
+            : "fil";
+          return `${type} (${name})`;
+        });
+        return parts.join(", ");
+      })()
+    : "";
 
   // Byg samtalehistorik fra messages — ekskludér den seneste besked (vises separat)
   const latestMessageIdForHistory = (latestMessage as Record<string, unknown>).id;
@@ -1147,6 +1175,7 @@ export async function runDraftV2Pipeline(
     attachments: imageAttachments,
     actionResult: postActionResult,
     customerHistory: customerHistory ?? undefined,
+    nonImageAttachmentsMeta: nonImageAttachmentsMeta || undefined,
   });
 
   let languageCheckedWritten = written;

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Component, useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
 import { ChevronLeft, ChevronRight, Download, Globe, Mail, X } from "lucide-react";
@@ -12,6 +12,14 @@ const escapeHtml = (value) =>
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
+
+const stripIncompleteTrailingTag = (value = "") => {
+  const html = String(value || "");
+  const lastOpen = html.lastIndexOf("<");
+  const lastClose = html.lastIndexOf(">");
+  if (lastOpen <= lastClose) return html;
+  return html.slice(0, lastOpen);
+};
 
 const decodeHtmlEntitiesOnce = (value = "") => {
   const named = {
@@ -288,7 +296,10 @@ const sanitizeEmailHtml = (value, attachments = [], options = {}) => {
   if (!value) return "";
   const cidMap = buildCidAttachmentUrlMap(attachments);
   const preserveInlineStyles = options?.preserveInlineStyles === true;
-  const htmlWithResolvedInlineCids = resolveInlineCidImages(value, attachments);
+  const htmlWithResolvedInlineCids = resolveInlineCidImages(
+    stripIncompleteTrailingTag(value),
+    attachments
+  );
   const sanitizedWithSafeImages = String(htmlWithResolvedInlineCids).replace(
     /<img\b[^>]*>/gi,
     (imgTag) => {
@@ -316,6 +327,8 @@ const sanitizeEmailHtml = (value, attachments = [], options = {}) => {
   );
 
   const sanitized = String(sanitizedWithSafeImages)
+    .replace(/<!doctype[^>]*>/gi, "")
+    .replace(/<!--[\s\S]*?-->/g, "")
     .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
     .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, "")
     .replace(/<link[\s\S]*?>/gi, "")
@@ -330,7 +343,7 @@ const sanitizeEmailHtml = (value, attachments = [], options = {}) => {
 
   const tokens = sanitized.split(/(<[^>]+>)/g);
   let insideAnchor = false;
-  return tokens
+  return stripIncompleteTrailingTag(tokens
     .map((token) => {
       if (!token) return token;
       if (token.startsWith("<")) {
@@ -349,7 +362,7 @@ const sanitizeEmailHtml = (value, attachments = [], options = {}) => {
         }
       );
     })
-    .join("");
+    .join(""));
 };
 
 const INLINE_ATTACHMENT_ID_RE = /\/api\/attachments\/([^/?#"'\s]+)\/download/g;
@@ -600,6 +613,39 @@ function AiEditBadge({ editStats }) {
     );
   }
   return null;
+}
+
+export class MessageRenderBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error) {
+    console.error("[MessageRenderBoundary] failed to render message", {
+      messageId: this.props.messageId,
+      error,
+    });
+  }
+
+  componentDidUpdate(prevProps) {
+    if (prevProps.messageId !== this.props.messageId && this.state.hasError) {
+      this.setState({ hasError: false });
+    }
+  }
+
+  render() {
+    if (!this.state.hasError) return this.props.children;
+    return (
+      <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        This message could not be rendered safely. Open the original email from the mailbox if you need the full content.
+      </div>
+    );
+  }
 }
 
 export function MessageBubble({

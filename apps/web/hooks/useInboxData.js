@@ -621,8 +621,9 @@ export function useThreadPreviewMessages(threadIds = [], options = {}) {
     const requestToken = fetchTokenRef.current + 1;
     fetchTokenRef.current = requestToken;
     const isStale = () => fetchTokenRef.current !== requestToken;
+    const requestThreadIds = threadKey ? threadKey.split("|") : [];
 
-    if (!supabase || !normalizedThreadIds.length) {
+    if (!supabase || !requestThreadIds.length) {
       setData([]);
       setLoading(false);
       return;
@@ -638,8 +639,8 @@ export function useThreadPreviewMessages(threadIds = [], options = {}) {
       });
       if (isStale()) return;
       const allRows = [];
-      for (let index = 0; index < normalizedThreadIds.length; index += PREVIEW_MESSAGE_CHUNK_SIZE) {
-        const chunk = normalizedThreadIds.slice(index, index + PREVIEW_MESSAGE_CHUNK_SIZE);
+      for (let index = 0; index < requestThreadIds.length; index += PREVIEW_MESSAGE_CHUNK_SIZE) {
+        const chunk = requestThreadIds.slice(index, index + PREVIEW_MESSAGE_CHUNK_SIZE);
         const limit = Math.min(
           Math.max(chunk.length * PREVIEW_MESSAGES_PER_THREAD, PREVIEW_MESSAGE_MIN_LIMIT),
           PREVIEW_MESSAGE_MAX_LIMIT
@@ -669,7 +670,7 @@ export function useThreadPreviewMessages(threadIds = [], options = {}) {
     } finally {
       if (!isStale()) setLoading(false);
     }
-  }, [getToken, normalizedThreadIds, supabase, threadKey, user]);
+  }, [getToken, supabase, threadKey, user]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -690,11 +691,23 @@ export function useThreadAttachments(messageIds = [], options = {}) {
   const { getToken } = useAuth();
   const { user } = useUser();
 
+  const messageKey = useMemo(
+    () =>
+      Array.from(new Set((messageIds || []).map((id) => String(id || "").trim()).filter(Boolean)))
+        .join("|"),
+    [messageIds]
+  );
+  const normalizedMessageIds = useMemo(
+    () => (messageKey ? messageKey.split("|") : []),
+    [messageKey]
+  );
+
   const seeded = useMemo(() => {
     if (!initialData?.length) return [];
-    if (!messageIds?.length) return [];
-    return initialData.filter((attachment) => messageIds.includes(attachment.message_id));
-  }, [initialData, messageIds]);
+    if (!normalizedMessageIds.length) return [];
+    const idSet = new Set(normalizedMessageIds);
+    return initialData.filter((attachment) => idSet.has(String(attachment.message_id || "")));
+  }, [initialData, normalizedMessageIds]);
 
   const [data, setData] = useState(seeded);
   const [loading, setLoading] = useState(false);
@@ -703,7 +716,8 @@ export function useThreadAttachments(messageIds = [], options = {}) {
   const seededKeyRef = useRef(seededKey);
 
   const fetchAttachments = useCallback(async () => {
-    if (!supabase || !messageIds?.length) return;
+    const requestMessageIds = messageKey ? messageKey.split("|") : [];
+    if (!supabase || !requestMessageIds.length) return;
     setLoading(true);
     setError(null);
     try {
@@ -724,7 +738,7 @@ export function useThreadAttachments(messageIds = [], options = {}) {
           "id, user_id, mailbox_id, message_id, provider, provider_attachment_id, filename, mime_type, size_bytes, storage_path, created_at"
         )
         .in("mailbox_id", mailboxIds)
-        .in("message_id", messageIds);
+        .in("message_id", requestMessageIds);
       request = applyClientScope(request, scope, { workspaceColumn: null, userColumn: "user_id" });
       const { data: rows, error: queryError } = await request;
       if (queryError) throw queryError;
@@ -734,7 +748,7 @@ export function useThreadAttachments(messageIds = [], options = {}) {
     } finally {
       setLoading(false);
     }
-  }, [getToken, messageIds, supabase, user]);
+  }, [getToken, messageKey, supabase, user]);
 
   useEffect(() => {
     if (!enabled) return;

@@ -319,6 +319,26 @@ function classifyKnowledgeSource(input: {
   return { usable_as, risk_flags: [...new Set(riskFlags)] };
 }
 
+function tokenOverlapJaccard(a: string, b: string): number {
+  const ta = new Set(tokenize(a));
+  const tb = new Set(tokenize(b));
+  if (ta.size === 0 && tb.size === 0) return 1;
+  const intersection = [...ta].filter((t) => tb.has(t)).length;
+  const union = new Set([...ta, ...tb]).size;
+  return union > 0 ? intersection / union : 0;
+}
+
+function deduplicateChunks(chunks: RetrievedChunk[]): RetrievedChunk[] {
+  const kept: RetrievedChunk[] = [];
+  for (const chunk of chunks) {
+    const isDuplicate = kept.some(
+      (k) => tokenOverlapJaccard(k.content, chunk.content) >= 0.6,
+    );
+    if (!isDuplicate) kept.push(chunk);
+  }
+  return kept;
+}
+
 // Reciprocal Rank Fusion over multiple ranked lists.
 // k=60 dampens high-rank advantage.
 function rrfFusion(
@@ -533,6 +553,13 @@ export async function runRetriever(
   const queryText = `${queries.join(" ")} ${customerMessage || ""}`;
   const productTerms = extractMentionedProductTerms(queryText, shop);
   const issueTerms = extractIssueTerms(queryText);
+  // When exactly one product is mentioned, identify other shop products to penalise
+  const mentionedProducts = productTerms.length > 0 ? productTerms : [];
+  const allShopProducts = buildShopProductTerms(shop);
+  const otherProducts = mentionedProducts.length === 1
+    ? allShopProducts.filter((p) => p !== mentionedProducts[0])
+    : [];
+
   const regularChunks: RetrievedChunk[] = fused
     .map((r) => {
       const base = {
@@ -560,19 +587,42 @@ export async function runRetriever(
       })
     )
     .sort((a, b) => {
-      const score = (chunk: RetrievedChunk) =>
-        chunk.similarity +
-        overlapCount(`${chunk.source_label} ${chunk.content}`, productTerms) *
-          0.08 +
-        overlapCount(`${chunk.source_label} ${chunk.content}`, issueTerms) *
-          0.04 +
-        (/manual_text|snippet/i.test(`${chunk.source_label} ${chunk.kind}`)
-          ? 0.04
-          : 0) +
-        (chunk.usable_as === "saved_reply" ? 0.06 : 0) +
-        (chunk.usable_as === "policy" ? 0.02 : 0) +
-        (chunk.usable_as === "fact" ? 0.02 : 0);
+      const score = (chunk: RetrievedChunk) => {
+        const text = `${chunk.source_label} ${chunk.content}`;
+        const productBoost = overlapCount(text, mentionedProducts) * 0.10;
+        // Penalise chunks that mention a different product but not the one the customer asked about
+        const crossProductPenalty =
+          mentionedProducts.length === 1 &&
+          overlapCount(text, otherProducts) > 0 &&
+          overlapCount(text, mentionedProducts) === 0
+            ? 0.12
+            : 0;
+        return chunk.similarity +
+          productBoost +
+          overlapCount(text, issueTerms) * 0.04 +
+          (/manual_text|snippet/i.test(`${chunk.source_label} ${chunk.kind}`)
+            ? 0.04
+            : 0) +
+          (chunk.usable_as === "saved_reply" ? 0.06 : 0) +
+          (chunk.usable_as === "policy" ? 0.02 : 0) +
+          (chunk.usable_as === "fact" ? 0.02 : 0) -
+          crossProductPenalty;
+      };
       return score(b) - score(a);
+    })
+    // Deduplicate near-identical chunks before applying budget
+    .reduce((acc: RetrievedChunk[], chunk) => {
+      const isDuplicate = acc.some(
+        (k) => tokenOverlapJaccard(k.content, chunk.content) >= 0.6,
+      );
+      return isDuplicate ? acc : [...acc, chunk];
+    }, [])
+    // Only include chunks that clear a minimum relevance floor relative to the top score
+    .filter((chunk, _i, arr) => {
+      if (arr.length === 0) return true;
+      const topSimilarity = arr[0].similarity;
+      // Always include at least 3 results; after that require >= 40% of top score
+      return _i < 3 || chunk.similarity >= topSimilarity * 0.4;
     })
     .slice(0, knowledgeBudget);
 

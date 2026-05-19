@@ -113,7 +113,7 @@ Rules:
   - Query 1: Customer's own words (what they describe), in customer's language
   - Query 2: ALWAYS in English — operational/product angle (e.g. "[product] charging cable replacement", "[product] defect production warranty", "[product] return policy"). This ensures English knowledge base content is found regardless of customer language.
   - Query 3 (optional): Procedure angle in English (e.g. "how to handle [issue]", "spare parts [product]")
-  - CRITICAL for physical damage/defect: always include a query about the specific product + "defect" or "warranty" or "warranty replacement"
+  - CRITICAL for physical damage/defect: always include (1) a query about the specific product + "defect" or "warranty" or "warranty replacement", AND (2) a separate query for "[product] repair procedure" or "[product] send in repair" to surface product-specific repair workflows. Physical damage almost always requires a documented repair/return procedure — retrieve it explicitly.
   - CRITICAL for technical symptoms: sub_queries must describe the SYMPTOM precisely, not generic keywords. "headset turns off unexpectedly after charging" not "dongle disconnected". "battery drains in 8 hours instead of 35" not "battery problem". Precise symptom queries surface the right troubleshooting content and avoid retrieving unrelated procedures like pairing guides.
 - required_facts: only what's needed — order_state | tracking | return_eligibility | policy_excerpt | product_specs
   - For refund, return, exchange, complaint about a purchased product, cancel, address_change, or tracking: include order_state so the system can look up the customer's order by email/order number

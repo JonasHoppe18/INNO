@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Package, Sparkles, TriangleAlert, X } from "lucide-react";
-import { MessageBubble } from "@/components/inbox/MessageBubble";
+import { MessageBubble, MessageRenderBoundary } from "@/components/inbox/MessageBubble";
 import { Composer } from "@/components/inbox/Composer";
 import { ThinkingCard } from "@/components/inbox/ThinkingCard";
 import { ActionCard } from "@/components/inbox/ActionCard";
@@ -583,16 +583,18 @@ export function TicketDetail({
                     />
                   </div>
                 ) : null}
-                <MessageBubble
-                  message={message}
-                  direction={direction}
-                  attachments={messageAttachments}
-                  outboundSenderName={currentUserName}
-                  editStats={direction === "outbound" ? sentDraftStats : null}
-                  translatedText={getMessageTranslationText(message, translationItems)}
-                  translationLoading={translationLoading}
-                  onRequestTranslation={onRequestTranslation}
-                />
+                <MessageRenderBoundary messageId={messageId || message?.id}>
+                  <MessageBubble
+                    message={message}
+                    direction={direction}
+                    attachments={messageAttachments}
+                    outboundSenderName={currentUserName}
+                    editStats={direction === "outbound" ? sentDraftStats : null}
+                    translatedText={getMessageTranslationText(message, translationItems)}
+                    translationLoading={translationLoading}
+                    onRequestTranslation={onRequestTranslation}
+                  />
+                </MessageRenderBoundary>
                 {shouldShowTrackingCard &&
                   latestInboundCustomerMessageId &&
                   String(message?.id || "") === latestInboundCustomerMessageId ? (
