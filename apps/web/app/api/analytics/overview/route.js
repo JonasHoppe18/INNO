@@ -17,6 +17,9 @@ const SUPABASE_SERVICE_ROLE_KEY =
 
 const SOLVED_STATUSES = new Set(["solved", "resolved", "closed"]);
 const NOISE_CLASSIFICATIONS = new Set(["notification", "spam", "system", "meta", "shopify"]);
+// Non-support routing categories that must never appear in analytics
+// (postmark-inbound sets classification_key to the routing category, e.g. "invoice", "job")
+const SUPPORT_CLASSIFICATION_KEY = "support";
 
 function createServiceClient() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null;
@@ -208,7 +211,8 @@ function isSolvedThread(thread) {
 
 function isSupportThread(thread) {
   const classification = String(thread?.classification_key || "").trim().toLowerCase();
-  if (NOISE_CLASSIFICATIONS.has(classification)) return false;
+  // Allow only threads explicitly classified as support (or not yet classified — empty defaults to support)
+  if (classification && classification !== SUPPORT_CLASSIFICATION_KEY) return false;
   const tags = Array.isArray(thread?.tags) ? thread.tags : [];
   if (tags.some((tag) => String(tag).startsWith("inbox:"))) return false;
   return true;

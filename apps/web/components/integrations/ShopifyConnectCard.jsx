@@ -81,7 +81,7 @@ export function ShopifyConnectCard() {
 
     let query = supabase
       .from("shops")
-      .select("shop_domain, owner_user_id, platform, installed_at, uninstalled_at")
+      .select("id, shop_domain, owner_user_id, platform, installed_at, uninstalled_at")
       .eq("platform", "shopify")
       .order("created_at", { ascending: false })
       .is("uninstalled_at", null)
@@ -97,7 +97,7 @@ export function ShopifyConnectCard() {
     if (!data && !error && !workspaceId && ownerUserId) {
       const fallback = await supabase
         .from("shops")
-        .select("shop_domain, owner_user_id, platform, installed_at, uninstalled_at")
+        .select("id, shop_domain, owner_user_id, platform, installed_at, uninstalled_at")
         .eq("platform", "shopify")
         .eq("owner_user_id", ownerUserId)
         .is("uninstalled_at", null)
@@ -124,21 +124,27 @@ export function ShopifyConnectCard() {
 
   const isConnected = Boolean(connection) && !connection?.uninstalled_at;
   const connectedDomain = connection?.shop_domain || connection?.store_domain;
+  const connectedShopId = connection?.id || null;
 
   useEffect(() => {
     const runAutoSync = async () => {
-      if (!isConnected || !connectedDomain) return;
-      if (autoSyncStartedFor === connectedDomain) return;
-      setAutoSyncStartedFor(connectedDomain);
+      if (!isConnected || !connectedDomain || !connectedShopId) return;
+      if (autoSyncStartedFor === connectedShopId) return;
+      setAutoSyncStartedFor(connectedShopId);
 
       try {
-        const countRes = await fetch("/api/knowledge/sync-products", { method: "GET" });
+        const shopParam = encodeURIComponent(String(connectedShopId));
+        const countRes = await fetch(`/api/knowledge/sync-products?shop_id=${shopParam}`, { method: "GET" });
         const countPayload = await countRes.json().catch(() => ({}));
         if (!countRes.ok) return;
         const currentCount = Number(countPayload?.count ?? 0);
         if (currentCount > 0) return;
 
-        const syncRes = await fetch("/api/knowledge/sync-products", { method: "POST" });
+        const syncRes = await fetch("/api/knowledge/sync-products", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ shop_id: connectedShopId }),
+        });
         const syncPayload = await syncRes.json().catch(() => ({}));
         if (!syncRes.ok) {
           throw new Error(syncPayload?.error || "Initial product sync failed.");
@@ -151,7 +157,7 @@ export function ShopifyConnectCard() {
       }
     };
     runAutoSync().catch(() => null);
-  }, [autoSyncStartedFor, connectedDomain, isConnected]);
+  }, [autoSyncStartedFor, connectedDomain, connectedShopId, isConnected]);
   // Status badges skal vise loading/aktiv/inaktiv baseret på Supabase record.
   const statusLabel = loading
     ? "Loading..."
