@@ -2666,97 +2666,111 @@ export function SettingsPanel() {
       }
 
       const memberOwnerId = shopRow?.owner_user_id ?? supabaseUserId;
+
+      // Fire all independent fetches in parallel
+      const fetchOptions = { method: "GET", cache: "no-store", credentials: "include" };
+      const [
+        membersResponse,
+        testModeResponse,
+        personaResponse,
+        autoReplyResponse,
+        emailSignatureResponse,
+        emailRoutingResponse,
+        emailSenderRulesResponse,
+        inboxesResponse,
+        profileRowsResult,
+      ] = await Promise.all([
+        workspaceId ? fetch("/api/settings/members", fetchOptions).catch(() => null) : Promise.resolve(null),
+        workspaceId ? fetch("/api/settings/test-mode", fetchOptions).catch(() => null) : Promise.resolve(null),
+        workspaceId ? fetch("/api/persona", fetchOptions).catch(() => null) : Promise.resolve(null),
+        fetch("/api/settings/auto-reply", fetchOptions).catch(() => null),
+        fetch("/api/settings/email-signature", fetchOptions).catch(() => null),
+        fetch("/api/settings/email-routing", fetchOptions).catch(() => null),
+        fetch("/api/settings/email-sender-rules", fetchOptions).catch(() => null),
+        fetch("/api/inboxes", fetchOptions).catch(() => null),
+        !workspaceId && memberOwnerId
+          ? supabase
+              .from("profiles")
+              .select("user_id, first_name, last_name, email, image_url, signature")
+              .eq("user_id", memberOwnerId)
+              .order("created_at", { ascending: true })
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+
+      // Parse all JSON responses in parallel
+      const [
+        membersPayload,
+        testModePayload,
+        personaPayload,
+        autoReplyPayload,
+        emailSignaturePayload,
+        emailRoutingPayload,
+        emailSenderRulesPayload,
+        inboxesPayload,
+      ] = await Promise.all([
+        membersResponse?.ok ? membersResponse.json().catch(() => ({})) : Promise.resolve({}),
+        testModeResponse?.ok ? testModeResponse.json().catch(() => ({})) : Promise.resolve({}),
+        personaResponse?.ok ? personaResponse.json().catch(() => ({})) : Promise.resolve({}),
+        autoReplyResponse?.ok ? autoReplyResponse.json().catch(() => ({})) : Promise.resolve({}),
+        emailSignatureResponse?.ok ? emailSignatureResponse.json().catch(() => ({})) : Promise.resolve({}),
+        emailRoutingResponse?.ok ? emailRoutingResponse.json().catch(() => ({})) : Promise.resolve({}),
+        emailSenderRulesResponse?.ok ? emailSenderRulesResponse.json().catch(() => ({})) : Promise.resolve({}),
+        inboxesResponse?.ok ? inboxesResponse.json().catch(() => ({})) : Promise.resolve({}),
+      ]);
+
+      // Apply members state
       if (workspaceId) {
-        const membersResponse = await fetch("/api/settings/members", {
-          method: "GET",
-          cache: "no-store",
-          credentials: "include",
-        }).catch(() => null);
         if (!membersResponse?.ok) throw new Error("Could not load workspace members.");
-        const membersPayload = await membersResponse.json().catch(() => ({}));
         setMembers(Array.isArray(membersPayload?.members) ? membersPayload.members : []);
         setWorkspaceCurrentRole(String(membersPayload?.current_role || ""));
         setCanManageWorkspaceMembers(Boolean(membersPayload?.can_manage_members));
       } else {
-        const { data: profileRows, error: membersError } = await supabase
-          .from("profiles")
-          .select("user_id, first_name, last_name, email, image_url, signature")
-          .eq("user_id", memberOwnerId)
-          .order("created_at", { ascending: true });
-        if (membersError) throw membersError;
-        setMembers(Array.isArray(profileRows) ? profileRows : []);
+        if (profileRowsResult.error) throw profileRowsResult.error;
+        setMembers(Array.isArray(profileRowsResult.data) ? profileRowsResult.data : []);
         setWorkspaceCurrentRole("");
         setCanManageWorkspaceMembers(false);
       }
 
-      if (workspaceId) {
-        const [testModeResponse, personaResponse] = await Promise.all([
-          fetch("/api/settings/test-mode", { method: "GET", cache: "no-store", credentials: "include" }).catch(() => null),
-          fetch("/api/persona", { method: "GET", cache: "no-store", credentials: "include" }).catch(() => null),
-        ]);
-        if (testModeResponse?.ok) {
-          const testModePayload = await testModeResponse.json().catch(() => ({}));
-          const resolvedTestMode = Boolean(testModePayload?.test_mode);
-          const resolvedTestEmail = String(testModePayload?.test_email || "").trim();
-          const resolvedSupportLanguage = normalizeSupportLanguage(
-            testModePayload?.support_language || "en"
-          );
-          const resolvedCloseSuggestionDelayHours = String(
-            normalizeCloseSuggestionDelayHours(testModePayload?.close_suggestion_delay_hours)
-          );
-          setTestMode(resolvedTestMode);
-          setInitialTestMode(resolvedTestMode);
-          setTestEmail(resolvedTestEmail);
-          setInitialTestEmail(resolvedTestEmail);
-          setSupportLanguage(resolvedSupportLanguage);
-          setInitialSupportLanguage(resolvedSupportLanguage);
-          setCloseSuggestionDelayHours(resolvedCloseSuggestionDelayHours);
-          setInitialCloseSuggestionDelayHours(resolvedCloseSuggestionDelayHours);
-        }
-        if (personaResponse?.ok) {
-          const personaPayload = await personaResponse.json().catch(() => ({}));
-          const resolved = String(personaPayload?.instructions || "").trim();
-          setAiPrompt(resolved);
-          setInitialAiPrompt(resolved);
-        }
+      // Apply test-mode + persona state
+      if (workspaceId && testModeResponse?.ok) {
+        const resolvedTestMode = Boolean(testModePayload?.test_mode);
+        const resolvedTestEmail = String(testModePayload?.test_email || "").trim();
+        const resolvedSupportLanguage = normalizeSupportLanguage(testModePayload?.support_language || "en");
+        const resolvedCloseSuggestionDelayHours = String(
+          normalizeCloseSuggestionDelayHours(testModePayload?.close_suggestion_delay_hours)
+        );
+        setTestMode(resolvedTestMode);
+        setInitialTestMode(resolvedTestMode);
+        setTestEmail(resolvedTestEmail);
+        setInitialTestEmail(resolvedTestEmail);
+        setSupportLanguage(resolvedSupportLanguage);
+        setInitialSupportLanguage(resolvedSupportLanguage);
+        setCloseSuggestionDelayHours(resolvedCloseSuggestionDelayHours);
+        setInitialCloseSuggestionDelayHours(resolvedCloseSuggestionDelayHours);
+      }
+      if (workspaceId && personaResponse?.ok) {
+        const resolved = String(personaPayload?.instructions || "").trim();
+        setAiPrompt(resolved);
+        setInitialAiPrompt(resolved);
       }
 
-      const autoReplyResponse = await fetch("/api/settings/auto-reply", {
-        method: "GET",
-        cache: "no-store",
-        credentials: "include",
-      }).catch(() => null);
+      // Apply auto-reply state
       if (autoReplyResponse?.ok) {
-        const payload = await autoReplyResponse.json().catch(() => ({}));
-        const setting = payload?.setting || {};
-        const template = payload?.template || {};
+        const setting = autoReplyPayload?.setting || {};
+        const template = autoReplyPayload?.template || {};
         setAutoReplyEnabled(Boolean(setting?.enabled));
         setInitialAutoReplyEnabled(Boolean(setting?.enabled));
-        setAutoReplyTriggerMode(
-          String(setting?.trigger_mode || "first_inbound_per_thread")
-        );
-        setInitialAutoReplyTriggerMode(
-          String(setting?.trigger_mode || "first_inbound_per_thread")
-        );
+        setAutoReplyTriggerMode(String(setting?.trigger_mode || "first_inbound_per_thread"));
+        setInitialAutoReplyTriggerMode(String(setting?.trigger_mode || "first_inbound_per_thread"));
         setAutoReplyCooldownMinutes(String(setting?.cooldown_minutes ?? 1440));
         setInitialAutoReplyCooldownMinutes(String(setting?.cooldown_minutes ?? 1440));
-        setAutoReplySubjectTemplate(
-          String(setting?.subject_template || "Tak for din henvendelse")
-        );
-        setInitialAutoReplySubjectTemplate(
-          String(setting?.subject_template || "Tak for din henvendelse")
-        );
+        setAutoReplySubjectTemplate(String(setting?.subject_template || "Tak for din henvendelse"));
+        setInitialAutoReplySubjectTemplate(String(setting?.subject_template || "Tak for din henvendelse"));
         setAutoReplyBodyTextTemplate(
-          String(
-            setting?.body_text_template ||
-              "Hej,\n\nTak for din henvendelse. Vi har modtaget din besked og vender tilbage hurtigst muligt.\n\nMed venlig hilsen\nSona Team"
-          )
+          String(setting?.body_text_template || "Hej,\n\nTak for din henvendelse. Vi har modtaget din besked og vender tilbage hurtigst muligt.\n\nMed venlig hilsen\nSona Team")
         );
         setInitialAutoReplyBodyTextTemplate(
-          String(
-            setting?.body_text_template ||
-              "Hej,\n\nTak for din henvendelse. Vi har modtaget din besked og vender tilbage hurtigst muligt.\n\nMed venlig hilsen\nSona Team"
-          )
+          String(setting?.body_text_template || "Hej,\n\nTak for din henvendelse. Vi har modtaget din besked og vender tilbage hurtigst muligt.\n\nMed venlig hilsen\nSona Team")
         );
         setAutoReplyBodyHtmlTemplate(String(setting?.body_html_template || ""));
         setInitialAutoReplyBodyHtmlTemplate(String(setting?.body_html_template || ""));
@@ -2765,27 +2779,16 @@ export function SettingsPanel() {
         setAutoReplyTemplateName(String(template?.name || "Default template"));
         setInitialAutoReplyTemplateName(String(template?.name || "Default template"));
         setAutoReplyTemplateHtml(
-          String(
-            template?.html_layout ||
-              "<div style=\"font-family:Arial,sans-serif;line-height:1.6;color:#111\">{{content}}</div>"
-          )
+          String(template?.html_layout || "<div style=\"font-family:Arial,sans-serif;line-height:1.6;color:#111\">{{content}}</div>")
         );
         setInitialAutoReplyTemplateHtml(
-          String(
-            template?.html_layout ||
-              "<div style=\"font-family:Arial,sans-serif;line-height:1.6;color:#111\">{{content}}</div>"
-          )
+          String(template?.html_layout || "<div style=\"font-family:Arial,sans-serif;line-height:1.6;color:#111\">{{content}}</div>")
         );
       }
 
-      const emailSignatureResponse = await fetch("/api/settings/email-signature", {
-        method: "GET",
-        cache: "no-store",
-        credentials: "include",
-      }).catch(() => null);
+      // Apply email-signature state
       if (emailSignatureResponse?.ok) {
-        const payload = await emailSignatureResponse.json().catch(() => ({}));
-        const signature = payload?.signature || {};
+        const signature = emailSignaturePayload?.signature || {};
         setSignatureIsActive(signature?.is_active !== false);
         setInitialSignatureIsActive(signature?.is_active !== false);
         setSignatureTemplateHtml(String(signature?.template_html || ""));
@@ -2797,14 +2800,9 @@ export function SettingsPanel() {
         setInitialSignatureTemplateHtml("");
       }
 
-      const emailRoutingResponse = await fetch("/api/settings/email-routing", {
-        method: "GET",
-        cache: "no-store",
-        credentials: "include",
-      }).catch(() => null);
+      // Apply email-routing state
       if (emailRoutingResponse?.ok) {
-        const payload = await emailRoutingResponse.json().catch(() => ({}));
-        const rows = Array.isArray(payload?.routes) ? payload.routes : [];
+        const rows = Array.isArray(emailRoutingPayload?.routes) ? emailRoutingPayload.routes : [];
         const normalized = normalizeRoutingRows(rows);
         setEmailRoutingRows(normalized);
         setInitialEmailRoutingRows(normalized);
@@ -2814,14 +2812,9 @@ export function SettingsPanel() {
         setInitialEmailRoutingRows(fallbackRoutes);
       }
 
-      const emailSenderRulesResponse = await fetch("/api/settings/email-sender-rules", {
-        method: "GET",
-        cache: "no-store",
-        credentials: "include",
-      }).catch(() => null);
+      // Apply email-sender-rules state
       if (emailSenderRulesResponse?.ok) {
-        const payload = await emailSenderRulesResponse.json().catch(() => ({}));
-        const rows = Array.isArray(payload?.rules) ? payload.rules : [];
+        const rows = Array.isArray(emailSenderRulesPayload?.rules) ? emailSenderRulesPayload.rules : [];
         const normalized = normalizeSenderRuleRows(rows);
         setEmailSenderRuleRows(normalized);
         setInitialEmailSenderRuleRows(normalized);
@@ -2831,14 +2824,9 @@ export function SettingsPanel() {
         setInitialEmailSenderRuleRows(fallbackRules);
       }
 
-      const inboxesResponse = await fetch("/api/inboxes", {
-        method: "GET",
-        cache: "no-store",
-        credentials: "include",
-      }).catch(() => null);
+      // Apply inboxes state
       if (inboxesResponse?.ok) {
-        const payload = await inboxesResponse.json().catch(() => ({}));
-        const inboxes = Array.isArray(payload?.inboxes) ? payload.inboxes : [];
+        const inboxes = Array.isArray(inboxesPayload?.inboxes) ? inboxesPayload.inboxes : [];
         setWorkspaceInboxesForRules(inboxes);
       } else {
         setWorkspaceInboxesForRules([]);
