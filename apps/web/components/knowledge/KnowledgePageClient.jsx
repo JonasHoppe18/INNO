@@ -333,6 +333,12 @@ function stitchChunkedText(chunks) {
   return merged.trim();
 }
 
+const ISSUE_TYPE_OPTIONS = [
+  "connectivity", "factory_reset", "audio", "battery", "firmware",
+  "microphone", "pairing", "physical_damage", "return", "refund",
+  "shipping", "tracking", "product_specs", "general",
+];
+
 export function KnowledgePageClient() {
   const supabase = useClerkSupabase();
   const { user } = useUser();
@@ -374,6 +380,10 @@ export function KnowledgePageClient() {
   const [snippetTitle, setSnippetTitle] = useState("");
   const [snippetContent, setSnippetContent] = useState("");
   const [snippetUsableAs, setSnippetUsableAs] = useState("");
+  const [snippetProducts, setSnippetProducts] = useState([]);
+  const [snippetIssueTypes, setSnippetIssueTypes] = useState([]);
+  const [tagSuggestions, setTagSuggestions] = useState({ products: [], issue_types: [] });
+  const [tagSuggestLoading, setTagSuggestLoading] = useState(false);
   const [historyProvider, setHistoryProvider] = useState(null);
   const [zendeskImportCount, setZendeskImportCount] = useState(null);
   const [zendeskImporting, setZendeskImporting] = useState(false);
@@ -855,9 +865,44 @@ export function KnowledgePageClient() {
     setSnippetTitle("");
     setSnippetContent("");
     setSnippetUsableAs("");
+    setSnippetProducts([]);
+    setSnippetIssueTypes([]);
+    setTagSuggestions({ products: [], issue_types: [] });
     setPdfFile(null);
     setPdfTitle("");
   };
+
+  async function fetchTagSuggestions(content) {
+    if (!content || content.length < 30) return;
+    setTagSuggestLoading(true);
+    try {
+      const res = await fetch("/api/knowledge/tag-suggest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content, shop_id: shopId }),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      setTagSuggestions(data);
+      // Auto-apply suggestions that aren't already selected
+      if (Array.isArray(data.products)) {
+        setSnippetProducts((prev) => {
+          const merged = [...new Set([...prev, ...data.products])];
+          return merged;
+        });
+      }
+      if (Array.isArray(data.issue_types)) {
+        setSnippetIssueTypes((prev) => {
+          const merged = [...new Set([...prev, ...data.issue_types])];
+          return merged;
+        });
+      }
+    } catch {
+      // Ignore errors
+    } finally {
+      setTagSuggestLoading(false);
+    }
+  }
 
   const buildSnippetDraftKey = useCallback(
     (snippetId) => {
@@ -970,6 +1015,9 @@ export function KnowledgePageClient() {
     setSnippetTitle(draft?.title || String(snippet?.title || ""));
     setSnippetContent(draft?.content || String(snippet?.content || ""));
     setSnippetUsableAs(String(snippet?.usable_as || ""));
+    setSnippetProducts(snippet.products || []);
+    setSnippetIssueTypes(snippet.issue_types || []);
+    setTagSuggestions({ products: [], issue_types: [] });
     setPdfFile(null);
     setPdfTitle("");
     setSnippetModalOpen(true);
@@ -1047,6 +1095,8 @@ export function KnowledgePageClient() {
           title,
           content,
           usable_as: snippetUsableAs || undefined,
+          products: snippetProducts.length > 0 ? snippetProducts : undefined,
+          issue_types: snippetIssueTypes.length > 0 ? snippetIssueTypes : undefined,
         }),
       });
       const payload = await response.json().catch(() => ({}));
@@ -2683,6 +2733,77 @@ export function KnowledgePageClient() {
                         onPaste={handleSnippetEditorPaste}
                         className="min-h-[320px] max-h-[520px] overflow-y-auto px-3 py-2 text-sm leading-6 outline-none"
                       />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tag fields */}
+                <div className="space-y-3 pt-1">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium text-gray-700">Tags</Label>
+                    <button
+                      type="button"
+                      onClick={() => fetchTagSuggestions(snippetContent)}
+                      disabled={tagSuggestLoading || !snippetContent}
+                      className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-40 transition-opacity"
+                    >
+                      {tagSuggestLoading ? "Analyserer..." : "Foreslå automatisk"}
+                    </button>
+                  </div>
+
+                  {/* Products */}
+                  <div className="space-y-1.5">
+                    <Label className="text-[11px] text-gray-500">Produkter</Label>
+                    {snippetProducts.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mb-1">
+                        {snippetProducts.map((p) => (
+                          <span key={p} className="flex items-center gap-0.5 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-800">
+                            {p}
+                            <button
+                              type="button"
+                              onClick={() => setSnippetProducts((prev) => prev.filter((x) => x !== p))}
+                              className="ml-0.5 hover:text-blue-600 leading-none"
+                            >×</button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <Input
+                      placeholder="Tilføj produkt og tryk Enter (fx a-blaze)"
+                      className="h-7 text-xs"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          const val = e.currentTarget.value.trim().toLowerCase();
+                          if (val && !snippetProducts.includes(val)) {
+                            setSnippetProducts((prev) => [...prev, val]);
+                          }
+                          e.currentTarget.value = "";
+                        }
+                      }}
+                    />
+                  </div>
+
+                  {/* Issue types */}
+                  <div className="space-y-1.5">
+                    <Label className="text-[11px] text-gray-500">Issue types</Label>
+                    <div className="flex flex-wrap gap-1">
+                      {ISSUE_TYPE_OPTIONS.map((t) => (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => setSnippetIssueTypes((prev) =>
+                            prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]
+                          )}
+                          className={`rounded-full px-2 py-0.5 text-xs border transition-colors ${
+                            snippetIssueTypes.includes(t)
+                              ? "bg-green-100 border-green-400 text-green-800"
+                              : "bg-gray-50 border-gray-300 text-gray-500 hover:border-gray-400"
+                          }`}
+                        >
+                          {t}
+                        </button>
+                      ))}
                     </div>
                   </div>
                 </div>
