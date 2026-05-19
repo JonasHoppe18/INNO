@@ -1622,10 +1622,47 @@ Deno.serve(async (req) => {
   for (const ref of referenceIds) {
     if (!ref) continue;
     const match = await findThreadByReplyMessage(mailbox.mailbox_id, ref);
-    if (match) {
-      threadId = match;
-      break;
+    if (!match) continue;
+
+    // Guard: don't thread an email from a completely different sender into an existing
+    // thread unless that sender has previously participated in the thread. This prevents
+    // forwarded emails (with stale References headers) from hijacking unrelated threads.
+    if (fromEmail) {
+      const { data: existingThread } = await supabase
+        .from("mail_threads")
+        .select("customer_email")
+        .eq("id", match)
+        .maybeSingle();
+      const threadOwnerEmail = String(existingThread?.customer_email || "").toLowerCase().trim();
+      const incomingEmail = fromEmail.toLowerCase().trim();
+      if (threadOwnerEmail && incomingEmail && threadOwnerEmail !== incomingEmail) {
+        // Check if this sender has any prior message in the thread
+        const { count } = await supabase
+          .from("mail_messages")
+          .select("id", { count: "exact", head: true })
+          .eq("thread_id", match)
+          .eq("from_email", incomingEmail);
+        if ((count ?? 0) === 0) {
+          // Different sender, no prior messages in this thread → create new thread
+          await logAgent(
+            "postmark_inbound_diagnostics",
+            {
+              message_id: storedMessageId,
+              slug,
+              note: "cross_sender_thread_guard",
+              incoming_email: incomingEmail,
+              thread_owner_email: threadOwnerEmail,
+              skipped_thread_id: match,
+            },
+            "info",
+          );
+          continue;
+        }
+      }
     }
+
+    threadId = match;
+    break;
   }
 
   let createdNewThread = false;

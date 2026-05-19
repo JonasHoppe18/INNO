@@ -1335,6 +1335,7 @@ export function InboxSplitView({
         },
         (payload) => {
           const nextMessage = payload?.new;
+          const prevMessage = payload?.old;
           const nextMessageId = String(nextMessage?.id || "").trim();
           if (!nextMessageId) return;
           setLiveMessages((prev) => {
@@ -1347,6 +1348,15 @@ export function InboxSplitView({
             });
             return found ? updated : [...existing, nextMessage];
           });
+          // When the pipeline writes ai_draft_text on an inbound message, the primary
+          // rawThreadMessages source (selectedThreadMessagesFromDb) is stale because it
+          // was fetched before the pipeline finished. Re-fetching picks up the new draft.
+          const aiDraftChanged = nextMessage?.ai_draft_text !== undefined &&
+            nextMessage?.ai_draft_text !== (prevMessage?.ai_draft_text ?? null) &&
+            String(nextMessage?.thread_id || "") === selectedThreadIdRef.current;
+          if (aiDraftChanged) {
+            refreshSelectedThreadMessagesRef.current?.().catch(() => null);
+          }
         },
       )
       .on(
