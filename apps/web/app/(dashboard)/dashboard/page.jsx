@@ -299,8 +299,10 @@ export default async function Page() {
   if (serviceClient) {
     try {
       const scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
-      const shopId = await resolveShopId(serviceClient, scope);
-      const mailboxIds = await loadMailboxIds(serviceClient, scope);
+      const [shopId, mailboxIds] = await Promise.all([
+        resolveShopId(serviceClient, scope),
+        loadMailboxIds(serviceClient, scope),
+      ]);
 
       let draftQuery = serviceClient
         .from("drafts")
