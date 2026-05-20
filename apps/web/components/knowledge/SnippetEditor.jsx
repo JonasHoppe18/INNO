@@ -182,8 +182,8 @@ export function SnippetEditor({
   };
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex-1 space-y-4 overflow-y-auto px-6 py-5">
+    <div className="flex h-full w-full flex-col">
+      <div className="flex-1 space-y-4 overflow-y-auto px-6 py-5 max-w-2xl">
         {/* Title */}
         <input
           value={title}
@@ -198,7 +198,7 @@ export function SnippetEditor({
             Knowledge type
           </label>
           <Select value={usableAs || ""} onValueChange={setUsableAs}>
-            <SelectTrigger className="h-8 w-64 text-[11px]">
+            <SelectTrigger className="h-8 w-full text-[11px]">
               <SelectValue placeholder="Select type..." />
             </SelectTrigger>
             <SelectContent>
@@ -290,7 +290,7 @@ export function SnippetEditor({
       </div>
 
       {/* Footer */}
-      <div className="flex items-center gap-2 border-t border-gray-100 bg-white px-6 py-3">
+      <div className="flex w-full items-center gap-2 border-t border-gray-100 bg-white px-6 py-3">
         <button
           onClick={handleSave}
           disabled={saving}
