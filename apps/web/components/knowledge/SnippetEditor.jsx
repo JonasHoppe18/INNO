@@ -106,7 +106,7 @@ export function SnippetEditor({
 
       // Fire async AI tagging — runs in background, updates UI when done
       if (trimContent.length >= 20) {
-        autoTagAsync(savedSnippetId, trimTitle, trimContent);
+        autoTagAsync(savedSnippetId, trimTitle, trimContent, usableAs, category, productId);
       }
     } catch (err) {
       toast.error(err.message);
@@ -115,7 +115,7 @@ export function SnippetEditor({
     }
   };
 
-  const autoTagAsync = async (snippetId, savedTitle, savedContent) => {
+  const autoTagAsync = async (snippetId, savedTitle, savedContent, savedUsableAs, savedCategory, savedProductId) => {
     try {
       const res = await fetch("/api/knowledge/tag-suggest", {
         method: "POST",
@@ -141,9 +141,9 @@ export function SnippetEditor({
           id: snippetId,
           title: savedTitle,
           content: savedContent,
-          ...(usableAs ? { usable_as: usableAs } : {}),
-          ...(category ? { category } : {}),
-          ...(productId ? { product_id: productId } : {}),
+          ...(savedUsableAs ? { usable_as: savedUsableAs } : {}),
+          ...(savedCategory ? { category: savedCategory } : {}),
+          ...(savedProductId ? { product_id: savedProductId } : {}),
           issue_types: merged,
           ...(suggestedProducts.length ? { products: suggestedProducts } : {}),
         }),
