@@ -186,7 +186,7 @@ export function SnippetEditor({
 
   return (
     <div className="flex h-full w-full flex-col">
-      <div className="flex-1 space-y-4 overflow-y-auto px-6 py-5 max-w-2xl">
+      <div className="flex-1 space-y-4 overflow-y-auto px-6 py-5">
         {/* Title */}
         <input
           value={title}
