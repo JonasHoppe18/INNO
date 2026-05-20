@@ -134,8 +134,8 @@ export function SnippetTwoPanel({
         </div>
       </div>
 
-      {/* Two-panel — bleeds to page edges, single border-t separator */}
-      <div className="-mx-4 lg:-mx-10 -mb-6 lg:-mb-10 flex border-t border-gray-100 min-h-[calc(100vh-200px)]">
+      {/* Two-panel — bleeds to page edges, defined height so children can use h-full */}
+      <div className="-mx-4 lg:-mx-10 -mb-6 lg:-mb-10 flex border-t border-gray-100 h-[calc(100svh-141px)] overflow-hidden">
         {/* Left: snippet list */}
         <div className="flex w-64 shrink-0 flex-col overflow-hidden border-r border-gray-100 bg-gray-50/50">
           {loading ? (
