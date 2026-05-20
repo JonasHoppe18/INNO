@@ -4,6 +4,9 @@ import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -193,17 +196,15 @@ export function SnippetEditor({
         />
 
         {/* Knowledge type */}
-        <div>
-          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-gray-400">
-            Knowledge type
-          </label>
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">Knowledge type</Label>
           <Select value={usableAs || ""} onValueChange={setUsableAs}>
-            <SelectTrigger className="h-8 w-full text-[11px]">
+            <SelectTrigger className="w-full">
               <SelectValue placeholder="Select type..." />
             </SelectTrigger>
             <SelectContent>
               {KNOWLEDGE_TYPES.map((t) => (
-                <SelectItem key={t.value} value={t.value} className="text-[11px]">
+                <SelectItem key={t.value} value={t.value}>
                   {t.label}
                 </SelectItem>
               ))}
@@ -212,26 +213,22 @@ export function SnippetEditor({
         </div>
 
         {/* Content */}
-        <div>
-          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-gray-400">
-            Content
-          </label>
-          <textarea
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">Content</Label>
+          <Textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
             placeholder="Write the knowledge here..."
-            className="w-full resize-y rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-[12px] leading-relaxed text-gray-700 placeholder:text-gray-300 outline-none focus:border-indigo-200 focus:bg-white transition-colors min-h-[120px]"
+            className="min-h-[140px] resize-y"
           />
-          <p className="mt-1 text-[10px] text-gray-300">
+          <p className="text-xs text-muted-foreground">
             Be precise — the AI uses this directly to answer customers.
           </p>
         </div>
 
         {/* Tags */}
-        <div>
-          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-gray-400">
-            Tags
-          </label>
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">Tags</Label>
           <div
             className={cn(
               "flex min-h-[36px] flex-wrap items-center gap-1.5 rounded-md border border-gray-200 bg-gray-50 px-2.5 py-2",
@@ -279,8 +276,8 @@ export function SnippetEditor({
             )}
           </div>
           {tags.some((t) => aiTags.has(t)) && (
-            <p className="mt-1 flex items-center gap-1 text-[10px] text-gray-300">
-              <span className="rounded-full border border-green-200 bg-green-50 px-1.5 py-0.5 text-[9px] text-green-600">
+            <p className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="rounded-full border border-green-200 bg-green-50 px-1.5 py-0.5 text-[10px] text-green-600">
                 AI
               </span>
               Green tags set automatically on save. Add or remove freely.
@@ -290,45 +287,38 @@ export function SnippetEditor({
       </div>
 
       {/* Footer */}
-      <div className="flex w-full items-center gap-2 border-t border-gray-100 bg-white px-6 py-3">
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="rounded-md bg-indigo-600 px-3.5 py-1.5 text-[11px] font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-        >
+      <div className="flex w-full items-center gap-2 border-t bg-background px-6 py-3">
+        <Button onClick={handleSave} disabled={saving} size="sm">
           {saving ? "Saving..." : isNew ? "Save snippet" : "Save changes"}
-        </button>
-        <button
-          onClick={onCancel}
-          className="rounded-md bg-gray-100 px-3 py-1.5 text-[11px] text-gray-500 hover:bg-gray-200 transition-colors"
-        >
+        </Button>
+        <Button onClick={onCancel} variant="ghost" size="sm">
           {isNew ? "Cancel" : "Discard"}
-        </button>
+        </Button>
         {!isNew && (
           <div className="ml-auto">
             {confirmDelete ? (
-              <div className="flex items-center gap-1.5">
-                <button
+              <div className="flex items-center gap-2">
+                <Button
                   onClick={handleDelete}
                   disabled={deleting}
-                  className="rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-[10px] font-medium text-red-600 hover:bg-red-100 disabled:opacity-50"
+                  variant="destructive"
+                  size="sm"
                 >
                   {deleting ? "Deleting..." : "Confirm delete"}
-                </button>
-                <button
-                  onClick={() => setConfirmDelete(false)}
-                  className="px-1 text-[10px] text-gray-400 hover:text-gray-600"
-                >
+                </Button>
+                <Button onClick={() => setConfirmDelete(false)} variant="ghost" size="sm">
                   Cancel
-                </button>
+                </Button>
               </div>
             ) : (
-              <button
+              <Button
                 onClick={() => setConfirmDelete(true)}
-                className="rounded-md border border-red-100 px-2.5 py-1.5 text-[11px] text-red-400 hover:border-red-200 hover:text-red-600 transition-colors"
+                variant="ghost"
+                size="sm"
+                className="text-destructive hover:text-destructive"
               >
                 Delete
-              </button>
+              </Button>
             )}
           </div>
         )}
