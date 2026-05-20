@@ -60,11 +60,62 @@ const DEFAULT_CATEGORIES = {
   },
 };
 
-function SnippetCard({ snippet, onEdit, onDelete }) {
+function SnippetCard({ snippet, onEdit, onDelete, onTagsUpdated }) {
   const [expanded, setExpanded] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [localProducts, setLocalProducts] = useState(snippet.products || []);
+  const [localIssueTypes, setLocalIssueTypes] = useState(snippet.issue_types || []);
+  const [tagSaving, setTagSaving] = useState(false);
+  const [newProduct, setNewProduct] = useState("");
 
   const toggle = () => setExpanded((v) => !v);
+
+  const saveTags = async (products, issueTypes) => {
+    setTagSaving(true);
+    try {
+      await fetch("/api/knowledge/snippets", {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: snippet.snippet_id,
+          shop_id: snippet.shop_id,
+          title: snippet.title,
+          content: snippet.content,
+          ...(snippet.category ? { category: snippet.category } : {}),
+          ...(snippet.product_id ? { product_id: snippet.product_id } : {}),
+          ...(snippet.usable_as ? { usable_as: snippet.usable_as } : {}),
+          products,
+          issue_types: issueTypes,
+        }),
+      });
+      onTagsUpdated?.({ ...snippet, products, issue_types: issueTypes });
+    } catch { /* ignore */ } finally {
+      setTagSaving(false);
+    }
+  };
+
+  const toggleIssueType = (t) => {
+    const next = localIssueTypes.includes(t)
+      ? localIssueTypes.filter((x) => x !== t)
+      : [...localIssueTypes, t];
+    setLocalIssueTypes(next);
+    saveTags(localProducts, next);
+  };
+
+  const removeProduct = (p) => {
+    const next = localProducts.filter((x) => x !== p);
+    setLocalProducts(next);
+    saveTags(next, localIssueTypes);
+  };
+
+  const addProduct = (val) => {
+    const v = val.trim().toLowerCase();
+    if (!v || localProducts.includes(v)) return;
+    const next = [...localProducts, v];
+    setLocalProducts(next);
+    saveTags(next, localIssueTypes);
+  };
 
   return (
     <div className="group">
@@ -80,10 +131,10 @@ function SnippetCard({ snippet, onEdit, onDelete }) {
         />
         <span className="text-sm font-medium flex-1 truncate">{snippet.title}</span>
         <div className="flex shrink-0 items-center gap-1 mr-1">
-          {(snippet.products || []).map((p) => (
+          {localProducts.map((p) => (
             <span key={p} className="rounded-full bg-blue-50 border border-blue-200 px-1.5 py-0.5 text-[10px] text-blue-700">{p}</span>
           ))}
-          {(snippet.issue_types || []).map((t) => (
+          {localIssueTypes.map((t) => (
             <span key={t} className="rounded-full bg-green-50 border border-green-200 px-1.5 py-0.5 text-[10px] text-green-700">{t}</span>
           ))}
         </div>
@@ -116,10 +167,65 @@ function SnippetCard({ snippet, onEdit, onDelete }) {
         </div>
       </div>
       {expanded && (
-        <div className="px-10 pb-4">
+        <div className="px-10 pb-5 space-y-4">
           <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
             {snippet.content}
           </p>
+
+          <div className="space-y-3 border-t pt-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-gray-500">Tags</span>
+              {tagSaving && <span className="text-[10px] text-gray-400">Gemmer...</span>}
+            </div>
+
+            {/* Products */}
+            <div className="space-y-1.5">
+              <span className="text-[11px] text-gray-400">Produkter</span>
+              <div className="flex flex-wrap items-center gap-1">
+                {localProducts.map((p) => (
+                  <span key={p} className="flex items-center gap-0.5 rounded-full bg-blue-50 border border-blue-200 px-2 py-0.5 text-xs text-blue-700">
+                    {p}
+                    <button type="button" onClick={() => removeProduct(p)} className="ml-0.5 hover:text-blue-500 leading-none">×</button>
+                  </span>
+                ))}
+                <input
+                  type="text"
+                  value={newProduct}
+                  onChange={(e) => setNewProduct(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addProduct(newProduct);
+                      setNewProduct("");
+                    }
+                  }}
+                  placeholder="+ produkt (Enter)"
+                  className="h-6 rounded-full border border-dashed border-gray-300 px-2 text-[11px] text-gray-500 placeholder:text-gray-300 focus:outline-none focus:border-blue-300 min-w-[110px]"
+                />
+              </div>
+            </div>
+
+            {/* Issue types */}
+            <div className="space-y-1.5">
+              <span className="text-[11px] text-gray-400">Issue types</span>
+              <div className="flex flex-wrap gap-1">
+                {ISSUE_TYPE_OPTIONS.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => toggleIssueType(t)}
+                    className={`rounded-full px-2 py-0.5 text-xs border transition-colors ${
+                      localIssueTypes.includes(t)
+                        ? "bg-green-100 border-green-400 text-green-800"
+                        : "bg-gray-50 border-gray-200 text-gray-400 hover:border-gray-300 hover:text-gray-600"
+                    }`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -455,7 +561,7 @@ function ProductsSection({ shopId, categorySlug }) {
   );
 }
 
-function SnippetList({ snippets, loading, onEdit, onDelete, onAdd, icon: Icon }) {
+function SnippetList({ snippets, loading, onEdit, onDelete, onAdd, onTagsUpdated, icon: Icon }) {
   if (loading) {
     return (
       <div className="space-y-3">
@@ -492,7 +598,7 @@ function SnippetList({ snippets, loading, onEdit, onDelete, onAdd, icon: Icon })
   return (
     <div className="rounded-lg border divide-y overflow-hidden">
       {snippets.map((snippet) => (
-        <SnippetCard key={snippet.snippet_id} snippet={snippet} onEdit={onEdit} onDelete={onDelete} />
+        <SnippetCard key={snippet.snippet_id} snippet={snippet} onEdit={onEdit} onDelete={onDelete} onTagsUpdated={onTagsUpdated} />
       ))}
       <div
         role="button"
@@ -766,6 +872,7 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
               onEdit={(s) => { setEditingSnippet(s); setModalOpen(true); }}
               onDelete={handleDelete}
               onAdd={() => { setEditingSnippet(null); setModalOpen(true); }}
+              onTagsUpdated={(updated) => setSnippets((prev) => prev.map((s) => s.snippet_id === updated.snippet_id ? updated : s))}
               icon={Icon}
             />
           </div>
