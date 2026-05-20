@@ -15,16 +15,16 @@ export function SnippetList({ snippets, selectedId, onSelect, newDraft }) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="mx-2 mb-1 mt-2 flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5">
+      <div className="flex items-center gap-2 border-b border-gray-100 px-3 py-2.5">
         <Search className="h-3.5 w-3.5 shrink-0 text-gray-300" />
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search snippets..."
-          className="flex-1 bg-transparent text-[11px] text-gray-700 placeholder:text-gray-400 outline-none"
+          className="flex-1 bg-transparent text-[11px] text-gray-600 placeholder:text-gray-300 outline-none"
         />
       </div>
-      <div className="flex-1 overflow-y-auto space-y-0.5 px-2 pb-2 pt-0.5">
+      <div className="flex-1 overflow-y-auto space-y-0.5 px-2 pb-2 pt-1.5">
         {newDraft && (
           <div
             onClick={() => onSelect(null)}
