@@ -556,6 +556,24 @@ function ProductsSection({ shopId, categorySlug }) {
             }
           />
         ))}
+        <div
+          onClick={() => router.push(`/knowledge/${categorySlug}/general`)}
+          className="group flex cursor-pointer items-center gap-3 rounded-lg border border-dashed border-indigo-200 bg-indigo-50/40 px-4 py-3 transition-all hover:border-indigo-300 hover:bg-indigo-50 active:scale-[0.98]"
+        >
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-indigo-100 text-indigo-600">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+            </svg>
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[13px] font-semibold text-indigo-700">General</div>
+            <div className="text-[11px] text-indigo-400 mt-0.5">Applies across all products</div>
+          </div>
+          <svg className="h-4 w-4 text-indigo-300 transition-transform group-hover:translate-x-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="m9 18 6-6-6-6"/>
+          </svg>
+        </div>
       </div>
     </div>
   );
@@ -859,22 +877,6 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
           <div>
             <h2 className="text-sm font-medium mb-3">Products</h2>
             <ProductsSection shopId={shopId} categorySlug={categorySlug} />
-          </div>
-          <Separator />
-          <div>
-            <h2 className="text-sm font-medium mb-1">General product knowledge</h2>
-            <p className="text-xs text-muted-foreground mb-4">
-              Knowledge that applies across all products — not product-specific.
-            </p>
-            <SnippetList
-              snippets={snippets}
-              loading={loading}
-              onEdit={(s) => { setEditingSnippet(s); setModalOpen(true); }}
-              onDelete={handleDelete}
-              onAdd={() => { setEditingSnippet(null); setModalOpen(true); }}
-              onTagsUpdated={(updated) => setSnippets((prev) => prev.map((s) => s.snippet_id === updated.snippet_id ? updated : s))}
-              icon={Icon}
-            />
           </div>
         </>
       )}
