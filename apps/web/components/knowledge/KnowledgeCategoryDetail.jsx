@@ -79,6 +79,14 @@ function SnippetCard({ snippet, onEdit, onDelete }) {
           className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-150 ${expanded ? "rotate-180" : ""}`}
         />
         <span className="text-sm font-medium flex-1 truncate">{snippet.title}</span>
+        <div className="flex shrink-0 items-center gap-1 mr-1">
+          {(snippet.products || []).map((p) => (
+            <span key={p} className="rounded-full bg-blue-50 border border-blue-200 px-1.5 py-0.5 text-[10px] text-blue-700">{p}</span>
+          ))}
+          {(snippet.issue_types || []).map((t) => (
+            <span key={t} className="rounded-full bg-green-50 border border-green-200 px-1.5 py-0.5 text-[10px] text-green-700">{t}</span>
+          ))}
+        </div>
         <div
           className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100"
           onClick={(e) => e.stopPropagation()}
