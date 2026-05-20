@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { FileText, Plus, Upload } from "lucide-react";
+import { ArrowLeft, FileText, Plus, Upload } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SnippetList } from "./SnippetList";
 import { SnippetEditor } from "./SnippetEditor";
@@ -99,46 +100,44 @@ export function SnippetTwoPanel({
       : `${count} snippet${count !== 1 ? "s" : ""}`);
 
   return (
-    <div className="flex min-h-[calc(100vh-140px)] flex-col rounded-lg border border-gray-100 bg-white overflow-hidden">
-      {/* Header */}
-      <div className="flex shrink-0 items-center gap-2.5 border-b border-gray-100 px-5 py-3.5">
-        <button
+    <div className="flex flex-col">
+      {/* Header — flat, matches the rest of the knowledge section */}
+      <div className="flex items-center gap-3 pb-6">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 shrink-0"
           onClick={() => router.push(backHref ?? "/knowledge")}
-          className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-md border border-gray-200 text-[11px] text-gray-500 hover:border-gray-300 hover:text-gray-700 transition-colors"
         >
-          ←
-        </button>
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
         {headerIcon && (
-          <div className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[6px] bg-gray-100 text-[10px] font-bold text-gray-600">
+          <div className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted text-xs font-bold text-muted-foreground">
             {headerIcon}
           </div>
         )}
         <div className="min-w-0 flex-1">
-          <div className="text-[13px] font-bold text-gray-900">
+          <h1 className="text-lg font-semibold leading-tight">
             {productTitle ?? "General"}
-          </div>
-          <div className="mt-0.5 text-[10px] text-gray-400">{subtitle}</div>
+          </h1>
+          <p className="text-sm text-muted-foreground">{subtitle}</p>
         </div>
-        <button
-          onClick={() => setImportOpen(true)}
-          className="flex items-center gap-1.5 rounded-md border border-gray-200 px-2.5 py-1.5 text-[11px] text-gray-500 hover:border-gray-300 hover:text-gray-700 transition-colors"
-        >
-          <Upload className="h-3 w-3" />
-          Import CSV
-        </button>
-        <button
-          onClick={handleAddSnippet}
-          className="flex items-center gap-1.5 rounded-md bg-indigo-600 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-indigo-700 transition-colors"
-        >
-          <Plus className="h-3 w-3" />
-          Add snippet
-        </button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
+            <Upload className="h-3.5 w-3.5 mr-1.5" />
+            Import CSV
+          </Button>
+          <Button size="sm" onClick={handleAddSnippet}>
+            <Plus className="h-3.5 w-3.5 mr-1.5" />
+            Add snippet
+          </Button>
+        </div>
       </div>
 
-      {/* Two-panel body */}
-      <div className="flex flex-1 overflow-hidden">
+      {/* Two-panel — bleeds to page edges, single border-t separator */}
+      <div className="-mx-4 lg:-mx-10 -mb-6 lg:-mb-10 flex border-t border-gray-100 min-h-[calc(100vh-200px)]">
         {/* Left: snippet list */}
-        <div className="flex w-64 shrink-0 flex-col overflow-hidden border-r border-gray-100">
+        <div className="flex w-64 shrink-0 flex-col overflow-hidden border-r border-gray-100 bg-gray-50/50">
           {loading ? (
             <div className="space-y-2 p-3">
               {[1, 2, 3, 4].map((i) => (
@@ -156,7 +155,7 @@ export function SnippetTwoPanel({
         </div>
 
         {/* Right: editor or empty state */}
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 overflow-hidden bg-white">
           {newDraft || selectedSnippet ? (
             <SnippetEditor
               key={newDraft ? "new" : selectedId}
@@ -168,25 +167,22 @@ export function SnippetTwoPanel({
               onCancel={handleCancel}
             />
           ) : (
-            <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+            <div className="flex h-full w-full flex-col items-center justify-center gap-3 text-center">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100">
                 <FileText className="h-5 w-5 text-gray-400" />
               </div>
               <div>
-                <p className="text-[13px] font-medium text-gray-600">
+                <p className="text-sm font-medium text-gray-600">
                   Select a snippet to edit
                 </p>
-                <p className="mt-0.5 text-[11px] text-gray-400">
+                <p className="mt-0.5 text-xs text-gray-400">
                   or add a new one
                 </p>
               </div>
-              <button
-                onClick={handleAddSnippet}
-                className="mt-1 flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-indigo-700 transition-colors"
-              >
-                <Plus className="h-3 w-3" />
+              <Button size="sm" onClick={handleAddSnippet}>
+                <Plus className="h-3.5 w-3.5 mr-1.5" />
                 Add snippet
-              </button>
+              </Button>
             </div>
           )}
         </div>
