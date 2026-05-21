@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export function SnippetList({ snippets, selectedId, onSelect, newDraft }) {
+export function SnippetList({ snippets, selectedId, onSelect }) {
   const [search, setSearch] = useState("");
 
   const filtered = search.trim()
@@ -24,17 +24,7 @@ export function SnippetList({ snippets, selectedId, onSelect, newDraft }) {
           className="flex-1 bg-transparent text-[11px] text-gray-600 placeholder:text-gray-300 outline-none"
         />
       </div>
-      <div className="flex-1 overflow-y-auto space-y-0.5 px-2 pb-2 pt-1.5">
-        {newDraft && (
-          <div
-            onClick={() => onSelect(null)}
-            className="cursor-pointer rounded-md border border-dashed border-indigo-300 bg-indigo-50 px-2 py-1.5"
-          >
-            <div className="text-[11.5px] font-semibold text-indigo-600">
-              New snippet
-            </div>
-          </div>
-        )}
+      <div className="flex-1 overflow-y-auto divide-y divide-gray-100 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {filtered.map((snippet) => (
           <SnippetRow
             key={snippet.snippet_id}
@@ -51,27 +41,47 @@ export function SnippetList({ snippets, selectedId, onSelect, newDraft }) {
 function SnippetRow({ snippet, active, onClick }) {
   const productTags = Array.isArray(snippet.products) ? snippet.products : [];
   const issueTags = Array.isArray(snippet.issue_types) ? snippet.issue_types : [];
-  const visibleTags = [...productTags.slice(0, 2), ...issueTags.slice(0, 2)];
+  const topTags = [...productTags.slice(0, 1), ...issueTags.slice(0, 2)];
+  const preview = snippet.content?.trim().replace(/\s+/g, " ").slice(0, 80);
 
   return (
-    <div
+    <button
+      type="button"
       onClick={onClick}
       className={cn(
-        "cursor-pointer rounded-md px-2 py-1.5 transition-colors duration-100",
-        active ? "bg-indigo-50" : "hover:bg-gray-50"
+        "relative flex w-full flex-col gap-0.5 px-4 py-3 text-left transition-colors duration-150 hover:bg-gray-50/80",
+        active && "bg-gray-100/60"
       )}
     >
-      <div
+      {/* Left accent bar */}
+      <span
         className={cn(
-          "truncate text-[11.5px] font-medium",
-          active ? "font-semibold text-indigo-700" : "text-gray-700"
+          "absolute left-0 top-0 h-full w-[3px] rounded-r transition-colors duration-150",
+          active ? "bg-indigo-400" : "bg-transparent"
+        )}
+      />
+
+      {/* Title */}
+      <span
+        className={cn(
+          "truncate text-[12.5px] font-medium leading-snug",
+          active ? "text-indigo-700" : "text-gray-800"
         )}
       >
         {snippet.title}
-      </div>
-      {visibleTags.length > 0 && (
+      </span>
+
+      {/* Content preview */}
+      {preview && (
+        <span className="truncate text-[11px] leading-snug text-gray-400">
+          {preview}
+        </span>
+      )}
+
+      {/* Tags */}
+      {topTags.length > 0 && (
         <div className="mt-1 flex flex-wrap gap-1">
-          {visibleTags.map((tag) => (
+          {topTags.map((tag) => (
             <span
               key={tag}
               className={cn(
@@ -86,6 +96,6 @@ function SnippetRow({ snippet, active, onClick }) {
           ))}
         </div>
       )}
-    </div>
+    </button>
   );
 }

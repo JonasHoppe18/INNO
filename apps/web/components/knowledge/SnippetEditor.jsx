@@ -1,12 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { MoreHorizontal, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { StickySaveBar } from "@/components/ui/sticky-save-bar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Select,
   SelectContent,
@@ -27,6 +32,7 @@ export function SnippetEditor({
   snippet,
   category,
   productId,
+  shopId,
   onSaved,
   onDeleted,
   onCancel,
@@ -54,6 +60,32 @@ export function SnippetEditor({
     setConfirmDelete(false);
   }, [snippet?.snippet_id]);
 
+  const isDirty = useMemo(() => {
+    if (isNew) return title.trim() !== "" || content.trim() !== "";
+    const origTags = [...(snippet?.issue_types ?? [])].sort().join(",");
+    const currTags = [...tags].sort().join(",");
+    return (
+      title !== (snippet?.title ?? "") ||
+      content !== (snippet?.content ?? "") ||
+      usableAs !== (snippet?.usable_as ?? "") ||
+      origTags !== currTags
+    );
+  }, [isNew, title, content, usableAs, tags, snippet]);
+
+  const handleDiscard = () => {
+    if (isNew) {
+      onCancel?.();
+    } else {
+      setTitle(snippet?.title ?? "");
+      setUsableAs(snippet?.usable_as ?? "");
+      setContent(snippet?.content ?? "");
+      setTags(snippet?.issue_types ?? []);
+      setAiTags(new Set(snippet?.issue_types ?? []));
+      setTagInput("");
+      setConfirmDelete(false);
+    }
+  };
+
   const addTag = (raw) => {
     const value = raw.trim().toLowerCase().replace(/\s+/g, "_");
     if (value && !tags.includes(value)) {
@@ -79,6 +111,7 @@ export function SnippetEditor({
         ...(usableAs ? { usable_as: usableAs } : {}),
         ...(category ? { category } : {}),
         ...(productId ? { product_id: productId } : {}),
+        ...(shopId ? { shop_id: shopId } : {}),
         issue_types: tags,
         ...(snippet?.snippet_id ? { id: snippet.snippet_id } : {}),
       };
@@ -133,7 +166,6 @@ export function SnippetEditor({
 
       if (!suggestedIssues.length && !suggestedProducts.length) return;
 
-      // Merge keeping existing manual tags
       const merged = [...new Set([...tags, ...suggestedIssues])];
 
       await fetch("/api/knowledge/snippets", {
@@ -152,7 +184,6 @@ export function SnippetEditor({
         }),
       });
 
-      // Update UI to reflect AI tags
       setTags(merged);
       setAiTags(new Set(suggestedIssues));
     } catch {
@@ -186,9 +217,50 @@ export function SnippetEditor({
 
   return (
     <div className="flex h-full w-full flex-col">
-      <div className="flex-1 space-y-4 overflow-y-auto px-6 py-5">
+      {/* Panel toolbar — delete lives here, not in the form */}
+      {!isNew && (
+        <div className="flex items-center justify-end border-b border-gray-100 px-4 py-1.5">
+          {confirmDelete ? (
+            <div className="flex items-center gap-3 text-[11.5px]">
+              <span className="text-gray-500">Delete this snippet?</span>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="font-medium text-red-500 transition-colors hover:text-red-700"
+              >
+                {deleting ? "Deleting..." : "Yes, delete"}
+              </button>
+              <button
+                onClick={() => setConfirmDelete(false)}
+                className="text-gray-400 transition-colors hover:text-gray-600"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="rounded p-1 text-gray-300 transition-colors hover:bg-gray-100 hover:text-gray-500">
+                  <MoreHorizontal className="h-4 w-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-40">
+                <DropdownMenuItem
+                  onClick={() => setConfirmDelete(true)}
+                  className="text-red-500 focus:text-red-500"
+                >
+                  Delete snippet
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
+      )}
+
+      <div className={cn("flex-1 space-y-4 overflow-y-auto px-6 py-5", isDirty && "pb-24")}>
         {/* Title */}
         <input
+          autoFocus
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Title..."
@@ -199,7 +271,7 @@ export function SnippetEditor({
         <div className="space-y-1.5">
           <Label className="text-xs text-muted-foreground">Knowledge type</Label>
           <Select value={usableAs || ""} onValueChange={setUsableAs}>
-            <SelectTrigger className="w-full">
+            <SelectTrigger className="w-72">
               <SelectValue placeholder="Select type..." />
             </SelectTrigger>
             <SelectContent>
@@ -215,11 +287,11 @@ export function SnippetEditor({
         {/* Content */}
         <div className="space-y-1.5">
           <Label className="text-xs text-muted-foreground">Content</Label>
-          <Textarea
+          <textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
             placeholder="Write the knowledge here..."
-            className="min-h-[140px] resize-y"
+            className="w-full min-h-[160px] resize-y rounded-lg border border-gray-100 bg-transparent px-4 py-3.5 text-[13.5px] leading-relaxed text-gray-800 placeholder:text-gray-300 outline-none transition-colors focus:border-indigo-200 focus:ring-2 focus:ring-indigo-100"
           />
           <p className="text-xs text-muted-foreground">
             Be precise — the AI uses this directly to answer customers.
@@ -284,45 +356,17 @@ export function SnippetEditor({
             </p>
           )}
         </div>
+
       </div>
 
-      {/* Footer */}
-      <div className="flex w-full items-center gap-2 border-t bg-background px-6 py-3">
-        <Button onClick={handleSave} disabled={saving} size="sm">
-          {saving ? "Saving..." : isNew ? "Save snippet" : "Save changes"}
-        </Button>
-        <Button onClick={onCancel} variant="ghost" size="sm">
-          {isNew ? "Cancel" : "Discard"}
-        </Button>
-        {!isNew && (
-          <div className="ml-auto">
-            {confirmDelete ? (
-              <div className="flex items-center gap-2">
-                <Button
-                  onClick={handleDelete}
-                  disabled={deleting}
-                  variant="destructive"
-                  size="sm"
-                >
-                  {deleting ? "Deleting..." : "Confirm delete"}
-                </Button>
-                <Button onClick={() => setConfirmDelete(false)} variant="ghost" size="sm">
-                  Cancel
-                </Button>
-              </div>
-            ) : (
-              <Button
-                onClick={() => setConfirmDelete(true)}
-                variant="ghost"
-                size="sm"
-                className="text-destructive hover:text-destructive"
-              >
-                Delete
-              </Button>
-            )}
-          </div>
-        )}
-      </div>
+      <StickySaveBar
+        isVisible={isDirty}
+        isSaving={saving}
+        onSave={handleSave}
+        onDiscard={handleDiscard}
+        saveLabel={isNew ? "Save snippet" : "Save changes"}
+        message={isNew ? "New snippet" : "Unsaved changes"}
+      />
     </div>
   );
 }
