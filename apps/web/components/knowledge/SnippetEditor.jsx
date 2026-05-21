@@ -45,6 +45,8 @@ export function SnippetEditor({
   const [tags, setTags] = useState(snippet?.issue_types ?? []);
   const [aiTags, setAiTags] = useState(new Set(snippet?.issue_types ?? []));
   const [tagInput, setTagInput] = useState("");
+  const [products, setProducts] = useState(snippet?.products ?? []);
+  const [productInput, setProductInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -57,6 +59,8 @@ export function SnippetEditor({
     setTags(snippet?.issue_types ?? []);
     setAiTags(new Set(snippet?.issue_types ?? []));
     setTagInput("");
+    setProducts(snippet?.products ?? []);
+    setProductInput("");
     setConfirmDelete(false);
   }, [snippet?.snippet_id]);
 
@@ -64,13 +68,16 @@ export function SnippetEditor({
     if (isNew) return title.trim() !== "" || content.trim() !== "";
     const origTags = [...(snippet?.issue_types ?? [])].sort().join(",");
     const currTags = [...tags].sort().join(",");
+    const origProducts = [...(snippet?.products ?? [])].sort().join(",");
+    const currProducts = [...products].sort().join(",");
     return (
       title !== (snippet?.title ?? "") ||
       content !== (snippet?.content ?? "") ||
       usableAs !== (snippet?.usable_as ?? "") ||
-      origTags !== currTags
+      origTags !== currTags ||
+      origProducts !== currProducts
     );
-  }, [isNew, title, content, usableAs, tags, snippet]);
+  }, [isNew, title, content, usableAs, tags, products, snippet]);
 
   const handleDiscard = () => {
     if (isNew) {
@@ -82,9 +89,21 @@ export function SnippetEditor({
       setTags(snippet?.issue_types ?? []);
       setAiTags(new Set(snippet?.issue_types ?? []));
       setTagInput("");
+      setProducts(snippet?.products ?? []);
+      setProductInput("");
       setConfirmDelete(false);
     }
   };
+
+  const addProduct = (raw) => {
+    const value = raw.trim().toLowerCase();
+    if (value && !products.includes(value)) {
+      setProducts((prev) => [...prev, value]);
+    }
+    setProductInput("");
+  };
+
+  const removeProduct = (p) => setProducts((prev) => prev.filter((x) => x !== p));
 
   const addTag = (raw) => {
     const value = raw.trim().toLowerCase().replace(/\s+/g, "_");
@@ -113,6 +132,7 @@ export function SnippetEditor({
         ...(productId ? { product_id: productId } : {}),
         ...(shopId ? { shop_id: shopId } : {}),
         issue_types: tags,
+        products,
         ...(snippet?.snippet_id ? { id: snippet.snippet_id } : {}),
       };
 
@@ -134,7 +154,7 @@ export function SnippetEditor({
         content: trimContent,
         usable_as: usableAs || null,
         issue_types: tags,
-        products: snippet?.products ?? [],
+        products,
         category: category ?? null,
         product_id: productId ?? null,
       };
@@ -142,7 +162,7 @@ export function SnippetEditor({
 
       // Fire async AI tagging — runs in background, updates UI when done
       if (trimContent.length >= 20) {
-        autoTagAsync(savedSnippetId, trimTitle, trimContent, usableAs, category, productId);
+        autoTagAsync(savedSnippetId, trimTitle, trimContent, usableAs, category, productId, products, tags);
       }
     } catch (err) {
       toast.error(err.message);
@@ -151,7 +171,7 @@ export function SnippetEditor({
     }
   };
 
-  const autoTagAsync = async (snippetId, savedTitle, savedContent, savedUsableAs, savedCategory, savedProductId) => {
+  const autoTagAsync = async (snippetId, savedTitle, savedContent, savedUsableAs, savedCategory, savedProductId, currentProducts, currentTags) => {
     try {
       const res = await fetch("/api/knowledge/tag-suggest", {
         method: "POST",
@@ -166,7 +186,9 @@ export function SnippetEditor({
 
       if (!suggestedIssues.length && !suggestedProducts.length) return;
 
-      const merged = [...new Set([...tags, ...suggestedIssues])];
+      const mergedIssues = [...new Set([...currentTags, ...suggestedIssues])];
+      // Only apply suggested products if user hasn't set any manually
+      const mergedProducts = currentProducts.length > 0 ? currentProducts : suggestedProducts;
 
       await fetch("/api/knowledge/snippets", {
         method: "PUT",
@@ -179,13 +201,16 @@ export function SnippetEditor({
           ...(savedUsableAs ? { usable_as: savedUsableAs } : {}),
           ...(savedCategory ? { category: savedCategory } : {}),
           ...(savedProductId ? { product_id: savedProductId } : {}),
-          issue_types: merged,
-          ...(suggestedProducts.length ? { products: suggestedProducts } : {}),
+          issue_types: mergedIssues,
+          products: mergedProducts,
         }),
       });
 
-      setTags(merged);
+      setTags(mergedIssues);
       setAiTags(new Set(suggestedIssues));
+      if (currentProducts.length === 0 && mergedProducts.length > 0) {
+        setProducts(mergedProducts);
+      }
     } catch {
       // Silently fail — tagging is best-effort
     }
@@ -298,9 +323,47 @@ export function SnippetEditor({
           </p>
         </div>
 
-        {/* Tags */}
+        {/* Products */}
         <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">Tags</Label>
+          <Label className="text-xs text-muted-foreground">Products</Label>
+          <div className="flex min-h-[36px] flex-wrap items-center gap-1.5 rounded-md border border-gray-200 bg-gray-50 px-2.5 py-2">
+            {products.length === 0 && productInput === "" ? (
+              <span className="text-[10px] text-gray-300">
+                Add product names this snippet applies to
+              </span>
+            ) : null}
+            {products.map((p) => (
+              <span
+                key={p}
+                className="inline-flex items-center gap-1 rounded-full bg-indigo-50 border border-indigo-200 px-2 py-0.5 text-[10px] text-indigo-700"
+              >
+                {p}
+                <button
+                  onClick={() => removeProduct(p)}
+                  className="text-indigo-300 hover:text-indigo-500 leading-none"
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              </span>
+            ))}
+            <input
+              value={productInput}
+              onChange={(e) => setProductInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && productInput.trim()) {
+                  e.preventDefault();
+                  addProduct(productInput);
+                }
+              }}
+              placeholder={products.length === 0 ? "" : "+ add product"}
+              className="bg-transparent text-[10px] text-gray-400 placeholder:text-gray-300 outline-none"
+            />
+          </div>
+        </div>
+
+        {/* Issue type tags */}
+        <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">Issue types</Label>
           <div
             className={cn(
               "flex min-h-[36px] flex-wrap items-center gap-1.5 rounded-md border border-gray-200 bg-gray-50 px-2.5 py-2",
