@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { MoreHorizontal, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -50,19 +50,6 @@ export function SnippetEditor({
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
-
-  // Reset when snippet changes
-  useEffect(() => {
-    setTitle(snippet?.title ?? "");
-    setUsableAs(snippet?.usable_as ?? "");
-    setContent(snippet?.content ?? "");
-    setTags(snippet?.issue_types ?? []);
-    setAiTags(new Set(snippet?.issue_types ?? []));
-    setTagInput("");
-    setProducts(snippet?.products ?? []);
-    setProductInput("");
-    setConfirmDelete(false);
-  }, [snippet?.snippet_id]);
 
   const isDirty = useMemo(() => {
     if (isNew) return title.trim() !== "" || content.trim() !== "";
