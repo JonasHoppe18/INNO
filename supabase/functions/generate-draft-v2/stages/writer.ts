@@ -396,12 +396,15 @@ function buildInfoRequirementsBlock(
       "order_reference: ordrenummer, så vi kan tjekke garanti eller finde den rigtige reservedel",
     );
   } else if (warrantyLike) {
+    const isFollowUp = caseState.decisions_made.length > 0 ||
+      caseState.pending_asks.length > 0;
     if (!hasOrderReference && !signals.hasPurchasePlace) {
       missing.push(
         "purchase_reference: ordrenummer eller hvor produktet er købt (købssted/forhandler). Spørg aldrig om ordre-email for dette felt",
       );
     }
-    if (!signals.hasDocumentation) {
+    // Only ask for defect documentation on follow-up — first reply should give troubleshooting steps first
+    if (!signals.hasDocumentation && isFollowUp) {
       missing.push(
         "defect_documentation: foto/video der dokumenterer fejlen eller skaden",
       );
