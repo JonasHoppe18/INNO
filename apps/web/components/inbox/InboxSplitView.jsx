@@ -1481,8 +1481,26 @@ export function InboxSplitView({
     [derivedThreads],
   );
 
-  const { data: previewMessages } = useThreadPreviewMessages(previewThreadIds, {
-    enabled: previewThreadIds.length > 0,
+  // Skip the preview fetch when we already have at least one message for
+  // the thread in liveMessages — the downstream merge at messagesByThread
+  // already covers the sender-name derivation in that case. SSR loads
+  // messages for the full inbox, so this normally drops the fetch entirely.
+  const threadIdsWithLiveMessages = useMemo(() => {
+    const set = new Set();
+    (liveMessages || []).forEach((message) => {
+      const tid = String(message?.thread_id || "").trim();
+      if (tid) set.add(tid);
+    });
+    return set;
+  }, [liveMessages]);
+
+  const previewThreadIdsToFetch = useMemo(
+    () => previewThreadIds.filter((id) => !threadIdsWithLiveMessages.has(id)),
+    [previewThreadIds, threadIdsWithLiveMessages],
+  );
+
+  const { data: previewMessages } = useThreadPreviewMessages(previewThreadIdsToFetch, {
+    enabled: previewThreadIdsToFetch.length > 0,
   });
   const deferredPreviewMessages = useDeferredValue(previewMessages);
 
