@@ -134,6 +134,35 @@ async function loadPreviousTickets(serviceClient, scope, { customerEmail, curren
   const normalizedEmail = normalizeEmail(customerEmail);
   if (!normalizedEmail) return [];
 
+  const tickets = await loadPreviousTicketsForEmail(serviceClient, scope, normalizedEmail);
+  if (!currentThreadId) return tickets;
+  const currentId = String(currentThreadId);
+  return tickets.filter((ticket) => ticket.thread_id !== currentId);
+}
+
+// Module-level cache for the underlying SQL — shared across requests for the
+// same workspace+email, regardless of which thread is currently open.
+// Each ticket-switch within a customer used to hit Postgres for ~100-200ms;
+// this collapses repeat lookups within the TTL into pure in-memory reads.
+const PREVIOUS_TICKETS_TTL_MS = 60_000;
+const previousTicketsCache = new Map();
+
+function scopeCacheKey(scope) {
+  if (scope?.workspaceId) return `ws:${scope.workspaceId}`;
+  if (scope?.supabaseUserId) return `u:${scope.supabaseUserId}`;
+  return "";
+}
+
+async function loadPreviousTicketsForEmail(serviceClient, scope, normalizedEmail) {
+  const scopeKey = scopeCacheKey(scope);
+  const cacheKey = `${scopeKey}|${normalizedEmail}`;
+  if (scopeKey) {
+    const cached = previousTicketsCache.get(cacheKey);
+    if (cached && Date.now() - cached.fetchedAt < PREVIOUS_TICKETS_TTL_MS) {
+      return cached.tickets;
+    }
+  }
+
   let query = serviceClient
     .from("mail_threads")
     .select("id, ticket_number, subject, status, last_message_at")
@@ -143,9 +172,6 @@ async function loadPreviousTickets(serviceClient, scope, { customerEmail, curren
     .order("last_message_at", { ascending: false, nullsLast: true })
     .limit(12);
   query = applyScope(query, scope);
-  if (currentThreadId) {
-    query = query.neq("id", currentThreadId);
-  }
 
   const { data, error } = await query;
   if (error) {
@@ -153,7 +179,7 @@ async function loadPreviousTickets(serviceClient, scope, { customerEmail, curren
     return [];
   }
 
-  return (Array.isArray(data) ? data : []).map((row) => ({
+  const tickets = (Array.isArray(data) ? data : []).map((row) => ({
     thread_id: String(row?.id || ""),
     ticket_number: Number.isFinite(Number(row?.ticket_number))
       ? Number(row.ticket_number)
@@ -162,6 +188,11 @@ async function loadPreviousTickets(serviceClient, scope, { customerEmail, curren
     status: String(row?.status || "").trim() || "open",
     last_message_at: row?.last_message_at || null,
   }));
+
+  if (scopeKey) {
+    previousTicketsCache.set(cacheKey, { tickets, fetchedAt: Date.now() });
+  }
+  return tickets;
 }
 
 function matchesOrderNumber(order, candidate) {

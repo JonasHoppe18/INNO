@@ -21,6 +21,24 @@ const buildKey = ({ email, orderNumber, threadId, sourceMessageId }) => {
   return parts.join("|");
 };
 
+// Module-level response cache. Survives component remounts so re-renders
+// of the same ticket context skip the route round-trip entirely. Same
+// customer across different threads still POSTs (different threadId in
+// key), but the server's previousTicketsCache makes those fast.
+const CUSTOMER_LOOKUP_TTL_MS = 60_000;
+const customerLookupCache = new Map();
+
+export function invalidateCustomerLookupForEmail(email) {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return;
+  const needle = `email:${normalized}`;
+  for (const key of customerLookupCache.keys()) {
+    if (key.includes(needle)) {
+      customerLookupCache.delete(key);
+    }
+  }
+}
+
 export function useCustomerLookup({
   email,
   orderNumber,
@@ -49,6 +67,16 @@ export function useCustomerLookup({
       if (!forceRefresh && key && lastKeyRef.current === key) {
         return;
       }
+      if (!forceRefresh && key) {
+        const cached = customerLookupCache.get(key);
+        if (cached && Date.now() - cached.fetchedAt < CUSTOMER_LOOKUP_TTL_MS) {
+          setData(cached.data ?? null);
+          setError(null);
+          lastKeyRef.current = key;
+          setLoading(false);
+          return;
+        }
+      }
       setLoading(true);
       setError(null);
       try {
@@ -70,6 +98,12 @@ export function useCustomerLookup({
         }
         setData(payload ?? null);
         lastKeyRef.current = key;
+        if (key) {
+          customerLookupCache.set(key, {
+            data: payload ?? null,
+            fetchedAt: Date.now(),
+          });
+        }
       } catch (err) {
         setError(err instanceof Error ? err : new Error("Unknown error."));
       } finally {

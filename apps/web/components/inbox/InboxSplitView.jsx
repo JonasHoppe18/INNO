@@ -30,7 +30,10 @@ import { useClerkSupabase } from "@/lib/useClerkSupabase";
 import { useUser } from "@clerk/nextjs";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { useCustomerLookup } from "@/hooks/useCustomerLookup";
+import {
+  invalidateCustomerLookupForEmail,
+  useCustomerLookup,
+} from "@/hooks/useCustomerLookup";
 import { useSiteHeaderActions } from "@/components/site-header-actions";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -1322,6 +1325,15 @@ export function InboxSplitView({
             String(nextMessage?.thread_id || "") === selectedThreadIdRef.current
           ) {
             messagesCacheRef.current.delete(String(nextMessage.thread_id || ""));
+          }
+          // An inbound mail changes the customer's previous-tickets list and
+          // possibly their order picture — drop any client cache for that email.
+          if (!nextMessage?.from_me) {
+            const customerEmail =
+              nextMessage?.extracted_customer_email || nextMessage?.from_email;
+            if (customerEmail) {
+              invalidateCustomerLookupForEmail(customerEmail);
+            }
           }
         },
       )
