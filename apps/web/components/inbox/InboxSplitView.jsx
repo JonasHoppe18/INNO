@@ -1351,8 +1351,15 @@ export function InboxSplitView({
           // When the pipeline writes ai_draft_text on an inbound message, the primary
           // rawThreadMessages source (selectedThreadMessagesFromDb) is stale because it
           // was fetched before the pipeline finished. Re-fetching picks up the new draft.
-          const aiDraftChanged = nextMessage?.ai_draft_text !== undefined &&
-            nextMessage?.ai_draft_text !== (prevMessage?.ai_draft_text ?? null) &&
+          // Supabase realtime omits unchanged columns from payload.old unless REPLICA
+          // IDENTITY FULL is set on the table, so only treat the field as "changed"
+          // when payload.old actually carries the previous value.
+          const prevHasAiDraft = prevMessage
+            ? Object.prototype.hasOwnProperty.call(prevMessage, "ai_draft_text")
+            : false;
+          const aiDraftChanged =
+            prevHasAiDraft &&
+            nextMessage?.ai_draft_text !== prevMessage?.ai_draft_text &&
             String(nextMessage?.thread_id || "") === selectedThreadIdRef.current;
           if (aiDraftChanged) {
             refreshSelectedThreadMessagesRef.current?.().catch(() => null);
@@ -3901,8 +3908,8 @@ export function InboxSplitView({
     setComposerMode("reply");
   }, []);
 
-  useEffect(() => {
-    setTitleContent(
+  const titleBarContent = useMemo(
+    () => (
       <InboxContentBoundary resetKey={`tabs:${selectedThreadId || "no-thread"}`}>
         <div className="flex min-w-0 flex-1 items-center">
           <div className="hidden h-10 shrink-0 items-center justify-end gap-3 bg-background px-3 lg:flex lg:w-[clamp(18rem,20vw,24rem)] lg:min-w-[clamp(18rem,20vw,24rem)] lg:max-w-[clamp(18rem,20vw,24rem)]">
@@ -3930,19 +3937,23 @@ export function InboxSplitView({
             inline
           />
         </div>
-      </InboxContentBoundary>,
-    );
+      </InboxContentBoundary>
+    ),
+    [
+      closeThreadTab,
+      handleCreateTicket,
+      handleViewAllTickets,
+      openThreads,
+      selectedThreadId,
+      unreadByThread,
+      unreadThreadCount,
+    ],
+  );
+
+  useEffect(() => {
+    setTitleContent(titleBarContent);
     return () => setTitleContent(null);
-  }, [
-    closeThreadTab,
-    handleViewAllTickets,
-    handleCreateTicket,
-    openThreads,
-    selectedThreadId,
-    setTitleContent,
-    unreadByThread,
-    unreadThreadCount,
-  ]);
+  }, [setTitleContent, titleBarContent]);
 
   useEffect(() => {
     const selectedStatuses = Array.isArray(filters.statuses)
