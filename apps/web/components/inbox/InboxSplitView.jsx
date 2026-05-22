@@ -1145,8 +1145,11 @@ export function InboxSplitView({
 
   useEffect(() => {
     let active = true;
-    let lastFetchAt = 0;
-    const REFETCH_COOLDOWN_MS = 30_000;
+    // SSR (loadInboxData) already populated initial threads/messages/attachments via props.
+    // Start the cooldown clock at mount so an immediate focus event doesn't refetch
+    // what we already have. Realtime + reconnect-handler keep state warm from here.
+    let lastFetchAt = Date.now();
+    const REFETCH_COOLDOWN_MS = 60_000;
 
     const fetchInboxData = async (force = false) => {
       if (!active) return;
@@ -1177,9 +1180,6 @@ export function InboxSplitView({
         // realtime handles ongoing updates — no retry loop needed
       }
     };
-
-    // Initial load
-    fetchInboxData();
 
     // Re-fetch on focus so stale data after a long idle gets refreshed
     const onFocus = () => {
