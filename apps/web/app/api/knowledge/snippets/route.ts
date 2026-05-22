@@ -588,9 +588,13 @@ export async function POST(request: Request) {
     const VALID_USABLE_AS_POST = ["policy", "procedure", "fact", "saved_reply", "tone_example", "background"];
     const rawUsableAsPost = String(payload?.usable_as || "").trim();
     const usableAs = VALID_USABLE_AS_POST.includes(rawUsableAsPost) ? rawUsableAsPost : null;
-    const products = Array.isArray(payload?.products)
+    const rawProducts = Array.isArray(payload?.products)
       ? (payload.products as unknown[]).map((p) => String(p).toLowerCase().trim()).filter(Boolean)
       : [];
+    const normalizedProductTitle = productTitle ? productTitle.toLowerCase().trim() : null;
+    const products = normalizedProductTitle && !rawProducts.includes(normalizedProductTitle)
+      ? [...rawProducts, normalizedProductTitle]
+      : rawProducts;
     const issueTypes = Array.isArray(payload?.issue_types)
       ? (payload.issue_types as unknown[]).map((t) => String(t).toLowerCase().trim()).filter(Boolean)
       : [];
@@ -690,9 +694,13 @@ export async function PUT(request: Request) {
     const VALID_USABLE_AS_PUT = ["policy", "procedure", "fact", "saved_reply", "tone_example", "background"];
     const rawUsableAsPut = String(payload?.usable_as || "").trim();
     const usableAs = VALID_USABLE_AS_PUT.includes(rawUsableAsPut) ? rawUsableAsPut : null;
-    const products = Array.isArray(payload?.products)
+    const rawProducts = Array.isArray(payload?.products)
       ? (payload.products as unknown[]).map((p) => String(p).toLowerCase().trim()).filter(Boolean)
       : [];
+    const normalizedProductTitle = productTitle ? productTitle.toLowerCase().trim() : null;
+    const products = normalizedProductTitle && !rawProducts.includes(normalizedProductTitle)
+      ? [...rawProducts, normalizedProductTitle]
+      : rawProducts;
     const issueTypes = Array.isArray(payload?.issue_types)
       ? (payload.issue_types as unknown[]).map((t) => String(t).toLowerCase().trim()).filter(Boolean)
       : [];

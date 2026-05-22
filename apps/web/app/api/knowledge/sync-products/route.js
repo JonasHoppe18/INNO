@@ -280,6 +280,7 @@ async function syncShopify({ serviceClient, creds }) {
           content_hash: contentHash,
           chunk_index: chunkIndex,
           chunk_count: chunks.length,
+          issue_types: ["product_specs"],
         },
         embedding,
       });

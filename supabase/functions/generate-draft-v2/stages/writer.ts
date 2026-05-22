@@ -391,6 +391,14 @@ function buildInfoRequirementsBlock(
     "cancel",
   ].includes(plan.primary_intent);
 
+  // Universal: if an order number was given but not found in Shopify, always ask where purchased
+  const orderGivenButNotFound = hasOrderReference && !order;
+  if (orderGivenButNotFound && !signals.hasPurchasePlace) {
+    missing.push(
+      "purchase_place: vi kan ikke genkende ordrenummeret i vores system — spørg venligt hvor produktet er købt (forhandler/platform)",
+    );
+  }
+
   if (signals.hasAccessoryRequest && !hasOrderReference) {
     missing.push(
       "order_reference: ordrenummer, så vi kan tjekke garanti eller finde den rigtige reservedel",
@@ -810,6 +818,7 @@ ABSOLUTTE FORBUD:
 - Du er et menneske. Aldrig "Som AI kan jeg...".
 - Skriv ALDRIG signatur, navn, sign-off eller email-adresser i svaret — tilføjes automatisk.
 - Brug KUN fakta fra "Verificerede fakta". Opfind aldrig priser, datoer, ordrenumre eller policies.
+- ALDRIG lagerantal, lagerstatus eller realtids-inventory — du har ikke adgang til live lagerdata. Sig i stedet at du tjekker, eller henvis til websitet.
 - ALDRIG falsk bekræftelse: skriv ALDRIG at en handling er udført medmindre actionResult bekræfter det eksplicit. Planlagte actions er forslag der venter på menneskelig godkendelse.
 - ALDRIG "sender videre til teamet", "videreformidler", "kontakt kundesupport" — tag handlingen nu eller forklar præcist hvad der mangler.
 - Spørg ALDRIG om telefonnummer.

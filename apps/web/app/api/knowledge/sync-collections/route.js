@@ -249,133 +249,21 @@ async function deleteMissingSources(serviceClient, creds, staleSourceIds) {
   }
 }
 
+async function deleteAllCollectionChunks(serviceClient, creds) {
+  let query = serviceClient
+    .from("agent_knowledge")
+    .delete()
+    .eq("shop_id", creds.shop_id)
+    .eq("source_provider", SOURCE_PROVIDER);
+  if (creds.workspace_id) query = query.eq("workspace_id", creds.workspace_id);
+  const { error } = await query;
+  if (error) throw new Error(error.message);
+}
+
 async function syncCollections({ serviceClient, creds }) {
-  const domain = creds.shop_domain.replace(/^https?:\/\//, "");
-  const [customCollections, smartCollections] = await Promise.all([
-    fetchCollectionsByType({ domain, accessToken: creds.access_token, type: "custom" }),
-    fetchCollectionsByType({ domain, accessToken: creds.access_token, type: "smart" }),
-  ]);
-  const collections = [...customCollections, ...smartCollections];
-  const existing = await loadExistingChunks(serviceClient, creds);
-  const seenSourceIds = new Set();
-
-  let synced = 0;
-  let indexed = 0;
-  let unchanged = 0;
-  let updatedChunks = 0;
-  let skippedChunks = 0;
-
-  for (const collection of collections) {
-    const collectionId = String(collection?.id || "").trim();
-    if (!collectionId) continue;
-    synced += 1;
-    const sourceId = `shopify:collection:${collectionId}`;
-    seenSourceIds.add(sourceId);
-
-    const context = buildCollectionContext(collection);
-    const chunks = chunkText(context);
-    const pageHash = hashText(
-      JSON.stringify({
-        id: collectionId,
-        updated_at: String(collection?.updated_at || ""),
-        context,
-      })
-    );
-
-    if (!chunks.length) {
-      const previousCount = existing.bySource.get(sourceId)?.chunk_count || 0;
-      if (previousCount > 0) {
-        await deleteStaleChunks(serviceClient, creds, sourceId, 0);
-      }
-      unchanged += 1;
-      continue;
-    }
-
-    const previousSource = existing.bySource.get(sourceId);
-    if (
-      previousSource?.page_hash &&
-      previousSource.page_hash === pageHash &&
-      previousSource.chunk_count === chunks.length
-    ) {
-      unchanged += 1;
-      skippedChunks += chunks.length;
-      continue;
-    }
-
-    const changed = [];
-    for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex += 1) {
-      const chunk = chunks[chunkIndex];
-      const chunkHash = hashText(chunk);
-      const previous = existing.byChunk.get(`${sourceId}:${chunkIndex}`);
-      if (previous?.chunk_hash && previous.chunk_hash === chunkHash) {
-        skippedChunks += 1;
-        continue;
-      }
-      changed.push({ chunk, chunkIndex, chunkHash });
-    }
-
-    if (!changed.length) {
-      const previousCount = previousSource?.chunk_count || 0;
-      if (previousCount > chunks.length) {
-        await deleteStaleChunks(serviceClient, creds, sourceId, chunks.length);
-      }
-      unchanged += 1;
-      continue;
-    }
-
-    const embeddings = await embedTexts(changed.map((item) => item.chunk));
-    for (let i = 0; i < changed.length; i += 1) {
-      const item = changed[i];
-      const metadata = {
-        collection_id: collectionId,
-        title: String(collection?.title || "").trim() || "Untitled collection",
-        handle: String(collection?.handle || "").trim() || null,
-        collection_type: String(collection?._collection_type || "").trim() || null,
-        url: collection?.handle ? `https://${domain}/collections/${collection.handle}` : null,
-        page_updated_at: collection?.updated_at || null,
-        page_hash: pageHash,
-        chunk_hash: item.chunkHash,
-        chunk_count: chunks.length,
-        chunk_index: item.chunkIndex,
-      };
-      await upsertChunk(serviceClient, {
-        workspace_id: creds.workspace_id,
-        shop_id: creds.shop_id,
-        source_id: sourceId,
-        chunk_index: item.chunkIndex,
-        content: item.chunk,
-        source_type: "document",
-        source_provider: SOURCE_PROVIDER,
-        metadata,
-        embedding: embeddings[i],
-      });
-      updatedChunks += 1;
-      existing.byChunk.set(`${sourceId}:${item.chunkIndex}`, {
-        page_hash: pageHash,
-        chunk_hash: item.chunkHash,
-      });
-    }
-
-    const previousCount = previousSource?.chunk_count || 0;
-    if (previousCount > chunks.length) {
-      await deleteStaleChunks(serviceClient, creds, sourceId, chunks.length);
-    }
-    existing.bySource.set(sourceId, { page_hash: pageHash, chunk_count: chunks.length });
-    indexed += 1;
-  }
-
-  const staleSources = Array.from(existing.bySource.keys()).filter((sourceId) => !seenSourceIds.has(sourceId));
-  if (staleSources.length) {
-    await deleteMissingSources(serviceClient, creds, staleSources);
-  }
-
-  return {
-    synced,
-    indexed,
-    unchanged,
-    updated_chunks: updatedChunks,
-    skipped_chunks: skippedChunks,
-  };
+  // Collection data (category structure) is not useful for support retrieval.
+  await deleteAllCollectionChunks(serviceClient, creds);
+  return { synced: 0, indexed: 0, unchanged: 0, updated_chunks: 0, skipped_chunks: 0 };
 }
 
 async function fetchActiveShopIds(serviceClient, scope) {

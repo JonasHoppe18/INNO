@@ -38,6 +38,7 @@ const PLANNER_SCHEMA = {
         "return",
         "refund",
         "exchange",
+        "cancel",
         "address_change",
         "product_question",
         "complaint",
@@ -137,7 +138,7 @@ Rules:
       }`
       : null,
     caseState.open_questions.length > 0
-      ? `- Open issues in thread (use for sub_queries): ${
+      ? `- Unresolved customer issues (CRITICAL: use these as primary basis for sub_queries — the customer's follow-up message may be short or vague but refers to these ongoing problems): ${
         caseState.open_questions.join("; ")
       }`
       : null,
@@ -153,7 +154,9 @@ Current customer message: "${body.slice(0, 800)}"
 
 Thread context (for sub_queries and facts ONLY — do NOT use for intent classification):
 ${threadContextLines}
-- Detected language of current message: detect from the current message above, ignore thread history language`;
+- Detected language of current message: detect from the current message above, ignore thread history language
+
+IMPORTANT for sub_queries: If the current message is short or vague (e.g. "it still doesn't work", "won't do anything", "same issue", "still broken") AND there are unresolved customer issues listed above, generate sub_queries that target those specific unresolved issues — not the vague wording of the current message. The customer is referring to their ongoing problem.`;
   const deterministicLanguage = resolveReplyLanguage(body, caseState.language);
   const model = Deno.env.get("OPENAI_EXTRACT_MODEL") ?? "gpt-4o-mini";
 

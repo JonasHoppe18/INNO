@@ -46,6 +46,7 @@ const CASE_STATE_SCHEMA = {
         "return",
         "refund",
         "exchange",
+        "cancel",
         "address_change",
         "product_question",
         "complaint",
@@ -108,7 +109,7 @@ export async function updateCaseState(
   }).join("\n\n");
 
   const existingSummary = existing.open_questions.length > 0
-    ? `Åbne spørgsmål fra tidligere: ${existing.open_questions.join("; ")}`
+    ? `ULØSTE PROBLEMER (bevar disse medmindre kunden eksplicit bekræfter de er løst): ${existing.open_questions.join("; ")}`
     : "";
 
   const systemPrompt =
@@ -121,7 +122,7 @@ ${existingSummary}
 
 Ekstraher og output JSON:
 {
-  "primary_intent": "tracking|return|refund|exchange|address_change|product_question|complaint|thanks|update|other",
+  "primary_intent": "tracking|return|refund|exchange|cancel|address_change|product_question|complaint|thanks|update|other",
   "language": "da|sv|de|en|nl|fr|no|fi|es|it",
   "order_numbers": ["#1234"],
   "customer_email": "kunde@example.com eller tom streng",
@@ -133,7 +134,7 @@ Ekstraher og output JSON:
 }
 
 Regler:
-- open_questions: kundens ubesvarede spørgsmål fra samtalen. Fjern et spørgsmål så snart agenten har besvaret det.
+- open_questions: kundens underliggende tekniske eller supportmæssige problem som ENDNU IKKE er bekræftet løst af kunden. Beskriv det konkret (fx "A-Blaze headset kan ikke parre til PC", "headset tænder ikke"). KRITISK: Fjern KUN et problem når KUNDEN bekræfter at det er løst (fx "det virker nu", "tak det hjalp", "det er ok nu"). At agenten sender et svar eller foreslår en løsning er IKKE nok — kunden skal eksplicit bekræfte. Bevar altid uløste problemer på tværs af agentbeskeder.
 - pending_asks: information eller bekræftelse vi HAR BEDT kunden om, men ENDNU IKKE modtaget svar på. Fjern straks når kunden har svaret — selv med et kort "ja", "ok" eller "det er korrekt".
 - decisions_made: hvad agenten allerede har tilbudt, gjort, eller hvad kunden har bekræftet. Eksempler: "cable_replacement_initiated", "address_confirmed: Højrupvej 48 5750 Ringe", "warranty_replacement_offered", "refund_offered". Inkludér bekræftede kundeoplysninger som en del af decisions_made så næste svar ved hvad der allerede er på plads.
 - Vigtigste regel: Når kunden bekræfter noget vi har spurgt om (adresse, ordrenummer, situation), skal pending_asks være TOM og decisions_made skal indeholde hvad der nu er bekræftet.

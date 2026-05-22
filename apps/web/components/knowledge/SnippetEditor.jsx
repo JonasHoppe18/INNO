@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MoreHorizontal, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -32,6 +32,7 @@ export function SnippetEditor({
   snippet,
   category,
   productId,
+  productTitle,
   shopId,
   onSaved,
   onDeleted,
@@ -39,17 +40,29 @@ export function SnippetEditor({
 }) {
   const isNew = !snippet;
 
+  const normalizedProductTitle = productTitle ? productTitle.trim().toLowerCase() : null;
+
   const [title, setTitle] = useState(snippet?.title ?? "");
   const [usableAs, setUsableAs] = useState(snippet?.usable_as ?? "");
   const [content, setContent] = useState(snippet?.content ?? "");
   const [tags, setTags] = useState(snippet?.issue_types ?? []);
   const [aiTags, setAiTags] = useState(new Set(snippet?.issue_types ?? []));
   const [tagInput, setTagInput] = useState("");
-  const [products, setProducts] = useState(snippet?.products ?? []);
+  const [products, setProducts] = useState(
+    snippet?.products ?? (isNew && normalizedProductTitle ? [normalizedProductTitle] : [])
+  );
   const [productInput, setProductInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const textareaRef = useRef(null);
+
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [content]);
 
   const isDirty = useMemo(() => {
     if (isNew) return title.trim() !== "" || content.trim() !== "";
@@ -117,6 +130,7 @@ export function SnippetEditor({
         ...(usableAs ? { usable_as: usableAs } : {}),
         ...(category ? { category } : {}),
         ...(productId ? { product_id: productId } : {}),
+        ...(productId && productTitle ? { product_title: productTitle } : {}),
         ...(shopId ? { shop_id: shopId } : {}),
         issue_types: tags,
         products,
@@ -300,10 +314,11 @@ export function SnippetEditor({
         <div className="space-y-1.5">
           <Label className="text-xs text-muted-foreground">Content</Label>
           <textarea
+            ref={textareaRef}
             value={content}
             onChange={(e) => setContent(e.target.value)}
             placeholder="Write the knowledge here..."
-            className="w-full min-h-[160px] resize-y rounded-lg border border-gray-100 bg-transparent px-4 py-3.5 text-[13.5px] leading-relaxed text-gray-800 placeholder:text-gray-300 outline-none transition-colors focus:border-indigo-200 focus:ring-2 focus:ring-indigo-100"
+            className="w-full min-h-[160px] resize-none overflow-hidden rounded-lg border border-gray-100 bg-transparent px-4 py-3.5 text-[13.5px] leading-relaxed text-gray-800 placeholder:text-gray-300 outline-none transition-colors focus:border-indigo-200 focus:ring-2 focus:ring-indigo-100"
           />
           <p className="text-xs text-muted-foreground">
             Be precise — the AI uses this directly to answer customers.
@@ -314,11 +329,6 @@ export function SnippetEditor({
         <div className="space-y-1.5">
           <Label className="text-xs text-muted-foreground">Products</Label>
           <div className="flex min-h-[36px] flex-wrap items-center gap-1.5 rounded-md border border-gray-200 bg-gray-50 px-2.5 py-2">
-            {products.length === 0 && productInput === "" ? (
-              <span className="text-[10px] text-gray-300">
-                Add product names this snippet applies to
-              </span>
-            ) : null}
             {products.map((p) => (
               <span
                 key={p}
@@ -342,8 +352,8 @@ export function SnippetEditor({
                   addProduct(productInput);
                 }
               }}
-              placeholder={products.length === 0 ? "" : "+ add product"}
-              className="bg-transparent text-[10px] text-gray-400 placeholder:text-gray-300 outline-none"
+              placeholder={products.length === 0 ? "Add product names — press Enter" : "+ add product"}
+              className="min-w-[180px] flex-1 bg-transparent text-[10px] text-gray-400 placeholder:text-gray-300 outline-none"
             />
           </div>
         </div>

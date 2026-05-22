@@ -161,6 +161,7 @@ export function SnippetTwoPanel({
               snippet={newDraft ? null : selectedSnippet}
               category={category}
               productId={productId}
+              productTitle={productTitle}
               shopId={shopId}
               onSaved={handleSaved}
               onDeleted={handleDeleted}

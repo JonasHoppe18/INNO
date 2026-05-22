@@ -154,6 +154,30 @@ async function fetchShopifyPages({ domain, accessToken }) {
   return pages;
 }
 
+const NOISE_PAGE_JOB = /\b(job|jobs|career|careers|hiring|vacancy|vacancies|position|apply now|we.re hiring|job opening)\b/i;
+const NOISE_PAGE_GIVEAWAY = /\b(giveaway|contest|competition|raffle|sweepstake|win a|prize draw)\b/i;
+const NOISE_PAGE_COOKIE = /\b(cookie(-policy)?|cookie policy)\b/i;
+const NOISE_PAGE_EVENT = /\b(expo|game expo|community day|gamebox|insomnia|lan party|esports event|tournament|tradeshow)\b/i;
+const NOISE_PAGE_SURVEY = /\b(survey|questionnaire|feedback form)\b/i;
+const NOISE_PAGE_PRESS = /\b(press release|partners with|announces partnership|raises funding|named to|recognized by)\b/i;
+const NOISE_PAGE_MARKETING = /\b(athlete(s)? (program|application|sign.?up)|member(zone)?(-signup)?)\b/i;
+const MIN_BODY_LENGTH = 120;
+
+function isNoisePage(page) {
+  const title = String(page?.title || "");
+  const handle = String(page?.handle || "");
+  const body = stripHtml(page?.body_html || page?.body || "");
+  if (body.length < MIN_BODY_LENGTH) return true;
+  if (NOISE_PAGE_JOB.test(title) || NOISE_PAGE_JOB.test(handle)) return true;
+  if (NOISE_PAGE_GIVEAWAY.test(title) || NOISE_PAGE_GIVEAWAY.test(handle)) return true;
+  if (NOISE_PAGE_COOKIE.test(title) || NOISE_PAGE_COOKIE.test(handle)) return true;
+  if (NOISE_PAGE_EVENT.test(title) || NOISE_PAGE_EVENT.test(handle)) return true;
+  if (NOISE_PAGE_SURVEY.test(title) || NOISE_PAGE_SURVEY.test(handle)) return true;
+  if (NOISE_PAGE_PRESS.test(title)) return true;
+  if (NOISE_PAGE_MARKETING.test(title) || NOISE_PAGE_MARKETING.test(handle)) return true;
+  return false;
+}
+
 function buildPageContext(page) {
   const title = String(page?.title || "Untitled page").trim();
   const body = stripHtml(page?.body_html || page?.body || "");
@@ -262,9 +286,18 @@ async function syncShopifyPages({ serviceClient, creds }) {
   for (const page of pages) {
     const pageId = String(page?.id ?? "").trim();
     if (!pageId) continue;
-    synced += 1;
 
     const sourceId = `shopify:page:${pageId}`;
+
+    if (isNoisePage(page)) {
+      // Delete any previously indexed chunks for this page
+      if (existing.byPage.has(sourceId)) {
+        await deleteStaleChunks(serviceClient, creds, sourceId, 0);
+      }
+      continue;
+    }
+
+    synced += 1;
     const context = buildPageContext(page);
     const chunks = chunkText(context);
     const pageHash = hashText(

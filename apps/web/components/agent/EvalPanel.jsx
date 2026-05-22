@@ -11,6 +11,11 @@ import {
   Zap,
   CheckCircle2,
   XCircle,
+  AlertTriangle,
+  FileText,
+  BookOpen,
+  ShoppingBag,
+  FileCode,
 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -25,6 +30,78 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+
+// ─── Source card helpers ──────────────────────────────────────────────────────
+
+const PROVIDER_META = {
+  manual_text:    { label: "Snippet",      icon: BookOpen,    color: "text-violet-600" },
+  shopify_product:{ label: "Product",      icon: ShoppingBag, color: "text-blue-600" },
+  shopify_page:   { label: "Page",         icon: FileText,    color: "text-gray-500" },
+  shopify_policy: { label: "Policy",       icon: FileCode,    color: "text-amber-600" },
+  shopify_file:   { label: "File",         icon: FileText,    color: "text-gray-500" },
+  saved_reply:    { label: "Saved reply",  icon: BookOpen,    color: "text-indigo-600" },
+};
+
+const USABLE_AS_STYLE = {
+  procedure:    "bg-blue-50 text-blue-700 border-blue-200",
+  policy:       "bg-amber-50 text-amber-700 border-amber-200",
+  fact:         "bg-gray-100 text-gray-600 border-gray-200",
+  background:   "bg-gray-100 text-gray-500 border-gray-200",
+  tone_example: "bg-purple-50 text-purple-700 border-purple-200",
+  saved_reply:  "bg-indigo-50 text-indigo-700 border-indigo-200",
+};
+
+function parseSourceLabel(label = "") {
+  const idx = label.indexOf(": ");
+  if (idx === -1) return { provider: "", title: label };
+  return { provider: label.slice(0, idx), title: label.slice(idx + 2) };
+}
+
+function SourceCard({ source }) {
+  const [expanded, setExpanded] = useState(false);
+  const { provider, title } = parseSourceLabel(source.source_label || "");
+  const meta = PROVIDER_META[provider] || { label: provider || "Source", icon: FileText, color: "text-gray-500" };
+  const Icon = meta.icon;
+  const usableStyle = USABLE_AS_STYLE[source.usable_as] || USABLE_AS_STYLE.background;
+  const riskFlags = Array.isArray(source.risk_flags) ? source.risk_flags : [];
+
+  return (
+    <div className="rounded-lg border bg-background overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full text-left p-2.5 hover:bg-muted/30 transition-colors"
+      >
+        <div className="flex items-start gap-2">
+          <Icon className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${meta.color}`} />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-xs font-medium text-foreground leading-snug">{title || `Source`}</p>
+            <div className="mt-1 flex flex-wrap items-center gap-1">
+              <span className="text-[10px] text-muted-foreground">{meta.label}</span>
+              {source.usable_as && (
+                <span className={`inline-flex items-center rounded border px-1 py-px text-[10px] font-medium ${usableStyle}`}>
+                  {source.usable_as}
+                </span>
+              )}
+              {riskFlags.map((flag) => (
+                <span key={flag} className="inline-flex items-center gap-0.5 rounded border border-orange-200 bg-orange-50 px-1 py-px text-[10px] text-orange-600">
+                  <AlertTriangle className="h-2.5 w-2.5" />
+                  {flag.replace(/_/g, " ")}
+                </span>
+              ))}
+            </div>
+          </div>
+          <ChevronRight className={`mt-0.5 h-3 w-3 shrink-0 text-muted-foreground transition-transform ${expanded ? "rotate-90" : ""}`} />
+        </div>
+      </button>
+      {expanded && source.content && (
+        <div className="border-t bg-muted/20 px-2.5 pb-2.5 pt-2">
+          <p className="whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">{source.content}</p>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ─── Score badge ──────────────────────────────────────────────────────────────
 
@@ -407,156 +484,151 @@ function EvalResultRow({ result }) {
 
       {open && (
         <div className="border-t bg-muted/20 px-4 pb-4 pt-3">
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,720px)_minmax(320px,1fr)]">
-            {/* Left: scores */}
-            <div className="space-y-3">
-              <QualitySummary dims={dims} overall={overall10} />
-
-              {displayResult.reasoning && (
-                <div className="rounded-xl border bg-card p-3">
-                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Judge note</p>
-                  <p className="text-sm leading-relaxed text-foreground">{displayResult.reasoning}</p>
+          <div className="space-y-4">
+            {/* Top: customer email */}
+            {displayResult.ticket_body && (
+              <details className="group rounded-xl border bg-card p-3" open>
+                <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground select-none">
+                  <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
+                  Customer email
+                </summary>
+                <div className="mt-2 max-h-48 overflow-auto rounded-lg bg-muted/30 p-3">
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed">{displayResult.ticket_body}</p>
                 </div>
-              )}
+              </details>
+            )}
 
-              {(displayResult.primary_gap || displayResult.likely_root_cause || missingFor10.length > 0) && (
-                <div className="rounded-xl border bg-card p-3 text-xs">
-                  <div className="mb-2 flex flex-wrap items-center gap-1.5">
-                    {displayResult.likely_root_cause && (
-                      <Badge variant="outline" className="text-[10px]">
-                        root: {displayResult.likely_root_cause}
-                      </Badge>
-                    )}
-                    {displayResult.primary_gap && (
-                      <Badge variant="secondary" className="text-[10px]">
-                        gap: {displayResult.primary_gap}
-                      </Badge>
+            {/* Middle: side-by-side draft comparison */}
+            {(displayResult.draft_content || displayResult.human_reply) && (
+              <div className="grid gap-3 lg:grid-cols-2 border-t border-gray-100 pt-3 mt-1">
+                <div className="rounded-xl border border-violet-100 bg-violet-50/30 p-3">
+                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Sona draft</p>
+                  <div className="max-h-[40vh] overflow-auto">
+                    {displayResult.draft_content
+                      ? <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{displayResult.draft_content}</p>
+                      : <span className="text-muted-foreground/50 text-xs">No draft generated</span>
+                    }
+                  </div>
+                </div>
+                <div className="rounded-xl border border-emerald-100 bg-emerald-50/30 p-3">
+                  <div className="mb-2 flex items-center gap-1.5">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Human reply</p>
+                    <Badge variant="outline" className="text-[10px] py-0">Zendesk</Badge>
+                  </div>
+                  <div className="max-h-[40vh] overflow-auto">
+                    {displayResult.human_reply
+                      ? <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{displayResult.human_reply}</p>
+                      : <span className="text-muted-foreground/50 text-xs">No human reply</span>
+                    }
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Bottom: scores + analysis */}
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+              {/* Left: scores */}
+              <div className="space-y-3">
+                <QualitySummary dims={dims} overall={overall10} />
+
+                {displayResult.reasoning && (
+                  <div className="rounded-xl border bg-card p-3">
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Judge note</p>
+                    <p className="text-sm leading-relaxed text-foreground">{displayResult.reasoning}</p>
+                  </div>
+                )}
+
+                {(displayResult.primary_gap || displayResult.likely_root_cause || missingFor10.length > 0) && (
+                  <div className="rounded-xl border bg-card p-3 text-xs">
+                    <div className="mb-2 flex flex-wrap items-center gap-1.5">
+                      {displayResult.likely_root_cause && (
+                        <Badge variant="outline" className="text-[10px]">root: {displayResult.likely_root_cause}</Badge>
+                      )}
+                      {displayResult.primary_gap && (
+                        <Badge variant="secondary" className="text-[10px]">gap: {displayResult.primary_gap}</Badge>
+                      )}
+                    </div>
+                    {missingFor10.length > 0 && (
+                      <div className="space-y-1">
+                        <p className="font-semibold text-foreground">Missing for 10/10</p>
+                        {missingFor10.map((item, index) => (
+                          <p key={`${item}-${index}`} className="text-muted-foreground">- {item}</p>
+                        ))}
+                      </div>
                     )}
                   </div>
-                  {missingFor10.length > 0 && (
-                    <div className="space-y-1">
-                      <p className="font-semibold text-foreground">Missing for 10/10</p>
-                      {missingFor10.map((item, index) => (
-                        <p key={`${item}-${index}`} className="text-muted-foreground">- {item}</p>
+                )}
+
+                {(confidence != null || displayResult.routing_hint || displayResult.latency_ms) && (
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    {confidence != null && (
+                      <div className="rounded-md border bg-card p-2">
+                        <p className="text-muted-foreground">Verifier</p>
+                        <p className="font-medium tabular-nums">{Math.round(confidence * 100)}%</p>
+                      </div>
+                    )}
+                    {displayResult.routing_hint && (
+                      <div className="rounded-md border bg-card p-2">
+                        <p className="text-muted-foreground">Routing</p>
+                        <p className="font-medium">{displayResult.routing_hint}</p>
+                      </div>
+                    )}
+                    {displayResult.latency_ms != null && (
+                      <div className="rounded-md border bg-card p-2">
+                        <p className="text-muted-foreground">Latency</p>
+                        <p className="font-medium tabular-nums">{Math.round(displayResult.latency_ms / 100) / 10}s</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {actions.length > 0 && (
+                  <div className="space-y-2 rounded-xl border bg-card p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-semibold">Action simulation</p>
+                        <p className="text-xs text-muted-foreground">Approve or reject in eval without changing Shopify.</p>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {actions.map((a, i) => <ActionBadge key={i} action={a} />)}
+                      </div>
+                    </div>
+                    {actions.map((action, index) => (
+                      <EvalActionPreview
+                        key={`${action.type || "action"}-${index}`}
+                        action={action}
+                        result={displayResult}
+                        onQualityUpdate={(quality) =>
+                          setDisplayResult((current) => ({ ...current, ...quality }))
+                        }
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Right: why Sona wrote this */}
+              <div className="space-y-3">
+                <div className="rounded-xl border bg-card p-3">
+                  <div className="mb-3 flex items-center justify-between">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Why Sona wrote this
+                    </p>
+                    {sources.length > 0 && (
+                      <span className="text-[10px] text-muted-foreground">{sources.length} source{sources.length !== 1 ? "s" : ""} retrieved</span>
+                    )}
+                  </div>
+                  {sources.length === 0 ? (
+                    <p className="text-xs text-muted-foreground/50">No knowledge sources retrieved</p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {sources.map((source, i) => (
+                        <SourceCard key={`${source.source_label || "source"}-${i}`} source={source} />
                       ))}
                     </div>
                   )}
                 </div>
-              )}
-
-              {actions.length > 0 && (
-                <div className="space-y-2 rounded-xl border bg-card p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <p className="text-sm font-semibold">Action simulation</p>
-                      <p className="text-xs text-muted-foreground">Approve or reject in eval without changing Shopify.</p>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {actions.map((a, i) => <ActionBadge key={i} action={a} />)}
-                    </div>
-                  </div>
-                  {actions.map((action, index) => (
-                    <EvalActionPreview
-                      key={`${action.type || "action"}-${index}`}
-                      action={action}
-                      result={displayResult}
-                      onQualityUpdate={(quality) =>
-                        setDisplayResult((current) => ({
-                          ...current,
-                          ...quality,
-                        }))
-                      }
-                    />
-                  ))}
-                </div>
-              )}
-
-              {(confidence != null || displayResult.routing_hint || displayResult.latency_ms) && (
-                <div className="grid grid-cols-3 gap-2 text-xs">
-                  {confidence != null && (
-                    <div className="rounded-md border bg-card p-2">
-                      <p className="text-muted-foreground">Verifier</p>
-                      <p className="font-medium tabular-nums">{Math.round(confidence * 100)}%</p>
-                    </div>
-                  )}
-                  {displayResult.routing_hint && (
-                    <div className="rounded-md border bg-card p-2">
-                      <p className="text-muted-foreground">Routing</p>
-                      <p className="font-medium">{displayResult.routing_hint}</p>
-                    </div>
-                  )}
-                  {displayResult.latency_ms != null && (
-                    <div className="rounded-md border bg-card p-2">
-                      <p className="text-muted-foreground">Latency</p>
-                      <p className="font-medium tabular-nums">{Math.round(displayResult.latency_ms / 100) / 10}s</p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {sources.length > 0 && (
-                <details className="group">
-                  <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground select-none">
-                    <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
-                    Sources used
-                  </summary>
-                  <div className="mt-1.5 space-y-1.5">
-                    {sources.map((source, i) => (
-                      <div key={`${source.source_label || "source"}-${i}`} className="rounded-md border bg-card p-2">
-                        <div className="mb-1 flex items-center gap-1.5">
-                          <Badge variant="outline" className="text-[10px] py-0">{source.kind || "source"}</Badge>
-                          <p className="truncate text-xs font-medium">{source.source_label || `Source ${i + 1}`}</p>
-                        </div>
-                        <p className="line-clamp-3 whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
-                          {source.content}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </details>
-              )}
-            </div>
-
-            {/* Right: content */}
-            <div className="space-y-2">
-              {displayResult.ticket_body && (
-                <details className="group rounded-xl border bg-card p-3" open>
-                  <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground select-none">
-                    <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
-                    Customer email
-                  </summary>
-                  <div className="mt-2 max-h-60 overflow-auto rounded-lg bg-muted/30 p-3">
-                    <p className="whitespace-pre-wrap text-sm leading-relaxed">{displayResult.ticket_body}</p>
-                  </div>
-                </details>
-              )}
-
-              {displayResult.draft_content && (
-                <details className="group rounded-xl border bg-card p-3">
-                  <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground select-none">
-                    <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
-                    Sona draft
-                  </summary>
-                  <div className="mt-2 max-h-60 overflow-auto rounded-lg bg-muted/30 p-3">
-                    <p className="whitespace-pre-wrap text-sm leading-relaxed">{displayResult.draft_content}</p>
-                  </div>
-                </details>
-              )}
-
-              {displayResult.human_reply && (
-                <details className="group rounded-xl border bg-card p-3">
-                  <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground select-none">
-                    <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
-                    <span className="flex items-center gap-1.5">
-                      Human reply
-                      <Badge variant="outline" className="text-[10px] py-0">Zendesk</Badge>
-                    </span>
-                  </summary>
-                  <div className="mt-2 max-h-60 overflow-auto rounded-lg bg-muted/30 p-3">
-                    <p className="whitespace-pre-wrap text-sm leading-relaxed">{displayResult.human_reply}</p>
-                  </div>
-                </details>
-              )}
+              </div>
             </div>
           </div>
         </div>
