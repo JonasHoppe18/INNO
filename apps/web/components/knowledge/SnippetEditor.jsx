@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { MoreHorizontal, X } from "lucide-react";
+import { ChevronDown, MoreHorizontal, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
@@ -241,9 +241,18 @@ export function SnippetEditor({
     }
   };
 
+  const hasMetadata = usableAs || products.length > 0 || tags.length > 0;
+  const [metaOpen, setMetaOpen] = useState(!isNew && hasMetadata);
+
+  const metaSummary = [
+    usableAs ? KNOWLEDGE_TYPES.find((t) => t.value === usableAs)?.label.split(" — ")[0] : null,
+    products.length > 0 ? `${products.length} product${products.length !== 1 ? "s" : ""}` : null,
+    tags.length > 0 ? `${tags.length} tag${tags.length !== 1 ? "s" : ""}` : null,
+  ].filter(Boolean).join(" · ");
+
   return (
     <div className="flex h-full w-full flex-col">
-      {/* Panel toolbar — delete lives here, not in the form */}
+      {/* Panel toolbar */}
       {!isNew && (
         <div className="flex items-center justify-end border-b border-gray-100 px-4 py-1.5">
           {confirmDelete ? (
@@ -283,7 +292,7 @@ export function SnippetEditor({
         </div>
       )}
 
-      <div className={cn("flex-1 space-y-4 overflow-y-auto px-6 py-5", isDirty && "pb-24")}>
+      <div className={cn("flex-1 space-y-5 overflow-y-auto px-6 py-5", isDirty && "pb-24")}>
         {/* Title */}
         <input
           autoFocus
@@ -293,130 +302,145 @@ export function SnippetEditor({
           className="w-full border-0 border-b-2 border-gray-100 bg-transparent pb-2 text-[15px] font-bold text-gray-900 placeholder:font-normal placeholder:text-gray-300 outline-none focus:border-indigo-200 transition-colors"
         />
 
-        {/* Knowledge type */}
-        <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">Knowledge type</Label>
-          <Select value={usableAs || ""} onValueChange={setUsableAs}>
-            <SelectTrigger className="w-72">
-              <SelectValue placeholder="Select type..." />
-            </SelectTrigger>
-            <SelectContent>
-              {KNOWLEDGE_TYPES.map((t) => (
-                <SelectItem key={t.value} value={t.value}>
-                  {t.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Content */}
-        <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">Content</Label>
+        {/* Content — primary focus */}
+        <div className="space-y-2">
           <textarea
             ref={textareaRef}
             value={content}
             onChange={(e) => setContent(e.target.value)}
-            placeholder="Write the knowledge here..."
-            className="w-full min-h-[160px] resize-none overflow-hidden rounded-lg border border-gray-100 bg-transparent px-4 py-3.5 text-[13.5px] leading-relaxed text-gray-800 placeholder:text-gray-300 outline-none transition-colors focus:border-indigo-200 focus:ring-2 focus:ring-indigo-100"
+            placeholder="Write the knowledge here — be precise, the AI uses this word for word."
+            className="w-full min-h-[200px] resize-none overflow-hidden rounded-lg border border-gray-100 bg-transparent px-4 py-3.5 text-[13.5px] leading-relaxed text-gray-800 placeholder:text-gray-300 outline-none transition-colors focus:border-indigo-200 focus:ring-2 focus:ring-indigo-100"
           />
-          <p className="text-xs text-muted-foreground">
-            Be precise — the AI uses this directly to answer customers.
-          </p>
         </div>
 
-        {/* Products */}
-        <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">Products</Label>
-          <div className="flex min-h-[36px] flex-wrap items-center gap-1.5 rounded-md border border-gray-200 bg-gray-50 px-2.5 py-2">
-            {products.map((p) => (
-              <span
-                key={p}
-                className="inline-flex items-center gap-1 rounded-full bg-indigo-50 border border-indigo-200 px-2 py-0.5 text-[10px] text-indigo-700"
-              >
-                {p}
-                <button
-                  onClick={() => removeProduct(p)}
-                  className="text-indigo-300 hover:text-indigo-500 leading-none"
-                >
-                  <X className="h-2.5 w-2.5" />
-                </button>
-              </span>
-            ))}
-            <input
-              value={productInput}
-              onChange={(e) => setProductInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && productInput.trim()) {
-                  e.preventDefault();
-                  addProduct(productInput);
-                }
-              }}
-              placeholder={products.length === 0 ? "Add product names — press Enter" : "+ add product"}
-              className="min-w-[180px] flex-1 bg-transparent text-[10px] text-gray-400 placeholder:text-gray-300 outline-none"
-            />
-          </div>
-        </div>
-
-        {/* Issue type tags */}
-        <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">Issue types</Label>
-          <div
-            className={cn(
-              "flex min-h-[36px] flex-wrap items-center gap-1.5 rounded-md border border-gray-200 bg-gray-50 px-2.5 py-2",
-              isNew && tags.length === 0 && "border-dashed"
-            )}
+        {/* AI settings — collapsible */}
+        <div className="rounded-lg border border-gray-100 overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setMetaOpen((v) => !v)}
+            className="flex w-full items-center justify-between px-3.5 py-2.5 text-left transition-colors hover:bg-gray-50/80"
           >
-            {isNew && tags.length === 0 ? (
-              <span className="text-[10px] text-gray-300">
-                AI will suggest tags when you save — or add your own
-              </span>
-            ) : (
-              <>
-                {tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className={cn(
-                      "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px]",
-                      aiTags.has(tag)
-                        ? "border border-green-200 bg-green-50 text-green-700"
-                        : "bg-gray-100 text-gray-600"
-                    )}
-                  >
-                    {tag}
-                    <button
-                      onClick={() => removeTag(tag)}
-                      className="text-gray-300 hover:text-gray-500 leading-none"
+            <div className="flex items-center gap-2">
+              <span className="text-[11.5px] font-medium text-gray-500">AI settings</span>
+              {!metaOpen && metaSummary && (
+                <span className="text-[11px] text-gray-400">{metaSummary}</span>
+              )}
+              {!metaOpen && !metaSummary && (
+                <span className="text-[11px] text-gray-300">type, products, tags — AI fills automatically</span>
+              )}
+            </div>
+            <ChevronDown className={cn("h-3.5 w-3.5 text-gray-300 transition-transform duration-150", metaOpen && "rotate-180")} />
+          </button>
+
+          {metaOpen && (
+            <div className="border-t border-gray-100 px-3.5 py-3.5 space-y-4">
+              {/* Knowledge type */}
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Knowledge type</Label>
+                <Select value={usableAs || ""} onValueChange={setUsableAs}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select type..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {KNOWLEDGE_TYPES.map((t) => (
+                      <SelectItem key={t.value} value={t.value}>
+                        {t.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Products */}
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Products</Label>
+                <div className="flex min-h-[36px] flex-wrap items-center gap-1.5 rounded-md border border-gray-200 bg-gray-50 px-2.5 py-2">
+                  {products.map((p) => (
+                    <span
+                      key={p}
+                      className="inline-flex items-center gap-1 rounded-full bg-indigo-50 border border-indigo-200 px-2 py-0.5 text-[10px] text-indigo-700"
                     >
-                      <X className="h-2.5 w-2.5" />
-                    </button>
-                  </span>
-                ))}
-                <input
-                  value={tagInput}
-                  onChange={(e) => setTagInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && tagInput.trim()) {
-                      e.preventDefault();
-                      addTag(tagInput);
-                    }
-                  }}
-                  placeholder="+ add tag"
-                  className="bg-transparent text-[10px] text-gray-400 placeholder:text-gray-300 outline-none"
-                />
-              </>
-            )}
-          </div>
-          {tags.some((t) => aiTags.has(t)) && (
-            <p className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span className="rounded-full border border-green-200 bg-green-50 px-1.5 py-0.5 text-[10px] text-green-600">
-                AI
-              </span>
-              Green tags set automatically on save. Add or remove freely.
-            </p>
+                      {p}
+                      <button
+                        onClick={() => removeProduct(p)}
+                        className="text-indigo-300 hover:text-indigo-500 leading-none"
+                      >
+                        <X className="h-2.5 w-2.5" />
+                      </button>
+                    </span>
+                  ))}
+                  <input
+                    value={productInput}
+                    onChange={(e) => setProductInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && productInput.trim()) {
+                        e.preventDefault();
+                        addProduct(productInput);
+                      }
+                    }}
+                    placeholder={products.length === 0 ? "Add product names — press Enter" : "+ add"}
+                    className="min-w-[160px] flex-1 bg-transparent text-[10px] text-gray-400 placeholder:text-gray-300 outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Issue type tags */}
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Issue types</Label>
+                <div
+                  className={cn(
+                    "flex min-h-[36px] flex-wrap items-center gap-1.5 rounded-md border border-gray-200 bg-gray-50 px-2.5 py-2",
+                    tags.length === 0 && "border-dashed"
+                  )}
+                >
+                  {tags.length === 0 ? (
+                    <span className="text-[10px] text-gray-300">AI suggests tags on save — or add your own</span>
+                  ) : (
+                    <>
+                      {tags.map((tag) => (
+                        <span
+                          key={tag}
+                          className={cn(
+                            "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px]",
+                            aiTags.has(tag)
+                              ? "border border-green-200 bg-green-50 text-green-700"
+                              : "bg-gray-100 text-gray-600"
+                          )}
+                        >
+                          {tag}
+                          <button
+                            onClick={() => removeTag(tag)}
+                            className="text-gray-300 hover:text-gray-500 leading-none"
+                          >
+                            <X className="h-2.5 w-2.5" />
+                          </button>
+                        </span>
+                      ))}
+                      <input
+                        value={tagInput}
+                        onChange={(e) => setTagInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && tagInput.trim()) {
+                            e.preventDefault();
+                            addTag(tagInput);
+                          }
+                        }}
+                        placeholder="+ add tag"
+                        className="bg-transparent text-[10px] text-gray-400 placeholder:text-gray-300 outline-none"
+                      />
+                    </>
+                  )}
+                </div>
+                {tags.some((t) => aiTags.has(t)) && (
+                  <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <span className="rounded-full border border-green-200 bg-green-50 px-1.5 py-0.5 text-[10px] text-green-600">AI</span>
+                    Green tags set automatically on save. Add or remove freely.
+                  </p>
+                )}
+              </div>
+            </div>
           )}
         </div>
-
       </div>
 
       <StickySaveBar
