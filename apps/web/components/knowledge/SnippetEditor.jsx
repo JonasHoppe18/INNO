@@ -21,10 +21,10 @@ import {
 } from "@/components/ui/select";
 
 const KNOWLEDGE_TYPES = [
-  { value: "fact", label: "Factual info — background knowledge" },
-  { value: "procedure", label: "Procedure — follow steps exactly" },
-  { value: "policy", label: "Policy — authoritative rule" },
-  { value: "tone_example", label: "Tone example" },
+  { value: "fact", label: "Fact — specific information" },
+  { value: "procedure", label: "Guide — step-by-step instructions" },
+  { value: "policy", label: "Policy — what we do or don't do" },
+  { value: "tone_example", label: "Tone example — how we write" },
   { value: "background", label: "Background — general context" },
 ];
 
