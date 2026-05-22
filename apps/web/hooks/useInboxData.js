@@ -2,61 +2,9 @@ import { useAuth, useUser } from "@clerk/nextjs";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useClerkSupabase } from "@/lib/useClerkSupabase";
 import { getMessageTimestamp } from "@/components/inbox/inbox-utils";
+import { getScope } from "@/hooks/useScope";
 
 const EMPTY_LIST = [];
-
-const UUID_REGEX =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-const isValidUuid = (value) => typeof value === "string" && UUID_REGEX.test(value);
-
-const base64Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-const base64UrlToBase64 = (input) => {
-  if (typeof input !== "string" || !input.length) {
-    return "";
-  }
-  const normalized = input.replace(/-/g, "+").replace(/_/g, "/");
-  const padding = (4 - (normalized.length % 4)) % 4;
-  return normalized.padEnd(normalized.length + padding, "=");
-};
-
-const decodeBase64 = (input) => {
-  let result = "";
-  let buffer = 0;
-  let bits = 0;
-  for (const char of input) {
-    if (char === "=") break;
-    const value = base64Alphabet.indexOf(char);
-    if (value === -1) continue;
-    buffer = (buffer << 6) | value;
-    bits += 6;
-    while (bits >= 8) {
-      bits -= 8;
-      const byte = (buffer >> bits) & 0xff;
-      result += String.fromCharCode(byte);
-    }
-  }
-  return result;
-};
-
-const decodeJwtPayload = (token) => {
-  if (typeof token !== "string" || !token.includes(".")) {
-    return null;
-  }
-  const [, payloadPart] = token.split(".");
-  if (!payloadPart) return null;
-  try {
-    const normalized = base64UrlToBase64(payloadPart);
-    const decoded = decodeBase64(normalized);
-    return JSON.parse(decoded);
-  } catch (_err) {
-    return null;
-  }
-};
-
-const SUPABASE_TEMPLATE =
-  process.env.NEXT_PUBLIC_CLERK_SUPABASE_TEMPLATE?.trim() || "supabase";
 
 const makeListKey = (list = [], key = "id") =>
   list.map((item) => item?.[key] ?? "").join("|");
@@ -65,66 +13,6 @@ const PREVIEW_MESSAGE_CHUNK_SIZE = 20;
 const PREVIEW_MESSAGES_PER_THREAD = 3;
 const PREVIEW_MESSAGE_MIN_LIMIT = 30;
 const PREVIEW_MESSAGE_MAX_LIMIT = 80;
-
-const resolveScope = async ({ supabase, user, getToken, logLabel }) => {
-  const metadataUuid = user?.publicMetadata?.supabase_uuid;
-  let supabaseUserId = isValidUuid(metadataUuid) ? metadataUuid : null;
-
-  if (!supabase || !user?.id) {
-    return {
-      supabaseUserId: null,
-      workspaceId: null,
-    };
-  }
-
-  if (!supabaseUserId && typeof getToken === "function") {
-    try {
-      const templateToken = await getToken({ template: SUPABASE_TEMPLATE });
-      const payload = decodeJwtPayload(templateToken);
-      const claimUuid =
-        typeof payload?.supabase_user_id === "string" ? payload.supabase_user_id : null;
-      const sub = typeof payload?.sub === "string" ? payload.sub : null;
-      const candidate = isValidUuid(claimUuid) ? claimUuid : sub;
-      if (isValidUuid(candidate)) {
-        supabaseUserId = candidate;
-      }
-    } catch (tokenError) {
-      console.warn(`${logLabel}: clerk token missing supabase uuid`, tokenError);
-    }
-  }
-
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("user_id")
-    .eq("clerk_user_id", user.id)
-    .maybeSingle();
-  if (profileError) throw profileError;
-
-  if (!supabaseUserId) {
-    const candidate = profile?.user_id;
-    if (isValidUuid(candidate)) {
-      supabaseUserId = candidate;
-    }
-  }
-
-  const { data: membership, error: membershipError } = await supabase
-    .from("workspace_members")
-    .select("workspace_id")
-    .eq("clerk_user_id", user.id)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (membershipError) throw membershipError;
-
-  if (!supabaseUserId) {
-    console.warn(`${logLabel}: supabase user id not ready, continuing with workspace scope only`);
-  }
-
-  return {
-    supabaseUserId,
-    workspaceId: membership?.workspace_id ?? null,
-  };
-};
 
 const applyClientScope = (
   query,
@@ -207,7 +95,7 @@ export function useThreads(options = {}) {
     setLoading(true);
     setError(null);
     try {
-      const scope = await resolveScope({
+      const scope = await getScope({
         supabase,
         user,
         getToken,
@@ -339,7 +227,7 @@ export function useThreadMessages(threadId, options = {}) {
         // Fallback to existing client query path below.
       }
 
-      const scope = await resolveScope({
+      const scope = await getScope({
         supabase,
         user,
         getToken,
@@ -631,7 +519,7 @@ export function useThreadPreviewMessages(threadIds = [], options = {}) {
     setLoading(true);
     setError(null);
     try {
-      const scope = await resolveScope({
+      const scope = await getScope({
         supabase,
         user,
         getToken,
@@ -721,7 +609,7 @@ export function useThreadAttachments(messageIds = [], options = {}) {
     setLoading(true);
     setError(null);
     try {
-      const scope = await resolveScope({
+      const scope = await getScope({
         supabase,
         user,
         getToken,
