@@ -25,6 +25,9 @@ async function fetchShopifyCredentials(serviceClient, scope, requestedShopId) {
     platform: "shopify",
     fields: "id, shop_domain, access_token_encrypted, platform, workspace_id",
     missingShopMessage: "shop_id is required for Shopify knowledge sync.",
+    // Fall back to the user's single scoped shop if no shop_id was sent —
+    // the PolicyEditor sometimes fires sync before the shopId state is hydrated.
+    allowSingleScopedFallback: true,
   });
   if (!data?.id || !data?.shop_domain || !data?.access_token_encrypted) {
     throw new Error("Missing Shopify credentials.");

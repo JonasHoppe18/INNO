@@ -39,14 +39,20 @@ export async function GET() {
   }
 
   const shop = await resolveScopedShop(supabase, scope, undefined, {
-    fields: "id, policy_refund, policy_shipping",
+    fields: "id, policy_refund, policy_shipping, policy_synced_at",
     allowSingleScopedFallback: true,
-  }) as { id?: string; policy_refund?: string; policy_shipping?: string } | null;
+  }) as {
+    id?: string;
+    policy_refund?: string;
+    policy_shipping?: string;
+    policy_synced_at?: string | null;
+  } | null;
 
   return NextResponse.json({
     shop_id: shop?.id || null,
     policy_refund: shop?.policy_refund || null,
     policy_shipping: shop?.policy_shipping || null,
+    policy_synced_at: shop?.policy_synced_at || null,
   });
 }
 

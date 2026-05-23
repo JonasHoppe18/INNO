@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
+  BookOpen,
   ChevronDown,
   ChevronRight,
   MessageSquare,
@@ -32,423 +33,62 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { StickySaveBar } from "@/components/ui/sticky-save-bar";
+import { ISSUE_TYPE_VALUES, ISSUE_TYPE_LABEL_MAP } from "@/lib/knowledge/issue-types";
+import { buildStarters } from "@/lib/knowledge/starters";
+import { SnippetEditor } from "./SnippetEditor";
+
+const KNOWLEDGE_TYPE_LABELS = {
+  fact: "Fact",
+  procedure: "Guide",
+  policy: "Policy",
+  tone_example: "Tone example",
+  background: "Background",
+  saved_reply: "Saved reply",
+};
+
+function formatRelativeTimestamp(iso) {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const diffMs = Date.now() - date.getTime();
+  const sec = Math.round(diffMs / 1000);
+  if (sec < 60) return "just now";
+  const min = Math.round(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.round(hr / 24);
+  if (day < 30) return `${day}d ago`;
+  return date.toLocaleDateString();
+}
 
 const DEFAULT_CATEGORIES = {
   "product-questions": {
     label: "Product Questions",
     icon: Package,
-    description: "Technical support, firmware, product usage",
+    description: "Upload guides, FAQs, and troubleshooting for each product",
     placeholder: "e.g. firmware update procedure, known issues, step-by-step guides...",
   },
   returns: {
     label: "Returns & Refunds",
     icon: RotateCcw,
-    description: "Return procedures, refunds, exchanges",
+    description: "Define your return policy and how exchanges work",
     placeholder: "e.g. how to start a return, who pays for shipping...",
   },
   shipping: {
     label: "Shipping & Delivery",
     icon: Truck,
-    description: "Delivery times, tracking, shipping costs",
+    description: "Set delivery times, costs, and carrier details",
     placeholder: "e.g. delivery times per country, what happens with delayed orders...",
   },
   general: {
     label: "General",
     icon: MessageSquare,
-    description: "Contact info, opening hours, other questions",
+    description: "Hours, contact info, and store-wide answers",
     placeholder: "e.g. opening hours, contact details, office address...",
   },
 };
 
-function SnippetCard({ snippet, onEdit, onDelete, onTagsUpdated }) {
-  const [expanded, setExpanded] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [localProducts, setLocalProducts] = useState(snippet.products || []);
-  const [localIssueTypes, setLocalIssueTypes] = useState(snippet.issue_types || []);
-  const [tagSaving, setTagSaving] = useState(false);
-  const [newProduct, setNewProduct] = useState("");
-
-  const toggle = () => setExpanded((v) => !v);
-
-  const saveTags = async (products, issueTypes) => {
-    setTagSaving(true);
-    try {
-      await fetch("/api/knowledge/snippets", {
-        method: "PUT",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: snippet.snippet_id,
-          shop_id: snippet.shop_id,
-          title: snippet.title,
-          content: snippet.content,
-          ...(snippet.category ? { category: snippet.category } : {}),
-          ...(snippet.product_id ? { product_id: snippet.product_id } : {}),
-          ...(snippet.usable_as ? { usable_as: snippet.usable_as } : {}),
-          products,
-          issue_types: issueTypes,
-        }),
-      });
-      onTagsUpdated?.({ ...snippet, products, issue_types: issueTypes });
-    } catch { /* ignore */ } finally {
-      setTagSaving(false);
-    }
-  };
-
-  const toggleIssueType = (t) => {
-    const next = localIssueTypes.includes(t)
-      ? localIssueTypes.filter((x) => x !== t)
-      : [...localIssueTypes, t];
-    setLocalIssueTypes(next);
-    saveTags(localProducts, next);
-  };
-
-  const removeProduct = (p) => {
-    const next = localProducts.filter((x) => x !== p);
-    setLocalProducts(next);
-    saveTags(next, localIssueTypes);
-  };
-
-  const addProduct = (val) => {
-    const v = val.trim().toLowerCase();
-    if (!v || localProducts.includes(v)) return;
-    const next = [...localProducts, v];
-    setLocalProducts(next);
-    saveTags(next, localIssueTypes);
-  };
-
-  return (
-    <div className="group">
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={toggle}
-        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && toggle()}
-        className="flex items-center gap-3 px-4 py-3 cursor-pointer select-none"
-      >
-        <ChevronDown
-          className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-150 ${expanded ? "rotate-180" : ""}`}
-        />
-        <span className="text-sm font-medium flex-1 truncate">{snippet.title}</span>
-        <div className="flex shrink-0 items-center gap-1 mr-1">
-          {localProducts.map((p) => (
-            <span key={p} className="rounded-full bg-blue-50 border border-blue-200 px-1.5 py-0.5 text-[10px] text-blue-700">{p}</span>
-          ))}
-          {localIssueTypes.map((t) => (
-            <span key={t} className="rounded-full bg-green-50 border border-green-200 px-1.5 py-0.5 text-[10px] text-green-700">{t}</span>
-          ))}
-        </div>
-        <div
-          className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(snippet)}>
-            <Pencil className="h-3.5 w-3.5" />
-          </Button>
-          {confirmDelete ? (
-            <div className="flex items-center gap-1">
-              <Button variant="destructive" size="sm" className="h-7 text-xs px-2" onClick={() => onDelete(snippet.snippet_id)}>
-                Delete
-              </Button>
-              <Button variant="ghost" size="sm" className="h-7 text-xs px-2" onClick={() => setConfirmDelete(false)}>
-                Cancel
-              </Button>
-            </div>
-          ) : (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 text-muted-foreground hover:text-destructive"
-              onClick={() => setConfirmDelete(true)}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
-          )}
-        </div>
-      </div>
-      {expanded && (
-        <div className="px-10 pb-5 space-y-4">
-          <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
-            {snippet.content}
-          </p>
-
-          <div className="space-y-3 border-t pt-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-gray-500">Tags</span>
-              {tagSaving && <span className="text-[10px] text-gray-400">Gemmer...</span>}
-            </div>
-
-            {/* Products */}
-            <div className="space-y-1.5">
-              <span className="text-[11px] text-gray-400">Produkter</span>
-              <div className="flex flex-wrap items-center gap-1">
-                {localProducts.map((p) => (
-                  <span key={p} className="flex items-center gap-0.5 rounded-full bg-blue-50 border border-blue-200 px-2 py-0.5 text-xs text-blue-700">
-                    {p}
-                    <button type="button" onClick={() => removeProduct(p)} className="ml-0.5 hover:text-blue-500 leading-none">×</button>
-                  </span>
-                ))}
-                <input
-                  type="text"
-                  value={newProduct}
-                  onChange={(e) => setNewProduct(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      addProduct(newProduct);
-                      setNewProduct("");
-                    }
-                  }}
-                  placeholder="+ produkt (Enter)"
-                  className="h-6 rounded-full border border-dashed border-gray-300 px-2 text-[11px] text-gray-500 placeholder:text-gray-300 focus:outline-none focus:border-blue-300 min-w-[110px]"
-                />
-              </div>
-            </div>
-
-            {/* Issue types */}
-            <div className="space-y-1.5">
-              <span className="text-[11px] text-gray-400">Issue types</span>
-              <div className="flex flex-wrap gap-1">
-                {ISSUE_TYPE_OPTIONS.map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => toggleIssueType(t)}
-                    className={`rounded-full px-2 py-0.5 text-xs border transition-colors ${
-                      localIssueTypes.includes(t)
-                        ? "bg-green-100 border-green-400 text-green-800"
-                        : "bg-gray-50 border-gray-200 text-gray-400 hover:border-gray-300 hover:text-gray-600"
-                    }`}
-                  >
-                    {t}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-const VALID_USABLE_AS = ["policy", "procedure", "saved_reply", "tone_example", "background"];
-
-const ISSUE_TYPE_OPTIONS = [
-  "connectivity", "factory_reset", "audio", "battery", "firmware",
-  "microphone", "pairing", "physical_damage", "return", "refund",
-  "shipping", "tracking", "product_specs", "general",
-];
-
-function SnippetModal({ open, onClose, onSave, shopId, categorySlug, productId, productTitle, initial }) {
-  const [title, setTitle] = useState(initial?.title || "");
-  const [content, setContent] = useState(initial?.content || "");
-  const [usableAs, setUsableAs] = useState(initial?.usable_as || "");
-  const [products, setProducts] = useState(initial?.products || []);
-  const [issueTypes, setIssueTypes] = useState(initial?.issue_types || []);
-  const [tagSuggestLoading, setTagSuggestLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (open) {
-      setTitle(initial?.title || "");
-      setContent(initial?.content || "");
-      setUsableAs(initial?.usable_as || "");
-      setProducts(initial?.products || []);
-      setIssueTypes(initial?.issue_types || []);
-    }
-  }, [open, initial]);
-
-  const fetchTagSuggestions = async () => {
-    if (!content || content.length < 30) return;
-    setTagSuggestLoading(true);
-    try {
-      const res = await fetch("/api/knowledge/tag-suggest", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content, shop_id: shopId }),
-      });
-      if (!res.ok) return;
-      const data = await res.json();
-      if (Array.isArray(data.products)) setProducts((prev) => [...new Set([...prev, ...data.products])]);
-      if (Array.isArray(data.issue_types)) setIssueTypes((prev) => [...new Set([...prev, ...data.issue_types])]);
-    } catch { /* ignore */ } finally {
-      setTagSuggestLoading(false);
-    }
-  };
-
-  const handleSave = async () => {
-    if (!title.trim() || !content.trim()) return;
-    setSaving(true);
-    try {
-      const body = {
-        shop_id: shopId,
-        title: title.trim(),
-        content: content.trim(),
-        category: categorySlug,
-        ...(usableAs ? { usable_as: usableAs } : {}),
-        ...(productId ? { product_id: productId, product_title: productTitle } : {}),
-        ...(products.length ? { products } : {}),
-        ...(issueTypes.length ? { issue_types: issueTypes } : {}),
-      };
-      if (initial?.snippet_id) {
-        const res = await fetch("/api/knowledge/snippets", {
-          method: "PUT",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: initial.snippet_id, ...body }),
-        });
-        if (!res.ok) throw new Error("Could not update snippet");
-      } else {
-        const res = await fetch("/api/knowledge/snippets", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-        if (!res.ok) throw new Error("Could not save snippet");
-      }
-      onSave();
-      onClose();
-    } catch (err) {
-      toast.error(err.message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const categoryMeta = DEFAULT_CATEGORIES[categorySlug];
-
-  return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>
-            {initial?.snippet_id ? "Edit snippet" : "Add snippet"}
-            {productTitle ? ` — ${productTitle}` : ""}
-          </DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4 py-2">
-          <div className="space-y-1.5">
-            <Label>Title</Label>
-            <Input
-              placeholder="e.g. Firmware update guide, Return policy exception"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              autoFocus
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>
-              Knowledge type
-              <span className="ml-1.5 text-xs font-normal text-muted-foreground">
-                — controls how the AI uses this content
-              </span>
-            </Label>
-            <Select
-              value={usableAs || "auto"}
-              onValueChange={(val) => setUsableAs(val === "auto" ? "" : val)}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Auto-detect" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="auto">Auto-detect — let the AI classify</SelectItem>
-                <SelectItem value="fact">FAQ / Product info — use as authoritative fact</SelectItem>
-                <SelectItem value="procedure">Procedure — follow these steps exactly</SelectItem>
-                <SelectItem value="policy">Policy — authoritative rule (highest priority)</SelectItem>
-                <SelectItem value="tone_example">Tone example — style reference only</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label>Content</Label>
-            <Textarea
-              placeholder={categoryMeta?.placeholder || "Describe the answer to a question customers typically ask..."}
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              rows={7}
-              className="resize-none text-sm"
-            />
-            <p className="text-xs text-muted-foreground">
-              Be precise and specific — the AI uses this directly to answer customers.
-            </p>
-          </div>
-
-          {/* Tag fields */}
-          <div className="space-y-3 border-t pt-3">
-            <div className="flex items-center justify-between">
-              <Label className="text-xs font-medium text-gray-700">Tags (hjælper AI med at finde den rigtige viden)</Label>
-              <button
-                type="button"
-                onClick={fetchTagSuggestions}
-                disabled={tagSuggestLoading || !content}
-                className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-40 transition-opacity"
-              >
-                {tagSuggestLoading ? "Analyserer..." : "Foreslå automatisk"}
-              </button>
-            </div>
-
-            {/* Products */}
-            <div className="space-y-1.5">
-              <Label className="text-[11px] text-gray-500">Produkter</Label>
-              {products.length > 0 && (
-                <div className="flex flex-wrap gap-1 mb-1">
-                  {products.map((p) => (
-                    <span key={p} className="flex items-center gap-0.5 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-800">
-                      {p}
-                      <button type="button" onClick={() => setProducts((prev) => prev.filter((x) => x !== p))} className="ml-0.5 hover:text-blue-600">×</button>
-                    </span>
-                  ))}
-                </div>
-              )}
-              <Input
-                placeholder="Tilføj produkt og tryk Enter (fx a-blaze)"
-                className="h-7 text-xs"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    const val = e.currentTarget.value.trim().toLowerCase();
-                    if (val && !products.includes(val)) setProducts((prev) => [...prev, val]);
-                    e.currentTarget.value = "";
-                  }
-                }}
-              />
-            </div>
-
-            {/* Issue types */}
-            <div className="space-y-1.5">
-              <Label className="text-[11px] text-gray-500">Issue types</Label>
-              <div className="flex flex-wrap gap-1">
-                {ISSUE_TYPE_OPTIONS.map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setIssueTypes((prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t])}
-                    className={`rounded-full px-2 py-0.5 text-xs border transition-colors ${
-                      issueTypes.includes(t)
-                        ? "bg-green-100 border-green-400 text-green-800"
-                        : "bg-gray-50 border-gray-300 text-gray-500 hover:border-gray-400"
-                    }`}
-                  >
-                    {t}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSave} disabled={!title.trim() || !content.trim() || saving}>
-            {saving ? "Saving..." : initial?.snippet_id ? "Save changes" : "Add snippet"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
 
 function getInitials(title) {
   return String(title || "")
@@ -461,6 +101,7 @@ function getInitials(title) {
 
 function ProductCard({ product, onClick }) {
   const initials = getInitials(product.title);
+  const count = Number(product.snippet_count) || 0;
   return (
     <Card className="group cursor-pointer transition-colors hover:bg-muted/50" onClick={onClick}>
       <CardContent className="p-4">
@@ -476,11 +117,16 @@ function ProductCard({ product, onClick }) {
               </p>
             )}
           </div>
-          {product.snippet_count > 0 && (
-            <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-              {product.snippet_count}
-            </span>
-          )}
+          <span
+            className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
+              count > 0
+                ? "bg-primary/10 text-primary"
+                : "bg-gray-50 text-gray-400"
+            }`}
+            title={count === 1 ? "1 snippet" : `${count} snippets`}
+          >
+            {count}
+          </span>
           <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
         </div>
       </CardContent>
@@ -493,6 +139,8 @@ function ProductsSection({ shopId, categorySlug }) {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [onlyMissing, setOnlyMissing] = useState(false);
+  const [generalCount, setGeneralCount] = useState(0);
 
   useEffect(() => {
     fetch("/api/knowledge/products", { credentials: "include" })
@@ -502,9 +150,25 @@ function ProductsSection({ shopId, categorySlug }) {
       .finally(() => setLoading(false));
   }, []);
 
-  const filtered = search.trim()
-    ? products.filter((p) => p.title.toLowerCase().includes(search.toLowerCase()))
-    : products;
+  useEffect(() => {
+    fetch(`/api/knowledge/snippets?category=${encodeURIComponent(categorySlug)}`, { credentials: "include" })
+      .then((r) => r.json())
+      .then((d) => {
+        const all = Array.isArray(d?.snippets) ? d.snippets : [];
+        const generalSnippets = all.filter((s) => !s.product_id);
+        const uniqueIds = new Set(generalSnippets.map((s) => s.snippet_id).filter(Boolean));
+        setGeneralCount(uniqueIds.size || generalSnippets.length);
+      })
+      .catch(() => {});
+  }, [categorySlug]);
+
+  const filtered = products.filter((p) => {
+    if (search.trim() && !p.title.toLowerCase().includes(search.toLowerCase())) return false;
+    if (onlyMissing && Number(p.snippet_count) > 0) return false;
+    return true;
+  });
+
+  const missingCount = products.filter((p) => !Number(p.snippet_count)).length;
 
   if (loading) {
     return (
@@ -535,7 +199,51 @@ function ProductsSection({ shopId, categorySlug }) {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
+      {/* General — promoted to the top so brand-wide knowledge is the obvious first stop */}
+      <div
+        onClick={() => router.push(`/knowledge/${categorySlug}/general`)}
+        className="group flex cursor-pointer items-center gap-3 rounded-lg border border-indigo-200 bg-indigo-50/60 px-4 py-3.5 transition-all hover:border-indigo-300 hover:bg-indigo-50 active:scale-[0.99]"
+      >
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-indigo-100 text-indigo-600">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+          </svg>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-[13px] font-semibold text-indigo-900">General product knowledge</div>
+          <div className="text-[11px] text-indigo-500 mt-0.5">Applies across all products — start here for brand-wide guides, FAQs, and shared procedures</div>
+        </div>
+        <span
+          className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
+            generalCount > 0 ? "bg-indigo-100 text-indigo-700" : "bg-white text-indigo-400 border border-indigo-200"
+          }`}
+        >
+          {generalCount}
+        </span>
+        <svg className="h-4 w-4 text-indigo-400 transition-transform group-hover:translate-x-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="m9 18 6-6-6-6"/>
+        </svg>
+      </div>
+
+      <div className="flex items-center justify-between gap-3 pt-1">
+        <h3 className="text-[13px] font-medium text-gray-700">Product-specific knowledge</h3>
+        {missingCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setOnlyMissing((v) => !v)}
+            className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
+              onlyMissing
+                ? "border-amber-300 bg-amber-50 text-amber-800"
+                : "border-gray-200 bg-white text-gray-500 hover:border-gray-300"
+            }`}
+          >
+            {onlyMissing ? `Showing ${missingCount} without snippets` : `Show only without snippets (${missingCount})`}
+          </button>
+        )}
+      </div>
+
       {products.length > 8 && (
         <Input
           placeholder="Search products..."
@@ -544,52 +252,36 @@ function ProductsSection({ shopId, categorySlug }) {
           className="max-w-sm"
         />
       )}
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        {filtered.map((product) => (
-          <ProductCard
-            key={product.id}
-            product={product}
-            onClick={() =>
-              router.push(
-                `/knowledge/${categorySlug}/${encodeURIComponent(product.external_id)}?title=${encodeURIComponent(product.title)}`
-              )
-            }
-          />
-        ))}
-        <div
-          onClick={() => router.push(`/knowledge/${categorySlug}/general`)}
-          className="group flex cursor-pointer items-center gap-3 rounded-lg border border-dashed border-indigo-200 bg-indigo-50/40 px-4 py-3 transition-all hover:border-indigo-300 hover:bg-indigo-50 active:scale-[0.98]"
-        >
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-indigo-100 text-indigo-600">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
-              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
-            </svg>
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-[13px] font-semibold text-indigo-700">General</div>
-            <div className="text-[11px] text-indigo-400 mt-0.5">Applies across all products</div>
-          </div>
-          <svg className="h-4 w-4 text-indigo-300 transition-transform group-hover:translate-x-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="m9 18 6-6-6-6"/>
-          </svg>
+
+      {filtered.length === 0 ? (
+        <p className="text-sm text-muted-foreground py-6 text-center">
+          {onlyMissing ? "Every product has at least one snippet." : "No products match your search."}
+        </p>
+      ) : (
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {filtered.map((product) => (
+            <ProductCard
+              key={product.id}
+              product={product}
+              onClick={() =>
+                router.push(
+                  `/knowledge/${categorySlug}/${encodeURIComponent(product.external_id)}?title=${encodeURIComponent(product.title)}`
+                )
+              }
+            />
+          ))}
         </div>
-      </div>
+      )}
     </div>
   );
 }
 
-function SnippetList({ snippets, loading, onEdit, onDelete, onAdd, onTagsUpdated, icon: Icon }) {
+function SnippetList({ snippets, loading, onAdd, onOpen, starters, onStarterClick }) {
   if (loading) {
     return (
-      <div className="space-y-3">
-        {[1, 2].map((i) => (
-          <Card key={i}>
-            <CardContent className="p-4 space-y-2">
-              <Skeleton className="h-4 w-1/3" />
-              <Skeleton className="h-3 w-full" />
-            </CardContent>
-          </Card>
+      <div className="space-y-2">
+        {[1, 2, 3].map((i) => (
+          <Skeleton key={i} className="h-14 w-full rounded-md" />
         ))}
       </div>
     );
@@ -597,37 +289,107 @@ function SnippetList({ snippets, loading, onEdit, onDelete, onAdd, onTagsUpdated
 
   if (!snippets.length) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-12 text-center">
-        <div className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-muted mb-3">
-          <Icon className="h-5 w-5 text-muted-foreground" />
+      <div className="rounded-lg border border-dashed border-indigo-100 bg-indigo-50/30 px-5 py-5">
+        <div className="flex items-center gap-2">
+          <BookOpen className="h-4 w-4 text-indigo-500" />
+          <p className="text-[13px] font-semibold text-gray-800">
+            Start with a common question
+          </p>
         </div>
-        <p className="text-sm font-medium">No snippets yet</p>
-        <p className="mt-1 text-xs text-muted-foreground max-w-xs">
-          Add knowledge the AI uses when answering questions in this category.
+        <p className="mt-1 text-[12px] text-gray-500">
+          Click one to pre-fill the editor with the question + Guide type. You only need to write the answer.
         </p>
-        <Button className="mt-4" onClick={onAdd}>
-          <Plus className="h-4 w-4 mr-1.5" />
-          Add first snippet
-        </Button>
+        <div className="mt-3 flex flex-col gap-1.5">
+          {starters.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => onStarterClick(s)}
+              className="group flex items-center justify-between rounded-md border border-gray-100 bg-white px-3 py-2 text-left text-[12.5px] text-gray-600 transition-all hover:border-indigo-200 hover:bg-indigo-50/30 hover:text-indigo-700"
+            >
+              <span className="truncate">{s}</span>
+              <Plus className="ml-2 h-3.5 w-3.5 shrink-0 text-gray-300 transition-colors group-hover:text-indigo-400" />
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={onAdd}
+          className="mt-3 text-[11.5px] text-gray-400 underline-offset-2 hover:text-gray-600 hover:underline"
+        >
+          Or start from scratch
+        </button>
       </div>
     );
   }
 
   return (
-    <div className="rounded-lg border divide-y overflow-hidden">
-      {snippets.map((snippet) => (
-        <SnippetCard key={snippet.snippet_id} snippet={snippet} onEdit={onEdit} onDelete={onDelete} onTagsUpdated={onTagsUpdated} />
-      ))}
-      <div
-        role="button"
-        tabIndex={0}
+    <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <ul className="divide-y divide-gray-100">
+        {snippets.map((snippet) => (
+          <li key={snippet.snippet_id}>
+            <button
+              type="button"
+              onClick={() => onOpen(snippet)}
+              className="group flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-gray-50"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  {snippet.format === "qa" && (
+                    <span className="shrink-0 rounded-sm bg-indigo-50 px-1 text-[9px] font-semibold uppercase tracking-wide text-indigo-500">
+                      Q&amp;A
+                    </span>
+                  )}
+                  <span className="truncate text-[13px] font-medium text-gray-800">
+                    {snippet.title}
+                  </span>
+                </div>
+                <p className="mt-0.5 truncate text-[11.5px] text-gray-500">
+                  {(snippet.format === "qa" && snippet.answer
+                    ? snippet.answer
+                    : snippet.content || ""
+                  )
+                    .replace(/\s+/g, " ")
+                    .slice(0, 140)}
+                </p>
+                <div className="mt-1 flex flex-wrap items-center gap-1">
+                  {snippet.usable_as && (
+                    <span className="rounded-full bg-purple-50 px-1.5 py-0.5 text-[9.5px] text-purple-600">
+                      {KNOWLEDGE_TYPE_LABELS[snippet.usable_as] || snippet.usable_as}
+                    </span>
+                  )}
+                  {(snippet.issue_types || []).slice(0, 3).map((t) => (
+                    <span
+                      key={t}
+                      className="rounded-full bg-green-50 px-1.5 py-0.5 text-[9.5px] text-green-700"
+                    >
+                      {ISSUE_TYPE_LABEL_MAP[t] || t}
+                    </span>
+                  ))}
+                  {(snippet.issue_types || []).length > 3 && (
+                    <span className="text-[9.5px] text-gray-400">
+                      +{snippet.issue_types.length - 3}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="shrink-0 text-right">
+                <p className="text-[10.5px] text-gray-400">
+                  {formatRelativeTimestamp(snippet.created_at)}
+                </p>
+              </div>
+            </button>
+          </li>
+        ))}
+      </ul>
+      <button
+        type="button"
         onClick={onAdd}
-        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onAdd()}
-        className="flex items-center gap-3 px-4 py-3 cursor-pointer text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+        className="flex w-full items-center gap-2 border-t border-gray-100 bg-gray-50/40 px-4 py-2.5 text-[12px] text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700"
       >
-        <Plus className="h-3.5 w-3.5 shrink-0" />
-        <span className="text-sm">Add snippet</span>
-      </div>
+        <Plus className="h-3.5 w-3.5" />
+        Add snippet
+      </button>
     </div>
   );
 }
@@ -642,11 +404,15 @@ function decodeEntities(text) {
     .replace(/&gt;/gi, ">");
 }
 
-function PolicyEditor({ title, description, field, initialContent, shopId, onSynced }) {
+function PolicyEditor({ title, description, field, initialContent, shopId, syncedAt, onSynced }) {
   const [value, setValue] = useState(() => decodeEntities(initialContent));
   const [saved, setSaved] = useState(() => decodeEntities(initialContent));
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  // Policy text from Shopify is usually long — collapse it by default so it
+  // doesn't dominate the page, and let the admin expand when they need to
+  // read or edit.
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     const decoded = decodeEntities(initialContent);
@@ -654,7 +420,15 @@ function PolicyEditor({ title, description, field, initialContent, shopId, onSyn
     setSaved(decoded);
   }, [initialContent]);
 
+  const syncedAgo = formatRelativeTimestamp(syncedAt);
+
   const isDirty = value !== saved;
+  // Short policies (or empty) don't benefit from collapse — just render inline.
+  const SHORT_POLICY_THRESHOLD = 320;
+  const isShort = (value || "").length <= SHORT_POLICY_THRESHOLD;
+  const isEffectivelyExpanded = expanded || isDirty || isShort;
+  const previewText = (value || "").trim().replace(/\s+/g, " ").slice(0, 240);
+  const wordCount = (value || "").trim().split(/\s+/).filter(Boolean).length;
 
   const handleSave = async () => {
     setSaving(true);
@@ -698,30 +472,86 @@ function PolicyEditor({ title, description, field, initialContent, shopId, onSyn
     <>
       <div className="rounded-xl border bg-card overflow-hidden">
         <div className="flex items-start justify-between gap-4 px-6 py-5 border-b">
-          <div>
-            <h2 className="text-base font-semibold">{title}</h2>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-semibold">{title}</h2>
+              <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-indigo-600">
+                Pinned
+              </span>
+            </div>
             <p className="text-sm text-muted-foreground mt-0.5">{description}</p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="shrink-0 gap-1.5"
-            onClick={handleSync}
-            disabled={syncing}
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={handleSync}
+              disabled={syncing}
+            >
+              <RotateCcw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
+              {syncing ? "Syncing…" : "Sync from Shopify"}
+            </Button>
+            {syncedAgo && (
+              <p className="text-[10.5px] text-gray-400">
+                Last synced {syncedAgo}
+              </p>
+            )}
+          </div>
+        </div>
+        {isEffectivelyExpanded ? (
+          <div className="px-6 py-5">
+            <Textarea
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              rows={16}
+              placeholder="Click here to write your policy…"
+              className="min-h-[240px] max-h-[480px] resize-y overflow-y-auto whitespace-pre-wrap text-[13px] leading-relaxed border-0 shadow-none p-0 focus-visible:ring-0 bg-transparent"
+            />
+            {!isShort && (
+              <div className="mt-3 flex items-center justify-between">
+                <p className="text-[11px] text-gray-400">
+                  {wordCount.toLocaleString()} word{wordCount === 1 ? "" : "s"}
+                </p>
+                {!isDirty && (
+                  <button
+                    type="button"
+                    onClick={() => setExpanded(false)}
+                    className="inline-flex items-center gap-1 text-[11.5px] text-gray-500 hover:text-gray-800"
+                  >
+                    <ChevronDown className="h-3 w-3 rotate-180" />
+                    Collapse
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            className="group flex w-full items-start justify-between gap-4 px-6 py-4 text-left transition-colors hover:bg-gray-50/60"
           >
-            <RotateCcw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
-            {syncing ? "Syncing…" : "Sync from Shopify"}
-          </Button>
-        </div>
-        <div className="px-6 py-5">
-          <Textarea
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            rows={16}
-            placeholder="Click here to write your policy…"
-            className="min-h-[240px] resize-y text-sm leading-relaxed border-0 shadow-none p-0 focus-visible:ring-0 bg-transparent"
-          />
-        </div>
+            <div className="min-w-0 flex-1">
+              {previewText ? (
+                <>
+                  <p className="line-clamp-3 text-[13px] leading-relaxed text-gray-600">
+                    {previewText}
+                    {(value || "").length > previewText.length ? "…" : ""}
+                  </p>
+                  <p className="mt-2 text-[11px] text-gray-400">
+                    {wordCount.toLocaleString()} word{wordCount === 1 ? "" : "s"} · click to expand and edit
+                  </p>
+                </>
+              ) : (
+                <p className="text-[12.5px] text-gray-400">
+                  No policy yet — click to add one, or sync from Shopify.
+                </p>
+              )}
+            </div>
+            <ChevronDown className="mt-1 h-4 w-4 shrink-0 text-gray-300 transition-colors group-hover:text-gray-500" />
+          </button>
+        )}
       </div>
 
       <StickySaveBar
@@ -751,9 +581,15 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
   const [snippets, setSnippets] = useState([]);
   const [shopId, setShopId] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [modalOpen, setModalOpen] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [editingSnippet, setEditingSnippet] = useState(null);
+  const [seedQuestion, setSeedQuestion] = useState("");
   const [shopPolicy, setShopPolicy] = useState(null);
+
+  const starters = useMemo(
+    () => buildStarters({ category: categorySlug }),
+    [categorySlug]
+  );
 
   const fetchSnippets = useCallback(async () => {
     setLoading(true);
@@ -792,20 +628,29 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
     fetchShopPolicy();
   }, [hasPolicySection, fetchShopPolicy]);
 
-  const handleDelete = async (snippetId) => {
-    try {
-      const res = await fetch("/api/knowledge/snippets", {
-        method: "DELETE",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: snippetId, shop_id: shopId }),
-      });
-      if (!res.ok) throw new Error("Could not delete snippet");
-      toast.success("Snippet deleted");
-      setSnippets((prev) => prev.filter((s) => s.snippet_id !== snippetId));
-    } catch (err) {
-      toast.error(err.message);
-    }
+  const openEditor = (snippet, seed = "") => {
+    setEditingSnippet(snippet);
+    setSeedQuestion(seed);
+    setEditorOpen(true);
+  };
+
+  const handleSaved = (saved) => {
+    setSnippets((prev) => {
+      const exists = prev.find((s) => s.snippet_id === saved.snippet_id);
+      if (exists) {
+        return prev.map((s) =>
+          s.snippet_id === saved.snippet_id ? { ...s, ...saved } : s
+        );
+      }
+      return [saved, ...prev];
+    });
+    setEditingSnippet((prev) => (prev ? { ...prev, ...saved } : saved));
+  };
+
+  const handleDeleted = (deletedId) => {
+    setSnippets((prev) => prev.filter((s) => s.snippet_id !== deletedId));
+    setEditorOpen(false);
+    setEditingSnippet(null);
   };
 
   return (
@@ -828,7 +673,7 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
         </div>
         {!isProductCategory && (
           <div className="ml-auto">
-            <Button onClick={() => { setEditingSnippet(null); setModalOpen(true); }}>
+            <Button onClick={() => openEditor(null)}>
               <Plus className="h-4 w-4 mr-1.5" />
               Add snippet
             </Button>
@@ -857,6 +702,7 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
             field="policy_refund"
             initialContent={shopPolicy.policy_refund}
             shopId={shopId}
+            syncedAt={shopPolicy.policy_synced_at}
             onSynced={fetchShopPolicy}
           />
         ) : (
@@ -866,6 +712,7 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
             field="policy_shipping"
             initialContent={shopPolicy.policy_shipping}
             shopId={shopId}
+            syncedAt={shopPolicy.policy_synced_at}
             onSynced={fetchShopPolicy}
           />
         )
@@ -884,35 +731,57 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
       {/* Snippets */}
       {!isProductCategory && (
         <>
-          {hasPolicySection && (
-            <div>
-              <h2 className="text-sm font-medium mb-1">Snippets</h2>
-              <p className="text-xs text-muted-foreground mb-3">
-                Upload specific Q&amp;A or instructions the AI should follow when answering questions in this category.
-              </p>
-            </div>
-          )}
+          <div>
+            <h2 className="text-sm font-medium">Snippets</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {hasPolicySection
+                ? "The pinned policy above is always sent to the AI. Snippets add specific Q&A the AI uses when retrieval matches a customer's question."
+                : "Add specific Q&A the AI uses when retrieval matches a customer's question."}
+            </p>
+          </div>
           <SnippetList
             snippets={snippets}
             loading={loading}
-            onEdit={(s) => { setEditingSnippet(s); setModalOpen(true); }}
-            onDelete={handleDelete}
-            onAdd={() => { setEditingSnippet(null); setModalOpen(true); }}
-            icon={Icon}
+            onAdd={() => openEditor(null)}
+            onOpen={(s) => openEditor(s)}
+            starters={starters}
+            onStarterClick={(seed) => openEditor(null, seed)}
           />
         </>
       )}
 
-      <SnippetModal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        onSave={fetchSnippets}
-        shopId={shopId}
-        categorySlug={categorySlug}
-        productId={null}
-        productTitle={null}
-        initial={editingSnippet}
-      />
+      <Dialog
+        open={editorOpen}
+        onOpenChange={(open) => {
+          setEditorOpen(open);
+          if (!open) {
+            setEditingSnippet(null);
+            setSeedQuestion("");
+          }
+        }}
+      >
+        <DialogContent className="max-h-[90vh] w-[min(96vw,900px)] max-w-none overflow-hidden p-0 sm:max-w-none">
+          <DialogHeader className="border-b border-gray-100 px-5 py-3">
+            <DialogTitle className="text-[14px] font-semibold">
+              {editingSnippet ? "Edit snippet" : "New snippet"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="h-[min(80vh,720px)] overflow-hidden">
+            <SnippetEditor
+              key={editingSnippet?.snippet_id || `new-${seedQuestion || "blank"}`}
+              snippet={editingSnippet}
+              seedQuestion={seedQuestion}
+              category={categorySlug}
+              productId={null}
+              productTitle={null}
+              shopId={shopId}
+              onSaved={handleSaved}
+              onDeleted={handleDeleted}
+              onCancel={() => setEditorOpen(false)}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

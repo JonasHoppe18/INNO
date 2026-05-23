@@ -42,7 +42,13 @@ function SnippetRow({ snippet, active, onClick }) {
   const productTags = Array.isArray(snippet.products) ? snippet.products : [];
   const issueTags = Array.isArray(snippet.issue_types) ? snippet.issue_types : [];
   const topTags = [...productTags.slice(0, 1), ...issueTags.slice(0, 2)];
-  const preview = snippet.content?.trim().replace(/\s+/g, " ").slice(0, 80);
+  const isQa = snippet.format === "qa";
+  // For Q&A snippets show the answer as the preview — the question is already
+  // implicit from the title (which users often set to the question itself).
+  const previewSource = isQa && snippet.answer
+    ? snippet.answer
+    : snippet.content || "";
+  const preview = previewSource.trim().replace(/\s+/g, " ").slice(0, 80);
 
   return (
     <button
@@ -61,14 +67,19 @@ function SnippetRow({ snippet, active, onClick }) {
         )}
       />
 
-      {/* Title */}
+      {/* Title with Q&A indicator */}
       <span
         className={cn(
-          "truncate text-[12.5px] font-medium leading-snug",
+          "flex items-center gap-1.5 truncate text-[12.5px] font-medium leading-snug",
           active ? "text-indigo-700" : "text-gray-800"
         )}
       >
-        {snippet.title}
+        {isQa && (
+          <span className="shrink-0 rounded-sm bg-indigo-50 px-1 text-[9px] font-semibold uppercase tracking-wide text-indigo-500">
+            Q&amp;A
+          </span>
+        )}
+        <span className="truncate">{snippet.title}</span>
       </span>
 
       {/* Content preview */}

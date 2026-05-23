@@ -1,13 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, FileText, Plus, Upload } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ArrowLeft, FileText, Lightbulb, Plus, Upload } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SnippetList } from "./SnippetList";
 import { SnippetEditor } from "./SnippetEditor";
 import { CsvSupportKnowledgeImportModal } from "./CsvSupportKnowledgeImportModal";
+import { buildStarters } from "@/lib/knowledge/starters";
 
 export function SnippetTwoPanel({
   category,
@@ -17,14 +18,21 @@ export function SnippetTwoPanel({
   backHref,
   headerIcon,
   headerSubtitle,
+  productScope,
 }) {
   const router = useRouter();
   const [snippets, setSnippets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState(null);
   const [newDraft, setNewDraft] = useState(false);
+  const [seedQuestion, setSeedQuestion] = useState("");
   const [importOpen, setImportOpen] = useState(false);
   const [shopId, setShopId] = useState(null);
+
+  const starters = useMemo(
+    () => buildStarters({ category, productTitle, productScope }),
+    [category, productTitle, productScope]
+  );
 
   const loadSnippets = useCallback(async () => {
     setLoading(true);
@@ -36,7 +44,11 @@ export function SnippetTwoPanel({
         credentials: "include",
       });
       const data = await res.json().catch(() => ({}));
-      const list = Array.isArray(data.snippets) ? data.snippets : [];
+      const rawList = Array.isArray(data.snippets) ? data.snippets : [];
+      // "general" scope: keep only snippets that aren't tied to a specific product
+      const list = productScope === "general"
+        ? rawList.filter((s) => !s.product_id)
+        : rawList;
       setSnippets(list);
       if (data.shop_id) setShopId(data.shop_id);
       setSelectedId((prev) => {
@@ -48,7 +60,7 @@ export function SnippetTwoPanel({
     } finally {
       setLoading(false);
     }
-  }, [category, productId]);
+  }, [category, productId, productScope]);
 
   useEffect(() => {
     loadSnippets();
@@ -61,13 +73,15 @@ export function SnippetTwoPanel({
     if (id !== null) setNewDraft(false);
   };
 
-  const handleAddSnippet = () => {
+  const handleAddSnippet = (seed = "") => {
     setSelectedId(null);
+    setSeedQuestion(seed);
     setNewDraft(true);
   };
 
   const handleSaved = (saved) => {
     setNewDraft(false);
+    setSeedQuestion("");
     setSnippets((prev) => {
       const exists = prev.find((s) => s.snippet_id === saved.snippet_id);
       if (exists) {
@@ -88,6 +102,7 @@ export function SnippetTwoPanel({
 
   const handleCancel = () => {
     setNewDraft(false);
+    setSeedQuestion("");
     if (snippets.length > 0) setSelectedId(snippets[0].snippet_id);
     else setSelectedId(null);
   };
@@ -127,7 +142,7 @@ export function SnippetTwoPanel({
             <Upload className="h-3.5 w-3.5 mr-1.5" />
             Import CSV
           </Button>
-          <Button size="sm" onClick={handleAddSnippet}>
+          <Button size="sm" onClick={() => handleAddSnippet()}>
             <Plus className="h-3.5 w-3.5 mr-1.5" />
             Add snippet
           </Button>
@@ -157,8 +172,9 @@ export function SnippetTwoPanel({
         <div className="flex flex-1 overflow-hidden bg-white">
           {newDraft || selectedSnippet ? (
             <SnippetEditor
-              key={newDraft ? "new" : selectedId}
+              key={newDraft ? `new-${seedQuestion || "blank"}` : selectedId}
               snippet={newDraft ? null : selectedSnippet}
+              seedQuestion={newDraft ? seedQuestion : ""}
               category={category}
               productId={productId}
               productTitle={productTitle}
@@ -167,6 +183,40 @@ export function SnippetTwoPanel({
               onDeleted={handleDeleted}
               onCancel={handleCancel}
             />
+          ) : snippets.length === 0 ? (
+            <div className="flex h-full w-full flex-col items-center justify-center gap-5 px-8 text-center">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-50">
+                <Lightbulb className="h-5 w-5 text-indigo-500" />
+              </div>
+              <div className="max-w-md">
+                <p className="text-sm font-semibold text-gray-700">
+                  Start with a common question
+                </p>
+                <p className="mt-1 text-xs text-gray-400">
+                  Click one to pre-fill the editor, or write your own. Q&amp;A snippets dramatically improve how the AI matches customer messages.
+                </p>
+              </div>
+              <div className="flex w-full max-w-md flex-col gap-1.5">
+                {starters.map((starter) => (
+                  <button
+                    key={starter}
+                    type="button"
+                    onClick={() => handleAddSnippet(starter)}
+                    className="group flex items-center justify-between rounded-md border border-gray-100 bg-white px-3 py-2 text-left text-[12.5px] text-gray-600 transition-all hover:border-indigo-200 hover:bg-indigo-50/30 hover:text-indigo-700"
+                  >
+                    <span className="truncate">{starter}</span>
+                    <Plus className="ml-2 h-3.5 w-3.5 shrink-0 text-gray-300 transition-colors group-hover:text-indigo-400" />
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => handleAddSnippet()}
+                className="text-[11.5px] text-gray-400 underline-offset-2 transition-colors hover:text-gray-600 hover:underline"
+              >
+                Or start from scratch
+              </button>
+            </div>
           ) : (
             <div className="flex h-full w-full flex-col items-center justify-center gap-3 text-center">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100">
@@ -180,7 +230,7 @@ export function SnippetTwoPanel({
                   or add a new one
                 </p>
               </div>
-              <Button size="sm" onClick={handleAddSnippet}>
+              <Button size="sm" onClick={() => handleAddSnippet()}>
                 <Plus className="h-3.5 w-3.5 mr-1.5" />
                 Add snippet
               </Button>

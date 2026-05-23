@@ -23,6 +23,7 @@ import {
   BookOpen,
   BookMarked,
   ImagePlus,
+  List,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -1027,7 +1028,6 @@ export function KnowledgeCategoriesClient() {
   const [creating, setCreating] = useState(false);
   const [importingTickets, setImportingTickets] = useState(false);
   const [ticketExamplesCount, setTicketExamplesCount] = useState(null);
-  const [bulkTagging, setBulkTagging] = useState(false);
 
   const fetchTicketExamplesCount = useCallback(async () => {
     try {
@@ -1139,30 +1139,11 @@ export function KnowledgeCategoriesClient() {
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
-            onClick={async () => {
-              if (bulkTagging) return;
-              setBulkTagging(true);
-              try {
-                const res = await fetch("/api/knowledge/bulk-tag", {
-                  method: "POST",
-                  credentials: "include",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({}),
-                });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data?.error || "Auto-tag failed.");
-                toast.success(`Auto-tag done: ${data.tagged} tagged, ${data.skipped} already tagged${data.errors ? `, ${data.errors} errors` : ""}.`);
-              } catch (err) {
-                toast.error(err instanceof Error ? err.message : "Auto-tag failed.");
-              } finally {
-                setBulkTagging(false);
-              }
-            }}
-            disabled={bulkTagging}
-            className="gap-1.5 text-gray-600"
+            onClick={() => router.push("/knowledge/all")}
+            className="gap-1.5"
           >
-            <RotateCcw className={`h-4 w-4 ${bulkTagging ? "animate-spin" : ""}`} />
-            {bulkTagging ? "Tagger..." : "Auto-tag alle"}
+            <List className="h-4 w-4" />
+            Browse all snippets
           </Button>
           <Button onClick={() => setCreateOpen(true)} className="gap-1.5">
             <Plus className="h-4 w-4" />

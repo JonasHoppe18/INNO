@@ -47,6 +47,9 @@ export interface PipelineInput {
     strong_model?: string;
     disable_escalation?: boolean;
   };
+  // Preview mode only — agent_knowledge chunk ids that should be excluded from
+  // retrieval. Used by the snippet preview A/B feature.
+  exclude_chunk_ids?: string[];
 }
 
 export interface KnowledgeGap {
@@ -830,6 +833,7 @@ export async function runDraftV2Pipeline(
       shop,
       supabase,
       excludeExternalTicketId: eval_payload?.source_thread_id ?? undefined,
+      excludeChunkIds: input.exclude_chunk_ids,
     }),
     runFactResolver({
       plan,

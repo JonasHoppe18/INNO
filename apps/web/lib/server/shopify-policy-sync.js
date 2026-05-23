@@ -297,6 +297,10 @@ export async function runPolicySyncForCreds({ serviceClient, creds }) {
       policy_summary_json: summaryPayload.summary,
       policy_summary_version: summaryPayload.version,
       policy_summary_updated_at: summaryPayload.updated_at,
+      // Distinct from updated_at — only set on a successful Shopify pull so
+      // the UI can show "Last synced N ago" without confusing manual edits
+      // with sync events.
+      policy_synced_at: new Date().toISOString(),
     })
     .eq("id", creds.shop_id);
 

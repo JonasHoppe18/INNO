@@ -22,6 +22,7 @@ Deno.serve(async (req) => {
       eval_options,
       customer_context,
       action_result,
+      exclude_chunk_ids,
     } = await req.json();
 
     if (!shop_id || (!thread_id && !email_data)) {
@@ -52,6 +53,9 @@ Deno.serve(async (req) => {
       eval_options,
       customer_context,
       action_result,
+      exclude_chunk_ids: Array.isArray(exclude_chunk_ids)
+        ? exclude_chunk_ids.map((id: unknown) => String(id || "")).filter(Boolean)
+        : undefined,
     });
     const latency_ms = Date.now() - startTime;
 

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { resolveAuthScope, resolveScopedShop } from "@/lib/server/workspace-auth";
+import { ISSUE_TYPE_VALUES } from "@/lib/knowledge/issue-types";
 
 export const runtime = "nodejs";
 
@@ -15,11 +16,8 @@ const SUPABASE_SERVICE_KEY =
   "";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 
-const ISSUE_TYPES = [
-  "connectivity", "factory_reset", "audio", "battery", "firmware",
-  "microphone", "pairing", "physical_damage", "return", "refund",
-  "shipping", "tracking", "product_specs", "general",
-];
+// Canonical vocabulary shared with the snippet UI and the retriever.
+const ISSUE_TYPES = ISSUE_TYPE_VALUES;
 
 function createServiceClient() {
   if (!SUPABASE_BASE_URL || !SUPABASE_SERVICE_KEY) return null;

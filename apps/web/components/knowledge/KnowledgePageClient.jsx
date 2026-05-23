@@ -36,6 +36,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { CsvSupportKnowledgeImportModal } from "@/components/knowledge/CsvSupportKnowledgeImportModal";
+import { ISSUE_TYPE_VALUES, ISSUE_TYPE_LABEL_MAP } from "@/lib/knowledge/issue-types";
 
 function formatDate(value) {
   if (!value) return "";
@@ -333,11 +334,9 @@ function stitchChunkedText(chunks) {
   return merged.trim();
 }
 
-const ISSUE_TYPE_OPTIONS = [
-  "connectivity", "factory_reset", "audio", "battery", "firmware",
-  "microphone", "pairing", "physical_damage", "return", "refund",
-  "shipping", "tracking", "product_specs", "general",
-];
+// Canonical issue_type vocabulary — kept in sync with the retriever via the
+// shared module so manual tags match what the AI searches for.
+const ISSUE_TYPE_OPTIONS = ISSUE_TYPE_VALUES;
 
 export function KnowledgePageClient() {
   const supabase = useClerkSupabase();
@@ -2831,7 +2830,7 @@ export function KnowledgePageClient() {
                               : "bg-gray-50 border-gray-300 text-gray-500 hover:border-gray-400"
                           }`}
                         >
-                          {t}
+                          {ISSUE_TYPE_LABEL_MAP[t] || t}
                         </button>
                       ))}
                     </div>

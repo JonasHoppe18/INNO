@@ -388,6 +388,9 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const category = searchParams.get("category") || null;
   const productId = searchParams.get("product_id") || null;
+  // When include_all=1, return ALL manual snippets regardless of category —
+  // used by the flat "Browse all snippets" power-user view.
+  const includeAll = searchParams.get("include_all") === "1";
 
   try {
     const { resolveScopedShop } = await import("@/lib/server/workspace-auth");
@@ -398,14 +401,16 @@ export async function GET(request: Request) {
 
     let query = (serviceClient as any)
       .from("agent_knowledge")
-      .select("id, source_id, content, metadata, chunk_index")
+      .select("id, source_id, content, metadata, chunk_index, created_at")
       .eq("shop_id", shop.id)
       .eq("source_provider", "manual_text");
 
-    if (category) {
-      query = query.eq("metadata->>category" as any, category);
-    } else {
-      query = query.is("metadata->>category" as any, null);
+    if (!includeAll) {
+      if (category) {
+        query = query.eq("metadata->>category" as any, category);
+      } else {
+        query = query.is("metadata->>category" as any, null);
+      }
     }
 
     if (productId) {
@@ -418,7 +423,7 @@ export async function GET(request: Request) {
     // Deduplicate by snippet_id, take first chunk (chunk_index 0)
     const seen = new Set<string>();
     const VALID_USABLE_AS = ["policy", "procedure", "fact", "saved_reply", "tone_example", "background"];
-    const snippets: Array<{ snippet_id: string; title: string; content: string; category: string | null; product_id: string | null; usable_as: string | null; is_stale: boolean; products: string[]; issue_types: string[] }> = [];
+    const snippets: Array<{ snippet_id: string; title: string; content: string; category: string | null; product_id: string | null; product_title: string | null; usable_as: string | null; is_stale: boolean; products: string[]; issue_types: string[]; format: "qa" | "prose"; question: string | null; answer: string | null; created_at: string | null }> = [];
     for (const row of rows || []) {
       const meta = row.metadata as any;
       const snippetId = String(meta?.snippet_id || row.source_id || row.id || "").trim();
@@ -426,16 +431,24 @@ export async function GET(request: Request) {
       if (asChunkIndex(meta?.chunk_index ?? row.chunk_index) !== 0) continue;
       seen.add(snippetId);
       const rawUsableAs = String(meta?.usable_as || "").trim();
+      const format = meta?.format === "qa" ? "qa" : "prose";
+      const question = typeof meta?.question === "string" ? meta.question : null;
+      const answer = typeof meta?.answer === "string" ? meta.answer : null;
       snippets.push({
         snippet_id: snippetId,
         title: String(meta?.title || "").trim() || "Untitled snippet",
         content: String(row.content || ""),
         category: (meta?.category as string) || null,
         product_id: (meta?.product_id as string) || null,
+        product_title: (meta?.product_title as string) || null,
         usable_as: VALID_USABLE_AS.includes(rawUsableAs) ? rawUsableAs : null,
         is_stale: false,
         products: Array.isArray(meta?.products) ? (meta.products as string[]) : [],
         issue_types: Array.isArray(meta?.issue_types) ? (meta.issue_types as string[]) : [],
+        format,
+        question,
+        answer,
+        created_at: (row.created_at as string) || null,
       });
     }
 
@@ -581,7 +594,21 @@ export async function POST(request: Request) {
     const payload = await request.json().catch(() => null);
     const requestedShopId = String(payload?.shop_id || "").trim();
     const title = String(payload?.title || "").trim();
-    const content = normalizeWhitespace(stripHtml(String(payload?.content || "")));
+    const rawQuestion = String(payload?.question || "").trim();
+    const rawAnswer = String(payload?.answer || "").trim();
+    const isQa = Boolean(rawQuestion && rawAnswer);
+    if ((rawQuestion && !rawAnswer) || (rawAnswer && !rawQuestion)) {
+      return NextResponse.json(
+        { error: "Both question and answer are required for Q&A snippets." },
+        { status: 400 }
+      );
+    }
+    // For Q&A snippets we synthesize the content from question + answer so the
+    // embedded chunk includes the question phrasing — that's what dramatically
+    // improves retrieval against customer messages (which ARE questions).
+    const content = isQa
+      ? `Question: ${rawQuestion}\n\nAnswer: ${rawAnswer}`
+      : normalizeWhitespace(stripHtml(String(payload?.content || "")));
     const category = String(payload?.category || "").trim() || null;
     const productId = String(payload?.product_id || "").trim() || null;
     const productTitle = String(payload?.product_title || "").trim() || null;
@@ -617,6 +644,12 @@ export async function POST(request: Request) {
     );
     const snippetId = makeSnippetId();
 
+    // Snippets in the product-questions category that aren't tied to a specific
+    // product apply to every product. Flag them so retrieval can treat them as
+    // cross-product baseline knowledge instead of pure semantic competitors.
+    const appliesToAllProducts =
+      category === "product-questions" && !productId && products.length === 0;
+
     const insertedChunks = await insertKnowledgeChunks({
       serviceClient,
       shopId,
@@ -633,6 +666,8 @@ export async function POST(request: Request) {
         ...(productId ? { product_id: productId, product_title: productTitle } : {}),
         ...(products.length ? { products } : {}),
         ...(issueTypes.length ? { issue_types: issueTypes } : {}),
+        ...(appliesToAllProducts ? { applies_to_all_products: true } : {}),
+        ...(isQa ? { format: "qa", question: rawQuestion, answer: rawAnswer } : {}),
       },
     });
     console.info(
@@ -687,7 +722,18 @@ export async function PUT(request: Request) {
     const snippetId = String(payload?.id || "").trim();
     const requestedShopId = String(payload?.shop_id || "").trim();
     const title = String(payload?.title || "").trim();
-    const content = normalizeWhitespace(stripHtml(String(payload?.content || "")));
+    const rawQuestion = String(payload?.question || "").trim();
+    const rawAnswer = String(payload?.answer || "").trim();
+    const isQa = Boolean(rawQuestion && rawAnswer);
+    if ((rawQuestion && !rawAnswer) || (rawAnswer && !rawQuestion)) {
+      return NextResponse.json(
+        { error: "Both question and answer are required for Q&A snippets." },
+        { status: 400 }
+      );
+    }
+    const content = isQa
+      ? `Question: ${rawQuestion}\n\nAnswer: ${rawAnswer}`
+      : normalizeWhitespace(stripHtml(String(payload?.content || "")));
     const category = String(payload?.category || "").trim() || null;
     const productId = String(payload?.product_id || "").trim() || null;
     const productTitle = String(payload?.product_title || "").trim() || null;
@@ -735,6 +781,9 @@ export async function PUT(request: Request) {
       throw new Error(`Could not replace snippet: ${deleteError.message}`);
     }
 
+    const appliesToAllProducts =
+      category === "product-questions" && !productId && products.length === 0;
+
     const insertedChunks = await insertKnowledgeChunks({
       serviceClient,
       shopId,
@@ -751,6 +800,8 @@ export async function PUT(request: Request) {
         ...(productId ? { product_id: productId, product_title: productTitle } : {}),
         ...(products.length ? { products } : {}),
         ...(issueTypes.length ? { issue_types: issueTypes } : {}),
+        ...(appliesToAllProducts ? { applies_to_all_products: true } : {}),
+        ...(isQa ? { format: "qa", question: rawQuestion, answer: rawAnswer } : {}),
       },
     });
 
@@ -763,6 +814,13 @@ export async function PUT(request: Request) {
       updated: true,
     });
   } catch (error: any) {
+    console.error(
+      JSON.stringify({
+        event: "knowledge.snippet.update_error",
+        workspace_id: scope?.workspaceId ?? null,
+        error: error?.message || "Could not update knowledge snippet.",
+      })
+    );
     return NextResponse.json({ error: error?.message || "Could not update knowledge snippet." }, { status: 500 });
   }
 }

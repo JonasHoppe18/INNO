@@ -16,6 +16,7 @@ export default async function GeneralKnowledgePage() {
         productTitle="General"
         backHref="/knowledge/product-questions"
         headerSubtitle="Applies across all products"
+        productScope="general"
       />
     </DashboardPageShell>
   );

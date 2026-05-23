@@ -18,6 +18,16 @@ export interface RetrievedChunk {
     | "background"
     | "ignore";
   risk_flags: string[];
+  // True when this chunk applies to every product in the shop (e.g. a snippet
+  // saved in the Product Questions → General bucket). Used by the scorer to
+  // skip cross-product penalties and grant a small product-context boost so
+  // brand-wide knowledge doesn't drown in noisy product description chunks.
+  applies_to_all_products: boolean;
+  // Canonical issue_type tags from the snippet metadata (e.g. "pairing",
+  // "physical_damage"). Used as an explicit scoring boost when they overlap
+  // with the issue terms detected on the customer message — rewards admins
+  // who took the time to tag snippets properly.
+  chunk_issue_types: string[];
 }
 
 export interface RetrieverResult {
@@ -42,6 +52,10 @@ export interface RetrieverInput {
   // Eval mode: exclude this ticket's own stored reply from few-shot examples
   // to prevent the model from trivially finding the correct answer in the KB.
   excludeExternalTicketId?: string;
+  // Preview mode: exclude specific agent_knowledge chunk ids from retrieval.
+  // Used by the "test snippet against ticket" feature to compare a draft with
+  // and without a candidate snippet's chunks present in the KB.
+  excludeChunkIds?: string[];
 }
 
 async function embedText(text: string): Promise<number[]> {
@@ -172,6 +186,10 @@ function extractMentionedProductTerms(
   });
 }
 
+// Output values MUST be from the canonical issue_types vocabulary defined in
+// apps/web/lib/knowledge/issue-types.js. The UI tags snippets with these exact
+// values, and metadata-overlap scoring depends on them matching. Drift = silent
+// retrieval misses.
 function extractIssueTerms(text: string): string[] {
   const lower = stripHtml(text).toLowerCase();
   const terms: string[] = [];
@@ -179,18 +197,19 @@ function extractIssueTerms(text: string): string[] {
     if (pattern.test(lower)) terms.push(term);
   };
   addIf("app", /\b(app|ios|android)\b/);
+  addIf("pairing", /\b(pair|paired|pairing|parring|parre)\b/);
   addIf(
-    "connect",
-    /\b(connect|connection|pair|paired|forbind|forbinde|tilslut)\b/,
+    "connectivity",
+    /\b(connect|connection|forbind|forbinde|tilslut|bluetooth|disconnect)\b/,
   );
   addIf("firmware", /\b(firmware|update|updater|opdater)\b/);
-  addIf("factory reset", /\b(factory reset|reset|nulstil)\b/);
+  addIf("factory_reset", /\b(factory reset|reset|nulstil)\b/);
   addIf("audio", /\b(audio|sound|lyd|cable|kabel|usb|usb-c)\b/);
   addIf("microphone", /\b(mic|microphone|mikrofon|mute|unmute)\b/);
   addIf("battery", /\b(battery|batteri|charging|charge|strøm|oplade)\b/);
-  addIf("ear pads", /\b(ear\s*pads?|earpads?|ørepuder?)\b/);
+  addIf("ear_pads", /\b(ear\s*pads?|earpads?|ørepuder?)\b/);
   addIf(
-    "damage",
+    "physical_damage",
     /\b(damage|damaged|broken|crack|cracked|skade|ødelagt|knækket|broke)\b/,
   );
   addIf(
@@ -202,6 +221,8 @@ function extractIssueTerms(text: string): string[] {
     /\b(return|retur|swap|replacement|ombytning|warranty|garanti)\b/,
   );
   addIf("tracking", /\b(tracking|track|pakke|shipment|forsendelse|awb)\b/);
+  addIf("shipping", /\b(shipping|delivery|fragt|levering|courier|dhl|gls|postnord)\b/);
+  addIf("product_specs", /\b(specs?|specifications?|specifikation|dimensions?|weight|vægt)\b/);
   return uniqueStrings(terms);
 }
 
@@ -227,7 +248,7 @@ function buildFallbackQueries(
   if (products.length || issues.length) {
     queries.push([...products.slice(0, 2), ...issues.slice(0, 3)].join(" "));
   }
-  if (issues.includes("ear pads")) {
+  if (issues.includes("ear_pads")) {
     queries.push(
       `${products[0] || ""} ear pads earpads compatible replaceable`.trim(),
     );
@@ -264,7 +285,7 @@ function classifyKnowledgeSource(input: {
   source_label: string;
   source_provider?: string | null;
   metadata?: Record<string, unknown> | null;
-}): Pick<RetrievedChunk, "usable_as" | "risk_flags"> {
+}): Pick<RetrievedChunk, "usable_as" | "risk_flags" | "applies_to_all_products" | "chunk_issue_types"> {
   const provider = String(input.source_provider || "").toLowerCase();
   const kind = String(input.kind || "").toLowerCase();
   const label = String(input.source_label || "").toLowerCase();
@@ -333,7 +354,37 @@ function classifyKnowledgeSource(input: {
     usable_as = explicitUsableAs;
   }
 
-  return { usable_as, risk_flags: [...new Set(riskFlags)] };
+  // "Applies to all products" — set explicitly when a snippet is saved in
+  // Product Questions → General. Also derived for snippets ingested before the
+  // flag existed: any manual snippet in product-questions that isn't tied to a
+  // product belongs to the general bucket.
+  const explicitAppliesToAll = input.metadata?.applies_to_all_products === true;
+  const metaCategory = String(input.metadata?.category || "").trim();
+  const metaProductId = String(input.metadata?.product_id || "").trim();
+  const metaProductsLen = Array.isArray(input.metadata?.products)
+    ? (input.metadata?.products as unknown[]).length
+    : 0;
+  const isManualSnippet = String(input.source_provider || "").toLowerCase() === "manual_text";
+  const derivedAppliesToAll =
+    isManualSnippet &&
+    metaCategory === "product-questions" &&
+    !metaProductId &&
+    metaProductsLen === 0;
+  const applies_to_all_products = explicitAppliesToAll || derivedAppliesToAll;
+
+  const rawIssueTypes = Array.isArray(input.metadata?.issue_types)
+    ? (input.metadata?.issue_types as unknown[])
+    : [];
+  const chunk_issue_types = uniqueStrings(
+    rawIssueTypes.map((t) => String(t || "").trim().toLowerCase()).filter(Boolean),
+  );
+
+  return {
+    usable_as,
+    risk_flags: [...new Set(riskFlags)],
+    applies_to_all_products,
+    chunk_issue_types,
+  };
 }
 
 function tokenOverlapJaccard(a: string, b: string): number {
@@ -432,9 +483,20 @@ async function runQueryPair(
 }
 
 export async function runRetriever(
-  { plan, shop_id, workspace_id, customerMessage, shop, supabase, excludeExternalTicketId }:
-    RetrieverInput,
+  {
+    plan,
+    shop_id,
+    workspace_id,
+    customerMessage,
+    shop,
+    supabase,
+    excludeExternalTicketId,
+    excludeChunkIds,
+  }: RetrieverInput,
 ): Promise<RetrieverResult> {
+  const excludedIdSet = new Set(
+    (excludeChunkIds ?? []).map((id) => String(id)).filter(Boolean),
+  );
   const queries = uniqueStrings([
     ...plan.sub_queries.filter(Boolean),
     ...buildFallbackQueries(plan, customerMessage, shop),
@@ -600,7 +662,13 @@ export async function runRetriever(
     if (pair.bm25.length > 0) allLists.push(pair.bm25);
   }
 
-  const fused = rrfFusion(allLists);
+  const fusedRaw = rrfFusion(allLists);
+  // Drop excluded chunks before any scoring/ranking — used by the snippet
+  // preview feature to simulate "what would the AI answer if this snippet
+  // wasn't in the knowledge base?"
+  const fused = excludedIdSet.size
+    ? fusedRaw.filter((r) => !excludedIdSet.has(String(r.id)))
+    : fusedRaw;
 
   // Knowledge chunks include saved replies indexed into agent_knowledge.
   const knowledgeBudget = 4;
@@ -644,16 +712,35 @@ export async function runRetriever(
       const score = (chunk: RetrievedChunk) => {
         const text = `${chunk.source_label} ${chunk.content}`;
         const productBoost = overlapCount(text, mentionedProducts) * 0.10;
-        // Penalise chunks that mention a different product but not the one the customer asked about
+        // Cross-product knowledge (Product Questions → General) is by definition
+        // compatible with any product, so it should never be penalised for
+        // mentioning the "wrong" product and should ride along on the product
+        // context when one is present.
         const crossProductPenalty =
+          !chunk.applies_to_all_products &&
           mentionedProducts.length === 1 &&
           overlapCount(text, otherProducts) > 0 &&
           overlapCount(text, mentionedProducts) === 0
             ? 0.12
             : 0;
+        const generalProductBoost =
+          chunk.applies_to_all_products && mentionedProducts.length > 0 ? 0.05 : 0;
+        // Reward chunks the admin tagged with issue_types that match what the
+        // customer is asking about. This is the explicit metadata path — much
+        // more reliable than text overlap once snippets are tagged from the
+        // canonical vocabulary.
+        const taggedIssueOverlap = chunk.chunk_issue_types.filter((t) =>
+          issueTerms.includes(t)
+        ).length;
+        const taggedIssueBoost = taggedIssueOverlap * 0.06;
         return chunk.similarity +
           productBoost +
-          overlapCount(text, issueTerms) * 0.04 +
+          generalProductBoost +
+          taggedIssueBoost +
+          // Legacy text-overlap boost — still helps for untagged Shopify
+          // product descriptions where the issue keyword sometimes appears
+          // verbatim. Keep small so tagged chunks win.
+          overlapCount(text, issueTerms) * 0.02 +
           (/manual_text|snippet/i.test(`${chunk.source_label} ${chunk.kind}`)
             ? 0.04
             : 0) +

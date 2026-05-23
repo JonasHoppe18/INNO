@@ -86,6 +86,7 @@
             "npm:tailwindcss@^3.4.3",
             "npm:typescript@5.9.3",
             "npm:vaul@^1.1.2",
+            "npm:xlsx@0.18.5",
             "npm:zod@^4.1.12"
           ]
         }

@@ -25,25 +25,25 @@ const DEFAULT_CATEGORIES = [
     slug: "product-questions",
     label: "Product Questions",
     icon: "Package",
-    description: "Technical support, firmware, product usage",
+    description: "Upload guides, FAQs, and troubleshooting for each product",
   },
   {
     slug: "returns",
     label: "Returns & Refunds",
     icon: "RotateCcw",
-    description: "Return procedures, refunds, exchanges",
+    description: "Define your return policy and how exchanges work",
   },
   {
     slug: "shipping",
     label: "Shipping & Delivery",
     icon: "Truck",
-    description: "Delivery times, tracking, shipping costs",
+    description: "Set delivery times, costs, and carrier details",
   },
   {
     slug: "general",
     label: "General",
     icon: "MessageSquare",
-    description: "Contact info, opening hours, other questions",
+    description: "Hours, contact info, and store-wide answers",
   },
 ];
 
