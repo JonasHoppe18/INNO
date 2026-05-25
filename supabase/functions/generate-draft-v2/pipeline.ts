@@ -827,6 +827,26 @@ export async function runDraftV2Pipeline(
         );
       }
     });
+
+    // A new customer message is being processed — any pending action from
+    // a prior turn is now stale (the conversation has moved on). Supersede
+    // them unconditionally; if the current draft proposes the same action
+    // again it will be re-inserted as a fresh "pending" row below.
+    // This fixes the bug where e.g. a "Cancel Order" awaiting-approval card
+    // would persist after the customer pivoted to asking about returns.
+    await supabase
+      .from("thread_actions")
+      .update({ status: "superseded", updated_at: new Date().toISOString() })
+      .eq("thread_id", thread_id)
+      .eq("status", "pending")
+      .then(({ error }) => {
+        if (error) {
+          console.warn(
+            "[pipeline] stale-action supersede failed:",
+            error.message,
+          );
+        }
+      });
   }
 
   // 5. Retrieve + resolve facts parallelt (uafhængige)

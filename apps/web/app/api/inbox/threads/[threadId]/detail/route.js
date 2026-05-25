@@ -254,10 +254,15 @@ async function loadDraftStats(serviceClient, scope, thread) {
 }
 
 async function loadOrderUpdate(serviceClient, scope, thread) {
+  // Exclude superseded actions — they're stale (replaced by a newer turn's
+  // action or auto-superseded when the customer pivoted intent). Showing them
+  // as "Awaiting approval" tricks the admin into approving an action that no
+  // longer matches the conversation.
   let actionQuery = serviceClient
     .from("thread_actions")
     .select("id, action_type, status, detail, payload, error, created_at, updated_at")
     .eq("thread_id", thread.id)
+    .neq("status", "superseded")
     .order("updated_at", { ascending: false })
     .limit(1);
   actionQuery = applyScope(actionQuery, scope);
