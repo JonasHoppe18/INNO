@@ -583,7 +583,13 @@ export async function runDraftV2Pipeline(
       body_text: eval_payload.body,
       from_me: false,
       created_at: new Date().toISOString(),
-    };
+      // Propagate from_email down to the message so case-state-updater can
+      // populate caseState.entities.customer_email via its latestMsg fallback.
+      // Without this, the LLM has to extract email from the body alone, which
+      // it usually can't — and fact-resolver loses its primary email source.
+      from_email: eval_payload.from_email ?? "eval@eval.internal",
+      extracted_customer_email: eval_payload.from_email ?? null,
+    } as typeof latestMessage;
     messages = [
       ...parseEvalConversationHistory(eval_payload.conversation_history),
       latestMessage,

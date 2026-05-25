@@ -6,6 +6,7 @@ import { sendPostmarkEmail } from "@/lib/server/postmark";
 import { getReplyTargetEmail } from "@/lib/inbox/sender";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 import { autoTagThread } from "@/lib/ai/autoTagThread";
+import { embedTexts } from "@/lib/server/shopify-policy-sync";
 import {
   composeEmailBodyWithSignature,
   loadEmailSignatureConfig,
@@ -206,7 +207,7 @@ async function captureV2DraftPreviewFeedback({
 
   const { data: preview, error: previewError } = await serviceClient
     .from("draft_previews")
-    .select("id, draft_text")
+    .select("id, draft_text, message_id")
     .eq("id", previewId)
     .eq("thread_id", threadId)
     .eq("shop_id", shopId)
@@ -260,6 +261,132 @@ async function captureV2DraftPreviewFeedback({
       error.message,
     );
   }
+
+  // Self-improvement loop: when an admin rewrote the draft significantly,
+  // promote the (customer_msg, corrected_reply) pair into ticket_examples.
+  // The retriever surfaces these in future runs as low-csat "corrected"
+  // examples (+0.15 boost) so the writer learns from past mistakes.
+  if (editClass === "major_edit" && preview.message_id) {
+    promoteEditToTicketExample({
+      serviceClient,
+      shopId,
+      threadId,
+      messageId: preview.message_id,
+      finalText,
+      deltaPct,
+      sentAt: sentAt || new Date().toISOString(),
+    }).catch((err) => {
+      // Best-effort — never let this block the send pipeline.
+      console.warn(
+        "[threads/send] failed to promote edit to ticket_examples",
+        err?.message || err,
+      );
+    });
+  }
+}
+
+// Synthesize a csat_score from the edit delta — bigger rewrite means the AI
+// was further off, which is a stronger learning signal for the retriever.
+// Clamps to [5, 80]: even small majors get some weight, but we never claim
+// a manually-edited reply was "perfect" (csat = 100 reserved for human-curated
+// imports).
+function synthesizeCsatFromEditDelta(deltaPct) {
+  const delta = typeof deltaPct === "number" ? deltaPct : 0.5;
+  const score = Math.round(100 - delta * 100);
+  return Math.max(5, Math.min(80, score));
+}
+
+async function promoteEditToTicketExample({
+  serviceClient,
+  shopId,
+  threadId,
+  messageId,
+  finalText,
+  deltaPct,
+  sentAt,
+}) {
+  if (!shopId || !threadId || !messageId || !finalText) return;
+
+  // Load the customer message that triggered this draft + thread context for
+  // intent/subject/workspace metadata.
+  const { data: message } = await serviceClient
+    .from("mail_messages")
+    .select("id, subject, clean_body_text, body_text, snippet, thread_id")
+    .eq("id", messageId)
+    .maybeSingle();
+  if (!message) return;
+
+  const customerMsg = String(
+    message.clean_body_text || message.body_text || message.snippet || "",
+  )
+    .replace(/\s+/g, " ")
+    .trim();
+  if (customerMsg.length < 10) return;
+
+  const { data: thread } = await serviceClient
+    .from("mail_threads")
+    .select("id, subject, workspace_id")
+    .eq("id", threadId)
+    .maybeSingle();
+
+  // Dedup: if the same thread + close-in-time customer_msg already has an
+  // edit_feedback example, skip — otherwise repeated sends on the same thread
+  // would flood ticket_examples with near-duplicates.
+  const externalTicketId = `${threadId}:${messageId}`;
+  const { data: existing } = await serviceClient
+    .from("ticket_examples")
+    .select("id")
+    .eq("shop_id", shopId)
+    .eq("source_provider", "edit_feedback")
+    .eq("external_ticket_id", externalTicketId)
+    .maybeSingle();
+  if (existing?.id) return;
+
+  // Embed only the customer message — that's what retriever matches against.
+  const [embedding] = await embedTexts([customerMsg.slice(0, 8000)]);
+  if (!Array.isArray(embedding) || !embedding.length) return;
+
+  const csatScore = synthesizeCsatFromEditDelta(deltaPct);
+
+  const { error: insertError } = await serviceClient
+    .from("ticket_examples")
+    .insert({
+      shop_id: shopId,
+      workspace_id: thread?.workspace_id || null,
+      source_provider: "edit_feedback",
+      external_ticket_id: externalTicketId,
+      customer_msg: customerMsg,
+      agent_reply: String(finalText).trim(),
+      subject: message.subject || thread?.subject || null,
+      intent: null,
+      language: null,
+      csat_score: csatScore,
+      embedding,
+      imported_at: sentAt,
+    });
+
+  if (insertError) {
+    // Conflict on (shop_id, source_provider, external_ticket_id) is expected
+    // when the same message is sent twice — silent skip is fine.
+    if (!/duplicate key|23505/i.test(String(insertError.message || ""))) {
+      console.warn(
+        "[threads/send] failed to insert edit_feedback ticket example",
+        insertError.message,
+      );
+    }
+    return;
+  }
+
+  console.info(
+    JSON.stringify({
+      event: "ticket_examples.edit_feedback_promoted",
+      shop_id: shopId,
+      thread_id: threadId,
+      external_ticket_id: externalTicketId,
+      edit_delta_pct: deltaPct,
+      csat_score: csatScore,
+    }),
+  );
 }
 
 function encodeBase64(bytes) {

@@ -1139,15 +1139,18 @@ export function KnowledgeCategoriesClient() {
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
+            onClick={() => router.push("/knowledge/simulate")}
+            className="gap-1.5"
+          >
+            Simulate a conversation
+          </Button>
+          <Button
+            variant="outline"
             onClick={() => router.push("/knowledge/all")}
             className="gap-1.5"
           >
             <List className="h-4 w-4" />
             Browse all snippets
-          </Button>
-          <Button onClick={() => setCreateOpen(true)} className="gap-1.5">
-            <Plus className="h-4 w-4" />
-            New category
           </Button>
         </div>
       </div>
@@ -1178,18 +1181,6 @@ export function KnowledgeCategoriesClient() {
               onClick={() => router.push(`/knowledge/${cat.slug}`)}
             />
           ))}
-          <Card
-            className="group cursor-pointer border-dashed border-gray-200 transition-all duration-150 hover:border-gray-300 hover:bg-gray-50/50 active:scale-[0.98]"
-            style={{ animationDelay: `${categories.length * 50}ms` }}
-            onClick={() => setCreateOpen(true)}
-          >
-            <CardContent className="flex flex-col items-center justify-center h-full min-h-[120px] gap-2 pt-6 text-gray-400">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-dashed border-gray-300 transition-colors group-hover:border-gray-400">
-                <Plus className="h-4 w-4" />
-              </div>
-              <span className="text-[13px]">New category</span>
-            </CardContent>
-          </Card>
         </div>
       )}
 
