@@ -191,6 +191,35 @@ const senderRulesSnapshot = (rows = []) =>
     }))
   );
 
+const normalizeBlocklistRows = (rows = []) =>
+  (Array.isArray(rows) ? rows : [])
+    .map((row) => {
+      const id = String(row?.id || "").trim();
+      const matcherType = String(row?.matcher_type || "").trim().toLowerCase() === "domain" ? "domain" : "email";
+      const matcherValue = normalizeSenderRuleMatcherValue(matcherType, row?.matcher_value || "");
+      if (!id) return null;
+      return {
+        id,
+        matcher_type: matcherType,
+        matcher_value: matcherValue,
+        note: String(row?.note || "").slice(0, 300),
+        is_active: Boolean(row?.is_active),
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => String(a.matcher_value || "").localeCompare(String(b.matcher_value || ""), "en", { sensitivity: "base" }));
+
+const blocklistSnapshot = (rows = []) =>
+  JSON.stringify(
+    normalizeBlocklistRows(rows).map((row) => ({
+      id: row.id,
+      matcher_type: row.matcher_type,
+      matcher_value: String(row.matcher_value || "").trim().toLowerCase(),
+      note: String(row.note || "").trim(),
+      is_active: Boolean(row.is_active),
+    }))
+  );
+
 function TabSkeleton() {
   return (
     <section className="max-w-2xl rounded-lg bg-white p-6">
@@ -1332,6 +1361,10 @@ function EmailSettings({
   onUpdateSenderRuleRow,
   onAddSenderRule,
   onDeleteSenderRule,
+  blocklistRows = [],
+  onUpdateBlocklistRow,
+  onAddBlocklistRow,
+  onDeleteBlocklistRow,
   canSave = false,
   onSaveChanges,
   onDiscardChanges,
@@ -1343,9 +1376,13 @@ function EmailSettings({
   const [draftBody, setDraftBody] = useState(bodyTextTemplate || "");
   const [addCategoryModalOpen, setAddCategoryModalOpen] = useState(false);
   const [addSenderRuleModalOpen, setAddSenderRuleModalOpen] = useState(false);
+  const [addBlocklistModalOpen, setAddBlocklistModalOpen] = useState(false);
   const [newSenderMatcherType, setNewSenderMatcherType] = useState("email");
   const [newSenderMatcherValue, setNewSenderMatcherValue] = useState("");
   const [newSenderDestination, setNewSenderDestination] = useState("classification:notification");
+  const [newBlockMatcherType, setNewBlockMatcherType] = useState("email");
+  const [newBlockMatcherValue, setNewBlockMatcherValue] = useState("");
+  const [newBlockNote, setNewBlockNote] = useState("");
   const [newCategoryLabel, setNewCategoryLabel] = useState("");
   const [signatureBuilderOpen, setSignatureBuilderOpen] = useState(false);
   const [signatureDraft, setSignatureDraft] = useState(DEFAULT_SIGNATURE_BUILDER);
@@ -1436,6 +1473,26 @@ function EmailSettings({
     newSenderMatcherType,
     newSenderMatcherValue,
     onAddSenderRule,
+  ]);
+
+  const handleCreateBlocklistRow = useCallback(() => {
+    const matcherType = String(newBlockMatcherType || "email").trim().toLowerCase() === "domain" ? "domain" : "email";
+    const matcherValue = String(newBlockMatcherValue || "").trim().toLowerCase();
+    if (!matcherValue) return;
+    onAddBlocklistRow?.({
+      matcher_type: matcherType,
+      matcher_value: matcherValue,
+      note: String(newBlockNote || "").trim(),
+    });
+    setNewBlockMatcherType("email");
+    setNewBlockMatcherValue("");
+    setNewBlockNote("");
+    setAddBlocklistModalOpen(false);
+  }, [
+    newBlockMatcherType,
+    newBlockMatcherValue,
+    newBlockNote,
+    onAddBlocklistRow,
   ]);
 
   const handleSignatureDraftField = useCallback((field, value) => {
@@ -1919,6 +1976,139 @@ function EmailSettings({
             </div>
           </div>
         </div>
+
+        <div className="rounded-2xl border border-border bg-card p-6">
+          <div className="space-y-5">
+            <div className="max-w-3xl">
+              <h3 className="font-medium text-foreground">Blocked Senders</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Soft-block future inbound emails by exact sender email or domain.
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Blocked emails are stored for audit but hidden from the normal inbox.
+              </p>
+            </div>
+            <div className="space-y-3">
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={savingRouting}
+                  onClick={() => setAddBlocklistModalOpen(true)}
+                >
+                  + Add blocked sender
+                </Button>
+              </div>
+              <div className="overflow-x-auto rounded-xl border border-border">
+                <div>
+                  <div className="grid grid-cols-[1fr_1.6fr_1.2fr_90px_44px] items-center gap-3 border-b border-border px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    <span>Type</span>
+                    <span>Sender match</span>
+                    <span>Note</span>
+                    <span className="text-right">Status</span>
+                    <span />
+                  </div>
+                  {blocklistRows.map((row) => (
+                    <div
+                      key={row.id}
+                      className="grid grid-cols-[1fr_1.6fr_1.2fr_90px_44px] items-center gap-3 border-b border-border px-4 py-3 last:border-b-0"
+                    >
+                      <Select
+                        value={row.matcher_type || "email"}
+                        onValueChange={(value) =>
+                          onUpdateBlocklistRow?.({
+                            ...row,
+                            matcher_type: value === "domain" ? "domain" : "email",
+                          })
+                        }
+                        disabled={savingRouting}
+                      >
+                        <SelectTrigger className="h-9 border-transparent bg-transparent text-sm hover:border-[#E5E7EB] focus:border-[#E5E7EB] focus:ring-0">
+                          <SelectValue placeholder="Type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="email">Email</SelectItem>
+                          <SelectItem value="domain">Domain</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Input
+                        type="text"
+                        placeholder={row.matcher_type === "domain" ? "example.com" : "sender@example.com"}
+                        value={row.matcher_value || ""}
+                        onChange={(event) =>
+                          onUpdateBlocklistRow?.({
+                            ...row,
+                            matcher_value: event.target.value,
+                          })
+                        }
+                        className="h-9 w-full border-transparent bg-transparent text-sm hover:border-[#E5E7EB] focus:border-[#E5E7EB] focus-visible:ring-0"
+                        disabled={savingRouting}
+                      />
+                      <Input
+                        type="text"
+                        placeholder="Optional"
+                        value={row.note || ""}
+                        onChange={(event) =>
+                          onUpdateBlocklistRow?.({
+                            ...row,
+                            note: event.target.value,
+                          })
+                        }
+                        className="h-9 w-full border-transparent bg-transparent text-sm hover:border-[#E5E7EB] focus:border-[#E5E7EB] focus-visible:ring-0"
+                        disabled={savingRouting}
+                      />
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={Boolean(row.is_active)}
+                          onClick={() =>
+                            onUpdateBlocklistRow?.({
+                              ...row,
+                              is_active: !Boolean(row.is_active),
+                            })
+                          }
+                          disabled={savingRouting}
+                          className={cn(
+                            "relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-200",
+                            row.is_active ? "bg-emerald-500" : "bg-slate-200",
+                            savingRouting && "cursor-not-allowed opacity-70"
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              "inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200",
+                              row.is_active ? "translate-x-6" : "translate-x-1"
+                            )}
+                          />
+                        </button>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="text-slate-500 hover:text-red-600"
+                        disabled={savingRouting}
+                        onClick={() => onDeleteBlocklistRow?.(row)}
+                        title="Delete blocked sender"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                  {!blocklistRows.length ? (
+                    <p className="px-4 py-3 text-sm text-muted-foreground">
+                      No blocked senders yet.
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Exact email blocks take precedence over domain blocks and sender rules.
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
 
       <Dialog open={messageModalOpen} onOpenChange={setMessageModalOpen}>
@@ -2115,6 +2305,78 @@ function EmailSettings({
               }
             >
               Create rule
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={addBlocklistModalOpen}
+        onOpenChange={(next) => {
+          setAddBlocklistModalOpen(next);
+          if (!next) {
+            setNewBlockMatcherType("email");
+            setNewBlockMatcherValue("");
+            setNewBlockNote("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add blocked sender</DialogTitle>
+            <DialogDescription>
+              Hide future emails from a specific sender email or domain.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-slate-700">Type</label>
+              <Select value={newBlockMatcherType} onValueChange={setNewBlockMatcherType}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="email">Email</SelectItem>
+                  <SelectItem value="domain">Domain</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-slate-700">Match value</label>
+              <Input
+                value={newBlockMatcherValue}
+                onChange={(event) => setNewBlockMatcherValue(event.target.value)}
+                placeholder={newBlockMatcherType === "domain" ? "example.com" : "sender@example.com"}
+                autoFocus
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-slate-700">Note</label>
+              <Input
+                value={newBlockNote}
+                onChange={(event) => setNewBlockNote(event.target.value.slice(0, 300))}
+                placeholder="Optional"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setAddBlocklistModalOpen(false);
+                setNewBlockMatcherType("email");
+                setNewBlockMatcherValue("");
+                setNewBlockNote("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleCreateBlocklistRow}
+              disabled={!String(newBlockMatcherValue || "").trim()}
+            >
+              Create block
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2476,6 +2738,7 @@ export function SettingsPanel() {
   const [savingAutoReply, setSavingAutoReply] = useState(false);
   const [emailRoutingRows, setEmailRoutingRows] = useState([]);
   const [emailSenderRuleRows, setEmailSenderRuleRows] = useState([]);
+  const [emailBlocklistRows, setEmailBlocklistRows] = useState([]);
   const [workspaceInboxesForRules, setWorkspaceInboxesForRules] = useState([]);
   const [savingEmailRouting, setSavingEmailRouting] = useState(false);
   const [initialAutoReplyEnabled, setInitialAutoReplyEnabled] = useState(false);
@@ -2497,6 +2760,7 @@ export function SettingsPanel() {
   const [initialSignatureTemplateHtml, setInitialSignatureTemplateHtml] = useState("");
   const [initialEmailRoutingRows, setInitialEmailRoutingRows] = useState([]);
   const [initialEmailSenderRuleRows, setInitialEmailSenderRuleRows] = useState([]);
+  const [initialEmailBlocklistRows, setInitialEmailBlocklistRows] = useState([]);
 
   useEffect(() => {
     const requestedTab = String(searchParams?.get("tab") || "").trim().toLowerCase();
@@ -2638,6 +2902,8 @@ export function SettingsPanel() {
         setInitialEmailRoutingRows(normalizeRoutingRows([]));
         setEmailSenderRuleRows(normalizeSenderRuleRows([]));
         setInitialEmailSenderRuleRows(normalizeSenderRuleRows([]));
+        setEmailBlocklistRows(normalizeBlocklistRows([]));
+        setInitialEmailBlocklistRows(normalizeBlocklistRows([]));
         setWorkspaceInboxesForRules([]);
         return;
       }
@@ -2677,6 +2943,7 @@ export function SettingsPanel() {
         emailSignatureResponse,
         emailRoutingResponse,
         emailSenderRulesResponse,
+        emailBlocklistResponse,
         inboxesResponse,
         profileRowsResult,
       ] = await Promise.all([
@@ -2687,6 +2954,7 @@ export function SettingsPanel() {
         fetch("/api/settings/email-signature", fetchOptions).catch(() => null),
         fetch("/api/settings/email-routing", fetchOptions).catch(() => null),
         fetch("/api/settings/email-sender-rules", fetchOptions).catch(() => null),
+        fetch("/api/settings/email-blocklist", fetchOptions).catch(() => null),
         fetch("/api/inboxes", fetchOptions).catch(() => null),
         !workspaceId && memberOwnerId
           ? supabase
@@ -2706,6 +2974,7 @@ export function SettingsPanel() {
         emailSignaturePayload,
         emailRoutingPayload,
         emailSenderRulesPayload,
+        emailBlocklistPayload,
         inboxesPayload,
       ] = await Promise.all([
         membersResponse?.ok ? membersResponse.json().catch(() => ({})) : Promise.resolve({}),
@@ -2715,6 +2984,7 @@ export function SettingsPanel() {
         emailSignatureResponse?.ok ? emailSignatureResponse.json().catch(() => ({})) : Promise.resolve({}),
         emailRoutingResponse?.ok ? emailRoutingResponse.json().catch(() => ({})) : Promise.resolve({}),
         emailSenderRulesResponse?.ok ? emailSenderRulesResponse.json().catch(() => ({})) : Promise.resolve({}),
+        emailBlocklistResponse?.ok ? emailBlocklistResponse.json().catch(() => ({})) : Promise.resolve({}),
         inboxesResponse?.ok ? inboxesResponse.json().catch(() => ({})) : Promise.resolve({}),
       ]);
 
@@ -2822,6 +3092,18 @@ export function SettingsPanel() {
         const fallbackRules = normalizeSenderRuleRows([]);
         setEmailSenderRuleRows(fallbackRules);
         setInitialEmailSenderRuleRows(fallbackRules);
+      }
+
+      // Apply email-blocklist state
+      if (emailBlocklistResponse?.ok) {
+        const rows = Array.isArray(emailBlocklistPayload?.blocks) ? emailBlocklistPayload.blocks : [];
+        const normalized = normalizeBlocklistRows(rows);
+        setEmailBlocklistRows(normalized);
+        setInitialEmailBlocklistRows(normalized);
+      } else {
+        const fallbackBlocks = normalizeBlocklistRows([]);
+        setEmailBlocklistRows(fallbackBlocks);
+        setInitialEmailBlocklistRows(fallbackBlocks);
       }
 
       // Apply inboxes state
@@ -3187,6 +3469,50 @@ export function SettingsPanel() {
     setEmailSenderRuleRows((prev) => prev.filter((entry) => String(entry?.id || "") !== id));
   }, []);
 
+  const handleUpdateEmailBlocklistRow = useCallback((row) => {
+    const rowId = String(row?.id || "").trim();
+    if (!rowId) return;
+    setEmailBlocklistRows((prev) =>
+      prev.map((existing) =>
+        existing.id === rowId
+          ? {
+              ...existing,
+              matcher_type: String(row?.matcher_type || existing.matcher_type || "email") === "domain" ? "domain" : "email",
+              matcher_value: String(row?.matcher_value || ""),
+              note: String(row?.note || "").slice(0, 300),
+              is_active: typeof row?.is_active === "boolean" ? row.is_active : Boolean(existing?.is_active),
+            }
+          : existing
+      )
+    );
+  }, []);
+
+  const handleAddEmailBlocklistRow = useCallback((block) => {
+    const matcherType = String(block?.matcher_type || "email").trim().toLowerCase() === "domain" ? "domain" : "email";
+    const matcherValue = String(block?.matcher_value || "").trim().toLowerCase();
+    if (!matcherValue) return;
+    const tempId = `tmp_blocklist_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    setEmailBlocklistRows((prev) =>
+      normalizeBlocklistRows([
+        ...prev,
+        {
+          id: tempId,
+          matcher_type: matcherType,
+          matcher_value: matcherValue,
+          note: String(block?.note || "").slice(0, 300),
+          is_active: true,
+        },
+      ])
+    );
+  }, []);
+
+  const handleDeleteEmailBlocklistRow = useCallback((row) => {
+    const id = String(row?.id || "").trim();
+    if (!id) return;
+    if (!window.confirm(`Delete blocked sender "${row?.matcher_value || id}"?`)) return;
+    setEmailBlocklistRows((prev) => prev.filter((entry) => String(entry?.id || "") !== id));
+  }, []);
+
   const handleSendSignatureTest = useCallback(async () => {
     if (sendingSignatureTest) return;
     setSendingSignatureTest(true);
@@ -3260,6 +3586,11 @@ export function SettingsPanel() {
     [emailSenderRuleRows, initialEmailSenderRuleRows]
   );
 
+  const hasBlocklistChanges = useMemo(
+    () => blocklistSnapshot(emailBlocklistRows) !== blocklistSnapshot(initialEmailBlocklistRows),
+    [emailBlocklistRows, initialEmailBlocklistRows]
+  );
+
   const hasSignatureTemplateChanges = useMemo(() => {
     if (Boolean(signatureIsActive) !== Boolean(initialSignatureIsActive)) return true;
     if (String(signatureTemplateHtml || "") !== String(initialSignatureTemplateHtml || "")) return true;
@@ -3272,8 +3603,8 @@ export function SettingsPanel() {
   ]);
 
   const canSaveEmailSettings = useMemo(() => {
-    return hasAutoReplyChanges || hasRoutingChanges || hasSenderRulesChanges || hasSignatureTemplateChanges;
-  }, [hasAutoReplyChanges, hasRoutingChanges, hasSenderRulesChanges, hasSignatureTemplateChanges]);
+    return hasAutoReplyChanges || hasRoutingChanges || hasSenderRulesChanges || hasBlocklistChanges || hasSignatureTemplateChanges;
+  }, [hasAutoReplyChanges, hasRoutingChanges, hasSenderRulesChanges, hasBlocklistChanges, hasSignatureTemplateChanges]);
 
   const handleDiscardEmailSettings = useCallback(() => {
     setAutoReplyEnabled(Boolean(initialAutoReplyEnabled));
@@ -3289,6 +3620,7 @@ export function SettingsPanel() {
     setSignatureTemplateHtml(String(initialSignatureTemplateHtml || ""));
     setEmailRoutingRows(normalizeRoutingRows(initialEmailRoutingRows));
     setEmailSenderRuleRows(normalizeSenderRuleRows(initialEmailSenderRuleRows));
+    setEmailBlocklistRows(normalizeBlocklistRows(initialEmailBlocklistRows));
   }, [
     initialAutoReplyBodyHtmlTemplate,
     initialAutoReplyBodyTextTemplate,
@@ -3303,6 +3635,7 @@ export function SettingsPanel() {
     initialSignatureTemplateHtml,
     initialEmailRoutingRows,
     initialEmailSenderRuleRows,
+    initialEmailBlocklistRows,
   ]);
 
   const handleSaveEmailSettings = useCallback(async () => {
@@ -3494,6 +3827,75 @@ export function SettingsPanel() {
         setEmailSenderRuleRows(persistedRules);
       }
 
+      if (hasBlocklistChanges) {
+        const blockRows = normalizeBlocklistRows(emailBlocklistRows);
+        const initialRows = normalizeBlocklistRows(initialEmailBlocklistRows);
+        const currentIds = new Set(blockRows.map((row) => String(row.id)));
+        const deletedRows = initialRows.filter((row) => !currentIds.has(String(row.id)));
+
+        for (const row of deletedRows) {
+          const response = await fetch("/api/settings/email-blocklist", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ id: row.id }),
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(payload?.error || "Could not delete blocked sender.");
+          }
+        }
+
+        for (const row of blockRows) {
+          const matcherType = String(row.matcher_type || "").trim().toLowerCase();
+          const matcherValue = normalizeSenderRuleMatcherValue(matcherType, row.matcher_value);
+          if (!matcherType || !matcherValue) {
+            throw new Error("Blocked sender requires a valid email or domain.");
+          }
+
+          const isTemporary = String(row.id).startsWith("tmp_blocklist_");
+          const method = isTemporary ? "POST" : "PUT";
+          const requestBody = isTemporary
+            ? {
+                matcher_type: matcherType,
+                matcher_value: matcherValue,
+                note: String(row.note || "").trim(),
+                is_active: Boolean(row.is_active),
+              }
+            : {
+                id: row.id,
+                matcher_type: matcherType,
+                matcher_value: matcherValue,
+                note: String(row.note || "").trim(),
+                is_active: Boolean(row.is_active),
+              };
+
+          const response = await fetch("/api/settings/email-blocklist", {
+            method,
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify(requestBody),
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(payload?.error || "Could not save blocked sender.");
+          }
+        }
+
+        const refreshResponse = await fetch("/api/settings/email-blocklist", {
+          method: "GET",
+          cache: "no-store",
+          credentials: "include",
+        });
+        const refreshPayload = await refreshResponse.json().catch(() => ({}));
+        if (!refreshResponse.ok) {
+          throw new Error(refreshPayload?.error || "Could not reload blocked senders.");
+        }
+        const persistedBlocks = normalizeBlocklistRows(refreshPayload?.blocks || []);
+        setInitialEmailBlocklistRows(persistedBlocks);
+        setEmailBlocklistRows(persistedBlocks);
+      }
+
       if (hasAutoReplyChanges) {
         setInitialAutoReplyEnabled(Boolean(autoReplyEnabled));
         setInitialAutoReplyTriggerMode(String(autoReplyTriggerMode || "first_inbound_per_thread"));
@@ -3522,15 +3924,18 @@ export function SettingsPanel() {
     autoReplyTemplateName,
     autoReplyTriggerMode,
     canSaveEmailSettings,
+    emailBlocklistRows,
     emailRoutingRows,
     emailSenderRuleRows,
     hasAutoReplyChanges,
+    hasBlocklistChanges,
     hasSignatureTemplateChanges,
     hasRoutingChanges,
     hasSenderRulesChanges,
     handleSaveAutoReply,
     initialEmailRoutingRows,
     initialEmailSenderRuleRows,
+    initialEmailBlocklistRows,
     signatureIsActive,
     signatureTemplateHtml,
     savingAutoReply,
@@ -3593,6 +3998,10 @@ export function SettingsPanel() {
             onUpdateSenderRuleRow={handleUpdateEmailSenderRuleRow}
             onAddSenderRule={handleAddEmailSenderRule}
             onDeleteSenderRule={handleDeleteEmailSenderRule}
+            blocklistRows={emailBlocklistRows}
+            onUpdateBlocklistRow={handleUpdateEmailBlocklistRow}
+            onAddBlocklistRow={handleAddEmailBlocklistRow}
+            onDeleteBlocklistRow={handleDeleteEmailBlocklistRow}
             canSave={canSaveEmailSettings}
             onSaveChanges={handleSaveEmailSettings}
             onDiscardChanges={handleDiscardEmailSettings}
@@ -3628,9 +4037,9 @@ export function SettingsPanel() {
   };
 
   return (
-    <main className="settings-theme flex min-h-screen bg-background">
+    <main className="settings-theme flex h-[calc(100svh_-_2.5rem_-_var(--app-top-offset,0px))] min-h-0 overflow-hidden bg-background">
       {/* Sidebar — matches app's sidebar design system */}
-      <aside className="sticky top-0 flex h-screen w-[256px] shrink-0 flex-col overflow-y-auto border-r border-sidebar-border bg-sidebar">
+      <aside className="flex h-full w-[256px] shrink-0 flex-col overflow-y-auto border-r border-sidebar-border bg-sidebar">
         <nav className="flex-1 space-y-6 px-5 pb-7 pt-12">
           {MENU_SECTIONS.map((section) => (
             <div key={section.label}>
@@ -3669,7 +4078,7 @@ export function SettingsPanel() {
       </aside>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto bg-muted/[0.24]">
+      <div className="min-w-0 flex-1 overflow-y-auto bg-muted/[0.24]">
         <div className="px-6 py-10 lg:px-12">
           <div key={activeTab} className="settings-tab-enter min-w-0">
             {renderContent()}

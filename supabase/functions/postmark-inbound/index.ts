@@ -93,10 +93,25 @@ type WorkspaceEmailSenderRule = {
   updated_at: string | null;
 };
 
+type WorkspaceEmailBlocklistEntry = {
+  id: string;
+  workspace_id: string;
+  matcher_type: "email" | "domain";
+  matcher_value: string;
+  is_active: boolean;
+  updated_at: string | null;
+};
+
 type SenderRuleOverride = {
   id: string;
   destinationType: "classification" | "inbox";
   destinationValue: string;
+};
+
+type BlockedSenderMatch = {
+  id: string;
+  matcherType: "email" | "domain";
+  matcherValue: string;
 };
 
 type RouteDecision = {
@@ -484,6 +499,78 @@ async function ensureWorkspaceSenderRules(workspaceId: string | null): Promise<W
       } as WorkspaceEmailSenderRule;
     })
     .filter((row): row is WorkspaceEmailSenderRule => Boolean(row?.id && row?.is_active));
+}
+
+async function ensureWorkspaceEmailBlocklist(workspaceId: string | null): Promise<WorkspaceEmailBlocklistEntry[]> {
+  if (!supabase || !workspaceId) return [];
+
+  const { data, error } = await supabase
+    .from("workspace_email_blocklist")
+    .select("id, workspace_id, matcher_type, matcher_value, is_active, updated_at")
+    .eq("workspace_id", workspaceId)
+    .eq("is_active", true)
+    .order("updated_at", { ascending: false })
+    .order("created_at", { ascending: false });
+  if (error) {
+    if (
+      /relation .*workspace_email_blocklist.* does not exist/i.test(
+        String((error as { message?: string })?.message || ""),
+      )
+    ) {
+      return [];
+    }
+    throw new Error(error.message);
+  }
+
+  return (Array.isArray(data) ? data : [])
+    .map((row) => {
+      const matcherType = normalizeSenderMatcherType(row?.matcher_type);
+      if (!matcherType) return null;
+      const matcherValue = normalizeSenderMatcherValue(matcherType, row?.matcher_value);
+      if (!matcherValue) return null;
+      return {
+        id: asString(row?.id),
+        workspace_id: asString(row?.workspace_id),
+        matcher_type: matcherType,
+        matcher_value: matcherValue,
+        is_active: Boolean(row?.is_active),
+        updated_at: asString(row?.updated_at) || null,
+      } as WorkspaceEmailBlocklistEntry;
+    })
+    .filter((row): row is WorkspaceEmailBlocklistEntry => Boolean(row?.id && row?.is_active));
+}
+
+function resolveBlockedSender(options: {
+  fromEmail: string;
+  blocks: WorkspaceEmailBlocklistEntry[];
+}): BlockedSenderMatch | null {
+  const fromEmail = asString(options.fromEmail).toLowerCase();
+  if (!fromEmail) return null;
+  const fromDomain = extractDomain(fromEmail);
+
+  for (const block of options.blocks) {
+    if (block.matcher_type !== "email") continue;
+    if (block.matcher_value === fromEmail) {
+      return {
+        id: block.id,
+        matcherType: block.matcher_type,
+        matcherValue: block.matcher_value,
+      };
+    }
+  }
+
+  for (const block of options.blocks) {
+    if (block.matcher_type !== "domain") continue;
+    if (fromDomain && block.matcher_value === fromDomain) {
+      return {
+        id: block.id,
+        matcherType: block.matcher_type,
+        matcherValue: block.matcher_value,
+      };
+    }
+  }
+
+  return null;
 }
 
 function resolveSenderRuleOverride(options: {
@@ -1493,6 +1580,16 @@ Deno.serve(async (req) => {
     );
     workspaceSenderRules = [];
   }
+  let workspaceEmailBlocklist: WorkspaceEmailBlocklistEntry[] = [];
+  try {
+    workspaceEmailBlocklist = await ensureWorkspaceEmailBlocklist(mailbox.workspace_id);
+  } catch (error) {
+    console.warn(
+      "postmark-inbound: failed to load email blocklist",
+      (error as Error)?.message || error,
+    );
+    workspaceEmailBlocklist = [];
+  }
   let workspaceInboxSlugs = new Set<string>();
   try {
     workspaceInboxSlugs = await ensureWorkspaceInboxSlugs(mailbox.workspace_id);
@@ -1510,7 +1607,22 @@ Deno.serve(async (req) => {
       label: route.label || route.category_key,
     }));
 
-  if (activeRoutingCategories.length > 0) {
+  const blockedSender = resolveBlockedSender({
+    fromEmail: fromEmail || "",
+    blocks: workspaceEmailBlocklist,
+  });
+  const isBlockedSender = Boolean(blockedSender?.id);
+
+  if (isBlockedSender) {
+    routingClassification = {
+      category: "blocked",
+      confidence: 0.99,
+      reason: `blocklist:${blockedSender?.id}`,
+      source: "fallback",
+      subject,
+      excerpt: textBody.slice(0, 420),
+    };
+  } else if (activeRoutingCategories.length > 0) {
     try {
       routingClassification = await classifyInboundRouting(
         {
@@ -1545,8 +1657,8 @@ Deno.serve(async (req) => {
   }
 
   const senderRuleOverride = resolveSenderRuleOverride({
-    fromEmail,
-    rules: workspaceSenderRules,
+    fromEmail: fromEmail || "",
+    rules: isBlockedSender ? [] : workspaceSenderRules,
     routes: workspaceRoutes,
     inboxSlugs: workspaceInboxSlugs,
   });
@@ -1588,16 +1700,22 @@ Deno.serve(async (req) => {
     ? senderRuleTargetsInbox
       ? "support"
       : normalizeRouteCategory(senderRuleOverride.destinationValue)
+    : isBlockedSender
+      ? "blocked"
     : inboxClassification.bucket === "notification"
       ? "notification"
       : normalizeRouteCategory(routingClassification.category);
   const classificationConfidence = senderRuleOverride
     ? 0.99
+    : isBlockedSender
+      ? 0.99
     : inboxClassification.bucket === "notification"
       ? Math.min(1, Math.max(0.8, inboxClassification.score / 8))
       : routingClassification.confidence;
   const classificationReason = senderRuleOverride
     ? `sender_rule_override:${senderRuleOverride.id}`
+    : isBlockedSender
+      ? `blocklist:${blockedSender?.id}`
     : inboxClassification.bucket === "notification"
       ? inboxClassification.reason
       : routingClassification.reason;
@@ -1681,9 +1799,9 @@ Deno.serve(async (req) => {
         customer_email: (shopifyContact.customerEmail || fromEmail || "").toLowerCase() || null,
         customer_last_inbound_at: receivedAt,
         last_message_at: receivedAt,
-        unread_count: 1,
-        is_read: false,
-        status: "new",
+        unread_count: isBlockedSender ? 0 : 1,
+        is_read: isBlockedSender,
+        status: isBlockedSender ? "blocked" : "new",
         priority: "normal",
         tags: withInboxTag(buildThreadTags([], inboundCategory), senderRuleInboxSlug || null),
         classification_key: classificationKey,
@@ -1739,7 +1857,7 @@ Deno.serve(async (req) => {
       to_emails: toList,
       cc_emails: ccList,
       bcc_emails: bccList,
-      is_read: false,
+      is_read: isBlockedSender,
       received_at: receivedAt,
       sent_at: receivedAt,
       created_at: new Date().toISOString(),
@@ -1780,7 +1898,11 @@ Deno.serve(async (req) => {
     .eq("id", threadId)
     .maybeSingle();
   const currentUnread = Number(existingThread?.unread_count ?? 0);
-  const nextUnreadCount = createdNewThread ? 1 : Math.max(0, currentUnread + 1);
+  const nextUnreadCount = isBlockedSender
+    ? 0
+    : createdNewThread
+      ? 1
+      : Math.max(0, currentUnread + 1);
   const existingCategory = splitThreadTags(existingThread?.tags).category;
   const shouldUpdateCategory = !existingCategory || (existingCategory === "General" && inboundCategory !== "General");
   const updatePayload: Record<string, unknown> = {
@@ -1788,7 +1910,7 @@ Deno.serve(async (req) => {
     snippet,
     subject: existingThread?.subject ? existingThread.subject : subject,
     unread_count: nextUnreadCount,
-    is_read: false,
+    is_read: isBlockedSender,
     customer_name: shopifyContact.customerName || fromName || existingThread?.customer_name || null,
     customer_email:
       (shopifyContact.customerEmail || fromEmail || existingThread?.customer_email || "").toLowerCase() ||
@@ -1799,7 +1921,9 @@ Deno.serve(async (req) => {
     classification_reason: classificationReason,
     updated_at: new Date().toISOString(),
   };
-  if (!createdNewThread) {
+  if (isBlockedSender) {
+    updatePayload.status = "blocked";
+  } else if (!createdNewThread) {
     // Re-open existing threads when a new inbound customer message arrives.
     updatePayload.status = "open";
   }
@@ -1819,24 +1943,22 @@ Deno.serve(async (req) => {
   if (createdNewThread) {
     const textToDetect = parsedBodies.cleanBodyText || textBody;
     if (textToDetect) {
-      detectCustomerLanguage(textToDetect, OPENAI_API_KEY).then((lang) => {
+      detectCustomerLanguage(textToDetect, OPENAI_API_KEY).then(async (lang) => {
         if (lang !== "unknown") {
-          supabase
+          await supabase
             .from("mail_threads")
             .update({ customer_language: lang })
-            .eq("id", threadId)
-            .then(() => null)
-            .catch(() => null);
+            .eq("id", threadId);
         }
       }).catch(() => null);
     }
   }
 
   // Fire-and-forget: AI auto-tagging based on email content
-  if (supabase && mailbox.workspace_id && threadId && OPENAI_API_KEY) {
+  if (supabase && mailbox.workspace_id && threadId && OPENAI_API_KEY && !isBlockedSender) {
     const tagBody = parsedBodies?.cleanBodyText || textBody || "";
     autoTagThread({
-      supabase,
+      supabase: supabase as any,
       workspaceId: mailbox.workspace_id,
       threadId,
       subject,
@@ -1845,7 +1967,7 @@ Deno.serve(async (req) => {
     }).catch((err: Error) => console.warn("[auto-tag] error:", err?.message));
 
     generateIssueMetadata({
-      supabase,
+      supabase: supabase as any,
       workspaceId: mailbox.workspace_id,
       threadId,
       subject,

@@ -54,6 +54,7 @@ export function isOutboundMessage(message, mailboxEmails = []) {
 
 export function getInboxBucket(thread) {
   const key = String(thread?.classification_key || "").trim().toLowerCase();
+  if (key === "blocked") return "blocked";
   return key === "notification" ? "notification" : "ticket";
 }
 
