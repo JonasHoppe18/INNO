@@ -1408,6 +1408,20 @@ export function InboxSplitView({
     selectedThreadIdRef.current = selectedThreadId;
   }, [selectedThreadId]);
 
+  // When the user switches threads, eagerly clear any cached pending-action
+  // state for the new thread. Without this, a stale action card briefly
+  // flashes from the previous fetch before the new detail-API response (which
+  // correctly returns no action when superseded) overwrites it.
+  useEffect(() => {
+    if (!selectedThreadId) return;
+    setPendingOrderUpdateByThread((prev) => {
+      if (!prev[selectedThreadId]) return prev;
+      const next = { ...prev };
+      delete next[selectedThreadId];
+      return next;
+    });
+  }, [selectedThreadId]);
+
   const activeNoteValue = selectedThreadId
     ? noteValueByThread[selectedThreadId] || ""
     : "";
