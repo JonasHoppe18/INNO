@@ -2321,7 +2321,24 @@ export function InboxSplitView({
       }));
     }
     const latestAction = detailOrderUpdate?.action || null;
-    if (!latestAction) return;
+    // No actionable action on this thread — clear any stale pending state we
+    // may have cached from a prior fetch. Without this, a "Cancel Order" card
+    // that was superseded server-side would persist in the UI until reload.
+    if (!latestAction) {
+      setPendingOrderUpdateByThread((prev) => {
+        if (!prev[selectedThreadId]) return prev;
+        const next = { ...prev };
+        delete next[selectedThreadId];
+        return next;
+      });
+      setOrderUpdateDecisionByThread((prev) => {
+        if (!prev[selectedThreadId]) return prev;
+        const next = { ...prev };
+        delete next[selectedThreadId];
+        return next;
+      });
+      return;
+    }
 
     const normalizedStatus = String(
       latestAction.normalizedStatus || latestAction.status || "",
@@ -2336,7 +2353,18 @@ export function InboxSplitView({
       normalizedStatus === "pending" ||
       normalizedStatus === "awaiting_approval" ||
       normalizedStatus === "requires_approval";
-    if (!shouldShowActionCardForType) return;
+    // Action exists but isn't in an approval-needing state (e.g. completed,
+    // failed, declined) — still clear pending state so the approval card
+    // disappears once the action transitions.
+    if (!shouldShowActionCardForType) {
+      setPendingOrderUpdateByThread((prev) => {
+        if (!prev[selectedThreadId]) return prev;
+        const next = { ...prev };
+        delete next[selectedThreadId];
+        return next;
+      });
+      return;
+    }
 
     const isTestModeAction =
       latestAction?.testMode === true ||
