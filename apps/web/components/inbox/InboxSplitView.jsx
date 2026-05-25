@@ -1412,6 +1412,11 @@ export function InboxSplitView({
   // state for the new thread. Without this, a stale action card briefly
   // flashes from the previous fetch before the new detail-API response (which
   // correctly returns no action when superseded) overwrites it.
+  //
+  // Also invalidate any cached draft for the new thread UNLESS the user has
+  // local edits (systemDraftUneditedByThread === false). The cached draft is
+  // often stale — the AI may have regenerated it server-side and the cache
+  // would otherwise show the old text. The next useEffect will fetch fresh.
   useEffect(() => {
     if (!selectedThreadId) return;
     setPendingOrderUpdateByThread((prev) => {
@@ -1420,7 +1425,19 @@ export function InboxSplitView({
       delete next[selectedThreadId];
       return next;
     });
-  }, [selectedThreadId]);
+    // Only invalidate draft cache if the user hasn't edited locally —
+    // we don't want to throw away unsaved edits when they tab back.
+    const userHasEdits = systemDraftUneditedByThread[selectedThreadId] === false;
+    if (!userHasEdits) {
+      setDraftValueByThread((prev) => {
+        if (!(selectedThreadId in prev)) return prev;
+        const next = { ...prev };
+        delete next[selectedThreadId];
+        return next;
+      });
+      draftCacheRef.current.delete(selectedThreadId);
+    }
+  }, [selectedThreadId, systemDraftUneditedByThread]);
 
   const activeNoteValue = selectedThreadId
     ? noteValueByThread[selectedThreadId] || ""
