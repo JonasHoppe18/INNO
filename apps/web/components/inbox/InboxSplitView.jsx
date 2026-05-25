@@ -1414,9 +1414,9 @@ export function InboxSplitView({
   // correctly returns no action when superseded) overwrites it.
   //
   // Also invalidate any cached draft for the new thread UNLESS the user has
-  // local edits (systemDraftUneditedByThread === false). The cached draft is
-  // often stale — the AI may have regenerated it server-side and the cache
-  // would otherwise show the old text. The next useEffect will fetch fresh.
+  // local edits. The cached draft is often stale — the AI may have regenerated
+  // it server-side and the cache would otherwise show the old text. The next
+  // useEffect will fetch fresh.
   useEffect(() => {
     if (!selectedThreadId) return;
     setPendingOrderUpdateByThread((prev) => {
@@ -1425,9 +1425,9 @@ export function InboxSplitView({
       delete next[selectedThreadId];
       return next;
     });
-    // Only invalidate draft cache if the user hasn't edited locally —
-    // we don't want to throw away unsaved edits when they tab back.
-    const userHasEdits = systemDraftUneditedByThread[selectedThreadId] === false;
+    // Read from ref so this effect doesn't depend on systemDraftUneditedByThread.
+    const userHasEdits =
+      systemDraftUneditedRef.current[selectedThreadId] === false;
     if (!userHasEdits) {
       setDraftValueByThread((prev) => {
         if (!(selectedThreadId in prev)) return prev;
@@ -1437,7 +1437,7 @@ export function InboxSplitView({
       });
       draftCacheRef.current.delete(selectedThreadId);
     }
-  }, [selectedThreadId, systemDraftUneditedByThread]);
+  }, [selectedThreadId]);
 
   const activeNoteValue = selectedThreadId
     ? noteValueByThread[selectedThreadId] || ""
@@ -3696,7 +3696,7 @@ export function InboxSplitView({
   );
 
   const handleRefineDraft = useCallback(
-    async (userPrompt) => {
+    async (userPrompt, snippetIds = []) => {
       if (!selectedThreadId || isLocalThreadId(selectedThreadId)) return;
       if (refineDraftLoadingByThread[selectedThreadId]) return;
       const threadId = selectedThreadId;
@@ -3719,7 +3719,11 @@ export function InboxSplitView({
             method: "POST",
             credentials: "include",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ currentDraft, userPrompt }),
+            body: JSON.stringify({
+              currentDraft,
+              userPrompt,
+              snippetIds: Array.isArray(snippetIds) ? snippetIds : [],
+            }),
           });
           const payload = await res.json().catch(() => ({}));
           if (!res.ok)

@@ -36,6 +36,9 @@ export async function POST(request, { params }) {
   const body = await request.json().catch(() => ({}));
   const currentDraft = String(body?.currentDraft || "").trim();
   const userPrompt = String(body?.userPrompt || "").trim();
+  const snippetIds = Array.isArray(body?.snippetIds)
+    ? body.snippetIds.map((id) => String(id || "").trim()).filter(Boolean)
+    : [];
 
   if (!currentDraft || !userPrompt) {
     return NextResponse.json(
@@ -101,6 +104,7 @@ export async function POST(request, { params }) {
       threadSubject: thread.subject || "",
       currentDraft,
       userPrompt,
+      snippetIds,
     }),
   });
 

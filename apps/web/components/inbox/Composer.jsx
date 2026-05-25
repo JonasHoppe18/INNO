@@ -345,14 +345,97 @@ export function Composer({
   const isForward = mode === "forward";
   const showDraftLoadingState = !isNote && (isDraftLoading || isRefiningDraft);
 
+  // Slash-command snippet picker state — declared HERE (before the callbacks
+  // and useMemo that reference these in their dep arrays). useMemo deps are
+  // evaluated at definition time, so the const bindings must already exist or
+  // we hit a TDZ ReferenceError.
+  const [refineSnippetsOpen, setRefineSnippetsOpen] = useState(false);
+  const [refineSnippetsSearch, setRefineSnippetsSearch] = useState("");
+  const [refineSnippetsList, setRefineSnippetsList] = useState([]);
+  const [refineSnippetsLoading, setRefineSnippetsLoading] = useState(false);
+  const [refineSelectedSnippets, setRefineSelectedSnippets] = useState([]);
+  const [refineSnippetsActiveIndex, setRefineSnippetsActiveIndex] = useState(0);
+  const refineSnippetsLoadedRef = useRef(false);
+
   const handleRefineSubmit = async () => {
     const prompt = refinePrompt.trim();
     if (!prompt || !onRefineDraft) return;
+    const snippetIds = refineSelectedSnippets.map((s) => s.id);
     setRefineError("");
     setRefineOpen(false);
     setRefinePrompt("");
-    await onRefineDraft(prompt);
+    setRefineSelectedSnippets([]);
+    setRefineSnippetsOpen(false);
+    setRefineSnippetsSearch("");
+    await onRefineDraft(prompt, snippetIds);
   };
+
+  // Lazy-load snippets the first time the agent opens the picker. We refresh
+  // on subsequent opens too in case knowledge was edited mid-session.
+  const loadRefineSnippets = useCallback(async () => {
+    setRefineSnippetsLoading(true);
+    try {
+      const res = await fetch("/api/knowledge/snippets?include_all=1", {
+        credentials: "include",
+      });
+      const data = await res.json().catch(() => ({}));
+      const list = Array.isArray(data?.snippets) ? data.snippets : [];
+      setRefineSnippetsList(list);
+      refineSnippetsLoadedRef.current = true;
+    } catch {
+      setRefineSnippetsList([]);
+    } finally {
+      setRefineSnippetsLoading(false);
+    }
+  }, []);
+
+  // Filter snippets by search query — match against title, content preview,
+  // question, and answer so the agent can find by any wording.
+  const refineSnippetsFiltered = useMemo(() => {
+    const q = refineSnippetsSearch.trim().toLowerCase();
+    const alreadyPickedIds = new Set(refineSelectedSnippets.map((s) => s.id));
+    return refineSnippetsList
+      .filter((s) => !alreadyPickedIds.has(s.snippet_id))
+      .filter((s) => {
+        if (!q) return true;
+        const haystack = [
+          s.title,
+          s.question,
+          s.answer,
+          s.content,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(q);
+      })
+      .slice(0, 12);
+  }, [refineSnippetsList, refineSnippetsSearch, refineSelectedSnippets]);
+
+  const openSnippetPicker = useCallback(() => {
+    setRefineSnippetsOpen(true);
+    setRefineSnippetsActiveIndex(0);
+    if (!refineSnippetsLoadedRef.current || refineSnippetsList.length === 0) {
+      loadRefineSnippets();
+    } else {
+      // Refresh in background (cheap) so edits from other tabs surface.
+      loadRefineSnippets();
+    }
+  }, [loadRefineSnippets, refineSnippetsList.length]);
+
+  const handlePickRefineSnippet = useCallback((snippet) => {
+    if (!snippet?.snippet_id) return;
+    setRefineSelectedSnippets((prev) => {
+      if (prev.some((s) => s.id === snippet.snippet_id)) return prev;
+      return [...prev, { id: snippet.snippet_id, title: snippet.title || "Snippet" }];
+    });
+    setRefineSnippetsOpen(false);
+    setRefineSnippetsSearch("");
+  }, []);
+
+  const handleRemoveRefineSnippet = useCallback((snippetId) => {
+    setRefineSelectedSnippets((prev) => prev.filter((s) => s.id !== snippetId));
+  }, []);
   const replyEditorMinHeightClassName = "min-h-[72px]";
   const editorBodyMinHeightClassName = isNote ? "min-h-[96px]" : "min-h-[112px]";
   const initialTo = useMemo(() => {
@@ -543,6 +626,9 @@ export function Composer({
     if (isDraftLoading || isRefiningDraft) {
       setRefineOpen(false);
       setRefinePrompt("");
+      setRefineSelectedSnippets([]);
+      setRefineSnippetsOpen(false);
+      setRefineSnippetsSearch("");
     }
   }, [isDraftLoading, isRefiningDraft]);
 
@@ -1279,21 +1365,84 @@ export function Composer({
           <div className="min-h-0 flex-1 overflow-y-auto bg-card px-3 py-2">
             {refineOpen && !isNote ? (
               <div
-                className="mb-2 flex flex-col gap-2 rounded-xl border border-violet-200 dark:border-violet-500/30 bg-violet-50/70 dark:bg-violet-500/10 px-3 py-2.5"
+                className="relative mb-2 flex flex-col gap-2 rounded-xl border border-violet-200 dark:border-violet-500/30 bg-violet-50/70 dark:bg-violet-500/10 px-3 py-2.5"
                 style={{
                   animation: "refine-slide-in 180ms cubic-bezier(0.23,1,0.32,1) both",
                 }}
               >
-                <div className="text-[11px] font-semibold uppercase tracking-wider text-violet-500 dark:text-violet-400">
-                  Refine draft
+                <div className="flex items-center justify-between">
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-violet-500 dark:text-violet-400">
+                    Refine draft
+                  </div>
+                  <div className="text-[10.5px] text-violet-400 dark:text-violet-400/70">
+                    Type <kbd className="rounded bg-violet-200/60 dark:bg-violet-500/20 px-1 font-mono">/</kbd> to attach a knowledge snippet
+                  </div>
                 </div>
+                {refineSelectedSnippets.length > 0 ? (
+                  <div className="flex flex-wrap gap-1">
+                    {refineSelectedSnippets.map((s) => (
+                      <span
+                        key={s.id}
+                        className="inline-flex items-center gap-1 rounded-full border border-violet-300 bg-white px-2 py-0.5 text-[11px] text-violet-700 dark:border-violet-500/40 dark:bg-violet-500/10 dark:text-violet-200"
+                      >
+                        <span className="truncate max-w-[180px]">{s.title}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveRefineSnippet(s.id)}
+                          className="text-violet-400 hover:text-violet-700 dark:hover:text-violet-100 leading-none"
+                          aria-label={`Remove ${s.title}`}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
                 <div className="flex items-center gap-2">
                   <input
                     autoFocus
                     type="text"
                     value={refinePrompt}
-                    onChange={(e) => setRefinePrompt(e.target.value)}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      // Detect "/" trigger: typed at start, or after whitespace.
+                      // Open picker; the "/" itself is stripped from the prompt
+                      // (it's a command character, not literal content).
+                      const last = next.slice(-1);
+                      if (last === "/") {
+                        const stripped = next.slice(0, -1);
+                        setRefinePrompt(stripped);
+                        openSnippetPicker();
+                        return;
+                      }
+                      setRefinePrompt(next);
+                    }}
                     onKeyDown={(e) => {
+                      if (refineSnippetsOpen) {
+                        if (e.key === "ArrowDown") {
+                          e.preventDefault();
+                          setRefineSnippetsActiveIndex((idx) =>
+                            Math.min(idx + 1, Math.max(0, refineSnippetsFiltered.length - 1)),
+                          );
+                          return;
+                        }
+                        if (e.key === "ArrowUp") {
+                          e.preventDefault();
+                          setRefineSnippetsActiveIndex((idx) => Math.max(0, idx - 1));
+                          return;
+                        }
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          const pick = refineSnippetsFiltered[refineSnippetsActiveIndex];
+                          if (pick) handlePickRefineSnippet(pick);
+                          return;
+                        }
+                        if (e.key === "Escape") {
+                          e.preventDefault();
+                          setRefineSnippetsOpen(false);
+                          return;
+                        }
+                      }
                       if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();
                         handleRefineSubmit();
@@ -1303,7 +1452,11 @@ export function Composer({
                         setRefineError("");
                       }
                     }}
-                    placeholder="Write a custom instruction..."
+                    placeholder={
+                      refineSelectedSnippets.length > 0
+                        ? "Add an instruction..."
+                        : "Write a custom instruction... (type / to pick a snippet)"
+                    }
                     className="flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-violet-400/70 dark:placeholder:text-violet-400/50"
                   />
                   <button
@@ -1319,6 +1472,91 @@ export function Composer({
                 </div>
                 {refineError ? (
                   <p className="text-[11px] text-red-500 dark:text-red-400">{refineError}</p>
+                ) : null}
+
+                {/* Snippet picker popover — opens via "/" or programmatically. */}
+                {refineSnippetsOpen ? (
+                  <div className="absolute left-3 right-3 top-full z-50 mt-1 overflow-hidden rounded-lg border border-violet-200 bg-white shadow-lg dark:border-violet-500/30 dark:bg-zinc-900">
+                    <div className="border-b border-violet-100 px-3 py-2 dark:border-violet-500/20">
+                      <input
+                        type="text"
+                        autoFocus
+                        value={refineSnippetsSearch}
+                        onChange={(e) => {
+                          setRefineSnippetsSearch(e.target.value);
+                          setRefineSnippetsActiveIndex(0);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "ArrowDown") {
+                            e.preventDefault();
+                            setRefineSnippetsActiveIndex((idx) =>
+                              Math.min(idx + 1, Math.max(0, refineSnippetsFiltered.length - 1)),
+                            );
+                          } else if (e.key === "ArrowUp") {
+                            e.preventDefault();
+                            setRefineSnippetsActiveIndex((idx) => Math.max(0, idx - 1));
+                          } else if (e.key === "Enter") {
+                            e.preventDefault();
+                            const pick = refineSnippetsFiltered[refineSnippetsActiveIndex];
+                            if (pick) handlePickRefineSnippet(pick);
+                          } else if (e.key === "Escape") {
+                            e.preventDefault();
+                            setRefineSnippetsOpen(false);
+                          }
+                        }}
+                        placeholder="Search snippets..."
+                        className="w-full bg-transparent text-[12.5px] text-foreground outline-none placeholder:text-muted-foreground"
+                      />
+                    </div>
+                    <div className="max-h-64 overflow-y-auto">
+                      {refineSnippetsLoading && refineSnippetsList.length === 0 ? (
+                        <p className="px-3 py-4 text-center text-[11.5px] text-muted-foreground">
+                          Loading snippets...
+                        </p>
+                      ) : refineSnippetsFiltered.length === 0 ? (
+                        <p className="px-3 py-4 text-center text-[11.5px] text-muted-foreground">
+                          {refineSnippetsSearch ? "No snippets match." : "No snippets available."}
+                        </p>
+                      ) : (
+                        <ul className="py-1">
+                          {refineSnippetsFiltered.map((s, idx) => {
+                            const isActive = idx === refineSnippetsActiveIndex;
+                            const preview = String(
+                              (s.format === "qa" && s.answer ? s.answer : s.content) || "",
+                            )
+                              .replace(/\s+/g, " ")
+                              .slice(0, 90);
+                            return (
+                              <li key={s.snippet_id}>
+                                <button
+                                  type="button"
+                                  onMouseEnter={() => setRefineSnippetsActiveIndex(idx)}
+                                  onClick={() => handlePickRefineSnippet(s)}
+                                  className={`flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left transition-colors ${
+                                    isActive ? "bg-violet-50 dark:bg-violet-500/15" : "hover:bg-muted/60"
+                                  }`}
+                                >
+                                  <span className="flex items-center gap-1.5 text-[12.5px] font-medium text-foreground">
+                                    {s.format === "qa" && (
+                                      <span className="rounded-sm bg-indigo-100 px-1 text-[9px] font-semibold uppercase tracking-wide text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300">
+                                        Q&amp;A
+                                      </span>
+                                    )}
+                                    {s.title || "Untitled snippet"}
+                                  </span>
+                                  {preview ? (
+                                    <span className="line-clamp-1 text-[11px] text-muted-foreground">
+                                      {preview}
+                                    </span>
+                                  ) : null}
+                                </button>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
                 ) : null}
               </div>
             ) : null}
