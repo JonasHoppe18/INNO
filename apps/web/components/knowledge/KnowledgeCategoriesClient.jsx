@@ -1155,7 +1155,10 @@ export function KnowledgeCategoriesClient() {
         </div>
       </div>
 
-      <KnowledgeGapsSection onCreateCategory={handleCreateFromGap} />
+      {/* KnowledgeGapsSection temporarily hidden — it suggested creating
+          gap-named categories which confused early customers. Re-enable once
+          we have a clearer "fill the gap inline" flow (no new category). */}
+      {/* <KnowledgeGapsSection onCreateCategory={handleCreateFromGap} /> */}
 
       {loading ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
