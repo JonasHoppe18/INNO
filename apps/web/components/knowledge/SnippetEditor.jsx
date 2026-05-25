@@ -75,7 +75,14 @@ export function SnippetEditor({
   const textareaRef = useRef(null);
   const answerRef = useRef(null);
 
-  const isQaType = QA_TYPES.has(usableAs);
+  // For NEW snippets: usableAs decides whether to show Q&A fields.
+  // For EXISTING snippets: respect the stored format. Legacy prose snippets
+  // (CSV imports, pre-Q&A creations) keep their content field visible even
+  // if usable_as is "fact" or "procedure" — otherwise the Q&A fields render
+  // empty and the actual content disappears from view.
+  const isQaType = isNew
+    ? QA_TYPES.has(usableAs)
+    : snippet?.format === "qa";
 
   useEffect(() => {
     const el = textareaRef.current;
