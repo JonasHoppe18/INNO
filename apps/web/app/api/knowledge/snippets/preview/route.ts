@@ -163,7 +163,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Thread is outside your scope." }, { status: 403 });
     }
   } else {
-    shopId = [...shopIds][0];
+    shopId = Array.from(shopIds)[0];
   }
 
   // Find all agent_knowledge chunk ids that belong to this snippet — the
