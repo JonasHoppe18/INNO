@@ -1,4 +1,4 @@
-import { Component, useCallback, useEffect, useMemo, useState } from "react";
+import { Component, useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
 import { ChevronLeft, ChevronRight, Download, Globe, Mail, X } from "lucide-react";
@@ -661,6 +661,7 @@ export function MessageBubble({
   const [selectedAttachment, setSelectedAttachment] = useState(null);
   const [viewEmailOpen, setViewEmailOpen] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
+  const [, startEmailOpenTransition] = useTransition();
   const isOutbound = direction === "outbound";
 
   // Show translation as soon as data is available (unless user clicked "Show original")
@@ -719,13 +720,32 @@ export function MessageBubble({
       toList.length === 0 &&
       ccList.length === 0 &&
       bccList.length === 0);
-  const safeBodyHtml = sanitizeEmailHtml(message?.body_html || "", attachments);
-  const safeModalBodyHtml = sanitizeEmailHtml(message?.body_html || "", attachments, {
-    preserveInlineStyles: true,
-  });
-  const { cleanBodyText, quotedBodyText, cleanBodyHtml, quotedBodyHtml } = deriveMessageBodies(message);
-  const safeCleanBodyHtml = sanitizeEmailHtml(cleanBodyHtml || "", attachments);
-  const safeQuotedBodyHtml = sanitizeEmailHtml(quotedBodyHtml || "", attachments);
+  const rawBodyHtml = message?.body_html || "";
+  const safeBodyHtml = useMemo(
+    () => sanitizeEmailHtml(rawBodyHtml, attachments),
+    [rawBodyHtml, attachments]
+  );
+  const safeModalBodyHtml = useMemo(
+    () =>
+      viewEmailOpen
+        ? sanitizeEmailHtml(rawBodyHtml, attachments, {
+            preserveInlineStyles: true,
+          })
+        : "",
+    [rawBodyHtml, attachments, viewEmailOpen]
+  );
+  const { cleanBodyText, quotedBodyText, cleanBodyHtml, quotedBodyHtml } = useMemo(
+    () => deriveMessageBodies(message),
+    [message]
+  );
+  const safeCleanBodyHtml = useMemo(
+    () => sanitizeEmailHtml(cleanBodyHtml || "", attachments),
+    [attachments, cleanBodyHtml]
+  );
+  const safeQuotedBodyHtml = useMemo(
+    () => sanitizeEmailHtml(quotedBodyHtml || "", attachments),
+    [attachments, quotedBodyHtml]
+  );
   const selectedAttachmentUrl = useMemo(() => {
     if (!selectedAttachment?.id) return "";
     return `/api/attachments/${selectedAttachment.id}/download`;
@@ -922,7 +942,9 @@ export function MessageBubble({
               <div className="flex flex-wrap items-center gap-3 px-1 text-sm font-medium text-muted-foreground">
                 <button
                   type="button"
-                  onClick={() => setViewEmailOpen(true)}
+                  onClick={() => {
+                    startEmailOpenTransition(() => setViewEmailOpen(true));
+                  }}
                   className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-[12px] opacity-0 transition-opacity hover:bg-muted group-hover/bubble:opacity-100"
                 >
                   <Mail className="h-3.5 w-3.5" />

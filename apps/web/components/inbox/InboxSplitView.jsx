@@ -139,6 +139,14 @@ const DRAFT_FETCH_DELAY_MS = 150;
 const MAX_PREFETCH_IN_FLIGHT = 2;
 const firstTagCache = new Map();
 
+const deferAfterInteraction = (callback) => {
+  if (typeof window !== "undefined" && typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(callback, { timeout: 1200 });
+    return;
+  }
+  setTimeout(callback, 0);
+};
+
 const isUuid = (value) => typeof value === "string" && UUID_REGEX.test(value);
 
 const getAssigneeLabel = (profile, fallbackValue) => {
@@ -4319,6 +4327,9 @@ export function InboxSplitView({
 
   const saveThreadDraft = useCallback(
     async ({ immediate = false, valueOverride, threadIdOverride } = {}) => {
+      const startedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
+      const getDurationMs = () =>
+        Math.round((typeof performance !== "undefined" ? performance.now() : Date.now()) - startedAt);
       const threadId = String(
         threadIdOverride || selectedThreadId || "",
       ).trim();
@@ -4388,6 +4399,7 @@ export function InboxSplitView({
             event: "draft_saved",
             threadId,
             status: "deleted",
+            durationMs: getDurationMs(),
           });
         }
         return;
@@ -4418,6 +4430,7 @@ export function InboxSplitView({
           event: "draft_saved",
           threadId,
           status: "saved",
+          durationMs: getDurationMs(),
         });
         if (data?.draft_id && selectedThreadIdRef.current === threadId) {
           setActiveDraftId(data.draft_id);
@@ -4427,6 +4440,7 @@ export function InboxSplitView({
           event: "draft_saved",
           threadId,
           status: "error",
+          durationMs: getDurationMs(),
         });
         // keep UI responsive; autosave retries on next change/interval
       } finally {
@@ -4448,6 +4462,8 @@ export function InboxSplitView({
   const handleSelectThreadInWorkspace = useCallback(
     (threadId, options = {}) => {
       const nextThreadId = String(threadId || "").trim();
+      const previousThreadId = String(selectedThreadIdRef.current || "").trim();
+      const previousDraftValue = draftValueRef.current;
       if (nextThreadId) {
         const now = typeof performance !== "undefined" ? performance.now() : Date.now();
         ticketSwitchStartedAtRef.current.set(nextThreadId, now);
@@ -4466,11 +4482,16 @@ export function InboxSplitView({
           ticketSwitchStartedAtRef.current.delete(nextThreadId);
         }
       }
-      saveThreadDraft({
-        immediate: true,
-        valueOverride: draftValueRef.current,
-      });
       openThreadInWorkspace(threadId, options);
+      if (previousThreadId && previousThreadId !== nextThreadId) {
+        deferAfterInteraction(() => {
+          saveThreadDraft({
+            immediate: true,
+            threadIdOverride: previousThreadId,
+            valueOverride: previousDraftValue,
+          });
+        });
+      }
     },
     [openThreadInWorkspace, saveThreadDraft],
   );
