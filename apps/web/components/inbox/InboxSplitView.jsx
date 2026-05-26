@@ -3213,8 +3213,11 @@ export function InboxSplitView({
         // Server has no draft. Always record this so auto-save doesn't treat
         // an unknown baseline as "changed" and re-write stale cached content. — 2026-05-26
         draftLastSavedRef.current[selectedThreadId] = "";
+        // Read from ref so this effect doesn't depend on systemDraftUneditedByThread —
+        // having it as a dep causes an infinite re-render loop because the effect
+        // also calls setSystemDraftUneditedByThread below. — 2026-05-26
         const isSystemUnedited =
-          systemDraftUneditedByThread[selectedThreadId] === true;
+          systemDraftUneditedRef.current[selectedThreadId] === true;
         if (hasExistingLocalDraft && !isSystemUnedited) {
           // User typed their own content that the server doesn't have yet —
           // preserve it but we've already recorded the server baseline above.
@@ -3259,6 +3262,7 @@ export function InboxSplitView({
       active = false;
       clearTimeout(timerId);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- systemDraftUneditedByThread intentionally omitted: effect also sets it via setSystemDraftUneditedByThread, adding it as a dep would create an infinite re-render loop. We read the latest value via systemDraftUneditedRef.current instead.
   }, [
     draftValueByThread,
     isLocalThreadId,
@@ -3266,7 +3270,6 @@ export function InboxSplitView({
     selectedThreadDetail,
     selectedThreadId,
     selectedThreadMessagesLoading,
-    systemDraftUneditedByThread,
   ]);
 
   useEffect(() => {
