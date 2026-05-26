@@ -173,17 +173,21 @@ async function loadDraft(serviceClient, scope, thread) {
 }
 
 async function loadDraftStats(serviceClient, scope, thread) {
-  const keys = [thread?.provider_thread_id, thread?.id].filter(Boolean);
-  if (!keys.length) return { edit_classification: null, edit_delta_pct: null };
-  let query = serviceClient
+  // Strict thread_id only — provider_thread_id grouping previously leaked
+  // edit metrics across sibling threads (Gmail reuses provider_thread_id).
+  // — 2026-05-26
+  if (!thread?.id || !scope?.workspaceId) {
+    return { edit_classification: null, edit_delta_pct: null };
+  }
+  const { data } = await serviceClient
     .from("drafts")
     .select("edit_classification, edit_delta_pct")
-    .in("thread_id", keys)
+    .eq("thread_id", thread.id)
+    .eq("workspace_id", scope.workspaceId)
     .eq("status", "sent")
     .order("created_at", { ascending: false })
-    .limit(1);
-  if (scope?.workspaceId) query = query.eq("workspace_id", scope.workspaceId);
-  const { data } = await query.maybeSingle();
+    .limit(1)
+    .maybeSingle();
   return {
     edit_classification: data?.edit_classification ?? null,
     edit_delta_pct: data?.edit_delta_pct ?? null,

@@ -2544,45 +2544,12 @@ export function InboxSplitView({
     draftLogIdByThread,
   ]);
 
-  // Fetch sent draft edit stats for the selected thread (for AI badge display)
-  // Uses an API route with service client to bypass RLS on the drafts table.
-  useEffect(() => {
-    if (!selectedThreadId || isLocalThreadId(selectedThreadId)) return;
-    if (
-      selectedThreadMessagesLoading &&
-      messagesFetchedForThreadId !== selectedThreadId
-    )
-      return;
-    if (
-      messagesFetchedForThreadId === selectedThreadId &&
-      selectedThreadDetail?.draftStats
-    )
-      return;
-    if (sentDraftStatsByThread[selectedThreadId]) return; // already fetched
-    let active = true;
-    const threadId = selectedThreadId;
-    const timerId = setTimeout(() => {
-      fetch(`/api/threads/${threadId}/draft-stats`)
-        .then((res) => res.ok ? res.json() : null)
-        .then((data) => {
-          if (active && data?.edit_classification) {
-            setSentDraftStatsByThread((prev) => ({ ...prev, [threadId]: data }));
-          }
-        })
-        .catch(() => null);
-    }, SECONDARY_THREAD_FETCH_DELAY_MS);
-    return () => {
-      active = false;
-      clearTimeout(timerId);
-    };
-  }, [
-    isLocalThreadId,
-    messagesFetchedForThreadId,
-    selectedThreadDetail,
-    selectedThreadId,
-    selectedThreadMessagesLoading,
-    sentDraftStatsByThread,
-  ]);
+  // NOTE: Previously a separate fetch to /api/threads/[id]/draft-stats was made
+  // here as a fallback for the AI-edit badge. Removed — the detail endpoint at
+  // /api/inbox/threads/[id]/detail already returns `draftStats` in its payload,
+  // and the effect at line ~2340 wires it into sentDraftStatsByThread. One
+  // round-trip instead of two, and one fewer place that could leak across
+  // threads if the scope query is ever loosened. — 2026-05-26
 
   useEffect(() => {
     if (isLocalThreadId(selectedThreadId)) return;
