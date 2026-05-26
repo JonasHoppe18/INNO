@@ -24,13 +24,6 @@ function createServiceClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
-const normalizeSubject = (value = "") =>
-  String(value || "")
-    .toLowerCase()
-    .replace(/^(?:(?:re|fw|fwd)\s*:\s*)+/i, "")
-    .replace(/\s+/g, " ")
-    .trim();
-
 const asString = (value) => (typeof value === "string" ? value.trim() : "");
 
 function normalizeActionStatus(status) {
@@ -61,10 +54,21 @@ async function loadMailboxIds(serviceClient, scope) {
 }
 
 async function loadRelatedThreadIds(serviceClient, scope, thread, mailboxIds) {
+  // Group mail_thread rows that represent the SAME conversation. We use only
+  // provider_thread_id (the email provider's stable thread identifier).
+  //
+  // History: there used to be a subject-based fallback for cases where
+  // provider_thread_id was missing AND a conversation got split across
+  // multiple mail_threads rows. It was removed because it merged unrelated
+  // threads whenever they shared a normalized subject (e.g. auto-generated
+  // titles like "New customer message on May 21"), causing draft cross-
+  // contamination: one customer's draft surfaced on another's ticket, and
+  // POSTs/DELETEs to /draft accidentally touched drafts on unrelated rows.
+  // Provider-thread-id only is much safer; the split-row fallback is rare
+  // enough that we'd rather miss it than corrupt drafts. — 2026-05-26
   const fallbackId = String(thread?.id || "").trim();
   const mailboxId = String(thread?.mailbox_id || "").trim();
   const providerThreadId = String(thread?.provider_thread_id || "").trim();
-  const subjectNorm = normalizeSubject(thread?.subject || "");
   if (!fallbackId || !mailboxId) return fallbackId ? [fallbackId] : [];
 
   let siblingRows = [];
@@ -77,26 +81,6 @@ async function loadRelatedThreadIds(serviceClient, scope, thread, mailboxIds) {
       .in("mailbox_id", mailboxIds)
       .order("created_at", { ascending: false });
     if (!error && Array.isArray(data)) siblingRows = data;
-  }
-
-  if ((!Array.isArray(siblingRows) || siblingRows.length <= 1) && subjectNorm) {
-    const { data, error } = await applyScope(
-      serviceClient
-        .from("mail_threads")
-        .select("id, subject")
-        .eq("mailbox_id", mailboxId)
-        .order("created_at", { ascending: false })
-        .limit(2000),
-      scope,
-    );
-    if (!error && Array.isArray(data)) {
-      siblingRows = [
-        ...(Array.isArray(siblingRows) ? siblingRows : []),
-        ...data
-          .filter((row) => normalizeSubject(row?.subject) === subjectNorm)
-          .map((row) => ({ id: row.id })),
-      ];
-    }
   }
 
   const ids = Array.from(

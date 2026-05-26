@@ -24,18 +24,25 @@ function createServiceClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
-const normalizeSubject = (value = "") =>
-  String(value || "")
-    .toLowerCase()
-    .replace(/^(?:(?:re|fw|fwd)\s*:\s*)+/i, "")
-    .replace(/\s+/g, " ")
-    .trim();
-
 async function loadRelatedThreadIdsForDraftClear(serviceClient, scope, thread) {
+  // Group mail_thread rows that represent the SAME conversation. We use only
+  // provider_thread_id (the email provider's stable thread identifier).
+  //
+  // History: there used to be a subject-based fallback for cases where
+  // provider_thread_id was missing AND a conversation got split across
+  // multiple mail_threads rows. It was removed because it merged unrelated
+  // threads whenever they shared a normalized subject (e.g. auto-generated
+  // titles like "New customer message on May 21"). That caused two visible
+  // bugs: (1) GET /draft returned drafts from unrelated customers' threads,
+  // (2) POST /draft updated existing drafts on the wrong thread, and
+  // DELETE /draft (triggered by autosave when the composer is empty) wiped
+  // drafts on subject-matched threads — including freshly generated ones
+  // for other customers. Provider-thread-id only is much safer; the
+  // split-row fallback is rare enough that we'd rather miss it than
+  // corrupt drafts. — 2026-05-26
   const fallbackId = String(thread?.id || "").trim();
   const mailboxId = String(thread?.mailbox_id || "").trim();
   const providerThreadId = String(thread?.provider_thread_id || "").trim();
-  const subjectNorm = normalizeSubject(thread?.subject || "");
   if (!fallbackId || !mailboxId) return fallbackId ? [fallbackId] : [];
 
   let siblingRows = [];
@@ -49,27 +56,6 @@ async function loadRelatedThreadIdsForDraftClear(serviceClient, scope, thread) {
       scope
     );
     if (!error && Array.isArray(data)) siblingRows = data;
-  }
-
-  if ((!Array.isArray(siblingRows) || siblingRows.length <= 1) && subjectNorm) {
-    const { data: subjectRows, error: subjectError } = await applyScope(
-      serviceClient
-        .from("mail_threads")
-        .select("id, subject")
-        .eq("mailbox_id", mailboxId)
-        .order("created_at", { ascending: false })
-        .limit(2000),
-      scope
-    );
-    if (!subjectError && Array.isArray(subjectRows)) {
-      const matches = subjectRows.filter(
-        (row) => normalizeSubject(row?.subject) === subjectNorm
-      );
-      siblingRows = [
-        ...(Array.isArray(siblingRows) ? siblingRows : []),
-        ...matches.map((row) => ({ id: row.id })),
-      ];
-    }
   }
 
   const ids = Array.from(
