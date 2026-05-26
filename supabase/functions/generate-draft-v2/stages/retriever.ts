@@ -332,9 +332,27 @@ function classifyKnowledgeSource(input: {
     usable_as = "saved_reply";
   } else if (
     /\b(procedure|script|step-by-step|follow these steps|use this script|return for swap|rma|warranty process)\b/i
+      .test(content) ||
+    // Numbered step list (e.g. "1. Pack the item.\n2. Print a label.\n3. ...").
+    // Catches procedure snippets that don't literally contain the word
+    // "procedure" — e.g. AceZone's return guide which is just numbered steps
+    // followed by an office address. Without this, such snippets fell through
+    // to `background` and the writer refused to use them.
+    /(^|\n)\s*\d+[.)]\s/.test(content) ||
+    // Postal-address shape — "send the item to" or a clear address block.
+    // Same purpose: classify return/RMA address snippets as procedure so
+    // the writer treats them as authoritative.
+    /\b(send (the |this )?item to|send back to|ship (?:back )?to|return to|return shipping address)\b/i
       .test(content)
   ) {
     usable_as = "procedure";
+  } else if (provider === "manual_text") {
+    // Admin-curated Q&A snippets from the Knowledge UI are written
+    // intentionally as authoritative answers to specific customer questions.
+    // Default them to `fact` so the writer treats their content as truth
+    // rather than mere "background context". Explicit metadata.usable_as
+    // (set further down) still wins if the admin overrode it.
+    usable_as = "fact";
   } else if (kind === "ticket") {
     usable_as = "tone_example";
   }

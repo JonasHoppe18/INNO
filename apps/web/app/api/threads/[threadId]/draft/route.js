@@ -24,50 +24,15 @@ function createServiceClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
-async function loadRelatedThreadIdsForDraftClear(serviceClient, scope, thread) {
-  // Group mail_thread rows that represent the SAME conversation. We use only
-  // provider_thread_id (the email provider's stable thread identifier).
-  //
-  // History: there used to be a subject-based fallback for cases where
-  // provider_thread_id was missing AND a conversation got split across
-  // multiple mail_threads rows. It was removed because it merged unrelated
-  // threads whenever they shared a normalized subject (e.g. auto-generated
-  // titles like "New customer message on May 21"). That caused two visible
-  // bugs: (1) GET /draft returned drafts from unrelated customers' threads,
-  // (2) POST /draft updated existing drafts on the wrong thread, and
-  // DELETE /draft (triggered by autosave when the composer is empty) wiped
-  // drafts on subject-matched threads — including freshly generated ones
-  // for other customers. Provider-thread-id only is much safer; the
-  // split-row fallback is rare enough that we'd rather miss it than
-  // corrupt drafts. — 2026-05-26
-  const fallbackId = String(thread?.id || "").trim();
-  const mailboxId = String(thread?.mailbox_id || "").trim();
-  const providerThreadId = String(thread?.provider_thread_id || "").trim();
-  if (!fallbackId || !mailboxId) return fallbackId ? [fallbackId] : [];
-
-  let siblingRows = [];
-  if (providerThreadId) {
-    const { data, error } = await applyScope(
-      serviceClient
-        .from("mail_threads")
-        .select("id")
-        .eq("mailbox_id", mailboxId)
-        .eq("provider_thread_id", providerThreadId),
-      scope
-    );
-    if (!error && Array.isArray(data)) siblingRows = data;
-  }
-
-  const ids = Array.from(
-    new Set(
-      (siblingRows || [])
-        .map((row) => String(row?.id || "").trim())
-        .filter(Boolean)
-    )
-  );
-  if (!ids.length) return [fallbackId];
-  return ids.includes(fallbackId) ? ids : [fallbackId, ...ids];
-}
+// NOTE: this route used to group mail_thread rows by provider_thread_id (and
+// before that, by normalized subject). Both proved unsafe: email providers
+// like Gmail reuse the same thread id across unrelated customer conversations
+// when subjects look similar (e.g. auto-generated "New customer message on
+// May 21"), so any IN(thread_id, ...) query would read/write drafts across
+// different customers' tickets. We now strictly scope every read, update, and
+// delete to a single mail_threads.id. A genuinely split conversation will lose
+// the sibling row's history — that's an accepted trade-off vs. corrupting
+// drafts on a live support inbox. — 2026-05-26
 
 async function loadLatestPendingDraftMeta(serviceClient, scope, threadKey) {
   if (!threadKey) return null;
@@ -217,7 +182,6 @@ export async function GET(_request, { params }) {
     thread.provider_thread_id || threadId
   );
   const proposalOnly = isProposalOnlyDraftMeta(latestPendingDraftMeta);
-  const relatedThreadIds = await loadRelatedThreadIdsForDraftClear(serviceClient, scope, thread);
   const { data: mailbox } = await applyScope(
     serviceClient
       .from("mail_accounts")
@@ -237,7 +201,7 @@ export async function GET(_request, { params }) {
     serviceClient
       .from("mail_messages")
       .select("id, body_text, body_html, subject, updated_at")
-      .in("thread_id", relatedThreadIds)
+      .eq("thread_id", threadId)
       .eq("from_me", true)
       .eq("is_draft", true)
       .order("updated_at", { ascending: false })
@@ -352,13 +316,12 @@ export async function POST(request, { params }) {
   });
   const nextBodyText = stripTrailingComposedFooter(bodyText || bodyHtml, signatureConfig);
   const snippet = buildSnippet(nextBodyText);
-  const relatedThreadIds = await loadRelatedThreadIdsForDraftClear(serviceClient, scope, thread);
 
   const { data: existingDraft } = await applyScope(
     serviceClient
       .from("mail_messages")
       .select("id, ai_draft_text, body_text")
-      .in("thread_id", relatedThreadIds)
+      .eq("thread_id", threadId)
       .eq("from_me", true)
       .eq("is_draft", true)
       .order("updated_at", { ascending: false })
@@ -428,7 +391,7 @@ export async function POST(request, { params }) {
     serviceClient
       .from("mail_messages")
       .update({ ai_draft_text: nextBodyText, updated_at: nowIso })
-      .in("thread_id", relatedThreadIds)
+      .eq("thread_id", threadId)
       .is("from_me", false),
     scope
   );
@@ -523,12 +486,11 @@ export async function DELETE(_request, { params }) {
   }
 
   const nowIso = new Date().toISOString();
-  const relatedThreadIds = await loadRelatedThreadIdsForDraftClear(serviceClient, scope, thread);
   await applyScope(
     serviceClient
       .from("mail_messages")
       .delete()
-      .in("thread_id", relatedThreadIds)
+      .eq("thread_id", threadId)
       .eq("from_me", true)
       .eq("is_draft", true),
     scope
@@ -538,7 +500,7 @@ export async function DELETE(_request, { params }) {
     serviceClient
       .from("mail_messages")
       .update({ ai_draft_text: null, updated_at: nowIso })
-      .in("thread_id", relatedThreadIds)
+      .eq("thread_id", threadId)
       .is("from_me", false),
     scope
   );

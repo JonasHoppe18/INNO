@@ -25,44 +25,6 @@ async function loadMailboxIds(serviceClient, scope) {
   return (data || []).map((row) => row.id).filter(Boolean);
 }
 
-async function loadRelatedThreadIds(serviceClient, threadId, mailboxIds) {
-  const { data: selectedThread, error: selectedThreadError } = await serviceClient
-    .from("mail_threads")
-    .select("id, provider_thread_id, mailbox_id")
-    .eq("id", threadId)
-    .in("mailbox_id", mailboxIds)
-    .limit(1)
-    .maybeSingle();
-
-  if (selectedThreadError || !selectedThread?.id) return [threadId];
-
-  const mailboxId = String(selectedThread.mailbox_id || "").trim();
-  const providerThreadId = String(selectedThread.provider_thread_id || "").trim();
-
-  if (!mailboxId) return [threadId];
-
-  let siblingRows = [];
-  if (providerThreadId) {
-    const { data, error } = await serviceClient
-      .from("mail_threads")
-      .select("id")
-      .eq("mailbox_id", mailboxId)
-      .eq("provider_thread_id", providerThreadId)
-      .order("created_at", { ascending: false });
-    if (!error && Array.isArray(data)) siblingRows = data;
-  }
-
-  const ids = Array.from(
-    new Set(
-      (siblingRows || [])
-        .map((row) => String(row?.id || "").trim())
-        .filter(Boolean)
-    )
-  );
-  if (!ids.length) return [threadId];
-  return ids.includes(threadId) ? ids : [threadId, ...ids];
-}
-
 export async function GET(_request, context) {
   try {
     const threadId = String(context?.params?.threadId || "").trim();
@@ -85,27 +47,23 @@ export async function GET(_request, context) {
       return NextResponse.json({ messages: [] }, { status: 200 });
     }
 
-    const [mailboxIds, relatedThreadIds] = await (async () => {
-      const ids = await loadMailboxIds(serviceClient, scope);
-      if (!ids.length) return [ids, [threadId]];
-      const related = await loadRelatedThreadIds(serviceClient, threadId, ids);
-      return [ids, related];
-    })();
+    const mailboxIds = await loadMailboxIds(serviceClient, scope);
 
     if (!mailboxIds.length) {
       return NextResponse.json({ messages: [] }, { status: 200 });
     }
 
-    const buildMessagesQuery = (select) => {
-      let q = serviceClient
+    // Strict single-thread scope. Sibling-thread grouping (by provider_thread_id
+    // or normalized subject) previously caused another customer's messages and
+    // drafts to bleed into this ticket whenever Gmail reused a thread id across
+    // unrelated conversations. — 2026-05-26
+    const buildMessagesQuery = (select) =>
+      serviceClient
         .from("mail_messages")
         .select(select)
         .in("mailbox_id", mailboxIds)
+        .eq("thread_id", threadId)
         .order("received_at", { ascending: true, nullsLast: true });
-      return relatedThreadIds.length > 1
-        ? q.in("thread_id", relatedThreadIds)
-        : q.eq("thread_id", threadId);
-    };
 
     let { data: rows, error } = await buildMessagesQuery(
       "id, user_id, mailbox_id, thread_id, provider_message_id, subject, snippet, body_text, body_html, clean_body_text, clean_body_html, quoted_body_text, quoted_body_html, from_name, from_email, extracted_customer_name, extracted_customer_email, extracted_customer_fields, sender_identity_source, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at, ai_draft_text"

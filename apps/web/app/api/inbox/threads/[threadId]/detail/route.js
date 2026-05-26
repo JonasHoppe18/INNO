@@ -53,47 +53,6 @@ async function loadMailboxIds(serviceClient, scope) {
   return (data || []).map((row) => row.id).filter(Boolean);
 }
 
-async function loadRelatedThreadIds(serviceClient, scope, thread, mailboxIds) {
-  // Group mail_thread rows that represent the SAME conversation. We use only
-  // provider_thread_id (the email provider's stable thread identifier).
-  //
-  // History: there used to be a subject-based fallback for cases where
-  // provider_thread_id was missing AND a conversation got split across
-  // multiple mail_threads rows. It was removed because it merged unrelated
-  // threads whenever they shared a normalized subject (e.g. auto-generated
-  // titles like "New customer message on May 21"), causing draft cross-
-  // contamination: one customer's draft surfaced on another's ticket, and
-  // POSTs/DELETEs to /draft accidentally touched drafts on unrelated rows.
-  // Provider-thread-id only is much safer; the split-row fallback is rare
-  // enough that we'd rather miss it than corrupt drafts. — 2026-05-26
-  const fallbackId = String(thread?.id || "").trim();
-  const mailboxId = String(thread?.mailbox_id || "").trim();
-  const providerThreadId = String(thread?.provider_thread_id || "").trim();
-  if (!fallbackId || !mailboxId) return fallbackId ? [fallbackId] : [];
-
-  let siblingRows = [];
-  if (providerThreadId) {
-    const { data, error } = await serviceClient
-      .from("mail_threads")
-      .select("id")
-      .eq("mailbox_id", mailboxId)
-      .eq("provider_thread_id", providerThreadId)
-      .in("mailbox_id", mailboxIds)
-      .order("created_at", { ascending: false });
-    if (!error && Array.isArray(data)) siblingRows = data;
-  }
-
-  const ids = Array.from(
-    new Set(
-      (siblingRows || [])
-        .map((row) => String(row?.id || "").trim())
-        .filter(Boolean),
-    ),
-  );
-  if (!ids.length) return [fallbackId];
-  return ids.includes(fallbackId) ? ids : [fallbackId, ...ids];
-}
-
 async function loadLatestPendingDraftMeta(serviceClient, scope, threadKey) {
   if (!threadKey) return null;
   let query = serviceClient
@@ -113,17 +72,18 @@ function isProposalOnlyDraftMeta(meta) {
   return Boolean(kind) && kind !== "final_customer_reply";
 }
 
-async function loadMessagesAndAttachments(serviceClient, threadId, relatedThreadIds, mailboxIds) {
-  const buildMessagesQuery = (select) => {
-    let q = serviceClient
+async function loadMessagesAndAttachments(serviceClient, threadId, mailboxIds) {
+  // Strict single-thread scope: we never query siblings here. Provider thread
+  // IDs (Gmail in particular) can collide across unrelated customer
+  // conversations when subjects look alike, which previously caused drafts
+  // and messages from one customer's ticket to leak into another's. — 2026-05-26
+  const buildMessagesQuery = (select) =>
+    serviceClient
       .from("mail_messages")
       .select(select)
       .in("mailbox_id", mailboxIds)
+      .eq("thread_id", threadId)
       .order("received_at", { ascending: true, nullsLast: true });
-    return relatedThreadIds.length > 1
-      ? q.in("thread_id", relatedThreadIds)
-      : q.eq("thread_id", threadId);
-  };
 
   let { data: rows, error } = await buildMessagesQuery(
     "id, user_id, mailbox_id, thread_id, provider_message_id, subject, snippet, body_text, body_html, clean_body_text, clean_body_html, quoted_body_text, quoted_body_html, from_name, from_email, extracted_customer_name, extracted_customer_email, extracted_customer_fields, sender_identity_source, to_emails, cc_emails, bcc_emails, from_me, is_draft, is_read, received_at, sent_at, created_at, ai_draft_text",
@@ -160,7 +120,7 @@ async function loadMessagesAndAttachments(serviceClient, threadId, relatedThread
   };
 }
 
-async function loadDraft(serviceClient, scope, thread, relatedThreadIds) {
+async function loadDraft(serviceClient, scope, thread) {
   const legacySignature = await loadLegacyUserSignature(serviceClient, scope.supabaseUserId);
   const { data: mailbox } = await applyScope(
     serviceClient
@@ -185,7 +145,7 @@ async function loadDraft(serviceClient, scope, thread, relatedThreadIds) {
     serviceClient
       .from("mail_messages")
       .select("id, body_text, body_html, subject, updated_at")
-      .in("thread_id", relatedThreadIds)
+      .eq("thread_id", thread.id)
       .eq("from_me", true)
       .eq("is_draft", true)
       .order("updated_at", { ascending: false })
@@ -344,15 +304,9 @@ export async function GET(_request, context) {
       return NextResponse.json({ error: "Thread not found." }, { status: 404 });
     }
 
-    const relatedThreadIds = await loadRelatedThreadIds(
-      serviceClient,
-      scope,
-      thread,
-      mailboxIds,
-    );
     const [messagePayload, draftPayload, draftStats, orderUpdate] = await Promise.all([
-      loadMessagesAndAttachments(serviceClient, threadId, relatedThreadIds, mailboxIds),
-      loadDraft(serviceClient, scope, thread, relatedThreadIds).catch((error) => ({
+      loadMessagesAndAttachments(serviceClient, threadId, mailboxIds),
+      loadDraft(serviceClient, scope, thread).catch((error) => ({
         error: error.message,
         signature: "",
         proposal_only: false,

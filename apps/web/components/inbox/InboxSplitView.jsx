@@ -2630,7 +2630,7 @@ export function InboxSplitView({
     if (!selectedThreadId) return [];
     const dbDataIsForCurrentThread =
       messagesFetchedForThreadId === selectedThreadId;
-    const base =
+    const rawBase =
       dbDataIsForCurrentThread &&
       Array.isArray(selectedThreadMessagesFromDb) &&
       selectedThreadMessagesFromDb.length
@@ -2638,6 +2638,13 @@ export function InboxSplitView({
         : messagesCacheRef.current.get(selectedThreadId) ||
           messagesByThread.get(selectedThreadId) ||
           [];
+    // Hard filter: never let a message belonging to a different mail_threads
+    // row pollute this composer. Defends against any upstream source (cached
+    // sibling-thread results, stray realtime payloads, etc.) silently bleeding
+    // another customer's draft into the open ticket. — 2026-05-26
+    const base = rawBase.filter(
+      (message) => String(message?.thread_id || "") === String(selectedThreadId),
+    );
     const local = localSentMessagesByThread[selectedThreadId] || [];
     const byId = new Map();
     [...base, ...local].forEach((message) => {
