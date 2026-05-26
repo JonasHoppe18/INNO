@@ -3266,6 +3266,7 @@ export function InboxSplitView({
     selectedThreadDetail,
     selectedThreadId,
     selectedThreadMessagesLoading,
+    systemDraftUneditedByThread,
   ]);
 
   useEffect(() => {
