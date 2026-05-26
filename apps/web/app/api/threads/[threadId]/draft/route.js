@@ -397,40 +397,44 @@ export async function POST(request, { params }) {
   );
 
   // Best-effort tracking in drafts table (legacy analytics).
-  {
-    let supersedeQuery = serviceClient
+  // Strict thread_id only — provider_thread_id fallback removed because Gmail
+  // reuses it across unrelated conversations. — 2026-05-26
+  if (scope.workspaceId) {
+    await serviceClient
       .from("drafts")
       .update({ status: "superseded" })
-      .eq("thread_id", thread.provider_thread_id || threadId)
+      .eq("thread_id", threadId)
       .eq("platform", thread.provider || "smtp")
-      .eq("status", "pending");
-    supersedeQuery = scope.workspaceId
-      ? supersedeQuery.eq("workspace_id", scope.workspaceId)
-      : supersedeQuery;
-    await supersedeQuery;
+      .eq("status", "pending")
+      .eq("workspace_id", scope.workspaceId);
   }
 
-  await serviceClient.from("drafts").insert({
-    shop_id: null,
-    customer_email: null,
-    subject: nextSubject,
-    status: "pending",
-    kind: "final_customer_reply",
-    execution_state: "no_action",
-    source_action_id: null,
-    final_reply_generated_at: nowIso,
-    platform: thread.provider || "smtp",
-    draft_id: draftId ? String(draftId) : null,
-    message_id: draftId ? String(draftId) : null,
-    thread_id: thread.provider_thread_id || threadId,
-    workspace_id: scope.workspaceId || null,
-    created_at: nowIso,
-  });
+  // Skip analytics insert if we cannot scope to a workspace — a NULL workspace_id
+  // row is a tenant-leakage vector (any workspace's analytics query could read it).
+  // — 2026-05-26
+  if (scope.workspaceId) {
+    await serviceClient.from("drafts").insert({
+      shop_id: null,
+      customer_email: null,
+      subject: nextSubject,
+      status: "pending",
+      kind: "final_customer_reply",
+      execution_state: "no_action",
+      source_action_id: null,
+      final_reply_generated_at: nowIso,
+      platform: thread.provider || "smtp",
+      draft_id: draftId ? String(draftId) : null,
+      message_id: draftId ? String(draftId) : null,
+      thread_id: threadId,
+      workspace_id: scope.workspaceId,
+      created_at: nowIso,
+    });
+  }
 
   if (originalAiDraftText && originalAiDraftText.trim() && originalAiDraftText.trim() !== nextBodyText.trim()) {
     await captureDraftEditFeedback({
       serviceClient,
-      threadId: thread.provider_thread_id || threadId,
+      threadId,
       messageDraftId: draftId,
       sourceWasAiGenerated: true,
       originalAiText: originalAiDraftText,
@@ -505,17 +509,15 @@ export async function DELETE(_request, { params }) {
     scope
   );
 
-  {
-    let supersedeQuery = serviceClient
+  // Strict thread_id only — provider_thread_id fallback removed. — 2026-05-26
+  if (scope.workspaceId) {
+    await serviceClient
       .from("drafts")
       .update({ status: "superseded" })
-      .eq("thread_id", thread.provider_thread_id || threadId)
+      .eq("thread_id", threadId)
       .eq("platform", thread.provider || "smtp")
-      .eq("status", "pending");
-    supersedeQuery = scope.workspaceId
-      ? supersedeQuery.eq("workspace_id", scope.workspaceId)
-      : supersedeQuery;
-    await supersedeQuery;
+      .eq("status", "pending")
+      .eq("workspace_id", scope.workspaceId);
   }
 
   return NextResponse.json({ ok: true }, { status: 200 });

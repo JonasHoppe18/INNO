@@ -187,24 +187,24 @@ export async function GET(_request, { params }) {
     return NextResponse.json({ error: "Thread not found." }, { status: 404 });
   }
 
-  const threadKeys = [thread.id, thread.provider_thread_id].filter(Boolean).map(String);
-  const threadKeySet = new Set(threadKeys);
+  // Strict single-thread scope. Sibling-thread grouping via provider_thread_id
+  // previously caused cross-thread contamination — Gmail reuses provider_thread_id
+  // across unrelated conversations, so an IN query on both keys would surface
+  // sibling-thread drafts/logs as if they belonged to this ticket. — 2026-05-26
+  const threadKeySet = new Set([String(thread.id)]);
 
-  let draftIdRows = [];
-  if (threadKeys.length) {
-    let draftsQuery = serviceClient
-      .from("drafts")
-      .select("draft_id")
-      .in("thread_id", threadKeys)
-      .order("created_at", { ascending: false })
-      .limit(100);
-    draftsQuery = applyScope(draftsQuery, scope, {
-      workspaceColumn: "workspace_id",
-      userColumn: null,
-    });
-    const { data: draftsData } = await draftsQuery;
-    draftIdRows = Array.isArray(draftsData) ? draftsData : [];
-  }
+  let draftsQuery = serviceClient
+    .from("drafts")
+    .select("draft_id")
+    .eq("thread_id", thread.id)
+    .order("created_at", { ascending: false })
+    .limit(100);
+  draftsQuery = applyScope(draftsQuery, scope, {
+    workspaceColumn: "workspace_id",
+    userColumn: null,
+  });
+  const { data: draftsData } = await draftsQuery;
+  const draftIdRows = Array.isArray(draftsData) ? draftsData : [];
   const draftIds = draftIdRows.map((row) => row?.draft_id).filter(Boolean);
 
   let draftLogs = [];

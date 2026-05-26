@@ -42,24 +42,35 @@ export async function GET(request, { params }) {
     return NextResponse.json({ error: "Could not resolve scope" }, { status: 500 });
   }
 
-  // Resolve thread to get provider_thread_id for key lookup
+  // Verify the thread belongs to the caller's workspace before reading stats.
+  // Strict single-thread scope. Sibling-thread grouping via provider_thread_id
+  // previously caused cross-thread contamination (Gmail reuses provider_thread_id
+  // across unrelated conversations). — 2026-05-26
   let threadQuery = serviceClient
     .from("mail_threads")
-    .select("id, provider_thread_id, workspace_id")
+    .select("id, workspace_id")
     .eq("id", threadId);
   threadQuery = applyScope(threadQuery, scope);
   const { data: thread } = await threadQuery.maybeSingle();
+  if (!thread) {
+    return NextResponse.json({
+      edit_classification: null,
+      edit_delta_pct: null,
+    });
+  }
 
-  const draftThreadKeys = [thread?.provider_thread_id, threadId].filter(Boolean);
-
-  const { data: draft } = await serviceClient
+  let draftQuery = serviceClient
     .from("drafts")
     .select("edit_classification, edit_delta_pct")
-    .in("thread_id", draftThreadKeys)
+    .eq("thread_id", threadId)
     .eq("status", "sent")
     .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(1);
+  draftQuery = applyScope(draftQuery, scope, {
+    workspaceColumn: "workspace_id",
+    userColumn: null,
+  });
+  const { data: draft } = await draftQuery.maybeSingle();
 
   return NextResponse.json({
     edit_classification: draft?.edit_classification ?? null,
