@@ -3111,11 +3111,17 @@ export function InboxSplitView({
         return;
       }
       if (!selectedThreadId) return;
+      // Only skip the server fetch if we have BOTH a cached local value AND a
+      // confirmed server baseline (draftLastSavedRef set). Without the second
+      // guard, a stale cached draft can persist in the composer after a DB
+      // cleanup: draftLastSavedRef stays undefined, auto-save then sees
+      // trimmed !== "" and re-writes the old content back to the server. — 2026-05-26
       if (
         Object.prototype.hasOwnProperty.call(
           draftValueByThread,
           selectedThreadId,
-        )
+        ) &&
+        selectedThreadId in draftLastSavedRef.current
       ) {
         setDraftReady(true);
         return;
@@ -3204,25 +3210,30 @@ export function InboxSplitView({
           [selectedThreadId]: true,
         }));
       } else {
-        if (hasExistingLocalDraft) {
+        // Server has no draft. Always record this so auto-save doesn't treat
+        // an unknown baseline as "changed" and re-write stale cached content. — 2026-05-26
+        draftLastSavedRef.current[selectedThreadId] = "";
+        const isSystemUnedited =
+          systemDraftUneditedByThread[selectedThreadId] === true;
+        if (hasExistingLocalDraft && !isSystemUnedited) {
+          // User typed their own content that the server doesn't have yet —
+          // preserve it but we've already recorded the server baseline above.
           setDraftReady(true);
           return;
         }
-        setDraftValueByThread((prev) => {
-          const existing = String(prev?.[selectedThreadId] || "");
-          if (existing.trim()) return prev;
-          return {
-            ...prev,
-            [selectedThreadId]: "",
-          };
-        });
-        setSystemDraftUneditedByThread((prev) => {
-          if (String(draftValueRef.current || "").trim()) return prev;
-          return {
-            ...prev,
-            [selectedThreadId]: false,
-          };
-        });
+        // Server confirmed empty and local draft is AI-generated (unedited by user).
+        // Clear it so we don't auto-save old AI content back to the server.
+        if (selectedThreadIdRef.current === selectedThreadId) {
+          setDraftValue("");
+        }
+        setDraftValueByThread((prev) => ({
+          ...prev,
+          [selectedThreadId]: "",
+        }));
+        setSystemDraftUneditedByThread((prev) => ({
+          ...prev,
+          [selectedThreadId]: false,
+        }));
       }
       if (draft?.id) {
         setActiveDraftId(draft.id);
