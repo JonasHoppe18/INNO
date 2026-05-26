@@ -43,7 +43,9 @@ function ExpandItem({ title, preview, right, children }) {
 
 // ── Score pill ──────────────────────────────────────────────────
 function ScorePill({ score }) {
-  const isHigh = score >= 0.8;
+  const numScore = typeof score === "number" && Number.isFinite(score) ? score : null;
+  const isHigh = numScore != null && numScore >= 0.8;
+  if (numScore == null) return null;
   return (
     <span
       className={cn(
@@ -53,7 +55,7 @@ function ScorePill({ score }) {
           : "border-amber-200 bg-amber-50 text-amber-700",
       )}
     >
-      {score.toFixed(2)}
+      {numScore.toFixed(2)}
     </span>
   );
 }
