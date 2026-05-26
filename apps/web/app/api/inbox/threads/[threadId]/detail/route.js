@@ -46,13 +46,6 @@ async function loadLegacyUserSignature(serviceClient, supabaseUserId) {
   return normalizePlainText(data?.signature);
 }
 
-async function loadMailboxIds(serviceClient, scope) {
-  const query = applyScope(serviceClient.from("mail_accounts").select("id"), scope);
-  const { data, error } = await query;
-  if (error) throw new Error(error.message);
-  return (data || []).map((row) => row.id).filter(Boolean);
-}
-
 async function loadLatestPendingDraftMeta(serviceClient, scope, threadKey) {
   if (!threadKey) return null;
   let query = serviceClient
@@ -72,7 +65,7 @@ function isProposalOnlyDraftMeta(meta) {
   return Boolean(kind) && kind !== "final_customer_reply";
 }
 
-async function loadMessagesAndAttachments(serviceClient, threadId, mailboxIds) {
+async function loadMessagesAndAttachments(serviceClient, threadId, mailboxId) {
   // Strict single-thread scope: we never query siblings here. Provider thread
   // IDs (Gmail in particular) can collide across unrelated customer
   // conversations when subjects look alike, which previously caused drafts
@@ -81,7 +74,7 @@ async function loadMessagesAndAttachments(serviceClient, threadId, mailboxIds) {
     serviceClient
       .from("mail_messages")
       .select(select)
-      .in("mailbox_id", mailboxIds)
+      .eq("mailbox_id", mailboxId)
       .eq("thread_id", threadId)
       .order("received_at", { ascending: true, nullsLast: true });
 
@@ -111,7 +104,7 @@ async function loadMessagesAndAttachments(serviceClient, threadId, mailboxIds) {
     .select(
       "id, user_id, mailbox_id, message_id, provider, provider_attachment_id, filename, mime_type, size_bytes, storage_path, created_at",
     )
-    .in("mailbox_id", mailboxIds)
+    .eq("mailbox_id", mailboxId)
     .in("message_id", messageIds);
   if (attachmentError) throw new Error(attachmentError.message);
   return {
@@ -286,17 +279,11 @@ export async function GET(_request, context) {
       return NextResponse.json({ error: "Auth scope not found." }, { status: 401 });
     }
 
-    const mailboxIds = await loadMailboxIds(serviceClient, scope);
-    if (!mailboxIds.length) {
-      return NextResponse.json({ messages: [], attachments: [] }, { status: 200 });
-    }
-
     const { data: thread, error: threadError } = await applyScope(
       serviceClient
         .from("mail_threads")
         .select("id, user_id, workspace_id, mailbox_id, provider, provider_thread_id, subject")
         .eq("id", threadId)
-        .in("mailbox_id", mailboxIds)
         .maybeSingle(),
       scope,
     );
@@ -305,7 +292,7 @@ export async function GET(_request, context) {
     }
 
     const [messagePayload, draftPayload, draftStats, orderUpdate] = await Promise.all([
-      loadMessagesAndAttachments(serviceClient, threadId, mailboxIds),
+      loadMessagesAndAttachments(serviceClient, threadId, thread.mailbox_id),
       loadDraft(serviceClient, scope, thread).catch((error) => ({
         error: error.message,
         signature: "",
