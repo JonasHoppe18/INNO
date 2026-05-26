@@ -706,9 +706,9 @@ export function MessageBubble({
       timeZone: DISPLAY_TIMEZONE,
     })
     : "";
-  const toList = message.to_emails || [];
-  const ccList = message.cc_emails || [];
-  const bccList = message.bcc_emails || [];
+  const toList = Array.isArray(message.to_emails) ? message.to_emails : [];
+  const ccList = Array.isArray(message.cc_emails) ? message.cc_emails : [];
+  const bccList = Array.isArray(message.bcc_emails) ? message.bcc_emails : [];
   const isDraft = Boolean(message?.is_draft);
   const isInternalNote =
     String(message?.provider_message_id || "").startsWith("internal-note:") ||
