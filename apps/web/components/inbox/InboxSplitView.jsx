@@ -4473,6 +4473,21 @@ export function InboxSplitView({
     [handleSelectThreadInWorkspace],
   );
 
+  // Prefetch on hover. CACHE-RACE SAFETY INVARIANT:
+  //
+  // The prefetched `draftCacheRef` entry could in theory go stale if the user
+  // edits a draft for thread X while prefetch is in-flight. It doesn't cause
+  // a bug because:
+  //
+  // 1. The `loadDraft` effect's early-return guard (~line 3119) only reads
+  //    `draftCacheRef` when `draftValueByThread[threadId]` is NOT set. User
+  //    edits always populate `draftValueByThread`, so any edited thread
+  //    short-circuits before the cache is touched.
+  // 2. Prefetch never runs for the currently-selected thread (line below).
+  //
+  // If you ever loosen the early-return guard, you MUST also add an explicit
+  // `cacheInvalidatedAt` timestamp to prevent stale-cache resurrections.
+  // — 2026-05-26
   const handlePrefetchThread = useCallback((threadId) => {
     if (!threadId || isLocalThreadId(threadId)) return;
     if (String(threadId) === String(selectedThreadIdRef.current || "")) return;
@@ -4505,6 +4520,26 @@ export function InboxSplitView({
     // the list used to start draft requests for many tickets the user never opened.
   }, [isLocalThreadId]);
 
+  // Auto-save tick fires every 4s. THREAD-SWITCH SAFETY INVARIANT:
+  //
+  // It looks like this could race with a thread switch (tick fires mid-switch
+  // and saves the new thread's content to the old thread's URL), but it can't:
+  //
+  // 1. `saveThreadDraft` is in deps, and the callback depends on `selectedThreadId`.
+  //    When the user switches threads, useCallback re-creates `saveThreadDraft`
+  //    with the new threadId, which triggers this effect to re-run — cleanup
+  //    clears the old interval before a new one starts.
+  // 2. `draftValueRef.current` is updated by a separate effect (~line 1428) that
+  //    runs AFTER React commits. So during a single tick, the interval callback's
+  //    `saveThreadDraft` closure and `draftValueRef.current` are guaranteed to
+  //    reference the SAME thread's state — both are one React-commit cycle
+  //    behind, but they're behind by the same amount.
+  // 3. `saveThreadDraft` itself derives `threadId` from `selectedThreadId` (its
+  //    closure), and the POST URL uses that threadId — never `draftValueRef`.
+  //
+  // Don't "fix" by adding selectedThreadIdRef.current checks inside the tick:
+  // doing that would actually CREATE a race where the ref (synchronous) and
+  // the closure (one commit behind) disagree. — 2026-05-26
   useEffect(() => {
     if (isLocalThreadId(selectedThreadId)) return;
     if (!selectedThreadId || !draftReady) return;
