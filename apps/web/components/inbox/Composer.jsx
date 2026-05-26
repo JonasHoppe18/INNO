@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ChevronDown,
   X,
@@ -345,33 +346,73 @@ export function Composer({
   const isForward = mode === "forward";
   const showDraftLoadingState = !isNote && (isDraftLoading || isRefiningDraft);
 
-  // Slash-command snippet picker state — declared HERE (before the callbacks
-  // and useMemo that reference these in their dep arrays). useMemo deps are
-  // evaluated at definition time, so the const bindings must already exist or
-  // we hit a TDZ ReferenceError.
-  const [refineSnippetsOpen, setRefineSnippetsOpen] = useState(false);
-  const [refineSnippetsSearch, setRefineSnippetsSearch] = useState("");
+  // Slash-command snippet picker state. The picker opens when the agent types
+  // "/" — the slash and any text typed after it stays INLINE in the input
+  // (acting as a live filter). On select we strip the "/<query>" and add the
+  // snippet as a chip above the input. Declared HERE (before the callbacks
+  // and useMemo) so const bindings exist when dep arrays are evaluated (TDZ).
   const [refineSnippetsList, setRefineSnippetsList] = useState([]);
   const [refineSnippetsLoading, setRefineSnippetsLoading] = useState(false);
-  const [refineSelectedSnippets, setRefineSelectedSnippets] = useState([]);
   const [refineSnippetsActiveIndex, setRefineSnippetsActiveIndex] = useState(0);
+  // Picker open/closed signal. We mirror the DOM-anchored slash position into
+  // this boolean so React knows when to render the popover. Real anchor lives
+  // in slashAnchorRef below.
+  const [refineSlashOpen, setRefineSlashOpen] = useState(false);
+  // Live filter typed after "/" — derived from caret position vs slash anchor
+  // on every input/selection event.
+  const [refineSlashQuery, setRefineSlashQuery] = useState("");
+  // contentEditable bookkeeping: the editor div is the source of truth for
+  // both typed text AND picked snippets (rendered as styled inline spans).
+  // We mirror just enough into React state to drive placeholder visibility
+  // and submit-button enabled state.
+  const [refineIsEmpty, setRefineIsEmpty] = useState(true);
   const refineSnippetsLoadedRef = useRef(false);
+  const refineInputRef = useRef(null);
+  // DOM Range-equivalent pointing at the "/" character: { node, offset }.
+  // Lives in a ref because mutating it shouldn't trigger renders.
+  const slashAnchorRef = useRef(null);
+  // Popover is portaled to <body> with fixed positioning because the composer
+  // card has overflow-hidden — without the portal the picker gets clipped by
+  // the composer chrome and only the bottom edge peeks out.
+  const [refinePickerRect, setRefinePickerRect] = useState(null);
+
+  const refineSnippetsOpen = refineSlashOpen;
+
+  const closeSnippetPicker = useCallback(() => {
+    slashAnchorRef.current = null;
+    setRefineSlashOpen(false);
+    setRefineSlashQuery("");
+    setRefineSnippetsActiveIndex(0);
+  }, []);
+
+  // Read the editor's current state into something we can submit. Pulls plain
+  // text from textContent and snippet IDs from any inline span tokens.
+  const harvestEditor = useCallback(() => {
+    const el = refineInputRef.current;
+    if (!el) return { prompt: "", snippetIds: [] };
+    const prompt = (el.textContent || "").replace(/ /g, " ").trim();
+    const snippetIds = Array.from(
+      el.querySelectorAll("[data-snippet-id]"),
+    ).map((node) => node.dataset.snippetId);
+    return { prompt, snippetIds };
+  }, []);
 
   const handleRefineSubmit = async () => {
-    const prompt = refinePrompt.trim();
+    const { prompt, snippetIds } = harvestEditor();
     if (!prompt || !onRefineDraft) return;
-    const snippetIds = refineSelectedSnippets.map((s) => s.id);
     setRefineError("");
     setRefineOpen(false);
-    setRefinePrompt("");
-    setRefineSelectedSnippets([]);
-    setRefineSnippetsOpen(false);
-    setRefineSnippetsSearch("");
+    // Clear the contentEditable surface.
+    if (refineInputRef.current) {
+      refineInputRef.current.innerHTML = "";
+    }
+    setRefineIsEmpty(true);
+    closeSnippetPicker();
     await onRefineDraft(prompt, snippetIds);
   };
 
-  // Lazy-load snippets the first time the agent opens the picker. We refresh
-  // on subsequent opens too in case knowledge was edited mid-session.
+  // Lazy-load snippets the first time the agent opens the picker. Refreshed
+  // on every open so edits from other tabs surface within seconds.
   const loadRefineSnippets = useCallback(async () => {
     setRefineSnippetsLoading(true);
     try {
@@ -389,53 +430,203 @@ export function Composer({
     }
   }, []);
 
-  // Filter snippets by search query — match against title, content preview,
-  // question, and answer so the agent can find by any wording.
+  // Filter snippets against the live inline slash query. Already-picked
+  // snippet IDs are sourced from the editor DOM at filter time so we don't
+  // re-offer something the agent already inserted.
   const refineSnippetsFiltered = useMemo(() => {
-    const q = refineSnippetsSearch.trim().toLowerCase();
-    const alreadyPickedIds = new Set(refineSelectedSnippets.map((s) => s.id));
+    const q = refineSlashQuery.trim().toLowerCase();
+    const el = refineInputRef.current;
+    const alreadyPickedIds = new Set(
+      el
+        ? Array.from(el.querySelectorAll("[data-snippet-id]")).map(
+            (n) => n.dataset.snippetId,
+          )
+        : [],
+    );
     return refineSnippetsList
       .filter((s) => !alreadyPickedIds.has(s.snippet_id))
       .filter((s) => {
         if (!q) return true;
-        const haystack = [
-          s.title,
-          s.question,
-          s.answer,
-          s.content,
-        ]
+        const haystack = [s.title, s.question, s.answer, s.content]
           .filter(Boolean)
           .join(" ")
           .toLowerCase();
         return haystack.includes(q);
       })
-      .slice(0, 12);
-  }, [refineSnippetsList, refineSnippetsSearch, refineSelectedSnippets]);
+      .slice(0, 8);
+    // refineIsEmpty is included so the memo re-runs when the editor's content
+    // changes (cheap proxy — we can't put DOM in deps).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refineSnippetsList, refineSlashQuery, refineIsEmpty]);
 
-  const openSnippetPicker = useCallback(() => {
-    setRefineSnippetsOpen(true);
+  // Insert the picked snippet as an inline non-editable span replacing the
+  // "/query" range. Caret moves to right after the span + trailing space so
+  // the agent can keep typing fluently.
+  const handlePickRefineSnippet = useCallback(
+    (snippet) => {
+      if (!snippet?.snippet_id) return;
+      const editor = refineInputRef.current;
+      const anchor = slashAnchorRef.current;
+      if (!editor || !anchor || !anchor.node?.isConnected) {
+        closeSnippetPicker();
+        return;
+      }
+      const text = anchor.node.textContent || "";
+      // Sanity: slash is still where we think it is.
+      if (text[anchor.offset] !== "/") {
+        closeSnippetPicker();
+        return;
+      }
+      // Range spans "/" + whatever query chars the agent typed.
+      const queryLen = refineSlashQuery.length;
+      const range = document.createRange();
+      range.setStart(anchor.node, anchor.offset);
+      range.setEnd(
+        anchor.node,
+        Math.min(anchor.offset + 1 + queryLen, text.length),
+      );
+      range.deleteContents();
+
+      const span = document.createElement("span");
+      span.setAttribute("contenteditable", "false");
+      span.dataset.snippetId = snippet.snippet_id;
+      span.className =
+        "inline rounded px-1 mx-0.5 bg-violet-100 text-violet-700 font-medium dark:bg-violet-500/20 dark:text-violet-200 select-none";
+      span.textContent = `/${snippet.title || "snippet"}`;
+      range.insertNode(span);
+
+      // Trailing space so the next char the agent types isn't glued to the
+      // token. We use a real space (not NBSP) so trim() at submit cleans it.
+      const spaceNode = document.createTextNode(" ");
+      span.after(spaceNode);
+
+      // Move caret after the space.
+      const sel = window.getSelection();
+      if (sel) {
+        const newRange = document.createRange();
+        newRange.setStart(spaceNode, 1);
+        newRange.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(newRange);
+      }
+
+      setRefineIsEmpty(!(editor.textContent || "").length);
+      closeSnippetPicker();
+      // Return focus so keystrokes go back to the editor.
+      setTimeout(() => editor.focus(), 0);
+    },
+    [refineSlashQuery, closeSnippetPicker],
+  );
+
+  // Reset active index when the filtered list changes so the highlight always
+  // starts at the top after typing.
+  useEffect(() => {
     setRefineSnippetsActiveIndex(0);
-    if (!refineSnippetsLoadedRef.current || refineSnippetsList.length === 0) {
+  }, [refineSlashQuery]);
+
+  // Called on every input/keyup in the contentEditable editor. Handles two
+  // jobs: (1) keep refineIsEmpty in sync for placeholder visibility, and
+  // (2) detect "/" trigger + live-update the slash query as the agent types.
+  const handleEditorSlashDetection = useCallback(() => {
+    const editor = refineInputRef.current;
+    if (!editor) return;
+    setRefineIsEmpty(!(editor.textContent || "").length);
+
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+    const range = sel.getRangeAt(0);
+    if (!range.collapsed) return;
+    // Only react to carets inside the editor.
+    if (!editor.contains(range.startContainer)) return;
+
+    // CASE A: picker already open — recompute query from caret vs anchor, or
+    // close it if the slash was deleted / caret moved out.
+    if (slashAnchorRef.current) {
+      const { node, offset } = slashAnchorRef.current;
+      const text = node.textContent || "";
+      if (!node.isConnected || text[offset] !== "/") {
+        closeSnippetPicker();
+        return;
+      }
+      if (range.startContainer !== node) {
+        // Caret left the slash text node — close picker.
+        closeSnippetPicker();
+        return;
+      }
+      if (range.startOffset <= offset) {
+        // Caret moved before the slash.
+        closeSnippetPicker();
+        return;
+      }
+      const querySoFar = text.slice(offset + 1, range.startOffset);
+      if (/\s/.test(querySoFar)) {
+        closeSnippetPicker();
+        return;
+      }
+      setRefineSlashQuery(querySoFar);
+      return;
+    }
+
+    // CASE B: picker closed — check if the char just typed was a "/" that
+    // qualifies as a trigger (start of editor or after whitespace).
+    const node = range.startContainer;
+    if (node.nodeType !== Node.TEXT_NODE) return;
+    const offset = range.startOffset;
+    if (offset === 0) return;
+    const text = node.textContent || "";
+    if (text[offset - 1] !== "/") return;
+
+    // Disambiguate: a snippet token's textContent starts with "/" — don't
+    // re-trigger when the caret happens to sit right after one.
+    let charBefore = "";
+    if (offset >= 2) {
+      charBefore = text[offset - 2];
+    } else {
+      const prev = node.previousSibling;
+      if (!prev) {
+        charBefore = ""; // start of editor
+      } else if (prev.nodeType === Node.ELEMENT_NODE) {
+        // Previous element is likely a snippet span — don't open.
+        return;
+      } else {
+        charBefore = (prev.textContent || "").slice(-1);
+      }
+    }
+    if (charBefore !== "" && !/\s/.test(charBefore)) return;
+
+    slashAnchorRef.current = { node, offset: offset - 1 };
+    setRefineSlashOpen(true);
+    setRefineSlashQuery("");
+    if (!refineSnippetsLoadedRef.current) {
       loadRefineSnippets();
     } else {
-      // Refresh in background (cheap) so edits from other tabs surface.
+      // Background refresh.
       loadRefineSnippets();
     }
-  }, [loadRefineSnippets, refineSnippetsList.length]);
+  }, [closeSnippetPicker, loadRefineSnippets]);
 
-  const handlePickRefineSnippet = useCallback((snippet) => {
-    if (!snippet?.snippet_id) return;
-    setRefineSelectedSnippets((prev) => {
-      if (prev.some((s) => s.id === snippet.snippet_id)) return prev;
-      return [...prev, { id: snippet.snippet_id, title: snippet.title || "Snippet" }];
-    });
-    setRefineSnippetsOpen(false);
-    setRefineSnippetsSearch("");
-  }, []);
-
-  const handleRemoveRefineSnippet = useCallback((snippetId) => {
-    setRefineSelectedSnippets((prev) => prev.filter((s) => s.id !== snippetId));
-  }, []);
+  // Track the input's bounding rect while the picker is open so the portaled
+  // popover can sit pixel-perfect above it. We refresh on scroll/resize so it
+  // stays anchored even as the user scrolls the ticket area underneath.
+  useEffect(() => {
+    if (!refineSnippetsOpen) {
+      setRefinePickerRect(null);
+      return undefined;
+    }
+    const update = () => {
+      const el = refineInputRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setRefinePickerRect({ left: r.left, top: r.top, width: r.width });
+    };
+    update();
+    window.addEventListener("scroll", update, true);
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+    };
+  }, [refineSnippetsOpen]);
   const replyEditorMinHeightClassName = "min-h-[72px]";
   const editorBodyMinHeightClassName = isNote ? "min-h-[96px]" : "min-h-[112px]";
   const initialTo = useMemo(() => {
@@ -480,7 +671,14 @@ export function Composer({
   const [savedReplies, setSavedReplies] = useState([]);
   const [savedRepliesQuery, setSavedRepliesQuery] = useState("");
   const [refineOpen, setRefineOpen] = useState(false);
-  const [refinePrompt, setRefinePrompt] = useState("");
+  // Focus the contentEditable surface when the refine panel opens, so the
+  // agent can start typing without an extra click. contentEditable doesn't
+  // honor autoFocus the way <input> does, so we do it imperatively.
+  useEffect(() => {
+    if (refineOpen) {
+      setTimeout(() => refineInputRef.current?.focus(), 0);
+    }
+  }, [refineOpen]);
   const [refineError, setRefineError] = useState("");
   const [isDragOver, setIsDragOver] = useState(false);
   const [composerHeightPx, setComposerHeightPx] = useState(MIN_COMPOSER_HEIGHT_PX);
@@ -625,12 +823,12 @@ export function Composer({
   useEffect(() => {
     if (isDraftLoading || isRefiningDraft) {
       setRefineOpen(false);
-      setRefinePrompt("");
-      setRefineSelectedSnippets([]);
-      setRefineSnippetsOpen(false);
-      setRefineSnippetsSearch("");
+      // Clear the contentEditable surface so the next refine starts blank.
+      if (refineInputRef.current) refineInputRef.current.innerHTML = "";
+      setRefineIsEmpty(true);
+      closeSnippetPicker();
     }
-  }, [isDraftLoading, isRefiningDraft]);
+  }, [isDraftLoading, isRefiningDraft, closeSnippetPicker]);
 
   const addRecipient = (valueToAdd, setter, inputSetter) => {
     const trimmed = valueToAdd.trim();
@@ -1378,90 +1576,84 @@ export function Composer({
                     Type <kbd className="rounded bg-violet-200/60 dark:bg-violet-500/20 px-1 font-mono">/</kbd> to attach a knowledge snippet
                   </div>
                 </div>
-                {refineSelectedSnippets.length > 0 ? (
-                  <div className="flex flex-wrap gap-1">
-                    {refineSelectedSnippets.map((s) => (
+                <div className="relative flex items-center gap-2">
+                  {/* contentEditable editor — text + inline snippet tokens.
+                      We never re-render its children from React; the DOM is
+                      source of truth between the initial empty mount and
+                      explicit clears (submit / cancel). React state mirrors
+                      just enough to drive placeholder + Apply enabled. */}
+                  <div className="relative flex-1">
+                    {refineIsEmpty ? (
                       <span
-                        key={s.id}
-                        className="inline-flex items-center gap-1 rounded-full border border-violet-300 bg-white px-2 py-0.5 text-[11px] text-violet-700 dark:border-violet-500/40 dark:bg-violet-500/10 dark:text-violet-200"
+                        aria-hidden
+                        className="pointer-events-none absolute left-0 top-1/2 -translate-y-1/2 text-[13px] text-violet-400/70 dark:text-violet-400/50"
                       >
-                        <span className="truncate max-w-[180px]">{s.title}</span>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveRefineSnippet(s.id)}
-                          className="text-violet-400 hover:text-violet-700 dark:hover:text-violet-100 leading-none"
-                          aria-label={`Remove ${s.title}`}
-                        >
-                          ×
-                        </button>
+                        Write a custom instruction... (type / to attach a snippet)
                       </span>
-                    ))}
-                  </div>
-                ) : null}
-                <div className="flex items-center gap-2">
-                  <input
-                    autoFocus
-                    type="text"
-                    value={refinePrompt}
-                    onChange={(e) => {
-                      const next = e.target.value;
-                      // Detect "/" trigger: typed at start, or after whitespace.
-                      // Open picker; the "/" itself is stripped from the prompt
-                      // (it's a command character, not literal content).
-                      const last = next.slice(-1);
-                      if (last === "/") {
-                        const stripped = next.slice(0, -1);
-                        setRefinePrompt(stripped);
-                        openSnippetPicker();
-                        return;
-                      }
-                      setRefinePrompt(next);
-                    }}
-                    onKeyDown={(e) => {
-                      if (refineSnippetsOpen) {
-                        if (e.key === "ArrowDown") {
-                          e.preventDefault();
-                          setRefineSnippetsActiveIndex((idx) =>
-                            Math.min(idx + 1, Math.max(0, refineSnippetsFiltered.length - 1)),
-                          );
+                    ) : null}
+                    <div
+                      ref={refineInputRef}
+                      // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+                      contentEditable
+                      suppressContentEditableWarning
+                      role="textbox"
+                      aria-multiline="false"
+                      onInput={handleEditorSlashDetection}
+                      onKeyUp={handleEditorSlashDetection}
+                      onClick={handleEditorSlashDetection}
+                      onKeyDown={(e) => {
+                        if (refineSnippetsOpen) {
+                          if (e.key === "ArrowDown") {
+                            e.preventDefault();
+                            setRefineSnippetsActiveIndex((idx) =>
+                              Math.min(
+                                idx + 1,
+                                Math.max(0, refineSnippetsFiltered.length - 1),
+                              ),
+                            );
+                            return;
+                          }
+                          if (e.key === "ArrowUp") {
+                            e.preventDefault();
+                            setRefineSnippetsActiveIndex((idx) => Math.max(0, idx - 1));
+                            return;
+                          }
+                          if (e.key === "Enter" || e.key === "Tab") {
+                            e.preventDefault();
+                            const pick = refineSnippetsFiltered[refineSnippetsActiveIndex];
+                            if (pick) handlePickRefineSnippet(pick);
+                            return;
+                          }
+                          if (e.key === "Escape") {
+                            e.preventDefault();
+                            closeSnippetPicker();
+                            return;
+                          }
+                          // Don't fall through to submit while picker is open.
                           return;
                         }
-                        if (e.key === "ArrowUp") {
+                        if (e.key === "Enter" && !e.shiftKey) {
                           e.preventDefault();
-                          setRefineSnippetsActiveIndex((idx) => Math.max(0, idx - 1));
-                          return;
-                        }
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          const pick = refineSnippetsFiltered[refineSnippetsActiveIndex];
-                          if (pick) handlePickRefineSnippet(pick);
-                          return;
+                          handleRefineSubmit();
                         }
                         if (e.key === "Escape") {
-                          e.preventDefault();
-                          setRefineSnippetsOpen(false);
-                          return;
+                          setRefineOpen(false);
+                          setRefineError("");
                         }
-                      }
-                      if (e.key === "Enter" && !e.shiftKey) {
+                      }}
+                      onPaste={(e) => {
+                        // Force plain-text paste so rich-text from other apps
+                        // doesn't pollute the editor with foreign styling.
                         e.preventDefault();
-                        handleRefineSubmit();
-                      }
-                      if (e.key === "Escape") {
-                        setRefineOpen(false);
-                        setRefineError("");
-                      }
-                    }}
-                    placeholder={
-                      refineSelectedSnippets.length > 0
-                        ? "Add an instruction..."
-                        : "Write a custom instruction... (type / to pick a snippet)"
-                    }
-                    className="flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-violet-400/70 dark:placeholder:text-violet-400/50"
-                  />
+                        const text = e.clipboardData?.getData("text/plain") || "";
+                        document.execCommand("insertText", false, text);
+                      }}
+                      className="min-h-[20px] w-full bg-transparent text-[13px] leading-[20px] text-foreground outline-none break-words whitespace-pre-wrap empty:before:content-none"
+                    />
+                  </div>
                   <button
                     type="button"
-                    disabled={!refinePrompt.trim()}
+                    disabled={refineIsEmpty}
                     onClick={handleRefineSubmit}
                     className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-2.5 py-1 text-[12px] font-medium text-white disabled:opacity-40 hover:bg-violet-700 transition-colors"
                     aria-label="Submit refinement"
@@ -1469,94 +1661,101 @@ export function Composer({
                     Apply
                     <CornerDownLeft className="h-3 w-3" />
                   </button>
+
+                  {/* Inline slash-command popover — opens UPWARD (above the
+                      input) like a chat composer's command menu. Portaled to
+                      <body> with FIXED positioning because the composer card
+                      has overflow-hidden ancestors that would otherwise clip
+                      the picker. Position is anchored to the input's bounding
+                      rect, refreshed on scroll/resize. */}
+                  {refineSnippetsOpen && refinePickerRect && typeof document !== "undefined"
+                    ? createPortal(
+                    <div
+                      className="fixed z-[100] overflow-hidden rounded-lg border border-gray-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
+                      style={{
+                        left: refinePickerRect.left,
+                        width: refinePickerRect.width,
+                        // Anchor the BOTTOM of the popover 6px above the top
+                        // of the input — opens upward.
+                        bottom: `calc(100vh - ${refinePickerRect.top}px + 6px)`,
+                      }}
+                    >
+                      {refineSlashQuery ? (
+                        <div className="border-b border-gray-100 bg-gray-50/50 px-3 py-1.5 text-[10.5px] text-gray-500 dark:border-zinc-800 dark:bg-zinc-800/50 dark:text-zinc-400">
+                          Filter: <span className="font-mono text-violet-600 dark:text-violet-400">/{refineSlashQuery}</span>
+                        </div>
+                      ) : null}
+                      <div className="max-h-64 overflow-y-auto py-1">
+                        {refineSnippetsLoading && refineSnippetsList.length === 0 ? (
+                          <p className="px-3 py-4 text-center text-[11.5px] text-muted-foreground">
+                            Loading snippets...
+                          </p>
+                        ) : refineSnippetsFiltered.length === 0 ? (
+                          <p className="px-3 py-4 text-center text-[11.5px] text-muted-foreground">
+                            {refineSlashQuery
+                              ? `No snippets match "/${refineSlashQuery}"`
+                              : "No snippets available."}
+                          </p>
+                        ) : (
+                          <ul>
+                            {refineSnippetsFiltered.map((s, idx) => {
+                              const isActive = idx === refineSnippetsActiveIndex;
+                              const preview = String(
+                                (s.format === "qa" && s.answer ? s.answer : s.content) || "",
+                              )
+                                .replace(/\s+/g, " ")
+                                .slice(0, 90);
+                              return (
+                                <li key={s.snippet_id}>
+                                  <button
+                                    type="button"
+                                    onMouseEnter={() => setRefineSnippetsActiveIndex(idx)}
+                                    onMouseDown={(e) => {
+                                      // Prevent input blur so focus stays put
+                                      // for keyboard-friendly UX.
+                                      e.preventDefault();
+                                    }}
+                                    onClick={() => handlePickRefineSnippet(s)}
+                                    className={`flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left transition-colors ${
+                                      isActive
+                                        ? "bg-violet-50 dark:bg-violet-500/15"
+                                        : "hover:bg-gray-50 dark:hover:bg-zinc-800/50"
+                                    }`}
+                                  >
+                                    <span className="flex items-center gap-1.5 text-[12.5px] font-medium text-foreground">
+                                      {s.format === "qa" && (
+                                        <span className="rounded-sm bg-indigo-100 px-1 text-[9px] font-semibold uppercase tracking-wide text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300">
+                                          Q&amp;A
+                                        </span>
+                                      )}
+                                      <span className="truncate">{s.title || "Untitled snippet"}</span>
+                                    </span>
+                                    {preview ? (
+                                      <span className="line-clamp-1 text-[11px] text-muted-foreground">
+                                        {preview}
+                                      </span>
+                                    ) : null}
+                                  </button>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        )}
+                      </div>
+                      <div className="border-t border-gray-100 bg-gray-50/50 px-3 py-1.5 text-[10px] text-gray-400 dark:border-zinc-800 dark:bg-zinc-800/50 dark:text-zinc-500">
+                        <kbd className="rounded bg-white px-1 font-mono dark:bg-zinc-700">↑↓</kbd> navigate
+                        <span className="mx-1.5">·</span>
+                        <kbd className="rounded bg-white px-1 font-mono dark:bg-zinc-700">↵</kbd> select
+                        <span className="mx-1.5">·</span>
+                        <kbd className="rounded bg-white px-1 font-mono dark:bg-zinc-700">esc</kbd> close
+                      </div>
+                    </div>,
+                    document.body,
+                  )
+                    : null}
                 </div>
                 {refineError ? (
                   <p className="text-[11px] text-red-500 dark:text-red-400">{refineError}</p>
-                ) : null}
-
-                {/* Snippet picker popover — opens via "/" or programmatically. */}
-                {refineSnippetsOpen ? (
-                  <div className="absolute left-3 right-3 top-full z-50 mt-1 overflow-hidden rounded-lg border border-violet-200 bg-white shadow-lg dark:border-violet-500/30 dark:bg-zinc-900">
-                    <div className="border-b border-violet-100 px-3 py-2 dark:border-violet-500/20">
-                      <input
-                        type="text"
-                        autoFocus
-                        value={refineSnippetsSearch}
-                        onChange={(e) => {
-                          setRefineSnippetsSearch(e.target.value);
-                          setRefineSnippetsActiveIndex(0);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === "ArrowDown") {
-                            e.preventDefault();
-                            setRefineSnippetsActiveIndex((idx) =>
-                              Math.min(idx + 1, Math.max(0, refineSnippetsFiltered.length - 1)),
-                            );
-                          } else if (e.key === "ArrowUp") {
-                            e.preventDefault();
-                            setRefineSnippetsActiveIndex((idx) => Math.max(0, idx - 1));
-                          } else if (e.key === "Enter") {
-                            e.preventDefault();
-                            const pick = refineSnippetsFiltered[refineSnippetsActiveIndex];
-                            if (pick) handlePickRefineSnippet(pick);
-                          } else if (e.key === "Escape") {
-                            e.preventDefault();
-                            setRefineSnippetsOpen(false);
-                          }
-                        }}
-                        placeholder="Search snippets..."
-                        className="w-full bg-transparent text-[12.5px] text-foreground outline-none placeholder:text-muted-foreground"
-                      />
-                    </div>
-                    <div className="max-h-64 overflow-y-auto">
-                      {refineSnippetsLoading && refineSnippetsList.length === 0 ? (
-                        <p className="px-3 py-4 text-center text-[11.5px] text-muted-foreground">
-                          Loading snippets...
-                        </p>
-                      ) : refineSnippetsFiltered.length === 0 ? (
-                        <p className="px-3 py-4 text-center text-[11.5px] text-muted-foreground">
-                          {refineSnippetsSearch ? "No snippets match." : "No snippets available."}
-                        </p>
-                      ) : (
-                        <ul className="py-1">
-                          {refineSnippetsFiltered.map((s, idx) => {
-                            const isActive = idx === refineSnippetsActiveIndex;
-                            const preview = String(
-                              (s.format === "qa" && s.answer ? s.answer : s.content) || "",
-                            )
-                              .replace(/\s+/g, " ")
-                              .slice(0, 90);
-                            return (
-                              <li key={s.snippet_id}>
-                                <button
-                                  type="button"
-                                  onMouseEnter={() => setRefineSnippetsActiveIndex(idx)}
-                                  onClick={() => handlePickRefineSnippet(s)}
-                                  className={`flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left transition-colors ${
-                                    isActive ? "bg-violet-50 dark:bg-violet-500/15" : "hover:bg-muted/60"
-                                  }`}
-                                >
-                                  <span className="flex items-center gap-1.5 text-[12.5px] font-medium text-foreground">
-                                    {s.format === "qa" && (
-                                      <span className="rounded-sm bg-indigo-100 px-1 text-[9px] font-semibold uppercase tracking-wide text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300">
-                                        Q&amp;A
-                                      </span>
-                                    )}
-                                    {s.title || "Untitled snippet"}
-                                  </span>
-                                  {preview ? (
-                                    <span className="line-clamp-1 text-[11px] text-muted-foreground">
-                                      {preview}
-                                    </span>
-                                  ) : null}
-                                </button>
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      )}
-                    </div>
-                  </div>
                 ) : null}
               </div>
             ) : null}
