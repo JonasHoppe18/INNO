@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ChevronDown,
@@ -308,7 +308,7 @@ const getSavedReplyInlineContentIdSet = (reply) => {
   );
 };
 
-export function Composer({
+function ComposerComponent({
   value,
   onChange,
   draftLoaded = false,
@@ -1146,13 +1146,13 @@ export function Composer({
     }
   };
 
-  const normalizeMentionKey = (value) =>
+  const normalizeMentionKey = useCallback((value) =>
     String(value || "")
       .toLowerCase()
       .replace(/[^a-z0-9._-]+/g, "")
-      .trim();
+      .trim(), []);
 
-  const resolveMentionIdsFromText = (text) => {
+  const resolveMentionIdsFromText = useCallback((text) => {
     const source = String(text || "");
     if (!source) return [];
     const candidates = Array.isArray(mentionUsers) ? mentionUsers : [];
@@ -1180,7 +1180,42 @@ export function Composer({
       });
     });
     return Array.from(resolved);
-  };
+  }, [mentionUsers, normalizeMentionKey]);
+
+  const submitComposer = useCallback(() => {
+    if (disabled || showDraftLoadingState || !canSend || !value.trim() || isSending) return;
+    const parsedMentionIds = isNote ? resolveMentionIdsFromText(value) : [];
+    const mentionUserIds = Array.from(
+      new Set([...(selectedMentionIds || []), ...parsedMentionIds])
+    );
+    onSend?.({
+      mode: isNote ? "note" : isForward ? "forward" : "reply",
+      bodyText: value,
+      toRecipients: buildRecipients(toRecipients, toInput),
+      ccRecipients: buildRecipients(ccRecipients, ccInput),
+      bccRecipients: buildRecipients(bccRecipients, bccInput),
+      attachments,
+      mentionUserIds,
+    });
+  }, [
+    attachments,
+    bccInput,
+    bccRecipients,
+    canSend,
+    ccInput,
+    ccRecipients,
+    disabled,
+    isForward,
+    isNote,
+    isSending,
+    onSend,
+    resolveMentionIdsFromText,
+    selectedMentionIds,
+    showDraftLoadingState,
+    toInput,
+    toRecipients,
+    value,
+  ]);
 
   const handleReplyEditorInput = (event) => {
     const html = String(event?.currentTarget?.innerHTML || "");
@@ -1793,6 +1828,11 @@ export function Composer({
                   }
                 }
                 onKeyDown={(event) => {
+                  if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                    event.preventDefault();
+                    submitComposer();
+                    return;
+                  }
                   if (!mentionState.open || !mentionCandidates.length) return;
                   if (event.key === "ArrowDown") {
                     event.preventDefault();
@@ -1866,6 +1906,12 @@ export function Composer({
                       beforeRange.setEnd(range.startContainer, range.startOffset);
                       replyCaretIndexRef.current = String(beforeRange.toString() || "")
                         .replace(/\r\n/g, "\n").length;
+                    }}
+                    onKeyDown={(event) => {
+                      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                        event.preventDefault();
+                        submitComposer();
+                      }
                     }}
                     onMouseUp={() => {
                       const selection = typeof window !== "undefined" ? window.getSelection() : null;
@@ -2089,19 +2135,7 @@ export function Composer({
                 type="button"
                 disabled={disabled || showDraftLoadingState || !canSend || !value.trim() || isSending}
                 onClick={() => {
-                  const parsedMentionIds = isNote ? resolveMentionIdsFromText(value) : [];
-                  const mentionUserIds = Array.from(
-                    new Set([...(selectedMentionIds || []), ...parsedMentionIds])
-                  );
-                  onSend?.({
-                    mode: isNote ? "note" : isForward ? "forward" : "reply",
-                    bodyText: value,
-                    toRecipients: buildRecipients(toRecipients, toInput),
-                    ccRecipients: buildRecipients(ccRecipients, ccInput),
-                    bccRecipients: buildRecipients(bccRecipients, bccInput),
-                    attachments,
-                    mentionUserIds,
-                  });
+                  submitComposer();
                 }}
                 className="h-8 w-8 rounded-full bg-violet-600 p-0 text-white shadow-sm hover:bg-violet-700"
               >
@@ -2196,3 +2230,5 @@ export function Composer({
     </div>
   );
 }
+
+export const Composer = memo(ComposerComponent);

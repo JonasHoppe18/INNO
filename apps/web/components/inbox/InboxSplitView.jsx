@@ -8,6 +8,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useTransition,
 } from "react";
 import { TicketList } from "@/components/inbox/TicketList";
 import { TicketDetail } from "@/components/inbox/TicketDetail";
@@ -32,6 +33,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { useCustomerLookup } from "@/hooks/useCustomerLookup";
 import { useSiteHeaderActions } from "@/components/site-header-actions";
+import { reportClientEvent } from "@/lib/client-events";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -134,6 +136,7 @@ const UUID_REGEX =
 const PREVIEW_CUSTOMER_LOOKUP_LIMIT = 30;
 const SECONDARY_THREAD_FETCH_DELAY_MS = 250;
 const DRAFT_FETCH_DELAY_MS = 150;
+const MAX_PREFETCH_IN_FLIGHT = 2;
 const firstTagCache = new Map();
 
 const isUuid = (value) => typeof value === "string" && UUID_REGEX.test(value);
@@ -1095,6 +1098,10 @@ export function InboxSplitView({
   const messagesCacheRef = useRef(new Map());
   const prefetchingRef = useRef(new Set());
   const draftCacheRef = useRef(new Map());
+  const ticketSwitchStartedAtRef = useRef(new Map());
+  const scrollPositionByThreadRef = useRef({});
+  const scrollSaveFrameRef = useRef(null);
+  const [, startInboxTransition] = useTransition();
   const supabase = useClerkSupabase();
   const { user } = useUser();
   const router = useRouter();
@@ -1303,6 +1310,11 @@ export function InboxSplitView({
           const nextMessage = payload?.new;
           const nextMessageId = String(nextMessage?.id || "").trim();
           if (!nextMessageId) return;
+          const nextThreadId = String(nextMessage?.thread_id || "").trim();
+          if (nextThreadId) {
+            messagesCacheRef.current.delete(nextThreadId);
+            draftCacheRef.current.delete(nextThreadId);
+          }
           setLiveMessages((prev) => {
             const existing = Array.isArray(prev) ? prev : [];
             if (
@@ -1338,6 +1350,11 @@ export function InboxSplitView({
           const prevMessage = payload?.old;
           const nextMessageId = String(nextMessage?.id || "").trim();
           if (!nextMessageId) return;
+          const nextThreadId = String(nextMessage?.thread_id || "").trim();
+          if (nextThreadId) {
+            messagesCacheRef.current.delete(nextThreadId);
+            draftCacheRef.current.delete(nextThreadId);
+          }
           setLiveMessages((prev) => {
             const existing = Array.isArray(prev) ? prev : [];
             let found = false;
@@ -1403,6 +1420,16 @@ export function InboxSplitView({
   useEffect(() => {
     draftValueRef.current = draftValue;
   }, [draftValue]);
+
+  useEffect(
+    () => () => {
+      if (scrollSaveFrameRef.current) {
+        cancelAnimationFrame(scrollSaveFrameRef.current);
+        scrollSaveFrameRef.current = null;
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     selectedThreadIdRef.current = selectedThreadId;
@@ -2694,6 +2721,18 @@ export function InboxSplitView({
         selectedThreadId,
         selectedThreadMessagesFromDb,
       );
+      const startedAt = ticketSwitchStartedAtRef.current.get(selectedThreadId);
+      if (startedAt) {
+        reportClientEvent({
+          event: "ticket_switch_completed",
+          threadId: selectedThreadId,
+          status: "loaded",
+          durationMs:
+            (typeof performance !== "undefined" ? performance.now() : Date.now()) -
+            startedAt,
+        });
+        ticketSwitchStartedAtRef.current.delete(selectedThreadId);
+      }
     }
   }, [
     messagesFetchedForThreadId,
@@ -3881,30 +3920,35 @@ export function InboxSplitView({
       const isMarkedRead = Boolean(thread?.is_read);
       if (!hasUnreadMessages && isMarkedRead) return;
 
-      setReadOverrides((prev) =>
-        prev[nextThreadId] ? prev : { ...prev, [nextThreadId]: true },
-      );
-      setLiveThreads((prev) =>
-        (prev || []).map((item) =>
-          String(item?.id || "").trim() === nextThreadId
-            ? { ...item, unread_count: 0, is_read: true }
-            : item,
-        ),
-      );
-      window.dispatchEvent(new CustomEvent("sona:thread-read"));
+	      setReadOverrides((prev) =>
+	        prev[nextThreadId] ? prev : { ...prev, [nextThreadId]: true },
+	      );
+      startInboxTransition(() => {
+        setLiveThreads((prev) =>
+          (prev || []).map((item) =>
+            String(item?.id || "").trim() === nextThreadId
+              ? { ...item, unread_count: 0, is_read: true }
+              : item,
+          ),
+        );
+      });
 
-      fetch("/api/inbox/thread-status", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          threadId: nextThreadId,
-          isRead: true,
-          unreadCount: 0,
-        }),
-      }).catch(() => null);
-    },
-    [derivedThreads, isLocalThreadId],
-  );
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent("sona:thread-read"));
+
+        fetch("/api/inbox/thread-status", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            threadId: nextThreadId,
+            isRead: true,
+            unreadCount: 0,
+          }),
+        }).catch(() => null);
+      }, 0);
+	    },
+	    [derivedThreads, isLocalThreadId, startInboxTransition],
+	  );
 
   const openThreadInWorkspace = useCallback(
     (threadId, options = {}) => {
@@ -3913,28 +3957,30 @@ export function InboxSplitView({
       const shouldOpenInNewTab = Boolean(options?.newTab);
       markThreadReadInstantly(nextThreadId);
 
-      setOpenThreadIds((prev) => {
-        if (prev.includes(nextThreadId)) return prev;
-        if (!prev.length) return [nextThreadId];
+      startInboxTransition(() => {
+        setOpenThreadIds((prev) => {
+          if (prev.includes(nextThreadId)) return prev;
+          if (!prev.length) return [nextThreadId];
 
-        const currentIndex = prev.indexOf(selectedThreadId);
-        if (shouldOpenInNewTab) {
+          const currentIndex = prev.indexOf(selectedThreadId);
+          if (shouldOpenInNewTab) {
+            const next = [...prev];
+            const insertAt = currentIndex === -1 ? next.length : currentIndex + 1;
+            next.splice(insertAt, 0, nextThreadId);
+            return next;
+          }
+
           const next = [...prev];
-          const insertAt = currentIndex === -1 ? next.length : currentIndex + 1;
-          next.splice(insertAt, 0, nextThreadId);
-          return next;
-        }
+          next[currentIndex === -1 || !selectedThreadId ? 0 : currentIndex] =
+            nextThreadId;
+          return Array.from(new Set(next));
+        });
 
-        const next = [...prev];
-        next[currentIndex === -1 || !selectedThreadId ? 0 : currentIndex] =
-          nextThreadId;
-        return Array.from(new Set(next));
+        setSelectedThreadId(nextThreadId);
       });
-
-      setSelectedThreadId(nextThreadId);
-    },
-    [markThreadReadInstantly, selectedThreadId],
-  );
+	    },
+	    [markThreadReadInstantly, selectedThreadId, startInboxTransition],
+	  );
 
   const closeThreadTab = useCallback(
     (threadId) => {
@@ -4232,6 +4278,29 @@ export function InboxSplitView({
     },
     [derivedThreads, selectedThreadId],
   );
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.defaultPrevented) return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target;
+      const tag = target?.tagName;
+      if (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        target?.isContentEditable
+      ) {
+        return;
+      }
+      if (event.key.toLowerCase() !== "e") return;
+      if (!selectedThreadId || isLocalThreadId(selectedThreadId)) return;
+      event.preventDefault();
+      handleTicketStateChange({ status: "Solved" });
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleTicketStateChange, isLocalThreadId, selectedThreadId]);
+
   const handleAssignmentChange = useCallback(
     (value) => {
       const selected = String(value || "");
@@ -4314,6 +4383,13 @@ export function InboxSplitView({
         if (deleteSucceeded && threadId === selectedThreadIdRef.current) {
           refreshSelectedThreadMessages?.().catch(() => null);
         }
+        if (deleteSucceeded) {
+          reportClientEvent({
+            event: "draft_saved",
+            threadId,
+            status: "deleted",
+          });
+        }
         return;
       }
       if (trimmed === String(draftLastSavedRef.current[threadId] || ""))
@@ -4338,10 +4414,20 @@ export function InboxSplitView({
           throw new Error(data?.error || "Could not save draft.");
         }
         draftLastSavedRef.current[threadId] = trimmed;
+        reportClientEvent({
+          event: "draft_saved",
+          threadId,
+          status: "saved",
+        });
         if (data?.draft_id && selectedThreadIdRef.current === threadId) {
           setActiveDraftId(data.draft_id);
         }
       } catch {
+        reportClientEvent({
+          event: "draft_saved",
+          threadId,
+          status: "error",
+        });
         // keep UI responsive; autosave retries on next change/interval
       } finally {
         savingDraftThreadIdsRef.current.delete(threadId);
@@ -4361,6 +4447,25 @@ export function InboxSplitView({
 
   const handleSelectThreadInWorkspace = useCallback(
     (threadId, options = {}) => {
+      const nextThreadId = String(threadId || "").trim();
+      if (nextThreadId) {
+        const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+        ticketSwitchStartedAtRef.current.set(nextThreadId, now);
+        reportClientEvent({
+          event: "ticket_switch_started",
+          threadId: nextThreadId,
+          status: messagesCacheRef.current.has(nextThreadId) ? "cache_hit" : "cold",
+        });
+        if (messagesCacheRef.current.has(nextThreadId)) {
+          reportClientEvent({
+            event: "ticket_switch_completed",
+            threadId: nextThreadId,
+            status: "cache_hit",
+            durationMs: 0,
+          });
+          ticketSwitchStartedAtRef.current.delete(nextThreadId);
+        }
+      }
       saveThreadDraft({
         immediate: true,
         valueOverride: draftValueRef.current,
@@ -4386,6 +4491,7 @@ export function InboxSplitView({
 
     // Prefetch the same detail payload used by the selected thread view.
     if (!messagesCacheRef.current.has(threadId) && !prefetchingRef.current.has(threadId)) {
+      if (prefetchingRef.current.size >= MAX_PREFETCH_IN_FLIGHT) return;
       prefetchingRef.current.add(threadId);
       fetch(`/api/inbox/threads/${encodeURIComponent(threadId)}/detail`, {
         method: "GET",
@@ -4465,6 +4571,7 @@ export function InboxSplitView({
       toast.error("Draft is empty.");
       return;
     }
+    const sendStartedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
     sendingStartedAtRef.current = Date.now();
     setIsSending(true);
     const toastId = toast.loading(
@@ -4514,6 +4621,14 @@ export function InboxSplitView({
           [selectedThreadId]: [...(prev[selectedThreadId] || []), noteMessage],
         }));
         toast.success("Internal note saved.", { id: toastId });
+        reportClientEvent({
+          event: "send_completed",
+          threadId: selectedThreadId,
+          status: "note",
+          durationMs:
+            (typeof performance !== "undefined" ? performance.now() : Date.now()) -
+            sendStartedAt,
+        });
         setNoteValueByThread((prev) => ({
           ...prev,
           [selectedThreadId]: "",
@@ -4738,7 +4853,24 @@ export function InboxSplitView({
         ...prev,
         [selectedThreadId]: true,
       }));
+      reportClientEvent({
+        event: "send_completed",
+        threadId: selectedThreadId,
+        status: composeMode,
+        durationMs:
+          (typeof performance !== "undefined" ? performance.now() : Date.now()) -
+          sendStartedAt,
+      });
     } catch (err) {
+      reportClientEvent({
+        event: "send_completed",
+        threadId: selectedThreadId,
+        status: "error",
+        errorCode: err?.message || "unknown",
+        durationMs:
+          (typeof performance !== "undefined" ? performance.now() : Date.now()) -
+          sendStartedAt,
+      });
       toast.error(err?.message || "Could not send draft.", { id: toastId });
     } finally {
       const elapsed = Date.now() - (sendingStartedAtRef.current || 0);
@@ -5117,12 +5249,37 @@ export function InboxSplitView({
     ],
   );
 
-  const getThreadTimestamp = (thread) => thread.last_message_at || "";
+  const getThreadTimestamp = useCallback((thread) => thread.last_message_at || "", []);
 
-  const getThreadUnreadCount = (thread) => {
-    if (readOverrides[thread.id] || thread.is_read) return 0;
-    return thread.unread_count || 0;
-  };
+  const getThreadUnreadCount = useCallback(
+    (thread) => {
+      if (readOverrides[thread.id] || thread.is_read) return 0;
+      return thread.unread_count || 0;
+    },
+    [readOverrides],
+  );
+
+  const handleConversationScroll = useCallback(
+    (scrollTop) => {
+      if (!selectedThreadId) return;
+      const threadId = selectedThreadId;
+      scrollPositionByThreadRef.current[threadId] = scrollTop;
+      if (scrollSaveFrameRef.current) return;
+      scrollSaveFrameRef.current = requestAnimationFrame(() => {
+        scrollSaveFrameRef.current = null;
+        const nextScrollTop = scrollPositionByThreadRef.current[threadId] || 0;
+        setScrollPositionByThread((prev) =>
+          prev[threadId] === nextScrollTop
+            ? prev
+            : {
+                ...prev,
+                [threadId]: nextScrollTop,
+              },
+        );
+      });
+    },
+    [selectedThreadId],
+  );
 
   const selectedPendingOrderUpdate = useMemo(() => {
     if (!selectedThreadId) return null;
@@ -5302,16 +5459,10 @@ export function InboxSplitView({
           onComposerModeChange={setComposerMode}
           mailboxEmails={mailboxEmails}
           isWorkspaceTestMode={isWorkspaceTestMode}
-          conversationScrollTop={
-            selectedThreadId ? scrollPositionByThread[selectedThreadId] || 0 : 0
-          }
-          onConversationScroll={(scrollTop) => {
-            if (!selectedThreadId) return;
-            setScrollPositionByThread((prev) => ({
-              ...prev,
-              [selectedThreadId]: scrollTop,
-            }));
-          }}
+	          conversationScrollTop={
+	            selectedThreadId ? scrollPositionByThread[selectedThreadId] || 0 : 0
+	          }
+	          onConversationScroll={handleConversationScroll}
           headerActions={
             selectedThreadId ? (
               <InboxHeaderActions

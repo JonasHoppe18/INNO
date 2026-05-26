@@ -1,4 +1,4 @@
-import { Component, useEffect, useMemo, useRef, useState } from "react";
+import { Component, memo, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Package, Sparkles, TriangleAlert, X } from "lucide-react";
 import { MessageBubble, MessageRenderBoundary } from "@/components/inbox/MessageBubble";
@@ -156,7 +156,7 @@ function getMessageTranslationText(message = null, translationItems = []) {
   return looksUnchanged ? null : translatedText;
 }
 
-export function TicketDetail({
+function TicketDetailComponent({
   thread,
   messages,
   attachments,
@@ -814,3 +814,5 @@ export function TicketDetail({
     </section>
   );
 }
+
+export const TicketDetail = memo(TicketDetailComponent);

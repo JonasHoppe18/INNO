@@ -2,6 +2,7 @@ import { useAuth, useUser } from "@clerk/nextjs";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useClerkSupabase } from "@/lib/useClerkSupabase";
 import { getMessageTimestamp } from "@/components/inbox/inbox-utils";
+import { reportClientEvent } from "@/lib/client-events";
 
 const EMPTY_LIST = [];
 
@@ -297,6 +298,7 @@ export function useThreadMessages(threadId, options = {}) {
   const lastThreadIdRef = useRef(threadId || null);
   const activeThreadIdRef = useRef(threadId || null);
   const fetchTokenRef = useRef(0);
+  const abortControllerRef = useRef(null);
 
   useEffect(() => {
     activeThreadIdRef.current = threadId || null;
@@ -307,8 +309,14 @@ export function useThreadMessages(threadId, options = {}) {
     const requestThreadId = threadId;
     const requestToken = fetchTokenRef.current + 1;
     fetchTokenRef.current = requestToken;
+    abortControllerRef.current?.abort();
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    const startedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
     const isStale = () =>
-      fetchTokenRef.current !== requestToken || activeThreadIdRef.current !== requestThreadId;
+      abortController.signal.aborted ||
+      fetchTokenRef.current !== requestToken ||
+      activeThreadIdRef.current !== requestThreadId;
 
     setLoading(true);
     setError(null);
@@ -318,8 +326,8 @@ export function useThreadMessages(threadId, options = {}) {
       try {
         const response = await fetch(`/api/inbox/threads/${threadId}/detail`, {
           method: "GET",
-          cache: "no-store",
           credentials: "include",
+          signal: abortController.signal,
         });
         if (response.ok) {
           const payload = await response.json().catch(() => null);
@@ -333,9 +341,16 @@ export function useThreadMessages(threadId, options = {}) {
           setData(rows);
           setAttachments(attachmentRows);
           setFetchedThreadId(requestThreadId);
+          reportClientEvent({
+            event: "thread_detail_loaded",
+            threadId: requestThreadId,
+            status: "ok",
+            durationMs: (typeof performance !== "undefined" ? performance.now() : Date.now()) - startedAt,
+          });
           return;
         }
       } catch (_serverFetchError) {
+        if (abortController.signal.aborted) return;
         // Fallback to existing client query path below.
       }
 
@@ -439,6 +454,12 @@ export function useThreadMessages(threadId, options = {}) {
       setData(normalizedRows);
       setDetail(null);
       setFetchedThreadId(requestThreadId);
+      reportClientEvent({
+        event: "thread_detail_loaded",
+        threadId: requestThreadId,
+        status: "fallback",
+        durationMs: (typeof performance !== "undefined" ? performance.now() : Date.now()) - startedAt,
+      });
 
       const messageIds = normalizedRows
         .map((row) => String(row?.id || "").trim())
@@ -463,9 +484,19 @@ export function useThreadMessages(threadId, options = {}) {
       }
     } catch (err) {
       if (isStale()) return;
+      reportClientEvent({
+        event: "thread_detail_loaded",
+        threadId: requestThreadId,
+        status: "error",
+        errorCode: err?.name === "AbortError" ? "aborted" : err?.message || "unknown",
+        durationMs: (typeof performance !== "undefined" ? performance.now() : Date.now()) - startedAt,
+      });
       console.error("[useThreadMessages] fejl for tråd:", threadId, err);
       setError(err instanceof Error ? err : new Error("Could not load messages."));
     } finally {
+      if (abortControllerRef.current === abortController) {
+        abortControllerRef.current = null;
+      }
       if (isStale()) return;
       setLoading(false);
     }
@@ -474,6 +505,9 @@ export function useThreadMessages(threadId, options = {}) {
   useEffect(() => {
     if (!enabled) return;
     fetchMessages();
+    return () => {
+      abortControllerRef.current?.abort();
+    };
   }, [enabled, fetchMessages]);
 
   useEffect(() => {

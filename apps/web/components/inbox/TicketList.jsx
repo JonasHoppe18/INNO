@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Input } from "@/components/ui/input";
 import {
@@ -29,6 +29,8 @@ const SORT_OPTIONS = [
 const CONTEXT_MENU_WIDTH_PX = 160;
 const CONTEXT_MENU_HEIGHT_PX = 84;
 const CONTEXT_MENU_GUTTER_PX = 8;
+const VIRTUAL_ROW_HEIGHT_PX = 84;
+const VIRTUAL_OVERSCAN_ROWS = 6;
 export function TicketList({
   threads,
   selectedThreadId,
@@ -53,6 +55,11 @@ export function TicketList({
   const exitTimersRef = useRef(new Map());
   const prevThreadIdsRef = useRef(null);
   const itemRefs = useRef({});
+  const scrollContainerRef = useRef(null);
+  const [virtualViewport, setVirtualViewport] = useState({
+    scrollTop: 0,
+    height: 0,
+  });
   const [newThreadIds, setNewThreadIds] = useState(new Set());
   const newTimersRef = useRef(new Map());
   const statusOptions = hideSolvedFilter
@@ -74,6 +81,24 @@ export function TicketList({
       : selectedStatuses.filter((value) => value !== status);
     onFiltersChange({ statuses: next, status: "All" });
   };
+
+  const updateVirtualViewport = useCallback(() => {
+    const node = scrollContainerRef.current;
+    if (!node) return;
+    setVirtualViewport((prev) => {
+      const next = {
+        scrollTop: node.scrollTop,
+        height: node.clientHeight,
+      };
+      if (
+        Math.abs(prev.scrollTop - next.scrollTop) < 24 &&
+        Math.abs(prev.height - next.height) < 2
+      ) {
+        return prev;
+      }
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     const currentIds = new Set((threads || []).map((t) => String(t?.id || "")).filter(Boolean));
@@ -157,6 +182,19 @@ export function TicketList({
   );
 
   useEffect(() => {
+    updateVirtualViewport();
+  }, [renderedThreads.length, updateVirtualViewport]);
+
+  useEffect(() => {
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const node = scrollContainerRef.current;
+    if (!node) return undefined;
+    const observer = new ResizeObserver(updateVirtualViewport);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [updateVirtualViewport]);
+
+  useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
       const tag = document.activeElement?.tagName;
@@ -225,6 +263,34 @@ export function TicketList({
           ),
         }
       : undefined;
+
+  const virtualWindow = useMemo(() => {
+    const total = renderedThreads.length;
+    if (!total) {
+      return {
+        rows: [],
+        before: 0,
+        after: 0,
+        startIndex: 0,
+      };
+    }
+    const viewportHeight = virtualViewport.height || 720;
+    const startIndex = Math.max(
+      0,
+      Math.floor(virtualViewport.scrollTop / VIRTUAL_ROW_HEIGHT_PX) -
+        VIRTUAL_OVERSCAN_ROWS
+    );
+    const visibleCount =
+      Math.ceil(viewportHeight / VIRTUAL_ROW_HEIGHT_PX) +
+      VIRTUAL_OVERSCAN_ROWS * 2;
+    const endIndex = Math.min(total, startIndex + visibleCount);
+    return {
+      rows: renderedThreads.slice(startIndex, endIndex),
+      before: startIndex * VIRTUAL_ROW_HEIGHT_PX,
+      after: Math.max(0, (total - endIndex) * VIRTUAL_ROW_HEIGHT_PX),
+      startIndex,
+    };
+  }, [renderedThreads, virtualViewport.height, virtualViewport.scrollTop]);
 
   return (
     <aside className="animate-view-enter flex w-full flex-col border-r border-border bg-background lg:w-[clamp(18rem,20vw,24rem)] lg:min-w-[clamp(18rem,20vw,24rem)] lg:max-w-[clamp(18rem,20vw,24rem)] lg:flex-none">
@@ -318,10 +384,18 @@ export function TicketList({
           </DropdownMenu>
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div
+        ref={scrollContainerRef}
+        className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        onScroll={updateVirtualViewport}
+      >
         {renderedThreads.length ? (
           <div className="divide-y divide-border">
-            {renderedThreads.map(({ thread, isExiting }, index) => {
+            {virtualWindow.before ? (
+              <div style={{ height: virtualWindow.before }} aria-hidden="true" />
+            ) : null}
+            {virtualWindow.rows.map(({ thread, isExiting }, index) => {
+              const absoluteIndex = virtualWindow.startIndex + index;
               const uiState = ticketStateByThread[thread.id];
               const customer = customerByThread[thread.id] || "Unknown sender";
               const timestamp = getTimestamp(thread);
@@ -339,7 +413,7 @@ export function TicketList({
                   priority={uiState?.priority}
                   isExiting={isExiting}
                   isNew={newThreadIds.has(String(thread.id))}
-                  mountIndex={index}
+                  mountIndex={absoluteIndex}
                   onSelect={(options) => onSelectThread(thread.id, options)}
                   onPrefetch={onPrefetchThread ? () => onPrefetchThread(thread.id) : undefined}
                   onContextMenu={(event) => {
@@ -354,6 +428,9 @@ export function TicketList({
                 </div>
               );
             })}
+            {virtualWindow.after ? (
+              <div style={{ height: virtualWindow.after }} aria-hidden="true" />
+            ) : null}
           </div>
         ) : (
           <div className="px-4 py-8 text-[13px] text-muted-foreground">

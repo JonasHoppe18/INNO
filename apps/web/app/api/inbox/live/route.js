@@ -136,7 +136,7 @@ async function loadMessagesLite(serviceClient, scope, mailboxIds) {
   return Array.isArray(data) ? data : [];
 }
 
-export async function GET() {
+export async function GET(request) {
   try {
     const { userId: clerkUserId, orgId } = await auth();
     if (!clerkUserId) {
@@ -172,16 +172,18 @@ export async function GET() {
       });
     }
 
-    const [threads, messages] = await Promise.all([
-      loadThreads(serviceClient, scope, mailboxIds).catch((error) => {
-        console.error("api/inbox/live loadThreads failed:", error?.message || error);
-        return [];
-      }),
-      loadMessagesLite(serviceClient, scope, mailboxIds).catch((error) => {
-        console.error("api/inbox/live loadMessagesLite failed:", error?.message || error);
-        return [];
-      }),
-    ]);
+    const includeMessages =
+      request?.nextUrl?.searchParams?.get("includeMessages") === "1";
+    const threads = await loadThreads(serviceClient, scope, mailboxIds).catch((error) => {
+      console.error("api/inbox/live loadThreads failed:", error?.message || error);
+      return [];
+    });
+    const messages = includeMessages
+      ? await loadMessagesLite(serviceClient, scope, mailboxIds).catch((error) => {
+          console.error("api/inbox/live loadMessagesLite failed:", error?.message || error);
+          return [];
+        })
+      : [];
 
     return NextResponse.json({ threads, messages, attachments: [] }, { status: 200 });
   } catch (error) {

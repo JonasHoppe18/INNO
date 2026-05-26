@@ -1,5 +1,6 @@
 import Image from "next/image";
 import shopifyLogo from "../../../../assets/Shopify-Logo.png";
+import { memo } from "react";
 import { ExternalLink, RefreshCw, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -64,7 +65,7 @@ const formatTicketRef = (ticketNumber) => {
     : "No ticket ID";
 };
 
-export function CustomerTab({ data, loading, error, onRefresh, lookupParams, onOpenTicket }) {
+function CustomerTabComponent({ data, loading, error, onRefresh, lookupParams, onOpenTicket }) {
   if (loading) {
     return (
       <div className="space-y-4 text-sm text-slate-500">
@@ -337,3 +338,5 @@ export function CustomerTab({ data, loading, error, onRefresh, lookupParams, onO
     </div>
   );
 }
+
+export const CustomerTab = memo(CustomerTabComponent);

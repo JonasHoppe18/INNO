@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useTransition } from "react"
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react"
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import {
@@ -139,9 +139,18 @@ function InboxSection({
   const isAssignedActive = pathname === "/inbox" && view === "mine"
   const isResolvedActive = pathname === "/inbox" && view === "resolved"
 
-  const navigateToView = (url) => {
-    startTransition(() => router.replace(url, { scroll: false }))
-  }
+  const currentInboxUrl = useMemo(() => {
+    if (pathname !== "/inbox") return pathname
+    return view ? `/inbox?view=${encodeURIComponent(view)}` : "/inbox"
+  }, [pathname, view])
+
+  const navigateToView = useCallback(
+    (url) => {
+      if (url === currentInboxUrl) return
+      startTransition(() => router.replace(url, { scroll: false }))
+    },
+    [currentInboxUrl, router, startTransition],
+  )
 
   useEffect(() => {
     if (!contextMenu) return undefined
