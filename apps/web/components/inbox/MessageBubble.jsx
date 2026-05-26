@@ -1,4 +1,4 @@
-import { Component, useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { Component, memo, useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
 import { ChevronLeft, ChevronRight, Download, Globe, Mail, X } from "lucide-react";
@@ -648,7 +648,7 @@ export class MessageRenderBoundary extends Component {
   }
 }
 
-export function MessageBubble({
+function MessageBubbleComponent({
   message,
   direction = "inbound",
   attachments = [],
@@ -1086,3 +1086,51 @@ export function MessageBubble({
     </>
   );
 }
+
+// Cheap, order-independent attachment id fingerprint. Most threads have 0-3
+// attachments per message — splitting on the join boundary lets us detect
+// add/remove/replace without an O(n) deep compare for the common case.
+const attachmentFingerprint = (list) => {
+  if (!Array.isArray(list) || !list.length) return "";
+  // Treat by length + first/last id; rare ordering changes will force re-render.
+  return `${list.length}:${list[0]?.id || ""}:${list[list.length - 1]?.id || ""}`;
+};
+
+// MessageBubble is heavy (HTML sanitization, CID-attachment resolution, link
+// rewriting) and renders once per email in the open thread. Without memo it
+// re-renders on every parent state change — most commonly on every keystroke
+// in the composer, because draftValue lives in the 172-hook InboxSplitView.
+//
+// We DON'T compare onRequestTranslation by reference. The parent often passes
+// an inline arrow function, but the callback only runs on user click — its
+// reference identity has no effect on render output, so treating it as stable
+// is safe. — 2026-05-26
+const arePropsEqual = (prev, next) => {
+  if (prev.message !== next.message) {
+    // Fall back to id+updated_at equality so identity changes from list re-sorts
+    // or realtime patches that produce structurally-identical messages skip.
+    const prevId = prev.message?.id || "";
+    const nextId = next.message?.id || "";
+    if (prevId !== nextId) return false;
+    const prevUpdated = prev.message?.updated_at || prev.message?.created_at || "";
+    const nextUpdated = next.message?.updated_at || next.message?.created_at || "";
+    if (prevUpdated !== nextUpdated) return false;
+    // Body changed without an updated_at bump — rare but possible during
+    // realtime patches; be conservative.
+    if ((prev.message?.body_text || "") !== (next.message?.body_text || "")) return false;
+    if ((prev.message?.body_html || "") !== (next.message?.body_html || "")) return false;
+    if ((prev.message?.ai_draft_text || "") !== (next.message?.ai_draft_text || "")) return false;
+  }
+  if (prev.direction !== next.direction) return false;
+  if (prev.outboundSenderName !== next.outboundSenderName) return false;
+  if (prev.translatedText !== next.translatedText) return false;
+  if (prev.translationLoading !== next.translationLoading) return false;
+  const prevEdit = prev.editStats || null;
+  const nextEdit = next.editStats || null;
+  if ((prevEdit?.edit_classification || null) !== (nextEdit?.edit_classification || null)) return false;
+  if ((prevEdit?.edit_delta_pct ?? null) !== (nextEdit?.edit_delta_pct ?? null)) return false;
+  if (attachmentFingerprint(prev.attachments) !== attachmentFingerprint(next.attachments)) return false;
+  return true;
+};
+
+export const MessageBubble = memo(MessageBubbleComponent, arePropsEqual);
