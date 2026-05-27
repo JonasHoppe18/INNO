@@ -2471,8 +2471,8 @@ export function InboxSplitView({
       else delete next[selectedThreadId];
       return next;
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- draftValueByThread is intentionally omitted: it's only read once for a "first-time-seeing-this-thread" guard (line ~2363). Including it in deps caused React error #185 (Maximum update depth exceeded): every composer keystroke in any thread mutates draftValueByThread → this effect re-ran → fired several unconditional setStates (setPendingOrderUpdateByThread with fresh object refs every time) → cascaded across all per-thread state maps → loop. The guard tolerates a stale closure because the effect re-creates with a fresh draftValueByThread snapshot whenever selectedThreadId changes. — 2026-05-26
   }, [
-    draftValueByThread,
     messagesFetchedForThreadId,
     selectedThreadDetail,
     selectedThreadId,
