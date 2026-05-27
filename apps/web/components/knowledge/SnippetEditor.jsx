@@ -327,7 +327,10 @@ export function SnippetEditor({
         method: "DELETE",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: snippet.snippet_id }),
+        body: JSON.stringify({
+          id: snippet.snippet_id,
+          ...(shopId ? { shop_id: shopId } : {}),
+        }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -436,7 +439,7 @@ export function SnippetEditor({
               ? "Title — short summary shown in the snippet list"
               : "Title..."
           }
-          className="w-full border-0 border-b-2 border-gray-100 bg-transparent pb-2 text-[15px] font-bold text-gray-900 placeholder:font-normal placeholder:text-gray-300 outline-none focus:border-indigo-200 transition-colors"
+          className="w-full border-0 border-b-2 border-gray-100 bg-transparent pb-2 text-[15px] font-bold text-gray-900 dark:text-white placeholder:font-normal placeholder:text-gray-300 outline-none focus:border-indigo-200 transition-colors"
         />
 
         {/* Content — primary focus. Q&A format for Fact/Guide types boosts
@@ -451,7 +454,7 @@ export function SnippetEditor({
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}
                 placeholder="e.g. How do I pair my AirPods with iPhone?"
-                className="w-full rounded-lg border border-gray-100 bg-transparent px-4 py-3 text-[13.5px] text-gray-800 placeholder:text-gray-300 outline-none transition-colors focus:border-indigo-200 focus:ring-2 focus:ring-indigo-100"
+                className="w-full rounded-lg border border-gray-100 bg-transparent px-4 py-3 text-[13.5px] text-gray-800 dark:text-white placeholder:text-gray-300 outline-none transition-colors focus:border-indigo-200 focus:ring-2 focus:ring-indigo-100"
               />
               <p className="text-[11px] text-gray-400">
                 Phrase it the way a customer would ask. This is what the AI matches against incoming messages.
@@ -468,7 +471,7 @@ export function SnippetEditor({
                     ? "Step-by-step instructions the AI should follow exactly..."
                     : "The factual answer the AI should give..."
                 }
-                className="w-full min-h-[160px] resize-none overflow-hidden rounded-lg border border-gray-100 bg-transparent px-4 py-3.5 text-[13.5px] leading-relaxed text-gray-800 placeholder:text-gray-300 outline-none transition-colors focus:border-indigo-200 focus:ring-2 focus:ring-indigo-100"
+                className="w-full min-h-[160px] resize-none overflow-hidden rounded-lg border border-gray-100 bg-transparent px-4 py-3.5 text-[13.5px] leading-relaxed text-gray-800 dark:text-white placeholder:text-gray-300 outline-none transition-colors focus:border-indigo-200 focus:ring-2 focus:ring-indigo-100"
               />
             </div>
           </div>
@@ -479,7 +482,7 @@ export function SnippetEditor({
               value={content}
               onChange={(e) => setContent(e.target.value)}
               placeholder="Write the knowledge here — be precise, the AI uses this word for word."
-              className="w-full min-h-[200px] resize-none overflow-hidden rounded-lg border border-gray-100 bg-transparent px-4 py-3.5 text-[13.5px] leading-relaxed text-gray-800 placeholder:text-gray-300 outline-none transition-colors focus:border-indigo-200 focus:ring-2 focus:ring-indigo-100"
+              className="w-full min-h-[200px] resize-none overflow-hidden rounded-lg border border-gray-100 bg-transparent px-4 py-3.5 text-[13.5px] leading-relaxed text-gray-800 dark:text-white placeholder:text-gray-300 outline-none transition-colors focus:border-indigo-200 focus:ring-2 focus:ring-indigo-100"
             />
           </div>
         )}
