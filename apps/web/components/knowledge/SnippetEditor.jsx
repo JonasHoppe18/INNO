@@ -60,7 +60,16 @@ export function SnippetEditor({
   const [usableAs, setUsableAs] = useState(snippet?.usable_as ?? (hasSeed ? "procedure" : ""));
   const [content, setContent] = useState(snippet?.content ?? "");
   const [question, setQuestion] = useState(snippet?.question ?? (hasSeed ? seedQuestion : ""));
-  const [answer, setAnswer] = useState(snippet?.answer ?? "");
+  // For a legacy prose snippet of a Q&A type (procedure/fact stored before
+  // the Q&A toggle existed), seed the Answer field with the existing content
+  // so the user sees their work in the right place. snippet.answer is null
+  // for those rows; we fall back to snippet.content when the type qualifies.
+  const [answer, setAnswer] = useState(
+    snippet?.answer ??
+      (QA_TYPES.has(snippet?.usable_as ?? "") && snippet?.format !== "qa"
+        ? snippet?.content ?? ""
+        : ""),
+  );
   const [tags, setTags] = useState(snippet?.issue_types ?? []);
   const [aiTags, setAiTags] = useState(new Set(snippet?.issue_types ?? []));
   const [tagPickerOpen, setTagPickerOpen] = useState(false);
@@ -74,15 +83,18 @@ export function SnippetEditor({
   const [previewOpen, setPreviewOpen] = useState(false);
   const textareaRef = useRef(null);
   const answerRef = useRef(null);
+  // Preserves the typed question text across format switches. If the user
+  // converts a Q&A snippet → tone_example → back to fact, we restore their
+  // question instead of forcing them to retype it.
+  const lastQuestionRef = useRef(snippet?.question ?? "");
 
-  // For NEW snippets: usableAs decides whether to show Q&A fields.
-  // For EXISTING snippets: respect the stored format. Legacy prose snippets
-  // (CSV imports, pre-Q&A creations) keep their content field visible even
-  // if usable_as is "fact" or "procedure" — otherwise the Q&A fields render
-  // empty and the actual content disappears from view.
-  const isQaType = isNew
-    ? QA_TYPES.has(usableAs)
-    : snippet?.format === "qa";
+  // Q&A view is driven entirely by usable_as. Fact/procedure types ALWAYS
+  // get the Question + Answer editor regardless of whether the snippet was
+  // stored as legacy prose (CSV imports, pre-Q&A creations) or true Q&A.
+  // For legacy prose snippets the existing content is seeded into the Answer
+  // field below so nothing disappears from view — admins can then optionally
+  // add a Question to upgrade the snippet to Q&A on the next save.
+  const isQaType = QA_TYPES.has(usableAs);
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -106,16 +118,26 @@ export function SnippetEditor({
     const wasQa = QA_TYPES.has(usableAs);
     const willBeQa = QA_TYPES.has(next);
     if (!wasQa && willBeQa) {
-      if (!question && !answer && content.trim()) {
+      // Switching TO Q&A: move the prose content into the Answer field so
+      // the user's knowledge text lands in the right place. Restore any
+      // previously-typed question from the ref (round-trip preservation).
+      if (content.trim()) {
         setAnswer(content.trim());
+      }
+      if (!question.trim() && lastQuestionRef.current) {
+        setQuestion(lastQuestionRef.current);
       }
       setContent("");
     } else if (wasQa && !willBeQa) {
-      if (question || answer) {
-        const combined = question && answer
-          ? `Question: ${question}\n\nAnswer: ${answer}`
-          : question || answer;
-        setContent(combined);
+      // Switching AWAY from Q&A: put just the answer text into content (it's
+      // the actual knowledge text). Remember the question in a ref so we can
+      // restore it on round-trip. We don't dump "Question: X\n\nAnswer: Y"
+      // literally because that string ends up in the AI's replies.
+      if (answer.trim()) {
+        setContent(answer.trim());
+      }
+      if (question.trim()) {
+        lastQuestionRef.current = question.trim();
       }
       setQuestion("");
       setAnswer("");
@@ -160,7 +182,12 @@ export function SnippetEditor({
       setUsableAs(snippet?.usable_as ?? "");
       setContent(snippet?.content ?? "");
       setQuestion(snippet?.question ?? "");
-      setAnswer(snippet?.answer ?? "");
+      setAnswer(
+        snippet?.answer ??
+          (QA_TYPES.has(snippet?.usable_as ?? "") && snippet?.format !== "qa"
+            ? snippet?.content ?? ""
+            : ""),
+      );
       setTags(snippet?.issue_types ?? []);
       setAiTags(new Set(snippet?.issue_types ?? []));
       setProducts(snippet?.products ?? []);
@@ -192,21 +219,31 @@ export function SnippetEditor({
     const trimTitle = title.trim();
     const trimQuestion = question.trim();
     const trimAnswer = answer.trim();
-    const useQa = isQaType && trimQuestion && trimAnswer;
-    // For Q&A mode the content is synthesized server-side; otherwise use the
-    // free-text content field.
+    // Save as true Q&A only when BOTH question and answer are filled. If the
+    // user leaves question empty (legacy prose snippet they didn't upgrade),
+    // we fall back to plain prose and use the Answer field's text as the
+    // content — same data, just stored as format=prose.
+    const useQa = isQaType && Boolean(trimQuestion) && Boolean(trimAnswer);
     const trimContent = useQa
       ? `Question: ${trimQuestion}\n\nAnswer: ${trimAnswer}`
-      : content.trim();
+      : isQaType
+        ? trimAnswer
+        : content.trim();
     if (!trimTitle) {
       toast.error("Title is required.");
       return;
     }
-    if (isQaType && (!trimQuestion || !trimAnswer)) {
-      toast.error("Both question and answer are required for this knowledge type.");
-      return;
-    }
-    if (!isQaType && !trimContent) {
+    if (isQaType) {
+      // Question is optional. If filled, answer must also be filled.
+      if (trimQuestion && !trimAnswer) {
+        toast.error("Answer is required when a question is provided.");
+        return;
+      }
+      if (!trimAnswer) {
+        toast.error("Answer is required.");
+        return;
+      }
+    } else if (!trimContent) {
       toast.error("Content is required.");
       return;
     }
@@ -448,7 +485,7 @@ export function SnippetEditor({
           <div className="space-y-3">
             <div className="space-y-1.5">
               <Label className="text-xs font-medium text-gray-600">
-                Customer question
+                Customer question <span className="text-gray-400 font-normal">(optional)</span>
               </Label>
               <input
                 value={question}
@@ -457,7 +494,7 @@ export function SnippetEditor({
                 className="w-full rounded-lg border border-gray-100 bg-transparent px-4 py-3 text-[13.5px] text-gray-800 dark:text-white placeholder:text-gray-300 outline-none transition-colors focus:border-indigo-200 focus:ring-2 focus:ring-indigo-100"
               />
               <p className="text-[11px] text-gray-400">
-                Phrase it the way a customer would ask. This is what the AI matches against incoming messages.
+                Phrase it the way a customer would ask. Adding this lets Sona reliably pick THIS snippet over similar ones. Leave empty to save as a plain guide.
               </p>
             </div>
             <div className="space-y-1.5">

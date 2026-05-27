@@ -689,7 +689,20 @@ export async function runRetriever(
     : fusedRaw;
 
   // Knowledge chunks include saved replies indexed into agent_knowledge.
-  const knowledgeBudget = 4;
+  //
+  // Budget is intent-aware: complaint/technical_support tickets typically have
+  // ONE specific problem (e.g. "headset shuts down randomly"), and sending 4
+  // semantically-similar snippets ("powers off", "audio cuts out", "mic
+  // doesn't work", "bluetooth workaround") causes the writer to blend them
+  // into a generic response instead of using the single best match. Trim to
+  // 2 for these intents. Other intents keep the wider context window because
+  // returns, refunds, exchanges etc. often legitimately span multiple
+  // procedures / policies in one reply.
+  const knowledgeBudget =
+    plan.primary_intent === "complaint" ||
+    plan.primary_intent === "technical_support"
+      ? 2
+      : 4;
   const queryText = `${queries.join(" ")} ${customerMessage || ""}`;
   const productTerms = extractMentionedProductTerms(queryText, shop);
   const issueTerms = extractIssueTerms(queryText);
@@ -784,6 +797,56 @@ export async function runRetriever(
       return _i < 3 || chunk.similarity >= topSimilarity * 0.6;
     })
     .slice(0, knowledgeBudget);
+
+  // ---- Q&A title-match override ----
+  // If exactly one Q&A snippet's question/title has dominant lexical overlap
+  // with the customer message, it is almost certainly THE answer — narrow the
+  // chunks list to just that snippet so the writer can't be distracted by
+  // semantically-similar siblings. Example: customer asks "headset shuts down
+  // randomly", we have one snippet titled "Bluetooth - Workaround for
+  // interrupted shutdown process" and three others about audio/mic/earcup
+  // issues. Embedding similarity puts them all close; this lexical check
+  // picks the clear winner.
+  //
+  // Threshold: overlap >= 0.35 AND at least 1.6x higher than the runner-up.
+  // 0.35 is high enough to require real word overlap (not just "the/a")
+  // since tokenize() strips stop words and we use Jaccard over content words.
+  if (regularChunks.length >= 2 && customerMessage) {
+    const customerTokens = new Set(tokenize(customerMessage));
+    if (customerTokens.size >= 2) {
+      const titleScores = regularChunks.map((chunk) => {
+        const meta = (chunk as unknown as { metadata?: Record<string, unknown> }).metadata;
+        const title = String(
+          (meta as Record<string, unknown> | undefined)?.title ||
+            (meta as Record<string, unknown> | undefined)?.question ||
+            chunk.source_label ||
+            "",
+        ).replace(/^[^:]+:\s*/, ""); // strip "manual_text: " prefix
+        const titleTokens = new Set(tokenize(title));
+        if (titleTokens.size === 0) return { chunk, score: 0 };
+        const intersection = [...customerTokens].filter((t) =>
+          titleTokens.has(t)
+        ).length;
+        // Coverage of the title by the customer's words — i.e. how much of
+        // the snippet's question is reflected in the customer's email.
+        const score = intersection / titleTokens.size;
+        return { chunk, score };
+      }).sort((a, b) => b.score - a.score);
+
+      const winner = titleScores[0];
+      const runnerUp = titleScores[1];
+      if (
+        winner.score >= 0.35 &&
+        (runnerUp.score === 0 || winner.score >= runnerUp.score * 1.6)
+      ) {
+        console.log(
+          `[retriever] Q&A title-match override → using single chunk: ${winner.chunk.source_label} (score=${winner.score.toFixed(2)}, runner-up=${runnerUp.score.toFixed(2)})`,
+        );
+        regularChunks.length = 0;
+        regularChunks.push(winner.chunk);
+      }
+    }
+  }
 
   // Past ticket examples — directly from typed ticket_examples table
   const pastTicketExamples = ticketResult
