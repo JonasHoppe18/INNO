@@ -162,8 +162,19 @@ export function SnippetEditor({
     // from question + answer on save, so comparing it to snippet.content (which
     // IS the synthesized string) would always look dirty. Diff only the fields
     // the active mode actually edits.
+    //
+    // Legacy quirk: for a procedure/fact snippet stored as prose (pre-Q&A
+    // toggle), we seed the Answer field from snippet.content at mount time
+    // so the user can SEE their existing knowledge. snippet.answer is still
+    // null in that case, so a naive `answer !== snippet.answer` would always
+    // mark the form dirty on open. Treat snippet.content as the original
+    // answer in that case — only flag dirty if the user actually edits.
+    const originalAnswer =
+      QA_TYPES.has(snippet?.usable_as ?? "") && snippet?.format !== "qa"
+        ? snippet?.content ?? ""
+        : snippet?.answer ?? "";
     const contentDirty = isQaType
-      ? question !== (snippet?.question ?? "") || answer !== (snippet?.answer ?? "")
+      ? question !== (snippet?.question ?? "") || answer !== originalAnswer
       : content !== (snippet?.content ?? "");
     return (
       title !== (snippet?.title ?? "") ||
