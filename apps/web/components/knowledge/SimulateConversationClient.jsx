@@ -73,10 +73,10 @@ function MetaPill({ label, value, tone = "gray" }) {
     <span
       className={cn(
         "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] ring-1 ring-inset ring-black/5",
-        tone === "gray" && "bg-gray-50 text-gray-500",
-        tone === "indigo" && "bg-indigo-50 text-indigo-600",
-        tone === "amber" && "bg-amber-50 text-amber-700",
-        tone === "emerald" && "bg-emerald-50 text-emerald-700",
+        tone === "gray" && "bg-gray-50 text-gray-500 dark:bg-gray-800 dark:text-gray-400",
+        tone === "indigo" && "bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400",
+        tone === "amber" && "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400",
+        tone === "emerald" && "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400",
       )}
     >
       {tone !== "gray" && (
@@ -100,12 +100,12 @@ function CustomerBubble({ turn, onEdit, onRemove, isLast }) {
   useEffect(() => setDraft(turn.text), [turn.text]);
   return (
     <div className="flex gap-3">
-      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-500 ring-1 ring-inset ring-gray-200/60">
+      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-500 ring-1 ring-inset ring-gray-200/60 dark:bg-gray-800 dark:text-gray-400 dark:ring-gray-700">
         <User className="h-3.5 w-3.5" />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
-          <p className="text-[10.5px] font-semibold uppercase tracking-widest text-gray-400">
+          <p className="text-[10.5px] font-semibold uppercase tracking-widest text-gray-400 dark:text-gray-500">
             Customer
           </p>
           {!editing && (
@@ -137,7 +137,7 @@ function CustomerBubble({ turn, onEdit, onRemove, isLast }) {
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               rows={3}
-              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-[12.5px] leading-relaxed text-gray-800 outline-none transition-shadow focus:border-indigo-200 focus:ring-2 focus:ring-indigo-100"
+              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-[12.5px] leading-relaxed text-gray-800 outline-none transition-shadow focus:border-indigo-200 focus:ring-2 focus:ring-indigo-100 dark:border-gray-700 dark:bg-gray-900/50 dark:text-gray-200 dark:focus:border-indigo-700 dark:focus:ring-indigo-900/50"
             />
             <div className="flex justify-end gap-1.5">
               <button
@@ -146,7 +146,7 @@ function CustomerBubble({ turn, onEdit, onRemove, isLast }) {
                   setDraft(turn.text);
                   setEditing(false);
                 }}
-                className="rounded px-2 py-1 text-[11px] text-gray-500 transition-colors hover:text-gray-700"
+                className="rounded px-2 py-1 text-[11px] text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
               >
                 Cancel
               </button>
@@ -163,7 +163,7 @@ function CustomerBubble({ turn, onEdit, onRemove, isLast }) {
             </div>
           </div>
         ) : (
-          <p className="mt-1 whitespace-pre-wrap rounded-lg bg-gray-50 px-3 py-2.5 text-[12.5px] leading-relaxed text-gray-700 ring-1 ring-inset ring-gray-100/80">
+          <p className="mt-1 whitespace-pre-wrap rounded-lg bg-gray-50 px-3 py-2.5 text-[12.5px] leading-relaxed text-gray-700 ring-1 ring-inset ring-gray-100/80 dark:bg-gray-800/60 dark:text-gray-200 dark:ring-gray-700/50">
             {turn.text}
           </p>
         )}
@@ -181,12 +181,12 @@ function AgentBubble({ turn, onEdit, onAcceptAction, isLast, contextOrderNumber,
   const acceptedAction = turn.acceptedAction || null;
   return (
     <div className="flex gap-3">
-      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-indigo-500 ring-1 ring-inset ring-indigo-100">
+      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-indigo-500 ring-1 ring-inset ring-indigo-100 dark:bg-indigo-950/40 dark:text-indigo-400 dark:ring-indigo-800/50">
         <Bot className="h-3.5 w-3.5" />
       </div>
       <div className="min-w-0 flex-1 space-y-1.5">
         <div className="flex items-center justify-between gap-2">
-          <p className="text-[10.5px] font-semibold uppercase tracking-widest text-indigo-400">
+          <p className="text-[10.5px] font-semibold uppercase tracking-widest text-indigo-400 dark:text-indigo-500">
             Sona AI{" "}
             {turn.edited && (
               <span className="font-normal normal-case opacity-60">(edited)</span>
@@ -209,9 +209,9 @@ function AgentBubble({ turn, onEdit, onAcceptAction, isLast, contextOrderNumber,
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               rows={Math.min(12, Math.max(3, Math.ceil(draft.length / 70)))}
-              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-[12.5px] leading-relaxed text-gray-800 outline-none transition-shadow focus:border-indigo-200 focus:ring-2 focus:ring-indigo-100"
+              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-[12.5px] leading-relaxed text-gray-800 outline-none transition-shadow focus:border-indigo-200 focus:ring-2 focus:ring-indigo-100 dark:border-gray-700 dark:bg-gray-900/50 dark:text-gray-200 dark:focus:border-indigo-700 dark:focus:ring-indigo-900/50"
             />
-            <p className="text-[10.5px] text-gray-400">
+            <p className="text-[10.5px] text-gray-400 dark:text-gray-500">
               Editing here simulates how an agent would rewrite the draft before sending. The next AI turn will see your edited version.
             </p>
             <div className="flex justify-end gap-1.5">
@@ -221,7 +221,7 @@ function AgentBubble({ turn, onEdit, onAcceptAction, isLast, contextOrderNumber,
                   setDraft(turn.text);
                   setEditing(false);
                 }}
-                className="rounded px-2 py-1 text-[11px] text-gray-500 transition-colors hover:text-gray-700"
+                className="rounded px-2 py-1 text-[11px] text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
               >
                 Cancel
               </button>
@@ -238,13 +238,13 @@ function AgentBubble({ turn, onEdit, onAcceptAction, isLast, contextOrderNumber,
             </div>
           </div>
         ) : turn.text ? (
-          <p className="whitespace-pre-wrap rounded-lg border border-gray-100 bg-white px-3 py-2.5 text-[12.5px] leading-relaxed text-gray-800 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+          <p className="whitespace-pre-wrap rounded-lg border border-gray-100 bg-white px-3 py-2.5 text-[12.5px] leading-relaxed text-gray-800 shadow-[0_1px_3px_rgba(0,0,0,0.04)] dark:border-gray-800 dark:bg-gray-900/40 dark:text-gray-200">
             {turn.text}
           </p>
         ) : proposedActions.length > 0 ? (
           null
         ) : (
-          <p className="rounded-lg border border-dashed border-gray-200 bg-gray-50 px-3 py-2 text-[11.5px] italic text-gray-400">
+          <p className="rounded-lg border border-dashed border-gray-200 bg-gray-50 px-3 py-2 text-[11.5px] italic text-gray-400 dark:border-gray-700 dark:bg-gray-800/40 dark:text-gray-500">
             No draft was generated for this turn.
           </p>
         )}
@@ -364,7 +364,7 @@ function TicketPickerDialog({ open, onOpenChange, onPick }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[80vh] w-[min(92vw,640px)] max-w-none overflow-hidden p-0 sm:max-w-none">
-        <DialogHeader className="border-b border-gray-100 px-5 py-3.5">
+        <DialogHeader className="border-b border-gray-100 px-5 py-3.5 dark:border-gray-800">
           <DialogTitle className="flex items-center gap-2 text-[14px] font-semibold">
             <Inbox className="h-4 w-4 text-indigo-500" />
             Load a real ticket to simulate from
@@ -374,13 +374,13 @@ function TicketPickerDialog({ open, onOpenChange, onPick }) {
           </DialogDescription>
         </DialogHeader>
         <div className="flex max-h-[65vh] flex-col">
-          <div className="flex items-center gap-2 border-b border-gray-100 px-5 py-2.5">
-            <Search className="h-3.5 w-3.5 text-gray-300" />
+          <div className="flex items-center gap-2 border-b border-gray-100 px-5 py-2.5 dark:border-gray-800">
+            <Search className="h-3.5 w-3.5 text-gray-300 dark:text-gray-600" />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search subject, customer, preview..."
-              className="flex-1 bg-transparent text-[12px] text-gray-700 placeholder:text-gray-300 outline-none"
+              className="flex-1 bg-transparent text-[12px] text-gray-700 placeholder:text-gray-300 outline-none dark:text-gray-300 dark:placeholder:text-gray-600"
             />
           </div>
           <div className="flex-1 overflow-y-auto">
@@ -391,29 +391,29 @@ function TicketPickerDialog({ open, onOpenChange, onPick }) {
                 ))}
               </div>
             ) : filtered.length === 0 ? (
-              <p className="px-5 py-10 text-center text-[12px] text-gray-400">
+              <p className="px-5 py-10 text-center text-[12px] text-gray-400 dark:text-gray-500">
                 {query ? "No tickets match your search." : "No tickets found."}
               </p>
             ) : (
-              <ul className="divide-y divide-gray-100">
+              <ul className="divide-y divide-gray-100 dark:divide-gray-800">
                 {filtered.map((thread) => (
                   <li key={thread.thread_id}>
                     <button
                       type="button"
                       disabled={loadingThreadId !== null}
                       onClick={() => handlePick(thread)}
-                      className="group flex w-full flex-col gap-0.5 px-5 py-2.5 text-left transition-colors hover:bg-gray-50 disabled:opacity-50"
+                      className="group flex w-full flex-col gap-0.5 px-5 py-2.5 text-left transition-colors hover:bg-gray-50 disabled:opacity-50 dark:hover:bg-gray-800/50"
                     >
-                      <span className="truncate text-[12.5px] font-medium text-gray-800">
+                      <span className="truncate text-[12.5px] font-medium text-gray-800 dark:text-gray-100">
                         {thread.subject || "(no subject)"}
                       </span>
                       {thread.customer_email && (
-                        <span className="truncate text-[11px] text-gray-500">
+                        <span className="truncate text-[11px] text-gray-500 dark:text-gray-400">
                           {thread.customer_email}
                         </span>
                       )}
                       {thread.preview && (
-                        <span className="truncate text-[11px] text-gray-400">
+                        <span className="truncate text-[11px] text-gray-400 dark:text-gray-500">
                           {thread.preview}
                         </span>
                       )}
@@ -704,10 +704,10 @@ export function SimulateConversationClient() {
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="min-w-0 flex-1">
-          <h1 className="text-[18px] font-semibold tracking-tight text-gray-900">
+          <h1 className="text-[18px] font-semibold tracking-tight text-gray-900 dark:text-gray-100">
             Simulate a conversation
           </h1>
-          <p className="mt-0.5 text-[12.5px] text-gray-500">
+          <p className="mt-0.5 text-[12.5px] text-gray-500 dark:text-gray-400">
             Test how Sona answers as a ticket grows over multiple turns. Edit any reply before continuing to simulate how an agent would intervene.
           </p>
         </div>
@@ -733,22 +733,22 @@ export function SimulateConversationClient() {
       </div>
 
       {/* Context strip */}
-      <div className="mb-3 overflow-hidden rounded-lg border border-gray-100 bg-white shadow-sm">
-        <div className="grid grid-cols-1 divide-y divide-gray-100 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+      <div className="mb-3 overflow-hidden rounded-lg border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900/40 dark:shadow-none">
+        <div className="grid grid-cols-1 divide-y divide-gray-100 sm:grid-cols-3 sm:divide-x sm:divide-y-0 dark:divide-gray-800">
           <label className="flex items-center gap-2.5 px-3.5 py-2.5">
-            <span className="shrink-0 text-[10.5px] font-semibold uppercase tracking-wide text-gray-400">
+            <span className="shrink-0 text-[10.5px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
               Subject
             </span>
             <input
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
               placeholder="(simulated ticket)"
-              className="flex-1 bg-transparent text-[12.5px] text-gray-700 placeholder:text-gray-300 outline-none disabled:opacity-50"
+              className="flex-1 bg-transparent text-[12.5px] text-gray-700 placeholder:text-gray-300 outline-none disabled:opacity-50 dark:text-gray-300 dark:placeholder:text-gray-600"
               disabled={hasTurns}
             />
           </label>
           <label className="flex items-center gap-2.5 px-3.5 py-2.5">
-            <span className="shrink-0 text-[10.5px] font-semibold uppercase tracking-wide text-gray-400">
+            <span className="shrink-0 text-[10.5px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
               Customer
             </span>
             <input
@@ -756,19 +756,19 @@ export function SimulateConversationClient() {
               onChange={(e) => setCustomerEmail(e.target.value)}
               placeholder="customer@example.com"
               type="email"
-              className="flex-1 bg-transparent text-[12.5px] text-gray-700 placeholder:text-gray-300 outline-none disabled:opacity-50"
+              className="flex-1 bg-transparent text-[12.5px] text-gray-700 placeholder:text-gray-300 outline-none disabled:opacity-50 dark:text-gray-300 dark:placeholder:text-gray-600"
               disabled={hasTurns}
             />
           </label>
           <label className="flex items-center gap-2.5 px-3.5 py-2.5">
-            <span className="shrink-0 text-[10.5px] font-semibold uppercase tracking-wide text-gray-400">
+            <span className="shrink-0 text-[10.5px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
               Order #
             </span>
             <input
               value={orderNumber}
               onChange={(e) => setOrderNumber(e.target.value)}
               placeholder="e.g. 1048 (optional)"
-              className="flex-1 bg-transparent text-[12.5px] text-gray-700 placeholder:text-gray-300 outline-none disabled:opacity-50"
+              className="flex-1 bg-transparent text-[12.5px] text-gray-700 placeholder:text-gray-300 outline-none disabled:opacity-50 dark:text-gray-300 dark:placeholder:text-gray-600"
               disabled={hasTurns}
             />
           </label>
@@ -782,17 +782,17 @@ export function SimulateConversationClient() {
             type="checkbox"
             checked={autoAcceptActions}
             onChange={(e) => setAutoAcceptActions(e.target.checked)}
-            className="h-3.5 w-3.5 cursor-pointer rounded border-gray-300 text-indigo-600 focus:ring-1 focus:ring-indigo-300"
+            className="h-3.5 w-3.5 cursor-pointer rounded border-gray-300 text-indigo-600 focus:ring-1 focus:ring-indigo-300 dark:border-gray-600"
           />
-          <span className="text-[11.5px] text-gray-600">
+          <span className="text-[11.5px] text-gray-600 dark:text-gray-400">
             Auto-accept proposed actions
           </span>
-          <span className="text-[10.5px] text-gray-400">
+          <span className="text-[10.5px] text-gray-400 dark:text-gray-500">
             (test mode — nothing executes)
           </span>
         </label>
         {!hasTurns && (
-          <p className="text-[10.5px] text-gray-400">
+          <p className="text-[10.5px] text-gray-400 dark:text-gray-500">
             Tip: provide customer email or order # for accurate Shopify lookups.
           </p>
         )}
@@ -801,15 +801,15 @@ export function SimulateConversationClient() {
       {/* Transcript */}
       <div
         ref={scrollRef}
-        className="flex-1 space-y-5 overflow-y-auto rounded-xl border border-gray-200/60 bg-white px-5 py-5 shadow-[inset_0_1px_2px_rgba(0,0,0,0.03)]"
+        className="flex-1 space-y-5 overflow-y-auto rounded-xl border border-gray-200/60 bg-white px-5 py-5 shadow-[inset_0_1px_2px_rgba(0,0,0,0.03)] dark:border-gray-800 dark:bg-card dark:shadow-none"
       >
         {!hasTurns && (
           <div className="flex h-full flex-col items-center justify-center gap-4 text-center animate-in fade-in-0 duration-500">
             <div className="space-y-1">
-              <p className="text-[14px] font-semibold text-gray-800">
+              <p className="text-[14px] font-semibold text-gray-800 dark:text-gray-100">
                 Start a simulated conversation
               </p>
-              <p className="max-w-sm text-[12px] leading-relaxed text-gray-400">
+              <p className="max-w-sm text-[12px] leading-relaxed text-gray-400 dark:text-gray-500">
                 Write the customer&apos;s first message below, or load a real ticket to replay and extend.
               </p>
             </div>
@@ -855,14 +855,14 @@ export function SimulateConversationClient() {
 
         {running && (
           <div className="flex gap-3 animate-in fade-in-0 duration-200">
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-indigo-500 ring-1 ring-inset ring-indigo-100">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-indigo-500 ring-1 ring-inset ring-indigo-100 dark:bg-indigo-950/40 dark:text-indigo-400 dark:ring-indigo-800/50">
               <Bot className="h-3.5 w-3.5" />
             </div>
             <div className="min-w-0 flex-1 space-y-1.5">
-              <p className="text-[10.5px] font-semibold uppercase tracking-widest text-indigo-400">
+              <p className="text-[10.5px] font-semibold uppercase tracking-widest text-indigo-400 dark:text-indigo-500">
                 Sona AI
               </p>
-              <div className="inline-flex rounded-lg border border-gray-100 bg-white px-3 py-2.5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+              <div className="inline-flex rounded-lg border border-gray-100 bg-white px-3 py-2.5 shadow-[0_1px_3px_rgba(0,0,0,0.04)] dark:border-gray-800 dark:bg-gray-900/40">
                 <TypingDots />
               </div>
             </div>
@@ -871,15 +871,15 @@ export function SimulateConversationClient() {
 
         {!running && lastError && (
           <div className="flex gap-3 animate-in fade-in-0 duration-200">
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-500 ring-1 ring-inset ring-red-100">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-500 ring-1 ring-inset ring-red-100 dark:bg-red-950/40 dark:text-red-400 dark:ring-red-800/50">
               <X className="h-3.5 w-3.5" />
             </div>
             <div className="min-w-0 flex-1 space-y-1.5">
-              <p className="text-[10.5px] font-semibold uppercase tracking-widest text-red-500">
+              <p className="text-[10.5px] font-semibold uppercase tracking-widest text-red-500 dark:text-red-400">
                 Simulation failed
               </p>
-              <div className="rounded-lg border border-red-100 bg-red-50/60 px-3 py-2.5">
-                <p className="text-[12px] text-red-700">{lastError}</p>
+              <div className="rounded-lg border border-red-100 bg-red-50/60 px-3 py-2.5 dark:border-red-900/50 dark:bg-red-950/30">
+                <p className="text-[12px] text-red-700 dark:text-red-400">{lastError}</p>
                 <div className="mt-2 flex items-center gap-2">
                   <Button size="sm" variant="outline" onClick={handleRetry} className="gap-1.5 transition-transform active:scale-[0.97]">
                     <RotateCcw className="h-3 w-3" />
@@ -914,7 +914,7 @@ export function SimulateConversationClient() {
                   : "Write the customer's first message... (Cmd+Enter to send)"
               }
               rows={3}
-              className="w-full resize-none rounded-xl border border-gray-200 bg-white px-4 py-3 text-[13px] leading-relaxed text-gray-800 placeholder:text-gray-300 outline-none transition-shadow focus:border-indigo-200 focus:ring-2 focus:ring-indigo-100/80 disabled:opacity-50"
+              className="w-full resize-none rounded-xl border border-gray-200 bg-white px-4 py-3 text-[13px] leading-relaxed text-gray-800 placeholder:text-gray-300 outline-none transition-shadow focus:border-indigo-200 focus:ring-2 focus:ring-indigo-100/80 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900/50 dark:text-gray-200 dark:placeholder:text-gray-600 dark:focus:border-indigo-700 dark:focus:ring-indigo-900/50"
               disabled={running}
               autoFocus
             />
@@ -935,8 +935,8 @@ export function SimulateConversationClient() {
             Sona is thinking...
           </p>
         ) : (
-          <div className="flex items-center justify-between gap-3 rounded-xl border border-indigo-100 bg-indigo-50/40 px-4 py-3">
-            <p className="text-[11.5px] text-indigo-700">
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-indigo-100 bg-indigo-50/40 px-4 py-3 dark:border-indigo-800/50 dark:bg-indigo-950/30">
+            <p className="text-[11.5px] text-indigo-700 dark:text-indigo-400">
               The conversation ends on a customer message. Generate Sona&apos;s reply to continue.
             </p>
             <Button

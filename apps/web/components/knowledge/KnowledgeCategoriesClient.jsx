@@ -264,19 +264,19 @@ function toSavedReplyStorageHtml(value = "") {
 }
 
 const ICON_COLORS = {
-  Package: "bg-blue-50 text-blue-600",
-  RotateCcw: "bg-orange-50 text-orange-600",
-  Truck: "bg-green-50 text-green-600",
-  MessageSquare: "bg-purple-50 text-purple-600",
-  Tag: "bg-yellow-50 text-yellow-600",
-  BookOpen: "bg-indigo-50 text-indigo-600",
+  Package: "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400",
+  RotateCcw: "bg-orange-50 text-orange-600 dark:bg-orange-950/40 dark:text-orange-400",
+  Truck: "bg-green-50 text-green-600 dark:bg-green-950/40 dark:text-green-400",
+  MessageSquare: "bg-purple-50 text-purple-600 dark:bg-purple-950/40 dark:text-purple-400",
+  Tag: "bg-yellow-50 text-yellow-600 dark:bg-yellow-950/40 dark:text-yellow-400",
+  BookOpen: "bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400",
 };
 
 function CategoryCard({ category, onClick, index = 0 }) {
-  const iconColor = ICON_COLORS[category.icon] || "bg-gray-50 text-gray-500";
+  const iconColor = ICON_COLORS[category.icon] || "bg-gray-50 text-gray-500 dark:bg-gray-800 dark:text-gray-400";
   return (
     <Card
-      className="group cursor-pointer border-gray-200 transition-all duration-150 hover:border-gray-300 hover:shadow-sm active:scale-[0.98]"
+      className="group cursor-pointer border-gray-200 transition-all duration-150 hover:border-gray-300 hover:shadow-sm active:scale-[0.98] dark:border-gray-800 dark:hover:border-gray-700"
       style={{ animationDelay: `${index * 50}ms` }}
       onClick={onClick}
     >
@@ -289,9 +289,9 @@ function CategoryCard({ category, onClick, index = 0 }) {
         </div>
       </CardHeader>
       <CardContent>
-        <CardTitle className="text-[13px] font-semibold text-gray-900">{category.label}</CardTitle>
+        <CardTitle className="text-[13px] font-semibold text-gray-900 dark:text-gray-100">{category.label}</CardTitle>
         {category.description && (
-          <CardDescription className="mt-1 text-[12px] line-clamp-2 leading-[1.5]">
+          <CardDescription className="mt-1 text-[12px] line-clamp-2 leading-[1.5] dark:text-gray-400">
             {category.description}
           </CardDescription>
         )}
@@ -654,9 +654,9 @@ function SavedRepliesSection() {
     <div>
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <h2 className="text-[15px] font-semibold text-gray-900">Saved Replies</h2>
+          <h2 className="text-[15px] font-semibold text-gray-900 dark:text-gray-100">Saved Replies</h2>
           {replies.length > 0 && (
-            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-500">
+            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
               {replies.length}
             </span>
           )}
@@ -691,24 +691,24 @@ function SavedRepliesSection() {
           </Button>
         </div>
       ) : (
-        <div className="rounded-lg border border-gray-200 divide-y divide-gray-100 overflow-hidden">
+        <div className="rounded-lg border border-gray-200 divide-y divide-gray-100 overflow-hidden dark:border-gray-800 dark:divide-gray-800">
           {replies.map((reply) => (
-            <div key={reply.id} className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-gray-50/60">
+            <div key={reply.id} className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-gray-50/60 dark:hover:bg-gray-800/40">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5 min-w-0">
-                  <span className="text-[13px] font-medium text-gray-900 truncate">{reply.title}</span>
+                  <span className="text-[13px] font-medium text-gray-900 truncate dark:text-gray-100">{reply.title}</span>
                   {reply.category && (
-                    <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-500">{reply.category}</span>
+                    <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-500 dark:bg-gray-800 dark:text-gray-400">{reply.category}</span>
                   )}
                   {(Array.isArray(reply?.images) ? reply.images.length : reply?.image ? 1 : 0) > 0 && (
-                    <span className="shrink-0 rounded-full bg-indigo-50 px-1.5 py-0.5 text-[11px] text-indigo-600">
+                    <span className="shrink-0 rounded-full bg-indigo-50 px-1.5 py-0.5 text-[11px] text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400">
                       {(Array.isArray(reply?.images) ? reply.images.length : 1) === 1
                         ? "1 image"
                         : `${Array.isArray(reply?.images) ? reply.images.length : 1} images`}
                     </span>
                   )}
                   {!reply.is_active && (
-                    <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-400">Inactive</span>
+                    <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-400 dark:bg-gray-800 dark:text-gray-500">Inactive</span>
                   )}
                 </div>
                 <p className="text-[12px] text-gray-400 truncate mt-0.5">
@@ -770,8 +770,8 @@ function SavedRepliesSection() {
             </div>
             <div className="space-y-1.5">
               <Label>Content</Label>
-              <div className="overflow-hidden rounded-md border border-gray-200">
-                <div className="flex items-center gap-1 border-b border-gray-200 bg-muted/40 px-2 py-1.5">
+              <div className="overflow-hidden rounded-md border border-gray-200 dark:border-gray-700">
+                <div className="flex items-center gap-1 border-b border-gray-200 bg-muted/40 px-2 py-1.5 dark:border-gray-700">
                   <Button
                     type="button"
                     variant="ghost"
@@ -802,7 +802,7 @@ function SavedRepliesSection() {
                   >
                     <UnderlineIcon className="h-3.5 w-3.5" />
                   </Button>
-                  <div className="mx-1 h-4 w-px bg-gray-300" />
+                  <div className="mx-1 h-4 w-px bg-gray-300 dark:bg-gray-600" />
                   <Button
                     type="button"
                     variant="ghost"
@@ -823,7 +823,7 @@ function SavedRepliesSection() {
                   >
                     <ListOrderedIcon className="h-3.5 w-3.5" />
                   </Button>
-                  <div className="mx-1 h-4 w-px bg-gray-300" />
+                  <div className="mx-1 h-4 w-px bg-gray-300 dark:bg-gray-600" />
                   <Button
                     type="button"
                     variant="ghost"
@@ -925,7 +925,7 @@ function SavedRepliesSection() {
                         width={320}
                         height={180}
                         unoptimized
-                        className="h-24 w-full rounded border border-gray-200 bg-white object-contain"
+                        className="h-24 w-full rounded border border-gray-200 bg-white object-contain dark:border-gray-700 dark:bg-gray-800"
                       />
                       {isInline && image?.content_id ? (
                         <p className="mt-1 truncate text-[11px] text-muted-foreground">
@@ -1131,8 +1131,8 @@ export function KnowledgeCategoriesClient() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-[20px] font-semibold tracking-tight text-gray-900">Knowledge Base</h1>
-          <p className="text-[13px] text-gray-500 mt-0.5">
+          <h1 className="text-[20px] font-semibold tracking-tight text-gray-900 dark:text-gray-100">Knowledge Base</h1>
+          <p className="text-[13px] text-gray-500 dark:text-gray-400 mt-0.5">
             Manage what your AI knows about your store
           </p>
         </div>
@@ -1187,10 +1187,10 @@ export function KnowledgeCategoriesClient() {
         </div>
       )}
 
-      <Separator />
+      <Separator className="dark:opacity-20" />
       <div className="flex items-center justify-end gap-2">
         {ticketExamplesCount !== null ? (
-          <p className="text-[11px] text-gray-400">
+          <p className="text-[11px] text-gray-400 dark:text-gray-500">
             {ticketExamplesCount} imported ticket examples
           </p>
         ) : null}
@@ -1199,7 +1199,7 @@ export function KnowledgeCategoriesClient() {
           variant="ghost"
           onClick={handleImportTickets}
           disabled={importingTickets}
-          className="h-7 px-2 text-[11px] text-gray-500 hover:text-gray-700"
+          className="h-7 px-2 text-[11px] text-gray-500 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-300"
         >
           {importingTickets ? "Importing..." : "Import tickets"}
         </Button>

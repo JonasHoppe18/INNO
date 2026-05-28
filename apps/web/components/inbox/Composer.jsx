@@ -1235,6 +1235,89 @@ function ComposerComponent({
     syncingReplyHtmlRef.current = false;
   };
 
+  // Paste from clipboard — supports text WITH inline images (e.g. screenshots
+  // pasted from Slack/Mail, content copied from a Notion page). Plain-text
+  // pastes pass through to the browser's default behavior. Image-bearing
+  // pastes: extract each image as a File, attach it as an inline base64
+  // attachment (same shape saved replies use), and insert a [cid:xxx] marker
+  // at the caret so it renders inline via the existing markers→<img> pipeline.
+  const handleReplyEditorPaste = async (event) => {
+    if (disabled || showDraftLoadingState) return;
+    const clipboard = event.clipboardData;
+    if (!clipboard) return;
+
+    const imageFiles = [];
+    const items = Array.from(clipboard.items || []);
+    for (const item of items) {
+      if (item.kind === "file" && String(item.type || "").startsWith("image/")) {
+        const file = item.getAsFile();
+        if (file) imageFiles.push(file);
+      }
+    }
+    // No images → let the browser handle the paste (text, etc.) normally.
+    if (imageFiles.length === 0) return;
+
+    event.preventDefault();
+
+    const readAsBase64 = (file) =>
+      new Promise((resolve) => {
+        try {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const result = String(reader.result || "");
+            const comma = result.indexOf(",");
+            resolve(comma >= 0 ? result.slice(comma + 1) : "");
+          };
+          reader.onerror = () => resolve("");
+          reader.readAsDataURL(file);
+        } catch {
+          resolve("");
+        }
+      });
+
+    const inlineAttachments = [];
+    const markers = [];
+    for (const file of imageFiles) {
+      const base64 = await readAsBase64(file);
+      if (!base64) continue;
+      const ext = String(file.type || "").split("/")[1] || "png";
+      const filename = file.name || `pasted-image-${Date.now()}.${ext}`;
+      const contentId = normalizeContentId(
+        `paste-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        filename,
+      );
+      if (!contentId) continue;
+      // Wrap in a fresh File so we can attach the __inno* marker props
+      // without mutating the original clipboard file.
+      const inlineFile = new File([file], filename, {
+        type: file.type || "image/png",
+        lastModified: file.lastModified || Date.now(),
+      });
+      inlineFile.__innoDeliveryMode = "inline";
+      inlineFile.__innoInline = true;
+      inlineFile.__innoContentId = contentId;
+      inlineFile.__innoContentBase64 = base64;
+      inlineFile.__innoMimeType = file.type || "image/png";
+      inlineAttachments.push(inlineFile);
+      const marker = buildCidMarker(contentId);
+      if (marker) markers.push(marker);
+    }
+
+    if (inlineAttachments.length === 0) return;
+
+    // Combine any pasted plain text with the markers. Text first, then a
+    // newline, then markers stacked one per line — the rendering pipeline
+    // turns each marker into an <img> on its own line.
+    const pastedText = String(clipboard.getData("text/plain") || "").trim();
+    const insertPayload = [pastedText, ...markers].filter(Boolean).join("\n");
+
+    setAttachments((prev) => [...prev, ...inlineAttachments]);
+    // execCommand is the most reliable cross-browser way to insert text at
+    // the caret in a contentEditable — it triggers the onInput handler so
+    // the parent value stays in sync.
+    document.execCommand("insertText", false, insertPayload);
+  };
+
   const getReplyInlineResizeTarget = (event) => {
     const target = event?.target;
     if (!(target instanceof HTMLImageElement)) return null;
@@ -1892,6 +1975,7 @@ function ComposerComponent({
                       }
                     }}
                     onInput={handleReplyEditorInput}
+                    onPaste={handleReplyEditorPaste}
                     onMouseDown={handleReplyEditorMouseDown}
                     onMouseMove={handleReplyEditorMouseMove}
                     onMouseLeave={handleReplyEditorMouseLeave}

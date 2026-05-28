@@ -150,9 +150,9 @@ export function SnippetTwoPanel({
       </div>
 
       {/* Two-panel — bleeds to page edges, defined height so children can use h-full */}
-      <div className="-mx-4 lg:-mx-10 -mb-6 lg:-mb-10 flex border-t border-gray-100 h-[calc(100svh-141px)] overflow-hidden">
+      <div className="-mx-4 lg:-mx-10 -mb-6 lg:-mb-10 flex border-t border-gray-100 h-[calc(100svh-141px)] overflow-hidden dark:border-gray-800">
         {/* Left: snippet list */}
-        <div className="flex w-64 shrink-0 flex-col overflow-hidden border-r border-gray-100 bg-gray-50/50">
+        <div className="flex w-64 shrink-0 flex-col overflow-hidden border-r border-gray-100 bg-gray-50/50 dark:border-gray-800 dark:bg-gray-900/30">
           {loading ? (
             <div className="space-y-2 p-3">
               {[1, 2, 3, 4].map((i) => (
@@ -169,7 +169,7 @@ export function SnippetTwoPanel({
         </div>
 
         {/* Right: editor or empty state */}
-        <div className="flex flex-1 overflow-hidden bg-white">
+        <div className="flex flex-1 overflow-hidden bg-white dark:bg-card">
           {newDraft || selectedSnippet ? (
             <SnippetEditor
               key={newDraft ? `new-${seedQuestion || "blank"}` : selectedId}
@@ -185,11 +185,11 @@ export function SnippetTwoPanel({
             />
           ) : snippets.length === 0 ? (
             <div className="flex h-full w-full flex-col items-center justify-center gap-5 px-8 text-center">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-50">
-                <Lightbulb className="h-5 w-5 text-indigo-500" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-50 dark:bg-indigo-950/40">
+                <Lightbulb className="h-5 w-5 text-indigo-500 dark:text-indigo-400" />
               </div>
               <div className="max-w-md">
-                <p className="text-sm font-semibold text-gray-700">
+                <p className="text-sm font-semibold text-gray-700 dark:text-gray-200">
                   Start with a common question
                 </p>
                 <p className="mt-1 text-xs text-gray-400">
@@ -202,28 +202,28 @@ export function SnippetTwoPanel({
                     key={starter}
                     type="button"
                     onClick={() => handleAddSnippet(starter)}
-                    className="group flex items-center justify-between rounded-md border border-gray-100 bg-white px-3 py-2 text-left text-[12.5px] text-gray-600 transition-all hover:border-indigo-200 hover:bg-indigo-50/30 hover:text-indigo-700"
+                    className="group flex items-center justify-between rounded-md border border-gray-100 bg-white px-3 py-2 text-left text-[12.5px] text-gray-600 transition-all hover:border-indigo-200 hover:bg-indigo-50/30 hover:text-indigo-700 dark:border-gray-800 dark:bg-transparent dark:text-gray-400 dark:hover:border-indigo-700 dark:hover:bg-indigo-950/30 dark:hover:text-indigo-300"
                   >
                     <span className="truncate">{starter}</span>
-                    <Plus className="ml-2 h-3.5 w-3.5 shrink-0 text-gray-300 transition-colors group-hover:text-indigo-400" />
+                    <Plus className="ml-2 h-3.5 w-3.5 shrink-0 text-gray-300 transition-colors group-hover:text-indigo-400 dark:text-gray-600 dark:group-hover:text-indigo-500" />
                   </button>
                 ))}
               </div>
               <button
                 type="button"
                 onClick={() => handleAddSnippet()}
-                className="text-[11.5px] text-gray-400 underline-offset-2 transition-colors hover:text-gray-600 hover:underline"
+                className="text-[11.5px] text-gray-400 underline-offset-2 transition-colors hover:text-gray-600 hover:underline dark:hover:text-gray-300"
               >
                 Or start from scratch
               </button>
             </div>
           ) : (
             <div className="flex h-full w-full flex-col items-center justify-center gap-3 text-center">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
                 <FileText className="h-5 w-5 text-gray-400" />
               </div>
               <div>
-                <p className="text-sm font-medium text-gray-600">
+                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
                   Select a snippet to edit
                 </p>
                 <p className="mt-0.5 text-xs text-gray-400">
