@@ -42,16 +42,16 @@ function formatRelative(iso) {
 function DraftCard({ title, badge, badgeTone, run, isLoading }) {
   const text = run?.draft_text;
   return (
-    <div className="flex h-full flex-col rounded-lg border border-gray-200 bg-white">
-      <div className="flex items-center justify-between border-b border-gray-100 px-3 py-2">
+    <div className="flex h-full flex-col rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-card">
+      <div className="flex items-center justify-between border-b border-gray-100 px-3 py-2 dark:border-gray-800">
         <div className="flex items-center gap-2">
-          <p className="text-[12px] font-semibold text-gray-700">{title}</p>
+          <p className="text-[12px] font-semibold text-gray-700 dark:text-gray-200">{title}</p>
           {badge && (
             <span
               className={cn(
                 "rounded-full px-1.5 py-0.5 text-[10px] font-medium",
-                badgeTone === "indigo" && "bg-indigo-50 text-indigo-600",
-                badgeTone === "gray" && "bg-gray-100 text-gray-500"
+                badgeTone === "indigo" && "bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400",
+                badgeTone === "gray" && "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"
               )}
             >
               {badge}
@@ -59,10 +59,10 @@ function DraftCard({ title, badge, badgeTone, run, isLoading }) {
           )}
         </div>
         {run?.latency_ms != null && !isLoading && (
-          <span className="text-[10px] text-gray-400">{run.latency_ms} ms</span>
+          <span className="text-[10px] text-gray-400 dark:text-gray-500">{run.latency_ms} ms</span>
         )}
       </div>
-      <div className="flex-1 overflow-y-auto px-4 py-3 text-[12.5px] leading-relaxed text-gray-700">
+      <div className="flex-1 overflow-y-auto px-4 py-3 text-[12.5px] leading-relaxed text-gray-700 dark:text-gray-300">
         {isLoading ? (
           <div className="space-y-2">
             <Skeleton className="h-3 w-full" />
@@ -71,23 +71,23 @@ function DraftCard({ title, badge, badgeTone, run, isLoading }) {
             <Skeleton className="h-3 w-4/6" />
           </div>
         ) : run?.error ? (
-          <div className="rounded-md bg-red-50 px-2.5 py-2 text-[11.5px] text-red-700">
+          <div className="rounded-md bg-red-50 px-2.5 py-2 text-[11.5px] text-red-700 dark:bg-red-950/40 dark:text-red-400">
             {run.error}
           </div>
         ) : text ? (
           <p className="whitespace-pre-wrap">{text}</p>
         ) : (
-          <p className="text-gray-300 italic">No draft generated.</p>
+          <p className="italic text-gray-300 dark:text-gray-600">No draft generated.</p>
         )}
       </div>
       {!isLoading && Array.isArray(run?.sources) && run.sources.length > 0 && (
-        <div className="border-t border-gray-100 px-3 py-2">
-          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+        <div className="border-t border-gray-100 px-3 py-2 dark:border-gray-800">
+          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
             Top sources
           </p>
           <ul className="space-y-0.5">
             {run.sources.slice(0, 4).map((s, i) => (
-              <li key={i} className="truncate text-[10.5px] text-gray-500">
+              <li key={i} className="truncate text-[10.5px] text-gray-500 dark:text-gray-400">
                 · {s.source_label || s.kind || "knowledge"}
               </li>
             ))}
@@ -119,7 +119,7 @@ function CustomMessageForm({ onSubmit }) {
     <form onSubmit={handleSubmit} className="flex h-full flex-col">
       <div className="flex-1 space-y-3 overflow-y-auto">
         <div className="space-y-1">
-          <label className="text-[11px] font-medium text-gray-600">
+          <label className="text-[11px] font-medium text-gray-600 dark:text-gray-400">
             Customer message <span className="text-red-500">*</span>
           </label>
           <textarea
@@ -127,24 +127,24 @@ function CustomMessageForm({ onSubmit }) {
             onChange={(e) => setBody(e.target.value)}
             placeholder="Paste or type the customer's message here — write it the way a customer would actually phrase it."
             rows={9}
-            className="w-full resize-none rounded-md border border-gray-200 bg-white px-3 py-2.5 text-[12.5px] leading-relaxed text-gray-700 placeholder:text-gray-300 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+            className="w-full resize-none rounded-md border border-gray-200 bg-white px-3 py-2.5 text-[12.5px] leading-relaxed text-gray-700 placeholder:text-gray-300 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 dark:border-gray-700 dark:bg-gray-900/50 dark:text-gray-200 dark:placeholder:text-gray-600 dark:focus:border-indigo-700 dark:focus:ring-indigo-900/50"
             autoFocus
           />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
-            <label className="text-[11px] font-medium text-gray-600">
+            <label className="text-[11px] font-medium text-gray-600 dark:text-gray-400">
               Subject <span className="text-gray-400">(optional)</span>
             </label>
             <input
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
               placeholder="e.g. Cannot pair AirPods"
-              className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-[12px] text-gray-700 placeholder:text-gray-300 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+              className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-[12px] text-gray-700 placeholder:text-gray-300 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 dark:border-gray-700 dark:bg-gray-900/50 dark:text-gray-200 dark:placeholder:text-gray-600 dark:focus:border-indigo-700"
             />
           </div>
           <div className="space-y-1">
-            <label className="text-[11px] font-medium text-gray-600">
+            <label className="text-[11px] font-medium text-gray-600 dark:text-gray-400">
               Customer email <span className="text-gray-400">(optional)</span>
             </label>
             <input
@@ -152,15 +152,15 @@ function CustomMessageForm({ onSubmit }) {
               onChange={(e) => setCustomerEmail(e.target.value)}
               type="email"
               placeholder="customer@example.com"
-              className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-[12px] text-gray-700 placeholder:text-gray-300 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+              className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-[12px] text-gray-700 placeholder:text-gray-300 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 dark:border-gray-700 dark:bg-gray-900/50 dark:text-gray-200 dark:placeholder:text-gray-600 dark:focus:border-indigo-700"
             />
           </div>
         </div>
-        <p className="text-[11px] text-gray-400">
+        <p className="text-[11px] text-gray-400 dark:text-gray-500">
           The test runs against a single message — no order context or conversation history. Use this for quick iteration; pick a real ticket when you need full context.
         </p>
       </div>
-      <div className="flex justify-end border-t border-gray-100 pt-3">
+      <div className="flex justify-end border-t border-gray-100 pt-3 dark:border-gray-800">
         <Button type="submit" size="sm" disabled={!canSubmit}>
           <Sparkles className="mr-1.5 h-3.5 w-3.5" />
           Run preview
@@ -184,13 +184,13 @@ function ThreadPicker({ threads, loading, onSelect }) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 border-b border-gray-100 px-1 pb-3">
-        <Search className="h-3.5 w-3.5 text-gray-300" />
+      <div className="flex items-center gap-2 border-b border-gray-100 px-1 pb-3 dark:border-gray-800">
+        <Search className="h-3.5 w-3.5 text-gray-300 dark:text-gray-600" />
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search by subject, customer, or preview..."
-          className="flex-1 bg-transparent text-[12px] text-gray-700 placeholder:text-gray-300 outline-none"
+          className="flex-1 bg-transparent text-[12px] text-gray-700 placeholder:text-gray-300 outline-none dark:text-gray-300 dark:placeholder:text-gray-600"
         />
       </div>
       <div className="-mx-1 flex-1 overflow-y-auto">
@@ -201,33 +201,33 @@ function ThreadPicker({ threads, loading, onSelect }) {
             ))}
           </div>
         ) : filtered.length === 0 ? (
-          <p className="px-2 py-8 text-center text-[12px] text-gray-400">
+          <p className="px-2 py-8 text-center text-[12px] text-gray-400 dark:text-gray-500">
             {query ? "No tickets match your search." : "No tickets found for this shop."}
           </p>
         ) : (
-          <ul className="divide-y divide-gray-100">
+          <ul className="divide-y divide-gray-100 dark:divide-gray-800">
             {filtered.map((thread) => (
               <li key={thread.thread_id}>
                 <button
                   type="button"
                   onClick={() => onSelect(thread)}
-                  className="group flex w-full flex-col gap-0.5 px-3 py-2.5 text-left transition-colors hover:bg-gray-50"
+                  className="group flex w-full flex-col gap-0.5 px-3 py-2.5 text-left transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/50"
                 >
                   <div className="flex items-center justify-between gap-3">
-                    <span className="truncate text-[12.5px] font-medium text-gray-800">
+                    <span className="truncate text-[12.5px] font-medium text-gray-800 dark:text-gray-100">
                       {thread.subject}
                     </span>
-                    <span className="shrink-0 text-[10.5px] text-gray-400">
+                    <span className="shrink-0 text-[10.5px] text-gray-400 dark:text-gray-500">
                       {formatRelative(thread.last_message_at)}
                     </span>
                   </div>
                   {thread.customer_email && (
-                    <span className="truncate text-[11px] text-gray-500">
+                    <span className="truncate text-[11px] text-gray-500 dark:text-gray-400">
                       {thread.customer_email}
                     </span>
                   )}
                   {thread.preview && (
-                    <span className="truncate text-[11px] text-gray-400">
+                    <span className="truncate text-[11px] text-gray-400 dark:text-gray-500">
                       {thread.preview}
                     </span>
                   )}
@@ -333,13 +333,13 @@ export function SnippetPreviewModal({ open, onOpenChange, snippetId, snippetTitl
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] w-[min(96vw,1100px)] max-w-none overflow-hidden p-0 sm:max-w-none">
-        <DialogHeader className="border-b border-gray-100 px-5 py-3.5">
+        <DialogHeader className="border-b border-gray-100 px-5 py-3.5 dark:border-gray-800">
           <DialogTitle className="flex items-center gap-2 text-[14px] font-semibold">
             {previewSource && (
               <button
                 type="button"
                 onClick={handleBack}
-                className="rounded p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                className="rounded p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:text-gray-500 dark:hover:bg-gray-800 dark:hover:text-gray-300"
               >
                 <ArrowLeft className="h-3.5 w-3.5" />
               </button>
@@ -351,7 +351,7 @@ export function SnippetPreviewModal({ open, onOpenChange, snippetId, snippetTitl
                 : "Test your snippet"}
             </span>
             {snippetTitle && !previewSource && (
-              <span className="ml-2 truncate rounded-full bg-gray-100 px-2 py-0.5 text-[10.5px] font-normal text-gray-500">
+              <span className="ml-2 truncate rounded-full bg-gray-100 px-2 py-0.5 text-[10.5px] font-normal text-gray-500 dark:bg-gray-800 dark:text-gray-400">
                 {snippetTitle}
               </span>
             )}
@@ -361,18 +361,18 @@ export function SnippetPreviewModal({ open, onOpenChange, snippetId, snippetTitl
         <div className="h-[min(80vh,720px)] overflow-hidden">
           {!previewSource ? (
             <div className="flex h-full flex-col px-5 py-3">
-              <p className="mb-3 text-[11.5px] text-gray-500">
+              <p className="mb-3 text-[11.5px] text-gray-500 dark:text-gray-400">
                 We&apos;ll run the AI pipeline twice — once with your snippet present, once without — so you can see exactly what it adds.
               </p>
-              <div className="mb-3 inline-flex w-fit gap-0.5 rounded-md border border-gray-200 bg-gray-50 p-0.5">
+              <div className="mb-3 inline-flex w-fit gap-0.5 rounded-md border border-gray-200 bg-gray-50 p-0.5 dark:border-gray-700 dark:bg-gray-900/50">
                 <button
                   type="button"
                   onClick={() => setPickerMode("inbox")}
                   className={cn(
                     "inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-[11.5px] font-medium transition-colors",
                     pickerMode === "inbox"
-                      ? "bg-white text-gray-800 shadow-sm"
-                      : "text-gray-500 hover:text-gray-700"
+                      ? "bg-white text-gray-800 shadow-sm dark:bg-gray-800 dark:text-gray-100 dark:shadow-none"
+                      : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
                   )}
                 >
                   <Inbox className="h-3 w-3" />
@@ -384,8 +384,8 @@ export function SnippetPreviewModal({ open, onOpenChange, snippetId, snippetTitl
                   className={cn(
                     "inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-[11.5px] font-medium transition-colors",
                     pickerMode === "custom"
-                      ? "bg-white text-gray-800 shadow-sm"
-                      : "text-gray-500 hover:text-gray-700"
+                      ? "bg-white text-gray-800 shadow-sm dark:bg-gray-800 dark:text-gray-100 dark:shadow-none"
+                      : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
                   )}
                 >
                   <PencilLine className="h-3 w-3" />
@@ -407,27 +407,27 @@ export function SnippetPreviewModal({ open, onOpenChange, snippetId, snippetTitl
           ) : (
             <div className="flex h-full flex-col">
               {/* Customer message panel */}
-              <div className="border-b border-gray-100 bg-gray-50/50 px-5 py-3">
+              <div className="border-b border-gray-100 bg-gray-50/50 px-5 py-3 dark:border-gray-800 dark:bg-gray-900/40">
                 <div className="flex items-start gap-2">
-                  <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-400" />
+                  <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-400 dark:text-gray-500" />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline gap-2">
-                      <p className="text-[11.5px] font-semibold text-gray-600">
+                      <p className="text-[11.5px] font-semibold text-gray-600 dark:text-gray-400">
                         Customer wrote
                       </p>
                       {result?.customer_email && (
-                        <p className="truncate text-[11px] text-gray-400">
+                        <p className="truncate text-[11px] text-gray-400 dark:text-gray-500">
                           {result.customer_email}
                         </p>
                       )}
                     </div>
                     {result?.subject && (
-                      <p className="mt-0.5 text-[12px] font-medium text-gray-700">
+                      <p className="mt-0.5 text-[12px] font-medium text-gray-700 dark:text-gray-300">
                         {result.subject}
                       </p>
                     )}
                     {result?.customer_message ? (
-                      <p className="mt-1 max-h-24 overflow-y-auto whitespace-pre-wrap text-[11.5px] leading-relaxed text-gray-600">
+                      <p className="mt-1 max-h-24 overflow-y-auto whitespace-pre-wrap text-[11.5px] leading-relaxed text-gray-600 dark:text-gray-400">
                         {result.customer_message}
                       </p>
                     ) : running ? (
@@ -446,8 +446,8 @@ export function SnippetPreviewModal({ open, onOpenChange, snippetId, snippetTitl
                   className={cn(
                     "flex items-center gap-2 border-b px-5 py-2 text-[11.5px]",
                     result.snippet_was_retrieved
-                      ? "border-emerald-100 bg-emerald-50 text-emerald-700"
-                      : "border-amber-100 bg-amber-50 text-amber-700"
+                      ? "border-emerald-100 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-400"
+                      : "border-amber-100 bg-amber-50 text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-400"
                   )}
                 >
                   {result.snippet_was_retrieved ? (
@@ -482,8 +482,8 @@ export function SnippetPreviewModal({ open, onOpenChange, snippetId, snippetTitl
               </div>
 
               {/* Footer */}
-              <div className="flex items-center justify-between gap-3 border-t border-gray-100 px-5 py-2.5">
-                <p className="flex items-center gap-1.5 text-[11px] text-gray-400">
+              <div className="flex items-center justify-between gap-3 border-t border-gray-100 px-5 py-2.5 dark:border-gray-800">
+                <p className="flex items-center gap-1.5 text-[11px] text-gray-400 dark:text-gray-500">
                   {running && (
                     <>
                       <Loader2 className="h-3 w-3 animate-spin" />
