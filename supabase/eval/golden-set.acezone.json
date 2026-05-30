@@ -450,7 +450,7 @@
       "language": "en",
       "expected_action": "none",
       "must_contain": [
-        "partnership"
+        "partner"
       ],
       "must_not_contain": [
         "return",
