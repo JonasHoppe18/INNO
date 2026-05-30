@@ -22,3 +22,42 @@ test("parseArgs: flags", () => {
 test("parseArgs: rejects bad tier", () => {
   assert.throws(() => parseArgs(["--tier", "bogus"]), /tier must be/);
 });
+
+import { validateCase, loadGoldenSet } from "./golden-eval-core.mjs";
+
+const histCase = {
+  id: "g-001", tier: "historical", subject: "s", body: "b",
+  source_thread_id: "tid-1", human_reply: "r", language: "da", intent: "complaint",
+};
+const edgeCase = {
+  id: "e-001", tier: "edge", subject: "s", body: "b",
+  source_thread_id: null, human_reply: "r", language: "en",
+  expected_action: "none", must_contain: ["photo"], must_not_contain: ["Bob"],
+};
+
+test("validateCase: accepts valid historical", () => {
+  assert.deepEqual(validateCase(histCase).id, "g-001");
+});
+
+test("validateCase: accepts valid edge", () => {
+  assert.deepEqual(validateCase(edgeCase).id, "e-001");
+});
+
+test("validateCase: requires id/body/human_reply", () => {
+  assert.throws(() => validateCase({ ...histCase, body: "" }), /body/);
+  assert.throws(() => validateCase({ ...histCase, human_reply: "" }), /human_reply/);
+});
+
+test("validateCase: historical requires source_thread_id", () => {
+  assert.throws(() => validateCase({ ...histCase, source_thread_id: null }), /source_thread_id/);
+});
+
+test("validateCase: edge must have null source_thread_id", () => {
+  assert.throws(() => validateCase({ ...edgeCase, source_thread_id: "x" }), /source_thread_id/);
+});
+
+test("loadGoldenSet: filters by tier and limit", () => {
+  const set = { shop_id: "s", cases: [histCase, edgeCase] };
+  assert.equal(loadGoldenSet(set, { tier: "edge", limit: null }).length, 1);
+  assert.equal(loadGoldenSet(set, { tier: null, limit: 1 }).length, 1);
+});
