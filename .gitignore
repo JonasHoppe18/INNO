@@ -53,3 +53,5 @@ apps/web/.env.production
 
 # golden-eval per-run reports
 supabase/eval/runs/
+# golden-eval scratch candidate file (regenerable via build-golden-candidates.mjs)
+supabase/eval/_candidates.json
