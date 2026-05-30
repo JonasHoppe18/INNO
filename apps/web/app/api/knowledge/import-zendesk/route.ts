@@ -20,6 +20,7 @@ const SUPABASE_SERVICE_KEY =
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const OPENAI_EMBEDDING_MODEL =
   process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small";
+const OPENAI_REDACT_MODEL = process.env.OPENAI_REDACT_MODEL || "gpt-4o-mini";
 
 const SOURCE_PROVIDER = "zendesk";
 const MAX_TICKETS = 200;
@@ -99,6 +100,99 @@ async function embedBatch(texts: string[]): Promise<number[][]> {
   return (payload?.data ?? [])
     .sort((a: any, b: any) => a.index - b.index)
     .map((item: any) => item.embedding);
+}
+
+// --- PII redaction -------------------------------------------------------
+// ticket_examples rows are injected into the writer prompt as few-shot tone
+// anchors. They MUST NOT carry real customer PII, or the model can copy another
+// customer's name/address/phone into a live reply (observed in production).
+// Every imported pair is run through an LLM redactor before embedding/insert.
+// If redaction fails for a ticket, that ticket is DROPPED — we never store raw PII.
+const REDACT_SYSTEM = `You are a strict GDPR redaction engine for customer-support transcripts.
+You receive JSON with fields: subject, customer_msg, agent_reply.
+Return JSON with the SAME fields, rewritten so that ALL personal data is replaced by neutral placeholders, while preserving meaning, tone, structure and any product/issue details.
+
+Replace:
+- Person names (customer AND agent/support names) -> neutral greeting/sign-off. Customer greeting becomes a neutral "Hi there" (or same-language equivalent). Agent signature name becomes "[Agent]". Never invent a name.
+- Email addresses -> [email]
+- Phone numbers -> [phone]
+- Postal/street addresses, postal codes, cities tied to a person -> [address]
+- Order numbers / order IDs -> [order number]
+- Tracking numbers / shipment IDs -> [tracking number]
+- Any other directly identifying info -> [redacted]
+
+KEEP intact: product names (A-Spire, A-Rise, A-Blaze, dongle, etc.), the nature of the issue, policy/procedure wording, tone, and language (do not translate).
+Output ONLY the JSON object.`;
+
+async function redactOne(input: {
+  subject: string;
+  customer_msg: string;
+  agent_reply: string;
+}): Promise<{ subject: string; customer_msg: string; agent_reply: string }> {
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: OPENAI_REDACT_MODEL,
+      temperature: 0,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: REDACT_SYSTEM },
+        { role: "user", content: JSON.stringify(input) },
+      ],
+    }),
+  });
+  if (!res.ok) throw new Error(`Redaction failed (${res.status})`);
+  const payload = await res.json();
+  const parsed = JSON.parse(payload.choices[0].message.content);
+  return {
+    subject: String(parsed.subject ?? ""),
+    customer_msg: String(parsed.customer_msg ?? ""),
+    agent_reply: String(parsed.agent_reply ?? ""),
+  };
+}
+
+/**
+ * Redact a batch of {subject, customerBody, agentReply} pairs with bounded
+ * concurrency. Tickets whose redaction fails are dropped (null) so raw PII is
+ * never persisted.
+ */
+async function redactPairs<
+  T extends { subject: string; customerBody: string; agentReply: string },
+>(pairs: T[]): Promise<(T | null)[]> {
+  const CONCURRENCY = 5;
+  const out: (T | null)[] = new Array(pairs.length).fill(null);
+  let cursor = 0;
+  async function worker() {
+    while (cursor < pairs.length) {
+      const idx = cursor++;
+      const p = pairs[idx];
+      try {
+        const r = await redactOne({
+          subject: p.subject,
+          customer_msg: p.customerBody,
+          agent_reply: p.agentReply,
+        });
+        if (!r.customer_msg || !r.agent_reply) {
+          out[idx] = null;
+          continue;
+        }
+        out[idx] = {
+          ...p,
+          subject: r.subject,
+          customerBody: r.customer_msg,
+          agentReply: r.agent_reply,
+        };
+      } catch {
+        out[idx] = null; // drop on failure — never store raw PII
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
+  return out;
 }
 
 export async function GET() {
@@ -241,8 +335,23 @@ export async function POST(req: Request) {
     return NextResponse.json({ imported: 0, skipped: 0, message: "No usable tickets found." });
   }
 
+  // GDPR: redact PII out of every pair BEFORE embedding/storing. Tickets that
+  // fail redaction are dropped so raw customer data is never persisted as a
+  // few-shot example.
+  const redacted = await redactPairs(pairs);
+  const droppedForPii = redacted.filter((r) => r === null).length;
+  const safePairs = redacted.filter((p): p is NonNullable<typeof p> => p !== null);
+
+  if (!safePairs.length) {
+    return NextResponse.json({
+      imported: 0,
+      skipped: pairs.length,
+      message: "No tickets could be safely redacted.",
+    });
+  }
+
   // Embed on customer message — semantic search must match similar customer questions, not agent replies
-  const customerMsgs = pairs.map((p) => buildCustomerMsg(p.subject, p.customerBody));
+  const customerMsgs = safePairs.map((p) => buildCustomerMsg(p.subject, p.customerBody));
   const allEmbeddings: number[][] = [];
 
   for (let i = 0; i < customerMsgs.length; i += EMBED_BATCH_SIZE) {
@@ -251,7 +360,7 @@ export async function POST(req: Request) {
     allEmbeddings.push(...embeddings);
   }
 
-  const rows = pairs.map((pair, idx) => ({
+  const rows = safePairs.map((pair, idx) => ({
     shop_id: shop.id,
     workspace_id: scope?.workspaceId ?? null,
     source_provider: SOURCE_PROVIDER,
@@ -260,6 +369,7 @@ export async function POST(req: Request) {
     agent_reply: pair.agentReply,
     subject: pair.subject,
     embedding: allEmbeddings[idx],
+    tags: ["pii_scrubbed"],
   }));
 
   // Dedup enforced by DB constraint (shop_id, source_provider, external_ticket_id)
@@ -282,6 +392,7 @@ export async function POST(req: Request) {
     imported: rows.length,
     total_in_db: totalCount ?? 0,
     total_fetched: pairs.length,
+    dropped_for_pii: droppedForPii,
   });
 }
 
