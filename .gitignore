@@ -50,3 +50,6 @@ apps/web/.env.production
 .claude/memory.json
 .claude/launch.json
 .worktrees/
+
+# golden-eval per-run reports
+supabase/eval/runs/
