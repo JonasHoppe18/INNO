@@ -95,6 +95,44 @@ function splitIntoSemanticChunks(text: string, maxChars = 2400, minChars = 150):
   return chunks.filter(Boolean);
 }
 
+// Canonical planner intents — must match generate-draft-v2/stages/planner.ts
+// primary_intent enum so internal-rule trigger_intent matches what the planner
+// emits. Drift = rules silently never fire.
+const VALID_TRIGGER_INTENTS = [
+  "tracking",
+  "return",
+  "refund",
+  "exchange",
+  "address_change",
+  "product_question",
+  "complaint",
+  "thanks",
+  "update",
+  "other",
+];
+
+// Parse audience ("customer" | "internal") and trigger_intent[] from a snippet
+// payload. Internal rules are injected deterministically by the pipeline's
+// internal-rules stage; audience="customer" (or absent) flows through normal
+// retrieval. Shared by POST and PUT so they stay in lockstep.
+function parseAudienceFields(payload: any): {
+  audience: "customer" | "internal" | null;
+  triggerIntent: string[];
+} {
+  const rawAudience = String(payload?.audience || "").trim().toLowerCase();
+  const audience = rawAudience === "internal"
+    ? "internal"
+    : rawAudience === "customer"
+    ? "customer"
+    : null;
+  const triggerIntent = Array.isArray(payload?.trigger_intent)
+    ? (payload.trigger_intent as unknown[])
+        .map((t) => String(t).toLowerCase().trim())
+        .filter((t) => VALID_TRIGGER_INTENTS.includes(t))
+    : [];
+  return { audience, triggerIntent: Array.from(new Set(triggerIntent)) };
+}
+
 function makeSnippetId() {
   try {
     return crypto.randomUUID();
@@ -388,6 +426,14 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const category = searchParams.get("category") || null;
   const productId = searchParams.get("product_id") || null;
+  // audience=internal returns only internal rules (deterministically-injected
+  // operating rules); the dedicated "Internal rules" UI uses this.
+  const audienceParam = (searchParams.get("audience") || "").trim().toLowerCase();
+  const audienceFilter = audienceParam === "internal"
+    ? "internal"
+    : audienceParam === "customer"
+    ? "customer"
+    : null;
   // When include_all=1, return ALL manual snippets regardless of category —
   // used by the flat "Browse all snippets" power-user view.
   const includeAll = searchParams.get("include_all") === "1";
@@ -405,7 +451,12 @@ export async function GET(request: Request) {
       .eq("shop_id", shop.id)
       .eq("source_provider", "manual_text");
 
-    if (!includeAll) {
+    if (audienceFilter) {
+      // Internal-rule view: filter purely by audience, ignore category buckets.
+      query = query.eq("metadata->>audience" as any, audienceFilter);
+    } else if (!includeAll) {
+      // Customer-facing views must never surface internal rules.
+      query = query.not("metadata->>audience" as any, "eq", "internal");
       if (category) {
         query = query.eq("metadata->>category" as any, category);
       } else {
@@ -423,7 +474,7 @@ export async function GET(request: Request) {
     // Deduplicate by snippet_id, take first chunk (chunk_index 0)
     const seen = new Set<string>();
     const VALID_USABLE_AS = ["policy", "procedure", "fact", "saved_reply", "tone_example", "background"];
-    const snippets: Array<{ snippet_id: string; title: string; content: string; category: string | null; product_id: string | null; product_title: string | null; usable_as: string | null; is_stale: boolean; products: string[]; issue_types: string[]; format: "qa" | "prose"; question: string | null; answer: string | null; created_at: string | null }> = [];
+    const snippets: Array<{ snippet_id: string; title: string; content: string; category: string | null; product_id: string | null; product_title: string | null; usable_as: string | null; is_stale: boolean; products: string[]; issue_types: string[]; format: "qa" | "prose"; question: string | null; answer: string | null; audience: string | null; trigger_intent: string[]; created_at: string | null }> = [];
     for (const row of rows || []) {
       const meta = row.metadata as any;
       const snippetId = String(meta?.snippet_id || row.source_id || row.id || "").trim();
@@ -448,6 +499,10 @@ export async function GET(request: Request) {
         format,
         question,
         answer,
+        audience: typeof meta?.audience === "string" ? meta.audience : null,
+        trigger_intent: Array.isArray(meta?.trigger_intent)
+          ? (meta.trigger_intent as string[])
+          : [],
         created_at: (row.created_at as string) || null,
       });
     }
@@ -625,6 +680,7 @@ export async function POST(request: Request) {
     const issueTypes = Array.isArray(payload?.issue_types)
       ? (payload.issue_types as unknown[]).map((t) => String(t).toLowerCase().trim()).filter(Boolean)
       : [];
+    const { audience, triggerIntent } = parseAudienceFields(payload);
     if (!title || !content) {
       return NextResponse.json({ error: "title and content are required." }, { status: 400 });
     }
@@ -668,6 +724,8 @@ export async function POST(request: Request) {
         ...(issueTypes.length ? { issue_types: issueTypes } : {}),
         ...(appliesToAllProducts ? { applies_to_all_products: true } : {}),
         ...(isQa ? { format: "qa", question: rawQuestion, answer: rawAnswer } : {}),
+        ...(audience ? { audience } : {}),
+        ...(triggerIntent.length ? { trigger_intent: triggerIntent } : {}),
       },
     });
     console.info(
@@ -750,6 +808,7 @@ export async function PUT(request: Request) {
     const issueTypes = Array.isArray(payload?.issue_types)
       ? (payload.issue_types as unknown[]).map((t) => String(t).toLowerCase().trim()).filter(Boolean)
       : [];
+    const { audience, triggerIntent } = parseAudienceFields(payload);
 
     if (!snippetId || !title || !content) {
       return NextResponse.json({ error: "id, title and content are required." }, { status: 400 });
@@ -802,6 +861,8 @@ export async function PUT(request: Request) {
         ...(issueTypes.length ? { issue_types: issueTypes } : {}),
         ...(appliesToAllProducts ? { applies_to_all_products: true } : {}),
         ...(isQa ? { format: "qa", question: rawQuestion, answer: rawAnswer } : {}),
+        ...(audience ? { audience } : {}),
+        ...(triggerIntent.length ? { trigger_intent: triggerIntent } : {}),
       },
     });
 

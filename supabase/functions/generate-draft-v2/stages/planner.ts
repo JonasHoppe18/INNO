@@ -3,8 +3,18 @@ import { CaseState } from "./case-state-updater.ts";
 import { resolveReplyLanguage } from "./language.ts";
 import { callOpenAIJson } from "./openai-json.ts";
 
+export type ResolutionStage =
+  | "troubleshoot_first"
+  | "request_evidence"
+  | "initiate_warranty_repair"
+  | "cancel_order"
+  | "refund_or_exchange"
+  | "info_only"
+  | "escalate_human";
+
 export interface Plan {
   primary_intent: string;
+  resolution_stage: ResolutionStage;
   sub_queries: string[];
   required_facts: string[];
   skills_to_consider: string[];
@@ -20,6 +30,7 @@ export interface PlannerInput {
 
 const FALLBACK_PLAN = (language: string): Plan => ({
   primary_intent: "other",
+  resolution_stage: "info_only",
   sub_queries: [],
   required_facts: ["order_state"],
   skills_to_consider: [],
@@ -47,6 +58,18 @@ const PLANNER_SCHEMA = {
         "other",
       ],
     },
+    resolution_stage: {
+      type: "string",
+      enum: [
+        "troubleshoot_first",
+        "request_evidence",
+        "initiate_warranty_repair",
+        "cancel_order",
+        "refund_or_exchange",
+        "info_only",
+        "escalate_human",
+      ],
+    },
     sub_queries: { type: "array", items: { type: "string" } },
     required_facts: { type: "array", items: { type: "string" } },
     skills_to_consider: { type: "array", items: { type: "string" } },
@@ -58,6 +81,7 @@ const PLANNER_SCHEMA = {
   },
   required: [
     "primary_intent",
+    "resolution_stage",
     "sub_queries",
     "required_facts",
     "skills_to_consider",
@@ -79,6 +103,7 @@ export async function runPlanner(
 Schema:
 {
   "primary_intent": "tracking|return|refund|exchange|address_change|product_question|complaint|thanks|update|other",
+  "resolution_stage": "troubleshoot_first|request_evidence|initiate_warranty_repair|cancel_order|refund_or_exchange|info_only|escalate_human",
   "sub_queries": ["query 1"],
   "required_facts": ["order_state"],
   "skills_to_consider": ["get_order"],
@@ -126,6 +151,24 @@ Rules:
 - skills_to_consider: only actions relevant to intent — get_order | get_tracking | update_shipping_address | cancel_order | refund_order | create_exchange_request
   - For "thanks" intent: skills_to_consider MUST be empty []
   - For "update" intent: skills_to_consider MUST be empty []
+- resolution_stage (CRITICAL — defines what the reply must DO, separate from intent which is what it is ABOUT). Pick exactly one:
+  - "troubleshoot_first": Customer reports a technical/functional issue (won't pair, won't charge, won't power on, no sound, dropouts, software glitch) and has NOT stated they already tried troubleshooting. The reply must give product-specific steps from knowledge — NEVER offer warranty/return/replacement yet, even if customer asks for it. Applies to most "complaint" intents about technical symptoms.
+  - "request_evidence": Customer reports physical damage / defect (broken part, dangling microphone, cracked shell, missing piece) OR is requesting warranty/replacement but evidence is missing (no photos/video, no order number when needed). The reply must ask for the missing evidence before offering a resolution path. Applies to many "complaint" and "exchange" intents on first contact.
+  - "initiate_warranty_repair": Customer explicitly states they HAVE tried the troubleshooting steps, OR damage is already documented in the thread (photos/video provided earlier, repair-path already acknowledged). The reply must outline the warranty / send-in-for-repair procedure per knowledge. Do NOT propose more troubleshooting.
+  - "cancel_order": Customer asks to cancel. Pair with "cancel" intent.
+  - "refund_or_exchange": Customer wants money back or product swap, and we are at the point of executing it (not still gathering evidence). Pair with "refund", "return", or "exchange" intents when prerequisites are met.
+  - "info_only": Pure informational response — tracking status, FAQ, product question, thanks, update, address change confirmation, invoice/receipt resend. No multi-step procedure to execute. This is the default for "thanks", "update", "tracking", "product_question", "address_change", and most "other".
+  - "escalate_human": Truly beyond AI scope (legal threat, multi-party dispute, ambiguous identity, shop policy explicitly requires human). Use sparingly.
+
+  CRITICAL decision rules:
+  - intent="complaint" + technical symptom + customer has NOT said they tried steps → resolution_stage = "troubleshoot_first" (never jump to warranty/return on first contact)
+  - intent="complaint" + technical symptom + customer says "I tried X/Y/Z and it still doesn't work" → resolution_stage = "initiate_warranty_repair"
+  - intent="complaint" or "exchange" + physical damage + first contact, no images in thread → resolution_stage = "request_evidence"
+  - intent="complaint" or "exchange" + physical damage + images/video already provided → resolution_stage = "initiate_warranty_repair"
+  - intent="cancel" → resolution_stage = "cancel_order"
+  - intent="thanks" or "update" → resolution_stage = "info_only" (ALWAYS)
+  - intent="tracking", "product_question", "address_change", "other" → resolution_stage = "info_only" unless a clear action is being executed
+
 - language: ISO 639-1 code. Supported: da, en, sv, de, fr, nl, no, fi, es, it`;
 
   const threadContextLines = [

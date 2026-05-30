@@ -714,6 +714,16 @@ export async function runRetriever(
     : [];
 
   const regularChunks: RetrievedChunk[] = fused
+    // Internal rules (metadata.audience === "internal") are injected
+    // deterministically by the internal-rules stage and must NEVER reach the
+    // customer-facing knowledge block — drop them from normal retrieval so the
+    // writer can't quote internal terminology/process verbatim.
+    .filter((r) => {
+      const meta = r.chunk.metadata && typeof r.chunk.metadata === "object"
+        ? r.chunk.metadata as Record<string, unknown>
+        : {};
+      return String(meta.audience || "").toLowerCase() !== "internal";
+    })
     .map((r) => {
       const base = {
         id: r.chunk.id as string,

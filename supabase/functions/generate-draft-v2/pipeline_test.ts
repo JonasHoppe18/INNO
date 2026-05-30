@@ -61,6 +61,7 @@ Deno.test("action-decision: returns [] when pending_asks is non-empty", async ()
 
   const plan = {
     primary_intent: "exchange",
+    resolution_stage: "initiate_warranty_repair" as const,
     sub_queries: [],
     required_facts: [],
     skills_to_consider: [],
@@ -107,6 +108,7 @@ Deno.test("action-decision: proposes exchange when pending_asks is empty", async
 
   const plan = {
     primary_intent: "exchange",
+    resolution_stage: "initiate_warranty_repair" as const,
     sub_queries: [],
     required_facts: [],
     skills_to_consider: [],

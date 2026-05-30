@@ -44,9 +44,14 @@ const JUDGE_WITH_HUMAN_PROMPT =
   `You are an expert customer service quality evaluator.
 You will be given a customer support ticket, an AI-generated draft response, and the actual response a human support agent sent.
 Treat the human response as a strong reference answer, but not as something to copy blindly. Ignore signatures, greetings, and minor wording differences.
+
+CRITICAL — live data divergence:
+The AI draft is generated NOW and may call live tools (shipping carriers like GLS, Shopify order status, current stock levels). The human reply was written WHEN the ticket originally arrived and reflects the state at that time. When the AI's facts differ from the human reply because the underlying reality has moved on (e.g. AI says "delivered May 13" where human said "shipped today"; AI says "in stock" where human said "sold out"), this is NOT a correctness failure — the AI is reporting current truth. Only penalise correctness when the AI states something that is verifiably wrong about the customer's situation at the time the AI is answering, or when it contradicts facts present in the ticket itself (order number, product name, customer's described problem).
+If you cannot tell whether a fact divergence is live-data drift or a real error, do NOT penalise correctness — set likely_root_cause to "eval_harness" and note it in reasoning.
+
 Score whether the AI draft is send-ready compared with the human response on four dimensions, each from 1 to 10:
 
-- correctness: Does the AI answer the customer's actual request and avoid unsupported facts?
+- correctness: Does the AI answer the customer's actual request using facts that are accurate at the time of answering? Live-data divergence from the human reply is NOT an error (see above).
 - completeness: Does the AI cover the same essential resolution/next-step points as the human reply, without adding irrelevant extras?
 - tone: Is the AI's tone appropriate for the customer's situation and at least as natural as the human reply?
 - actionability: Does the AI make the next step or outcome as clear as the human reply?

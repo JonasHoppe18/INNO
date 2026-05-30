@@ -40,6 +40,8 @@ export interface WriterInput {
   actionResult?: Record<string, unknown> | null;
   customerHistory?: string;
   nonImageAttachmentsMeta?: string;
+  /** Pre-rendered internal-rules block (deterministic, never quoted verbatim). */
+  internalRulesBlock?: string;
 }
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
@@ -271,6 +273,12 @@ function extractMessageSignals(messageText: string) {
     ...[...messageText.matchAll(
       /\b(?:order|ordre|command|bestilling)\s*#?\s*(\d{3,8})\b/gi,
     )].map((match) => `#${match[1]}`),
+    // "Order Number: ABC123" or "Ordrenummer: 6008" or "ordre nummer er 4435"
+    ...[...messageText.matchAll(
+      /\b(?:order\s*number|order\s*#|order\s*no\.?|ordrenummer|ordre\s*nummer|ordre\s*nr\.?|bestillingsnummer)\s*[:#=]?\s*#?([A-Z0-9-]{3,20})\b/gi,
+    )].map((match) => match[1].startsWith("#") ? match[1] : `#${match[1]}`),
+    // Alphanumeric refs after # (Shopify checkout-style: #L85G8Z0PR)
+    ...(messageText.match(/#[A-Z][A-Z0-9]{4,15}\b/g) ?? []),
   ];
   const trackingRefs = [
     ...(messageText.match(/\bAWB\s*\d{8,}\b/gi) ?? []),
@@ -549,6 +557,7 @@ export async function runWriter(
     actionResult = null,
     customerHistory,
     nonImageAttachmentsMeta,
+    internalRulesBlock,
   }: WriterInput,
 ): Promise<WriterResult> {
   const resolvedModel = model ?? Deno.env.get("OPENAI_MODEL") ?? "gpt-5-mini";
@@ -598,10 +607,16 @@ Intet sikkert kundenavn til hilsenen. Start med en naturlig neutral hilsen på k
     })
   );
 
-  // --- Few-shot (primær tone-anker — placeres øverst så modellen ser det først) ---
+  // --- Few-shot (primary tone anchor — placed near the top so the model sees it first) ---
   const fewShotBlock = retrieved.past_ticket_examples.length > 0
-    ? `# Eksempler på lignende sager — brug som reference for BÅDE indhold og tone
-Disse viser hvad der er det rigtige svar i lignende situationer OG den rette tone og stil. "Korrigeret" betyder at medarbejderen omskrev Sonas udkast markant — det er det stærkeste signal om hvad der forventes. "Bekræftet" betyder Sonas udkast var næsten korrekt:
+    ? `# Examples of similar cases — use ONLY as a reference for STYLE, TONE and how to resolve the case
+These show the right kind of response and the correct tone/voice in similar situations. "Corrected" means the agent rewrote Sona's draft significantly — the strongest signal of what's expected. "Confirmed" means Sona's draft was nearly correct.
+
+CRITICAL PRIVACY RULE: These examples are from OTHER customers. They are STYLE references only.
+NEVER copy any personal data out of them into your reply — no names, greetings, email addresses,
+postal addresses, phone numbers, order numbers, tracking numbers or agent signatures. Address the
+reply ONLY to the CURRENT customer using ONLY details from the current conversation and verified facts.
+If you are unsure of the current customer's name, use a neutral greeting — never borrow a name from an example.
 
 ` +
       retrieved.past_ticket_examples
@@ -611,16 +626,16 @@ Disse viser hvad der er det rigtige svar i lignende situationer OG den rette ton
             const label = ex.csat_score === null
               ? ""
               : isHeavilyCorrected
-              ? " [Korrigeret — medarbejder omskrev Sonas svar markant]"
+              ? " [Corrected — agent rewrote Sona's reply significantly]"
               : ex.csat_score >= 90
-              ? " [Bekræftet — Sonas svar var næsten korrekt]"
+              ? " [Confirmed — Sona's reply was nearly correct]"
               : "";
             const contextBlock = ex.conversation_context
-              ? `Tidligere i samtalen:\n${ex.conversation_context.slice(0, 400)}\n`
+              ? `Earlier in the conversation:\n${ex.conversation_context.slice(0, 400)}\n`
               : "";
-            return `[Eksempel ${i + 1}${label}]
-${contextBlock}Kunde: "${ex.customer_msg.slice(0, 350)}"
-Support svarede: "${ex.agent_reply.slice(0, 500)}"`;
+            return `[Example ${i + 1}${label}]
+${contextBlock}Customer: "${ex.customer_msg.slice(0, 350)}"
+Support replied: "${ex.agent_reply.slice(0, 500)}"`;
           },
         )
         .join("\n\n")
@@ -814,7 +829,15 @@ ${
 SPROG (absolut): Svar KUN på ${replyLanguage} (${langName}). Bland aldrig sprog.
 ${languageCorrectionInstruction ? `SPROGKORREKTION: ${languageCorrectionInstruction}` : ""}
 
+RESOLUTION STAGE (læs først):
+Den første blok i brugerbeskeden er "# RESOLUTION STAGE" og er en STÆRK ANBEFALING om hvad svaret bør gøre. Følg den som default. MEN: hvis kundens besked tydeligt viser at stagen er forkert valgt (fx kunden har eksplicit skrevet "jeg har prøvet alt" men stagen er "troubleshoot_first", eller kunden tydeligt beder om refund og det er rimeligt at give), så brug din dømmekraft og følg kundens reelle behov. Stagen er ikke en hård lås — den er en stærk default.
+
 ABSOLUTTE FORBUD:
+- UVERIFICERET ORDRE (kritisk): Hvis kunden refererer et ordrenummer (fx "#1234", "ordre 4435", "Order Number: ABC123") OG det ordrenummer IKKE optræder i "Verificerede fakta" under "Ordre fundet", så er ordren ikke verificeret. Du må ALDRIG:
+  · skrive "din ordre #X" / "your order #X" / "order #X has been..." som om ordren eksisterer i vores system
+  · love eller foreslå handlinger på ordren (cancel, refund, address-update, return, exchange, tracking)
+  · skrive at noget "har" eller "vil blive" gjort for ordren
+  Du SKAL i stedet venligt forklare at vi ikke kan finde et ordrenummer i det format i vores system, og spørge hvor produktet er købt (forhandler/platform). Dette gælder selv om kunden eksplicit beder om en handling.
 - Du er et menneske. Aldrig "Som AI kan jeg...".
 - Skriv ALDRIG signatur, navn, sign-off eller email-adresser i svaret — tilføjes automatisk.
 - Brug KUN fakta fra "Verificerede fakta". Opfind aldrig priser, datoer, ordrenumre eller policies.
@@ -896,7 +919,30 @@ ${
 ${customerHistory}`
     : "";
 
+  const stageDirectives: Record<string, string> = {
+    troubleshoot_first:
+      "Foretrukken sti: giv produkt-specifikke troubleshooting-trin fra hentede sources før garanti/retur/ombytning nævnes. UNDTAGELSE: hvis kunden eksplicit skriver de allerede har prøvet trin, eller eksplicit beder om replacement/refund og kontekst gør det rimeligt, så følg kundens behov i stedet.",
+    request_evidence:
+      "Foretrukken sti: anerkend problemet kort og bed om manglende evidens (billeder/video af skade, ordrenummer hvis ukendt) før et resolution-tilbud. UNDTAGELSE: hvis evidens allerede er givet i tråden, eller kundens problem er klart uden billeder, så gå videre uden at bede om det igen.",
+    initiate_warranty_repair:
+      "Foretrukken sti: forklar garanti-/reparations-proceduren fra knowledge. Undgå at foreslå mere troubleshooting hvis kunden allerede har prøvet trin eller skaden er fysisk og dokumenteret.",
+    cancel_order:
+      "Foretrukken sti: bekræft annulleringsforespørgslen. KRITISK: skriv KUN i datid (\"er annulleret\", \"er refunderet\") hvis 'POST-ACTION'-blokken eller actionResult eksplicit bekræfter at handlingen er udført. Ellers skriv i nutid/fremtid (\"vi annullerer\", \"din ordre annulleres\") eller som bekræftelse på at anmodningen er modtaget og venter.",
+    refund_or_exchange:
+      "Foretrukken sti: bekræft eller initier retur/refund/ombytning per knowledge. Samme datid-regel som cancel_order: kun datid hvis action er bekræftet udført.",
+    info_only:
+      "Besvar kundens konkrete spørgsmål med verificerede fakta. Ingen handlingssti udover at give informationen.",
+    escalate_human:
+      "Angiv at sagen kræver en specialist — lov ikke konkrete actions.",
+  };
+  const resolutionStage = plan.resolution_stage || "info_only";
+  const stageBlock = `# RESOLUTION STAGE (stærk anbefaling — ikke absolut, men afvig kun hvis kundens behov tydeligt kræver det)
+Stage: ${resolutionStage}
+${stageDirectives[resolutionStage] ?? stageDirectives.info_only}`;
+
   const userContent = [
+    stageBlock,
+    internalRulesBlock || "",
     fewShotBlock,
     // Conversation history placed early so the model processes prior context
     // before KB content — critical for follow-up messages and multi-turn threads.
@@ -923,6 +969,7 @@ ${latestCustomerMessage.slice(0, 1200)}${
       : "",
     `# Sammenfatning af henvendelsen
 Intent: ${plan.primary_intent}
+Resolution stage: ${resolutionStage} (se hard constraint øverst)
 Sprog: ${replyLanguage} (${langName})
 Samtale-fase: ${
       isConfirmationReply

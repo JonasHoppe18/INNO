@@ -4,6 +4,7 @@ import { runGate } from "./stages/gate.ts";
 import { updateCaseState } from "./stages/case-state-updater.ts";
 import { runPlanner } from "./stages/planner.ts";
 import { runRetriever } from "./stages/retriever.ts";
+import { runInternalRules } from "./stages/internal-rules.ts";
 import { runFactResolver } from "./stages/fact-resolver.ts";
 import {
   ActionProposal,
@@ -786,6 +787,7 @@ export async function runDraftV2Pipeline(
     plan = {
       ...plan,
       primary_intent: actionIntentMap[actionType] ?? plan.primary_intent,
+      resolution_stage: "info_only",
       skills_to_consider: [],
       confidence: 1,
     };
@@ -801,6 +803,7 @@ export async function runDraftV2Pipeline(
     plan = {
       ...plan,
       primary_intent: "address_change",
+      resolution_stage: "info_only",
       required_facts: Array.from(new Set([...(plan.required_facts || []), "order_state"])),
       skills_to_consider: Array.from(new Set([...(plan.skills_to_consider || []), "update_shipping_address"])),
       confidence: Math.max(Number(plan.confidence || 0), 0.9),
@@ -849,8 +852,8 @@ export async function runDraftV2Pipeline(
       });
   }
 
-  // 5. Retrieve + resolve facts parallelt (uafhængige)
-  const [retrieved, facts] = await Promise.all([
+  // 5. Retrieve + resolve facts + interne regler parallelt (uafhængige)
+  const [retrieved, facts, internalRules] = await Promise.all([
     runRetriever({
       plan,
       shop_id,
@@ -869,7 +872,18 @@ export async function runDraftV2Pipeline(
       supabase,
       customerContext: customer_context,
     }),
+    runInternalRules({
+      shop_id,
+      primary_intent: plan.primary_intent,
+      supabase,
+    }),
   ]);
+  const internalRulesBlock = internalRules.block || undefined;
+  if (internalRules.rules.length > 0) {
+    console.log(
+      `[generate-draft-v2] internal rules injected: ${internalRules.rules.length} (intent=${plan.primary_intent})`,
+    );
+  }
 
   if (!eval_payload && thread_id) {
     supabase.from("agent_logs").insert({
@@ -1221,6 +1235,7 @@ export async function runDraftV2Pipeline(
     conversationHistory,
     actionProposals: finalProposals,
     policyContext,
+    internalRulesBlock,
     model: firstPassModel,
     attachments: imageAttachments,
     actionResult: postActionResult,
@@ -1250,6 +1265,7 @@ export async function runDraftV2Pipeline(
         conversationHistory,
         actionProposals: finalProposals,
         policyContext,
+        internalRulesBlock,
         model: firstPassModel,
         attachments: imageAttachments,
         actionResult: postActionResult,
@@ -1304,6 +1320,7 @@ export async function runDraftV2Pipeline(
         conversationHistory,
         actionProposals: finalProposals,
         policyContext,
+        internalRulesBlock,
         model: firstPassModel,
         attachments: imageAttachments,
         actionResult: postActionResult,
@@ -1383,6 +1400,7 @@ export async function runDraftV2Pipeline(
         conversationHistory,
         actionProposals: finalProposals,
         policyContext,
+        internalRulesBlock,
         model: escalationModel,
         attachments: imageAttachments,
         actionResult: postActionResult,
