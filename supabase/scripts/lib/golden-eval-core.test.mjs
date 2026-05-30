@@ -61,3 +61,48 @@ test("loadGoldenSet: filters by tier and limit", () => {
   assert.equal(loadGoldenSet(set, { tier: "edge", limit: null }).length, 1);
   assert.equal(loadGoldenSet(set, { tier: null, limit: 1 }).length, 1);
 });
+
+import { extractActionTypes, runGates } from "./golden-eval-core.mjs";
+
+test("extractActionTypes: reads type/action_type/kind", () => {
+  assert.deepEqual(
+    extractActionTypes([{ type: "return" }, { action_type: "exchange" }, { kind: "refund" }]),
+    ["return", "exchange", "refund"]
+  );
+  assert.deepEqual(extractActionTypes([]), []);
+  assert.deepEqual(extractActionTypes(null), []);
+});
+
+const edge = {
+  id: "e-001", tier: "edge",
+  expected_action: "return", must_contain: ["photo", "30-day"], must_not_contain: ["Bob"],
+};
+
+test("runGates: passes when all conditions met", () => {
+  const g = runGates("Please send a Photo so we can start the 30-DAY return.", [{ type: "return" }], edge);
+  assert.equal(g.passed, true);
+  assert.deepEqual(g.failures, []);
+});
+
+test("runGates: fails missing must_contain", () => {
+  const g = runGates("Send a photo please.", [{ type: "return" }], edge);
+  assert.equal(g.passed, false);
+  assert.match(g.failures.join("|"), /must_contain.*30-day/i);
+});
+
+test("runGates: fails on must_not_contain", () => {
+  const g = runGates("Photo, 30-day, hi Bob", [{ type: "return" }], edge);
+  assert.equal(g.passed, false);
+  assert.match(g.failures.join("|"), /must_not_contain.*Bob/i);
+});
+
+test("runGates: expected_action none requires empty actions", () => {
+  const c = { id: "e", tier: "edge", expected_action: "none" };
+  assert.equal(runGates("hi", [], c).passed, true);
+  assert.equal(runGates("hi", [{ type: "return" }], c).passed, false);
+});
+
+test("runGates: historical tier has no gates (always passes)", () => {
+  const g = runGates("anything", [], { id: "h", tier: "historical" });
+  assert.equal(g.passed, true);
+});

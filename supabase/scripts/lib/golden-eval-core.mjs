@@ -44,3 +44,36 @@ export function loadGoldenSet(set, { tier = null, limit = null } = {}) {
   if (limit) cases = cases.slice(0, limit);
   return cases;
 }
+
+export function extractActionTypes(actions) {
+  if (!Array.isArray(actions)) return [];
+  return actions
+    .map((a) => a?.type || a?.action_type || a?.kind || a?.name || null)
+    .filter(Boolean);
+}
+
+export function runGates(draft, actions, testCase) {
+  if (testCase.tier !== "edge") return { passed: true, failures: [] };
+  const failures = [];
+  const hay = String(draft || "").toLowerCase();
+
+  for (const needle of testCase.must_contain || []) {
+    if (!hay.includes(String(needle).toLowerCase())) {
+      failures.push(`must_contain missing: "${needle}"`);
+    }
+  }
+  for (const needle of testCase.must_not_contain || []) {
+    if (hay.includes(String(needle).toLowerCase())) {
+      failures.push(`must_not_contain present: "${needle}"`);
+    }
+  }
+  if (testCase.expected_action != null) {
+    const types = extractActionTypes(actions);
+    if (testCase.expected_action === "none") {
+      if (types.length > 0) failures.push(`expected no action, got: [${types.join(", ")}]`);
+    } else if (!types.includes(testCase.expected_action)) {
+      failures.push(`expected_action "${testCase.expected_action}" not in [${types.join(", ")}]`);
+    }
+  }
+  return { passed: failures.length === 0, failures };
+}
