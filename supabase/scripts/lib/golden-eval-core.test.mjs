@@ -106,3 +106,37 @@ test("runGates: historical tier has no gates (always passes)", () => {
   const g = runGates("anything", [], { id: "h", tier: "historical" });
   assert.equal(g.passed, true);
 });
+
+import { computeAggregate, diffBaseline } from "./golden-eval-core.mjs";
+
+const results = [
+  { id: "g-001", intent: "complaint", status: "scored",
+    scores: { correctness: 4, completeness: 4, tone: 5, actionability: 4, overall_10: 8, send_ready: false } },
+  { id: "g-002", intent: "return", status: "scored",
+    scores: { correctness: 3, completeness: 3, tone: 4, actionability: 3, overall_10: 6, send_ready: true } },
+  { id: "g-003", intent: "complaint", status: "failed", error: "boom" },
+];
+
+test("computeAggregate: averages only scored, builds per_intent + per_case", () => {
+  const a = computeAggregate(results);
+  assert.equal(a.n_cases, 2);
+  assert.equal(a.aggregate.overall_10, 7);          // (8+6)/2
+  assert.equal(a.aggregate.tone, 4.5);              // (5+4)/2
+  assert.equal(a.aggregate.send_ready_rate, 0.5);   // 1 of 2
+  assert.equal(a.per_intent.complaint, 8);          // only the scored complaint
+  assert.equal(a.per_case["g-001"], 8);
+});
+
+test("diffBaseline: reports aggregate deltas and regressed cases", () => {
+  const current = computeAggregate(results);
+  const baseline = { aggregate: { overall_10: 7.5 }, per_case: { "g-001": 9, "g-002": 6 } };
+  const d = diffBaseline(current, baseline);
+  assert.equal(d.aggregateDeltas.overall_10, -0.5);          // 7 - 7.5
+  assert.deepEqual(d.regressedCases.map((r) => r.id), ["g-001"]); // 8 < 9; g-002 8>=6 not regressed
+});
+
+test("diffBaseline: null baseline yields no diff", () => {
+  const d = diffBaseline(computeAggregate(results), null);
+  assert.equal(d.aggregateDeltas, null);
+  assert.deepEqual(d.regressedCases, []);
+});

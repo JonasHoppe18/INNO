@@ -77,3 +77,57 @@ export function runGates(draft, actions, testCase) {
   }
   return { passed: failures.length === 0, failures };
 }
+
+const DIMS = ["correctness", "completeness", "tone", "actionability", "overall_10"];
+
+function round2(n) {
+  return Math.round(n * 100) / 100;
+}
+
+export function computeAggregate(results) {
+  const scored = results.filter((r) => r.status === "scored");
+  const aggregate = {};
+  for (const dim of DIMS) {
+    aggregate[dim] = scored.length
+      ? round2(scored.reduce((s, r) => s + (r.scores[dim] || 0), 0) / scored.length)
+      : 0;
+  }
+  aggregate.send_ready_rate = scored.length
+    ? round2(scored.filter((r) => r.scores.send_ready).length / scored.length)
+    : 0;
+
+  const per_intent = {};
+  const byIntent = {};
+  for (const r of scored) {
+    const k = r.intent || "unknown";
+    (byIntent[k] = byIntent[k] || []).push(r.scores.overall_10 || 0);
+  }
+  for (const [k, arr] of Object.entries(byIntent)) {
+    per_intent[k] = round2(arr.reduce((s, v) => s + v, 0) / arr.length);
+  }
+
+  const per_case = {};
+  for (const r of scored) per_case[r.id] = r.scores.overall_10;
+
+  return { n_cases: scored.length, aggregate, per_intent, per_case };
+}
+
+export function diffBaseline(current, baseline) {
+  if (!baseline || !baseline.aggregate) {
+    return { aggregateDeltas: null, regressedCases: [] };
+  }
+  const aggregateDeltas = {};
+  for (const dim of [...DIMS, "send_ready_rate"]) {
+    if (typeof baseline.aggregate[dim] === "number") {
+      aggregateDeltas[dim] = round2((current.aggregate[dim] || 0) - baseline.aggregate[dim]);
+    }
+  }
+  const regressedCases = [];
+  for (const [id, score] of Object.entries(current.per_case)) {
+    const base = baseline.per_case?.[id];
+    if (typeof base === "number" && score < base) {
+      regressedCases.push({ id, from: base, to: score });
+    }
+  }
+  return { aggregateDeltas, regressedCases };
+}
