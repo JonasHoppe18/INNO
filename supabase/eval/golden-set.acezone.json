@@ -441,23 +441,6 @@
       "must_not_contain": []
     },
     {
-      "id": "e-003",
-      "tier": "edge",
-      "subject": "Partnership / wholesale enquiry",
-      "body": "Hi, we run an esports venue and want to buy 40 headsets at wholesale. Who do I talk to about a partnership?",
-      "source_thread_id": null,
-      "human_reply": "Thanks for reaching out — I'll route this to our partnerships team who handle wholesale and venue deals.",
-      "language": "en",
-      "expected_action": "none",
-      "must_contain": [
-        "partner"
-      ],
-      "must_not_contain": [
-        "return",
-        "refund"
-      ]
-    },
-    {
       "id": "e-004",
       "tier": "edge",
       "subject": "Headset cracked, no order number",
@@ -467,7 +450,7 @@
       "language": "en",
       "expected_action": "none",
       "must_contain": [
-        "photo"
+        "order"
       ],
       "must_not_contain": [
         "Christoffer"

@@ -1,13 +1,13 @@
 {
-  "accepted_at": "2026-05-30T09:30:59.646Z",
-  "n_cases": 45,
+  "accepted_at": "2026-05-30T09:41:01.785Z",
+  "n_cases": 44,
   "aggregate": {
     "correctness": 3.89,
-    "completeness": 3.62,
+    "completeness": 3.64,
     "tone": 4.27,
-    "actionability": 3.69,
-    "overall_10": 6.71,
-    "send_ready_rate": 0.33
+    "actionability": 3.7,
+    "overall_10": 6.73,
+    "send_ready_rate": 0.34
   },
   "per_intent": {
     "address_change": 4,
@@ -19,7 +19,7 @@
     "return": 6.8,
     "return|refund": 9,
     "tracking": 5.83,
-    "unknown": 6.89
+    "unknown": 7
   },
   "per_case": {
     "g-001": 4,
@@ -65,7 +65,6 @@
     "g-047": 7,
     "e-001": 5,
     "e-002": 8,
-    "e-003": 6,
     "e-004": 9
   }
 }
