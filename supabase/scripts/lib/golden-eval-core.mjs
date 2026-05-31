@@ -12,11 +12,23 @@ export function parseArgs(argv) {
     throw new Error('tier must be "historical" or "edge"');
   }
   const limitRaw = val("--limit");
+  const intentRaw = val("--intent");
+  const absFloorRaw = val("--abs-floor");
+  const pqBudgetRaw = val("--pq-budget");
   return {
     shop: val("--shop") || ACEZONE_SHOP_ID,
     tier,
     limit: limitRaw !== null ? parseInt(limitRaw, 10) : null,
+    // Comma-separated list of intents to keep (e.g. "complaint,product_question").
+    // null = no intent filter.
+    intent: intentRaw !== null
+      ? intentRaw.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean)
+      : null,
     accept: has("--accept"),
+    retrievalAbsFloor: absFloorRaw !== null ? parseFloat(absFloorRaw) : null,
+    retrievalPqBudget: pqBudgetRaw !== null ? parseInt(pqBudgetRaw, 10) : null,
+    retrievalIssueTiebreak: has("--issue-tiebreak"),
+    retrievalSourceConsolidate: has("--source-consolidate"),
   };
 }
 
@@ -37,10 +49,14 @@ export function validateCase(c) {
   return c;
 }
 
-export function loadGoldenSet(set, { tier = null, limit = null } = {}) {
+export function loadGoldenSet(set, { tier = null, limit = null, intent = null } = {}) {
   if (!set || !Array.isArray(set.cases)) throw new Error("golden set must have a cases array");
   let cases = set.cases.map(validateCase);
   if (tier) cases = cases.filter((c) => c.tier === tier);
+  if (intent && intent.length) {
+    const wanted = new Set(intent.map((s) => String(s).toLowerCase()));
+    cases = cases.filter((c) => wanted.has(String(c.intent || "").toLowerCase()));
+  }
   if (limit) cases = cases.slice(0, limit);
   return cases;
 }
@@ -109,7 +125,70 @@ export function computeAggregate(results) {
   const per_case = {};
   for (const r of scored) per_case[r.id] = r.scores.overall_10;
 
-  return { n_cases: scored.length, aggregate, per_intent, per_case };
+  const withCoh = scored.filter(
+    (r) => r.coherence && typeof r.coherence.n_chunks === "number",
+  );
+  const coherence = {
+    n: withCoh.length,
+    grab_bag_rate: withCoh.length
+      ? round2(withCoh.filter((r) => r.coherence.is_grab_bag).length / withCoh.length)
+      : 0,
+    avg_distinct_sources: withCoh.length
+      ? round2(withCoh.reduce((s, r) => s + r.coherence.distinct_sources, 0) / withCoh.length)
+      : 0,
+    avg_distinct_products: withCoh.length
+      ? round2(withCoh.reduce((s, r) => s + r.coherence.distinct_products, 0) / withCoh.length)
+      : 0,
+    avg_top_source_share: withCoh.length
+      ? round2(withCoh.reduce((s, r) => s + r.coherence.top_source_share, 0) / withCoh.length)
+      : 0,
+    per_case: {},
+  };
+  for (const r of withCoh) {
+    coherence.per_case[r.id] = {
+      is_grab_bag: r.coherence.is_grab_bag,
+      distinct_sources: r.coherence.distinct_sources,
+      distinct_products: r.coherence.distinct_products,
+    };
+  }
+
+  return { n_cases: scored.length, aggregate, per_intent, per_case, coherence };
+}
+
+export function computeCoherence(chunks) {
+  const arr = Array.isArray(chunks) ? chunks : [];
+  const n_chunks = arr.length;
+  if (n_chunks === 0) {
+    return {
+      n_chunks: 0, distinct_sources: 0, distinct_products: 0,
+      top_source_share: 1, is_grab_bag: false,
+    };
+  }
+  // Group identity: prefer source_id, fall back to title (multi-chunk guides
+  // share both). Empty identity is ignored so it never inflates the count.
+  const identity = (c) => String(c?.source_id ?? c?.title ?? "").trim().toLowerCase();
+  const counts = new Map();
+  for (const c of arr) {
+    const id = identity(c);
+    if (!id) continue;
+    counts.set(id, (counts.get(id) || 0) + 1);
+  }
+  const distinct_sources = counts.size;
+  const maxCount = counts.size ? Math.max(...counts.values()) : 0;
+  const top_source_share = round2(maxCount / n_chunks);
+
+  const productSet = new Set();
+  for (const c of arr) {
+    const prods = Array.isArray(c?.products) ? c.products : [];
+    for (const p of prods) {
+      const name = String(p || "").trim().toLowerCase();
+      if (name) productSet.add(name);
+    }
+  }
+  const distinct_products = productSet.size;
+  const is_grab_bag = distinct_sources >= 3 || distinct_products >= 2;
+
+  return { n_chunks, distinct_sources, distinct_products, top_source_share, is_grab_bag };
 }
 
 export function diffBaseline(current, baseline) {
@@ -130,4 +209,70 @@ export function diffBaseline(current, baseline) {
     }
   }
   return { aggregateDeltas, regressedCases };
+}
+
+// ---- Retrieval metrics (matcher precision, separate from answer quality) ----
+// Identity convention: source_id when present, else title; lowercased+trimmed.
+// Matches computeCoherence's grouping so gold-labels and live chunks line up.
+function retrievalIdentity(entry) {
+  return String(entry?.source_id ?? entry?.title ?? "").trim().toLowerCase();
+}
+
+// gold: array of correct snippet identities ([] means "no snippet should match").
+// matcher: { candidates[], ranked[], selected_ids[], abstained } from retrieval_debug.
+// Returns per-case metrics; fields are null when not applicable so the
+// aggregate can average only over the cases each metric makes sense for.
+export function computeRetrievalMetrics(gold, matcher) {
+  const goldSet = new Set((gold || []).map((g) => String(g).trim().toLowerCase()));
+  const goldEmpty = goldSet.size === 0;
+  const m = matcher || {};
+  const candidates = Array.isArray(m.candidates) ? m.candidates : [];
+  const ranked = Array.isArray(m.ranked) ? m.ranked : [];
+  const selected = Array.isArray(m.selected_ids) ? m.selected_ids : [];
+
+  if (goldEmpty) {
+    // Abstention case: correct iff we selected nothing.
+    return {
+      gold_empty: true,
+      recall_at_k: null,
+      precision_at_1: null,
+      mrr: null,
+      abstention_correct: selected.length === 0 ? 1 : 0,
+    };
+  }
+
+  const recall = candidates.some((c) => goldSet.has(retrievalIdentity(c))) ? 1 : 0;
+
+  let mrr = 0;
+  for (let i = 0; i < ranked.length; i++) {
+    if (goldSet.has(retrievalIdentity(ranked[i]))) {
+      mrr = 1 / (i + 1);
+      break;
+    }
+  }
+  const precisionAt1 = ranked.length > 0 && goldSet.has(retrievalIdentity(ranked[0])) ? 1 : 0;
+
+  return {
+    gold_empty: false,
+    recall_at_k: recall,
+    precision_at_1: precisionAt1,
+    mrr: round2(mrr),
+    abstention_correct: null,
+  };
+}
+
+export function aggregateRetrievalMetrics(perCase) {
+  const arr = Array.isArray(perCase) ? perCase : [];
+  const avg = (key) => {
+    const vals = arr.map((p) => p?.[key]).filter((v) => typeof v === "number");
+    return vals.length ? round2(vals.reduce((s, v) => s + v, 0) / vals.length) : null;
+  };
+  return {
+    n_labeled: arr.length,
+    n_abstain_cases: arr.filter((p) => p?.gold_empty).length,
+    recall_at_k: avg("recall_at_k"),
+    precision_at_1: avg("precision_at_1"),
+    mrr: avg("mrr"),
+    abstention_correct: avg("abstention_correct"),
+  };
 }

@@ -167,27 +167,42 @@ export async function GET(req) {
 
     if (conversation.length < 2) continue;
 
-    // Find the first customer message + matching agent reply for a clean ground-truth pair.
-    // Using the FIRST exchange avoids ambiguity in multi-turn tickets where the last
-    // customer message might have no corresponding agent reply (e.g. ticket closed mid-thread),
-    // and ensures human_reply always responds to customer_body.
-    const firstCustomerIdx = conversation.findIndex((c) => c.role === "customer");
-    if (firstCustomerIdx === -1) continue;
+    // Build a LEAK-FREE ground-truth pair anchored on the LAST agent reply.
+    //
+    // Previously we answered the FIRST customer message but attached the
+    // SUBSEQUENT (future) turns as conversation_history — that leaks the
+    // resolution into context and never tests a genuine follow-up. Instead we
+    // anchor on the final agent reply: the customer turn it answers becomes the
+    // message under test, and only the turns BEFORE that customer turn become
+    // history (strictly prior context — no leak).
+    //
+    // For a single-exchange ticket this collapses to today's behaviour (the
+    // last agent reply IS the first reply, history empty). For multi-turn
+    // tickets it becomes a real warm follow-up where the prior agent's
+    // commitments live in the history — exactly the cases the conversation-aware
+    // pipeline must handle.
+    let lastAgentIdx = -1;
+    for (let i = conversation.length - 1; i >= 0; i--) {
+      if (conversation[i].role === "agent") { lastAgentIdx = i; break; }
+    }
+    if (lastAgentIdx <= 0) continue;
 
-    // Agent reply must come AFTER the first customer message
-    const agentMessage = conversation.slice(firstCustomerIdx + 1).find((c) => c.role === "agent");
-    if (!agentMessage) continue;
+    // The customer turn the final agent reply responds to = last customer turn
+    // before lastAgentIdx.
+    let answeredCustomerIdx = -1;
+    for (let i = lastAgentIdx - 1; i >= 0; i--) {
+      if (conversation[i].role === "customer") { answeredCustomerIdx = i; break; }
+    }
+    if (answeredCustomerIdx === -1) continue;
 
-    // Everything after the first customer+agent exchange = subsequent turns captured as history
-    // so the pipeline can see the full context when relevant
-    const firstAgentIdx = conversation.indexOf(agentMessage);
-    const subsequentMessages = conversation.slice(firstAgentIdx + 1);
-    const conversationHistory = subsequentMessages.length > 0
-      ? subsequentMessages.map((m) => `${m.role === "customer" ? "Customer" : "Agent"}: ${m.body}`).join("\n\n")
+    // History = everything strictly BEFORE the answered customer turn.
+    const priorMessages = conversation.slice(0, answeredCustomerIdx);
+    const conversationHistory = priorMessages.length > 0
+      ? priorMessages.map((m) => `${m.role === "customer" ? "Customer" : "Agent"}: ${m.body}`).join("\n\n")
       : null;
 
-    const customerBody = conversation[firstCustomerIdx].body;
-    const agentBody = agentMessage.body;
+    const customerBody = conversation[answeredCustomerIdx].body;
+    const agentBody = conversation[lastAgentIdx].body;
 
     if (!customerBody || !agentBody) continue;
 

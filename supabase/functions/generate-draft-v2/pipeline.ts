@@ -47,6 +47,11 @@ export interface PipelineInput {
     writer_model?: string;
     strong_model?: string;
     disable_escalation?: boolean;
+    // Retrieval coherence rules (default off → production unchanged).
+    retrieval_abs_floor?: number | null;
+    retrieval_pq_budget?: number | null;
+    retrieval_issue_tiebreak?: boolean;
+    retrieval_source_consolidate?: boolean;
   };
   // Preview mode only — agent_knowledge chunk ids that should be excluded from
   // retrieval. Used by the snippet preview A/B feature.
@@ -79,6 +84,33 @@ export interface PipelineResult {
   knowledge_gaps: KnowledgeGap[];
   skipped?: boolean;
   skip_reason?: string;
+  // Eval-only: full writer-facing chunk set for coherence measurement.
+  // Present only when the pipeline runs in eval mode (eval_payload set).
+  retrieval_debug?: {
+    chunks: Array<{
+      id: string;
+      title: string;
+      source_id: string | null;
+      chunk_index: number | null;
+      chunk_count: number;
+      score: number;
+      vector_similarity: number | null;
+      kind: string;
+      usable_as?: string;
+      products: string[];
+      issue_types: string[];
+    }>;
+    // Snippet-matcher trace (eval only). Mirrors RetrieverResult["matcher_debug"].
+    matcher?: {
+      candidates: Array<{ id: string; source_id: string | null; title: string }>;
+      ranked: Array<
+        { id: string; source_id: string | null; title: string; relevance: number }
+      >;
+      selected_ids: string[];
+      abstained: boolean;
+      fell_back: boolean;
+    };
+  };
 }
 
 const STRONG_MODEL = Deno.env.get("OPENAI_STRONG_MODEL") ?? "gpt-5-mini";
@@ -863,6 +895,12 @@ export async function runDraftV2Pipeline(
       supabase,
       excludeExternalTicketId: eval_payload?.source_thread_id ?? undefined,
       excludeChunkIds: input.exclude_chunk_ids,
+      coherenceFlags: {
+        absFloor: eval_options?.retrieval_abs_floor ?? null,
+        pqBudget: eval_options?.retrieval_pq_budget ?? null,
+        issueTiebreak: eval_options?.retrieval_issue_tiebreak === true,
+        sourceConsolidate: eval_options?.retrieval_source_consolidate === true,
+      },
     }),
     runFactResolver({
       plan,
@@ -1651,5 +1689,28 @@ export async function runDraftV2Pipeline(
       usable_as: c.usable_as,
       risk_flags: c.risk_flags,
     })),
+    // Eval-only observability: the full writer-facing chunk set so the golden
+    // runner can measure retrieval coherence. Omitted entirely in production
+    // (gated on eval_payload), so no behavior or PII change for real traffic.
+    ...(eval_payload
+      ? {
+        retrieval_debug: {
+          chunks: retrieved.chunks.map((c) => ({
+            id: c.id,
+            title: c.source_label,
+            source_id: c.source_id ?? null,
+            chunk_index: c.chunk_index ?? null,
+            chunk_count: c.chunk_count ?? 1,
+            score: c.similarity,
+            vector_similarity: c.vector_similarity ?? null,
+            kind: c.kind,
+            usable_as: c.usable_as,
+            products: c.products ?? [],
+            issue_types: c.chunk_issue_types,
+          })),
+          ...(retrieved.matcher_debug ? { matcher: retrieved.matcher_debug } : {}),
+        },
+      }
+      : {}),
   };
 }

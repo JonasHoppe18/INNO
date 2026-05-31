@@ -140,3 +140,207 @@ test("diffBaseline: null baseline yields no diff", () => {
   assert.equal(d.aggregateDeltas, null);
   assert.deepEqual(d.regressedCases, []);
 });
+
+import { computeCoherence } from "./golden-eval-core.mjs";
+
+test("computeCoherence: empty input is coherent", () => {
+  const r = computeCoherence([]);
+  assert.deepEqual(r, {
+    n_chunks: 0, distinct_sources: 0, distinct_products: 0,
+    top_source_share: 1, is_grab_bag: false,
+  });
+});
+
+test("computeCoherence: single focused guide", () => {
+  const r = computeCoherence([
+    { title: "Warranty policy", source_id: "s1", products: ["a-spire"] },
+    { title: "Warranty policy", source_id: "s1", products: ["a-spire"] },
+  ]);
+  assert.equal(r.n_chunks, 2);
+  assert.equal(r.distinct_sources, 1);
+  assert.equal(r.distinct_products, 1);
+  assert.equal(r.top_source_share, 1);
+  assert.equal(r.is_grab_bag, false);
+});
+
+test("computeCoherence: two-product scatter flags grab_bag", () => {
+  const r = computeCoherence([
+    { title: "Mic A-Spire", source_id: "s1", products: ["a-spire"] },
+    { title: "Mic A-blaze", source_id: "s2", products: ["a-blaze"] },
+  ]);
+  assert.equal(r.distinct_products, 2);
+  assert.equal(r.top_source_share, 0.5);
+  assert.equal(r.is_grab_bag, true);
+});
+
+test("computeCoherence: three+ distinct sources flags grab_bag", () => {
+  const r = computeCoherence([
+    { title: "Privacy policy", source_id: "s1", products: [] },
+    { title: "Shipping", source_id: "s2", products: [] },
+    { title: "Terms", source_id: "s3", products: [] },
+    { title: "Warranty", source_id: "s4", products: [] },
+  ]);
+  assert.equal(r.distinct_sources, 4);
+  assert.equal(r.distinct_products, 0);
+  assert.equal(r.top_source_share, 0.25);
+  assert.equal(r.is_grab_bag, true);
+});
+
+test("computeCoherence: falls back to title when source_id missing", () => {
+  const r = computeCoherence([
+    { title: "DONGLE?", source_id: null, products: [] },
+    { title: "DONGLE?", products: [] },
+  ]);
+  assert.equal(r.distinct_sources, 1);
+  assert.equal(r.top_source_share, 1);
+  assert.equal(r.is_grab_bag, false);
+});
+
+import { computeAggregate as computeAggregateForCoh } from "./golden-eval-core.mjs";
+
+test("computeAggregate: coherence block over results", () => {
+  const results = [
+    { id: "g-1", status: "scored", intent: "x",
+      scores: { correctness: 4, completeness: 4, tone: 4, actionability: 4, overall_10: 8, send_ready: true },
+      coherence: { n_chunks: 2, distinct_sources: 1, distinct_products: 1, top_source_share: 1, is_grab_bag: false } },
+    { id: "g-2", status: "scored", intent: "y",
+      scores: { correctness: 3, completeness: 3, tone: 3, actionability: 3, overall_10: 6, send_ready: false },
+      coherence: { n_chunks: 4, distinct_sources: 4, distinct_products: 0, top_source_share: 0.25, is_grab_bag: true } },
+  ];
+  const agg = computeAggregateForCoh(results);
+  assert.equal(agg.coherence.n, 2);
+  assert.equal(agg.coherence.grab_bag_rate, 0.5);
+  assert.equal(agg.coherence.avg_distinct_sources, 2.5);
+  assert.equal(agg.coherence.avg_distinct_products, 0.5);
+  assert.equal(agg.coherence.avg_top_source_share, 0.63); // (1 + 0.25) / 2 = 0.625 → round2
+  assert.deepEqual(agg.coherence.per_case["g-2"], {
+    is_grab_bag: true, distinct_sources: 4, distinct_products: 0,
+  });
+});
+
+test("computeAggregate: coherence block is zeros when results lack coherence", () => {
+  const results = [
+    { id: "g-1", status: "scored", intent: "x",
+      scores: { correctness: 4, completeness: 4, tone: 4, actionability: 4, overall_10: 8, send_ready: true } },
+  ];
+  const agg = computeAggregateForCoh(results);
+  assert.equal(agg.coherence.n, 0);
+  assert.equal(agg.coherence.grab_bag_rate, 0);
+  assert.deepEqual(agg.coherence.per_case, {});
+});
+
+import {
+  computeRetrievalMetrics,
+  aggregateRetrievalMetrics,
+} from "./golden-eval-core.mjs";
+
+test("computeRetrievalMetrics: recall hit, precision@1 hit, MRR 1", () => {
+  const gold = ["snip-a"];
+  const matcher = {
+    candidates: [
+      { id: "c1", source_id: "snip-a", title: "EQ" },
+      { id: "c2", source_id: "snip-b", title: "Pairing" },
+    ],
+    ranked: [
+      { id: "c1", source_id: "snip-a", title: "EQ", relevance: 0.8 },
+      { id: "c2", source_id: "snip-b", title: "Pairing", relevance: 0.4 },
+    ],
+    selected_ids: ["c1"],
+    abstained: false,
+  };
+  const m = computeRetrievalMetrics(gold, matcher);
+  assert.equal(m.gold_empty, false);
+  assert.equal(m.recall_at_k, 1);
+  assert.equal(m.precision_at_1, 1);
+  assert.equal(m.mrr, 1);
+  assert.equal(m.abstention_correct, null);
+});
+
+test("computeRetrievalMetrics: correct ranked second → precision@1 0, MRR 0.5", () => {
+  const gold = ["snip-a"];
+  const matcher = {
+    candidates: [
+      { id: "c2", source_id: "snip-b", title: "Pairing" },
+      { id: "c1", source_id: "snip-a", title: "EQ" },
+    ],
+    ranked: [
+      { id: "c2", source_id: "snip-b", title: "Pairing", relevance: 0.7 },
+      { id: "c1", source_id: "snip-a", title: "EQ", relevance: 0.65 },
+    ],
+    selected_ids: ["c2"],
+    abstained: false,
+  };
+  const m = computeRetrievalMetrics(gold, matcher);
+  assert.equal(m.recall_at_k, 1);
+  assert.equal(m.precision_at_1, 0);
+  assert.equal(m.mrr, 0.5);
+});
+
+test("computeRetrievalMetrics: correct not in pool → recall 0, MRR 0", () => {
+  const gold = ["snip-z"];
+  const matcher = {
+    candidates: [{ id: "c1", source_id: "snip-a", title: "EQ" }],
+    ranked: [{ id: "c1", source_id: "snip-a", title: "EQ", relevance: 0.9 }],
+    selected_ids: ["c1"],
+    abstained: false,
+  };
+  const m = computeRetrievalMetrics(gold, matcher);
+  assert.equal(m.recall_at_k, 0);
+  assert.equal(m.precision_at_1, 0);
+  assert.equal(m.mrr, 0);
+});
+
+test("computeRetrievalMetrics: gold empty + abstained → abstention correct, recall null", () => {
+  const matcher = {
+    candidates: [{ id: "c1", source_id: "snip-a", title: "Mic" }],
+    ranked: [{ id: "c1", source_id: "snip-a", title: "Mic", relevance: 0.3 }],
+    selected_ids: [],
+    abstained: true,
+  };
+  const m = computeRetrievalMetrics([], matcher);
+  assert.equal(m.gold_empty, true);
+  assert.equal(m.abstention_correct, 1);
+  assert.equal(m.recall_at_k, null);
+  assert.equal(m.precision_at_1, null);
+  assert.equal(m.mrr, null);
+});
+
+test("computeRetrievalMetrics: gold empty but selected something → abstention wrong", () => {
+  const matcher = {
+    candidates: [{ id: "c1", source_id: "snip-a", title: "Mic" }],
+    ranked: [{ id: "c1", source_id: "snip-a", title: "Mic", relevance: 0.7 }],
+    selected_ids: ["c1"],
+    abstained: false,
+  };
+  const m = computeRetrievalMetrics([], matcher);
+  assert.equal(m.abstention_correct, 0);
+});
+
+test("computeRetrievalMetrics: identity falls back to title when source_id null", () => {
+  const gold = ["why can't i change my eq"];
+  const matcher = {
+    candidates: [{ id: "c1", source_id: null, title: "Why can't I change my EQ" }],
+    ranked: [{ id: "c1", source_id: null, title: "Why can't I change my EQ", relevance: 0.8 }],
+    selected_ids: ["c1"],
+    abstained: false,
+  };
+  const m = computeRetrievalMetrics(gold, matcher);
+  assert.equal(m.recall_at_k, 1);
+  assert.equal(m.precision_at_1, 1);
+});
+
+test("aggregateRetrievalMetrics: averages over non-null, counts abstention", () => {
+  const per = [
+    { gold_empty: false, recall_at_k: 1, precision_at_1: 1, mrr: 1, abstention_correct: null },
+    { gold_empty: false, recall_at_k: 1, precision_at_1: 0, mrr: 0.5, abstention_correct: null },
+    { gold_empty: true, recall_at_k: null, precision_at_1: null, mrr: null, abstention_correct: 1 },
+    { gold_empty: true, recall_at_k: null, precision_at_1: null, mrr: null, abstention_correct: 0 },
+  ];
+  const agg = aggregateRetrievalMetrics(per);
+  assert.equal(agg.n_labeled, 4);
+  assert.equal(agg.recall_at_k, 1);      // 2/2
+  assert.equal(agg.precision_at_1, 0.5); // 1/2
+  assert.equal(agg.mrr, 0.75);           // (1+0.5)/2
+  assert.equal(agg.abstention_correct, 0.5); // 1/2
+  assert.equal(agg.n_abstain_cases, 2);
+});

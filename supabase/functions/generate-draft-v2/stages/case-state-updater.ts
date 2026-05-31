@@ -90,23 +90,42 @@ export async function updateCaseState(
   const latestMsg = messages[messages.length - 1] as {
     clean_body_text?: string;
     body_text?: string;
+    quoted_body_text?: string;
     from_email?: string;
     id?: string;
     direction?: string;
+    from_me?: boolean;
   };
 
-  // Byg en komprimeret samtale-historik til LLM (max 8 beskeder, 600 tegn per besked)
+  // Byg en komprimeret samtale-historik til LLM (max 8 beskeder, 600 tegn per besked).
+  // Rolle bestemmes af BÅDE from_me OG direction — production-rows har kun from_me
+  // (ingen direction-kolonne), mens eval-parsede beskeder kun har direction. Tjek
+  // begge, ellers labeles agent-svar fejlagtigt som [Kunde] og AGENT-FORPLIGTELSER-
+  // udvindingen nedenfor fyrer aldrig.
   const recentMessages = messages.slice(-8).map((m) => {
     const msg = m as {
       clean_body_text?: string;
       body_text?: string;
       from_email?: string;
       direction?: string;
+      from_me?: boolean;
     };
     const body = (msg.clean_body_text || msg.body_text || "").slice(0, 2000);
-    const role = msg.direction === "outbound" ? "Agent" : "Kunde";
+    const isAgent = msg.direction === "outbound" || msg.from_me === true;
+    const role = isAgent ? "Agent" : "Kunde";
     return `[${role}]: ${body}`;
   }).join("\n\n");
+
+  // Citeret tråd-historik fra den seneste inbound-besked. Når kunden svarer fra
+  // en EKSTERN helpdesk (fx Zendesk) i stedet for via Sona, bliver agentens
+  // tidligere svar ALDRIG til separate from_me=true rows — de lever kun som
+  // citeret tekst i quoted_body_text. Uden dette block er agentens løfter
+  // (ombytning tilbudt, retur startet osv.) usynlige for decisions_made.
+  // Citatet er nyeste-først, så slice fra start fanger det seneste agent-svar.
+  const latestQuoted = String(latestMsg?.quoted_body_text ?? "").trim();
+  const quotedHistoryBlock = latestQuoted
+    ? `\n\nTIDLIGERE I TRÅDEN (citeret historik — kan indeholde agentens tidligere svar og løfter). Udvind decisions_made og pending_asks herfra, men behandl kun den NYESTE besked ovenfor som det kunden beder om netop nu:\n${latestQuoted.slice(0, 3000)}`
+    : "";
 
   const existingSummary = existing.open_questions.length > 0
     ? `ULØSTE PROBLEMER (bevar disse medmindre kunden eksplicit bekræfter de er løst): ${existing.open_questions.join("; ")}`
@@ -116,7 +135,7 @@ export async function updateCaseState(
     `Du er en support-analyse AI. Ekstraher struktureret information fra en support-samtale. Output KUN gyldigt JSON.`;
 
   const userPrompt = `Samtale:
-${recentMessages}
+${recentMessages}${quotedHistoryBlock}
 
 ${existingSummary}
 
@@ -140,7 +159,7 @@ Regler:
 - Vigtigste regel: Når kunden bekræfter noget vi har spurgt om (adresse, ordrenummer, situation), skal pending_asks være TOM og decisions_made skal indeholde hvad der nu er bekræftet.
 - Kun inkludér det der faktisk er i samtalen
 
-AGENT-FORPLIGTELSER (KRITISK): Læs alle [Agent]-beskeder grundigt og fang hvad agenten har lovet eller arrangeret. Tilføj til decisions_made:
+AGENT-FORPLIGTELSER (KRITISK): Læs alle [Agent]-beskeder OG "TIDLIGERE I TRÅDEN (citeret historik)" grundigt og fang hvad agenten har lovet eller arrangeret. Tilføj til decisions_made:
 - Hvis agenten skriver at de opretter en back-order eller reserverer en vare → "back_order_placed" eller "back_order_placed_invoice_in_[måned]"
 - Hvis agenten skriver at forsendelse er arrangeret / lager er kontaktet og sender ASAP → "shipping_arranged_asap"
 - Hvis agenten skriver at de har bedt lager oprette en manuel ordre → "manual_order_requested_awaiting_tracking"

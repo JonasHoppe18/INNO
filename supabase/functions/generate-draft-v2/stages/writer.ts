@@ -425,7 +425,29 @@ function buildInfoRequirementsBlock(
         "defect_documentation: foto/video der dokumenterer fejlen eller skaden",
       );
     }
-    // Telefonnummer er IKKE påkrævet — fjernet da det skaber forvirring og ikke bruges i workflow
+    // Return-for-swap / replacement requires shipping-label details (full name,
+    // address, phone, email). The KB chunks that list these fields are tagged
+    // asks_for_extra_fields so the writer won't copy them verbatim — which
+    // previously dropped them entirely, so Sona asked only for a photo while a
+    // human agent collected the label info. Re-introduce them deterministically
+    // when we're on the replacement path (physical damage, or a follow-up where
+    // troubleshooting is done), but only the fields we don't already know from
+    // the order — never re-ask for known info.
+    const onReplacementPath = signals.hasPhysicalDamage || isFollowUp;
+    if (onReplacementPath) {
+      const labelFields: string[] = [];
+      if (!customerName) labelFields.push("fulde navn");
+      if (!shippingAddressKnown) {
+        labelFields.push("fuld adresse inkl. postnummer og by");
+      }
+      labelFields.push("telefonnummer");
+      if (!customerEmail) labelFields.push("email");
+      missing.push(
+        `return_shipping_details: oplysninger vi skal bruge for at lave en retur-/forsendelseslabel — ${
+          labelFields.join(", ")
+        }`,
+      );
+    }
   } else if (policyReturnLike) {
     // Policy returns/refunds are not defect claims. Do not ask for defect photos or phone
     // unless a shop-specific policy explicitly requires it.
@@ -846,6 +868,9 @@ ABSOLUTTE FORBUD:
 - ALDRIG "sender videre til teamet", "videreformidler", "kontakt kundesupport" — tag handlingen nu eller forklar præcist hvad der mangler.
 - Spørg ALDRIG om telefonnummer.
 - URLs som plain text — aldrig markdown [tekst](url).
+- TRIN-FORMATERING: Når du giver en procedure med flere trin, stil det pænt op som en normal kundeservicemedarbejder ville — sæt HVERT trin på sin egen linje med et linjeskift imellem. Kør ALDRIG trinnene sammen i én løbende paragraf. Behold den nummererings-/punktstil der står i knowledge (fx "1)" eller "1." eller bullets) — du skal ikke lave den om, kun sørge for linjeskiftene. En kort intro-sætning må stå før listen og en kort lukning efter.
+- INGEN INLINE-LISTER: Når du opremser to eller flere ting — trin, betingelser, ting kunden skal sende, spørgsmål — så sæt hvert punkt på sin EGEN linje. Skriv ALDRIG opremsningen inde i en løbende sætning (fx "1) ... 2) ... og 3) ..." på én linje). Bryd den op, også selvom det kun er 2-3 korte punkter.
+- LÆSEVENLIGT (vigtigt): Skriv som en menneskelig supportmedarbejder — i KORTE afsnit på 1-2 sætninger med en tom linje imellem. Skriv ALDRIG en mur af tekst (4-5 sætninger mast sammen i ét afsnit er for tungt at læse). Hvert nyt punkt, hvert nyt trin i tankegangen, får sit eget korte afsnit. Luft og linjeskift gør svaret nemt at skimme — det er sådan en dygtig medarbejder skriver en mail.
 - Kald ALDRIG kundens problem for "produktionsfejl" eller "fabriksfejl" — brug kundens egne ord.
 ${
     actionResult
@@ -860,9 +885,13 @@ Handlingen er allerede udført i Shopify. Skriv KUN 2-3 sætninger.
   }
 
 FAKTA OG VIDENSBASE:
+- KANAL-KONTEKST (kritisk): Kunden skriver allerede til os via DENNE email-tråd. Bed dem ALDRIG om at "kontakte os", "skrive til os", "række ud til support", "kontakt os først" eller om at sende en mail til en support-adresse (fx support@...) — de er her allerede, og deres svar lander det rigtige sted. Hvis et KB-trin siger "kontakt os først" eller lister en support-email, så betragt det trin som ALLEREDE opfyldt: udelad det helt, eller omskriv til "svar blot på denne email". Kopiér aldrig sådanne trin ordret ud af knowledge.
 - Besvar altid kundens konkrete spørgsmål med præcise fakta — rapportér ikke blot status.
-- Følg KB-procedurer FULDT UD — aldrig forkortet. Giv ALLE trin der er i sources.
+- KORT OG PRÆCIS (kritisk): Svar som en dygtig medarbejder der har travlt — led med det mest brugbare (selve svaret, adressen, det næste trin) og stop der. Recitér ALDRIG hele policyer, betingelser eller edge-cases kunden ikke har spurgt om. Eksempel: en kunde der allerede har besluttet at returnere skal have returadressen + evt. én vigtig betingelse — IKKE hele 30-dages-policyen med EU-regler, partial-refund og third-party-noter.
+- TEKNISKE PROCEDURER er undtagelsen: en troubleshooting-, parrings- eller firmware-procedure gives med ALLE trin i rækkefølge (her ødelægger forkortelse løsningen). Udelad dog trin der blot beder kunden kontakte os / maile support (se KANAL-KONTEKST). For ALT andet end tekniske trin: vær kort.
 - Tilføj ALDRIG egne troubleshooting-trin eller råd der ikke eksplicit fremgår af de hentede sources — brug KUN hvad der er i vidensbasen.
+- INGEN GØR-DET-SELV-REPARATION: Foreslå aldrig at kunden selv reparerer, limer, taper, justerer, åbner eller modificerer produktet — heller ikke som "tip". Hvis et produkt er slidt, defekt eller i stykker, er løsningen erstatning/retur/garanti, ikke en hjemmelavet fiks. Kun hvis et KB-trin eksplicit beskriver en kunde-udført handling må du nævne den.
+- RENT INFORMATIONS-/PRODUKTSPØRGSMÅL: Når kunden bare spørger om et faktum (virker X til Y? sender I samlet? hvor lang er batteritiden?), så led med det direkte svar i ÉN sætning (ja/nej + kernen) og tilføj højst 1-2 sætningers uddybning der faktisk er relevant. Reciter ikke beslægtet policy eller specs kunden ikke spurgte om.
 - Brug kun indhold fra en source hvis dens emne matcher kundens specifikke problem.
 - SOURCE-SELECTION (KRITISK): Hvis flere sources er hentet, vælg KUN den ene der mest direkte besvarer kundens konkrete spørgsmål. Brug KUN den source's indhold i svaret. Ignorér tangentielt relaterede sources medmindre de tilføjer kritisk manglende information (fx en adresse eller et trin der mangler i hovedkilden). Bland ALDRIG indhold fra flere sources for "fuldstændighed" — det producerer rodede svar der adresserer ting kunden ikke spurgte om.
 - TEKNISK TROUBLESHOOTING: Giv specifikke trin FØR du nævner ombytning/garanti. Nævn KUN garanti/ombytning hvis shop-policy eksplicit tillader det som follow-up — ellers AFSLUT svaret med en kort åben hilsen ("Let me know if you have any other questions" eller lignende). UNDTAGELSE: kunden skriver eksplicit at de HAR prøvet alle trin — spring da direkte til næste skridt jvf. policy. Bed ALDRIG om garantidokumentation (foto, video, kvittering) i første svar — afvent kundens resultat fra trinene først. Foreslå ALDRIG at starte garantiprocessen eller bede om bekræftelse på ombytning i første svar.

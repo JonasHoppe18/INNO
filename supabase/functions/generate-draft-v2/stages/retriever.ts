@@ -2,6 +2,22 @@
 import { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { Plan } from "./planner.ts";
 import { isVariantConflictingSource } from "./customer-context.ts";
+import {
+  applyAbsoluteFloor,
+  consolidateDominantSource,
+  resolveKnowledgeBudget,
+  type RetrievalCoherenceFlags,
+} from "./retriever-coherence.ts";
+import { matchSnippets, type MatchCandidate } from "./snippet-matcher.ts";
+
+// Snippet-matcher config. Thresholds are starting values calibrated against the
+// retrieval-eval (E); adjust only against measured aggregates, never single cases.
+const SNIPPET_MATCHER_MODEL = "gpt-4o-mini";
+const SNIPPET_MATCHER_THRESHOLD = 0.6;
+const SNIPPET_MATCHER_MARGIN = 0.15;
+// Candidate-pool size handed to the matcher (recall layer). Above this we trust
+// hybrid ranking; the matcher (precision layer) picks the final chunks from here.
+const MATCH_POOL_SIZE = 15;
 
 export interface RetrievedChunk {
   id: string;
@@ -28,6 +44,30 @@ export interface RetrievedChunk {
   // with the issue terms detected on the customer message — rewards admins
   // who took the time to tag snippets properly.
   chunk_issue_types: string[];
+  // ---- Eval-only observability (populated from chunk metadata) ----
+  // Used to measure retrieval coherence (single-guide vs grab-bag). Optional
+  // because not every construction site has metadata; consumers fall back to
+  // source_label/title when these are absent.
+  source_id?: string | null;
+  // Raw snippet title from metadata (no display "provider: " prefix). This is the
+  // identity used to match against gold-labels — it must equal what
+  // build-gold-labels.mjs writes (metadata.title || name || label). source_label
+  // is a display string and must NOT be used as identity.
+  source_title?: string | null;
+  chunk_index?: number | null;
+  chunk_count?: number;
+  products?: string[];
+  // Max cosine similarity (1 - distance) seen for this chunk across the vector
+  // queries that surfaced it. null for BM25-only chunks (no vector score).
+  // Used by the absolute relevance floor to drop the whole knowledge block when
+  // nothing is genuinely relevant. Distinct from `similarity`, which after
+  // fusion holds the RRF rank score, not cosine.
+  vector_similarity?: number | null;
+  // The snippet's free-text customer question (metadata.question), when this
+  // chunk came from a Q&A snippet. The snippet-matcher weights this highest —
+  // it is a more specific, cross-lingual discriminator than any tag. null for
+  // non-Q&A chunks (Shopify product descriptions, manuals, policies).
+  question?: string | null;
 }
 
 export interface RetrieverResult {
@@ -40,6 +80,15 @@ export interface RetrieverResult {
     csat_score: number | null;
     conversation_context: string | null;
   }>;
+  // Eval-only observability for retrieval-precision metrics. Populated by the
+  // matcher step; consumed by the golden runner. Omitted in production.
+  matcher_debug?: {
+    candidates: Array<{ id: string; source_id: string | null; title: string }>;
+    ranked: Array<{ id: string; source_id: string | null; title: string; relevance: number }>;
+    selected_ids: string[];
+    abstained: boolean;
+    fell_back: boolean;
+  };
 }
 
 export interface RetrieverInput {
@@ -56,6 +105,8 @@ export interface RetrieverInput {
   // Used by the "test snippet against ticket" feature to compare a draft with
   // and without a candidate snippet's chunks present in the KB.
   excludeChunkIds?: string[];
+  // Retrieval coherence rules. Omitted/undefined fields = production defaults.
+  coherenceFlags?: Partial<RetrievalCoherenceFlags>;
 }
 
 async function embedText(text: string): Promise<number[]> {
@@ -232,39 +283,105 @@ function overlapCount(haystack: string, needles: string[]): number {
     .length;
 }
 
-function buildFallbackQueries(
+// Issue-type vocabulary terms that signal a commercial return/refund intent
+// (as opposed to a technical fault). Drawn from the shared issue_types vocab in
+// apps/web/lib/knowledge/issue-types.js — NOT shop-specific phrasing.
+const RETURN_ISSUE_TERMS = new Set(["return", "refund"]);
+
+// Intents that should additionally probe for return/refund knowledge even if no
+// return/refund issue term was lexically detected in the message.
+const RETURN_INTENTS = new Set(["return", "refund", "exchange"]);
+
+// Intents whose messages warrant a technical/troubleshooting probe.
+const TECHNICAL_INTENTS = new Set([
+  "complaint",
+  "exchange",
+  "refund",
+  "product_question",
+  "technical_support",
+]);
+
+// A supplementary retrieval query plus how it should be filtered.
+// productAgnostic=true runs the query WITHOUT the product metadata filter —
+// used for return/refund content, which is product-independent (a return policy
+// applies regardless of which headset). Technical queries keep productAgnostic
+// false so the strict product filter still separates e.g. A-Spire from A-Spire
+// Wireless and never blends the two distinct products.
+export interface FallbackQuery {
+  text: string;
+  productAgnostic: boolean;
+}
+
+// Build supplementary retrieval queries from the customer message.
+//
+// Design note (recall, not policy): a single message often carries TWO intents
+// — e.g. "I want to return it because it won't connect" is both a return
+// request AND a technical fault. We emit each as a SEPARATE query so the
+// candidate pool contains BOTH the troubleshooting knowledge AND the
+// return/refund knowledge. We deliberately do NOT decide which one answers the
+// customer here — that choice is shop-specific (one shop deflects with a guide,
+// another just accepts the return) and is made downstream by the snippet
+// matcher / writer against whatever the shop actually has in its knowledge.
+// Nothing here is hardcoded to a particular shop's behaviour; the splits are
+// driven by the shared issue-type vocabulary.
+export function buildFallbackQueries(
   plan: Plan,
   customerMessage?: string,
   shop?: Record<string, unknown>,
-): string[] {
+): FallbackQuery[] {
   const text = stripHtml(customerMessage || "");
   if (!text) return [];
 
   const products = extractMentionedProductTerms(text, shop);
   const issues = extractIssueTerms(text);
-  const tokens = tokenize(text).slice(0, 18);
-  const queries: string[] = [];
+  const returnIssues = issues.filter((i) => RETURN_ISSUE_TERMS.has(i));
+  const technicalIssues = issues.filter((i) => !RETURN_ISSUE_TERMS.has(i));
+  const queries: FallbackQuery[] = [];
 
-  if (products.length || issues.length) {
-    queries.push([...products.slice(0, 2), ...issues.slice(0, 3)].join(" "));
-  }
   if (issues.includes("ear_pads")) {
-    queries.push(
-      `${products[0] || ""} ear pads earpads compatible replaceable`.trim(),
-    );
+    queries.push({
+      text: `${products[0] || ""} ear pads earpads compatible replaceable`.trim(),
+      productAgnostic: false,
+    });
   }
   if (plan.primary_intent === "product_question" && products.length) {
-    queries.push(`${products[0]} compatibility product specs accessories`);
+    queries.push({
+      text: `${products[0]} compatibility product specs accessories`,
+      productAgnostic: false,
+    });
   }
-  if (
-    ["complaint", "exchange", "refund"].includes(plan.primary_intent) &&
-    products.length
-  ) {
-    queries.push(`${products[0]} ${issues.join(" ")} warranty troubleshooting`);
-  }
-  if (tokens.length) queries.push(tokens.join(" "));
 
-  return uniqueStrings(queries).filter((q) => q.length > 3);
+  // Return/refund probe — fires on either a detected return/refund issue term
+  // OR a return-family intent, and is INDEPENDENT of whether a product is
+  // named (a bare "I want to return this" must still surface return knowledge).
+  // Runs product-agnostic: return content is often tagged with an incidental or
+  // no product, so a strict product filter would wrongly drop it.
+  if (returnIssues.length > 0 || RETURN_INTENTS.has(plan.primary_intent)) {
+    queries.push({
+      text: [...returnIssues, "return", "refund", "policy", "instructions"].join(" "),
+      productAgnostic: true,
+    });
+  }
+
+  // Technical probe — surfaces troubleshooting/manual knowledge. Driven purely
+  // by the detected technical issue terms; no fixed bias phrase is appended so
+  // the query reflects the customer's actual problem rather than assuming one.
+  if (technicalIssues.length > 0 && TECHNICAL_INTENTS.has(plan.primary_intent) && products.length) {
+    queries.push({
+      text: `${products[0]} ${technicalIssues.join(" ")}`,
+      productAgnostic: false,
+    });
+  }
+
+  // Dedup by text, keeping product-agnostic precedence if a text repeats.
+  const byText = new Map<string, FallbackQuery>();
+  for (const q of queries) {
+    if (q.text.length <= 3) continue;
+    const prev = byText.get(q.text);
+    if (!prev) byText.set(q.text, q);
+    else if (q.productAgnostic) prev.productAgnostic = true;
+  }
+  return [...byText.values()];
 }
 
 function sourceLabel(chunk: Record<string, unknown>): string {
@@ -430,17 +547,26 @@ function deduplicateChunks(chunks: RetrievedChunk[]): RetrievedChunk[] {
 function rrfFusion(
   lists: Array<Array<Record<string, unknown>>>,
   k = 60,
-): Array<{ id: string; score: number; chunk: Record<string, unknown> }> {
+): Array<
+  { id: string; score: number; vectorSimilarity: number | null; chunk: Record<string, unknown> }
+> {
   const scores = new Map<
     string,
-    { id: string; score: number; chunk: Record<string, unknown> }
+    { id: string; score: number; vectorSimilarity: number | null; chunk: Record<string, unknown> }
   >();
 
   for (const list of lists) {
     list.forEach((item, rank) => {
       const id = item.id as string;
-      const existing = scores.get(id) ?? { id, score: 0, chunk: item };
+      const existing = scores.get(id) ??
+        { id, score: 0, vectorSimilarity: null, chunk: item };
       existing.score += 1 / (k + rank + 1);
+      const sim = typeof item.similarity === "number" ? item.similarity : null;
+      if (sim !== null) {
+        existing.vectorSimilarity = existing.vectorSimilarity === null
+          ? sim
+          : Math.max(existing.vectorSimilarity, sim);
+      }
       existing.chunk = item;
       scores.set(id, existing);
     });
@@ -510,15 +636,35 @@ export async function runRetriever(
     supabase,
     excludeExternalTicketId,
     excludeChunkIds,
+    coherenceFlags,
   }: RetrieverInput,
 ): Promise<RetrieverResult> {
   const excludedIdSet = new Set(
     (excludeChunkIds ?? []).map((id) => String(id)).filter(Boolean),
   );
-  const queries = uniqueStrings([
-    ...plan.sub_queries.filter(Boolean),
-    ...buildFallbackQueries(plan, customerMessage, shop),
-  ]).slice(0, 5);
+  const flags: RetrievalCoherenceFlags = {
+    absFloor: coherenceFlags?.absFloor ?? null,
+    pqBudget: coherenceFlags?.pqBudget ?? null,
+    issueTiebreak: coherenceFlags?.issueTiebreak === true,
+    sourceConsolidate: coherenceFlags?.sourceConsolidate === true,
+  };
+  // Assemble queries with per-query filter intent. Planner sub_queries inherit
+  // the strict product filter; fallback queries carry their own productAgnostic
+  // flag (return/refund probes run product-agnostic — see buildFallbackQueries).
+  const queryDefs: FallbackQuery[] = [];
+  const seenQueryText = new Set<string>();
+  for (const text of plan.sub_queries.filter(Boolean)) {
+    if (seenQueryText.has(text)) continue;
+    seenQueryText.add(text);
+    queryDefs.push({ text, productAgnostic: false });
+  }
+  for (const q of buildFallbackQueries(plan, customerMessage, shop)) {
+    if (seenQueryText.has(q.text)) continue;
+    seenQueryText.add(q.text);
+    queryDefs.push(q);
+  }
+  const boundedQueryDefs = queryDefs.slice(0, 5);
+  const queries = boundedQueryDefs.map((q) => q.text);
   if (queries.length === 0) return { chunks: [], past_ticket_examples: [] };
 
   const filterProducts = extractMentionedProductTerms(customerMessage || "", shop);
@@ -545,7 +691,17 @@ export async function runRetriever(
   const [queryPairs, ticketResult] = await Promise.all([
     (async () => {
       const filtered = await Promise.all(
-        queries.map((q) => runQueryPair(q, shop_id, supabase, filterProducts, filterIssueTypes)),
+        boundedQueryDefs.map((q) =>
+          runQueryPair(
+            q.text,
+            shop_id,
+            supabase,
+            // Return/refund probes run product-agnostic so product-independent
+            // return content isn't dropped by a strict product filter.
+            q.productAgnostic ? undefined : filterProducts,
+            filterIssueTypes,
+          )
+        ),
       );
       const totalHits = filtered.reduce(
         (sum, p) => sum + p.vector.length + p.bm25.length, 0,
@@ -698,11 +854,7 @@ export async function runRetriever(
   // 2 for these intents. Other intents keep the wider context window because
   // returns, refunds, exchanges etc. often legitimately span multiple
   // procedures / policies in one reply.
-  const knowledgeBudget =
-    plan.primary_intent === "complaint" ||
-    plan.primary_intent === "technical_support"
-      ? 2
-      : 4;
+  const knowledgeBudget = resolveKnowledgeBudget(plan.primary_intent, flags.pqBudget);
   const queryText = `${queries.join(" ")} ${customerMessage || ""}`;
   const productTerms = extractMentionedProductTerms(queryText, shop);
   const issueTerms = extractIssueTerms(queryText);
@@ -713,7 +865,7 @@ export async function runRetriever(
     ? allShopProducts.filter((p) => p !== mentionedProducts[0])
     : [];
 
-  const regularChunks: RetrievedChunk[] = fused
+  const scoredChunks: RetrievedChunk[] = fused
     // Internal rules (metadata.audience === "internal") are injected
     // deterministically by the internal-rules stage and must NEVER reach the
     // customer-facing knowledge block — drop them from normal retrieval so the
@@ -725,12 +877,25 @@ export async function runRetriever(
       return String(meta.audience || "").toLowerCase() !== "internal";
     })
     .map((r) => {
+      const meta = r.chunk.metadata && typeof r.chunk.metadata === "object"
+        ? r.chunk.metadata as Record<string, unknown>
+        : {};
       const base = {
         id: r.chunk.id as string,
         content: r.chunk.content as string,
         kind: (r.chunk.source_type as string) ?? "knowledge",
         source_label: sourceLabel(r.chunk),
         similarity: r.score,
+        source_id: meta.source_id != null ? String(meta.source_id) : null,
+        source_title: String(meta.title || meta.name || meta.label || "").trim() ||
+          null,
+        chunk_index: typeof meta.chunk_index === "number" ? meta.chunk_index : null,
+        chunk_count: typeof meta.chunk_count === "number" ? meta.chunk_count : 1,
+        products: Array.isArray(meta.products)
+          ? (meta.products as unknown[]).map((p) => String(p || "").trim().toLowerCase()).filter(Boolean)
+          : [],
+        vector_similarity: r.vectorSimilarity,
+        question: typeof meta.question === "string" ? meta.question : null,
       };
       return {
         ...base,
@@ -791,7 +956,15 @@ export async function runRetriever(
           crossProductPenalty;
       };
       return score(b) - score(a);
-    })
+    });
+
+  // Mechanism 3: collapse to a dominant multi-chunk guide when one exists.
+  // Inert for single-chunk-snippet shops (all source_id null) — see helper.
+  const consolidated = flags.sourceConsolidate
+    ? consolidateDominantSource(scoredChunks)
+    : scoredChunks;
+
+  const regularChunks: RetrievedChunk[] = consolidated
     // Deduplicate near-identical chunks before applying budget
     .reduce((acc: RetrievedChunk[], chunk) => {
       const isDuplicate = acc.some(
@@ -808,53 +981,87 @@ export async function runRetriever(
     })
     .slice(0, knowledgeBudget);
 
-  // ---- Q&A title-match override ----
-  // If exactly one Q&A snippet's question/title has dominant lexical overlap
-  // with the customer message, it is almost certainly THE answer — narrow the
-  // chunks list to just that snippet so the writer can't be distracted by
-  // semantically-similar siblings. Example: customer asks "headset shuts down
-  // randomly", we have one snippet titled "Bluetooth - Workaround for
-  // interrupted shutdown process" and three others about audio/mic/earcup
-  // issues. Embedding similarity puts them all close; this lexical check
-  // picks the clear winner.
-  //
-  // Threshold: overlap >= 0.35 AND at least 1.6x higher than the runner-up.
-  // 0.35 is high enough to require real word overlap (not just "the/a")
-  // since tokenize() strips stop words and we use Jaccard over content words.
-  if (regularChunks.length >= 2 && customerMessage) {
-    const customerTokens = new Set(tokenize(customerMessage));
-    if (customerTokens.size >= 2) {
-      const titleScores = regularChunks.map((chunk) => {
-        const meta = (chunk as unknown as { metadata?: Record<string, unknown> }).metadata;
-        const title = String(
-          (meta as Record<string, unknown> | undefined)?.title ||
-            (meta as Record<string, unknown> | undefined)?.question ||
-            chunk.source_label ||
-            "",
-        ).replace(/^[^:]+:\s*/, ""); // strip "manual_text: " prefix
-        const titleTokens = new Set(tokenize(title));
-        if (titleTokens.size === 0) return { chunk, score: 0 };
-        const intersection = [...customerTokens].filter((t) =>
-          titleTokens.has(t)
-        ).length;
-        // Coverage of the title by the customer's words — i.e. how much of
-        // the snippet's question is reflected in the customer's email.
-        const score = intersection / titleTokens.size;
-        return { chunk, score };
-      }).sort((a, b) => b.score - a.score);
+  // Mechanism 1: drop the whole knowledge block when nothing clears the
+  // absolute cosine floor (junk-fallback guard).
+  if (flags.absFloor !== null) {
+    const floored = applyAbsoluteFloor(regularChunks, flags.absFloor);
+    if (floored.length !== regularChunks.length) {
+      console.log(
+        `[retriever] abs-floor gate → dropping knowledge block (best vector_similarity below ${flags.absFloor})`,
+      );
+      regularChunks.length = 0;
+      regularChunks.push(...floored);
+    }
+  }
 
-      const winner = titleScores[0];
-      const runnerUp = titleScores[1];
-      if (
-        winner.score >= 0.35 &&
-        (runnerUp.score === 0 || winner.score >= runnerUp.score * 1.6)
-      ) {
-        console.log(
-          `[retriever] Q&A title-match override → using single chunk: ${winner.chunk.source_label} (score=${winner.score.toFixed(2)}, runner-up=${runnerUp.score.toFixed(2)})`,
-        );
-        regularChunks.length = 0;
-        regularChunks.push(winner.chunk);
+  // ---- Snippet-matcher: cross-lingual precision + abstention ----
+  // Re-rank a broad candidate pool against the customer message with an LLM and
+  // select the winner(s) — or abstain (zero chunks) when nothing truly answers
+  // the request. Replaces the old lexical title-match override + issue-tiebreak.
+  // Never blocks a draft: on any failure we fall back to regularChunks (today's
+  // behaviour). matcher_debug is for eval only.
+  const pool = consolidated
+    .reduce((acc: RetrievedChunk[], chunk) => {
+      const dup = acc.some((k) => tokenOverlapJaccard(k.content, chunk.content) >= 0.6);
+      return dup ? acc : [...acc, chunk];
+    }, [])
+    .slice(0, MATCH_POOL_SIZE);
+
+  let finalChunks = regularChunks;
+  let matcherDebug: RetrieverResult["matcher_debug"] | undefined;
+
+  if (customerMessage && pool.length > 0) {
+    const byId = new Map(pool.map((c) => [c.id, c]));
+    const candidates: MatchCandidate[] = pool.map((c) => ({
+      id: c.id,
+      question: c.question ?? null,
+      title: c.source_label,
+      excerpt: c.content,
+    }));
+    try {
+      const matched = await matchSnippets(customerMessage, candidates, {
+        model: SNIPPET_MATCHER_MODEL,
+        threshold: SNIPPET_MATCHER_THRESHOLD,
+        maxSelected: knowledgeBudget,
+        marginMin: SNIPPET_MATCHER_MARGIN,
+      });
+      finalChunks = matched.selected
+        .map((s) => byId.get(s.id))
+        .filter((c): c is RetrievedChunk => Boolean(c));
+      console.log(
+        `[retriever] snippet-matcher selected=${finalChunks.length} abstained=${matched.abstained} pool=${pool.length}`,
+      );
+      matcherDebug = {
+        candidates: pool.map((c) => ({ id: c.id, source_id: c.source_id ?? null, title: c.source_title ?? c.source_label })),
+        ranked: matched.ranked.map((r) => {
+          const c = byId.get(r.id);
+          return { id: r.id, source_id: c?.source_id ?? null, title: c?.source_title ?? c?.source_label ?? "", relevance: r.relevance };
+        }),
+        selected_ids: finalChunks.map((c) => c.id),
+        abstained: matched.abstained,
+        fell_back: false,
+      };
+    } catch (err) {
+      // Additive layer: never make things worse than today. Keep regularChunks.
+      console.error(`[retriever] snippet-matcher failed, falling back to top-chunks: ${(err as Error).message}`);
+      try {
+        await supabase.from("agent_logs").insert({
+          shop_id,
+          workspace_id: workspace_id ?? null,
+          step: "snippet_matcher_fallback",
+          step_detail: { error: (err as Error).message, pool_size: pool.length },
+        });
+      } catch (_logErr) {
+        // logging must never block a draft
       }
+      finalChunks = regularChunks;
+      matcherDebug = {
+        candidates: pool.map((c) => ({ id: c.id, source_id: c.source_id ?? null, title: c.source_title ?? c.source_label })),
+        ranked: regularChunks.map((c) => ({ id: c.id, source_id: c.source_id ?? null, title: c.source_title ?? c.source_label, relevance: 0 })),
+        selected_ids: regularChunks.map((c) => c.id),
+        abstained: false,
+        fell_back: true,
+      };
     }
   }
 
@@ -871,13 +1078,14 @@ export async function runRetriever(
     }));
 
   console.log(
-    `[retriever] queries=${queries.length} knowledge=${regularChunks.length} saved_reply_knowledge=${
-      regularChunks.filter((chunk) => chunk.usable_as === "saved_reply").length
+    `[retriever] queries=${queries.length} knowledge=${finalChunks.length} saved_reply_knowledge=${
+      finalChunks.filter((chunk) => chunk.usable_as === "saved_reply").length
     } past_tickets=${pastTicketExamples.length}`,
   );
 
   return {
-    chunks: regularChunks,
+    chunks: finalChunks,
     past_ticket_examples: pastTicketExamples,
+    ...(matcherDebug ? { matcher_debug: matcherDebug } : {}),
   };
 }

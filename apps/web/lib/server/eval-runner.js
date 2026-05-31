@@ -56,7 +56,18 @@ Score whether the AI draft is send-ready compared with the human response on fou
 - tone: Is the AI's tone appropriate for the customer's situation and at least as natural as the human reply?
 - actionability: Does the AI make the next step or outcome as clear as the human reply?
 
-overall_10: Your holistic score (1-10) for sendability. 10 = the AI draft is as good as or better than the human reply and could be sent as-is. 6 = useful but needs edits. 1 = wrong or unsafe.
+overall_10: Your holistic score (1-10) for sendability. Use these anchors strictly — do NOT inflate a draft just because it reads fluently or sounds professional:
+- 9-10: Reaches the SAME resolution the human did and is send-ready with no edits. Reserve 10 for drafts as good as or better than the human.
+- 7-8: Right resolution, but a human would make minor edits (small wording, one missing non-critical detail).
+- 5-6: Right topic but the resolution is incomplete, partly wrong, or materially more verbose than the human while saying less — a human would substantially rewrite it.
+- 3-4: Pursues the WRONG resolution, would mislead the customer, or omits the core thing the customer needs.
+- 1-2: Wrong, unsafe, or off-topic.
+
+Hard caps (apply BEFORE picking the number — these override a fluent-but-flawed draft):
+- RESOLUTION MISMATCH: If the human resolves the case one way and the AI proposes a different path that is wrong or worse (e.g. DIY/self-repair instead of sending a replacement; an in-house warranty swap when the human says a third-party reseller is responsible; troubleshooting the wrong subsystem), cap overall at 4.
+- MISSING INFO THE HUMAN COLLECTED: If the human asks for specific information needed to proceed (shipping/label details, order number, name used at purchase, photos) and the AI does not, cap overall at 6 and name it in missing_for_10.
+- VERBOSITY: If the AI is materially longer than the human while the human was concise and complete, drop overall by 1-2 and set primary_gap to "too verbose".
+- INVENTED CONTENT: If the AI gives steps, specs, numbers, or advice not supported by the ticket, the human reply, or known product facts, cap overall at 4 (this is a correctness failure, not a style issue).
 
 Important: Some evaluated outputs intentionally pause before a customer-facing reply because an action needs human approval.
 If the AI output says it paused for action approval, judge whether the proposed action/routing is correct. Do not score it as "no response provided" just because the final customer reply comes after approval.
@@ -240,6 +251,20 @@ async function generateDraftV2(shopId, subject, emailBody, options = {}) {
           writer_model: options.writerModel || undefined,
           strong_model: options.strongModel || undefined,
           disable_escalation: options.disableEscalation === true,
+          retrieval_abs_floor:
+            typeof options.retrievalAbsFloor === "number"
+              ? options.retrievalAbsFloor
+              : undefined,
+          retrieval_pq_budget:
+            typeof options.retrievalPqBudget === "number"
+              ? options.retrievalPqBudget
+              : undefined,
+          retrieval_issue_tiebreak: options.retrievalIssueTiebreak === true
+            ? true
+            : undefined,
+          retrieval_source_consolidate: options.retrievalSourceConsolidate === true
+            ? true
+            : undefined,
         },
       }),
     });
@@ -268,12 +293,22 @@ async function generateDraftV2(shopId, subject, emailBody, options = {}) {
   const confidence = typeof data?.confidence === "number" ? data.confidence : null;
   const sources = Array.isArray(data?.sources) ? data.sources : [];
   const routingHint = typeof data?.routing_hint === "string" ? data.routing_hint : null;
+  const retrievalDebug =
+    data?.retrieval_debug && Array.isArray(data.retrieval_debug.chunks)
+      ? data.retrieval_debug.chunks
+      : [];
+  const matcherDebug =
+    data?.retrieval_debug && data.retrieval_debug.matcher
+      ? data.retrieval_debug.matcher
+      : null;
   return {
     draft,
     actions,
     confidence,
     sources,
     routingHint,
+    retrievalDebug,
+    matcherDebug,
     latencyMs: Date.now() - startTime,
   };
 }
