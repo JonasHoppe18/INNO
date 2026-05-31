@@ -53,6 +53,10 @@ Eval-systemet er bygget og kørende. Prioritet er nu at bruge eval-resultaterne 
 **Action types:** UI understøtter langt flere actions end dokumenteret (exchange, return, shipping method, hold fulfillment osv.)
 
 ## Seneste ændringer
+- **Conversation-aware case-state:** `case-state-updater` labeler nu roller via `from_me` (ikke et ikke-eksisterende `direction`-felt — den gamle check var død, så agent-forpligtelser blev aldrig udvundet i produktion). Læser desuden `quoted_body_text`, så tidligere agent-svar der kun lever i citat-blokken (fx AceZone der svarer via Zendesk uden `from_me=true` rows) bliver fanget til `decisions_made`/`pending_asks`.
+- **Leak-fri eval-harness:** `/api/eval/zendesk-tickets` ankrer nu ground-truth på det SIDSTE agent-svar i stedet for det første. Historik er strengt forudgående kontekst (ingen future-turn leak) — multi-turn tickets bliver ægte warm follow-up cases.
+- **Snippet-matcher precision-lag:** LLM-baseret precision/abstention på retrieval (threshold/margin/budget) for at vælge KUN den rigtige knowledge-chunk og afstå når intet matcher.
+- **Retriever-coherence + golden-eval:** `retriever-coherence` stage + `golden-eval`/`gold-labels` tooling (`supabase/scripts/run-golden-eval.mjs`, `build-gold-labels.mjs`, `probe-recall.mjs`, `supabase/eval/gold-labels.acezone.json`) til at måle retrieval-kvalitet mod AceZone-labels. Design-docs i `docs/superpowers/`.
 - Eval-system bygget: `eval_runs` tabel, EvalPanel UI, worker-baseret kørsel via `/api/eval/run`
 - Knowledge kategorier tilføjet (`knowledge_categories` tabel + UI)
 - Draft edit-statistik: `/api/threads/[id]/draft-stats` tracker redigeringer inden send
