@@ -340,6 +340,7 @@ function buildInfoRequirementsBlock(
   caseState: CaseState,
   plan: Plan,
   latestCustomerMessage?: string,
+  replyMode: "procedure" | "concise" = "procedure",
 ): string {
   const known: string[] = [];
   const missing: string[] = [];
@@ -495,12 +496,13 @@ ${
       : ""
   }
 ${
-    hasPurchaseReferenceMissing && hasDefectDocumentationMissing
+    replyMode !== "concise" && hasPurchaseReferenceMissing &&
+      hasDefectDocumentationMissing
       ? "Når både purchase_reference og defect_documentation mangler, skal du bede om begge i samme svar, fx ordrenummer eller hvor headsettet er købt samt et foto af skaden. Skriv ikke at foto kun skal sendes senere eller 'hvis nødvendigt'."
       : ""
   }
 ${
-    warrantyLike
+    replyMode !== "concise" && warrantyLike
       ? "For garanti/refund/defekt-sager skal første prioritet være proof-of-purchase/ordrenummer/købssted og dokumentation (foto/video). Spørg kun om telefonnummer hvis order/proof-of-purchase allerede er kendt, eller kunden allerede har oplyst hvor produktet er købt. Hvis kunden allerede har bedt om refund/refusion, må du ikke bede kunden vælge mellem refund og replacement."
       : ""
   }
@@ -636,6 +638,21 @@ Intet sikkert kundenavn til hilsenen. Start med en naturlig neutral hilsen på k
     })
   );
 
+  // --- Reply mode (mode-split) ---
+  // Procedure stages produce sequential steps the customer executes — they need
+  // the full knowledge and current behavior. Everything else is a decision/info
+  // reply that must be short and lead with the answer. Brevity comes from
+  // starving the concise path of bloat (slim system prompt + capped knowledge),
+  // not from a louder rule. See docs/superpowers/specs/2026-06-02-writer-mode-split-design.md
+  const resolutionStage = plan.resolution_stage || "info_only";
+  const PROCEDURE_STAGES = new Set([
+    "troubleshoot_first",
+    "initiate_warranty_repair",
+  ]);
+  const replyMode: "procedure" | "concise" = PROCEDURE_STAGES.has(resolutionStage)
+    ? "procedure"
+    : "concise";
+
   // --- Few-shot (primary tone anchor — placed near the top so the model sees it first) ---
   const fewShotBlock = retrieved.past_ticket_examples.length > 0
     ? `# Examples of similar cases — use ONLY as a reference for STYLE, TONE and how to resolve the case
@@ -680,6 +697,7 @@ Support replied: "${ex.agent_reply.slice(0, 500)}"`;
     caseState,
     plan,
     latestCustomerMessage,
+    replyMode,
   );
 
   // --- Shop policy (deterministisk — brug altid disse regler) ---
@@ -782,8 +800,20 @@ Regler for post-action-svaret:
     : "";
 
   // --- Viden fra vidensbase ---
+  // Concise mode caps each chunk hard — the writer should extract one fact, not
+  // recite. Procedure mode keeps full chunks so no troubleshooting step is lost.
+  const knowledgeChunkCap = (usableAs: string): number =>
+    replyMode === "concise"
+      ? 600
+      : usableAs === "procedure" || usableAs === "fact"
+      ? 2500
+      : 1500;
   const knowledgeBlock = chunksForPrompt.length > 0
-    ? `# Relevant viden fra vidensbasen med kildepolitik
+    ? `# Relevant viden fra vidensbasen med kildepolitik${
+      replyMode === "concise"
+        ? "\n(KORT-MODE: udtræk KUN det ene relevante faktum — gengiv ikke, og reciter ikke betingelser/policy kunden ikke spurgte om.)"
+        : ""
+    }
 Kildepolitik:
 - policy: autoritativ regel fra webshoppen/Shopify policy — følg altid.
 - procedure: følg processen præcist, men spørg kun om felter fra missing_required_fields.
@@ -802,7 +832,7 @@ Kildepolitik:
             `[kilde ${i}] ${c.source_label}
 usable_as: ${c.usable_as}
 risk_flags: ${c.risk_flags.length ? c.risk_flags.join(", ") : "none"}
-${c.content.slice(0, (c.usable_as === "procedure" || c.usable_as === "fact") ? 2500 : 1500)}`,
+${c.content.slice(0, knowledgeChunkCap(c.usable_as))}`,
         )
         .join("\n\n")
     : "";
@@ -849,7 +879,46 @@ ${c.content.slice(0, (c.usable_as === "procedure" || c.usable_as === "fact") ? 2
     caseState.open_questions.length === 0 &&
     caseState.pending_asks.length === 0;
 
-  const systemPrompt = `Du er en supportmedarbejder for ${shopName}.${
+  const conciseSystemPrompt = `Du er en supportmedarbejder for ${shopName}.${
+    brandDescription ? `\nOm virksomheden: ${brandDescription}` : ""
+  }
+${persona ? `\n${persona}\n` : ""}
+SPROG (absolut): Svar KUN på ${replyLanguage} (${langName}). Bland aldrig sprog.
+${languageCorrectionInstruction ? `SPROGKORREKTION: ${languageCorrectionInstruction}` : ""}
+
+SÅDAN SVARER DU (vigtigst):
+- Svar som en travl, erfaren senior-medarbejder der allerede har besluttet sig. Led med beslutningen / svaret / næste konkrete handling i den FØRSTE sætning. Højst 1-2 sætninger mere.
+- Reciter ALDRIG policy, betingelser, frister, specs eller edge-cases kunden ikke spurgte om. Giv kun den ene del der er relevant lige nu (fx kun returadressen — ikke hele return-policyen).
+- Udtræk højst ÉT relevant faktum fra knowledge. Gengiv aldrig knowledge ordret, og lim aldrig flere kilder sammen.
+- Hvis vi har nok info til at handle, så gør det — bed ikke om mere. Spørg KUN om felter i missing_required_fields, og kun hvis de faktisk mangler.
+- Undgå defensivt proces-sprog: "vi vurderer", "når vi har bekræftet", "hvis du er berettiget", "send flere billeder", "vi vender tilbage", "sagen sendes videre". Tag beslutningen nu, eller bed præcist om det ene der mangler.
+- Korte afsnit på 1-2 sætninger med tom linje imellem. Ingen indledende fyld ("Tak for din besked..."), gentag ikke kundens spørgsmål.
+
+ABSOLUTTE FORBUD (faktuel sikkerhed):
+- UVERIFICERET ORDRE: Hvis kunden refererer et ordrenummer der IKKE står i "Verificerede fakta" under "Ordre fundet", må du aldrig skrive "din ordre #X" som om den findes eller love handlinger på den. Forklar venligt at vi ikke kan finde nummeret, og spørg hvor produktet er købt.
+- Du er et menneske. Aldrig "Som AI kan jeg...".
+- Skriv ALDRIG signatur, navn eller email-adresser — tilføjes automatisk.
+- Brug KUN fakta fra "Verificerede fakta". Opfind aldrig priser, datoer, ordrenumre, policies eller lagerstatus.
+- ALDRIG falsk bekræftelse: skriv aldrig at en handling ER udført medmindre actionResult bekræfter det. Planlagte actions venter på godkendelse.
+- ALDRIG "sender videre til teamet" / "kontakt kundesupport". Spørg ALDRIG om telefonnummer. URLs som plain text, aldrig markdown-links.
+- KANAL: Kunden skriver allerede i denne tråd. Bed dem aldrig "kontakte os" eller maile en support-adresse. Hvis et KB-trin siger det, så betragt trinet som opfyldt.
+- Kald aldrig kundens problem "produktionsfejl"/"fabriksfejl" — brug kundens egne ord. Foreslå aldrig at kunden selv reparerer produktet.
+
+BESLUTNINGSREGLER:
+- IKKE-AFSENDT ORDRE: Hvis kunden vil returnere/refundere OG fulfillment_status er "unfulfilled", tilbyd ANNULLERING som primær løsning ("Da ordren endnu ikke er afsendt, kan vi annullere den i stedet — vil du det?"). Nævn ikke returadresse/-procedure. Ved "fulfilled"/ukendt: normal return-policy.
+- FAKTURA/kvittering (resend_confirmation_or_invoice): skriv som om den er vedhæftet nu (datid), 1-2 sætninger.
+- "thanks"/"update": svar som en kollega der lige har hjulpet. 1 sætning, max 2. Ingen spørgsmål, intet handlingsforslag, nævn ikke ordrenummer/produkt. Fx "Selv tak — god dag!". FORBUDT: "Tak for din henvendelse", "Vi er her for at hjælpe", "Spørg endelig hvis...".${
+    actionResult
+      ? `
+- POST-ACTION: Handlingen er allerede udført. Skriv KUN 2-3 sætninger i datid. Ingen "tak for din besked", ingen genforklaring, aldrig "vil blive".`
+      : ""
+  }
+
+AFSLUTNING: Afventer svar → "Jeg ser frem til at høre fra dig." Sag løst → "God dag!". Aldrig "er du velkommen til at kontakte os igen".
+
+Returner KUN gyldigt JSON — ingen markdown udenfor JSON.`;
+
+  const proceduralSystemPrompt = `Du er en supportmedarbejder for ${shopName}.${
     brandDescription ? `\nOm virksomheden: ${brandDescription}` : ""
   }
 ${
@@ -939,6 +1008,10 @@ INTENT:
 
 Returner KUN gyldigt JSON — ingen markdown udenfor JSON.`;
 
+  const systemPrompt = replyMode === "concise"
+    ? conciseSystemPrompt
+    : proceduralSystemPrompt;
+
   // --- Samtalehistorik — de seneste udvekslinger i den aktuelle tråd ---
   const historyBlock = conversationHistory && conversationHistory.length > 1
     ? `# Samtalehistorik (den aktuelle tråd — se hvad der allerede er sagt og lovet)
@@ -974,7 +1047,6 @@ ${customerHistory}`
     escalate_human:
       "Angiv at sagen kræver en specialist — lov ikke konkrete actions.",
   };
-  const resolutionStage = plan.resolution_stage || "info_only";
   const stageBlock = `# RESOLUTION STAGE (stærk anbefaling — ikke absolut, men afvig kun hvis kundens behov tydeligt kræver det)
 Stage: ${resolutionStage}
 ${stageDirectives[resolutionStage] ?? stageDirectives.info_only}`;
