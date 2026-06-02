@@ -71,8 +71,8 @@ Drafts findes faktisk tre steder. Alle tre er nødvendige og må ikke konsolider
 
 ## Knowledge og retrieval
 - Primær kilde: `agent_knowledge` tabel (chunks + embeddings, scopet på `shop_id`)
-- Policy/tone hentes deterministisk via `buildPinnedPolicyContext` fra `shops`-felter
-- `shopify_policy` chunks filtreres fra generisk retrieval da pinned policy har forrang
+- Policy hentes nu fra `agent_knowledge` (`usable_as: policy`) via retrieval — IKKE længere som pinned `policy_summary_json`/excerpts. `buildPinnedPolicyContext` leverer KUN adfærds-guardrails (anti-hallucination, channel-rule, intent-suppression), ikke policy-data.
+- `shopify_policy`/`shopify_page` chunks indgår i retrieval og leveres til writeren (filtreres IKKE fra). `policy_summary_json`-kolonnen + `policy-summary.js`-generatoren er vestigiale for draft-pipelinen, men bruges stadig af web-UI (settings/returns, insights).
 - **Scoping-regel:** Al knowledge er altid scopet til eksplicit `shop_id` — aldrig implicit scope
 
 ## Kommandoer

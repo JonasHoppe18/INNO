@@ -39,7 +39,7 @@ Eval-systemet er bygget og kørende. Prioritet er nu at bruge eval-resultaterne 
 ## Kendte svagheder
 - Tenancy-migration er ikke komplet — workspace-scoping kan være inkonsistent
 - Gmail/Outlook parser-kvalitet matcher muligvis ikke Postmark-stien
-- Policy eksisterer to steder (pinned shops-felter + agent_knowledge chunks) — pinned har forrang
+- Policy hentes nu KUN fra agent_knowledge (retrieval); pinned policy leverer kun adfærds-guardrails, ikke data. Recall på den rigtige policy-chunk er nu den kritiske faktor (måles via eval)
 - Email-quoting fra Zendesk-wrappers kan forurene parsed indhold
 
 ## Kritiske ting at vide
