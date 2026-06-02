@@ -185,6 +185,10 @@ function stripGeneratedSignature(text: string): string {
 
 function cleanDraftText(text: string): string {
   return stripGeneratedSignature(text)
+    // Strip signature placeholders the model sometimes leaves despite the no-signature rule
+    // (e.g. "[Your Name]", "[Name]", "[Dit navn]"). The real signature is appended automatically.
+    .replace(/\[[^\]\n]{0,30}\b(?:name|navn)\b[^\]\n]{0,10}\]/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
     .replace(/\s+[—–]\s+/g, ", ")
     // Strip any instruction to contact via email — customer is already in the right thread.
     .replace(

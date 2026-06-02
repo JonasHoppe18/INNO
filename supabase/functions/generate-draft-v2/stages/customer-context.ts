@@ -40,6 +40,11 @@ function cleanNameCandidate(value: string): string {
     .trim();
 }
 
+// Articles/greetings/stopwords that are never a customer's name on their own or as
+// a leading token (fixes "Hi The," from candidates like "The AceZone Team").
+const NON_NAME_WORDS =
+  /^(?:the|a|an|dear|hi|hello|hey|hej|hallo|hola|bonjour|thanks|thank|to|from|mr|mrs|ms|dr|sir|madam|team)$/i;
+
 function isPlausibleName(value: string): boolean {
   const name = cleanNameCandidate(value);
   if (!name || name.length < 2 || name.length > 60) return false;
@@ -48,11 +53,15 @@ function isPlausibleName(value: string): boolean {
     /^(email|company|your country|country|country code|body|what is|if applicable|order|ordre|n\/a|none)$/i
       .test(name)
   ) return false;
-  // Reject team/department labels (e.g. "Kundeservice-teamet", "Support Team")
+  // Reject team/department labels anywhere (e.g. "Kundeservice-teamet", "Support Team", "The AceZone Team")
   if (
     /^(kundeservice|support.?team|customer.?service|after.?sales|sav\b|service|team\b)/i
-      .test(name)
+      .test(name) ||
+    /\bteam(?:et)?\b/i.test(name)
   ) return false;
+  // Reject articles/greetings/stopwords — both as the whole candidate and as the leading token.
+  const firstToken = name.split(/\s+/)[0] ?? "";
+  if (NON_NAME_WORDS.test(name) || NON_NAME_WORDS.test(firstToken)) return false;
   return /[A-Za-zÆØÅæøåÄÖÜäöüßÉéÈèÁáÀàÍíÓóÚúÑñ]/.test(name);
 }
 
