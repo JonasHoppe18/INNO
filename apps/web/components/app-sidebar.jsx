@@ -87,8 +87,8 @@ const baseData = {
       icon: MailIcon,
     },
     {
-      name: "Fine-tuning",
-      url: "/fine-tuning",
+      name: "Playground",
+      url: "/playground",
       icon: SlidersHorizontal,
     },
     {

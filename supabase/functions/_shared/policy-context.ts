@@ -52,9 +52,9 @@ const truncateToApproxTokens = (value: string, maxTokens: number) => {
 
 function parseReturnWindowDays(text: string): number | null {
   const patterns = [
-    /(?:within|up to|under|in)\s+(\d{1,3})\s*(?:day|days)\b/i,
-    /(\d{1,3})\s*(?:day|days)\s*(?:return|refund|window|period)/i,
-    /return(?:s)?\s*(?:accepted|allowed)?\s*(?:for|within)?\s*(\d{1,3})\s*(?:day|days)/i,
+    /(?:within|up to|under|in)\s+(\d{1,3})[\s-]*(?:day|days)\b/i,
+    /(\d{1,3})[\s-]*(?:day|days)\s*(?:return|refund|window|period)/i,
+    /return(?:s)?\s*(?:accepted|allowed)?\s*(?:for|within)?\s*(\d{1,3})[\s-]*(?:day|days)/i,
   ];
   for (const pattern of patterns) {
     const match = text.match(pattern);
@@ -236,76 +236,36 @@ export function detectPolicyIntent(subject: string, body: string): PolicyIntent 
 function policyRulesBlock(intent: PolicyIntent) {
   const lines = [
     "POLICY RULES (PINNED):",
-    "- For returns/refunds/warranty/shipping, follow POLICY SUMMARY and POLICY EXCERPTS strictly.",
-    "- Never invent URLs, return portals, labels, or processes not explicitly provided.",
-    "- If policy is unclear or missing, ask exactly ONE clarifying question instead of guessing.",
-    "- If a return portal URL exists in settings/context, use it. Otherwise do not guess a portal URL.",
-    "- For return flows that require support contact, ask briefly for order number, full name, and return reason if missing.",
+    "- For returns/refunds/warranty/shipping, follow the retrieved POLICY knowledge (sources tagged usable_as: policy) strictly. Use ONLY what it states — never improvise terms, amounts, or deadlines.",
+    "- Never invent URLs, return portals, labels, or processes that are not present in the retrieved knowledge.",
+    "- If the relevant policy is unclear or not present in the retrieved knowledge, ask exactly ONE clarifying question instead of guessing.",
+    "- The customer is already in the correct support thread. Never tell them to email or contact a support address — handle the request here.",
+    "- For return flows that require order number, full name, and return reason, ask briefly for the specific missing detail(s) if they are not already known.",
     "- If this is an ongoing replacement, defect, or exchange follow-up and the order is already known, do not restart the case as a fresh return intake.",
+    "- Give the customer only the part of the policy they need right now — do not recite the entire policy.",
   ];
 
   if (intent === "OTHER" || intent === "WARRANTY" || intent === "SHIPPING") {
     lines.push(
-      "- RETURN DETAILS SUPPRESSED: This ticket has NOT been classified as a return or refund request. Even though the POLICY SUMMARY below contains return_address, return_shipping_paid_by, and similar fields — DO NOT mention, share, or reference any return logistics (return address, return shipping costs, packaging requirements, courier instructions) in your reply. Answer the customer's actual question only. If the customer mentions returning as a conditional threat ('I will return unless...'), treat it as a question to answer — not as a return request to process.",
+      "- RETURN DETAILS SUPPRESSED: This ticket is NOT a return or refund request. Even if return logistics appear in the retrieved knowledge, do NOT mention or reference any of it (return address, return shipping costs, packaging requirements, courier instructions). Answer the customer's actual question only. If the customer mentions returning only as a conditional threat ('I will return unless...'), treat it as a question to answer — not as a return request to process.",
     );
   }
 
   if (intent === "WARRANTY") {
     lines.push(
-      "- WARRANTY CLAIM RULE: This ticket is classified as a WARRANTY case, not a return request. The return_window_days in POLICY SUMMARY refers to the standard return window — it does NOT apply to warranty or defect claims. Do NOT cite the return window as a reason to reject or limit a warranty claim. Use warranty_duration_regions_short (if available) to assess warranty eligibility instead.",
+      "- WARRANTY CLAIM RULE: A standard return window does NOT apply to warranty or defect claims. Do NOT cite a return window as a reason to reject or limit a warranty claim. Assess warranty eligibility from the warranty terms in the retrieved knowledge instead.",
     );
   }
 
   if (intent === "RETURN" || intent === "REFUND") {
     lines.push(
-      "- RETURNS - CHANNEL RULE: If store policy says 'contact us via email' or shows an email address, do NOT tell the customer to email that address. The customer is already in the right support thread. Never mention an email address in the reply. Instead: (1) If the policy shows a physical return address or step-by-step return procedure, provide those directly — include the full return address from return_address or POLICY EXCERPTS, packaging instructions, and shipping instructions. (2) If the required return details (order number, name at purchase, reason) are NOT yet known from the verified facts or customer message, ask for the specific missing detail(s) first. (3) If all details ARE already known and a return address exists in the policy, give the complete return instructions now — do not ask for information already provided.",
-      "- RETURNS - ADDRESS RULE: When return_address in POLICY SUMMARY is non-empty, you MUST include it verbatim in the reply so the customer knows where to ship the item. Format it clearly as the destination address. Also include packaging and courier instructions if present in POLICY EXCERPTS.",
-      "- RETURNS - CONTINUATION RULE: If the customer says they already received the replacement/new item and asks how to send the old item back, answer with practical return logistics directly. Do not ask again for order number or name when the order is already known. Do not mention who pays return shipping unless the customer asks about shipping cost or the approved context explicitly requires it for this continuation.",
-      "- DEFECT/REPLACEMENT RETURN RULE: For defect, warranty, or replacement-related return continuations, use defect_return_shipping_rule if it exists. If it is unspecified, do not claim who pays return shipping.",
+      "- RETURNS - CHANNEL RULE: If the policy shows an email address for returns, do NOT tell the customer to email it — they are already in the right thread. Instead: (1) if the retrieved policy gives a physical return address or a step-by-step return procedure, provide those directly, including the full return address and any packaging/courier instructions from the policy; (2) if the required return details (order number, name at purchase, reason) are NOT yet known from the verified facts or customer message, ask for the specific missing detail(s) first; (3) if all details ARE already known and the policy contains a return address, give the complete return instructions now — do not ask for information already provided.",
+      "- RETURNS - ADDRESS RULE: When the retrieved policy knowledge contains a return address, include it verbatim so the customer knows where to ship the item.",
+      "- RETURNS - CONTINUATION RULE: If the customer says they already received the replacement/new item and asks how to send the old item back, answer with practical return logistics directly. Do not ask again for order number or name when the order is already known. Do not state who pays return shipping unless the customer asks about shipping cost or the policy clearly specifies it.",
     );
   }
 
   return lines.join("\n");
-}
-
-function summaryBlock(summary: PolicySummary) {
-  return [
-    "POLICY SUMMARY (PINNED):",
-    `- return_window_days: ${summary.return_window_days ?? "unknown"}`,
-    `- return_shipping_paid_by: ${summary.return_shipping_paid_by}`,
-    `- return_contact_email: ${summary.return_contact_email || "unknown"}`,
-    `- return_address: ${summary.return_address || "unknown"}`,
-    `- defect_return_shipping_rule: ${summary.defect_return_shipping_rule}`,
-    `- return_instructions_short: ${summary.return_instructions_short}`,
-    `- refund_conditions_short: ${summary.refund_conditions_short}`,
-    `- warranty_duration_regions_short: ${summary.warranty_duration_regions_short || "unknown"}`,
-    summary.last_modified_date ? `- last_modified_date: ${summary.last_modified_date}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
-
-function pickPolicyExcerpt(intent: PolicyIntent, policies: PoliciesForPrompt): string {
-  const refund = String(policies.policy_refund || "").trim();
-  const shipping = String(policies.policy_shipping || "").trim();
-  const terms = String(policies.policy_terms || "").trim();
-
-  if (intent === "RETURN" || intent === "REFUND") {
-    return [refund ? `Refund/Return Policy:\n${refund}` : "", terms ? `Terms:\n${terms}` : ""]
-      .filter(Boolean)
-      .join("\n\n");
-  }
-  if (intent === "SHIPPING") {
-    return [shipping ? `Shipping Policy:\n${shipping}` : "", terms ? `Terms:\n${terms}` : ""]
-      .filter(Boolean)
-      .join("\n\n");
-  }
-  if (intent === "WARRANTY") {
-    return [terms ? `Terms/Warranty:\n${terms}` : "", refund ? `Refund Policy:\n${refund}` : ""]
-      .filter(Boolean)
-      .join("\n\n");
-  }
-  return "";
 }
 
 export function buildPinnedPolicyContext(options: {
@@ -326,55 +286,25 @@ export function buildPinnedPolicyContext(options: {
   policySummaryIncluded: boolean;
   policyExcerptIncluded: boolean;
 } {
+  // Knowledge-only policy: we no longer pin a structured policy_summary_json
+  // blob or dump raw policy excerpts into the prompt. Policy CONTENT now comes
+  // from retrieved agent_knowledge chunks (usable_as: "policy"), which already
+  // reach the writer. We keep ONLY the behavioral guardrails (anti-hallucination,
+  // channel rule, intent-based suppression) — these are not policy data and
+  // prevent regressions. `policies`/`reservedTokens` are accepted for backwards
+  // compatibility with callers but are no longer read.
   const intent = options.intentOverride ?? detectPolicyIntent(options.subject, options.body);
-  const rawSummary = options.policies?.policy_summary_json;
-  const hasUsableSummary =
-    rawSummary &&
-    typeof rawSummary === "object" &&
-    !Array.isArray(rawSummary) &&
-    (String((rawSummary as Record<string, unknown>).return_instructions_short || "").trim()
-      .length > 0 ||
-      String((rawSummary as Record<string, unknown>).refund_conditions_short || "").trim().length >
-        0 ||
-      Number((rawSummary as Record<string, unknown>).return_window_days) > 0);
-  const mergedSummary = hasUsableSummary
-    ? normalizePolicySummary(rawSummary)
-    : buildHeuristicPolicySummary({
-        refundPolicy: options.policies.policy_refund,
-        shippingPolicy: options.policies.policy_shipping,
-        termsPolicy: options.policies.policy_terms,
-      });
-
-  // Fallback: if JSON had an empty return_address but raw policy text exists, try to extract it
-  if (!mergedSummary.return_address && options.policies.policy_refund) {
-    const extracted = extractReturnAddressBlock(options.policies.policy_refund);
-    if (extracted) mergedSummary.return_address = extracted;
-  }
-
   const rules = policyRulesBlock(intent);
-  const summaryText = summaryBlock(mergedSummary);
-  const reserved = Math.max(200, Math.min(Number(options.reservedTokens || 600), 2000));
-
-  let excerptText = "";
-  if (intent !== "OTHER") {
-    const rawExcerpt = pickPolicyExcerpt(intent, options.policies);
-    const baseTokens = estimateTokens(`${summaryText}\n${rules}`);
-    const remaining = Math.max(60, reserved - baseTokens);
-    const trimmed = truncateToApproxTokens(rawExcerpt, remaining);
-    if (trimmed) {
-      excerptText = ["POLICY EXCERPTS (PINNED):", trimmed].join("\n");
-    }
-  }
 
   return {
     intent,
-    summary: mergedSummary,
-    policySummaryText: summaryText,
+    summary: { ...DEFAULT_POLICY_SUMMARY },
+    policySummaryText: "",
     policyRulesText: rules,
-    policyExcerptText: excerptText,
-    policySummaryTokens: estimateTokens(summaryText),
-    policyExcerptTokens: estimateTokens(excerptText),
-    policySummaryIncluded: true,
-    policyExcerptIncluded: Boolean(excerptText),
+    policyExcerptText: "",
+    policySummaryTokens: 0,
+    policyExcerptTokens: 0,
+    policySummaryIncluded: false,
+    policyExcerptIncluded: false,
   };
 }

@@ -185,6 +185,10 @@ function stripGeneratedSignature(text: string): string {
 
 function cleanDraftText(text: string): string {
   return stripGeneratedSignature(text)
+    // Strip signature placeholders the model sometimes leaves despite the no-signature rule
+    // (e.g. "[Your Name]", "[Name]", "[Dit navn]"). The real signature is appended automatically.
+    .replace(/\[[^\]\n]{0,30}\b(?:name|navn)\b[^\]\n]{0,10}\]/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
     .replace(/\s+[—–]\s+/g, ", ")
     // Strip any instruction to contact via email — customer is already in the right thread.
     .replace(
@@ -589,6 +593,9 @@ export async function runWriter(
       .persona_instructions ??
       (shop as { instructions?: string }).instructions ??
       "";
+  // Brand-kontekst — auto-udfyldt fra Shopify, fortæller modellen hvem den repræsenterer.
+  const brandDescription =
+    ((shop as { brand_description?: string }).brand_description ?? "").trim();
 
   const recentCustomerText = [
     ...conversationHistory.filter((m) => m.role === "customer").slice(-3).map((m) => m.text),
@@ -842,7 +849,9 @@ ${c.content.slice(0, (c.usable_as === "procedure" || c.usable_as === "fact") ? 2
     caseState.open_questions.length === 0 &&
     caseState.pending_asks.length === 0;
 
-  const systemPrompt = `Du er en supportmedarbejder for ${shopName}.
+  const systemPrompt = `Du er en supportmedarbejder for ${shopName}.${
+    brandDescription ? `\nOm virksomheden: ${brandDescription}` : ""
+  }
 ${
     persona
       ? `\n${persona}\n`
@@ -871,6 +880,7 @@ ABSOLUTTE FORBUD:
 - TRIN-FORMATERING: Når du giver en procedure med flere trin, stil det pænt op som en normal kundeservicemedarbejder ville — sæt HVERT trin på sin egen linje med et linjeskift imellem. Kør ALDRIG trinnene sammen i én løbende paragraf. Behold den nummererings-/punktstil der står i knowledge (fx "1)" eller "1." eller bullets) — du skal ikke lave den om, kun sørge for linjeskiftene. En kort intro-sætning må stå før listen og en kort lukning efter.
 - INGEN INLINE-LISTER: Når du opremser to eller flere ting — trin, betingelser, ting kunden skal sende, spørgsmål — så sæt hvert punkt på sin EGEN linje. Skriv ALDRIG opremsningen inde i en løbende sætning (fx "1) ... 2) ... og 3) ..." på én linje). Bryd den op, også selvom det kun er 2-3 korte punkter.
 - LÆSEVENLIGT (vigtigt): Skriv som en menneskelig supportmedarbejder — i KORTE afsnit på 1-2 sætninger med en tom linje imellem. Skriv ALDRIG en mur af tekst (4-5 sætninger mast sammen i ét afsnit er for tungt at læse). Hvert nyt punkt, hvert nyt trin i tankegangen, får sit eget korte afsnit. Luft og linjeskift gør svaret nemt at skimme — det er sådan en dygtig medarbejder skriver en mail.
+- LÆNGDE (vigtigt): Skriv det KORTEST mulige svar der fuldt ud løser henvendelsen — som en travl, dygtig medarbejder. Match kundens egen længde; et simpelt spørgsmål får et kort svar (typisk 2-5 sætninger). Giv KUN den del kunden har brug for lige nu — recitér aldrig hele politikken, alle betingelser eller en hel guide når kun én del er relevant (fx kun returadressen, ikke alle refund-betingelser, medmindre kunden spørger). Ingen indledende fyld ("Tak for din besked...") og gentag ikke kundens spørgsmål — gå direkte til svaret.
 - Kald ALDRIG kundens problem for "produktionsfejl" eller "fabriksfejl" — brug kundens egne ord.
 ${
     actionResult

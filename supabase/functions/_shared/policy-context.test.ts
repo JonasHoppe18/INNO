@@ -6,7 +6,7 @@ import {
 } from "./policy-context.ts";
 import { buildMailPrompt } from "./prompt.ts";
 
-Deno.test("policy summary stays included with tiny reserved token budget", () => {
+Deno.test("policy context is guardrails-only (no pinned summary or excerpt)", () => {
   const context = buildPinnedPolicyContext({
     subject: "Return request",
     body: "I want to return my order",
@@ -20,13 +20,15 @@ Deno.test("policy summary stays included with tiny reserved token budget", () =>
     },
   });
 
-  assertEquals(context.policySummaryIncluded, true);
-  assertMatch(context.policySummaryText, /POLICY SUMMARY \(PINNED\)/);
+  // Knowledge-only: policy data is no longer pinned — only behavioral guardrails remain.
+  assertEquals(context.policySummaryIncluded, false);
+  assertEquals(context.policySummaryText, "");
+  assertEquals(context.policyExcerptText, "");
+  assertEquals(context.policyExcerptIncluded, false);
   assertMatch(context.policyRulesText, /Never invent URLs, return portals, labels, or processes/);
-  assertEquals(context.policySummaryTokens > 0, true);
 });
 
-Deno.test("return prompt contains summary and never-invent-portal rule", () => {
+Deno.test("return prompt carries guardrails (never-invent-portal + channel rule)", () => {
   const context = buildPinnedPolicyContext({
     subject: "Return label",
     body: "Where is your return portal?",
@@ -47,7 +49,6 @@ Deno.test("return prompt contains summary and never-invent-portal rule", () => {
     policyExcerpt: context.policyExcerptText,
   });
 
-  assertMatch(prompt, /POLICY SUMMARY \(PINNED\)/);
   assertMatch(prompt, /Never invent URLs, return portals, labels, or processes/);
   assertMatch(prompt, /RETURNS - CHANNEL RULE/i);
 });

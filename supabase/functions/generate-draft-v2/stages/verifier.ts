@@ -70,6 +70,23 @@ const FALLBACK_RESULT: VerifierResult = {
   issues: ["verifier_api_error"],
 };
 
+// Deterministic guard: the writer must NEVER claim live stock/inventory status
+// (writer rule "ALDRIG lagerantal/lagerstatus") unless a "Lagerstatus" fact from
+// the inventory lookup backs it. Mirrors the mixedLanguageCheck post-step.
+// Conservative regex — only unambiguous inventory phrasings, to avoid false retries.
+const STOCK_CLAIM_RE =
+  /\b(?:på lager|ikke på lager|på lageret|udsolgt|tilbage på lager|på restordre|i restordre|in stock|out of stock|back in stock|sold out|\d+\s*(?:stk\.?|styk\.?|pcs?\.?|units?)\s*(?:på lager|tilbage|left|available))\b/i;
+
+function unsupportedStockClaim(
+  draftText: string,
+  facts: ResolvedFact[],
+): boolean {
+  // If the inventory lookup produced a stock fact, the claim is allowed to be grounded in it.
+  const hasStockFact = facts.some((f) => /lagerstatus|lagerantal|på lager/i.test(f.label));
+  if (hasStockFact) return false;
+  return STOCK_CLAIM_RE.test(draftText);
+}
+
 export async function runVerifier(
   {
     draftText,
@@ -232,7 +249,11 @@ Machine-readable list of what went wrong. Use: answers_question_missing, wrong_l
     if (parsed.commits_to_next_step === false && !issues.includes("no_commitment")) {
       issues.push("no_commitment");
     }
-    const finalConfidence = languageCheck.ok
+    const stockViolation = unsupportedStockClaim(draftText, facts.facts);
+    if (stockViolation && !issues.includes("unsupported_stock_claim")) {
+      issues.push("unsupported_stock_claim");
+    }
+    const finalConfidence = languageCheck.ok && !stockViolation
       ? confidence
       : Math.min(confidence, 0.62);
 
@@ -261,7 +282,8 @@ Machine-readable list of what went wrong. Use: answers_question_missing, wrong_l
       confidence: finalConfidence,
       block_send: parsed.block_send === true,
       retry_with_stronger_model: parsed.retry_with_stronger_model === true ||
-        finalConfidence < 0.65 || !languageCheck.ok || needsRetryForCommitment,
+        finalConfidence < 0.65 || !languageCheck.ok || needsRetryForCommitment ||
+        stockViolation,
       issues,
     };
 

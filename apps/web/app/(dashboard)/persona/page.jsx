@@ -1,20 +1,8 @@
-import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { PersonaPanel } from "@/components/agent/PersonaPanel";
-import { PersonaPageHeader } from "@/components/agent/PersonaPageHeader";
-import { DashboardPageShell } from "@/components/dashboard-page-shell";
 
-export default async function AgentPersonaPage() {
-  const { userId } = await auth();
-  if (!userId) {
-    redirect("/sign-in?redirect_url=/persona");
-  }
-
-  return (
-    <DashboardPageShell>
-      <PersonaPanel>
-        <PersonaPageHeader />
-      </PersonaPanel>
-    </DashboardPageShell>
-  );
+// The agent's master prompt is now edited on the Settings page (the canonical
+// editor — see the "AI Prompt" section). This route stays as a redirect so any
+// existing links/bookmarks land in the right place.
+export default function AgentPersonaPage() {
+  redirect("/settings");
 }

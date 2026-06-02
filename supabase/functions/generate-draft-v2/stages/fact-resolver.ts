@@ -273,7 +273,29 @@ export async function runFactResolver(
   }
 
   if (!order) {
-    console.warn("[fact-resolver] No order found — returning empty facts");
+    // Emit an EXPLICIT not-found fact instead of empty facts, so the writer's
+    // "unverified order" / "ask, don't guess" rules fire on a positive signal
+    // rather than on the mere absence of an "Ordre fundet" fact.
+    if (orderNumbers.length > 0) {
+      console.warn(
+        `[fact-resolver] Order(s) ${JSON.stringify(orderNumbers)} not found — emitting explicit not-found fact`,
+      );
+      facts.push({
+        label: "Ordre IKKE fundet",
+        value:
+          `Ordrenummer ${orderNumbers.join(", ")} kunne IKKE findes i vores system. ` +
+          `Bekræft aldrig ordren som eksisterende, og udfør/lov ingen handlinger på den. ` +
+          `Forklar venligt at vi ikke kan finde et ordrenummer i det format, og spørg hvor produktet er købt (vores website eller en forhandler/platform) — antag ikke website.`,
+      });
+    } else {
+      console.warn("[fact-resolver] No order found (no order number given) — emitting explicit not-found fact");
+      facts.push({
+        label: "Ingen ordre fundet",
+        value:
+          `Vi kunne ikke finde en ordre på kundens oplysninger. ` +
+          `Bed om ordrenummer (#xxxx), og — ved garanti/defekt/retur — spørg hvor produktet er købt, før du bekræfter noget eller lover en handling.`,
+      });
+    }
     return { facts, order: null };
   }
 

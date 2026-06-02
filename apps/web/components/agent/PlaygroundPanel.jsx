@@ -10,46 +10,25 @@ import {
   useState,
 } from "react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
+import Link from "next/link";
 import { useAgentPersonaConfig } from "@/hooks/useAgentPersonaConfig";
 import {
   AlertTriangle,
-  Bold,
   BookOpen,
   Bot,
   CheckCircle2,
   ChevronRight,
   Clock,
-  Heading1,
-  Heading2,
-  Heading3,
-  Italic,
-  Link2,
-  List,
   Loader2,
-  Quote,
   Search,
+  Settings2,
   Shield,
-  Underline,
   User,
   XCircle,
 } from "lucide-react";
 import { ThreadPickerModal } from "./ThreadPickerModal";
 import { EvalPanel } from "./EvalPanel";
 
-const TOOLBAR_BUTTONS = [
-  { icon: Bold, label: "Bold" },
-  { icon: Italic, label: "Italic" },
-  { icon: Underline, label: "Underline" },
-  { icon: List, label: "List" },
-  { icon: Heading1, label: "H1" },
-  { icon: Heading2, label: "H2" },
-  { icon: Heading3, label: "H3" },
-  { icon: Link2, label: "Link" },
-  { icon: Quote, label: "Quote" },
-];
-const MODEL_OPTIONS = ["gpt-4o-mini", "gpt-4o"];
 const ACTION_MODES = [
   { value: "automatic", label: "Automatic" },
   { value: "approval", label: "Approval flow" },
@@ -57,23 +36,6 @@ const ACTION_MODES = [
 
 const SHOPIFY_SIGNAL_REGEX =
   /\b(order|adresse|address|refund|return|exchange|cancel|tracking|shipment|shipping)\b/i;
-
-const DEFAULT_INSTRUCTIONS = `TONE OG STIL — gælder på alle sprog:
-
-Åbning (kun første svar i en tråd):
-Start altid med en kort, varm indledning på kundens sprog. Tak kunden for at henvende sig og vis empati for problemet. Eksempel på dansk: "Tak fordi du kontakter os. Vi er kede af at høre, at du oplever problemer med [produkt]." — tilpas til kundens sprog og skriv altid indledningen på samme sprog som kunden.
-Gå direkte til løsning efter indledningen — skriv aldrig kundens problem om med egne ord.
-
-Opfølgningssvar (kunden har allerede skrevet):
-Spring indledningen over — gå direkte til sagen.
-
-Afslutning — vurdér altid situationen og skriv på kundens sprog:
-- Konkrete trin givet, afventer resultat: "Jeg ser frem til at høre fra dig."
-- Problemet løst eller ombytning aftalt: "God dag!"
-- Frustreret kunde eller lang ventetid: "Undskyld for ulejligheden og tak for din tålmodighed."
-
-Kontekstbevidsthed:
-Læs altid kundens besked grundigt igennem, inden du beder om yderligere information. Bed aldrig kunden om noget, de allerede har givet — hvis de skriver at de har vedhæftet billeder, skal du ikke bede om billeder. Hvis de allerede har beskrevet problemet i detaljer, skal du ikke bede dem om at uddybe.`;
 
 function toDurationLabel(value) {
   const numeric = Number(value);
@@ -95,23 +57,20 @@ function getInitials(value) {
   return initials || "CU";
 }
 
-const FineTuningPanelContext = createContext(null);
+const PlaygroundPanelContext = createContext(null);
 
-export function useFineTuningPanelActions() {
-  const ctx = useContext(FineTuningPanelContext);
+export function usePlaygroundPanelActions() {
+  const ctx = useContext(PlaygroundPanelContext);
   if (!ctx) {
-    throw new Error("useFineTuningPanelActions must be used inside FineTuningPanel");
+    throw new Error("usePlaygroundPanelActions must be used inside PlaygroundPanel");
   }
   return ctx;
 }
 
-export function FineTuningPanel({ children }) {
+export function PlaygroundPanel({ children }) {
   const { persona, loading, error, refresh, test, testPersona } =
     useAgentPersonaConfig();
 
-  const [instructions, setInstructions] = useState("");
-
-  const [selectedModel, setSelectedModel] = useState("gpt-4o-mini");
   const [actionMode, setActionMode] = useState("automatic");
   const [approvalDecision, setApprovalDecision] = useState(null);
   // Simulation fields — editable, filled by "Pick from inbox" or typed manually
@@ -141,10 +100,6 @@ export function FineTuningPanel({ children }) {
     return test.error instanceof Error ? test.error.message : String(test.error);
   }, [test?.error]);
 
-  useEffect(() => {
-    setInstructions(persona?.instructions || "");
-  }, [persona?.instructions]);
-
   const handleRefresh = useCallback(() => refresh().catch(() => null), [refresh]);
 
   const activeSimulation = useMemo(() => {
@@ -172,7 +127,7 @@ export function FineTuningPanel({ children }) {
     const fallback = [
       {
         tool: "write_email_draft_response",
-        details: "Draft generated from current fine-tuning instructions.",
+        details: "Draft generated from your saved master prompt.",
         durationLabel: "239ms",
       },
     ];
@@ -249,7 +204,7 @@ export function FineTuningPanel({ children }) {
     if (simThreadId) {
       setSimLoading(true);
       try {
-        // Always use eval_mode so the gate is bypassed — the fine-tuning page is
+        // Always use eval_mode so the gate is bypassed — the playground is
         // for testing only and should work on any ticket regardless of its state.
         const res = await fetch(`/api/draft/preview-v2`, {
           method: "POST",
@@ -291,9 +246,8 @@ export function FineTuningPanel({ children }) {
       scenario: activeSimulation.body,
       ticketSubject: activeSimulation.subject,
       customerFrom: activeSimulation.from,
-      instructions,
+      instructions: persona?.instructions || "",
       signature: "",
-      model: selectedModel,
       emailLanguage: null,
     }).catch(() => null);
   };
@@ -307,36 +261,35 @@ export function FineTuningPanel({ children }) {
   );
 
   return (
-    <FineTuningPanelContext.Provider value={contextValue}>
+    <PlaygroundPanelContext.Provider value={contextValue}>
       {children || null}
       <Card className="overflow-hidden border-0 bg-white shadow-none">
         <CardContent className="bg-white">
-          <div className="grid items-stretch gap-8 lg:grid-cols-2">
-            {/* Left column: Instructions first, advanced shop context second */}
-            <div className="space-y-5">
-              <EditorField
-                label="Instructions"
-                description="Describe how the AI should behave, open and close its replies, and what it can promise. The AI understands context — you can write conditional rules."
-                value={instructions}
-                onChange={setInstructions}
-                selectedModel={selectedModel}
-                onSelectedModelChange={setSelectedModel}
-                placeholder={`Examples:
-- Start first replies by thanking the customer for reaching out and showing empathy for their issue.
-- Close with "I look forward to hearing from you" when the issue is still being troubleshot, and "Have a great day!" when a solution has been given.
-- Never promise a refund without first checking the order date.
-- Always sign off with the agent's first name only.`}
-                rows={24}
-              />
-              {error && (
-                <p className="text-sm text-destructive">
-                  {error.message ?? "Could not load or save instructions."}
+          <div className="space-y-5">
+            {/* The playground tests the saved master prompt; editing happens in the agent settings */}
+            <div className="flex flex-col gap-2 rounded-2xl border border-slate-100 bg-slate-50/60 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-foreground">Playground</p>
+                <p className="text-xs text-muted-foreground">
+                  Test how the agent responds to a real or made-up ticket using your saved configuration. Editing the prompt happens in the agent settings.
                 </p>
-              )}
+              </div>
+              <Link
+                href="/settings"
+                className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-input bg-background px-3 text-xs font-medium text-slate-600 shadow-sm transition hover:bg-slate-50"
+              >
+                <Settings2 className="h-3.5 w-3.5" />
+                Edit master prompt
+              </Link>
             </div>
+            {error && (
+              <p className="text-sm text-destructive">
+                {error.message ?? "Could not load configuration."}
+              </p>
+            )}
 
-            {/* Right column: Ticket simulation */}
-            <aside className="overflow-hidden rounded-2xl border border-gray-200 bg-sidebar shadow-sm lg:sticky lg:top-6 lg:min-h-[760px]">
+            {/* Ticket simulation */}
+            <aside className="overflow-hidden rounded-2xl border border-gray-200 bg-sidebar shadow-sm">
               <div className="flex items-center gap-2 border-b border-gray-100 bg-sidebar px-4 py-2 text-xs font-medium text-slate-600">
                 <Shield className="h-3.5 w-3.5 text-slate-500" />
                 Simulation mode — no real-world impact. The AI will not send emails or update live orders.
@@ -527,7 +480,7 @@ export function FineTuningPanel({ children }) {
           setSimError(null);
         }}
       />
-    </FineTuningPanelContext.Provider>
+    </PlaygroundPanelContext.Provider>
   );
 }
 
@@ -681,60 +634,3 @@ function PipelineTrace({ debug }) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-function EditorField({
-  label,
-  description,
-  value,
-  onChange,
-  placeholder,
-  rows = 5,
-  selectedModel,
-  onSelectedModelChange,
-}) {
-  return (
-    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-      {(label || description) && (
-        <div className="border-b border-gray-200 px-4 py-3">
-          {label ? <p className="text-sm font-semibold text-foreground">{label}</p> : null}
-          {description ? (
-            <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
-          ) : null}
-        </div>
-      )}
-      <div>
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 bg-gray-50 px-3 py-2">
-          <div className="flex flex-wrap items-center gap-1.5">
-            {TOOLBAR_BUTTONS.map(({ icon: Icon, label: buttonLabel }) => (
-              <span
-                key={buttonLabel}
-                className="inline-flex h-7 min-w-7 items-center justify-center rounded-md border border-transparent px-1.5 text-muted-foreground"
-                role="presentation"
-                aria-hidden="true"
-              >
-                <Icon className="h-3.5 w-3.5" />
-              </span>
-            ))}
-          </div>
-          <select
-            value={selectedModel}
-            onChange={(event) => onSelectedModelChange(event.target.value)}
-            className="h-8 rounded-md border border-gray-200 bg-white px-2 text-xs font-medium text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-          >
-            {MODEL_OPTIONS.map((model) => (
-              <option key={model} value={model}>
-                {model}
-              </option>
-            ))}
-          </select>
-        </div>
-        <Textarea
-          value={value}
-          onChange={onChange}
-          rows={rows}
-          className="min-h-[760px] resize-y border-0 bg-transparent px-4 py-4 text-sm leading-relaxed text-slate-800 focus-visible:ring-2 focus-visible:ring-blue-500/30 focus-visible:ring-offset-2"
-          placeholder={placeholder}
-        />
-      </div>
-    </div>
-  );
-}
