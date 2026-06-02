@@ -589,6 +589,9 @@ export async function runWriter(
       .persona_instructions ??
       (shop as { instructions?: string }).instructions ??
       "";
+  // Brand-kontekst — auto-udfyldt fra Shopify, fortæller modellen hvem den repræsenterer.
+  const brandDescription =
+    ((shop as { brand_description?: string }).brand_description ?? "").trim();
 
   const recentCustomerText = [
     ...conversationHistory.filter((m) => m.role === "customer").slice(-3).map((m) => m.text),
@@ -842,7 +845,9 @@ ${c.content.slice(0, (c.usable_as === "procedure" || c.usable_as === "fact") ? 2
     caseState.open_questions.length === 0 &&
     caseState.pending_asks.length === 0;
 
-  const systemPrompt = `Du er en supportmedarbejder for ${shopName}.
+  const systemPrompt = `Du er en supportmedarbejder for ${shopName}.${
+    brandDescription ? `\nOm virksomheden: ${brandDescription}` : ""
+  }
 ${
     persona
       ? `\n${persona}\n`

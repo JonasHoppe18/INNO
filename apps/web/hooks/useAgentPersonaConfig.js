@@ -84,7 +84,6 @@ export function useAgentPersonaConfig(options = {}) {
       instructions: row.instructions ?? "",
       shop_name: row.shop_name ?? "",
       brand_description: row.brand_description ?? "",
-      support_identity: row.support_identity ?? "",
       updatedAt: row.updated_at ?? null,
     };
   }, []);
@@ -161,7 +160,6 @@ export function useAgentPersonaConfig(options = {}) {
           scenario: updates.scenario ?? persona?.scenario ?? null,
           instructions: updates.instructions ?? persona?.instructions ?? null,
           brand_description: updates.brand_description ?? persona?.brand_description ?? null,
-          support_identity: updates.support_identity ?? persona?.support_identity ?? null,
         };
 
         const res = await fetch("/api/persona", {

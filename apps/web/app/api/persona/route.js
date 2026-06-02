@@ -59,16 +59,13 @@ export async function GET() {
   if (scope?.workspaceId) {
     const { data } = await supabase
       .from("shops")
-      .select("shop_name, brand_description, support_identity")
+      .select("shop_name, brand_description")
       .eq("workspace_id", scope.workspaceId)
       .maybeSingle();
     shopData = data;
   }
 
   const shopName = shopData?.shop_name ?? "";
-  const defaultSupportIdentity = shopName
-    ? `Du er en del af ${shopName}'s supportteam. Du ER supporten — henvis aldrig kunden til "en professionel" eller "kontakt support", de har allerede kontaktet dig. Hvis problemet ikke kan løses remote, tilbyd garantiombytning eller retur.`
-    : "";
 
   return NextResponse.json({
     persona: {
@@ -78,7 +75,6 @@ export async function GET() {
       scenario: workspaceSettings?.persona_scenario ?? "",
       shop_name: shopName,
       brand_description: shopData?.brand_description ?? "",
-      support_identity: shopData?.support_identity ?? defaultSupportIdentity,
     },
   });
 }
@@ -100,7 +96,7 @@ export async function POST(req) {
   }
 
   const body = await req.json().catch(() => ({}));
-  const { signature, instructions, scenario, brand_description, support_identity } = body;
+  const { signature, instructions, scenario, brand_description } = body;
 
   // Gem signature — per bruger (profiles)
   if (signature !== undefined) {
@@ -138,14 +134,11 @@ export async function POST(req) {
     }
   }
 
-  // Gem shop identity fields — brand_description + support_identity i shops tabellen
-  if (scope?.workspaceId && (brand_description !== undefined || support_identity !== undefined)) {
+  // Gem shop identity field — brand_description i shops tabellen
+  if (scope?.workspaceId && brand_description !== undefined) {
     await supabase
       .from("shops")
-      .update({
-        ...(brand_description !== undefined && { brand_description }),
-        ...(support_identity !== undefined && { support_identity }),
-      })
+      .update({ brand_description })
       .eq("workspace_id", scope.workspaceId);
   }
 
@@ -170,7 +163,7 @@ export async function POST(req) {
   if (scope?.workspaceId) {
     const { data } = await supabase
       .from("shops")
-      .select("shop_name, brand_description, support_identity")
+      .select("shop_name, brand_description")
       .eq("workspace_id", scope.workspaceId)
       .maybeSingle();
     savedShopData = data;
@@ -186,7 +179,6 @@ export async function POST(req) {
       scenario: savedWorkspaceSettings?.persona_scenario ?? "",
       shop_name: savedShopName,
       brand_description: savedShopData?.brand_description ?? "",
-      support_identity: savedShopData?.support_identity ?? "",
     },
   });
 }

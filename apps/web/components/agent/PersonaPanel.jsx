@@ -16,19 +16,23 @@ import {
   Underline,
 } from "lucide-react";
 
-const DEFAULT_INSTRUCTIONS = `TONE OG STIL — gælder på alle sprog:
+const DEFAULT_INSTRUCTIONS = `IDENTITET OG ROLLE:
+Du ER supporten — henvis aldrig kunden videre ("kontakt en forhandler", "kontakt support"); de har allerede skrevet til dig. Løs sagen selv. Kan det ikke løses remote (defekt eller i stykker), så tilbyd garantiombytning eller retur som næste skridt — efterlad aldrig kunden uden en vej videre.
 
-Åbning (kun første svar i en tråd):
-Start altid med en kort, varm indledning på kundens sprog. Tak kunden for at henvende sig og vis empati for problemet. Eksempel på dansk: "Tak fordi du kontakter os. Vi er kede af at høre, at du oplever problemer med [produkt]." — tilpas til kundens sprog og skriv altid indledningen på samme sprog som kunden.
-Gå direkte til løsning efter indledningen — skriv aldrig kundens problem om med egne ord.
+TONE OG STIL — gælder på alle sprog:
+- Svar altid på kundens sprog (dansk → dansk, engelsk → engelsk).
+- Brug kundens fornavn i hilsenen ("Hej [navn]," / "Hi [name],").
+- Vær kort og direkte. Spring generiske åbnere over ("Tak fordi du kontakter os") — gå til svaret. Ved defekt/frustration: ét kort empatisk udsagn først.
+- Emoji kun når konteksten er genuint positiv (😊, ✅) — aldrig på klager eller returneringer.
 
-Opfølgningssvar (kunden har allerede skrevet):
-Spring indledningen over — gå direkte til sagen.
+AFSLUTNING — vurdér situationen:
+- Konkrete trin givet, afventer svar: "Jeg ser frem til at høre fra dig."
+- Problemet løst: "God dag!" / "Have a great day!"
+- Frustration eller lang ventetid: "Undskyld for ulejligheden og tak for din tålmodighed."
+- Aldrig: "du er velkommen til at kontakte os igen".
 
-Afslutning — vurdér altid situationen og skriv på kundens sprog:
-- Konkrete trin givet, afventer resultat: "Jeg ser frem til at høre fra dig."
-- Problemet løst eller ombytning aftalt: "God dag!"
-- Frustreret kunde eller lang ventetid: "Undskyld for ulejligheden og tak for din tålmodighed."`;
+KONTEKSTBEVIDSTHED:
+Læs kundens besked grundigt før du beder om noget. Bed aldrig om noget kunden allerede har givet (billeder, ordrenummer, detaljer). Har kunden allerede taget et trin, så gentag ikke det trin i din guide.`;
 
 // Dummy toolbar data – ren kosmetik men hjælper med at beskrive editoren.
 const TOOLBAR_BUTTONS = [
@@ -57,7 +61,6 @@ export function PersonaPanel({ children }) {
     signature: "",
     instructions: "",
     brand_description: "",
-    support_identity: "",
   });
   // Dirty flag styrer hvornår gem-knappen skal aktiveres.
   const [dirty, setDirty] = useState(false);
@@ -76,11 +79,10 @@ export function PersonaPanel({ children }) {
       signature: persona?.signature ?? "",
       instructions: persona?.instructions || DEFAULT_INSTRUCTIONS,
       brand_description: persona?.brand_description ?? "",
-      support_identity: persona?.support_identity ?? "",
     });
     setScenarioInput(persona?.scenario ?? "");
     setDirty(false);
-  }, [persona?.signature, persona?.scenario, persona?.instructions, persona?.brand_description, persona?.support_identity]);
+  }, [persona?.signature, persona?.scenario, persona?.instructions, persona?.brand_description]);
 
   // Generisk onChange der opdaterer form state.
   const handleChange = (key) => (event) => {
@@ -145,18 +147,16 @@ export function PersonaPanel({ children }) {
                   className="w-full resize-y rounded-lg border border-input bg-white px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
                 />
               </div>
-              <div className="space-y-1.5">
-                <p className="text-xs font-medium text-muted-foreground">Support identity</p>
-                <textarea
-                  value={form.support_identity}
-                  onChange={handleChange("support_identity")}
-                  rows={3}
-                  placeholder="Du er en del af [shop]'s supportteam. Du ER supporten — henvis aldrig kunden videre."
-                  className="w-full resize-y rounded-lg border border-input bg-white px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-                />
-              </div>
             </div>
 
+            <EditorField
+              label="Master prompt"
+              description="The single source of truth for the agent — its identity, what it can promise, tone, and how to reply."
+              value={form.instructions}
+              onChange={handleChange("instructions")}
+              placeholder="Keep the tone warm and solution-oriented..."
+              rows={14}
+            />
             <EditorField
               label="Signature"
               description="Shown at the bottom of every reply - supports line breaks."
@@ -164,14 +164,6 @@ export function PersonaPanel({ children }) {
               onChange={handleChange("signature")}
               placeholder={"Best regards\n Sona AI"}
               rows={4}
-            />
-            <EditorField
-              label="Instructions"
-              description="Tone of voice, what the agent can promise, and how to reply."
-              value={form.instructions}
-              onChange={handleChange("instructions")}
-              placeholder="Keep the tone warm and solution-oriented..."
-              rows={8}
             />
             {error && (
               <p className="text-sm text-destructive">
