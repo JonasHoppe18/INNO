@@ -10,7 +10,7 @@ app/
 components/
   inbox/              → Inbox UI (TicketDetail, InboxSplitView osv.)
   settings/           → Indstillingssider
-  agent/              → AI-agent UI: AutomationPanel, EvalPanel, FineTuningPanel, PersonaPanel
+  agent/              → AI-agent UI: AutomationPanel, EvalPanel, PlaygroundPanel, PersonaPanel
   analytics/          → Analytics UI (TicketVolumeChart osv.)
   knowledge/          → Knowledge base UI (kategorier, gaps, snippets)
   integrations/       → Shopify + mailbox integrationer
