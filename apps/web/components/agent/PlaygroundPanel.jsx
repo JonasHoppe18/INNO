@@ -275,7 +275,7 @@ export function PlaygroundPanel({ children }) {
                 </p>
               </div>
               <Link
-                href="/persona"
+                href="/settings"
                 className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-input bg-background px-3 text-xs font-medium text-slate-600 shadow-sm transition hover:bg-slate-50"
               >
                 <Settings2 className="h-3.5 w-3.5" />
