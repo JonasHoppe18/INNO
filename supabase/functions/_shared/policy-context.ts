@@ -52,9 +52,9 @@ const truncateToApproxTokens = (value: string, maxTokens: number) => {
 
 function parseReturnWindowDays(text: string): number | null {
   const patterns = [
-    /(?:within|up to|under|in)\s+(\d{1,3})\s*(?:day|days)\b/i,
-    /(\d{1,3})\s*(?:day|days)\s*(?:return|refund|window|period)/i,
-    /return(?:s)?\s*(?:accepted|allowed)?\s*(?:for|within)?\s*(\d{1,3})\s*(?:day|days)/i,
+    /(?:within|up to|under|in)\s+(\d{1,3})[\s-]*(?:day|days)\b/i,
+    /(\d{1,3})[\s-]*(?:day|days)\s*(?:return|refund|window|period)/i,
+    /return(?:s)?\s*(?:accepted|allowed)?\s*(?:for|within)?\s*(\d{1,3})[\s-]*(?:day|days)/i,
   ];
   for (const pattern of patterns) {
     const match = text.match(pattern);

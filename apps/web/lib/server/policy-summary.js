@@ -42,9 +42,9 @@ function normalizeSummary(input) {
 
 function parseReturnWindowDays(text = "") {
   const patterns = [
-    /(?:within|up to|under|in)\s+(\d{1,3})\s*(?:day|days)\b/i,
-    /(\d{1,3})\s*(?:day|days)\s*(?:return|refund|window|period)/i,
-    /return(?:s)?\s*(?:accepted|allowed)?\s*(?:for|within)?\s*(\d{1,3})\s*(?:day|days)/i,
+    /(?:within|up to|under|in)\s+(\d{1,3})[\s-]*(?:day|days)\b/i,
+    /(\d{1,3})[\s-]*(?:day|days)\s*(?:return|refund|window|period)/i,
+    /return(?:s)?\s*(?:accepted|allowed)?\s*(?:for|within)?\s*(\d{1,3})[\s-]*(?:day|days)/i,
   ];
   for (const pattern of patterns) {
     const match = text.match(pattern);
@@ -168,7 +168,7 @@ async function llmSummary({ refundPolicy = "", shippingPolicy = "", termsPolicy 
     body: JSON.stringify({
       model: OPENAI_MODEL,
       temperature: 0,
-      max_tokens: 280,
+      max_tokens: 900,
       response_format: {
         type: "json_schema",
         json_schema: schema,
