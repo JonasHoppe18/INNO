@@ -111,6 +111,10 @@ const VALID_TRIGGER_INTENTS = [
   "other",
 ];
 
+function isInternalAudience(value: unknown) {
+  return String(value || "").trim().toLowerCase() === "internal";
+}
+
 // Parse audience ("customer" | "internal") and trigger_intent[] from a snippet
 // payload. Internal rules are injected deterministically by the pipeline's
 // internal-rules stage; audience="customer" (or absent) flows through normal
@@ -450,13 +454,15 @@ export async function GET(request: Request) {
       .select("id, source_id, content, metadata, chunk_index, created_at")
       .eq("shop_id", shop.id)
       .eq("source_provider", "manual_text");
+    const hideInternalAudience = !audienceFilter && !includeAll;
 
     if (audienceFilter) {
       // Internal-rule view: filter purely by audience, ignore category buckets.
       query = query.eq("metadata->>audience" as any, audienceFilter);
     } else if (!includeAll) {
-      // Customer-facing views must never surface internal rules.
-      query = query.not("metadata->>audience" as any, "eq", "internal");
+      // Customer-facing views must never surface internal rules. The actual
+      // internal filter happens after fetching because SQL "not equals" drops
+      // null audience values, and legacy customer snippets do not set audience.
       if (category) {
         query = query.eq("metadata->>category" as any, category);
       } else {
@@ -477,6 +483,7 @@ export async function GET(request: Request) {
     const snippets: Array<{ snippet_id: string; title: string; content: string; category: string | null; product_id: string | null; product_title: string | null; usable_as: string | null; is_stale: boolean; products: string[]; issue_types: string[]; format: "qa" | "prose"; question: string | null; answer: string | null; audience: string | null; trigger_intent: string[]; created_at: string | null }> = [];
     for (const row of rows || []) {
       const meta = row.metadata as any;
+      if (hideInternalAudience && isInternalAudience(meta?.audience)) continue;
       const snippetId = String(meta?.snippet_id || row.source_id || row.id || "").trim();
       if (!snippetId || seen.has(snippetId)) continue;
       if (asChunkIndex(meta?.chunk_index ?? row.chunk_index) !== 0) continue;

@@ -20,6 +20,10 @@ function createServiceClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 }
 
+function isInternalAudience(value: unknown) {
+  return String(value || "").trim().toLowerCase() === "internal";
+}
+
 export async function GET() {
   const { userId: clerkUserId, orgId } = await auth();
   if (!clerkUserId) {
@@ -67,7 +71,9 @@ export async function GET() {
 
   const countByProductId: Record<string, number> = {};
   for (const row of knowledgeRows || []) {
-    const pid = (row.metadata as any)?.product_id as string | undefined;
+    const metadata = (row.metadata as any) || {};
+    if (isInternalAudience(metadata.audience)) continue;
+    const pid = metadata.product_id as string | undefined;
     if (pid) countByProductId[pid] = (countByProductId[pid] || 0) + 1;
   }
 
