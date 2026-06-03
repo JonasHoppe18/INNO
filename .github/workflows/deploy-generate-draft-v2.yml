@@ -1,0 +1,36 @@
+name: Deploy generate-draft-v2
+
+# Deploys the active draft pipeline to the production Supabase project using the
+# Supabase CLI, which bundles the function together with its ../_shared imports
+# correctly (the reason this cannot be done safely by hand via the MCP tool).
+#
+# One-time setup: add a repo secret SUPABASE_ACCESS_TOKEN
+#   (Supabase Dashboard -> Account -> Access Tokens -> generate).
+#
+# Trigger: manually via the Actions tab ("Run workflow"), or automatically when
+# the function / shared code changes on this branch.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - claude/upbeat-ride-rP9Os
+    paths:
+      - supabase/functions/generate-draft-v2/**
+      - supabase/functions/_shared/**
+      - .github/workflows/deploy-generate-draft-v2.yml
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Deploy generate-draft-v2 (verify_jwt stays enabled)
+        run: supabase functions deploy generate-draft-v2 --project-ref ikuupzjaxzvatdnmyzoy
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
