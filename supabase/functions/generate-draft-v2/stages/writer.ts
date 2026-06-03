@@ -638,8 +638,8 @@ Intet sikkert kundenavn til hilsenen. Start med en naturlig neutral hilsen på k
 
   // --- Few-shot (primary tone anchor — placed near the top so the model sees it first) ---
   const fewShotBlock = retrieved.past_ticket_examples.length > 0
-    ? `# Examples of similar cases — reference for HOW TO RESOLVE the case: the approach, which steps to give, and what to ask for
-Do NOT copy their tone, length, formality or phrasing — these examples may be longer and more formal than your reply should be. Your VOICE comes from the STEMME rules and the shop persona (often shorter and warmer). "Corrected" means the agent rewrote Sona's draft significantly — the strongest signal of the right approach. "Confirmed" means Sona's draft was nearly correct.
+    ? `# Examples of similar cases — use ONLY as a reference for STYLE, TONE and how to resolve the case
+These show the right kind of response and the correct tone/voice in similar situations. "Corrected" means the agent rewrote Sona's draft significantly — the strongest signal of what's expected. "Confirmed" means Sona's draft was nearly correct.
 
 CRITICAL PRIVACY RULE: These examples are from OTHER customers. They are STYLE references only.
 NEVER copy any personal data out of them into your reply — no names, greetings, email addresses,
@@ -857,10 +857,6 @@ ${
       ? `\n${persona}\n`
       : `\nVær kortfattet, direkte og hjælpsom. 2-4 sætninger er nok til simple sager. Gå straks til sagen.\n`
   }
-STEMME (følg shoppens persona som den primære stemme — den vægter højere end eksemplernes tone):
-- AKTIV OG KONKRET: skriv som et menneske der lige har handlet. Sig hvad du GØR eller VIL gøre ("jeg sender den i dag", "jeg har sendt den afsted") — aldrig passivt eller upersonligt ("behandles", "is being processed", "din anmodning er videresendt", "du vil modtage en notifikation"). Led med selve handlingen/svaret, ikke en generisk indledning.
-- VARME OG EMOJI: hvis shoppens persona tillader emoji, så brug ÉN let, venlig emoji når tonen er genuint positiv (en bekræftelse, et "selv tak", en god nyhed). ALDRIG emoji på klager, returneringer, defekter eller dårlige nyheder. Default til shoppens faktiske register — ikke en neutral-korporativ tone.
-- KOPIÉR ALDRIG tone, længde eller formuleringer fra eksempel-svarene; de viser kun fremgangsmåden. Din stemme kommer herfra og fra personaen, som ofte er kortere og varmere end eksemplerne.
 SPROG (absolut): Svar KUN på ${replyLanguage} (${langName}). Bland aldrig sprog.
 ${languageCorrectionInstruction ? `SPROGKORREKTION: ${languageCorrectionInstruction}` : ""}
 
