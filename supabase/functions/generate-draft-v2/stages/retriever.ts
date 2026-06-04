@@ -18,6 +18,9 @@ const SNIPPET_MATCHER_MARGIN = 0.15;
 // Candidate-pool size handed to the matcher (recall layer). Above this we trust
 // hybrid ranking; the matcher (precision layer) picks the final chunks from here.
 const MATCH_POOL_SIZE = 15;
+const MAX_DIAGNOSTIC_QUERY_RESULTS = 200;
+const MAX_DIAGNOSTIC_CANDIDATES = 60;
+const MAX_DIAGNOSTIC_TEXT = 120;
 
 export interface RetrievedChunk {
   id: string;
@@ -92,6 +95,7 @@ export interface RetrieverResult {
     abstained: boolean;
     fell_back: boolean;
   };
+  candidate_diagnostics?: RetrievalCandidateDiagnostics;
 }
 
 export interface RetrieverInput {
@@ -225,6 +229,11 @@ function uniqueStrings(items: string[]): string[] {
   return [...new Set(items.filter(Boolean))];
 }
 
+function shortDiagnosticText(value: unknown): string | null {
+  const text = stripHtml(String(value ?? "")).slice(0, MAX_DIAGNOSTIC_TEXT);
+  return text || null;
+}
+
 function buildShopProductTerms(shop?: Record<string, unknown>): string[] {
   const overview = String(shop?.product_overview || "");
   const terms = overview
@@ -331,6 +340,57 @@ const TECHNICAL_INTENTS = new Set([
 export interface FallbackQuery {
   text: string;
   productAgnostic: boolean;
+}
+
+type QuerySource = "vector" | "bm25";
+
+type QueryPair = {
+  vector: Array<Record<string, unknown>>;
+  bm25: Array<Record<string, unknown>>;
+};
+
+export interface RetrievalCandidateDiagnostics {
+  planner_queries: string[];
+  fallback_queries: Array<{
+    query: string;
+    product_agnostic: boolean;
+  }>;
+  query_results: Array<{
+    query: string;
+    query_index: number;
+    source: QuerySource;
+    chunk_id: string;
+    raw_rank: number;
+    raw_score: number | null;
+    source_type: string | null;
+    usable_as: RetrievedChunk["usable_as"] | null;
+    title: string | null;
+    question: string | null;
+    products: string[];
+    issue_types: string[];
+  }>;
+  merged_candidates_pre_score: Array<{
+    chunk_id: string;
+    vector_rank: number | null;
+    bm25_rank: number | null;
+    rrf_score: number;
+  }>;
+  scored_candidates_pre_dedupe: Array<{
+    chunk_id: string;
+    base_score: number;
+    product_boost: number;
+    issue_type_boost: number;
+    lexical_issue_boost: number;
+    source_type_boost: number;
+    usable_as_boost: number;
+    cross_product_penalty: number;
+    final_score: number;
+  }>;
+  candidates_post_dedupe: string[];
+  matcher_pool_top15: string[];
+  matcher_selected_ids: string[];
+  matcher_abstain: boolean | null;
+  final_selected_ids: string[];
 }
 
 // Build supplementary retrieval queries from the customer message.
@@ -559,6 +619,211 @@ function classifyKnowledgeSource(input: {
   };
 }
 
+function diagnosticChunkMeta(row: Record<string, unknown>): {
+  source_type: string | null;
+  usable_as: RetrievedChunk["usable_as"] | null;
+  title: string | null;
+  question: string | null;
+  products: string[];
+  issue_types: string[];
+} {
+  const metadata = row.metadata && typeof row.metadata === "object"
+    ? row.metadata as Record<string, unknown>
+    : {};
+  const source_label = sourceLabel(row);
+  const classified = classifyKnowledgeSource({
+    content: String(row.content || ""),
+    kind: String(row.source_type || "knowledge"),
+    source_label,
+    source_provider: row.source_provider as string | null,
+    metadata,
+  });
+  return {
+    source_type: row.source_type != null ? String(row.source_type) : null,
+    usable_as: classified.usable_as,
+    title: shortDiagnosticText(metadata.title || metadata.name || metadata.label),
+    question: typeof metadata.question === "string"
+      ? shortDiagnosticText(metadata.question)
+      : null,
+    products: Array.isArray(metadata.products)
+      ? (metadata.products as unknown[]).map((p) =>
+        String(p || "").trim().toLowerCase()
+      ).filter(Boolean).slice(0, 8)
+      : [],
+    issue_types: classified.chunk_issue_types.slice(0, 8),
+  };
+}
+
+function buildRawRankIndex(
+  queryPairs: QueryPair[],
+  source: QuerySource,
+): Map<string, number> {
+  const ranks = new Map<string, number>();
+  for (const pair of queryPairs) {
+    const list = source === "vector" ? pair.vector : pair.bm25;
+    list.forEach((row, index) => {
+      const id = String(row.id);
+      const rank = index + 1;
+      const existing = ranks.get(id);
+      if (existing == null || rank < existing) ranks.set(id, rank);
+    });
+  }
+  return ranks;
+}
+
+type ScoreBreakdown = {
+  base_score: number;
+  product_boost: number;
+  issue_type_boost: number;
+  lexical_issue_boost: number;
+  source_type_boost: number;
+  usable_as_boost: number;
+  cross_product_penalty: number;
+  final_score: number;
+};
+
+function buildScoreBreakdown(input: {
+  chunk: RetrievedChunk;
+  mentionedProducts: string[];
+  otherProducts: string[];
+  issueTerms: string[];
+}): ScoreBreakdown {
+  const { chunk, mentionedProducts, otherProducts, issueTerms } = input;
+  const text = `${chunk.source_label} ${chunk.content}`;
+  const directProductBoost = overlapCount(text, mentionedProducts) * 0.10;
+  const generalProductBoost =
+    chunk.applies_to_all_products && mentionedProducts.length > 0 ? 0.05 : 0;
+  const productBoost = directProductBoost + generalProductBoost;
+  const crossProductPenalty = !chunk.applies_to_all_products &&
+      mentionedProducts.length === 1 &&
+      overlapCount(text, otherProducts) > 0 &&
+      overlapCount(text, mentionedProducts) === 0
+    ? 0.12
+    : 0;
+  const taggedIssueOverlap = chunk.chunk_issue_types.filter((t) =>
+    issueTerms.includes(t)
+  ).length;
+  const issueTypeBoost = taggedIssueOverlap * 0.06;
+  const lexicalIssueBoost = overlapCount(text, issueTerms) * 0.02;
+  const sourceTypeBoost =
+    /manual_text|snippet/i.test(`${chunk.source_label} ${chunk.kind}`)
+      ? 0.04
+      : 0;
+  const usableAsBoost =
+    (chunk.usable_as === "saved_reply" ? 0.06 : 0) +
+    (chunk.usable_as === "policy" ? 0.02 : 0) +
+    (chunk.usable_as === "fact" ? 0.02 : 0);
+  const finalScore = chunk.similarity +
+    productBoost +
+    issueTypeBoost +
+    lexicalIssueBoost +
+    sourceTypeBoost +
+    usableAsBoost -
+    crossProductPenalty;
+  return {
+    base_score: chunk.similarity,
+    product_boost: productBoost,
+    issue_type_boost: issueTypeBoost,
+    lexical_issue_boost: lexicalIssueBoost,
+    source_type_boost: sourceTypeBoost,
+    usable_as_boost: usableAsBoost,
+    cross_product_penalty: crossProductPenalty,
+    final_score: finalScore,
+  };
+}
+
+export function buildRetrievalCandidateDiagnostics(input: {
+  plannerQueries: string[];
+  fallbackQueries: FallbackQuery[];
+  queryDefs: FallbackQuery[];
+  queryPairs: QueryPair[];
+  fusedRaw: Array<{
+    id: string;
+    score: number;
+    vectorSimilarity: number | null;
+    chunk: Record<string, unknown>;
+  }>;
+  scoredChunks: RetrievedChunk[];
+  candidatesPostDedupe: RetrievedChunk[];
+  matcherPool: RetrievedChunk[];
+  matcherDebug?: RetrieverResult["matcher_debug"];
+  finalChunks: RetrievedChunk[];
+  scoreBreakdown: (chunk: RetrievedChunk) => ScoreBreakdown;
+}): RetrievalCandidateDiagnostics {
+  const vectorRanks = buildRawRankIndex(input.queryPairs, "vector");
+  const bm25Ranks = buildRawRankIndex(input.queryPairs, "bm25");
+  const queryResults: RetrievalCandidateDiagnostics["query_results"] = [];
+  input.queryPairs.forEach((pair, queryIndex) => {
+    const query = input.queryDefs[queryIndex]?.text ?? "";
+    for (const source of ["vector", "bm25"] as const) {
+      const list = source === "vector" ? pair.vector : pair.bm25;
+      list.forEach((row, index) => {
+        if (queryResults.length >= MAX_DIAGNOSTIC_QUERY_RESULTS) return;
+        const meta = diagnosticChunkMeta(row);
+        queryResults.push({
+          query,
+          query_index: queryIndex,
+          source,
+          chunk_id: String(row.id),
+          raw_rank: index + 1,
+          raw_score: typeof row.similarity === "number" ? row.similarity : null,
+          source_type: meta.source_type,
+          usable_as: meta.usable_as,
+          title: meta.title,
+          question: meta.question,
+          products: meta.products,
+          issue_types: meta.issue_types,
+        });
+      });
+    }
+  });
+
+  return {
+    planner_queries: input.plannerQueries.slice(0, 5),
+    fallback_queries: input.fallbackQueries.slice(0, 5).map((q) => ({
+      query: q.text,
+      product_agnostic: q.productAgnostic,
+    })),
+    query_results: queryResults,
+    merged_candidates_pre_score: input.fusedRaw
+      .slice(0, MAX_DIAGNOSTIC_CANDIDATES)
+      .map((row) => ({
+        chunk_id: String(row.id),
+        vector_rank: vectorRanks.get(String(row.id)) ?? null,
+        bm25_rank: bm25Ranks.get(String(row.id)) ?? null,
+        rrf_score: row.score,
+      })),
+    scored_candidates_pre_dedupe: input.scoredChunks
+      .slice(0, MAX_DIAGNOSTIC_CANDIDATES)
+      .map((chunk) => ({
+        chunk_id: String(chunk.id),
+        ...input.scoreBreakdown(chunk),
+      })),
+    candidates_post_dedupe: input.candidatesPostDedupe
+      .slice(0, MAX_DIAGNOSTIC_CANDIDATES)
+      .map((chunk) => String(chunk.id)),
+    matcher_pool_top15: input.matcherPool.map((chunk) => String(chunk.id)),
+    matcher_selected_ids: (input.matcherDebug?.selected_ids ?? []).map((id) =>
+      String(id)
+    ),
+    matcher_abstain: input.matcherDebug?.abstained ?? null,
+    final_selected_ids: input.finalChunks.map((chunk) => String(chunk.id)),
+  };
+}
+
+export function buildRetrievalCandidateDiagnosticsBestEffort(
+  build: () => RetrievalCandidateDiagnostics,
+): RetrievalCandidateDiagnostics | undefined {
+  try {
+    return build();
+  } catch (err) {
+    console.warn(
+      `[retriever] candidate diagnostics skipped: ${(err as Error).message}`,
+    );
+    return undefined;
+  }
+}
+
 function tokenOverlapJaccard(a: string, b: string): number {
   const ta = new Set(tokenize(a));
   const tb = new Set(tokenize(b));
@@ -700,12 +965,14 @@ export async function runRetriever(
   // flag (return/refund probes run product-agnostic — see buildFallbackQueries).
   const queryDefs: FallbackQuery[] = [];
   const seenQueryText = new Set<string>();
-  for (const text of plan.sub_queries.filter(Boolean)) {
+  const plannerQueries = plan.sub_queries.filter(Boolean);
+  for (const text of plannerQueries) {
     if (seenQueryText.has(text)) continue;
     seenQueryText.add(text);
     queryDefs.push({ text, productAgnostic: false });
   }
-  for (const q of buildFallbackQueries(plan, customerMessage, shop)) {
+  const fallbackQueries = buildFallbackQueries(plan, customerMessage, shop);
+  for (const q of fallbackQueries) {
     if (seenQueryText.has(q.text)) continue;
     seenQueryText.add(q.text);
     queryDefs.push(q);
@@ -935,6 +1202,14 @@ export async function runRetriever(
     ? allShopProducts.filter((p) => p !== mentionedProducts[0])
     : [];
 
+  const scoreBreakdown = (chunk: RetrievedChunk) =>
+    buildScoreBreakdown({
+      chunk,
+      mentionedProducts,
+      otherProducts,
+      issueTerms,
+    });
+
   const scoredChunks: RetrievedChunk[] = fused
     // Internal rules (metadata.audience === "internal") are injected
     // deterministically by the internal-rules stage and must NEVER reach the
@@ -991,50 +1266,9 @@ export async function runRetriever(
         usable_as: chunk.usable_as,
       })
     )
-    .sort((a, b) => {
-      const score = (chunk: RetrievedChunk) => {
-        const text = `${chunk.source_label} ${chunk.content}`;
-        const productBoost = overlapCount(text, mentionedProducts) * 0.10;
-        // Cross-product knowledge (Product Questions → General) is by definition
-        // compatible with any product, so it should never be penalised for
-        // mentioning the "wrong" product and should ride along on the product
-        // context when one is present.
-        const crossProductPenalty = !chunk.applies_to_all_products &&
-            mentionedProducts.length === 1 &&
-            overlapCount(text, otherProducts) > 0 &&
-            overlapCount(text, mentionedProducts) === 0
-          ? 0.12
-          : 0;
-        const generalProductBoost =
-          chunk.applies_to_all_products && mentionedProducts.length > 0
-            ? 0.05
-            : 0;
-        // Reward chunks the admin tagged with issue_types that match what the
-        // customer is asking about. This is the explicit metadata path — much
-        // more reliable than text overlap once snippets are tagged from the
-        // canonical vocabulary.
-        const taggedIssueOverlap = chunk.chunk_issue_types.filter((t) =>
-          issueTerms.includes(t)
-        ).length;
-        const taggedIssueBoost = taggedIssueOverlap * 0.06;
-        return chunk.similarity +
-          productBoost +
-          generalProductBoost +
-          taggedIssueBoost +
-          // Legacy text-overlap boost — still helps for untagged Shopify
-          // product descriptions where the issue keyword sometimes appears
-          // verbatim. Keep small so tagged chunks win.
-          overlapCount(text, issueTerms) * 0.02 +
-          (/manual_text|snippet/i.test(`${chunk.source_label} ${chunk.kind}`)
-            ? 0.04
-            : 0) +
-          (chunk.usable_as === "saved_reply" ? 0.06 : 0) +
-          (chunk.usable_as === "policy" ? 0.02 : 0) +
-          (chunk.usable_as === "fact" ? 0.02 : 0) -
-          crossProductPenalty;
-      };
-      return score(b) - score(a);
-    });
+    .sort((a, b) =>
+      scoreBreakdown(b).final_score - scoreBreakdown(a).final_score
+    );
 
   // Mechanism 3: collapse to a dominant multi-chunk guide when one exists.
   // Inert for single-chunk-snippet shops (all source_id null) — see helper.
@@ -1078,14 +1312,14 @@ export async function runRetriever(
   // the request. Replaces the old lexical title-match override + issue-tiebreak.
   // Never blocks a draft: on any failure we fall back to regularChunks (today's
   // behaviour). matcher_debug is for eval only.
-  const pool = consolidated
+  const candidatesPostDedupe = consolidated
     .reduce((acc: RetrievedChunk[], chunk) => {
       const dup = acc.some((k) =>
         tokenOverlapJaccard(k.content, chunk.content) >= 0.6
       );
       return dup ? acc : [...acc, chunk];
-    }, [])
-    .slice(0, MATCH_POOL_SIZE);
+    }, []);
+  const pool = candidatesPostDedupe.slice(0, MATCH_POOL_SIZE);
 
   let finalChunks = regularChunks;
   let matcherDebug: RetrieverResult["matcher_debug"] | undefined;
@@ -1170,6 +1404,22 @@ export async function runRetriever(
     }
   }
 
+  const candidateDiagnostics = buildRetrievalCandidateDiagnosticsBestEffort(
+    () => buildRetrievalCandidateDiagnostics({
+      plannerQueries,
+      fallbackQueries,
+      queryDefs: boundedQueryDefs,
+      queryPairs,
+      fusedRaw,
+      scoredChunks,
+      candidatesPostDedupe,
+      matcherPool: pool,
+      matcherDebug,
+      finalChunks,
+      scoreBreakdown,
+    }),
+  );
+
   // Past ticket examples — directly from typed ticket_examples table
   const pastTicketExamples = ticketResult
     .filter((t) => t.agent_reply && t.agent_reply.length > 20)
@@ -1192,5 +1442,8 @@ export async function runRetriever(
     chunks: finalChunks,
     past_ticket_examples: pastTicketExamples,
     ...(matcherDebug ? { matcher_debug: matcherDebug } : {}),
+    ...(candidateDiagnostics
+      ? { candidate_diagnostics: candidateDiagnostics }
+      : {}),
   };
 }

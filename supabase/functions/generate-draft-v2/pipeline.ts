@@ -4,6 +4,7 @@ import { runGate } from "./stages/gate.ts";
 import { updateCaseState } from "./stages/case-state-updater.ts";
 import { runPlanner } from "./stages/planner.ts";
 import { runRetriever } from "./stages/retriever.ts";
+import type { RetrievalCandidateDiagnostics } from "./stages/retriever.ts";
 import { runInternalRules } from "./stages/internal-rules.ts";
 import { runFactResolver } from "./stages/fact-resolver.ts";
 import {
@@ -122,6 +123,7 @@ export interface PipelineResult {
       abstained: boolean;
       fell_back: boolean;
     };
+    candidate_diagnostics?: RetrievalCandidateDiagnostics;
   };
 }
 
@@ -1102,22 +1104,31 @@ export async function runDraftV2Pipeline(
       }),
     ]);
     const internalRulesBlock = internalRules.block || undefined;
+    const retrievalTrace = {
+      included_chunks: compactRetrievedChunks(
+        retrieved.chunks as unknown as Array<Record<string, unknown>>,
+      ),
+      matcher: retrieved.matcher_debug ?? null,
+      diagnostics_coverage: {
+        selected_chunks: "captured",
+        matcher_rejected_candidates: retrieved.matcher_debug
+          ? "captured_as_ranked_not_selected"
+          : "not_available",
+        drop_reasons: eval_payload && retrieved.candidate_diagnostics
+          ? "captured_in_candidate_diagnostics"
+          : "not_available_in_generate_draft_v2_retriever",
+        raw_candidate_diagnostics: eval_payload && retrieved.candidate_diagnostics
+          ? "captured_eval_only"
+          : "not_captured",
+      },
+      ...(eval_payload && retrieved.candidate_diagnostics
+        ? { candidate_diagnostics: retrieved.candidate_diagnostics }
+        : {}),
+    };
     await updateDraftGenerationTrace(supabase, generationId, {
       facts_json: facts,
       retrieved_chunk_ids: retrieved.chunks.map((chunk) => chunk.id),
-      retrieval_trace_json: {
-        included_chunks: compactRetrievedChunks(
-          retrieved.chunks as unknown as Array<Record<string, unknown>>,
-        ),
-        matcher: retrieved.matcher_debug ?? null,
-        diagnostics_coverage: {
-          selected_chunks: "captured",
-          matcher_rejected_candidates: retrieved.matcher_debug
-            ? "captured_as_ranked_not_selected"
-            : "not_available",
-          drop_reasons: "not_available_in_generate_draft_v2_retriever",
-        },
-      },
+      retrieval_trace_json: retrievalTrace,
       ticket_example_ids: retrieved.past_ticket_examples
         .map((example) => example.id ?? null)
         .filter(Boolean),
@@ -2019,6 +2030,9 @@ export async function runDraftV2Pipeline(
             })),
             ...(retrieved.matcher_debug
               ? { matcher: retrieved.matcher_debug }
+              : {}),
+            ...(retrieved.candidate_diagnostics
+              ? { candidate_diagnostics: retrieved.candidate_diagnostics }
               : {}),
           },
         }
