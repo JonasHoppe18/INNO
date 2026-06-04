@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
+import { applySavedEditToGeneration } from "@/lib/server/draft-generation-coupling";
 import {
   composeEmailBodyWithSignature,
   loadEmailSignatureConfig,
@@ -120,6 +121,35 @@ async function captureDraftEditFeedback({
     status: "info",
     created_at: createdAt || new Date().toISOString(),
   });
+}
+
+function classifyDraftEdit(originalAiText, finalText) {
+  const diffSummary = summarizeDraftDiff(originalAiText, finalText);
+  return diffSummary.identical_normalized
+    ? "no_edit"
+    : diffSummary.changed_materially
+      ? "major_edit"
+      : "minor_edit";
+}
+
+// Resolve the pipeline draft_id (the per-run UUID also stored on draft_generations)
+// from the newest pending drafts row for this thread, captured BEFORE this save
+// supersedes/inserts its own drafts row. Used as the explicit coupling key for the
+// saved-edit outcome. Returns null when none is found (helper falls back to text).
+async function loadPipelineDraftId(serviceClient, { threadKeys, workspaceId }) {
+  const keys = Array.from(new Set((threadKeys || []).filter(Boolean)));
+  if (!keys.length) return null;
+  let query = serviceClient
+    .from("drafts")
+    .select("draft_id, created_at")
+    .in("thread_id", keys)
+    .eq("status", "pending")
+    .not("draft_id", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(1);
+  if (workspaceId) query = query.eq("workspace_id", workspaceId);
+  const { data } = await query.maybeSingle();
+  return data?.draft_id || null;
 }
 
 async function loadLegacyUserSignature(serviceClient, supabaseUserId) {
@@ -297,6 +327,14 @@ export async function POST(request, { params }) {
     return NextResponse.json({ error: "Thread not found." }, { status: 404 });
   }
 
+  // Capture the pipeline draft_id BEFORE we supersede/insert drafts rows below,
+  // so the saved-edit outcome couples to the right draft_generations row by its
+  // explicit per-run id rather than by matching draft text.
+  const pipelineDraftId = await loadPipelineDraftId(serviceClient, {
+    threadKeys: [thread.provider_thread_id, threadId],
+    workspaceId: scope.workspaceId || null,
+  });
+
   const nowIso = new Date().toISOString();
   const nextSubject = subject || thread.subject || "Re:";
   const legacySignature = await loadLegacyUserSignature(serviceClient, scope.supabaseUserId);
@@ -442,6 +480,16 @@ export async function POST(request, { params }) {
       createdAt: nowIso,
     }).catch((error) => {
       console.warn("[threads/draft] draft edit feedback capture failed", error?.message || error);
+    });
+    await applySavedEditToGeneration({
+      serviceClient,
+      draftId: pipelineDraftId,
+      threadId,
+      workspaceId: scope.workspaceId || null,
+      editClassification: classifyDraftEdit(originalAiDraftText, nextBodyText),
+      editDistance: null,
+      fallback: { originalAiText: originalAiDraftText },
+      logger: console,
     });
   }
 

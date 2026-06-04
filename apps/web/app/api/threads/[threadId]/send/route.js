@@ -285,6 +285,31 @@ async function captureV2DraftPreviewFeedback({
   }
 }
 
+async function updateDraftGenerationOutcome({
+  serviceClient,
+  draftId,
+  threadId,
+  finalText,
+  editClass,
+  editDistance,
+}) {
+  if (!serviceClient || !draftId) return;
+  const patch = {
+    employee_sent_text: finalText || null,
+    edit_classification: editClass || null,
+    edit_distance: typeof editDistance === "number" ? editDistance : null,
+  };
+  let query = serviceClient
+    .from("draft_generations")
+    .update(patch)
+    .eq("draft_id", String(draftId));
+  if (threadId) query = query.eq("thread_id", threadId);
+  const { error } = await query;
+  if (error) {
+    console.warn("[threads/send] failed to update draft generation outcome", error.message);
+  }
+}
+
 // Synthesize a csat_score from the edit delta — bigger rewrite means the AI
 // was further off, which is a stronger learning signal for the retriever.
 // Clamps to [5, 80]: even small majors get some weight, but we never claim
@@ -1771,7 +1796,7 @@ export async function POST(request, { params }) {
   if (draftThreadKeys.length) {
     let pendingDraftsQuery = serviceClient
       .from("drafts")
-      .select("id, created_at, status")
+      .select("id, draft_id, created_at, status")
       .in("thread_id", draftThreadKeys)
       .in("status", ["pending", "superseded"])
       .order("created_at", { ascending: false });
@@ -1806,7 +1831,7 @@ export async function POST(request, { params }) {
       if (latestDraftId !== null) {
         const { data: draftRow } = await serviceClient
           .from("drafts")
-          .select("ai_draft_text")
+          .select("ai_draft_text, draft_id")
           .eq("id", latestDraftId)
           .maybeSingle();
         const savedAiText = draftRow?.ai_draft_text || aiDraftText || null;
@@ -1844,6 +1869,14 @@ export async function POST(request, { params }) {
           sentDraftQuery = sentDraftQuery.eq("workspace_id", draftWorkspaceId);
         }
         await sentDraftQuery;
+        await updateDraftGenerationOutcome({
+          serviceClient,
+          draftId: draftRow?.draft_id ?? pendingDraftRows[0]?.draft_id ?? null,
+          threadId,
+          finalText: coreBodyText,
+          editClass,
+          editDistance: dist,
+        });
       }
 
       if (staleDraftIds.length) {

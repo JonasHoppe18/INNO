@@ -8,7 +8,7 @@ import {
   resolveKnowledgeBudget,
   type RetrievalCoherenceFlags,
 } from "./retriever-coherence.ts";
-import { matchSnippets, type MatchCandidate } from "./snippet-matcher.ts";
+import { type MatchCandidate, matchSnippets } from "./snippet-matcher.ts";
 
 // Snippet-matcher config. Thresholds are starting values calibrated against the
 // retrieval-eval (E); adjust only against measured aggregates, never single cases.
@@ -73,6 +73,7 @@ export interface RetrievedChunk {
 export interface RetrieverResult {
   chunks: RetrievedChunk[];
   past_ticket_examples: Array<{
+    id?: number;
     customer_msg: string;
     agent_reply: string;
     subject: string | null;
@@ -84,7 +85,9 @@ export interface RetrieverResult {
   // matcher step; consumed by the golden runner. Omitted in production.
   matcher_debug?: {
     candidates: Array<{ id: string; source_id: string | null; title: string }>;
-    ranked: Array<{ id: string; source_id: string | null; title: string; relevance: number }>;
+    ranked: Array<
+      { id: string; source_id: string | null; title: string; relevance: number }
+    >;
     selected_ids: string[];
     abstained: boolean;
     fell_back: boolean;
@@ -179,8 +182,20 @@ const INTENT_TO_ISSUE_TYPES: Record<string, string[]> = {
   return: ["return"],
   refund: ["refund", "return"],
   exchange: ["return", "physical_damage", "connectivity"],
-  complaint: ["physical_damage", "connectivity", "audio", "battery", "firmware"],
-  product_question: ["product_specs", "connectivity", "audio", "firmware", "battery"],
+  complaint: [
+    "physical_damage",
+    "connectivity",
+    "audio",
+    "battery",
+    "firmware",
+  ],
+  product_question: [
+    "product_specs",
+    "connectivity",
+    "audio",
+    "firmware",
+    "battery",
+  ],
   address_change: ["shipping"],
   cancel: ["return"],
   other: [],
@@ -272,8 +287,14 @@ function extractIssueTerms(text: string): string[] {
     /\b(return|retur|swap|replacement|ombytning|warranty|garanti)\b/,
   );
   addIf("tracking", /\b(tracking|track|pakke|shipment|forsendelse|awb)\b/);
-  addIf("shipping", /\b(shipping|delivery|fragt|levering|courier|dhl|gls|postnord)\b/);
-  addIf("product_specs", /\b(specs?|specifications?|specifikation|dimensions?|weight|vægt)\b/);
+  addIf(
+    "shipping",
+    /\b(shipping|delivery|fragt|levering|courier|dhl|gls|postnord)\b/,
+  );
+  addIf(
+    "product_specs",
+    /\b(specs?|specifications?|specifikation|dimensions?|weight|vægt)\b/,
+  );
   return uniqueStrings(terms);
 }
 
@@ -340,7 +361,8 @@ export function buildFallbackQueries(
 
   if (issues.includes("ear_pads")) {
     queries.push({
-      text: `${products[0] || ""} ear pads earpads compatible replaceable`.trim(),
+      text: `${products[0] || ""} ear pads earpads compatible replaceable`
+        .trim(),
       productAgnostic: false,
     });
   }
@@ -358,7 +380,8 @@ export function buildFallbackQueries(
   // no product, so a strict product filter would wrongly drop it.
   if (returnIssues.length > 0 || RETURN_INTENTS.has(plan.primary_intent)) {
     queries.push({
-      text: [...returnIssues, "return", "refund", "policy", "instructions"].join(" "),
+      text: [...returnIssues, "return", "refund", "policy", "instructions"]
+        .join(" "),
       productAgnostic: true,
     });
   }
@@ -366,7 +389,10 @@ export function buildFallbackQueries(
   // Technical probe — surfaces troubleshooting/manual knowledge. Driven purely
   // by the detected technical issue terms; no fixed bias phrase is appended so
   // the query reflects the customer's actual problem rather than assuming one.
-  if (technicalIssues.length > 0 && TECHNICAL_INTENTS.has(plan.primary_intent) && products.length) {
+  if (
+    technicalIssues.length > 0 && TECHNICAL_INTENTS.has(plan.primary_intent) &&
+    products.length
+  ) {
     queries.push({
       text: `${products[0]} ${technicalIssues.join(" ")}`,
       productAgnostic: false,
@@ -402,7 +428,10 @@ function classifyKnowledgeSource(input: {
   source_label: string;
   source_provider?: string | null;
   metadata?: Record<string, unknown> | null;
-}): Pick<RetrievedChunk, "usable_as" | "risk_flags" | "applies_to_all_products" | "chunk_issue_types"> {
+}): Pick<
+  RetrievedChunk,
+  "usable_as" | "risk_flags" | "applies_to_all_products" | "chunk_issue_types"
+> {
   const provider = String(input.source_provider || "").toLowerCase();
   const kind = String(input.kind || "").toLowerCase();
   const label = String(input.source_label || "").toLowerCase();
@@ -480,7 +509,13 @@ function classifyKnowledgeSource(input: {
 
   // Explicit classification set by shop admin in KB management UI takes priority over heuristic.
   const VALID_USABLE_AS: RetrievedChunk["usable_as"][] = [
-    "policy", "procedure", "fact", "saved_reply", "tone_example", "background", "ignore",
+    "policy",
+    "procedure",
+    "fact",
+    "saved_reply",
+    "tone_example",
+    "background",
+    "ignore",
   ];
   const explicitUsableAs = typeof input.metadata?.usable_as === "string"
     ? input.metadata.usable_as as RetrievedChunk["usable_as"]
@@ -499,9 +534,9 @@ function classifyKnowledgeSource(input: {
   const metaProductsLen = Array.isArray(input.metadata?.products)
     ? (input.metadata?.products as unknown[]).length
     : 0;
-  const isManualSnippet = String(input.source_provider || "").toLowerCase() === "manual_text";
-  const derivedAppliesToAll =
-    isManualSnippet &&
+  const isManualSnippet =
+    String(input.source_provider || "").toLowerCase() === "manual_text";
+  const derivedAppliesToAll = isManualSnippet &&
     metaCategory === "product-questions" &&
     !metaProductId &&
     metaProductsLen === 0;
@@ -511,7 +546,9 @@ function classifyKnowledgeSource(input: {
     ? (input.metadata?.issue_types as unknown[])
     : [];
   const chunk_issue_types = uniqueStrings(
-    rawIssueTypes.map((t) => String(t || "").trim().toLowerCase()).filter(Boolean),
+    rawIssueTypes.map((t) => String(t || "").trim().toLowerCase()).filter(
+      Boolean,
+    ),
   );
 
   return {
@@ -548,11 +585,21 @@ function rrfFusion(
   lists: Array<Array<Record<string, unknown>>>,
   k = 60,
 ): Array<
-  { id: string; score: number; vectorSimilarity: number | null; chunk: Record<string, unknown> }
+  {
+    id: string;
+    score: number;
+    vectorSimilarity: number | null;
+    chunk: Record<string, unknown>;
+  }
 > {
   const scores = new Map<
     string,
-    { id: string; score: number; vectorSimilarity: number | null; chunk: Record<string, unknown> }
+    {
+      id: string;
+      score: number;
+      vectorSimilarity: number | null;
+      chunk: Record<string, unknown>;
+    }
   >();
 
   for (const list of lists) {
@@ -667,10 +714,16 @@ export async function runRetriever(
   const queries = boundedQueryDefs.map((q) => q.text);
   if (queries.length === 0) return { chunks: [], past_ticket_examples: [] };
 
-  const filterProducts = extractMentionedProductTerms(customerMessage || "", shop);
+  const filterProducts = extractMentionedProductTerms(
+    customerMessage || "",
+    shop,
+  );
   const intentIssueTypes = INTENT_TO_ISSUE_TYPES[plan.primary_intent] ?? [];
   const detectedIssueTypes = extractIssueTerms(customerMessage || "");
-  const filterIssueTypes = uniqueStrings([...intentIssueTypes, ...detectedIssueTypes]);
+  const filterIssueTypes = uniqueStrings([
+    ...intentIssueTypes,
+    ...detectedIssueTypes,
+  ]);
 
   // Resolve which ticket_examples ids to exclude (eval data-leakage prevention).
   const excludedTicketExampleIds = new Set<number>();
@@ -704,11 +757,19 @@ export async function runRetriever(
         ),
       );
       const totalHits = filtered.reduce(
-        (sum, p) => sum + p.vector.length + p.bm25.length, 0,
+        (sum, p) => sum + p.vector.length + p.bm25.length,
+        0,
       );
-      if (totalHits === 0 && (filterProducts.length > 0 || filterIssueTypes.length > 0)) {
-        console.log("[retriever] metadata filter returned 0 results — falling back to unfiltered search");
-        return Promise.all(queries.map((q) => runQueryPair(q, shop_id, supabase)));
+      if (
+        totalHits === 0 &&
+        (filterProducts.length > 0 || filterIssueTypes.length > 0)
+      ) {
+        console.log(
+          "[retriever] metadata filter returned 0 results — falling back to unfiltered search",
+        );
+        return Promise.all(
+          queries.map((q) => runQueryPair(q, shop_id, supabase)),
+        );
       }
       return filtered;
     })(),
@@ -730,6 +791,7 @@ export async function runRetriever(
             intent?: string;
             csat_score: number | null;
             conversation_context: string | null;
+            id: number;
             similarity: number;
             score: number;
           }
@@ -783,16 +845,20 @@ export async function runRetriever(
                 overlapCount(text, issueTerms) * 0.08;
               // Boost heavily-corrected examples — low csat_score means the shop
               // had to rewrite Sona's draft significantly, making it a richer learning signal.
-              const csatScore = typeof item.csat_score === "number" ? item.csat_score : null;
+              const csatScore = typeof item.csat_score === "number"
+                ? item.csat_score
+                : null;
               const correctionBoost = csatScore !== null
                 ? ((100 - csatScore) / 100) * 0.15
                 : 0;
-              const score = Number(item.similarity || 0) + lexicalScore + correctionBoost;
+              const score = Number(item.similarity || 0) + lexicalScore +
+                correctionBoost;
               // Skip tickets that are the source of this eval run
               if (excludedTicketExampleIds.has(item.id)) continue;
               const existing = resultMap.get(String(item.id));
               if (!existing || score > existing.score) {
                 resultMap.set(String(item.id), {
+                  id: item.id,
                   customer_msg: item.customer_msg,
                   agent_reply: item.agent_reply,
                   subject: item.subject,
@@ -815,6 +881,7 @@ export async function runRetriever(
           .sort((a, b) => b.score - a.score)
           .slice(0, 3)
           .map((item) => ({
+            id: item.id,
             customer_msg: item.customer_msg,
             agent_reply: item.agent_reply,
             subject: item.subject ?? null,
@@ -854,7 +921,10 @@ export async function runRetriever(
   // 2 for these intents. Other intents keep the wider context window because
   // returns, refunds, exchanges etc. often legitimately span multiple
   // procedures / policies in one reply.
-  const knowledgeBudget = resolveKnowledgeBudget(plan.primary_intent, flags.pqBudget);
+  const knowledgeBudget = resolveKnowledgeBudget(
+    plan.primary_intent,
+    flags.pqBudget,
+  );
   const queryText = `${queries.join(" ")} ${customerMessage || ""}`;
   const productTerms = extractMentionedProductTerms(queryText, shop);
   const issueTerms = extractIssueTerms(queryText);
@@ -887,12 +957,19 @@ export async function runRetriever(
         source_label: sourceLabel(r.chunk),
         similarity: r.score,
         source_id: meta.source_id != null ? String(meta.source_id) : null,
-        source_title: String(meta.title || meta.name || meta.label || "").trim() ||
+        source_title:
+          String(meta.title || meta.name || meta.label || "").trim() ||
           null,
-        chunk_index: typeof meta.chunk_index === "number" ? meta.chunk_index : null,
-        chunk_count: typeof meta.chunk_count === "number" ? meta.chunk_count : 1,
+        chunk_index: typeof meta.chunk_index === "number"
+          ? meta.chunk_index
+          : null,
+        chunk_count: typeof meta.chunk_count === "number"
+          ? meta.chunk_count
+          : 1,
         products: Array.isArray(meta.products)
-          ? (meta.products as unknown[]).map((p) => String(p || "").trim().toLowerCase()).filter(Boolean)
+          ? (meta.products as unknown[]).map((p) =>
+            String(p || "").trim().toLowerCase()
+          ).filter(Boolean)
           : [],
         vector_similarity: r.vectorSimilarity,
         question: typeof meta.question === "string" ? meta.question : null,
@@ -922,15 +999,16 @@ export async function runRetriever(
         // compatible with any product, so it should never be penalised for
         // mentioning the "wrong" product and should ride along on the product
         // context when one is present.
-        const crossProductPenalty =
-          !chunk.applies_to_all_products &&
-          mentionedProducts.length === 1 &&
-          overlapCount(text, otherProducts) > 0 &&
-          overlapCount(text, mentionedProducts) === 0
-            ? 0.12
-            : 0;
+        const crossProductPenalty = !chunk.applies_to_all_products &&
+            mentionedProducts.length === 1 &&
+            overlapCount(text, otherProducts) > 0 &&
+            overlapCount(text, mentionedProducts) === 0
+          ? 0.12
+          : 0;
         const generalProductBoost =
-          chunk.applies_to_all_products && mentionedProducts.length > 0 ? 0.05 : 0;
+          chunk.applies_to_all_products && mentionedProducts.length > 0
+            ? 0.05
+            : 0;
         // Reward chunks the admin tagged with issue_types that match what the
         // customer is asking about. This is the explicit metadata path — much
         // more reliable than text overlap once snippets are tagged from the
@@ -1002,7 +1080,9 @@ export async function runRetriever(
   // behaviour). matcher_debug is for eval only.
   const pool = consolidated
     .reduce((acc: RetrievedChunk[], chunk) => {
-      const dup = acc.some((k) => tokenOverlapJaccard(k.content, chunk.content) >= 0.6);
+      const dup = acc.some((k) =>
+        tokenOverlapJaccard(k.content, chunk.content) >= 0.6
+      );
       return dup ? acc : [...acc, chunk];
     }, [])
     .slice(0, MATCH_POOL_SIZE);
@@ -1032,10 +1112,19 @@ export async function runRetriever(
         `[retriever] snippet-matcher selected=${finalChunks.length} abstained=${matched.abstained} pool=${pool.length}`,
       );
       matcherDebug = {
-        candidates: pool.map((c) => ({ id: c.id, source_id: c.source_id ?? null, title: c.source_title ?? c.source_label })),
+        candidates: pool.map((c) => ({
+          id: c.id,
+          source_id: c.source_id ?? null,
+          title: c.source_title ?? c.source_label,
+        })),
         ranked: matched.ranked.map((r) => {
           const c = byId.get(r.id);
-          return { id: r.id, source_id: c?.source_id ?? null, title: c?.source_title ?? c?.source_label ?? "", relevance: r.relevance };
+          return {
+            id: r.id,
+            source_id: c?.source_id ?? null,
+            title: c?.source_title ?? c?.source_label ?? "",
+            relevance: r.relevance,
+          };
         }),
         selected_ids: finalChunks.map((c) => c.id),
         abstained: matched.abstained,
@@ -1043,21 +1132,37 @@ export async function runRetriever(
       };
     } catch (err) {
       // Additive layer: never make things worse than today. Keep regularChunks.
-      console.error(`[retriever] snippet-matcher failed, falling back to top-chunks: ${(err as Error).message}`);
+      console.error(
+        `[retriever] snippet-matcher failed, falling back to top-chunks: ${
+          (err as Error).message
+        }`,
+      );
       try {
         await supabase.from("agent_logs").insert({
           shop_id,
           workspace_id: workspace_id ?? null,
           step: "snippet_matcher_fallback",
-          step_detail: { error: (err as Error).message, pool_size: pool.length },
+          step_detail: {
+            error: (err as Error).message,
+            pool_size: pool.length,
+          },
         });
       } catch (_logErr) {
         // logging must never block a draft
       }
       finalChunks = regularChunks;
       matcherDebug = {
-        candidates: pool.map((c) => ({ id: c.id, source_id: c.source_id ?? null, title: c.source_title ?? c.source_label })),
-        ranked: regularChunks.map((c) => ({ id: c.id, source_id: c.source_id ?? null, title: c.source_title ?? c.source_label, relevance: 0 })),
+        candidates: pool.map((c) => ({
+          id: c.id,
+          source_id: c.source_id ?? null,
+          title: c.source_title ?? c.source_label,
+        })),
+        ranked: regularChunks.map((c) => ({
+          id: c.id,
+          source_id: c.source_id ?? null,
+          title: c.source_title ?? c.source_label,
+          relevance: 0,
+        })),
         selected_ids: regularChunks.map((c) => c.id),
         abstained: false,
         fell_back: true,

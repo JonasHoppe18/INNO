@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
+import { applyRejectionToGeneration } from "@/lib/server/draft-generation-coupling";
 
 const SUPABASE_URL = (
   process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -127,6 +128,7 @@ export async function POST(request) {
           thread_id,
           message_id: message_id ?? null,
           shop_id,
+          generation_id: result.generation_id ?? null,
           draft_text: result.draft_text,
           proposed_actions: result.proposed_actions ?? [],
           verifier_confidence: result.confidence ?? null,
@@ -148,6 +150,8 @@ export async function POST(request) {
 
     return NextResponse.json({
       preview_id: previewId,
+      generation_id: result.generation_id ?? null,
+      draft_id: result.draft_id ?? null,
       draft_text: result.draft_text ?? null,
       proposed_actions: result.proposed_actions ?? [],
       routing_hint: result.routing_hint ?? "review",
@@ -229,6 +233,15 @@ export async function PATCH(request) {
     );
   }
 
+  const { data: preview } = await supabase
+    .from("draft_previews")
+    .select("id, message_id, draft_text, generation_id")
+    .eq("id", previewId)
+    .eq("thread_id", threadId)
+    .eq("shop_id", shopId)
+    .eq("pipeline_version", "v2")
+    .maybeSingle();
+
   const { error } = await supabase
     .from("draft_previews")
     .update({
@@ -247,6 +260,24 @@ export async function PATCH(request) {
       { error: "Could not update feedback" },
       { status: 500 },
     );
+  }
+
+  if (preview?.id) {
+    // Couple by the preview's stored generation_id; fall back to a single newest
+    // exact-text match only for legacy preview rows created before generation_id
+    // existed. Never overwrites completed_at — rejection sets rejected_at instead.
+    await applyRejectionToGeneration({
+      serviceClient: supabase,
+      generationId: preview.generation_id ?? null,
+      rejectionReason: outcome,
+      fallback: {
+        threadId,
+        shopId,
+        messageId: preview.message_id ?? null,
+        draftText: preview.draft_text || "",
+      },
+      logger: console,
+    });
   }
 
   return NextResponse.json({ ok: true });

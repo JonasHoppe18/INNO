@@ -16,6 +16,14 @@ export interface WriterResult {
   draft_text: string;
   proposed_actions: ActionProposal[];
   citations: Array<{ claim: string; source_index: number }>;
+  usage?: {
+    model: string;
+    prompt_hash: string | null;
+    input_tokens: number | null;
+    output_tokens: number | null;
+    cost_usd: number | null;
+    latency_ms: number;
+  };
 }
 
 export interface PolicyContextInput {
@@ -153,6 +161,44 @@ function extractResponsesText(data: Record<string, unknown>): string {
     }
   }
   return parts.join("").trim();
+}
+
+function usageNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function extractTokenUsage(
+  data: Record<string, unknown>,
+  useResponsesApi: boolean,
+): { input_tokens: number | null; output_tokens: number | null } {
+  const usage = data.usage && typeof data.usage === "object"
+    ? data.usage as Record<string, unknown>
+    : {};
+  if (useResponsesApi) {
+    return {
+      input_tokens: usageNumber(usage.input_tokens),
+      output_tokens: usageNumber(usage.output_tokens),
+    };
+  }
+  return {
+    input_tokens: usageNumber(usage.prompt_tokens),
+    output_tokens: usageNumber(usage.completion_tokens),
+  };
+}
+
+async function hashPromptForTrace(
+  systemPrompt: string,
+  userContent: string,
+): Promise<string | null> {
+  try {
+    const bytes = new TextEncoder().encode(`${systemPrompt}\n\n${userContent}`);
+    const digest = await crypto.subtle.digest("SHA-256", bytes);
+    return Array.from(new Uint8Array(digest))
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("");
+  } catch {
+    return null;
+  }
 }
 
 const SIGNOFF_LINE_RE =
@@ -535,7 +581,9 @@ async function runPostActionRefundWriter(
 
   const userPrompt =
     `A refund has been executed in Shopify. Write exactly 2 sentences in language "${language}":
-1. State the refund is done (past tense). Include "${orderName}"${amountClause ? ` and "${amountDisplay}"` : ""}.
+1. State the refund is done (past tense). Include "${orderName}"${
+      amountClause ? ` and "${amountDisplay}"` : ""
+    }.
 2. Say the amount will appear back on their account within 3-5 business days (use natural phrasing for "${language}").
 
 Output: the 2 sentences only.`;
@@ -576,7 +624,7 @@ export async function runWriter(
     facts,
     shop,
     latestCustomerMessage,
-    conversationHistory,
+    conversationHistory = [],
     actionProposals,
     policyContext,
     model,
@@ -600,7 +648,9 @@ export async function runWriter(
     ((shop as { brand_description?: string }).brand_description ?? "").trim();
 
   const recentCustomerText = [
-    ...conversationHistory.filter((m) => m.role === "customer").slice(-3).map((m) => m.text),
+    ...conversationHistory.filter((m) => m.role === "customer").slice(-3).map((
+      m,
+    ) => m.text),
     latestCustomerMessage ?? "",
   ].filter(Boolean).join(" ");
   const replyLanguage = resolveReplyLanguage(recentCustomerText, "en");
@@ -649,9 +699,8 @@ Intet sikkert kundenavn til hilsenen. Start med en naturlig neutral hilsen på k
     "troubleshoot_first",
     "initiate_warranty_repair",
   ]);
-  const replyMode: "procedure" | "concise" = PROCEDURE_STAGES.has(resolutionStage)
-    ? "procedure"
-    : "concise";
+  const replyMode: "procedure" | "concise" =
+    PROCEDURE_STAGES.has(resolutionStage) ? "procedure" : "concise";
 
   // --- Few-shot (primary tone anchor — placed near the top so the model sees it first) ---
   const fewShotBlock = retrieved.past_ticket_examples.length > 0
@@ -668,7 +717,8 @@ If you are unsure of the current customer's name, use a neutral greeting — nev
       retrieved.past_ticket_examples
         .map(
           (ex, i) => {
-            const isHeavilyCorrected = ex.csat_score !== null && ex.csat_score < 60;
+            const isHeavilyCorrected = ex.csat_score !== null &&
+              ex.csat_score < 60;
             const label = ex.csat_score === null
               ? ""
               : isHeavilyCorrected
@@ -677,7 +727,9 @@ If you are unsure of the current customer's name, use a neutral greeting — nev
               ? " [Confirmed — Sona's reply was nearly correct]"
               : "";
             const contextBlock = ex.conversation_context
-              ? `Earlier in the conversation:\n${ex.conversation_context.slice(0, 400)}\n`
+              ? `Earlier in the conversation:\n${
+                ex.conversation_context.slice(0, 400)
+              }\n`
               : "";
             return `[Example ${i + 1}${label}]
 ${contextBlock}Customer: "${ex.customer_msg.slice(0, 350)}"
@@ -742,18 +794,21 @@ Support replied: "${ex.agent_reply.slice(0, 500)}"`;
         )
         .join("\n")
     : "";
-  const actionAmountDisplay = formatActionAmountDisplay(actionResult, replyLanguage);
+  const actionAmountDisplay = formatActionAmountDisplay(
+    actionResult,
+    replyLanguage,
+  );
   // If the action returned amount=0 (e.g. cancellation flow that triggers a Shopify refund internally),
   // try to recover the real order total from facts so the confirmation can cite the correct amount.
   const actionAmountIsZero = !actionAmountDisplay ||
     /^0[,.]?0*\s*/.test(actionAmountDisplay.trim());
   const fallbackAmountFromFacts = actionAmountIsZero
     ? (() => {
-        const orderTotal = facts.facts.find((f) =>
-          /total|price|amount|beløb|pris/i.test(f.label)
-        )?.value ?? "";
-        return orderTotal;
-      })()
+      const orderTotal =
+        facts.facts.find((f) => /total|price|amount|beløb|pris/i.test(f.label))
+          ?.value ?? "";
+      return orderTotal;
+    })()
     : "";
   const resolvedAmountDisplay = actionAmountIsZero && fallbackAmountFromFacts
     ? fallbackAmountFromFacts
@@ -766,7 +821,9 @@ Support replied: "${ex.agent_reply.slice(0, 500)}"`;
 En medarbejder har gennemgået kundens anmodning og valgt IKKE at udføre handlingen. Skriv et kort, venligt svar til kunden der forklarer situationen.
 
 - action_type: ${String(actionResult.action_type || "")}
-- order_name: ${String(actionResult.order_name || actionResult.order_number || "")}
+- order_name: ${
+        String(actionResult.order_name || actionResult.order_number || "")
+      }
 - detail: ${String(actionResult.detail || "")}
 
 Regler for afvist-svaret:
@@ -782,8 +839,13 @@ Kundens sag er allerede godkendt og handlingen er allerede udført i Shopify. Sv
 
 - action_type: ${String(actionResult.action_type || "")}
 - outcome: ${actionOutcome}
-- order_name: ${String(actionResult.order_name || actionResult.order_number || "")}
-- amount_display: ${resolvedAmountDisplay || "(ukendt — brug ordretotal fra Verificerede fakta hvis tilgængelig)"}
+- order_name: ${
+        String(actionResult.order_name || actionResult.order_number || "")
+      }
+- amount_display: ${
+        resolvedAmountDisplay ||
+        "(ukendt — brug ordretotal fra Verificerede fakta hvis tilgængelig)"
+      }
 - currency: ${String(actionResult.currency || "")}
 - detail: ${String(actionResult.detail || "")}
 
@@ -838,7 +900,10 @@ ${c.content.slice(0, knowledgeChunkCap(c.usable_as))}`,
     : "";
 
   // --- Focused post-action draft for refund/cancel — uses a minimal LLM call ---
-  if (actionResult && /refund|cancel/i.test(String(actionResult.action_type || ""))) {
+  if (
+    actionResult &&
+    /refund|cancel/i.test(String(actionResult.action_type || ""))
+  ) {
     const orderName = String(
       actionResult.order_name || actionResult.order_number || "",
     );
@@ -884,7 +949,11 @@ ${c.content.slice(0, knowledgeChunkCap(c.usable_as))}`,
   }
 ${persona ? `\n${persona}\n` : ""}
 SPROG (absolut): Svar KUN på ${replyLanguage} (${langName}). Bland aldrig sprog.
-${languageCorrectionInstruction ? `SPROGKORREKTION: ${languageCorrectionInstruction}` : ""}
+${
+    languageCorrectionInstruction
+      ? `SPROGKORREKTION: ${languageCorrectionInstruction}`
+      : ""
+  }
 
 HOLDNING (vigtigst af alt — læs først):
 - Du er en erfaren kundeservice-kollega med mandat til at LØSE sagen — ikke en sagsbehandler der visiterer den. Træf kaldet: hvis situationen klart kalder på annullering / erstatning / refusion / ombytning inden for policy, så commit til det i klar tale ("vi annullerer den dublerede ordre for dig", "vi sender et nyt headset"). Hedge ALDRIG med "måske", "den realistiske mulighed er", "jeg bekræfter lige om det er muligt".
@@ -936,7 +1005,11 @@ ${
       : `\nVær kortfattet, direkte og hjælpsom. 2-4 sætninger er nok til simple sager. Gå straks til sagen.\n`
   }
 SPROG (absolut): Svar KUN på ${replyLanguage} (${langName}). Bland aldrig sprog.
-${languageCorrectionInstruction ? `SPROGKORREKTION: ${languageCorrectionInstruction}` : ""}
+${
+    languageCorrectionInstruction
+      ? `SPROGKORREKTION: ${languageCorrectionInstruction}`
+      : ""
+  }
 
 RESOLUTION STAGE (læs først):
 Den første blok i brugerbeskeden er "# RESOLUTION STAGE" og er en STÆRK ANBEFALING om hvad svaret bør gøre. Følg den som default. MEN: hvis kundens besked tydeligt viser at stagen er forkert valgt (fx kunden har eksplicit skrevet "jeg har prøvet alt" men stagen er "troubleshoot_first", eller kunden tydeligt beder om refund og det er rimeligt at give), så brug din dømmekraft og følg kundens reelle behov. Stagen er ikke en hård lås — den er en stærk default.
@@ -1057,7 +1130,7 @@ ${customerHistory}`
     initiate_warranty_repair:
       "Foretrukken sti: forklar garanti-/reparations-proceduren fra knowledge. Undgå at foreslå mere troubleshooting hvis kunden allerede har prøvet trin eller skaden er fysisk og dokumenteret.",
     cancel_order:
-      "Foretrukken sti: bekræft annulleringsforespørgslen. KRITISK: skriv KUN i datid (\"er annulleret\", \"er refunderet\") hvis 'POST-ACTION'-blokken eller actionResult eksplicit bekræfter at handlingen er udført. Ellers skriv i nutid/fremtid (\"vi annullerer\", \"din ordre annulleres\") eller som bekræftelse på at anmodningen er modtaget og venter.",
+      'Foretrukken sti: bekræft annulleringsforespørgslen. KRITISK: skriv KUN i datid ("er annulleret", "er refunderet") hvis \'POST-ACTION\'-blokken eller actionResult eksplicit bekræfter at handlingen er udført. Ellers skriv i nutid/fremtid ("vi annullerer", "din ordre annulleres") eller som bekræftelse på at anmodningen er modtaget og venter.',
     refund_or_exchange:
       "Foretrukken sti: bekræft eller initier retur/refund/ombytning per knowledge. Samme datid-regel som cancel_order: kun datid hvis action er bekræftet udført.",
     info_only:
@@ -1065,7 +1138,8 @@ ${customerHistory}`
     escalate_human:
       "Angiv at sagen kræver en specialist — lov ikke konkrete actions.",
   };
-  const stageBlock = `# RESOLUTION STAGE (stærk anbefaling — ikke absolut, men afvig kun hvis kundens behov tydeligt kræver det)
+  const stageBlock =
+    `# RESOLUTION STAGE (stærk anbefaling — ikke absolut, men afvig kun hvis kundens behov tydeligt kræver det)
 Stage: ${resolutionStage}
 ${stageDirectives[resolutionStage] ?? stageDirectives.info_only}`;
 
@@ -1091,10 +1165,10 @@ ${stageDirectives[resolutionStage] ?? stageDirectives.info_only}`;
     latestCustomerMessage
       ? `# Kundens seneste besked (læs denne grundigt — brug alle detaljer kunden har givet)
 ${latestCustomerMessage.slice(0, 1200)}${
-          nonImageAttachmentsMeta
-            ? `\n\n[Kunden har vedhæftet: ${nonImageAttachmentsMeta}. Anerkend at du kan se det i dit svar, men analyser ikke indholdet da du ikke kan læse det — behandl det som dokumentation kunden har sendt.]`
-            : ""
-        }`
+        nonImageAttachmentsMeta
+          ? `\n\n[Kunden har vedhæftet: ${nonImageAttachmentsMeta}. Anerkend at du kan se det i dit svar, men analyser ikke indholdet da du ikke kan læse det — behandl det som dokumentation kunden har sendt.]`
+          : ""
+      }`
       : "",
     `# Sammenfatning af henvendelsen
 Intent: ${plan.primary_intent}
@@ -1158,6 +1232,7 @@ Returner JSON:
       ]
       : userContent;
 
+    const writerStartedAt = Date.now();
     const resp = await fetch(
       useResponsesApi ? OPENAI_RESPONSES_API_URL : OPENAI_API_URL,
       {
@@ -1197,6 +1272,7 @@ Returner JSON:
         ),
       },
     );
+    const writerLatencyMs = Date.now() - writerStartedAt;
 
     if (!resp.ok) {
       const errorText = await resp.text().catch(() => "");
@@ -1205,6 +1281,7 @@ Returner JSON:
       );
     }
     const data = await resp.json();
+    const tokenUsage = extractTokenUsage(data, useResponsesApi);
     const content = useResponsesApi
       ? extractResponsesText(data)
       : data.choices?.[0]?.message?.content;
@@ -1222,6 +1299,14 @@ Returner JSON:
       ),
       proposed_actions: actionProposals ?? [],
       citations: Array.isArray(parsed.citations) ? parsed.citations : [],
+      usage: {
+        model: resolvedModel,
+        prompt_hash: await hashPromptForTrace(systemPrompt, userContent),
+        input_tokens: tokenUsage.input_tokens,
+        output_tokens: tokenUsage.output_tokens,
+        cost_usd: null,
+        latency_ms: writerLatencyMs,
+      },
     };
   } catch (err) {
     console.error("[writer] Error:", err);
