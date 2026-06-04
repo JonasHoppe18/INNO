@@ -1,11 +1,27 @@
 import { assertEquals } from "jsr:@std/assert@1";
 import { buildRetrievalLogPayload } from "./retrieval-log.ts";
+import type { RetrievedChunk } from "./retriever.ts";
+
+function chunk(overrides: Partial<RetrievedChunk>): RetrievedChunk {
+  return {
+    id: "c1",
+    content: "hello",
+    source_label: "Policy",
+    similarity: 0.9,
+    kind: "policy",
+    usable_as: "policy",
+    risk_flags: [],
+    applies_to_all_products: false,
+    chunk_issue_types: [],
+    ...overrides,
+  };
+}
 
 Deno.test("buildRetrievalLogPayload truncates chunk content to 600 chars", () => {
   const longContent = "x".repeat(800);
   const result = buildRetrievalLogPayload(
     "thread-1",
-    [{ id: "c1", content: longContent, source_label: "Policy", similarity: 0.9, kind: "policy", usable_as: "policy", risk_flags: [] }],
+    [chunk({ content: longContent })],
     [],
   );
   const parsed = JSON.parse(result.step_detail);
@@ -13,10 +29,7 @@ Deno.test("buildRetrievalLogPayload truncates chunk content to 600 chars", () =>
 });
 
 Deno.test("buildRetrievalLogPayload caps at 8 chunks", () => {
-  const chunks = Array.from({ length: 12 }, (_, i) => ({
-    id: `c${i}`, content: "hello", source_label: "X", similarity: 0.8,
-    kind: "policy", usable_as: "policy" as const, risk_flags: [],
-  }));
+  const chunks = Array.from({ length: 12 }, (_, i) => chunk({ id: `c${i}` }));
   const result = buildRetrievalLogPayload("thread-1", chunks, []);
   const parsed = JSON.parse(result.step_detail);
   assertEquals(parsed.kb_chunks.length, 8);

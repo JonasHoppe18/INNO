@@ -284,12 +284,21 @@ async function generateDraftV2(shopId, subject, emailBody, options = {}) {
     );
   }
   const draft = String(data?.reply || data?.draft_text || "").trim();
-  if (!draft) {
+  const skipped = data?.skipped === true;
+  // A paused/skipped run is a legitimate pipeline outcome (action needs approval,
+  // or routing short-circuit). Only treat an empty draft as an error when nothing
+  // else explains it, so the gold runner can still record skip outcomes.
+  const proposedActions = Array.isArray(data?.proposed_actions)
+    ? data.proposed_actions
+    : Array.isArray(data?.actions)
+      ? data.actions
+      : [];
+  if (!draft && !skipped && proposedActions.length === 0) {
     throw new Error(
       `generate-draft-v2 returned no reply. Raw: ${raw.slice(0, 300)}`,
     );
   }
-  const actions = Array.isArray(data?.actions) ? data.actions : [];
+  const actions = proposedActions;
   const confidence = typeof data?.confidence === "number" ? data.confidence : null;
   const sources = Array.isArray(data?.sources) ? data.sources : [];
   const routingHint = typeof data?.routing_hint === "string" ? data.routing_hint : null;
@@ -309,6 +318,13 @@ async function generateDraftV2(shopId, subject, emailBody, options = {}) {
     routingHint,
     retrievalDebug,
     matcherDebug,
+    // Additive fields — already present in the eval-mode response — so the gold
+    // runner can couple by generation_id and grade intent without a second call.
+    generationId: typeof data?.generation_id === "string" ? data.generation_id : null,
+    intent: typeof data?.intent === "string" ? data.intent : null,
+    knowledgeGaps: Array.isArray(data?.knowledge_gaps) ? data.knowledge_gaps : [],
+    skipped,
+    skipReason: typeof data?.skip_reason === "string" ? data.skip_reason : null,
     latencyMs: Date.now() - startTime,
   };
 }

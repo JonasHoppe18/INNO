@@ -1,0 +1,65 @@
+{
+  "//": "Example gold-eval seed. Fully anonymized dummy cases — NOT real customer data and NOT shop-specific. Copy to gold-eval-cases.<shop>.json, fill real cases, then import with: node supabase/scripts/import-gold-eval-cases.mjs --file <path> --shop <shop_id>. The --shop flag overrides shop_id below.",
+  "shop_id": "00000000-0000-0000-0000-000000000000",
+  "cases": [
+    {
+      "external_id": "demo-tracking-01",
+      "title": "Where is my order?",
+      "category": "tracking",
+      "customer_message": "Hi, I ordered two weeks ago (order #10231) and still haven't received anything. Can you tell me where my package is?",
+      "thread_history_json": [],
+      "order_context_json": {
+        "order_number": "10231",
+        "fulfillment_status": "fulfilled",
+        "tracking_number": "DEMO123456789",
+        "carrier": "demo-carrier"
+      },
+      "expected_intent": "order_status",
+      "required_facts_json": ["tracking_number", "carrier", "last_known_status"],
+      "gold_knowledge_chunk_ids": [],
+      "expected_resolution": "Share the tracking link and current carrier status; reassure on delivery window.",
+      "expected_action_json": null,
+      "ideal_reply": "Hi! Your order #10231 shipped and is on its way with demo-carrier (tracking DEMO123456789). The latest scan shows it in transit and it should arrive within a few business days. Here's your tracking link so you can follow it: <link>. Let me know if it doesn't move in the next couple of days and I'll chase it for you.",
+      "autopilot_allowed": true,
+      "notes": "Straightforward status lookup; no knowledge chunk required — answer comes from order context.",
+      "is_active": true
+    },
+    {
+      "external_id": "demo-tech-01",
+      "title": "Product won't turn on",
+      "category": "technical_support",
+      "customer_message": "I just got my device and it won't power on. I've tried charging it for an hour but nothing happens. What should I do?",
+      "thread_history_json": [],
+      "order_context_json": null,
+      "expected_intent": "complaint",
+      "required_facts_json": ["reset_procedure", "charging_requirement"],
+      "gold_knowledge_chunk_ids": ["REPLACE_WITH_REAL_agent_knowledge_chunk_id"],
+      "expected_resolution": "Walk the customer through the documented reset/charging procedure before offering a replacement.",
+      "expected_action_json": null,
+      "ideal_reply": "Sorry to hear it won't power on! Before anything else, let's try the reset: hold the power button for 10 seconds while it's plugged into the original charger, then leave it charging for 30 minutes and try again. If it still won't turn on after that, reply here and I'll arrange a replacement right away.",
+      "autopilot_allowed": false,
+      "notes": "Tests retrieval of the troubleshooting/reset knowledge chunk. Replace the gold chunk id with the real agent_knowledge id for your shop.",
+      "is_active": true
+    },
+    {
+      "external_id": "demo-return-01",
+      "title": "Want to return an unopened item",
+      "category": "return",
+      "customer_message": "Hi, I bought the wrong size and would like to return it. The box is unopened. How do I start a return?",
+      "thread_history_json": [],
+      "order_context_json": {
+        "order_number": "10544",
+        "fulfillment_status": "delivered"
+      },
+      "expected_intent": "return",
+      "required_facts_json": ["return_window_days", "return_instructions"],
+      "gold_knowledge_chunk_ids": ["REPLACE_WITH_REAL_return_policy_chunk_id"],
+      "expected_resolution": "Confirm eligibility within the return window and give the customer the return steps/label process.",
+      "expected_action_json": null,
+      "ideal_reply": "Of course! Since your order #10544 is within our 30-day return window and the box is unopened, you're all set. Here's how to start: <return steps>. Once we receive the item we'll process your refund or exchange. Want me to send a prepaid return label?",
+      "autopilot_allowed": false,
+      "notes": "Tests retrieval of the return-policy chunk and the return intent. Replace the gold chunk id with the real return-policy agent_knowledge id.",
+      "is_active": true
+    }
+  ]
+}
