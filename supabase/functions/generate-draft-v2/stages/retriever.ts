@@ -248,17 +248,36 @@ function buildShopProductTerms(shop?: Record<string, unknown>): string[] {
   );
 }
 
-function extractMentionedProductTerms(
+// B1: most-specific product resolution. When several shop product terms match
+// the same message and one term is a substring of another, longer matched term
+// (e.g. "a-spire" ⊂ "a-spire wireless"), keep only the most specific term. This
+// prevents a wireless customer from also counting as a wired ("a-spire") match,
+// which previously kept mentionedProducts.length===2 and silently disabled the
+// cross-product penalty. Generic — no hardcoded product names. Genuinely
+// different products (e.g. "a-blaze" + "a-spire wireless") are both preserved.
+export function resolveMostSpecificProductTerms(matchedTerms: string[]): string[] {
+  const terms = uniqueStrings(matchedTerms.map((t) => t.toLowerCase().trim()));
+  return terms.filter((term) =>
+    !terms.some((other) =>
+      other !== term &&
+      other.length > term.length &&
+      other.includes(term)
+    )
+  );
+}
+
+export function extractMentionedProductTerms(
   text: string,
   shop?: Record<string, unknown>,
 ): string[] {
   const lower = stripHtml(text).toLowerCase();
   const shopTerms = buildShopProductTerms(shop);
-  return shopTerms.filter((term) => {
+  const matched = shopTerms.filter((term) => {
     if (lower.includes(term)) return true;
     if (term === "ear pads" && lower.includes("earpads")) return true;
     return false;
   });
+  return resolveMostSpecificProductTerms(matched);
 }
 
 // Output values MUST be from the canonical issue_types vocabulary defined in
@@ -391,6 +410,20 @@ export interface RetrievalCandidateDiagnostics {
   matcher_selected_ids: string[];
   matcher_abstain: boolean | null;
   final_selected_ids: string[];
+  // B2 eval-only observability for the metadata-based product scorer. Lets the
+  // golden runner see exactly which resolved product term matched which chunk's
+  // products[] metadata, and the resulting boost/penalty — without re-deriving
+  // it. Optional so older consumers / best-effort fallbacks stay valid.
+  product_scoring?: {
+    product_match_source: "metadata";
+    mentioned_products_resolved: string[];
+    per_chunk: Array<{
+      chunk_id: string;
+      chunk_products_normalized: string[];
+      product_boost: number;
+      cross_product_penalty: number;
+    }>;
+  };
 }
 
 // Build supplementary retrieval queries from the customer message.
@@ -682,22 +715,43 @@ type ScoreBreakdown = {
   final_score: number;
 };
 
-function buildScoreBreakdown(input: {
+// B2: canonical product-identity normalizer. Lowercase, trim, and collapse any
+// run of hyphens/whitespace to a single space so "A-Spire Wireless",
+// "a-spire   wireless" and "a-spire-wireless" compare equal. Used to match a
+// customer's resolved product term against a chunk's products[] METADATA — the
+// authoritative product tag — instead of counting brand-name occurrences in the
+// chunk body (which rewarded verbose product-description chunks and let a
+// wrongly-tagged wired chunk slip past the cross-product penalty).
+export function normProduct(value: string): string {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[-\s]+/g, " ")
+    .trim();
+}
+
+export function buildScoreBreakdown(input: {
   chunk: RetrievedChunk;
   mentionedProducts: string[];
   otherProducts: string[];
   issueTerms: string[];
 }): ScoreBreakdown {
-  const { chunk, mentionedProducts, otherProducts, issueTerms } = input;
+  const { chunk, mentionedProducts, issueTerms } = input;
   const text = `${chunk.source_label} ${chunk.content}`;
-  const directProductBoost = overlapCount(text, mentionedProducts) * 0.10;
+  // Product match is driven by chunk.products[] METADATA, not body text.
+  const chunkProductSet = new Set((chunk.products ?? []).map(normProduct));
+  const mentionedNorm = mentionedProducts.map(normProduct);
+  const metadataMatchCount =
+    mentionedNorm.filter((p) => chunkProductSet.has(p)).length;
+  const directProductBoost = metadataMatchCount * 0.10;
   const generalProductBoost =
     chunk.applies_to_all_products && mentionedProducts.length > 0 ? 0.05 : 0;
   const productBoost = directProductBoost + generalProductBoost;
+  // Penalize a product-specific chunk whose metadata names a DIFFERENT product
+  // than the single product the customer asked about.
   const crossProductPenalty = !chunk.applies_to_all_products &&
       mentionedProducts.length === 1 &&
-      overlapCount(text, otherProducts) > 0 &&
-      overlapCount(text, mentionedProducts) === 0
+      chunkProductSet.size > 0 &&
+      metadataMatchCount === 0
     ? 0.12
     : 0;
   const taggedIssueOverlap = chunk.chunk_issue_types.filter((t) =>
@@ -749,6 +803,9 @@ export function buildRetrievalCandidateDiagnostics(input: {
   matcherDebug?: RetrieverResult["matcher_debug"];
   finalChunks: RetrievedChunk[];
   scoreBreakdown: (chunk: RetrievedChunk) => ScoreBreakdown;
+  // B2: resolved (most-specific) product terms detected on the query. Optional —
+  // when absent, the product_scoring diagnostics block is omitted.
+  mentionedProductsResolved?: string[];
 }): RetrievalCandidateDiagnostics {
   const vectorRanks = buildRawRankIndex(input.queryPairs, "vector");
   const bm25Ranks = buildRawRankIndex(input.queryPairs, "bm25");
@@ -808,6 +865,29 @@ export function buildRetrievalCandidateDiagnostics(input: {
     ),
     matcher_abstain: input.matcherDebug?.abstained ?? null,
     final_selected_ids: input.finalChunks.map((chunk) => String(chunk.id)),
+    ...(input.mentionedProductsResolved
+      ? {
+        product_scoring: {
+          product_match_source: "metadata" as const,
+          mentioned_products_resolved: input.mentionedProductsResolved.map(
+            normProduct,
+          ),
+          per_chunk: input.scoredChunks
+            .slice(0, MAX_DIAGNOSTIC_CANDIDATES)
+            .map((chunk) => {
+              const b = input.scoreBreakdown(chunk);
+              return {
+                chunk_id: String(chunk.id),
+                chunk_products_normalized: (chunk.products ?? []).map(
+                  normProduct,
+                ),
+                product_boost: b.product_boost,
+                cross_product_penalty: b.cross_product_penalty,
+              };
+            }),
+        },
+      }
+      : {}),
   };
 }
 
@@ -1417,6 +1497,7 @@ export async function runRetriever(
       matcherDebug,
       finalChunks,
       scoreBreakdown,
+      mentionedProductsResolved: mentionedProducts,
     }),
   );
 

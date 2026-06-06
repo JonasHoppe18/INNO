@@ -165,6 +165,73 @@ Deno.test("buildRetrievalCandidateDiagnostics does not store full chunk content"
   );
 });
 
+Deno.test("product_scoring block is present when resolved products are passed", () => {
+  const c1 = chunk("1", { products: ["a-spire wireless"] });
+  const c2 = chunk("2", { products: ["a-spire"] });
+  const diagnostics = buildRetrievalCandidateDiagnostics({
+    plannerQueries: [],
+    fallbackQueries: [],
+    queryDefs: [{ text: "query", productAgnostic: false }],
+    queryPairs: [{ vector: [row("1"), row("2")], bm25: [] }],
+    fusedRaw: [
+      { id: "1", score: 0.02, vectorSimilarity: 0.9, chunk: row("1") },
+      { id: "2", score: 0.01, vectorSimilarity: 0.8, chunk: row("2") },
+    ],
+    scoredChunks: [c1, c2],
+    candidatesPostDedupe: [c1, c2],
+    matcherPool: [c1, c2],
+    finalChunks: [c1],
+    mentionedProductsResolved: ["a-spire wireless"],
+    scoreBreakdown: (candidate) => ({
+      base_score: candidate.similarity,
+      product_boost: candidate.id === "1" ? 0.1 : 0,
+      issue_type_boost: 0,
+      lexical_issue_boost: 0,
+      source_type_boost: 0,
+      usable_as_boost: 0,
+      cross_product_penalty: candidate.id === "2" ? 0.12 : 0,
+      final_score: candidate.similarity,
+    }),
+  });
+  assertEquals(diagnostics.product_scoring?.product_match_source, "metadata");
+  assertEquals(diagnostics.product_scoring?.mentioned_products_resolved, [
+    "a spire wireless",
+  ]);
+  assertEquals(diagnostics.product_scoring?.per_chunk[0], {
+    chunk_id: "1",
+    chunk_products_normalized: ["a spire wireless"],
+    product_boost: 0.1,
+    cross_product_penalty: 0,
+  });
+  assertEquals(diagnostics.product_scoring?.per_chunk[1].cross_product_penalty, 0.12);
+});
+
+Deno.test("product_scoring block omitted when resolved products absent", () => {
+  const c = chunk("1");
+  const diagnostics = buildRetrievalCandidateDiagnostics({
+    plannerQueries: [],
+    fallbackQueries: [],
+    queryDefs: [{ text: "query", productAgnostic: false }],
+    queryPairs: [{ vector: [row("1")], bm25: [] }],
+    fusedRaw: [{ id: "1", score: 0.01, vectorSimilarity: 0.9, chunk: row("1") }],
+    scoredChunks: [c],
+    candidatesPostDedupe: [c],
+    matcherPool: [c],
+    finalChunks: [c],
+    scoreBreakdown: () => ({
+      base_score: 0,
+      product_boost: 0,
+      issue_type_boost: 0,
+      lexical_issue_boost: 0,
+      source_type_boost: 0,
+      usable_as_boost: 0,
+      cross_product_penalty: 0,
+      final_score: 0,
+    }),
+  });
+  assertEquals(diagnostics.product_scoring, undefined);
+});
+
 Deno.test("buildRetrievalCandidateDiagnosticsBestEffort does not throw", () => {
   const diagnostics = buildRetrievalCandidateDiagnosticsBestEffort(() => {
     throw new Error("diagnostics fixture failure");
