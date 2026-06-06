@@ -150,7 +150,8 @@
       "gold_knowledge_chunk_ids": [
         3649,
         3948,
-        3929
+        3929,
+        3990
       ],
       "expected_resolution": "Walk through driver reinstall + factory reset + dongle re-pair and firmware update before considering a replacement dongle. Resolvable on message content alone.",
       "expected_action_json": null,
@@ -710,8 +711,7 @@
       ],
       "required_facts_json": null,
       "gold_knowledge_chunk_ids": [
-        3929,
-        3948
+        3929
       ],
       "expected_resolution": "Confirm a replacement dongle can be purchased and ask for the order number to find the correct spare part. Answerable on content (yes, spare available); order number is for follow-up.",
       "expected_action_json": null,

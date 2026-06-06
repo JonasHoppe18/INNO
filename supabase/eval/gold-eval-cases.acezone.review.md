@@ -120,10 +120,11 @@ This matrix expands every case into the exact fields required for the manual qua
 - expected_intent: technical_support
 - grading_mode: content_only
 - missing context: None.
-- relevant knowledge: 3649, 3948, 3929
+- relevant knowledge: 3649, 3948, 3929, 3990
 - expected resolution: Walk through driver reinstall + factory reset + dongle re-pair and firmware update before considering a replacement dongle. Resolvable on message content alone.
 - open questions: None.
 - review_notes: Dongle re-pair / driver-reinstall guide retrievable; gold reply troubleshoots before offering a replacement. Fully gradable on content.
+- 2026-06-05 gold-mapping revision (disambiguation audit Trin A): ADDED 3990 ("Poor dongle range" — driver uninstall/reinstall + dongle re-pair, products=[a-spire wireless, a-blaze]). The expected_resolution explicitly calls for "driver reinstall + ... dongle re-pair", which is exactly 3990's procedure, so it is a valid troubleshooting hit alongside 3649/3948. No removals.
 
 #### g-031
 
@@ -393,10 +394,11 @@ This matrix expands every case into the exact fields required for the manual qua
 - expected_intent: product_question
 - grading_mode: content_only
 - missing context: None for content grading; order number only needed for follow-up purchase flow.
-- relevant knowledge: 3929, 3948
+- relevant knowledge: 3929
 - expected resolution: Confirm a replacement dongle can be purchased and ask for the order number to find the correct spare part. Answerable on content (yes, spare available); order number is for follow-up.
 - open questions: Confirm replacement dongles are actually sold as spare parts.
 - review_notes: Core answer ('yes, a replacement dongle is purchasable') is content-gradable; the order number is only for follow-up, not blocking. Spare-part knowledge retrievable. Open question for full confidence: confirm a replacement dongle is actually sold as a spare on the store.
+- 2026-06-05 gold-mapping revision (disambiguation audit Trin A): REMOVED 3948 ("Dongle doesn't connect to headset" — a connectivity/pairing troubleshooting chunk). The customer LOST their dongle and asks to buy a replacement; connectivity troubleshooting is not relevant. Only 3929 ("My dongle is broken" — replacement/spare-part policy) is a correct hit. Note: 3929 is internal replacement policy; there is no customer-facing "buy a spare dongle on the webshop" chunk — flagged as a knowledge gap.
 
 #### g-021
 
