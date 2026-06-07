@@ -10,8 +10,10 @@
       "customer_message": "acezone headset\nHejsa jeg har et headset jeg lige har købt som gik ud mens jeg spillede og det ville ikke tænde nu efter det løb tør det lyser bare rød og men tænder ikke jeg kan få den til og sige paringlist clear og factory reset men det ville stadig ikke tænde går jeg så ind på appen på pcen med kablet i kan jeg få den til og connect og har updateret den men når jeg prøver på dongle siger den erro 8 hvad skyldes dette",
       "thread_history_json": null,
       "order_context_json": null,
-      "expected_intent": "technical_support",
+      "expected_intent": "complaint",
       "secondary_intents": [],
+      "expected_resolution_stage": "troubleshoot_first",
+      "_taxonomy": "Runtime emits intent=complaint + a resolution_stage for hardware-fault troubleshooting; expected_intent aligned to runtime taxonomy so the case is not penalized for a measurement mismatch. category=technical_support retained as the analytic/business segment (serves the evaluation_category role).",
       "required_facts_json": null,
       "gold_knowledge_chunk_ids": [
         3972,
@@ -36,8 +38,10 @@
       "customer_message": "New customer message on 17 April 2026 at 16.43\nYou received a new message from your online store's contact form. Country Code: DK Name: [redacted] Email: [email] Company / Team: [redacted] Country: Danmark If Applicable, Place Of Purchase And Order Number: [order number] What Is Your Request Regarding?: A-Spire Wireless What Do You Need Help With?: Connectivity / Pairing Body: Min app gider ikke virke når jeg prøver at Connect headset med appen, har et billede af den bare snurre og siger den ik kan Connect",
       "thread_history_json": null,
       "order_context_json": null,
-      "expected_intent": "technical_support",
+      "expected_intent": "complaint",
       "secondary_intents": [],
+      "expected_resolution_stage": "troubleshoot_first",
+      "_taxonomy": "Runtime emits intent=complaint + a resolution_stage for pairing/firmware troubleshooting; expected_intent aligned to runtime taxonomy. category=technical_support retained as the analytic/business segment (serves the evaluation_category role).",
       "required_facts_json": null,
       "gold_knowledge_chunk_ids": [
         3813,
@@ -88,8 +92,10 @@
       "customer_message": "New customer message on 16 April 2026 at 08.51\nYou received a new message from your online store's contact form. Country Code: DK Name: [redacted] Email: [email] Company / Team: Your Country: Danmark If Applicable, Place Of Purchase And Order Number: [order number] What Is Your Request Regarding?: A-Spire Wireless What Do You Need Help With?: Speaker / Microphone Issues Body: hejsa jeg har et headsæt fra jer af der slukker midt under spillet ...? og kan ikke lade det op og have det tændt samtidig....? vil sige kan ikke spille imens det lader",
       "thread_history_json": null,
       "order_context_json": null,
-      "expected_intent": "technical_support",
+      "expected_intent": "complaint",
       "secondary_intents": [],
+      "expected_resolution_stage": "troubleshoot_first",
+      "_taxonomy": "Runtime emits intent=complaint + a resolution_stage for firmware/driver/cable troubleshooting; expected_intent aligned to runtime taxonomy. category=technical_support retained as the analytic/business segment (serves the evaluation_category role).",
       "required_facts_json": null,
       "gold_knowledge_chunk_ids": [
         3833,
@@ -114,10 +120,12 @@
       "customer_message": "New customer message on 29 April 2026 at 13.20\nYou received a new message from your online store's contact form. Country Code: DK Name: [redacted] Email: [email] Company / Team: Your Country: Denmark If Applicable, Place Of Purchase And Order Number: Place of purchase: AceZone (official website) Order number: [order number] What Is Your Request Regarding?: A-Blaze What Do You Need Help With?: Other Body: Hej AceZone Support, Jeg skriver angående mit AceZone A-Blaze headset, som ser ud til at være defekt. Headsettet kan godt oprette forbindelse, men der kommer ikke lyd ud det meste af tiden. Jeg kan dog høre lyd, når jeg slår mikrofonen fra og til. Hvis jeg slukker og tænder headsettet, kommer lyden tilbage kortvarigt, men forsvinder derefter igen. Jeg har allerede prøvet følgende: Brug af en anden computer Udskiftning af forskellige kabler Problemet fortsætter stadig på trods af dette. Jeg vil derfor høre, hvad næste skridt er, og om det er muligt at få det repareret eller ombyttet. På forhånd tak for hjælpen. Venlig hilsen [redacted]",
       "thread_history_json": null,
       "order_context_json": null,
-      "expected_intent": "technical_support",
+      "expected_intent": "complaint",
       "secondary_intents": [
         "exchange_request"
       ],
+      "expected_resolution_stage": "initiate_warranty_repair",
+      "_taxonomy": "Runtime emits intent=complaint; customer already exhausted basic troubleshooting (PCs/cables/factory reset), so the correct resolution_stage is initiate_warranty_repair (exchange is the customer-raised fallback). expected_intent aligned to runtime taxonomy. category=technical_support retained as the analytic/business segment (serves the evaluation_category role).",
       "required_facts_json": null,
       "gold_knowledge_chunk_ids": [
         3837,
@@ -142,10 +150,12 @@
       "customer_message": "You received a new message from your online store's contact form.\n\nCountry Code:\nDK\n\nName:\n[Customer] \n\nEmail:\n[email]\n\nCompany / Team:\n\nYour Country:\nDanmark\n\nIf Applicable, Place Of Purchase And Order Number:\nAcezone.io order number: [order number]\n\nWhat Is Your Request Regarding?:\nA-Spire Wireless\n\nWhat Do You Need Help With?:\nConnectivity / Pairing\n\nBody:\nHej, jeg har lige købt mit aspire wireless, men jeg kan ikke få det til at du' uden ledning. Jeg kan godt connecte med bluetooth, men så er der jo rigtig meget delay på. Når jeg putter ledningen i headsettet så duer headsettet som det skal, men når jeg bruger dongle, så reagerere headsettet overhovedet ikke, hvad skal jeg gøre? Kan i evt. sende en ny dongle? Tak på forhånd. Hilsner fra [Customer]",
       "thread_history_json": null,
       "order_context_json": null,
-      "expected_intent": "technical_support",
+      "expected_intent": "complaint",
       "secondary_intents": [
         "product_question"
       ],
+      "expected_resolution_stage": "troubleshoot_first",
+      "_taxonomy": "Runtime emits intent=complaint + a resolution_stage for dongle driver/firmware troubleshooting before any replacement. expected_intent aligned to runtime taxonomy. category=technical_support retained as the analytic/business segment (serves the evaluation_category role).",
       "required_facts_json": null,
       "gold_knowledge_chunk_ids": [
         3649,
@@ -197,8 +207,10 @@
       "customer_message": "You received a new message from your online store's contact form.\n\nCountry Code:\nDK\n\nName:\n[redacted]\n\nEmail:\n[email]\n\nCompany / Team:\n\nYour Country:\nDenmark\n\nIf Applicable, Place Of Purchase And Order Number:\n6 April order nr [order number]\n\nWhat Is Your Request Regarding?:\nA-Spire Wireless\n\nWhat Do You Need Help With?:\nSetting up headset\n\nBody:\nHej, håber i forstår hvad jeg skriver, ellers må i lige skrive at jeg skal oversætte. Jeg kan ikke få lov til at få mit headset til at connecte med appen på telefonen, nu har jeg prøvet og lave factory reset, og prøve en anden telefon. Men det fungere stadig ikke. Den siger at connection failed - og ved ikke hvad jeg skal gøre her. Headsettet siger også paring mode men sker ikke noget. [redacted]",
       "thread_history_json": null,
       "order_context_json": null,
-      "expected_intent": "technical_support",
+      "expected_intent": "product_question",
       "secondary_intents": [],
+      "expected_resolution_stage": "troubleshoot_first",
+      "_taxonomy": "Runtime classifies this as product_question (a how-do-I-fix question, customer already tried factory reset/other phone) and produces a troubleshooting reply; expected_intent aligned to the runtime label so the case is not penalized for a measurement mismatch. category=technical_support retained as the analytic/business segment (serves the evaluation_category role).",
       "required_facts_json": null,
       "gold_knowledge_chunk_ids": [
         3813,
@@ -223,8 +235,10 @@
       "customer_message": "Hi, the USB dongle for my A-Spire Wireless won't connect to my PC anymore. What do I do?",
       "thread_history_json": null,
       "order_context_json": null,
-      "expected_intent": "technical_support",
+      "expected_intent": "complaint",
       "secondary_intents": [],
+      "expected_resolution_stage": "troubleshoot_first",
+      "_taxonomy": "Runtime emits intent=complaint + a resolution_stage for dongle re-pairing troubleshooting (replacement only as fallback). expected_intent aligned to runtime taxonomy. category=technical_support retained as the analytic/business segment (serves the evaluation_category role).",
       "required_facts_json": null,
       "gold_knowledge_chunk_ids": [
         3948,

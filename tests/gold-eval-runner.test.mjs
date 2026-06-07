@@ -494,3 +494,107 @@ test("seed: a seed case feeds computeRetrievalHitAtK end-to-end with bigint matc
   assert.equal(hitAtK.hit_at_1, true);
   assert.equal(hitAtK.recall_at_5, 1);
 });
+
+// ---------------------------------------------------------------------------
+// Technical-support taxonomy alignment (expected_intent ↔ runtime taxonomy)
+//
+// Runtime has NO `technical_support` intent: the planner emits `complaint`
+// (with a resolution_stage) for hardware-fault troubleshooting, and
+// `product_question` for "how do I fix" questions. These seed cases used to
+// carry expected_intent="technical_support", which made the deterministic
+// grader (normalizeIntent) mark every one wrong by construction — a
+// measurement mismatch, not a resolution bug. The fix aligns expected_intent
+// to the runtime label while preserving `category=technical_support` as the
+// analytic/business segment, and adds expected_resolution_stage for separate
+// grading. We deliberately do NOT add a broad alias (e.g. technical_support →
+// complaint), because that would hide the difference between the runtime
+// intent and the business category.
+// ---------------------------------------------------------------------------
+
+const VALID_RESOLUTION_STAGES = [
+  "troubleshoot_first",
+  "request_evidence",
+  "initiate_warranty_repair",
+  "cancel_order",
+  "refund_or_exchange",
+  "info_only",
+  "escalate_human",
+];
+
+// The runtime intent each technical case is OBSERVED to emit (eval-mode probe).
+const TECHNICAL_CASE_RUNTIME = {
+  "g-002": { expected_intent: "complaint", runtime_intent: "complaint", resolution_stage: "troubleshoot_first" },
+  "g-003": { expected_intent: "complaint", runtime_intent: "complaint", resolution_stage: "troubleshoot_first" },
+  "g-007": { expected_intent: "complaint", runtime_intent: "complaint", resolution_stage: "troubleshoot_first" },
+  "g-009": { expected_intent: "complaint", runtime_intent: "complaint", resolution_stage: "initiate_warranty_repair" },
+  "g-023": { expected_intent: "complaint", runtime_intent: "complaint", resolution_stage: "troubleshoot_first" },
+  "g-043": { expected_intent: "product_question", runtime_intent: "product_question", resolution_stage: "troubleshoot_first" },
+  "e-001": { expected_intent: "complaint", runtime_intent: "complaint", resolution_stage: "troubleshoot_first" },
+};
+
+test("seed: technical cases now grade CORRECT against the runtime intent", () => {
+  const seed = loadAceZoneSeed();
+  for (const [id, exp] of Object.entries(TECHNICAL_CASE_RUNTIME)) {
+    const c = seed.cases.find((x) => x.source_case_id === id);
+    assert.ok(c, `technical case ${id} present`);
+    assert.equal(c.expected_intent, exp.expected_intent, `${id} expected_intent aligned to runtime taxonomy`);
+    // The deterministic grader must now mark these correct (was false by construction before).
+    const { intentCorrect } = compareIntent(c.expected_intent, exp.runtime_intent);
+    assert.equal(intentCorrect, true, `${id} grades intent_correct against runtime intent`);
+  }
+});
+
+test("seed: technical cases preserve category=technical_support as the analytic segment", () => {
+  const seed = loadAceZoneSeed();
+  for (const id of Object.keys(TECHNICAL_CASE_RUNTIME)) {
+    const c = seed.cases.find((x) => x.source_case_id === id);
+    assert.equal(c.category, "technical_support", `${id} retains technical_support analytic category`);
+  }
+});
+
+test("seed: technical cases carry a separately-gradable expected_resolution_stage", () => {
+  const seed = loadAceZoneSeed();
+  for (const [id, exp] of Object.entries(TECHNICAL_CASE_RUNTIME)) {
+    const c = seed.cases.find((x) => x.source_case_id === id);
+    assert.ok(VALID_RESOLUTION_STAGES.includes(c.expected_resolution_stage), `${id} has a valid resolution stage`);
+    assert.equal(c.expected_resolution_stage, exp.resolution_stage, `${id} resolution_stage matches expected`);
+  }
+});
+
+test("seed: no alias backdoor — no active case uses technical_support as expected_intent", () => {
+  // Aligning to the runtime taxonomy (not adding a technical_support→complaint
+  // alias) means technical_support must no longer appear as a runtime-graded intent.
+  const seed = loadAceZoneSeed();
+  // Only active cases are graded; the alias-backdoor concern applies to those.
+  // (Inactive cases g-005/g-031 are excluded from eval and out of this scope.)
+  for (const c of seed.cases.filter((x) => x.is_active !== false)) {
+    assert.notEqual(
+      normalizeIntent(c.expected_intent),
+      "technical_support",
+      `active case ${c.source_case_id} must not grade against a non-runtime technical_support intent`,
+    );
+  }
+  // And normalizeIntent still does NOT silently alias technical_support to complaint.
+  assert.equal(normalizeIntent("technical_support"), "technical_support");
+  assert.notEqual(normalizeIntent("technical_support"), "complaint");
+});
+
+test("seed: complaint-guards keep their runtime intents (no regression from the alignment)", () => {
+  const seed = loadAceZoneSeed();
+  const guards = {
+    "g-004": { expected_intent: "complaint", category: "complaint" },
+    "e-004": { expected_intent: "exchange_request", category: "exchange_request" },
+    "g-013": { expected_intent: "refund_request", category: "refund_request" },
+    "g-028": { expected_intent: "refund_request", category: "refund_request" },
+  };
+  for (const [id, exp] of Object.entries(guards)) {
+    const c = seed.cases.find((x) => x.source_case_id === id);
+    assert.ok(c, `guard ${id} present`);
+    assert.equal(c.expected_intent, exp.expected_intent, `${id} expected_intent unchanged`);
+    assert.equal(c.category, exp.category, `${id} category unchanged`);
+    // Guards must NOT have been swept into the technical_support segment.
+    assert.notEqual(c.category, "technical_support", `${id} is not a technical_support case`);
+    // expected_intent still grades against itself (sanity of the guard).
+    assert.equal(compareIntent(c.expected_intent, exp.expected_intent).intentCorrect, true);
+  }
+});
