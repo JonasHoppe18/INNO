@@ -417,10 +417,15 @@
       "secondary_intents": [],
       "required_facts_json": null,
       "gold_knowledge_chunk_ids": [
+        3184,
+        3185,
+        3188,
+        3190,
+        3192,
         3913,
-        3651,
-        3192
+        3651
       ],
+      "_gold_note": "AUTHORITATIVE SOURCE = the live Shopify 'Warranty and Returns policy' page, chunked into 3184/3185/3188/3190/3192 (3188 carries the Øster Allé return address; 3192 the diminished-value/warranty text). A correct hit only requires one of these authoritative chunks. The manual_text/saved_reply chunks 3913 + 3651 are SUPPLEMENTARY duplicates of the same policy and are NOT necessary for a correct hit; 3919 is likewise a manual duplicate and intentionally NOT relied upon. Updated 2026-06-07 after read-only audit showed the live pipeline already answers this case send-ready from 3184/3185/3188. See docs/acezone-return-knowledge-review.md.",
       "expected_resolution": "Explain the 30-day return policy, possible value deduction for opened/worn units (EU consumer law), the office return address, and the courier/label steps. Largely policy-driven; gradable on content (retrieval of return policy).",
       "expected_action_json": null,
       "ideal_reply": "Hi there, Thanks for reaching out. As per our policy, we accept returns within our 30-day return period, even if the product has been opened and briefly tested. Since the headset has been unsealed and worn, it can no longer be sold as new. In accordance with EU consumer protection law, we may deduct an amount from your refund to reflect any diminished value. To proceed with the return: 1. Please ensure all original packaging and components are included. 2. Book and print a return label and send the item to: AceZone International ApS, [address]. 3. Hand in the package for return at your local return access point.",
@@ -430,7 +435,7 @@
       "is_active": true,
       "benchmark_status": "READY_FULL",
       "manual_reviewed": true,
-      "review_notes": "Policy-driven 'how does a return work' question; the canonical 30-day return policy chunk fully answers it without order lookup. Resolution + retrieval gradable on content. The diminished-value deduction is policy text, not order-specific here."
+      "review_notes": "Policy-driven 'how does a return work' question. Gold remapped 2026-06-07 to the authoritative Shopify 'Warranty and Returns policy' chunks (3184/3185/3188/3190/3192); read-only audit confirmed the live pipeline selects 3184/3185/3188 (matcher rel=1.00) and returns a send-ready answer with the correct Øster Allé address. Manual/saved-reply chunks 3913/3651 kept as supplementary only."
     },
     {
       "source_case_id": "g-047",
@@ -445,10 +450,16 @@
       ],
       "required_facts_json": null,
       "gold_knowledge_chunk_ids": [
+        3184,
+        3185,
+        3188,
+        3190,
+        3192,
         3919,
         3913,
         3651
       ],
+      "_gold_note": "AUTHORITATIVE SOURCE = the live Shopify 'Warranty and Returns policy' page, chunked into 3184/3185/3188/3190/3192. A correct hit only requires one of these authoritative chunks. The manual_text/saved_reply chunks 3919 + 3913 + 3651 are SUPPLEMENTARY duplicates of the same policy and are NOT necessary for a correct hit. Updated 2026-06-07 after read-only audit. See docs/acezone-return-knowledge-review.md.",
       "expected_resolution": "Reassure firmware/pairing first, then confirm returns are accepted within 30 days even if opened/tested, with possible deduction, and list the return procedure. Policy-driven; gradable on content.",
       "expected_action_json": null,
       "ideal_reply": "Hi there, Thank you for reaching out. It is essential for proper use that your headset and dongle are up to date with our newest FirmWare. For returns and our policies: As per our policy, we accept returns within our 30-day return period, even if the product has been opened and briefly tested. We may deduct an amount from your refund to reflect any diminished value. To proceed with the return: ensure all original packaging is included, book a return label, and send the item to AceZone International ApS, [address].",
@@ -458,7 +469,7 @@
       "is_active": true,
       "benchmark_status": "READY_FULL",
       "manual_reviewed": true,
-      "review_notes": "Raw 'unknown' remapped to return_request (the question is whether a used return is reimbursable). The 30-day-even-if-opened policy chunk answers it on content. Resolution + retrieval gradable. Refund is a documented secondary intent."
+      "review_notes": "Raw 'unknown' remapped to return_request (the question is whether a used return is reimbursable). Gold remapped 2026-06-07 to the authoritative Shopify 'Warranty and Returns policy' chunks (3184/3185/3188/3190/3192); manual/saved-reply chunks 3919/3913/3651 kept as supplementary only. Refund is a documented secondary intent."
     },
     {
       "source_case_id": "g-032",
