@@ -55,3 +55,6 @@ apps/web/.env.production
 supabase/eval/runs/
 # golden-eval scratch candidate file (regenerable via build-golden-candidates.mjs)
 supabase/eval/_candidates.json
+
+# local-only consolidation backups (raw embeddings, never commit)
+.local-backups/
