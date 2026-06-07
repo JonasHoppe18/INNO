@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { resolveAuthScope, resolveScopedShop } from "@/lib/server/workspace-auth";
+import { splitIntoSemanticChunks } from "@/lib/server/semantic-chunker";
 
 export const runtime = "nodejs";
 
@@ -54,45 +55,6 @@ function stripHtml(html: string): string {
     .replace(/&#39;/g, "'")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-}
-
-function splitIntoSemanticChunks(text: string, maxChars = 2400, minChars = 150): string[] {
-  const normalized = normalizeWhitespace(text);
-  if (!normalized) return [];
-
-  // Split on section headers (##, numbered sections) or double newlines
-  const sections = normalized
-    .split(/\n(?=#{1,3}\s|\d+\.\s)|\n\n+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length >= minChars);
-
-  if (sections.length <= 1) {
-    // No clear section boundaries — fall back to character overlap chunking
-    const chunks: string[] = [];
-    let start = 0;
-    while (start < normalized.length) {
-      const end = Math.min(normalized.length, start + maxChars);
-      const chunk = normalized.slice(start, end).trim();
-      if (chunk) chunks.push(chunk);
-      if (end >= normalized.length) break;
-      start = Math.max(0, end - 200);
-    }
-    return chunks.filter(Boolean);
-  }
-
-  // Merge short consecutive sections and split oversized ones
-  const chunks: string[] = [];
-  let buffer = "";
-  for (const section of sections) {
-    if (buffer && (buffer.length + section.length + 2) > maxChars) {
-      chunks.push(buffer.trim());
-      buffer = section;
-    } else {
-      buffer = buffer ? `${buffer}\n\n${section}` : section;
-    }
-  }
-  if (buffer.trim().length >= minChars) chunks.push(buffer.trim());
-  return chunks.filter(Boolean);
 }
 
 // Canonical planner intents — must match generate-draft-v2/stages/planner.ts
