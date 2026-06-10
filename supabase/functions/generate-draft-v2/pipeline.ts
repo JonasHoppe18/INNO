@@ -1331,10 +1331,12 @@ export async function runDraftV2Pipeline(
       })
       .filter((t) => t.length > 0)
       .join(" ");
+    const replyLanguageFallback = eval_payload ? plan.language : "en";
     const replyLanguage = resolveReplyLanguage(
       recentInboundForLanguage || latestCustomerMessage,
-      "en",
+      replyLanguageFallback,
     );
+    const writerReplyLanguageFallback = eval_payload ? replyLanguage : undefined;
 
     const shouldWaitForActionDecision = shouldDeferDraftUntilActionDecision(
       finalProposals,
@@ -1593,6 +1595,7 @@ export async function runDraftV2Pipeline(
       policyContext,
       internalRulesBlock,
       authoritativePreviewDocumentContext,
+      replyLanguageFallback: writerReplyLanguageFallback,
       model: firstPassModel,
       attachments: imageAttachments,
       actionResult: postActionResult,
@@ -1636,6 +1639,7 @@ export async function runDraftV2Pipeline(
           policyContext,
           internalRulesBlock,
           authoritativePreviewDocumentContext,
+          replyLanguageFallback: writerReplyLanguageFallback,
           model: firstPassModel,
           attachments: imageAttachments,
           actionResult: postActionResult,
@@ -1694,6 +1698,7 @@ export async function runDraftV2Pipeline(
           policyContext,
           internalRulesBlock,
           authoritativePreviewDocumentContext,
+          replyLanguageFallback: writerReplyLanguageFallback,
           model: firstPassModel,
           attachments: imageAttachments,
           actionResult: postActionResult,
@@ -1795,6 +1800,7 @@ export async function runDraftV2Pipeline(
           policyContext,
           internalRulesBlock,
           authoritativePreviewDocumentContext,
+          replyLanguageFallback: writerReplyLanguageFallback,
           model: escalationModel,
           attachments: imageAttachments,
           actionResult: postActionResult,

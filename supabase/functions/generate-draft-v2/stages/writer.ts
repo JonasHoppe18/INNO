@@ -56,6 +56,11 @@ export interface WriterInput {
    * content remain unchanged.
    */
   authoritativePreviewDocumentContext?: string;
+  /**
+   * Eval/preview-only language fallback resolved by the pipeline. Undefined in
+   * ordinary runtime so the writer keeps its existing language resolution path.
+   */
+  replyLanguageFallback?: string;
 }
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
@@ -94,6 +99,25 @@ const LANGUAGE_NAMES: Record<string, string> = {
   es: "spansk",
   it: "italiensk",
 };
+
+export function resolveWriterReplyLanguage(input: {
+  latestCustomerMessage?: string;
+  conversationHistory?: Array<{ role: "customer" | "agent"; text: string }>;
+  replyLanguageFallback?: string;
+}): string {
+  const recentCustomerText = [
+    ...(input.conversationHistory ?? [])
+      .filter((m) => m.role === "customer")
+      .slice(-3)
+      .map((m) => m.text),
+    input.latestCustomerMessage ?? "",
+  ].filter(Boolean).join(" ");
+
+  return resolveReplyLanguage(
+    recentCustomerText,
+    input.replyLanguageFallback ?? "en",
+  );
+}
 
 const LANGUAGE_LOCALES: Record<string, string> = {
   da: "da-DK",
@@ -641,6 +665,7 @@ export async function runWriter(
     nonImageAttachmentsMeta,
     internalRulesBlock,
     authoritativePreviewDocumentContext,
+    replyLanguageFallback,
   }: WriterInput,
 ): Promise<WriterResult> {
   const resolvedModel = model ?? Deno.env.get("OPENAI_MODEL") ?? "gpt-5-mini";
@@ -654,13 +679,11 @@ export async function runWriter(
   const brandDescription =
     ((shop as { brand_description?: string }).brand_description ?? "").trim();
 
-  const recentCustomerText = [
-    ...conversationHistory.filter((m) => m.role === "customer").slice(-3).map((
-      m,
-    ) => m.text),
-    latestCustomerMessage ?? "",
-  ].filter(Boolean).join(" ");
-  const replyLanguage = resolveReplyLanguage(recentCustomerText, "en");
+  const replyLanguage = resolveWriterReplyLanguage({
+    latestCustomerMessage,
+    conversationHistory,
+    replyLanguageFallback,
+  });
   const langName = LANGUAGE_NAMES[replyLanguage] ?? replyLanguage;
   const salutationName = resolveSalutationName(
     latestCustomerMessage ?? "",
