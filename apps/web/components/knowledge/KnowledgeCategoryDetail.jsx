@@ -566,6 +566,186 @@ function PolicyEditor({ title, description, field, initialContent, shopId, synce
   );
 }
 
+const RETURNS_DOC_TYPE = "returns_refunds";
+
+function statusLabel({ isDirty, document }) {
+  if (isDirty) return "Unsaved changes";
+  if (document?.has_unpublished_changes) return "Unpublished changes";
+  if (document?.published_at) return "Published";
+  return "Saved";
+}
+
+function KnowledgeDocumentEditor({ shopId, onShopId }) {
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [document, setDocument] = useState(null);
+  const [value, setValue] = useState("");
+  const [savedValue, setSavedValue] = useState("");
+  const [error, setError] = useState("");
+
+  const loadDocument = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(
+        `/api/knowledge/documents?category=returns&document_type=${RETURNS_DOC_TYPE}${shopId ? `&shop_id=${encodeURIComponent(shopId)}` : ""}`,
+        { credentials: "include" },
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Could not load document.");
+      setDocument(data.document);
+      setValue(data.document?.draft_markdown || "");
+      setSavedValue(data.document?.draft_markdown || "");
+      if (data?.shop_id) onShopId?.(data.shop_id);
+    } catch (err) {
+      setError(err.message || "Could not load document.");
+    } finally {
+      setLoading(false);
+    }
+  }, [shopId, onShopId]);
+
+  useEffect(() => {
+    loadDocument();
+  }, [loadDocument]);
+
+  const isDirty = value !== savedValue;
+  const canPreview = Boolean(document?.id) && !isDirty;
+  const currentStatus = statusLabel({ isDirty, document });
+
+  const saveDraft = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fetch("/api/knowledge/documents", {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...(shopId ? { shop_id: shopId } : {}),
+          category: "returns",
+          document_type: RETURNS_DOC_TYPE,
+          title: "Returns & Refunds",
+          draft_markdown: value,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Could not save document.");
+      setDocument(data.document);
+      setSavedValue(data.document?.draft_markdown || value);
+      toast.success("Knowledge document saved");
+    } catch (err) {
+      setError(err.message || "Could not save document.");
+      toast.error(err.message || "Could not save document.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const publishDraft = async () => {
+    setPublishing(true);
+    setError("");
+    try {
+      const res = await fetch("/api/knowledge/documents", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...(shopId ? { shop_id: shopId } : {}),
+          action: "publish",
+          category: "returns",
+          document_type: RETURNS_DOC_TYPE,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Could not publish document.");
+      setDocument(data.document);
+      setSavedValue(data.document?.draft_markdown || value);
+      setValue(data.document?.draft_markdown || value);
+      toast.success("Knowledge document published");
+    } catch (err) {
+      setError(err.message || "Could not publish document.");
+      toast.error(err.message || "Could not publish document.");
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  const openPreview = () => {
+    if (!canPreview) {
+      toast.error(isDirty ? "Save changes before preview testing." : "Save the document before preview testing.");
+      return;
+    }
+    router.push(`/knowledge/simulate?preview_document_id=${encodeURIComponent(document.id)}`);
+  };
+
+  if (loading) {
+    return (
+      <div className="rounded-xl border bg-card overflow-hidden">
+        <div className="px-6 py-5 border-b space-y-2">
+          <Skeleton className="h-5 w-44" />
+          <Skeleton className="h-4 w-72" />
+        </div>
+        <div className="px-6 py-5 space-y-2">
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-3/4" />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border bg-card overflow-hidden">
+      <div className="flex flex-col gap-4 border-b px-6 py-5 md:flex-row md:items-start md:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-base font-semibold">Returns & Refunds</h2>
+            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+              {currentStatus}
+            </span>
+          </div>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            Define your return policy and how refunds work
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={openPreview}>
+            Test against ticket
+          </Button>
+          <Button type="button" variant="outline" size="sm" onClick={openPreview}>
+            Simulate conversation
+          </Button>
+          <Button type="button" variant="outline" size="sm" onClick={publishDraft} disabled={publishing || isDirty || !document?.id}>
+            {publishing ? "Publishing..." : "Publish"}
+          </Button>
+          <Button type="button" size="sm" onClick={saveDraft} disabled={saving || !isDirty}>
+            {saving ? "Saving..." : "Save changes"}
+          </Button>
+        </div>
+      </div>
+      <div className="px-6 py-5">
+        <p className="mb-3 text-xs text-muted-foreground">
+          Use headings to organise the guide. Each heading becomes a focused knowledge section for the AI.
+        </p>
+        {error && (
+          <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
+            {error}
+          </div>
+        )}
+        <Textarea
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          rows={20}
+          spellCheck={false}
+          className="min-h-[460px] resize-y whitespace-pre-wrap font-mono text-[13px] leading-relaxed"
+        />
+      </div>
+    </div>
+  );
+}
+
 export function KnowledgeCategoryDetail({ categorySlug }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -698,15 +878,7 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
             </div>
           </div>
         ) : categorySlug === "returns" ? (
-          <PolicyEditor
-            title="Return Policy"
-            description="Shown to customers and used by AI when answering return & refund questions."
-            field="policy_refund"
-            initialContent={shopPolicy.policy_refund}
-            shopId={shopId}
-            syncedAt={shopPolicy.policy_synced_at}
-            onSynced={fetchShopPolicy}
-          />
+          <KnowledgeDocumentEditor shopId={shopId} onShopId={setShopId} />
         ) : (
           <PolicyEditor
             title="Shipping Policy"
@@ -736,7 +908,9 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
           <div>
             <h2 className="text-sm font-medium">Snippets</h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              {hasPolicySection
+              {categorySlug === "returns"
+                ? "Legacy snippets remain available for reference and specific cases. Saved replies continue to behave as separate macros."
+                : hasPolicySection
                 ? "The pinned policy above is always sent to the AI. Snippets add specific Q&A the AI uses when retrieval matches a customer's question."
                 : "Add specific Q&A the AI uses when retrieval matches a customer's question."}
             </p>

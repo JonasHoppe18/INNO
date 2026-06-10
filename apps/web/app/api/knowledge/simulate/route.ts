@@ -12,6 +12,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { resolveAuthScope, listScopedShops } from "@/lib/server/workspace-auth";
+import { loadPreviewDocumentContext } from "@/lib/server/knowledge-doc-preview";
 
 const SUPABASE_URL = (
   process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -67,6 +68,7 @@ export async function POST(request: Request) {
 
   const subject = String(payload?.subject || "").trim() || "(simulated ticket)";
   const requestedShopId = String(payload?.shop_id || "").trim();
+  const previewDocumentId = String(payload?.preview_document_id || "").trim();
   const customerEmail = String(payload?.customer_email || "").trim() || null;
   let orderNumber = String(payload?.order_number || "").trim() || null;
   // When the client loaded a real ticket and hasn't diverged from it yet,
@@ -128,6 +130,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "No shop in scope." }, { status: 403 });
   }
 
+  let previewDocumentContext = null;
+  if (previewDocumentId) {
+    try {
+      previewDocumentContext = await loadPreviewDocumentContext({
+        serviceClient: supabase,
+        shopId,
+        documentId: previewDocumentId,
+      });
+    } catch (err: any) {
+      return NextResponse.json(
+        { error: err?.message || "Preview document context is unavailable." },
+        { status: 400 },
+      );
+    }
+  }
+
   // Find the latest customer message — that's the "body" the AI is replying
   // to. In post-action mode (last turn = agent), we re-use the most recent
   // customer message and treat everything after it as agent context.
@@ -176,11 +194,13 @@ export async function POST(request: Request) {
         shop_id: shopId,
         thread_id: realThreadId,
         message_id: realMessageId,
+        ...(previewDocumentContext ? { preview_document_context: previewDocumentContext } : {}),
         ...(actionResult ? { action_result: actionResult } : {}),
       }
     : {
         shop_id: shopId,
         email_data: emailData,
+        ...(previewDocumentContext ? { preview_document_context: previewDocumentContext } : {}),
         ...(actionResult ? { action_result: actionResult } : {}),
       };
 
@@ -225,6 +245,17 @@ export async function POST(request: Request) {
     routing_hint: data.routing_hint ?? null,
     confidence: typeof data.confidence === "number" ? data.confidence : null,
     sources: Array.isArray(data.sources) ? data.sources : [],
+    preview_document_context: data.preview_document_context ?? (
+      previewDocumentContext
+        ? {
+          requested: true,
+          document_id: previewDocumentContext.document_id,
+          preview_chunk_ids: previewDocumentContext.chunk_ids,
+          section_headings: previewDocumentContext.section_headings,
+          active_only_for_test: true,
+        }
+        : null
+    ),
     intent: data.intent ?? null,
     latency_ms: typeof data.latency_ms === "number" ? data.latency_ms : latency,
   });
