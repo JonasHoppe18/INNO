@@ -13,6 +13,11 @@ import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { resolveAuthScope, listScopedShops } from "@/lib/server/workspace-auth";
 import { loadPreviewDocumentContext } from "@/lib/server/knowledge-doc-preview";
+import {
+  buildKnowledgeDocumentPreviewRunBodies,
+  wasLegacySnippetRetrieved,
+  wasPreviewDocumentInjected,
+} from "@/lib/server/knowledge-doc-preview-comparison";
 
 const SUPABASE_URL = (
   process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -40,6 +45,15 @@ type DraftRun = {
   confidence: number | null;
   sources: Array<{ content?: string; kind?: string; source_label?: string }>;
   latency_ms: number | null;
+  preview_document_context?: {
+    requested: true;
+    document_id: string;
+    preview_chunk_ids: string[];
+    section_headings: string[];
+    active_only_for_test: true;
+    injected: boolean;
+    reason: string;
+  } | null;
   error?: string;
 };
 
@@ -76,6 +90,7 @@ async function callEdgeFunction(
       confidence: typeof data.confidence === "number" ? data.confidence : null,
       sources: Array.isArray(data.sources) ? data.sources : [],
       latency_ms: typeof data.latency_ms === "number" ? data.latency_ms : Date.now() - start,
+      preview_document_context: data.preview_document_context ?? null,
     };
   } catch (err: any) {
     return {
@@ -274,18 +289,17 @@ export async function POST(request: Request) {
     displayCustomerName = customName;
   }
 
+  const runBodies = buildKnowledgeDocumentPreviewRunBodies({
+    shopId: shopId!,
+    emailData,
+    previewDocumentContext,
+    snippetExcludeChunkIds: excludeChunkIds,
+  });
+
   // Run both pipelines in parallel.
   const [withSnippet, withoutSnippet] = await Promise.all([
-    callEdgeFunction({
-      shop_id: shopId,
-      email_data: emailData,
-      ...(previewDocumentContext ? { preview_document_context: previewDocumentContext } : {}),
-    }),
-    callEdgeFunction({
-      shop_id: shopId,
-      email_data: emailData,
-      exclude_chunk_ids: excludeChunkIds,
-    }),
+    callEdgeFunction(runBodies.withPreview),
+    callEdgeFunction(runBodies.withoutPreview),
   ]);
 
   // Detect whether this snippet's chunks actually surfaced in the baseline run.
@@ -301,11 +315,9 @@ export async function POST(request: Request) {
   const snippetTitle = previewDocumentContext
     ? "Knowledge document preview"
     : String((snippetMeta?.metadata as any)?.title || "").trim();
-  const snippetWasRetrieved = snippetTitle
-    ? withSnippet.sources.some((s) =>
-        String(s.source_label || "").toLowerCase().includes(snippetTitle.toLowerCase())
-      )
-    : false;
+  const snippetWasRetrieved = previewDocumentContext
+    ? wasPreviewDocumentInjected(withSnippet)
+    : wasLegacySnippetRetrieved({ run: withSnippet, snippetTitle });
 
   return NextResponse.json({
     customer_message: emailData.body,
@@ -314,7 +326,7 @@ export async function POST(request: Request) {
     subject: emailData.subject,
     snippet_title: snippetTitle || null,
     snippet_was_retrieved: snippetWasRetrieved,
-    excluded_chunk_count: excludeChunkIds.length,
+    excluded_chunk_count: runBodies.excludedChunkIds.length,
     preview_document_context: previewDocumentContext
       ? {
         requested: true,
@@ -322,6 +334,8 @@ export async function POST(request: Request) {
         preview_chunk_ids: previewDocumentContext.chunk_ids,
         section_headings: previewDocumentContext.section_headings,
         active_only_for_test: true,
+        injected: withSnippet.preview_document_context?.injected === true,
+        reason: withSnippet.preview_document_context?.reason ?? null,
       }
       : null,
     with_snippet: withSnippet,

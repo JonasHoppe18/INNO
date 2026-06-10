@@ -69,14 +69,14 @@ test("preview context is explicit and scoped by shop, document id, and preview e
         shop_id: "shop-1",
         source_provider: "knowledge_document",
         content: "Preview A",
-        metadata: { document_id: "doc-1", environment: "preview", section_heading: "Return window", section_order: 1 },
+        metadata: { document_id: "doc-1", environment: "preview", active_for_ai: false, section_heading: "Return window", section_order: 1 },
       },
       {
         id: 4,
         shop_id: "shop-1",
         source_provider: "knowledge_document",
         content: "Preview B",
-        metadata: { document_id: "doc-1", environment: "preview", section_heading: "Return shipping", section_order: 0 },
+        metadata: { document_id: "doc-1", environment: "preview", active_for_ai: false, section_heading: "Return shipping", section_order: 0 },
       },
       {
         id: 2,
@@ -106,6 +106,7 @@ test("preview context is explicit and scoped by shop, document id, and preview e
   assert.deepEqual(context.chunk_ids, ["4", "1"]);
   assert.deepEqual(context.section_headings, ["Return shipping", "Return window"]);
   assert.equal(context.chunks[0].content, "Preview B");
+  assert.equal(context.chunks[0].metadata.active_for_ai, false);
 });
 
 test("no preview id leaves legacy production payload unchanged", () => {
