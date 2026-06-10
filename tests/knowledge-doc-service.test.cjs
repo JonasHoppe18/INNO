@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 
 const {
+  RETURNS_DOCUMENT_TEMPLATE,
   getKnowledgeDocument,
   saveKnowledgeDocumentDraft,
   publishKnowledgeDocument,
@@ -159,6 +160,11 @@ test("GET missing doc returns template without inserting row", async () => {
   assert.equal(result.document.id, null);
   assert.equal(client.db.knowledge_documents.length, 0);
   assert.ok(result.parsed_sections.length > 0);
+});
+
+test("Returns document starter template begins with section headings", () => {
+  assert.equal(RETURNS_DOCUMENT_TEMPLATE.startsWith("## Return window"), true);
+  assert.equal(RETURNS_DOCUMENT_TEMPLATE.includes("# Returns & Refunds"), false);
 });
 
 test("PUT creates one doc, repeated PUT reuses id, and regenerates only preview chunks", async () => {

@@ -41,6 +41,7 @@ import {
 } from "@/lib/knowledge/knowledge-doc-preview-actions";
 import { SnippetEditor } from "./SnippetEditor";
 import { SnippetPreviewModal } from "./SnippetPreviewModal";
+import { KnowledgeDocsEditor } from "./KnowledgeDocsEditor";
 
 const KNOWLEDGE_TYPE_LABELS = {
   fact: "Fact",
@@ -756,7 +757,7 @@ function KnowledgeDocumentEditor({ shopId, onShopId }) {
         </div>
         <div className="px-6 py-5">
           <p className="mb-3 text-xs text-muted-foreground">
-            Use headings to organise the guide. Each heading becomes a focused knowledge section for the AI.
+            Use section headings to organise the guide. Each section heading becomes a focused knowledge section for the AI.
           </p>
           {error && (
             <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
@@ -768,15 +769,12 @@ function KnowledgeDocumentEditor({ shopId, onShopId }) {
               {previewError}
             </div>
           )}
-          <Textarea
+          <KnowledgeDocsEditor
             value={value}
-            onChange={(e) => {
-              setValue(e.target.value);
+            onChange={(markdown) => {
+              setValue(markdown);
               setPreviewError("");
             }}
-            rows={20}
-            spellCheck={false}
-            className="min-h-[460px] resize-y whitespace-pre-wrap font-mono text-[13px] leading-relaxed"
           />
         </div>
       </div>

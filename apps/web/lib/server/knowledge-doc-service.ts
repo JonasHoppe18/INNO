@@ -4,9 +4,7 @@ import {
   type KnowledgeDocumentSection,
 } from "./knowledge-doc-parser";
 
-export const RETURNS_DOCUMENT_TEMPLATE = `# Returns & Refunds
-
-## Return window
+export const RETURNS_DOCUMENT_TEMPLATE = `## Return window
 
 ## Opened or tested products
 
