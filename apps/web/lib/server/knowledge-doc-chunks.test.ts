@@ -97,7 +97,7 @@ Deno.test("unknown sections stay safe and body text does not infer address metad
         heading: "Special cases",
         normalized_heading: "special cases",
         section_key: "special_cases",
-        content: "Øster Allé 56, 5th floor",
+        content: "Testvej 12, 1000 Copenhagen",
         metadata: {},
       }),
     ],

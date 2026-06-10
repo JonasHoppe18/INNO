@@ -115,9 +115,9 @@ Repair location.`);
 
 Deno.test("body text does not infer address semantics or shop-specific metadata", () => {
   const sections = parseKnowledgeDocumentSections(`## Special cases
-AceZone International ApS
-Øster Allé 56, 5th floor
-2100 København Ø
+Example Shop ApS
+Testvej 12
+1000 Copenhagen
 Denmark`);
 
   assertEquals(sections[0].section_key, "special_cases");

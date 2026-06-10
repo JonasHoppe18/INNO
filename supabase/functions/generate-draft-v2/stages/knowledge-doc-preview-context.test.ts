@@ -112,5 +112,5 @@ Deno.test("preview context has no shop-specific or address-specific hardcoding",
   });
 
   const block = result.blockText ?? "";
-  assertEquals(/AceZone|Øster|Nordre|address/i.test(block), false);
+  assertEquals(/ExampleBrand|Testvej|Sample Street|address/i.test(block), false);
 });

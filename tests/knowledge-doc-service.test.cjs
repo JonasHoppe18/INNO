@@ -143,9 +143,9 @@ const markdown = `# Returns & Refunds
 30 days.
 
 ## Default return address
-AceZone International ApS
-Øster Allé 56, 5th floor
-2100 København Ø
+Example Shop ApS
+Testvej 12
+1000 Copenhagen
 Denmark`;
 
 test("GET missing doc returns template without inserting row", async () => {

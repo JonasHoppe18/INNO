@@ -74,8 +74,8 @@ test("loaded document serializes without losing H2 section boundaries", () => {
 
 ## Default return address
 
-AceZone International ApS
-Øster Allé 56, 5th floor`);
+Example Shop ApS
+Testvej 12`);
 
   assert.ok(output.includes("# Returns & Refunds"));
   assert.ok(output.includes("## Return window"));
