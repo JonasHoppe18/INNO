@@ -119,7 +119,7 @@ export async function POST(request: Request) {
   const customName = String(customMessage?.customer_name || "").trim() || null;
 
   if (!snippetId && !previewDocumentId) {
-    return NextResponse.json({ error: "snippet_id is required." }, { status: 400 });
+    return NextResponse.json({ error: "snippet_id or preview_document_id is required." }, { status: 400 });
   }
   if (!threadId && !customBody) {
     return NextResponse.json(

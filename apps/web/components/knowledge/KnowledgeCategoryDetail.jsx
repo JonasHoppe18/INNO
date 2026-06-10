@@ -35,7 +35,12 @@ import { Separator } from "@/components/ui/separator";
 import { StickySaveBar } from "@/components/ui/sticky-save-bar";
 import { ISSUE_TYPE_VALUES, ISSUE_TYPE_LABEL_MAP } from "@/lib/knowledge/issue-types";
 import { buildStarters } from "@/lib/knowledge/starters";
+import {
+  buildKnowledgeDocumentSimulationHref,
+  getKnowledgeDocumentPreviewBlockedReason,
+} from "@/lib/knowledge/knowledge-doc-preview-actions";
 import { SnippetEditor } from "./SnippetEditor";
+import { SnippetPreviewModal } from "./SnippetPreviewModal";
 
 const KNOWLEDGE_TYPE_LABELS = {
   fact: "Fact",
@@ -580,10 +585,12 @@ function KnowledgeDocumentEditor({ shopId, onShopId }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [document, setDocument] = useState(null);
   const [value, setValue] = useState("");
   const [savedValue, setSavedValue] = useState("");
   const [error, setError] = useState("");
+  const [previewError, setPreviewError] = useState("");
 
   const loadDocument = useCallback(async () => {
     setLoading(true);
@@ -611,7 +618,11 @@ function KnowledgeDocumentEditor({ shopId, onShopId }) {
   }, [loadDocument]);
 
   const isDirty = value !== savedValue;
-  const canPreview = Boolean(document?.id) && !isDirty;
+  const previewBlockedReason = getKnowledgeDocumentPreviewBlockedReason({
+    documentId: document?.id,
+    isDirty,
+  });
+  const canPreview = !previewBlockedReason;
   const currentStatus = statusLabel({ isDirty, document });
 
   const saveDraft = async () => {
@@ -634,6 +645,7 @@ function KnowledgeDocumentEditor({ shopId, onShopId }) {
       if (!res.ok) throw new Error(data?.error || "Could not save document.");
       setDocument(data.document);
       setSavedValue(data.document?.draft_markdown || value);
+      setPreviewError("");
       toast.success("Knowledge document saved");
     } catch (err) {
       setError(err.message || "Could not save document.");
@@ -672,12 +684,24 @@ function KnowledgeDocumentEditor({ shopId, onShopId }) {
     }
   };
 
-  const openPreview = () => {
+  const openTicketPreview = () => {
     if (!canPreview) {
-      toast.error(isDirty ? "Save changes before preview testing." : "Save the document before preview testing.");
+      setPreviewError(previewBlockedReason);
+      toast.error(previewBlockedReason);
       return;
     }
-    router.push(`/knowledge/simulate?preview_document_id=${encodeURIComponent(document.id)}`);
+    setPreviewError("");
+    setPreviewOpen(true);
+  };
+
+  const openSimulation = () => {
+    if (!canPreview) {
+      setPreviewError(previewBlockedReason);
+      toast.error(previewBlockedReason);
+      return;
+    }
+    setPreviewError("");
+    router.push(buildKnowledgeDocumentSimulationHref(document.id));
   };
 
   if (loading) {
@@ -697,52 +721,74 @@ function KnowledgeDocumentEditor({ shopId, onShopId }) {
   }
 
   return (
-    <div className="rounded-xl border bg-card overflow-hidden">
-      <div className="flex flex-col gap-4 border-b px-6 py-5 md:flex-row md:items-start md:justify-between">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-base font-semibold">Returns & Refunds</h2>
-            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-              {currentStatus}
-            </span>
+    <>
+      <div className="rounded-xl border bg-card overflow-hidden">
+        <div className="flex flex-col gap-4 border-b px-6 py-5 md:flex-row md:items-start md:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-base font-semibold">Returns & Refunds</h2>
+              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                {currentStatus}
+              </span>
+            </div>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Define your return policy and how refunds work
+            </p>
           </div>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Define your return policy and how refunds work
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={openTicketPreview} title={previewBlockedReason || "Run an A/B preview against a ticket"}>
+                Test against ticket
+              </Button>
+              <Button type="button" variant="outline" size="sm" onClick={openSimulation} title={previewBlockedReason || "Open simulation with this draft document preview"}>
+                Simulate conversation
+              </Button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={publishDraft} disabled={publishing || isDirty || !document?.id}>
+                {publishing ? "Publishing..." : "Publish"}
+              </Button>
+              <Button type="button" size="sm" onClick={saveDraft} disabled={saving || !isDirty}>
+                {saving ? "Saving..." : "Save changes"}
+              </Button>
+            </div>
+          </div>
+        </div>
+        <div className="px-6 py-5">
+          <p className="mb-3 text-xs text-muted-foreground">
+            Use headings to organise the guide. Each heading becomes a focused knowledge section for the AI.
           </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={openPreview}>
-            Test against ticket
-          </Button>
-          <Button type="button" variant="outline" size="sm" onClick={openPreview}>
-            Simulate conversation
-          </Button>
-          <Button type="button" variant="outline" size="sm" onClick={publishDraft} disabled={publishing || isDirty || !document?.id}>
-            {publishing ? "Publishing..." : "Publish"}
-          </Button>
-          <Button type="button" size="sm" onClick={saveDraft} disabled={saving || !isDirty}>
-            {saving ? "Saving..." : "Save changes"}
-          </Button>
+          {error && (
+            <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
+              {error}
+            </div>
+          )}
+          {previewError && (
+            <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
+              {previewError}
+            </div>
+          )}
+          <Textarea
+            value={value}
+            onChange={(e) => {
+              setValue(e.target.value);
+              setPreviewError("");
+            }}
+            rows={20}
+            spellCheck={false}
+            className="min-h-[460px] resize-y whitespace-pre-wrap font-mono text-[13px] leading-relaxed"
+          />
         </div>
       </div>
-      <div className="px-6 py-5">
-        <p className="mb-3 text-xs text-muted-foreground">
-          Use headings to organise the guide. Each heading becomes a focused knowledge section for the AI.
-        </p>
-        {error && (
-          <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
-            {error}
-          </div>
-        )}
-        <Textarea
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          rows={20}
-          spellCheck={false}
-          className="min-h-[460px] resize-y whitespace-pre-wrap font-mono text-[13px] leading-relaxed"
+      {document?.id && (
+        <SnippetPreviewModal
+          open={previewOpen}
+          onOpenChange={setPreviewOpen}
+          previewDocumentId={document.id}
+          previewTitle="Returns & Refunds"
         />
-      </div>
-    </div>
+      )}
+    </>
   );
 }
 
@@ -767,6 +813,7 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
   const [editingSnippet, setEditingSnippet] = useState(null);
   const [seedQuestion, setSeedQuestion] = useState("");
   const [shopPolicy, setShopPolicy] = useState(null);
+  const [showLegacySnippets, setShowLegacySnippets] = useState(categorySlug !== "returns");
 
   const starters = useMemo(
     () => buildStarters({ category: categorySlug }),
@@ -794,6 +841,10 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
   useEffect(() => {
     fetchSnippets();
   }, [fetchSnippets]);
+
+  useEffect(() => {
+    setShowLegacySnippets(categorySlug !== "returns");
+  }, [categorySlug]);
 
   const fetchShopPolicy = useCallback(() => {
     fetch("/api/knowledge/shop-policy", { credentials: "include" })
@@ -905,24 +956,38 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
       {/* Snippets */}
       {!isProductCategory && (
         <>
-          <div>
-            <h2 className="text-sm font-medium">Snippets</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {categorySlug === "returns"
-                ? "Legacy snippets remain available for reference and specific cases. Saved replies continue to behave as separate macros."
-                : hasPolicySection
-                ? "The pinned policy above is always sent to the AI. Snippets add specific Q&A the AI uses when retrieval matches a customer's question."
-                : "Add specific Q&A the AI uses when retrieval matches a customer's question."}
-            </p>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-medium">Snippets</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {categorySlug === "returns"
+                  ? "Legacy snippets remain available for reference and specific cases. Saved replies continue to behave as separate macros."
+                  : hasPolicySection
+                  ? "The pinned policy above is always sent to the AI. Snippets add specific Q&A the AI uses when retrieval matches a customer's question."
+                  : "Add specific Q&A the AI uses when retrieval matches a customer's question."}
+              </p>
+            </div>
+            {categorySlug === "returns" && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowLegacySnippets((value) => !value)}
+              >
+                {showLegacySnippets ? "Hide legacy snippets" : "Show legacy snippets"}
+              </Button>
+            )}
           </div>
-          <SnippetList
-            snippets={snippets}
-            loading={loading}
-            onAdd={() => openEditor(null)}
-            onOpen={(s) => openEditor(s)}
-            starters={starters}
-            onStarterClick={(seed) => openEditor(null, seed)}
-          />
+          {showLegacySnippets && (
+            <SnippetList
+              snippets={snippets}
+              loading={loading}
+              onAdd={() => openEditor(null)}
+              onOpen={(s) => openEditor(s)}
+              starters={starters}
+              onStarterClick={(seed) => openEditor(null, seed)}
+            />
+          )}
         </>
       )}
 

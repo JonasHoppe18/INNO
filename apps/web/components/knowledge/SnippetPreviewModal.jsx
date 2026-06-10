@@ -22,6 +22,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { buildKnowledgeDocumentPreviewPayload } from "@/lib/knowledge/knowledge-doc-preview-actions";
 
 function formatRelative(iso) {
   if (!iso) return "";
@@ -241,7 +242,7 @@ function ThreadPicker({ threads, loading, onSelect }) {
   );
 }
 
-export function SnippetPreviewModal({ open, onOpenChange, snippetId, snippetTitle }) {
+export function SnippetPreviewModal({ open, onOpenChange, snippetId, snippetTitle, previewDocumentId, previewTitle }) {
   const [threads, setThreads] = useState([]);
   const [threadsLoading, setThreadsLoading] = useState(false);
   const [pickerMode, setPickerMode] = useState("inbox"); // "inbox" | "custom"
@@ -251,6 +252,7 @@ export function SnippetPreviewModal({ open, onOpenChange, snippetId, snippetTitl
   const [previewSource, setPreviewSource] = useState(null);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState(null);
+  const isDocumentPreview = Boolean(previewDocumentId);
 
   useEffect(() => {
     if (!open) return;
@@ -279,10 +281,15 @@ export function SnippetPreviewModal({ open, onOpenChange, snippetId, snippetTitl
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            snippet_id: snippetId,
-            thread_id: thread.thread_id,
-          }),
+          body: JSON.stringify(isDocumentPreview
+            ? buildKnowledgeDocumentPreviewPayload({
+              documentId: previewDocumentId,
+              threadId: thread.thread_id,
+            })
+            : {
+              snippet_id: snippetId,
+              thread_id: thread.thread_id,
+            }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data?.error || "Preview failed");
@@ -294,7 +301,7 @@ export function SnippetPreviewModal({ open, onOpenChange, snippetId, snippetTitl
         setRunning(false);
       }
     },
-    [snippetId]
+    [isDocumentPreview, previewDocumentId, snippetId]
   );
 
   const runCustomPreview = useCallback(
@@ -307,10 +314,15 @@ export function SnippetPreviewModal({ open, onOpenChange, snippetId, snippetTitl
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            snippet_id: snippetId,
-            custom_message: customMessage,
-          }),
+          body: JSON.stringify(isDocumentPreview
+            ? buildKnowledgeDocumentPreviewPayload({
+              documentId: previewDocumentId,
+              customMessage,
+            })
+            : {
+              snippet_id: snippetId,
+              custom_message: customMessage,
+            }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data?.error || "Preview failed");
@@ -322,7 +334,7 @@ export function SnippetPreviewModal({ open, onOpenChange, snippetId, snippetTitl
         setRunning(false);
       }
     },
-    [snippetId]
+    [isDocumentPreview, previewDocumentId, snippetId]
   );
 
   const handleBack = () => {
@@ -347,12 +359,16 @@ export function SnippetPreviewModal({ open, onOpenChange, snippetId, snippetTitl
             <Sparkles className="h-4 w-4 text-indigo-500" />
             <span>
               {previewSource
-                ? "Snippet preview — A/B comparison"
+                ? isDocumentPreview
+                  ? "Knowledge document preview"
+                  : "Snippet preview — A/B comparison"
+                : isDocumentPreview
+                ? "Test your draft document"
                 : "Test your snippet"}
             </span>
-            {snippetTitle && !previewSource && (
+            {(previewTitle || snippetTitle) && !previewSource && (
               <span className="ml-2 truncate rounded-full bg-gray-100 px-2 py-0.5 text-[10.5px] font-normal text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-                {snippetTitle}
+                {previewTitle || snippetTitle}
               </span>
             )}
           </DialogTitle>
@@ -362,7 +378,9 @@ export function SnippetPreviewModal({ open, onOpenChange, snippetId, snippetTitl
           {!previewSource ? (
             <div className="flex h-full flex-col px-5 py-3">
               <p className="mb-3 text-[11.5px] text-gray-500 dark:text-gray-400">
-                We&apos;ll run the AI pipeline twice — once with your snippet present, once without — so you can see exactly what it adds.
+                {isDocumentPreview
+                  ? "We'll run the AI pipeline twice — once with your draft document preview, once without — so you can see exactly what it adds."
+                  : "We'll run the AI pipeline twice — once with your snippet present, once without — so you can see exactly what it adds."}
               </p>
               <div className="mb-3 inline-flex w-fit gap-0.5 rounded-md border border-gray-200 bg-gray-50 p-0.5 dark:border-gray-700 dark:bg-gray-900/50">
                 <button
@@ -457,7 +475,11 @@ export function SnippetPreviewModal({ open, onOpenChange, snippetId, snippetTitl
                   )}
                   <p>
                     {result.snippet_was_retrieved
-                      ? "Your snippet was retrieved for this ticket. The drafts below show what changes when it's removed."
+                      ? isDocumentPreview
+                        ? "Your draft document preview was used for this ticket. The drafts below show what changes when it's removed."
+                        : "Your snippet was retrieved for this ticket. The drafts below show what changes when it's removed."
+                      : isDocumentPreview
+                      ? "Your draft document preview was not used for this ticket. Try a return or refund question that matches the document sections."
                       : "Your snippet was NOT retrieved for this ticket — try rephrasing the question to match the customer's wording, or add more relevant issue tags."}
                   </p>
                 </div>
@@ -466,14 +488,14 @@ export function SnippetPreviewModal({ open, onOpenChange, snippetId, snippetTitl
               {/* A/B drafts */}
               <div className="grid flex-1 grid-cols-2 gap-3 overflow-hidden px-5 py-3">
                 <DraftCard
-                  title="With your snippet"
-                  badge="Baseline"
+                  title={isDocumentPreview ? "With draft document" : "With your snippet"}
+                  badge={isDocumentPreview ? "Preview" : "Baseline"}
                   badgeTone="indigo"
                   run={result?.with_snippet}
                   isLoading={running}
                 />
                 <DraftCard
-                  title="Without your snippet"
+                  title={isDocumentPreview ? "Without draft document" : "Without your snippet"}
                   badge="Excluded"
                   badgeTone="gray"
                   run={result?.without_snippet}
