@@ -50,6 +50,12 @@ export interface WriterInput {
   nonImageAttachmentsMeta?: string;
   /** Pre-rendered internal-rules block (deterministic, never quoted verbatim). */
   internalRulesBlock?: string;
+  /**
+   * Pre-rendered authoritative draft document block for explicit preview/test
+   * runs only. Undefined in ordinary runtime so writer prompt ordering and
+   * content remain unchanged.
+   */
+  authoritativePreviewDocumentContext?: string;
 }
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
@@ -634,6 +640,7 @@ export async function runWriter(
     customerHistory,
     nonImageAttachmentsMeta,
     internalRulesBlock,
+    authoritativePreviewDocumentContext,
   }: WriterInput,
 ): Promise<WriterResult> {
   const resolvedModel = model ?? Deno.env.get("OPENAI_MODEL") ?? "gpt-5-mini";
@@ -1146,6 +1153,7 @@ ${stageDirectives[resolutionStage] ?? stageDirectives.info_only}`;
   const userContent = [
     stageBlock,
     internalRulesBlock || "",
+    authoritativePreviewDocumentContext || "",
     fewShotBlock,
     // Conversation history placed early so the model processes prior context
     // before KB content — critical for follow-up messages and multi-turn threads.
