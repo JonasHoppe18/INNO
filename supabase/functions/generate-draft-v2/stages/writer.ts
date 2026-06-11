@@ -690,6 +690,7 @@ export async function runWriter(
     nonImageAttachmentsMeta,
     internalRulesBlock,
     authoritativePreviewDocumentContext,
+    resolvedCustomerName,
     replyLanguageFallback,
   }: WriterInput,
 ): Promise<WriterResult> {
