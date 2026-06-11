@@ -36,6 +36,7 @@ import {
 } from "./stages/email-thread-normalizer.ts";
 import { detectCustomerProvidedReturnTracking } from "./stages/return-tracking-attribution.ts";
 import { resolveCustomerName } from "./stages/customer-name-resolution.ts";
+import { checkUnsupportedCommitments } from "./stages/unsupported-commitment-check.ts";
 
 export interface EvalPayload {
   subject: string;
@@ -92,6 +93,13 @@ export interface PipelineResult {
   generation_id?: string;
   proposed_actions: ActionProposal[];
   routing_hint: "auto" | "review" | "block";
+  block_send_recommended?: boolean;
+  unsupported_commitment_check?: {
+    checked: boolean;
+    compliant: boolean;
+    violations: Array<{ type: string; excerpt: string }>;
+    requires_review: boolean;
+  };
   is_test_mode: boolean;
   confidence: number;
   intent?: string;
@@ -1953,6 +1961,29 @@ export async function runDraftV2Pipeline(
       );
     }
 
+    // 12. Deterministic post-writer safety check — catches unsupported
+    // refund/prepaid-label/replacement/exchange promises that prompt-only
+    // guardrails do not reliably prevent. Additive only: never rewrites the
+    // draft, never executes actions; only escalates routing_hint to "review".
+    const unsupportedCommitmentCheck = checkUnsupportedCommitments({
+      draft_text: finalDraft ?? "",
+      approved_actions: finalProposals
+        .filter((p) => !p.requires_approval)
+        .map((p) => ({ type: p.type })),
+      suggested_actions: finalProposals
+        .filter((p) => p.requires_approval)
+        .map((p) => ({ type: p.type })),
+      language: replyLanguage,
+    });
+    let blockSendRecommended = false;
+    if (unsupportedCommitmentCheck.requires_review) {
+      finalRoutingHint = "review";
+      blockSendRecommended = true;
+      console.warn(
+        `[generate-draft-v2] unsupported commitment check flagged ${unsupportedCommitmentCheck.violations.length} violation(s) — routing to review`,
+      );
+    }
+
     const policyChunkCount = retrieved.chunks.filter((c) =>
       c.usable_as === "policy"
     ).length;
@@ -2156,6 +2187,13 @@ export async function runDraftV2Pipeline(
       generation_id: generationId,
       proposed_actions: finalProposals,
       routing_hint: finalRoutingHint,
+      block_send_recommended: blockSendRecommended,
+      unsupported_commitment_check: {
+        checked: true,
+        compliant: unsupportedCommitmentCheck.compliant,
+        violations: unsupportedCommitmentCheck.violations,
+        requires_review: unsupportedCommitmentCheck.requires_review,
+      },
       is_test_mode: isTestMode,
       confidence: finalConfidence,
       intent: plan.primary_intent,
