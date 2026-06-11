@@ -19,6 +19,7 @@ import {
   buildPinnedPolicyContext,
   PolicyIntent,
 } from "../_shared/policy-context.ts";
+import { parseEmailReplyBodies } from "../_shared/email-reply-parser.ts";
 import { loadImageAttachments } from "./stages/attachment-loader.ts";
 import {
   cleanupMixedLanguageDraft,
@@ -29,12 +30,17 @@ import {
   buildKnowledgeDocPreviewContext,
   type KnowledgeDocPreviewContextInput,
 } from "./stages/knowledge-doc-preview-context.ts";
+import {
+  buildWriterConversationHistory,
+  visibleEmailText,
+} from "./stages/email-thread-normalizer.ts";
+import { detectCustomerProvidedReturnTracking } from "./stages/return-tracking-attribution.ts";
 
 export interface EvalPayload {
   subject: string;
   body: string;
   from_email?: string;
-  conversation_history?: string;
+  conversation_history?: string | Array<{ role?: string; text?: string }>;
   // When set, the retriever excludes this ticket from few-shot examples to
   // prevent data leakage where the AI finds its own correct answer in the KB.
   source_thread_id?: string;
@@ -536,8 +542,27 @@ function detectKnowledgeGaps(
 }
 
 function parseEvalConversationHistory(
-  history?: string,
+  history?: EvalPayload["conversation_history"],
 ): Record<string, unknown>[] {
+  if (Array.isArray(history)) {
+    return history
+      .map((turn, index) => {
+        const role = String(turn?.role || "").toLowerCase();
+        const body = String(turn?.text || "").trim();
+        if (!body) return null;
+        const isAgent = role === "agent" || role === "support";
+        return {
+          id: `eval-history-${index}`,
+          clean_body_text: body,
+          body_text: body,
+          from_me: isAgent,
+          direction: isAgent ? "outbound" : "inbound",
+          created_at: new Date(Date.now() - (history.length - index) * 1000)
+            .toISOString(),
+        };
+      })
+      .filter(Boolean) as Record<string, unknown>[];
+  }
   const text = String(history || "").trim();
   if (!text) return [];
 
@@ -846,10 +871,12 @@ export async function runDraftV2Pipeline(
         subject: eval_payload.subject,
         from_email: eval_payload.from_email ?? "eval@eval.internal",
       };
+      const parsedEvalBody = parseEmailReplyBodies({ text: eval_payload.body });
       latestMessage = {
         id: "eval",
-        clean_body_text: eval_payload.body,
+        clean_body_text: parsedEvalBody.cleanBodyText,
         body_text: eval_payload.body,
+        quoted_body_text: parsedEvalBody.quotedBodyText,
         from_me: false,
         created_at: new Date().toISOString(),
         // Propagate from_email down to the message so case-state-updater can
@@ -910,6 +937,20 @@ export async function runDraftV2Pipeline(
 
     if (!latestMessage && !eval_payload) {
       return await completeSkippedGeneration("no_messages");
+    }
+    const latestVisibleCustomerText = visibleEmailText(latestMessage);
+    if (latestVisibleCustomerText) {
+      latestMessage = {
+        ...latestMessage,
+        clean_body_text: latestVisibleCustomerText,
+      };
+      const latestMessageId = (latestMessage as Record<string, unknown>).id;
+      messages = messages.map((message) =>
+        latestMessageId &&
+          (message as Record<string, unknown>).id === latestMessageId
+          ? latestMessage
+          : message
+      );
     }
 
     // 2. Gate — skipped in eval mode
@@ -1031,9 +1072,7 @@ export async function runDraftV2Pipeline(
         confidence: 1,
       };
     }
-    const latestBody =
-      (latestMessage.clean_body_text ?? latestMessage.body_text ??
-        "") as string;
+    const latestBody = visibleEmailText(latestMessage);
     if (
       plan.primary_intent !== "address_change" &&
       /\b(?:ændre|skifte|rette|opdatere|change|update|correct)\b[\s\S]{0,120}\b(?:adresse|leveringsadresse|shipping address|address)\b/i
@@ -1147,7 +1186,48 @@ export async function runDraftV2Pipeline(
         supabase,
       }),
     ]);
-    const internalRulesBlock = internalRules.block || undefined;
+    const quotedAwareConversationHistory = buildWriterConversationHistory(
+      messages,
+      latestMessage,
+    );
+    const returnTrackingAttribution = detectCustomerProvidedReturnTracking({
+      latestCustomerMessage: latestBody,
+      conversationHistory: quotedAwareConversationHistory,
+      plan,
+    });
+    if (returnTrackingAttribution) {
+      facts.facts = facts.facts.filter((fact) =>
+        ![
+          "Tracking (fragtmand)",
+          "Tracking URL",
+          "Tracking",
+          "Leveret tidspunkt",
+          "Forventet levering",
+          "Pakkeshop",
+        ].includes(fact.label)
+      );
+      facts.facts.push({
+        label: "Customer-provided return tracking",
+        value: returnTrackingAttribution.tracking_numbers.join(", "),
+      });
+      plan = {
+        ...plan,
+        primary_intent: plan.primary_intent === "tracking"
+          ? "return"
+          : plan.primary_intent,
+        resolution_stage: "info_only",
+        required_facts: (plan.required_facts || []).filter((fact) =>
+          fact !== "tracking"
+        ),
+        skills_to_consider: (plan.skills_to_consider || []).filter((skill) =>
+          skill !== "get_tracking"
+        ),
+      };
+    }
+    const internalRulesBlock = [
+      internalRules.block || "",
+      returnTrackingAttribution?.blockText || "",
+    ].filter(Boolean).join("\n\n") || undefined;
     const retrievalTrace = {
       included_chunks: compactRetrievedChunks(
         retrieved.chunks as unknown as Array<Record<string, unknown>>,
@@ -1312,9 +1392,7 @@ export async function runDraftV2Pipeline(
       );
     }
 
-    const latestCustomerMessage =
-      (latestMessage.clean_body_text ?? latestMessage.body_text ??
-        "") as string;
+    const latestCustomerMessage = latestBody;
 
     // Combine recent inbound messages for language detection — the latest message
     // alone may be too short (e.g. "Here is the receipt:") to score reliably.
@@ -1325,10 +1403,7 @@ export async function runDraftV2Pipeline(
         return row.direction !== "outbound" && row.from_me !== true;
       })
       .slice(-3)
-      .map((m) => {
-        const row = m as Record<string, unknown>;
-        return ((row.clean_body_text ?? row.body_text ?? "") as string);
-      })
+      .map((m) => visibleEmailText(m))
       .filter((t) => t.length > 0)
       .join(" ");
     const replyLanguageFallback = eval_payload ? plan.language : "en";
@@ -1553,25 +1628,8 @@ export async function runDraftV2Pipeline(
       })()
       : "";
 
-    // Byg samtalehistorik fra messages — ekskludér den seneste besked (vises separat)
-    const latestMessageIdForHistory =
-      (latestMessage as Record<string, unknown>).id;
-    const conversationHistory = messages.filter((m) => {
-      if (!latestMessageIdForHistory) return m !== latestMessage;
-      return (m as Record<string, unknown>).id !== latestMessageIdForHistory;
-    }).map((m) => {
-      const msg = m as {
-        clean_body_text?: string;
-        body_text?: string;
-        direction?: string;
-        from_me?: boolean;
-      };
-      const isAgent = msg.direction === "outbound" || msg.from_me === true;
-      return {
-        role: isAgent ? "agent" as const : "customer" as const,
-        text: (msg.clean_body_text ?? msg.body_text ?? "") as string,
-      };
-    }).filter((m) => m.text.length > 0);
+    // Byg samtalehistorik fra visible messages + parsed quoted support replies.
+    const conversationHistory = quotedAwareConversationHistory;
 
     // 9. Skriv første draft — simple intents bruger gpt-4o-mini, resten gpt-5-mini
     currentStage = "writer";

@@ -1134,7 +1134,7 @@ Returner KUN gyldigt JSON — ingen markdown udenfor JSON.`;
     : proceduralSystemPrompt;
 
   // --- Samtalehistorik — de seneste udvekslinger i den aktuelle tråd ---
-  const historyBlock = conversationHistory && conversationHistory.length > 1
+  const historyBlock = conversationHistory && conversationHistory.length > 0
     ? `# Samtalehistorik (den aktuelle tråd — se hvad der allerede er sagt og lovet)
 ${
       conversationHistory
