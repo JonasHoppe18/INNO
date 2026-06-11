@@ -167,6 +167,21 @@ test("Returns document starter template begins with section headings", () => {
   assert.equal(RETURNS_DOCUMENT_TEMPLATE.includes("# Returns & Refunds"), false);
 });
 
+test("starter template contains policy-fact sections only — no Internal guidance", () => {
+  assert.equal(RETURNS_DOCUMENT_TEMPLATE.includes("## Internal guidance"), false);
+  // The fact sections remain.
+  for (const heading of [
+    "## Return window",
+    "## Opened or tested products",
+    "## Return shipping",
+    "## Refund processing",
+    "## Default return address",
+    "## Third-party purchases",
+  ]) {
+    assert.ok(RETURNS_DOCUMENT_TEMPLATE.includes(heading), `missing ${heading}`);
+  }
+});
+
 test("PUT creates one doc, repeated PUT reuses id, and regenerates only preview chunks", async () => {
   const client = makeClient({
     agent_knowledge: [

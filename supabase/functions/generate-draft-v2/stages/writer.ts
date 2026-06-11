@@ -12,6 +12,7 @@ import {
 } from "./customer-context.ts";
 import { InlineImageAttachment } from "./attachment-loader.ts";
 import type { ResolveCustomerNameResult } from "./customer-name-resolution.ts";
+import { buildPlatformSupportGuardrailsBlock } from "./platform-support-guardrails.ts";
 
 export interface WriterResult {
   draft_text: string;
@@ -1164,9 +1165,13 @@ INTENT:
 
 Returner KUN gyldigt JSON — ingen markdown udenfor JSON.`;
 
-  const systemPrompt = replyMode === "concise"
-    ? conciseSystemPrompt
-    : proceduralSystemPrompt;
+  // Platform-level mandate — identical for all shops, appended exactly once to
+  // the system layer so it outranks shop persona, knowledge and stage guidance.
+  // Every writer path (primary, correction retries, escalation) goes through
+  // runWriter, so this is the single insertion point.
+  const systemPrompt = `${
+    replyMode === "concise" ? conciseSystemPrompt : proceduralSystemPrompt
+  }\n\n${buildPlatformSupportGuardrailsBlock()}`;
 
   // --- Samtalehistorik — de seneste udvekslinger i den aktuelle tråd ---
   const historyBlock = conversationHistory && conversationHistory.length > 0

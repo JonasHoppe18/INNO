@@ -11,4 +11,5 @@ export const SECTION_HEADING_LEVEL = 2;
 
 export const SECTION_HEADING_LABEL = "Section heading";
 
-export const SECTION_HEADING_TOOLTIP = "Section heading — creates a focused AI knowledge section";
+export const SECTION_HEADING_TOOLTIP =
+  "Section heading — creates a focused AI knowledge section. Write policy facts and procedures; universal safety rules are applied automatically.";

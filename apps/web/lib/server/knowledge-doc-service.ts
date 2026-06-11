@@ -4,6 +4,12 @@ import {
   type KnowledgeDocumentSection,
 } from "./knowledge-doc-parser";
 
+// Starter template for NEW Returns & Refunds documents. Shop-specific policy
+// FACTS and procedures only — universal safety/behavior rules are enforced by
+// the hidden platform writer mandate (generate-draft-v2/stages/
+// platform-support-guardrails.ts) and must not live in shop-editable docs.
+// Existing documents that still contain an "## Internal guidance" section keep
+// parsing unchanged (knowledge-doc-parser.ts retains the heading mapping).
 export const RETURNS_DOCUMENT_TEMPLATE = `## Return window
 
 ## Opened or tested products
@@ -14,9 +20,7 @@ export const RETURNS_DOCUMENT_TEMPLATE = `## Return window
 
 ## Default return address
 
-## Third-party purchases
-
-## Internal guidance`;
+## Third-party purchases`;
 
 export type KnowledgeDocumentRecord = {
   id: string | null;
