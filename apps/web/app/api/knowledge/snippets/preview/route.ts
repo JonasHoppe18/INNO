@@ -12,6 +12,12 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { resolveAuthScope, listScopedShops } from "@/lib/server/workspace-auth";
+import { loadPreviewDocumentContext } from "@/lib/server/knowledge-doc-preview";
+import {
+  buildKnowledgeDocumentPreviewRunBodies,
+  wasLegacySnippetRetrieved,
+  wasPreviewDocumentInjected,
+} from "@/lib/server/knowledge-doc-preview-comparison";
 
 const SUPABASE_URL = (
   process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -39,6 +45,15 @@ type DraftRun = {
   confidence: number | null;
   sources: Array<{ content?: string; kind?: string; source_label?: string }>;
   latency_ms: number | null;
+  preview_document_context?: {
+    requested: true;
+    document_id: string;
+    preview_chunk_ids: string[];
+    section_headings: string[];
+    active_only_for_test: true;
+    injected: boolean;
+    reason: string;
+  } | null;
   error?: string;
 };
 
@@ -75,6 +90,7 @@ async function callEdgeFunction(
       confidence: typeof data.confidence === "number" ? data.confidence : null,
       sources: Array.isArray(data.sources) ? data.sources : [],
       latency_ms: typeof data.latency_ms === "number" ? data.latency_ms : Date.now() - start,
+      preview_document_context: data.preview_document_context ?? null,
     };
   } catch (err: any) {
     return {
@@ -109,6 +125,7 @@ export async function POST(request: Request) {
 
   const payload = await request.json().catch(() => null);
   const snippetId = String((payload as any)?.snippet_id || "").trim();
+  const previewDocumentId = String((payload as any)?.preview_document_id || "").trim();
   const threadId = String((payload as any)?.thread_id || "").trim();
   const customMessage = (payload as any)?.custom_message;
   const customBody = String(customMessage?.body || "").trim();
@@ -116,8 +133,8 @@ export async function POST(request: Request) {
   const customEmail = String(customMessage?.customer_email || "").trim() || null;
   const customName = String(customMessage?.customer_name || "").trim() || null;
 
-  if (!snippetId) {
-    return NextResponse.json({ error: "snippet_id is required." }, { status: 400 });
+  if (!snippetId && !previewDocumentId) {
+    return NextResponse.json({ error: "snippet_id or preview_document_id is required." }, { status: 400 });
   }
   if (!threadId && !customBody) {
     return NextResponse.json(
@@ -166,23 +183,40 @@ export async function POST(request: Request) {
     shopId = Array.from(shopIds)[0];
   }
 
-  // Find all agent_knowledge chunk ids that belong to this snippet — the
-  // edge function will exclude them from the "without snippet" run.
-  const { data: snippetChunks, error: chunkErr } = await supabase
-    .from("agent_knowledge")
-    .select("id")
-    .eq("shop_id", shopId!)
-    .eq("source_provider", "manual_text")
-    .eq("metadata->>snippet_id", snippetId);
-  if (chunkErr) {
-    return NextResponse.json({ error: chunkErr.message }, { status: 500 });
-  }
-  const excludeChunkIds = (snippetChunks || []).map((c: any) => String(c.id));
-  if (!excludeChunkIds.length) {
-    return NextResponse.json(
-      { error: "Snippet has no indexed chunks — save the snippet first." },
-      { status: 400 },
-    );
+  let excludeChunkIds: string[] = [];
+  let previewDocumentContext = null;
+  if (previewDocumentId) {
+    try {
+      previewDocumentContext = await loadPreviewDocumentContext({
+        serviceClient: supabase,
+        shopId: shopId!,
+        documentId: previewDocumentId,
+      });
+    } catch (err: any) {
+      return NextResponse.json(
+        { error: err?.message || "Preview document context is unavailable." },
+        { status: 400 },
+      );
+    }
+  } else {
+    // Find all agent_knowledge chunk ids that belong to this snippet — the
+    // edge function will exclude them from the "without snippet" run.
+    const { data: snippetChunks, error: chunkErr } = await supabase
+      .from("agent_knowledge")
+      .select("id")
+      .eq("shop_id", shopId!)
+      .eq("source_provider", "manual_text")
+      .eq("metadata->>snippet_id", snippetId);
+    if (chunkErr) {
+      return NextResponse.json({ error: chunkErr.message }, { status: 500 });
+    }
+    excludeChunkIds = (snippetChunks || []).map((c: any) => String(c.id));
+    if (!excludeChunkIds.length) {
+      return NextResponse.json(
+        { error: "Snippet has no indexed chunks — save the snippet first." },
+        { status: 400 },
+      );
+    }
   }
 
   // Build the email_data payload — either from the real thread's latest
@@ -255,30 +289,35 @@ export async function POST(request: Request) {
     displayCustomerName = customName;
   }
 
+  const runBodies = buildKnowledgeDocumentPreviewRunBodies({
+    shopId: shopId!,
+    emailData,
+    previewDocumentContext,
+    snippetExcludeChunkIds: excludeChunkIds,
+  });
+
   // Run both pipelines in parallel.
   const [withSnippet, withoutSnippet] = await Promise.all([
-    callEdgeFunction({ shop_id: shopId, email_data: emailData }),
-    callEdgeFunction({
-      shop_id: shopId,
-      email_data: emailData,
-      exclude_chunk_ids: excludeChunkIds,
-    }),
+    callEdgeFunction(runBodies.withPreview),
+    callEdgeFunction(runBodies.withoutPreview),
   ]);
 
   // Detect whether this snippet's chunks actually surfaced in the baseline run.
   // We check by looking at source_label (which usually includes the snippet
   // title) since the chunk ids aren't returned in the sources array.
-  const { data: snippetMeta } = await supabase
-    .from("agent_knowledge")
-    .select("metadata")
-    .eq("id", excludeChunkIds[0])
-    .maybeSingle();
-  const snippetTitle = String((snippetMeta?.metadata as any)?.title || "").trim();
-  const snippetWasRetrieved = snippetTitle
-    ? withSnippet.sources.some((s) =>
-        String(s.source_label || "").toLowerCase().includes(snippetTitle.toLowerCase())
-      )
-    : false;
+  const { data: snippetMeta } = excludeChunkIds[0]
+    ? await supabase
+      .from("agent_knowledge")
+      .select("metadata")
+      .eq("id", excludeChunkIds[0])
+      .maybeSingle()
+    : { data: null };
+  const snippetTitle = previewDocumentContext
+    ? "Knowledge document preview"
+    : String((snippetMeta?.metadata as any)?.title || "").trim();
+  const snippetWasRetrieved = previewDocumentContext
+    ? wasPreviewDocumentInjected(withSnippet)
+    : wasLegacySnippetRetrieved({ run: withSnippet, snippetTitle });
 
   return NextResponse.json({
     customer_message: emailData.body,
@@ -287,7 +326,18 @@ export async function POST(request: Request) {
     subject: emailData.subject,
     snippet_title: snippetTitle || null,
     snippet_was_retrieved: snippetWasRetrieved,
-    excluded_chunk_count: excludeChunkIds.length,
+    excluded_chunk_count: runBodies.excludedChunkIds.length,
+    preview_document_context: previewDocumentContext
+      ? {
+        requested: true,
+        document_id: previewDocumentContext.document_id,
+        preview_chunk_ids: previewDocumentContext.chunk_ids,
+        section_headings: previewDocumentContext.section_headings,
+        active_only_for_test: true,
+        injected: withSnippet.preview_document_context?.injected === true,
+        reason: withSnippet.preview_document_context?.reason ?? null,
+      }
+      : null,
     with_snippet: withSnippet,
     without_snippet: withoutSnippet,
   });

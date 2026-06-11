@@ -25,6 +25,10 @@ import {
   mixedLanguageCheck,
   resolveReplyLanguage,
 } from "./stages/language.ts";
+import {
+  buildKnowledgeDocPreviewContext,
+  type KnowledgeDocPreviewContextInput,
+} from "./stages/knowledge-doc-preview-context.ts";
 
 export interface EvalPayload {
   subject: string;
@@ -57,6 +61,9 @@ export interface PipelineInput {
   // Preview mode only — agent_knowledge chunk ids that should be excluded from
   // retrieval. Used by the snippet preview A/B feature.
   exclude_chunk_ids?: string[];
+  // Preview mode only — explicit docs chunks loaded and shop-scoped by the app
+  // route. Absent in ordinary runtime so no preview context is loaded here.
+  preview_document_context?: KnowledgeDocPreviewContextInput;
 }
 
 export interface KnowledgeGap {
@@ -125,6 +132,15 @@ export interface PipelineResult {
     };
     candidate_diagnostics?: RetrievalCandidateDiagnostics;
   };
+  preview_document_context?: {
+    requested: true;
+    document_id: string;
+    preview_chunk_ids: string[];
+    section_headings: string[];
+    active_only_for_test: true;
+    injected: boolean;
+    reason: string;
+  } | null;
 }
 
 const STRONG_MODEL = Deno.env.get("OPENAI_STRONG_MODEL") ?? "gpt-5-mini";
@@ -158,6 +174,34 @@ function compactRetrievedChunks(chunks: Array<Record<string, unknown>>) {
     issue_types: chunk.chunk_issue_types ?? [],
     risk_flags: chunk.risk_flags ?? [],
   }));
+}
+
+function buildPipelineSources(input: {
+  retrievedChunks: Array<{
+    content: string;
+    kind: string;
+    source_label: string;
+    usable_as?: string;
+    risk_flags?: string[];
+  }>;
+  previewSources: Array<{
+    content: string;
+    kind: string;
+    source_label: string;
+    usable_as?: string;
+    risk_flags?: string[];
+  }>;
+}) {
+  return [
+    ...input.previewSources,
+    ...input.retrievedChunks.slice(0, Math.max(0, 5 - input.previewSources.length)).map((c) => ({
+      content: c.content.slice(0, 200),
+      kind: c.kind,
+      source_label: c.source_label,
+      usable_as: c.usable_as,
+      risk_flags: c.risk_flags,
+    })),
+  ];
 }
 
 async function createDraftGenerationTrace(input: {
@@ -1249,16 +1293,17 @@ export async function runDraftV2Pipeline(
         effectiveRoutingHint = constrained.routing_hint;
       }
     }
-    await updateDraftGenerationTrace(supabase, generationId, {
-      action_decision_json: {
-        raw: actionDecision,
-        effective: {
-          proposals: finalProposals,
-          routing_hint: effectiveRoutingHint,
-          automation,
-          is_test_mode: isTestMode,
-        },
+    const actionDecisionTrace: Record<string, unknown> = {
+      raw: actionDecision,
+      effective: {
+        proposals: finalProposals,
+        routing_hint: effectiveRoutingHint,
+        automation,
+        is_test_mode: isTestMode,
       },
+    };
+    await updateDraftGenerationTrace(supabase, generationId, {
+      action_decision_json: actionDecisionTrace,
     });
 
     if (isTestMode) {
@@ -1286,10 +1331,12 @@ export async function runDraftV2Pipeline(
       })
       .filter((t) => t.length > 0)
       .join(" ");
+    const replyLanguageFallback = eval_payload ? plan.language : "en";
     const replyLanguage = resolveReplyLanguage(
       recentInboundForLanguage || latestCustomerMessage,
-      "en",
+      replyLanguageFallback,
     );
+    const writerReplyLanguageFallback = eval_payload ? replyLanguage : undefined;
 
     const shouldWaitForActionDecision = shouldDeferDraftUntilActionDecision(
       finalProposals,
@@ -1452,6 +1499,18 @@ export async function runDraftV2Pipeline(
       intentOverride,
     });
 
+    const previewDocument = buildKnowledgeDocPreviewContext(
+      input.preview_document_context,
+    );
+    const authoritativePreviewDocumentContext =
+      previewDocument.blockText ?? undefined;
+    if (previewDocument.diagnostics) {
+      actionDecisionTrace.preview_document_context = previewDocument.diagnostics;
+      await updateDraftGenerationTrace(supabase, generationId, {
+        action_decision_json: actionDecisionTrace,
+      });
+    }
+
     // Hent billedvedhæftninger for seneste kundebesked (tom liste i eval-mode)
     const latestMessageId = (latestMessage as Record<string, unknown>).id as
       | string
@@ -1535,6 +1594,8 @@ export async function runDraftV2Pipeline(
       actionProposals: finalProposals,
       policyContext,
       internalRulesBlock,
+      authoritativePreviewDocumentContext,
+      replyLanguageFallback: writerReplyLanguageFallback,
       model: firstPassModel,
       attachments: imageAttachments,
       actionResult: postActionResult,
@@ -1577,6 +1638,8 @@ export async function runDraftV2Pipeline(
           actionProposals: finalProposals,
           policyContext,
           internalRulesBlock,
+          authoritativePreviewDocumentContext,
+          replyLanguageFallback: writerReplyLanguageFallback,
           model: firstPassModel,
           attachments: imageAttachments,
           actionResult: postActionResult,
@@ -1634,6 +1697,8 @@ export async function runDraftV2Pipeline(
           actionProposals: finalProposals,
           policyContext,
           internalRulesBlock,
+          authoritativePreviewDocumentContext,
+          replyLanguageFallback: writerReplyLanguageFallback,
           model: firstPassModel,
           attachments: imageAttachments,
           actionResult: postActionResult,
@@ -1734,6 +1799,8 @@ export async function runDraftV2Pipeline(
           actionProposals: finalProposals,
           policyContext,
           internalRulesBlock,
+          authoritativePreviewDocumentContext,
+          replyLanguageFallback: writerReplyLanguageFallback,
           model: escalationModel,
           attachments: imageAttachments,
           actionResult: postActionResult,
@@ -2002,13 +2069,13 @@ export async function runDraftV2Pipeline(
       confidence: finalConfidence,
       intent: plan.primary_intent,
       knowledge_gaps: knowledgeGaps,
-      sources: retrieved.chunks.slice(0, 5).map((c) => ({
-        content: c.content.slice(0, 200),
-        kind: c.kind,
-        source_label: c.source_label,
-        usable_as: c.usable_as,
-        risk_flags: c.risk_flags,
-      })),
+      sources: buildPipelineSources({
+        retrievedChunks: retrieved.chunks,
+        previewSources: previewDocument.sources,
+      }),
+      ...(previewDocument.diagnostics
+        ? { preview_document_context: previewDocument.diagnostics }
+        : {}),
       // Eval-only observability: the full writer-facing chunk set so the golden
       // runner can measure retrieval coherence. Omitted entirely in production
       // (gated on eval_payload), so no behavior or PII change for real traffic.

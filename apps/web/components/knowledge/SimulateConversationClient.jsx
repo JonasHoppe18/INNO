@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   Bot,
@@ -437,6 +437,8 @@ function TicketPickerDialog({ open, onOpenChange, onPick }) {
 
 export function SimulateConversationClient() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const previewDocumentId = String(searchParams.get("preview_document_id") || "").trim();
   const [turns, setTurns] = useState([]);
   const [draftCustomerMessage, setDraftCustomerMessage] = useState("");
   const [subject, setSubject] = useState("");
@@ -481,6 +483,7 @@ export function SimulateConversationClient() {
           has_action_result: Boolean(acceptedAction),
           has_customer_email: Boolean(effectiveCustomerEmail),
           has_order_number: Boolean(effectiveOrderNumber),
+          has_preview_document: Boolean(previewDocumentId),
         });
         const res = await fetch("/api/knowledge/simulate", {
           method: "POST",
@@ -491,6 +494,7 @@ export function SimulateConversationClient() {
             subject: effectiveSubject || undefined,
             customer_email: effectiveCustomerEmail || undefined,
             order_number: effectiveOrderNumber || undefined,
+            ...(previewDocumentId ? { preview_document_id: previewDocumentId } : {}),
             ...(effectiveLoadedThread
               ? {
                   thread_id: effectiveLoadedThread.thread_id,
@@ -562,7 +566,7 @@ export function SimulateConversationClient() {
         setRunning(false);
       }
     },
-    [subject, customerEmail, orderNumber, loadedThread, autoAcceptActions]
+    [subject, customerEmail, orderNumber, loadedThread, autoAcceptActions, previewDocumentId]
   );
 
   const generateReply = useCallback(
@@ -731,6 +735,12 @@ export function SimulateConversationClient() {
           )}
         </div>
       </div>
+
+      {previewDocumentId && (
+        <div className="mb-3 rounded-lg border border-indigo-200 bg-indigo-50 px-3.5 py-2 text-[12px] text-indigo-700 dark:border-indigo-800/70 dark:bg-indigo-950/30 dark:text-indigo-300">
+          Draft knowledge document preview is active for this simulation only.
+        </div>
+      )}
 
       {/* Context strip */}
       <div className="mb-3 overflow-hidden rounded-lg border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900/40 dark:shadow-none">
