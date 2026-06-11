@@ -3,6 +3,11 @@ import {
   parseKnowledgeDocumentSections,
   type KnowledgeDocumentSection,
 } from "./knowledge-doc-parser";
+import {
+  PRODUCT_SUPPORT_CATEGORY,
+  PRODUCT_SUPPORT_DOCUMENT_TYPE,
+  productScopeFromDocumentType,
+} from "../knowledge/product-support";
 
 // Starter template for NEW Returns & Refunds documents. Shop-specific policy
 // FACTS and procedures only — universal safety/behavior rules are enforced by
@@ -21,6 +26,26 @@ export const RETURNS_DOCUMENT_TEMPLATE = `## Return window
 ## Default return address
 
 ## Third-party purchases`;
+
+// Starter template for NEW product-support documents. Headings are suggestions
+// only — the H2 parser accepts any custom heading, and users can rename,
+// delete, reorder or add sections freely. Keep this template free of
+// shop-specific facts and platform guardrails.
+export const PRODUCT_SUPPORT_DOCUMENT_TEMPLATE = `## Product overview
+
+## Microphone troubleshooting
+
+## Bluetooth pairing
+
+## Firmware update
+
+## Reset instructions
+
+## Charging issues
+
+## Serial number location
+
+## When to escalate for further review`;
 
 export type KnowledgeDocumentRecord = {
   id: string | null;
@@ -47,17 +72,34 @@ function asNonEmpty(value: unknown, fallback = "") {
   return text || fallback;
 }
 
+function requireProductScopeIfProductSupport(category: string, documentType: string): string {
+  if (category !== PRODUCT_SUPPORT_CATEGORY) return "";
+  const productScope = productScopeFromDocumentType(documentType);
+  if (!productScope) {
+    throw new Error(
+      `Product-support documents require a product-scoped document_type ("${PRODUCT_SUPPORT_DOCUMENT_TYPE}:<product-scope>").`,
+    );
+  }
+  return productScope;
+}
+
 export function defaultKnowledgeDocument(category: string, documentType: string): KnowledgeDocumentRecord {
+  const isProductSupport = category === PRODUCT_SUPPORT_CATEGORY
+    && Boolean(productScopeFromDocumentType(documentType));
   return {
     id: null,
     category,
     document_type: documentType,
     title: category === "returns" && documentType === "returns_refunds"
       ? "Returns & Refunds"
-      : "Knowledge Document",
+      : isProductSupport
+        ? "Product Support"
+        : "Knowledge Document",
     draft_markdown: category === "returns" && documentType === "returns_refunds"
       ? RETURNS_DOCUMENT_TEMPLATE
-      : "# Knowledge Document\n\n## Overview",
+      : isProductSupport
+        ? PRODUCT_SUPPORT_DOCUMENT_TEMPLATE
+        : "# Knowledge Document\n\n## Overview",
     published_markdown: "",
     has_unpublished_changes: false,
     published_at: null,
@@ -94,12 +136,16 @@ export async function getKnowledgeDocument(options: {
     }
     : defaultKnowledgeDocument(options.category, options.documentType);
 
+  // Legacy product snippets live under the "product-questions" category.
+  const legacyCategory = options.category === PRODUCT_SUPPORT_CATEGORY
+    ? "product-questions"
+    : options.category;
   const legacy = await options.serviceClient
     .from("agent_knowledge")
     .select("id")
     .eq("shop_id", options.shopId)
     .eq("source_provider", "manual_text")
-    .eq("metadata->>category", options.category)
+    .eq("metadata->>category", legacyCategory)
     .limit(1);
   if (legacy.error) throw new Error(legacy.error.message);
 
@@ -120,6 +166,7 @@ async function replaceDocumentChunks(options: {
   title: string;
   sections: KnowledgeDocumentSection[];
   environment: KnowledgeDocumentChunkEnvironment;
+  productScope?: string;
 }) {
   const { error: deleteError } = await options.serviceClient
     .from("agent_knowledge")
@@ -133,11 +180,14 @@ async function replaceDocumentChunks(options: {
   const chunkPayloads = buildKnowledgeDocumentChunks({
     shopId: options.shopId,
     documentId: options.documentId,
-    documentType: options.documentType,
+    // Product-support chunks carry the base document_type plus an explicit
+    // product_scope so retrieval can never mix products via type matching.
+    documentType: options.productScope ? PRODUCT_SUPPORT_DOCUMENT_TYPE : options.documentType,
     category: options.category,
     title: options.title,
     sections: options.sections,
     environment: options.environment,
+    productScope: options.productScope,
   });
 
   const rows = [];
@@ -167,6 +217,7 @@ export async function saveKnowledgeDocumentDraft(options: {
 }): Promise<KnowledgeDocumentResponse & { preview_chunks: number }> {
   const category = asNonEmpty(options.category);
   const documentType = asNonEmpty(options.documentType);
+  const productScope = requireProductScopeIfProductSupport(category, documentType);
   const title = asNonEmpty(options.title, "Knowledge Document");
   const draftMarkdown = String(options.draftMarkdown ?? "").replace(/\r\n/g, "\n");
   const sections = parseKnowledgeDocumentSections(draftMarkdown);
@@ -198,6 +249,7 @@ export async function saveKnowledgeDocumentDraft(options: {
     title,
     sections,
     environment: "preview",
+    productScope,
   });
 
   const response = await getKnowledgeDocument({
@@ -216,6 +268,9 @@ export async function publishKnowledgeDocument(options: {
   category: string;
   documentType: string;
 }): Promise<KnowledgeDocumentResponse & { production_chunks: number }> {
+  if (String(options.category || "").trim() === PRODUCT_SUPPORT_CATEGORY) {
+    throw new Error("Product-support documents are preview-only and cannot be published yet.");
+  }
   const { data: existing, error: loadError } = await options.serviceClient
     .from("knowledge_documents")
     .select("id, category, document_type, title, draft_markdown, metadata")
