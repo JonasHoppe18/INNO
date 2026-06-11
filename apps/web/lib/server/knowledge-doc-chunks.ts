@@ -18,6 +18,7 @@ export type BuildKnowledgeDocumentChunkOptions = {
   title: string;
   sections: KnowledgeDocumentSection[];
   environment: KnowledgeDocumentChunkEnvironment;
+  productScope?: string;
 };
 
 export function buildKnowledgeDocumentChunks(
@@ -40,6 +41,7 @@ export function buildKnowledgeDocumentChunks(
       chunking_mode: "section_level",
       retrieval_mode: "authoritative_context_only",
       category: options.category,
+      ...(options.productScope ? { product_scope: options.productScope } : {}),
       usable_as: "policy",
       audience: "internal",
       environment: options.environment,
