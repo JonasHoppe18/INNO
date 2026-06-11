@@ -1613,6 +1613,15 @@ export async function runDraftV2Pipeline(
 
     const previewDocument = buildKnowledgeDocPreviewContext(
       input.preview_document_context,
+      {
+        latestCustomerMessage: latestCustomerMessage ?? latestBody ?? "",
+        conversationHistory: Array.isArray(quotedAwareConversationHistory)
+          ? quotedAwareConversationHistory
+            .map((turn) => String(turn?.text ?? ""))
+            .filter(Boolean)
+            .join("\n")
+          : undefined,
+      },
     );
     const authoritativePreviewDocumentContext =
       previewDocument.blockText ?? undefined;

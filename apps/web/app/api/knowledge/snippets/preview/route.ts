@@ -53,6 +53,14 @@ type DraftRun = {
     active_only_for_test: true;
     injected: boolean;
     reason: string;
+    product_support_section_selection?: {
+      document_id: string;
+      product_scope: string;
+      selected_chunk_ids: string[];
+      selected_headings: string[];
+      confidence: "high" | "medium" | "low";
+      reason: string;
+    };
   } | null;
   error?: string;
 };
@@ -331,11 +339,25 @@ export async function POST(request: Request) {
       ? {
         requested: true,
         document_id: previewDocumentContext.document_id,
-        preview_chunk_ids: previewDocumentContext.chunk_ids,
-        section_headings: previewDocumentContext.section_headings,
+        // Prefer the pipeline's SELECTED sections (Product Support selective
+        // injection) so "Test against ticket" shows only what was injected.
+        // Fall back to the full loaded set for documents with no selection
+        // (e.g. Returns & Refunds, which still injects all sections).
+        preview_chunk_ids:
+          withSnippet.preview_document_context?.preview_chunk_ids ??
+          previewDocumentContext.chunk_ids,
+        section_headings:
+          withSnippet.preview_document_context?.section_headings ??
+          previewDocumentContext.section_headings,
         active_only_for_test: true,
         injected: withSnippet.preview_document_context?.injected === true,
         reason: withSnippet.preview_document_context?.reason ?? null,
+        ...(withSnippet.preview_document_context?.product_support_section_selection
+          ? {
+            product_support_section_selection:
+              withSnippet.preview_document_context.product_support_section_selection,
+          }
+          : {}),
       }
       : null,
     with_snippet: withSnippet,
