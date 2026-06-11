@@ -11,6 +11,7 @@ import {
   resolveSalutationName,
 } from "./customer-context.ts";
 import { InlineImageAttachment } from "./attachment-loader.ts";
+import type { ResolveCustomerNameResult } from "./customer-name-resolution.ts";
 
 export interface WriterResult {
   draft_text: string;
@@ -56,6 +57,7 @@ export interface WriterInput {
    * content remain unchanged.
    */
   authoritativePreviewDocumentContext?: string;
+  resolvedCustomerName?: ResolveCustomerNameResult;
   /**
    * Eval/preview-only language fallback resolved by the pipeline. Undefined in
    * ordinary runtime so the writer keeps its existing language resolution path.
@@ -309,14 +311,25 @@ function greetingPrefix(language: string): string {
   }
 }
 
-function normalizeOpeningGreeting(
+export function normalizeOpeningGreeting(
   text: string,
   salutationName: string,
   language: string,
+  forceNeutral = false,
 ): string {
   const draft = text.trim();
   const name = salutationName.trim();
-  if (!name) return draft;
+  if (!name) {
+    if (!forceNeutral) return draft;
+    const neutral = language === "en" ? "Hi there," : `${greetingPrefix(language)},`;
+    if (/^(hi|hello|hej|hallo|bonjour|hola|ciao)\b[^\n]*,?\s*\n+/i.test(draft)) {
+      return draft.replace(
+        /^(hi|hello|hej|hallo|bonjour|hola|ciao)\b[^\n]*,?\s*\n+/i,
+        `${neutral}\n\n`,
+      );
+    }
+    return `${neutral}\n\n${draft}`;
+  }
 
   const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const expected = `${greetingPrefix(language)} ${name},`;
@@ -328,9 +341,21 @@ function normalizeOpeningGreeting(
   ) {
     return draft;
   }
+  if (/^(hi|hello|hej|hallo|bonjour|hola|ciao)\s+[A-ZÆØÅÄÖÜÉÈÁÀÍÓÚÑ][^\n,]{1,60},?\s*\n+/i.test(draft)) {
+    return draft.replace(
+      /^(hi|hello|hej|hallo|bonjour|hola|ciao)\s+[A-ZÆØÅÄÖÜÉÈÁÀÍÓÚÑ][^\n,]{1,60},?\s*\n+/i,
+      `${expected}\n\n`,
+    );
+  }
   if (new RegExp(`^${escapedName}\\s*[,\\n]`, "i").test(draft)) {
     return draft.replace(
       new RegExp(`^${escapedName}\\s*,?\\s*`, "i"),
+      `${expected}\n\n`,
+    );
+  }
+  if (/^[A-ZÆØÅÄÖÜÉÈÁÀÍÓÚÑ][A-Za-zÆØÅæøåÄÖÜäöüßÉéÈèÁáÀàÍíÓóÚúÑñ'-]{1,29}\s*,\s*\n+/i.test(draft)) {
+    return draft.replace(
+      /^[A-ZÆØÅÄÖÜÉÈÁÀÍÓÚÑ][A-Za-zÆØÅæøåÄÖÜäöüßÉéÈèÁáÀàÍíÓóÚúÑñ'-]{1,29}\s*,\s*\n+/i,
       `${expected}\n\n`,
     );
   }
@@ -685,10 +710,17 @@ export async function runWriter(
     replyLanguageFallback,
   });
   const langName = LANGUAGE_NAMES[replyLanguage] ?? replyLanguage;
-  const salutationName = resolveSalutationName(
+  const fallbackSalutationName = resolveSalutationName(
     latestCustomerMessage ?? "",
-    factValue(facts, "Kundenavn"),
+    resolvedCustomerName ? undefined : factValue(facts, "Kundenavn"),
   );
+  const salutationName = resolvedCustomerName
+    ? {
+      name: resolvedCustomerName.first_name ?? "",
+      source: resolvedCustomerName.source,
+      conflictingOrderName: undefined,
+    }
+    : fallbackSalutationName;
   const salutationBlock = salutationName.name
     ? `# Hilsenavn (deterministisk)
 Start svaret med fornavnet "${salutationName.name}".
@@ -699,7 +731,7 @@ ${
         : ""
     }`
     : `# Hilsenavn (deterministisk)
-Intet sikkert kundenavn til hilsenen. Start med en naturlig neutral hilsen på kundens sprog.`;
+Intet sikkert kundenavn til hilsenen. Start med en neutral hilsen på kundens sprog, fx "Hi there," på engelsk. Brug ikke ordre-/Shopify-navnet til hilsenen.`;
   const variantBlock = buildVariantGuidanceBlock(
     latestCustomerMessage ?? "",
     retrieved.chunks.map((chunk) => ({
@@ -949,6 +981,8 @@ ${c.content.slice(0, knowledgeChunkCap(c.usable_as))}`,
     const closing = closingByLang[replyLanguage] ?? "Have a great day!";
     const greetingLine = salutationName.name
       ? `${greetingPrefix(replyLanguage)} ${salutationName.name},`
+      : replyLanguage === "en"
+      ? "Hi there,"
       : `${greetingPrefix(replyLanguage)},`;
     const postActionDraft = await runPostActionRefundWriter(
       resolvedAmountDisplay,
@@ -1327,6 +1361,7 @@ Returner JSON:
         cleanedDraft,
         salutationName.name,
         replyLanguage,
+        resolvedCustomerName?.first_name === null,
       ),
       proposed_actions: actionProposals ?? [],
       citations: Array.isArray(parsed.citations) ? parsed.citations : [],

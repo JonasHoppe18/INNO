@@ -1,4 +1,4 @@
-import { resolveWriterReplyLanguage } from "./writer.ts";
+import { normalizeOpeningGreeting, resolveWriterReplyLanguage } from "./writer.ts";
 
 Deno.test("writer language fallback preserves Danish preview comparison replies", () => {
   const language = resolveWriterReplyLanguage({
@@ -36,5 +36,30 @@ Deno.test("both preview comparison arms can share the same resolved language fal
     throw new Error(
       `Expected identical language context, got ${withRunLanguage} and ${withoutRunLanguage}`,
     );
+  }
+});
+
+Deno.test("neutral salutation replaces unsafe named English greeting", () => {
+  const draft = normalizeOpeningGreeting(
+    "Hi Evan,\n\nThank you for sending the return tracking number.",
+    "",
+    "en",
+    true,
+  );
+
+  if (!draft.startsWith("Hi there,\n\n")) {
+    throw new Error(`Expected neutral greeting, got ${draft}`);
+  }
+});
+
+Deno.test("resolved salutation preserves safe customer name", () => {
+  const draft = normalizeOpeningGreeting(
+    "Evan,\n\nThanks for your message.",
+    "Britt",
+    "en",
+  );
+
+  if (!draft.startsWith("Hi Britt,\n\n")) {
+    throw new Error(`Expected resolved greeting, got ${draft}`);
   }
 });

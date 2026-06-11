@@ -35,11 +35,13 @@ import {
   visibleEmailText,
 } from "./stages/email-thread-normalizer.ts";
 import { detectCustomerProvidedReturnTracking } from "./stages/return-tracking-attribution.ts";
+import { resolveCustomerName } from "./stages/customer-name-resolution.ts";
 
 export interface EvalPayload {
   subject: string;
   body: string;
   from_email?: string;
+  from_name?: string;
   conversation_history?: string | Array<{ role?: string; text?: string }>;
   // When set, the retriever excludes this ticket from few-shot examples to
   // prevent data leakage where the AI finds its own correct answer in the KB.
@@ -884,6 +886,7 @@ export async function runDraftV2Pipeline(
         // Without this, the LLM has to extract email from the body alone, which
         // it usually can't — and fact-resolver loses its primary email source.
         from_email: eval_payload.from_email ?? "eval@eval.internal",
+        from_name: eval_payload.from_name ?? null,
         extracted_customer_email: eval_payload.from_email ?? null,
       } as typeof latestMessage;
       messages = [
@@ -1228,6 +1231,32 @@ export async function runDraftV2Pipeline(
       internalRules.block || "",
       returnTrackingAttribution?.blockText || "",
     ].filter(Boolean).join("\n\n") || undefined;
+    const latestSenderEmail = String(
+      (latestMessage as Record<string, unknown>).from_email || "",
+    ).trim() || null;
+    const latestSenderDisplayName = String(
+      (latestMessage as Record<string, unknown>).from_name || "",
+    ).trim() || null;
+    const resolvedCustomerName = resolveCustomerName({
+      latestCustomerMessage: latestBody,
+      senderEmail: latestSenderEmail,
+      senderDisplayName: latestSenderDisplayName,
+      orderCustomerName: facts.facts.find((fact) => fact.label === "Kundenavn")?.value ?? null,
+      orderCustomerEmail: facts.order?.email ?? null,
+      recentCustomerMessages: messages
+        .filter((message) => {
+          const row = message as Record<string, unknown>;
+          return row.direction !== "outbound" && row.from_me !== true;
+        })
+        .slice(-6)
+        .map((message) => {
+          const row = message as Record<string, unknown>;
+          return {
+            text: visibleEmailText(row),
+            senderEmail: String(row.from_email || "").trim() || null,
+          };
+        }),
+    });
     const retrievalTrace = {
       included_chunks: compactRetrievedChunks(
         retrieved.chunks as unknown as Array<Record<string, unknown>>,
@@ -1653,6 +1682,7 @@ export async function runDraftV2Pipeline(
       policyContext,
       internalRulesBlock,
       authoritativePreviewDocumentContext,
+      resolvedCustomerName,
       replyLanguageFallback: writerReplyLanguageFallback,
       model: firstPassModel,
       attachments: imageAttachments,
@@ -1697,6 +1727,7 @@ export async function runDraftV2Pipeline(
           policyContext,
           internalRulesBlock,
           authoritativePreviewDocumentContext,
+          resolvedCustomerName,
           replyLanguageFallback: writerReplyLanguageFallback,
           model: firstPassModel,
           attachments: imageAttachments,
@@ -1756,6 +1787,7 @@ export async function runDraftV2Pipeline(
           policyContext,
           internalRulesBlock,
           authoritativePreviewDocumentContext,
+          resolvedCustomerName,
           replyLanguageFallback: writerReplyLanguageFallback,
           model: firstPassModel,
           attachments: imageAttachments,
@@ -1858,6 +1890,7 @@ export async function runDraftV2Pipeline(
           policyContext,
           internalRulesBlock,
           authoritativePreviewDocumentContext,
+          resolvedCustomerName,
           replyLanguageFallback: writerReplyLanguageFallback,
           model: escalationModel,
           attachments: imageAttachments,
