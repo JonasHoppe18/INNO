@@ -26,6 +26,7 @@ export function KnowledgeDocumentEditorCard({
   documentType,
   title,
   description,
+  helperText = "Use section headings to organise the guide. Each section heading becomes a focused knowledge section for the AI.",
   allowPublish = true,
 }) {
   const router = useRouter();
@@ -203,7 +204,7 @@ export function KnowledgeDocumentEditorCard({
         </div>
         <div className="px-6 py-5">
           <p className="mb-3 text-xs text-muted-foreground">
-            Use section headings to organise the guide. Each section heading becomes a focused knowledge section for the AI.
+            {helperText}
           </p>
           {error && (
             <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">

@@ -27,25 +27,12 @@ export const RETURNS_DOCUMENT_TEMPLATE = `## Return window
 
 ## Third-party purchases`;
 
-// Starter template for NEW product-support documents. Headings are suggestions
-// only — the H2 parser accepts any custom heading, and users can rename,
-// delete, reorder or add sections freely. Keep this template free of
-// shop-specific facts and platform guardrails.
-export const PRODUCT_SUPPORT_DOCUMENT_TEMPLATE = `## Product overview
-
-## Microphone troubleshooting
-
-## Bluetooth pairing
-
-## Firmware update
-
-## Reset instructions
-
-## Charging issues
-
-## Serial number location
-
-## When to escalate for further review`;
+// Starter template for NEW product-support documents. Intentionally empty —
+// predefined headings were too opinionated to fit every product, so a new
+// document opens as a blank editor and users create their own H2 sections via
+// the existing "Section heading" toolbar button. The H2 parser accepts any
+// custom heading.
+export const PRODUCT_SUPPORT_DOCUMENT_TEMPLATE = "";
 
 export type KnowledgeDocumentRecord = {
   id: string | null;

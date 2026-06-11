@@ -150,7 +150,8 @@ test("product scope helpers build stable identifiers", () => {
   assert.throws(() => productScopeForProduct({}));
 });
 
-test("starter template is suggestions only — expected headings, no Internal guidance, no shop names", () => {
+test("starter template is empty — no predefined headings inserted", () => {
+  assert.equal(PRODUCT_SUPPORT_DOCUMENT_TEMPLATE, "");
   for (const heading of [
     "## Product overview",
     "## Microphone troubleshooting",
@@ -160,14 +161,13 @@ test("starter template is suggestions only — expected headings, no Internal gu
     "## Charging issues",
     "## Serial number location",
     "## When to escalate for further review",
+    "## Internal guidance",
   ]) {
-    assert.ok(PRODUCT_SUPPORT_DOCUMENT_TEMPLATE.includes(heading), `missing ${heading}`);
+    assert.equal(PRODUCT_SUPPORT_DOCUMENT_TEMPLATE.includes(heading), false, `unexpected ${heading}`);
   }
-  assert.equal(PRODUCT_SUPPORT_DOCUMENT_TEMPLATE.includes("## Internal guidance"), false);
-  assert.equal(/acezone|a-spire|a-blaze|a-rise/i.test(PRODUCT_SUPPORT_DOCUMENT_TEMPLATE), false);
 });
 
-test("GET missing product-support doc returns starter template without inserting a row", async () => {
+test("GET missing product-support doc opens empty without inserting a row", async () => {
   const client = makeClient();
   const result = await getKnowledgeDocument({
     serviceClient: client,
@@ -176,13 +176,50 @@ test("GET missing product-support doc returns starter template without inserting
     documentType: "product_support:product-1",
   });
   assert.equal(result.document.id, null);
-  assert.equal(result.document.draft_markdown, PRODUCT_SUPPORT_DOCUMENT_TEMPLATE);
+  assert.equal(result.document.draft_markdown, "");
+  assert.equal(result.parsed_sections.length, 0);
   assert.equal(client.db.knowledge_documents.length, 0);
 });
 
-test("default document for unscoped product_support type does not get the template", () => {
+test("existing saved product-support Markdown loads unchanged (template does not override)", async () => {
+  const saved = "## Existing custom heading\nSaved content.";
+  const client = makeClient({
+    knowledge_documents: [
+      {
+        id: "doc-existing",
+        shop_id: "shop-1",
+        category: PRODUCT_SUPPORT_CATEGORY,
+        document_type: "product_support:product-1",
+        title: "Product Support",
+        draft_markdown: saved,
+        published_markdown: "",
+        has_unpublished_changes: true,
+        published_at: null,
+        metadata: {},
+      },
+    ],
+  });
+  const result = await getKnowledgeDocument({
+    serviceClient: client,
+    shopId: "shop-1",
+    category: PRODUCT_SUPPORT_CATEGORY,
+    documentType: "product_support:product-1",
+  });
+  assert.equal(result.document.id, "doc-existing");
+  assert.equal(result.document.draft_markdown, saved);
+  assert.equal(result.parsed_sections.length, 1);
+  assert.equal(result.parsed_sections[0].section_key, "existing_custom_heading");
+});
+
+test("default document for unscoped product_support type is not treated as product-support", () => {
   const doc = defaultKnowledgeDocument(PRODUCT_SUPPORT_CATEGORY, "product_support");
-  assert.notEqual(doc.draft_markdown, PRODUCT_SUPPORT_DOCUMENT_TEMPLATE);
+  // Unscoped falls through to the generic default, not the empty product-support template.
+  assert.equal(doc.draft_markdown, "# Knowledge Document\n\n## Overview");
+});
+
+test("new product-support default document opens empty", () => {
+  const doc = defaultKnowledgeDocument(PRODUCT_SUPPORT_CATEGORY, "product_support:product-1");
+  assert.equal(doc.draft_markdown, "");
 });
 
 test("save requires a product-scoped document_type for product_support", async () => {
