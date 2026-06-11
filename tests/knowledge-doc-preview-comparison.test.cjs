@@ -50,6 +50,18 @@ test("preview comparison sends explicit context only to the with run", () => {
   assert.deepEqual(result.excludedChunkIds, ["chunk-return-window"]);
 });
 
+test("preview comparison arms receive identical customer language input", () => {
+  const result = buildKnowledgeDocumentPreviewRunBodies({
+    shopId: "shop-1",
+    emailData,
+    previewDocumentContext,
+    snippetExcludeChunkIds: [],
+  });
+
+  assert.deepEqual(result.withPreview.email_data, emailData);
+  assert.deepEqual(result.withoutPreview.email_data, emailData);
+});
+
 test("legacy snippet comparison payload remains unchanged when no preview id exists", () => {
   const result = buildKnowledgeDocumentPreviewRunBodies({
     shopId: "shop-1",
