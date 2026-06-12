@@ -1812,6 +1812,8 @@ export async function runDraftV2Pipeline(
       internalRulesBlock,
       authoritativePreviewDocumentContext,
       productSupportTopicLock,
+      completedTroubleshootingBlock:
+        previewDocument.completedTroubleshootingBlock ?? undefined,
       resolvedCustomerName,
       replyLanguageFallback: writerReplyLanguageFallback,
       model: firstPassModel,
@@ -1859,6 +1861,8 @@ export async function runDraftV2Pipeline(
           internalRulesBlock,
           authoritativePreviewDocumentContext,
           productSupportTopicLock,
+          completedTroubleshootingBlock:
+            previewDocument.completedTroubleshootingBlock ?? undefined,
           resolvedCustomerName,
           replyLanguageFallback: writerReplyLanguageFallback,
           model: firstPassModel,
@@ -1920,6 +1924,8 @@ export async function runDraftV2Pipeline(
           internalRulesBlock,
           authoritativePreviewDocumentContext,
           productSupportTopicLock,
+          completedTroubleshootingBlock:
+            previewDocument.completedTroubleshootingBlock ?? undefined,
           resolvedCustomerName,
           replyLanguageFallback: writerReplyLanguageFallback,
           model: firstPassModel,
@@ -2037,6 +2043,8 @@ export async function runDraftV2Pipeline(
           internalRulesBlock,
           authoritativePreviewDocumentContext,
           productSupportTopicLock,
+          completedTroubleshootingBlock:
+            previewDocument.completedTroubleshootingBlock ?? undefined,
           resolvedCustomerName,
           replyLanguageFallback: writerReplyLanguageFallback,
           model: escalationModel,

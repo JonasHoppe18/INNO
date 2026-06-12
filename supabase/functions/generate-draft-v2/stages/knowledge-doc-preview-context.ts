@@ -4,6 +4,10 @@ import {
   selectProductSupportSections,
   type ProductSupportSection,
 } from "./product-support-section-selector.ts";
+import {
+  buildCompletedTroubleshootingBlock,
+  detectCompletedTroubleshooting,
+} from "./product-support-completed-troubleshooting.ts";
 
 export type KnowledgeDocPreviewSection = {
   chunk_id: string;
@@ -53,6 +57,13 @@ export type KnowledgeDocPreviewContextInput = {
 
 export type KnowledgeDocPreviewContextResult = {
   blockText: string | null;
+  // Product Support preview ONLY: a structured "already completed: …" writer
+  // block derived from the visible customer turns. Null for Returns & Refunds
+  // preview, non product-support docs, ordinary runtime, and when no completed
+  // troubleshooting step was detected. Passed to the writer as a non-suppressed
+  // block so the reply acknowledges completed steps and, once a path is
+  // exhausted, asks for the order number instead of repeating steps.
+  completedTroubleshootingBlock: string | null;
   diagnostics: {
     requested: true;
     document_id: string;
@@ -153,6 +164,32 @@ export function buildKnowledgeDocPreviewContext(
   context: KnowledgeDocPreviewContextInput,
   query?: KnowledgeDocPreviewQuery,
 ): KnowledgeDocPreviewContextResult {
+  const base = buildKnowledgeDocPreviewContextBase(context, query);
+
+  // Product Support preview ONLY: scan the visible customer turns for already-
+  // completed troubleshooting and attach a structured writer block. Returns &
+  // Refunds preview and non product-support docs never reach this (null).
+  let completedTroubleshootingBlock: string | null = null;
+  if (context) {
+    const sections = normalizeSections(context);
+    if (isProductSupportDocument(sections)) {
+      const visibleText = [
+        String(query?.latestCustomerMessage || ""),
+        String(query?.conversationHistory || ""),
+      ].filter(Boolean).join("\n");
+      completedTroubleshootingBlock = buildCompletedTroubleshootingBlock(
+        detectCompletedTroubleshooting(visibleText),
+      );
+    }
+  }
+
+  return { ...base, completedTroubleshootingBlock };
+}
+
+function buildKnowledgeDocPreviewContextBase(
+  context: KnowledgeDocPreviewContextInput,
+  query?: KnowledgeDocPreviewQuery,
+): Omit<KnowledgeDocPreviewContextResult, "completedTroubleshootingBlock"> {
   if (!context) {
     return { blockText: null, diagnostics: null, sources: [] };
   }

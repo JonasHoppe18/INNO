@@ -85,6 +85,15 @@ export interface WriterInput {
    * paths are unchanged.
    */
   productSupportTopicLock?: boolean;
+  /**
+   * Product Support PREVIEW only: a structured "already completed: …" block
+   * derived from the visible customer turns. Rendered as a non-suppressed block
+   * so the writer acknowledges completed steps, never repeats them (or an
+   * equivalent variant), and once a path is exhausted asks for the order number
+   * instead of proposing more steps. Undefined in ordinary runtime and Returns &
+   * Refunds preview, so those paths are unchanged.
+   */
+  completedTroubleshootingBlock?: string;
 }
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
@@ -716,6 +725,7 @@ export async function runWriter(
     replyLanguageFallback,
     clarificationOnly = false,
     productSupportTopicLock = false,
+    completedTroubleshootingBlock,
   }: WriterInput,
 ): Promise<WriterResult> {
   const resolvedModel = model ?? Deno.env.get("OPENAI_MODEL") ?? "gpt-5-mini";
@@ -1256,9 +1266,17 @@ ${stageDirectives[resolutionStage] ?? stageDirectives.info_only}`;
       ? buildProductSupportTopicGuardrails()
       : "";
 
+  // Product Support PREVIEW only: structured completed-troubleshooting block.
+  // Non-suppressed so it governs the reply in BOTH section-selected (topic-lock)
+  // and abstained (clarification) modes — once a path is exhausted the writer
+  // asks for the order number instead of repeating a completed step. Empty in
+  // ordinary runtime and Returns & Refunds preview.
+  const completedTroubleshootingPreviewBlock = completedTroubleshootingBlock || "";
+
   const userContent = [
     clarificationBlock,
     productSupportTopicBlock,
+    completedTroubleshootingPreviewBlock,
     suppress(stageBlock),
     internalRulesBlock || "",
     suppress(authoritativePreviewDocumentContext || ""),
