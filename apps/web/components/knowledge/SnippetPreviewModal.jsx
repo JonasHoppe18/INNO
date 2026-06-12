@@ -43,7 +43,7 @@ function formatRelative(iso) {
 function DraftCard({ title, badge, badgeTone, run, isLoading }) {
   const text = run?.draft_text;
   return (
-    <div className="flex h-full flex-col rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-card">
+    <div className="flex h-full min-h-0 flex-col rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-card">
       <div className="flex items-center justify-between border-b border-gray-100 px-3 py-2 dark:border-gray-800">
         <div className="flex items-center gap-2">
           <p className="text-[12px] font-semibold text-gray-700 dark:text-gray-200">{title}</p>
@@ -63,7 +63,7 @@ function DraftCard({ title, badge, badgeTone, run, isLoading }) {
           <span className="text-[10px] text-gray-400 dark:text-gray-500">{run.latency_ms} ms</span>
         )}
       </div>
-      <div className="flex-1 overflow-y-auto px-4 py-3 text-[12.5px] leading-relaxed text-gray-700 dark:text-gray-300">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3 text-[12.5px] leading-relaxed text-gray-700 dark:text-gray-300">
         {isLoading ? (
           <div className="space-y-2">
             <Skeleton className="h-3 w-full" />
@@ -356,7 +356,6 @@ export function SnippetPreviewModal({ open, onOpenChange, snippetId, snippetTitl
                 <ArrowLeft className="h-3.5 w-3.5" />
               </button>
             )}
-            <Sparkles className="h-4 w-4 text-indigo-500" />
             <span>
               {previewSource
                 ? isDocumentPreview
@@ -490,7 +489,7 @@ export function SnippetPreviewModal({ open, onOpenChange, snippetId, snippetTitl
               )}
 
               {/* A/B drafts */}
-              <div className="grid flex-1 grid-cols-2 gap-3 overflow-hidden px-5 py-3">
+              <div className="grid min-h-0 flex-1 grid-cols-2 gap-3 overflow-hidden px-5 py-3">
                 <DraftCard
                   title={isDocumentPreview ? "With draft document" : "With your snippet"}
                   badge={isDocumentPreview ? "Preview" : "Baseline"}
