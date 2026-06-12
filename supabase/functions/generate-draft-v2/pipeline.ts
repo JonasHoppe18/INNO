@@ -33,6 +33,10 @@ import {
 } from "./stages/knowledge-doc-preview-context.ts";
 import { isProductSupportClarificationReason } from "./stages/product-support-clarification.ts";
 import {
+  externalIdFromProductScope,
+  scopeLegacyChunksToProduct,
+} from "./stages/product-support-legacy-scope.ts";
+import {
   buildWriterConversationHistory,
   visibleEmailText,
 } from "./stages/email-thread-normalizer.ts";
@@ -1714,6 +1718,53 @@ export async function runDraftV2Pipeline(
       previewDocument.diagnostics?.reason,
     );
 
+    // Product Support PREVIEW only: scope legacy retrieved knowledge to the
+    // selected product so cross-product snippets (e.g. an A-Blaze-only guide)
+    // cannot contaminate a draft generated for a different product's support
+    // document. Shared/general rows (no product_id) and the selected product's
+    // own rows are kept. Ordinary runtime and Returns & Refunds preview are
+    // unaffected (no product_support selection → no product_scope).
+    let productSupportLegacyScope:
+      | ReturnType<typeof scopeLegacyChunksToProduct>["diagnostics"]
+      | undefined;
+    const psSelection = previewDocument.diagnostics?.product_support_section_selection;
+    if (psSelection?.product_scope) {
+      let selectedProductTitle: string | null = null;
+      const selectedExternalId = externalIdFromProductScope(psSelection.product_scope);
+      if (selectedExternalId) {
+        try {
+          const { data: prod } = await supabase
+            .from("shop_products")
+            .select("title")
+            .eq("shop_id", shop_id)
+            .eq("external_id", selectedExternalId)
+            .maybeSingle();
+          selectedProductTitle = (prod?.title as string | undefined) ?? null;
+        } catch (_err) {
+          // Best-effort: without the title we still scope by canonical id.
+          selectedProductTitle = null;
+        }
+      }
+      const scoped = scopeLegacyChunksToProduct({
+        productScope: psSelection.product_scope,
+        selectedProductTitle,
+        chunks: retrieved.chunks.map((c) => ({
+          id: c.id,
+          product_id: c.product_id,
+          content: c.content,
+          source_title: c.source_title,
+        })),
+      });
+      productSupportLegacyScope = scoped.diagnostics;
+      if (scoped.diagnostics.excluded_cross_product_row_ids.length > 0) {
+        const keptIds = new Set(scoped.kept.map((c) => c.id));
+        retrieved.chunks = retrieved.chunks.filter((c) => keptIds.has(c.id));
+        console.log(
+          `[generate-draft-v2] product-support preview scoped legacy retrieval to ${psSelection.product_scope}: excluded ${scoped.diagnostics.excluded_cross_product_row_ids.length} cross-product row(s)`,
+        );
+      }
+    }
+
     // 9. Skriv første draft — simple intents bruger gpt-4o-mini, resten gpt-5-mini
     currentStage = "writer";
     const firstPassModel = resolveWriterModel(
@@ -2272,6 +2323,9 @@ export async function runDraftV2Pipeline(
             reason: "low_confidence_no_matching_section",
           },
         }
+        : {}),
+      ...(productSupportLegacyScope
+        ? { product_support_legacy_scope: productSupportLegacyScope }
         : {}),
       // Eval-only observability: the full writer-facing chunk set so the golden
       // runner can measure retrieval coherence. Omitted entirely in production

@@ -61,6 +61,11 @@ export interface RetrievedChunk {
   chunk_index?: number | null;
   chunk_count?: number;
   products?: string[];
+  // Single product external id this chunk is scoped to (metadata.product_id),
+  // when set. null/undefined = not tied to one product (shared/general). Used
+  // by the Product Support PREVIEW cross-product scope filter; never used to
+  // alter ordinary runtime behavior.
+  product_id?: string | null;
   // Max cosine similarity (1 - distance) seen for this chunk across the vector
   // queries that surfaced it. null for BM25-only chunks (no vector score).
   // Used by the absolute relevance floor to drop the whole knowledge block when
@@ -1311,6 +1316,9 @@ export async function runRetriever(
             String(p || "").trim().toLowerCase()
           ).filter(Boolean)
           : [],
+        product_id: meta.product_id != null
+          ? String(meta.product_id).trim() || null
+          : null,
         vector_similarity: r.vectorSimilarity,
         question: typeof meta.question === "string" ? meta.question : null,
       };

@@ -503,3 +503,49 @@ test("Returns & Refunds preview never triggers clarification mode", () => {
   });
   assert.equal(isProductSupportClarificationReason(result.diagnostics.reason), false);
 });
+
+// ---------------------------------------------------------------------------
+// Cross-product legacy retrieval scoping (Product Support PREVIEW only).
+// Mirrors the real AceZone product_id → product mapping.
+// ---------------------------------------------------------------------------
+const {
+  scopeLegacyChunksToProduct,
+  externalIdFromProductScope,
+} = require("../supabase/functions/generate-draft-v2/stages/product-support-legacy-scope.ts");
+
+const LEGACY_CHUNKS = [
+  { id: "aspire-w", product_id: "9114609942851", source_title: "A-Spire Wireless disconnect", content: "" },
+  { id: "shared", product_id: null, source_title: "general", content: "escalation" },
+  { id: "ablaze", product_id: "14930213372227", source_title: "Why does my headset keep disconnecting for A-Blaze?", content: "" },
+  { id: "wired", product_id: "7548544745718", source_title: "A-Spire mic", content: "" },
+  { id: "arise", product_id: "7548536488182", source_title: "A-RISE repair", content: "" },
+];
+
+test("legacy scope: A-Spire Wireless preview allows selected + shared, blocks other products", () => {
+  const { kept, diagnostics } = scopeLegacyChunksToProduct({
+    productScope: "product-9114609942851",
+    selectedProductTitle: "A-Spire Wireless",
+    chunks: LEGACY_CHUNKS,
+  });
+  const ids = new Set(kept.map((c) => c.id));
+  assert.ok(ids.has("aspire-w"));
+  assert.ok(ids.has("shared"));
+  assert.ok(!ids.has("ablaze"));
+  assert.ok(!ids.has("wired"));
+  assert.ok(!ids.has("arise"));
+  assert.deepEqual(
+    diagnostics.excluded_cross_product_row_ids.sort(),
+    ["ablaze", "arise", "wired"].sort(),
+  );
+});
+
+test("legacy scope: external id parsing + no-op when only shared/selected rows", () => {
+  assert.equal(externalIdFromProductScope("product-9114609942851"), "9114609942851");
+  const { kept, diagnostics } = scopeLegacyChunksToProduct({
+    productScope: "product-9114609942851",
+    selectedProductTitle: "A-Spire Wireless",
+    chunks: [LEGACY_CHUNKS[0], LEGACY_CHUNKS[1]],
+  });
+  assert.equal(kept.length, 2);
+  assert.equal(diagnostics.excluded_cross_product_row_ids.length, 0);
+});
