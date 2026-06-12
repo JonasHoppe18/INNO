@@ -1,4 +1,5 @@
 import {
+  isGenericProductSupportMessage,
   PRODUCT_SUPPORT_LOW_CONFIDENCE_INSTRUCTION,
   selectProductSupportSections,
   type ProductSupportSection,
@@ -207,6 +208,35 @@ export function buildKnowledgeDocPreviewContext(
             selected_headings: [],
             confidence: "low",
             reason: "no_customer_message",
+          },
+        },
+        sources: [],
+      };
+    }
+
+    // Deterministic generic-message guard (preview-only). A message that names
+    // no concrete symptom ("my headset is not working", "broken", "does not
+    // work") must clarify FIRST — otherwise a generic word can lexically anchor
+    // to a section heading ("...is not working", "Dongle is broken...") and
+    // inject troubleshooting. Runs before selection so no guide is chosen.
+    if (isGenericProductSupportMessage(latestCustomerMessage)) {
+      return {
+        blockText: PRODUCT_SUPPORT_LOW_CONFIDENCE_INSTRUCTION,
+        diagnostics: {
+          requested: true,
+          document_id: documentId,
+          preview_chunk_ids: [],
+          section_headings: [],
+          active_only_for_test: true,
+          injected: true,
+          reason: "product_support_low_confidence",
+          product_support_section_selection: {
+            document_id: documentId,
+            product_scope: productScope,
+            selected_chunk_ids: [],
+            selected_headings: [],
+            confidence: "low",
+            reason: "generic_message_clarification",
           },
         },
         sources: [],

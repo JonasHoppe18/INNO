@@ -303,6 +303,39 @@ export function selectProductSupportSections(
   return withDiag(lex.selection);
 }
 
+// Concrete symptom / issue-category signals (EN + DA). If a customer message
+// contains ANY of these it names a real issue, so the selector is allowed to
+// run. A message with none of these (e.g. "my headset is not working",
+// "mit headset er gået i stykker") is GENERIC: the Product Support preview must
+// clarify first instead of letting a generic word ("working", "broken")
+// accidentally anchor to a section heading. No shop/product names here — these
+// are generic support-symptom terms only.
+const CONCRETE_SYMPTOM_PATTERNS: RegExp[] = [
+  /\bdisconnect/i, /\bafbryd/i, /\bmister forbindelse/i, /\bdrops?\b/i,
+  /\bcrackl?/i, /\bknitr/i, /\bknas/i, /\bdistort/i, /\bstatic\b/i, /\becho\b/i,
+  /\bcuts? out\b/i, /\bcutting out\b/i,
+  /\bmicrophone\b/i, /\bmic\b/i, /\bmikrofon/i,
+  /\baudio\b/i, /\bsound\b/i, /\blyd\b/i, /\bno sound\b/i, /\bingen lyd\b/i, /\bmuted?\b/i,
+  /\bone[\s-]?(ear|earcup|ear cup|side)\b/i, /\bear ?cups?\b/i, /\bsingle ear\b/i,
+  /\bene øre\b/i, /\bkun.{0,12}(øre|side)\b/i,
+  /\bapp\b/i, /\bpair/i, /\bpairing\b/i, /\bforbind/i, /\bconnect/i, /\bconnection\b/i,
+  /\bforbindelse\b/i, /\bbluetooth\b/i,
+  /\bdongle\b/i, /\bfirmware\b/i, /\bupdate fails?\b/i, /\bopdatering/i,
+  /\bcharg/i, /\bbattery\b/i, /\bbatteri/i, /\bstrøm\b/i, /\boplad/i,
+  /\bear ?pads?\b/i, /\børepude/i, /\bpude\b/i,
+  /\bvolume\b/i, /\blydstyrke/i, /\banc\b/i, /\bnoise[\s-]?cancel/i, /\bstøj/i,
+];
+
+// True when a Product Support preview message is GENERIC — it does not name any
+// concrete symptom or issue category — so the preview should ask one focused
+// clarification question BEFORE selecting a troubleshooting section. Empty input
+// counts as generic. Preview-only; deterministic; no LLM. Product/shop-agnostic.
+export function isGenericProductSupportMessage(message: string): boolean {
+  const text = String(message || "").trim();
+  if (!text) return true;
+  return !CONCRETE_SYMPTOM_PATTERNS.some((pattern) => pattern.test(text));
+}
+
 // Marker/instruction stored as the preview blockText when no Product Support
 // section matches (low confidence). The ACTUAL behavior is enforced
 // deterministically by clarification-only writer mode (the pipeline suppresses

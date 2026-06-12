@@ -45,9 +45,11 @@ export function buildProductSupportTopicGuardrails(): string {
     "Do not answer refund, return, shipping, exchange, discount, warranty, or carrier topics that appear only in older context (earlier turns, quoted replies, legacy knowledge) unless the latest customer message explicitly asks about them.",
     "Do not repeat troubleshooting steps the customer has already said they completed. Acknowledge those completed steps and any new facts in the latest message.",
     "Advance the case: respond to what changed in the latest message and give only the next not-yet-tried step. Do not resend a near-duplicate of a previous reply.",
-    "If the standard troubleshooting steps are already exhausted, ask for the remaining details needed to review the case.",
-    "Do not promise or commit to warranty, repair, replacement, refund, shipment, backorder, carrier contact, or a follow-up unless that action is explicitly verified in the provided facts.",
-    'Prefer wording such as "we can review the next step" rather than "we can proceed with the warranty process".',
+    "Do not diagnose a hardware fault or conclude the headset is defective unless that is explicitly verified in the provided facts.",
+    "Do not assume warranty repair, replacement, or any other specific outcome is the next step.",
+    "If the standard troubleshooting steps are already exhausted, first ask for the customer's order number. Only if the customer cannot provide an order number, ask for proof of purchase and where the headset was purchased. Do not lead with where it was purchased. Then say the case can be reviewed further to assess the appropriate next step.",
+    "Do not promise or commit to warranty approval, repair, replacement, refund, shipment, backorder, carrier contact, or a follow-up unless that action is explicitly verified in the provided facts.",
+    'Prefer neutral wording such as "we can review the case further to assess the appropriate next step" rather than concluding "we can proceed with the warranty process" or "this is a hardware issue".',
   ].join("\n");
 }
 
