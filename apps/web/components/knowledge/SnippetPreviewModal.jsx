@@ -171,10 +171,12 @@ function CustomMessageForm({ onSubmit }) {
   );
 }
 
-function ThreadPicker({ threads, loading, onSelect }) {
-  const [query, setQuery] = useState("");
+function ThreadPicker({ threads, loading, onSelect, query, onQueryChange }) {
+  // The server already filters by `query` (so older tickets are found too).
+  // We keep a light client-side filter for instant narrowing between the
+  // debounced server fetches.
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = String(query || "").trim().toLowerCase();
     if (!q) return threads;
     return threads.filter((t) =>
       `${t.subject} ${t.preview} ${t.customer_email || ""}`
@@ -189,8 +191,8 @@ function ThreadPicker({ threads, loading, onSelect }) {
         <Search className="h-3.5 w-3.5 text-gray-300 dark:text-gray-600" />
         <input
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search by subject, customer, or preview..."
+          onChange={(e) => onQueryChange(e.target.value)}
+          placeholder="Search all tickets by subject, customer, or preview..."
           className="flex-1 bg-transparent text-[12px] text-gray-700 placeholder:text-gray-300 outline-none dark:text-gray-300 dark:placeholder:text-gray-600"
         />
       </div>
@@ -245,6 +247,7 @@ function ThreadPicker({ threads, loading, onSelect }) {
 export function SnippetPreviewModal({ open, onOpenChange, snippetId, snippetTitle, previewDocumentId, previewTitle }) {
   const [threads, setThreads] = useState([]);
   const [threadsLoading, setThreadsLoading] = useState(false);
+  const [threadQuery, setThreadQuery] = useState("");
   const [pickerMode, setPickerMode] = useState("inbox"); // "inbox" | "custom"
   // Tracks whether a preview is in progress / has a result. Holds either a
   // selected-thread object or { custom: true } so we know to show the result
@@ -259,17 +262,35 @@ export function SnippetPreviewModal({ open, onOpenChange, snippetId, snippetTitl
     setPickerMode("inbox");
     setPreviewSource(null);
     setResult(null);
-    setThreadsLoading(true);
-    fetch("/api/knowledge/snippets/preview/threads?limit=30", {
-      credentials: "include",
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        setThreads(Array.isArray(data?.threads) ? data.threads : []);
-      })
-      .catch(() => setThreads([]))
-      .finally(() => setThreadsLoading(false));
+    setThreadQuery("");
   }, [open]);
+
+  // Load threads — server-side search so ANY ticket is findable, not just the
+  // most recent ones. Debounced while typing; aborts stale requests.
+  useEffect(() => {
+    if (!open) return;
+    const q = threadQuery.trim();
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      setThreadsLoading(true);
+      fetch(
+        `/api/knowledge/snippets/preview/threads?limit=50${q ? `&search=${encodeURIComponent(q)}` : ""}`,
+        { credentials: "include", signal: controller.signal },
+      )
+        .then((r) => r.json())
+        .then((data) => {
+          setThreads(Array.isArray(data?.threads) ? data.threads : []);
+        })
+        .catch((err) => {
+          if (err?.name !== "AbortError") setThreads([]);
+        })
+        .finally(() => setThreadsLoading(false));
+    }, q ? 250 : 0);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [open, threadQuery]);
 
   const runPreview = useCallback(
     async (thread) => {
@@ -415,6 +436,8 @@ export function SnippetPreviewModal({ open, onOpenChange, snippetId, snippetTitl
                     threads={threads}
                     loading={threadsLoading}
                     onSelect={runPreview}
+                    query={threadQuery}
+                    onQueryChange={setThreadQuery}
                   />
                 ) : (
                   <CustomMessageForm onSubmit={runCustomPreview} />

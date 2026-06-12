@@ -45,6 +45,11 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const requestedLimit = Number(url.searchParams.get("limit") || 30);
   const limit = Math.min(Math.max(requestedLimit, 5), 100);
+  // Optional server-side search so the picker can find ANY ticket — not just
+  // the most recent `limit`. Strip characters that would break the PostgREST
+  // `or` filter syntax; keep it a simple case-insensitive contains match.
+  const rawSearch = String(url.searchParams.get("search") || "").trim();
+  const search = rawSearch.replace(/[,()%*\\]/g, " ").trim().slice(0, 120);
 
   let shops: Array<{ id: string }>;
   try {
@@ -70,10 +75,16 @@ export async function GET(request: Request) {
     return NextResponse.json({ threads: [] });
   }
 
-  const { data: threads, error: thErr } = await supabase
+  let threadQuery = supabase
     .from("mail_threads")
     .select("id, subject, snippet, last_message_at, customer_email, mailbox_id")
-    .in("mailbox_id", mailboxIds)
+    .in("mailbox_id", mailboxIds);
+  if (search) {
+    threadQuery = threadQuery.or(
+      `subject.ilike.%${search}%,snippet.ilike.%${search}%,customer_email.ilike.%${search}%`,
+    );
+  }
+  const { data: threads, error: thErr } = await threadQuery
     .order("last_message_at", { ascending: false, nullsFirst: false })
     .limit(limit);
   if (thErr) {
