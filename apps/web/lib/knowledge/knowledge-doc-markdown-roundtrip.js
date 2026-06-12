@@ -14,6 +14,14 @@ const markdownManager = new MarkdownManager({
   ],
 });
 
+export function parseKnowledgeDocumentMarkdown(markdown) {
+  return markdownManager.parse(String(markdown || ""));
+}
+
+export function serializeKnowledgeDocumentMarkdown(content) {
+  return normalizeKnowledgeDocumentMarkdown(markdownManager.serialize(content));
+}
+
 export function normalizeKnowledgeDocumentMarkdown(markdown) {
   return String(markdown || "")
     .replace(/&amp;/g, "&")
@@ -24,6 +32,6 @@ export function normalizeKnowledgeDocumentMarkdown(markdown) {
 }
 
 export function roundTripKnowledgeDocumentMarkdown(markdown) {
-  const parsed = markdownManager.parse(String(markdown || ""));
-  return normalizeKnowledgeDocumentMarkdown(markdownManager.serialize(parsed));
+  const parsed = parseKnowledgeDocumentMarkdown(markdown);
+  return serializeKnowledgeDocumentMarkdown(parsed);
 }

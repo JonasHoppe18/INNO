@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
+import { Fragment, Slice } from "@tiptap/pm/model";
 import StarterKit from "@tiptap/starter-kit";
 import { Markdown } from "@tiptap/markdown";
 import {
@@ -17,6 +18,7 @@ import {
   SECTION_HEADING_LEVEL,
   SECTION_HEADING_TOOLTIP,
 } from "@/lib/knowledge/knowledge-doc-editor-config";
+import { parseKnowledgeDocumentMarkdownPaste } from "@/lib/knowledge/knowledge-doc-markdown-paste";
 import { normalizeKnowledgeDocumentMarkdown } from "@/lib/knowledge/knowledge-doc-markdown-roundtrip";
 
 const extensions = [
@@ -59,6 +61,17 @@ export function KnowledgeDocsEditor({ value, onChange }) {
     editorProps: {
       attributes: {
         class: "min-h-[520px] px-8 py-7 outline-none",
+      },
+      handlePaste(view, event) {
+        const text = event.clipboardData?.getData("text/plain") || "";
+        const pastedContent = parseKnowledgeDocumentMarkdownPaste(text);
+        if (!pastedContent) return false;
+
+        event.preventDefault();
+        const nodes = pastedContent.map((node) => view.state.schema.nodeFromJSON(node));
+        const slice = new Slice(Fragment.fromArray(nodes), 0, 0);
+        view.dispatch(view.state.tr.replaceSelection(slice).scrollIntoView());
+        return true;
       },
     },
     onUpdate({ editor }) {
@@ -145,7 +158,9 @@ export function KnowledgeDocsEditor({ value, onChange }) {
           "[&_.ProseMirror_h2]:mb-3 [&_.ProseMirror_h2]:mt-7 [&_.ProseMirror_h2]:border-b [&_.ProseMirror_h2]:pb-2 [&_.ProseMirror_h2]:text-lg [&_.ProseMirror_h2]:font-semibold dark:[&_.ProseMirror_h2]:border-gray-800",
           "[&_.ProseMirror_h3]:mb-2 [&_.ProseMirror_h3]:mt-5 [&_.ProseMirror_h3]:text-base [&_.ProseMirror_h3]:font-semibold",
           "[&_.ProseMirror_p]:my-3 [&_.ProseMirror_p]:leading-7",
-          "[&_.ProseMirror_ul]:my-3 [&_.ProseMirror_ol]:my-3 [&_.ProseMirror_li]:my-1",
+          "[&_.ProseMirror_ul]:my-3 [&_.ProseMirror_ul]:list-disc [&_.ProseMirror_ul]:pl-6",
+          "[&_.ProseMirror_ol]:my-3 [&_.ProseMirror_ol]:list-decimal [&_.ProseMirror_ol]:pl-6",
+          "[&_.ProseMirror_li]:my-1 [&_.ProseMirror_li>p]:my-1",
           "[&_.ProseMirror_a]:text-indigo-600 [&_.ProseMirror_a]:underline dark:[&_.ProseMirror_a]:text-indigo-400",
           "[&_.ProseMirror]:text-[14px] [&_.ProseMirror]:text-gray-800 dark:[&_.ProseMirror]:text-gray-100",
         )}
