@@ -5,6 +5,7 @@ import { RetrieverResult } from "./retriever.ts";
 import { FactResolverResult } from "./fact-resolver.ts";
 import { ActionProposal } from "./action-decision.ts";
 import { resolveReplyLanguage } from "./language.ts";
+import { buildClarificationDirective } from "./product-support-clarification.ts";
 import {
   buildVariantGuidanceBlock,
   isVariantConflictingSource,
@@ -64,6 +65,14 @@ export interface WriterInput {
    * ordinary runtime so the writer keeps its existing language resolution path.
    */
   replyLanguageFallback?: string;
+  /**
+   * Product Support PREVIEW only: the selector abstained (no matching section),
+   * so the writer must ask exactly one clarification question in the customer's
+   * resolved language and must NOT emit troubleshooting. When true, retrieved
+   * knowledge/snippets/examples are suppressed so legacy troubleshooting cannot
+   * bleed into the reply. Undefined/false in ordinary runtime.
+   */
+  clarificationOnly?: boolean;
 }
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
@@ -693,6 +702,7 @@ export async function runWriter(
     authoritativePreviewDocumentContext,
     resolvedCustomerName,
     replyLanguageFallback,
+    clarificationOnly = false,
   }: WriterInput,
 ): Promise<WriterResult> {
   const resolvedModel = model ?? Deno.env.get("OPENAI_MODEL") ?? "gpt-5-mini";
@@ -1213,26 +1223,38 @@ ${customerHistory}`
 Stage: ${resolutionStage}
 ${stageDirectives[resolutionStage] ?? stageDirectives.info_only}`;
 
+  // Product Support PREVIEW clarification-only mode: replace the resolution
+  // stage with a strict clarification directive and suppress every
+  // troubleshooting-bearing block so legacy knowledge cannot leak into the
+  // single clarification question. The reply stays in `replyLanguage`, so the
+  // question is multilingual via the existing language resolver — no per-language
+  // text and no shop/product hardcoding here.
+  const clarificationBlock = clarificationOnly
+    ? buildClarificationDirective(replyLanguage)
+    : "";
+  const suppress = (block: string) => (clarificationOnly ? "" : block);
+
   const userContent = [
-    stageBlock,
+    clarificationBlock,
+    suppress(stageBlock),
     internalRulesBlock || "",
-    authoritativePreviewDocumentContext || "",
-    fewShotBlock,
+    suppress(authoritativePreviewDocumentContext || ""),
+    suppress(fewShotBlock),
     // Conversation history placed early so the model processes prior context
     // before KB content — critical for follow-up messages and multi-turn threads.
     historyBlock,
-    policyBlock,
+    suppress(policyBlock),
     factsBlock,
     salutationBlock,
     variantBlock,
-    infoRequirementsBlock,
-    decisionsMade,
-    pendingAsks,
-    actionResultBlock,
-    actionsBlock,
-    openQBlock,
-    knowledgeBlock,
-    customerHistoryBlock,
+    suppress(infoRequirementsBlock),
+    suppress(decisionsMade),
+    suppress(pendingAsks),
+    suppress(actionResultBlock),
+    suppress(actionsBlock),
+    suppress(openQBlock),
+    suppress(knowledgeBlock),
+    suppress(customerHistoryBlock),
     latestCustomerMessage
       ? `# Kundens seneste besked (læs denne grundigt — brug alle detaljer kunden har givet)
 ${latestCustomerMessage.slice(0, 1200)}${

@@ -227,3 +227,279 @@ test("missing document id still returns safe non-injected diagnostics", () => {
   assert.equal(result.blockText, null);
   assert.equal(result.diagnostics.injected, false);
 });
+
+// ---------------------------------------------------------------------------
+// Hybrid (semantic) selection — multilingual.
+//
+// Embeddings are MOCKED (no live API). Each section gets a basis vector with a
+// shared baseline component (mimicking the real compressed space). A query
+// embedding aimed at section k has its clear argmax + margin at k. This tests
+// the dispatcher routing (lexical-first vs semantic-rescue), the cosine
+// ranking, the margin gate and abstention — NOT real cross-lingual semantics
+// (those were calibrated against live embeddings during the slice eval).
+// ---------------------------------------------------------------------------
+
+const SEM_DIM = HEADINGS.length; // one basis dimension per section
+function basisVector(k) {
+  // shared baseline 0.3 everywhere + a strong 1.0 spike at k
+  const v = new Array(SEM_DIM).fill(0.3);
+  v[k] = 1.3;
+  return v;
+}
+function semanticSections() {
+  return HEADINGS.map(([chunk_id, section_heading, content], i) => ({
+    chunk_id,
+    section_key: section_heading.toLowerCase().replace(/[^a-z0-9]+/g, "_"),
+    section_heading,
+    content: withTitle(section_heading, content),
+    section_order: i,
+    embedding: basisVector(i),
+  }));
+}
+const H = {
+  micUnclear: 1,
+  micCableDongle: 2,
+  pulsating: 3,
+  firmware: 5,
+  appPairing: 6,
+  powerDisconnect: 7,
+  donglePairing: 8,
+  dongleDriver: 9,
+};
+
+// Danish messages have NO English heading token → forces the semantic path.
+const DANISH = [
+  ["Min mikrofon virker ikke, og mine venner kan næsten ikke høre mig.", H.micUnclear, "Microphone is not working or sounds unclear"],
+  ["Mikrofonen virker med kabel, men ikke når jeg bruger donglen.", H.micCableDongle, "Microphone works with the cable but not with the dongle"],
+  ["Lyden kratter, og headsettet mister forbindelsen.", H.firmware, "Firmware update for audio cracking or repeated disconnects"],
+  ["Jeg kan ikke forbinde headsettet til appen.", H.appPairing, "Bluetooth pairing with the AceZone app"],
+  ["Jeg kan kun høre lyd i den ene side.", H.dongleDriver, "Dongle driver reset for one-earcup audio, weird noises or poor range"],
+];
+
+for (const [msg, targetIdx, expected] of DANISH) {
+  test(`hybrid: Danish "${msg.slice(0, 28)}…" → ${expected}`, () => {
+    const result = selectProductSupportSections({
+      latest_customer_message: msg,
+      query_embedding: basisVector(targetIdx),
+      sections: semanticSections(),
+    });
+    assert.equal(result.selected_sections.length, 1, "Danish issue selects exactly one section");
+    assert.equal(result.selected_sections[0].section_heading, expected);
+    assert.notEqual(result.confidence, "low");
+    assert.equal(result.reason, "semantic_single_section");
+    // diagnostics carry both score arrays
+    assert.equal(result.semantic_scores.length, SEM_DIM);
+    assert.equal(result.lexical_scores.length, SEM_DIM);
+  });
+}
+
+test("hybrid: English lexical anchor WINS over a misleading embedding (precision)", () => {
+  // Query embedding deliberately points at the WRONG section (micUnclear), but
+  // the English lexical anchor ("dongle") must still select Dongle pairing.
+  const result = selectProductSupportSections({
+    latest_customer_message: "not connecting to the wireless dongle",
+    query_embedding: basisVector(H.micUnclear),
+    sections: semanticSections(),
+  });
+  assert.equal(result.selected_sections[0].section_heading, "Dongle pairing");
+  assert.equal(result.reason, "lexical_single_section");
+});
+
+test("hybrid: English app pairing selects exactly 1 section", () => {
+  const result = selectProductSupportSections({
+    latest_customer_message: "I cannot connect to the AceZone app",
+    query_embedding: basisVector(H.powerDisconnect),
+    sections: semanticSections(),
+  });
+  assert.equal(result.selected_sections.length, 1);
+  assert.equal(result.selected_sections[0].section_heading, "Bluetooth pairing with the AceZone app");
+});
+
+test("hybrid: ambiguous Danish with low semantic margin abstains (no guide)", () => {
+  // Query equidistant between two sections → tiny margin → abstain.
+  const a = basisVector(H.micUnclear);
+  const b = basisVector(H.donglePairing);
+  const mixed = a.map((v, i) => (v + b[i]) / 2);
+  const result = selectProductSupportSections({
+    latest_customer_message: "Min A-Spire Wireless virker ikke ordentligt.",
+    query_embedding: mixed,
+    sections: semanticSections(),
+  });
+  assert.equal(result.selected_sections.length, 0);
+  assert.equal(result.confidence, "low");
+  assert.equal(result.reason, "semantic_low_margin");
+});
+
+test("hybrid: no query embedding → pure lexical path (unchanged behavior)", () => {
+  const result = selectProductSupportSections({
+    latest_customer_message: "Mikrofonen virker med kabel, men ikke når jeg bruger donglen.",
+    sections: semanticSections(), // embeddings present but no query embedding
+  });
+  // Danish has no lexical anchor and no query embedding → abstain.
+  assert.equal(result.selected_sections.length, 0);
+  assert.equal(result.confidence, "low");
+  assert.equal(result.semantic_scores, undefined);
+});
+
+test("hybrid: semantic path never returns a chunk outside the scoped sections", () => {
+  const provided = new Set(semanticSections().map((s) => s.chunk_id));
+  for (const [msg, targetIdx] of DANISH) {
+    const result = selectProductSupportSections({
+      latest_customer_message: msg,
+      query_embedding: basisVector(targetIdx),
+      sections: semanticSections(),
+    });
+    for (const s of result.selected_sections) assert.ok(provided.has(s.chunk_id));
+  }
+});
+
+test("hybrid: max 3 cap holds even if many sections are semantically close", () => {
+  const flat = new Array(SEM_DIM).fill(0.5); // equidistant to everything
+  const result = selectProductSupportSections({
+    latest_customer_message: "noget med headsettet",
+    query_embedding: flat,
+    sections: semanticSections(),
+  });
+  assert.ok(result.selected_sections.length <= 3);
+});
+
+test("context builder threads query embedding into hybrid selection (Danish)", () => {
+  const ctx = {
+    requested: true,
+    document_id: "doc-asp",
+    chunks: HEADINGS.map(([id, heading, content], i) => ({
+      id,
+      content: withTitle(heading, content),
+      metadata: {
+        section_heading: heading,
+        category: "product_support",
+        product_scope: "product-9114609942851",
+        section_order: i,
+      },
+      embedding: basisVector(i),
+    })),
+  };
+  const result = buildKnowledgeDocPreviewContext(ctx, {
+    latestCustomerMessage: "Mikrofonen virker med kabel, men ikke når jeg bruger donglen.",
+    queryEmbedding: basisVector(H.micCableDongle),
+  });
+  assert.equal(result.diagnostics.injected, true);
+  assert.deepEqual(result.diagnostics.section_headings, [
+    "Microphone works with the cable but not with the dongle",
+  ]);
+  const sel = result.diagnostics.product_support_section_selection;
+  assert.equal(Array.isArray(sel.semantic_scores), true);
+  assert.equal(Array.isArray(sel.lexical_scores), true);
+});
+
+// ---------------------------------------------------------------------------
+// Low-confidence clarification: directive strength + banner correctness
+// ---------------------------------------------------------------------------
+const {
+  wasPreviewDocumentInjected,
+  wasPreviewDocumentClarification,
+} = require("../apps/web/lib/server/knowledge-doc-preview-comparison.ts");
+
+test("low-confidence blockText is a short language-agnostic instruction (no canned reply, no 'source of truth' frame)", () => {
+  const result = buildKnowledgeDocPreviewContext(productSupportContext(), {
+    latestCustomerMessage: "My A-Spire Wireless does not work properly.",
+  });
+  assert.equal(result.diagnostics.reason, "product_support_low_confidence");
+  assert.ok(!result.blockText.includes("source of truth"));
+  assert.ok(/clarification question/i.test(result.blockText));
+  assert.ok(/do not provide troubleshooting/i.test(result.blockText));
+  // No canned per-language reply text and no guide content leak.
+  assert.ok(!result.blockText.includes("is the issue related to the microphone"));
+  assert.ok(!result.blockText.includes("## Factory reset"));
+});
+
+test("banner: low-confidence clarification counts as preview USED, not unused", () => {
+  const lowConf = {
+    preview_document_context: {
+      injected: true,
+      preview_chunk_ids: [],
+      reason: "product_support_low_confidence",
+    },
+  };
+  assert.equal(wasPreviewDocumentInjected(lowConf), true);
+  assert.equal(wasPreviewDocumentClarification(lowConf), true);
+});
+
+test("banner: a real section injection is USED but not a clarification", () => {
+  const injected = {
+    preview_document_context: {
+      injected: true,
+      preview_chunk_ids: ["c6"],
+      reason: "product_support_selected",
+    },
+  };
+  assert.equal(wasPreviewDocumentInjected(injected), true);
+  assert.equal(wasPreviewDocumentClarification(injected), false);
+});
+
+test("banner: a genuinely uninjected run is still reported as not used", () => {
+  const none = {
+    preview_document_context: { injected: false, preview_chunk_ids: [], reason: "missing_document_id" },
+  };
+  assert.equal(wasPreviewDocumentInjected(none), false);
+  assert.equal(wasPreviewDocumentClarification(none), false);
+});
+
+// ---------------------------------------------------------------------------
+// Clarification trigger is language-agnostic: ambiguous EN/DA/DE/FR all abstain
+// (reason product_support_low_confidence) → pipeline switches the writer into
+// clarification-only mode regardless of language. A specific issue still selects.
+// ---------------------------------------------------------------------------
+const {
+  isProductSupportClarificationReason,
+} = require("../supabase/functions/generate-draft-v2/stages/product-support-clarification.ts");
+
+const AMBIGUOUS = [
+  ["en", "My A-Spire Wireless does not work properly."],
+  ["da", "Mit A-Spire Wireless virker ikke ordentligt."],
+  ["de", "Mein A-Spire Wireless funktioniert nicht richtig."],
+  ["fr", "Mon A-Spire Wireless ne fonctionne pas correctement."],
+];
+
+for (const [lang, msg] of AMBIGUOUS) {
+  test(`ambiguous ${lang} message abstains → clarification-only trigger (no section)`, () => {
+    // No query embedding (lexical path); ambiguous wording has no heading anchor.
+    const result = buildKnowledgeDocPreviewContext(productSupportContext(), {
+      latestCustomerMessage: msg,
+    });
+    assert.equal(result.diagnostics.reason, "product_support_low_confidence");
+    assert.deepEqual(result.diagnostics.section_headings, []);
+    assert.equal(
+      isProductSupportClarificationReason(result.diagnostics.reason),
+      true,
+      "pipeline would enable clarification-only mode",
+    );
+  });
+}
+
+test("specific app-pairing issue still selects a section (no clarification mode)", () => {
+  const result = buildKnowledgeDocPreviewContext(productSupportContext(), {
+    latestCustomerMessage: "My A-Spire Wireless will not connect to the AceZone app.",
+  });
+  assert.deepEqual(result.diagnostics.section_headings, [
+    "Bluetooth pairing with the AceZone app",
+  ]);
+  assert.equal(
+    isProductSupportClarificationReason(result.diagnostics.reason),
+    false,
+  );
+});
+
+test("Returns & Refunds preview never triggers clarification mode", () => {
+  const returnsContext = {
+    requested: true,
+    document_id: "doc-returns",
+    chunks: [
+      { id: "r1", content: "30 days return window.", metadata: { section_heading: "Return window", category: "returns", section_order: 0 } },
+    ],
+  };
+  const result = buildKnowledgeDocPreviewContext(returnsContext, {
+    latestCustomerMessage: "anything unclear",
+  });
+  assert.equal(isProductSupportClarificationReason(result.diagnostics.reason), false);
+});

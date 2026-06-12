@@ -16,6 +16,7 @@ import { loadPreviewDocumentContext } from "@/lib/server/knowledge-doc-preview";
 import {
   buildKnowledgeDocumentPreviewRunBodies,
   wasLegacySnippetRetrieved,
+  wasPreviewDocumentClarification,
   wasPreviewDocumentInjected,
 } from "@/lib/server/knowledge-doc-preview-comparison";
 
@@ -60,6 +61,8 @@ type DraftRun = {
       selected_headings: string[];
       confidence: "high" | "medium" | "low";
       reason: string;
+      semantic_scores?: number[];
+      lexical_scores?: number[];
     };
   } | null;
   error?: string;
@@ -326,8 +329,14 @@ export async function POST(request: Request) {
   const snippetWasRetrieved = previewDocumentContext
     ? wasPreviewDocumentInjected(withSnippet)
     : wasLegacySnippetRetrieved({ run: withSnippet, snippetTitle });
+  // True when the document had no matching section and the preview instead
+  // asked the writer to pose a clarification question (expected for unclear
+  // messages) — lets the UI explain this instead of "preview not used".
+  const previewClarification = Boolean(previewDocumentContext) &&
+    wasPreviewDocumentClarification(withSnippet);
 
   return NextResponse.json({
+    preview_clarification: previewClarification,
     customer_message: emailData.body,
     customer_email: displayCustomerEmail,
     customer_name: displayCustomerName,

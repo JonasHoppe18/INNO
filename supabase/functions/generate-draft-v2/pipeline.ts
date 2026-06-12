@@ -14,12 +14,13 @@ import {
 } from "./stages/action-decision.ts";
 import { buildRetrievalLogPayload } from "./stages/retrieval-log.ts";
 import { runWriter } from "./stages/writer.ts";
-import { runVerifier } from "./stages/verifier.ts";
+import { runVerifier, type VerifierResult } from "./stages/verifier.ts";
 import {
   buildPinnedPolicyContext,
   PolicyIntent,
 } from "../_shared/policy-context.ts";
 import { parseEmailReplyBodies } from "../_shared/email-reply-parser.ts";
+import { embedText } from "../_shared/embed-text.ts";
 import { loadImageAttachments } from "./stages/attachment-loader.ts";
 import {
   cleanupMixedLanguageDraft,
@@ -30,6 +31,7 @@ import {
   buildKnowledgeDocPreviewContext,
   type KnowledgeDocPreviewContextInput,
 } from "./stages/knowledge-doc-preview-context.ts";
+import { isProductSupportClarificationReason } from "./stages/product-support-clarification.ts";
 import {
   buildWriterConversationHistory,
   visibleEmailText,
@@ -1611,16 +1613,41 @@ export async function runDraftV2Pipeline(
       intentOverride,
     });
 
+    const previewLatestCustomerMessage = latestCustomerMessage ?? latestBody ?? "";
+    const previewConversationHistory = Array.isArray(quotedAwareConversationHistory)
+      ? quotedAwareConversationHistory
+        .map((turn) => String(turn?.text ?? ""))
+        .filter(Boolean)
+        .join("\n")
+      : undefined;
+
+    // Hybrid Product Support section selection: embed the latest customer issue
+    // ONCE, and ONLY for an explicit Product Support preview run. Never for
+    // Returns & Refunds preview, never for ordinary runtime (no preview
+    // context). On any embedding failure we fall back to lexical-only.
+    let previewQueryEmbedding: number[] | undefined;
+    const previewChunks = input.preview_document_context?.chunks;
+    const isProductSupportPreview = Array.isArray(previewChunks) &&
+      previewChunks.some((c) =>
+        (c?.metadata as Record<string, unknown> | null | undefined)?.category ===
+          "product_support"
+      );
+    if (isProductSupportPreview && previewLatestCustomerMessage.trim()) {
+      try {
+        previewQueryEmbedding = await embedText(previewLatestCustomerMessage.slice(0, 4000));
+      } catch (error) {
+        console.warn(
+          `[generate-draft-v2] product-support query embedding failed, falling back to lexical: ${error}`,
+        );
+      }
+    }
+
     const previewDocument = buildKnowledgeDocPreviewContext(
       input.preview_document_context,
       {
-        latestCustomerMessage: latestCustomerMessage ?? latestBody ?? "",
-        conversationHistory: Array.isArray(quotedAwareConversationHistory)
-          ? quotedAwareConversationHistory
-            .map((turn) => String(turn?.text ?? ""))
-            .filter(Boolean)
-            .join("\n")
-          : undefined,
+        latestCustomerMessage: previewLatestCustomerMessage,
+        conversationHistory: previewConversationHistory,
+        queryEmbedding: previewQueryEmbedding,
       },
     );
     const authoritativePreviewDocumentContext =
@@ -1677,6 +1704,16 @@ export async function runDraftV2Pipeline(
     // Byg samtalehistorik fra visible messages + parsed quoted support replies.
     const conversationHistory = quotedAwareConversationHistory;
 
+    // Product Support PREVIEW only: the selector abstained (no matching
+    // section). Drive the writer into clarification-only mode — suppress
+    // troubleshooting knowledge and ask exactly one clarification question in
+    // the resolved language — and skip every post-writer LLM pass so legacy
+    // knowledge can never re-enter the reply. No effect in ordinary runtime
+    // (no preview context) or for Returns & Refunds (different reason).
+    const productSupportClarification = isProductSupportClarificationReason(
+      previewDocument.diagnostics?.reason,
+    );
+
     // 9. Skriv første draft — simple intents bruger gpt-4o-mini, resten gpt-5-mini
     currentStage = "writer";
     const firstPassModel = resolveWriterModel(
@@ -1706,6 +1743,7 @@ export async function runDraftV2Pipeline(
       actionResult: postActionResult,
       customerHistory: customerHistory ?? undefined,
       nonImageAttachmentsMeta: nonImageAttachmentsMeta || undefined,
+      clarificationOnly: productSupportClarification,
     });
     await updateDraftGenerationTrace(supabase, generationId, {
       writer_model: written.usage?.model ?? firstPassModel,
@@ -1725,7 +1763,7 @@ export async function runDraftV2Pipeline(
       languageCheckedWritten.draft_text,
       replyLanguage,
     );
-    if (!initialLanguageCheck.ok) {
+    if (!productSupportClarification && !initialLanguageCheck.ok) {
       console.warn(
         `[generate-draft-v2] mixed language detected before verifier: expected=${replyLanguage} foreign=${
           initialLanguageCheck.detectedForeignLanguages.join(",")
@@ -1779,7 +1817,7 @@ export async function runDraftV2Pipeline(
       };
     }
 
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    for (let attempt = 1; !productSupportClarification && attempt <= 3; attempt++) {
       const postActionIssues = detectPostActionDraftIssues(
         languageCheckedWritten.draft_text,
         postActionResult,
@@ -1849,17 +1887,30 @@ export async function runDraftV2Pipeline(
       };
     }
 
-    // 10. Verificér grounding og kvalitet
+    // 10. Verificér grounding og kvalitet. Skipped for the clarification-only
+    // preview branch: there is nothing to ground (it is a single question) and
+    // we must not trigger a verifier-driven rewrite (an extra LLM call) that
+    // could re-introduce troubleshooting.
     currentStage = "verifier";
-    const verified = await runVerifier({
-      draftText: languageCheckedWritten.draft_text,
-      proposedActions: finalProposals,
-      citations: languageCheckedWritten.citations,
-      facts,
-      retrievedChunks: retrieved.chunks,
-      customerMessage: latestCustomerMessage,
-      language: replyLanguage,
-    });
+    const verified: VerifierResult = productSupportClarification
+      ? {
+        grounded_claims_pct: 1,
+        contradictions: [],
+        policy_violations: [],
+        confidence: 0.6,
+        block_send: false,
+        retry_with_stronger_model: false,
+        issues: [],
+      }
+      : await runVerifier({
+        draftText: languageCheckedWritten.draft_text,
+        proposedActions: finalProposals,
+        citations: languageCheckedWritten.citations,
+        facts,
+        retrievedChunks: retrieved.chunks,
+        customerMessage: latestCustomerMessage,
+        language: replyLanguage,
+      });
     await updateDraftGenerationTrace(supabase, generationId, {
       verifier_output_json: verified,
     });
@@ -2213,6 +2264,14 @@ export async function runDraftV2Pipeline(
       }),
       ...(previewDocument.diagnostics
         ? { preview_document_context: previewDocument.diagnostics }
+        : {}),
+      ...(productSupportClarification
+        ? {
+          product_support_clarification: {
+            used: true,
+            reason: "low_confidence_no_matching_section",
+          },
+        }
         : {}),
       // Eval-only observability: the full writer-facing chunk set so the golden
       // runner can measure retrieval coherence. Omitted entirely in production
