@@ -198,6 +198,86 @@ test("explicitly shared row stays allowed even with sibling titles present", () 
   assert(keptIds.has("applies-all"), "applies_to_all_products row kept");
 });
 
+// --- Resolvable foreign product_id must not leak via the title fallback -------
+// Reproduces the 6/45 historical leak: legacy A-Spire Wireless rows carry a
+// REAL, resolvable product_id (9114609942851) but were retrieved for the wired
+// "A-Spire" preview. Their bodies/titles spell out "A-Spire Wireless", so the
+// word-boundary phrase " a spire " matches the wired title and the title
+// fallback would rescue them when sibling titles were unavailable. Passing the
+// shop's known external ids makes the separation strict regardless of titles.
+const SHOP_EXTERNAL_IDS = [
+  "9114609942851", // A-Spire Wireless
+  "7548544745718", // A-Spire (wired)
+  "14930213372227", // A-Blaze
+  "7548536488182", // A-Rise
+];
+
+const LEAK_CHUNKS = [
+  // Exact shape of the historical leakers: resolvable Wireless product_id.
+  { id: "ps-3974", product_id: "9114609942851", products: ["a-spire wireless"], source_title: "My microphone keeps muting/unmuting for A-spire Wireless?", content: "..." },
+  { id: "ps-3972", product_id: "9114609942851", products: ["a-spire", "a-spire wireless"], source_title: "My headset cant't turn on for A-spire Wireless?", content: "Why doesn't my headset power on?" },
+  { id: "ps-3835", product_id: "9114609942851", products: ["a-spire wireless"], source_title: "Why does my headset A-Spire Wireless keep disconnecting?", content: "..." },
+  // Sidetone on (wired) A-Spire leaking into A-Blaze in the eval:
+  { id: "ps-3877", product_id: "7548544745718", products: ["a-spire"], source_title: "Sidetone on A-Spire - How to disable or reduce it", content: "..." },
+  // A genuinely shared row must still pass:
+  { id: "shared", product_id: null, source_title: "Headset still doesn't work after guides", content: "general escalation" },
+];
+
+test("wired A-Spire excludes resolvable A-Spire Wireless product_id rows even without sibling titles", () => {
+  const { kept } = scopeLegacyChunksToProduct({
+    productScope: "product-7548544745718", // wired A-Spire
+    selectedProductTitle: "A-Spire",
+    knownProductExternalIds: SHOP_EXTERNAL_IDS,
+    chunks: LEAK_CHUNKS,
+  });
+  const keptIds = new Set(kept.map((c) => c.id));
+  assert(!keptIds.has("ps-3974"), "Wireless mic row excluded for wired A-Spire");
+  assert(!keptIds.has("ps-3972"), "Wireless power-on row excluded for wired A-Spire");
+  assert(!keptIds.has("ps-3835"), "Wireless disconnect row excluded for wired A-Spire");
+  assert(keptIds.has("shared"), "truly shared row kept");
+});
+
+test("A-Blaze excludes a resolvable wired-A-Spire sidetone row", () => {
+  const { kept } = scopeLegacyChunksToProduct({
+    productScope: "product-14930213372227", // A-Blaze
+    selectedProductTitle: "A-Blaze",
+    knownProductExternalIds: SHOP_EXTERNAL_IDS,
+    chunks: LEAK_CHUNKS,
+  });
+  const keptIds = new Set(kept.map((c) => c.id));
+  assert(!keptIds.has("ps-3877"), "wired A-Spire sidetone row excluded for A-Blaze");
+  assert(keptIds.has("shared"), "truly shared row kept");
+});
+
+test("A-Spire Wireless keeps its own resolvable product_id rows", () => {
+  const { kept } = scopeLegacyChunksToProduct({
+    productScope: "product-9114609942851", // A-Spire Wireless
+    selectedProductTitle: "A-Spire Wireless",
+    knownProductExternalIds: SHOP_EXTERNAL_IDS,
+    chunks: LEAK_CHUNKS,
+  });
+  const keptIds = new Set(kept.map((c) => c.id));
+  assert(keptIds.has("ps-3974"), "Wireless row kept for A-Spire Wireless");
+  assert(keptIds.has("ps-3972"), "Wireless row kept for A-Spire Wireless");
+  assert(!keptIds.has("ps-3877"), "wired-only sidetone row excluded for A-Spire Wireless");
+  assert(keptIds.has("shared"), "truly shared row kept");
+});
+
+test("known external ids do not disturb truly-legacy (unresolvable) id handling", () => {
+  // product_id 48 is NOT in the shop's known external ids → still resolved by
+  // the title-mention fallback (kept here because the title names A-Spire Wireless).
+  const { kept } = scopeLegacyChunksToProduct({
+    productScope: "product-9114609942851",
+    selectedProductTitle: "A-Spire Wireless",
+    siblingProductTitles: ["A-Spire Wireless", "A-Spire"],
+    knownProductExternalIds: SHOP_EXTERNAL_IDS,
+    chunks: [
+      { id: "legacy-48", product_id: "48", source_title: "Why am I only hearing audio in 1 earcup for A-Spire Wireless?", content: "factory reset" },
+    ],
+  });
+  assert(new Set(kept.map((c) => c.id)).has("legacy-48"), "truly-legacy Wireless row still kept via title fallback");
+});
+
 test("empty chunk list does not throw and keeps nothing", () => {
   const { kept, diagnostics } = scopeLegacyChunksToProduct({
     productScope: SELECTED_SCOPE,

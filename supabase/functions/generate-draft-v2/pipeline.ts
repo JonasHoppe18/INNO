@@ -1741,6 +1741,7 @@ export async function runDraftV2Pipeline(
     if (psSelection?.product_scope) {
       let selectedProductTitle: string | null = null;
       let siblingProductTitles: string[] = [];
+      let knownProductExternalIds: string[] = [];
       const selectedExternalId = externalIdFromProductScope(psSelection.product_scope);
       if (selectedExternalId) {
         try {
@@ -1756,6 +1757,9 @@ export async function runDraftV2Pipeline(
           siblingProductTitles = productRows
             .map((p) => String((p as Record<string, unknown>).title || "").trim())
             .filter(Boolean);
+          knownProductExternalIds = productRows
+            .map((p) => String((p as Record<string, unknown>).external_id || "").trim())
+            .filter(Boolean);
           selectedProductTitle = (productRows.find((p) =>
             String((p as Record<string, unknown>).external_id || "").trim() ===
               selectedExternalId
@@ -1764,12 +1768,14 @@ export async function runDraftV2Pipeline(
           // Best-effort: without the title we still scope by canonical id.
           selectedProductTitle = null;
           siblingProductTitles = [];
+          knownProductExternalIds = [];
         }
       }
       const scoped = scopeLegacyChunksToProduct({
         productScope: psSelection.product_scope,
         selectedProductTitle,
         siblingProductTitles,
+        knownProductExternalIds,
         chunks: retrieved.chunks.map((c) => ({
           id: c.id,
           product_id: c.product_id,

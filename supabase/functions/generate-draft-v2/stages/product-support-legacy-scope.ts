@@ -5,6 +5,12 @@
 // Rule per retrieved chunk (data-driven — no shop/product names hardcoded):
 //  - no product_id (shared/general, incl. applies_to_all_products) → KEEP
 //  - product_id === the selected product's external id                → KEEP
+//  - product_id resolves to a KNOWN OTHER product (its external id is in the
+//    shop's product set, but is not the selected one) → EXCLUDE. The row is
+//    definitively scoped to a different product, so the legacy title-mention
+//    fallback below must NOT be allowed to rescue it (this is what let
+//    "A-spire Wireless" rows leak into the wired "A-Spire" preview when sibling
+//    titles were unavailable or the body did not spell out the full variant).
 //  - the chunk text clearly names the selected product (legacy numeric
 //    product ids that no longer resolve, but the row is about the selected
 //    product) → KEEP
@@ -115,6 +121,12 @@ export function scopeLegacyChunksToProduct(options: {
   // title-mention fallback. Optional — without it the fallback still works by
   // word-boundary phrase match, just cannot disambiguate prefix-variant titles.
   siblingProductTitles?: string[] | null;
+  // All known product external ids for the shop (preview-only). When a chunk's
+  // product_id is in this set but is not the selected one, the chunk is
+  // definitively scoped to a known other product and is excluded WITHOUT
+  // consulting the title-mention fallback. Optional — when omitted, behavior is
+  // unchanged (the fallback still guards prefix-variant leakage via titles).
+  knownProductExternalIds?: string[] | null;
   chunks: LegacyScopeChunk[];
 }): {
   kept: LegacyScopeChunk[];
@@ -128,6 +140,13 @@ export function scopeLegacyChunksToProduct(options: {
       .map((title) => normalize(title || ""))
       .filter(Boolean)
     : [];
+  const knownExternalIds = new Set(
+    (Array.isArray(options.knownProductExternalIds)
+      ? options.knownProductExternalIds
+      : [])
+      .map((id) => String(id || "").trim())
+      .filter(Boolean),
+  );
   const chunks = Array.isArray(options.chunks) ? options.chunks : [];
 
   const kept: LegacyScopeChunk[] = [];
@@ -145,6 +164,10 @@ export function scopeLegacyChunksToProduct(options: {
     let keep: boolean;
     if (selectedExternalId && pid === selectedExternalId) {
       keep = true; // same product (canonical external id)
+    } else if (pid && knownExternalIds.has(pid)) {
+      // product_id resolves to a known OTHER product → definitively scoped
+      // elsewhere; never let the title-mention fallback rescue it.
+      keep = false;
     } else if (
       pid &&
       selectedTitleNorm &&
