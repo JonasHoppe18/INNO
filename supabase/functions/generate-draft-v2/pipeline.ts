@@ -31,7 +31,10 @@ import {
   buildKnowledgeDocPreviewContext,
   type KnowledgeDocPreviewContextInput,
 } from "./stages/knowledge-doc-preview-context.ts";
-import { isProductSupportClarificationReason } from "./stages/product-support-clarification.ts";
+import {
+  isProductSupportClarificationReason,
+  shouldApplyProductSupportTopicLock,
+} from "./stages/product-support-clarification.ts";
 import {
   externalIdFromProductScope,
   scopeLegacyChunksToProduct,
@@ -1718,6 +1721,13 @@ export async function runDraftV2Pipeline(
       previewDocument.diagnostics?.reason,
     );
 
+    // Product Support PREVIEW only: an H2 section WAS selected → enable the
+    // topic-lock + progression guardrails in the writer. False for Returns &
+    // Refunds preview (reason "injected") and ordinary runtime (no diagnostics).
+    const productSupportTopicLock = shouldApplyProductSupportTopicLock(
+      previewDocument.diagnostics?.reason,
+    );
+
     // Product Support PREVIEW only: scope legacy retrieved knowledge to the
     // selected product so cross-product snippets (e.g. an A-Blaze-only guide)
     // cannot contaminate a draft generated for a different product's support
@@ -1801,6 +1811,7 @@ export async function runDraftV2Pipeline(
       policyContext,
       internalRulesBlock,
       authoritativePreviewDocumentContext,
+      productSupportTopicLock,
       resolvedCustomerName,
       replyLanguageFallback: writerReplyLanguageFallback,
       model: firstPassModel,
@@ -1847,6 +1858,7 @@ export async function runDraftV2Pipeline(
           policyContext,
           internalRulesBlock,
           authoritativePreviewDocumentContext,
+          productSupportTopicLock,
           resolvedCustomerName,
           replyLanguageFallback: writerReplyLanguageFallback,
           model: firstPassModel,
@@ -1907,6 +1919,7 @@ export async function runDraftV2Pipeline(
           policyContext,
           internalRulesBlock,
           authoritativePreviewDocumentContext,
+          productSupportTopicLock,
           resolvedCustomerName,
           replyLanguageFallback: writerReplyLanguageFallback,
           model: firstPassModel,
@@ -2023,6 +2036,7 @@ export async function runDraftV2Pipeline(
           policyContext,
           internalRulesBlock,
           authoritativePreviewDocumentContext,
+          productSupportTopicLock,
           resolvedCustomerName,
           replyLanguageFallback: writerReplyLanguageFallback,
           model: escalationModel,

@@ -5,7 +5,10 @@ import { RetrieverResult } from "./retriever.ts";
 import { FactResolverResult } from "./fact-resolver.ts";
 import { ActionProposal } from "./action-decision.ts";
 import { resolveReplyLanguage } from "./language.ts";
-import { buildClarificationDirective } from "./product-support-clarification.ts";
+import {
+  buildClarificationDirective,
+  buildProductSupportTopicGuardrails,
+} from "./product-support-clarification.ts";
 import {
   buildVariantGuidanceBlock,
   isVariantConflictingSource,
@@ -73,6 +76,15 @@ export interface WriterInput {
    * bleed into the reply. Undefined/false in ordinary runtime.
    */
   clarificationOnly?: boolean;
+  /**
+   * Product Support PREVIEW only: an H2 section WAS selected, so the writer gets
+   * the topic-lock + progression guardrails (keep to the latest message and the
+   * selected section; do not answer older refund/return/shipping/etc. topics; do
+   * not repeat completed troubleshooting; do not promise unverified actions).
+   * Undefined/false in ordinary runtime and Returns & Refunds preview, so those
+   * paths are unchanged.
+   */
+  productSupportTopicLock?: boolean;
 }
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
@@ -703,6 +715,7 @@ export async function runWriter(
     resolvedCustomerName,
     replyLanguageFallback,
     clarificationOnly = false,
+    productSupportTopicLock = false,
   }: WriterInput,
 ): Promise<WriterResult> {
   const resolvedModel = model ?? Deno.env.get("OPENAI_MODEL") ?? "gpt-5-mini";
@@ -1234,8 +1247,18 @@ ${stageDirectives[resolutionStage] ?? stageDirectives.info_only}`;
     : "";
   const suppress = (block: string) => (clarificationOnly ? "" : block);
 
+  // Product Support PREVIEW only (section selected): topic-lock + progression
+  // guardrails. Placed high in the prompt so it governs how older context and
+  // legacy knowledge below are used. Never present in clarification-only mode
+  // (mutually exclusive), ordinary runtime, or Returns & Refunds preview.
+  const productSupportTopicBlock =
+    productSupportTopicLock && !clarificationOnly
+      ? buildProductSupportTopicGuardrails()
+      : "";
+
   const userContent = [
     clarificationBlock,
+    productSupportTopicBlock,
     suppress(stageBlock),
     internalRulesBlock || "",
     suppress(authoritativePreviewDocumentContext || ""),

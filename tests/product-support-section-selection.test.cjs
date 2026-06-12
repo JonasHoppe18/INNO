@@ -549,3 +549,124 @@ test("legacy scope: external id parsing + no-op when only shared/selected rows",
   assert.equal(kept.length, 2);
   assert.equal(diagnostics.excluded_cross_product_row_ids.length, 0);
 });
+
+// ---------------------------------------------------------------------------
+// Slice 2 — Product Support PREVIEW writer topic & progression guardrails.
+// These cover the preview-only writer directives (topic-lock + progression and
+// the strengthened clarification fallback). They assert the directive CONTENT
+// and the gating predicate — no network / no writer LLM call.
+// ---------------------------------------------------------------------------
+const {
+  buildClarificationDirective,
+  buildProductSupportTopicGuardrails,
+  shouldApplyProductSupportTopicLock,
+  isProductSupportClarificationReason: isClarificationReason,
+} = require("../supabase/functions/generate-draft-v2/stages/product-support-clarification.ts");
+
+// 1. selected Product Support section is marked as primary guidance
+test("topic guardrails: selected section is marked as PRIMARY guidance", () => {
+  const block = buildProductSupportTopicGuardrails();
+  assert.match(block, /PRIMARY guidance source/i);
+  assert.match(block, /selected Product Support section/i);
+});
+
+// 2. latest customer message is explicitly marked as the live request
+test("topic guardrails: latest customer message marked as the live request", () => {
+  const block = buildProductSupportTopicGuardrails();
+  assert.match(block, /LIVE REQUEST/);
+  assert.match(block, /latest customer message/i);
+});
+
+// 3. old refund/return/shipping/discount/carrier/warranty topics cannot override
+//    a Bluetooth/app section unless the latest message asks about them
+test("topic guardrails: old non-support workflows cannot override the section", () => {
+  const block = buildProductSupportTopicGuardrails();
+  for (const topic of ["refund", "return", "shipping", "exchange", "discount", "warranty", "carrier"]) {
+    assert.ok(block.toLowerCase().includes(topic), `mentions ${topic}`);
+  }
+  assert.match(block, /unless the latest customer message explicitly asks/i);
+  assert.match(block, /older context/i);
+});
+
+// 4. clarification fallback produces exactly one focused clarification question
+test("clarification fallback: exactly one focused clarification question", () => {
+  const block = buildClarificationDirective("en");
+  assert.match(block, /exactly one concise clarification question/i);
+  assert.match(block, /\(en\)/);
+  assert.match(block, /Do not provide troubleshooting steps/i);
+});
+
+// 5. clarification fallback does not include unrelated workflows
+test("clarification fallback: forbids unrelated shipping/return/refund/warranty workflows", () => {
+  const block = buildClarificationDirective("da").toLowerCase();
+  for (const topic of ["shipping", "return", "refund", "warranty", "exchange", "carrier"]) {
+    assert.ok(block.includes(topic), `forbids ${topic}`);
+  }
+  assert.match(block, /do not answer or resolve an older thread topic/i);
+  assert.match(block, /do not promise any action/i);
+});
+
+// 6. completed troubleshooting steps should not be repeated
+test("topic guardrails: do not repeat completed troubleshooting steps", () => {
+  const block = buildProductSupportTopicGuardrails();
+  assert.match(block, /Do not repeat troubleshooting steps the customer has already said they completed/i);
+});
+
+// 7. new follow-up facts should be acknowledged + case advances
+test("topic guardrails: acknowledge new facts and advance the case", () => {
+  const block = buildProductSupportTopicGuardrails();
+  assert.match(block, /Acknowledge those completed steps and any new facts/i);
+  assert.match(block, /Advance the case/i);
+  assert.match(block, /next not-yet-tried step/i);
+  assert.match(block, /remaining details needed to review the case/i);
+});
+
+// 8. premature warranty-process commitment is not allowed; prefers softer wording
+test("topic guardrails: no premature warranty/repair/refund commitment", () => {
+  const block = buildProductSupportTopicGuardrails();
+  assert.match(block, /Do not promise or commit to warranty, repair, replacement, refund/i);
+  assert.match(block, /unless that action is explicitly verified/i);
+  assert.match(block, /we can review the next step/i);
+  assert.match(block, /rather than .*we can proceed with the warranty process/i);
+});
+
+// 9. ordinary runtime is untouched — no preview diagnostics → no topic lock,
+//    no clarification mode.
+test("ordinary runtime: no preview diagnostics → no topic lock, no clarification", () => {
+  assert.equal(shouldApplyProductSupportTopicLock(undefined), false);
+  assert.equal(shouldApplyProductSupportTopicLock(null), false);
+  assert.equal(isClarificationReason(undefined), false);
+});
+
+// 10. Returns & Refunds preview is unchanged — reason "injected", so the topic
+//     lock does NOT fire and the full document is still injected as before.
+test("Returns & Refunds preview: reason 'injected', no topic lock, full doc injected", () => {
+  const returnsContext = {
+    requested: true,
+    document_id: "doc-returns",
+    chunks: [
+      { id: "r1", content: "30 days return window.", metadata: { section_heading: "Return window", category: "returns", section_order: 0 } },
+      { id: "r2", content: "Refunds go to original payment method.", metadata: { section_heading: "Refund method", category: "returns", section_order: 1 } },
+    ],
+  };
+  const result = buildKnowledgeDocPreviewContext(returnsContext, {
+    latestCustomerMessage: "How long is the return window?",
+  });
+  assert.equal(result.diagnostics.reason, "injected");
+  assert.equal(shouldApplyProductSupportTopicLock(result.diagnostics.reason), false);
+  assert.equal(isClarificationReason(result.diagnostics.reason), false);
+  // Full document still injected (both sections), behavior unchanged.
+  assert.ok(result.blockText.includes("Return window"));
+  assert.ok(result.blockText.includes("Refund method"));
+});
+
+// Bonus: a selected Product Support section yields reason "product_support_selected"
+// → topic lock DOES fire (the path that gets the guardrails).
+test("selected Product Support section → topic lock fires", () => {
+  const result = buildKnowledgeDocPreviewContext(productSupportContext(), {
+    latestCustomerMessage: "My A-Spire Wireless will not connect to the AceZone app.",
+  });
+  assert.equal(result.diagnostics.reason, "product_support_selected");
+  assert.equal(shouldApplyProductSupportTopicLock(result.diagnostics.reason), true);
+  assert.equal(isClarificationReason(result.diagnostics.reason), false);
+});
