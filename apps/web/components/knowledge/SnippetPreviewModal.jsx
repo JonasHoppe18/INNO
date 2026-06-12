@@ -463,23 +463,27 @@ export function SnippetPreviewModal({ open, onOpenChange, snippetId, snippetTitl
                 <div
                   className={cn(
                     "flex items-center gap-2 border-b px-5 py-2 text-[11.5px]",
-                    result.snippet_was_retrieved
+                    result.preview_clarification
+                      ? "border-indigo-100 bg-indigo-50 text-indigo-700 dark:border-indigo-900/50 dark:bg-indigo-950/30 dark:text-indigo-400"
+                      : result.snippet_was_retrieved
                       ? "border-emerald-100 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-400"
                       : "border-amber-100 bg-amber-50 text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-400"
                   )}
                 >
-                  {result.snippet_was_retrieved ? (
+                  {result.preview_clarification || result.snippet_was_retrieved ? (
                     <CheckCircle2 className="h-3.5 w-3.5" />
                   ) : (
                     <AlertTriangle className="h-3.5 w-3.5" />
                   )}
                   <p>
-                    {result.snippet_was_retrieved
+                    {result.preview_clarification
+                      ? "No document section matched this issue, so the preview asked the customer a focused clarification question — the expected behaviour for an unclear message."
+                      : result.snippet_was_retrieved
                       ? isDocumentPreview
                         ? "Your draft document preview was used for this ticket. The drafts below show what changes when it's removed."
                         : "Your snippet was retrieved for this ticket. The drafts below show what changes when it's removed."
                       : isDocumentPreview
-                      ? "Your draft document preview was not used for this ticket. Try a return or refund question that matches the document sections."
+                      ? "Your draft document preview was not used for this ticket. Try a question that matches one of the document sections."
                       : "Your snippet was NOT retrieved for this ticket — try rephrasing the question to match the customer's wording, or add more relevant issue tags."}
                   </p>
                 </div>

@@ -12,11 +12,15 @@ export type KnowledgeDocPreviewSection = {
   category?: string;
   product_scope?: string;
   section_order?: number;
+  embedding?: number[];
 };
 
 export type KnowledgeDocPreviewQuery = {
   latestCustomerMessage?: string;
   conversationHistory?: string;
+  // Precomputed query embedding (Edge Function side, Product Support preview
+  // only). Optional — when absent the selector falls back to lexical-only.
+  queryEmbedding?: number[];
 };
 
 const PRODUCT_SUPPORT_CATEGORY = "product_support";
@@ -28,6 +32,8 @@ export type ProductSupportSectionSelectionDiagnostics = {
   selected_headings: string[];
   confidence: "high" | "medium" | "low";
   reason: string;
+  semantic_scores?: number[];
+  lexical_scores?: number[];
 };
 
 export type KnowledgeDocPreviewContextInput = {
@@ -40,6 +46,7 @@ export type KnowledgeDocPreviewContextInput = {
     id: string;
     content: string;
     metadata?: Record<string, unknown> | null;
+    embedding?: number[];
   }>;
 } | null | undefined;
 
@@ -80,6 +87,7 @@ function normalizeSections(
         section_order: typeof section.section_order === "number"
           ? section.section_order
           : undefined,
+        embedding: Array.isArray(section.embedding) ? section.embedding : undefined,
       }))
       .filter((section) => section.chunk_id && section.content);
   }
@@ -97,6 +105,7 @@ function normalizeSections(
           category: String(metadata.category || "").trim() || undefined,
           product_scope: String(metadata.product_scope || "").trim() || undefined,
           section_order: Number.isFinite(order) ? order : undefined,
+          embedding: Array.isArray(chunk.embedding) ? chunk.embedding : undefined,
         };
       })
       .filter((section) => section.chunk_id && section.content);
@@ -182,7 +191,7 @@ export function buildKnowledgeDocPreviewContext(
     // and let the writer ask one focused clarification question (preview only).
     if (!latestCustomerMessage) {
       return {
-        blockText: renderPreviewBlock(PRODUCT_SUPPORT_LOW_CONFIDENCE_INSTRUCTION),
+        blockText: PRODUCT_SUPPORT_LOW_CONFIDENCE_INSTRUCTION,
         diagnostics: {
           requested: true,
           document_id: documentId,
@@ -210,11 +219,13 @@ export function buildKnowledgeDocPreviewContext(
       section_heading: section.section_heading,
       content: section.content,
       section_order: section.section_order,
+      embedding: section.embedding,
     }));
     const selection = selectProductSupportSections({
       latest_customer_message: latestCustomerMessage,
       conversation_history: query?.conversationHistory,
       sections: selectorSections,
+      query_embedding: query?.queryEmbedding,
     });
 
     const selectionDiagnostics: ProductSupportSectionSelectionDiagnostics = {
@@ -224,13 +235,15 @@ export function buildKnowledgeDocPreviewContext(
       selected_headings: selection.selected_sections.map((s) => s.section_heading),
       confidence: selection.confidence,
       reason: selection.reason,
+      ...(selection.semantic_scores ? { semantic_scores: selection.semantic_scores } : {}),
+      ...(selection.lexical_scores ? { lexical_scores: selection.lexical_scores } : {}),
     };
 
     // Low confidence / ambiguous → do not inject any guide; instruct the writer
     // (preview only) to ask one focused clarification question.
     if (selection.confidence === "low" || selection.selected_sections.length === 0) {
       return {
-        blockText: renderPreviewBlock(PRODUCT_SUPPORT_LOW_CONFIDENCE_INSTRUCTION),
+        blockText: PRODUCT_SUPPORT_LOW_CONFIDENCE_INSTRUCTION,
         diagnostics: {
           requested: true,
           document_id: documentId,

@@ -9,6 +9,7 @@ import {
   type RetrievalCoherenceFlags,
 } from "./retriever-coherence.ts";
 import { type MatchCandidate, matchSnippets } from "./snippet-matcher.ts";
+import { embedText } from "../../_shared/embed-text.ts";
 
 // Snippet-matcher config. Thresholds are starting values calibrated against the
 // retrieval-eval (E); adjust only against measured aggregates, never single cases.
@@ -116,22 +117,6 @@ export interface RetrieverInput {
   coherenceFlags?: Partial<RetrievalCoherenceFlags>;
 }
 
-async function embedText(text: string): Promise<number[]> {
-  const resp = await fetch("https://api.openai.com/v1/embeddings", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${Deno.env.get("OPENAI_API_KEY")}`,
-    },
-    body: JSON.stringify({
-      model: "text-embedding-3-small",
-      input: text.slice(0, 8000),
-    }),
-  });
-  if (!resp.ok) throw new Error(`Embedding error: ${resp.status}`);
-  const data = await resp.json();
-  return data.data[0].embedding;
-}
 
 function sanitiseBm25Query(query: string): string {
   return query

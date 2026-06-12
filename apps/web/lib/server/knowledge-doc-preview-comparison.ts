@@ -45,9 +45,22 @@ export function buildKnowledgeDocumentPreviewRunBodies(options: {
 }
 
 export function wasPreviewDocumentInjected(run: DraftRunLike): boolean {
-  return run.preview_document_context?.injected === true &&
-    Array.isArray(run.preview_document_context.preview_chunk_ids) &&
-    run.preview_document_context.preview_chunk_ids.length > 0;
+  const ctx = run.preview_document_context;
+  if (ctx?.injected !== true) return false;
+  // Sections were injected.
+  if (Array.isArray(ctx.preview_chunk_ids) && ctx.preview_chunk_ids.length > 0) {
+    return true;
+  }
+  // Product Support low-confidence: no section matched, but the preview WAS
+  // used — it directed the writer to ask a clarification question.
+  return ctx.reason === "product_support_low_confidence";
+}
+
+// Distinguishes the "no section matched → asked a clarification question"
+// outcome from a normal section injection, so the UI can explain it correctly
+// instead of claiming the preview was unused.
+export function wasPreviewDocumentClarification(run: DraftRunLike): boolean {
+  return run.preview_document_context?.reason === "product_support_low_confidence";
 }
 
 export function wasLegacySnippetRetrieved(options: {
