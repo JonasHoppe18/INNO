@@ -435,10 +435,11 @@ export function buildRefundStatusDirective(
       if (opts?.customerClaimsReturned) {
         return `${header}
 - Kunden oplyser selv at varen er returneret — anerkend dette som en KUNDE-OPLYST oplysning, ikke som en verificeret kendsgerning.
-- Bekræft at der endnu IKKE er udstedt en refundering.
-- Du kan IKKE verificere ud fra de aktuelle oplysninger om returpakken er modtaget eller behandlet internt — sig dette tydeligt; antag IKKE at returneringen er modtaget eller behandlet.
-- Lov IKKE at vi giver besked/underretter automatisk, og lov ikke hvornår pengene ankommer.
-- Bed kunden sende et retur-trackingnummer eller tracking-link, så vi kan undersøge status nærmere.
+- Bekræft KUN at der endnu IKKE er udstedt en refundering.
+- Sig tydeligt at du lige nu IKKE kan se om returpakken er ankommet/modtaget og behandlet internt — antag IKKE at returneringen er modtaget eller behandlet.
+- Bed kunden sende et retur-trackingnummer eller tracking-link, så status kan undersøges nærmere.
+- FORBUDTE formuleringer (brug ingen af disse eller lignende — beskriv IKKE en automatisk refunderings-workflow): "når vi modtager og behandler din returnering", "så snart vi har modtaget returneringen", "vi igangsætter/starter refunderingen", "refunderingen igangsættes/starter automatisk", "du vil blive underrettet/får besked", "vi holder øje med forsendelsen/pakken".
+- Lov IKKE hvornår pengene ankommer og lov ikke nogen notifikation.
 - Nævn IKKE ansvar eller omkostninger for returforsendelse, medmindre kunden selv spørger om forsendelse eller omkostninger.`;
       }
       return `${header}

@@ -50,21 +50,54 @@ Deno.test("no_refund + customer claims returned → safe acknowledgement directi
   // 4. acknowledge the customer's statement
   assertStringIncludes(d, "kunden oplyser"); // acknowledge customer-stated return
   // 5. do not claim received
-  assert(/kan ikke verificere[^.]*modtaget/.test(d), "must say receipt cannot be verified");
-  assert(!/returneringen er modtaget(?!\s*kan)/.test(d.replace(/ikke verificere[^.]*modtaget/g, "")));
+  assert(/ikke kan (se|verificere)[^.]*(modtaget|ankommet)/.test(d), "must say receipt cannot be verified");
   // 6. do not claim processed
   assertStringIncludes(d, "behandlet");
   // 7. do not promise notification
-  assert(/lov ikke[^.]*(besked|underret)/.test(d), "must forbid promising notification");
+  assert(/lov ikke[^.]*(besked|underret|notifikation)/.test(d), "must forbid promising notification");
   // 8. do not promise timing (no day-count, no arrival promise)
   assert(!/\d+\s*(?:-\s*\d+\s*)?(?:hverdage|dage|days)/.test(d), "must not hardcode timing");
   assertStringIncludes(d, "hvornår pengene");
   // 9. ask for return tracking number or link
   assertStringIncludes(d, "tracking");
   assert(/nummer|link/.test(d), "must ask for tracking number or link");
+  // review status further
+  assertStringIncludes(d, "undersøges nærmere");
   // 10. must not assert return-shipping cost responsibility unless asked
   assert(!/dit ansvar|din regning|kundens ansvar/.test(d), "must not assert shipping responsibility");
   assert(/medmindre kunden/.test(d), "must gate any shipping-cost mention behind the customer asking");
+  // NEW: explicitly forbid the automatic refund-workflow phrasing
+  assertStringIncludes(d, "forbudte formuleringer");
+  assertStringIncludes(d, "automatisk refunderings-workflow");
+  // the affirmative workflow snippets appear ONLY inside the forbidden list,
+  // never as an instruction to use them — assert the forbidden framing is present
+  assert(/når vi modtager og behandler/.test(d), "names the forbidden 'once we receive and process' phrasing");
+  assert(/vi igangsætter|igangsættes/.test(d), "names the forbidden 'we will initiate the refund' phrasing");
+  // and there is no standalone affirmative promise outside the forbidden line
+  const withoutForbiddenLine = d.split("\n").filter((l) => !l.includes("forbudte formuleringer")).join("\n");
+  assert(!/du vil blive underrettet/.test(withoutForbiddenLine), "no standalone notification promise");
+});
+
+// 2. branch forbids the automatic refund-workflow wording (explicit list)
+Deno.test("returned-claim branch forbids automatic refund-workflow wording", () => {
+  const d = buildRefundStatusDirective(
+    mk("no_refund_issued", { total_refunded: "0.00", refund_count: 0 }),
+    { customerClaimsReturned: true },
+  ).toLowerCase();
+  for (const phrase of [
+    "når vi modtager og behandler",
+    "vi igangsætter",
+    "automatisk",
+    "underrettet",
+    "holder øje med",
+  ]) {
+    assertStringIncludes(d, phrase);
+  }
+  // all of them must sit on the FORBUDTE line (forbidden), not as guidance
+  const forbiddenLine = d.split("\n").find((l) => l.includes("forbudte formuleringer")) ?? "";
+  for (const phrase of ["når vi modtager og behandler", "vi igangsætter", "underrettet", "holder øje med"]) {
+    assertStringIncludes(forbiddenLine, phrase);
+  }
 });
 
 // 10b. customerClaimsReturned detection
