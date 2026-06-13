@@ -67,3 +67,64 @@ Deno.test("multiple outbound parcels → directive notes multiple shipments", ()
 Deno.test("empty facts → empty directive", () => {
   assert(buildTrackingDirective([]) === "");
 });
+
+// --- Customer-provided return tracking, carrier status NOT verified ----------
+
+const FORBIDDEN_EN = [
+  "refund will be issued",
+  "refund will be initiated",
+  "once processed",
+  "once received",
+  "once we receive",
+  "keep an eye",
+  "monitor",
+  "you will be notified",
+];
+
+// 1. unsupported / unknown customer-provided return tracking → no unsafe wording
+Deno.test("return customer_provided/unknown directive contains no unsafe workflow wording", () => {
+  const d = buildTrackingDirective([f({ direction: "return", verification: "customer_provided", state: "unknown", carrier: "USPS" })]).toLowerCase();
+  for (const phrase of FORBIDDEN_EN) assert(!d.includes(phrase), `must not contain "${phrase}"`);
+  // no refund-timing/notification promise
+  assert(!/\d+\s*(?:-\s*\d+\s*)?(?:dage|days|hverdage)/.test(d));
+});
+
+// 2. it DOES include the required safe content (+ carrier name when known)
+Deno.test("return customer_provided/unknown directive includes required safe content", () => {
+  const d = buildTrackingDirective([f({ direction: "return", verification: "customer_provided", state: "unknown", carrier: "USPS" })]).toLowerCase();
+  assertStringIncludes(d, "modtaget retur-tracking-nummeret"); // acknowledged
+  assertStringIncludes(d, "usps-trackingstatus"); // names the carrier
+  assertStringIncludes(d, "ikke kan verificere"); // cannot verify carrier status
+  assert(/ankommet|modtaget/.test(d)); // cannot confirm arrived/received
+  assertStringIncludes(d, "behandlet internt"); // cannot confirm internally processed
+  assertStringIncludes(d, "refunderingen endnu ikke er udstedt"); // no refund issued
+  assertStringIncludes(d, "undersøge returstatus nærmere"); // can be reviewed further
+});
+
+// unknown carrier (no carrier name) → generic carrier wording
+Deno.test("return unverified without carrier name → generic carrier wording", () => {
+  const d = buildTrackingDirective([f({ direction: "return", verification: "customer_provided", state: "unknown", carrier: undefined })]).toLowerCase();
+  assertStringIncludes(d, "carrier-trackingstatus");
+});
+
+// 3. lookup_error return follows the SAME safety rules
+Deno.test("return lookup_error directive follows the same safe structure", () => {
+  const d = buildTrackingDirective([f({ direction: "return", verification: "customer_provided", state: "lookup_error", carrier: "USPS" })]).toLowerCase();
+  for (const phrase of FORBIDDEN_EN) assert(!d.includes(phrase), `lookup_error must not contain "${phrase}"`);
+  assertStringIncludes(d, "ikke kan verificere");
+  assertStringIncludes(d, "undersøge returstatus nærmere");
+});
+
+// 4 & 5. outbound GLS/PostNord delivered directive unchanged + free of return wording
+Deno.test("outbound delivered directive unchanged and carries no return-workflow wording", () => {
+  const gls = buildTrackingDirective([f({ direction: "outbound", verification: "carrier_verified", state: "delivered", carrier: "GLS" })]).toLowerCase();
+  const pn = buildTrackingDirective([f({ direction: "outbound", verification: "carrier_verified", state: "in_transit", carrier: "PostNord" })]).toLowerCase();
+  // stable existing outbound semantics
+  assert(/tracking[^.]*leveret|leveret[^.]*ifølge/.test(gls));
+  assert(/på vej/.test(pn));
+  // outbound must not carry the return-specific refund/processing wording
+  for (const d of [gls, pn]) {
+    assert(!d.includes("retur-tracking-nummeret"));
+    assert(!d.includes("refunderingen endnu ikke er udstedt"));
+  }
+});

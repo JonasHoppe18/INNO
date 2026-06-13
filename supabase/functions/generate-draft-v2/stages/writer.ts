@@ -468,12 +468,20 @@ function trackingStateLine(f: TrackingFact): string {
 }
 
 function returnStateLine(f: TrackingFact): string {
+  // Both customer_provided/unknown and lookup_error are UNVERIFIED → identical
+  // strict safe wording. Provide an explicit approved structure so the model
+  // cannot fall back to generic return-workflow language.
   if (f.verification !== "carrier_verified") {
-    if (f.state === "lookup_error") {
-      return "- Retur-tracking kan IKKE verificeres lige nu. Anerkend nummeret, men sig at status ikke kan bekræftes; sig IKKE på vej/leveret/modtaget.";
-    }
-    // customer_provided / unknown
-    return "- Kunde-oplyst retur-tracking (IKKE verificeret). Anerkend nummeret, men påstå IKKE at returneringen er på vej, leveret eller modtaget. Sig at carrier-status ikke kan verificeres lige nu.";
+    const carrierRef = f.carrier
+      ? `${f.carrier}-trackingstatus`
+      : "carrier-trackingstatus";
+    return [
+      "- Kunde-oplyst retur-tracking (IKKE carrier-verificeret).",
+      `  Anerkend at vi har modtaget retur-tracking-nummeret. Sig at vi lige nu IKKE kan verificere ${carrierRef} i vores system, og at vi derfor IKKE kan bekræfte om returpakken er ankommet/modtaget eller er behandlet internt.`,
+      "  Sig at tracking-nummeret kan bruges til at undersøge returstatus nærmere.",
+      "  Hvis verificerede refund-fakta viser at ingen refundering er udstedt: sig tydeligt at refunderingen endnu IKKE er udstedt.",
+      "  FORBUDT (brug aldrig disse eller lignende, hverken på dansk eller engelsk): love refundering efter at returen er modtaget/behandlet; sige at refunderingen udstedes/igangsættes når pakken modtages; beskrive en automatisk refunderings-proces; love en refunderingsdato/tid; love at kunden får besked; bede kunden om selv at følge trackingen; sige at en carrier-bekræftet ankomst betyder intern behandling.",
+    ].join("\n");
   }
   switch (f.state) {
     case "delivered":
