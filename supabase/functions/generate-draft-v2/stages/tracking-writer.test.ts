@@ -83,8 +83,12 @@ Deno.test("delivered-not-received: does not assert personal receipt", () => {
 });
 
 // 4. asks customer to confirm delivery address
-Deno.test("delivered-not-received: asks to confirm delivery address", () => {
-  assertStringIncludes(dnr(), "leveringsadressen");
+Deno.test("delivered-not-received: requires explicit delivery address confirmation", () => {
+  const d = dnr();
+  assertStringIncludes(d, "kritisk");
+  assertStringIncludes(d, "eksplicit spørgsmål");
+  assert(/bekræft(e|er)?[^.]*leveringsadressen|leveringsadressen[^.]*korrekt/.test(d));
+  assertStringIncludes(d, "dette må ikke udelades");
 });
 
 // 5. suggests checking neighbours / household / reception / safe place / parcel shop
@@ -100,6 +104,19 @@ Deno.test("delivered-not-received: suggests nearby places to check", () => {
 // 6. says case can be reviewed/investigated further
 Deno.test("delivered-not-received: says case can be investigated further", () => {
   assert(/undersøge[^.]*nærmere|undersøge forsendelsen/.test(dnr()));
+});
+
+// 6b. concrete next-step closing, not generic support sign-off
+Deno.test("delivered-not-received: requires concrete next-step closing and discourages generic endings", () => {
+  const d = dnr();
+  assertStringIncludes(d, "konkret næste skridt");
+  assertStringIncludes(d, "når kunden har bekræftet adressen");
+  assertStringIncludes(d, "undersøge forsendelsen nærmere");
+  assert(/fragtfirmaet|carrieren/.test(d));
+  assertStringIncludes(d, "generiske afslutninger");
+  assertStringIncludes(d, "i look forward to hearing from you");
+  assertStringIncludes(d, "feel free to reach out");
+  assertStringIncludes(d, "let me know");
 });
 
 // 7-11. no refund / replacement / reshipment / compensation / unsupported claim promises

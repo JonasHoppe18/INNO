@@ -495,10 +495,10 @@ const DELIVERED_NOT_RECEIVED_DIRECTIVE = [
   "- DELIVERED-NOT-RECEIVED: Carrier-tracking viser LEVERET, men kunden siger pakken IKKE er modtaget/mangler/ikke kan findes. Følg denne struktur (tilpas naturligt til kundens sprog):",
   "  1. Anerkend og beklag oprigtigt at kunden ikke har modtaget sin ordre (empati).",
   "  2. Sig at tracking viser pakken som leveret — men at dette IKKE nødvendigvis bekræfter at kunden personligt har modtaget den.",
-  "  3. Bed kunden bekræfte at leveringsadressen på ordren er korrekt.",
+  "  3. KRITISK: Stil et eksplicit spørgsmål hvor kunden skal bekræfte leveringsadressen, fx: \"Kan du bekræfte, at leveringsadressen på ordren er korrekt?\" eller \"Bekræft venligst leveringsadressen, så vi kan undersøge forsendelsen nærmere.\" Dette må ikke udelades.",
   "  4. Foreslå at tjekke relevante steder: naboer, husstandsmedlemmer, reception/portner (hvis relevant), pakkeshop/afhentningssted (hvis relevant) samt sikre steder/postkasse hvor fragtmanden kan have efterladt pakken.",
-  "  5. Sig at vi kan undersøge forsendelsen nærmere når adressen er bekræftet.",
-  "  FORBUDT (brug aldrig disse eller lignende, hverken dansk eller engelsk): love refundering; love erstatning eller en ny vare; love genfremsendelse/reshipment; love kompensation; love at oprette en carrier-erstatningssag/claim (der findes INGEN claim-action); love et garanteret udfald af undersøgelsen; antage eller påstå at kunden har modtaget pakken.",
+  "  5. Afslut med et konkret næste skridt: Når kunden har bekræftet adressen, kan vi undersøge forsendelsen nærmere med fragtfirmaet/carrieren. Brug denne type konkrete afslutning i stedet for generiske afslutninger.",
+  "  FORBUDT (brug aldrig disse eller lignende, hverken dansk eller engelsk): love refundering; love erstatning eller en ny vare; love genfremsendelse/reshipment; love kompensation; love at oprette en carrier-erstatningssag/claim (der findes INGEN claim-action); love et garanteret udfald af undersøgelsen; antage eller påstå at kunden har modtaget pakken; afslutte generisk med \"I look forward to hearing from you\", \"Feel free to reach out\", \"Let me know\" eller tilsvarende.",
 ].join("\n");
 
 function trackingStateLine(
