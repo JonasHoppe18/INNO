@@ -2,7 +2,7 @@
 import { Plan } from "./planner.ts";
 import { CaseState } from "./case-state-updater.ts";
 import { RetrieverResult } from "./retriever.ts";
-import { FactResolverResult } from "./fact-resolver.ts";
+import { FactResolverResult, type OrderMatch } from "./fact-resolver.ts";
 import { ActionProposal } from "./action-decision.ts";
 import { resolveReplyLanguage } from "./language.ts";
 import {
@@ -395,6 +395,53 @@ export function normalizeOpeningGreeting(
 
 function factValue(facts: FactResolverResult, label: string): string {
   return facts.facts.find((f) => f.label === label)?.value ?? "";
+}
+
+// Concise authority hierarchy: verified live commerce/tracking facts outrank
+// Knowledge Docs and legacy knowledge, and missing live facts must never be
+// guessed. Rendered into every writer prompt.
+export function buildLiveFactAuthorityBlock(): string {
+  return `# Kilde-autoritet (rangordning — følg altid)
+1. Verificerede live commerce-fakta (ordrestatus, betaling, fulfillment, ordredato, varelinjer) er autoritative for AKTUELLE ordreforhold.
+2. Verificerede live tracking-fakta er autoritative for forsendelse og levering.
+3. Knowledge Docs giver stabil workflow-vejledning (processer, troubleshooting, politik) — ikke aktuelle ordredata.
+4. Legacy/øvrig viden er kun sekundær fallback.
+5. Lad ALDRIG forældet viden (inkl. cachede shop_products pris/lager) overstyre verificerede live-fakta ved konflikt — live-fakta vinder.
+6. GÆT ALDRIG ordre-, tracking-, lager-, refunderings-, annullerings- eller fulfillment-status når verificerede live-fakta mangler — spørg eller brug sikker formulering i stedet.`;
+}
+
+// Structured, clearly-labeled order-match state directive for the writer.
+// Mirrors the OrderMatch state machine in fact-resolver so the writer can act
+// safely without re-parsing prose. Returns "" when no match is present.
+export function buildOrderMatchDirective(match?: OrderMatch): string {
+  if (!match) return "";
+  const header = `# Ordre-match (struktureret) — state: ${match.state}`;
+  switch (match.state) {
+    case "exact_order_number":
+      return `${header}
+- Ordren er verificeret ud fra et oplyst ordrenummer. Du må svare direkte med de verificerede fakta. Foreslåede ordre-actions går altid via almindelig godkendelse — udfør aldrig selv.`;
+    case "single_email_match":
+      return `${header}
+- Ordren er fundet via kundens EMAIL (ikke et oplyst ordrenummer). Verificerede læse-fakta (status, fulfillment, tracking, dato) er sikre at oplyse.
+- Foreslå/lov IKKE refundering, annullering, adresseændring, ombytning eller genfremsendelse, før kunden har bekræftet den rigtige ordre (fx ordrenummer).`;
+    case "multiple_email_matches":
+      return `${header}
+- Der blev fundet ${match.candidate_count} ordrer på kundens email. Vælg ALDRIG en ordre selv og gengiv INGEN ordre-detaljer.
+- Bed kunden oplyse/bekræfte det relevante ordrenummer (#xxxx). Ingen handlinger.`;
+    case "order_not_found":
+      return `${header}
+- Opslaget lykkedes, men ingen ordre matchede. Sig IKKE at kunden ingen ordre har.
+- Bed kunden bekræfte ordrenummeret eller oplyse manglende detaljer. Ingen handlinger.`;
+    case "integration_error":
+      return `${header}
+- Vi kunne ikke verificere ordren pga. en teknisk fejl/timeout — dette er IKKE bevis for at ordren ikke findes.
+- Sig ALDRIG at ordren ikke kan findes. Brug sikker formulering: "Jeg kan desværre ikke verificere ordredetaljerne i øjeblikket" og at vi vender tilbage/prøver igen. Ingen handlinger.`;
+    case "missing_identifiers":
+      return `${header}
+- Vi har hverken ordrenummer eller email at slå op på. Bed FØRST om ordrenummer (#xxxx); hvis det ikke haves, bed om den email der blev brugt ved købet. Ingen handlinger.`;
+    default:
+      return header;
+  }
 }
 
 function unique(items: string[]): string[] {
@@ -835,6 +882,10 @@ Support replied: "${ex.agent_reply.slice(0, 500)}"`;
         )
         .join("\n\n")
     : "";
+
+  // --- Kilde-autoritet + ordre-match (live-fakta vinder, ingen gætteri) ---
+  const authorityBlock = buildLiveFactAuthorityBlock();
+  const orderMatchBlock = buildOrderMatchDirective(facts.match);
 
   // --- Verificerede fakta (deterministiske — brug disse frem for viden) ---
   const factsBlock = facts.facts.length > 0
@@ -1285,6 +1336,8 @@ ${stageDirectives[resolutionStage] ?? stageDirectives.info_only}`;
     // before KB content — critical for follow-up messages and multi-turn threads.
     historyBlock,
     suppress(policyBlock),
+    authorityBlock,
+    orderMatchBlock,
     factsBlock,
     salutationBlock,
     variantBlock,

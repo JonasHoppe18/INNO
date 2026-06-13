@@ -14,9 +14,173 @@ export interface ResolvedFact {
   value: string;
 }
 
+// Order-match confidence — additive, read-only. Lets the writer and the action
+// layer reason about HOW the order was identified without re-parsing prose.
+export type OrderMatchState =
+  | "exact_order_number" // getOrderByName returned a confirmed order
+  | "single_email_match" // no #, email fallback returned exactly one order
+  | "multiple_email_matches" // no #, email fallback returned >1 (never auto-pick)
+  | "order_not_found" // lookup SUCCEEDED, zero matches
+  | "integration_error" // a lookup threw / timed out / creds missing / decrypt failed
+  | "missing_identifiers"; // no order number AND no usable email to look up
+
+export interface OrderMatch {
+  state: OrderMatchState;
+  candidate_count: number;
+  had_order_number: boolean;
+  had_email: boolean;
+  // Set ONLY for exact_order_number / single_email_match; null otherwise.
+  // Never the full candidate list — avoids exposing unrelated orders.
+  selected_order_name: string | null;
+}
+
 export interface FactResolverResult {
   facts: ResolvedFact[];
   order?: Order | null;
+  // Always populated by runFactResolver. Optional in the type so legacy callers
+  // / fixtures that omit it still typecheck; consumers default to a safe state.
+  match?: OrderMatch;
+}
+
+// Minimal provider surface the order-match resolver needs — a subset of
+// CommerceProvider so it stays unit-testable with a fake (no network).
+export interface OrderLookupProvider {
+  getOrderByName(name: string): Promise<Order | null>;
+  listOrdersByEmail(email: string, limit?: number): Promise<Order[]>;
+}
+
+export interface OrderResolution {
+  order: Order | null;
+  match: OrderMatch;
+}
+
+// Pure orchestration of the order-match state machine. Safety rules:
+//  - An explicit order number takes precedence and NEVER silently falls back to
+//    email (a wrong-order email match would be unsafe).
+//  - A thrown/failed lookup yields integration_error, never order_not_found.
+//  - Multiple email matches are never auto-selected.
+export async function resolveOrderMatch(opts: {
+  provider: OrderLookupProvider;
+  orderNumbers: string[];
+  customerEmail: string;
+  emailMatchLimit?: number;
+}): Promise<OrderResolution> {
+  const orderNumbers = Array.isArray(opts.orderNumbers) ? opts.orderNumbers : [];
+  const customerEmail = String(opts.customerEmail || "").trim();
+  const hadOrderNumber = orderNumbers.length > 0;
+  const hadEmail = customerEmail.length > 0;
+
+  const base = {
+    had_order_number: hadOrderNumber,
+    had_email: hadEmail,
+  };
+
+  if (!hadOrderNumber && !hadEmail) {
+    return {
+      order: null,
+      match: {
+        ...base,
+        state: "missing_identifiers",
+        candidate_count: 0,
+        selected_order_name: null,
+      },
+    };
+  }
+
+  // 1. Explicit order number takes precedence — no email fallback on failure.
+  if (hadOrderNumber) {
+    let threw = false;
+    for (const raw of orderNumbers) {
+      try {
+        const found = await opts.provider.getOrderByName(raw);
+        if (found) {
+          return {
+            order: found,
+            match: {
+              ...base,
+              state: "exact_order_number",
+              candidate_count: 1,
+              selected_order_name: found.name,
+            },
+          };
+        }
+      } catch (_err) {
+        threw = true;
+      }
+    }
+    return {
+      order: null,
+      match: {
+        ...base,
+        state: threw ? "integration_error" : "order_not_found",
+        candidate_count: 0,
+        selected_order_name: null,
+      },
+    };
+  }
+
+  // 2. Email fallback — only when no explicit order number was provided.
+  try {
+    const orders = await opts.provider.listOrdersByEmail(
+      customerEmail,
+      opts.emailMatchLimit ?? 5,
+    );
+    if (!Array.isArray(orders) || orders.length === 0) {
+      return {
+        order: null,
+        match: {
+          ...base,
+          state: "order_not_found",
+          candidate_count: 0,
+          selected_order_name: null,
+        },
+      };
+    }
+    if (orders.length === 1) {
+      return {
+        order: orders[0],
+        match: {
+          ...base,
+          state: "single_email_match",
+          candidate_count: 1,
+          selected_order_name: orders[0].name,
+        },
+      };
+    }
+    // >1 — never silently select; expose only the count.
+    return {
+      order: null,
+      match: {
+        ...base,
+        state: "multiple_email_matches",
+        candidate_count: orders.length,
+        selected_order_name: null,
+      },
+    };
+  } catch (_err) {
+    return {
+      order: null,
+      match: {
+        ...base,
+        state: "integration_error",
+        candidate_count: 0,
+        selected_order_name: null,
+      },
+    };
+  }
+}
+
+function integrationErrorMatch(
+  hadOrderNumber: boolean,
+  hadEmail: boolean,
+): OrderMatch {
+  return {
+    state: "integration_error",
+    candidate_count: 0,
+    had_order_number: hadOrderNumber,
+    had_email: hadEmail,
+    selected_order_name: null,
+  };
 }
 
 export interface FactResolverInput {
@@ -172,7 +336,13 @@ export async function runFactResolver(
     console.log(
       `[fact-resolver] Using customer_context order: ${contextOrder.name}`,
     );
-    return buildFactsFromOrder(contextOrder, facts, plan);
+    return buildFactsFromOrder(contextOrder, facts, plan, {
+      state: "exact_order_number",
+      candidate_count: 1,
+      had_order_number: caseState.entities.order_numbers.length > 0,
+      had_email: Boolean(caseState.entities.customer_email),
+      selected_order_name: contextOrder.name,
+    });
   }
 
   const s = shop as Record<string, unknown>;
@@ -180,11 +350,26 @@ export async function runFactResolver(
   const shopDomain = (s.shop_domain as string) ?? null;
   const encryptedToken = (s.access_token_encrypted as string) ?? null;
 
+  const thread0 = thread as Record<string, unknown>;
+  const hadOrderNumberEarly = caseState.entities.order_numbers.length > 0;
+  const hadEmailEarly = Boolean(
+    caseState.entities.customer_email ||
+      (thread0.customer_email as string) ||
+      (thread0.from_email as string),
+  );
+
   if (!shopDomain || !encryptedToken) {
+    // We cannot verify against Shopify → integration_error (NOT "not found"),
+    // so the writer uses safe "unable to verify right now" wording.
     console.warn(
-      "[fact-resolver] Missing Shopify credentials (shop_domain or access_token_encrypted) — skipping order lookup",
+      "[fact-resolver] Missing Shopify credentials (shop_domain or access_token_encrypted) — cannot verify order",
     );
-    return { facts, order: null };
+    facts.push(integrationErrorFact());
+    return {
+      facts,
+      order: null,
+      match: integrationErrorMatch(hadOrderNumberEarly, hadEmailEarly),
+    };
   }
 
   let shopifyToken: string;
@@ -192,7 +377,12 @@ export async function runFactResolver(
     shopifyToken = await decryptShopifyToken(encryptedToken);
   } catch (err) {
     console.warn("[fact-resolver] Failed to decrypt Shopify token:", err);
-    return { facts, order: null };
+    facts.push(integrationErrorFact());
+    return {
+      facts,
+      order: null,
+      match: integrationErrorMatch(hadOrderNumberEarly, hadEmailEarly),
+    };
   }
 
   const provider = createCommerceProvider({
@@ -218,94 +408,97 @@ export async function runFactResolver(
     }`,
   );
 
-  let order: Order | null = null;
+  // Order-match state machine — explicit order number takes precedence and
+  // never silently falls back to email; failures become integration_error.
+  const { order, match } = await resolveOrderMatch({
+    provider,
+    orderNumbers,
+    customerEmail,
+  });
 
-  // 1. Direkte opslag på ordrenummer hvis kunden har nævnt det
-  if (orderNumbers.length > 0) {
-    for (const raw of orderNumbers) {
-      try {
-        console.log(`[fact-resolver] Looking up order by name: ${raw}`);
-        const found = await provider.getOrderByName(raw);
-        if (found) {
-          order = found;
-          console.log(
-            `[fact-resolver] Found order: ${order.name} fulfillment=${order.fulfillment_status}`,
-          );
-          break;
-        } else {
-          console.warn(`[fact-resolver] Order not found by name: ${raw}`);
-        }
-      } catch (err) {
-        console.warn("[fact-resolver] Order name lookup failed:", err);
-      }
-    }
-  }
+  console.log(
+    `[fact-resolver] order_match=${match.state} order=${order?.name ?? "none"} candidates=${match.candidate_count}`,
+  );
 
-  // 2. Fallback: hent seneste ordre på kundens email
-  if (!order && customerEmail) {
-    try {
-      console.log(
-        `[fact-resolver] Falling back to email lookup: ${customerEmail}`,
-      );
-      const orders = await provider.listOrdersByEmail(customerEmail, 5);
-      if (orders.length > 0) {
-        // For tracking/shipping intent: prefer orders that are actually fulfilled (have tracking)
-        // rather than blindly taking the newest order which might be unfulfilled
-        const isTrackingIntent = plan.primary_intent === "tracking" ||
-          plan.required_facts.includes("tracking");
-        if (isTrackingIntent && orders.length > 1) {
-          const fulfilledOrder = orders.find(
-            (o) =>
-              o.fulfillment_status === "fulfilled" ||
-              o.fulfillment_status === "partial",
-          );
-          order = fulfilledOrder ?? orders[0];
-        } else {
-          order = orders[0];
-        }
-        console.log(
-          `[fact-resolver] Found order by email: ${order.name} (fulfillment=${order.fulfillment_status})`,
-        );
-      }
-    } catch (err) {
-      console.warn("[fact-resolver] Order lookup by email failed:", err);
-    }
-  }
-
-  if (!order) {
-    // Emit an EXPLICIT not-found fact instead of empty facts, so the writer's
-    // "unverified order" / "ask, don't guess" rules fire on a positive signal
-    // rather than on the mere absence of an "Ordre fundet" fact.
-    if (orderNumbers.length > 0) {
-      console.warn(
-        `[fact-resolver] Order(s) ${JSON.stringify(orderNumbers)} not found — emitting explicit not-found fact`,
-      );
+  if (order) {
+    // exact_order_number or single_email_match → safe verified read facts.
+    if (match.state === "single_email_match") {
       facts.push({
-        label: "Ordre IKKE fundet",
+        label: "Ordre-match (email-fallback)",
         value:
-          `Ordrenummer ${orderNumbers.join(", ")} kunne IKKE findes i vores system. ` +
-          `Bekræft aldrig ordren som eksisterende, og udfør/lov ingen handlinger på den. ` +
-          `Forklar venligt at vi ikke kan finde et ordrenummer i det format, og spørg hvor produktet er købt (vores website eller en forhandler/platform) — antag ikke website.`,
-      });
-    } else {
-      console.warn("[fact-resolver] No order found (no order number given) — emitting explicit not-found fact");
-      facts.push({
-        label: "Ingen ordre fundet",
-        value:
-          `Vi kunne ikke finde en ordre på kundens oplysninger. ` +
-          `Bed om ordrenummer (#xxxx), og — ved garanti/defekt/retur — spørg hvor produktet er købt, før du bekræfter noget eller lover en handling.`,
+          `Ordren er fundet ud fra kundens email (IKKE et oplyst ordrenummer). ` +
+          `Verificerede ordre-/leverings-/tracking-fakta er sikre at oplyse. ` +
+          `Foreslå/lov dog ALDRIG refundering, annullering, adresseændring, ombytning eller genfremsendelse, før kunden har bekræftet at det er den rigtige ordre (fx ved ordrenummer).`,
       });
     }
-    return { facts, order: null };
+    return buildFactsFromOrder(order, facts, plan, match);
   }
 
-  return buildFactsFromOrder(order, facts, plan);
+  // No verified order — emit an explicit, state-specific instruction fact so the
+  // writer asks/clarifies on a positive signal instead of guessing.
+  switch (match.state) {
+    case "multiple_email_matches":
+      // Expose ONLY a safe count — never line items, addresses or per-order details.
+      facts.push({
+        label: "Flere ordrer fundet",
+        value:
+          `Vi fandt ${match.candidate_count} ordrer på kundens email. ` +
+          `Vælg ALDRIG en ordre på må og få og gengiv ingen ordre-detaljer. ` +
+          `Bed kunden bekræfte det relevante ordrenummer (#xxxx), før du oplyser status eller foreslår handlinger.`,
+      });
+      break;
+    case "integration_error":
+      facts.push(integrationErrorFact());
+      break;
+    case "missing_identifiers":
+      facts.push({
+        label: "Ingen identifikatorer",
+        value:
+          `Vi har hverken ordrenummer eller email at slå op på. ` +
+          `Bed FØRST om ordrenummer (#xxxx); hvis det ikke haves, bed om den email der blev brugt ved købet. ` +
+          `Bekræft intet og lov ingen handling, før en ordre er verificeret.`,
+      });
+      break;
+    case "order_not_found":
+    default:
+      if (orderNumbers.length > 0) {
+        facts.push({
+          label: "Ordre IKKE fundet",
+          value:
+            `Ordrenummer ${orderNumbers.join(", ")} kunne IKKE findes i vores system. ` +
+            `Bekræft aldrig ordren som eksisterende, og udfør/lov ingen handlinger på den. ` +
+            `Forklar venligt at vi ikke kan finde et ordrenummer i det format, og spørg hvor produktet er købt (vores website eller en forhandler/platform) — antag ikke website.`,
+        });
+      } else {
+        facts.push({
+          label: "Ingen ordre fundet",
+          value:
+            `Vi kunne ikke finde en ordre på kundens oplysninger. ` +
+            `Bed om ordrenummer (#xxxx), og — ved garanti/defekt/retur — spørg hvor produktet er købt, før du bekræfter noget eller lover en handling.`,
+        });
+      }
+      break;
+  }
+  return { facts, order: null, match };
+}
+
+// Safe, customer-facing-neutral instruction for an integration failure: the
+// writer must NOT tell the customer the order cannot be found.
+function integrationErrorFact(): ResolvedFact {
+  return {
+    label: "Ordreopslag midlertidigt utilgængeligt",
+    value:
+      `Vi kunne IKKE verificere ordren netop nu (teknisk fejl/timeout mod systemet — IKKE bevis for at ordren ikke findes). ` +
+      `Sig ALDRIG at ordren ikke kan findes. Brug sikker formulering som "Jeg kan desværre ikke verificere ordredetaljerne i øjeblikket" og at vi vender tilbage/prøver igen. ` +
+      `Oplys ingen ordre-/tracking-/refunderings-status og foreslå ingen handlinger.`,
+  };
 }
 
 async function buildFactsFromOrder(
   order: Order,
   facts: ResolvedFact[],
   plan: Plan,
+  match?: OrderMatch,
 ): Promise<FactResolverResult> {
   const fulfillmentStatusDa: Record<string, string> = {
     fulfilled: "Afsendt (alle varer er afsendt)",
@@ -496,5 +689,5 @@ async function buildFactsFromOrder(
     });
   }
 
-  return { facts, order };
+  return { facts, order, match };
 }
