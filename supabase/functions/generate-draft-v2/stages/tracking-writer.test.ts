@@ -1,5 +1,5 @@
 import { assert, assertStringIncludes } from "jsr:@std/assert@1";
-import { buildTrackingDirective } from "./writer.ts";
+import { buildTrackingDirective, customerClaimsNotReceived } from "./writer.ts";
 import type { TrackingFact } from "../../_shared/tracking/normalized-tracking.ts";
 
 function f(p: Partial<TrackingFact>): TrackingFact {
@@ -38,6 +38,129 @@ Deno.test("outbound delivered: tracking shows delivered, not asserted received",
   const d = buildTrackingDirective([f({ direction: "outbound", verification: "carrier_verified", state: "delivered" })]).toLowerCase();
   assert(/tracking[^.]*leveret|leveret[^.]*ifølge/.test(d), "frames as carrier tracking");
   assert(/ikke[^.]*modtaget|hvis kunden/.test(d), "must not assert customer received");
+});
+
+// --- Delivered-not-received safe workflow -----------------------------------
+
+// Affirmative PROMISE phrasings only. The directive legitimately *names* these
+// actions inside its FORBUDT/prohibition list ("love genfremsendelse", etc.) to
+// instruct the model not to promise them — so we must assert the absence of
+// affirmative commitments, not the bare nouns.
+const DNR_FORBIDDEN = [
+  // refund
+  "vi refunderer dig", "we will refund", "vil blive refunderet",
+  // replacement / reshipment
+  "vi sender en ny", "vi sender et nyt", "we will send a new", "send you a new",
+  "vi genfremsender", "we will reship", "we will resend",
+  // compensation
+  "du vil blive kompenseret", "you will be compensated", "vi kompenserer",
+  // guaranteed claim / outcome
+  "vi opretter en erstatningssag for", "we will file a claim", "vi garanterer at",
+];
+
+function dnr(state: TrackingFact["state"] = "delivered") {
+  return buildTrackingDirective(
+    [f({ direction: "outbound", verification: "carrier_verified", state })],
+    { customerClaimsNotReceived: true },
+  ).toLowerCase();
+}
+
+// 1. delivered + not-received → triggers the workflow block
+Deno.test("delivered + not received → triggers delivered-not-received workflow", () => {
+  const d = dnr();
+  assertStringIncludes(d, "delivered-not-received");
+});
+
+// 2. says carrier tracking shows delivered
+Deno.test("delivered-not-received: states tracking shows delivered", () => {
+  assert(/tracking[^.]*leveret|viser[^.]*leveret/.test(dnr()));
+});
+
+// 3. does not claim customer personally received it
+Deno.test("delivered-not-received: does not assert personal receipt", () => {
+  const d = dnr();
+  assert(/ikke nødvendigvis|ikke[^.]*personligt[^.]*modtaget/.test(d));
+});
+
+// 4. asks customer to confirm delivery address
+Deno.test("delivered-not-received: asks to confirm delivery address", () => {
+  assertStringIncludes(dnr(), "leveringsadressen");
+});
+
+// 5. suggests checking neighbours / household / reception / safe place / parcel shop
+Deno.test("delivered-not-received: suggests nearby places to check", () => {
+  const d = dnr();
+  assertStringIncludes(d, "naboer");
+  assertStringIncludes(d, "husstand");
+  assertStringIncludes(d, "reception");
+  assertStringIncludes(d, "pakkeshop");
+  assert(/sikre steder|sikkert sted|postkasse/.test(d));
+});
+
+// 6. says case can be reviewed/investigated further
+Deno.test("delivered-not-received: says case can be investigated further", () => {
+  assert(/undersøge[^.]*nærmere|undersøge forsendelsen/.test(dnr()));
+});
+
+// 7-11. no refund / replacement / reshipment / compensation / unsupported claim promises
+Deno.test("delivered-not-received: makes no refund/replacement/reshipment/compensation/claim promises", () => {
+  const d = dnr();
+  // explicit prohibition section is present
+  assertStringIncludes(d, "forbudt");
+  // and no affirmative promise is made
+  for (const phrase of DNR_FORBIDDEN) {
+    assert(!d.includes(phrase), `must not contain affirmative promise "${phrase}"`);
+  }
+});
+
+// 12. ordinary delivered (no dispute) is unchanged — no workflow block
+Deno.test("delivered WITHOUT not-received signal → no workflow block (unchanged)", () => {
+  const plain = buildTrackingDirective(
+    [f({ direction: "outbound", verification: "carrier_verified", state: "delivered" })],
+  ).toLowerCase();
+  assert(!plain.includes("delivered-not-received"));
+  assert(!plain.includes("leveringsadressen"));
+  // stable existing semantics preserved
+  assert(/tracking[^.]*leveret|leveret[^.]*ifølge/.test(plain));
+});
+
+// 13. in_transit + not-received signal → no workflow block (only delivered triggers)
+Deno.test("in_transit + not-received signal → no workflow block", () => {
+  const d = dnr("in_transit");
+  assert(!d.includes("delivered-not-received"));
+  assert(!d.includes("leveringsadressen"));
+  assert(/på vej/.test(d));
+});
+
+// customerClaimsNotReceived detection — EN + DA phrasings
+Deno.test("customerClaimsNotReceived detects EN/DA not-received phrasings", () => {
+  for (
+    const m of [
+      "I did not receive my order",
+      "I haven't received the package",
+      "It says delivered but I never got it",
+      "my package is missing",
+      "I can't find the parcel anywhere",
+      "tracking says delivered but it's not here",
+      "Jeg har ikke modtaget min pakke",
+      "Pakken er ikke kommet",
+      "der står leveret men jeg har ikke fået den",
+      "min pakke mangler",
+    ]
+  ) {
+    assert(customerClaimsNotReceived(m), `should detect: ${m}`);
+  }
+  for (
+    const m of [
+      "Thank you, I received my order today",
+      "Where is my tracking number?",
+      "Jeg vil gerne returnere min ordre",
+      "",
+      null,
+    ]
+  ) {
+    assert(!customerClaimsNotReceived(m), `should NOT detect: ${m}`);
+  }
 });
 
 // lookup_error distinct from unknown; never in transit

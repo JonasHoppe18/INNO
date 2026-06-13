@@ -412,12 +412,55 @@ export function buildLiveFactAuthorityBlock(): string {
 7. Påstå ALDRIG at en refundering er udstedt, et refund-beløb, et refund-tidspunkt, at en returnering er modtaget, eller hvornår pengene ankommer, uden verificerede live-fakta eller verificeret politik-kontekst.`;
 }
 
+// Detects when the customer states (in their own words) that the package has
+// NOT been received / is missing / cannot be found. CUSTOMER-STATED only —
+// never treated as a verified fact. Used solely to select the safe
+// delivered-not-received writer workflow when carrier tracking shows delivered.
+export function customerClaimsNotReceived(message?: string | null): boolean {
+  const m = String(message ?? "").toLowerCase();
+  // English
+  if (
+    /\b(?:not|never|haven't|hasn't|didn't|did\s+not|have\s+not|has\s+not)\s+(?:yet\s+)?(?:receiv|got|gotten|arriv|deliver|gett)/
+      .test(m) ||
+    /\b(?:not\s+received|never\s+received|not\s+arrived|never\s+arrived|not\s+here|isn't\s+here|never\s+got\s+it|never\s+came)\b/
+      .test(m) ||
+    /\b(?:package|parcel|order|it|shipment)\s+(?:is\s+)?missing\b/.test(m) ||
+    /\bmissing\s+(?:package|parcel|order|shipment)\b/.test(m) ||
+    /\bcan'?t\s+find\s+(?:it|the|my)\b/.test(m) ||
+    /\b(?:delivered\s+but|says\s+delivered\s+but|marked\s+delivered\s+but)\b/.test(m)
+  ) {
+    return true;
+  }
+  // Danish
+  if (
+    /\bikke\s+(?:har\s+)?(?:endnu\s+)?(?:modtaget|fået|modtog|kommet|ankommet)\b/.test(m) ||
+    /\b(?:har|er)\s+ikke\s+(?:modtaget|fået|kommet|ankommet)\b/.test(m) ||
+    /\baldrig\s+(?:modtaget|fået|kommet)\b/.test(m) ||
+    /\b(?:pakken|pakke|ordren|ordre|forsendelsen|varen)\s+(?:er\s+)?(?:væk|forsvundet|mangler|ikke\s+kommet)\b/.test(m) ||
+    /\bmangler\s+(?:min\s+|stadig\s+)?(?:pakke|pakken|ordre|ordren|vare|varen)\b/.test(m) ||
+    /\bkan\s+ikke\s+finde\s+(?:den|min|pakken|ordren)\b/.test(m) ||
+    /\bleveret\s+men\b/.test(m)
+  ) {
+    return true;
+  }
+  return false;
+}
+
 // Shared tracking directive — outbound + return, derived from normalized
 // TrackingFact[]. Safe by construction: lookup_error ≠ in_transit, customer-
 // provided ≠ verified, carrier-delivered ≠ received/processed, never promises
 // monitoring/notification/automatic refunds, never invents an ETA.
-export function buildTrackingDirective(facts: TrackingFact[]): string {
+//
+// `customerClaimsNotReceived` selects the delivered-not-received safe workflow:
+// when carrier tracking shows delivered AND the customer states they did not
+// receive the package, the writer must not assert personal receipt and must
+// not promise any refund/replacement/reshipment/compensation/claim outcome.
+export function buildTrackingDirective(
+  facts: TrackingFact[],
+  opts?: { customerClaimsNotReceived?: boolean },
+): string {
   if (!Array.isArray(facts) || facts.length === 0) return "";
+  const notReceived = opts?.customerClaimsNotReceived === true;
   const outbound = facts.filter((f) => f.direction === "outbound");
   const ret = facts.filter((f) => f.direction === "return");
   const lines: string[] = ["# Forsendelses-tracking (struktureret, verificeret kun hvor angivet)"];
@@ -429,7 +472,7 @@ export function buildTrackingDirective(facts: TrackingFact[]): string {
   }
   for (const f of outbound) {
     lines.push(`## Outbound ${f.tracking_number}${f.carrier ? ` (${f.carrier})` : ""} — state: ${f.state}, verification: ${f.verification}`);
-    lines.push(trackingStateLine(f));
+    lines.push(trackingStateLine(f, { customerClaimsNotReceived: notReceived }));
   }
   for (const f of ret) {
     lines.push(`## Return ${f.tracking_number}${f.carrier ? ` (${f.carrier})` : ""} — state: ${f.state}, verification: ${f.verification}`);
@@ -443,9 +486,28 @@ export function buildTrackingDirective(facts: TrackingFact[]): string {
   return lines.join("\n");
 }
 
-function trackingStateLine(f: TrackingFact): string {
+// Delivered + customer states not-received → deterministic safe workflow.
+// Carrier "delivered" ≠ personal receipt. Asks for address confirmation and
+// nearby-checks, offers a closer look — but promises NOTHING (no refund,
+// replacement, reshipment, compensation, claim, or guaranteed outcome), since
+// no such action exists in this pipeline.
+const DELIVERED_NOT_RECEIVED_DIRECTIVE = [
+  "- DELIVERED-NOT-RECEIVED: Carrier-tracking viser LEVERET, men kunden siger pakken IKKE er modtaget/mangler/ikke kan findes. Følg denne struktur (tilpas naturligt til kundens sprog):",
+  "  1. Anerkend og beklag oprigtigt at kunden ikke har modtaget sin ordre (empati).",
+  "  2. Sig at tracking viser pakken som leveret — men at dette IKKE nødvendigvis bekræfter at kunden personligt har modtaget den.",
+  "  3. Bed kunden bekræfte at leveringsadressen på ordren er korrekt.",
+  "  4. Foreslå at tjekke relevante steder: naboer, husstandsmedlemmer, reception/portner (hvis relevant), pakkeshop/afhentningssted (hvis relevant) samt sikre steder/postkasse hvor fragtmanden kan have efterladt pakken.",
+  "  5. Sig at vi kan undersøge forsendelsen nærmere når adressen er bekræftet.",
+  "  FORBUDT (brug aldrig disse eller lignende, hverken dansk eller engelsk): love refundering; love erstatning eller en ny vare; love genfremsendelse/reshipment; love kompensation; love at oprette en carrier-erstatningssag/claim (der findes INGEN claim-action); love et garanteret udfald af undersøgelsen; antage eller påstå at kunden har modtaget pakken.",
+].join("\n");
+
+function trackingStateLine(
+  f: TrackingFact,
+  opts?: { customerClaimsNotReceived?: boolean },
+): string {
   switch (f.state) {
     case "delivered":
+      if (opts?.customerClaimsNotReceived) return DELIVERED_NOT_RECEIVED_DIRECTIVE;
       return "- Carrier-tracking viser LEVERET. Sig at tracking viser leveret; påstå IKKE at kunden personligt har modtaget pakken — hvis kunden siger den ikke er modtaget, tilbyd at undersøge.";
     case "out_for_delivery":
       return "- Pakken er ude til levering i dag (verificeret).";
@@ -1034,7 +1096,9 @@ Support replied: "${ex.agent_reply.slice(0, 500)}"`;
       customerClaimsReturned: customerClaimsReturned(latestCustomerMessage),
     })
     : "";
-  const trackingBlock = buildTrackingDirective(facts.tracking_facts ?? []);
+  const trackingBlock = buildTrackingDirective(facts.tracking_facts ?? [], {
+    customerClaimsNotReceived: customerClaimsNotReceived(latestCustomerMessage),
+  });
 
   // --- Verificerede fakta (deterministiske — brug disse frem for viden) ---
   const factsBlock = facts.facts.length > 0
