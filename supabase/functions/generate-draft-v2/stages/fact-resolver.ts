@@ -6,7 +6,8 @@ import {
   createCommerceProvider,
 } from "../../_shared/integrations/commerce/index.ts";
 import type { Order } from "../../_shared/integrations/commerce/types.ts";
-import { fetchTrackingDetailsForOrders } from "../../_shared/tracking.ts";
+import { fetchTrackingDetailsForOrders, resolveOutboundTrackingFacts } from "../../_shared/tracking.ts";
+import type { TrackingFact } from "../../_shared/tracking/normalized-tracking.ts";
 import { decryptShopifyToken } from "../../_shared/shopify-credentials.ts";
 
 export interface ResolvedFact {
@@ -225,6 +226,9 @@ export interface FactResolverResult {
   // Always populated by runFactResolver. Optional in the type so legacy callers
   // / fixtures that omit it still typecheck; consumers default to a safe state.
   match?: OrderMatch;
+  // Normalized read-only tracking facts (outbound by default; the pipeline may
+  // replace with a customer-provided return fact). Optional/additive.
+  tracking_facts?: TrackingFact[];
 }
 
 // Minimal provider surface the order-match resolver needs — a subset of
@@ -685,6 +689,7 @@ async function buildFactsFromOrder(
   plan: Plan,
   match?: OrderMatch,
 ): Promise<FactResolverResult> {
+  let trackingFacts: TrackingFact[] | undefined;
   const fulfillmentStatusDa: Record<string, string> = {
     fulfilled: "Afsendt (alle varer er afsendt)",
     partial: "Delvist afsendt",
@@ -853,6 +858,12 @@ async function buildFactsFromOrder(
     } catch (err) {
       console.warn("[fact-resolver] Live tracking lookup failed:", err);
     }
+    // Normalized read-only outbound tracking facts (all parcels, safe states).
+    try {
+      trackingFacts = await resolveOutboundTrackingFacts(order);
+    } catch (err) {
+      console.warn("[fact-resolver] Normalized outbound tracking failed:", err);
+    }
   } else if (!firstFulfillment) {
     facts.push({ label: "Tracking", value: "Ordren er endnu ikke afsendt" });
   }
@@ -884,5 +895,5 @@ async function buildFactsFromOrder(
     });
   }
 
-  return { facts, order, match };
+  return { facts, order, match, tracking_facts: trackingFacts };
 }

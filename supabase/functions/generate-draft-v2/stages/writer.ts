@@ -3,6 +3,7 @@ import { Plan } from "./planner.ts";
 import { CaseState } from "./case-state-updater.ts";
 import { RetrieverResult } from "./retriever.ts";
 import { FactResolverResult, deriveRefundStatus, type OrderMatch, type RefundStatus } from "./fact-resolver.ts";
+import type { TrackingFact } from "../../_shared/tracking/normalized-tracking.ts";
 import { ActionProposal } from "./action-decision.ts";
 import { resolveReplyLanguage } from "./language.ts";
 import {
@@ -409,6 +410,85 @@ export function buildLiveFactAuthorityBlock(): string {
 5. Lad ALDRIG forældet viden (inkl. cachede shop_products pris/lager) overstyre verificerede live-fakta ved konflikt — live-fakta vinder. Dette gælder også refund-status: live refund-fakta vinder over enhver knowledge/legacy-kilde.
 6. GÆT ALDRIG ordre-, tracking-, lager-, refunderings-, annullerings- eller fulfillment-status når verificerede live-fakta mangler — spørg eller brug sikker formulering i stedet.
 7. Påstå ALDRIG at en refundering er udstedt, et refund-beløb, et refund-tidspunkt, at en returnering er modtaget, eller hvornår pengene ankommer, uden verificerede live-fakta eller verificeret politik-kontekst.`;
+}
+
+// Shared tracking directive — outbound + return, derived from normalized
+// TrackingFact[]. Safe by construction: lookup_error ≠ in_transit, customer-
+// provided ≠ verified, carrier-delivered ≠ received/processed, never promises
+// monitoring/notification/automatic refunds, never invents an ETA.
+export function buildTrackingDirective(facts: TrackingFact[]): string {
+  if (!Array.isArray(facts) || facts.length === 0) return "";
+  const outbound = facts.filter((f) => f.direction === "outbound");
+  const ret = facts.filter((f) => f.direction === "return");
+  const lines: string[] = ["# Forsendelses-tracking (struktureret, verificeret kun hvor angivet)"];
+
+  if (outbound.length > 1) {
+    lines.push(
+      `- Ordren har FLERE forsendelser (multiple shipments) (${outbound.length}). Oplys status pr. forsendelse separat; antag IKKE at de deler samme status.`,
+    );
+  }
+  for (const f of outbound) {
+    lines.push(`## Outbound ${f.tracking_number}${f.carrier ? ` (${f.carrier})` : ""} — state: ${f.state}, verification: ${f.verification}`);
+    lines.push(trackingStateLine(f));
+  }
+  for (const f of ret) {
+    lines.push(`## Return ${f.tracking_number}${f.carrier ? ` (${f.carrier})` : ""} — state: ${f.state}, verification: ${f.verification}`);
+    lines.push(returnStateLine(f));
+  }
+  lines.push(
+    "- Generelt: opfind ALDRIG en leveringsdato/ETA (oplys kun ETA hvis den er angivet i fakta). " +
+      "Tilbyd IKKE proaktiv opfølgning på forsendelsen, lov ingen besked/notifikation, og beskriv ingen automatisk refunderings-proces. " +
+      "Bland ALDRIG outbound- og retur-tracking sammen.",
+  );
+  return lines.join("\n");
+}
+
+function trackingStateLine(f: TrackingFact): string {
+  switch (f.state) {
+    case "delivered":
+      return "- Carrier-tracking viser LEVERET. Sig at tracking viser leveret; påstå IKKE at kunden personligt har modtaget pakken — hvis kunden siger den ikke er modtaget, tilbyd at undersøge.";
+    case "out_for_delivery":
+      return "- Pakken er ude til levering i dag (verificeret).";
+    case "in_transit":
+      return "- Pakken er på vej (verificeret). Del evt. tracking-linket.";
+    case "pickup_ready":
+      return "- Pakken er klar til afhentning (verificeret).";
+    case "label_created":
+      return "- Forsendelsesdata er oprettet hos fragtmanden; pakken er endnu ikke nødvendigvis afhentet.";
+    case "exception":
+      return "- Der er en undtagelse/forsinkelse på forsendelsen (verificeret). Vær konkret men forsigtig.";
+    case "returned_to_sender":
+      return "- Forsendelsen er på vej retur til afsender (verificeret).";
+    case "lookup_error":
+      return "- Jeg kan IKKE verificere live forsendelsesstatus i øjeblikket. Angiv ingen konkret leveringsstatus; brug sikker formulering om at status ikke kan bekræftes nu.";
+    case "unknown":
+    default:
+      return "- Der findes et tracking-nummer, men carrier-status kan ikke verificeres lige nu. Del nummeret/linket, men angiv ingen konkret status.";
+  }
+}
+
+function returnStateLine(f: TrackingFact): string {
+  if (f.verification !== "carrier_verified") {
+    if (f.state === "lookup_error") {
+      return "- Retur-tracking kan IKKE verificeres lige nu. Anerkend nummeret, men sig at status ikke kan bekræftes; sig IKKE på vej/leveret/modtaget.";
+    }
+    // customer_provided / unknown
+    return "- Kunde-oplyst retur-tracking (IKKE verificeret). Anerkend nummeret, men påstå IKKE at returneringen er på vej, leveret eller modtaget. Sig at carrier-status ikke kan verificeres lige nu.";
+  }
+  switch (f.state) {
+    case "delivered":
+      return "- Carrier-tracking viser at returforsendelsen er LEVERET. Sig at tracking viser leveret, men påstå IKKE at returneringen er behandlet internt/færdigbehandlet. Hvis ingen refundering er udstedt, sig at sagen kan gennemgås nærmere.";
+    case "in_transit":
+      return "- Returforsendelsen er på vej (verificeret). Lov IKKE en refunderingsdato.";
+    case "out_for_delivery":
+      return "- Returforsendelsen er ude til levering (verificeret). Lov ikke refunderingsdato.";
+    case "returned_to_sender":
+      return "- Returforsendelsen er på vej retur (verificeret).";
+    case "exception":
+      return "- Der er en undtagelse på returforsendelsen (verificeret).";
+    default:
+      return "- Returforsendelsens status kan ikke fastslås sikkert; anerkend nummeret og lov ingen refunderingstid.";
+  }
 }
 
 // Structured, clearly-labeled refund-status directive for the writer. Mirrors
@@ -946,6 +1026,7 @@ Support replied: "${ex.agent_reply.slice(0, 500)}"`;
       customerClaimsReturned: customerClaimsReturned(latestCustomerMessage),
     })
     : "";
+  const trackingBlock = buildTrackingDirective(facts.tracking_facts ?? []);
 
   // --- Verificerede fakta (deterministiske — brug disse frem for viden) ---
   const factsBlock = facts.facts.length > 0
@@ -1399,6 +1480,7 @@ ${stageDirectives[resolutionStage] ?? stageDirectives.info_only}`;
     authorityBlock,
     orderMatchBlock,
     refundStatusBlock,
+    trackingBlock,
     factsBlock,
     salutationBlock,
     variantBlock,
