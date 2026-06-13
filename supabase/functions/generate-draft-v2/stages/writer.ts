@@ -2,7 +2,7 @@
 import { Plan } from "./planner.ts";
 import { CaseState } from "./case-state-updater.ts";
 import { RetrieverResult } from "./retriever.ts";
-import { FactResolverResult, type OrderMatch } from "./fact-resolver.ts";
+import { FactResolverResult, deriveRefundStatus, type OrderMatch, type RefundStatus } from "./fact-resolver.ts";
 import { ActionProposal } from "./action-decision.ts";
 import { resolveReplyLanguage } from "./language.ts";
 import {
@@ -406,8 +406,36 @@ export function buildLiveFactAuthorityBlock(): string {
 2. Verificerede live tracking-fakta er autoritative for forsendelse og levering.
 3. Knowledge Docs giver stabil workflow-vejledning (processer, troubleshooting, politik) — ikke aktuelle ordredata.
 4. Legacy/øvrig viden er kun sekundær fallback.
-5. Lad ALDRIG forældet viden (inkl. cachede shop_products pris/lager) overstyre verificerede live-fakta ved konflikt — live-fakta vinder.
-6. GÆT ALDRIG ordre-, tracking-, lager-, refunderings-, annullerings- eller fulfillment-status når verificerede live-fakta mangler — spørg eller brug sikker formulering i stedet.`;
+5. Lad ALDRIG forældet viden (inkl. cachede shop_products pris/lager) overstyre verificerede live-fakta ved konflikt — live-fakta vinder. Dette gælder også refund-status: live refund-fakta vinder over enhver knowledge/legacy-kilde.
+6. GÆT ALDRIG ordre-, tracking-, lager-, refunderings-, annullerings- eller fulfillment-status når verificerede live-fakta mangler — spørg eller brug sikker formulering i stedet.
+7. Påstå ALDRIG at en refundering er udstedt, et refund-beløb, et refund-tidspunkt, at en returnering er modtaget, eller hvornår pengene ankommer, uden verificerede live-fakta eller verificeret politik-kontekst.`;
+}
+
+// Structured, clearly-labeled refund-status directive for the writer. Mirrors
+// the RefundStatus state machine in fact-resolver. Returns "" when absent.
+export function buildRefundStatusDirective(refund?: RefundStatus | null): string {
+  if (!refund) return "";
+  const header = `# Refunderingsstatus (struktureret) — state: ${refund.state}`;
+  switch (refund.state) {
+    case "no_refund_issued":
+      return `${header}
+- Ingen refundering er registreret på ordren. Sig IKKE at en refundering er udstedt og opfind ikke en returstatus.
+- Antag IKKE at en returnering er modtaget, selvom kunden siger de har returneret varen — bed om bekræftelse eller rut til gennemgang.`;
+    case "full_refund_issued":
+      return `${header}
+- Hele beløbet ER refunderet${refund.total_refunded && refund.currency ? ` (${refund.total_refunded} ${refund.currency})` : ""}. Du må oplyse verificeret beløb og tidspunkt hvis tilgængeligt.
+- Lov IKKE hvornår beløbet vises på kontoen med en konkret tidsramme (fx antal dage) medmindre verificeret politik angiver den. Brug i stedet: "Refunderingen er udstedt. Hvor lang tid det tager før beløbet vises på din konto kan afhænge af din betalingsudbyder."`;
+    case "partial_refund_issued":
+      return `${header}
+- En DELVIS refundering ER udstedt${refund.total_refunded && refund.currency ? ` (${refund.total_refunded} ${refund.currency})` : ""}. Du må oplyse verificeret beløb og tidspunkt hvis tilgængeligt.
+- Antyd IKKE at restbeløbet automatisk bliver refunderet.
+- Lov ikke en konkret bankbehandlingstid medmindre verificeret politik angiver den; tiden før beløbet vises kan afhænge af kundens betalingsudbyder.`;
+    case "refund_pending_or_unclear":
+    default:
+      return `${header}
+- Refunderingsstatus skal gennemgås nærmere. Opfind IKKE et beløb og opfind IKKE en dato.
+- Claim IKKE at returneringen er modtaget, og lov ikke hvornår pengene ankommer.`;
+  }
 }
 
 // Structured, clearly-labeled order-match state directive for the writer.
@@ -886,6 +914,12 @@ Support replied: "${ex.agent_reply.slice(0, 500)}"`;
   // --- Kilde-autoritet + ordre-match (live-fakta vinder, ingen gætteri) ---
   const authorityBlock = buildLiveFactAuthorityBlock();
   const orderMatchBlock = buildOrderMatchDirective(facts.match);
+  const refundRelevantForWriter = facts.order != null &&
+    (plan.primary_intent === "refund" || plan.primary_intent === "return" ||
+      (Array.isArray(facts.order.refunds) && facts.order.refunds.length > 0));
+  const refundStatusBlock = refundRelevantForWriter && facts.order
+    ? buildRefundStatusDirective(deriveRefundStatus(facts.order))
+    : "";
 
   // --- Verificerede fakta (deterministiske — brug disse frem for viden) ---
   const factsBlock = facts.facts.length > 0
@@ -1338,6 +1372,7 @@ ${stageDirectives[resolutionStage] ?? stageDirectives.info_only}`;
     suppress(policyBlock),
     authorityBlock,
     orderMatchBlock,
+    refundStatusBlock,
     factsBlock,
     salutationBlock,
     variantBlock,

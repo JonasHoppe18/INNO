@@ -5,9 +5,35 @@ import type {
   Address,
   RefundOpts,
   RefundResult,
+  RefundRecord,
   LineItemEdit,
   ActionType,
 } from './types.ts';
+
+// Maps the `refunds[]` array already present in the Shopify REST order payload
+// to normalised RefundRecord[]. Read-only and additive — no extra fetch.
+// Exported for unit testing.
+export function mapShopifyRefunds(rawRefunds: unknown): RefundRecord[] {
+  if (!Array.isArray(rawRefunds)) return [];
+  return rawRefunds.map((r: any) => ({
+    id: r?.id != null ? String(r.id) : undefined,
+    created_at: r?.created_at ?? null,
+    processed_at: r?.processed_at ?? null,
+    note: r?.note ?? null,
+    transactions: Array.isArray(r?.transactions)
+      ? r.transactions.map((t: any) => ({
+          id: t?.id != null ? String(t.id) : undefined,
+          amount: t?.amount != null ? String(t.amount) : undefined,
+          currency: t?.currency ?? undefined,
+          gateway: t?.gateway ?? undefined,
+          status: t?.status ?? undefined,
+          kind: t?.kind ?? undefined,
+          processed_at: t?.processed_at ?? null,
+          created_at: t?.created_at ?? null,
+        }))
+      : [],
+  }));
+}
 
 // Constructor config for ShopifyProvider
 export interface ShopifyProviderConfig {
@@ -123,6 +149,7 @@ function mapOrder(raw: RawShopifyOrder): Order {
           shipment_status: f.shipment_status ?? undefined,
         }))
       : [],
+    refunds: mapShopifyRefunds(raw.refunds),
     tags: raw.tags ?? undefined,
     note: raw.note ?? undefined,
   };

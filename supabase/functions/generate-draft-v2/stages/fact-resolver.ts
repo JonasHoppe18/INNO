@@ -34,6 +34,191 @@ export interface OrderMatch {
   selected_order_name: string | null;
 }
 
+// Refund-status — derived deterministically from the order's mapped refunds[]
+// (already present in the live Shopify payload). Read-only; never asserts
+// timing/return-receipt the data does not support.
+export type RefundStatusState =
+  | "no_refund_issued"
+  | "full_refund_issued"
+  | "partial_refund_issued"
+  | "refund_pending_or_unclear";
+
+export interface RefundStatus {
+  state: RefundStatusState;
+  total_refunded: string | null;
+  currency: string | null;
+  last_refund_at: string | null;
+  order_total: string | null;
+  refund_count: number;
+}
+
+function isSuccessfulRefundTxn(t: {
+  kind?: string;
+  status?: string;
+  processed_at?: string | null;
+}): boolean {
+  const kind = String(t.kind ?? "refund").toLowerCase();
+  if (kind !== "refund") return false; // ignore non-refund txns (e.g. "sale")
+  const status = String(t.status ?? "").toLowerCase();
+  // Explicitly exclude not-yet-issued / failed states.
+  if (["pending", "failure", "error", "voided"].includes(status)) return false;
+  if (status === "success") return true;
+  // Unknown/empty status only counts if Shopify marked it processed.
+  return Boolean(t.processed_at);
+}
+
+// Derives a safe refund-status from a FOUND order. Never called on
+// integration_error / not-found paths, so a lookup failure can never become
+// "no_refund_issued".
+export function deriveRefundStatus(order: Order): RefundStatus {
+  const orderCurrency = String(order.currency ?? "").trim() || null;
+  const orderTotal = String(order.total_price ?? "").trim() || null;
+  const base = {
+    currency: orderCurrency,
+    order_total: orderTotal,
+  };
+
+  // Distinguish "looked up, none present" ([]) from "unknown" (undefined).
+  if (order.refunds === undefined) {
+    return {
+      ...base,
+      state: "refund_pending_or_unclear",
+      total_refunded: null,
+      last_refund_at: null,
+      refund_count: 0,
+    };
+  }
+  const refunds = order.refunds;
+  if (refunds.length === 0) {
+    return {
+      ...base,
+      state: "no_refund_issued",
+      total_refunded: "0.00",
+      last_refund_at: null,
+      refund_count: 0,
+    };
+  }
+
+  const txns = refunds.flatMap((r) => r.transactions ?? []);
+  const successful = txns.filter(isSuccessfulRefundTxn);
+  if (successful.length === 0) {
+    // Objects exist but nothing successfully issued (pending/failed/malformed).
+    return {
+      ...base,
+      state: "refund_pending_or_unclear",
+      total_refunded: null,
+      last_refund_at: null,
+      refund_count: refunds.length,
+    };
+  }
+
+  // Currency safety: every successful txn must share the order's currency.
+  const currencies = new Set(
+    successful.map((t) => String(t.currency ?? orderCurrency ?? "").trim().toUpperCase()).filter(Boolean),
+  );
+  const unsafeCurrency = currencies.size !== 1 ||
+    (orderCurrency ? !currencies.has(orderCurrency.toUpperCase()) : true);
+
+  // Amount safety: every successful amount must parse.
+  const amounts = successful.map((t) => Number(t.amount));
+  const amountsValid = amounts.every((n) => Number.isFinite(n));
+  const total = amountsValid ? amounts.reduce((a, b) => a + b, 0) : NaN;
+  const orderTotalNum = Number(orderTotal);
+
+  const lastRefundAt = pickLastTimestamp(refunds, successful);
+
+  if (unsafeCurrency || !amountsValid || !Number.isFinite(orderTotalNum) || total <= 0) {
+    return {
+      ...base,
+      state: "refund_pending_or_unclear",
+      total_refunded: null,
+      last_refund_at: lastRefundAt,
+      refund_count: refunds.length,
+    };
+  }
+
+  const totalStr = total.toFixed(2);
+  const EPS = 0.01;
+  const state: RefundStatusState = total >= orderTotalNum - EPS
+    ? "full_refund_issued"
+    : "partial_refund_issued";
+  return {
+    ...base,
+    state,
+    total_refunded: totalStr,
+    last_refund_at: lastRefundAt,
+    refund_count: refunds.length,
+  };
+}
+
+// Builds the deterministic, writer-facing refund instruction fact. Carries the
+// verified amount/timestamp only for issued states; never fabricates timing or
+// return-receipt.
+function buildRefundStatusFact(s: RefundStatus): ResolvedFact {
+  const amount = s.total_refunded && s.currency
+    ? `${s.total_refunded} ${s.currency}`
+    : s.total_refunded ?? "";
+  const when = s.last_refund_at
+    ? formatRefundDate(s.last_refund_at)
+    : "";
+  switch (s.state) {
+    case "no_refund_issued":
+      return {
+        label: "Refunderingsstatus: ingen refundering udstedt",
+        value:
+          `Der er IKKE registreret en refundering på ordren. Sig ikke at en refundering er udstedt, og opfind ikke en returstatus. ` +
+          `Hvis kunden siger de allerede har returneret varen, så antag ikke at returneringen er modtaget — bed om bekræftelse eller rut til gennemgang.`,
+      };
+    case "full_refund_issued":
+      return {
+        label: "Refunderingsstatus: fuld refundering udstedt",
+        value:
+          `Hele beløbet ER refunderet${amount ? ` (${amount})` : ""}${when ? ` den ${when}` : ""} til den oprindelige betalingsmetode. ` +
+          `Lov IKKE en konkret bankbehandlingstid (fx antal dage) medmindre verificeret politik angiver den; brug i stedet: ` +
+          `"Refunderingen er udstedt. Hvor lang tid det tager før beløbet vises på din konto kan afhænge af din betalingsudbyder."`,
+      };
+    case "partial_refund_issued":
+      return {
+        label: "Refunderingsstatus: delvis refundering udstedt",
+        value:
+          `En DELVIS refundering ER udstedt${amount ? ` (${amount})` : ""}${when ? ` den ${when}` : ""}${s.order_total ? ` af ordretotalen ${s.order_total} ${s.currency ?? ""}`.trimEnd() : ""}. ` +
+          `Antyd IKKE at restbeløbet automatisk bliver refunderet. ` +
+          `Lov ikke en konkret bankbehandlingstid medmindre verificeret politik angiver den; sig at tiden før beløbet vises kan afhænge af kundens betalingsudbyder.`,
+      };
+    case "refund_pending_or_unclear":
+    default:
+      return {
+        label: "Refunderingsstatus: skal gennemgås",
+        value:
+          `Refunderingsstatus kan ikke fastslås sikkert og skal gennemgås nærmere. ` +
+          `Opfind ikke et beløb eller en dato, claim ikke at returneringen er modtaget, og lov ikke hvornår pengene ankommer.`,
+      };
+  }
+}
+
+function formatRefundDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("da-DK", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "Europe/Copenhagen",
+  });
+}
+
+function pickLastTimestamp(
+  refunds: Array<{ processed_at?: string | null; created_at?: string | null }>,
+  txns: Array<{ processed_at?: string | null; created_at?: string | null }>,
+): string | null {
+  const candidates = [
+    ...txns.map((t) => t.processed_at ?? t.created_at),
+    ...refunds.map((r) => r.processed_at ?? r.created_at),
+  ].filter((x): x is string => Boolean(x));
+  if (!candidates.length) return null;
+  return candidates.reduce((a, b) => (new Date(b) > new Date(a) ? b : a));
+}
+
 export interface FactResolverResult {
   facts: ResolvedFact[];
   order?: Order | null;
@@ -515,6 +700,16 @@ async function buildFactsFromOrder(
   });
   if (order.email) {
     facts.push({ label: "Kunde-email kendt", value: order.email });
+  }
+
+  // Refund-status — surface verified live refund facts when the customer is
+  // asking about a refund/return, or when refunds exist on the order.
+  const refundRelevant = plan.primary_intent === "refund" ||
+    plan.primary_intent === "return" ||
+    (Array.isArray(order.refunds) && order.refunds.length > 0);
+  if (refundRelevant) {
+    const refundStatus = deriveRefundStatus(order);
+    facts.push(buildRefundStatusFact(refundStatus));
   }
 
   if (order.shipping_address) {
