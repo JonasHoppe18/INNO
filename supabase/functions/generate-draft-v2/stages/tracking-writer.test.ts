@@ -1,5 +1,5 @@
 import { assert, assertStringIncludes } from "jsr:@std/assert@1";
-import { buildTrackingDirective, customerClaimsNotReceived } from "./writer.ts";
+import { buildTrackingDirective, customerClaimsNotReceived, customerReportsTrackingDelivered } from "./writer.ts";
 import type { TrackingFact } from "../../_shared/tracking/normalized-tracking.ts";
 
 function f(p: Partial<TrackingFact>): TrackingFact {
@@ -63,6 +63,13 @@ function dnr(state: TrackingFact["state"] = "delivered") {
     [f({ direction: "outbound", verification: "carrier_verified", state })],
     { customerClaimsNotReceived: true },
   ).toLowerCase();
+}
+
+function reportedDnr() {
+  return buildTrackingDirective([], {
+    customerClaimsNotReceived: true,
+    customerReportsTrackingDelivered: true,
+  }).toLowerCase();
 }
 
 // 1. delivered + not-received → triggers the workflow block
@@ -130,6 +137,53 @@ Deno.test("delivered-not-received: makes no refund/replacement/reshipment/compen
   }
 });
 
+// Customer-reported delivered + not-received, but no verified tracking facts.
+Deno.test("customer-reported delivered + not received without tracking facts triggers safe workflow", () => {
+  const message = "Hi, the tracking says delivered, but I have not received my package.";
+  assert(customerClaimsNotReceived(message));
+  assert(customerReportsTrackingDelivered(message));
+  const d = buildTrackingDirective([], {
+    customerClaimsNotReceived: customerClaimsNotReceived(message),
+    customerReportsTrackingDelivered: customerReportsTrackingDelivered(message),
+  }).toLowerCase();
+  assertStringIncludes(d, "customer-reported-delivered-not-received");
+});
+
+Deno.test("customer-reported delivered-not-received: asks address, checks places, and concrete next step", () => {
+  const d = reportedDnr();
+  assertStringIncludes(d, "kundens oplysninger");
+  assert(/ikke nødvendigvis[^.]*personligt[^.]*modtaget/.test(d));
+  assert(/bekræft(e|er)?[^.]*leveringsadressen|leveringsadressen[^.]*korrekt/.test(d));
+  assertStringIncludes(d, "dette må ikke udelades");
+  assertStringIncludes(d, "naboer");
+  assertStringIncludes(d, "husstandsmedlemmer");
+  assertStringIncludes(d, "reception");
+  assertStringIncludes(d, "pakkeshop");
+  assertStringIncludes(d, "postkasse");
+  assert(/sikre steder|sikkert sted/.test(d));
+  assertStringIncludes(d, "når kunden har bekræftet adressen");
+  assertStringIncludes(d, "undersøge forsendelsen nærmere");
+  assert(/fragtfirmaet|carrieren|shipping partner/.test(d));
+});
+
+Deno.test("customer-reported delivered-not-received: forbids generic endings and verified-status claims", () => {
+  const d = reportedDnr();
+  assertStringIncludes(d, "påstå ikke at sona/shoppen har verificeret carrier-status");
+  assertStringIncludes(d, "påstå live/verificeret trackingstatus");
+  assert(!d.includes("carrier-tracking viser leveret"));
+  assertStringIncludes(d, "generiske afslutninger");
+  assertStringIncludes(d, "i look forward to hearing from you");
+  assertStringIncludes(d, "feel free to reach out");
+  assertStringIncludes(d, "let me know");
+});
+
+Deno.test("customer-reported delivered-not-received: makes no unsafe promises", () => {
+  const d = reportedDnr();
+  for (const phrase of DNR_FORBIDDEN) {
+    assert(!d.includes(phrase), `must not contain affirmative promise "${phrase}"`);
+  }
+});
+
 // 12. ordinary delivered (no dispute) is unchanged — no workflow block
 Deno.test("delivered WITHOUT not-received signal → no workflow block (unchanged)", () => {
   const plain = buildTrackingDirective(
@@ -147,6 +201,12 @@ Deno.test("in_transit + not-received signal → no workflow block", () => {
   assert(!d.includes("delivered-not-received"));
   assert(!d.includes("leveringsadressen"));
   assert(/på vej/.test(d));
+});
+
+Deno.test("empty facts without customer-reported delivered message remains empty", () => {
+  assert(buildTrackingDirective([]) === "");
+  assert(buildTrackingDirective([], { customerClaimsNotReceived: true }) === "");
+  assert(buildTrackingDirective([], { customerReportsTrackingDelivered: true }) === "");
 });
 
 // customerClaimsNotReceived detection — EN + DA phrasings
@@ -177,6 +237,34 @@ Deno.test("customerClaimsNotReceived detects EN/DA not-received phrasings", () =
     ]
   ) {
     assert(!customerClaimsNotReceived(m), `should NOT detect: ${m}`);
+  }
+});
+
+Deno.test("customerReportsTrackingDelivered detects EN/DA delivered tracking phrasings", () => {
+  for (
+    const m of [
+      "the tracking says delivered",
+      "tracking shows the package as delivered",
+      "the carrier page marked it delivered",
+      "it is listed as delivered but not here",
+      "tracking viser leveret",
+      "der står leveret i trackingen",
+      "pakken er markeret som leveret",
+    ]
+  ) {
+    assert(customerReportsTrackingDelivered(m), `should detect: ${m}`);
+  }
+  for (
+    const m of [
+      "Where is my tracking number?",
+      "The tracking is not updating",
+      "My package is on the way",
+      "Jeg vil gerne have tracking",
+      "",
+      null,
+    ]
+  ) {
+    assert(!customerReportsTrackingDelivered(m), `should NOT detect: ${m}`);
   }
 });
 

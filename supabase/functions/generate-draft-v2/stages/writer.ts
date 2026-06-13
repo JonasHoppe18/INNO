@@ -446,6 +446,30 @@ export function customerClaimsNotReceived(message?: string | null): boolean {
   return false;
 }
 
+// Detects when the customer states that the tracking page says delivered.
+// CUSTOMER-STATED only — never treated as verified carrier tracking.
+export function customerReportsTrackingDelivered(message?: string | null): boolean {
+  const m = String(message ?? "").toLowerCase();
+  // English
+  if (
+    /\b(?:tracking|carrier|status|page|link|website|app)[^.?!]{0,80}\b(?:says|shows|showed|marked|lists|states|is|was)\s+(?:(?:the\s+)?(?:package|parcel|order|shipment|it)\s+)?(?:as\s+)?delivered\b/
+      .test(m) ||
+    /\b(?:says|shows|showed|marked|listed|states)\s+(?:(?:the\s+)?(?:package|parcel|order|shipment|it)\s+)?(?:as\s+)?delivered\b/.test(m) ||
+    /\b(?:marked|listed)\s+(?:(?:the\s+)?(?:package|parcel|order|shipment|it)\s+)?(?:as\s+)?delivered\b/.test(m)
+  ) {
+    return true;
+  }
+  // Danish
+  if (
+    /\b(?:tracking|trackingen|status|siden|linket|appen)[^.?!]{0,80}\b(?:siger|viser|står|markeret|meldt)\s+(?:som\s+)?leveret\b/
+      .test(m) ||
+    /\b(?:der\s+står|står|viser|siger|markeret|meldt)\s+(?:som\s+)?leveret\b/.test(m)
+  ) {
+    return true;
+  }
+  return false;
+}
+
 // Shared tracking directive — outbound + return, derived from normalized
 // TrackingFact[]. Safe by construction: lookup_error ≠ in_transit, customer-
 // provided ≠ verified, carrier-delivered ≠ received/processed, never promises
@@ -457,10 +481,13 @@ export function customerClaimsNotReceived(message?: string | null): boolean {
 // not promise any refund/replacement/reshipment/compensation/claim outcome.
 export function buildTrackingDirective(
   facts: TrackingFact[],
-  opts?: { customerClaimsNotReceived?: boolean },
+  opts?: { customerClaimsNotReceived?: boolean; customerReportsTrackingDelivered?: boolean },
 ): string {
-  if (!Array.isArray(facts) || facts.length === 0) return "";
   const notReceived = opts?.customerClaimsNotReceived === true;
+  const customerReportedDelivered = opts?.customerReportsTrackingDelivered === true;
+  if (!Array.isArray(facts) || facts.length === 0) {
+    return notReceived && customerReportedDelivered ? CUSTOMER_REPORTED_DELIVERED_NOT_RECEIVED_DIRECTIVE : "";
+  }
   const outbound = facts.filter((f) => f.direction === "outbound");
   const ret = facts.filter((f) => f.direction === "return");
   const lines: string[] = ["# Forsendelses-tracking (struktureret, verificeret kun hvor angivet)"];
@@ -499,6 +526,17 @@ const DELIVERED_NOT_RECEIVED_DIRECTIVE = [
   "  4. Foreslå at tjekke relevante steder: naboer, husstandsmedlemmer, reception/portner (hvis relevant), pakkeshop/afhentningssted (hvis relevant) samt sikre steder/postkasse hvor fragtmanden kan have efterladt pakken.",
   "  5. Afslut med et konkret næste skridt: Når kunden har bekræftet adressen, kan vi undersøge forsendelsen nærmere med fragtfirmaet/carrieren. Brug denne type konkrete afslutning i stedet for generiske afslutninger.",
   "  FORBUDT (brug aldrig disse eller lignende, hverken dansk eller engelsk): love refundering; love erstatning eller en ny vare; love genfremsendelse/reshipment; love kompensation; love at oprette en carrier-erstatningssag/claim (der findes INGEN claim-action); love et garanteret udfald af undersøgelsen; antage eller påstå at kunden har modtaget pakken; afslutte generisk med \"I look forward to hearing from you\", \"Feel free to reach out\", \"Let me know\" eller tilsvarende.",
+].join("\n");
+
+const CUSTOMER_REPORTED_DELIVERED_NOT_RECEIVED_DIRECTIVE = [
+  "- CUSTOMER-REPORTED-DELIVERED-NOT-RECEIVED: Kunden oplyser selv, at tracking viser/angiver pakken som LEVERET, men kunden siger pakken IKKE er modtaget/mangler/ikke kan findes. Der findes ingen verificeret live carrier-status i fakta. Følg denne struktur (tilpas naturligt til kundens sprog):",
+  "  1. Anerkend og beklag oprigtigt at kunden ikke kan finde/modtage sin ordre (empati).",
+  "  2. Referér forsigtigt til kundens oplysninger, fx: \"Since you mention that the tracking shows the package as delivered...\" eller \"If the tracking page shows the package as delivered...\". Påstå IKKE at Sona/shoppen har verificeret carrier-status.",
+  "  3. Sig at en leveret-status ikke nødvendigvis bekræfter at kunden personligt har modtaget pakken.",
+  "  4. KRITISK: Stil et eksplicit spørgsmål hvor kunden skal bekræfte leveringsadressen, fx: \"Kan du bekræfte, at leveringsadressen på ordren er korrekt?\" eller \"Bekræft venligst leveringsadressen, så vi kan undersøge forsendelsen nærmere.\" Dette må ikke udelades.",
+  "  5. Foreslå at tjekke relevante steder: naboer, husstandsmedlemmer, reception/portner (hvis relevant), pakkeshop/afhentningssted (hvis relevant), postkasse samt sikre steder hvor fragtmanden kan have efterladt pakken.",
+  "  6. Afslut med et konkret næste skridt: Når kunden har bekræftet adressen, kan vi undersøge forsendelsen nærmere med fragtfirmaet/carrieren/shipping partner. Brug denne type konkrete afslutning i stedet for generiske afslutninger.",
+  "  FORBUDT (brug aldrig disse eller lignende, hverken dansk eller engelsk): påstå live/verificeret trackingstatus; love refundering; love erstatning eller en ny vare; love genfremsendelse/reshipment; love kompensation; love at oprette en carrier-erstatningssag/claim; love et garanteret udfald; antage eller påstå at kunden har modtaget pakken; afslutte generisk med \"I look forward to hearing from you\", \"Feel free to reach out\", \"Let me know\" eller tilsvarende.",
 ].join("\n");
 
 function trackingStateLine(
@@ -1098,6 +1136,7 @@ Support replied: "${ex.agent_reply.slice(0, 500)}"`;
     : "";
   const trackingBlock = buildTrackingDirective(facts.tracking_facts ?? [], {
     customerClaimsNotReceived: customerClaimsNotReceived(latestCustomerMessage),
+    customerReportsTrackingDelivered: customerReportsTrackingDelivered(latestCustomerMessage),
   });
 
   // --- Verificerede fakta (deterministiske — brug disse frem for viden) ---
