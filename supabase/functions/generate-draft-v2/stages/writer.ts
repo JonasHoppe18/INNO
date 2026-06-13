@@ -413,11 +413,34 @@ export function buildLiveFactAuthorityBlock(): string {
 
 // Structured, clearly-labeled refund-status directive for the writer. Mirrors
 // the RefundStatus state machine in fact-resolver. Returns "" when absent.
-export function buildRefundStatusDirective(refund?: RefundStatus | null): string {
+// Detects when the customer states (in their own words) that they already
+// returned / sent back the item. Used only to choose safe acknowledgement
+// wording — it is a CUSTOMER-STATED fact, never treated as verified receipt.
+export function customerClaimsReturned(message?: string | null): boolean {
+  const m = String(message ?? "").toLowerCase();
+  return /\b(returned|sent\s+(?:it\s+|them\s+|the\s+\w+\s+)?back|shipped\s+(?:it\s+|them\s+)?back|posted\s+(?:it\s+)?back|mailed\s+(?:it\s+)?back)\b/.test(m) ||
+    /\b(returneret|returnerede|sendt\s+(?:den\s+|det\s+|dem\s+|varen\s+|pakken\s+)?(?:retur|tilbage)|sendte\s+(?:den\s+|det\s+|dem\s+|varen\s+|pakken\s+)?(?:retur|tilbage))\b/.test(m);
+}
+
+export function buildRefundStatusDirective(
+  refund?: RefundStatus | null,
+  opts?: { customerClaimsReturned?: boolean },
+): string {
   if (!refund) return "";
   const header = `# Refunderingsstatus (struktureret) — state: ${refund.state}`;
   switch (refund.state) {
     case "no_refund_issued":
+      // Sub-case: customer says they already returned the item, but live facts
+      // verify neither receipt nor internal processing.
+      if (opts?.customerClaimsReturned) {
+        return `${header}
+- Kunden oplyser selv at varen er returneret — anerkend dette som en KUNDE-OPLYST oplysning, ikke som en verificeret kendsgerning.
+- Bekræft at der endnu IKKE er udstedt en refundering.
+- Du kan IKKE verificere ud fra de aktuelle oplysninger om returpakken er modtaget eller behandlet internt — sig dette tydeligt; antag IKKE at returneringen er modtaget eller behandlet.
+- Lov IKKE at vi giver besked/underretter automatisk, og lov ikke hvornår pengene ankommer.
+- Bed kunden sende et retur-trackingnummer eller tracking-link, så vi kan undersøge status nærmere.
+- Nævn IKKE ansvar eller omkostninger for returforsendelse, medmindre kunden selv spørger om forsendelse eller omkostninger.`;
+      }
       return `${header}
 - Ingen refundering er registreret på ordren. Sig IKKE at en refundering er udstedt og opfind ikke en returstatus.
 - Antag IKKE at en returnering er modtaget, selvom kunden siger de har returneret varen — bed om bekræftelse eller rut til gennemgang.`;
@@ -918,7 +941,9 @@ Support replied: "${ex.agent_reply.slice(0, 500)}"`;
     (plan.primary_intent === "refund" || plan.primary_intent === "return" ||
       (Array.isArray(facts.order.refunds) && facts.order.refunds.length > 0));
   const refundStatusBlock = refundRelevantForWriter && facts.order
-    ? buildRefundStatusDirective(deriveRefundStatus(facts.order))
+    ? buildRefundStatusDirective(deriveRefundStatus(facts.order), {
+      customerClaimsReturned: customerClaimsReturned(latestCustomerMessage),
+    })
     : "";
 
   // --- Verificerede fakta (deterministiske — brug disse frem for viden) ---
