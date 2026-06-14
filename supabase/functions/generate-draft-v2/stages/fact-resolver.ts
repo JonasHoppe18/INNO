@@ -26,6 +26,76 @@ function normalizeStockMatchText(value: string | null | undefined): string {
     .replace(/\s+/g, " ");
 }
 
+export function isStockAvailabilityQuestion(message: string | null | undefined): boolean {
+  const text = String(message ?? "").toLowerCase();
+  return /\b(?:in stock|available|availability|do you have|back in stock|restock|preorder|pre-order|can i buy|på lager|tilgængelig|har i|kan jeg købe|forudbestil)\b/i
+    .test(text);
+}
+
+function cleanStockProductCandidate(value: string): string {
+  return value
+    .replace(/[?.!,;:]+$/g, "")
+    .replace(/^(?:the|a|an|this|that)\s+/i, "")
+    .replace(/\s+(?:right now|now|today|currently)$/i, "")
+    .trim();
+}
+
+export function deriveStockProductCandidate(
+  latestCustomerMessage: string | null | undefined,
+): string | null {
+  const message = String(latestCustomerMessage ?? "").trim();
+  if (!isStockAvailabilityQuestion(message)) return null;
+
+  const variantOnly =
+    /\b(?:black|white|red|blue|green|grey|gray|version|variant|color|colour|farve|sort|hvid)\b/i
+      .test(message) &&
+    !/\b(?:a-spire|aspire|a-blaze|ablaze|a-rise|arise|ear pads?|dongle|sound card|iem|a-live|alive)\b/i
+      .test(message);
+  if (variantOnly) return null;
+
+  const patterns = [
+    /\b(?:is|are)\s+(.+?)\s+(?:in stock|available)\b/i,
+    /\bdo you have\s+(.+?)(?:\s+(?:available|in stock))?\??$/i,
+    /\bwhen will\s+(.+?)\s+be\s+back\s+in\s+stock\b/i,
+    /\bcan i buy\s+(.+?)\??$/i,
+    /\bhar i\s+(.+?)(?:\s+(?:på lager|tilgængelig))?\??$/i,
+    /\b(?:er|findes)\s+(.+?)\s+(?:på lager|tilgængelig)\b/i,
+  ];
+  for (const pattern of patterns) {
+    const match = message.match(pattern);
+    const candidate = cleanStockProductCandidate(match?.[1] ?? "");
+    if (candidate && normalizeStockMatchText(candidate).split(" ").length <= 8) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+export function stockProductQueriesForFactResolver(input: {
+  plan: Plan;
+  caseState: CaseState;
+  latestCustomerMessage?: string | null;
+}): string[] {
+  if (input.plan.primary_intent !== "product_question") return [];
+  if (input.caseState.entities.products_mentioned.length > 0) {
+    return [...new Set(input.caseState.entities.products_mentioned.map((p) => p.trim()).filter(Boolean))];
+  }
+  const fallback = deriveStockProductCandidate(input.latestCustomerMessage);
+  return fallback ? [fallback] : [];
+}
+
+export async function resolveStockAvailabilityFactsForQueries(
+  queries: string[],
+  lookup: (query: string) => Promise<StockAvailabilityFact[]>,
+): Promise<ResolvedFact[]> {
+  const facts: ResolvedFact[] = [];
+  for (const product of queries.slice(0, 3)) {
+    const results = await lookup(product);
+    facts.push(...summarizeStockAvailability(product, results));
+  }
+  return facts;
+}
+
 function isDefaultVariantTitle(title: string | null | undefined): boolean {
   return normalizeStockMatchText(title) === "default title";
 }
@@ -526,6 +596,7 @@ export interface FactResolverInput {
   shop: Record<string, unknown>;
   supabase: SupabaseClient;
   customerContext?: Record<string, unknown> | null;
+  latestCustomerMessage?: string | null;
 }
 
 function orderFromCustomerContext(
@@ -607,14 +678,19 @@ function orderFromCustomerContext(
 }
 
 export async function runFactResolver(
-  { plan, caseState, thread, shop, supabase, customerContext }:
+  { plan, caseState, thread, shop, supabase, customerContext, latestCustomerMessage }:
     FactResolverInput,
 ): Promise<FactResolverResult> {
   const facts: ResolvedFact[] = [];
 
   // Inventory lookup for product_question intent when products are mentioned
+  const stockProductQueries = stockProductQueriesForFactResolver({
+    plan,
+    caseState,
+    latestCustomerMessage,
+  });
   const needsInventory = plan.primary_intent === "product_question" &&
-    caseState.entities.products_mentioned.length > 0;
+    stockProductQueries.length > 0;
 
   const orderRelevantIntents = new Set([
     "tracking",
@@ -647,10 +723,10 @@ export async function runFactResolver(
         });
 
         if (typeof provider2.searchProductInventory === "function") {
-          for (const product of caseState.entities.products_mentioned.slice(0, 3)) {
-            const results = await provider2.searchProductInventory(product);
-            facts.push(...summarizeStockAvailability(product, results));
-          }
+          facts.push(...await resolveStockAvailabilityFactsForQueries(
+            stockProductQueries,
+            (product) => provider2.searchProductInventory(product),
+          ));
         }
       } catch (err) {
         console.warn("[fact-resolver] Inventory lookup failed:", err);

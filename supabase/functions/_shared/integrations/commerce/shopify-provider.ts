@@ -172,6 +172,50 @@ function normalizeInventoryPolicy(value: unknown): 'deny' | 'continue' | null {
   return text === 'deny' || text === 'continue' ? text : null;
 }
 
+function normalizeProductLookupText(value: unknown): string {
+  return String(value ?? '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+function isSpecificProductQuery(query: string): boolean {
+  const normalized = normalizeProductLookupText(query);
+  if (!normalized) return false;
+  const tokens = normalized.split(' ').filter(Boolean);
+  if (tokens.length >= 2) return true;
+  return /^a[- ]?(?:spire|blaze|rise|live)$/i.test(query.trim());
+}
+
+export function selectShopifyProductsForStockQuery(
+  query: string,
+  products: Array<Record<string, unknown>>,
+): Array<Record<string, unknown>> {
+  if (!isSpecificProductQuery(query)) return [];
+  const normalizedQuery = normalizeProductLookupText(query);
+  const withLookup = products.map((product) => ({
+    product,
+    title: normalizeProductLookupText(product.title),
+    handle: normalizeProductLookupText(product.handle),
+  })).filter((entry) => entry.title || entry.handle);
+
+  const exactTitle = withLookup.filter((entry) => entry.title === normalizedQuery);
+  if (exactTitle.length > 0) return exactTitle.map((entry) => entry.product);
+
+  const exactHandle = withLookup.filter((entry) => entry.handle === normalizedQuery);
+  if (exactHandle.length > 0) return exactHandle.map((entry) => entry.product);
+
+  const contains = withLookup.filter((entry) =>
+    entry.title.includes(normalizedQuery) ||
+    entry.handle.includes(normalizedQuery) ||
+    normalizedQuery.includes(entry.title)
+  );
+  if (contains.length === 1) return [contains[0].product];
+  return contains.map((entry) => entry.product);
+}
+
 function stockStateForVariant(input: {
   productStatus: string | null;
   publishedAt: string | null;
@@ -493,7 +537,20 @@ export class ShopifyProvider implements CommerceProvider {
       );
       const products = payload?.products ?? [];
       const checkedAt = new Date().toISOString();
-      return products.flatMap((product) =>
+      if (products.length > 0) {
+        return products.flatMap((product) =>
+          mapShopifyProductToStockFacts(product, checkedAt)
+        );
+      }
+
+      const fallbackPayload = await this.fetch<{ products?: Array<Record<string, unknown>> }>(
+        `products.json?status=any&limit=250&fields=id,title,handle,status,published_at,variants`,
+      );
+      const fallbackProducts = selectShopifyProductsForStockQuery(
+        query,
+        fallbackPayload?.products ?? [],
+      );
+      return fallbackProducts.flatMap((product) =>
         mapShopifyProductToStockFacts(product, checkedAt)
       );
     } catch {

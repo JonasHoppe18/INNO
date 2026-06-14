@@ -1199,6 +1199,7 @@ export async function runDraftV2Pipeline(
         shop,
         supabase,
         customerContext: customer_context,
+        latestCustomerMessage: latestBody,
       }),
       runInternalRules({
         shop_id,

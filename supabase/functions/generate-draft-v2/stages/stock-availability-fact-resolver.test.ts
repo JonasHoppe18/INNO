@@ -1,6 +1,13 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
-import { summarizeStockAvailability } from "./fact-resolver.ts";
+import {
+  deriveStockProductCandidate,
+  resolveStockAvailabilityFactsForQueries,
+  stockProductQueriesForFactResolver,
+  summarizeStockAvailability,
+} from "./fact-resolver.ts";
 import type { StockAvailabilityFact, StockState } from "../../_shared/integrations/commerce/types.ts";
+import type { Plan } from "./planner.ts";
+import type { CaseState } from "./case-state-updater.ts";
 
 function fact(overrides: Partial<StockAvailabilityFact> = {}): StockAvailabilityFact {
   return {
@@ -26,12 +33,94 @@ function state(value: string): string {
   return /(?:^|;\s*)state=([^;]+)/.exec(value)?.[1] ?? "";
 }
 
+function plan(intent = "product_question"): Plan {
+  return {
+    primary_intent: intent,
+    resolution_stage: "info_only",
+    sub_queries: [],
+    required_facts: [],
+    skills_to_consider: [],
+    confidence: 0.9,
+    language: "en",
+  };
+}
+
+function caseState(products_mentioned: string[] = []): CaseState {
+  return {
+    intents: [],
+    entities: { order_numbers: [], customer_email: "", products_mentioned },
+    decisions_made: [],
+    open_questions: [],
+    pending_asks: [],
+    language: "en",
+    last_updated_msg_id: "m1",
+  };
+}
+
+Deno.test("clear stock questions derive conservative product candidates", () => {
+  assertEquals(deriveStockProductCandidate("Is A-Spire Wireless in stock?"), "A-Spire Wireless");
+  assertEquals(deriveStockProductCandidate("Do you have A-Rise available?"), "A-Rise");
+  assertEquals(deriveStockProductCandidate("Is A-Blaze in stock?"), "A-Blaze");
+  assertEquals(deriveStockProductCandidate("Do you have replacement ear pads?"), "replacement ear pads");
+});
+
+Deno.test("variant-only stock question does not derive product without context", () => {
+  assertEquals(deriveStockProductCandidate("Is the black version available?"), null);
+});
+
+Deno.test("product question with empty entities uses fallback candidate", () => {
+  assertEquals(
+    stockProductQueriesForFactResolver({
+      plan: plan(),
+      caseState: caseState(),
+      latestCustomerMessage: "Is A-Spire Wireless in stock?",
+    }),
+    ["A-Spire Wireless"],
+  );
+});
+
+Deno.test("variant-only question with empty entities yields no stock query", () => {
+  assertEquals(
+    stockProductQueriesForFactResolver({
+      plan: plan(),
+      caseState: caseState(),
+      latestCustomerMessage: "Is the black version available?",
+    }),
+    [],
+  );
+});
+
+Deno.test("existing products_mentioned take precedence over fallback candidate", () => {
+  assertEquals(
+    stockProductQueriesForFactResolver({
+      plan: plan(),
+      caseState: caseState(["A-Blaze"]),
+      latestCustomerMessage: "Is A-Spire Wireless in stock?",
+    }),
+    ["A-Blaze"],
+  );
+});
+
 Deno.test("stock fact emitted for confident single product match", () => {
   const [resolved] = summarizeStockAvailability("A-Spire Wireless", [fact()]);
   assertEquals(resolved.label, "Live stock availability");
   assertEquals(state(resolved.value), "in_stock");
   assertStringIncludes(resolved.value, "source=shopify_live");
   assertStringIncludes(resolved.value, "exact_quantity_hidden=true");
+});
+
+Deno.test("clear stock question + fallback query emits live stock fact with safe lookup result", async () => {
+  const queries = stockProductQueriesForFactResolver({
+    plan: plan(),
+    caseState: caseState(),
+    latestCustomerMessage: "Is A-Spire Wireless in stock?",
+  });
+  const [resolved] = await resolveStockAvailabilityFactsForQueries(
+    queries,
+    async () => [fact()],
+  );
+  assertEquals(resolved.label, "Live stock availability");
+  assertEquals(state(resolved.value), "in_stock");
 });
 
 Deno.test("multiple variants all same state summarize product-level state", () => {
