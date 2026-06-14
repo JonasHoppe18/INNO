@@ -513,6 +513,53 @@ export function buildTrackingDirective(
   return lines.join("\n");
 }
 
+const DELIVERED_NOT_RECEIVED_NEXT_STEP =
+  "Once you confirm the address, we can look into the shipment further with our shipping partner.";
+
+const GENERIC_DELIVERED_NOT_RECEIVED_CLOSING_RE =
+  /(?:\n\s*)?(?:I look forward to hearing from you|Looking forward to hearing from you|Feel free to reach out|Please let me know|Let me know|If you have any questions, feel free to contact us)\.?\s*$/i;
+
+function isDeliveredNotReceivedFlow(
+  facts: TrackingFact[],
+  latestCustomerMessage?: string | null,
+): boolean {
+  const notReceived = customerClaimsNotReceived(latestCustomerMessage);
+  if (!notReceived) return false;
+  const hasVerifiedDelivered = facts.some((fact) =>
+    fact.direction === "outbound" &&
+    fact.verification === "carrier_verified" &&
+    fact.state === "delivered"
+  );
+  const hasAnyVerifiedOutbound = facts.some((fact) =>
+    fact.direction === "outbound" &&
+    fact.verification === "carrier_verified"
+  );
+  return hasVerifiedDelivered ||
+    (!hasAnyVerifiedOutbound && customerReportsTrackingDelivered(latestCustomerMessage));
+}
+
+export function cleanupDeliveredNotReceivedDraft(
+  draft: string,
+  opts: {
+    trackingFacts?: TrackingFact[];
+    latestCustomerMessage?: string | null;
+  },
+): string {
+  if (!isDeliveredNotReceivedFlow(opts.trackingFacts ?? [], opts.latestCustomerMessage)) {
+    return draft;
+  }
+  const trimmed = String(draft ?? "").trim();
+  if (!trimmed) return trimmed;
+  const withoutGenericClosing = trimmed.replace(
+    GENERIC_DELIVERED_NOT_RECEIVED_CLOSING_RE,
+    "",
+  ).trimEnd();
+  if (/once you confirm the address/i.test(withoutGenericClosing)) {
+    return withoutGenericClosing.trim();
+  }
+  return `${withoutGenericClosing}\n\n${DELIVERED_NOT_RECEIVED_NEXT_STEP}`.trim();
+}
+
 function stockValueField(value: string, key: string): string | null {
   const match = new RegExp(`(?:^|;\\s*)${key}=([^;]+)`).exec(value);
   return match?.[1]?.trim() || null;
@@ -1775,7 +1822,13 @@ Returner JSON:
     }
     const parsed = JSON.parse(content);
 
-    const cleanedDraft = cleanDraftText(parsed.reply_draft ?? "");
+    const cleanedDraft = cleanupDeliveredNotReceivedDraft(
+      cleanDraftText(parsed.reply_draft ?? ""),
+      {
+        trackingFacts: facts.tracking_facts ?? [],
+        latestCustomerMessage,
+      },
+    );
     return {
       draft_text: normalizeOpeningGreeting(
         cleanedDraft,

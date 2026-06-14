@@ -1,5 +1,5 @@
 import { assert, assertStringIncludes } from "jsr:@std/assert@1";
-import { buildTrackingDirective, customerClaimsNotReceived, customerReportsTrackingDelivered } from "./writer.ts";
+import { buildTrackingDirective, cleanupDeliveredNotReceivedDraft, customerClaimsNotReceived, customerReportsTrackingDelivered } from "./writer.ts";
 import type { TrackingFact } from "../../_shared/tracking/normalized-tracking.ts";
 
 function f(p: Partial<TrackingFact>): TrackingFact {
@@ -72,6 +72,17 @@ function reportedDnr() {
   }).toLowerCase();
 }
 
+function cleanup(
+  draft: string,
+  state: TrackingFact["state"] = "delivered",
+  message = "Hi, the tracking says delivered, but I have not received my package.",
+) {
+  return cleanupDeliveredNotReceivedDraft(draft, {
+    trackingFacts: [f({ direction: "outbound", verification: "carrier_verified", state })],
+    latestCustomerMessage: message,
+  });
+}
+
 // 1. delivered + not-received → triggers the workflow block
 Deno.test("delivered + not received → triggers delivered-not-received workflow", () => {
   const d = dnr();
@@ -135,6 +146,73 @@ Deno.test("delivered-not-received: makes no refund/replacement/reshipment/compen
   for (const phrase of DNR_FORBIDDEN) {
     assert(!d.includes(phrase), `must not contain affirmative promise "${phrase}"`);
   }
+});
+
+Deno.test("delivered-not-received cleanup replaces generic ending with concrete next step", () => {
+  const draft = [
+    "Hi there,",
+    "",
+    "The tracking shows delivered, but that does not necessarily confirm that you personally received the package. Could you please confirm that the delivery address on your order is correct?",
+    "",
+    "I look forward to hearing from you.",
+  ].join("\n");
+  const cleaned = cleanup(draft);
+  assert(!/I look forward to hearing from you/i.test(cleaned));
+  assertStringIncludes(cleaned, "Once you confirm the address");
+  assertStringIncludes(cleaned, "shipping partner");
+});
+
+Deno.test("delivered-not-received cleanup removes generic ending without duplicating existing next step", () => {
+  const draft = [
+    "Please confirm the delivery address so we can look into this further.",
+    "",
+    "Once you confirm the address, we can look into the shipment further with our shipping partner.",
+    "",
+    "Let me know.",
+  ].join("\n");
+  const cleaned = cleanup(draft);
+  assert(!/Let me know/i.test(cleaned));
+  const matches = cleaned.match(/Once you confirm the address/gi) ?? [];
+  assert(matches.length === 1, "concrete next step should not be duplicated");
+});
+
+Deno.test("delivered-not-received cleanup adds no refund replacement reshipment or compensation promise", () => {
+  const cleaned = cleanup("Please confirm your delivery address.\n\nFeel free to reach out.").toLowerCase();
+  for (const phrase of DNR_FORBIDDEN) {
+    assert(!cleaned.includes(phrase), `must not contain affirmative promise "${phrase}"`);
+  }
+});
+
+Deno.test("ordinary delivered tracking without dispute cleanup is unchanged", () => {
+  const draft = "Tracking shows the package was delivered.\n\nI look forward to hearing from you.";
+  const cleaned = cleanupDeliveredNotReceivedDraft(draft, {
+    trackingFacts: [f({ direction: "outbound", verification: "carrier_verified", state: "delivered" })],
+    latestCustomerMessage: "Where is my order?",
+  });
+  assert(cleaned === draft);
+});
+
+Deno.test("in-transit tracking cleanup is unchanged", () => {
+  const draft = "Your package is on the way.\n\nI look forward to hearing from you.";
+  assert(cleanup(draft, "in_transit") === draft);
+});
+
+Deno.test("return tracking cleanup is unchanged", () => {
+  const draft = "Thanks for the return tracking number.\n\nPlease let me know.";
+  const cleaned = cleanupDeliveredNotReceivedDraft(draft, {
+    trackingFacts: [f({ direction: "return", verification: "customer_provided", state: "unknown" })],
+    latestCustomerMessage: "The return tracking number is 1234567890.",
+  });
+  assert(cleaned === draft);
+});
+
+Deno.test("refund wording cleanup is unchanged", () => {
+  const draft = "A refund has not been issued yet.\n\nLet me know.";
+  const cleaned = cleanupDeliveredNotReceivedDraft(draft, {
+    trackingFacts: [],
+    latestCustomerMessage: "When will I get my refund?",
+  });
+  assert(cleaned === draft);
 });
 
 // Customer-reported delivered + not-received, but no verified tracking facts.
