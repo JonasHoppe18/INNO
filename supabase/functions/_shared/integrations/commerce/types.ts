@@ -86,6 +86,32 @@ export interface TrackingInfo {
   events?: Array<{ timestamp: string; description: string; location?: string }>;
 }
 
+export type StockState =
+  | "in_stock"
+  | "out_of_stock"
+  | "low_stock"
+  | "preorder"
+  | "unavailable"
+  | "discontinued"
+  | "unknown";
+
+export interface StockAvailabilityFact {
+  product_id: string;
+  product_title: string;
+  product_handle?: string | null;
+  variant_id: string | null;
+  variant_title: string | null;
+  sku: string | null;
+  state: StockState;
+  quantity: number | null;
+  inventory_policy: "deny" | "continue" | null;
+  inventory_management: string | null;
+  product_status: string | null;
+  published_at: string | null;
+  source: "shopify_live";
+  checked_at: string;
+}
+
 export interface RefundOpts {
   amount?: number;
   reason?: string;
@@ -128,6 +154,7 @@ export interface CommerceProvider {
   listOrdersByEmail(email: string, limit?: number): Promise<Order[]>;
   listOrdersByPhone(phone: string, limit?: number): Promise<Order[]>;
   getTracking(orderId: string): Promise<TrackingInfo[]>;
+  searchProductInventory(query: string): Promise<StockAvailabilityFact[]>;
 
   // --- Write operations ---
   cancelOrder(id: string, opts?: { reason?: string; notifyCustomer?: boolean }): Promise<void>;

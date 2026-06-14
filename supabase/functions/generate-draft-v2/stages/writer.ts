@@ -2,7 +2,7 @@
 import { Plan } from "./planner.ts";
 import { CaseState } from "./case-state-updater.ts";
 import { RetrieverResult } from "./retriever.ts";
-import { FactResolverResult, deriveRefundStatus, type OrderMatch, type RefundStatus } from "./fact-resolver.ts";
+import { FactResolverResult, deriveRefundStatus, type OrderMatch, type RefundStatus, type ResolvedFact } from "./fact-resolver.ts";
 import type { TrackingFact } from "../../_shared/tracking/normalized-tracking.ts";
 import { ActionProposal } from "./action-decision.ts";
 import { resolveReplyLanguage } from "./language.ts";
@@ -510,6 +510,48 @@ export function buildTrackingDirective(
       "Tilbyd IKKE proaktiv opfølgning på forsendelsen, lov ingen besked/notifikation, og beskriv ingen automatisk refunderings-proces. " +
       "Bland ALDRIG outbound- og retur-tracking sammen.",
   );
+  return lines.join("\n");
+}
+
+function stockValueField(value: string, key: string): string | null {
+  const match = new RegExp(`(?:^|;\\s*)${key}=([^;]+)`).exec(value);
+  return match?.[1]?.trim() || null;
+}
+
+export function buildStockAvailabilityDirective(facts: ResolvedFact[]): string {
+  const stockFacts = facts.filter((fact) => fact.label === "Live stock availability");
+  if (stockFacts.length === 0) {
+    return [
+      "# Live stock availability guardrails",
+      "- No live Shopify stock availability fact is present. Do NOT claim that a product or variant is in stock, out of stock, available for preorder, reserved, held, discontinued, or expected back on a date.",
+      "- If the customer asks about stock/availability and no live stock fact is present, say that live availability cannot be confirmed right now and ask for the exact product name or link if needed.",
+      "- Do not use old knowledge-base chunks, product descriptions, or examples as live stock truth.",
+    ].join("\n");
+  }
+
+  const lines = [
+    "# Live stock availability (read-only Shopify facts)",
+    "- Use ONLY these live Shopify stock facts for stock/availability claims. Do not use knowledge-base text as live stock truth.",
+    "- Never mention exact inventory quantity. Never promise a restock date, preorder, reservation, holding stock, or inventory update unless a live fact explicitly says so.",
+  ];
+  for (const fact of stockFacts) {
+    const state = stockValueField(fact.value, "state") ?? "unknown";
+    const product = stockValueField(fact.value, "product") ??
+      stockValueField(fact.value, "product_query") ?? "the product";
+    const variant = stockValueField(fact.value, "variant");
+    lines.push(`- Fact: ${fact.value}`);
+    if (state === "in_stock") {
+      lines.push(`  Writer rule: You may say ${product}${variant && variant !== "all_variants" && variant !== "default" ? ` (${variant})` : ""} is currently available in the store. Do not include exact quantity.`);
+    } else if (state === "out_of_stock") {
+      lines.push(`  Writer rule: You may say ${product}${variant && variant !== "all_variants" && variant !== "default" ? ` (${variant})` : ""} currently appears to be out of stock. Also say there is no confirmed restock date right now unless a separate verified fact provides one.`);
+    } else if (state === "variant_clarification_required") {
+      lines.push("  Writer rule: Availability differs by variant/version. Ask the customer which version, color, or variant they mean before answering availability.");
+    } else if (state === "unavailable" || state === "discontinued") {
+      lines.push(`  Writer rule: Do not say ${product} is in stock. Say it is not currently available in the store if the customer asks.`);
+    } else {
+      lines.push("  Writer rule: Live availability is inconclusive. Say you cannot confirm live availability right now and ask for the exact product name/link or variant if needed.");
+    }
+  }
   return lines.join("\n");
 }
 
@@ -1138,6 +1180,7 @@ Support replied: "${ex.agent_reply.slice(0, 500)}"`;
     customerClaimsNotReceived: customerClaimsNotReceived(latestCustomerMessage),
     customerReportsTrackingDelivered: customerReportsTrackingDelivered(latestCustomerMessage),
   });
+  const stockAvailabilityBlock = buildStockAvailabilityDirective(facts.facts);
 
   // --- Verificerede fakta (deterministiske — brug disse frem for viden) ---
   const factsBlock = facts.facts.length > 0
@@ -1378,7 +1421,7 @@ ABSOLUTTE FORBUD (faktuel sikkerhed):
 - UVERIFICERET ORDRE: Hvis kunden HAR oplyst et ordrenummer der IKKE står i "Verificerede fakta" under "Ordre fundet", må du aldrig skrive "din ordre #X" som om den findes eller love handlinger på den. Forklar venligt at vi ikke kan finde nummeret i vores system, og spørg DA hvor produktet er købt.
 - Du er et menneske. Aldrig "Som AI kan jeg...".
 - Skriv ALDRIG signatur, navn eller email-adresser — tilføjes automatisk.
-- Brug KUN fakta fra "Verificerede fakta". Opfind aldrig priser, datoer, ordrenumre, policies eller lagerstatus.
+- Brug KUN fakta fra "Verificerede fakta". Opfind aldrig priser, datoer, ordrenumre, policies eller lagerstatus. Lager/availability må KUN besvares ud fra en "Live stock availability"-faktablok; ellers sig at live availability ikke kan bekræftes.
 - ALDRIG falsk bekræftelse: skriv aldrig at en handling ER udført medmindre actionResult bekræfter det. Planlagte actions venter på godkendelse.
 - ALDRIG "sender videre til teamet" / "kontakt kundesupport". Spørg ALDRIG om telefonnummer. URLs som plain text, aldrig markdown-links.
 - KANAL: Kunden skriver allerede i denne tråd. Bed dem aldrig "kontakte os" eller maile en support-adresse. Hvis et KB-trin siger det, så betragt trinet som opfyldt.
@@ -1433,7 +1476,7 @@ ABSOLUTTE FORBUD:
 - Du er et menneske. Aldrig "Som AI kan jeg...".
 - Skriv ALDRIG signatur, navn, sign-off eller email-adresser i svaret — tilføjes automatisk.
 - Brug KUN fakta fra "Verificerede fakta". Opfind aldrig priser, datoer, ordrenumre eller policies.
-- ALDRIG lagerantal, lagerstatus eller realtids-inventory — du har ikke adgang til live lagerdata. Sig i stedet at du tjekker, eller henvis til websitet.
+- ALDRIG lagerantal, lagerstatus eller realtids-inventory medmindre "Verificerede fakta" indeholder "Live stock availability". Selv da: giv ikke eksakt antal; sig kun currently available/out of stock/ask variant clarification/unknown according to the fact.
 - ALDRIG falsk bekræftelse: skriv ALDRIG at en handling er udført medmindre actionResult bekræfter det eksplicit. Planlagte actions er forslag der venter på menneskelig godkendelse.
 - ALDRIG "sender videre til teamet", "videreformidler", "kontakt kundesupport" — tag handlingen nu eller forklar præcist hvad der mangler.
 - Spørg ALDRIG om telefonnummer.
@@ -1592,6 +1635,7 @@ ${stageDirectives[resolutionStage] ?? stageDirectives.info_only}`;
     orderMatchBlock,
     refundStatusBlock,
     trackingBlock,
+    stockAvailabilityBlock,
     factsBlock,
     salutationBlock,
     variantBlock,

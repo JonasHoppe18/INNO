@@ -8,6 +8,8 @@ import type {
   RefundRecord,
   LineItemEdit,
   ActionType,
+  StockAvailabilityFact,
+  StockState,
 } from './types.ts';
 
 // Maps the `refunds[]` array already present in the Shopify REST order payload
@@ -153,6 +155,85 @@ function mapOrder(raw: RawShopifyOrder): Order {
     tags: raw.tags ?? undefined,
     note: raw.note ?? undefined,
   };
+}
+
+function nullableString(value: unknown): string | null {
+  const text = String(value ?? '').trim();
+  return text || null;
+}
+
+function numericQuantity(value: unknown): number | null {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
+function normalizeInventoryPolicy(value: unknown): 'deny' | 'continue' | null {
+  const text = String(value ?? '').trim().toLowerCase();
+  return text === 'deny' || text === 'continue' ? text : null;
+}
+
+function stockStateForVariant(input: {
+  productStatus: string | null;
+  publishedAt: string | null;
+  quantity: number | null;
+  inventoryPolicy: 'deny' | 'continue' | null;
+  inventoryManagement: string | null;
+}): StockState {
+  const status = String(input.productStatus ?? '').trim().toLowerCase();
+  if (status === 'archived') return 'discontinued';
+  if (status && status !== 'active') return 'unavailable';
+  if (!input.publishedAt) return 'unavailable';
+  if (!input.inventoryManagement) return 'unknown';
+  if (input.inventoryPolicy === 'deny') {
+    return (input.quantity ?? 0) > 0 ? 'in_stock' : 'out_of_stock';
+  }
+  if (input.inventoryPolicy === 'continue') {
+    return (input.quantity ?? 0) > 0 ? 'in_stock' : 'unknown';
+  }
+  return (input.quantity ?? 0) > 0 ? 'in_stock' : 'unknown';
+}
+
+export function mapShopifyProductToStockFacts(
+  product: Record<string, unknown>,
+  checkedAt = new Date().toISOString(),
+): StockAvailabilityFact[] {
+  const productId = String(product?.id ?? '').trim();
+  const productTitle = String(product?.title ?? '').trim();
+  if (!productId || !productTitle) return [];
+  const productStatus = nullableString(product?.status);
+  const publishedAt = nullableString(product?.published_at);
+  const productHandle = nullableString(product?.handle);
+  const variants = Array.isArray(product?.variants) ? product.variants : [];
+  return variants.map((variantRaw) => {
+    const variant = variantRaw && typeof variantRaw === 'object'
+      ? variantRaw as Record<string, unknown>
+      : {};
+    const quantity = numericQuantity(variant?.inventory_quantity);
+    const inventoryPolicy = normalizeInventoryPolicy(variant?.inventory_policy);
+    const inventoryManagement = nullableString(variant?.inventory_management);
+    return {
+      product_id: productId,
+      product_title: productTitle,
+      product_handle: productHandle,
+      variant_id: nullableString(variant?.id),
+      variant_title: nullableString(variant?.title) ?? 'Default Title',
+      sku: nullableString(variant?.sku),
+      state: stockStateForVariant({
+        productStatus,
+        publishedAt,
+        quantity,
+        inventoryPolicy,
+        inventoryManagement,
+      }),
+      quantity,
+      inventory_policy: inventoryPolicy,
+      inventory_management: inventoryManagement,
+      product_status: productStatus,
+      published_at: publishedAt,
+      source: 'shopify_live' as const,
+      checked_at: checkedAt,
+    };
+  });
 }
 
 export class ShopifyProvider implements CommerceProvider {
@@ -404,28 +485,17 @@ export class ShopifyProvider implements CommerceProvider {
   // Used by fact_resolver when customer asks about product availability.
   async searchProductInventory(
     query: string,
-  ): Promise<Array<{ title: string; variant: string; available: boolean; quantity: number }>> {
+  ): Promise<StockAvailabilityFact[]> {
     try {
       const encoded = encodeURIComponent(query.slice(0, 100));
       const payload = await this.fetch<{ products?: Array<Record<string, unknown>> }>(
-        `products.json?title=${encoded}&limit=5&fields=id,title,variants`,
+        `products.json?title=${encoded}&status=any&limit=5&fields=id,title,handle,status,published_at,variants`,
       );
       const products = payload?.products ?? [];
-      const results: Array<{ title: string; variant: string; available: boolean; quantity: number }> = [];
-      for (const product of products) {
-        const title = String(product.title ?? "");
-        const variants = Array.isArray(product.variants) ? product.variants : [];
-        for (const v of variants) {
-          const qty = Number(v.inventory_quantity ?? 0);
-          results.push({
-            title,
-            variant: String(v.title ?? "Default"),
-            available: qty > 0,
-            quantity: qty,
-          });
-        }
-      }
-      return results;
+      const checkedAt = new Date().toISOString();
+      return products.flatMap((product) =>
+        mapShopifyProductToStockFacts(product, checkedAt)
+      );
     } catch {
       return [];
     }

@@ -5,7 +5,7 @@ import { CaseState } from "./case-state-updater.ts";
 import {
   createCommerceProvider,
 } from "../../_shared/integrations/commerce/index.ts";
-import type { Order } from "../../_shared/integrations/commerce/types.ts";
+import type { Order, StockAvailabilityFact, StockState } from "../../_shared/integrations/commerce/types.ts";
 import { fetchTrackingDetailsForOrders, resolveOutboundTrackingFacts } from "../../_shared/tracking.ts";
 import type { TrackingFact } from "../../_shared/tracking/normalized-tracking.ts";
 import { decryptShopifyToken } from "../../_shared/shopify-credentials.ts";
@@ -13,6 +13,153 @@ import { decryptShopifyToken } from "../../_shared/shopify-credentials.ts";
 export interface ResolvedFact {
   label: string;
   value: string;
+}
+
+const STOCK_FACT_LABEL = "Live stock availability";
+
+function normalizeStockMatchText(value: string | null | undefined): string {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function isDefaultVariantTitle(title: string | null | undefined): boolean {
+  return normalizeStockMatchText(title) === "default title";
+}
+
+function stockFactValue(fields: Record<string, string | number | boolean | null | undefined>): string {
+  return Object.entries(fields)
+    .filter(([, value]) => value !== undefined && value !== null && value !== "")
+    .map(([key, value]) => `${key}=${String(value).replace(/[;\n]/g, " ").trim()}`)
+    .join("; ");
+}
+
+function pickProductFacts(
+  query: string,
+  facts: StockAvailabilityFact[],
+): { selected: StockAvailabilityFact[]; reason: string | null } {
+  const byProduct = new Map<string, StockAvailabilityFact[]>();
+  for (const fact of facts) {
+    if (!fact.product_id) continue;
+    const current = byProduct.get(fact.product_id) ?? [];
+    current.push(fact);
+    byProduct.set(fact.product_id, current);
+  }
+  const products = [...byProduct.values()];
+  if (products.length === 0) return { selected: [], reason: "not_found" };
+  if (products.length === 1) return { selected: products[0], reason: null };
+
+  const normalizedQuery = normalizeStockMatchText(query);
+  const exact = products.filter((group) =>
+    normalizeStockMatchText(group[0]?.product_title) === normalizedQuery
+  );
+  if (exact.length === 1) return { selected: exact[0], reason: null };
+  return { selected: [], reason: "ambiguous_product" };
+}
+
+function statePriority(state: StockState): number {
+  switch (state) {
+    case "in_stock":
+      return 1;
+    case "out_of_stock":
+      return 2;
+    case "unavailable":
+      return 3;
+    case "discontinued":
+      return 4;
+    case "low_stock":
+      return 5;
+    case "preorder":
+      return 6;
+    case "unknown":
+    default:
+      return 7;
+  }
+}
+
+export function summarizeStockAvailability(
+  query: string,
+  rawFacts: StockAvailabilityFact[],
+): ResolvedFact[] {
+  const { selected, reason } = pickProductFacts(query, rawFacts);
+  if (reason || selected.length === 0) {
+    return [{
+      label: STOCK_FACT_LABEL,
+      value: stockFactValue({
+        state: "unknown",
+        product_query: query,
+        reason: reason ?? "not_found",
+        source: "shopify_live",
+      }),
+    }];
+  }
+
+  const product = selected[0];
+  const normalizedQuery = normalizeStockMatchText(query);
+  const variantMatches = selected.filter((fact) =>
+    fact.variant_title &&
+    !isDefaultVariantTitle(fact.variant_title) &&
+    normalizedQuery.includes(normalizeStockMatchText(fact.variant_title))
+  );
+  const factsForSummary = variantMatches.length > 0 ? variantMatches : selected;
+  if (factsForSummary.length === 1) {
+    const fact = factsForSummary[0];
+    return [{
+      label: STOCK_FACT_LABEL,
+      value: stockFactValue({
+        state: fact.state,
+        product_id: fact.product_id,
+        product: fact.product_title,
+        variant_id: fact.variant_id,
+        variant: isDefaultVariantTitle(fact.variant_title) ? "default" : fact.variant_title,
+        inventory_policy: fact.inventory_policy,
+        inventory_management: fact.inventory_management,
+        product_status: fact.product_status,
+        published: Boolean(fact.published_at),
+        source: fact.source,
+        checked_at: fact.checked_at,
+        exact_quantity_hidden: true,
+      }),
+    }];
+  }
+
+  const states = new Set(factsForSummary.map((fact) => fact.state));
+  if (states.size === 1) {
+    const state = factsForSummary[0].state;
+    return [{
+      label: STOCK_FACT_LABEL,
+      value: stockFactValue({
+        state,
+        product_id: product.product_id,
+        product: product.product_title,
+        variant: "all_variants",
+        source: product.source,
+        checked_at: product.checked_at,
+        exact_quantity_hidden: true,
+      }),
+    }];
+  }
+
+  const visibleStates = [...states].sort((a, b) => statePriority(a) - statePriority(b));
+  return [{
+    label: STOCK_FACT_LABEL,
+    value: stockFactValue({
+      state: "variant_clarification_required",
+      product_id: product.product_id,
+      product: product.product_title,
+      variants: factsForSummary
+        .map((fact) => fact.variant_title)
+        .filter((title) => title && !isDefaultVariantTitle(title))
+        .join("|"),
+      variant_states: visibleStates.join("|"),
+      reason: "mixed_variant_availability",
+      source: product.source,
+      checked_at: product.checked_at,
+    }),
+  }];
 }
 
 // Order-match confidence — additive, read-only. Lets the writer and the action
@@ -497,20 +644,12 @@ export async function runFactResolver(
           shop_domain: shopDomain2,
           access_token: shopifyToken2,
           api_version: "2024-04",
-        }) as unknown as { searchProductInventory?: (q: string) => Promise<Array<{ title: string; variant: string; available: boolean; quantity: number }>> };
+        });
 
         if (typeof provider2.searchProductInventory === "function") {
           for (const product of caseState.entities.products_mentioned.slice(0, 3)) {
             const results = await provider2.searchProductInventory(product);
-            if (results.length > 0) {
-              const allUnavailable = results.every((r) => !r.available);
-              const summary = allUnavailable
-                ? `Udsolgt (${results[0].title})`
-                : results.map((r) =>
-                  `${r.title}${r.variant !== "Default Title" ? ` – ${r.variant}` : ""}: ${r.available ? `${r.quantity} på lager` : "Udsolgt"}`
-                ).join(", ");
-              facts.push({ label: "Lagerstatus", value: summary });
-            }
+            facts.push(...summarizeStockAvailability(product, results));
           }
         }
       } catch (err) {
