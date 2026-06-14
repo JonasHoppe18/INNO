@@ -6,6 +6,7 @@ import {
   createCommerceProvider,
 } from "../../_shared/integrations/commerce/index.ts";
 import type { Order, StockAvailabilityFact, StockState } from "../../_shared/integrations/commerce/types.ts";
+import type { ShopifyProductInventoryLookupDiagnostics } from "../../_shared/integrations/commerce/shopify-provider.ts";
 import { fetchTrackingDetailsForOrders, resolveOutboundTrackingFacts } from "../../_shared/tracking.ts";
 import type { TrackingFact } from "../../_shared/tracking/normalized-tracking.ts";
 import { decryptShopifyToken } from "../../_shared/shopify-credentials.ts";
@@ -94,6 +95,157 @@ export async function resolveStockAvailabilityFactsForQueries(
     facts.push(...summarizeStockAvailability(product, results));
   }
   return facts;
+}
+
+export interface StockLookupDebug {
+  stock_lookup_intent: {
+    primary_intent: string;
+    considered_stock_question: boolean;
+  };
+  stock_lookup_entities: {
+    products_mentioned: string[];
+    fallback_product_candidate: string | null;
+    latest_body_used: string;
+  };
+  attempts: Array<{
+    stock_lookup_attempt: {
+      attempted: boolean;
+      query: string;
+    };
+    shopify_lookup_result?: ShopifyProductInventoryLookupDiagnostics;
+    stock_mapping_result?: {
+      product_statuses: string[];
+      published_at_present: boolean;
+      variant_count: number;
+      mixed_variants: boolean;
+      inventory_management_summary: string[];
+      inventory_policy_summary: string[];
+      mapped_states: string[];
+      clarification_required: boolean;
+      unknown_reasons: string[];
+    };
+    stock_fact_result: {
+      emitted: boolean;
+      fact_label: string | null;
+      stock_state: string | null;
+      writer_received: boolean;
+    };
+  }>;
+}
+
+type StockInventoryLookupWithDiagnostics = {
+  searchProductInventoryWithDiagnostics(
+    query: string,
+  ): Promise<{
+    facts: StockAvailabilityFact[];
+    diagnostics?: ShopifyProductInventoryLookupDiagnostics;
+  }>;
+};
+
+function hasStockInventoryLookupDiagnostics(
+  provider: unknown,
+): provider is StockInventoryLookupWithDiagnostics {
+  return Boolean(
+    provider &&
+      typeof provider === "object" &&
+      "searchProductInventoryWithDiagnostics" in provider &&
+      typeof (provider as Record<string, unknown>).searchProductInventoryWithDiagnostics ===
+        "function",
+  );
+}
+
+function stockStateFromResolvedFact(fact: ResolvedFact | undefined): string | null {
+  if (!fact) return null;
+  return /(?:^|;\s*)state=([^;]+)/.exec(fact.value)?.[1] ?? null;
+}
+
+function stockMappingDiagnostics(
+  rawFacts: StockAvailabilityFact[],
+  resolvedFacts: ResolvedFact[],
+): StockLookupDebug["attempts"][number]["stock_mapping_result"] {
+  const states = [...new Set(rawFacts.map((fact) => fact.state).filter(Boolean))];
+  const productStatuses = [...new Set(rawFacts.map((fact) => fact.product_status ?? "null"))];
+  const inventoryManagement = [
+    ...new Set(rawFacts.map((fact) => fact.inventory_management ?? "null")),
+  ];
+  const inventoryPolicies = [
+    ...new Set(rawFacts.map((fact) => fact.inventory_policy ?? "null")),
+  ];
+  const resolvedState = stockStateFromResolvedFact(resolvedFacts[0]);
+  const unknownReasons = resolvedFacts
+    .map((fact) => /(?:^|;\s*)reason=([^;]+)/.exec(fact.value)?.[1] ?? null)
+    .filter((reason): reason is string => Boolean(reason));
+  return {
+    product_statuses: productStatuses,
+    published_at_present: rawFacts.some((fact) => Boolean(fact.published_at)),
+    variant_count: rawFacts.length,
+    mixed_variants: states.length > 1,
+    inventory_management_summary: inventoryManagement,
+    inventory_policy_summary: inventoryPolicies,
+    mapped_states: resolvedState ? [resolvedState] : states,
+    clarification_required: resolvedState === "variant_clarification_required",
+    unknown_reasons: unknownReasons,
+  };
+}
+
+export async function resolveStockAvailabilityFactsWithDiagnostics(
+  input: {
+    plan: Plan;
+    caseState: CaseState;
+    latestCustomerMessage?: string | null;
+    queries: string[];
+    lookup: (query: string) => Promise<
+      | StockAvailabilityFact[]
+      | {
+        facts: StockAvailabilityFact[];
+        diagnostics?: ShopifyProductInventoryLookupDiagnostics;
+      }
+    >;
+  },
+): Promise<{ facts: ResolvedFact[]; diagnostics: StockLookupDebug }> {
+  const latestBody = String(input.latestCustomerMessage ?? "");
+  const fallbackProductCandidate =
+    input.caseState.entities.products_mentioned.length > 0
+      ? null
+      : deriveStockProductCandidate(latestBody);
+  const diagnostics: StockLookupDebug = {
+    stock_lookup_intent: {
+      primary_intent: input.plan.primary_intent,
+      considered_stock_question: isStockAvailabilityQuestion(latestBody),
+    },
+    stock_lookup_entities: {
+      products_mentioned: [...input.caseState.entities.products_mentioned],
+      fallback_product_candidate: fallbackProductCandidate,
+      latest_body_used: latestBody,
+    },
+    attempts: [],
+  };
+  const facts: ResolvedFact[] = [];
+
+  for (const query of input.queries.slice(0, 3)) {
+    const lookupResult = await input.lookup(query);
+    const rawFacts = Array.isArray(lookupResult) ? lookupResult : lookupResult.facts;
+    const resolvedFacts = summarizeStockAvailability(query, rawFacts);
+    facts.push(...resolvedFacts);
+    diagnostics.attempts.push({
+      stock_lookup_attempt: {
+        attempted: true,
+        query,
+      },
+      ...(Array.isArray(lookupResult) || !lookupResult.diagnostics
+        ? {}
+        : { shopify_lookup_result: lookupResult.diagnostics }),
+      stock_mapping_result: stockMappingDiagnostics(rawFacts, resolvedFacts),
+      stock_fact_result: {
+        emitted: resolvedFacts.some((fact) => fact.label === STOCK_FACT_LABEL),
+        fact_label: resolvedFacts[0]?.label ?? null,
+        stock_state: stockStateFromResolvedFact(resolvedFacts[0]),
+        writer_received: resolvedFacts.some((fact) => fact.label === STOCK_FACT_LABEL),
+      },
+    });
+  }
+
+  return { facts, diagnostics };
 }
 
 function isDefaultVariantTitle(title: string | null | undefined): boolean {
@@ -440,6 +592,7 @@ function pickLastTimestamp(
 export interface FactResolverResult {
   facts: ResolvedFact[];
   order?: Order | null;
+  stock_lookup_debug?: StockLookupDebug;
   // Always populated by runFactResolver. Optional in the type so legacy callers
   // / fixtures that omit it still typecheck; consumers default to a safe state.
   match?: OrderMatch;
@@ -689,6 +842,31 @@ export async function runFactResolver(
     caseState,
     latestCustomerMessage,
   });
+  const stockLookupDebugBase: StockLookupDebug = {
+    stock_lookup_intent: {
+      primary_intent: plan.primary_intent,
+      considered_stock_question: isStockAvailabilityQuestion(latestCustomerMessage),
+    },
+    stock_lookup_entities: {
+      products_mentioned: [...caseState.entities.products_mentioned],
+      fallback_product_candidate: caseState.entities.products_mentioned.length > 0
+        ? null
+        : deriveStockProductCandidate(latestCustomerMessage),
+      latest_body_used: String(latestCustomerMessage ?? ""),
+    },
+    attempts: stockProductQueries.map((query) => ({
+      stock_lookup_attempt: {
+        attempted: false,
+        query,
+      },
+      stock_fact_result: {
+        emitted: false,
+        fact_label: null,
+        stock_state: null,
+        writer_received: false,
+      },
+    })),
+  };
   const needsInventory = plan.primary_intent === "product_question" &&
     stockProductQueries.length > 0;
 
@@ -705,7 +883,11 @@ export async function runFactResolver(
     plan.required_facts.some((f) =>
       f === "order_state" || f === "tracking" || f === "return_eligibility"
     );
-  if (!needsOrder && !needsInventory) return { facts, order: null };
+  if (!needsOrder && !needsInventory) {
+    return plan.primary_intent === "product_question"
+      ? { facts, order: null, stock_lookup_debug: stockLookupDebugBase }
+      : { facts, order: null };
+  }
 
   // --- Inventory lookup (product_question intent) ---
   if (needsInventory && !needsOrder) {
@@ -723,16 +905,24 @@ export async function runFactResolver(
         });
 
         if (typeof provider2.searchProductInventory === "function") {
-          facts.push(...await resolveStockAvailabilityFactsForQueries(
-            stockProductQueries,
-            (product) => provider2.searchProductInventory(product),
-          ));
+          const lookupWithDiagnostics = hasStockInventoryLookupDiagnostics(provider2)
+            ? (product: string) => provider2.searchProductInventoryWithDiagnostics(product)
+            : (product: string) => provider2.searchProductInventory(product);
+          const resolved = await resolveStockAvailabilityFactsWithDiagnostics({
+            plan,
+            caseState,
+            latestCustomerMessage,
+            queries: stockProductQueries,
+            lookup: lookupWithDiagnostics,
+          });
+          facts.push(...resolved.facts);
+          return { facts, order: null, stock_lookup_debug: resolved.diagnostics };
         }
       } catch (err) {
         console.warn("[fact-resolver] Inventory lookup failed:", err);
       }
     }
-    return { facts, order: null };
+    return { facts, order: null, stock_lookup_debug: stockLookupDebugBase };
   }
 
   const contextOrder = orderFromCustomerContext(customerContext);

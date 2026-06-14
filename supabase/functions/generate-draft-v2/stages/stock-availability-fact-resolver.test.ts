@@ -2,6 +2,7 @@ import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import {
   deriveStockProductCandidate,
   resolveStockAvailabilityFactsForQueries,
+  resolveStockAvailabilityFactsWithDiagnostics,
   stockProductQueriesForFactResolver,
   summarizeStockAvailability,
 } from "./fact-resolver.ts";
@@ -121,6 +122,125 @@ Deno.test("clear stock question + fallback query emits live stock fact with safe
   );
   assertEquals(resolved.label, "Live stock availability");
   assertEquals(state(resolved.value), "in_stock");
+});
+
+Deno.test("stock diagnostics record fallback candidate and lookup attempt", async () => {
+  const input = {
+    plan: plan(),
+    caseState: caseState(),
+    latestCustomerMessage: "Is A-Spire Wireless in stock?",
+  };
+  const queries = stockProductQueriesForFactResolver(input);
+  const result = await resolveStockAvailabilityFactsWithDiagnostics({
+    ...input,
+    queries,
+    lookup: async () => ({
+      facts: [fact()],
+      diagnostics: {
+        query: "A-Spire Wireless",
+        title_search_product_count: 0,
+        list_fallback_attempted: true,
+        list_fallback_product_count: 7,
+        matched_products: [{
+          id: "p1",
+          title: "A-Spire Wireless",
+          handle: "a-spire-wireless",
+        }],
+        ambiguous_match: false,
+        no_match: false,
+      },
+    }),
+  });
+
+  assertEquals(result.diagnostics.stock_lookup_intent.primary_intent, "product_question");
+  assertEquals(result.diagnostics.stock_lookup_intent.considered_stock_question, true);
+  assertEquals(result.diagnostics.stock_lookup_entities.products_mentioned, []);
+  assertEquals(result.diagnostics.stock_lookup_entities.fallback_product_candidate, "A-Spire Wireless");
+  assertEquals(result.diagnostics.stock_lookup_entities.latest_body_used, "Is A-Spire Wireless in stock?");
+  assertEquals(result.diagnostics.attempts[0].stock_lookup_attempt, {
+    attempted: true,
+    query: "A-Spire Wireless",
+  });
+});
+
+Deno.test("stock diagnostics record title-empty list fallback match", async () => {
+  const result = await resolveStockAvailabilityFactsWithDiagnostics({
+    plan: plan(),
+    caseState: caseState(),
+    latestCustomerMessage: "Is A-Spire Wireless in stock?",
+    queries: ["A-Spire Wireless"],
+    lookup: async () => ({
+      facts: [fact()],
+      diagnostics: {
+        query: "A-Spire Wireless",
+        title_search_product_count: 0,
+        list_fallback_attempted: true,
+        list_fallback_product_count: 12,
+        matched_products: [{
+          id: "p1",
+          title: "A-Spire Wireless",
+          handle: "a-spire-wireless",
+        }],
+        ambiguous_match: false,
+        no_match: false,
+      },
+    }),
+  });
+  const attempt = result.diagnostics.attempts[0];
+  assertEquals(attempt.shopify_lookup_result?.title_search_product_count, 0);
+  assertEquals(attempt.shopify_lookup_result?.list_fallback_attempted, true);
+  assertEquals(attempt.shopify_lookup_result?.list_fallback_product_count, 12);
+  assertEquals(attempt.shopify_lookup_result?.matched_products[0].title, "A-Spire Wireless");
+  assertEquals(attempt.stock_fact_result.emitted, true);
+  assertEquals(attempt.stock_fact_result.stock_state, "in_stock");
+  assertEquals(attempt.stock_fact_result.writer_received, true);
+});
+
+Deno.test("stock diagnostics record ambiguous fallback and unknown mapping reason", async () => {
+  const result = await resolveStockAvailabilityFactsWithDiagnostics({
+    plan: plan(),
+    caseState: caseState(),
+    latestCustomerMessage: "Is A-Spire in stock?",
+    queries: ["A-Spire"],
+    lookup: async () => ({
+      facts: [
+        fact({ product_id: "p1", product_title: "A-Spire Wireless" }),
+        fact({ product_id: "p2", product_title: "A-Spire Wired", state: "out_of_stock" }),
+      ],
+      diagnostics: {
+        query: "A-Spire",
+        title_search_product_count: 0,
+        list_fallback_attempted: true,
+        list_fallback_product_count: 12,
+        matched_products: [
+          { id: "p1", title: "A-Spire Wireless", handle: "a-spire-wireless" },
+          { id: "p2", title: "A-Spire Wired", handle: "a-spire" },
+        ],
+        ambiguous_match: true,
+        no_match: false,
+      },
+    }),
+  });
+  const attempt = result.diagnostics.attempts[0];
+  assertEquals(attempt.shopify_lookup_result?.ambiguous_match, true);
+  assertEquals(attempt.stock_mapping_result?.mapped_states, ["unknown"]);
+  assertEquals(attempt.stock_mapping_result?.unknown_reasons, ["ambiguous_product"]);
+  assertEquals(attempt.stock_fact_result.emitted, true);
+  assertEquals(attempt.stock_fact_result.stock_state, "unknown");
+});
+
+Deno.test("stock diagnostics record mapped unknown inventory-management reason", async () => {
+  const result = await resolveStockAvailabilityFactsWithDiagnostics({
+    plan: plan(),
+    caseState: caseState(),
+    latestCustomerMessage: "Is A-Spire Wireless in stock?",
+    queries: ["A-Spire Wireless"],
+    lookup: async () => [fact({ inventory_management: null, state: "unknown" })],
+  });
+  const attempt = result.diagnostics.attempts[0];
+  assertEquals(attempt.stock_mapping_result?.inventory_management_summary, ["null"]);
+  assertEquals(attempt.stock_mapping_result?.mapped_states, ["unknown"]);
+  assertEquals(attempt.stock_fact_result.stock_state, "unknown");
 });
 
 Deno.test("multiple variants all same state summarize product-level state", () => {

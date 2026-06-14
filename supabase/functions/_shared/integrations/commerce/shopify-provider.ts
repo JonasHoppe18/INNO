@@ -216,6 +216,49 @@ export function selectShopifyProductsForStockQuery(
   return contains.map((entry) => entry.product);
 }
 
+export interface ShopifyProductInventoryLookupDiagnostics {
+  query: string;
+  title_search_product_count: number;
+  list_fallback_attempted: boolean;
+  list_fallback_product_count: number;
+  matched_products: Array<{
+    id: string | null;
+    title: string | null;
+    handle: string | null;
+  }>;
+  ambiguous_match: boolean;
+  no_match: boolean;
+}
+
+function productLookupDiagnostics(
+  query: string,
+  input: {
+    titleProducts: Array<Record<string, unknown>>;
+    listFallbackAttempted: boolean;
+    listFallbackProductCount: number;
+    matchedProducts: Array<Record<string, unknown>>;
+  },
+): ShopifyProductInventoryLookupDiagnostics {
+  const productIds = new Set(
+    input.matchedProducts
+      .map((product) => String(product.id ?? "").trim())
+      .filter(Boolean),
+  );
+  return {
+    query,
+    title_search_product_count: input.titleProducts.length,
+    list_fallback_attempted: input.listFallbackAttempted,
+    list_fallback_product_count: input.listFallbackProductCount,
+    matched_products: input.matchedProducts.map((product) => ({
+      id: product.id == null ? null : String(product.id),
+      title: product.title == null ? null : String(product.title),
+      handle: product.handle == null ? null : String(product.handle),
+    })),
+    ambiguous_match: productIds.size > 1,
+    no_match: input.matchedProducts.length === 0,
+  };
+}
+
 function stockStateForVariant(input: {
   productStatus: string | null;
   publishedAt: string | null;
@@ -530,6 +573,16 @@ export class ShopifyProvider implements CommerceProvider {
   async searchProductInventory(
     query: string,
   ): Promise<StockAvailabilityFact[]> {
+    const result = await this.searchProductInventoryWithDiagnostics(query);
+    return result.facts;
+  }
+
+  async searchProductInventoryWithDiagnostics(
+    query: string,
+  ): Promise<{
+    facts: StockAvailabilityFact[];
+    diagnostics: ShopifyProductInventoryLookupDiagnostics;
+  }> {
     try {
       const encoded = encodeURIComponent(query.slice(0, 100));
       const payload = await this.fetch<{ products?: Array<Record<string, unknown>> }>(
@@ -538,23 +591,48 @@ export class ShopifyProvider implements CommerceProvider {
       const products = payload?.products ?? [];
       const checkedAt = new Date().toISOString();
       if (products.length > 0) {
-        return products.flatMap((product) =>
-          mapShopifyProductToStockFacts(product, checkedAt)
-        );
+        return {
+          facts: products.flatMap((product) =>
+            mapShopifyProductToStockFacts(product, checkedAt)
+          ),
+          diagnostics: productLookupDiagnostics(query, {
+            titleProducts: products,
+            listFallbackAttempted: false,
+            listFallbackProductCount: 0,
+            matchedProducts: products,
+          }),
+        };
       }
 
       const fallbackPayload = await this.fetch<{ products?: Array<Record<string, unknown>> }>(
         `products.json?status=any&limit=250&fields=id,title,handle,status,published_at,variants`,
       );
+      const listedProducts = fallbackPayload?.products ?? [];
       const fallbackProducts = selectShopifyProductsForStockQuery(
         query,
-        fallbackPayload?.products ?? [],
+        listedProducts,
       );
-      return fallbackProducts.flatMap((product) =>
-        mapShopifyProductToStockFacts(product, checkedAt)
-      );
+      return {
+        facts: fallbackProducts.flatMap((product) =>
+          mapShopifyProductToStockFacts(product, checkedAt)
+        ),
+        diagnostics: productLookupDiagnostics(query, {
+          titleProducts: products,
+          listFallbackAttempted: true,
+          listFallbackProductCount: listedProducts.length,
+          matchedProducts: fallbackProducts,
+        }),
+      };
     } catch {
-      return [];
+      return {
+        facts: [],
+        diagnostics: productLookupDiagnostics(query, {
+          titleProducts: [],
+          listFallbackAttempted: false,
+          listFallbackProductCount: 0,
+          matchedProducts: [],
+        }),
+      };
     }
   }
 

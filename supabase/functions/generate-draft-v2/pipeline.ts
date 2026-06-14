@@ -156,6 +156,9 @@ export interface PipelineResult {
       fell_back: boolean;
     };
     candidate_diagnostics?: RetrievalCandidateDiagnostics;
+    stock_lookup_debug?: NonNullable<
+      Awaited<ReturnType<typeof runFactResolver>>["stock_lookup_debug"]
+    >;
   };
   preview_document_context?: {
     requested: true;
@@ -2394,6 +2397,9 @@ export async function runDraftV2Pipeline(
               : {}),
             ...(retrieved.candidate_diagnostics
               ? { candidate_diagnostics: retrieved.candidate_diagnostics }
+              : {}),
+            ...(facts.stock_lookup_debug
+              ? { stock_lookup_debug: facts.stock_lookup_debug }
               : {}),
           },
         }

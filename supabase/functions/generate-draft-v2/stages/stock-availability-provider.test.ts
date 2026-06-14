@@ -146,3 +146,38 @@ Deno.test("title search empty falls back to bounded product list", async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+Deno.test("inventory lookup diagnostics expose title and fallback match details", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = ((input: string | URL | Request) => {
+    const url = String(input);
+    const products = url.includes("title=")
+      ? []
+      : [product({ id: 501, title: "A-Spire Wireless" }), product({ id: 502, title: "A-Blaze" })];
+    return Promise.resolve(new Response(JSON.stringify({ products }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+  }) as typeof fetch;
+  try {
+    const provider = new ShopifyProvider({
+      shopDomain: "example.myshopify.com",
+      accessToken: "token",
+      apiVersion: "2024-04",
+    });
+    const result = await provider.searchProductInventoryWithDiagnostics("A-Spire Wireless");
+    assertEquals(result.facts.length, 1);
+    assertEquals(result.diagnostics.title_search_product_count, 0);
+    assertEquals(result.diagnostics.list_fallback_attempted, true);
+    assertEquals(result.diagnostics.list_fallback_product_count, 2);
+    assertEquals(result.diagnostics.matched_products[0], {
+      id: "501",
+      title: "A-Spire Wireless",
+      handle: "a-spire-wireless",
+    });
+    assertEquals(result.diagnostics.ambiguous_match, false);
+    assertEquals(result.diagnostics.no_match, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
