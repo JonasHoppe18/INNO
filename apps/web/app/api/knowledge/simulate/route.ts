@@ -257,6 +257,7 @@ export async function POST(request: Request) {
         : null
     ),
     intent: data.intent ?? null,
+    ...(data.retrieval_debug ? { retrieval_debug: data.retrieval_debug } : {}),
     latency_ms: typeof data.latency_ms === "number" ? data.latency_ms : latency,
   });
 }
