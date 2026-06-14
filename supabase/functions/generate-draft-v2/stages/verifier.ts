@@ -70,21 +70,54 @@ const FALLBACK_RESULT: VerifierResult = {
   issues: ["verifier_api_error"],
 };
 
-// Deterministic guard: the writer must NEVER claim live stock/inventory status
-// (writer rule "ALDRIG lagerantal/lagerstatus") unless a "Lagerstatus" fact from
-// the inventory lookup backs it. Mirrors the mixedLanguageCheck post-step.
-// Conservative regex — only unambiguous inventory phrasings, to avoid false retries.
-const STOCK_CLAIM_RE =
-  /\b(?:på lager|ikke på lager|på lageret|udsolgt|tilbage på lager|på restordre|i restordre|in stock|out of stock|back in stock|sold out|\d+\s*(?:stk\.?|styk\.?|pcs?\.?|units?)\s*(?:på lager|tilbage|left|available))\b/i;
+const STOCK_AVAILABLE_RE =
+  /\b(?:på lager|in stock|currently available|available in (?:our|the) store|tilgængelig i (?:vores|web)?shoppen|kan købes)\b/i;
+const STOCK_OUT_RE =
+  /\b(?:ikke på lager|udsolgt|out of stock|sold out|currently unavailable|not currently available)\b/i;
+const RESTOCK_PROMISE_RE =
+  /\b(?:back in stock|restock(?:ed)?|tilbage på lager|kommer på lager igen|restockes).{0,100}(?:\d{1,2}|tomorrow|next week|next month|within|by|on|i næste uge|næste måned|den\s+\d{1,2})\b/i;
+const PREORDER_PROMISE_RE =
+  /\b(?:preorder|pre-order|forudbestil|forudbestilling|restordre).{0,100}\b(?:available|yes|can|possible|muligt|kan|tilgængelig)\b/i;
+const EXACT_STOCK_QUANTITY_RE =
+  /\b\d+\s*(?:stk\.?|styk\.?|pcs?\.?|units?)\s*(?:på lager|tilbage|left|available|in stock)\b/i;
 
-function unsupportedStockClaim(
+function stockFactStates(facts: ResolvedFact[]): Set<string> {
+  const states = new Set<string>();
+  for (const fact of facts) {
+    if (fact.label !== "Live stock availability") continue;
+    const match = /(?:^|;\s*)state=([^;]+)/.exec(fact.value);
+    if (match?.[1]) states.add(match[1].trim());
+  }
+  return states;
+}
+
+export function detectUnsupportedStockClaims(
   draftText: string,
   facts: ResolvedFact[],
-): boolean {
-  // If the inventory lookup produced a stock fact, the claim is allowed to be grounded in it.
-  const hasStockFact = facts.some((f) => /lagerstatus|lagerantal|på lager/i.test(f.label));
-  if (hasStockFact) return false;
-  return STOCK_CLAIM_RE.test(draftText);
+): string[] {
+  const states = stockFactStates(facts);
+  const issues: string[] = [];
+  if (STOCK_AVAILABLE_RE.test(draftText) && !states.has("in_stock")) {
+    issues.push("unsupported_stock_claim");
+  }
+  if (
+    STOCK_OUT_RE.test(draftText) &&
+    !states.has("out_of_stock") &&
+    !states.has("unavailable") &&
+    !states.has("discontinued")
+  ) {
+    issues.push("unsupported_stock_claim");
+  }
+  if (RESTOCK_PROMISE_RE.test(draftText)) {
+    issues.push("unsupported_restock_promise");
+  }
+  if (PREORDER_PROMISE_RE.test(draftText) && !states.has("preorder")) {
+    issues.push("unsupported_preorder_promise");
+  }
+  if (EXACT_STOCK_QUANTITY_RE.test(draftText)) {
+    issues.push("unsupported_stock_quantity");
+  }
+  return [...new Set(issues)];
 }
 
 export async function runVerifier(
@@ -249,10 +282,11 @@ Machine-readable list of what went wrong. Use: answers_question_missing, wrong_l
     if (parsed.commits_to_next_step === false && !issues.includes("no_commitment")) {
       issues.push("no_commitment");
     }
-    const stockViolation = unsupportedStockClaim(draftText, facts.facts);
-    if (stockViolation && !issues.includes("unsupported_stock_claim")) {
-      issues.push("unsupported_stock_claim");
+    const stockIssues = detectUnsupportedStockClaims(draftText, facts.facts);
+    for (const issue of stockIssues) {
+      if (!issues.includes(issue)) issues.push(issue);
     }
+    const stockViolation = stockIssues.length > 0;
     const finalConfidence = languageCheck.ok && !stockViolation
       ? confidence
       : Math.min(confidence, 0.62);

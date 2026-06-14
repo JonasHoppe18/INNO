@@ -31,7 +31,10 @@ import {
   buildKnowledgeDocPreviewContext,
   type KnowledgeDocPreviewContextInput,
 } from "./stages/knowledge-doc-preview-context.ts";
-import { isProductSupportClarificationReason } from "./stages/product-support-clarification.ts";
+import {
+  isProductSupportClarificationReason,
+  shouldApplyProductSupportTopicLock,
+} from "./stages/product-support-clarification.ts";
 import {
   externalIdFromProductScope,
   scopeLegacyChunksToProduct,
@@ -153,6 +156,9 @@ export interface PipelineResult {
       fell_back: boolean;
     };
     candidate_diagnostics?: RetrievalCandidateDiagnostics;
+    stock_lookup_debug?: NonNullable<
+      Awaited<ReturnType<typeof runFactResolver>>["stock_lookup_debug"]
+    >;
   };
   preview_document_context?: {
     requested: true;
@@ -1196,6 +1202,7 @@ export async function runDraftV2Pipeline(
         shop,
         supabase,
         customerContext: customer_context,
+        latestCustomerMessage: latestBody,
       }),
       runInternalRules({
         shop_id,
@@ -1718,6 +1725,13 @@ export async function runDraftV2Pipeline(
       previewDocument.diagnostics?.reason,
     );
 
+    // Product Support PREVIEW only: an H2 section WAS selected → enable the
+    // topic-lock + progression guardrails in the writer. False for Returns &
+    // Refunds preview (reason "injected") and ordinary runtime (no diagnostics).
+    const productSupportTopicLock = shouldApplyProductSupportTopicLock(
+      previewDocument.diagnostics?.reason,
+    );
+
     // Product Support PREVIEW only: scope legacy retrieved knowledge to the
     // selected product so cross-product snippets (e.g. an A-Blaze-only guide)
     // cannot contaminate a draft generated for a different product's support
@@ -1730,27 +1744,47 @@ export async function runDraftV2Pipeline(
     const psSelection = previewDocument.diagnostics?.product_support_section_selection;
     if (psSelection?.product_scope) {
       let selectedProductTitle: string | null = null;
+      let siblingProductTitles: string[] = [];
+      let knownProductExternalIds: string[] = [];
       const selectedExternalId = externalIdFromProductScope(psSelection.product_scope);
       if (selectedExternalId) {
         try {
-          const { data: prod } = await supabase
+          // Fetch the shop's product titles so the legacy title-mention fallback
+          // can tell prefix-variant siblings apart (wired "A-Spire" vs
+          // "A-Spire Wireless"). Preview-only — this block only runs when a
+          // Product Support section was selected (product_scope set).
+          const { data: prods } = await supabase
             .from("shop_products")
-            .select("title")
-            .eq("shop_id", shop_id)
-            .eq("external_id", selectedExternalId)
-            .maybeSingle();
-          selectedProductTitle = (prod?.title as string | undefined) ?? null;
+            .select("title, external_id")
+            .eq("shop_id", shop_id);
+          const productRows = Array.isArray(prods) ? prods : [];
+          siblingProductTitles = productRows
+            .map((p) => String((p as Record<string, unknown>).title || "").trim())
+            .filter(Boolean);
+          knownProductExternalIds = productRows
+            .map((p) => String((p as Record<string, unknown>).external_id || "").trim())
+            .filter(Boolean);
+          selectedProductTitle = (productRows.find((p) =>
+            String((p as Record<string, unknown>).external_id || "").trim() ===
+              selectedExternalId
+          )?.title as string | undefined) ?? null;
         } catch (_err) {
           // Best-effort: without the title we still scope by canonical id.
           selectedProductTitle = null;
+          siblingProductTitles = [];
+          knownProductExternalIds = [];
         }
       }
       const scoped = scopeLegacyChunksToProduct({
         productScope: psSelection.product_scope,
         selectedProductTitle,
+        siblingProductTitles,
+        knownProductExternalIds,
         chunks: retrieved.chunks.map((c) => ({
           id: c.id,
           product_id: c.product_id,
+          products: c.products,
+          applies_to_all_products: c.applies_to_all_products,
           content: c.content,
           source_title: c.source_title,
         })),
@@ -1787,6 +1821,9 @@ export async function runDraftV2Pipeline(
       policyContext,
       internalRulesBlock,
       authoritativePreviewDocumentContext,
+      productSupportTopicLock,
+      completedTroubleshootingBlock:
+        previewDocument.completedTroubleshootingBlock ?? undefined,
       resolvedCustomerName,
       replyLanguageFallback: writerReplyLanguageFallback,
       model: firstPassModel,
@@ -1833,6 +1870,9 @@ export async function runDraftV2Pipeline(
           policyContext,
           internalRulesBlock,
           authoritativePreviewDocumentContext,
+          productSupportTopicLock,
+          completedTroubleshootingBlock:
+            previewDocument.completedTroubleshootingBlock ?? undefined,
           resolvedCustomerName,
           replyLanguageFallback: writerReplyLanguageFallback,
           model: firstPassModel,
@@ -1893,6 +1933,9 @@ export async function runDraftV2Pipeline(
           policyContext,
           internalRulesBlock,
           authoritativePreviewDocumentContext,
+          productSupportTopicLock,
+          completedTroubleshootingBlock:
+            previewDocument.completedTroubleshootingBlock ?? undefined,
           resolvedCustomerName,
           replyLanguageFallback: writerReplyLanguageFallback,
           model: firstPassModel,
@@ -2009,6 +2052,9 @@ export async function runDraftV2Pipeline(
           policyContext,
           internalRulesBlock,
           authoritativePreviewDocumentContext,
+          productSupportTopicLock,
+          completedTroubleshootingBlock:
+            previewDocument.completedTroubleshootingBlock ?? undefined,
           resolvedCustomerName,
           replyLanguageFallback: writerReplyLanguageFallback,
           model: escalationModel,
@@ -2351,6 +2397,9 @@ export async function runDraftV2Pipeline(
               : {}),
             ...(retrieved.candidate_diagnostics
               ? { candidate_diagnostics: retrieved.candidate_diagnostics }
+              : {}),
+            ...(facts.stock_lookup_debug
+              ? { stock_lookup_debug: facts.stock_lookup_debug }
               : {}),
           },
         }

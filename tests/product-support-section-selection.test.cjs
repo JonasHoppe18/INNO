@@ -549,3 +549,261 @@ test("legacy scope: external id parsing + no-op when only shared/selected rows",
   assert.equal(kept.length, 2);
   assert.equal(diagnostics.excluded_cross_product_row_ids.length, 0);
 });
+
+// ---------------------------------------------------------------------------
+// Slice 2 — Product Support PREVIEW writer topic & progression guardrails.
+// These cover the preview-only writer directives (topic-lock + progression and
+// the strengthened clarification fallback). They assert the directive CONTENT
+// and the gating predicate — no network / no writer LLM call.
+// ---------------------------------------------------------------------------
+const {
+  buildClarificationDirective,
+  buildProductSupportTopicGuardrails,
+  shouldApplyProductSupportTopicLock,
+  isProductSupportClarificationReason: isClarificationReason,
+} = require("../supabase/functions/generate-draft-v2/stages/product-support-clarification.ts");
+
+// 1. selected Product Support section is marked as primary guidance
+test("topic guardrails: selected section is marked as PRIMARY guidance", () => {
+  const block = buildProductSupportTopicGuardrails();
+  assert.match(block, /PRIMARY guidance source/i);
+  assert.match(block, /selected Product Support section/i);
+});
+
+// 2. latest customer message is explicitly marked as the live request
+test("topic guardrails: latest customer message marked as the live request", () => {
+  const block = buildProductSupportTopicGuardrails();
+  assert.match(block, /LIVE REQUEST/);
+  assert.match(block, /latest customer message/i);
+});
+
+// 3. old refund/return/shipping/discount/carrier/warranty topics cannot override
+//    a Bluetooth/app section unless the latest message asks about them
+test("topic guardrails: old non-support workflows cannot override the section", () => {
+  const block = buildProductSupportTopicGuardrails();
+  for (const topic of ["refund", "return", "shipping", "exchange", "discount", "warranty", "carrier"]) {
+    assert.ok(block.toLowerCase().includes(topic), `mentions ${topic}`);
+  }
+  assert.match(block, /unless the latest customer message explicitly asks/i);
+  assert.match(block, /older context/i);
+});
+
+// 4. clarification fallback produces exactly one focused clarification question
+test("clarification fallback: exactly one focused clarification question", () => {
+  const block = buildClarificationDirective("en");
+  assert.match(block, /exactly one concise clarification question/i);
+  assert.match(block, /\(en\)/);
+  assert.match(block, /Do not provide troubleshooting steps/i);
+});
+
+// 5. clarification fallback does not include unrelated workflows
+test("clarification fallback: forbids unrelated shipping/return/refund/warranty workflows", () => {
+  const block = buildClarificationDirective("da").toLowerCase();
+  for (const topic of ["shipping", "return", "refund", "warranty", "exchange", "carrier"]) {
+    assert.ok(block.includes(topic), `forbids ${topic}`);
+  }
+  assert.match(block, /do not answer or resolve an older thread topic/i);
+  assert.match(block, /do not promise any action/i);
+});
+
+// 6. completed troubleshooting steps should not be repeated
+test("topic guardrails: do not repeat completed troubleshooting steps", () => {
+  const block = buildProductSupportTopicGuardrails();
+  assert.match(block, /Do not repeat troubleshooting steps the customer has already said they completed/i);
+});
+
+// 7. new follow-up facts should be acknowledged + case advances
+test("topic guardrails: acknowledge new facts and advance the case", () => {
+  const block = buildProductSupportTopicGuardrails();
+  assert.match(block, /Acknowledge those completed steps and any new facts/i);
+  assert.match(block, /Advance the case/i);
+  assert.match(block, /next not-yet-tried step/i);
+  assert.match(block, /reviewed further to assess the appropriate next step/i);
+});
+
+// 8. premature warranty-process commitment is not allowed; prefers softer wording
+test("topic guardrails: no premature warranty/repair/refund commitment", () => {
+  const block = buildProductSupportTopicGuardrails();
+  assert.match(block, /Do not promise or commit to warranty approval, repair, replacement, refund/i);
+  assert.match(block, /unless that action is explicitly verified/i);
+  assert.match(block, /we can review the case further to assess the appropriate next step/i);
+  assert.match(block, /rather than .*we can proceed with the warranty process/i);
+});
+
+// 9. ordinary runtime is untouched — no preview diagnostics → no topic lock,
+//    no clarification mode.
+test("ordinary runtime: no preview diagnostics → no topic lock, no clarification", () => {
+  assert.equal(shouldApplyProductSupportTopicLock(undefined), false);
+  assert.equal(shouldApplyProductSupportTopicLock(null), false);
+  assert.equal(isClarificationReason(undefined), false);
+});
+
+// 10. Returns & Refunds preview is unchanged — reason "injected", so the topic
+//     lock does NOT fire and the full document is still injected as before.
+test("Returns & Refunds preview: reason 'injected', no topic lock, full doc injected", () => {
+  const returnsContext = {
+    requested: true,
+    document_id: "doc-returns",
+    chunks: [
+      { id: "r1", content: "30 days return window.", metadata: { section_heading: "Return window", category: "returns", section_order: 0 } },
+      { id: "r2", content: "Refunds go to original payment method.", metadata: { section_heading: "Refund method", category: "returns", section_order: 1 } },
+    ],
+  };
+  const result = buildKnowledgeDocPreviewContext(returnsContext, {
+    latestCustomerMessage: "How long is the return window?",
+  });
+  assert.equal(result.diagnostics.reason, "injected");
+  assert.equal(shouldApplyProductSupportTopicLock(result.diagnostics.reason), false);
+  assert.equal(isClarificationReason(result.diagnostics.reason), false);
+  // Full document still injected (both sections), behavior unchanged.
+  assert.ok(result.blockText.includes("Return window"));
+  assert.ok(result.blockText.includes("Refund method"));
+});
+
+// Bonus: a selected Product Support section yields reason "product_support_selected"
+// → topic lock DOES fire (the path that gets the guardrails).
+test("selected Product Support section → topic lock fires", () => {
+  const result = buildKnowledgeDocPreviewContext(productSupportContext(), {
+    latestCustomerMessage: "My A-Spire Wireless will not connect to the AceZone app.",
+  });
+  assert.equal(result.diagnostics.reason, "product_support_selected");
+  assert.equal(shouldApplyProductSupportTopicLock(result.diagnostics.reason), true);
+  assert.equal(isClarificationReason(result.diagnostics.reason), false);
+});
+
+// ---------------------------------------------------------------------------
+// Slice 3 — generic-message clarification guard + hardware/warranty wording.
+// Preview-only, deterministic, no network.
+// ---------------------------------------------------------------------------
+const {
+  isGenericProductSupportMessage,
+} = require("../supabase/functions/generate-draft-v2/stages/product-support-section-selector.ts");
+
+// 1-3. Generic EN + DA messages enter clarification fallback (no section).
+const GENERIC_MESSAGES = [
+  "My headset is not working.",
+  "My headset is broken.",
+  "It stopped working.",
+  "I have a problem with my headset.",
+  "My A-Blaze does not work.",
+  "Mit headset virker ikke.",
+  "Mit headset er gået i stykker.",
+  "Jeg har et problem med mit headset.",
+];
+for (const msg of GENERIC_MESSAGES) {
+  test(`generic message clarifies (no section): "${msg}"`, () => {
+    assert.equal(isGenericProductSupportMessage(msg), true);
+    const result = buildKnowledgeDocPreviewContext(productSupportContext(), {
+      latestCustomerMessage: msg,
+    });
+    assert.equal(result.diagnostics.reason, "product_support_low_confidence");
+    assert.deepEqual(result.diagnostics.section_headings, []);
+    assert.equal(
+      result.diagnostics.product_support_section_selection.reason,
+      "generic_message_clarification",
+    );
+    assert.equal(isClarificationReason(result.diagnostics.reason), true);
+  });
+}
+
+// 4-5. Clarification output is exactly one focused question with no troubleshooting.
+test("generic-guard clarification: one focused question, no troubleshooting", () => {
+  const block = buildClarificationDirective("en");
+  assert.match(block, /exactly one concise clarification question/i);
+  // exactly one directive sentence about asking a question
+  const questionLines = block.split("\n").filter((l) => /clarification question/i.test(l));
+  assert.equal(questionLines.length, 1);
+  assert.match(block, /Do not provide troubleshooting steps/i);
+  assert.match(block, /Do not promise any action/i);
+});
+
+// 6. Concrete symptoms still select a relevant H2 section (not generic).
+const CONCRETE_MESSAGES = [
+  "My A-Spire Wireless keeps disconnecting and the audio is cracking.",
+  "The microphone is not working.",
+  "app cannot find headset",
+  "missing dongle",
+  "firmware update fails",
+  "one-ear audio",
+  "ear pads deteriorating",
+  "Mikrofonen virker ikke med donglen.",
+];
+for (const msg of CONCRETE_MESSAGES) {
+  test(`concrete symptom is NOT generic: "${msg}"`, () => {
+    assert.equal(isGenericProductSupportMessage(msg), false);
+  });
+}
+test("concrete app-pairing message still selects a section (guard does not fire)", () => {
+  const result = buildKnowledgeDocPreviewContext(productSupportContext(), {
+    latestCustomerMessage: "My A-Spire Wireless will not connect to the AceZone app.",
+  });
+  assert.equal(result.diagnostics.reason, "product_support_selected");
+  assert.deepEqual(result.diagnostics.section_headings, [
+    "Bluetooth pairing with the AceZone app",
+  ]);
+});
+
+// 7. Completed troubleshooting is not repeated (guardrail content).
+test("guardrails: completed troubleshooting not repeated", () => {
+  const block = buildProductSupportTopicGuardrails();
+  assert.match(block, /Do not repeat troubleshooting steps the customer has already said they completed/i);
+});
+
+// 8. Exhausted troubleshooting asks for order number FIRST; proof of purchase +
+//    purchase channel only as a fallback. Must not lead with where purchased.
+test("guardrails: exhausted troubleshooting asks for order number first, proof/channel only as fallback", () => {
+  const block = buildProductSupportTopicGuardrails();
+  assert.match(block, /first ask for the customer's order number/i);
+  assert.match(block, /Only if the customer cannot provide an order number, ask for proof of purchase and where the headset was purchased/i);
+  assert.match(block, /Do not lead with where it was purchased/i);
+  assert.match(block, /reviewed further to assess the appropriate next step/i);
+  // Order-number ask must come before the proof-of-purchase fallback.
+  assert.ok(
+    block.toLowerCase().indexOf("order number") <
+      block.toLowerCase().indexOf("proof of purchase"),
+    "order number is requested before proof of purchase",
+  );
+});
+
+// 9. Hardware faults are not diagnosed prematurely.
+test("guardrails: no premature hardware-fault diagnosis", () => {
+  const block = buildProductSupportTopicGuardrails();
+  assert.match(block, /Do not diagnose a hardware fault or conclude the headset is defective unless that is explicitly verified/i);
+});
+
+// 10. Warranty repair is not assumed.
+test("guardrails: warranty repair (or any outcome) is not assumed", () => {
+  const block = buildProductSupportTopicGuardrails();
+  assert.match(block, /Do not assume warranty repair, replacement, or any other specific outcome is the next step/i);
+  assert.match(block, /Do not promise or commit to warranty approval, repair, replacement/i);
+  assert.match(block, /we can review the case further to assess the appropriate next step/i);
+});
+
+// 11. Ordinary runtime untouched — the generic guard only runs inside the
+//     Product Support preview branch; no preview context → no guard, no lock.
+test("ordinary runtime: generic guard does not affect non-preview gating", () => {
+  assert.equal(shouldApplyProductSupportTopicLock(undefined), false);
+  assert.equal(isClarificationReason(undefined), false);
+  // The detector is a pure helper; ordinary runtime never calls it (no preview
+  // document context is built), so runtime behavior is unchanged.
+  assert.equal(typeof isGenericProductSupportMessage, "function");
+});
+
+// 12. Returns & Refunds preview unchanged — generic message still injects the
+//     full doc (the generic guard is Product Support-only).
+test("Returns & Refunds preview: generic message still injects full doc (guard is PS-only)", () => {
+  const returnsContext = {
+    requested: true,
+    document_id: "doc-returns",
+    chunks: [
+      { id: "r1", content: "30 days return window.", metadata: { section_heading: "Return window", category: "returns", section_order: 0 } },
+      { id: "r2", content: "Refunds go to original payment method.", metadata: { section_heading: "Refund method", category: "returns", section_order: 1 } },
+    ],
+  };
+  const result = buildKnowledgeDocPreviewContext(returnsContext, {
+    latestCustomerMessage: "It is not working.", // generic, but R&R must be unaffected
+  });
+  assert.equal(result.diagnostics.reason, "injected");
+  assert.ok(result.blockText.includes("Return window"));
+  assert.ok(result.blockText.includes("Refund method"));
+});

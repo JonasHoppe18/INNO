@@ -12,7 +12,7 @@
 //
 import { Plan } from "./planner.ts";
 import { CaseState } from "./case-state-updater.ts";
-import { FactResolverResult } from "./fact-resolver.ts";
+import { FactResolverResult, type OrderMatchState } from "./fact-resolver.ts";
 import { RetrieverResult } from "./retriever.ts";
 import { callOpenAIJson } from "./openai-json.ts";
 
@@ -29,6 +29,54 @@ export interface ActionProposal {
 export interface ActionDecisionResult {
   proposals: ActionProposal[];
   routing_hint: "auto" | "review" | "block";
+}
+
+// The ONLY genuinely read-only, side-effect-free order-action proposals. Every
+// other action either mutates Shopify, sends a customer-facing message, or
+// writes data (note/tag), so none of them are safe on an unconfirmed order.
+// `requires_approval` is NOT a safe signal here — e.g. initiate_return carries
+// requires_approval=false yet mutates — so we use an explicit allowlist.
+const READ_ONLY_LOOKUP_ACTIONS: ReadonlySet<string> = new Set([
+  "lookup_order_status",
+  "fetch_tracking",
+]);
+
+export function isReadOnlyLookupAction(type: string): boolean {
+  return READ_ONLY_LOOKUP_ACTIONS.has(String(type || "").trim());
+}
+
+// Per-match-state action policy:
+//   "all"              → exact order number: any proposal may flow (via approval)
+//   "read_only_lookup" → single email match: ONLY read-only lookups allowed
+//   "none"             → every other state (incl. an absent/undefined match):
+//                        block ALL order-action proposals (fail-safe)
+export type MatchActionPolicy = "all" | "read_only_lookup" | "none";
+
+export function actionPolicyForMatch(
+  state: OrderMatchState | undefined,
+): MatchActionPolicy {
+  switch (state) {
+    case "exact_order_number":
+      return "all";
+    case "single_email_match":
+      return "read_only_lookup";
+    // multiple_email_matches | order_not_found | integration_error |
+    // missing_identifiers | undefined → no verified, confirmed order → no actions.
+    default:
+      return "none";
+  }
+}
+
+// Applies the match-state policy to a proposal list. Fail-safe by construction:
+// an absent match collapses to "none".
+export function applyMatchActionPolicy(
+  proposals: ActionProposal[],
+  state: OrderMatchState | undefined,
+): ActionProposal[] {
+  const policy = actionPolicyForMatch(state);
+  if (policy === "all") return proposals;
+  if (policy === "none") return [];
+  return proposals.filter((p) => isReadOnlyLookupAction(p.type));
 }
 
 // Per-shop action konfiguration — læst fra shops.action_config JSONB.
@@ -874,6 +922,22 @@ export async function runActionDecision(
 
   if (shouldUseLlmFallback) {
     proposals = await llmFallbackActions(plan, caseState, facts, shopConfig);
+  }
+
+  // Safety gate: apply the order-match action policy. Covers BOTH the
+  // deterministic and LLM-fallback paths. Fail-safe — an absent match collapses
+  // to "none", so only an exact order number (full) or a single email match
+  // (read-only lookups only) can ever carry proposals through. Read-only lookup
+  // failures (order=null → unsafe states) can never seed a proposal.
+  // generate-draft-v2 stays propose-only.
+  const before = proposals.length;
+  proposals = applyMatchActionPolicy(proposals, facts.match?.state);
+  if (before !== proposals.length) {
+    console.log(
+      `[action-decision] order_match=${facts.match?.state ?? "absent"} policy=${
+        actionPolicyForMatch(facts.match?.state)
+      } — stripped ${before - proposals.length} proposal(s)`,
+    );
   }
 
   const routing_hint = computeRoutingHint(proposals, plan);

@@ -66,6 +66,30 @@ const STOPWORDS = new Set([
   "thanks", "thank", "hello", "hi", "hey", "regards", "able",
 ]);
 
+// --- Microphone-section guard ------------------------------------------------
+// A microphone-specific section (e.g. "Microphone works with the cable but not
+// with the dongle") must NOT be selected when the live issue is a non-microphone
+// audio fault (cracking / disconnecting / dropping) with no microphone symptom.
+// Reproduced in the manual A-Blaze run: the mic heading's "dongle"/"cable"
+// tokens lexically anchored a cracking/disconnect complaint onto the Generic USB
+// Audio flow. Generic support vocabulary only — no shop/product names.
+const MICROPHONE_HEADING_PATTERN = /\b(microphone|mic|mikrofon)\b/i;
+const NON_MIC_AUDIO_ISSUE_PATTERN =
+  /\b(disconnect\w*|afbryd\w*|mister forbindelse|drops?\b|dropping|crackl\w*|knitr\w*|knas\w*|distort\w*|static|cuts? out|cutting out)/i;
+
+function isMicrophoneHeading(heading: string): boolean {
+  return MICROPHONE_HEADING_PATTERN.test(String(heading || ""));
+}
+
+// True when the customer text reports a non-microphone audio fault and never
+// mentions the microphone — the case where a mic-specific guide is off-topic.
+function isNonMicrophoneAudioIssue(text: string): boolean {
+  const haystack = String(text || "");
+  if (!haystack.trim()) return false;
+  if (MICROPHONE_HEADING_PATTERN.test(haystack)) return false;
+  return NON_MIC_AUDIO_ISSUE_PATTERN.test(haystack);
+}
+
 function tokenize(text: string): string[] {
   return String(text || "")
     .toLowerCase()
@@ -128,6 +152,10 @@ type LexResult = {
 function scoreLexical(
   input: ProductSupportSelectorInput,
   sections: ProductSupportSection[],
+  // Selection eligibility. Ineligible sections still contribute to IDF/df and to
+  // the full-length lexical_scores diagnostics, but can never be chosen as an
+  // anchored candidate (used by the microphone-section guard).
+  isEligible: (index: number) => boolean = () => true,
 ): LexResult {
   const sectionTokenSets = sections.map((s) =>
     uniqueTokenSet(`${s.section_heading} ${s.content}`)
@@ -186,7 +214,7 @@ function scoreLexical(
   });
 
   const lexicalScores = scored.map((s) => Number(s.combined.toFixed(4)));
-  const anchored = scored.filter((s) => s.headingMatchCount > 0);
+  const anchored = scored.filter((s) => s.headingMatchCount > 0 && isEligible(s.index));
 
   if (anchored.length === 0) {
     return {
@@ -250,7 +278,24 @@ export function selectProductSupportSections(
     return { selected_sections: [], confidence: "low", reason: "no_sections_available" };
   }
 
-  const lex = scoreLexical(input, sections);
+  // Microphone-section guard: when the active issue is a non-microphone audio
+  // fault (cracking/disconnect) with no microphone symptom, mark microphone-
+  // specific sections INELIGIBLE for selection so they can never be chosen (and
+  // never lexically anchor on shared "dongle"/"cable" tokens). The sections are
+  // NOT removed from the pool — they still contribute to IDF/df and to the
+  // full-length score diagnostics, so the diagnostic arrays stay aligned to the
+  // whole document. Inert when the customer actually reports a microphone issue,
+  // or when there is no non-mic audio fault. Falls back to allowing all sections
+  // if every section would otherwise be excluded.
+  const combinedQueryText = `${input.latest_customer_message || ""}\n${
+    input.conversation_history || ""
+  }`;
+  const guardActive = isNonMicrophoneAudioIssue(combinedQueryText) &&
+    sections.some((s) => !isMicrophoneHeading(s.section_heading));
+  const isEligible = (index: number): boolean =>
+    !(guardActive && isMicrophoneHeading(sections[index]?.section_heading || ""));
+
+  const lex = scoreLexical(input, sections, isEligible);
 
   // Semantic scores are diagnostics-only when the lexical path leads.
   const queryEmbedding = Array.isArray(input.query_embedding) ? input.query_embedding : null;
@@ -278,13 +323,17 @@ export function selectProductSupportSections(
   // 2) Cross-lingual rescue: lexical has no anchor. Use semantic similarity
   //    (the primary cross-lingual signal), margin-gated so noise abstains.
   if (semanticScores) {
+    // Rank only eligible sections (the microphone guard can mark mic-specific
+    // sections ineligible) — but semanticScores itself stays full-length above
+    // so the diagnostics describe every section in the document.
     const ranked = semanticScores
       .map((sim, index) => ({ index, sim }))
+      .filter((r) => isEligible(r.index))
       .sort((a, b) => b.sim - a.sim || a.index - b.index);
     const top = ranked[0];
     const second = ranked[1];
-    const margin = top.sim - (second?.sim ?? 0);
-    if (margin >= SEM_MARGIN_MIN) {
+    const margin = (top?.sim ?? 0) - (second?.sim ?? 0);
+    if (top && margin >= SEM_MARGIN_MIN) {
       return withDiag({
         selected_sections: [sections[top.index]],
         confidence: margin >= SEM_MARGIN_HIGH ? "high" : "medium",
@@ -301,6 +350,39 @@ export function selectProductSupportSections(
 
   // 3) No embeddings available → fall back to the lexical result (abstain).
   return withDiag(lex.selection);
+}
+
+// Concrete symptom / issue-category signals (EN + DA). If a customer message
+// contains ANY of these it names a real issue, so the selector is allowed to
+// run. A message with none of these (e.g. "my headset is not working",
+// "mit headset er gået i stykker") is GENERIC: the Product Support preview must
+// clarify first instead of letting a generic word ("working", "broken")
+// accidentally anchor to a section heading. No shop/product names here — these
+// are generic support-symptom terms only.
+const CONCRETE_SYMPTOM_PATTERNS: RegExp[] = [
+  /\bdisconnect/i, /\bafbryd/i, /\bmister forbindelse/i, /\bdrops?\b/i,
+  /\bcrackl?/i, /\bknitr/i, /\bknas/i, /\bdistort/i, /\bstatic\b/i, /\becho\b/i,
+  /\bcuts? out\b/i, /\bcutting out\b/i,
+  /\bmicrophone\b/i, /\bmic\b/i, /\bmikrofon/i,
+  /\baudio\b/i, /\bsound\b/i, /\blyd\b/i, /\bno sound\b/i, /\bingen lyd\b/i, /\bmuted?\b/i,
+  /\bone[\s-]?(ear|earcup|ear cup|side)\b/i, /\bear ?cups?\b/i, /\bsingle ear\b/i,
+  /\bene øre\b/i, /\bkun.{0,12}(øre|side)\b/i,
+  /\bapp\b/i, /\bpair/i, /\bpairing\b/i, /\bforbind/i, /\bconnect/i, /\bconnection\b/i,
+  /\bforbindelse\b/i, /\bbluetooth\b/i,
+  /\bdongle\b/i, /\bfirmware\b/i, /\bupdate fails?\b/i, /\bopdatering/i,
+  /\bcharg/i, /\bbattery\b/i, /\bbatteri/i, /\bstrøm\b/i, /\boplad/i,
+  /\bear ?pads?\b/i, /\børepude/i, /\bpude\b/i,
+  /\bvolume\b/i, /\blydstyrke/i, /\banc\b/i, /\bnoise[\s-]?cancel/i, /\bstøj/i,
+];
+
+// True when a Product Support preview message is GENERIC — it does not name any
+// concrete symptom or issue category — so the preview should ask one focused
+// clarification question BEFORE selecting a troubleshooting section. Empty input
+// counts as generic. Preview-only; deterministic; no LLM. Product/shop-agnostic.
+export function isGenericProductSupportMessage(message: string): boolean {
+  const text = String(message || "").trim();
+  if (!text) return true;
+  return !CONCRETE_SYMPTOM_PATTERNS.some((pattern) => pattern.test(text));
 }
 
 // Marker/instruction stored as the preview blockText when no Product Support

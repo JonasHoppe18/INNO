@@ -1,4 +1,11 @@
 import { getGlsTrackingSnapshot, type TrackingSnapshot as GlsProviderSnapshot } from "./tracking/providers/gls/index.ts";
+import {
+  normalizeTrackingDetail,
+  shopifyShipmentStatusToState,
+  type TrackingFact,
+} from "./tracking/normalized-tracking.ts";
+
+export type { TrackingFact } from "./tracking/normalized-tracking.ts";
 
 type TrackingEvent = {
   status?: string;
@@ -1126,16 +1133,19 @@ async function fetchUpsStatus(
   });
 }
 
-function collectTrackingCandidates(order: any) {
+export type TrackingCandidate = {
+  company: string;
+  trackingNumber: string;
+  trackingUrl: string;
+  source?: "shopify" | "webshipper";
+  statusText?: string;
+  snapshot?: TrackingSnapshot | null;
+  shipmentStatus?: string | null;
+};
+
+export function collectTrackingCandidates(order: any): TrackingCandidate[] {
   const fulfillments = Array.isArray(order?.fulfillments) ? order.fulfillments : [];
-  const candidates: Array<{
-    company: string;
-    trackingNumber: string;
-    trackingUrl: string;
-    source?: "shopify" | "webshipper";
-    statusText?: string;
-    snapshot?: TrackingSnapshot | null;
-  }> = [];
+  const candidates: TrackingCandidate[] = [];
 
   const webshipper = order?.webshipper_tracking;
   if (webshipper && typeof webshipper === "object") {
@@ -1178,10 +1188,60 @@ function collectTrackingCandidates(order: any) {
       trackingUrl,
       source: "shopify",
       statusText: "",
+      shipmentStatus: asString(fulfillment?.shipment_status) || null,
     });
   }
 
   return candidates;
+}
+
+// Per-candidate carrier resolution: detect carrier and fetch its live status,
+// returning a TrackingDetail. Extracted from fetchTrackingDetailsForOrders so the
+// normalized resolver can reuse the EXACT same fetch path (backward-compatible —
+// no behavior change to the live GLS/PostNord fetchers).
+export async function fetchTrackingDetailForCandidate(
+  candidate: { company?: string; trackingNumber: string; trackingUrl?: string },
+): Promise<TrackingDetail> {
+  const trackingNumber = candidate.trackingNumber;
+  const trackingUrl = candidate.trackingUrl || "";
+  const carrier = detectCarrier({
+    company: candidate.company,
+    trackingUrl,
+    trackingNumber,
+  });
+
+  if (carrier === "gls") {
+    return (await fetchGLSStatus(trackingNumber, trackingUrl)) ?? {
+      carrier: "GLS",
+      statusText: "Shipped - follow the parcel via tracking link.",
+      trackingNumber,
+      trackingUrl,
+    };
+  }
+  if (carrier === "postnord") return await fetchPostNordStatus(trackingNumber, trackingUrl);
+  if (carrier === "dao") return await fetchDaoStatus(trackingNumber, trackingUrl);
+  if (carrier === "bring") return await fetchBringStatus(trackingNumber, trackingUrl);
+  if (carrier === "dhl") return await fetchDhlStatus(trackingNumber, trackingUrl);
+  if (carrier === "ups") return await fetchUpsStatus(trackingNumber, trackingUrl);
+  const fallback = buildShopifyFallbackTracking(
+    { company: candidate.company || "Carrier", trackingNumber, trackingUrl },
+    candidate.company || "Carrier",
+  );
+  fallback.lookupDetail = "carrier_unknown";
+  return fallback;
+}
+
+// Carriers for which we have a real (or config-gated) live lookup path. Used by
+// the return resolver to decide whether to attempt carrier verification. USPS /
+// FedEx are intentionally absent (Slice 1 adds no new carriers).
+export function isSupportedTrackingCarrier(
+  hint: { company?: string | null; trackingUrl?: string | null; trackingNumber?: string | null },
+): boolean {
+  return detectCarrier({
+    company: hint.company ?? null,
+    trackingUrl: hint.trackingUrl ?? null,
+    trackingNumber: hint.trackingNumber ?? null,
+  }) !== "unknown";
 }
 
 export async function fetchTrackingDetailsForOrders(
@@ -1232,38 +1292,93 @@ export async function fetchTrackingDetailsForOrders(
     if (!carrierAllowed) {
       detail = buildShopifyFallbackTracking(candidate, candidate.company || "Carrier");
       detail.lookupDetail = "carrier_not_selected";
-    } else if (carrier === "gls") {
-      detail = (await fetchGLSStatus(candidate.trackingNumber, candidate.trackingUrl)) ?? {
-        carrier: "GLS",
-        statusText: "Shipped - follow the parcel via tracking link.",
-        trackingNumber: candidate.trackingNumber,
-        trackingUrl: candidate.trackingUrl,
-      };
-      detail.source = candidate.source || "shopify";
-    } else if (carrier === "postnord") {
-      detail = await fetchPostNordStatus(candidate.trackingNumber, candidate.trackingUrl);
-      detail.source = candidate.source || "shopify";
-    } else if (carrier === "dao") {
-      detail = await fetchDaoStatus(candidate.trackingNumber, candidate.trackingUrl);
-      detail.source = candidate.source || "shopify";
-    } else if (carrier === "bring") {
-      detail = await fetchBringStatus(candidate.trackingNumber, candidate.trackingUrl);
-      detail.source = candidate.source || "shopify";
-    } else if (carrier === "dhl") {
-      detail = await fetchDhlStatus(candidate.trackingNumber, candidate.trackingUrl);
-      detail.source = candidate.source || "shopify";
-    } else if (carrier === "ups") {
-      detail = await fetchUpsStatus(candidate.trackingNumber, candidate.trackingUrl);
-      detail.source = candidate.source || "shopify";
     } else {
-      detail = buildShopifyFallbackTracking(candidate, candidate.company || "Carrier");
-      detail.lookupDetail = "carrier_unknown";
+      // Same per-carrier fetch path as the normalized resolver (single source of
+      // truth); preserves the prior GLS/PostNord/.../unknown-fallback behavior.
+      detail = await fetchTrackingDetailForCandidate(candidate);
+      detail.source = candidate.source || "shopify";
     }
 
     details[key] = detail;
   }
 
   return details;
+}
+
+type FetchDetailFn = (
+  candidate: { company?: string; trackingNumber: string; trackingUrl?: string },
+) => Promise<TrackingDetail>;
+
+// Normalized OUTBOUND resolver: returns a TrackingFact for EVERY parcel on the
+// order (no candidates[0] truncation). direction is always "outbound". A generic
+// Shopify fallback is upgraded to a concrete state ONLY via the fulfillment's own
+// shipment_status — never invented as in_transit.
+export async function resolveOutboundTrackingFacts(
+  order: any,
+  deps?: { fetchDetail?: FetchDetailFn },
+): Promise<TrackingFact[]> {
+  const fetchDetail = deps?.fetchDetail ?? fetchTrackingDetailForCandidate;
+  const sourceOrderId = pickOrderKey(order) ?? undefined;
+  const candidates = collectTrackingCandidates(order);
+  const facts: TrackingFact[] = [];
+  for (const candidate of candidates) {
+    if (!candidate.trackingNumber) continue;
+    const detail = await fetchDetail({
+      company: candidate.company,
+      trackingNumber: candidate.trackingNumber,
+      trackingUrl: candidate.trackingUrl,
+    });
+    const fact = normalizeTrackingDetail(detail, {
+      direction: "outbound",
+      source_order_id: sourceOrderId,
+    });
+    // Generic fallback (state "unknown") → use a concrete Shopify shipment_status
+    // if present, as a shopify_fulfillment-verified state.
+    if (fact.state === "unknown") {
+      const shopifyState = shopifyShipmentStatusToState(candidate.shipmentStatus);
+      if (shopifyState) {
+        fact.state = shopifyState;
+        fact.verification = "shopify_fulfillment";
+      }
+    }
+    facts.push(fact);
+  }
+  return facts;
+}
+
+// Normalized RETURN resolver for a customer-provided tracking number. direction
+// is always "return". verification stays "customer_provided" unless a SUPPORTED
+// carrier lookup succeeds (→ "carrier_verified"). Unsupported carriers (USPS /
+// FedEx / unknown) are never fetched and stay customer_provided + unknown.
+export async function resolveReturnTrackingFact(
+  input: { tracking_number: string; carrier_hint?: string; source_order_id?: string },
+  deps?: { fetchDetail?: FetchDetailFn },
+): Promise<TrackingFact> {
+  const trackingNumber = String(input.tracking_number ?? "").trim();
+  const supported = isSupportedTrackingCarrier({
+    company: input.carrier_hint ?? null,
+    trackingNumber,
+  });
+  if (!supported) {
+    return {
+      tracking_number: trackingNumber,
+      carrier: input.carrier_hint || undefined,
+      direction: "return",
+      verification: "customer_provided",
+      state: "unknown",
+      source_order_id: input.source_order_id,
+    };
+  }
+  const fetchDetail = deps?.fetchDetail ?? fetchTrackingDetailForCandidate;
+  const detail = await fetchDetail({
+    company: input.carrier_hint,
+    trackingNumber,
+    trackingUrl: "",
+  });
+  return normalizeTrackingDetail(detail, {
+    direction: "return",
+    source_order_id: input.source_order_id,
+  });
 }
 
 export async function fetchTrackingSummariesForOrders(

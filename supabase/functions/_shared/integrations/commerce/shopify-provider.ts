@@ -5,9 +5,37 @@ import type {
   Address,
   RefundOpts,
   RefundResult,
+  RefundRecord,
   LineItemEdit,
   ActionType,
+  StockAvailabilityFact,
+  StockState,
 } from './types.ts';
+
+// Maps the `refunds[]` array already present in the Shopify REST order payload
+// to normalised RefundRecord[]. Read-only and additive — no extra fetch.
+// Exported for unit testing.
+export function mapShopifyRefunds(rawRefunds: unknown): RefundRecord[] {
+  if (!Array.isArray(rawRefunds)) return [];
+  return rawRefunds.map((r: any) => ({
+    id: r?.id != null ? String(r.id) : undefined,
+    created_at: r?.created_at ?? null,
+    processed_at: r?.processed_at ?? null,
+    note: r?.note ?? null,
+    transactions: Array.isArray(r?.transactions)
+      ? r.transactions.map((t: any) => ({
+          id: t?.id != null ? String(t.id) : undefined,
+          amount: t?.amount != null ? String(t.amount) : undefined,
+          currency: t?.currency ?? undefined,
+          gateway: t?.gateway ?? undefined,
+          status: t?.status ?? undefined,
+          kind: t?.kind ?? undefined,
+          processed_at: t?.processed_at ?? null,
+          created_at: t?.created_at ?? null,
+        }))
+      : [],
+  }));
+}
 
 // Constructor config for ShopifyProvider
 export interface ShopifyProviderConfig {
@@ -123,9 +151,176 @@ function mapOrder(raw: RawShopifyOrder): Order {
           shipment_status: f.shipment_status ?? undefined,
         }))
       : [],
+    refunds: mapShopifyRefunds(raw.refunds),
     tags: raw.tags ?? undefined,
     note: raw.note ?? undefined,
   };
+}
+
+function nullableString(value: unknown): string | null {
+  const text = String(value ?? '').trim();
+  return text || null;
+}
+
+function numericQuantity(value: unknown): number | null {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
+function normalizeInventoryPolicy(value: unknown): 'deny' | 'continue' | null {
+  const text = String(value ?? '').trim().toLowerCase();
+  return text === 'deny' || text === 'continue' ? text : null;
+}
+
+function normalizeProductLookupText(value: unknown): string {
+  return String(value ?? '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+function isSpecificProductQuery(query: string): boolean {
+  const normalized = normalizeProductLookupText(query);
+  if (!normalized) return false;
+  const tokens = normalized.split(' ').filter(Boolean);
+  if (tokens.length >= 2) return true;
+  return /^a[- ]?(?:spire|blaze|rise|live)$/i.test(query.trim());
+}
+
+export function selectShopifyProductsForStockQuery(
+  query: string,
+  products: Array<Record<string, unknown>>,
+): Array<Record<string, unknown>> {
+  if (!isSpecificProductQuery(query)) return [];
+  const normalizedQuery = normalizeProductLookupText(query);
+  const withLookup = products.map((product) => ({
+    product,
+    title: normalizeProductLookupText(product.title),
+    handle: normalizeProductLookupText(product.handle),
+  })).filter((entry) => entry.title || entry.handle);
+
+  const exactTitle = withLookup.filter((entry) => entry.title === normalizedQuery);
+  if (exactTitle.length > 0) return exactTitle.map((entry) => entry.product);
+
+  const exactHandle = withLookup.filter((entry) => entry.handle === normalizedQuery);
+  if (exactHandle.length > 0) return exactHandle.map((entry) => entry.product);
+
+  const contains = withLookup.filter((entry) =>
+    entry.title.includes(normalizedQuery) ||
+    entry.handle.includes(normalizedQuery) ||
+    normalizedQuery.includes(entry.title)
+  );
+  if (contains.length === 1) return [contains[0].product];
+  return contains.map((entry) => entry.product);
+}
+
+export interface ShopifyProductInventoryLookupDiagnostics {
+  query: string;
+  title_search_product_count: number;
+  list_fallback_attempted: boolean;
+  list_fallback_product_count: number;
+  matched_products: Array<{
+    id: string | null;
+    title: string | null;
+    handle: string | null;
+  }>;
+  ambiguous_match: boolean;
+  no_match: boolean;
+}
+
+function productLookupDiagnostics(
+  query: string,
+  input: {
+    titleProducts: Array<Record<string, unknown>>;
+    listFallbackAttempted: boolean;
+    listFallbackProductCount: number;
+    matchedProducts: Array<Record<string, unknown>>;
+  },
+): ShopifyProductInventoryLookupDiagnostics {
+  const productIds = new Set(
+    input.matchedProducts
+      .map((product) => String(product.id ?? "").trim())
+      .filter(Boolean),
+  );
+  return {
+    query,
+    title_search_product_count: input.titleProducts.length,
+    list_fallback_attempted: input.listFallbackAttempted,
+    list_fallback_product_count: input.listFallbackProductCount,
+    matched_products: input.matchedProducts.map((product) => ({
+      id: product.id == null ? null : String(product.id),
+      title: product.title == null ? null : String(product.title),
+      handle: product.handle == null ? null : String(product.handle),
+    })),
+    ambiguous_match: productIds.size > 1,
+    no_match: input.matchedProducts.length === 0,
+  };
+}
+
+function stockStateForVariant(input: {
+  productStatus: string | null;
+  publishedAt: string | null;
+  quantity: number | null;
+  inventoryPolicy: 'deny' | 'continue' | null;
+  inventoryManagement: string | null;
+}): StockState {
+  const status = String(input.productStatus ?? '').trim().toLowerCase();
+  if (status === 'archived') return 'discontinued';
+  if (status && status !== 'active') return 'unavailable';
+  if (!input.publishedAt) return 'unavailable';
+  if (!input.inventoryManagement) return 'unknown';
+  if (input.inventoryPolicy === 'deny') {
+    return (input.quantity ?? 0) > 0 ? 'in_stock' : 'out_of_stock';
+  }
+  if (input.inventoryPolicy === 'continue') {
+    return (input.quantity ?? 0) > 0 ? 'in_stock' : 'unknown';
+  }
+  return (input.quantity ?? 0) > 0 ? 'in_stock' : 'unknown';
+}
+
+export function mapShopifyProductToStockFacts(
+  product: Record<string, unknown>,
+  checkedAt = new Date().toISOString(),
+): StockAvailabilityFact[] {
+  const productId = String(product?.id ?? '').trim();
+  const productTitle = String(product?.title ?? '').trim();
+  if (!productId || !productTitle) return [];
+  const productStatus = nullableString(product?.status);
+  const publishedAt = nullableString(product?.published_at);
+  const productHandle = nullableString(product?.handle);
+  const variants = Array.isArray(product?.variants) ? product.variants : [];
+  return variants.map((variantRaw) => {
+    const variant = variantRaw && typeof variantRaw === 'object'
+      ? variantRaw as Record<string, unknown>
+      : {};
+    const quantity = numericQuantity(variant?.inventory_quantity);
+    const inventoryPolicy = normalizeInventoryPolicy(variant?.inventory_policy);
+    const inventoryManagement = nullableString(variant?.inventory_management);
+    return {
+      product_id: productId,
+      product_title: productTitle,
+      product_handle: productHandle,
+      variant_id: nullableString(variant?.id),
+      variant_title: nullableString(variant?.title) ?? 'Default Title',
+      sku: nullableString(variant?.sku),
+      state: stockStateForVariant({
+        productStatus,
+        publishedAt,
+        quantity,
+        inventoryPolicy,
+        inventoryManagement,
+      }),
+      quantity,
+      inventory_policy: inventoryPolicy,
+      inventory_management: inventoryManagement,
+      product_status: productStatus,
+      published_at: publishedAt,
+      source: 'shopify_live' as const,
+      checked_at: checkedAt,
+    };
+  });
 }
 
 export class ShopifyProvider implements CommerceProvider {
@@ -377,30 +572,67 @@ export class ShopifyProvider implements CommerceProvider {
   // Used by fact_resolver when customer asks about product availability.
   async searchProductInventory(
     query: string,
-  ): Promise<Array<{ title: string; variant: string; available: boolean; quantity: number }>> {
+  ): Promise<StockAvailabilityFact[]> {
+    const result = await this.searchProductInventoryWithDiagnostics(query);
+    return result.facts;
+  }
+
+  async searchProductInventoryWithDiagnostics(
+    query: string,
+  ): Promise<{
+    facts: StockAvailabilityFact[];
+    diagnostics: ShopifyProductInventoryLookupDiagnostics;
+  }> {
     try {
       const encoded = encodeURIComponent(query.slice(0, 100));
       const payload = await this.fetch<{ products?: Array<Record<string, unknown>> }>(
-        `products.json?title=${encoded}&limit=5&fields=id,title,variants`,
+        `products.json?title=${encoded}&status=any&limit=5&fields=id,title,handle,status,published_at,variants`,
       );
       const products = payload?.products ?? [];
-      const results: Array<{ title: string; variant: string; available: boolean; quantity: number }> = [];
-      for (const product of products) {
-        const title = String(product.title ?? "");
-        const variants = Array.isArray(product.variants) ? product.variants : [];
-        for (const v of variants) {
-          const qty = Number(v.inventory_quantity ?? 0);
-          results.push({
-            title,
-            variant: String(v.title ?? "Default"),
-            available: qty > 0,
-            quantity: qty,
-          });
-        }
+      const checkedAt = new Date().toISOString();
+      if (products.length > 0) {
+        return {
+          facts: products.flatMap((product) =>
+            mapShopifyProductToStockFacts(product, checkedAt)
+          ),
+          diagnostics: productLookupDiagnostics(query, {
+            titleProducts: products,
+            listFallbackAttempted: false,
+            listFallbackProductCount: 0,
+            matchedProducts: products,
+          }),
+        };
       }
-      return results;
+
+      const fallbackPayload = await this.fetch<{ products?: Array<Record<string, unknown>> }>(
+        `products.json?status=any&limit=250&fields=id,title,handle,status,published_at,variants`,
+      );
+      const listedProducts = fallbackPayload?.products ?? [];
+      const fallbackProducts = selectShopifyProductsForStockQuery(
+        query,
+        listedProducts,
+      );
+      return {
+        facts: fallbackProducts.flatMap((product) =>
+          mapShopifyProductToStockFacts(product, checkedAt)
+        ),
+        diagnostics: productLookupDiagnostics(query, {
+          titleProducts: products,
+          listFallbackAttempted: true,
+          listFallbackProductCount: listedProducts.length,
+          matchedProducts: fallbackProducts,
+        }),
+      };
     } catch {
-      return [];
+      return {
+        facts: [],
+        diagnostics: productLookupDiagnostics(query, {
+          titleProducts: [],
+          listFallbackAttempted: false,
+          listFallbackProductCount: 0,
+          matchedProducts: [],
+        }),
+      };
     }
   }
 

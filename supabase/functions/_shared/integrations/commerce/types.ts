@@ -30,6 +30,27 @@ export interface Fulfillment {
   shipment_status?: string;
 }
 
+// Refund data already present inline in the Shopify REST order payload. Mapped
+// additively (read-only) — no new endpoint is fetched.
+export interface RefundTransaction {
+  id?: string;
+  amount?: string;
+  currency?: string;
+  gateway?: string;
+  status?: string;
+  kind?: string;
+  processed_at?: string | null;
+  created_at?: string | null;
+}
+
+export interface RefundRecord {
+  id?: string;
+  created_at?: string | null;
+  processed_at?: string | null;
+  note?: string | null;
+  transactions: RefundTransaction[];
+}
+
 export interface Order {
   id: string;
   order_number: string | number;
@@ -46,6 +67,9 @@ export interface Order {
   shipping_address?: Address;
   line_items: LineItem[];
   fulfillments: Fulfillment[];
+  // Optional, additive. Absent when the order was mapped before refund support
+  // or carries no refunds; an empty array means "looked up, none present".
+  refunds?: RefundRecord[];
   tags?: string;
   note?: string;
 }
@@ -60,6 +84,32 @@ export interface TrackingInfo {
   estimated_delivery?: string;
   last_event?: string;
   events?: Array<{ timestamp: string; description: string; location?: string }>;
+}
+
+export type StockState =
+  | "in_stock"
+  | "out_of_stock"
+  | "low_stock"
+  | "preorder"
+  | "unavailable"
+  | "discontinued"
+  | "unknown";
+
+export interface StockAvailabilityFact {
+  product_id: string;
+  product_title: string;
+  product_handle?: string | null;
+  variant_id: string | null;
+  variant_title: string | null;
+  sku: string | null;
+  state: StockState;
+  quantity: number | null;
+  inventory_policy: "deny" | "continue" | null;
+  inventory_management: string | null;
+  product_status: string | null;
+  published_at: string | null;
+  source: "shopify_live";
+  checked_at: string;
 }
 
 export interface RefundOpts {
@@ -104,6 +154,7 @@ export interface CommerceProvider {
   listOrdersByEmail(email: string, limit?: number): Promise<Order[]>;
   listOrdersByPhone(phone: string, limit?: number): Promise<Order[]>;
   getTracking(orderId: string): Promise<TrackingInfo[]>;
+  searchProductInventory(query: string): Promise<StockAvailabilityFact[]>;
 
   // --- Write operations ---
   cancelOrder(id: string, opts?: { reason?: string; notifyCustomer?: boolean }): Promise<void>;

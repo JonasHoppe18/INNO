@@ -2,10 +2,14 @@
 import { Plan } from "./planner.ts";
 import { CaseState } from "./case-state-updater.ts";
 import { RetrieverResult } from "./retriever.ts";
-import { FactResolverResult } from "./fact-resolver.ts";
+import { FactResolverResult, deriveRefundStatus, type OrderMatch, type RefundStatus, type ResolvedFact } from "./fact-resolver.ts";
+import type { TrackingFact } from "../../_shared/tracking/normalized-tracking.ts";
 import { ActionProposal } from "./action-decision.ts";
 import { resolveReplyLanguage } from "./language.ts";
-import { buildClarificationDirective } from "./product-support-clarification.ts";
+import {
+  buildClarificationDirective,
+  buildProductSupportTopicGuardrails,
+} from "./product-support-clarification.ts";
 import {
   buildVariantGuidanceBlock,
   isVariantConflictingSource,
@@ -73,6 +77,24 @@ export interface WriterInput {
    * bleed into the reply. Undefined/false in ordinary runtime.
    */
   clarificationOnly?: boolean;
+  /**
+   * Product Support PREVIEW only: an H2 section WAS selected, so the writer gets
+   * the topic-lock + progression guardrails (keep to the latest message and the
+   * selected section; do not answer older refund/return/shipping/etc. topics; do
+   * not repeat completed troubleshooting; do not promise unverified actions).
+   * Undefined/false in ordinary runtime and Returns & Refunds preview, so those
+   * paths are unchanged.
+   */
+  productSupportTopicLock?: boolean;
+  /**
+   * Product Support PREVIEW only: a structured "already completed: …" block
+   * derived from the visible customer turns. Rendered as a non-suppressed block
+   * so the writer acknowledges completed steps, never repeats them (or an
+   * equivalent variant), and once a path is exhausted asks for the order number
+   * instead of proposing more steps. Undefined in ordinary runtime and Returns &
+   * Refunds preview, so those paths are unchanged.
+   */
+  completedTroubleshootingBlock?: string;
 }
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
@@ -374,6 +396,381 @@ export function normalizeOpeningGreeting(
 
 function factValue(facts: FactResolverResult, label: string): string {
   return facts.facts.find((f) => f.label === label)?.value ?? "";
+}
+
+// Concise authority hierarchy: verified live commerce/tracking facts outrank
+// Knowledge Docs and legacy knowledge, and missing live facts must never be
+// guessed. Rendered into every writer prompt.
+export function buildLiveFactAuthorityBlock(): string {
+  return `# Kilde-autoritet (rangordning — følg altid)
+1. Verificerede live commerce-fakta (ordrestatus, betaling, fulfillment, ordredato, varelinjer) er autoritative for AKTUELLE ordreforhold.
+2. Verificerede live tracking-fakta er autoritative for forsendelse og levering.
+3. Knowledge Docs giver stabil workflow-vejledning (processer, troubleshooting, politik) — ikke aktuelle ordredata.
+4. Legacy/øvrig viden er kun sekundær fallback.
+5. Lad ALDRIG forældet viden (inkl. cachede shop_products pris/lager) overstyre verificerede live-fakta ved konflikt — live-fakta vinder. Dette gælder også refund-status: live refund-fakta vinder over enhver knowledge/legacy-kilde.
+6. GÆT ALDRIG ordre-, tracking-, lager-, refunderings-, annullerings- eller fulfillment-status når verificerede live-fakta mangler — spørg eller brug sikker formulering i stedet.
+7. Påstå ALDRIG at en refundering er udstedt, et refund-beløb, et refund-tidspunkt, at en returnering er modtaget, eller hvornår pengene ankommer, uden verificerede live-fakta eller verificeret politik-kontekst.`;
+}
+
+// Detects when the customer states (in their own words) that the package has
+// NOT been received / is missing / cannot be found. CUSTOMER-STATED only —
+// never treated as a verified fact. Used solely to select the safe
+// delivered-not-received writer workflow when carrier tracking shows delivered.
+export function customerClaimsNotReceived(message?: string | null): boolean {
+  const m = String(message ?? "").toLowerCase();
+  // English
+  if (
+    /\b(?:not|never|haven't|hasn't|didn't|did\s+not|have\s+not|has\s+not)\s+(?:yet\s+)?(?:receiv|got|gotten|arriv|deliver|gett)/
+      .test(m) ||
+    /\b(?:not\s+received|never\s+received|not\s+arrived|never\s+arrived|not\s+here|isn't\s+here|never\s+got\s+it|never\s+came)\b/
+      .test(m) ||
+    /\b(?:package|parcel|order|it|shipment)\s+(?:is\s+)?missing\b/.test(m) ||
+    /\bmissing\s+(?:package|parcel|order|shipment)\b/.test(m) ||
+    /\bcan'?t\s+find\s+(?:it|the|my)\b/.test(m) ||
+    /\b(?:delivered\s+but|says\s+delivered\s+but|marked\s+delivered\s+but)\b/.test(m)
+  ) {
+    return true;
+  }
+  // Danish
+  if (
+    /\bikke\s+(?:har\s+)?(?:endnu\s+)?(?:modtaget|fået|modtog|kommet|ankommet)\b/.test(m) ||
+    /\b(?:har|er)\s+ikke\s+(?:modtaget|fået|kommet|ankommet)\b/.test(m) ||
+    /\baldrig\s+(?:modtaget|fået|kommet)\b/.test(m) ||
+    /\b(?:pakken|pakke|ordren|ordre|forsendelsen|varen)\s+(?:er\s+)?(?:væk|forsvundet|mangler|ikke\s+kommet)\b/.test(m) ||
+    /\bmangler\s+(?:min\s+|stadig\s+)?(?:pakke|pakken|ordre|ordren|vare|varen)\b/.test(m) ||
+    /\bkan\s+ikke\s+finde\s+(?:den|min|pakken|ordren)\b/.test(m) ||
+    /\bleveret\s+men\b/.test(m)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+// Detects when the customer states that the tracking page says delivered.
+// CUSTOMER-STATED only — never treated as verified carrier tracking.
+export function customerReportsTrackingDelivered(message?: string | null): boolean {
+  const m = String(message ?? "").toLowerCase();
+  // English
+  if (
+    /\b(?:tracking|carrier|status|page|link|website|app)[^.?!]{0,80}\b(?:says|shows|showed|marked|lists|states|is|was)\s+(?:(?:the\s+)?(?:package|parcel|order|shipment|it)\s+)?(?:as\s+)?delivered\b/
+      .test(m) ||
+    /\b(?:says|shows|showed|marked|listed|states)\s+(?:(?:the\s+)?(?:package|parcel|order|shipment|it)\s+)?(?:as\s+)?delivered\b/.test(m) ||
+    /\b(?:marked|listed)\s+(?:(?:the\s+)?(?:package|parcel|order|shipment|it)\s+)?(?:as\s+)?delivered\b/.test(m)
+  ) {
+    return true;
+  }
+  // Danish
+  if (
+    /\b(?:tracking|trackingen|status|siden|linket|appen)[^.?!]{0,80}\b(?:siger|viser|står|markeret|meldt)\s+(?:som\s+)?leveret\b/
+      .test(m) ||
+    /\b(?:der\s+står|står|viser|siger|markeret|meldt)\s+(?:som\s+)?leveret\b/.test(m)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+// Shared tracking directive — outbound + return, derived from normalized
+// TrackingFact[]. Safe by construction: lookup_error ≠ in_transit, customer-
+// provided ≠ verified, carrier-delivered ≠ received/processed, never promises
+// monitoring/notification/automatic refunds, never invents an ETA.
+//
+// `customerClaimsNotReceived` selects the delivered-not-received safe workflow:
+// when carrier tracking shows delivered AND the customer states they did not
+// receive the package, the writer must not assert personal receipt and must
+// not promise any refund/replacement/reshipment/compensation/claim outcome.
+export function buildTrackingDirective(
+  facts: TrackingFact[],
+  opts?: { customerClaimsNotReceived?: boolean; customerReportsTrackingDelivered?: boolean },
+): string {
+  const notReceived = opts?.customerClaimsNotReceived === true;
+  const customerReportedDelivered = opts?.customerReportsTrackingDelivered === true;
+  if (!Array.isArray(facts) || facts.length === 0) {
+    return notReceived && customerReportedDelivered ? CUSTOMER_REPORTED_DELIVERED_NOT_RECEIVED_DIRECTIVE : "";
+  }
+  const outbound = facts.filter((f) => f.direction === "outbound");
+  const ret = facts.filter((f) => f.direction === "return");
+  const lines: string[] = ["# Forsendelses-tracking (struktureret, verificeret kun hvor angivet)"];
+
+  if (outbound.length > 1) {
+    lines.push(
+      `- Ordren har FLERE forsendelser (multiple shipments) (${outbound.length}). Oplys status pr. forsendelse separat; antag IKKE at de deler samme status.`,
+    );
+  }
+  for (const f of outbound) {
+    lines.push(`## Outbound ${f.tracking_number}${f.carrier ? ` (${f.carrier})` : ""} — state: ${f.state}, verification: ${f.verification}`);
+    lines.push(trackingStateLine(f, { customerClaimsNotReceived: notReceived }));
+  }
+  for (const f of ret) {
+    lines.push(`## Return ${f.tracking_number}${f.carrier ? ` (${f.carrier})` : ""} — state: ${f.state}, verification: ${f.verification}`);
+    lines.push(returnStateLine(f));
+  }
+  lines.push(
+    "- Generelt: opfind ALDRIG en leveringsdato/ETA (oplys kun ETA hvis den er angivet i fakta). " +
+      "Tilbyd IKKE proaktiv opfølgning på forsendelsen, lov ingen besked/notifikation, og beskriv ingen automatisk refunderings-proces. " +
+      "Bland ALDRIG outbound- og retur-tracking sammen.",
+  );
+  return lines.join("\n");
+}
+
+const DELIVERED_NOT_RECEIVED_NEXT_STEP =
+  "Once you confirm the address, we can look into the shipment further with our shipping partner.";
+
+const GENERIC_DELIVERED_NOT_RECEIVED_CLOSING_RE =
+  /(?:\n\s*)?(?:I look forward to hearing from you|Looking forward to hearing from you|Feel free to reach out|Please let me know|Let me know|If you have any questions, feel free to contact us)\.?\s*$/i;
+
+function isDeliveredNotReceivedFlow(
+  facts: TrackingFact[],
+  latestCustomerMessage?: string | null,
+): boolean {
+  const notReceived = customerClaimsNotReceived(latestCustomerMessage);
+  if (!notReceived) return false;
+  const hasVerifiedDelivered = facts.some((fact) =>
+    fact.direction === "outbound" &&
+    fact.verification === "carrier_verified" &&
+    fact.state === "delivered"
+  );
+  const hasAnyVerifiedOutbound = facts.some((fact) =>
+    fact.direction === "outbound" &&
+    fact.verification === "carrier_verified"
+  );
+  return hasVerifiedDelivered ||
+    (!hasAnyVerifiedOutbound && customerReportsTrackingDelivered(latestCustomerMessage));
+}
+
+export function cleanupDeliveredNotReceivedDraft(
+  draft: string,
+  opts: {
+    trackingFacts?: TrackingFact[];
+    latestCustomerMessage?: string | null;
+  },
+): string {
+  if (!isDeliveredNotReceivedFlow(opts.trackingFacts ?? [], opts.latestCustomerMessage)) {
+    return draft;
+  }
+  const trimmed = String(draft ?? "").trim();
+  if (!trimmed) return trimmed;
+  const withoutGenericClosing = trimmed.replace(
+    GENERIC_DELIVERED_NOT_RECEIVED_CLOSING_RE,
+    "",
+  ).trimEnd();
+  if (/once you confirm the address/i.test(withoutGenericClosing)) {
+    return withoutGenericClosing.trim();
+  }
+  return `${withoutGenericClosing}\n\n${DELIVERED_NOT_RECEIVED_NEXT_STEP}`.trim();
+}
+
+function stockValueField(value: string, key: string): string | null {
+  const match = new RegExp(`(?:^|;\\s*)${key}=([^;]+)`).exec(value);
+  return match?.[1]?.trim() || null;
+}
+
+export function buildStockAvailabilityDirective(facts: ResolvedFact[]): string {
+  const stockFacts = facts.filter((fact) => fact.label === "Live stock availability");
+  if (stockFacts.length === 0) {
+    return [
+      "# Live stock availability guardrails",
+      "- No live Shopify stock availability fact is present. Do NOT claim that a product or variant is in stock, out of stock, available for preorder, reserved, held, discontinued, or expected back on a date.",
+      "- If the customer asks about stock/availability and no live stock fact is present, say that live availability cannot be confirmed right now and ask for the exact product name or link if needed.",
+      "- Do not use old knowledge-base chunks, product descriptions, or examples as live stock truth.",
+    ].join("\n");
+  }
+
+  const lines = [
+    "# Live stock availability (read-only Shopify facts)",
+    "- Use ONLY these live Shopify stock facts for stock/availability claims. Do not use knowledge-base text as live stock truth.",
+    "- Never mention exact inventory quantity. Never promise a restock date, preorder, reservation, holding stock, or inventory update unless a live fact explicitly says so.",
+  ];
+  for (const fact of stockFacts) {
+    const state = stockValueField(fact.value, "state") ?? "unknown";
+    const product = stockValueField(fact.value, "product") ??
+      stockValueField(fact.value, "product_query") ?? "the product";
+    const variant = stockValueField(fact.value, "variant");
+    lines.push(`- Fact: ${fact.value}`);
+    if (state === "in_stock") {
+      lines.push(`  Writer rule: You may say ${product}${variant && variant !== "all_variants" && variant !== "default" ? ` (${variant})` : ""} is currently available in the store. Do not include exact quantity.`);
+    } else if (state === "out_of_stock") {
+      lines.push(`  Writer rule: You may say ${product}${variant && variant !== "all_variants" && variant !== "default" ? ` (${variant})` : ""} currently appears to be out of stock. Also say there is no confirmed restock date right now unless a separate verified fact provides one.`);
+    } else if (state === "variant_clarification_required") {
+      lines.push("  Writer rule: Availability differs by variant/version. Ask the customer which version, color, or variant they mean before answering availability.");
+    } else if (state === "unavailable" || state === "discontinued") {
+      lines.push(`  Writer rule: Do not say ${product} is in stock. Say it is not currently available in the store if the customer asks.`);
+    } else {
+      lines.push("  Writer rule: Live availability is inconclusive. Say you cannot confirm live availability right now and ask for the exact product name/link or variant if needed.");
+    }
+  }
+  return lines.join("\n");
+}
+
+// Delivered + customer states not-received → deterministic safe workflow.
+// Carrier "delivered" ≠ personal receipt. Asks for address confirmation and
+// nearby-checks, offers a closer look — but promises NOTHING (no refund,
+// replacement, reshipment, compensation, claim, or guaranteed outcome), since
+// no such action exists in this pipeline.
+const DELIVERED_NOT_RECEIVED_DIRECTIVE = [
+  "- DELIVERED-NOT-RECEIVED: Carrier-tracking viser LEVERET, men kunden siger pakken IKKE er modtaget/mangler/ikke kan findes. Følg denne struktur (tilpas naturligt til kundens sprog):",
+  "  1. Anerkend og beklag oprigtigt at kunden ikke har modtaget sin ordre (empati).",
+  "  2. Sig at tracking viser pakken som leveret — men at dette IKKE nødvendigvis bekræfter at kunden personligt har modtaget den.",
+  "  3. KRITISK: Stil et eksplicit spørgsmål hvor kunden skal bekræfte leveringsadressen, fx: \"Kan du bekræfte, at leveringsadressen på ordren er korrekt?\" eller \"Bekræft venligst leveringsadressen, så vi kan undersøge forsendelsen nærmere.\" Dette må ikke udelades.",
+  "  4. Foreslå at tjekke relevante steder: naboer, husstandsmedlemmer, reception/portner (hvis relevant), pakkeshop/afhentningssted (hvis relevant) samt sikre steder/postkasse hvor fragtmanden kan have efterladt pakken.",
+  "  5. Afslut med et konkret næste skridt: Når kunden har bekræftet adressen, kan vi undersøge forsendelsen nærmere med fragtfirmaet/carrieren. Brug denne type konkrete afslutning i stedet for generiske afslutninger.",
+  "  FORBUDT (brug aldrig disse eller lignende, hverken dansk eller engelsk): love refundering; love erstatning eller en ny vare; love genfremsendelse/reshipment; love kompensation; love at oprette en carrier-erstatningssag/claim (der findes INGEN claim-action); love et garanteret udfald af undersøgelsen; antage eller påstå at kunden har modtaget pakken; afslutte generisk med \"I look forward to hearing from you\", \"Feel free to reach out\", \"Let me know\" eller tilsvarende.",
+].join("\n");
+
+const CUSTOMER_REPORTED_DELIVERED_NOT_RECEIVED_DIRECTIVE = [
+  "- CUSTOMER-REPORTED-DELIVERED-NOT-RECEIVED: Kunden oplyser selv, at tracking viser/angiver pakken som LEVERET, men kunden siger pakken IKKE er modtaget/mangler/ikke kan findes. Der findes ingen verificeret live carrier-status i fakta. Følg denne struktur (tilpas naturligt til kundens sprog):",
+  "  1. Anerkend og beklag oprigtigt at kunden ikke kan finde/modtage sin ordre (empati).",
+  "  2. Referér forsigtigt til kundens oplysninger, fx: \"Since you mention that the tracking shows the package as delivered...\" eller \"If the tracking page shows the package as delivered...\". Påstå IKKE at Sona/shoppen har verificeret carrier-status.",
+  "  3. Sig at en leveret-status ikke nødvendigvis bekræfter at kunden personligt har modtaget pakken.",
+  "  4. KRITISK: Stil et eksplicit spørgsmål hvor kunden skal bekræfte leveringsadressen, fx: \"Kan du bekræfte, at leveringsadressen på ordren er korrekt?\" eller \"Bekræft venligst leveringsadressen, så vi kan undersøge forsendelsen nærmere.\" Dette må ikke udelades.",
+  "  5. Foreslå at tjekke relevante steder: naboer, husstandsmedlemmer, reception/portner (hvis relevant), pakkeshop/afhentningssted (hvis relevant), postkasse samt sikre steder hvor fragtmanden kan have efterladt pakken.",
+  "  6. Afslut med et konkret næste skridt: Når kunden har bekræftet adressen, kan vi undersøge forsendelsen nærmere med fragtfirmaet/carrieren/shipping partner. Brug denne type konkrete afslutning i stedet for generiske afslutninger.",
+  "  FORBUDT (brug aldrig disse eller lignende, hverken dansk eller engelsk): påstå live/verificeret trackingstatus; love refundering; love erstatning eller en ny vare; love genfremsendelse/reshipment; love kompensation; love at oprette en carrier-erstatningssag/claim; love et garanteret udfald; antage eller påstå at kunden har modtaget pakken; afslutte generisk med \"I look forward to hearing from you\", \"Feel free to reach out\", \"Let me know\" eller tilsvarende.",
+].join("\n");
+
+function trackingStateLine(
+  f: TrackingFact,
+  opts?: { customerClaimsNotReceived?: boolean },
+): string {
+  switch (f.state) {
+    case "delivered":
+      if (opts?.customerClaimsNotReceived) return DELIVERED_NOT_RECEIVED_DIRECTIVE;
+      return "- Carrier-tracking viser LEVERET. Sig at tracking viser leveret; påstå IKKE at kunden personligt har modtaget pakken — hvis kunden siger den ikke er modtaget, tilbyd at undersøge.";
+    case "out_for_delivery":
+      return "- Pakken er ude til levering i dag (verificeret).";
+    case "in_transit":
+      return "- Pakken er på vej (verificeret). Del evt. tracking-linket.";
+    case "pickup_ready":
+      return "- Pakken er klar til afhentning (verificeret).";
+    case "label_created":
+      return "- Forsendelsesdata er oprettet hos fragtmanden; pakken er endnu ikke nødvendigvis afhentet.";
+    case "exception":
+      return "- Der er en undtagelse/forsinkelse på forsendelsen (verificeret). Vær konkret men forsigtig.";
+    case "returned_to_sender":
+      return "- Forsendelsen er på vej retur til afsender (verificeret).";
+    case "lookup_error":
+      return "- Jeg kan IKKE verificere live forsendelsesstatus i øjeblikket. Angiv ingen konkret leveringsstatus; brug sikker formulering om at status ikke kan bekræftes nu.";
+    case "unknown":
+    default:
+      return "- Der findes et tracking-nummer, men carrier-status kan ikke verificeres lige nu. Del nummeret/linket, men angiv ingen konkret status.";
+  }
+}
+
+function returnStateLine(f: TrackingFact): string {
+  // Both customer_provided/unknown and lookup_error are UNVERIFIED → identical
+  // strict safe wording. Provide an explicit approved structure so the model
+  // cannot fall back to generic return-workflow language.
+  if (f.verification !== "carrier_verified") {
+    const carrierRef = f.carrier
+      ? `${f.carrier}-trackingstatus`
+      : "carrier-trackingstatus";
+    return [
+      "- Kunde-oplyst retur-tracking (IKKE carrier-verificeret).",
+      `  Anerkend at vi har modtaget retur-tracking-nummeret. Sig at vi lige nu IKKE kan verificere ${carrierRef} i vores system, og at vi derfor IKKE kan bekræfte om returpakken er ankommet/modtaget eller er behandlet internt.`,
+      "  Sig at tracking-nummeret kan bruges til at undersøge returstatus nærmere.",
+      "  Hvis verificerede refund-fakta viser at ingen refundering er udstedt: sig tydeligt at refunderingen endnu IKKE er udstedt.",
+      "  FORBUDT (brug aldrig disse eller lignende, hverken på dansk eller engelsk): love refundering efter at returen er modtaget/behandlet; sige at refunderingen udstedes/igangsættes når pakken modtages; beskrive en automatisk refunderings-proces; love en refunderingsdato/tid; love at kunden får besked; bede kunden om selv at følge trackingen; sige at en carrier-bekræftet ankomst betyder intern behandling.",
+    ].join("\n");
+  }
+  switch (f.state) {
+    case "delivered":
+      return "- Carrier-tracking viser at returforsendelsen er LEVERET. Sig at tracking viser leveret, men påstå IKKE at returneringen er behandlet internt/færdigbehandlet. Hvis ingen refundering er udstedt, sig at sagen kan gennemgås nærmere.";
+    case "in_transit":
+      return "- Returforsendelsen er på vej (verificeret). Lov IKKE en refunderingsdato.";
+    case "out_for_delivery":
+      return "- Returforsendelsen er ude til levering (verificeret). Lov ikke refunderingsdato.";
+    case "returned_to_sender":
+      return "- Returforsendelsen er på vej retur (verificeret).";
+    case "exception":
+      return "- Der er en undtagelse på returforsendelsen (verificeret).";
+    default:
+      return "- Returforsendelsens status kan ikke fastslås sikkert; anerkend nummeret og lov ingen refunderingstid.";
+  }
+}
+
+// Structured, clearly-labeled refund-status directive for the writer. Mirrors
+// the RefundStatus state machine in fact-resolver. Returns "" when absent.
+// Detects when the customer states (in their own words) that they already
+// returned / sent back the item. Used only to choose safe acknowledgement
+// wording — it is a CUSTOMER-STATED fact, never treated as verified receipt.
+export function customerClaimsReturned(message?: string | null): boolean {
+  const m = String(message ?? "").toLowerCase();
+  return /\b(returned|sent\s+(?:it\s+|them\s+|the\s+\w+\s+)?back|shipped\s+(?:it\s+|them\s+)?back|posted\s+(?:it\s+)?back|mailed\s+(?:it\s+)?back)\b/.test(m) ||
+    /\b(returneret|returnerede|sendt\s+(?:den\s+|det\s+|dem\s+|varen\s+|pakken\s+)?(?:retur|tilbage)|sendte\s+(?:den\s+|det\s+|dem\s+|varen\s+|pakken\s+)?(?:retur|tilbage))\b/.test(m);
+}
+
+export function buildRefundStatusDirective(
+  refund?: RefundStatus | null,
+  opts?: { customerClaimsReturned?: boolean },
+): string {
+  if (!refund) return "";
+  const header = `# Refunderingsstatus (struktureret) — state: ${refund.state}`;
+  switch (refund.state) {
+    case "no_refund_issued":
+      // Sub-case: customer says they already returned the item, but live facts
+      // verify neither receipt nor internal processing.
+      if (opts?.customerClaimsReturned) {
+        return `${header}
+- Kunden oplyser selv at varen er returneret — anerkend dette som en KUNDE-OPLYST oplysning, ikke som en verificeret kendsgerning.
+- Bekræft KUN at der endnu IKKE er udstedt en refundering.
+- Sig tydeligt at du lige nu IKKE kan se om returpakken er ankommet/modtaget og behandlet internt — antag IKKE at returneringen er modtaget eller behandlet.
+- Bed kunden sende et retur-trackingnummer eller tracking-link, så status kan undersøges nærmere.
+- FORBUDTE formuleringer (brug ingen af disse eller lignende — beskriv IKKE en automatisk refunderings-workflow): "når vi modtager og behandler din returnering", "så snart vi har modtaget returneringen", "vi igangsætter/starter refunderingen", "refunderingen igangsættes/starter automatisk", "du vil blive underrettet/får besked", "vi holder øje med forsendelsen/pakken".
+- Lov IKKE hvornår pengene ankommer og lov ikke nogen notifikation.
+- Nævn IKKE ansvar eller omkostninger for returforsendelse, medmindre kunden selv spørger om forsendelse eller omkostninger.`;
+      }
+      return `${header}
+- Ingen refundering er registreret på ordren. Sig IKKE at en refundering er udstedt og opfind ikke en returstatus.
+- Antag IKKE at en returnering er modtaget, selvom kunden siger de har returneret varen — bed om bekræftelse eller rut til gennemgang.`;
+    case "full_refund_issued":
+      return `${header}
+- Hele beløbet ER refunderet${refund.total_refunded && refund.currency ? ` (${refund.total_refunded} ${refund.currency})` : ""}. Du må oplyse verificeret beløb og tidspunkt hvis tilgængeligt.
+- Lov IKKE hvornår beløbet vises på kontoen med en konkret tidsramme (fx antal dage) medmindre verificeret politik angiver den. Brug i stedet: "Refunderingen er udstedt. Hvor lang tid det tager før beløbet vises på din konto kan afhænge af din betalingsudbyder."`;
+    case "partial_refund_issued":
+      return `${header}
+- En DELVIS refundering ER udstedt${refund.total_refunded && refund.currency ? ` (${refund.total_refunded} ${refund.currency})` : ""}. Du må oplyse verificeret beløb og tidspunkt hvis tilgængeligt.
+- Antyd IKKE at restbeløbet automatisk bliver refunderet.
+- Lov ikke en konkret bankbehandlingstid medmindre verificeret politik angiver den; tiden før beløbet vises kan afhænge af kundens betalingsudbyder.`;
+    case "refund_pending_or_unclear":
+    default:
+      return `${header}
+- Refunderingsstatus skal gennemgås nærmere. Opfind IKKE et beløb og opfind IKKE en dato.
+- Claim IKKE at returneringen er modtaget, og lov ikke hvornår pengene ankommer.`;
+  }
+}
+
+// Structured, clearly-labeled order-match state directive for the writer.
+// Mirrors the OrderMatch state machine in fact-resolver so the writer can act
+// safely without re-parsing prose. Returns "" when no match is present.
+export function buildOrderMatchDirective(match?: OrderMatch): string {
+  if (!match) return "";
+  const header = `# Ordre-match (struktureret) — state: ${match.state}`;
+  switch (match.state) {
+    case "exact_order_number":
+      return `${header}
+- Ordren er verificeret ud fra et oplyst ordrenummer. Du må svare direkte med de verificerede fakta. Foreslåede ordre-actions går altid via almindelig godkendelse — udfør aldrig selv.`;
+    case "single_email_match":
+      return `${header}
+- Ordren er fundet via kundens EMAIL (ikke et oplyst ordrenummer). Verificerede læse-fakta (status, fulfillment, tracking, dato) er sikre at oplyse.
+- Foreslå/lov IKKE refundering, annullering, adresseændring, ombytning eller genfremsendelse, før kunden har bekræftet den rigtige ordre (fx ordrenummer).`;
+    case "multiple_email_matches":
+      return `${header}
+- Der blev fundet ${match.candidate_count} ordrer på kundens email. Vælg ALDRIG en ordre selv og gengiv INGEN ordre-detaljer.
+- Bed kunden oplyse/bekræfte det relevante ordrenummer (#xxxx). Ingen handlinger.`;
+    case "order_not_found":
+      return `${header}
+- Opslaget lykkedes, men ingen ordre matchede. Sig IKKE at kunden ingen ordre har.
+- Bed kunden bekræfte ordrenummeret eller oplyse manglende detaljer. Ingen handlinger.`;
+    case "integration_error":
+      return `${header}
+- Vi kunne ikke verificere ordren pga. en teknisk fejl/timeout — dette er IKKE bevis for at ordren ikke findes.
+- Sig ALDRIG at ordren ikke kan findes. Brug sikker formulering: "Jeg kan desværre ikke verificere ordredetaljerne i øjeblikket" og at vi vender tilbage/prøver igen. Ingen handlinger.`;
+    case "missing_identifiers":
+      return `${header}
+- Vi har hverken ordrenummer eller email at slå op på. Bed FØRST om ordrenummer (#xxxx); hvis det ikke haves, bed om den email der blev brugt ved købet. Ingen handlinger.`;
+    default:
+      return header;
+  }
 }
 
 function unique(items: string[]): string[] {
@@ -703,6 +1100,8 @@ export async function runWriter(
     resolvedCustomerName,
     replyLanguageFallback,
     clarificationOnly = false,
+    productSupportTopicLock = false,
+    completedTroubleshootingBlock,
   }: WriterInput,
 ): Promise<WriterResult> {
   const resolvedModel = model ?? Deno.env.get("OPENAI_MODEL") ?? "gpt-5-mini";
@@ -812,6 +1211,23 @@ Support replied: "${ex.agent_reply.slice(0, 500)}"`;
         )
         .join("\n\n")
     : "";
+
+  // --- Kilde-autoritet + ordre-match (live-fakta vinder, ingen gætteri) ---
+  const authorityBlock = buildLiveFactAuthorityBlock();
+  const orderMatchBlock = buildOrderMatchDirective(facts.match);
+  const refundRelevantForWriter = facts.order != null &&
+    (plan.primary_intent === "refund" || plan.primary_intent === "return" ||
+      (Array.isArray(facts.order.refunds) && facts.order.refunds.length > 0));
+  const refundStatusBlock = refundRelevantForWriter && facts.order
+    ? buildRefundStatusDirective(deriveRefundStatus(facts.order), {
+      customerClaimsReturned: customerClaimsReturned(latestCustomerMessage),
+    })
+    : "";
+  const trackingBlock = buildTrackingDirective(facts.tracking_facts ?? [], {
+    customerClaimsNotReceived: customerClaimsNotReceived(latestCustomerMessage),
+    customerReportsTrackingDelivered: customerReportsTrackingDelivered(latestCustomerMessage),
+  });
+  const stockAvailabilityBlock = buildStockAvailabilityDirective(facts.facts);
 
   // --- Verificerede fakta (deterministiske — brug disse frem for viden) ---
   const factsBlock = facts.facts.length > 0
@@ -1052,7 +1468,7 @@ ABSOLUTTE FORBUD (faktuel sikkerhed):
 - UVERIFICERET ORDRE: Hvis kunden HAR oplyst et ordrenummer der IKKE står i "Verificerede fakta" under "Ordre fundet", må du aldrig skrive "din ordre #X" som om den findes eller love handlinger på den. Forklar venligt at vi ikke kan finde nummeret i vores system, og spørg DA hvor produktet er købt.
 - Du er et menneske. Aldrig "Som AI kan jeg...".
 - Skriv ALDRIG signatur, navn eller email-adresser — tilføjes automatisk.
-- Brug KUN fakta fra "Verificerede fakta". Opfind aldrig priser, datoer, ordrenumre, policies eller lagerstatus.
+- Brug KUN fakta fra "Verificerede fakta". Opfind aldrig priser, datoer, ordrenumre, policies eller lagerstatus. Lager/availability må KUN besvares ud fra en "Live stock availability"-faktablok; ellers sig at live availability ikke kan bekræftes.
 - ALDRIG falsk bekræftelse: skriv aldrig at en handling ER udført medmindre actionResult bekræfter det. Planlagte actions venter på godkendelse.
 - ALDRIG "sender videre til teamet" / "kontakt kundesupport". Spørg ALDRIG om telefonnummer. URLs som plain text, aldrig markdown-links.
 - KANAL: Kunden skriver allerede i denne tråd. Bed dem aldrig "kontakte os" eller maile en support-adresse. Hvis et KB-trin siger det, så betragt trinet som opfyldt.
@@ -1107,7 +1523,7 @@ ABSOLUTTE FORBUD:
 - Du er et menneske. Aldrig "Som AI kan jeg...".
 - Skriv ALDRIG signatur, navn, sign-off eller email-adresser i svaret — tilføjes automatisk.
 - Brug KUN fakta fra "Verificerede fakta". Opfind aldrig priser, datoer, ordrenumre eller policies.
-- ALDRIG lagerantal, lagerstatus eller realtids-inventory — du har ikke adgang til live lagerdata. Sig i stedet at du tjekker, eller henvis til websitet.
+- ALDRIG lagerantal, lagerstatus eller realtids-inventory medmindre "Verificerede fakta" indeholder "Live stock availability". Selv da: giv ikke eksakt antal; sig kun currently available/out of stock/ask variant clarification/unknown according to the fact.
 - ALDRIG falsk bekræftelse: skriv ALDRIG at en handling er udført medmindre actionResult bekræfter det eksplicit. Planlagte actions er forslag der venter på menneskelig godkendelse.
 - ALDRIG "sender videre til teamet", "videreformidler", "kontakt kundesupport" — tag handlingen nu eller forklar præcist hvad der mangler.
 - Spørg ALDRIG om telefonnummer.
@@ -1234,8 +1650,26 @@ ${stageDirectives[resolutionStage] ?? stageDirectives.info_only}`;
     : "";
   const suppress = (block: string) => (clarificationOnly ? "" : block);
 
+  // Product Support PREVIEW only (section selected): topic-lock + progression
+  // guardrails. Placed high in the prompt so it governs how older context and
+  // legacy knowledge below are used. Never present in clarification-only mode
+  // (mutually exclusive), ordinary runtime, or Returns & Refunds preview.
+  const productSupportTopicBlock =
+    productSupportTopicLock && !clarificationOnly
+      ? buildProductSupportTopicGuardrails()
+      : "";
+
+  // Product Support PREVIEW only: structured completed-troubleshooting block.
+  // Non-suppressed so it governs the reply in BOTH section-selected (topic-lock)
+  // and abstained (clarification) modes — once a path is exhausted the writer
+  // asks for the order number instead of repeating a completed step. Empty in
+  // ordinary runtime and Returns & Refunds preview.
+  const completedTroubleshootingPreviewBlock = completedTroubleshootingBlock || "";
+
   const userContent = [
     clarificationBlock,
+    productSupportTopicBlock,
+    completedTroubleshootingPreviewBlock,
     suppress(stageBlock),
     internalRulesBlock || "",
     suppress(authoritativePreviewDocumentContext || ""),
@@ -1244,6 +1678,11 @@ ${stageDirectives[resolutionStage] ?? stageDirectives.info_only}`;
     // before KB content — critical for follow-up messages and multi-turn threads.
     historyBlock,
     suppress(policyBlock),
+    authorityBlock,
+    orderMatchBlock,
+    refundStatusBlock,
+    trackingBlock,
+    stockAvailabilityBlock,
     factsBlock,
     salutationBlock,
     variantBlock,
@@ -1383,7 +1822,13 @@ Returner JSON:
     }
     const parsed = JSON.parse(content);
 
-    const cleanedDraft = cleanDraftText(parsed.reply_draft ?? "");
+    const cleanedDraft = cleanupDeliveredNotReceivedDraft(
+      cleanDraftText(parsed.reply_draft ?? ""),
+      {
+        trackingFacts: facts.tracking_facts ?? [],
+        latestCustomerMessage,
+      },
+    );
     return {
       draft_text: normalizeOpeningGreeting(
         cleanedDraft,
