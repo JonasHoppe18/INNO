@@ -61,10 +61,8 @@ export interface RetrievedChunk {
   chunk_index?: number | null;
   chunk_count?: number;
   products?: string[];
-  // Single product external id this chunk is scoped to (metadata.product_id),
-  // when set. null/undefined = not tied to one product (shared/general). Used
-  // by the Product Support PREVIEW cross-product scope filter; never used to
-  // alter ordinary runtime behavior.
+  // Single product external id/scope this chunk is scoped to, when set.
+  // null/undefined = not tied to one product (shared/general).
   product_id?: string | null;
   // Max cosine similarity (1 - distance) seen for this chunk across the vector
   // queries that surfaced it. null for BM25-only chunks (no vector score).
@@ -270,6 +268,143 @@ export function extractMentionedProductTerms(
   return resolveMostSpecificProductTerms(matched);
 }
 
+function isKnowledgeDocumentProvider(sourceProvider: unknown): boolean {
+  return String(sourceProvider || "").trim().toLowerCase() ===
+    KNOWLEDGE_DOCUMENT_PROVIDER;
+}
+
+function isReturnRefundContext(
+  plan: Plan,
+  customerMessage?: string,
+): boolean {
+  const issueTerms = extractIssueTerms(customerMessage || "");
+  return RETURN_INTENTS.has(plan.primary_intent) ||
+    issueTerms.some((term) => RETURN_ISSUE_TERMS.has(term));
+}
+
+function isEarPadContext(customerMessage?: string): boolean {
+  const lower = stripHtml(customerMessage || "").toLowerCase();
+  return extractIssueTerms(lower).includes("ear_pads") ||
+    /\b(ear\s*pads?|earpads?|replacement\s+pads?|ørepuder?)\b/i.test(lower);
+}
+
+function extractKnowledgeDocumentProductTerms(input: {
+  content?: string;
+  metadata?: Record<string, unknown> | null;
+  shop?: Record<string, unknown>;
+}): string[] {
+  const metadata = input.metadata && typeof input.metadata === "object"
+    ? input.metadata
+    : {};
+  const text = [
+    metadata.title,
+    metadata.name,
+    metadata.label,
+    metadata.section_heading,
+    input.content,
+  ].map((v) => String(v || "")).join("\n");
+  return extractMentionedProductTerms(text, input.shop);
+}
+
+function extractKnowledgeDocumentTitleText(input: {
+  content?: string;
+  metadata?: Record<string, unknown> | null;
+}): string {
+  const metadata = input.metadata && typeof input.metadata === "object"
+    ? input.metadata
+    : {};
+  const explicit = String(metadata.title || metadata.name || metadata.label || "")
+    .trim();
+  if (explicit) return explicit;
+  const heading = String(input.content || "").match(/^\s*#\s+(.+)$/m)?.[1];
+  return String(heading || "").trim();
+}
+
+export type RuntimeKnowledgeDocumentDecision = {
+  allowed: boolean;
+  reason: string;
+};
+
+export function evaluateRuntimeKnowledgeDocumentAccess(input: {
+  source_provider?: string | null;
+  content?: string;
+  metadata?: Record<string, unknown> | null;
+  plan: Plan;
+  customerMessage?: string;
+  shop?: Record<string, unknown>;
+}): RuntimeKnowledgeDocumentDecision {
+  if (!isKnowledgeDocumentProvider(input.source_provider)) {
+    return { allowed: true, reason: "not_knowledge_document" };
+  }
+
+  const metadata = input.metadata && typeof input.metadata === "object"
+    ? input.metadata
+    : {};
+  const environment = String(metadata.environment || "").trim().toLowerCase();
+  if (!KNOWLEDGE_DOCUMENT_ENVIRONMENTS.has(environment)) {
+    return { allowed: false, reason: "unsupported_document_environment" };
+  }
+
+  const category = String(metadata.category || "").trim();
+  if (category === RETURNS_DOCUMENT_CATEGORY) {
+    return isReturnRefundContext(input.plan, input.customerMessage)
+      ? { allowed: true, reason: "returns_context" }
+      : { allowed: false, reason: "not_returns_context" };
+  }
+
+  if (category !== PRODUCT_SUPPORT_DOCUMENT_CATEGORY) {
+    return { allowed: false, reason: "unsupported_document_category" };
+  }
+
+  // Product Support docs are currently used in inbox drafts as human-reviewed
+  // draft context. No auto-send/autonomous action path exists.
+  const mentionedProducts = extractMentionedProductTerms(
+    input.customerMessage || "",
+    input.shop,
+  );
+  const documentProducts = extractKnowledgeDocumentProductTerms({
+    content: input.content,
+    metadata,
+    shop: input.shop,
+  });
+  const earPadContext = isEarPadContext(input.customerMessage);
+  const scopedMentionedProducts = earPadContext && mentionedProducts.length > 1
+    ? mentionedProducts.filter((term) => normProduct(term) !== "ear pads")
+    : mentionedProducts;
+  const titleProducts = extractMentionedProductTerms(
+    extractKnowledgeDocumentTitleText({ content: input.content, metadata }),
+    input.shop,
+  );
+  const isGenericEarPadDocument = titleProducts.some((term) =>
+    normProduct(term) === "ear pads"
+  );
+
+  if (isGenericEarPadDocument) {
+    return earPadContext
+      ? { allowed: true, reason: "ear_pads_context" }
+      : { allowed: false, reason: "ear_pads_document_without_context" };
+  }
+
+  if (scopedMentionedProducts.length !== 1) {
+    return {
+      allowed: false,
+      reason: scopedMentionedProducts.length > 1
+        ? "ambiguous_product_context"
+        : "missing_product_context",
+    };
+  }
+
+  if (!documentProducts.length) {
+    return { allowed: false, reason: "document_product_unresolved" };
+  }
+
+  const mentioned = normProduct(scopedMentionedProducts[0]);
+  const matches = documentProducts.some((term) => normProduct(term) === mentioned);
+  return matches
+    ? { allowed: true, reason: "same_product_context" }
+    : { allowed: false, reason: "wrong_product_context" };
+}
+
 // Output values MUST be from the canonical issue_types vocabulary defined in
 // apps/web/lib/knowledge/issue-types.js. The UI tags snippets with these exact
 // values, and metadata-overlap scoring depends on them matching. Drift = silent
@@ -330,6 +465,10 @@ const RETURN_ISSUE_TERMS = new Set(["return", "refund"]);
 // Intents that should additionally probe for return/refund knowledge even if no
 // return/refund issue term was lexically detected in the message.
 const RETURN_INTENTS = new Set(["return", "refund", "exchange"]);
+const KNOWLEDGE_DOCUMENT_PROVIDER = "knowledge_document";
+const KNOWLEDGE_DOCUMENT_ENVIRONMENTS = new Set(["preview", "production"]);
+const PRODUCT_SUPPORT_DOCUMENT_CATEGORY = "product_support";
+const RETURNS_DOCUMENT_CATEGORY = "returns";
 
 // Intents whose messages warrant a technical/troubleshooting probe.
 const TECHNICAL_INTENTS = new Set([
@@ -1283,18 +1422,44 @@ export async function runRetriever(
   const scoredChunks: RetrievedChunk[] = fused
     // Internal rules (metadata.audience === "internal") are injected
     // deterministically by the internal-rules stage and must NEVER reach the
-    // customer-facing knowledge block — drop them from normal retrieval so the
-    // writer can't quote internal terminology/process verbatim.
+    // customer-facing knowledge block. Knowledge Docs are the one exception:
+    // they are deliberately authored as internal, human-reviewed draft context,
+    // and pass through only when the document-specific runtime scope gate below
+    // says the current ticket matches the document category/product.
     .filter((r) => {
       const meta = r.chunk.metadata && typeof r.chunk.metadata === "object"
         ? r.chunk.metadata as Record<string, unknown>
         : {};
+      const sourceProvider = r.chunk.source_provider as string | null;
+      if (isKnowledgeDocumentProvider(sourceProvider)) {
+        return evaluateRuntimeKnowledgeDocumentAccess({
+          source_provider: sourceProvider,
+          content: String(r.chunk.content || ""),
+          metadata: meta,
+          plan,
+          customerMessage,
+          shop,
+        }).allowed;
+      }
       return String(meta.audience || "").toLowerCase() !== "internal";
     })
     .map((r) => {
       const meta = r.chunk.metadata && typeof r.chunk.metadata === "object"
         ? r.chunk.metadata as Record<string, unknown>
         : {};
+      const sourceProvider = r.chunk.source_provider as string | null;
+      const runtimeDocumentProducts = isKnowledgeDocumentProvider(sourceProvider)
+        ? extractKnowledgeDocumentProductTerms({
+          content: String(r.chunk.content || ""),
+          metadata: meta,
+          shop,
+        })
+        : [];
+      const metadataProducts = Array.isArray(meta.products)
+        ? (meta.products as unknown[]).map((p) =>
+          String(p || "").trim().toLowerCase()
+        ).filter(Boolean)
+        : [];
       const base = {
         id: r.chunk.id as string,
         content: r.chunk.content as string,
@@ -1311,13 +1476,11 @@ export async function runRetriever(
         chunk_count: typeof meta.chunk_count === "number"
           ? meta.chunk_count
           : 1,
-        products: Array.isArray(meta.products)
-          ? (meta.products as unknown[]).map((p) =>
-            String(p || "").trim().toLowerCase()
-          ).filter(Boolean)
-          : [],
+        products: uniqueStrings([...metadataProducts, ...runtimeDocumentProducts]),
         product_id: meta.product_id != null
           ? String(meta.product_id).trim() || null
+          : meta.product_scope != null
+          ? String(meta.product_scope).trim() || null
           : null,
         vector_similarity: r.vectorSimilarity,
         question: typeof meta.question === "string" ? meta.question : null,
@@ -1326,7 +1489,7 @@ export async function runRetriever(
         ...base,
         ...classifyKnowledgeSource({
           ...base,
-          source_provider: r.chunk.source_provider as string | null,
+          source_provider: sourceProvider,
           metadata: r.chunk.metadata as Record<string, unknown> | null,
         }),
       };
