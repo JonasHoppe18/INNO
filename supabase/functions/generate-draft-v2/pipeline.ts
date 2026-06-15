@@ -3,6 +3,10 @@ import { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { runGate } from "./stages/gate.ts";
 import { updateCaseState } from "./stages/case-state-updater.ts";
 import { runPlanner } from "./stages/planner.ts";
+import {
+  replacementIntentOverride,
+  resolveReplacementFlowState,
+} from "./stages/replacement-flow.ts";
 import { runRetriever } from "./stages/retriever.ts";
 import type { RetrievalCandidateDiagnostics } from "./stages/retriever.ts";
 import { runInternalRules } from "./stages/internal-rules.ts";
@@ -1161,6 +1165,46 @@ export async function runDraftV2Pipeline(
         ),
         confidence: Math.max(Number(plan.confidence || 0), 0.9),
       };
+    }
+
+    // Multi-turn replacement/warranty flow: a clear "Kan jeg få et nyt?" /
+    // purchase-source confirmation after failed troubleshooting must not degrade
+    // to a generic `other`. Deterministic, scans agent + customer turns.
+    {
+      const replacementHistory = messages.map((m) => {
+        const msg = m as {
+          clean_body_text?: string;
+          body_text?: string;
+          direction?: string;
+          from_me?: boolean;
+        };
+        const isAgent = msg.direction === "outbound" || msg.from_me === true;
+        return {
+          role: (isAgent ? "agent" : "customer") as "agent" | "customer",
+          text: msg.clean_body_text || msg.body_text || "",
+        };
+      });
+      const replacementState = resolveReplacementFlowState({
+        history: replacementHistory,
+        latestMessage: latestBody,
+        purchaseSourceKnown: false,
+        orderNumberKnown: caseState.entities.order_numbers.length > 0,
+      });
+      const override = replacementIntentOverride(
+        replacementState,
+        plan.primary_intent,
+      );
+      if (override) {
+        plan = {
+          ...plan,
+          primary_intent: override,
+          resolution_stage: "refund_or_exchange",
+          required_facts: Array.from(
+            new Set([...(plan.required_facts || []), "order_state"]),
+          ),
+          confidence: Math.max(Number(plan.confidence || 0), 0.8),
+        };
+      }
     }
 
     await updateDraftGenerationTrace(supabase, generationId, {

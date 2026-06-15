@@ -78,6 +78,13 @@ export interface RetrievedChunk {
   // it is a more specific, cross-lingual discriminator than any tag. null for
   // non-Q&A chunks (Shopify product descriptions, manuals, policies).
   question?: string | null;
+  // Trusted Shopify product identity from synced `shopify_product` knowledge
+  // metadata. Used to ground a product-page URL when the LIVE Shopify stock
+  // lookup cannot find the product (e.g. credentials/scope/sync gap) but
+  // retrieval still selected a trusted product source. Never derived from
+  // customer text. null for non-product chunks.
+  product_handle?: string | null;
+  product_url?: string | null;
 }
 
 export interface RetrieverResult {
@@ -1575,6 +1582,14 @@ export async function runRetriever(
         knowledge_document_access_reason: accessDecision?.reason ?? null,
         vector_similarity: r.vectorSimilarity,
         question: typeof meta.question === "string" ? meta.question : null,
+        product_handle: sourceProvider === "shopify_product" &&
+            typeof meta.handle === "string"
+          ? meta.handle.trim() || null
+          : null,
+        product_url: sourceProvider === "shopify_product" &&
+            typeof meta.url === "string"
+          ? meta.url.trim() || null
+          : null,
       };
       return {
         ...base,

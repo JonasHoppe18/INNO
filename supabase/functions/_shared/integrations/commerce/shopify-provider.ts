@@ -186,7 +186,22 @@ function isSpecificProductQuery(query: string): boolean {
   if (!normalized) return false;
   const tokens = normalized.split(' ').filter(Boolean);
   if (tokens.length >= 2) return true;
-  return /^a[- ]?(?:spire|blaze|rise|live)$/i.test(query.trim());
+  // Known short model family (a-rise/a-spire/...) stays specific.
+  if (/^a[- ]?(?:spire|blaze|rise|live)$/i.test(query.trim())) return true;
+  // A single DISTINCTIVE token (>= 4 chars, e.g. "airpods", "arise") is
+  // specific enough to attempt a local contains-match. Wrong-product safety is
+  // still enforced by selectShopifyProductsForStockQuery's exact/contains rules,
+  // so this cannot turn "airpods" into A-Blaze. Short/generic tokens are not.
+  return tokens.length === 1 && tokens[0].length >= 4;
+}
+
+// Compact (space-stripped) normalization so spelling/spacing variants of the
+// SAME token collapse together — "A-rise", "A Rise", "a-rise" and "arise" all
+// become "arise" — while DISTINCT model names ("aspire", "ablaze") stay
+// different. Used as an exact-equality tier only, never substring, so it cannot
+// broaden A-Rise into A-Spire/A-Blaze.
+function normalizeProductLookupCompact(value: unknown): string {
+  return normalizeProductLookupText(value).replace(/\s+/g, '');
 }
 
 export function selectShopifyProductsForStockQuery(
@@ -195,10 +210,13 @@ export function selectShopifyProductsForStockQuery(
 ): Array<Record<string, unknown>> {
   if (!isSpecificProductQuery(query)) return [];
   const normalizedQuery = normalizeProductLookupText(query);
+  const compactQuery = normalizeProductLookupCompact(query);
   const withLookup = products.map((product) => ({
     product,
     title: normalizeProductLookupText(product.title),
     handle: normalizeProductLookupText(product.handle),
+    titleCompact: normalizeProductLookupCompact(product.title),
+    handleCompact: normalizeProductLookupCompact(product.handle),
   })).filter((entry) => entry.title || entry.handle);
 
   const exactTitle = withLookup.filter((entry) => entry.title === normalizedQuery);
@@ -206,6 +224,13 @@ export function selectShopifyProductsForStockQuery(
 
   const exactHandle = withLookup.filter((entry) => entry.handle === normalizedQuery);
   if (exactHandle.length > 0) return exactHandle.map((entry) => entry.product);
+
+  // Space-insensitive exact match ("arise" → "A-Rise", "A Rise" → "A-Rise").
+  const compactMatch = withLookup.filter((entry) =>
+    (entry.titleCompact && entry.titleCompact === compactQuery) ||
+    (entry.handleCompact && entry.handleCompact === compactQuery)
+  );
+  if (compactMatch.length > 0) return compactMatch.map((entry) => entry.product);
 
   const contains = withLookup.filter((entry) =>
     entry.title.includes(normalizedQuery) ||
@@ -228,6 +253,53 @@ export interface ShopifyProductInventoryLookupDiagnostics {
   }>;
   ambiguous_match: boolean;
   no_match: boolean;
+  // Distinct reason the live lookup produced no usable products. Lets the
+  // pipeline tell apart a genuine empty/zero-products store from an auth/scope
+  // or wrong-shop problem instead of collapsing everything into "not_found".
+  // null when the call succeeded (regardless of whether it matched).
+  error_reason?:
+    | "missing_read_products_scope"
+    | "missing_read_inventory_scope"
+    | "wrong_shop_context"
+    | "shopify_returned_zero_products"
+    | "lookup_error"
+    | null;
+  http_status?: number | null;
+}
+
+// True when matched products were returned but NONE of their variants expose a
+// numeric inventory_quantity — the signature of a token without read_inventory.
+// The product is identifiable; live stock simply cannot be read.
+function matchedProductsLackInventory(
+  products: Array<Record<string, unknown>>,
+): boolean {
+  if (products.length === 0) return false;
+  let sawVariant = false;
+  for (const product of products) {
+    const variants = Array.isArray(product?.variants) ? product.variants : [];
+    for (const v of variants) {
+      sawVariant = true;
+      const qty = (v as Record<string, unknown>)?.inventory_quantity;
+      if (qty != null && Number.isFinite(Number(qty))) return false;
+    }
+  }
+  return sawVariant;
+}
+
+// Classify a failed Admin API call into a distinct, actionable reason.
+function classifyShopifyLookupError(
+  err: unknown,
+): { error_reason: NonNullable<ShopifyProductInventoryLookupDiagnostics["error_reason"]>; http_status: number | null } {
+  const status = typeof (err as { status?: unknown })?.status === "number"
+    ? (err as { status: number }).status
+    : null;
+  if (status === 401 || status === 403) {
+    return { error_reason: "missing_read_products_scope", http_status: status };
+  }
+  if (status === 404) {
+    return { error_reason: "wrong_shop_context", http_status: status };
+  }
+  return { error_reason: "lookup_error", http_status: status };
 }
 
 function productLookupDiagnostics(
@@ -585,54 +657,73 @@ export class ShopifyProvider implements CommerceProvider {
   }> {
     try {
       const encoded = encodeURIComponent(query.slice(0, 100));
+      // status MUST be a products-endpoint value (active|archived|draft).
+      // "any" is an ORDERS-only filter — passing it to products.json makes
+      // Shopify return zero, which is why orders worked but product/stock
+      // lookup returned nothing. Align with knowledge sync-products: status=active.
       const payload = await this.fetch<{ products?: Array<Record<string, unknown>> }>(
-        `products.json?title=${encoded}&status=any&limit=5&fields=id,title,handle,status,published_at,variants`,
+        `products.json?title=${encoded}&status=active&limit=5&fields=id,title,handle,status,published_at,variants`,
       );
       const products = payload?.products ?? [];
       const checkedAt = new Date().toISOString();
       if (products.length > 0) {
+        const diagnostics = productLookupDiagnostics(query, {
+          titleProducts: products,
+          listFallbackAttempted: false,
+          listFallbackProductCount: 0,
+          matchedProducts: products,
+        });
+        if (matchedProductsLackInventory(products)) {
+          diagnostics.error_reason = "missing_read_inventory_scope";
+        }
         return {
           facts: products.flatMap((product) =>
             mapShopifyProductToStockFacts(product, checkedAt)
           ),
-          diagnostics: productLookupDiagnostics(query, {
-            titleProducts: products,
-            listFallbackAttempted: false,
-            listFallbackProductCount: 0,
-            matchedProducts: products,
-          }),
+          diagnostics,
         };
       }
 
       const fallbackPayload = await this.fetch<{ products?: Array<Record<string, unknown>> }>(
-        `products.json?status=any&limit=250&fields=id,title,handle,status,published_at,variants`,
+        `products.json?status=active&limit=250&fields=id,title,handle,status,published_at,variants`,
       );
       const listedProducts = fallbackPayload?.products ?? [];
       const fallbackProducts = selectShopifyProductsForStockQuery(
         query,
         listedProducts,
       );
+      const diagnostics = productLookupDiagnostics(query, {
+        titleProducts: products,
+        listFallbackAttempted: true,
+        listFallbackProductCount: listedProducts.length,
+        matchedProducts: fallbackProducts,
+      });
+      // No active products at all in the store → distinct reason (empty/wrong
+      // shop context), not a mere title miss.
+      if (listedProducts.length === 0) {
+        diagnostics.error_reason = "shopify_returned_zero_products";
+      } else if (matchedProductsLackInventory(fallbackProducts)) {
+        // Product identified, but no variant exposes inventory_quantity → the
+        // token is missing read_inventory. Identity is usable; stock is unknown.
+        diagnostics.error_reason = "missing_read_inventory_scope";
+      }
       return {
         facts: fallbackProducts.flatMap((product) =>
           mapShopifyProductToStockFacts(product, checkedAt)
         ),
-        diagnostics: productLookupDiagnostics(query, {
-          titleProducts: products,
-          listFallbackAttempted: true,
-          listFallbackProductCount: listedProducts.length,
-          matchedProducts: fallbackProducts,
-        }),
+        diagnostics,
       };
-    } catch {
-      return {
-        facts: [],
-        diagnostics: productLookupDiagnostics(query, {
-          titleProducts: [],
-          listFallbackAttempted: false,
-          listFallbackProductCount: 0,
-          matchedProducts: [],
-        }),
-      };
+    } catch (err) {
+      const { error_reason, http_status } = classifyShopifyLookupError(err);
+      const diagnostics = productLookupDiagnostics(query, {
+        titleProducts: [],
+        listFallbackAttempted: false,
+        listFallbackProductCount: 0,
+        matchedProducts: [],
+      });
+      diagnostics.error_reason = error_reason;
+      diagnostics.http_status = http_status;
+      return { facts: [], diagnostics };
     }
   }
 
