@@ -343,6 +343,61 @@ Deno.test("same-product A-Blaze Knowledge Doc receives post-gate retrieval boost
   );
 });
 
+Deno.test("Product Support boost matches issue terms by token and phrase boundaries", () => {
+  const boostFor = (content: string, issueTerms: string[]) =>
+    buildScoreBreakdown({
+      chunk: chunk({
+        id: "doc-aspire",
+        content,
+        source_label: "knowledge_document",
+        source_provider: "knowledge_document",
+        document_category: "product_support",
+        knowledge_document_access_reason: "same_product_context",
+        products: ["a-spire wireless"],
+        similarity: 0.04,
+      }),
+      mentionedProducts: ["A-Spire Wireless"],
+      otherProducts: [],
+      issueTerms,
+    }).product_support_doc_boost;
+
+  assertEquals(
+    boostFor(
+      "# A-Spire Wireless — Product Support\n\n## App pairing\nUse this for app connection issues.",
+      ["app"],
+    ) > 0,
+    true,
+  );
+  assertEquals(
+    boostFor(
+      "# A-Spire Wireless — Product Support\n\n## Random note\nThis happens when status appears in the application log.",
+      ["app"],
+    ),
+    0,
+  );
+  assertEquals(
+    boostFor(
+      "# A-Spire Wireless — Product Support\n\n## Ear pads\nUse this for replacement ear pads.",
+      ["ear_pads"],
+    ) > 0,
+    true,
+  );
+  assertEquals(
+    boostFor(
+      "# A-Spire Wireless — Product Support\n\n## Ear pads\nUse this for replacement ear pads.",
+      ["ear-pads"],
+    ) > 0,
+    true,
+  );
+  assertEquals(
+    boostFor(
+      "# A-Spire Wireless — Product Support\n\n## Audio quality\nUse this for audio quality issues.",
+      ["audio quality"],
+    ) > 0,
+    true,
+  );
+});
+
 Deno.test("wrong-product Product Support docs remain excluded before boost can apply", () => {
   const blocked = decision({
     category: "product_support",

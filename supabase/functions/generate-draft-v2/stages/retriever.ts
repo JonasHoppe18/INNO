@@ -486,12 +486,25 @@ function hasLexicalIssueSignal(
   haystack: string,
   issueTerms: string[],
 ): boolean {
-  const lower = stripHtml(haystack).toLowerCase();
+  const normalized = normalizeIssueSignalText(haystack);
+  const tokens = new Set(normalized.split(" ").filter(Boolean));
+  const padded = ` ${normalized} `;
   return issueTerms.some((term) => {
-    const raw = term.toLowerCase();
-    const spaced = raw.replace(/_/g, " ");
-    return lower.includes(raw) || (spaced !== raw && lower.includes(spaced));
+    const normalizedTerm = normalizeIssueSignalText(term);
+    if (!normalizedTerm) return false;
+    const termTokens = normalizedTerm.split(" ").filter(Boolean);
+    if (termTokens.length === 1) return tokens.has(termTokens[0]);
+    return padded.includes(` ${termTokens.join(" ")} `);
   });
+}
+
+function normalizeIssueSignalText(value: string): string {
+  return stripHtml(value)
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 // Issue-type vocabulary terms that signal a commercial return/refund intent
