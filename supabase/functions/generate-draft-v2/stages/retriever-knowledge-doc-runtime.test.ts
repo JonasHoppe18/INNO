@@ -1,6 +1,8 @@
 import { assertEquals } from "jsr:@std/assert@1";
 import {
+  buildScoreBreakdown,
   evaluateRuntimeKnowledgeDocumentAccess,
+  type RetrievedChunk,
   type RuntimeKnowledgeDocumentDecision,
 } from "./retriever.ts";
 
@@ -41,6 +43,40 @@ function decision(input: {
     customerMessage: input.customerMessage,
     shop: SHOP,
   });
+}
+
+function chunk(
+  input: Partial<RetrievedChunk> & {
+    id: string;
+    content: string;
+    source_label: string;
+  },
+): RetrievedChunk {
+  return {
+    kind: "document",
+    similarity: 0.05,
+    usable_as: "background",
+    risk_flags: [],
+    applies_to_all_products: false,
+    chunk_issue_types: [],
+    products: [],
+    ...input,
+  };
+}
+
+function finalScore(
+  candidate: RetrievedChunk,
+  options: {
+    mentionedProducts: string[];
+    issueTerms: string[];
+  },
+): number {
+  return buildScoreBreakdown({
+    chunk: candidate,
+    mentionedProducts: options.mentionedProducts,
+    otherProducts: [],
+    issueTerms: options.issueTerms,
+  }).final_score;
 }
 
 Deno.test("inbox runtime may include same-product Product Support document chunks", () => {
@@ -213,5 +249,200 @@ Deno.test("unsupported document environments are not used in inbox retrieval", (
   assertEquals(result, {
     allowed: false,
     reason: "unsupported_document_environment",
+  });
+});
+
+Deno.test("same-product A-Spire Wireless Knowledge Doc receives post-gate retrieval boost", () => {
+  const access = decision({
+    category: "product_support",
+    metadata: { product_title: "A-Spire Wireless" },
+    content:
+      "# A-Spire Wireless — Product Support\n\n## Firmware update for audio cracking or repeated disconnects\nUpdate the headset and dongle firmware.",
+    customerMessage:
+      "My A-Spire Wireless keeps disconnecting and the audio is cracking.",
+  });
+  assertEquals(access, { allowed: true, reason: "same_product_context" });
+
+  const doc = chunk({
+    id: "doc-aspire",
+    content:
+      "# A-Spire Wireless — Product Support\n\n## Firmware update for audio cracking or repeated disconnects\nUpdate the headset and dongle firmware.",
+    source_label: "knowledge_document",
+    source_provider: "knowledge_document",
+    document_category: "product_support",
+    knowledge_document_access_reason: access.reason,
+    products: ["a-spire wireless"],
+    similarity: 0.04,
+  });
+  const legacy = chunk({
+    id: "legacy-aspire",
+    content: "Firmware updater notes for A-Spire Wireless audio cracking.",
+    source_label: "manual_text: Firmware note",
+    kind: "snippet",
+    products: ["a-spire wireless"],
+    similarity: 0.10,
+  });
+
+  const score = (c: RetrievedChunk) =>
+    finalScore(c, {
+      mentionedProducts: ["A-Spire Wireless"],
+      issueTerms: ["firmware", "audio", "connectivity"],
+    });
+  assertEquals(score(doc) > score(legacy), true);
+  assertEquals(
+    buildScoreBreakdown({
+      chunk: doc,
+      mentionedProducts: ["A-Spire Wireless"],
+      otherProducts: [],
+      issueTerms: ["firmware", "audio", "connectivity"],
+    }).product_support_doc_boost > 0,
+    true,
+  );
+});
+
+Deno.test("same-product A-Blaze Knowledge Doc receives post-gate retrieval boost", () => {
+  const access = decision({
+    category: "product_support",
+    metadata: { product_title: "A-Blaze" },
+    content:
+      "# A-Blaze — Product Support\n\n## Microphone is not working or sounds unclear\nUse this for A-Blaze microphone issues.",
+    customerMessage: "My A-Blaze microphone sounds bad and unclear.",
+  });
+  assertEquals(access, { allowed: true, reason: "same_product_context" });
+
+  const doc = chunk({
+    id: "doc-ablaze",
+    content:
+      "# A-Blaze — Product Support\n\n## Microphone is not working or sounds unclear\nUse this for A-Blaze microphone issues.",
+    source_label: "knowledge_document",
+    source_provider: "knowledge_document",
+    document_category: "product_support",
+    knowledge_document_access_reason: access.reason,
+    products: ["a-blaze"],
+    similarity: 0.04,
+  });
+  const legacy = chunk({
+    id: "legacy-ablaze",
+    content: "General A-Blaze microphone troubleshooting.",
+    source_label: "manual_text: A-Blaze mic",
+    kind: "snippet",
+    products: ["a-blaze"],
+    similarity: 0.10,
+  });
+
+  assertEquals(
+    finalScore(doc, {
+      mentionedProducts: ["A-Blaze"],
+      issueTerms: ["microphone"],
+    }) >
+      finalScore(legacy, {
+        mentionedProducts: ["A-Blaze"],
+        issueTerms: ["microphone"],
+      }),
+    true,
+  );
+});
+
+Deno.test("wrong-product Product Support docs remain excluded before boost can apply", () => {
+  const blocked = decision({
+    category: "product_support",
+    content:
+      "# A-Blaze — Product Support\n\n## Compatibility note\nThis body mentions A-Spire Wireless and dongle disconnects.",
+    metadata: { product_title: "A-Blaze" },
+    customerMessage: "My A-Spire Wireless dongle keeps disconnecting.",
+  });
+  assertEquals(blocked, { allowed: false, reason: "wrong_product_context" });
+});
+
+Deno.test("legacy knowledge is preserved alongside boosted Product Support docs", () => {
+  const doc = chunk({
+    id: "doc-aspire",
+    content:
+      "# A-Spire Wireless — Product Support\n\n## Dongle pairing\nPair the wireless dongle with the headset.",
+    source_label: "knowledge_document",
+    source_provider: "knowledge_document",
+    document_category: "product_support",
+    knowledge_document_access_reason: "same_product_context",
+    products: ["a-spire wireless"],
+    similarity: 0.04,
+  });
+  const legacy = chunk({
+    id: "legacy-aspire",
+    content: "Legacy A-Spire Wireless dongle pairing note.",
+    source_label: "manual_text: Dongle pairing",
+    kind: "snippet",
+    products: ["a-spire wireless"],
+    similarity: 0.08,
+  });
+  const ranked = [legacy, doc].sort((a, b) =>
+    finalScore(b, {
+      mentionedProducts: ["A-Spire Wireless"],
+      issueTerms: ["pairing", "connectivity"],
+    }) -
+    finalScore(a, {
+      mentionedProducts: ["A-Spire Wireless"],
+      issueTerms: ["pairing", "connectivity"],
+    })
+  );
+  assertEquals(ranked.map((c) => c.id), ["doc-aspire", "legacy-aspire"]);
+});
+
+Deno.test("Returns & Refunds Knowledge Doc scoring is unchanged by Product Support boost", () => {
+  const returnsDoc = chunk({
+    id: "doc-returns",
+    content:
+      "# Returns & Refunds\n\n## Refund processing\nRefunds are processed after the return is received.",
+    source_label: "knowledge_document",
+    source_provider: "knowledge_document",
+    document_category: "returns",
+    knowledge_document_access_reason: "returns_context",
+    similarity: 0.08,
+  });
+  const breakdown = buildScoreBreakdown({
+    chunk: returnsDoc,
+    mentionedProducts: [],
+    otherProducts: [],
+    issueTerms: ["refund", "return"],
+  });
+  assertEquals(breakdown.product_support_doc_boost, 0);
+});
+
+Deno.test("Ear pads Knowledge Doc is boosted only for ear-pad context", () => {
+  const allowed = decision({
+    category: "product_support",
+    content:
+      "# Ear pads — Product Support\n\n## Compatibility by headset\nUse this for replacement ear pad compatibility.",
+    customerMessage: "Do you have replacement ear pads for A-Rise?",
+  });
+  assertEquals(allowed, { allowed: true, reason: "ear_pads_context" });
+
+  const doc = chunk({
+    id: "doc-ear-pads",
+    content:
+      "# Ear pads — Product Support\n\n## Compatibility by headset\nUse this for replacement ear pad compatibility.",
+    source_label: "knowledge_document",
+    source_provider: "knowledge_document",
+    document_category: "product_support",
+    knowledge_document_access_reason: allowed.reason,
+    products: ["ear pads"],
+    similarity: 0.04,
+  });
+  const allowedBreakdown = buildScoreBreakdown({
+    chunk: doc,
+    mentionedProducts: ["A-Rise", "Ear pads"],
+    otherProducts: [],
+    issueTerms: ["ear_pads"],
+  });
+  assertEquals(allowedBreakdown.product_support_doc_boost > 0, true);
+
+  const blocked = decision({
+    category: "product_support",
+    content:
+      "# Ear pads — Product Support\n\n## Compatibility by headset\nUse this for replacement ear pad compatibility.",
+    customerMessage: "My A-Rise cable is broken.",
+  });
+  assertEquals(blocked, {
+    allowed: false,
+    reason: "ear_pads_document_without_context",
   });
 });
