@@ -10,6 +10,13 @@ import type { ShopifyProductInventoryLookupDiagnostics } from "../../_shared/int
 import { fetchTrackingDetailsForOrders, resolveOutboundTrackingFacts } from "../../_shared/tracking.ts";
 import type { TrackingFact } from "../../_shared/tracking/normalized-tracking.ts";
 import { decryptShopifyToken } from "../../_shared/shopify-credentials.ts";
+import {
+  derivePurchaseProductCandidate,
+  isPurchaseLinkRequest,
+  resolvePublicStorefrontDomain,
+  selectGroundedProductLink,
+  TRUSTED_PRODUCT_LINK_LABEL,
+} from "./purchase-link.ts";
 
 export interface ResolvedFact {
   label: string;
@@ -29,7 +36,10 @@ function normalizeStockMatchText(value: string | null | undefined): string {
 
 export function isStockAvailabilityQuestion(message: string | null | undefined): boolean {
   const text = String(message ?? "").toLowerCase();
-  return /\b(?:in stock|available|availability|do you have|back in stock|restock|preorder|pre-order|can i buy|på lager|tilgængelig|har i|kan jeg købe|forudbestil)\b/i
+  // Note: "can i buy" / "kan jeg købe" are intentionally NOT stock signals —
+  // they are purchase-link / where-to-buy intent (see purchase-link.ts) and
+  // must not fall through to the "cannot confirm stock" fallback.
+  return /\b(?:in stock|available|availability|do you have|back in stock|restock|preorder|pre-order|på lager|tilgængelig|har i|forudbestil)\b/i
     .test(text);
 }
 
@@ -81,8 +91,12 @@ export function stockProductQueriesForFactResolver(input: {
   if (input.caseState.entities.products_mentioned.length > 0) {
     return [...new Set(input.caseState.entities.products_mentioned.map((p) => p.trim()).filter(Boolean))];
   }
-  const fallback = deriveStockProductCandidate(input.latestCustomerMessage);
-  return fallback ? [fallback] : [];
+  const stockFallback = deriveStockProductCandidate(input.latestCustomerMessage);
+  if (stockFallback) return [stockFallback];
+  // Purchase-link / where-to-buy intent still needs a product lookup so we can
+  // ground a trusted product-page URL from the matched product's handle.
+  const purchaseFallback = derivePurchaseProductCandidate(input.latestCustomerMessage);
+  return purchaseFallback ? [purchaseFallback] : [];
 }
 
 export async function resolveStockAvailabilityFactsForQueries(
@@ -131,6 +145,21 @@ export interface StockLookupDebug {
       writer_received: boolean;
     };
   }>;
+  // Shop-resolution diagnostics: which shop the live lookup actually ran
+  // against, and whether the read-only workspace-scoped Shopify fallback (the
+  // same selection strategy Knowledge product-sync uses) had to be attempted
+  // because the mailbox-bound shop was missing/non-Shopify/tokenless or
+  // returned zero products. Present only on the inventory path.
+  shop_resolution?: {
+    primary_shop_id: string | null;
+    primary_shop_domain: string | null;
+    fallback_shop_attempted: boolean;
+    fallback_shop_id: string | null;
+    fallback_shop_domain: string | null;
+    fallback_reason: string | null;
+    fallback_lookup_result: "products_found" | "zero_products" | "no_shop_found" | "error" | null;
+    primary_and_fallback_differ: boolean;
+  };
 }
 
 type StockInventoryLookupWithDiagnostics = {
@@ -335,6 +364,7 @@ export function summarizeStockAvailability(
         state: fact.state,
         product_id: fact.product_id,
         product: fact.product_title,
+        handle: fact.product_handle ?? null,
         variant_id: fact.variant_id,
         variant: isDefaultVariantTitle(fact.variant_title) ? "default" : fact.variant_title,
         inventory_policy: fact.inventory_policy,
@@ -357,6 +387,7 @@ export function summarizeStockAvailability(
         state,
         product_id: product.product_id,
         product: product.product_title,
+        handle: product.product_handle ?? null,
         variant: "all_variants",
         source: product.source,
         checked_at: product.checked_at,
@@ -830,6 +861,130 @@ function orderFromCustomerContext(
   };
 }
 
+// True when a live lookup actually matched at least one product. Drives the
+// read-only fallback: a mailbox-bound shop that returns zero products (or
+// errors) is treated as "no usable result" so we can retry against the
+// workspace's Shopify shop — but a matched product with unknown stock (e.g.
+// missing read_inventory) is NOT re-tried, since the fallback would hit the
+// same scope limitation.
+export function inventoryLookupHadProductMatch(diagnostics: StockLookupDebug): boolean {
+  return diagnostics.attempts.some(
+    (attempt) => (attempt.shopify_lookup_result?.matched_products?.length ?? 0) > 0,
+  );
+}
+
+// Pure decision: should the read-only workspace-scoped Shopify fallback be
+// attempted, and why? Fallback fires when the mailbox-bound (primary) shop is
+// not Shopify, has no token, errored, or returned zero products. A primary that
+// matched a product (even with unknown stock) does NOT trigger fallback.
+export function decideInventoryFallbackReason(input: {
+  primaryIsShopify: boolean;
+  primaryHasToken: boolean;
+  primaryRan: boolean;
+  primaryHadMatch: boolean;
+}): string | null {
+  if (!input.primaryIsShopify) return "primary_shop_not_shopify";
+  if (!input.primaryHasToken) return "primary_shop_missing_token";
+  if (!input.primaryRan) return "primary_lookup_error";
+  if (!input.primaryHadMatch) return "primary_shopify_returned_zero_products";
+  return null;
+}
+
+// Read-only resolution of the workspace/owner-scoped, newest active Shopify
+// shop — the SAME selection strategy the Knowledge product-sync uses
+// (resolveScopedShop platform=shopify) and postmark-inbound's auto-bind. No DB
+// writes. Returns a shop row distinct from the primary (by id) that has a
+// usable domain + token, or null.
+export async function resolveFallbackShopifyShop(
+  supabase: SupabaseClient,
+  primaryShop: Record<string, unknown>,
+): Promise<Record<string, unknown> | null> {
+  const workspaceId = (primaryShop.workspace_id as string | null) ?? null;
+  const ownerUserId = (primaryShop.owner_user_id as string | null) ?? null;
+  const primaryId = (primaryShop.id as string | null) ?? null;
+  if (!workspaceId && !ownerUserId) return null;
+  try {
+    let query = supabase
+      .from("shops")
+      .select("*")
+      .is("uninstalled_at", null)
+      .eq("platform", "shopify")
+      .order("created_at", { ascending: false })
+      .limit(5);
+    query = workspaceId
+      ? query.eq("workspace_id", workspaceId)
+      : query.eq("owner_user_id", ownerUserId);
+    const { data, error } = await query;
+    if (error || !Array.isArray(data)) return null;
+    for (const row of data as Array<Record<string, unknown>>) {
+      if (primaryId && row.id === primaryId) continue;
+      if (row.shop_domain && row.access_token_encrypted) return row;
+    }
+  } catch (err) {
+    console.warn("[fact-resolver] fallback shop resolution failed:", err);
+  }
+  return null;
+}
+
+// Run the live inventory lookup against ONE shop row. Returns the resolved
+// facts + diagnostics, whether a product was matched, and a coarse outcome.
+// Never writes to the DB. Returns null when the shop is not usable for a live
+// Shopify lookup (non-Shopify / tokenless / decrypt failure).
+async function runInventoryLookupForShop(
+  shopRow: Record<string, unknown>,
+  ctx: {
+    plan: Plan;
+    caseState: CaseState;
+    latestCustomerMessage?: string | null;
+    queries: string[];
+  },
+): Promise<
+  | {
+    facts: ResolvedFact[];
+    diagnostics: StockLookupDebug;
+    hadMatch: boolean;
+    outcome: "products_found" | "zero_products" | "error";
+  }
+  | null
+> {
+  const shopDomain = (shopRow.shop_domain as string) ?? null;
+  const encryptedToken = (shopRow.access_token_encrypted as string) ?? null;
+  if (!shopDomain || !encryptedToken) return null;
+  if (shopRow.platform != null && String(shopRow.platform) !== "shopify") return null;
+  try {
+    const shopifyToken = await decryptShopifyToken(encryptedToken);
+    const provider = createCommerceProvider({
+      provider_type: "shopify",
+      shop_domain: shopDomain,
+      access_token: shopifyToken,
+      // Match the Knowledge product-sync path (SHOPIFY_API_VERSION default
+      // 2024-07) for the product/inventory listing. Order flows are untouched.
+      api_version: "2024-07",
+    });
+    if (typeof provider.searchProductInventory !== "function") return null;
+    const lookupWithDiagnostics = hasStockInventoryLookupDiagnostics(provider)
+      ? (product: string) => provider.searchProductInventoryWithDiagnostics(product)
+      : (product: string) => provider.searchProductInventory(product);
+    const resolved = await resolveStockAvailabilityFactsWithDiagnostics({
+      plan: ctx.plan,
+      caseState: ctx.caseState,
+      latestCustomerMessage: ctx.latestCustomerMessage,
+      queries: ctx.queries,
+      lookup: lookupWithDiagnostics,
+    });
+    const hadMatch = inventoryLookupHadProductMatch(resolved.diagnostics);
+    return {
+      facts: resolved.facts,
+      diagnostics: resolved.diagnostics,
+      hadMatch,
+      outcome: hadMatch ? "products_found" : "zero_products",
+    };
+  } catch (err) {
+    console.warn("[fact-resolver] Inventory lookup failed:", err);
+    return null;
+  }
+}
+
 export async function runFactResolver(
   { plan, caseState, thread, shop, supabase, customerContext, latestCustomerMessage }:
     FactResolverInput,
@@ -892,37 +1047,95 @@ export async function runFactResolver(
   // --- Inventory lookup (product_question intent) ---
   if (needsInventory && !needsOrder) {
     const s2 = shop as Record<string, unknown>;
-    const shopDomain2 = (s2.shop_domain as string) ?? null;
-    const encryptedToken2 = (s2.access_token_encrypted as string) ?? null;
-    if (shopDomain2 && encryptedToken2) {
-      try {
-        const shopifyToken2 = await decryptShopifyToken(encryptedToken2);
-        const provider2 = createCommerceProvider({
-          provider_type: "shopify",
-          shop_domain: shopDomain2,
-          access_token: shopifyToken2,
-          api_version: "2024-04",
-        });
+    const primaryShopId = (s2.id as string | null) ?? null;
+    const primaryShopDomain = (s2.shop_domain as string | null) ?? null;
+    const primaryIsShopify = s2.platform == null || String(s2.platform) === "shopify";
+    const primaryHasToken = Boolean(s2.access_token_encrypted);
 
-        if (typeof provider2.searchProductInventory === "function") {
-          const lookupWithDiagnostics = hasStockInventoryLookupDiagnostics(provider2)
-            ? (product: string) => provider2.searchProductInventoryWithDiagnostics(product)
-            : (product: string) => provider2.searchProductInventory(product);
-          const resolved = await resolveStockAvailabilityFactsWithDiagnostics({
-            plan,
-            caseState,
-            latestCustomerMessage,
-            queries: stockProductQueries,
-            lookup: lookupWithDiagnostics,
-          });
-          facts.push(...resolved.facts);
-          return { facts, order: null, stock_lookup_debug: resolved.diagnostics };
+    const lookupCtx = {
+      plan,
+      caseState,
+      latestCustomerMessage,
+      queries: stockProductQueries,
+    };
+
+    // Primary lookup against the mailbox-bound shop row (unchanged when it works).
+    const primary = primaryIsShopify && primaryHasToken
+      ? await runInventoryLookupForShop(s2, lookupCtx)
+      : null;
+
+    // Decide whether to attempt the read-only workspace-scoped Shopify fallback:
+    // primary missing/non-Shopify/tokenless, or it returned zero products.
+    const fallbackReason = decideInventoryFallbackReason({
+      primaryIsShopify,
+      primaryHasToken,
+      primaryRan: Boolean(primary),
+      primaryHadMatch: Boolean(primary?.hadMatch),
+    });
+
+    let chosen = primary;
+    const shopResolution: NonNullable<StockLookupDebug["shop_resolution"]> = {
+      primary_shop_id: primaryShopId,
+      primary_shop_domain: primaryShopDomain,
+      fallback_shop_attempted: false,
+      fallback_shop_id: null,
+      fallback_shop_domain: null,
+      fallback_reason: null,
+      fallback_lookup_result: null,
+      primary_and_fallback_differ: false,
+    };
+    let publicDomainShop: Record<string, unknown> = s2;
+
+    if (fallbackReason && !(primary?.hadMatch)) {
+      shopResolution.fallback_shop_attempted = true;
+      shopResolution.fallback_reason = fallbackReason;
+      const fallbackShop = await resolveFallbackShopifyShop(supabase, s2);
+      if (!fallbackShop) {
+        shopResolution.fallback_lookup_result = "no_shop_found";
+      } else {
+        shopResolution.fallback_shop_id = (fallbackShop.id as string | null) ?? null;
+        shopResolution.fallback_shop_domain = (fallbackShop.shop_domain as string | null) ?? null;
+        shopResolution.primary_and_fallback_differ = fallbackShop.id !== primaryShopId;
+        const fallback = await runInventoryLookupForShop(fallbackShop, lookupCtx);
+        if (!fallback) {
+          shopResolution.fallback_lookup_result = "error";
+        } else {
+          shopResolution.fallback_lookup_result = fallback.hadMatch
+            ? "products_found"
+            : "zero_products";
+          // Prefer the fallback result only when it actually matched a product;
+          // otherwise keep the primary diagnostics (honest "unknown").
+          if (fallback.hadMatch || !primary) {
+            chosen = fallback;
+            publicDomainShop = fallbackShop;
+          }
         }
-      } catch (err) {
-        console.warn("[fact-resolver] Inventory lookup failed:", err);
       }
     }
-    return { facts, order: null, stock_lookup_debug: stockLookupDebugBase };
+
+    const diagnostics: StockLookupDebug = chosen
+      ? { ...chosen.diagnostics, shop_resolution: shopResolution }
+      : { ...stockLookupDebugBase, shop_resolution: shopResolution };
+
+    if (chosen) {
+      facts.push(...chosen.facts);
+      // Purchase-link / where-to-buy intent: ground a trusted product-page URL
+      // from the matched product's handle + the PUBLIC storefront domain of the
+      // shop the lookup actually ran against (never the myshopify Admin host).
+      if (isPurchaseLinkRequest(latestCustomerMessage)) {
+        const requestedProduct = derivePurchaseProductCandidate(latestCustomerMessage) ??
+          stockProductQueries[0] ?? null;
+        const grounded = selectGroundedProductLink({
+          requestedProduct,
+          facts: chosen.facts,
+          publicStorefrontDomain: resolvePublicStorefrontDomain(publicDomainShop).domain,
+        });
+        if (grounded) {
+          facts.push({ label: TRUSTED_PRODUCT_LINK_LABEL, value: grounded.url });
+        }
+      }
+    }
+    return { facts, order: null, stock_lookup_debug: diagnostics };
   }
 
   const contextOrder = orderFromCustomerContext(customerContext);

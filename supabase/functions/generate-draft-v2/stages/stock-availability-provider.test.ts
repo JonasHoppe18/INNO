@@ -85,6 +85,77 @@ Deno.test("list fallback multiple plausible matches returns ambiguity candidates
   assertEquals(selected.length, 2);
 });
 
+Deno.test("A-rise spelling/spacing variants all match A-Rise without matching siblings", () => {
+  const catalog = [
+    product({ id: 1, title: "A-Rise", handle: "a-rise" }),
+    product({ id: 2, title: "A-Spire Wireless", handle: "a-spire-wireless" }),
+    product({ id: 3, title: "A-Blaze", handle: "a-blaze" }),
+  ];
+  for (const variant of ["A-rise", "A-Rise", "A Rise", "a rise", "arise"]) {
+    const selected = selectShopifyProductsForStockQuery(variant, catalog);
+    assertEquals(selected.length, 1, `variant ${variant} should match exactly one`);
+    assertEquals(selected[0].title, "A-Rise", `variant ${variant} should match A-Rise`);
+  }
+});
+
+Deno.test("zero-product store surfaces shopify_returned_zero_products reason", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (() =>
+    Promise.resolve(
+      new Response(JSON.stringify({ products: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    )) as typeof fetch;
+  try {
+    const provider = new ShopifyProvider({
+      shopDomain: "shop-acezone.myshopify.com",
+      accessToken: "token",
+      apiVersion: "2024-04",
+    });
+    const { facts, diagnostics } = await provider
+      .searchProductInventoryWithDiagnostics("A-Rise");
+    assertEquals(facts, []);
+    assertEquals(diagnostics.no_match, true);
+    assertEquals(diagnostics.error_reason, "shopify_returned_zero_products");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+Deno.test("403 from Shopify surfaces missing_read_products_scope", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (() =>
+    Promise.resolve(
+      new Response(JSON.stringify({ errors: "Not authorized" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      }),
+    )) as typeof fetch;
+  try {
+    const provider = new ShopifyProvider({
+      shopDomain: "shop-acezone.myshopify.com",
+      accessToken: "token",
+      apiVersion: "2024-04",
+    });
+    const { facts, diagnostics } = await provider
+      .searchProductInventoryWithDiagnostics("A-Rise");
+    assertEquals(facts, []);
+    assertEquals(diagnostics.error_reason, "missing_read_products_scope");
+    assertEquals(diagnostics.http_status, 403);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+Deno.test("A-Rise query never selects A-Spire or A-Blaze", () => {
+  const selected = selectShopifyProductsForStockQuery("A-Rise", [
+    product({ id: 2, title: "A-Spire Wireless", handle: "a-spire-wireless" }),
+    product({ id: 3, title: "A-Blaze", handle: "a-blaze" }),
+  ]);
+  assertEquals(selected, []);
+});
+
 Deno.test("list fallback no plausible matches returns empty", () => {
   const selected = selectShopifyProductsForStockQuery("Unknown product", [
     product({ id: 1, title: "A-Spire Wireless" }),
@@ -142,6 +213,76 @@ Deno.test("title search empty falls back to bounded product list", async () => {
     assertEquals(facts[0].product_id, "401");
     assertEquals(calls.length, 2);
     assert(calls[1].includes("limit=250"));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+Deno.test("product listing uses status=active (not status=any) on both calls", () => {
+  // Regression: status=any is an ORDERS-only filter; products.json must use
+  // status=active (aligned with knowledge sync-products), otherwise Shopify
+  // returns zero products.
+  const originalFetch = globalThis.fetch;
+  const calls: string[] = [];
+  globalThis.fetch = ((input: string | URL | Request) => {
+    const url = String(input);
+    calls.push(url);
+    const products = url.includes("title=") ? [] : [product({ id: 901, title: "A-Spire Wireless" })];
+    return Promise.resolve(new Response(JSON.stringify({ products }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+  }) as typeof fetch;
+  return (async () => {
+    try {
+      const provider = new ShopifyProvider({ shopDomain: "x.myshopify.com", accessToken: "t", apiVersion: "2024-07" });
+      await provider.searchProductInventory("A-Spire Wireless");
+      assertEquals(calls.length, 2);
+      for (const url of calls) {
+        assert(url.includes("status=active"), `expected status=active in ${url}`);
+        assert(!url.includes("status=any"), `status=any must not appear in ${url}`);
+      }
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  })();
+});
+
+Deno.test("demo AirPods: title query zero but list returns products → matched in_stock", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = ((input: string | URL | Request) => {
+    const url = String(input);
+    const products = url.includes("title=") ? [] : [
+      product({ id: 11, title: "Apple Airpods 4", handle: "apple-airpods-4", variants: [{ id: 1, title: "Default Title", inventory_quantity: 7, inventory_policy: "deny", inventory_management: "shopify" }] }),
+      product({ id: 12, title: "A-Blaze", handle: "a-blaze" }),
+    ];
+    return Promise.resolve(new Response(JSON.stringify({ products }), { status: 200, headers: { "Content-Type": "application/json" } }));
+  }) as typeof fetch;
+  try {
+    const provider = new ShopifyProvider({ shopDomain: "test-app-store-ai-mailer.myshopify.com", accessToken: "t", apiVersion: "2024-07" });
+    const { facts, diagnostics } = await provider.searchProductInventoryWithDiagnostics("airpods");
+    assertEquals(diagnostics.matched_products.map((p) => p.title), ["Apple Airpods 4"]);
+    assertEquals(facts[0]?.state, "in_stock");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+Deno.test("matched product without inventory_quantity → missing_read_inventory_scope, unknown", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = ((input: string | URL | Request) => {
+    const url = String(input);
+    const products = url.includes("title=") ? [] : [
+      product({ id: 21, title: "Apple Airpods 4", handle: "apple-airpods-4", variants: [{ id: 1, title: "Default Title", inventory_quantity: null, inventory_policy: null, inventory_management: null }] }),
+    ];
+    return Promise.resolve(new Response(JSON.stringify({ products }), { status: 200, headers: { "Content-Type": "application/json" } }));
+  }) as typeof fetch;
+  try {
+    const provider = new ShopifyProvider({ shopDomain: "x.myshopify.com", accessToken: "t", apiVersion: "2024-07" });
+    const { facts, diagnostics } = await provider.searchProductInventoryWithDiagnostics("airpods");
+    assertEquals(diagnostics.matched_products.length, 1);
+    assertEquals(diagnostics.error_reason, "missing_read_inventory_scope");
+    assertEquals(facts[0]?.state, "unknown");
   } finally {
     globalThis.fetch = originalFetch;
   }

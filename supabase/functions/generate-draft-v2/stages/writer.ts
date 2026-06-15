@@ -2,7 +2,7 @@
 import { Plan } from "./planner.ts";
 import { CaseState } from "./case-state-updater.ts";
 import { RetrieverResult } from "./retriever.ts";
-import { FactResolverResult, deriveRefundStatus, type OrderMatch, type RefundStatus, type ResolvedFact } from "./fact-resolver.ts";
+import { FactResolverResult, deriveRefundStatus, isStockAvailabilityQuestion, type OrderMatch, type RefundStatus, type ResolvedFact } from "./fact-resolver.ts";
 import type { TrackingFact } from "../../_shared/tracking/normalized-tracking.ts";
 import { ActionProposal } from "./action-decision.ts";
 import { resolveReplyLanguage } from "./language.ts";
@@ -16,6 +16,21 @@ import {
   resolveSalutationName,
 } from "./customer-context.ts";
 import { InlineImageAttachment } from "./attachment-loader.ts";
+import {
+  buildReplacementFlowDirective,
+  resolveReplacementFlowState,
+} from "./replacement-flow.ts";
+import {
+  buildPurchaseLinkDirective,
+  buildStockUnknownLinkFallbackDirective,
+  derivePurchaseProductCandidate,
+  firstTrustedProductLink,
+  isAmbiguousProductRequest,
+  isPurchaseLinkRequest,
+  resolvePublicStorefrontDomain,
+  selectGroundedProductLinkFromChunks,
+  threadMentionsCheckoutLink,
+} from "./purchase-link.ts";
 import type { ResolveCustomerNameResult } from "./customer-name-resolution.ts";
 import { buildPlatformSupportGuardrailsBlock } from "./platform-support-guardrails.ts";
 
@@ -1229,6 +1244,66 @@ Support replied: "${ex.agent_reply.slice(0, 500)}"`;
   });
   const stockAvailabilityBlock = buildStockAvailabilityDirective(facts.facts);
 
+  // Purchase-link / where-to-buy intent + stock-link fallback. Both lean on a
+  // grounded product-page URL: prefer the live-stock handle fact, else fall
+  // back to the trusted `shopify_product` knowledge selected by retrieval (so
+  // a failing live Shopify lookup no longer forces "ask the customer for a
+  // product link"). The URL is always rebuilt from the trusted shop domain +
+  // a trusted handle — never from customer text.
+  const publicStorefront = resolvePublicStorefrontDomain(
+    shop as Record<string, unknown>,
+  );
+  const requestedProductForLink = caseState.entities.products_mentioned[0] ??
+    derivePurchaseProductCandidate(latestCustomerMessage);
+  // Customer-facing product URL: prefer the live-stock grounded fact, else the
+  // trusted shopify_product retrieval chunk — both rebuilt on the PUBLIC
+  // storefront domain. Never a myshopify host. Null when no public domain is
+  // configured (debug: missing_public_storefront_domain).
+  const groundedProductUrl = firstTrustedProductLink(facts.facts) ??
+    selectGroundedProductLinkFromChunks({
+      requestedProduct: requestedProductForLink,
+      chunks: retrieved.chunks,
+      publicStorefrontDomain: publicStorefront.domain,
+    })?.url ?? null;
+  const noPublicStorefrontDomain = !groundedProductUrl &&
+    publicStorefront.reason === "missing_public_storefront_domain";
+  const checkoutLinkInThread = threadMentionsCheckoutLink([
+    ...(conversationHistory ?? []).map((m) => m.text),
+    latestCustomerMessage ?? "",
+  ]);
+  const stockFactState = stockValueField(
+    facts.facts.find((f) => f.label === "Live stock availability")?.value ?? "",
+    "state",
+  );
+  const purchaseLinkBlock = buildPurchaseLinkDirective({
+    isPurchaseLinkRequest: isPurchaseLinkRequest(latestCustomerMessage),
+    groundedProductUrl,
+    ambiguousProduct: isAmbiguousProductRequest(latestCustomerMessage),
+    threadMentionsCheckoutLink: checkoutLinkInThread,
+    noPublicStorefrontDomain,
+  });
+  const stockLinkFallbackBlock = buildStockUnknownLinkFallbackDirective({
+    isStockQuestion: isStockAvailabilityQuestion(latestCustomerMessage),
+    stockConfirmed: Boolean(stockFactState) && stockFactState !== "unknown",
+    groundedProductUrl,
+    threadMentionsCheckoutLink: checkoutLinkInThread,
+    noPublicStorefrontDomain,
+  });
+
+  // Multi-turn troubleshooting → replacement/warranty flow. Stops repeated
+  // troubleshooting after failed attempts and gates "we will send a new unit"
+  // language on the order being identified.
+  const orderNumberKnownForFlow = Boolean(factValue(facts, "Ordre fundet")) ||
+    caseState.entities.order_numbers.length > 0;
+  const replacementFlowBlock = buildReplacementFlowDirective(
+    resolveReplacementFlowState({
+      history: conversationHistory,
+      latestMessage: latestCustomerMessage,
+      purchaseSourceKnown: false,
+      orderNumberKnown: orderNumberKnownForFlow,
+    }),
+  );
+
   // --- Verificerede fakta (deterministiske — brug disse frem for viden) ---
   const factsBlock = facts.facts.length > 0
     ? `# Verificerede fakta (brug disse som kilde til faktuelle påstande)
@@ -1682,6 +1757,9 @@ ${stageDirectives[resolutionStage] ?? stageDirectives.info_only}`;
     orderMatchBlock,
     refundStatusBlock,
     trackingBlock,
+    purchaseLinkBlock,
+    stockLinkFallbackBlock,
+    replacementFlowBlock,
     stockAvailabilityBlock,
     factsBlock,
     salutationBlock,

@@ -4,6 +4,7 @@ import { RetrievedChunk } from "./retriever.ts";
 import { ActionProposal } from "./action-decision.ts";
 import { mixedLanguageCheck } from "./language.ts";
 import { callOpenAIJson } from "./openai-json.ts";
+import { detectPrematureReplacementShipment } from "./replacement-flow.ts";
 
 export interface VerifierResult {
   grounded_claims_pct: number;
@@ -286,8 +287,17 @@ Machine-readable list of what went wrong. Use: answers_question_missing, wrong_l
     for (const issue of stockIssues) {
       if (!issues.includes(issue)) issues.push(issue);
     }
+    const orderKnown = facts.facts.some((f) => f.label === "Ordre fundet");
+    const replacementIssues = detectPrematureReplacementShipment(draftText, {
+      orderKnown,
+    });
+    for (const issue of replacementIssues) {
+      if (!issues.includes(issue)) issues.push(issue);
+    }
     const stockViolation = stockIssues.length > 0;
-    const finalConfidence = languageCheck.ok && !stockViolation
+    const replacementViolation = replacementIssues.length > 0;
+    const finalConfidence = languageCheck.ok && !stockViolation &&
+        !replacementViolation
       ? confidence
       : Math.min(confidence, 0.62);
 
@@ -314,10 +324,10 @@ Machine-readable list of what went wrong. Use: answers_question_missing, wrong_l
         ? ["return_window_misapplied"]
         : [],
       confidence: finalConfidence,
-      block_send: parsed.block_send === true,
+      block_send: parsed.block_send === true || replacementViolation,
       retry_with_stronger_model: parsed.retry_with_stronger_model === true ||
         finalConfidence < 0.65 || !languageCheck.ok || needsRetryForCommitment ||
-        stockViolation,
+        stockViolation || replacementViolation,
       issues,
     };
 
