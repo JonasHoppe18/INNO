@@ -289,7 +289,8 @@ function isReturnRefundContext(
 function isEarPadContext(customerMessage?: string): boolean {
   const lower = stripHtml(customerMessage || "").toLowerCase();
   return extractIssueTerms(lower).includes("ear_pads") ||
-    /\b(ear\s*pads?|earpads?|replacement\s+pads?|ørepuder?)\b/i.test(lower);
+    /\b(ear\s*pads?|earpads?|replacement\s+pads?|pads?|cushions?|ørepuder?)\b/i
+      .test(lower);
 }
 
 function extractKnowledgeDocumentProductTerms(input: {
@@ -451,7 +452,7 @@ function extractIssueTerms(text: string): string[] {
   addIf("audio", /\b(audio|sound|lyd|cable|kabel|usb|usb-c)\b/);
   addIf("microphone", /\b(mic|microphone|mikrofon|mute|unmute)\b/);
   addIf("battery", /\b(battery|batteri|charging|charge|strøm|oplade)\b/);
-  addIf("ear_pads", /\b(ear\s*pads?|earpads?|ørepuder?)\b/);
+  addIf("ear_pads", /\b(ear\s*pads?|earpads?|pads?|cushions?|ørepuder?)\b/);
   addIf(
     "physical_damage",
     /\b(damage|damaged|broken|crack|cracked|skade|ødelagt|knækket|broke)\b/,
@@ -925,13 +926,21 @@ export function buildScoreBreakdown(input: {
   const mentionedNorm = mentionedProducts.map(normProduct);
   const metadataMatchCount =
     mentionedNorm.filter((p) => chunkProductSet.has(p)).length;
+  const isProductSupportKnowledgeDoc =
+    isKnowledgeDocumentProvider(chunk.source_provider) &&
+    chunk.document_category === PRODUCT_SUPPORT_DOCUMENT_CATEGORY;
+  const isEarPadsAccess =
+    chunk.knowledge_document_access_reason === "ear_pads_context";
+  const productSupportScopeMatch = metadataMatchCount > 0 ||
+    (isEarPadsAccess && chunkProductSet.has("ear pads"));
   const directProductBoost = metadataMatchCount * 0.10;
   const generalProductBoost =
     chunk.applies_to_all_products && mentionedProducts.length > 0 ? 0.05 : 0;
   const productBoost = directProductBoost + generalProductBoost;
   // Penalize a product-specific chunk whose metadata names a DIFFERENT product
   // than the single product the customer asked about.
-  const crossProductPenalty = !chunk.applies_to_all_products &&
+  const crossProductPenalty = !isEarPadsAccess &&
+      !chunk.applies_to_all_products &&
       mentionedProducts.length === 1 &&
       chunkProductSet.size > 0 &&
       metadataMatchCount === 0
@@ -943,11 +952,10 @@ export function buildScoreBreakdown(input: {
   const lexicalIssueOverlap = overlapCount(text, issueTerms);
   const lexicalIssueBoost = lexicalIssueOverlap * 0.02;
   const productSupportDocBoost =
-    isKnowledgeDocumentProvider(chunk.source_provider) &&
-      chunk.document_category === PRODUCT_SUPPORT_DOCUMENT_CATEGORY &&
+    isProductSupportKnowledgeDoc &&
       (chunk.knowledge_document_access_reason === "same_product_context" ||
-        chunk.knowledge_document_access_reason === "ear_pads_context") &&
-      metadataMatchCount > 0 &&
+        isEarPadsAccess) &&
+      productSupportScopeMatch &&
       hasLexicalIssueSignal(text, issueTerms)
       ? 0.16
       : 0;

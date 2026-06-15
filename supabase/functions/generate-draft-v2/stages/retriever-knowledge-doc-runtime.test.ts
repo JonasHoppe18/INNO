@@ -463,14 +463,6 @@ Deno.test("Returns & Refunds Knowledge Doc scoring is unchanged by Product Suppo
 });
 
 Deno.test("Ear pads Knowledge Doc is boosted only for ear-pad context", () => {
-  const allowed = decision({
-    category: "product_support",
-    content:
-      "# Ear pads — Product Support\n\n## Compatibility by headset\nUse this for replacement ear pad compatibility.",
-    customerMessage: "Do you have replacement ear pads for A-Rise?",
-  });
-  assertEquals(allowed, { allowed: true, reason: "ear_pads_context" });
-
   const doc = chunk({
     id: "doc-ear-pads",
     content:
@@ -478,26 +470,65 @@ Deno.test("Ear pads Knowledge Doc is boosted only for ear-pad context", () => {
     source_label: "knowledge_document",
     source_provider: "knowledge_document",
     document_category: "product_support",
-    knowledge_document_access_reason: allowed.reason,
+    knowledge_document_access_reason: "ear_pads_context",
     products: ["ear pads"],
     similarity: 0.04,
   });
-  const allowedBreakdown = buildScoreBreakdown({
-    chunk: doc,
-    mentionedProducts: ["A-Rise", "Ear pads"],
-    otherProducts: [],
-    issueTerms: ["ear_pads"],
-  });
-  assertEquals(allowedBreakdown.product_support_doc_boost > 0, true);
+  const earPadCases = [
+    {
+      message: "Do you have replacement ear pads for A-Spire Wireless?",
+      mentionedProducts: ["A-Spire Wireless"],
+    },
+    {
+      message: "Are A-Rise ear pads available?",
+      mentionedProducts: ["A-Rise"],
+    },
+    {
+      message: "Which ear pads fit A-Blaze?",
+      mentionedProducts: ["A-Blaze"],
+    },
+    {
+      message: "Can I buy new cushions for my A-Spire?",
+      mentionedProducts: ["A-Spire"],
+    },
+  ];
 
-  const blocked = decision({
-    category: "product_support",
-    content:
-      "# Ear pads — Product Support\n\n## Compatibility by headset\nUse this for replacement ear pad compatibility.",
-    customerMessage: "My A-Rise cable is broken.",
-  });
-  assertEquals(blocked, {
-    allowed: false,
-    reason: "ear_pads_document_without_context",
-  });
+  for (const { message, mentionedProducts } of earPadCases) {
+    const allowed = decision({
+      category: "product_support",
+      content:
+        "# Ear pads — Product Support\n\n## Compatibility by headset\nUse this for replacement ear pad compatibility.",
+      customerMessage: message,
+    });
+    assertEquals(allowed, { allowed: true, reason: "ear_pads_context" });
+
+    const allowedBreakdown = buildScoreBreakdown({
+      chunk: doc,
+      mentionedProducts,
+      otherProducts: [],
+      issueTerms: ["ear_pads"],
+    });
+    assertEquals(allowedBreakdown.product_support_doc_boost > 0, true);
+    assertEquals(allowedBreakdown.cross_product_penalty, 0);
+  }
+
+  for (
+    const message of [
+      "My A-Spire Wireless has bad audio.",
+      "My A-Blaze microphone is not working.",
+      "My A-Rise won't turn on.",
+      "A-Spire Wireless Bluetooth pairing issue.",
+    ]
+  ) {
+    const blocked = decision({
+      category: "product_support",
+      content:
+        "# Ear pads — Product Support\n\n## Compatibility by headset\nUse this for replacement ear pad compatibility.",
+      customerMessage: message,
+    });
+    assertEquals(blocked, {
+      allowed: false,
+      reason: "ear_pads_document_without_context",
+    });
+  }
 });
