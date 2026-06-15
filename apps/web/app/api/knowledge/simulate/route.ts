@@ -189,17 +189,23 @@ export async function POST(request: Request) {
   // behavior (accumulated case_state, real fact-resolver context). Eval mode
   // is used for synthetic / multi-turn-after-load scenarios.
   const useRealMode = Boolean(realThreadId && realMessageId);
+  // The simulator never persists. Eval mode (email_data) is already no-write via
+  // eval_payload, but real-thread mode passes thread_id/message_id with no
+  // eval_payload — so we set dry_run explicitly to guarantee the pipeline skips
+  // every `draft_generations` write in both modes.
   const edgeBody = useRealMode
     ? {
         shop_id: shopId,
         thread_id: realThreadId,
         message_id: realMessageId,
+        dry_run: true,
         ...(previewDocumentContext ? { preview_document_context: previewDocumentContext } : {}),
         ...(actionResult ? { action_result: actionResult } : {}),
       }
     : {
         shop_id: shopId,
         email_data: emailData,
+        dry_run: true,
         ...(previewDocumentContext ? { preview_document_context: previewDocumentContext } : {}),
         ...(actionResult ? { action_result: actionResult } : {}),
       };
