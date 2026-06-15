@@ -64,6 +64,9 @@ export interface RetrievedChunk {
   // Single product external id/scope this chunk is scoped to, when set.
   // null/undefined = not tied to one product (shared/general).
   product_id?: string | null;
+  source_provider?: string | null;
+  document_category?: string | null;
+  knowledge_document_access_reason?: string | null;
   // Max cosine similarity (1 - distance) seen for this chunk across the vector
   // queries that surfaced it. null for BM25-only chunks (no vector score).
   // Used by the absolute relevance floor to drop the whole knowledge block when
@@ -119,7 +122,6 @@ export interface RetrieverInput {
   // Retrieval coherence rules. Omitted/undefined fields = production defaults.
   coherenceFlags?: Partial<RetrievalCoherenceFlags>;
 }
-
 
 function sanitiseBm25Query(query: string): string {
   return query
@@ -243,7 +245,9 @@ function buildShopProductTerms(shop?: Record<string, unknown>): string[] {
 // which previously kept mentionedProducts.length===2 and silently disabled the
 // cross-product penalty. Generic — no hardcoded product names. Genuinely
 // different products (e.g. "a-blaze" + "a-spire wireless") are both preserved.
-export function resolveMostSpecificProductTerms(matchedTerms: string[]): string[] {
+export function resolveMostSpecificProductTerms(
+  matchedTerms: string[],
+): string[] {
   const terms = uniqueStrings(matchedTerms.map((t) => t.toLowerCase().trim()));
   return terms.filter((term) =>
     !terms.some((other) =>
@@ -285,7 +289,8 @@ function isReturnRefundContext(
 function isEarPadContext(customerMessage?: string): boolean {
   const lower = stripHtml(customerMessage || "").toLowerCase();
   return extractIssueTerms(lower).includes("ear_pads") ||
-    /\b(ear\s*pads?|earpads?|replacement\s+pads?|ørepuder?)\b/i.test(lower);
+    /\b(ear\s*pads?|earpads?|replacement\s+pads?|pads?|cushions?|ørepuder?)\b/i
+      .test(lower);
 }
 
 function extractKnowledgeDocumentProductTerms(input: {
@@ -330,7 +335,9 @@ function extractKnowledgeDocumentTitleText(input: {
   const metadata = input.metadata && typeof input.metadata === "object"
     ? input.metadata
     : {};
-  const explicit = String(metadata.title || metadata.name || metadata.label || "")
+  const explicit = String(
+    metadata.title || metadata.name || metadata.label || "",
+  )
     .trim();
   if (explicit) return explicit;
   const heading = String(input.content || "").match(/^\s*#\s+(.+)$/m)?.[1];
@@ -416,7 +423,9 @@ export function evaluateRuntimeKnowledgeDocumentAccess(input: {
   }
 
   const mentioned = normProduct(scopedMentionedProducts[0]);
-  const matches = documentProducts.some((term) => normProduct(term) === mentioned);
+  const matches = documentProducts.some((term) =>
+    normProduct(term) === mentioned
+  );
   return matches
     ? { allowed: true, reason: "same_product_context" }
     : { allowed: false, reason: "wrong_product_context" };
@@ -443,7 +452,7 @@ function extractIssueTerms(text: string): string[] {
   addIf("audio", /\b(audio|sound|lyd|cable|kabel|usb|usb-c)\b/);
   addIf("microphone", /\b(mic|microphone|mikrofon|mute|unmute)\b/);
   addIf("battery", /\b(battery|batteri|charging|charge|strøm|oplade)\b/);
-  addIf("ear_pads", /\b(ear\s*pads?|earpads?|ørepuder?)\b/);
+  addIf("ear_pads", /\b(ear\s*pads?|earpads?|pads?|cushions?|ørepuder?)\b/);
   addIf(
     "physical_damage",
     /\b(damage|damaged|broken|crack|cracked|skade|ødelagt|knækket|broke)\b/,
@@ -472,6 +481,31 @@ function overlapCount(haystack: string, needles: string[]): number {
   const lower = stripHtml(haystack).toLowerCase();
   return needles.filter((needle) => lower.includes(needle.toLowerCase()))
     .length;
+}
+
+function hasLexicalIssueSignal(
+  haystack: string,
+  issueTerms: string[],
+): boolean {
+  const normalized = normalizeIssueSignalText(haystack);
+  const tokens = new Set(normalized.split(" ").filter(Boolean));
+  const padded = ` ${normalized} `;
+  return issueTerms.some((term) => {
+    const normalizedTerm = normalizeIssueSignalText(term);
+    if (!normalizedTerm) return false;
+    const termTokens = normalizedTerm.split(" ").filter(Boolean);
+    if (termTokens.length === 1) return tokens.has(termTokens[0]);
+    return padded.includes(` ${termTokens.join(" ")} `);
+  });
+}
+
+function normalizeIssueSignalText(value: string): string {
+  return stripHtml(value)
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 // Issue-type vocabulary terms that signal a commercial return/refund intent
@@ -546,6 +580,7 @@ export interface RetrievalCandidateDiagnostics {
     product_boost: number;
     issue_type_boost: number;
     lexical_issue_boost: number;
+    product_support_doc_boost: number;
     source_type_boost: number;
     usable_as_boost: number;
     cross_product_penalty: number;
@@ -820,7 +855,9 @@ function diagnosticChunkMeta(row: Record<string, unknown>): {
   return {
     source_type: row.source_type != null ? String(row.source_type) : null,
     usable_as: classified.usable_as,
-    title: shortDiagnosticText(metadata.title || metadata.name || metadata.label),
+    title: shortDiagnosticText(
+      metadata.title || metadata.name || metadata.label,
+    ),
     question: typeof metadata.question === "string"
       ? shortDiagnosticText(metadata.question)
       : null,
@@ -855,6 +892,7 @@ type ScoreBreakdown = {
   product_boost: number;
   issue_type_boost: number;
   lexical_issue_boost: number;
+  product_support_doc_boost: number;
   source_type_boost: number;
   usable_as_boost: number;
   cross_product_penalty: number;
@@ -888,35 +926,51 @@ export function buildScoreBreakdown(input: {
   const mentionedNorm = mentionedProducts.map(normProduct);
   const metadataMatchCount =
     mentionedNorm.filter((p) => chunkProductSet.has(p)).length;
+  const isProductSupportKnowledgeDoc =
+    isKnowledgeDocumentProvider(chunk.source_provider) &&
+    chunk.document_category === PRODUCT_SUPPORT_DOCUMENT_CATEGORY;
+  const isEarPadsAccess =
+    chunk.knowledge_document_access_reason === "ear_pads_context";
+  const productSupportScopeMatch = metadataMatchCount > 0 ||
+    (isEarPadsAccess && chunkProductSet.has("ear pads"));
   const directProductBoost = metadataMatchCount * 0.10;
   const generalProductBoost =
     chunk.applies_to_all_products && mentionedProducts.length > 0 ? 0.05 : 0;
   const productBoost = directProductBoost + generalProductBoost;
   // Penalize a product-specific chunk whose metadata names a DIFFERENT product
   // than the single product the customer asked about.
-  const crossProductPenalty = !chunk.applies_to_all_products &&
+  const crossProductPenalty = !isEarPadsAccess &&
+      !chunk.applies_to_all_products &&
       mentionedProducts.length === 1 &&
       chunkProductSet.size > 0 &&
       metadataMatchCount === 0
     ? 0.12
     : 0;
-  const taggedIssueOverlap = chunk.chunk_issue_types.filter((t) =>
-    issueTerms.includes(t)
-  ).length;
+  const taggedIssueOverlap =
+    chunk.chunk_issue_types.filter((t) => issueTerms.includes(t)).length;
   const issueTypeBoost = taggedIssueOverlap * 0.06;
-  const lexicalIssueBoost = overlapCount(text, issueTerms) * 0.02;
+  const lexicalIssueOverlap = overlapCount(text, issueTerms);
+  const lexicalIssueBoost = lexicalIssueOverlap * 0.02;
+  const productSupportDocBoost =
+    isProductSupportKnowledgeDoc &&
+      (chunk.knowledge_document_access_reason === "same_product_context" ||
+        isEarPadsAccess) &&
+      productSupportScopeMatch &&
+      hasLexicalIssueSignal(text, issueTerms)
+      ? 0.16
+      : 0;
   const sourceTypeBoost =
     /manual_text|snippet/i.test(`${chunk.source_label} ${chunk.kind}`)
       ? 0.04
       : 0;
-  const usableAsBoost =
-    (chunk.usable_as === "saved_reply" ? 0.06 : 0) +
+  const usableAsBoost = (chunk.usable_as === "saved_reply" ? 0.06 : 0) +
     (chunk.usable_as === "policy" ? 0.02 : 0) +
     (chunk.usable_as === "fact" ? 0.02 : 0);
   const finalScore = chunk.similarity +
     productBoost +
     issueTypeBoost +
     lexicalIssueBoost +
+    productSupportDocBoost +
     sourceTypeBoost +
     usableAsBoost -
     crossProductPenalty;
@@ -925,6 +979,7 @@ export function buildScoreBreakdown(input: {
     product_boost: productBoost,
     issue_type_boost: issueTypeBoost,
     lexical_issue_boost: lexicalIssueBoost,
+    product_support_doc_boost: productSupportDocBoost,
     source_type_boost: sourceTypeBoost,
     usable_as_boost: usableAsBoost,
     cross_product_penalty: crossProductPenalty,
@@ -1465,13 +1520,24 @@ export async function runRetriever(
         ? r.chunk.metadata as Record<string, unknown>
         : {};
       const sourceProvider = r.chunk.source_provider as string | null;
-      const runtimeDocumentProducts = isKnowledgeDocumentProvider(sourceProvider)
-        ? extractKnowledgeDocumentProductTerms({
+      const accessDecision = isKnowledgeDocumentProvider(sourceProvider)
+        ? evaluateRuntimeKnowledgeDocumentAccess({
+          source_provider: sourceProvider,
           content: String(r.chunk.content || ""),
           metadata: meta,
+          plan,
+          customerMessage,
           shop,
         })
-        : [];
+        : null;
+      const runtimeDocumentProducts =
+        isKnowledgeDocumentProvider(sourceProvider)
+          ? extractKnowledgeDocumentProductTerms({
+            content: String(r.chunk.content || ""),
+            metadata: meta,
+            shop,
+          })
+          : [];
       const metadataProducts = Array.isArray(meta.products)
         ? (meta.products as unknown[]).map((p) =>
           String(p || "").trim().toLowerCase()
@@ -1493,12 +1559,20 @@ export async function runRetriever(
         chunk_count: typeof meta.chunk_count === "number"
           ? meta.chunk_count
           : 1,
-        products: uniqueStrings([...metadataProducts, ...runtimeDocumentProducts]),
+        products: uniqueStrings([
+          ...metadataProducts,
+          ...runtimeDocumentProducts,
+        ]),
         product_id: meta.product_id != null
           ? String(meta.product_id).trim() || null
           : meta.product_scope != null
           ? String(meta.product_scope).trim() || null
           : null,
+        source_provider: sourceProvider,
+        document_category: isKnowledgeDocumentProvider(sourceProvider)
+          ? String(meta.category || "").trim() || null
+          : null,
+        knowledge_document_access_reason: accessDecision?.reason ?? null,
         vector_similarity: r.vectorSimilarity,
         question: typeof meta.question === "string" ? meta.question : null,
       };
@@ -1658,20 +1732,21 @@ export async function runRetriever(
   }
 
   const candidateDiagnostics = buildRetrievalCandidateDiagnosticsBestEffort(
-    () => buildRetrievalCandidateDiagnostics({
-      plannerQueries,
-      fallbackQueries,
-      queryDefs: boundedQueryDefs,
-      queryPairs,
-      fusedRaw,
-      scoredChunks,
-      candidatesPostDedupe,
-      matcherPool: pool,
-      matcherDebug,
-      finalChunks,
-      scoreBreakdown,
-      mentionedProductsResolved: mentionedProducts,
-    }),
+    () =>
+      buildRetrievalCandidateDiagnostics({
+        plannerQueries,
+        fallbackQueries,
+        queryDefs: boundedQueryDefs,
+        queryPairs,
+        fusedRaw,
+        scoredChunks,
+        candidatesPostDedupe,
+        matcherPool: pool,
+        matcherDebug,
+        finalChunks,
+        scoreBreakdown,
+        mentionedProductsResolved: mentionedProducts,
+      }),
   );
 
   // Past ticket examples — directly from typed ticket_examples table
