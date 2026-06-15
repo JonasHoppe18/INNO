@@ -26,6 +26,7 @@ function decision(input: {
   customerMessage: string;
   intent?: string;
   environment?: string;
+  metadata?: Record<string, unknown>;
 }): RuntimeKnowledgeDocumentDecision {
   return evaluateRuntimeKnowledgeDocumentAccess({
     source_provider: "knowledge_document",
@@ -34,6 +35,7 @@ function decision(input: {
       environment: input.environment ?? "preview",
       category: input.category,
       section_heading: "Runtime section",
+      ...input.metadata,
     },
     plan: plan(input.intent ?? "complaint"),
     customerMessage: input.customerMessage,
@@ -49,6 +51,28 @@ Deno.test("inbox runtime may include same-product Product Support document chunk
     customerMessage: "My A-Spire Wireless keeps disconnecting and cracking.",
   });
   assertEquals(result, { allowed: true, reason: "same_product_context" });
+});
+
+Deno.test("Product Support ownership uses metadata, not cross-product body mentions", () => {
+  const blocked = decision({
+    category: "product_support",
+    content:
+      "# A-Blaze — Product Support\n\n## Compatibility note\nDo not use this guide for A-Spire Wireless dongle issues.",
+    metadata: { product_title: "A-Blaze" },
+    customerMessage: "My A-Spire Wireless keeps disconnecting and cracking.",
+  });
+  assertEquals(blocked, { allowed: false, reason: "wrong_product_context" });
+});
+
+Deno.test("same-product metadata passes even if body mentions another product", () => {
+  const allowed = decision({
+    category: "product_support",
+    content:
+      "# A-Spire Wireless — Product Support\n\n## Compatibility note\nDo not confuse this with A-Blaze Bluetooth pairing.",
+    metadata: { product_title: "A-Spire Wireless" },
+    customerMessage: "My A-Spire Wireless keeps disconnecting and cracking.",
+  });
+  assertEquals(allowed, { allowed: true, reason: "same_product_context" });
 });
 
 Deno.test("inbox runtime excludes wrong-product Product Support document chunks", () => {
@@ -69,6 +93,50 @@ Deno.test("wired A-Spire document is excluded from A-Spire Wireless inbox contex
     customerMessage: "My A-Spire Wireless keeps disconnecting.",
   });
   assertEquals(result, { allowed: false, reason: "wrong_product_context" });
+});
+
+Deno.test("production Product Support chunks use the same runtime scope gate", () => {
+  const result = decision({
+    category: "product_support",
+    content:
+      "# A-Blaze — Product Support\n\n## Microphone\nUse this for A-Blaze microphone issues.",
+    customerMessage: "My A-Blaze microphone is not working.",
+    environment: "production",
+  });
+  assertEquals(result, { allowed: true, reason: "same_product_context" });
+});
+
+Deno.test("ambiguous Product Support product context fails closed", () => {
+  const result = decision({
+    category: "product_support",
+    content:
+      "# A-Blaze — Product Support\n\n## Bluetooth\nUse this for A-Blaze Bluetooth pairing.",
+    customerMessage: "My A-Blaze and A-Rise both have app problems.",
+  });
+  assertEquals(result, { allowed: false, reason: "ambiguous_product_context" });
+});
+
+Deno.test("missing Product Support product context fails closed", () => {
+  const result = decision({
+    category: "product_support",
+    content:
+      "# A-Blaze — Product Support\n\n## Bluetooth\nUse this for A-Blaze Bluetooth pairing.",
+    customerMessage: "My headset has app problems.",
+  });
+  assertEquals(result, { allowed: false, reason: "missing_product_context" });
+});
+
+Deno.test("Product Support chunks without trusted product ownership fail closed", () => {
+  const result = decision({
+    category: "product_support",
+    content:
+      "## Bluetooth\nThis guide mentions A-Blaze and A-Spire Wireless only in body examples.",
+    customerMessage: "My A-Blaze has app problems.",
+  });
+  assertEquals(result, {
+    allowed: false,
+    reason: "document_product_unresolved",
+  });
 });
 
 Deno.test("generic Ear pads document appears only for ear-pad context", () => {

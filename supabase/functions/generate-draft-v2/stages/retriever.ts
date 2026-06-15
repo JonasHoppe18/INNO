@@ -296,14 +296,31 @@ function extractKnowledgeDocumentProductTerms(input: {
   const metadata = input.metadata && typeof input.metadata === "object"
     ? input.metadata
     : {};
-  const text = [
+  const rawProducts = [
+    metadata.product_scope,
+    metadata.product_id,
+    metadata.product_title,
+    metadata.document_title,
     metadata.title,
     metadata.name,
     metadata.label,
-    metadata.section_heading,
-    input.content,
-  ].map((v) => String(v || "")).join("\n");
-  return extractMentionedProductTerms(text, input.shop);
+    ...(Array.isArray(metadata.product_ids) ? metadata.product_ids : []),
+    ...(Array.isArray(metadata.products) ? metadata.products : []),
+  ];
+  const explicitTerms = rawProducts
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .flatMap((value) => extractMentionedProductTerms(value, input.shop));
+  if (explicitTerms.length) return uniqueStrings(explicitTerms);
+
+  // Fallback to the structured document title embedded as a Markdown H1 by the
+  // chunk builder. Do not use arbitrary body text for ownership; cross-product
+  // comparisons inside the guide must never make the chunk belong to that other
+  // product.
+  return extractMentionedProductTerms(
+    extractKnowledgeDocumentTitleText({ content: input.content, metadata }),
+    input.shop,
+  );
 }
 
 function extractKnowledgeDocumentTitleText(input: {
