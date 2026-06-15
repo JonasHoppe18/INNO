@@ -66,6 +66,11 @@ export interface PipelineInput {
   customer_context?: Record<string, unknown> | null;
   action_result?: Record<string, unknown> | null;
   eval_payload?: EvalPayload;
+  // When true (or when eval_payload is present), the pipeline runs in
+  // no-write mode: it executes end-to-end (retrieval, writer, draft) but never
+  // inserts/updates `draft_generations`. Used by simulation / verification
+  // callers that must not mutate production trace data.
+  dry_run?: boolean;
   eval_options?: {
     writer_model?: string;
     strong_model?: string;
@@ -232,7 +237,36 @@ function buildPipelineSources(input: {
   ];
 }
 
-async function createDraftGenerationTrace(input: {
+// Synthetic generation ids minted in eval/dry-run mode carry this prefix. Both
+// trace helpers detect it and skip the DB write entirely, so the pipeline can
+// run end-to-end (writer, retrieval, draft) without ever touching
+// `draft_generations`. The id still flows through downstream code that expects
+// a string, but must NEVER reach a real DB write.
+export const DRY_RUN_GENERATION_PREFIX = "dry-run:";
+
+export function isDryRunGenerationId(id: string | null | undefined): boolean {
+  return typeof id === "string" && id.startsWith(DRY_RUN_GENERATION_PREFIX);
+}
+
+// Single source of truth for "this run must not write trace rows". A run is
+// no-write when it carries an eval payload (eval/simulation) OR an explicit
+// dry_run flag. Production inbox generation has neither → writes as before.
+export function isNoWriteDraftRun(input: {
+  eval_payload?: unknown;
+  dry_run?: boolean;
+}): boolean {
+  return Boolean(input.eval_payload) || input.dry_run === true;
+}
+
+// Mints the generation id for a run. No-write runs get the sentinel prefix so
+// the trace helpers skip all DB writes; production runs get a plain uuid.
+export function mintGenerationId(isNoWrite: boolean): string {
+  return isNoWrite
+    ? `${DRY_RUN_GENERATION_PREFIX}${crypto.randomUUID()}`
+    : crypto.randomUUID();
+}
+
+export async function createDraftGenerationTrace(input: {
   supabase: SupabaseClient;
   id: string;
   shop_id: string;
@@ -240,6 +274,8 @@ async function createDraftGenerationTrace(input: {
   message_id?: string;
   draft_id: string;
 }) {
+  // Dry-run / eval: no-op. Never insert a trace row.
+  if (isDryRunGenerationId(input.id)) return;
   const { error } = await input.supabase.from("draft_generations").insert({
     id: input.id,
     shop_id: input.shop_id,
@@ -254,12 +290,14 @@ async function createDraftGenerationTrace(input: {
   }
 }
 
-async function updateDraftGenerationTrace(
+export async function updateDraftGenerationTrace(
   supabase: SupabaseClient,
   generationId: string,
   patch: Record<string, unknown>,
 ) {
   if (!generationId || Object.keys(patch).length === 0) return;
+  // Dry-run / eval: no-op. Never update a trace row.
+  if (isDryRunGenerationId(generationId)) return;
   const { error } = await supabase
     .from("draft_generations")
     .update(patch)
@@ -815,8 +853,12 @@ export async function runDraftV2Pipeline(
     eval_payload,
     eval_options,
   } = input;
+  // No-write mode: eval runs (eval_payload) or an explicit dry_run flag. In this
+  // mode the generation id is minted with a sentinel prefix so the trace helpers
+  // skip every insert/update to `draft_generations`.
+  const isDryRun = isNoWriteDraftRun({ eval_payload, dry_run: input.dry_run });
   const draftId = crypto.randomUUID();
-  const generationId = crypto.randomUUID();
+  const generationId = mintGenerationId(isDryRun);
   const pipelineStartedAt = Date.now();
   let currentStage = "initializing";
 

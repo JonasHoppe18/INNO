@@ -24,6 +24,7 @@ Deno.serve(async (req) => {
       action_result,
       exclude_chunk_ids,
       preview_document_context,
+      dry_run,
     } = await req.json();
 
     if (!shop_id || (!thread_id && !email_data)) {
@@ -55,6 +56,7 @@ Deno.serve(async (req) => {
       customer_context,
       action_result,
       preview_document_context,
+      dry_run: dry_run === true,
       exclude_chunk_ids: Array.isArray(exclude_chunk_ids)
         ? exclude_chunk_ids.map((id: unknown) => String(id || "")).filter(Boolean)
         : undefined,
