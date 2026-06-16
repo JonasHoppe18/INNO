@@ -459,6 +459,85 @@ Deno.test("manual checkout-link directive overrides stock & forbids out-of-stock
   assertEquals(buildManualCheckoutLinkDirective({ active: false }), "");
 });
 
+// --- Public storefront domain support (shops.public_storefront_domain) ------
+
+// Helper mirroring the runtime path: resolve a shop's public domain, then build
+// the product page URL from the trusted domain + a trusted Shopify handle.
+function productUrlForShop(shop: Record<string, unknown>, handle: string): string | null {
+  const { domain } = resolvePublicStorefrontDomain(shop);
+  return buildTrustedProductUrl(domain, handle);
+}
+
+Deno.test("public domain configured → builds public product URL", () => {
+  assertEquals(
+    productUrlForShop({ public_storefront_domain: "www.acezone.io", shop_domain: "shop-acezone.myshopify.com" }, "a-rise"),
+    "https://www.acezone.io/products/a-rise",
+  );
+});
+
+Deno.test("only myshopify shop_domain → no public product URL", () => {
+  const shop = { shop_domain: "shop-acezone.myshopify.com" };
+  assertEquals(resolvePublicStorefrontDomain(shop), { domain: null, reason: "missing_public_storefront_domain" });
+  assertEquals(productUrlForShop(shop, "a-rise"), null);
+});
+
+Deno.test("public domain with protocol is normalized", () => {
+  assertEquals(
+    productUrlForShop({ public_storefront_domain: "https://www.acezone.io" }, "a-rise"),
+    "https://www.acezone.io/products/a-rise",
+  );
+});
+
+Deno.test("public domain with trailing slash is normalized", () => {
+  assertEquals(
+    productUrlForShop({ public_storefront_domain: "www.acezone.io/" }, "a-rise"),
+    "https://www.acezone.io/products/a-rise",
+  );
+});
+
+Deno.test("public_storefront_domain set to a myshopify host is rejected", () => {
+  const shop = { public_storefront_domain: "shop-acezone.myshopify.com" };
+  assertEquals(resolvePublicStorefrontDomain(shop), { domain: null, reason: "missing_public_storefront_domain" });
+  assertEquals(productUrlForShop(shop, "a-rise"), null);
+});
+
+Deno.test("synced metadata URL is myshopify but public domain set → rebuild on public domain", () => {
+  const result = selectGroundedProductLinkFromChunks({
+    requestedProduct: "A-Rise",
+    chunks: [{
+      source_provider: "shopify_product",
+      source_title: "A-Rise",
+      product_handle: "a-rise",
+      product_url: "https://shop-acezone.myshopify.com/products/a-rise",
+    }],
+    publicStorefrontDomain: resolvePublicStorefrontDomain({ public_storefront_domain: "www.acezone.io" }).domain,
+  });
+  assertEquals(result?.url, "https://www.acezone.io/products/a-rise");
+});
+
+Deno.test("customer-text URL is ignored — only trusted domain + handle builds a link", () => {
+  // No public domain configured: a URL pasted by the customer must NOT surface.
+  assertEquals(
+    selectGroundedProductLinkFromChunks({
+      requestedProduct: "A-Rise",
+      chunks: [{ source_provider: "shopify_product", source_title: "A-Rise", product_url: "https://evil.example/products/a-rise" }],
+      publicStorefrontDomain: resolvePublicStorefrontDomain({ shop_domain: "shop-acezone.myshopify.com" }).domain,
+    }),
+    null,
+  );
+});
+
+Deno.test("invalid / malicious public_storefront_domain values are rejected", () => {
+  for (const bad of ["javascript:alert(1)", "www.acezone.io/products/a-rise", "https://evil.com/path", "not a domain", ""]) {
+    assertEquals(
+      resolvePublicStorefrontDomain({ public_storefront_domain: bad }).domain,
+      null,
+      `should reject "${bad}"`,
+    );
+    assertEquals(productUrlForShop({ public_storefront_domain: bad }, "a-rise"), null);
+  }
+});
+
 Deno.test("TRUSTED_PRODUCT_LINK_LABEL is stable", () => {
   assertEquals(TRUSTED_PRODUCT_LINK_LABEL, "Trusted product page link");
 });
