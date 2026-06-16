@@ -21,9 +21,11 @@ import {
   resolveReplacementFlowState,
 } from "./replacement-flow.ts";
 import {
+  buildManualCheckoutLinkDirective,
   buildPurchaseLinkDirective,
   buildStockUnknownLinkFallbackDirective,
   derivePurchaseProductCandidate,
+  detectManualCheckoutLinkFlow,
   firstTrustedProductLink,
   isAmbiguousProductRequest,
   isPurchaseLinkRequest,
@@ -1242,7 +1244,7 @@ Support replied: "${ex.agent_reply.slice(0, 500)}"`;
     customerClaimsNotReceived: customerClaimsNotReceived(latestCustomerMessage),
     customerReportsTrackingDelivered: customerReportsTrackingDelivered(latestCustomerMessage),
   });
-  const stockAvailabilityBlock = buildStockAvailabilityDirective(facts.facts);
+  let stockAvailabilityBlock = buildStockAvailabilityDirective(facts.facts);
 
   // Purchase-link / where-to-buy intent + stock-link fallback. Both lean on a
   // grounded product-page URL: prefer the live-stock handle fact, else fall
@@ -1275,14 +1277,29 @@ Support replied: "${ex.agent_reply.slice(0, 500)}"`;
     facts.facts.find((f) => f.label === "Live stock availability")?.value ?? "",
     "state",
   );
-  const purchaseLinkBlock = buildPurchaseLinkDirective({
+  // T-050832: when the customer is accepting/requesting a checkout link AND
+  // support previously offered a manual checkout link or set aside office/manual
+  // stock, the ordinary online stock-status answer is the WRONG headline. This
+  // manual checkout-link flow becomes the single strategy and SUPPRESSES the
+  // stock-availability + purchase-link + stock-fallback blocks for this draft.
+  const manualCheckoutFlow = detectManualCheckoutLinkFlow({
+    latestCustomerMessage,
+    conversationHistory,
+  });
+  const manualCheckoutLinkBlock = buildManualCheckoutLinkDirective({
+    active: manualCheckoutFlow,
+    productHint: requestedProductForLink ?? null,
+  });
+  // Suppress the ordinary online stock-status answer in the manual flow.
+  if (manualCheckoutFlow) stockAvailabilityBlock = "";
+  const purchaseLinkBlock = manualCheckoutFlow ? "" : buildPurchaseLinkDirective({
     isPurchaseLinkRequest: isPurchaseLinkRequest(latestCustomerMessage),
     groundedProductUrl,
     ambiguousProduct: isAmbiguousProductRequest(latestCustomerMessage),
     threadMentionsCheckoutLink: checkoutLinkInThread,
     noPublicStorefrontDomain,
   });
-  const stockLinkFallbackBlock = buildStockUnknownLinkFallbackDirective({
+  const stockLinkFallbackBlock = manualCheckoutFlow ? "" : buildStockUnknownLinkFallbackDirective({
     isStockQuestion: isStockAvailabilityQuestion(latestCustomerMessage),
     stockConfirmed: Boolean(stockFactState) && stockFactState !== "unknown",
     groundedProductUrl,
@@ -1757,6 +1774,7 @@ ${stageDirectives[resolutionStage] ?? stageDirectives.info_only}`;
     orderMatchBlock,
     refundStatusBlock,
     trackingBlock,
+    manualCheckoutLinkBlock,
     purchaseLinkBlock,
     stockLinkFallbackBlock,
     replacementFlowBlock,

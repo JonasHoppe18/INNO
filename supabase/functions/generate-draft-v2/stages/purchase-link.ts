@@ -124,6 +124,64 @@ export function threadMentionsCheckoutLink(
     .test(joined);
 }
 
+// Prior support context offering a MANUAL checkout link / office-or-manual
+// stock — distinct from threadMentionsCheckoutLink (which only matches the word
+// "checkout link"). This also catches the "we have a few units at the office"
+// style promise, which means online Shopify stock is irrelevant to the answer.
+export function threadMentionsManualCheckoutContext(
+  texts: Array<string | null | undefined> | string | null | undefined,
+): boolean {
+  const all = Array.isArray(texts) ? texts : [texts];
+  const joined = all.map((t) => lower(t)).join("\n");
+  return (
+    // checkout / check-out link offers
+    /\bcheck\s*-?\s*out[\s-]*link\b|\bcheckout[\s-]*link\b/i.test(joined) ||
+    /\bsend\w*\s+(?:dig|jer|you)\b[^.?!]{0,30}\blink\b/i.test(joined) ||
+    /\b(?:send|sende)\s+dig\s+et\s+link\b/i.test(joined) ||
+    // office / manual / warehouse stock kept aside
+    /\bet\s+par\s+stykker\b[^.?!]{0,40}\b(?:kontor|kontoret|lager|liggende)\b/i.test(joined) ||
+    /\bliggende\b[^.?!]{0,20}\b(?:her\s+)?(?:på\s+)?kontor\w*/i.test(joined) ||
+    /\boffice\s+stock\b|\bmanual\s+stock\b/i.test(joined) ||
+    /\ba\s+few\s+(?:units?|pieces?)\b[^.?!]{0,30}\b(?:office|warehouse|in stock|here)\b/i.test(joined)
+  );
+}
+
+// Manual checkout-link sales flow: the customer is accepting/requesting a
+// purchase/checkout link AND support has already offered a manual checkout link
+// or set aside office/manual stock. In this context the ordinary online
+// stock-status answer is the WRONG headline — continue the promised manual
+// checkout-link flow instead.
+export function detectManualCheckoutLinkFlow(input: {
+  latestCustomerMessage: string | null | undefined;
+  conversationHistory?: Array<{ role?: string; text?: string | null }> | null;
+}): boolean {
+  if (!isPurchaseLinkRequest(input.latestCustomerMessage)) return false;
+  const historyTexts = (Array.isArray(input.conversationHistory)
+    ? input.conversationHistory
+    : []).map((m) => m?.text ?? "");
+  return threadMentionsManualCheckoutContext(historyTexts);
+}
+
+// Strong directive that drives the manual checkout-link flow and forbids the
+// ordinary online out-of-stock / restock framing. Never claims a link was
+// already created (no action creates one in this pipeline).
+export function buildManualCheckoutLinkDirective(opts: {
+  active: boolean;
+  productHint?: string | null;
+}): string {
+  if (!opts.active) return "";
+  const product = (opts.productHint && opts.productHint.trim()) || "produktet";
+  return [
+    "# Manual checkout-link flow (STRATEGY — overrides stock-status answering)",
+    "- Context: support has already offered to send a manual/office checkout link, and the customer is accepting/requesting that link. This is a manual sales flow, NOT an online stock-status question.",
+    `- Continue the promised flow: confirm warmly that we will arrange a checkout link for ${product} and that we will get back with the link shortly.`,
+    "- FORBIDDEN (do not write these or equivalents, in any language): \"udsolgt\", \"ikke på lager\", \"ingen bekræftet dato\", \"tilbage på lager\", \"out of stock\", \"back in stock\", \"sold out\", \"no confirmed restock date\". Online Shopify stock is irrelevant here — do NOT mention it.",
+    "- Do NOT claim a checkout link has already been created or sent — no link exists yet; say we will send/arrange it shortly.",
+    "- Do NOT create or fabricate a checkout/cart URL, and do NOT ask the customer to provide a product link.",
+    "- Keep it short and friendly; end with the shop's normal sign-off, no generic \"I look forward to hearing from you\" filler.",
+  ].join("\n");
+}
+
 // The customer asked for a purchase link but named only a generic category
 // ("send link til headset") with no model-specific token → ambiguous.
 export function isAmbiguousProductRequest(message: string | null | undefined): boolean {

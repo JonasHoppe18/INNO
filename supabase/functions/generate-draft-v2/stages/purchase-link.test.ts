@@ -1,9 +1,12 @@
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import {
+  buildManualCheckoutLinkDirective,
   buildPurchaseLinkDirective,
   buildStockUnknownLinkFallbackDirective,
   buildTrustedProductUrl,
   derivePurchaseProductCandidate,
+  detectManualCheckoutLinkFlow,
+  threadMentionsManualCheckoutContext,
   isAmbiguousProductRequest,
   isPurchaseLinkRequest,
   type ProductSourceChunk,
@@ -314,6 +317,58 @@ Deno.test("stock-unknown fallback empty only when confirmed or not a stock quest
     }),
     "",
   );
+});
+
+// --- Manual checkout-link flow (T-050832) -------------------------------
+
+Deno.test("threadMentionsManualCheckoutContext detects checkout-link & office-stock offers", () => {
+  assert(threadMentionsManualCheckoutContext(["Jeg kan sende dig et check-out link"]));
+  assert(threadMentionsManualCheckoutContext(["jeg sender dig et checkout link"]));
+  assert(threadMentionsManualCheckoutContext(["send dig et link til betaling"]));
+  assert(threadMentionsManualCheckoutContext(["Vi har et par stykker liggende her på kontoret"]));
+  assert(threadMentionsManualCheckoutContext(["We have a few units at the office"]));
+  assert(threadMentionsManualCheckoutContext(["I can send you a checkout link"]));
+  assertEquals(threadMentionsManualCheckoutContext(["Tak for din besked"]), false);
+});
+
+Deno.test("detectManualCheckoutLinkFlow: purchase-link + prior manual-stock offer", () => {
+  const history = [
+    { role: "agent", text: "Vi har et par stykker liggende her på kontoret, så hvis du ønsker, kan jeg sende dig et check-out link…" },
+  ];
+  assert(detectManualCheckoutLinkFlow({
+    latestCustomerMessage: "Hej Send gerne link til at jeg kan købe A-rise headset :)",
+    conversationHistory: history,
+  }));
+  // No prior manual/checkout context → not the manual flow.
+  assertEquals(
+    detectManualCheckoutLinkFlow({
+      latestCustomerMessage: "Hej Send gerne link til at jeg kan købe A-rise headset :)",
+      conversationHistory: [{ role: "agent", text: "Tak for din besked" }],
+    }),
+    false,
+  );
+  // Latest message is not a purchase-link request → not the manual flow.
+  assertEquals(
+    detectManualCheckoutLinkFlow({
+      latestCustomerMessage: "Har I A-Rise på lager?",
+      conversationHistory: history,
+    }),
+    false,
+  );
+});
+
+Deno.test("manual checkout-link directive overrides stock & forbids out-of-stock wording", () => {
+  const d = buildManualCheckoutLinkDirective({ active: true, productHint: "A-Rise" });
+  assert(/checkout/i.test(d));
+  assert(/A-Rise/.test(d));
+  // Forbidden online-stock / restock phrasings are explicitly listed.
+  for (const phrase of ["udsolgt", "ikke på lager", "ingen bekræftet dato", "tilbage på lager", "out of stock", "back in stock"]) {
+    assert(d.includes(phrase), `directive should forbid "${phrase}"`);
+  }
+  // Must not claim a link already exists.
+  assert(/Do NOT claim a checkout link has already been created/i.test(d));
+  assert(/Do NOT create or fabricate/i.test(d));
+  assertEquals(buildManualCheckoutLinkDirective({ active: false }), "");
 });
 
 Deno.test("TRUSTED_PRODUCT_LINK_LABEL is stable", () => {
