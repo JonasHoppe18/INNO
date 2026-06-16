@@ -1296,6 +1296,7 @@ Support replied: "${ex.agent_reply.slice(0, 500)}"`;
   const purchaseLinkBlock = manualCheckoutFlow ? "" : buildPurchaseLinkDirective({
     isPurchaseLinkRequest: isPurchaseLinkRequest(latestCustomerMessage),
     isCheckoutLinkRequest: isCheckoutLinkRequest(latestCustomerMessage),
+    isStockQuestion: isStockAvailabilityQuestion(latestCustomerMessage),
     groundedProductUrl,
     ambiguousProduct: isAmbiguousProductRequest(latestCustomerMessage),
     threadMentionsCheckoutLink: checkoutLinkInThread,

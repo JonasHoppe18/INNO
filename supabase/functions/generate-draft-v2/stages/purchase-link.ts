@@ -526,6 +526,9 @@ export function buildPurchaseLinkDirective(opts: {
   // Explicit checkout/payment-link request. Ordinary product-page link requests
   // (the default) must NOT use checkout wording.
   isCheckoutLinkRequest?: boolean;
+  // True when the customer explicitly asked about stock/availability/buying now.
+  // When false, an ordinary product-link reply must NOT mention stock at all.
+  isStockQuestion?: boolean;
   groundedProductUrl: string | null;
   ambiguousProduct: boolean;
   threadMentionsCheckoutLink: boolean;
@@ -533,6 +536,7 @@ export function buildPurchaseLinkDirective(opts: {
 }): string {
   if (!opts.isPurchaseLinkRequest) return "";
   const checkout = opts.isCheckoutLinkRequest === true;
+  const stockQuestion = opts.isStockQuestion === true;
   const lines = [
     checkout
       ? "# Checkout-link request"
@@ -545,9 +549,15 @@ export function buildPurchaseLinkDirective(opts: {
     lines.push(
       `- Include the EXACT URL above verbatim in the draft, e.g. "Du kan finde produktet her: ${opts.groundedProductUrl}". Do NOT merely offer to "sende dig linket" without actually including the URL.`,
     );
-    lines.push(
-      "- Do NOT lead with or focus on stock/availability uncertainty, and do NOT claim the product is available/på lager/in stock unless a live in_stock fact says so.",
-    );
+    if (stockQuestion) {
+      lines.push(
+        "- The customer asked about stock/availability: you MAY state availability ONLY if a live stock fact supports it (in_stock → available, out_of_stock → not currently in stock). Never claim availability without a live fact.",
+      );
+    } else {
+      lines.push(
+        "- The customer did NOT ask about stock. Do NOT mention stock or availability at all — no \"på lager\", \"tilgængelig\", \"i øjeblikket på lager\" or \"in stock\". Keep it short: a brief greeting, the product page link, done.",
+      );
+    }
     lines.push(
       "- Do NOT ask the customer to provide a product link, product name or variant — you already have the correct product page link.",
     );

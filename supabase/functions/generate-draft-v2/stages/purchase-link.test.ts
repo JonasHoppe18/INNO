@@ -181,6 +181,35 @@ Deno.test("ordinary product-link (grounded): includes exact URL, NO checkout wor
   assert(!/help send a direct checkout-link/i.test(d2));
 });
 
+Deno.test("ordinary product-link (no stock question): directive forbids stock wording", () => {
+  const d = buildPurchaseLinkDirective({
+    isPurchaseLinkRequest: true,
+    isCheckoutLinkRequest: false,
+    isStockQuestion: false,
+    groundedProductUrl: "https://www.acezone.io/products/a-rise",
+    ambiguousProduct: false,
+    threadMentionsCheckoutLink: false,
+  });
+  assert(d.includes("https://www.acezone.io/products/a-rise"));
+  assert(/Do NOT mention stock or availability at all/i.test(d));
+  assert(/på lager/i.test(d)); // the forbidden word is listed in the rule
+  assert(!/MAY state availability/i.test(d));
+});
+
+Deno.test("product-link WITH explicit stock question: availability allowed if grounded", () => {
+  const d = buildPurchaseLinkDirective({
+    isPurchaseLinkRequest: true,
+    isCheckoutLinkRequest: false,
+    isStockQuestion: true,
+    groundedProductUrl: "https://www.acezone.io/products/a-rise",
+    ambiguousProduct: false,
+    threadMentionsCheckoutLink: false,
+  });
+  assert(d.includes("https://www.acezone.io/products/a-rise"));
+  assert(/MAY state availability ONLY if a live stock fact/i.test(d));
+  assert(!/Do NOT mention stock or availability at all/i.test(d));
+});
+
 Deno.test("explicit checkout-link request: may offer checkout help, never fabricates", () => {
   const d = buildPurchaseLinkDirective({
     isPurchaseLinkRequest: true,
