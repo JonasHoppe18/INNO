@@ -2089,6 +2089,7 @@ export async function runDraftV2Pipeline(
         facts,
         retrievedChunks: retrieved.chunks,
         customerMessage: latestCustomerMessage,
+        conversationHistory,
         language: replyLanguage,
       });
     await updateDraftGenerationTrace(supabase, generationId, {
@@ -2163,6 +2164,7 @@ export async function runDraftV2Pipeline(
             facts,
             retrievedChunks: retrieved.chunks,
             customerMessage: latestCustomerMessage,
+            conversationHistory,
             language: replyLanguage,
           });
 

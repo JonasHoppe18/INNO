@@ -2,6 +2,9 @@ import { assert, assertEquals } from "jsr:@std/assert@1";
 import {
   buildManualCheckoutLinkDirective,
   buildPurchaseLinkDirective,
+  containsLinkPlaceholder,
+  detectOrdinaryProductLinkCheckoutViolation,
+  isCheckoutLinkRequest,
   buildStockUnknownLinkFallbackDirective,
   buildTrustedProductUrl,
   derivePurchaseProductCandidate,
@@ -152,41 +155,126 @@ Deno.test("threadMentionsCheckoutLink detects prior support offer", () => {
   assertEquals(threadMentionsCheckoutLink(["Tak for din besked"]), false);
 });
 
-Deno.test("directive (grounded): leads with link, no stock fallback, no fabricated checkout", () => {
+Deno.test("ordinary product-link (grounded): includes exact URL, NO checkout wording, no placeholder", () => {
   const d = buildPurchaseLinkDirective({
     isPurchaseLinkRequest: true,
-    groundedProductUrl: "https://acezone.dk/products/a-rise",
+    isCheckoutLinkRequest: false,
+    groundedProductUrl: "https://www.acezone.io/products/a-rise",
     ambiguousProduct: false,
     threadMentionsCheckoutLink: false,
   });
-  assert(d.includes("https://acezone.dk/products/a-rise"));
-  assert(/LEAD with this product page link/i.test(d));
-  assert(/Do NOT lead with .*stock/i.test(d));
-  assert(/Do NOT ask the customer to provide a product link/i.test(d));
+  assert(d.includes("https://www.acezone.io/products/a-rise"));
+  assert(/Include the EXACT URL above verbatim/i.test(d));
+  // Ordinary product-link path must forbid checkout wording + placeholders.
+  assert(/ORDINARY product-page link request, NOT a checkout-link request/i.test(d));
+  assert(/NEVER write a placeholder/i.test(d));
   assert(/Do NOT invent.*checkout/i.test(d));
+  // Even when threadMentionsCheckoutLink is incidentally true, an ordinary
+  // request must NOT get the "offer a checkout-link" line.
+  const d2 = buildPurchaseLinkDirective({
+    isPurchaseLinkRequest: true,
+    isCheckoutLinkRequest: false,
+    groundedProductUrl: "https://www.acezone.io/products/a-rise",
+    ambiguousProduct: false,
+    threadMentionsCheckoutLink: true,
+  });
+  assert(!/help send a direct checkout-link/i.test(d2));
 });
 
-Deno.test("directive (checkout context): may offer checkout help, never fabricates", () => {
+Deno.test("explicit checkout-link request: may offer checkout help, never fabricates", () => {
   const d = buildPurchaseLinkDirective({
     isPurchaseLinkRequest: true,
-    groundedProductUrl: "https://acezone.dk/products/a-rise",
+    isCheckoutLinkRequest: true,
+    groundedProductUrl: "https://www.acezone.io/products/a-rise",
     ambiguousProduct: false,
     threadMentionsCheckoutLink: true,
   });
   assert(/checkout-link/i.test(d));
   assert(/MUST NOT invent/i.test(d));
+  // Checkout request must NOT carry the ordinary "no checkout wording" rule.
+  assert(!/ORDINARY product-page link request/i.test(d));
 });
 
-Deno.test("directive (no ground): support helps, no stock-unknown lead", () => {
+Deno.test("directive (no ground): safe fallback, no placeholder, no 'send the link' promise", () => {
   const d = buildPurchaseLinkDirective({
     isPurchaseLinkRequest: true,
     groundedProductUrl: null,
     ambiguousProduct: false,
     threadMentionsCheckoutLink: false,
   });
-  assert(/we can send the correct product link/i.test(d));
-  assert(/Do NOT claim that stock\/availability is unknown as the main answer/i.test(d));
+  assert(/cannot find a secure product link right now/i.test(d));
+  assert(/NEVER write a placeholder/i.test(d));
   assert(/NEVER show a myshopify\.com URL/i.test(d));
+});
+
+Deno.test("isCheckoutLinkRequest distinguishes checkout from ordinary product link", () => {
+  assert(isCheckoutLinkRequest("Kan du sende et checkout-link til A-Rise?"));
+  assert(isCheckoutLinkRequest("Kan du sende et betalingslink?"));
+  assert(isCheckoutLinkRequest("send a payment link"));
+  // Ordinary product-link requests are NOT checkout-link requests.
+  assertEquals(isCheckoutLinkRequest("Kan du sende link til A-Rise?"), false);
+  assertEquals(isCheckoutLinkRequest("Hvor kan jeg købe A-Rise?"), false);
+  assertEquals(isCheckoutLinkRequest("Har du et produktlink?"), false);
+});
+
+Deno.test("containsLinkPlaceholder catches forbidden placeholders", () => {
+  for (const s of ["[indsæt link her]", "[link]", "[produktlink]", "[product link]", "[checkout link]", "insert link here", "indsæt produktlink her"]) {
+    assert(containsLinkPlaceholder(`Her er linket: ${s}`), `should flag "${s}"`);
+  }
+  assertEquals(containsLinkPlaceholder("Du kan finde A-Rise her: https://www.acezone.io/products/a-rise"), false);
+});
+
+Deno.test("verifier guard: ordinary product-link draft using checkout wording is flagged", () => {
+  const draft = "Hej, A-Rise er på lager. Jeg kan sende dig et direkte checkout-link, så du kan gennemføre købet.";
+  assert(detectOrdinaryProductLinkCheckoutViolation(draft, {
+    customerMessage: "Kan du sende link til A-Rise?",
+    conversationHistory: [],
+  }));
+});
+
+Deno.test("verifier guard: ordinary product-link draft with the real URL is NOT flagged", () => {
+  const draft = "Hej, Du kan finde A-Rise her: https://www.acezone.io/products/a-rise";
+  assertEquals(
+    detectOrdinaryProductLinkCheckoutViolation(draft, {
+      customerMessage: "Kan du sende link til A-Rise?",
+      conversationHistory: [],
+    }),
+    false,
+  );
+});
+
+Deno.test("verifier guard: explicit checkout-link request may use checkout wording", () => {
+  const draft = "Hej, Jeg kan sende dig et checkout-link til A-Rise.";
+  assertEquals(
+    detectOrdinaryProductLinkCheckoutViolation(draft, {
+      customerMessage: "Kan du sende et checkout-link til A-Rise?",
+      conversationHistory: [],
+    }),
+    false,
+  );
+});
+
+Deno.test("verifier guard: manual checkout flow may use checkout wording", () => {
+  const draft = "Hej Daniel, Jeg sørger for at arrangere et checkout-link til dig.";
+  assertEquals(
+    detectOrdinaryProductLinkCheckoutViolation(draft, {
+      customerMessage: "Send gerne link til at jeg kan købe A-Rise",
+      conversationHistory: [
+        { role: "agent", text: "Vi har et par stykker liggende på kontoret… kan sende dig et check-out link" },
+      ],
+    }),
+    false,
+  );
+});
+
+Deno.test("verifier guard: non-product-link message is never flagged", () => {
+  assertEquals(
+    detectOrdinaryProductLinkCheckoutViolation("Vi sender dig et checkout-link.", {
+      customerMessage: "Hvor er min pakke?",
+      conversationHistory: [],
+    }),
+    false,
+  );
 });
 
 Deno.test("directive (ambiguous): one clarification, no guess", () => {

@@ -28,6 +28,7 @@ import {
   detectManualCheckoutLinkFlow,
   firstTrustedProductLink,
   isAmbiguousProductRequest,
+  isCheckoutLinkRequest,
   isPurchaseLinkRequest,
   resolvePublicStorefrontDomain,
   selectGroundedProductLinkFromChunks,
@@ -1294,6 +1295,7 @@ Support replied: "${ex.agent_reply.slice(0, 500)}"`;
   if (manualCheckoutFlow) stockAvailabilityBlock = "";
   const purchaseLinkBlock = manualCheckoutFlow ? "" : buildPurchaseLinkDirective({
     isPurchaseLinkRequest: isPurchaseLinkRequest(latestCustomerMessage),
+    isCheckoutLinkRequest: isCheckoutLinkRequest(latestCustomerMessage),
     groundedProductUrl,
     ambiguousProduct: isAmbiguousProductRequest(latestCustomerMessage),
     threadMentionsCheckoutLink: checkoutLinkInThread,

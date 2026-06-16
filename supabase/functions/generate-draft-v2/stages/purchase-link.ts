@@ -462,25 +462,91 @@ const NO_GENERIC_CLOSING_RULE =
 const NO_MYSHOPIFY_RULE =
   "- NEVER show a myshopify.com URL to the customer. Only ever use the public storefront URL provided above; if none is provided, do not output any URL.";
 
+const NO_PLACEHOLDER_RULE =
+  "- NEVER write a placeholder for a link, e.g. \"[indsæt link her]\", \"[link]\", \"[produktlink]\", \"[product link]\", \"[checkout link]\" or \"insert link here\". Either include the exact grounded URL above verbatim, or include no URL at all.";
+
+const NO_CHECKOUT_WORDING_RULE =
+  "- This is an ORDINARY product-page link request, NOT a checkout-link request. Do NOT use the words \"checkout-link\", \"direkte checkout-link\", \"betalingslink\", \"cart link\" or \"foretage købet\", and do NOT imply a checkout/cart/payment link exists. Just give the product page link.";
+
+// Detection regex for placeholder link tokens — used by the verifier guard.
+export const LINK_PLACEHOLDER_RE =
+  /\[\s*(?:inds[æa]t\s+)?(?:produkt)?link(?:\s+her)?\s*\]|\[\s*product\s+link\s*\]|\[\s*checkout\s+link\s*\]|\[\s*url\s*\]|insert\s+link\s+here|inds[æa]t\s+(?:produkt)?link\s+her/i;
+
+export function containsLinkPlaceholder(text: string | null | undefined): boolean {
+  return LINK_PLACEHOLDER_RE.test(String(text ?? ""));
+}
+
+// Explicit checkout-link / payment-link request (distinct from an ordinary
+// product-page link request). Only these — plus the manual-checkout flow — may
+// use checkout-link wording.
+export function isCheckoutLinkRequest(message: string | null | undefined): boolean {
+  const text = lower(message);
+  if (!text) return false;
+  return /\bcheck\s*-?\s*out\s*-?\s*link\b|\bcheckout[\s-]*link\b|\bbetalingslink\b|\bkurv-?link\b|\bcart\s+link\b|\bpayment\s+link\b/i
+    .test(text);
+}
+
+// Checkout/payment/cart-link wording that must NOT appear in an ordinary
+// product-page link reply. "foretage/gennemføre købet" only counts as a
+// violation when no concrete public product URL is present (see detector below).
+const CHECKOUT_WORDING_RE =
+  /\bcheck\s*-?\s*out\s*-?\s*link\b|\bcheckout[\s-]*link\b|\bdirekte\s+checkout\b|\bbetalingslink\b|\bkurv-?link\b|\bcart\s+link\b|\bpayment\s+link\b|\bcheckout\s+url\b|\bgennemføre\s+købet\b/i;
+
+// Deterministic verifier guard: returns true when the draft uses checkout/cart/
+// payment-link wording for an ORDINARY product-page link request — i.e. the
+// latest message is a product-link request, it is NOT an explicit checkout-link
+// request, and it is NOT the manual-checkout flow. Pure.
+export function detectOrdinaryProductLinkCheckoutViolation(
+  draftText: string | null | undefined,
+  opts: {
+    customerMessage: string | null | undefined;
+    conversationHistory?: Array<{ role?: string; text?: string | null }> | null;
+  },
+): boolean {
+  const isOrdinaryProductLink = isPurchaseLinkRequest(opts.customerMessage) &&
+    !isCheckoutLinkRequest(opts.customerMessage) &&
+    !detectManualCheckoutLinkFlow({
+      latestCustomerMessage: opts.customerMessage,
+      conversationHistory: opts.conversationHistory ?? [],
+    });
+  if (!isOrdinaryProductLink) return false;
+  const draft = String(draftText ?? "");
+  if (CHECKOUT_WORDING_RE.test(draft)) return true;
+  // "foretage købet" is only a violation when no real public product URL is
+  // present (a bare "you can complete the purchase here" with no link).
+  if (/\bforetage\s+købet\b/i.test(draft) && !/https?:\/\/\S+\/products\//i.test(draft)) {
+    return true;
+  }
+  return false;
+}
+
 // Writer directive for purchase-link requests.
 export function buildPurchaseLinkDirective(opts: {
   isPurchaseLinkRequest: boolean;
+  // Explicit checkout/payment-link request. Ordinary product-page link requests
+  // (the default) must NOT use checkout wording.
+  isCheckoutLinkRequest?: boolean;
   groundedProductUrl: string | null;
   ambiguousProduct: boolean;
   threadMentionsCheckoutLink: boolean;
   noPublicStorefrontDomain?: boolean;
 }): string {
   if (!opts.isPurchaseLinkRequest) return "";
-  const lines = ["# Purchase-link request (where-to-buy / send a link to buy)"];
+  const checkout = opts.isCheckoutLinkRequest === true;
+  const lines = [
+    checkout
+      ? "# Checkout-link request"
+      : "# Product-page link request (ordinary — give the product page URL)",
+  ];
   if (opts.groundedProductUrl) {
     lines.push(
-      `- The customer wants a link to BUY the product. A TRUSTED public storefront product page URL is grounded: ${opts.groundedProductUrl}`,
+      `- The customer asked for a product link. A TRUSTED public storefront product page URL is grounded: ${opts.groundedProductUrl}`,
     );
     lines.push(
-      "- LEAD with this product page link as the answer and include the exact URL above verbatim.",
+      `- Include the EXACT URL above verbatim in the draft, e.g. "Du kan finde produktet her: ${opts.groundedProductUrl}". Do NOT merely offer to "sende dig linket" without actually including the URL.`,
     );
     lines.push(
-      "- Do NOT lead with or focus on stock/availability uncertainty. Do NOT say you cannot confirm stock as the main answer. Do NOT apologise for unknown stock.",
+      "- Do NOT lead with or focus on stock/availability uncertainty, and do NOT claim the product is available/på lager/in stock unless a live in_stock fact says so.",
     );
     lines.push(
       "- Do NOT ask the customer to provide a product link, product name or variant — you already have the correct product page link.",
@@ -488,32 +554,37 @@ export function buildPurchaseLinkDirective(opts: {
     lines.push(
       "- Do NOT invent, guess or fabricate any checkout/cart URL. Only the product page URL above is allowed.",
     );
+    if (!checkout) lines.push(NO_CHECKOUT_WORDING_RULE);
   } else if (opts.ambiguousProduct) {
     lines.push(
-      "- The customer asked for a purchase link but the specific product/model is ambiguous. Ask EXACTLY ONE short clarification about which product or model they mean.",
+      "- The customer asked for a product link but the specific product/model is ambiguous. Ask EXACTLY ONE short clarification about which product or model they mean.",
     );
     lines.push("- Do NOT guess a product. Do NOT provide any product URL.");
     lines.push("- Do NOT lead with stock/availability uncertainty.");
   } else {
     lines.push(
-      "- The customer wants a link to buy the product, but no trusted PUBLIC storefront product page URL is available right now" +
+      "- No trusted PUBLIC storefront product page URL is available right now" +
         (opts.noPublicStorefrontDomain
           ? " (no public storefront domain is configured — debug: missing_public_storefront_domain)."
           : "."),
     );
     lines.push(
-      "- Do NOT claim that stock/availability is unknown as the main answer. Instead say that we can send the correct product link.",
+      "- Do NOT use a placeholder and do NOT promise to 'send the link'. Say plainly that you cannot find a secure product link right now, e.g. \"Jeg kan desværre ikke finde et sikkert produktlink til produktet lige nu.\"",
     );
     lines.push(
       "- Do NOT invent, guess or fabricate any product URL or checkout/cart URL, and do NOT output a myshopify.com URL.",
     );
   }
-  if (opts.threadMentionsCheckoutLink) {
+  // Checkout-link wording is allowed ONLY for an explicit checkout-link request
+  // (the manual-checkout flow is handled by its own directive, which suppresses
+  // this block). Never for an ordinary product-page link request.
+  if (checkout && opts.threadMentionsCheckoutLink) {
     lines.push(
-      "- The thread mentions a direct checkout link. You MAY say that we can help send a direct checkout-link (e.g. \"vi kan hjælpe med at sende et direkte checkout-link\"), but you MUST NOT invent, guess or fabricate any checkout/cart URL.",
+      "- You MAY say that we can help send a direct checkout-link, but you MUST NOT invent, guess or fabricate any checkout/cart URL.",
     );
   }
   lines.push(NO_MYSHOPIFY_RULE);
+  lines.push(NO_PLACEHOLDER_RULE);
   lines.push(NO_GENERIC_CLOSING_RULE);
   return lines.join("\n");
 }
