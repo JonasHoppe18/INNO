@@ -8,6 +8,8 @@ import {
   resolveReplacementFlowState,
 } from "./stages/replacement-flow.ts";
 import { runRetriever } from "./stages/retriever.ts";
+import { resolveEcommerceLinks } from "./stages/ecommerce-link-resolver.ts";
+import { resolvePublicStorefrontDomain } from "./stages/purchase-link.ts";
 import type { RetrievalCandidateDiagnostics } from "./stages/retriever.ts";
 import { runInternalRules } from "./stages/internal-rules.ts";
 import { runFactResolver } from "./stages/fact-resolver.ts";
@@ -168,6 +170,8 @@ export interface PipelineResult {
     stock_lookup_debug?: NonNullable<
       Awaited<ReturnType<typeof runFactResolver>>["stock_lookup_debug"]
     >;
+    // Phase 0 advisory ecommerce link/action strategy (debug-only).
+    ecommerce_link_action_resolution?: ReturnType<typeof resolveEcommerceLinks>;
   };
   preview_document_context?: {
     requested: true;
@@ -2487,6 +2491,20 @@ export async function runDraftV2Pipeline(
             ...(facts.stock_lookup_debug
               ? { stock_lookup_debug: facts.stock_lookup_debug }
               : {}),
+            // Phase 0 ADVISORY: typed ecommerce link/action strategy. Debug-only
+            // — the writer/action-decision do NOT consume this; it changes no
+            // behavior. Pure classification of already-resolved inputs.
+            ecommerce_link_action_resolution: resolveEcommerceLinks({
+              latestCustomerMessage: latestBody,
+              conversationHistory,
+              primaryIntent: plan.primary_intent,
+              facts: facts.facts,
+              productChunks: retrieved.chunks,
+              publicStorefrontDomain:
+                resolvePublicStorefrontDomain(shop as Record<string, unknown>)
+                  .domain,
+              requestedProduct: caseState.entities.products_mentioned[0] ?? null,
+            }),
           },
         }
         : {}),
