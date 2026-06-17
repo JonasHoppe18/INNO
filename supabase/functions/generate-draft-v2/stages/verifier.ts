@@ -5,6 +5,16 @@ import { ActionProposal } from "./action-decision.ts";
 import { mixedLanguageCheck } from "./language.ts";
 import { callOpenAIJson } from "./openai-json.ts";
 import { detectPrematureReplacementShipment } from "./replacement-flow.ts";
+import {
+  containsLinkPlaceholder,
+  detectOrdinaryProductLinkCheckoutViolation,
+} from "./purchase-link.ts";
+import {
+  detectFabricatedReturnAddress,
+  groundedReturnAddresses,
+  isReturnRefundIntent,
+  selectReturnsPolicyContents,
+} from "./returns-grounding.ts";
 
 export interface VerifierResult {
   grounded_claims_pct: number;
@@ -23,6 +33,8 @@ export interface VerifierInput {
   facts: { facts: ResolvedFact[] };
   retrievedChunks: RetrievedChunk[];
   customerMessage?: string;
+  conversationHistory?: Array<{ role?: string; text?: string | null }>;
+  primaryIntent?: string;
   language?: string;
 }
 
@@ -129,6 +141,8 @@ export async function runVerifier(
     facts,
     retrievedChunks,
     customerMessage,
+    conversationHistory,
+    primaryIntent,
     language,
   }: VerifierInput,
 ): Promise<VerifierResult> {
@@ -294,10 +308,39 @@ Machine-readable list of what went wrong. Use: answers_question_missing, wrong_l
     for (const issue of replacementIssues) {
       if (!issues.includes(issue)) issues.push(issue);
     }
+    // Deterministic placeholder guard: a draft must never ship a link
+    // placeholder like "[indsæt link her]" / "[link]" / "insert link here".
+    const placeholderViolation = containsLinkPlaceholder(draftText);
+    if (placeholderViolation && !issues.includes("link_placeholder")) {
+      issues.push("link_placeholder");
+    }
+    // Deterministic ordinary-product-link guard: an ordinary product-page link
+    // request (not an explicit checkout-link request, not the manual-checkout
+    // flow) must not use checkout/payment/cart-link wording.
+    const checkoutWordingViolation = detectOrdinaryProductLinkCheckoutViolation(
+      draftText,
+      { customerMessage, conversationHistory },
+    );
+    if (checkoutWordingViolation && !issues.includes("ordinary_product_link_checkout_wording")) {
+      issues.push("ordinary_product_link_checkout_wording");
+    }
+    // Deterministic returns-address guard: a return/refund draft must not
+    // contain a fabricated/placeholder return address (only the grounded
+    // Denmark/US addresses from the canonical Returns & Refunds doc are allowed).
+    const returnAddressViolation = detectFabricatedReturnAddress(draftText, {
+      isReturnRefundIntent: isReturnRefundIntent(primaryIntent, customerMessage),
+      groundedAddresses: groundedReturnAddresses(
+        selectReturnsPolicyContents(retrievedChunks),
+      ),
+    });
+    if (returnAddressViolation && !issues.includes("fabricated_return_address")) {
+      issues.push("fabricated_return_address");
+    }
     const stockViolation = stockIssues.length > 0;
     const replacementViolation = replacementIssues.length > 0;
     const finalConfidence = languageCheck.ok && !stockViolation &&
-        !replacementViolation
+        !replacementViolation && !placeholderViolation &&
+        !checkoutWordingViolation && !returnAddressViolation
       ? confidence
       : Math.min(confidence, 0.62);
 
@@ -324,10 +367,13 @@ Machine-readable list of what went wrong. Use: answers_question_missing, wrong_l
         ? ["return_window_misapplied"]
         : [],
       confidence: finalConfidence,
-      block_send: parsed.block_send === true || replacementViolation,
+      block_send: parsed.block_send === true || replacementViolation ||
+        placeholderViolation || checkoutWordingViolation ||
+        returnAddressViolation,
       retry_with_stronger_model: parsed.retry_with_stronger_model === true ||
         finalConfidence < 0.65 || !languageCheck.ok || needsRetryForCommitment ||
-        stockViolation || replacementViolation,
+        stockViolation || replacementViolation || placeholderViolation ||
+        checkoutWordingViolation || returnAddressViolation,
       issues,
     };
 

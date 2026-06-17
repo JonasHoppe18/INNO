@@ -10,6 +10,7 @@ import {
 import { runRetriever } from "./stages/retriever.ts";
 import type { RetrievalCandidateDiagnostics } from "./stages/retriever.ts";
 import { runInternalRules } from "./stages/internal-rules.ts";
+import { isReturnRefundIntent } from "./stages/returns-grounding.ts";
 import { runFactResolver } from "./stages/fact-resolver.ts";
 import {
   ActionProposal,
@@ -1885,6 +1886,46 @@ export async function runDraftV2Pipeline(
       }
     }
 
+    // Deterministic Returns & Refunds grounding: guarantee the canonical returns
+    // doc reaches the writer/verifier even when vector recall missed the tiny
+    // address chunk (T-050835). Read-only; appended only for return/refund
+    // intent and only when not already retrieved. No DB writes, no mutations.
+    if (isReturnRefundIntent(plan.primary_intent, latestBody)) {
+      const hasReturnsDoc = retrieved.chunks.some((c) =>
+        String(c.source_provider || "").toLowerCase() === "knowledge_document" &&
+        String(c.document_category || "").toLowerCase() === "returns"
+      );
+      if (!hasReturnsDoc) {
+        try {
+          const { data: returnsRows } = await supabase
+            .from("agent_knowledge")
+            .select("id, content, source_provider, metadata")
+            .eq("shop_id", shop_id)
+            .eq("source_provider", "knowledge_document")
+            .eq("metadata->>category", "returns")
+            .limit(20);
+          for (const r of (Array.isArray(returnsRows) ? returnsRows : [])) {
+            const row = r as Record<string, unknown>;
+            retrieved.chunks.push({
+              id: String(row.id ?? `returns-${retrieved.chunks.length}`),
+              content: String(row.content ?? ""),
+              kind: "knowledge",
+              source_label: "Returns & Refunds",
+              similarity: 0,
+              usable_as: "policy",
+              risk_flags: [],
+              applies_to_all_products: true,
+              chunk_issue_types: [],
+              source_provider: "knowledge_document",
+              document_category: "returns",
+            });
+          }
+        } catch (err) {
+          console.warn("[generate-draft-v2] returns-doc grounding fetch failed:", err);
+        }
+      }
+    }
+
     // 9. Skriv første draft — simple intents bruger gpt-4o-mini, resten gpt-5-mini
     currentStage = "writer";
     const firstPassModel = resolveWriterModel(
@@ -2089,6 +2130,8 @@ export async function runDraftV2Pipeline(
         facts,
         retrievedChunks: retrieved.chunks,
         customerMessage: latestCustomerMessage,
+        conversationHistory,
+        primaryIntent: plan.primary_intent,
         language: replyLanguage,
       });
     await updateDraftGenerationTrace(supabase, generationId, {
@@ -2163,6 +2206,8 @@ export async function runDraftV2Pipeline(
             facts,
             retrievedChunks: retrieved.chunks,
             customerMessage: latestCustomerMessage,
+            conversationHistory,
+            primaryIntent: plan.primary_intent,
             language: replyLanguage,
           });
 

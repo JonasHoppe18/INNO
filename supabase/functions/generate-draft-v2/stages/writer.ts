@@ -21,11 +21,22 @@ import {
   resolveReplacementFlowState,
 } from "./replacement-flow.ts";
 import {
+  buildReturnsGroundingDirective,
+  extractReturnAddresses,
+  isReturnRefundIntent,
+  resolveReturnCountryPreference,
+  selectReturnsPolicyContents,
+  stripAddressLinesFromExample,
+} from "./returns-grounding.ts";
+import {
+  buildManualCheckoutLinkDirective,
   buildPurchaseLinkDirective,
   buildStockUnknownLinkFallbackDirective,
   derivePurchaseProductCandidate,
+  detectManualCheckoutLinkFlow,
   firstTrustedProductLink,
   isAmbiguousProductRequest,
+  isCheckoutLinkRequest,
   isPurchaseLinkRequest,
   resolvePublicStorefrontDomain,
   selectGroundedProductLinkFromChunks,
@@ -1191,6 +1202,14 @@ Intet sikkert kundenavn til hilsenen. Start med en neutral hilsen på kundens sp
     PROCEDURE_STAGES.has(resolutionStage) ? "procedure" : "concise";
 
   // --- Few-shot (primary tone anchor — placed near the top so the model sees it first) ---
+  // Return/refund ticket: addresses, labels, refund timing and return policy
+  // must come ONLY from the canonical Returns & Refunds doc — never from
+  // example emails. Strip address lines from examples so they cannot leak an
+  // (old) address into the reply.
+  const isReturnRefund = isReturnRefundIntent(
+    plan.primary_intent,
+    latestCustomerMessage,
+  );
   const fewShotBlock = retrieved.past_ticket_examples.length > 0
     ? `# Examples of similar cases — use ONLY as a reference for STYLE, TONE and how to resolve the case
 These show the right kind of response and the correct tone/voice in similar situations. "Corrected" means the agent rewrote Sona's draft significantly — the strongest signal of what's expected. "Confirmed" means Sona's draft was nearly correct.
@@ -1219,9 +1238,12 @@ If you are unsure of the current customer's name, use a neutral greeting — nev
                 ex.conversation_context.slice(0, 400)
               }\n`
               : "";
+            const agentReply = isReturnRefund
+              ? stripAddressLinesFromExample(ex.agent_reply)
+              : ex.agent_reply;
             return `[Example ${i + 1}${label}]
 ${contextBlock}Customer: "${ex.customer_msg.slice(0, 350)}"
-Support replied: "${ex.agent_reply.slice(0, 500)}"`;
+Support replied: "${agentReply.slice(0, 500)}"`;
           },
         )
         .join("\n\n")
@@ -1242,7 +1264,7 @@ Support replied: "${ex.agent_reply.slice(0, 500)}"`;
     customerClaimsNotReceived: customerClaimsNotReceived(latestCustomerMessage),
     customerReportsTrackingDelivered: customerReportsTrackingDelivered(latestCustomerMessage),
   });
-  const stockAvailabilityBlock = buildStockAvailabilityDirective(facts.facts);
+  let stockAvailabilityBlock = buildStockAvailabilityDirective(facts.facts);
 
   // Purchase-link / where-to-buy intent + stock-link fallback. Both lean on a
   // grounded product-page URL: prefer the live-stock handle fact, else fall
@@ -1275,14 +1297,31 @@ Support replied: "${ex.agent_reply.slice(0, 500)}"`;
     facts.facts.find((f) => f.label === "Live stock availability")?.value ?? "",
     "state",
   );
-  const purchaseLinkBlock = buildPurchaseLinkDirective({
+  // T-050832: when the customer is accepting/requesting a checkout link AND
+  // support previously offered a manual checkout link or set aside office/manual
+  // stock, the ordinary online stock-status answer is the WRONG headline. This
+  // manual checkout-link flow becomes the single strategy and SUPPRESSES the
+  // stock-availability + purchase-link + stock-fallback blocks for this draft.
+  const manualCheckoutFlow = detectManualCheckoutLinkFlow({
+    latestCustomerMessage,
+    conversationHistory,
+  });
+  const manualCheckoutLinkBlock = buildManualCheckoutLinkDirective({
+    active: manualCheckoutFlow,
+    productHint: requestedProductForLink ?? null,
+  });
+  // Suppress the ordinary online stock-status answer in the manual flow.
+  if (manualCheckoutFlow) stockAvailabilityBlock = "";
+  const purchaseLinkBlock = manualCheckoutFlow ? "" : buildPurchaseLinkDirective({
     isPurchaseLinkRequest: isPurchaseLinkRequest(latestCustomerMessage),
+    isCheckoutLinkRequest: isCheckoutLinkRequest(latestCustomerMessage),
+    isStockQuestion: isStockAvailabilityQuestion(latestCustomerMessage),
     groundedProductUrl,
     ambiguousProduct: isAmbiguousProductRequest(latestCustomerMessage),
     threadMentionsCheckoutLink: checkoutLinkInThread,
     noPublicStorefrontDomain,
   });
-  const stockLinkFallbackBlock = buildStockUnknownLinkFallbackDirective({
+  const stockLinkFallbackBlock = manualCheckoutFlow ? "" : buildStockUnknownLinkFallbackDirective({
     isStockQuestion: isStockAvailabilityQuestion(latestCustomerMessage),
     stockConfirmed: Boolean(stockFactState) && stockFactState !== "unknown",
     groundedProductUrl,
@@ -1303,6 +1342,23 @@ Support replied: "${ex.agent_reply.slice(0, 500)}"`;
       orderNumberKnown: orderNumberKnownForFlow,
     }),
   );
+
+  // Deterministic Returns & Refunds grounding: ground the return address from
+  // the canonical returns doc + route by customer/order country. Prevents the
+  // writer from hallucinating a return address (T-050835).
+  const returnsPolicyContents = selectReturnsPolicyContents(retrieved.chunks);
+  const returnAddresses = extractReturnAddresses(returnsPolicyContents);
+  const returnCountryPreference = resolveReturnCountryPreference({
+    orderCountry: facts.order?.shipping_address?.country ?? null,
+    customerCountry: caseState.entities.customer_country ?? null,
+  });
+  const returnsGroundingBlock = buildReturnsGroundingDirective({
+    isReturnRefundIntent: isReturnRefund,
+    addresses: returnAddresses,
+    countryPreference: returnCountryPreference,
+    orderNumber: caseState.entities.order_numbers[0] ??
+      (factValue(facts, "Ordre fundet") || null),
+  });
 
   // --- Verificerede fakta (deterministiske — brug disse frem for viden) ---
   const factsBlock = facts.facts.length > 0
@@ -1757,9 +1813,11 @@ ${stageDirectives[resolutionStage] ?? stageDirectives.info_only}`;
     orderMatchBlock,
     refundStatusBlock,
     trackingBlock,
+    manualCheckoutLinkBlock,
     purchaseLinkBlock,
     stockLinkFallbackBlock,
     replacementFlowBlock,
+    returnsGroundingBlock,
     stockAvailabilityBlock,
     factsBlock,
     salutationBlock,

@@ -1,9 +1,15 @@
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import {
+  buildManualCheckoutLinkDirective,
   buildPurchaseLinkDirective,
+  containsLinkPlaceholder,
+  detectOrdinaryProductLinkCheckoutViolation,
+  isCheckoutLinkRequest,
   buildStockUnknownLinkFallbackDirective,
   buildTrustedProductUrl,
   derivePurchaseProductCandidate,
+  detectManualCheckoutLinkFlow,
+  threadMentionsManualCheckoutContext,
   isAmbiguousProductRequest,
   isPurchaseLinkRequest,
   type ProductSourceChunk,
@@ -149,41 +155,155 @@ Deno.test("threadMentionsCheckoutLink detects prior support offer", () => {
   assertEquals(threadMentionsCheckoutLink(["Tak for din besked"]), false);
 });
 
-Deno.test("directive (grounded): leads with link, no stock fallback, no fabricated checkout", () => {
+Deno.test("ordinary product-link (grounded): includes exact URL, NO checkout wording, no placeholder", () => {
   const d = buildPurchaseLinkDirective({
     isPurchaseLinkRequest: true,
-    groundedProductUrl: "https://acezone.dk/products/a-rise",
+    isCheckoutLinkRequest: false,
+    groundedProductUrl: "https://www.acezone.io/products/a-rise",
     ambiguousProduct: false,
     threadMentionsCheckoutLink: false,
   });
-  assert(d.includes("https://acezone.dk/products/a-rise"));
-  assert(/LEAD with this product page link/i.test(d));
-  assert(/Do NOT lead with .*stock/i.test(d));
-  assert(/Do NOT ask the customer to provide a product link/i.test(d));
+  assert(d.includes("https://www.acezone.io/products/a-rise"));
+  assert(/Include the EXACT URL above verbatim/i.test(d));
+  // Ordinary product-link path must forbid checkout wording + placeholders.
+  assert(/ORDINARY product-page link request, NOT a checkout-link request/i.test(d));
+  assert(/NEVER write a placeholder/i.test(d));
   assert(/Do NOT invent.*checkout/i.test(d));
+  // Even when threadMentionsCheckoutLink is incidentally true, an ordinary
+  // request must NOT get the "offer a checkout-link" line.
+  const d2 = buildPurchaseLinkDirective({
+    isPurchaseLinkRequest: true,
+    isCheckoutLinkRequest: false,
+    groundedProductUrl: "https://www.acezone.io/products/a-rise",
+    ambiguousProduct: false,
+    threadMentionsCheckoutLink: true,
+  });
+  assert(!/help send a direct checkout-link/i.test(d2));
 });
 
-Deno.test("directive (checkout context): may offer checkout help, never fabricates", () => {
+Deno.test("ordinary product-link (no stock question): directive forbids stock wording", () => {
   const d = buildPurchaseLinkDirective({
     isPurchaseLinkRequest: true,
-    groundedProductUrl: "https://acezone.dk/products/a-rise",
+    isCheckoutLinkRequest: false,
+    isStockQuestion: false,
+    groundedProductUrl: "https://www.acezone.io/products/a-rise",
+    ambiguousProduct: false,
+    threadMentionsCheckoutLink: false,
+  });
+  assert(d.includes("https://www.acezone.io/products/a-rise"));
+  assert(/Do NOT mention stock or availability at all/i.test(d));
+  assert(/på lager/i.test(d)); // the forbidden word is listed in the rule
+  assert(!/MAY state availability/i.test(d));
+});
+
+Deno.test("product-link WITH explicit stock question: availability allowed if grounded", () => {
+  const d = buildPurchaseLinkDirective({
+    isPurchaseLinkRequest: true,
+    isCheckoutLinkRequest: false,
+    isStockQuestion: true,
+    groundedProductUrl: "https://www.acezone.io/products/a-rise",
+    ambiguousProduct: false,
+    threadMentionsCheckoutLink: false,
+  });
+  assert(d.includes("https://www.acezone.io/products/a-rise"));
+  assert(/MAY state availability ONLY if a live stock fact/i.test(d));
+  assert(!/Do NOT mention stock or availability at all/i.test(d));
+});
+
+Deno.test("explicit checkout-link request: may offer checkout help, never fabricates", () => {
+  const d = buildPurchaseLinkDirective({
+    isPurchaseLinkRequest: true,
+    isCheckoutLinkRequest: true,
+    groundedProductUrl: "https://www.acezone.io/products/a-rise",
     ambiguousProduct: false,
     threadMentionsCheckoutLink: true,
   });
   assert(/checkout-link/i.test(d));
   assert(/MUST NOT invent/i.test(d));
+  // Checkout request must NOT carry the ordinary "no checkout wording" rule.
+  assert(!/ORDINARY product-page link request/i.test(d));
 });
 
-Deno.test("directive (no ground): support helps, no stock-unknown lead", () => {
+Deno.test("directive (no ground): safe fallback, no placeholder, no 'send the link' promise", () => {
   const d = buildPurchaseLinkDirective({
     isPurchaseLinkRequest: true,
     groundedProductUrl: null,
     ambiguousProduct: false,
     threadMentionsCheckoutLink: false,
   });
-  assert(/we can send the correct product link/i.test(d));
-  assert(/Do NOT claim that stock\/availability is unknown as the main answer/i.test(d));
+  assert(/cannot find a secure product link right now/i.test(d));
+  assert(/NEVER write a placeholder/i.test(d));
   assert(/NEVER show a myshopify\.com URL/i.test(d));
+});
+
+Deno.test("isCheckoutLinkRequest distinguishes checkout from ordinary product link", () => {
+  assert(isCheckoutLinkRequest("Kan du sende et checkout-link til A-Rise?"));
+  assert(isCheckoutLinkRequest("Kan du sende et betalingslink?"));
+  assert(isCheckoutLinkRequest("send a payment link"));
+  // Ordinary product-link requests are NOT checkout-link requests.
+  assertEquals(isCheckoutLinkRequest("Kan du sende link til A-Rise?"), false);
+  assertEquals(isCheckoutLinkRequest("Hvor kan jeg købe A-Rise?"), false);
+  assertEquals(isCheckoutLinkRequest("Har du et produktlink?"), false);
+});
+
+Deno.test("containsLinkPlaceholder catches forbidden placeholders", () => {
+  for (const s of ["[indsæt link her]", "[link]", "[produktlink]", "[product link]", "[checkout link]", "insert link here", "indsæt produktlink her"]) {
+    assert(containsLinkPlaceholder(`Her er linket: ${s}`), `should flag "${s}"`);
+  }
+  assertEquals(containsLinkPlaceholder("Du kan finde A-Rise her: https://www.acezone.io/products/a-rise"), false);
+});
+
+Deno.test("verifier guard: ordinary product-link draft using checkout wording is flagged", () => {
+  const draft = "Hej, A-Rise er på lager. Jeg kan sende dig et direkte checkout-link, så du kan gennemføre købet.";
+  assert(detectOrdinaryProductLinkCheckoutViolation(draft, {
+    customerMessage: "Kan du sende link til A-Rise?",
+    conversationHistory: [],
+  }));
+});
+
+Deno.test("verifier guard: ordinary product-link draft with the real URL is NOT flagged", () => {
+  const draft = "Hej, Du kan finde A-Rise her: https://www.acezone.io/products/a-rise";
+  assertEquals(
+    detectOrdinaryProductLinkCheckoutViolation(draft, {
+      customerMessage: "Kan du sende link til A-Rise?",
+      conversationHistory: [],
+    }),
+    false,
+  );
+});
+
+Deno.test("verifier guard: explicit checkout-link request may use checkout wording", () => {
+  const draft = "Hej, Jeg kan sende dig et checkout-link til A-Rise.";
+  assertEquals(
+    detectOrdinaryProductLinkCheckoutViolation(draft, {
+      customerMessage: "Kan du sende et checkout-link til A-Rise?",
+      conversationHistory: [],
+    }),
+    false,
+  );
+});
+
+Deno.test("verifier guard: manual checkout flow may use checkout wording", () => {
+  const draft = "Hej Daniel, Jeg sørger for at arrangere et checkout-link til dig.";
+  assertEquals(
+    detectOrdinaryProductLinkCheckoutViolation(draft, {
+      customerMessage: "Send gerne link til at jeg kan købe A-Rise",
+      conversationHistory: [
+        { role: "agent", text: "Vi har et par stykker liggende på kontoret… kan sende dig et check-out link" },
+      ],
+    }),
+    false,
+  );
+});
+
+Deno.test("verifier guard: non-product-link message is never flagged", () => {
+  assertEquals(
+    detectOrdinaryProductLinkCheckoutViolation("Vi sender dig et checkout-link.", {
+      customerMessage: "Hvor er min pakke?",
+      conversationHistory: [],
+    }),
+    false,
+  );
 });
 
 Deno.test("directive (ambiguous): one clarification, no guess", () => {
@@ -314,6 +434,137 @@ Deno.test("stock-unknown fallback empty only when confirmed or not a stock quest
     }),
     "",
   );
+});
+
+// --- Manual checkout-link flow (T-050832) -------------------------------
+
+Deno.test("threadMentionsManualCheckoutContext detects checkout-link & office-stock offers", () => {
+  assert(threadMentionsManualCheckoutContext(["Jeg kan sende dig et check-out link"]));
+  assert(threadMentionsManualCheckoutContext(["jeg sender dig et checkout link"]));
+  assert(threadMentionsManualCheckoutContext(["send dig et link til betaling"]));
+  assert(threadMentionsManualCheckoutContext(["Vi har et par stykker liggende her på kontoret"]));
+  assert(threadMentionsManualCheckoutContext(["We have a few units at the office"]));
+  assert(threadMentionsManualCheckoutContext(["I can send you a checkout link"]));
+  assertEquals(threadMentionsManualCheckoutContext(["Tak for din besked"]), false);
+});
+
+Deno.test("detectManualCheckoutLinkFlow: purchase-link + prior manual-stock offer", () => {
+  const history = [
+    { role: "agent", text: "Vi har et par stykker liggende her på kontoret, så hvis du ønsker, kan jeg sende dig et check-out link…" },
+  ];
+  assert(detectManualCheckoutLinkFlow({
+    latestCustomerMessage: "Hej Send gerne link til at jeg kan købe A-rise headset :)",
+    conversationHistory: history,
+  }));
+  // No prior manual/checkout context → not the manual flow.
+  assertEquals(
+    detectManualCheckoutLinkFlow({
+      latestCustomerMessage: "Hej Send gerne link til at jeg kan købe A-rise headset :)",
+      conversationHistory: [{ role: "agent", text: "Tak for din besked" }],
+    }),
+    false,
+  );
+  // Latest message is not a purchase-link request → not the manual flow.
+  assertEquals(
+    detectManualCheckoutLinkFlow({
+      latestCustomerMessage: "Har I A-Rise på lager?",
+      conversationHistory: history,
+    }),
+    false,
+  );
+});
+
+Deno.test("manual checkout-link directive overrides stock & forbids out-of-stock wording", () => {
+  const d = buildManualCheckoutLinkDirective({ active: true, productHint: "A-Rise" });
+  assert(/checkout/i.test(d));
+  assert(/A-Rise/.test(d));
+  // Forbidden online-stock / restock phrasings are explicitly listed.
+  for (const phrase of ["udsolgt", "ikke på lager", "ingen bekræftet dato", "tilbage på lager", "out of stock", "back in stock"]) {
+    assert(d.includes(phrase), `directive should forbid "${phrase}"`);
+  }
+  // Must not claim a link already exists.
+  assert(/Do NOT claim a checkout link has already been created/i.test(d));
+  assert(/Do NOT create or fabricate/i.test(d));
+  assertEquals(buildManualCheckoutLinkDirective({ active: false }), "");
+});
+
+// --- Public storefront domain support (shops.public_storefront_domain) ------
+
+// Helper mirroring the runtime path: resolve a shop's public domain, then build
+// the product page URL from the trusted domain + a trusted Shopify handle.
+function productUrlForShop(shop: Record<string, unknown>, handle: string): string | null {
+  const { domain } = resolvePublicStorefrontDomain(shop);
+  return buildTrustedProductUrl(domain, handle);
+}
+
+Deno.test("public domain configured → builds public product URL", () => {
+  assertEquals(
+    productUrlForShop({ public_storefront_domain: "www.acezone.io", shop_domain: "shop-acezone.myshopify.com" }, "a-rise"),
+    "https://www.acezone.io/products/a-rise",
+  );
+});
+
+Deno.test("only myshopify shop_domain → no public product URL", () => {
+  const shop = { shop_domain: "shop-acezone.myshopify.com" };
+  assertEquals(resolvePublicStorefrontDomain(shop), { domain: null, reason: "missing_public_storefront_domain" });
+  assertEquals(productUrlForShop(shop, "a-rise"), null);
+});
+
+Deno.test("public domain with protocol is normalized", () => {
+  assertEquals(
+    productUrlForShop({ public_storefront_domain: "https://www.acezone.io" }, "a-rise"),
+    "https://www.acezone.io/products/a-rise",
+  );
+});
+
+Deno.test("public domain with trailing slash is normalized", () => {
+  assertEquals(
+    productUrlForShop({ public_storefront_domain: "www.acezone.io/" }, "a-rise"),
+    "https://www.acezone.io/products/a-rise",
+  );
+});
+
+Deno.test("public_storefront_domain set to a myshopify host is rejected", () => {
+  const shop = { public_storefront_domain: "shop-acezone.myshopify.com" };
+  assertEquals(resolvePublicStorefrontDomain(shop), { domain: null, reason: "missing_public_storefront_domain" });
+  assertEquals(productUrlForShop(shop, "a-rise"), null);
+});
+
+Deno.test("synced metadata URL is myshopify but public domain set → rebuild on public domain", () => {
+  const result = selectGroundedProductLinkFromChunks({
+    requestedProduct: "A-Rise",
+    chunks: [{
+      source_provider: "shopify_product",
+      source_title: "A-Rise",
+      product_handle: "a-rise",
+      product_url: "https://shop-acezone.myshopify.com/products/a-rise",
+    }],
+    publicStorefrontDomain: resolvePublicStorefrontDomain({ public_storefront_domain: "www.acezone.io" }).domain,
+  });
+  assertEquals(result?.url, "https://www.acezone.io/products/a-rise");
+});
+
+Deno.test("customer-text URL is ignored — only trusted domain + handle builds a link", () => {
+  // No public domain configured: a URL pasted by the customer must NOT surface.
+  assertEquals(
+    selectGroundedProductLinkFromChunks({
+      requestedProduct: "A-Rise",
+      chunks: [{ source_provider: "shopify_product", source_title: "A-Rise", product_url: "https://evil.example/products/a-rise" }],
+      publicStorefrontDomain: resolvePublicStorefrontDomain({ shop_domain: "shop-acezone.myshopify.com" }).domain,
+    }),
+    null,
+  );
+});
+
+Deno.test("invalid / malicious public_storefront_domain values are rejected", () => {
+  for (const bad of ["javascript:alert(1)", "www.acezone.io/products/a-rise", "https://evil.com/path", "not a domain", ""]) {
+    assertEquals(
+      resolvePublicStorefrontDomain({ public_storefront_domain: bad }).domain,
+      null,
+      `should reject "${bad}"`,
+    );
+    assertEquals(productUrlForShop({ public_storefront_domain: bad }, "a-rise"), null);
+  }
 });
 
 Deno.test("TRUSTED_PRODUCT_LINK_LABEL is stable", () => {
