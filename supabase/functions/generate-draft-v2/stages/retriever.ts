@@ -10,6 +10,7 @@ import {
 } from "./retriever-coherence.ts";
 import { type MatchCandidate, matchSnippets } from "./snippet-matcher.ts";
 import { embedText } from "../../_shared/embed-text.ts";
+import { filterSoftDisabledRows } from "../../_shared/knowledge-flags.ts";
 
 // Snippet-matcher config. Thresholds are starting values calibrated against the
 // retrieval-eval (E); adjust only against measured aggregates, never single cases.
@@ -1216,7 +1217,11 @@ async function runQueryPair(
         console.warn("[retriever] BM25 search error:", error.message);
         return [];
       }
-      return (data ?? []) as Array<Record<string, unknown>>;
+      // BM25 bypasses match_agent_knowledge, so apply the soft-disable filter
+      // here too (archived / disabled_for_ai / active_for_ai=false).
+      return filterSoftDisabledRows(
+        (data ?? []) as Array<Record<string, unknown>>,
+      );
     })(),
   ]);
 

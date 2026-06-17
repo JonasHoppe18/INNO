@@ -25,6 +25,7 @@
 // to flow through the normal retriever path unchanged.
 
 import { SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { filterSoftDisabledRows } from "../../_shared/knowledge-flags.ts";
 
 export interface InternalRule {
   id: string;
@@ -71,7 +72,11 @@ export async function runInternalRules(input: {
       console.warn("[internal-rules] fetch error:", error.message);
       return { rules: [], block: "" };
     }
-    rows = (data ?? []) as Array<Record<string, unknown>>;
+    // Direct query bypasses match_agent_knowledge — honor soft-disable flags
+    // so archived/disabled internal rules stop applying.
+    rows = filterSoftDisabledRows(
+      (data ?? []) as Array<Record<string, unknown>>,
+    );
   } catch (err) {
     console.warn("[internal-rules] fetch failed:", err);
     return { rules: [], block: "" };
