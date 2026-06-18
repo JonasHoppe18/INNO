@@ -51,6 +51,7 @@ import {
 import { detectCustomerProvidedReturnTracking } from "./stages/return-tracking-attribution.ts";
 import { resolveCustomerName } from "./stages/customer-name-resolution.ts";
 import { checkUnsupportedCommitments } from "./stages/unsupported-commitment-check.ts";
+import { checkUnsupportedAssumptions } from "./stages/unsupported-assumption-check.ts";
 
 export interface EvalPayload {
   subject: string;
@@ -114,6 +115,12 @@ export interface PipelineResult {
   routing_hint: "auto" | "review" | "block";
   block_send_recommended?: boolean;
   unsupported_commitment_check?: {
+    checked: boolean;
+    compliant: boolean;
+    violations: Array<{ type: string; excerpt: string }>;
+    requires_review: boolean;
+  };
+  unsupported_assumption_check?: {
     checked: boolean;
     compliant: boolean;
     violations: Array<{ type: string; excerpt: string }>;
@@ -2272,6 +2279,29 @@ export async function runDraftV2Pipeline(
       );
     }
 
+    // 12b. Deterministic guard against an ungrounded "gift" / "original
+    // purchaser" assumption (warranty / third-party cases). Same additive
+    // posture: never rewrites, only escalates routing_hint to "review".
+    const conversationTextForAssumptions = [
+      latestCustomerMessage ?? "",
+      Array.isArray(conversationHistory)
+        ? conversationHistory
+          .map((m) => (m && typeof m === "object" ? String(m.text ?? "") : ""))
+          .join("\n")
+        : String(conversationHistory ?? ""),
+    ].join("\n");
+    const unsupportedAssumptionCheck = checkUnsupportedAssumptions({
+      draft_text: finalDraft ?? "",
+      conversation_text: conversationTextForAssumptions,
+    });
+    if (unsupportedAssumptionCheck.requires_review) {
+      finalRoutingHint = "review";
+      blockSendRecommended = true;
+      console.warn(
+        `[generate-draft-v2] ungrounded gift/original-purchaser assumption flagged ${unsupportedAssumptionCheck.violations.length} violation(s) — routing to review`,
+      );
+    }
+
     const policyChunkCount = retrieved.chunks.filter((c) =>
       c.usable_as === "policy"
     ).length;
@@ -2481,6 +2511,12 @@ export async function runDraftV2Pipeline(
         compliant: unsupportedCommitmentCheck.compliant,
         violations: unsupportedCommitmentCheck.violations,
         requires_review: unsupportedCommitmentCheck.requires_review,
+      },
+      unsupported_assumption_check: {
+        checked: true,
+        compliant: unsupportedAssumptionCheck.compliant,
+        violations: unsupportedAssumptionCheck.violations,
+        requires_review: unsupportedAssumptionCheck.requires_review,
       },
       is_test_mode: isTestMode,
       confidence: finalConfidence,
