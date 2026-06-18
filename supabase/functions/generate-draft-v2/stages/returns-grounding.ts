@@ -23,7 +23,15 @@ export interface ReturnsChunkLike {
   metadata?: Record<string, unknown> | null;
 }
 
-const RETURN_INTENTS = new Set(["return", "refund", "exchange", "complaint"]);
+// Only genuine return/refund intents auto-ground the canonical Returns &
+// Refunds doc. "complaint" and "exchange" were previously included but are too
+// broad: the classifier labels product-troubleshooting tickets as "complaint"
+// (e.g. "my mic isn't working") and purchase/replacement questions as
+// "exchange" (e.g. "can I buy replacement ear pads"), which injected the returns
+// doc into unrelated queries as retrieval noise. Real return/refund context
+// inside such tickets is still caught by RETURN_KEYWORDS_RE below
+// (return/refund/retur/refusion/send back/reklam/withdraw/fortryd…).
+const RETURN_INTENTS = new Set(["return", "refund"]);
 const RETURN_KEYWORDS_RE =
   /\b(return\w*|refund\w*|retur\w*|refusion\w*|money\s+back|pengene\s+tilbage|send\s+(?:it|the\s+headset)\s+back|reklam\w*|withdraw\w*|fortryd\w*)\b/i;
 

@@ -29,6 +29,31 @@ Deno.test("isReturnRefundIntent detects intent + keywords", () => {
   assertEquals(isReturnRefundIntent("product_question", "where can I buy A-Rise"), false);
 });
 
+Deno.test("isReturnRefundIntent: 'complaint' intent alone does NOT trigger (mic troubleshooting)", () => {
+  // The classifier labels product-troubleshooting as "complaint"; without any
+  // return/refund wording this must NOT ground the canonical returns doc.
+  assertEquals(
+    isReturnRefundIntent("complaint", "My A-Spire Wireless microphone is not working."),
+    false,
+  );
+});
+
+Deno.test("isReturnRefundIntent: 'exchange' intent alone does NOT trigger (ear-pads purchase)", () => {
+  // The classifier labels purchase/replacement questions as "exchange"; without
+  // return/refund wording this must NOT ground the canonical returns doc.
+  assertEquals(
+    isReturnRefundIntent("exchange", "Can I buy replacement ear pads for A-Spire?"),
+    false,
+  );
+});
+
+Deno.test("isReturnRefundIntent: complaint/exchange WITH return wording still triggers", () => {
+  // Genuine return context inside a complaint/exchange ticket is still caught by
+  // the keyword regex, so grounding is preserved where it matters.
+  assert(isReturnRefundIntent("complaint", "It's broken, I want to return it for a refund."));
+  assert(isReturnRefundIntent("exchange", "jeg vil gerne returnere og have pengene tilbage"));
+});
+
 Deno.test("selectReturnsPolicyContents picks only the returns knowledge_document", () => {
   const got = selectReturnsPolicyContents(returnsChunks);
   assertEquals(got.length, 3);
