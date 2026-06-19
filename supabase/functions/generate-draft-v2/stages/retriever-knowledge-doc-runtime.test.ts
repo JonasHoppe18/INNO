@@ -152,12 +152,12 @@ Deno.test("ambiguous Product Support product context fails closed", () => {
   assertEquals(result, { allowed: false, reason: "ambiguous_product_context" });
 });
 
-Deno.test("missing Product Support product context fails closed", () => {
+Deno.test("missing Product Support product context fails closed for non-software queries", () => {
   const result = decision({
     category: "product_support",
     content:
-      "# A-Blaze — Product Support\n\n## Bluetooth\nUse this for A-Blaze Bluetooth pairing.",
-    customerMessage: "My headset has app problems.",
+      "# A-Blaze — Product Support\n\n## Physical damage\nUse this for A-Blaze physical damage.",
+    customerMessage: "My headset is broken.",
   });
   assertEquals(result, { allowed: false, reason: "missing_product_context" });
 });
@@ -531,4 +531,108 @@ Deno.test("Ear pads Knowledge Doc is boosted only for ear-pad context", () => {
       reason: "ear_pads_document_without_context",
     });
   }
+});
+
+// ---- Cross-product software/app/Bluetooth context ----
+
+Deno.test("app question without product allows app-related document sections", () => {
+  const result = decision({
+    category: "product_support",
+    content:
+      "# A-Rise — Product Support\n\n## App and Bluetooth setup\nUse this for AceZone app pairing with A-Rise.",
+    customerMessage: "Can I use the AceZone app with my headset?",
+    metadata: { section_heading: "App and Bluetooth setup" },
+  });
+  assertEquals(result, { allowed: true, reason: "cross_product_software_context" });
+});
+
+Deno.test("firmware question without product allows firmware-related document sections", () => {
+  const result = decision({
+    category: "product_support",
+    content:
+      "# A-Spire Wireless — Product Support\n\n## Firmware update\nUpdate the headset and dongle firmware.",
+    customerMessage: "How do I update the firmware on my headset?",
+    metadata: { section_heading: "Firmware update" },
+  });
+  assertEquals(result, { allowed: true, reason: "cross_product_software_context" });
+});
+
+Deno.test("bluetooth question without product allows bluetooth-related document sections", () => {
+  const result = decision({
+    category: "product_support",
+    content:
+      "# A-Blaze — Product Support\n\n## Bluetooth pairing\nUse this for A-Blaze Bluetooth pairing.",
+    customerMessage: "My headset won't connect via Bluetooth.",
+    metadata: { section_heading: "Bluetooth pairing" },
+  });
+  assertEquals(result, { allowed: true, reason: "cross_product_software_context" });
+});
+
+Deno.test("software context does NOT allow sections without software/app signals", () => {
+  const result = decision({
+    category: "product_support",
+    content:
+      "# A-Rise — Product Support\n\n## Ear pads for A-Rise\nUse this for A-Rise ear pad compatibility.",
+    customerMessage: "Can I use the AceZone app with my headset?",
+    metadata: { section_heading: "Ear pads for A-Rise" },
+  });
+  assertEquals(result, { allowed: false, reason: "missing_product_context" });
+});
+
+Deno.test("non-software question without product still fails closed", () => {
+  const result = decision({
+    category: "product_support",
+    content:
+      "# A-Rise — Product Support\n\n## App and Bluetooth setup\nUse this for AceZone app pairing.",
+    customerMessage: "Where can I buy a replacement cable?",
+    metadata: { section_heading: "App and Bluetooth setup" },
+  });
+  assertEquals(result, { allowed: false, reason: "missing_product_context" });
+});
+
+Deno.test("IEM + Sound Card matches with 'and' connector in customer message", () => {
+  const result = decision({
+    category: "product_support",
+    content:
+      "# IEM + Sound Card — Product Support\n\n## Release date or availability\nExplain that AceZone cannot provide a release estimate.",
+    customerMessage: "When will the IEM and sound card be released?",
+    metadata: { product_title: "IEM + Sound Card" },
+  });
+  assertEquals(result, { allowed: true, reason: "same_product_context" });
+});
+
+Deno.test("cross-product software context Knowledge Doc receives post-gate retrieval boost", () => {
+  const access = decision({
+    category: "product_support",
+    content:
+      "# A-Rise — Product Support\n\n## App and Bluetooth setup\nUse this for AceZone app pairing with A-Rise.",
+    customerMessage: "Can I use the AceZone app with my headset?",
+    metadata: { section_heading: "App and Bluetooth setup" },
+  });
+  assertEquals(access, { allowed: true, reason: "cross_product_software_context" });
+
+  const doc = chunk({
+    id: "doc-app-rise",
+    content:
+      "# A-Rise — Product Support\n\n## App and Bluetooth setup\nUse this for AceZone app pairing with A-Rise.",
+    source_label: "knowledge_document",
+    source_provider: "knowledge_document",
+    document_category: "product_support",
+    knowledge_document_access_reason: access.reason,
+    products: ["a-rise"],
+    similarity: 0.04,
+  });
+
+  const score = finalScore(doc, {
+    mentionedProducts: [],
+    issueTerms: ["app", "connectivity"],
+  });
+  const breakdown = buildScoreBreakdown({
+    chunk: doc,
+    mentionedProducts: [],
+    otherProducts: [],
+    issueTerms: ["app", "connectivity"],
+  });
+  assertEquals(breakdown.product_support_doc_boost > 0, true);
+  assertEquals(breakdown.cross_product_penalty, 0);
 });

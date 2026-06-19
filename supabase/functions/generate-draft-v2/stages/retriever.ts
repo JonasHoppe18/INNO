@@ -232,6 +232,10 @@ function shortDiagnosticText(value: unknown): string | null {
   return text || null;
 }
 
+function normalizeConnectors(text: string): string {
+  return text.replace(/\s*[+&]\s*/g, " and ");
+}
+
 function buildShopProductTerms(shop?: Record<string, unknown>): string[] {
   const overview = String(shop?.product_overview || "");
   const terms = overview
@@ -241,7 +245,10 @@ function buildShopProductTerms(shop?: Record<string, unknown>): string[] {
   return uniqueStrings(
     terms.flatMap((term) => {
       const lower = term.toLowerCase();
-      return lower === "ear pads" ? [lower, "earpads"] : [lower];
+      const normalized = normalizeConnectors(lower);
+      const variants = lower === normalized ? [lower] : [lower, normalized];
+      if (lower === "ear pads") variants.push("earpads");
+      return variants;
     }),
   );
 }
@@ -271,9 +278,11 @@ export function extractMentionedProductTerms(
   shop?: Record<string, unknown>,
 ): string[] {
   const lower = stripHtml(text).toLowerCase();
+  const lowerNormalized = normalizeConnectors(lower);
   const shopTerms = buildShopProductTerms(shop);
   const matched = shopTerms.filter((term) => {
     if (lower.includes(term)) return true;
+    if (lowerNormalized.includes(term)) return true;
     if (term === "ear pads" && lower.includes("earpads")) return true;
     return false;
   });
@@ -299,6 +308,17 @@ function isEarPadContext(customerMessage?: string): boolean {
   return extractIssueTerms(lower).includes("ear_pads") ||
     /\b(ear\s*pads?|earpads?|replacement\s+pads?|pads?|cushions?|ørepuder?)\b/i
       .test(lower);
+}
+
+const SOFTWARE_CONNECTIVITY_RE =
+  /\b(app|software|firmware|bluetooth|pairing|pair|paired|forbind|forbinde|tilslut|connect|connection|disconnect|opdater)\b/i;
+
+function isSoftwareConnectivityContext(customerMessage?: string): boolean {
+  return SOFTWARE_CONNECTIVITY_RE.test(stripHtml(customerMessage || ""));
+}
+
+function hasSoftwareConnectivitySignal(text: string): boolean {
+  return SOFTWARE_CONNECTIVITY_RE.test(text);
 }
 
 function extractKnowledgeDocumentProductTerms(input: {
@@ -415,6 +435,26 @@ export function evaluateRuntimeKnowledgeDocumentAccess(input: {
     return earPadContext
       ? { allowed: true, reason: "ear_pads_context" }
       : { allowed: false, reason: "ear_pads_document_without_context" };
+  }
+
+  // Cross-product app/software/Bluetooth/firmware exception: these topics are
+  // legitimately shared across multiple headset models (e.g. the AceZone app
+  // works with A-Rise, A-Blaze, and A-Spire Wireless). When no specific
+  // product is mentioned, allow document chunks whose section heading matches
+  // the detected software/connectivity issue terms.
+  if (scopedMentionedProducts.length === 0) {
+    const softwareIssue = isSoftwareConnectivityContext(input.customerMessage);
+    if (softwareIssue) {
+      const sectionHeading = String(metadata.section_heading || "").toLowerCase();
+      const titleText = extractKnowledgeDocumentTitleText({
+        content: input.content,
+        metadata,
+      }).toLowerCase();
+      const combinedText = `${sectionHeading} ${titleText}`;
+      if (hasSoftwareConnectivitySignal(combinedText)) {
+        return { allowed: true, reason: "cross_product_software_context" };
+      }
+    }
   }
 
   if (scopedMentionedProducts.length !== 1) {
@@ -748,6 +788,20 @@ function classifyKnowledgeSource(input: {
   ) {
     riskFlags.push("retailer_specific");
   }
+  if (provider === "shopify_product") {
+    const tags = String(metadata.tags ?? "").toLowerCase();
+    const price = String(metadata.price ?? "").trim();
+    const placeholderPrice = price !== "" &&
+      (Number(price) >= 99999 || price === "0.00" || price === "0");
+    if (
+      /\bwaitlist\b/.test(tags) ||
+      /\bhide-price\b/.test(tags) ||
+      /\bdraft\b/.test(String(metadata.status ?? "").toLowerCase()) ||
+      placeholderPrice
+    ) {
+      riskFlags.push("shopify_product_not_live");
+    }
+  }
 
   let usable_as: RetrievedChunk["usable_as"] = "background";
   if (
@@ -939,6 +993,8 @@ export function buildScoreBreakdown(input: {
     chunk.document_category === PRODUCT_SUPPORT_DOCUMENT_CATEGORY;
   const isEarPadsAccess =
     chunk.knowledge_document_access_reason === "ear_pads_context";
+  const isCrossProductSoftwareAccess =
+    chunk.knowledge_document_access_reason === "cross_product_software_context";
   const productSupportScopeMatch = metadataMatchCount > 0 ||
     (isEarPadsAccess && chunkProductSet.has("ear pads"));
   const directProductBoost = metadataMatchCount * 0.10;
@@ -948,6 +1004,7 @@ export function buildScoreBreakdown(input: {
   // Penalize a product-specific chunk whose metadata names a DIFFERENT product
   // than the single product the customer asked about.
   const crossProductPenalty = !isEarPadsAccess &&
+      !isCrossProductSoftwareAccess &&
       !chunk.applies_to_all_products &&
       mentionedProducts.length === 1 &&
       chunkProductSet.size > 0 &&
@@ -962,8 +1019,9 @@ export function buildScoreBreakdown(input: {
   const productSupportDocBoost =
     isProductSupportKnowledgeDoc &&
       (chunk.knowledge_document_access_reason === "same_product_context" ||
-        isEarPadsAccess) &&
-      productSupportScopeMatch &&
+        isEarPadsAccess ||
+        isCrossProductSoftwareAccess) &&
+      (productSupportScopeMatch || isCrossProductSoftwareAccess) &&
       hasLexicalIssueSignal(text, issueTerms)
       ? 0.16
       : 0;
