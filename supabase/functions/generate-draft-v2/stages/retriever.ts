@@ -300,6 +300,7 @@ function isReturnRefundContext(
 ): boolean {
   const issueTerms = extractIssueTerms(customerMessage || "");
   return RETURN_INTENTS.has(plan.primary_intent) ||
+    plan.resolution_stage === "initiate_warranty_repair" ||
     issueTerms.some((term) => RETURN_ISSUE_TERMS.has(term));
 }
 

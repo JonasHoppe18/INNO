@@ -18,8 +18,8 @@ const SHOP = {
   ].join("\n"),
 };
 
-function plan(primary_intent: string) {
-  return { primary_intent, sub_queries: [] } as any;
+function plan(primary_intent: string, resolution_stage?: string) {
+  return { primary_intent, resolution_stage: resolution_stage ?? "info_only", sub_queries: [] } as any;
 }
 
 function decision(input: {
@@ -27,6 +27,7 @@ function decision(input: {
   category: string;
   customerMessage: string;
   intent?: string;
+  resolution_stage?: string;
   environment?: string;
   metadata?: Record<string, unknown>;
 }): RuntimeKnowledgeDocumentDecision {
@@ -39,7 +40,7 @@ function decision(input: {
       section_heading: "Runtime section",
       ...input.metadata,
     },
-    plan: plan(input.intent ?? "complaint"),
+    plan: plan(input.intent ?? "complaint", input.resolution_stage),
     customerMessage: input.customerMessage,
     shop: SHOP,
   });
@@ -635,4 +636,56 @@ Deno.test("cross-product software context Knowledge Doc receives post-gate retri
   });
   assertEquals(breakdown.product_support_doc_boost > 0, true);
   assertEquals(breakdown.cross_product_penalty, 0);
+});
+
+// ---- initiate_warranty_repair opens returns gate for complaint intent ----
+
+Deno.test("complaint + initiate_warranty_repair allows Returns & Refunds chunks", () => {
+  const result = decision({
+    category: "returns",
+    content:
+      "# Returns & Refunds\n\n## Return for swap\nIf troubleshooting is exhausted, ask the customer for their order number.",
+    customerMessage:
+      "I tried all troubleshooting steps and the headset still does not work.",
+    intent: "complaint",
+    resolution_stage: "initiate_warranty_repair",
+  });
+  assertEquals(result, { allowed: true, reason: "returns_context" });
+});
+
+Deno.test("generic complaint without initiate_warranty_repair still blocks Returns & Refunds chunks", () => {
+  const result = decision({
+    category: "returns",
+    content:
+      "# Returns & Refunds\n\n## Return window\nCustomers can return within the documented window.",
+    customerMessage: "My A-Blaze microphone is not working.",
+    intent: "complaint",
+    resolution_stage: "troubleshoot_first",
+  });
+  assertEquals(result, { allowed: false, reason: "not_returns_context" });
+});
+
+Deno.test("return/refund/exchange intents still allow Returns & Refunds chunks regardless of resolution_stage", () => {
+  for (const intent of ["return", "refund", "exchange"]) {
+    const result = decision({
+      category: "returns",
+      content:
+        "# Returns & Refunds\n\n## Refund processing\nRefunds are processed after the return is received.",
+      customerMessage: "I want to return my headset.",
+      intent,
+    });
+    assertEquals(result, { allowed: true, reason: "returns_context" });
+  }
+});
+
+Deno.test("initiate_warranty_repair does not affect product_support gate", () => {
+  const result = decision({
+    category: "product_support",
+    content:
+      "# A-Blaze — Product Support\n\n## Physical damage\nUse this for A-Blaze physical damage.",
+    customerMessage: "My headset is broken.",
+    intent: "complaint",
+    resolution_stage: "initiate_warranty_repair",
+  });
+  assertEquals(result, { allowed: false, reason: "missing_product_context" });
 });
