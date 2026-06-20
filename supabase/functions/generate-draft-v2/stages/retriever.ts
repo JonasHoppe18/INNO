@@ -322,6 +322,13 @@ function hasSoftwareConnectivitySignal(text: string): boolean {
   return SOFTWARE_CONNECTIVITY_RE.test(text);
 }
 
+const TECHNICAL_SUPPORT_CONTEXT_RE =
+  /\b(microphone|mic|audio|sound|discord|windows|48\s*k(?:hz)?|48khz|48000\s*hz|48000hz|16000\s*hz|16000hz|robotic|distorted|muffled|choppy|low\s+volume|sound\s+enhancements?|audio\s+enhancements?|spatial\s+sound|voice\s+clarity|krisp|noise\s+suppression)\b/i;
+
+function isTechnicalSupportContext(customerMessage?: string): boolean {
+  return TECHNICAL_SUPPORT_CONTEXT_RE.test(stripHtml(customerMessage || ""));
+}
+
 // Accessory compatibility (cable / adapter / charger) is shared across every
 // AceZone headset, so a bare "any USB-C cable?" / "any USB-C to USB-A adapter?"
 // question carries no product name. Detector matches the customer message;
@@ -421,6 +428,12 @@ export function evaluateRuntimeKnowledgeDocumentAccess(input: {
     return isReturnRefundContext(input.plan, input.customerMessage)
       ? { allowed: true, reason: "returns_context" }
       : { allowed: false, reason: "not_returns_context" };
+  }
+
+  if (category === TECHNICAL_SUPPORT_DOCUMENT_CATEGORY) {
+    return isTechnicalSupportContext(input.customerMessage)
+      ? { allowed: true, reason: "technical_support_context" }
+      : { allowed: false, reason: "not_technical_support_context" };
   }
 
   if (category !== PRODUCT_SUPPORT_DOCUMENT_CATEGORY) {
@@ -604,6 +617,7 @@ const KNOWLEDGE_DOCUMENT_PROVIDER = "knowledge_document";
 const KNOWLEDGE_DOCUMENT_ENVIRONMENTS = new Set(["preview", "production"]);
 const PRODUCT_SUPPORT_DOCUMENT_CATEGORY = "product_support";
 const RETURNS_DOCUMENT_CATEGORY = "returns";
+const TECHNICAL_SUPPORT_DOCUMENT_CATEGORY = "technical_support";
 
 // Intents whose messages warrant a technical/troubleshooting probe.
 const TECHNICAL_INTENTS = new Set([
