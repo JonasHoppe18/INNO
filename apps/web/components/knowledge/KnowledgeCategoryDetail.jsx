@@ -142,14 +142,42 @@ function ProductsSection({ shopId, categorySlug }) {
   const [search, setSearch] = useState("");
   const [onlyMissing, setOnlyMissing] = useState(false);
   const [generalCount, setGeneralCount] = useState(0);
+  const [syncing, setSyncing] = useState(false);
 
-  useEffect(() => {
-    fetch("/api/knowledge/products", { credentials: "include" })
+  const loadProducts = useCallback(() => {
+    return fetch("/api/knowledge/products", { credentials: "include" })
       .then((r) => r.json())
       .then((d) => setProducts(d?.products ?? []))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    loadProducts();
+  }, [loadProducts]);
+
+  const handleSyncProducts = useCallback(async () => {
+    setSyncing(true);
+    try {
+      const res = await fetch("/api/knowledge/sync-products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(shopId ? { shop_id: shopId } : {}),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(typeof payload?.error === "string" ? payload.error : "Sync failed.");
+      }
+      toast.success(
+        `Synced ${Number(payload?.synced ?? 0)} products (${Number(payload?.indexed ?? 0)} indexed).`,
+      );
+      await loadProducts();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Sync failed.");
+    } finally {
+      setSyncing(false);
+    }
+  }, [shopId, loadProducts]);
 
   useEffect(() => {
     fetch(`/api/knowledge/snippets?category=${encodeURIComponent(categorySlug)}`, { credentials: "include" })
@@ -191,11 +219,28 @@ function ProductsSection({ shopId, categorySlug }) {
     );
   }
 
+  const syncButton = (
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      onClick={handleSyncProducts}
+      disabled={syncing}
+      className="gap-1.5"
+    >
+      <RotateCcw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
+      {syncing ? "Syncing..." : "Sync products"}
+    </Button>
+  );
+
   if (!products.length) {
     return (
-      <p className="text-sm text-muted-foreground">
-        No products found. Sync your Shopify products under settings.
-      </p>
+      <div className="flex flex-col items-start gap-3">
+        <p className="text-sm text-muted-foreground">
+          No products found yet. Sync your Shopify products to get started.
+        </p>
+        {syncButton}
+      </div>
     );
   }
 
@@ -232,19 +277,22 @@ function ProductsSection({ shopId, categorySlug }) {
 
       <div className="flex items-center justify-between gap-3 pt-1">
         <h3 className="text-[13px] font-medium text-gray-700 dark:text-gray-300">Product-specific knowledge</h3>
-        {missingCount > 0 && (
-          <button
-            type="button"
-            onClick={() => setOnlyMissing((v) => !v)}
-            className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
-              onlyMissing
-                ? "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-300"
-                : "border-gray-200 bg-white text-gray-500 hover:border-gray-300 dark:border-gray-700 dark:bg-transparent dark:text-gray-400 dark:hover:border-gray-600"
-            }`}
-          >
-            {onlyMissing ? `Showing ${missingCount} without snippets` : `Show only without snippets (${missingCount})`}
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {missingCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setOnlyMissing((v) => !v)}
+              className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
+                onlyMissing
+                  ? "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-300"
+                  : "border-gray-200 bg-white text-gray-500 hover:border-gray-300 dark:border-gray-700 dark:bg-transparent dark:text-gray-400 dark:hover:border-gray-600"
+              }`}
+            >
+              {onlyMissing ? `Showing ${missingCount} without snippets` : `Show only without snippets (${missingCount})`}
+            </button>
+          )}
+          {syncButton}
+        </div>
       </div>
 
       {products.length > 8 && (
