@@ -33,7 +33,7 @@ Deno.test("preview chunks are inactive and preserve environment", () => {
   assertEquals(rows[0].metadata.active_for_ai, false);
 });
 
-Deno.test("production chunks stay inactive until runtime activation is wired", () => {
+Deno.test("production chunks are active on publish and carry no pending flag", () => {
   const rows = buildKnowledgeDocumentChunks({
     shopId: "shop-1",
     documentId: "doc-1",
@@ -45,8 +45,8 @@ Deno.test("production chunks stay inactive until runtime activation is wired", (
   });
 
   assertEquals(rows[0].metadata.environment, "production");
-  assertEquals(rows[0].metadata.active_for_ai, false);
-  assertEquals(rows[0].metadata.runtime_activation_pending, true);
+  assertEquals(rows[0].metadata.active_for_ai, true);
+  assertEquals("runtime_activation_pending" in rows[0].metadata, false);
 });
 
 Deno.test("document id and section order are preserved", () => {

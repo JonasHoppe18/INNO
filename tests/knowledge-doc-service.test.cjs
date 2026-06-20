@@ -290,8 +290,8 @@ test("publish copies draft to published and regenerates only production chunks",
   assert.equal(client.db.agent_knowledge.filter((r) => r.metadata?.environment === "preview").length, 1);
   assert.ok(client.db.agent_knowledge.some((r) =>
     r.metadata?.environment === "production" &&
-    r.metadata?.active_for_ai === false &&
-    r.metadata?.runtime_activation_pending === true
+    r.metadata?.active_for_ai === true &&
+    r.metadata?.runtime_activation_pending === undefined
   ));
   assert.equal(client.db.agent_knowledge.filter((r) => r.source_provider === "manual_text").length, 1);
   assert.equal(client.db.agent_knowledge.filter((r) => r.source_provider === "saved_reply").length, 1);
