@@ -10,6 +10,12 @@ import {
 import { runRetriever } from "./stages/retriever.ts";
 import type { RetrievalCandidateDiagnostics } from "./stages/retriever.ts";
 import { runInternalRules } from "./stages/internal-rules.ts";
+import {
+  buildCompatibilityDirective,
+  detectCompatibilityQuery,
+  isCompatibilityQuestion,
+  resolveCompatibility,
+} from "./stages/product-compatibility.ts";
 import { isReturnRefundIntent } from "./stages/returns-grounding.ts";
 import { runFactResolver } from "./stages/fact-resolver.ts";
 import {
@@ -1342,9 +1348,41 @@ export async function runDraftV2Pipeline(
         ),
       };
     }
+    // Stage 4B-3-1: structured product-compatibility facts. Only for
+    // compatibility-style questions, and only when CONFIRMED rows exist — so
+    // unrelated drafts and the pre-seed state are unchanged (no fighting the
+    // existing manual_text/retrieval path). Brand-wide rows (product_id null)
+    // apply to all products; product-specific override is supported by the
+    // resolver/table for when product detection is wired in a later slice.
+    // Best-effort: a missing table (pre-migration) yields no rows → no block.
+    let compatibilityBlock = "";
+    if (isCompatibilityQuestion(latestBody)) {
+      const { targets } = detectCompatibilityQuery(latestBody);
+      if (targets.length > 0) {
+        const { data: compatRows, error: compatErr } = await supabase
+          .from("shop_product_compatibility")
+          .select(
+            "product_id, target, connection, compatible, reason, workaround, confidence",
+          )
+          .eq("shop_ref_id", shop_id)
+          .in("target", targets);
+        const rows = !compatErr && Array.isArray(compatRows)
+          ? (compatRows as Parameters<typeof resolveCompatibility>[0])
+          : [];
+        const resolved = targets.map((target) =>
+          resolveCompatibility(rows, { target })
+        );
+        if (resolved.some((r) => r.known)) {
+          compatibilityBlock = buildCompatibilityDirective(resolved, {
+            wasAsked: true,
+          });
+        }
+      }
+    }
     const internalRulesBlock = [
       internalRules.block || "",
       returnTrackingAttribution?.blockText || "",
+      compatibilityBlock || "",
     ].filter(Boolean).join("\n\n") || undefined;
     const latestSenderEmail = String(
       (latestMessage as Record<string, unknown>).from_email || "",
