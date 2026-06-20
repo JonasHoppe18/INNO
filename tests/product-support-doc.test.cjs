@@ -361,7 +361,7 @@ test("save leaves legacy snippets and saved replies untouched (no archive/delete
   assert.equal(client.db.saved_replies.length, 1);
 });
 
-test("product-support documents cannot be published (no runtime activation)", async () => {
+test("product-support documents can be published into active, product-scoped production chunks", async () => {
   const client = makeClient({
     knowledge_documents: [
       {
@@ -378,17 +378,28 @@ test("product-support documents cannot be published (no runtime activation)", as
       },
     ],
   });
-  await assert.rejects(
-    publishKnowledgeDocument({
-      serviceClient: client,
-      embedder,
-      shopId: "shop-1",
-      category: PRODUCT_SUPPORT_CATEGORY,
-      documentType: "product_support:product-a",
-    }),
-    /preview-only/,
+
+  const result = await publishKnowledgeDocument({
+    serviceClient: client,
+    embedder,
+    shopId: "shop-1",
+    category: PRODUCT_SUPPORT_CATEGORY,
+    documentType: "product_support:product-a",
+  });
+
+  assert.equal(result.document.published_markdown, docMarkdown);
+  assert.equal(result.document.has_unpublished_changes, false);
+  assert.ok(result.document.published_at);
+
+  const productionChunks = client.db.agent_knowledge.filter(
+    (r) => r.source_provider === "knowledge_document" && r.metadata?.environment === "production",
   );
-  assert.equal(client.db.agent_knowledge.length, 0);
+  // Three draft sections => three production chunks, all live and product-scoped.
+  assert.equal(productionChunks.length, 3);
+  assert.ok(productionChunks.every((r) => r.metadata?.active_for_ai === true));
+  assert.ok(productionChunks.every((r) => r.metadata?.runtime_activation_pending === undefined));
+  assert.ok(productionChunks.every((r) => r.metadata?.document_type === "product_support"));
+  assert.ok(productionChunks.every((r) => r.metadata?.product_scope === "product-a"));
 });
 
 test("ticket preview payload and simulation href pass the document id", () => {

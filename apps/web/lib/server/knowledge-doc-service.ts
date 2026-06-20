@@ -255,15 +255,20 @@ export async function publishKnowledgeDocument(options: {
   category: string;
   documentType: string;
 }): Promise<KnowledgeDocumentResponse & { production_chunks: number }> {
-  if (String(options.category || "").trim() === PRODUCT_SUPPORT_CATEGORY) {
-    throw new Error("Product-support documents are preview-only and cannot be published yet.");
-  }
+  const category = asNonEmpty(options.category);
+  const documentType = asNonEmpty(options.documentType);
+  // Product-support documents are now first-class publishable canonical docs.
+  // Resolving the product scope here (throws on a malformed document_type) makes
+  // the production chunks carry the same document_type + product_scope shape as
+  // the preview chunks, so retrieval can keep scoping them per product.
+  const productScope = requireProductScopeIfProductSupport(category, documentType);
+
   const { data: existing, error: loadError } = await options.serviceClient
     .from("knowledge_documents")
     .select("id, category, document_type, title, draft_markdown, metadata")
     .eq("shop_id", options.shopId)
-    .eq("category", options.category)
-    .eq("document_type", options.documentType)
+    .eq("category", category)
+    .eq("document_type", documentType)
     .maybeSingle();
   if (loadError) throw new Error(loadError.message);
   if (!existing?.id) throw new Error("Knowledge document not found.");
@@ -296,13 +301,14 @@ export async function publishKnowledgeDocument(options: {
     title: existing.title,
     sections,
     environment: "production",
+    productScope,
   });
 
   const response = await getKnowledgeDocument({
     serviceClient: options.serviceClient,
     shopId: options.shopId,
-    category: options.category,
-    documentType: options.documentType,
+    category,
+    documentType,
   });
   return { ...response, production_chunks: productionChunks };
 }
