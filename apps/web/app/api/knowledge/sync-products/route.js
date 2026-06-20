@@ -5,6 +5,11 @@ import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { decryptString } from "@/lib/server/shopify-oauth";
 import { applyScope, resolveAuthScope, resolveScopedShop } from "@/lib/server/workspace-auth";
+import {
+  detectPlaceholderPrice,
+  mapShopifyProductToNormalizedProduct,
+  toShopProductRow,
+} from "@/lib/server/commerce/normalize-product";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -40,7 +45,8 @@ function createServiceClient() {
 async function fetchShopifyCredentials(serviceClient, scope, requestedShopId) {
   const data = await resolveScopedShop(serviceClient, scope, requestedShopId, {
     platform: "shopify",
-    fields: "id, shop_domain, access_token_encrypted, platform, workspace_id",
+    fields:
+      "id, shop_domain, access_token_encrypted, platform, workspace_id, public_storefront_domain",
     missingShopMessage: "shop_id is required for Shopify knowledge sync.",
   });
   if (!data?.id || !data?.shop_domain || !data?.access_token_encrypted) {
@@ -51,6 +57,7 @@ async function fetchShopifyCredentials(serviceClient, scope, requestedShopId) {
     workspace_id: data.workspace_id ?? null,
     platform: data.platform,
     shop_domain: data.shop_domain,
+    public_storefront_domain: data.public_storefront_domain ?? null,
     access_token: decryptString(data.access_token_encrypted),
   };
 }
@@ -219,27 +226,29 @@ async function syncShopify({ serviceClient, creds }) {
   const rows = [];
   let indexed = 0;
   let unchanged = 0;
+  const syncedAt = new Date().toISOString();
 
   for (const product of products) {
     const productId = String(product?.id ?? "").trim();
     if (!productId) continue;
-    const title = product?.title ?? "Untitled product";
-    const description = stripHtml(
-      product?.body_html || product?.body || product?.description || product?.body_text || ""
-    );
-    const variant = Array.isArray(product?.variants) ? product.variants[0] : null;
-    const price = variant?.price ?? variant?.compare_at_price ?? "";
+
+    // Platform-neutral normalization. ALL Shopify-payload parsing stays inside
+    // mapShopifyProductToNormalizedProduct; the row written below is the same
+    // normalized shape every commerce provider will produce.
+    const normalized = mapShopifyProductToNormalizedProduct(product, {
+      publicStorefrontDomain: creds.public_storefront_domain,
+    });
+    const title = normalized.title;
+    const price = normalized.price_display;
     const context = buildProductContext(product);
     const contentHash = buildKnowledgeHash(product, context);
 
-    rows.push({
-      shop_ref_id: creds.shop_id,
-      external_id: productId,
-      platform: "shopify",
-      title,
-      description,
-      price: price || null,
-    });
+    rows.push(
+      toShopProductRow(normalized, {
+        shopRefId: creds.shop_id,
+        syncedAt,
+      }),
+    );
 
     const previousHash = existingHashes.get(productId);
     if (previousHash && previousHash === contentHash) {
@@ -274,9 +283,16 @@ async function syncShopify({ serviceClient, creds }) {
           product_id: productId,
           title: String(title || "").trim(),
           price: price || null,
-          handle: String(product?.handle || "").trim() || null,
-          product_updated_at: product?.updated_at || null,
-          url: product?.handle ? `https://${domain}/products/${product.handle}` : null,
+          handle: normalized.handle,
+          product_updated_at: normalized.product_updated_at,
+          // Trusted, customer-facing product URL (public storefront, never the
+          // internal myshopify host). Null when no public domain is configured.
+          url: normalized.product_url,
+          status: normalized.status,
+          // Centralized placeholder-price signal so the runtime retriever can
+          // suppress not-live products without re-deriving the rule (it keeps a
+          // hard-coded fallback for safety).
+          is_placeholder_price: normalized.is_placeholder_price,
           content_hash: contentHash,
           chunk_index: chunkIndex,
           chunk_count: chunks.length,

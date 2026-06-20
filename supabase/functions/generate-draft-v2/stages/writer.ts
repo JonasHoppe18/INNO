@@ -40,7 +40,9 @@ import {
   isPurchaseLinkRequest,
   resolvePublicStorefrontDomain,
   selectGroundedProductLinkFromChunks,
+  selectGroundedProductLinkFromProducts,
   threadMentionsCheckoutLink,
+  type ProductSourceRow,
 } from "./purchase-link.ts";
 import type { ResolveCustomerNameResult } from "./customer-name-resolution.ts";
 import { buildPlatformSupportGuardrailsBlock } from "./platform-support-guardrails.ts";
@@ -121,6 +123,13 @@ export interface WriterInput {
    * Refunds preview, so those paths are unchanged.
    */
   completedTroubleshootingBlock?: string;
+  /**
+   * Synced, platform-neutral `shop_products` rows for the shop (title + handle +
+   * product_url). Used as the product-link grounding fallback between the live
+   * stock-fact handle and the retrieved shopify_product chunk. Optional: when
+   * absent, link grounding falls back to chunks exactly as before.
+   */
+  products?: ProductSourceRow[];
 }
 
 const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
@@ -1132,6 +1141,7 @@ export async function runWriter(
     clarificationOnly = false,
     productSupportTopicLock = false,
     completedTroubleshootingBlock,
+    products,
   }: WriterInput,
 ): Promise<WriterResult> {
   const resolvedModel = model ?? Deno.env.get("OPENAI_MODEL") ?? "gpt-5-mini";
@@ -1286,6 +1296,11 @@ Support replied: "${agentReply.slice(0, 500)}"`;
   // storefront domain. Never a myshopify host. Null when no public domain is
   // configured (debug: missing_public_storefront_domain).
   const groundedProductUrl = firstTrustedProductLink(facts.facts) ??
+    selectGroundedProductLinkFromProducts({
+      requestedProduct: requestedProductForLink,
+      products,
+      publicStorefrontDomain: publicStorefront.domain,
+    })?.url ??
     selectGroundedProductLinkFromChunks({
       requestedProduct: requestedProductForLink,
       chunks: retrieved.chunks,

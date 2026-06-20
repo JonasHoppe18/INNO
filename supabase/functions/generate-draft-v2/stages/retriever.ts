@@ -797,6 +797,27 @@ function sourceLabel(chunk: Record<string, unknown>): string {
   return title ? `${provider}: ${title}` : provider;
 }
 
+// Whether a synced shopify_product chunk represents a product that is NOT live
+// for sale (placeholder price, hidden price, waitlist, or draft). Prefers the
+// centralized `is_placeholder_price` flag stamped by the product sync, and keeps
+// the original hard-coded sentinel-price/tag/status checks as a safety fallback
+// for legacy chunks synced before the flag existed.
+export function isShopifyProductNotLive(
+  metadata: Record<string, unknown>,
+): boolean {
+  if (metadata?.is_placeholder_price === true) return true;
+  const tags = String(metadata?.tags ?? "").toLowerCase();
+  const price = String(metadata?.price ?? "").trim();
+  const placeholderPrice = price !== "" &&
+    (Number(price) >= 99999 || price === "0.00" || price === "0");
+  return (
+    /\bwaitlist\b/.test(tags) ||
+    /\bhide-price\b/.test(tags) ||
+    /\bdraft\b/.test(String(metadata?.status ?? "").toLowerCase()) ||
+    placeholderPrice
+  );
+}
+
 function classifyKnowledgeSource(input: {
   content: string;
   kind: string;
@@ -841,19 +862,8 @@ function classifyKnowledgeSource(input: {
   ) {
     riskFlags.push("retailer_specific");
   }
-  if (provider === "shopify_product") {
-    const tags = String(metadata.tags ?? "").toLowerCase();
-    const price = String(metadata.price ?? "").trim();
-    const placeholderPrice = price !== "" &&
-      (Number(price) >= 99999 || price === "0.00" || price === "0");
-    if (
-      /\bwaitlist\b/.test(tags) ||
-      /\bhide-price\b/.test(tags) ||
-      /\bdraft\b/.test(String(metadata.status ?? "").toLowerCase()) ||
-      placeholderPrice
-    ) {
-      riskFlags.push("shopify_product_not_live");
-    }
+  if (provider === "shopify_product" && isShopifyProductNotLive(metadata)) {
+    riskFlags.push("shopify_product_not_live");
   }
 
   let usable_as: RetrievedChunk["usable_as"] = "background";

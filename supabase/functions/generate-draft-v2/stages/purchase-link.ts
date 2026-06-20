@@ -432,6 +432,64 @@ export function selectGroundedProductLinkFromChunks(opts: {
   return null;
 }
 
+// Minimal shape of a synced, platform-neutral `shop_products` row needed for
+// product-link grounding.
+export interface ProductSourceRow {
+  title?: string | null;
+  handle?: string | null;
+  product_url?: string | null;
+}
+
+// Ground a trusted product-page URL from synced, platform-neutral
+// `shop_products` rows. Used as the fallback BETWEEN the live stock-fact handle
+// (first priority) and the retrieved `shopify_product` knowledge chunk (last).
+// Wrong-product safety mirrors the chunk/live variants: the matched product
+// title must correspond to the requested product, and ambiguity (>1 distinct
+// matching product) returns null rather than guessing.
+export function selectGroundedProductLinkFromProducts(opts: {
+  requestedProduct: string | null | undefined;
+  products: ProductSourceRow[] | null | undefined;
+  publicStorefrontDomain: string | null | undefined;
+}): { url: string; productTitle: string } | null {
+  const requested = normalizeProductText(opts.requestedProduct);
+  if (!requested) return null;
+  const requestedTokens = requested.split(" ").filter(Boolean);
+  const products = Array.isArray(opts.products) ? opts.products : [];
+
+  const matches = products.filter((p) => {
+    if (!p.handle && !p.product_url) return false;
+    const normTitle = normalizeProductText(p.title);
+    if (!normTitle) return false;
+    if (normTitle.includes(requested)) return true;
+    const titleTokens = new Set(normTitle.split(" "));
+    return requestedTokens.every((t) =>
+      GENERIC_PRODUCT_WORDS.has(t) || titleTokens.has(t)
+    );
+  });
+  if (matches.length === 0) return null;
+
+  const distinct = new Set(matches.map((p) => normalizeProductText(p.title)));
+  if (distinct.size !== 1) return null;
+
+  const chosen = matches[0];
+  const title = chosen.title || opts.requestedProduct || "the product";
+  // Prefer rebuilding from the PUBLIC storefront domain + synced handle so the
+  // host is always the customer-facing store (never myshopify). Only fall back
+  // to the stored product_url when it is itself on the public storefront domain.
+  const fromHandle = buildTrustedProductUrl(
+    opts.publicStorefrontDomain,
+    chosen.handle,
+  );
+  if (fromHandle) return { url: fromHandle, productTitle: String(title) };
+  if (
+    chosen.product_url &&
+    isTrustedHttpsUrl(chosen.product_url, opts.publicStorefrontDomain)
+  ) {
+    return { url: chosen.product_url.trim(), productTitle: String(title) };
+  }
+  return null;
+}
+
 function isTrustedHttpsUrl(
   url: string | null | undefined,
   publicStorefrontDomain: string | null | undefined,
