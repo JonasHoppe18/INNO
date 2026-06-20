@@ -701,7 +701,10 @@ export function buildFallbackQueries(
   // named (a bare "I want to return this" must still surface return knowledge).
   // Runs product-agnostic: return content is often tagged with an incidental or
   // no product, so a strict product filter would wrongly drop it.
-  if (returnIssues.length > 0 || RETURN_INTENTS.has(plan.primary_intent)) {
+  if (
+    returnIssues.length > 0 || RETURN_INTENTS.has(plan.primary_intent) ||
+    plan.resolution_stage === "initiate_warranty_repair"
+  ) {
     queries.push({
       text: [...returnIssues, "return", "refund", "policy", "instructions"]
         .join(" "),
