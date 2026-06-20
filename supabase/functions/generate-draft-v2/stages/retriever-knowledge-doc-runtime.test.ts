@@ -227,6 +227,70 @@ Deno.test("Returns & Refunds chunks only appear for return or refund context", (
   assertEquals(blocked, { allowed: false, reason: "not_returns_context" });
 });
 
+// ---- General technical support context ----
+
+Deno.test("technical support doc allows robotic Windows microphone questions", () => {
+  const result = decision({
+    category: "technical_support",
+    content:
+      "# General PC Audio Troubleshooting\n\n## Windows microphone format and sound enhancements\nSet the microphone format to 48000Hz and disable sound enhancements.",
+    customerMessage: "My mic sounds robotic on Windows",
+  });
+  assertEquals(result, { allowed: true, reason: "technical_support_context" });
+});
+
+Deno.test("technical support doc allows Discord microphone questions", () => {
+  const result = decision({
+    category: "technical_support",
+    content:
+      "# General PC Audio Troubleshooting\n\n## Discord microphone processing\nTurn off Krisp and noise suppression if the microphone sounds bad in Discord.",
+    customerMessage: "My microphone sounds bad in Discord",
+  });
+  assertEquals(result, { allowed: true, reason: "technical_support_context" });
+});
+
+Deno.test("technical support doc allows 48kHz microphone format questions", () => {
+  const result = decision({
+    category: "technical_support",
+    content:
+      "# General PC Audio Troubleshooting\n\n## Windows microphone format\nSet Headset Microphone to 48000Hz if it is currently 16000Hz.",
+    customerMessage: "How do I set my microphone to 48kHz?",
+  });
+  assertEquals(result, { allowed: true, reason: "technical_support_context" });
+});
+
+Deno.test("technical support doc blocks order status questions", () => {
+  const result = decision({
+    category: "technical_support",
+    content:
+      "# General PC Audio Troubleshooting\n\n## Windows microphone format\nSet Headset Microphone to 48000Hz.",
+    customerMessage: "Where is my order?",
+  });
+  assertEquals(result, { allowed: false, reason: "not_technical_support_context" });
+});
+
+Deno.test("technical support doc blocks return questions", () => {
+  const result = decision({
+    category: "technical_support",
+    content:
+      "# General PC Audio Troubleshooting\n\n## Windows microphone format\nSet Headset Microphone to 48000Hz.",
+    customerMessage: "Can I return my headset?",
+    intent: "return",
+  });
+  assertEquals(result, { allowed: false, reason: "not_technical_support_context" });
+});
+
+Deno.test("technical support doc blocks product comparison questions", () => {
+  const result = decision({
+    category: "technical_support",
+    content:
+      "# General PC Audio Troubleshooting\n\n## Windows microphone format\nSet Headset Microphone to 48000Hz.",
+    customerMessage: "Which headset should I choose?",
+    intent: "product_question",
+  });
+  assertEquals(result, { allowed: false, reason: "not_technical_support_context" });
+});
+
 Deno.test("legacy non-document knowledge remains allowed by the document gate", () => {
   const result = evaluateRuntimeKnowledgeDocumentAccess({
     source_provider: "manual_text",
