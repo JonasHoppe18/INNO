@@ -591,6 +591,76 @@ Deno.test("non-software question without product still fails closed", () => {
   assertEquals(result, { allowed: false, reason: "missing_product_context" });
 });
 
+// ---- Cross-product accessory (cable / adapter) context ----
+
+Deno.test("adapter question without product allows cable/adapter document sections", () => {
+  const result = decision({
+    category: "product_support",
+    content:
+      "# A-Blaze — Product Support\n\n## Cable and adapter compatibility\nAny standard USB-C to USB-A adapter should work.",
+    customerMessage: "Can I use a USB-C to USB-A adapter with the dongle?",
+    metadata: { section_heading: "Cable and adapter compatibility" },
+  });
+  assertEquals(result, { allowed: true, reason: "cross_product_accessory_context" });
+});
+
+Deno.test("cable question without product allows cable/adapter document sections", () => {
+  const result = decision({
+    category: "product_support",
+    content:
+      "# A-Spire Wireless — Product Support\n\n## Cable and adapter compatibility\nAny standard USB-C cable works.",
+    customerMessage: "Can I use any USB-C cable with my headset?",
+    metadata: { section_heading: "Cable and adapter compatibility" },
+  });
+  assertEquals(result, { allowed: true, reason: "cross_product_accessory_context" });
+});
+
+Deno.test("accessory context does NOT allow non-accessory document sections", () => {
+  const result = decision({
+    category: "product_support",
+    content:
+      "# A-Blaze — Product Support\n\n## Microphone troubleshooting\nSet the mic format to 48000Hz.",
+    customerMessage: "Can I use a USB-C to USB-A adapter with the dongle?",
+    metadata: { section_heading: "Microphone troubleshooting" },
+  });
+  assertEquals(result, { allowed: false, reason: "missing_product_context" });
+});
+
+Deno.test("generic product question without accessory signal still fails closed", () => {
+  const result = decision({
+    category: "product_support",
+    content:
+      "# A-Blaze — Product Support\n\n## Cable and adapter compatibility\nAny standard USB-C cable works.",
+    customerMessage: "Which headset should I choose?",
+    metadata: { section_heading: "Cable and adapter compatibility" },
+  });
+  assertEquals(result, { allowed: false, reason: "missing_product_context" });
+});
+
+Deno.test("pure adapter compatibility does NOT pull in the Returns & Refunds doc", () => {
+  const result = decision({
+    category: "returns",
+    content:
+      "# Returns & Refunds\n\n## Cable, adapter and accessory replacements\nWarranty handling for accessories.",
+    customerMessage: "Can I use a USB-C to USB-A adapter with the dongle?",
+    intent: "product_question",
+    metadata: { section_heading: "Cable, adapter and accessory replacements" },
+  });
+  assertEquals(result, { allowed: false, reason: "not_returns_context" });
+});
+
+Deno.test("warranty/replacement cable question still retrieves Returns & Refunds", () => {
+  const result = decision({
+    category: "returns",
+    content:
+      "# Returns & Refunds\n\n## Cable, adapter and accessory replacements\nWarranty handling for accessories.",
+    customerMessage: "My cable is defective, can I get a replacement under warranty?",
+    intent: "return",
+    metadata: { section_heading: "Cable, adapter and accessory replacements" },
+  });
+  assertEquals(result, { allowed: true, reason: "returns_context" });
+});
+
 Deno.test("IEM + Sound Card matches with 'and' connector in customer message", () => {
   const result = decision({
     category: "product_support",

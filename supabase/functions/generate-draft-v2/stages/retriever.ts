@@ -322,6 +322,24 @@ function hasSoftwareConnectivitySignal(text: string): boolean {
   return SOFTWARE_CONNECTIVITY_RE.test(text);
 }
 
+// Accessory compatibility (cable / adapter / charger) is shared across every
+// AceZone headset, so a bare "any USB-C cable?" / "any USB-C to USB-A adapter?"
+// question carries no product name. Detector matches the customer message;
+// the heading check below constrains which document sections may answer it.
+const ACCESSORY_COMPAT_RE =
+  /\b(cable|kabel|adapter|adaptor|usb-?c|usb-?a|dongle|charger|charging|oplader)\b/i;
+
+function isAccessoryCompatibilityContext(customerMessage?: string): boolean {
+  return ACCESSORY_COMPAT_RE.test(stripHtml(customerMessage || ""));
+}
+
+const ACCESSORY_HEADING_RE =
+  /\b(cable|adapter|adaptor|accessor|usb-?c|usb-?a|charger|charging)\b/i;
+
+function hasAccessoryCompatibilityHeading(text: string): boolean {
+  return ACCESSORY_HEADING_RE.test(text);
+}
+
 function extractKnowledgeDocumentProductTerms(input: {
   content?: string;
   metadata?: Record<string, unknown> | null;
@@ -454,6 +472,23 @@ export function evaluateRuntimeKnowledgeDocumentAccess(input: {
       const combinedText = `${sectionHeading} ${titleText}`;
       if (hasSoftwareConnectivitySignal(combinedText)) {
         return { allowed: true, reason: "cross_product_software_context" };
+      }
+    }
+  }
+
+  // Cross-product accessory exception: cable / adapter / charger compatibility
+  // is the same across every headset (any standard USB-C cable works; any
+  // standard USB-C to USB-A adapter works on the dongle). When no specific
+  // product is mentioned and the customer asks an accessory-compatibility
+  // question, allow document chunks whose section heading is about cable /
+  // adapter / accessory compatibility. Heading-constrained so unrelated product
+  // sections never leak in on a bare accessory question.
+  if (scopedMentionedProducts.length === 0) {
+    const accessoryIssue = isAccessoryCompatibilityContext(input.customerMessage);
+    if (accessoryIssue) {
+      const sectionHeading = String(metadata.section_heading || "").toLowerCase();
+      if (hasAccessoryCompatibilityHeading(sectionHeading)) {
+        return { allowed: true, reason: "cross_product_accessory_context" };
       }
     }
   }
