@@ -16,6 +16,7 @@ import {
   resolvePublicStorefrontDomain,
   selectGroundedProductLink,
   selectGroundedProductLinkFromChunks,
+  selectGroundedProductLinkFromProducts,
   threadMentionsCheckoutLink,
   TRUSTED_PRODUCT_LINK_LABEL,
 } from "./purchase-link.ts";
@@ -569,4 +570,62 @@ Deno.test("invalid / malicious public_storefront_domain values are rejected", ()
 
 Deno.test("TRUSTED_PRODUCT_LINK_LABEL is stable", () => {
   assertEquals(TRUSTED_PRODUCT_LINK_LABEL, "Trusted product page link");
+});
+
+// --- Stage 4B-1: shop_products normalized-row fallback ---------------------
+
+Deno.test("selectGroundedProductLinkFromProducts builds a trusted URL from a matching normalized product row", () => {
+  const result = selectGroundedProductLinkFromProducts({
+    requestedProduct: "A-Spire Wireless",
+    products: [
+      { title: "A-Spire", handle: "a-spire", product_url: null },
+      {
+        title: "A-Spire Wireless",
+        handle: "a-spire-wireless",
+        product_url: "https://www.acezone.io/products/a-spire-wireless",
+      },
+    ],
+    publicStorefrontDomain: "www.acezone.io",
+  });
+  assertEquals(result, {
+    url: "https://www.acezone.io/products/a-spire-wireless",
+    productTitle: "A-Spire Wireless",
+  });
+});
+
+Deno.test("selectGroundedProductLinkFromProducts returns null on ambiguous product match (no guessing)", () => {
+  const result = selectGroundedProductLinkFromProducts({
+    requestedProduct: "A-Spire",
+    products: [
+      { title: "A-Spire", handle: "a-spire", product_url: null },
+      { title: "A-Spire Wireless", handle: "a-spire-wireless", product_url: null },
+    ],
+    publicStorefrontDomain: "www.acezone.io",
+  });
+  // "A-Spire" tokens are a subset of both titles → two distinct products → null.
+  assertEquals(result, null);
+});
+
+Deno.test("selectGroundedProductLinkFromProducts never emits a myshopify link", () => {
+  const result = selectGroundedProductLinkFromProducts({
+    requestedProduct: "A-Rise",
+    products: [
+      {
+        title: "A-Rise",
+        handle: "a-rise",
+        product_url: "https://shop-acezone.myshopify.com/products/a-rise",
+      },
+    ],
+    publicStorefrontDomain: "shop-acezone.myshopify.com",
+  });
+  assertEquals(result, null);
+});
+
+Deno.test("selectGroundedProductLinkFromProducts returns null when no public domain and only a myshopify product_url exists", () => {
+  const result = selectGroundedProductLinkFromProducts({
+    requestedProduct: "A-Rise",
+    products: [{ title: "A-Rise", handle: null, product_url: null }],
+    publicStorefrontDomain: null,
+  });
+  assertEquals(result, null);
 });

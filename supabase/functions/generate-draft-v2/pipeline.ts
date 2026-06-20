@@ -1943,7 +1943,25 @@ export async function runDraftV2Pipeline(
     console.log(
       `[generate-draft-v2] writer model: ${firstPassModel} (intent=${plan.primary_intent})`,
     );
+    // Stage 4B-1: synced, platform-neutral product rows for product-link
+    // grounding (fallback between the live stock-fact handle and retrieved
+    // shopify_product chunks). Scoped by shop_ref_id (never the legacy NULL
+    // shop_id). Best-effort and tolerant of a pre-migration schema: a missing
+    // column yields an error → empty list → unchanged chunk-based behavior.
+    let productLinkRows: Array<
+      { title: string | null; handle: string | null; product_url: string | null }
+    > = [];
+    {
+      const { data: prodRows, error: prodErr } = await supabase
+        .from("shop_products")
+        .select("title, handle, product_url")
+        .eq("shop_ref_id", shop_id);
+      productLinkRows = !prodErr && Array.isArray(prodRows)
+        ? (prodRows as typeof productLinkRows)
+        : [];
+    }
     const written = await runWriter({
+      products: productLinkRows,
       plan,
       caseState,
       retrieved,
@@ -1993,6 +2011,7 @@ export async function runDraftV2Pipeline(
       );
       try {
         const correctionWritten = await runWriter({
+          products: productLinkRows,
           plan,
           caseState,
           retrieved,
@@ -2056,6 +2075,7 @@ export async function runDraftV2Pipeline(
       );
       try {
         const correctionWritten = await runWriter({
+          products: productLinkRows,
           plan,
           caseState,
           retrieved,
@@ -2177,6 +2197,7 @@ export async function runDraftV2Pipeline(
       );
       try {
         const strongWritten = await runWriter({
+          products: productLinkRows,
           plan,
           caseState,
           retrieved,
