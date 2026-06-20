@@ -18,8 +18,8 @@ const SHOP = {
   ].join("\n"),
 };
 
-function plan(primary_intent: string) {
-  return { primary_intent, sub_queries: [] } as any;
+function plan(primary_intent: string, resolution_stage?: string) {
+  return { primary_intent, resolution_stage: resolution_stage ?? "info_only", sub_queries: [] } as any;
 }
 
 function decision(input: {
@@ -27,6 +27,7 @@ function decision(input: {
   category: string;
   customerMessage: string;
   intent?: string;
+  resolution_stage?: string;
   environment?: string;
   metadata?: Record<string, unknown>;
 }): RuntimeKnowledgeDocumentDecision {
@@ -39,7 +40,7 @@ function decision(input: {
       section_heading: "Runtime section",
       ...input.metadata,
     },
-    plan: plan(input.intent ?? "complaint"),
+    plan: plan(input.intent ?? "complaint", input.resolution_stage),
     customerMessage: input.customerMessage,
     shop: SHOP,
   });
@@ -152,12 +153,12 @@ Deno.test("ambiguous Product Support product context fails closed", () => {
   assertEquals(result, { allowed: false, reason: "ambiguous_product_context" });
 });
 
-Deno.test("missing Product Support product context fails closed", () => {
+Deno.test("missing Product Support product context fails closed for non-software queries", () => {
   const result = decision({
     category: "product_support",
     content:
-      "# A-Blaze — Product Support\n\n## Bluetooth\nUse this for A-Blaze Bluetooth pairing.",
-    customerMessage: "My headset has app problems.",
+      "# A-Blaze — Product Support\n\n## Physical damage\nUse this for A-Blaze physical damage.",
+    customerMessage: "My headset is broken.",
   });
   assertEquals(result, { allowed: false, reason: "missing_product_context" });
 });
@@ -531,4 +532,160 @@ Deno.test("Ear pads Knowledge Doc is boosted only for ear-pad context", () => {
       reason: "ear_pads_document_without_context",
     });
   }
+});
+
+// ---- Cross-product software/app/Bluetooth context ----
+
+Deno.test("app question without product allows app-related document sections", () => {
+  const result = decision({
+    category: "product_support",
+    content:
+      "# A-Rise — Product Support\n\n## App and Bluetooth setup\nUse this for AceZone app pairing with A-Rise.",
+    customerMessage: "Can I use the AceZone app with my headset?",
+    metadata: { section_heading: "App and Bluetooth setup" },
+  });
+  assertEquals(result, { allowed: true, reason: "cross_product_software_context" });
+});
+
+Deno.test("firmware question without product allows firmware-related document sections", () => {
+  const result = decision({
+    category: "product_support",
+    content:
+      "# A-Spire Wireless — Product Support\n\n## Firmware update\nUpdate the headset and dongle firmware.",
+    customerMessage: "How do I update the firmware on my headset?",
+    metadata: { section_heading: "Firmware update" },
+  });
+  assertEquals(result, { allowed: true, reason: "cross_product_software_context" });
+});
+
+Deno.test("bluetooth question without product allows bluetooth-related document sections", () => {
+  const result = decision({
+    category: "product_support",
+    content:
+      "# A-Blaze — Product Support\n\n## Bluetooth pairing\nUse this for A-Blaze Bluetooth pairing.",
+    customerMessage: "My headset won't connect via Bluetooth.",
+    metadata: { section_heading: "Bluetooth pairing" },
+  });
+  assertEquals(result, { allowed: true, reason: "cross_product_software_context" });
+});
+
+Deno.test("software context does NOT allow sections without software/app signals", () => {
+  const result = decision({
+    category: "product_support",
+    content:
+      "# A-Rise — Product Support\n\n## Ear pads for A-Rise\nUse this for A-Rise ear pad compatibility.",
+    customerMessage: "Can I use the AceZone app with my headset?",
+    metadata: { section_heading: "Ear pads for A-Rise" },
+  });
+  assertEquals(result, { allowed: false, reason: "missing_product_context" });
+});
+
+Deno.test("non-software question without product still fails closed", () => {
+  const result = decision({
+    category: "product_support",
+    content:
+      "# A-Rise — Product Support\n\n## App and Bluetooth setup\nUse this for AceZone app pairing.",
+    customerMessage: "Where can I buy a replacement cable?",
+    metadata: { section_heading: "App and Bluetooth setup" },
+  });
+  assertEquals(result, { allowed: false, reason: "missing_product_context" });
+});
+
+Deno.test("IEM + Sound Card matches with 'and' connector in customer message", () => {
+  const result = decision({
+    category: "product_support",
+    content:
+      "# IEM + Sound Card — Product Support\n\n## Release date or availability\nExplain that AceZone cannot provide a release estimate.",
+    customerMessage: "When will the IEM and sound card be released?",
+    metadata: { product_title: "IEM + Sound Card" },
+  });
+  assertEquals(result, { allowed: true, reason: "same_product_context" });
+});
+
+Deno.test("cross-product software context Knowledge Doc receives post-gate retrieval boost", () => {
+  const access = decision({
+    category: "product_support",
+    content:
+      "# A-Rise — Product Support\n\n## App and Bluetooth setup\nUse this for AceZone app pairing with A-Rise.",
+    customerMessage: "Can I use the AceZone app with my headset?",
+    metadata: { section_heading: "App and Bluetooth setup" },
+  });
+  assertEquals(access, { allowed: true, reason: "cross_product_software_context" });
+
+  const doc = chunk({
+    id: "doc-app-rise",
+    content:
+      "# A-Rise — Product Support\n\n## App and Bluetooth setup\nUse this for AceZone app pairing with A-Rise.",
+    source_label: "knowledge_document",
+    source_provider: "knowledge_document",
+    document_category: "product_support",
+    knowledge_document_access_reason: access.reason,
+    products: ["a-rise"],
+    similarity: 0.04,
+  });
+
+  const score = finalScore(doc, {
+    mentionedProducts: [],
+    issueTerms: ["app", "connectivity"],
+  });
+  const breakdown = buildScoreBreakdown({
+    chunk: doc,
+    mentionedProducts: [],
+    otherProducts: [],
+    issueTerms: ["app", "connectivity"],
+  });
+  assertEquals(breakdown.product_support_doc_boost > 0, true);
+  assertEquals(breakdown.cross_product_penalty, 0);
+});
+
+// ---- initiate_warranty_repair opens returns gate for complaint intent ----
+
+Deno.test("complaint + initiate_warranty_repair allows Returns & Refunds chunks", () => {
+  const result = decision({
+    category: "returns",
+    content:
+      "# Returns & Refunds\n\n## Return for swap\nIf troubleshooting is exhausted, ask the customer for their order number.",
+    customerMessage:
+      "I tried all troubleshooting steps and the headset still does not work.",
+    intent: "complaint",
+    resolution_stage: "initiate_warranty_repair",
+  });
+  assertEquals(result, { allowed: true, reason: "returns_context" });
+});
+
+Deno.test("generic complaint without initiate_warranty_repair still blocks Returns & Refunds chunks", () => {
+  const result = decision({
+    category: "returns",
+    content:
+      "# Returns & Refunds\n\n## Return window\nCustomers can return within the documented window.",
+    customerMessage: "My A-Blaze microphone is not working.",
+    intent: "complaint",
+    resolution_stage: "troubleshoot_first",
+  });
+  assertEquals(result, { allowed: false, reason: "not_returns_context" });
+});
+
+Deno.test("return/refund/exchange intents still allow Returns & Refunds chunks regardless of resolution_stage", () => {
+  for (const intent of ["return", "refund", "exchange"]) {
+    const result = decision({
+      category: "returns",
+      content:
+        "# Returns & Refunds\n\n## Refund processing\nRefunds are processed after the return is received.",
+      customerMessage: "I want to return my headset.",
+      intent,
+    });
+    assertEquals(result, { allowed: true, reason: "returns_context" });
+  }
+});
+
+Deno.test("initiate_warranty_repair does not affect product_support gate", () => {
+  const result = decision({
+    category: "product_support",
+    content:
+      "# A-Blaze — Product Support\n\n## Physical damage\nUse this for A-Blaze physical damage.",
+    customerMessage: "My headset is broken.",
+    intent: "complaint",
+    resolution_stage: "initiate_warranty_repair",
+  });
+  assertEquals(result, { allowed: false, reason: "missing_product_context" });
 });

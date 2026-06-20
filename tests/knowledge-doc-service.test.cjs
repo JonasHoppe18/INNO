@@ -290,10 +290,73 @@ test("publish copies draft to published and regenerates only production chunks",
   assert.equal(client.db.agent_knowledge.filter((r) => r.metadata?.environment === "preview").length, 1);
   assert.ok(client.db.agent_knowledge.some((r) =>
     r.metadata?.environment === "production" &&
-    r.metadata?.active_for_ai === false &&
-    r.metadata?.runtime_activation_pending === true
+    r.metadata?.active_for_ai === true &&
+    r.metadata?.runtime_activation_pending === undefined
   ));
   assert.equal(client.db.agent_knowledge.filter((r) => r.source_provider === "manual_text").length, 1);
   assert.equal(client.db.agent_knowledge.filter((r) => r.source_provider === "saved_reply").length, 1);
   assert.equal(client.db.saved_replies.length, 1);
+});
+
+test("publish product-support doc is allowed and emits active, product-scoped production chunks", async () => {
+  const client = makeClient({
+    knowledge_documents: [
+      {
+        id: "doc-ps",
+        shop_id: "shop-1",
+        category: "product_support",
+        document_type: "product_support:product-123",
+        title: "A-Blaze — Product Support",
+        draft_markdown: "## Product overview\n\nText.\n\n## Cable and adapter compatibility\n\nAny standard USB-C cable works.",
+        published_markdown: "",
+        has_unpublished_changes: true,
+        published_at: null,
+        metadata: {},
+      },
+    ],
+    agent_knowledge: [
+      {
+        id: 10,
+        shop_id: "shop-1",
+        source_provider: "knowledge_document",
+        metadata: { document_id: "doc-ps", environment: "preview", active_for_ai: false },
+      },
+      {
+        id: 11,
+        shop_id: "shop-1",
+        source_provider: "knowledge_document",
+        metadata: { document_id: "doc-ps", environment: "production", active_for_ai: true },
+      },
+    ],
+  });
+
+  const result = await publishKnowledgeDocument({
+    serviceClient: client,
+    embedder: async () => [0, 1, 2],
+    shopId: "shop-1",
+    category: "product_support",
+    documentType: "product_support:product-123",
+  });
+
+  assert.equal(result.document.has_unpublished_changes, false);
+  assert.ok(result.document.published_at);
+
+  const productionChunks = client.db.agent_knowledge.filter(
+    (r) => r.source_provider === "knowledge_document" && r.metadata?.environment === "production",
+  );
+  // Old production chunk replaced, not duplicated: two draft sections => two chunks.
+  assert.equal(productionChunks.length, 2);
+  assert.ok(productionChunks.every((r) => r.metadata?.active_for_ai === true));
+  assert.ok(productionChunks.every((r) => r.metadata?.runtime_activation_pending === undefined));
+  // Product chunks carry the base document_type plus an explicit product_scope.
+  assert.ok(productionChunks.every((r) => r.metadata?.document_type === "product_support"));
+  assert.ok(productionChunks.every((r) => r.metadata?.product_scope === "product-123"));
+  assert.ok(productionChunks.some((r) => r.metadata?.section_heading === "Cable and adapter compatibility"));
+
+  // Preview chunks stay inactive and are left untouched by a publish.
+  const previewChunks = client.db.agent_knowledge.filter(
+    (r) => r.source_provider === "knowledge_document" && r.metadata?.environment === "preview",
+  );
+  assert.equal(previewChunks.length, 1);
+  assert.equal(previewChunks[0].metadata?.active_for_ai, false);
 });

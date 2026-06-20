@@ -45,10 +45,11 @@ export function buildKnowledgeDocumentChunks(
       usable_as: "policy",
       audience: "internal",
       environment: options.environment,
-      active_for_ai: false,
-      ...(options.environment === "production"
-        ? { runtime_activation_pending: true }
-        : {}),
+      // Publishing a document means "make this live for the AI". Production
+      // chunks are therefore active immediately; re-publishing must never
+      // silently drop the document out of retrieval. Preview chunks are
+      // editing-only copies and stay inactive.
+      active_for_ai: options.environment === "production",
       section_key: section.section_key,
       section_heading: section.heading,
       section_order: section.order,

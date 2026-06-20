@@ -43,3 +43,10 @@ Deno.test("unknown stock fact says live availability cannot be confirmed", () =>
   assertStringIncludes(block, "cannot confirm live availability");
 });
 
+Deno.test("no live stock fact warns about shopify_product catalog chunks", () => {
+  const block = buildStockAvailabilityDirective([]).toLowerCase();
+  assertStringIncludes(block, "shopify product catalog chunks");
+  assertStringIncludes(block, "not proof");
+  assertStringIncludes(block, "shopify_product_not_live");
+});
+

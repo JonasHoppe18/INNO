@@ -599,6 +599,8 @@ export function buildStockAvailabilityDirective(facts: ResolvedFact[]): string {
       "- No live Shopify stock availability fact is present. Do NOT claim that a product or variant is in stock, out of stock, available for preorder, reserved, held, discontinued, or expected back on a date.",
       "- If the customer asks about stock/availability and no live stock fact is present, say that live availability cannot be confirmed right now and ask for the exact product name or link if needed.",
       "- Do not use old knowledge-base chunks, product descriptions, or examples as live stock truth.",
+      "- CRITICAL: Shopify product catalog chunks (source_label containing 'shopify_product') describe a product's features/specs but are NOT proof that the product is released, available, purchasable, or in stock. A product page may exist in Shopify for a product that is unreleased, on a waitlist, or hidden from the storefront. Never infer availability, release status, or purchasability from product descriptions alone.",
+      "- If a knowledge chunk has risk_flags=shopify_product_not_live, the product is explicitly marked as not publicly available (waitlist, hidden price, draft, or placeholder price). Do NOT claim it is available, released, or purchasable. Do NOT provide a purchase link for it.",
     ].join("\n");
   }
 
@@ -1508,6 +1510,7 @@ Kildepolitik:
 - ignore: må ikke bruges i kundesvaret.
 - risk_flags=strong_claim: formulér forsigtigt, medmindre samme claim støttes af policy eller fact.
 - risk_flags=asks_for_extra_fields: kopier aldrig de ekstra feltkrav; brug kun missing_required_fields.
+- risk_flags=shopify_product_not_live: this product is NOT publicly released/available (waitlist, hidden price, or draft). Never claim it is available, in stock, released, or purchasable. Never provide a purchase link for it.
 
 ` +
       chunksForPrompt

@@ -66,9 +66,9 @@ export function KnowledgeProductDetail({ productId, productTitle }) {
         category={PRODUCT_SUPPORT_CATEGORY}
         documentType={productSupportDocumentTypeForScope(productScope)}
         title={`${productTitle || "Product"} — Product Support`}
-        description="Product-specific support guide with troubleshooting sections. Draft preview only — not used in ordinary runtime."
+        description="Product-specific support guide with troubleshooting sections. Publish to make it live for the AI."
         helperText="Create section headings for the topics relevant to this product. Each section heading becomes a focused knowledge section for the AI."
-        allowPublish={false}
+        allowPublish={true}
       />
     </div>
   );

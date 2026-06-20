@@ -2,8 +2,8 @@ import { assert, assertEquals } from "jsr:@std/assert@1";
 import { buildFallbackQueries } from "./retriever.ts";
 import type { Plan } from "./planner.ts";
 
-function plan(intent: string): Plan {
-  return { primary_intent: intent } as unknown as Plan;
+function plan(intent: string, resolution_stage?: string): Plan {
+  return { primary_intent: intent, resolution_stage: resolution_stage ?? "info_only" } as unknown as Plan;
 }
 
 import type { FallbackQuery } from "./retriever.ts";
@@ -70,4 +70,23 @@ Deno.test("pure technical complaint emits a technical probe but no return probe"
 
 Deno.test("empty message yields no queries", () => {
   assertEquals(buildFallbackQueries(plan("return"), "", {}), []);
+});
+
+Deno.test("complaint + initiate_warranty_repair emits a return probe even without return terms", () => {
+  const qs = buildFallbackQueries(
+    plan("complaint", "initiate_warranty_repair"),
+    "I tried all troubleshooting steps and the headset still does not work",
+    { name: "AceZone", product_overview: "A-Spire Wireless" },
+  );
+  assert(hasReturnProbe(qs), `expected return probe in ${JSON.stringify(qs)}`);
+  assertEquals(returnProbe(qs)?.productAgnostic, true);
+});
+
+Deno.test("complaint without initiate_warranty_repair and no return terms emits no return probe", () => {
+  const qs = buildFallbackQueries(
+    plan("complaint", "troubleshoot_first"),
+    "My headset won't pair over bluetooth",
+    { name: "AceZone", product_overview: "A-Spire Wireless" },
+  );
+  assertEquals(hasReturnProbe(qs), false);
 });

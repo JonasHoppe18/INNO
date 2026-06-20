@@ -78,3 +78,37 @@ Deno.test("matching is case-insensitive", () => {
   const out = extractMentionedProductTerms("MY a-SPIRE wireless", SHOP);
   assertEquals(out, ["a-spire wireless"]);
 });
+
+// ---- Connector normalization: +, &, and ----
+
+Deno.test("'IEM and Sound Card' matches 'IEM + Sound Card' from product_overview", () => {
+  const out = extractMentionedProductTerms(
+    "When will the IEM and Sound Card be released?",
+    SHOP,
+  );
+  assertEquals(out, ["iem + sound card"]);
+});
+
+Deno.test("'IEM & Sound Card' matches 'IEM + Sound Card' from product_overview", () => {
+  const out = extractMentionedProductTerms(
+    "Is the IEM & Sound Card available?",
+    SHOP,
+  );
+  assertEquals(out, ["iem + sound card"]);
+});
+
+Deno.test("'IEM + Sound Card' still matches literally", () => {
+  const out = extractMentionedProductTerms(
+    "Tell me about the IEM + Sound Card",
+    SHOP,
+  );
+  assertEquals(out, ["iem + sound card"]);
+});
+
+Deno.test("generic headset message does not match any product", () => {
+  const out = extractMentionedProductTerms(
+    "Can I use the AceZone app with my headset?",
+    SHOP,
+  );
+  assertEquals(out, []);
+});
