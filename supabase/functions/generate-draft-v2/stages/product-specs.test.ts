@@ -159,6 +159,89 @@ Deno.test("a suggested spec carrying evidence is still never served (Stage 4B-3-
   assertEquals(resolveProductSpecs(suggestedWithEvidence, { productId: 1 }).length, 0);
 });
 
+// --- Stage 4B-3-2h: positioning / customer guidance -----------------------
+
+const positioningRows: SpecRow[] = [
+  // A-Blaze (1) positioning — comparable=false
+  { product_id: 1, spec_key: "best_for", spec_group: "positioning", spec_value: "Customers who want strong wireless gaming at a lower price.", value_bool: null, value_num: null, unit: null, display_order: 200, comparable: false, confidence: "confirmed" },
+  { product_id: 1, spec_key: "tradeoff", spec_group: "positioning", spec_value: "Fewer app-controlled features than A-Spire Wireless.", value_bool: null, value_num: null, unit: null, display_order: 202, comparable: false, confidence: "confirmed" },
+  // A-Spire Wireless (2) positioning
+  { product_id: 2, spec_key: "best_for", spec_group: "positioning", spec_value: "Customers who want the most feature-rich wireless headset.", value_bool: null, value_num: null, unit: null, display_order: 200, comparable: false, confidence: "confirmed" },
+  // a SUGGESTED positioning row that must never surface
+  { product_id: 2, spec_key: "main_advantage", spec_group: "positioning", spec_value: "(unconfirmed marketing claim)", value_bool: null, value_num: null, unit: null, display_order: 201, comparable: false, confidence: "suggested" },
+];
+
+function positioningProducts() {
+  const all = [...rows, ...positioningRows];
+  return [
+    { productId: 1, title: "A-Blaze", specs: resolveProductSpecs(all, { productId: 1 }) },
+    { productId: 2, title: "A-Spire Wireless", specs: resolveProductSpecs(all, { productId: 2 }) },
+  ];
+}
+
+Deno.test("positioning section appears when confirmed positioning rows exist", () => {
+  const ps = positioningProducts();
+  const block = buildComparisonDirective(buildSpecComparison(ps), ps, { wasAsked: true });
+  assert(/positioning|customer guidance/i.test(block), "no positioning section");
+  assert(block.includes("Customers who want strong wireless gaming at a lower price."));
+  assert(block.includes("Customers who want the most feature-rich wireless headset."));
+});
+
+Deno.test("suggested positioning rows are ignored in the positioning section", () => {
+  const block = buildComparisonDirective(buildSpecComparison(positioningProducts()), positioningProducts(), { wasAsked: true });
+  assert(!block.includes("(unconfirmed marketing claim)"));
+});
+
+Deno.test("comparable=false positioning rows do not appear in the technical comparison table", () => {
+  const cmp = buildSpecComparison(positioningProducts());
+  for (const key of ["best_for", "tradeoff", "main_advantage"]) {
+    assert(!cmp.some((r) => r.spec_key === key), `${key} leaked into comparison table`);
+  }
+});
+
+Deno.test("existing comparable technical comparison output is unchanged by positioning rows", () => {
+  const withPos = buildSpecComparison(positioningProducts());
+  const withoutPos = buildSpecComparison([
+    { productId: 1, title: "A-Blaze", specs: resolveProductSpecs(rows, { productId: 1 }) },
+    { productId: 2, title: "A-Spire Wireless", specs: resolveProductSpecs(rows, { productId: 2 }) },
+  ]);
+  assertEquals(withPos.map((r) => r.spec_key), withoutPos.map((r) => r.spec_key));
+});
+
+Deno.test("positioning section is absent when no positioning rows exist", () => {
+  const ps = [
+    { productId: 1, title: "A-Blaze", specs: resolveProductSpecs(rows, { productId: 1 }) },
+    { productId: 2, title: "A-Spire Wireless", specs: resolveProductSpecs(rows, { productId: 2 }) },
+  ];
+  const block = buildComparisonDirective(buildSpecComparison(ps), ps, { wasAsked: true });
+  assert(!/# (positioning|customer guidance)/i.test(block));
+});
+
+Deno.test("directive includes natural-writing guidance", () => {
+  const ps = positioningProducts();
+  const block = buildComparisonDirective(buildSpecComparison(ps), ps, { wasAsked: true });
+  assert(/who each product is for|practical difference/i.test(block));
+  assert(/dry key-value dump|natural/i.test(block));
+  assert(/recommendation/i.test(block));
+  // Guidance explicitly forbids contested fields.
+  assert(/do not mention DAC/i.test(block));
+});
+
+Deno.test("directive still excludes a SUGGESTED dac_quality (never a fact line)", () => {
+  const withSuggestedDac: SpecRow[] = [
+    { product_id: 1, spec_key: "eq_app_bands", spec_group: "audio", spec_value: "8", value_bool: null, value_num: 8, unit: "bands", display_order: 20, comparable: true, confidence: "confirmed" },
+    { product_id: 1, spec_key: "dac_quality", spec_group: "audio", spec_value: "48 kHz / 24-bit", value_bool: null, value_num: null, unit: null, display_order: 10, comparable: true, confidence: "suggested" },
+    { product_id: 2, spec_key: "eq_app_bands", spec_group: "audio", spec_value: "8", value_bool: null, value_num: 8, unit: "bands", display_order: 20, comparable: true, confidence: "confirmed" },
+    { product_id: 2, spec_key: "dac_quality", spec_group: "audio", spec_value: "384 kHz / 24-bit", value_bool: null, value_num: null, unit: null, display_order: 10, comparable: true, confidence: "suggested" },
+  ];
+  const ps = [
+    { productId: 1, title: "A-Blaze", specs: resolveProductSpecs(withSuggestedDac, { productId: 1 }) },
+    { productId: 2, title: "A-Spire Wireless", specs: resolveProductSpecs(withSuggestedDac, { productId: 2 }) },
+  ];
+  const block = buildComparisonDirective(buildSpecComparison(ps), ps, { wasAsked: true });
+  assert(!/^- dac_quality/im.test(block), "suggested dac_quality must not appear as a fact line");
+});
+
 Deno.test("buildComparisonDirective returns empty when no comparable confirmed specs exist", () => {
   assertEquals(buildComparisonDirective([], [], { wasAsked: true }), "");
   // also empty when not asked

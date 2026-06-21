@@ -214,14 +214,28 @@ export function buildComparisonDirective(
 ): string {
   if (!opts.wasAsked) return "";
   const rows = Array.isArray(comparison) ? comparison : [];
-  // Require at least one row where some product has a real (non-"Not specified")
-  // value — otherwise there is nothing confirmed to compare.
+  const productList = Array.isArray(products) ? products : [];
+
+  // Confirmed positioning facts (spec_group='positioning', kept out of the
+  // technical table via comparable=false). resolveProductSpecs already dropped
+  // suggested rows, so anything here is confirmed.
+  const positioning = productList
+    .map((p) => ({
+      title: p.title,
+      specs: (p.specs ?? [])
+        .filter((s) => s.spec_group === "positioning")
+        .sort((a, b) => a.display_order - b.display_order),
+    }))
+    .filter((p) => p.specs.length > 0);
+
+  // Require at least one real comparable fact OR some positioning guidance —
+  // otherwise there is nothing confirmed to say.
   const hasFact = rows.some((r) =>
     r.values.some((v) => v.value !== NOT_SPECIFIED)
   );
-  if (!hasFact) return "";
+  if (!hasFact && positioning.length === 0) return "";
 
-  const titles = (Array.isArray(products) ? products : []).map((p) => p.title);
+  const titles = productList.map((p) => p.title);
   const header = titles.length
     ? `# PRODUCT COMPARISON — CONFIRMED SPECS (authoritative): ${
       titles.join(" vs ")
@@ -233,8 +247,23 @@ export function buildComparisonDirective(
     const parts = row.values.map((v) => `${v.title}: ${v.value}`).join(" | ");
     lines.push(`- ${row.spec_key} — ${parts}`);
   }
+
+  if (positioning.length > 0) {
+    lines.push("", "# CUSTOMER GUIDANCE (positioning, authoritative)");
+    for (const p of positioning) {
+      const parts = p.specs.map((s) => `${s.spec_key}: ${s.spec_value}`).join(" ");
+      lines.push(`- ${p.title} — ${parts}`);
+    }
+  }
+
   lines.push(
-    "- Use ONLY the confirmed specs above. Where a value is \"Not specified\", do not guess or invent it — omit it or say it is not specified.",
+    "",
+    "Writing guidance:",
+    "- Start with the practical difference — who each product is for — using the customer guidance above.",
+    "- Then summarise the key confirmed technical differences in natural customer-service language; do not write a dry key-value dump.",
+    "- Close with a short recommendation when the customer's need is clear.",
+    "- Phrase one-sided features positively (e.g. \"the X additionally offers Y\"); avoid saying \"Not specified\" unless necessary, and never assert a product lacks a feature you have no data for.",
+    "- Use ONLY the confirmed facts above; do not guess or invent missing facts, and never use suggested/unconfirmed specs — do not mention DAC, sound-quality/comfort/feature ratings, or outdoor mode unless they appear as confirmed facts above.",
   );
   return lines.join("\n");
 }
