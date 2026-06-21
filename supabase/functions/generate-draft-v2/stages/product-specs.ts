@@ -26,6 +26,15 @@ export interface SpecRow {
   display_order: number;
   comparable: boolean;
   confidence: "confirmed" | "suggested";
+  // Stage 4B-3-2d: provenance/review metadata for suggested specs. Carried for
+  // typing/storage only — the resolver and comparison never read these, so
+  // they cannot affect customer-facing output.
+  evidence_text?: string | null;
+  source_url?: string | null;
+  extracted_at?: string | null;
+  reviewed_at?: string | null;
+  reviewed_by?: string | null;
+  review_note?: string | null;
 }
 
 export interface ResolvedSpec {

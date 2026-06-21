@@ -121,6 +121,44 @@ Deno.test("buildComparisonDirective renders the table and a no-guess rule when c
   assert(/do not (guess|invent)/i.test(block));
 });
 
+Deno.test("evidence/review fields do not affect comparison output (Stage 4B-3-2d)", () => {
+  const plain: SpecRow[] = [
+    { product_id: 1, spec_key: "dac_quality", spec_group: "audio", spec_value: "48 kHz / 24-bit", value_bool: null, value_num: null, unit: null, display_order: 10, comparable: true, confidence: "confirmed" },
+  ];
+  const withEvidence: SpecRow[] = [
+    {
+      ...plain[0],
+      evidence_text: "DAC: 48 kHz / 24-bit",
+      source_url: "https://www.acezone.io/products/a-blaze",
+      extracted_at: "2026-06-20T00:00:00Z",
+      reviewed_at: null,
+      reviewed_by: null,
+      review_note: null,
+    },
+  ];
+  const a = buildSpecComparison([
+    { productId: 1, title: "A-Blaze", specs: resolveProductSpecs(plain, { productId: 1 }) },
+  ]);
+  const b = buildSpecComparison([
+    { productId: 1, title: "A-Blaze", specs: resolveProductSpecs(withEvidence, { productId: 1 }) },
+  ]);
+  assertEquals(b, a);
+});
+
+Deno.test("a suggested spec carrying evidence is still never served (Stage 4B-3-2d)", () => {
+  const suggestedWithEvidence: SpecRow[] = [
+    {
+      product_id: 1, spec_key: "dac_quality", spec_group: "audio",
+      spec_value: "Better than A-Spire (per 3927)", value_bool: null, value_num: null,
+      unit: null, display_order: 10, comparable: true, confidence: "suggested",
+      evidence_text: "manual_text 3927 says A-Blaze has a better DAC",
+      source_url: null, extracted_at: "2026-06-20T00:00:00Z",
+      reviewed_at: null, reviewed_by: null, review_note: "conflicts product page",
+    },
+  ];
+  assertEquals(resolveProductSpecs(suggestedWithEvidence, { productId: 1 }).length, 0);
+});
+
 Deno.test("buildComparisonDirective returns empty when no comparable confirmed specs exist", () => {
   assertEquals(buildComparisonDirective([], [], { wasAsked: true }), "");
   // also empty when not asked
