@@ -39,7 +39,7 @@ function findSegment(segments, re) {
   return segments.find((s) => re.test(s)) || null;
 }
 
-const CONNECTION_TOKENS = [
+const CONNECTION_TOKENS: Array<[RegExp, string]> = [
   [/usb[\s‑-]?c/i, "USB-C"],
   [/\bdongle\b|2\.4\s*ghz/i, "wireless dongle"],
   [/3\.5\s*mm|\bjack\b/i, "3.5mm AUX"],
