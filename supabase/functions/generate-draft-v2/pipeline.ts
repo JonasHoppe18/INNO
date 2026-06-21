@@ -16,6 +16,13 @@ import {
   isCompatibilityQuestion,
   resolveCompatibility,
 } from "./stages/product-compatibility.ts";
+import {
+  buildComparisonDirective,
+  buildSpecComparison,
+  detectComparisonQuery,
+  isComparisonQuestion,
+  resolveProductSpecs,
+} from "./stages/product-specs.ts";
 import { isReturnRefundIntent } from "./stages/returns-grounding.ts";
 import { runFactResolver } from "./stages/fact-resolver.ts";
 import {
@@ -1379,10 +1386,61 @@ export async function runDraftV2Pipeline(
         }
       }
     }
+    // Stage 4B-3-2: structured product-comparison facts. Only for explicit
+    // comparison questions naming 2+ known products, and only when CONFIRMED
+    // comparable specs exist — so unrelated drafts and the pre-seed state are
+    // unchanged. A cheap textual cue gates the title lookup so ordinary drafts
+    // do no extra DB work. Best-effort: missing table/rows yield no block.
+    let comparisonBlock = "";
+    if (
+      /\bvs\.?\b|\bversus\b|\bdifference\b|\bcompare|\bbetter\b|\bwhich (one|is)\b/i
+        .test(latestBody ?? "")
+    ) {
+      const { data: prodRows } = await supabase
+        .from("shop_products")
+        .select("id, title")
+        .eq("shop_ref_id", shop_id);
+      const products = Array.isArray(prodRows)
+        ? (prodRows as Array<{ id: number; title: string }>)
+        : [];
+      const titles = products.map((p) => p.title).filter(Boolean);
+      if (isComparisonQuestion(latestBody, titles)) {
+        const matched = detectComparisonQuery(latestBody, titles)
+          .map((title) => ({
+            title,
+            id: products.find((p) => p.title === title)?.id ?? null,
+          }))
+          .filter((m): m is { title: string; id: number } => m.id != null);
+        if (matched.length >= 2) {
+          const ids = matched.map((m) => m.id);
+          const { data: specRows, error: specErr } = await supabase
+            .from("shop_product_specs")
+            .select(
+              "product_id, spec_key, spec_group, spec_value, value_bool, value_num, unit, display_order, comparable, confidence",
+            )
+            .eq("shop_ref_id", shop_id)
+            .or(`product_id.is.null,product_id.in.(${ids.join(",")})`);
+          const rows = !specErr && Array.isArray(specRows)
+            ? (specRows as Parameters<typeof resolveProductSpecs>[0])
+            : [];
+          const productSpecs = matched.map((m) => ({
+            productId: m.id,
+            title: m.title,
+            specs: resolveProductSpecs(rows, { productId: m.id }),
+          }));
+          comparisonBlock = buildComparisonDirective(
+            buildSpecComparison(productSpecs),
+            productSpecs,
+            { wasAsked: true },
+          );
+        }
+      }
+    }
     const internalRulesBlock = [
       internalRules.block || "",
       returnTrackingAttribution?.blockText || "",
       compatibilityBlock || "",
+      comparisonBlock || "",
     ].filter(Boolean).join("\n\n") || undefined;
     const latestSenderEmail = String(
       (latestMessage as Record<string, unknown>).from_email || "",
