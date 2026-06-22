@@ -275,6 +275,42 @@ function AgentBubble({ turn, onEdit, onAcceptAction, isLast, contextOrderNumber,
                 ))}
               </ul>
             )}
+            {Array.isArray(meta.provenance?.structured_facts) && meta.provenance.structured_facts.length > 0 && (
+              <div className="mt-1.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-600">Structured facts (confirmed)</p>
+                <ul className="mt-0.5 space-y-0.5 pl-3">
+                  {meta.provenance.structured_facts.slice(0, 8).map((f, i) => (
+                    <li key={i} className="text-[10.5px] text-emerald-700">
+                      · {f.key}: {f.value} <span className="text-emerald-500/70">({f.origin_table})</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {Array.isArray(meta.provenance?.live_facts) && meta.provenance.live_facts.length > 0 && (
+              <div className="mt-1.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-sky-600">Live facts (verified)</p>
+                <ul className="mt-0.5 space-y-0.5 pl-3">
+                  {meta.provenance.live_facts.slice(0, 8).map((f, i) => (
+                    <li key={i} className="text-[10.5px] text-sky-700">
+                      · {f.label}: {f.value} <span className="text-sky-500/70">({f.source})</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {Array.isArray(meta.provenance?.guardrails_unavailable) && meta.provenance.guardrails_unavailable.length > 0 && (
+              <div className="mt-1.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-orange-600">Guardrails / unavailable</p>
+                <ul className="mt-0.5 space-y-0.5 pl-3">
+                  {meta.provenance.guardrails_unavailable.slice(0, 8).map((g, i) => (
+                    <li key={i} className="text-[10.5px] text-orange-700">
+                      · {g.topic}/{g.reason}: {g.message}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </details>
         )}
         {!editing && proposedActions.length > 0 && (
@@ -536,6 +572,7 @@ export function SimulateConversationClient() {
             confidence: data.confidence,
             latency_ms: data.latency_ms,
             sources: data.sources || [],
+            provenance: data.provenance || null,
             proposed_actions: data.proposed_actions || [],
           },
         };
