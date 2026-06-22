@@ -31,6 +31,7 @@ import {
   type Provenance,
   type StructuredFactProvenance,
 } from "./stages/provenance.ts";
+import { partitionLiveCommerceLegacy } from "./stages/live-commerce-retrieval-gate.ts";
 import { isReturnRefundIntent } from "./stages/returns-grounding.ts";
 import { runFactResolver } from "./stages/fact-resolver.ts";
 import {
@@ -1367,6 +1368,28 @@ export async function runDraftV2Pipeline(
         ),
       };
     }
+    // Stage 5, Slice 2A: intent-aware retrieval down-ranking. For pure
+    // live-commerce intents WITH live order facts present, the authoritative
+    // answer comes from live facts — so legacy factual retrieval (manual_text /
+    // saved_reply, never policy/procedure) is removed from the writer's source
+    // set to stop it contaminating the reply. Nothing is deleted from the DB;
+    // the suppressed chunks are still surfaced in provenance, flagged
+    // `downranked_live_commerce_legacy`, so the agent can see what was set aside.
+    // No effect when the intent isn't live-commerce or no live order resolved.
+    const liveCommerceGate = partitionLiveCommerceLegacy(retrieved.chunks, {
+      intent: plan.primary_intent,
+      hasLiveOrder: Boolean(facts.order),
+    });
+    const suppressedLegacyChunks = liveCommerceGate.suppressed.map((c) => ({
+      ...c,
+      risk_flags: [...(c.risk_flags ?? []), "downranked_live_commerce_legacy"],
+    }));
+    if (suppressedLegacyChunks.length > 0) {
+      retrieved.chunks = liveCommerceGate.kept;
+      console.log(
+        `[generate-draft-v2] live-commerce gate: suppressed ${suppressedLegacyChunks.length} legacy factual chunk(s) from writer set (intent=${plan.primary_intent}, order=${facts.order?.name ?? "none"})`,
+      );
+    }
     // Stage 4B-3-1: structured product-compatibility facts. Only for
     // compatibility-style questions, and only when CONFIRMED rows exist — so
     // unrelated drafts and the pre-seed state are unchanged (no fighting the
@@ -1810,7 +1833,7 @@ export async function runDraftV2Pipeline(
           risk_flags: c.risk_flags,
         })),
         provenance: assembleProvenance({
-          retrievedChunks: retrieved.chunks,
+          retrievedChunks: [...retrieved.chunks, ...suppressedLegacyChunks],
           structuredFacts: structuredFactsProvenance,
           facts: facts.facts,
           extraGuardrails: provenanceGuardrails,
@@ -2687,7 +2710,7 @@ export async function runDraftV2Pipeline(
         previewSources: previewDocument.sources,
       }),
       provenance: assembleProvenance({
-        retrievedChunks: retrieved.chunks,
+        retrievedChunks: [...retrieved.chunks, ...suppressedLegacyChunks],
         structuredFacts: structuredFactsProvenance,
         facts: facts.facts,
         extraGuardrails: provenanceGuardrails,
