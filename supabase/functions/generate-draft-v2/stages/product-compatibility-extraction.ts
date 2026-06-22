@@ -300,7 +300,13 @@ export function extractCompatibilityCandidates(
   // product body_html. Such candidates are always needs_review and never clean.
   // (Deeper column-aligned chart reconciliation is deliberately out of scope:
   //  multi-column OCR alignment is too error-prone to auto-trust.)
-  if (input.ocrText) {
+  //
+  // SCOPING (Slice H): OCR is strictly secondary — it corroborates/conflicts
+  // with a product's PRIMARY body_html compatibility evidence. If this product
+  // has no `Compatibility:` line, shop-level OCR/chart text must NOT invent
+  // first-source candidates for it (otherwise accessories / unrelated products
+  // inherit console compatibility from a shop-wide chart).
+  if (compatLine && input.ocrText) {
     const ocr = String(input.ocrText);
     for (const [target, re] of PLATFORM_TOKENS) {
       if (bodyTargets.has(target)) continue;

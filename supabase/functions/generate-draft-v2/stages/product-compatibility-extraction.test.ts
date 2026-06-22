@@ -205,6 +205,46 @@ Deno.test("8. extractor is pure and NOT imported by the runtime pipeline", async
   );
 });
 
+// --- OCR scoping (Slice H): OCR is secondary, never a first source ----------
+
+Deno.test("OCR scoping: a product with NO body_html Compatibility line gets ZERO candidates even with shop-level OCR", () => {
+  const out = extractCompatibilityCandidates({
+    productId: 49,
+    productTitle: "Ear pads",
+    productUrl: "https://www.acezone.io/products/spare-parts",
+    bodyHtml: "Ear pads spare part. Replaceable memory-foam cushions for AceZone headsets.",
+    ocrText:
+      "COMPATIBILITY PC & MacOS (Wireless & USB-C) PS5 (Wireless & USB-C) PS4 (AUX) Nintendo Switch (AUX & BT) XBOX (AUX)",
+    sourceType: "body_html",
+  });
+  assertEquals(out.length, 0, "no primary Compatibility line => OCR must not invent candidates");
+});
+
+Deno.test("OCR scoping: A-Live / IEM-like products do not inherit PlayStation/Xbox/Switch from OCR alone", () => {
+  for (const bodyHtml of ["A-Live audio mixer. USB powered.", "IEM + Sound Card bundle. In-ear monitors."]) {
+    const out = extractCompatibilityCandidates({
+      productId: 45,
+      bodyHtml,
+      ocrText: "XBOX (AUX) PS5 (Wireless & USB-C) Nintendo Switch (AUX & BT)",
+    });
+    assertEquals(out.length, 0);
+    assertEquals(
+      out.filter((c) => ["xbox", "playstation", "switch"].includes(c.target ?? "")).length,
+      0,
+    );
+  }
+});
+
+Deno.test("OCR scoping: a product WITH a primary line still gets OCR conflict candidates (behavior preserved)", () => {
+  const out = extractCompatibilityCandidates({
+    productId: 48,
+    bodyHtml: "Compatibility: PC/Mac, PS4/5 (USB/Analog/Dongle), Switch (Analog/BT), Mobile", // no Xbox
+    ocrText: "XBOX (AUX)",
+  });
+  const xbox = out.filter((c) => c.target === "xbox");
+  assert(xbox.length > 0 && xbox.every((c) => c.needs_review), "primary present => OCR conflict still flagged");
+});
+
 // --- Extra rule coverage ----------------------------------------------------
 
 Deno.test("rule 6: 'not compatible' attaches only to its own platform scope", () => {
