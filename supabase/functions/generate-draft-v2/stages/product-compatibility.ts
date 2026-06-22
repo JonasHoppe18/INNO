@@ -13,7 +13,10 @@
 //   - only confidence='confirmed' rows are ever served,
 //   - no confirmed row => unknown ("not confirmed"); the writer must not guess.
 
-import type { StructuredFactProvenance } from "./provenance.ts";
+import type {
+  GuardrailUnavailableProvenance,
+  StructuredFactProvenance,
+} from "./provenance.ts";
 
 export type CompatibleState = "yes" | "no" | "partial";
 
@@ -207,6 +210,47 @@ export function buildCompatibilityDirective(
  * resolveCompatibility already filtered to confidence='confirmed', so everything
  * here is confirmed. NEVER includes the directive prose itself.
  */
+export interface CompatibilityOutcome {
+  /** Writer directive: the CONFIRMED-FACTS block when known, the NOT-CONFIRMED
+   *  abstention block when no confirmed row exists. Never customer-facing text. */
+  directive: string;
+  /** Confirmed structured facts for provenance (empty when unknown). */
+  structuredFacts: StructuredFactProvenance[];
+  /** Response-only guardrails (a compatibility/no_confirmed_row entry when unknown). */
+  guardrails: GuardrailUnavailableProvenance[];
+}
+
+/**
+ * Stage 5, Slice 2B. Single decision for a compatibility question where a
+ * lookup was attempted: ALWAYS produce a writer directive — the confirmed facts
+ * when known, otherwise the NOT-CONFIRMED abstention directive so the writer
+ * does not fall back to retrieval/guessing. Confirmed cases also emit structured
+ * provenance; unknown cases emit a safe guardrail.
+ */
+export function buildCompatibilityOutcome(
+  resolved: ResolvedCompatibility[] | null | undefined,
+): CompatibilityOutcome {
+  const list = Array.isArray(resolved) ? resolved : [];
+  const directive = buildCompatibilityDirective(list, { wasAsked: true });
+  if (list.some((r) => r.known)) {
+    return {
+      directive,
+      structuredFacts: buildCompatibilityProvenance(list),
+      guardrails: [],
+    };
+  }
+  return {
+    directive,
+    structuredFacts: [],
+    guardrails: [{
+      topic: "compatibility",
+      reason: "no_confirmed_row",
+      message:
+        "Compatibility for the requested platform/connection is not confirmed in structured data.",
+    }],
+  };
+}
+
 export function buildCompatibilityProvenance(
   resolved: ResolvedCompatibility[] | null | undefined,
 ): StructuredFactProvenance[] {

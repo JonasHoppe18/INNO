@@ -11,8 +11,7 @@ import { runRetriever } from "./stages/retriever.ts";
 import type { RetrievalCandidateDiagnostics } from "./stages/retriever.ts";
 import { runInternalRules } from "./stages/internal-rules.ts";
 import {
-  buildCompatibilityDirective,
-  buildCompatibilityProvenance,
+  buildCompatibilityOutcome,
   detectCompatibilityQuery,
   isCompatibilityQuestion,
   resolveCompatibility,
@@ -1419,23 +1418,15 @@ export async function runDraftV2Pipeline(
         const resolved = targets.map((target) =>
           resolveCompatibility(rows, { target })
         );
-        if (resolved.some((r) => r.known)) {
-          compatibilityBlock = buildCompatibilityDirective(resolved, {
-            wasAsked: true,
-          });
-          structuredFactsProvenance.push(
-            ...buildCompatibilityProvenance(resolved),
-          );
-        } else {
-          // Response-only: surface the abstention so the agent sees we hold no
-          // confirmed compatibility data. Writer behavior is unchanged (no block).
-          provenanceGuardrails.push({
-            topic: "compatibility",
-            reason: "no_confirmed_row",
-            message:
-              "Compatibility for the requested platform/connection is not confirmed in structured data.",
-          });
-        }
+        // Stage 5, Slice 2B: ALWAYS inject a directive once a lookup was
+        // attempted — the confirmed-facts block when known, otherwise the
+        // NOT-CONFIRMED abstention block so the writer does not fall back to
+        // retrieval/guessing. Known cases also emit structured provenance;
+        // unknown cases emit a compatibility/no_confirmed_row guardrail.
+        const compatOutcome = buildCompatibilityOutcome(resolved);
+        compatibilityBlock = compatOutcome.directive;
+        structuredFactsProvenance.push(...compatOutcome.structuredFacts);
+        provenanceGuardrails.push(...compatOutcome.guardrails);
       }
     }
     // Stage 4B-3-2: structured product-comparison facts. Only for explicit

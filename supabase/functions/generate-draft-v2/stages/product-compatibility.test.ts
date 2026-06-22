@@ -1,6 +1,7 @@
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import {
   buildCompatibilityDirective,
+  buildCompatibilityOutcome,
   buildCompatibilityProvenance,
   detectCompatibilityQuery,
   isCompatibilityQuestion,
@@ -136,4 +137,30 @@ Deno.test("buildCompatibilityProvenance returns [] for unknown / empty input", (
     buildCompatibilityProvenance([resolveCompatibility(brandXbox, { target: "playstation" })]),
     [],
   );
+});
+
+// --- Stage 5, Slice 2B: unknown-compatibility abstention outcome ----------
+
+Deno.test("buildCompatibilityOutcome (known): confirmed directive + structured facts, no guardrail", () => {
+  const resolved = [resolveCompatibility(brandXbox, { target: "xbox" })];
+  const out = buildCompatibilityOutcome(resolved);
+  assert(/CONFIRMED FACTS/i.test(out.directive));
+  assert(out.structuredFacts.length > 0);
+  for (const f of out.structuredFacts) assertEquals(f.confidence, "confirmed");
+  assertEquals(out.guardrails.length, 0);
+});
+
+Deno.test("buildCompatibilityOutcome (unknown): NOT-CONFIRMED directive + guardrail, no structured facts", () => {
+  // playstation has no rows in brandXbox → unknown.
+  const resolved = [resolveCompatibility(brandXbox, { target: "playstation", connection: "bluetooth" })];
+  const out = buildCompatibilityOutcome(resolved);
+  assert(/NOT CONFIRMED/i.test(out.directive), "must inject the NOT-CONFIRMED directive");
+  assert(/do not guess/i.test(out.directive));
+  assertEquals(out.structuredFacts.length, 0, "no confirmed structured fact when unknown");
+  assertEquals(out.guardrails.length, 1);
+  assertEquals(out.guardrails[0].topic, "compatibility");
+  assertEquals(out.guardrails[0].reason, "no_confirmed_row");
+  assert(out.guardrails[0].message.length > 0);
+  // The directive must NOT assert a compatibility verdict it doesn't have.
+  assert(!/\b(yes|compatible)\b/i.test(out.directive.replace(/not confirmed/gi, "")));
 });
