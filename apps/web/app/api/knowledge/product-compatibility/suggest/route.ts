@@ -73,7 +73,10 @@ function toDbRow(row: Record<string, unknown>) {
 
 // Probe whether the additive evidence columns exist (apply path only). Selecting
 // them with limit(0) errors cleanly on a pre-migration table.
-async function evidenceColumnsReady(client: ReturnType<typeof createClient>) {
+// (client typed loosely: the @supabase/supabase-js generic instance type does
+//  not match the default-generic ReturnType<typeof createClient> signature.)
+// deno-lint-ignore no-explicit-any
+async function evidenceColumnsReady(client: any) {
   const { error } = await client
     .from("shop_product_compatibility")
     .select(REQUIRED_EVIDENCE_COLUMNS.join(","))
