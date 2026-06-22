@@ -1,6 +1,7 @@
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import {
   buildCompatibilityDirective,
+  buildCompatibilityProvenance,
   detectCompatibilityQuery,
   isCompatibilityQuestion,
   resolveCompatibility,
@@ -98,4 +99,41 @@ Deno.test("buildCompatibilityDirective on an unknown question emits a no-guess d
 
 Deno.test("buildCompatibilityDirective returns empty string when not a compatibility question", () => {
   assertEquals(buildCompatibilityDirective([], { wasAsked: false }), "");
+});
+
+// --- Stage 5, Slice 1: compatibility provenance ---------------------------
+
+Deno.test("buildCompatibilityProvenance exposes confirmed compatibility facts from shop_product_compatibility", () => {
+  const resolved = [resolveCompatibility(brandXbox, { target: "xbox" })];
+  const prov = buildCompatibilityProvenance(resolved);
+
+  assert(prov.length > 0);
+  for (const f of prov) {
+    assertEquals(f.type, "compatibility");
+    assertEquals(f.confidence, "confirmed");
+    assertEquals(f.origin_table, "shop_product_compatibility");
+  }
+  const aux = prov.find((f) => /aux/i.test(f.key));
+  assert(aux, "expected an AUX compatibility fact");
+  assert(/compatible/i.test(aux!.value));
+});
+
+Deno.test("buildCompatibilityProvenance never includes a suggested compatibility row", () => {
+  const rows: CompatibilityRow[] = [
+    { product_id: null, target: "switch", connection: "usb_c", compatible: "yes", reason: null, workaround: null, confidence: "confirmed" },
+    { product_id: null, target: "switch", connection: "bluetooth", compatible: "yes", reason: null, workaround: null, confidence: "suggested" },
+  ];
+  const resolved = [resolveCompatibility(rows, { target: "switch" })];
+  const prov = buildCompatibilityProvenance(resolved);
+  assertEquals(prov.length, 1);
+  assert(/usb-?c/i.test(prov[0].key));
+  assert(!prov.some((f) => /bluetooth/i.test(f.key)));
+});
+
+Deno.test("buildCompatibilityProvenance returns [] for unknown / empty input", () => {
+  assertEquals(buildCompatibilityProvenance([]), []);
+  assertEquals(
+    buildCompatibilityProvenance([resolveCompatibility(brandXbox, { target: "playstation" })]),
+    [],
+  );
 });

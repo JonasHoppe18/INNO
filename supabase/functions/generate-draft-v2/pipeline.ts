@@ -12,17 +12,25 @@ import type { RetrievalCandidateDiagnostics } from "./stages/retriever.ts";
 import { runInternalRules } from "./stages/internal-rules.ts";
 import {
   buildCompatibilityDirective,
+  buildCompatibilityProvenance,
   detectCompatibilityQuery,
   isCompatibilityQuestion,
   resolveCompatibility,
 } from "./stages/product-compatibility.ts";
 import {
   buildComparisonDirective,
+  buildComparisonProvenance,
   buildSpecComparison,
   detectComparisonQuery,
   isComparisonQuestion,
   resolveProductSpecs,
 } from "./stages/product-specs.ts";
+import {
+  assembleProvenance,
+  type GuardrailUnavailableProvenance,
+  type Provenance,
+  type StructuredFactProvenance,
+} from "./stages/provenance.ts";
 import { isReturnRefundIntent } from "./stages/returns-grounding.ts";
 import { runFactResolver } from "./stages/fact-resolver.ts";
 import {
@@ -149,6 +157,10 @@ export interface PipelineResult {
     usable_as?: string;
     risk_flags?: string[];
   }>;
+  // Response-only provenance (Stage 5, Slice 1). Safe, UI-ready summary of where
+  // the draft's facts came from. Never persisted in this slice. Never carries
+  // hidden writer-directive text.
+  provenance?: Provenance;
   knowledge_gaps: KnowledgeGap[];
   skipped?: boolean;
   skip_reason?: string;
@@ -1362,6 +1374,11 @@ export async function runDraftV2Pipeline(
     // apply to all products; product-specific override is supported by the
     // resolver/table for when product detection is wired in a later slice.
     // Best-effort: a missing table (pre-migration) yields no rows → no block.
+    // Stage 5, Slice 1: response-only provenance accumulators. Populated only
+    // from CONFIRMED structured facts that actually fed the writer directives;
+    // never carry directive text. They never change writer behavior.
+    const structuredFactsProvenance: StructuredFactProvenance[] = [];
+    const provenanceGuardrails: GuardrailUnavailableProvenance[] = [];
     let compatibilityBlock = "";
     if (isCompatibilityQuestion(latestBody)) {
       const { targets } = detectCompatibilityQuery(latestBody);
@@ -1382,6 +1399,18 @@ export async function runDraftV2Pipeline(
         if (resolved.some((r) => r.known)) {
           compatibilityBlock = buildCompatibilityDirective(resolved, {
             wasAsked: true,
+          });
+          structuredFactsProvenance.push(
+            ...buildCompatibilityProvenance(resolved),
+          );
+        } else {
+          // Response-only: surface the abstention so the agent sees we hold no
+          // confirmed compatibility data. Writer behavior is unchanged (no block).
+          provenanceGuardrails.push({
+            topic: "compatibility",
+            reason: "no_confirmed_row",
+            message:
+              "Compatibility for the requested platform/connection is not confirmed in structured data.",
           });
         }
       }
@@ -1428,11 +1457,19 @@ export async function runDraftV2Pipeline(
             title: m.title,
             specs: resolveProductSpecs(rows, { productId: m.id }),
           }));
+          const comparison = buildSpecComparison(productSpecs);
           comparisonBlock = buildComparisonDirective(
-            buildSpecComparison(productSpecs),
+            comparison,
             productSpecs,
             { wasAsked: true },
           );
+          // Response-only provenance: only when the directive actually used the
+          // confirmed specs (mirrors what the writer received).
+          if (comparisonBlock) {
+            structuredFactsProvenance.push(
+              ...buildComparisonProvenance(comparison, productSpecs),
+            );
+          }
         }
       }
     }
@@ -1772,6 +1809,12 @@ export async function runDraftV2Pipeline(
           usable_as: c.usable_as,
           risk_flags: c.risk_flags,
         })),
+        provenance: assembleProvenance({
+          retrievedChunks: retrieved.chunks,
+          structuredFacts: structuredFactsProvenance,
+          facts: facts.facts,
+          extraGuardrails: provenanceGuardrails,
+        }),
       };
     }
 
@@ -2642,6 +2685,12 @@ export async function runDraftV2Pipeline(
       sources: buildPipelineSources({
         retrievedChunks: retrieved.chunks,
         previewSources: previewDocument.sources,
+      }),
+      provenance: assembleProvenance({
+        retrievedChunks: retrieved.chunks,
+        structuredFacts: structuredFactsProvenance,
+        facts: facts.facts,
+        extraGuardrails: provenanceGuardrails,
       }),
       ...(previewDocument.diagnostics
         ? { preview_document_context: previewDocument.diagnostics }

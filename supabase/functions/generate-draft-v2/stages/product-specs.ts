@@ -2,6 +2,8 @@
 //
 // Structured, platform-neutral product specs (Stage 4B-3-2).
 //
+// Provenance helpers (Stage 5, Slice 1) live at the bottom of this file.
+//
 // Sona compares products from curated, confirmed specs in
 // public.shop_product_specs — never by guessing from product descriptions or
 // prose retrieval. PURE module (no DB, no LLM): the pipeline fetches rows and
@@ -12,6 +14,8 @@
 //     (product_id = null) for the same spec_key,
 //   - only confidence='confirmed' rows are ever served,
 //   - a missing spec is "Not specified" (never inferred as "No").
+
+import type { StructuredFactProvenance } from "./provenance.ts";
 
 const NOT_SPECIFIED = "Not specified";
 
@@ -266,4 +270,53 @@ export function buildComparisonDirective(
     "- Use ONLY the confirmed facts above; do not guess or invent missing facts, and never use suggested/unconfirmed specs — do not mention DAC, sound-quality/comfort/feature ratings, or outdoor mode unless they appear as confirmed facts above.",
   );
   return lines.join("\n");
+}
+
+/**
+ * Response-only provenance (Stage 5, Slice 1). Returns the confirmed structured
+ * facts that actually fed the comparison directive — the comparable spec rows
+ * plus any positioning guidance — as flat, UI-safe entries. NEVER includes the
+ * directive prose itself, and only ever sees confirmed specs (resolveProductSpecs
+ * already dropped suggested rows before products[] is built).
+ */
+export function buildComparisonProvenance(
+  comparison: ComparisonRow[] | null | undefined,
+  products: ProductSpecs[] | null | undefined,
+): StructuredFactProvenance[] {
+  const rows = Array.isArray(comparison) ? comparison : [];
+  const productList = Array.isArray(products) ? products : [];
+  const out: StructuredFactProvenance[] = [];
+
+  // Comparable technical specs — one entry per spec_key across the products.
+  for (const row of rows) {
+    out.push({
+      type: "comparison",
+      product_titles: row.values.map((v) => v.title),
+      key: row.spec_key,
+      value: row.values.map((v) => `${v.title}: ${v.value}`).join(" | "),
+      confidence: "confirmed",
+      origin_table: "shop_product_specs",
+    });
+  }
+
+  // Confirmed positioning guidance (resolveProductSpecs already dropped
+  // suggested rows, so anything here is confirmed).
+  for (const p of productList) {
+    for (
+      const s of (p.specs ?? [])
+        .filter((spec) => spec.spec_group === "positioning")
+        .sort((a, b) => a.display_order - b.display_order)
+    ) {
+      out.push({
+        type: "spec",
+        product_titles: [p.title],
+        key: s.spec_key,
+        value: s.spec_value,
+        confidence: "confirmed",
+        origin_table: "shop_product_specs",
+      });
+    }
+  }
+
+  return out;
 }

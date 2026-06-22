@@ -251,6 +251,7 @@ export async function POST(request: Request) {
     routing_hint: data.routing_hint ?? null,
     confidence: typeof data.confidence === "number" ? data.confidence : null,
     sources: Array.isArray(data.sources) ? data.sources : [],
+    provenance: data.provenance ?? null,
     preview_document_context: data.preview_document_context ?? (
       previewDocumentContext
         ? {

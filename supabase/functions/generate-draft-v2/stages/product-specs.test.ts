@@ -1,6 +1,7 @@
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import {
   buildComparisonDirective,
+  buildComparisonProvenance,
   buildSpecComparison,
   detectComparisonQuery,
   isComparisonQuestion,
@@ -249,4 +250,79 @@ Deno.test("buildComparisonDirective returns empty when no comparable confirmed s
     { productId: 1, title: "A-Blaze", specs: resolveProductSpecs(rows, { productId: 1 }) },
   ]);
   assertEquals(buildComparisonDirective(cmp, [], { wasAsked: false }), "");
+});
+
+// --- Stage 5, Slice 1: comparison provenance ------------------------------
+
+Deno.test("buildComparisonProvenance exposes confirmed comparison facts from shop_product_specs", () => {
+  const ps = [
+    { productId: 1, title: "A-Blaze", specs: resolveProductSpecs(rows, { productId: 1 }) },
+    { productId: 2, title: "A-Spire Wireless", specs: resolveProductSpecs(rows, { productId: 2 }) },
+  ];
+  const prov = buildComparisonProvenance(buildSpecComparison(ps), ps);
+
+  // Every entry is a confirmed structured fact sourced from the specs table.
+  assert(prov.length > 0);
+  for (const f of prov) {
+    assertEquals(f.confidence, "confirmed");
+    assertEquals(f.origin_table, "shop_product_specs");
+  }
+  const eq = prov.find((f) => f.key === "eq_app_bands");
+  assert(eq, "expected eq_app_bands comparison fact");
+  assertEquals(eq!.type, "comparison");
+  assertEquals(eq!.product_titles, ["A-Blaze", "A-Spire Wireless"]);
+  assert(eq!.value.includes("A-Blaze"));
+  assert(eq!.value.includes("A-Spire Wireless"));
+});
+
+Deno.test("buildComparisonProvenance never leaks a suggested spec value (shows Not specified)", () => {
+  const ps = [
+    { productId: 1, title: "A-Blaze", specs: resolveProductSpecs(rows, { productId: 1 }) },
+    { productId: 2, title: "A-Spire Wireless", specs: resolveProductSpecs(rows, { productId: 2 }) },
+  ];
+  const prov = buildComparisonProvenance(buildSpecComparison(ps), ps);
+  // glasses_mode for A-Spire Wireless is suggested → must render as Not specified.
+  const glasses = prov.find((f) => f.key === "glasses_mode");
+  assert(glasses, "expected glasses_mode comparison fact");
+  assert(glasses!.value.includes("A-Spire Wireless: Not specified"));
+});
+
+Deno.test("buildComparisonProvenance includes confirmed positioning as type 'spec'", () => {
+  const ps = positioningProducts();
+  const prov = buildComparisonProvenance(buildSpecComparison(ps), ps);
+  const positioning = prov.filter((f) => f.type === "spec");
+  assert(positioning.length > 0, "expected positioning provenance entries");
+  assert(
+    positioning.some((f) =>
+      f.value.includes("Customers who want strong wireless gaming at a lower price.")
+    ),
+  );
+  // Suggested positioning row must never surface.
+  assert(!prov.some((f) => f.value.includes("(unconfirmed marketing claim)")));
+});
+
+Deno.test("buildComparisonProvenance returns [] for empty input", () => {
+  assertEquals(buildComparisonProvenance([], []), []);
+  assertEquals(buildComparisonProvenance(null, null), []);
+});
+
+Deno.test("suggested-only dac_quality never appears in comparison provenance (AceZone live state)", () => {
+  // Mirrors AceZone's real data: dac_quality exists ONLY as confidence='suggested'.
+  const suggestedDacRows: SpecRow[] = [
+    { product_id: 1, spec_key: "dac_quality", spec_group: "audio", spec_value: "Better DAC", value_bool: null, value_num: null, unit: null, display_order: 10, comparable: true, confidence: "suggested" },
+    { product_id: 2, spec_key: "dac_quality", spec_group: "audio", spec_value: "Best DAC", value_bool: null, value_num: null, unit: null, display_order: 10, comparable: true, confidence: "suggested" },
+    // a confirmed spec so a comparison can still be built
+    { product_id: 1, spec_key: "eq_app_bands", spec_group: "audio", spec_value: "8", value_bool: null, value_num: 8, unit: "bands", display_order: 20, comparable: true, confidence: "confirmed" },
+    { product_id: 2, spec_key: "eq_app_bands", spec_group: "audio", spec_value: "8", value_bool: null, value_num: 8, unit: "bands", display_order: 20, comparable: true, confidence: "confirmed" },
+  ];
+  const ps = [
+    { productId: 1, title: "A-Blaze", specs: resolveProductSpecs(suggestedDacRows, { productId: 1 }) },
+    { productId: 2, title: "A-Spire Wireless", specs: resolveProductSpecs(suggestedDacRows, { productId: 2 }) },
+  ];
+  const prov = buildComparisonProvenance(buildSpecComparison(ps), ps);
+  // No dac_quality entry at all, and no suggested dac value leaks anywhere.
+  assert(!prov.some((f) => f.key === "dac_quality"), "suggested dac_quality must not be a provenance fact");
+  assert(!prov.some((f) => /better dac|best dac/i.test(f.value)), "suggested dac value leaked");
+  // The confirmed spec still surfaces.
+  assert(prov.some((f) => f.key === "eq_app_bands"));
 });

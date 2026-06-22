@@ -228,6 +228,7 @@ export function PlaygroundPanel({ children }) {
         setSimDraft(text || "No draft was generated.");
         setSimPipelineDebug({
           sources: data?.sources || [],
+          provenance: data?.provenance || null,
           confidence: data?.confidence ?? null,
           routing_hint: data?.routing_hint || null,
           intent: data?.intent || null,
@@ -496,6 +497,14 @@ const USABLE_AS_META = {
   ignore:       { label: "Ignored",          color: "bg-slate-100 text-slate-400 border-slate-200" },
 };
 
+// Stage 5, Slice 1 — human labels for provenance live-fact sources.
+const LIVE_SOURCE_LABELS = {
+  shopify_order: "Shopify order",
+  carrier_tracking: "Carrier tracking",
+  refund_derivation: "Refund (live)",
+  shopify_inventory: "Live inventory",
+};
+
 const INTENT_LABELS = {
   return: "Return",
   refund: "Refund",
@@ -512,7 +521,10 @@ const INTENT_LABELS = {
 };
 
 function PipelineTrace({ debug }) {
-  const { sources = [], confidence, routing_hint, intent, knowledge_gaps = [], latency_ms } = debug;
+  const { sources = [], confidence, routing_hint, intent, knowledge_gaps = [], latency_ms, provenance = null } = debug;
+  const structuredFacts = provenance?.structured_facts ?? [];
+  const liveFacts = provenance?.live_facts ?? [];
+  const guardrails = provenance?.guardrails_unavailable ?? [];
   const [expanded, setExpanded] = useState(new Set());
 
   function toggle(i) {
@@ -610,6 +622,73 @@ function PipelineTrace({ debug }) {
           </div>
         )}
       </div>
+
+      {/* Structured facts (confirmed — shop_product_specs / shop_product_compatibility) */}
+      {structuredFacts.length > 0 && (
+        <div className="border-t border-slate-200 p-3">
+          <p className="mb-2 flex items-center gap-1 text-xs font-medium text-emerald-600">
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            Structured facts ({structuredFacts.length})
+          </p>
+          <div className="space-y-1.5">
+            {structuredFacts.map((f, i) => (
+              <div key={i} className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate text-xs font-medium text-emerald-900">{f.key}</span>
+                  <span className="inline-flex shrink-0 items-center rounded-full border border-emerald-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
+                    {f.type} · confirmed
+                  </span>
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-emerald-800">{f.value}</p>
+                <p className="mt-0.5 text-[10px] text-emerald-600/80">{f.origin_table}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Live facts (verified live commerce data) */}
+      {liveFacts.length > 0 && (
+        <div className="border-t border-slate-200 p-3">
+          <p className="mb-2 flex items-center gap-1 text-xs font-medium text-sky-600">
+            <Shield className="h-3.5 w-3.5" />
+            Live facts ({liveFacts.length})
+          </p>
+          <div className="space-y-1.5">
+            {liveFacts.map((f, i) => (
+              <div key={i} className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate text-xs font-medium text-sky-900">{f.label}</span>
+                  <span className="inline-flex shrink-0 items-center rounded-full border border-sky-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-sky-700">
+                    {LIVE_SOURCE_LABELS[f.source] ?? f.source} · verified
+                  </span>
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-sky-800">{f.value}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Guardrails / unavailable facts (safe abstentions) */}
+      {guardrails.length > 0 && (
+        <div className="border-t border-slate-200 p-3">
+          <p className="mb-2 flex items-center gap-1 text-xs font-medium text-orange-600">
+            <AlertTriangle className="h-3.5 w-3.5" />
+            Guardrails / unavailable facts ({guardrails.length})
+          </p>
+          <div className="space-y-1.5">
+            {guardrails.map((g, i) => (
+              <div key={i} className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2">
+                <span className="inline-flex shrink-0 items-center rounded-full border border-orange-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-orange-700">
+                  {g.topic} · {g.reason}
+                </span>
+                <p className="mt-1 text-xs leading-relaxed text-orange-800">{g.message}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Knowledge gaps */}
       {knowledge_gaps.length > 0 && (

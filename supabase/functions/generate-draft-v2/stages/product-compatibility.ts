@@ -13,6 +13,8 @@
 //   - only confidence='confirmed' rows are ever served,
 //   - no confirmed row => unknown ("not confirmed"); the writer must not guess.
 
+import type { StructuredFactProvenance } from "./provenance.ts";
+
 export type CompatibleState = "yes" | "no" | "partial";
 
 export interface CompatibilityRow {
@@ -197,4 +199,40 @@ export function buildCompatibilityDirective(
     "- Use ONLY the confirmed facts above. For any platform/connection not listed, do NOT guess — say it is not confirmed or ask for details.",
   );
   return lines.join("\n");
+}
+
+/**
+ * Response-only provenance (Stage 5, Slice 1). Returns the confirmed
+ * compatibility facts that actually fed the directive as flat, UI-safe entries.
+ * resolveCompatibility already filtered to confidence='confirmed', so everything
+ * here is confirmed. NEVER includes the directive prose itself.
+ */
+export function buildCompatibilityProvenance(
+  resolved: ResolvedCompatibility[] | null | undefined,
+): StructuredFactProvenance[] {
+  const list = Array.isArray(resolved) ? resolved : [];
+  const out: StructuredFactProvenance[] = [];
+  for (const r of list) {
+    if (!r.known) continue;
+    const targetLabel = TARGET_LABEL[r.target] ?? r.target;
+    for (const res of r.results) {
+      const connLabel = CONNECTION_LABEL[res.connection] ?? res.connection;
+      const verdict = res.compatible === "yes"
+        ? "compatible"
+        : res.compatible === "no"
+        ? "NOT compatible"
+        : "partially compatible";
+      let value = verdict;
+      if (res.reason) value += `. Reason: ${res.reason}`;
+      if (res.workaround) value += `. Workaround: ${res.workaround}`;
+      out.push({
+        type: "compatibility",
+        key: `${targetLabel} via ${connLabel}`,
+        value,
+        confidence: "confirmed",
+        origin_table: "shop_product_compatibility",
+      });
+    }
+  }
+  return out;
 }
