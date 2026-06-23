@@ -101,7 +101,16 @@ function round2(n) {
 }
 
 export function computeAggregate(results) {
-  const scored = results.filter((r) => r.status === "scored");
+  const allScored = results.filter((r) => r.status === "scored");
+  // Non-comparable action anchors (human reply IS a completed action confirmation)
+  // are reported separately and kept OUT of the headline averages — judging a
+  // draft directly against an action confirmation deflates and distorts scores.
+  const excludedResults = allScored.filter(
+    (r) => r.anchor_class === "non_comparable_anchor",
+  );
+  const scored = allScored.filter(
+    (r) => r.anchor_class !== "non_comparable_anchor",
+  );
   const aggregate = {};
   for (const dim of DIMS) {
     aggregate[dim] = scored.length
@@ -152,7 +161,28 @@ export function computeAggregate(results) {
     };
   }
 
-  return { n_cases: scored.length, aggregate, per_intent, per_case, coherence };
+  const excluded = {
+    n: excludedResults.length,
+    avg_overall_10: excludedResults.length
+      ? round2(
+        excludedResults.reduce((s, r) => s + (r.scores.overall_10 || 0), 0) /
+          excludedResults.length,
+      )
+      : 0,
+    per_case: Object.fromEntries(
+      excludedResults.map((r) => [r.id, r.scores.overall_10]),
+    ),
+  };
+
+  return {
+    n_cases: scored.length,
+    n_excluded: excludedResults.length,
+    aggregate,
+    per_intent,
+    per_case,
+    coherence,
+    excluded,
+  };
 }
 
 export function computeCoherence(chunks) {

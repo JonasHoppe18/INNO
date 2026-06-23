@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { resolveAuthScope } from "@/lib/server/workspace-auth";
+import { classifyAnchor } from "@/lib/server/eval-anchor";
 
 const SUPABASE_URL = (
   process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -206,12 +207,19 @@ export async function GET(req) {
 
     if (!customerBody || !agentBody) continue;
 
+    const { anchor_class, signals: anchor_signals } = classifyAnchor({
+      humanReply: agentBody,
+    });
+
     results.push({
       id: String(ticketId),
       subject,
       customer_body: customerBody.slice(0, 3000),
       human_reply: agentBody.slice(0, 3000),
       conversation_history: conversationHistory ? conversationHistory.slice(0, 3000) : null,
+      anchor_class,
+      anchor_signals,
+      multi_turn: priorMessages.length > 0,
       created_at: ticket.created_at,
     });
 

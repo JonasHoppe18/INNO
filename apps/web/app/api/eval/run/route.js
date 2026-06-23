@@ -65,6 +65,9 @@ function normalizeItems({ emails, thread_ids, zendesk_tickets }) {
         customer_body: ticket?.customer_body ?? ticket?.body ?? "",
         human_reply: ticket?.human_reply ?? "",
         conversation_history: ticket?.conversation_history ?? "",
+        anchor_class: ticket?.anchor_class ?? "comparable",
+        anchor_signals: Array.isArray(ticket?.anchor_signals) ? ticket.anchor_signals : [],
+        multi_turn: ticket?.multi_turn === true,
       }))
       .filter((ticket) => String(ticket.customer_body || ticket.body || "").trim());
     return { mode: "zendesk", items };
