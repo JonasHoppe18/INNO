@@ -22,10 +22,11 @@
 // stays the default and a genuine CS reply is never silently dropped.
 
 const COMPLETED_ACTION = [
-  // shipment created / dispatched
+  // shipment created / dispatched. Note: a bare carrier name is deliberately NOT
+  // a signal on its own — words like "bring"/"ups" are too common and would
+  // false-positive. Real confirmations carry a tracking ref or a "sent with …".
   /\btracking\s*(number|info|link)\b/i,
   /\b(har (lavet|oprettet) forsendelsen|shipment (is )?ready|made the shipment|sent (it )?with|sendt med|afsendt)\b/i,
-  /\b(fedex|postnord|gls|dhl|ups|dao|bring)\b/i,
   // refund issued
   /\b(refunded|refund has been (issued|processed)|issued (a|the) refund|beløbet (er )?(tilbageført|refunderet)|via (a )?gift\s?card)\b/i,
   // discount activated
@@ -42,6 +43,9 @@ const NEEDS_OUT_OF_BAND = [
   /\b(swift|iban|bank details|bankoplysninger)\b/i,
   // asks for the identity/shipping fields needed to perform an action the AI can't do
   /\b(provide (me )?(your )?(full name|full address|phone( number)?))\b/i,
+  // an explicit identity block (full name + full address) is an out-of-band
+  // shipment/invoice request the AI cannot fulfil, even when phrased as a list.
+  /\bfull name\b[\s\S]{0,60}\bfull address\b/i,
   /\b(need (a |an )?(phone|address|email)[^.\n]{0,30}\b(for|to)\b[^.\n]{0,30}\b(shipment|order|transfer)\b)/i,
   /\b(send me your (name|address|details))\b/i,
   /\b(oplys|udfyld)[^.\n]{0,40}(navn|adresse|telefon)[^.\n]{0,40}(forsendelse|ordre|overførsel)\b/i,
