@@ -27,14 +27,22 @@ const COMPLETED_ACTION = [
   // false-positive. Real confirmations carry a tracking ref or a "sent with …".
   /\btracking\s*(number|info|link)\b/i,
   /\b(har (lavet|oprettet) forsendelsen|shipment (is )?ready|made the shipment|sent (it )?with|sendt med|afsendt)\b/i,
+  // Danish shipment / dispatch confirmations (object + sendt/afsendt, or "sendt afsted",
+  // or a tracking reference). Scoped to an object so a bare "sendt" can't false-positive.
+  /\b(dongle|pakken?|varen|ordren|den)\s+(er\s+)?(sendt|afsendt)\b/i,
+  /\bsendt\s+afsted\b/i,
+  /\btracking(en|et)?\b/i,
   // refund issued
   /\b(refunded|refund has been (issued|processed)|issued (a|the) refund|beløbet (er )?(tilbageført|refunderet)|via (a )?gift\s?card)\b/i,
+  // Danish refund / gift card (whole words; agent replies mentioning these are
+  // overwhelmingly action confirmations, while comparable stays the default).
+  /\b(gavekort|refundering(en)?)\b/i,
   // discount activated
   /\b(code is now active|now active for you|koden er (nu )?aktiv|activated the (code|discount)|er (nu )?aktiveret)\b/i,
   // replacement sent
   /\b(sent you a new|sending (you )?a (new|replacement)|sender dig et nyt|nyt (headset|sæt) (er )?sendt|replacement (is )?on its way)\b/i,
-  // bank transfer completed
-  /\b(transfer (is )?(done|completed)|overførsel (er )?gennemført|payment sent)\b/i,
+  // bank transfer (completed or in progress — the AI has no tool for either)
+  /\b(transfer (is )?(done|completed)|overførs(el|len)|overførsel (er )?gennemført|payment sent)\b/i,
   // order / invoice created
   /\b(created the order|oprettet ordren|invoice (is )?(created|attached|sent)|faktura (er )?(oprettet|sendt))\b/i,
 ];

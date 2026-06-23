@@ -17,6 +17,13 @@ const NON_COMPARABLE = [
   "Hi again,\n\nThe refund was sent to you via a Gift Card by Amazon, so your refund stands.",
   // pilot 302 — agent commits to sending a replacement + tracking link to follow
   "Hej,\n\nDa det er en garantisag, sender vi dig et nyt. Jeg vender tilbage med et tracking link.",
+  // pilot 289 — dongle dispatched + tracking to follow (Danish)
+  "Hej igen,\n\nTak for konfirmationen. Jeg får en dongle sendt afsted ASAP i morgen! Jeg vender tilbage med trackingen.",
+  // pilot 288 — refund/transfer in progress via bank (Danish; AI has no tool for it)
+  "Hej,\n\nJeg har informeret mine overordnede om, at refunderingen skal bekræftes fra vores bank. Når det er bekræftet, bør overførslen ske.",
+  // plain Danish shipment + gift-card refund confirmations
+  "Hej,\n\nPakken er sendt.",
+  "Hej,\n\nBeløbet er tilbageført til dit gavekort.",
 ];
 
 const ACTION_REQUIRED = [
@@ -31,6 +38,8 @@ const COMPARABLE = [
   "Hi again,\n\nYes, the A-Spire (Wired) model supports Bluetooth connection. It is meant for music and mobile use; we do not recommend it for gaming.",
   // ordinary product-support reply, mentions a common word ("bring") that must NOT trip the carrier heuristic
   "Hi,\n\nPlease bring the headset close to the dongle and try pairing again, then let me know if it connects.",
+  // pilot 276 — Danish technical explanation, no action cues (must stay comparable)
+  "Hej der,\n\nNår du anvender en EQ profil i CS2, kan du dæmpe visse frekvensområder. Al processering ligger i selve headsettet, så du har mindre forsinkelse.",
   "", // empty reply defaults to comparable
 ];
 
