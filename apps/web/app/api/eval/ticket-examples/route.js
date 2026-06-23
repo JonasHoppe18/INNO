@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { resolveAuthScope, listScopedShops } from "@/lib/server/workspace-auth";
+import { classifyAnchor } from "@/lib/server/eval-anchor";
 
 const SUPABASE_URL = (
   process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -66,20 +67,26 @@ export async function GET(req) {
 
   const examples = (data ?? [])
     .filter((row) => String(row.customer_msg || "").trim() && String(row.agent_reply || "").trim())
-    .map((row) => ({
-      id: `ticket-example-${row.id}`,
-      ticket_example_id: row.id,
-      external_ticket_id: row.external_ticket_id,
-      source_provider: row.source_provider,
-      subject: row.subject || "(no subject)",
-      customer_body: String(row.customer_msg || "").slice(0, 3000),
-      human_reply: String(row.agent_reply || "").slice(0, 3000),
-      intent: row.intent,
-      language: row.language,
-      csat_score: row.csat_score,
-      tags: row.tags ?? [],
-      created_at: row.imported_at,
-    }));
+    .map((row) => {
+      const human_reply = String(row.agent_reply || "").slice(0, 3000);
+      const { anchor_class, signals: anchor_signals } = classifyAnchor({ humanReply: human_reply });
+      return {
+        id: `ticket-example-${row.id}`,
+        ticket_example_id: row.id,
+        external_ticket_id: row.external_ticket_id,
+        source_provider: row.source_provider,
+        subject: row.subject || "(no subject)",
+        customer_body: String(row.customer_msg || "").slice(0, 3000),
+        human_reply,
+        intent: row.intent,
+        language: row.language,
+        csat_score: row.csat_score,
+        tags: row.tags ?? [],
+        anchor_class,
+        anchor_signals,
+        created_at: row.imported_at,
+      };
+    });
 
   return NextResponse.json({ examples, fetched: examples.length, requested: limit });
 }
