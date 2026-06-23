@@ -160,11 +160,20 @@ async function scoreZendesk({
     ? `[Previous conversation:\n${conversationHistory}\n]\n\n${ticketBody}`
     : ticketBody;
 
+  const anchorClass = String(
+    (ticket as Record<string, unknown>)?.anchor_class || "comparable",
+  );
+  // Non-comparable anchors (human reply is a completed action confirmation) are
+  // judged standalone, not against the human reply, and excluded from headline
+  // aggregates downstream.
+  const judgeHuman = anchorClass === "non_comparable_anchor" ? null : humanReply;
+
   const scores = await judgeWithOpenAI(
     judgeBody,
     draftForJudge(draft, actions),
-    humanReply,
+    judgeHuman,
     judgeModel,
+    anchorClass,
   );
 
   const { error: insertError } = await supabase
@@ -185,6 +194,9 @@ async function scoreZendesk({
       latency_ms: latencyMs,
       human_reply: humanReply ? humanReply.slice(0, 2000) : null,
       zendesk_ticket_id: zendeskId || null,
+      anchor_class: anchorClass,
+      excluded_from_aggregate: anchorClass === "non_comparable_anchor",
+      judge_flags: scores.judge_flags ?? null,
       correctness: scores.correctness,
       completeness: scores.completeness,
       tone: scores.tone,

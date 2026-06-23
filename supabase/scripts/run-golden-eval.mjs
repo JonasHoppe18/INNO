@@ -20,6 +20,7 @@ import {
 import {
   generateDraftV2, judgeWithOpenAI, draftForJudge,
 } from "../../apps/web/lib/server/eval-runner.js";
+import { classifyAnchor } from "../../apps/web/lib/server/eval-anchor.js";
 
 const SET_PATH = "supabase/eval/golden-set.acezone.json";
 const BASELINE_PATH = "supabase/eval/golden-baseline.acezone.json";
@@ -50,8 +51,11 @@ for (const c of cases) {
       retrievalIssueTiebreak: opts.retrievalIssueTiebreak || undefined,
       retrievalSourceConsolidate: opts.retrievalSourceConsolidate || undefined,
     });
+    const anchorClass = c.anchor_class ||
+      classifyAnchor({ humanReply: c.human_reply }).anchor_class;
+    const judgeHuman = anchorClass === "non_comparable_anchor" ? null : c.human_reply;
     const judged = await judgeWithOpenAI(
-      c.body, draftForJudge(gen.draft, gen.actions), c.human_reply, "gpt-4o-mini"
+      c.body, draftForJudge(gen.draft, gen.actions), judgeHuman, "gpt-4o-mini", anchorClass,
     );
     const gate = runGates(gen.draft, gen.actions, c);
     if (!gate.passed) gateFailures++;
@@ -61,6 +65,7 @@ for (const c of cases) {
       : null;
     results.push({
       id: c.id, intent: c.intent || null, tier: c.tier, status: "scored",
+      anchor_class: anchorClass,
       scores: {
         correctness: judged.correctness, completeness: judged.completeness,
         tone: judged.tone, actionability: judged.actionability,
