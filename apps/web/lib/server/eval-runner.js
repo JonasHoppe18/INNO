@@ -1,3 +1,5 @@
+import { detectHardCapSignals } from "./judge-hardcaps.js";
+
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const INTERNAL_AGENT_SECRET = process.env.INTERNAL_AGENT_SECRET || "";
 const SUPABASE_URL = (
@@ -26,9 +28,11 @@ overall_10: Your holistic score (1-10) for whether a support agent could send th
 Important: Some evaluated outputs intentionally pause before a customer-facing reply because an action needs human approval.
 If the AI output says it paused for action approval, judge whether the proposed action/routing is correct. Do not score it as "no response provided" just because the final customer reply comes after approval.
 
-Hard caps (apply BEFORE picking the number — these override a fluent-but-flawed draft):
+NON-NEGOTIABLE HARD CAPS — these OVERRIDE everything above (including any instruction not to penalize missing actions). Set the flag AND cap the score:
 - FABRICATION: If the AI invents a person, team, process, policy, address, or a commitment/action not supported by the ticket or known facts (e.g. naming a colleague, a "sales leads team", or a return-label process never established), set "fabrication": true and cap overall at 2. This is a safety failure.
+  Examples: "I'll notify the team handling X so <Name> is informed" when that team/person is not in the ticket → fabrication. Naming an internal department/colleague/process that was never established → fabrication, even if it looks like a helpful handoff.
 - UNSUPPORTED AVAILABILITY: If the AI states or implies a product, variant, or spare part is in stock / purchasable / restockable without that being given as a fact, set "unsupported_availability": true and cap overall at 3.
+  Examples: "we offer these earpads as spare parts on our webshop" plus a purchase/spare-parts link, or "it's in stock / you can buy it / I'll reserve a set", when no live stock fact is given → unsupported_availability=true, even if you then ask which country/order to "confirm stock".
 - WRONG LANGUAGE: If the reply language does not match the customer's language, set "language_mismatch": true and cap overall at 2.
 - WRONG DIRECTION (multi-turn): If the conversation already established a direction and the AI reverses or restarts it (e.g. re-asks "what do you need help with?"), set "wrong_direction": true and cap overall at 3.
 - UNNECESSARY ESCALATION/HEDGING: If the AI defers ("I'll get back to you", "we'll look into it / forward this") when it had enough to resolve or to ask one precise question, set "unnecessary_escalation": true and drop overall by 2.
@@ -75,12 +79,14 @@ overall_10: Your holistic score (1-10) for sendability. Use these anchors strict
 - 3-4: Pursues the WRONG resolution, would mislead the customer, or omits the core thing the customer needs.
 - 1-2: Wrong, unsafe, or off-topic.
 
-Hard caps (apply BEFORE picking the number — these override a fluent-but-flawed draft):
+NON-NEGOTIABLE HARD CAPS — these OVERRIDE everything above (including any instruction not to penalize missing actions). Set the flag AND cap the score:
 - RESOLUTION MISMATCH: If the human resolves the case one way and the AI proposes a different path that is wrong or worse (e.g. DIY/self-repair instead of sending a replacement; an in-house warranty swap when the human says a third-party reseller is responsible; troubleshooting the wrong subsystem), cap overall at 4.
 - MISSING INFO THE HUMAN COLLECTED: If the human asks for specific information needed to proceed (shipping/label details, order number, name used at purchase, photos) and the AI does not, cap overall at 6 and name it in missing_for_10.
 - VERBOSITY: If the AI is materially longer than the human while the human was concise and complete, drop overall by 1-2 and set primary_gap to "too verbose".
 - INVENTED CONTENT / FABRICATION: If the AI gives steps, specs, numbers, advice, OR invents a person, team, process, policy, address, or commitment not supported by the ticket, the human reply, or known product facts, set "fabrication": true and cap overall at 2 (this is a safety failure, not a style issue).
+  Examples: "I'll notify the team handling X so <Name> is informed" when that team/person is not in the ticket/human reply → fabrication. Naming an internal department/colleague/process that was never established → fabrication, even if it looks like a helpful handoff.
 - UNSUPPORTED AVAILABILITY: If the AI states or implies a product, variant, or spare part is in stock / purchasable / restockable without that being given as a fact, set "unsupported_availability": true and cap overall at 3.
+  Examples: "we offer these earpads as spare parts on our webshop" plus a purchase/spare-parts link, or "it's in stock / you can buy it / I'll reserve a set", when no live stock fact is given → unsupported_availability=true, even if you then ask which country/order to "confirm stock".
 - WRONG LANGUAGE: If the reply language does not match the customer's language, set "language_mismatch": true and cap overall at 2.
 - WRONG DIRECTION (multi-turn): If the conversation already established a direction and the AI reverses or restarts it (e.g. tells the customer to return an item when the shop was sending a replacement, or re-asks "what do you need help with?"), set "wrong_direction": true and cap overall at 3.
 - UNNECESSARY ESCALATION/HEDGING: If the AI defers ("I'll get back to you", "we'll look into it / forward this") when it had enough to resolve or to ask one precise question, set "unnecessary_escalation": true and drop overall by 2.
@@ -134,7 +140,13 @@ const ACTION_REQUIRED_NOTE =
   `(created a shipment, issued a refund, asked for SWIFT/IBAN or shipping identity, activated a code) ` +
   `that the AI has no tool or fact access to. Do NOT penalize the AI for not performing that action. ` +
   `Score only whether the AI's reply is a correct, safe, send-ready customer-service reply (e.g. asking ` +
-  `the right single clarifying question). Still apply all hard caps.`;
+  `the right single clarifying question).` +
+  `\n\nHARD CAPS ARE NON-NEGOTIABLE AND APPLY WITH FULL FORCE HERE TOO — the "do not penalize" rule above ` +
+  `NEVER overrides them. In particular: inventing a team, person, department, or process to hand off to is ` +
+  `FABRICATION (set fabrication=true, cap overall<=2) EVEN IF it reads as a helpful action; claiming a ` +
+  `product/part is available, in stock, or purchasable (or linking a buy/spare-parts page as if buyable) ` +
+  `without a stated fact is UNSUPPORTED AVAILABILITY (set unsupported_availability=true, cap overall<=3) ` +
+  `EVEN IF you then ask for order/shipping details.`;
 
 async function judgeWithOpenAI(
   ticketBody,
@@ -179,11 +191,17 @@ async function judgeWithOpenAI(
   const overall10 = clamp10(parsed.overall_10 ?? parsed.overall);
 
   // Deterministic hard-cap enforcement: the model is told to set these flags and
-  // cap itself, but we re-apply the caps in code so a fluent-but-unsafe draft can
-  // never slip through with a high score if the model forgets to lower it.
+  // cap itself, but it under-recalls them (especially in action_required cases),
+  // so we (a) OR in a high-precision deterministic detector and (b) re-apply the
+  // caps in code, so a fluent-but-unsafe draft can never slip through.
+  const detected = detectHardCapSignals(draftContent, {
+    ticketBody,
+    humanReply: humanReply || "",
+  });
   const judge_flags = {
-    fabrication: parsed.fabrication === true,
-    unsupported_availability: parsed.unsupported_availability === true,
+    fabrication: parsed.fabrication === true || detected.fabrication,
+    unsupported_availability:
+      parsed.unsupported_availability === true || detected.unsupported_availability,
     language_mismatch: parsed.language_mismatch === true,
     wrong_direction: parsed.wrong_direction === true,
     unnecessary_escalation: parsed.unnecessary_escalation === true,
