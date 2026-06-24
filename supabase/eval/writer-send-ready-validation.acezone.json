@@ -1,0 +1,40 @@
+{
+  "shop_id": "38df5fef-2a23-47f3-803e-39f2d6f1ed99",
+  "cases": [
+    {
+      "id": "g-020",
+      "tier": "historical",
+      "subject": "New customer message on 18 May 2026 at 13.24",
+      "body": "You received a new message from your online store's contact form.\n\nCountry Code:\nDK\n\nName:\n[redacted]\n\nEmail:\n[email]\n\nCompany / Team:\n\nYour Country:\nDanmark\n\nIf Applicable, Place Of Purchase And Order Number:\n\nWhat Is Your Request Regarding?:\nA-Spire Wireless\n\nWhat Do You Need Help With?:\nConnectivity / Pairing\n\nBody:\nJeg har smidt min dongle væk til mit a spire acezone\nheadset er der mulighed for at købe en ny?",
+      "source_thread_id": "948458ef-954e-4254-b62d-8d8192792938",
+      "human_reply": "Hej there,\n\nDet er muligt at købe en ny dongle til dit A-Spire Wireless headset. For at vi kan hjælpe dig med at finde den rigtige reservedel, har vi brug for dit ordrenummer. Når du har det, kan vi guide dig videre i processen.\n\nJeg ser frem til at høre fra dig.",
+      "language": "da",
+      "intent": "product_question"
+    },
+    {
+      "id": "g-024",
+      "tier": "historical",
+      "subject": "New customer message on 14 May 2026 at 23.27",
+      "body": "You received a new message from your online store's contact form.\n\nCountry Code:\nDK\n\nName:\n[redacted]\n\nEmail:\n[email]\n\nCompany / Team:\n\nYour Country:\nDanmark\n\nIf Applicable, Place Of Purchase And Order Number:\n\nWhat Is Your Request Regarding?:\nA-Spire Wireless\n\nWhat Do You Need Help With?:\nHeadset not charging / Not turning on/off\n\nBody:\nhello\n\nmy a-spire wireless dont want to power on even when i have a\ncable connected to it, and it shows that its charging",
+      "source_thread_id": "7353f32e-9901-47be-9603-6b0475beeacd",
+      "human_reply": "Hi there,\n\nLet's try a few troubleshooting steps to resolve the issue with your A-Spire Wireless headset not powering on. Please follow these steps:\n\n1. Ensure the headset is properly connected to a power source using the USB-C cable. Try using a different cable or power source if possible to rule out any issues with the cable or charger.\n\n2. Perform a factory reset on the headset:\n   - Turn the headset off.\n   - Press and hold the power button for 15 seconds until you hear a voice prompt indicating a factory reset has been completed.\n\n3. After the reset, try turning the headset on again.\n\nIf the headset still does not power on after these steps, please try:\n\nLet us try to find the connection issue, which I think is related to bluetooth.\nThe order of the steps are important in order to get a result.\nMake sure not to have the USB Cable connected while pairing Bluetooth or launching the AceZone Control App !\nMake sure your headset is turned on !Turn off Bluetooth on all devices, (Mobiles, iPads, PC´s), that could have established a connection to your headset.Turn Off your headset\n\nThere is a possibility that your headset did not complete the Bluetooth shut down process, before the headset powered off itself.\nTurn On Bluetooth on your mobile (where you keep the AceZone App) and erase the A-Spire Wireless in the list of bluetooth devices.Hold down the headset power button until it goes into pairing mode. Choose A-Spire Wireless in the list of unpaired devices.\n\nNow you should have a fresh Bluetooth connection to your Mobile.\nI hope this solved the connection issue.\n\nI look forward to hearing from you 🙂",
+      "language": "en",
+      "intent": "product_question"
+    },
+    {
+      "id": "e-002",
+      "tier": "edge",
+      "subject": "A-Rise warranty claim",
+      "body": "My A-Rise stopped working after 5 months. I bought it directly from your store. Can I get it repaired or replaced under warranty?",
+      "source_thread_id": null,
+      "human_reply": "Hi there, your A-Rise is covered by warranty. Please send a photo of the issue and your order number so we can arrange a replacement.",
+      "language": "en",
+      "expected_action": "none",
+      "must_contain": [
+        "warranty",
+        "photo"
+      ],
+      "must_not_contain": []
+    }
+  ]
+}
