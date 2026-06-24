@@ -21,6 +21,7 @@ import {
   generateDraftV2, judgeWithOpenAI, draftForJudge,
 } from "../../apps/web/lib/server/eval-runner.js";
 import { classifyAnchor } from "../../apps/web/lib/server/eval-anchor.js";
+import { classifyLiveFactDependency } from "../../apps/web/lib/server/eval-live-fact.js";
 
 const SET_PATH = "supabase/eval/golden-set.acezone.json";
 const BASELINE_PATH = "supabase/eval/golden-baseline.acezone.json";
@@ -60,12 +61,19 @@ for (const c of cases) {
     const gate = runGates(gen.draft, gen.actions, c);
     if (!gate.passed) gateFailures++;
     const coherence = computeCoherence(gen.retrievalDebug || []);
-    const retrieval = goldById.has(c.id) && gen.matcherDebug
+    const { live_fact_dependent } = classifyLiveFactDependency({
+      body: c.body, humanReply: c.human_reply, intent: c.intent,
+    });
+    // Skip retrieval precision for live-fact cases: their gold label points at a
+    // legacy/FAQ doc the live-commerce gate intentionally down-ranks, so a "miss"
+    // here is by design, not a retrieval failure.
+    const retrieval = goldById.has(c.id) && gen.matcherDebug && !live_fact_dependent
       ? computeRetrievalMetrics(goldById.get(c.id), gen.matcherDebug)
       : null;
     results.push({
       id: c.id, intent: c.intent || null, tier: c.tier, status: "scored",
       anchor_class: anchorClass,
+      live_fact_dependent,
       scores: {
         correctness: judged.correctness, completeness: judged.completeness,
         tone: judged.tone, actionability: judged.actionability,
@@ -97,6 +105,16 @@ writeFileSync(reportPath, JSON.stringify({ stamp, opts, summary, retrievalAgg, d
 console.log("\n=== Aggregate ===");
 console.log(summary.aggregate);
 console.log("per_intent:", summary.per_intent);
+
+if (summary.excluded_live_fact_dependent && summary.excluded_live_fact_dependent.n > 0) {
+  console.log("\n=== Excluded: live_fact_dependent (unresolvable live data) ===");
+  console.log({
+    n: summary.excluded_live_fact_dependent.n,
+    avg_overall_10: summary.excluded_live_fact_dependent.avg_overall_10,
+    ids: summary.excluded_live_fact_dependent.ids,
+    reason: summary.excluded_live_fact_dependent.reason,
+  });
+}
 
 if (summary.coherence && summary.coherence.n > 0) {
   const coh = summary.coherence;
