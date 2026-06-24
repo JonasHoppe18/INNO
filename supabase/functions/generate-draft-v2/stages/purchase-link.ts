@@ -66,6 +66,30 @@ function lower(message: string | null | undefined): string {
   return String(message ?? "").toLowerCase();
 }
 
+export function isAccessoryReplacementRequest(message: string | null | undefined): boolean {
+  const text = lower(message);
+  if (!text) return false;
+  const hasReplacementIntent =
+    /\b(lost|forgot|missing|misplaced|replacement|replace|new|spare|mistet|glemt|mangler|er\s+væk|væk|forsvundet|erstatning|ny|reservedel|tilbehør)\b/i
+      .test(text) ||
+    /\b(?:smidt|tabt)[^.?!]{0,40}\bvæk\b/i.test(text) ||
+    /\b(?:buy|purchase|order|køb|købe|bestil|bestille)[^.?!]{0,40}\b(?:new|replacement|spare|ny|erstatning|reservedel|tilbehør)\b/i
+      .test(text);
+  if (!hasReplacementIntent) return false;
+
+  const hasGenericPartSignal =
+    /\b(accessor(?:y|ies)|spare[- ]?parts?|replacement\s+parts?|parts?|component|components|tilbehør|reservedele?|reservedel)\b/i
+      .test(text);
+  const hasCommonAccessoryCategory =
+    /\b(dongle|adapter|adaptor|charger|charging cable|cables?|usb-?c|usb c|lade\s*kabel|ladekabel|kabler?|oplader)\b/i
+      .test(text);
+  const lostItemForProduct =
+    /\b(?:lost|forgot|misplaced|missing|mistet|glemt|mangler|smidt|tabt)\b[^.?!]{0,80}\b(?:for|to|til|for)\s+(?:my|the|mit|min|mine|det|den)\b/i
+      .test(text);
+
+  return hasGenericPartSignal || hasCommonAccessoryCategory || lostItemForProduct;
+}
+
 export function normalizeProductText(value: string | null | undefined): string {
   return String(value ?? "")
     .toLowerCase()
@@ -90,6 +114,7 @@ function hasModelSpecificToken(message: string | null | undefined): boolean {
 export function isPurchaseLinkRequest(message: string | null | undefined): boolean {
   const text = lower(message);
   if (!text) return false;
+  if (isAccessoryReplacementRequest(text)) return false;
   const patterns: RegExp[] = [
     // where to buy
     /\bhvor\s+(?:kan\s+jeg\s+)?køb/i,

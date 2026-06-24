@@ -4,6 +4,9 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 
 const {
+  GENERAL_DOCUMENT_CATEGORY,
+  GENERAL_DOCUMENT_TEMPLATE,
+  GENERAL_DOCUMENT_TYPE,
   PRODUCT_SUPPORT_DOCUMENT_TEMPLATE,
   RETURNS_DOCUMENT_TEMPLATE,
   defaultKnowledgeDocument,
@@ -222,6 +225,31 @@ test("new product-support default document opens empty", () => {
   assert.equal(doc.draft_markdown, "");
 });
 
+test("new General default document opens as an H2-based knowledge document", () => {
+  const doc = defaultKnowledgeDocument(GENERAL_DOCUMENT_CATEGORY, GENERAL_DOCUMENT_TYPE);
+  assert.equal(doc.title, "General Knowledge");
+  assert.equal(doc.category, "general");
+  assert.equal(doc.document_type, "general");
+  assert.equal(doc.draft_markdown, GENERAL_DOCUMENT_TEMPLATE);
+  assert.match(doc.draft_markdown, /^## Store-wide procedures/m);
+});
+
+test("GET missing General document opens default without inserting a row", async () => {
+  const client = makeClient();
+  const result = await getKnowledgeDocument({
+    serviceClient: client,
+    shopId: "shop-1",
+    category: GENERAL_DOCUMENT_CATEGORY,
+    documentType: GENERAL_DOCUMENT_TYPE,
+  });
+
+  assert.equal(result.document.id, null);
+  assert.equal(result.document.title, "General Knowledge");
+  assert.equal(result.document.draft_markdown, GENERAL_DOCUMENT_TEMPLATE);
+  assert.equal(result.parsed_sections.length, 3);
+  assert.equal(client.db.knowledge_documents.length, 0);
+});
+
 test("save requires a product-scoped document_type for product_support", async () => {
   const client = makeClient();
   await assert.rejects(
@@ -292,6 +320,39 @@ test("preview chunks carry product scope and stay inactive", async () => {
     assert.equal(typeof chunk.metadata.section_heading, "string");
     assert.equal(chunk.metadata.section_order, index);
   });
+});
+
+test("General documents save into inactive preview chunks without touching snippets", async () => {
+  const client = makeClient({
+    agent_knowledge: [
+      {
+        id: 901,
+        shop_id: "shop-1",
+        source_provider: "manual_text",
+        metadata: { category: "general", snippet_id: "general-snippet-1" },
+      },
+    ],
+  });
+  const result = await saveKnowledgeDocumentDraft({
+    serviceClient: client,
+    embedder,
+    shopId: "shop-1",
+    category: GENERAL_DOCUMENT_CATEGORY,
+    documentType: GENERAL_DOCUMENT_TYPE,
+    title: "General Knowledge",
+    draftMarkdown: "## Spare parts\nAsk for the product model if the customer needs a replacement accessory.",
+  });
+
+  const chunks = client.db.agent_knowledge.filter((r) => r.source_provider === "knowledge_document");
+  assert.equal(result.document.category, "general");
+  assert.equal(result.document.document_type, "general");
+  assert.equal(chunks.length, 1);
+  assert.equal(chunks[0].metadata.category, "general");
+  assert.equal(chunks[0].metadata.document_type, "general");
+  assert.equal(chunks[0].metadata.environment, "preview");
+  assert.equal(chunks[0].metadata.active_for_ai, false);
+  assert.equal(chunks[0].metadata.product_scope, undefined);
+  assert.equal(client.db.agent_knowledge.filter((r) => r.source_provider === "manual_text").length, 1);
 });
 
 test("no cross-product and no cross-shop mixing", async () => {
@@ -400,6 +461,46 @@ test("product-support documents can be published into active, product-scoped pro
   assert.ok(productionChunks.every((r) => r.metadata?.runtime_activation_pending === undefined));
   assert.ok(productionChunks.every((r) => r.metadata?.document_type === "product_support"));
   assert.ok(productionChunks.every((r) => r.metadata?.product_scope === "product-a"));
+});
+
+test("General documents publish into active production chunks", async () => {
+  const generalMarkdown = "## Spare parts\nUse the merchant-specific spare-part procedure.";
+  const client = makeClient({
+    knowledge_documents: [
+      {
+        id: "doc-general",
+        shop_id: "shop-1",
+        category: GENERAL_DOCUMENT_CATEGORY,
+        document_type: GENERAL_DOCUMENT_TYPE,
+        title: "General Knowledge",
+        draft_markdown: generalMarkdown,
+        published_markdown: "",
+        has_unpublished_changes: true,
+        published_at: null,
+        metadata: {},
+      },
+    ],
+  });
+
+  const result = await publishKnowledgeDocument({
+    serviceClient: client,
+    embedder,
+    shopId: "shop-1",
+    category: GENERAL_DOCUMENT_CATEGORY,
+    documentType: GENERAL_DOCUMENT_TYPE,
+  });
+
+  assert.equal(result.document.published_markdown, generalMarkdown);
+  assert.equal(result.document.has_unpublished_changes, false);
+  assert.ok(result.document.published_at);
+  const productionChunks = client.db.agent_knowledge.filter(
+    (r) => r.source_provider === "knowledge_document" && r.metadata?.environment === "production",
+  );
+  assert.equal(productionChunks.length, 1);
+  assert.equal(productionChunks[0].metadata.category, "general");
+  assert.equal(productionChunks[0].metadata.document_type, "general");
+  assert.equal(productionChunks[0].metadata.active_for_ai, true);
+  assert.equal(productionChunks[0].metadata.product_scope, undefined);
 });
 
 test("ticket preview payload and simulation href pass the document id", () => {
