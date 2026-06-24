@@ -880,6 +880,35 @@ function extractMessageSignals(messageText: string) {
   };
 }
 
+export function buildSendReadyNextStepStandardBlock(opts: {
+  latestCustomerMessage?: string;
+  replyMode: "procedure" | "concise";
+}): string {
+  const signals = extractMessageSignals(opts.latestCustomerMessage ?? "");
+  const lines: string[] = [];
+
+  if (signals.hasAccessoryRequest) {
+    lines.push(
+      "# Send-ready next-step standard — accessory/spare-part request",
+      "- The customer is asking about a lost/missing/new/replacement accessory or spare part.",
+      "- Lead with asking for the order number OR purchase context (where/when it was purchased) so support can identify the exact replacement part.",
+      "- Explain briefly that the order/purchase context is needed to find the correct compatible replacement part.",
+      "- Do NOT answer only with a generic webshop, stock, restock, or availability message. If availability is relevant, mention it only after the order/purchase-context ask.",
+    );
+  }
+
+  if (opts.replyMode === "procedure") {
+    lines.push(
+      "# Send-ready next-step standard — technical procedures",
+      "- Preserve exact values from the retrieved source when giving troubleshooting, pairing, firmware, charging, reset, or power-button steps.",
+      "- If a retrieved source says 15 seconds, write 15 seconds exactly. Never change it to 10 seconds or any other invented value.",
+      "- Do not add generic troubleshooting steps that are not explicitly supported by the retrieved source selected for the customer's issue.",
+    );
+  }
+
+  return lines.join("\n");
+}
+
 function buildInfoRequirementsBlock(
   facts: FactResolverResult,
   caseState: CaseState,
@@ -959,7 +988,7 @@ function buildInfoRequirementsBlock(
 
   if (signals.hasAccessoryRequest && !hasOrderReference) {
     missing.push(
-      "order_reference: ordrenummer, så vi kan tjekke garanti eller finde den rigtige reservedel",
+      "order_reference: ordrenummer eller købskontekst (hvor/hvornår produktet er købt), så vi kan identificere den rigtige kompatible reservedel",
     );
   } else if (warrantyLike) {
     const isFollowUp = caseState.decisions_made.length > 0 ||
@@ -1391,6 +1420,10 @@ Support replied: "${agentReply.slice(0, 500)}"`;
     latestCustomerMessage,
     replyMode,
   );
+  const sendReadyNextStepBlock = buildSendReadyNextStepStandardBlock({
+    latestCustomerMessage,
+    replyMode,
+  });
 
   // --- Shop policy (deterministisk — brug altid disse regler) ---
   const policyBlock = policyContext
@@ -1838,6 +1871,7 @@ ${stageDirectives[resolutionStage] ?? stageDirectives.info_only}`;
     stockLinkFallbackBlock,
     replacementFlowBlock,
     returnsGroundingBlock,
+    sendReadyNextStepBlock,
     stockAvailabilityBlock,
     factsBlock,
     salutationBlock,
