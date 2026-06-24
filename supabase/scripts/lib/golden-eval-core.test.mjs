@@ -344,3 +344,45 @@ test("aggregateRetrievalMetrics: averages over non-null, counts abstention", () 
   assert.equal(agg.abstention_correct, 0.5); // 1/2
   assert.equal(agg.n_abstain_cases, 2);
 });
+
+// --- cost-control: --set + unknown-flag guard (the 44-vs-10 bug) ---
+import { readFileSync } from "node:fs";
+import { resolveSetPath } from "./golden-eval-core.mjs";
+
+const FULL_SET = "supabase/eval/golden-set.acezone.json";
+const PILOT_SET = "supabase/eval/pilot-set.acezone.json";
+const loadFile = (p) => JSON.parse(readFileSync(p, "utf8"));
+
+test("parseArgs: captures --set, defaults to null", () => {
+  assert.equal(parseArgs(["--set", PILOT_SET]).set, PILOT_SET);
+  assert.equal(parseArgs([]).set, null);
+});
+
+test("parseArgs: fails loudly on unknown / misspelled flags", () => {
+  assert.throws(() => parseArgs(["--bogus"]), /Unknown argument: --bogus/);
+  assert.throws(() => parseArgs(["--sett", PILOT_SET]), /Unknown argument: --sett/);
+  assert.doesNotThrow(() => parseArgs(["--set", PILOT_SET, "--limit", "3"]));
+});
+
+test("resolveSetPath: returns subset when it exists", () => {
+  assert.equal(
+    resolveSetPath({ set: PILOT_SET }, { defaultPath: FULL_SET, existsSync: (p) => p === PILOT_SET }),
+    PILOT_SET,
+  );
+});
+
+test("resolveSetPath: missing --set file throws (no silent fallback to 44)", () => {
+  assert.throws(
+    () => resolveSetPath({ set: "supabase/eval/nope.json" }, { defaultPath: FULL_SET, existsSync: () => false }),
+    /--set file not found/,
+  );
+});
+
+test("resolveSetPath: no --set uses default full set", () => {
+  assert.equal(resolveSetPath({ set: null }, { defaultPath: FULL_SET, existsSync: () => false }), FULL_SET);
+});
+
+test("--set loads exactly the 10-case pilot; default loads all 44", () => {
+  assert.equal(loadGoldenSet(loadFile(PILOT_SET), {}).length, 10);
+  assert.equal(loadGoldenSet(loadFile(FULL_SET), {}).length, 44);
+});

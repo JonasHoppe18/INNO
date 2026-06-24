@@ -1,0 +1,106 @@
+{
+  "shop_id": "38df5fef-2a23-47f3-803e-39f2d6f1ed99",
+  "note": "Cost-controlled 10-case HEAD pilot subset curated from golden-set.acezone.json. Balanced across tracking/refund/return/exchange/product/complaint/clarification. g-036 and g-041 are live_fact_dependent and report in the live bucket. Read-only sample selection; do not --accept against the golden baseline.",
+  "cases": [
+    {
+      "id": "g-036",
+      "tier": "historical",
+      "subject": "New customer message on April 14, 2026 at 12:10 pm",
+      "body": "New customer message on April 14, 2026 at 12:10 pm\nYou received a new message from your online store's contact form. Country Code: AD Name: [redacted] Email: [email] Company / Team: Your Country: If Applicable, Place Of Purchase And Order Number: [order number] What Is Your Request Regarding?: A-Spire Wireless What Do You Need Help With?: N/A Body: Hello, could I get an update on the shipping status of this order? I downloaded the app, but there hasn’t been any update for the past 4 days. Order number: [order number] Thank you!",
+      "source_thread_id": "5655",
+      "human_reply": "Hi there, Thank you for your message. We have received your order, and it has been forwarded to our warehouse partner. They have experienced issues at the warehouse and may therefore be slightly delayed. We expect that it will be shipped today or tomorrow 🙂 Have a wonderful day! Best regards, [Agent] Support Associate Acezone.io",
+      "language": "da",
+      "intent": "tracking"
+    },
+    {
+      "id": "g-041",
+      "tier": "historical",
+      "subject": "Levering",
+      "body": "Hej Acezone,\n\nVille høre om mit headset når at blive sendt i dag da jeg skal bruge det i weekenden har bestilt med dao og ved de levere alle dage 365 mit ordre nummer er [order number] mange tak på forhånd og glæder mig til at opleve jeres headset 💪",
+      "source_thread_id": "145b07f2-8c8d-42d0-8b1c-00dcbdf76077",
+      "human_reply": "Hej igen,\n\nJeg har lige været inde og tjekke din forsendelse.\nDen er blevet oprettet i dag, og vores lager venter på at DAO kommer og henter den.\n\nHvis vi er super heldige, får du den senere i dag 🤩",
+      "language": "da",
+      "intent": "tracking"
+    },
+    {
+      "id": "g-027",
+      "tier": "historical",
+      "subject": "Re: Closing Ticket [order number] ---------------------------------------------- Hi there, Mar 9, 2026, 23:57 GMT+1 You received a new message from your online store's contact form. **Country Code:** US **Name:** [redacted] **Email:** [email]",
+      "body": "Previous Ticket ID: [order number]\n\nI am reaching out again due to the headset's issue. To recap, the original\nheadset I got, A-Spire Wireless, ended up having a microphone issue. The\nvoice in the headset would say \"microphone muted, microphone unmuted\" over\nand over, slight movements of the mic would cause it. I messaged support,\nshowed a video as proof and got a replacement. Well, the replacement ended\nup having the same issue in much less time than the first. I will attach a\nvideo as proof of the replacement doing the same thing. I tried just\ngetting over it and to not move the mic at all, but it does it so often I\ndon't even use the headset anymore and got a different one. Since this\nissue has happened with two headsets now, I would like to request a refund\nas I am not looking to gamble with another one.",
+      "source_thread_id": "dd11eea6-2464-4a5c-ba9d-0d04ef3fec1f",
+      "human_reply": "Hi there,\n\nThank you for reaching out again.\n\nOur mute switch is sensitive in the \"standing up\" position and we therefore recommend to use the mic clip when muting the microphone.\nIt is important to put the microphone all the way up when muting to ensure the switch has been properly activated.\n\nIf you wish to initiate a refund, I will need you to send the headset to the following address:\n\nAceZone Returns\nPrep Partners\n[address]\n\nPlease mark the package as \"AceZone Product Return #[order number]\".\n\nKindly select a trackable courier service, and forward it here once you have done so 🙂\nOnce received, I'll initiate the refund.",
+      "language": "en",
+      "intent": "refund"
+    },
+    {
+      "id": "g-031",
+      "tier": "historical",
+      "subject": "Re: [AceZone] Re: New customer message on 13 April 2026 at 19:56",
+      "body": "Re: [AceZone] Re: New customer message on 13 April 2026 at 19:56\nThis is a follow-up to your previous request #[order number] \"New customer message on 13 ...\" Guten Tag, Gibt es schon Neuigkeiten für mich ? Ich habe ein weiteres Problem manchmal wenn ich spreche höre ich mich selber obwohl ich diese Einstellung deaktiviert habe. Jedoch höre ich mich nicht normal sondern metallisch. Liebe Grüße [Agent] &lt; [email] &gt; schrieb am Di. 14. Apr. 2026 um 12:54: Hello again, Thank you for the reply. I have forwarded this to my engineers to get some insights from them 😃 Once I hear back from them, I will return with their reply. For now, please try: With the headset powered on and connected to your PC via USB-C cable, open the Device Manager window on your PC. Find the headset under Sound, video and game controllers, then right-click it and uninstall the drivers. Unplug the headset Plug it back into the same USB port . ( If you want to use it on another USB port, you have to follow this process again, as the driver belongs to the specific USB port you are using ). After that, try to do a factory reset: Turn the headset off . Press and hold power button for 15 seconds. A voice prompt will tell you a factory reset has been made. Please note that this will delete all saved Bluetooth connections from your headset, including your phone/PC and dongle. You should also delete the headset from your phone/PC's saved devices, as well as delete it from the AceZone app before pairing again. We'll need to re-pair the headset and the dongle: Plug the dongle into your PC. Reset the dongle by holding down the button until the LED turns purple . Remove the dongle. Turn your headset on, and make sure no cables are connected . Hold the Noise Cancelling mode button (right next to the power button) for 4 seconds to enable pairing mode. Plug the dongle back in. The LED will blink blue/red. Pairing will happen automatically. The LED will turn blue when the pairing is done. Thank you again, and I look forward to returning with more",
+      "source_thread_id": "5809",
+      "human_reply": "Hi there, Thank you for reaching out again. I apologise for not returning with a response. Did you try the steps I suggested in the previous e-mail? For the metallic sound, could you confirm whether or not your headset is up to date with our latest firmware? This also includes the dongle 🙂 You mention that Sidetone is turned off, but you still hear yourself - does this occur every time you speak or only occasionally? A guide for our FirmWare Updater: Search for AceZone Firmware Updater on the Microsoft Store, and download the app. Then: Make sure your headset is powered on , and that it is not connected to any Bluetooth devices (turn off Bluetooth on any devices the headset might be connected to). Disconnect your USB-C dongle if it is connected to your PC. Connect your headset via the USB-C cable to your PC. Open the Firmware Updater app. Select the A-Spire Wireless from the dropdown menu. Click Update. Once the update is done, you can connect the dongle to your PC. Select the dongle from the dropdown menu. Click Update . At this point you should be on the latest firmware version for the A-Spire Wireless. Then, make sure that \"Voice Clarity\" is turned off under Windows Sound Settings and that no other Audio Software is interfering. Furthermore, has the issue persisted the same, or has anything changed in the battery's behavior? Thank you again - I look forward to hearing back from you! 😃 [Agent]",
+      "language": "da",
+      "intent": "return"
+    },
+    {
+      "id": "g-008",
+      "tier": "historical",
+      "subject": "New customer message on April 21, 2026 at 10:15 am",
+      "body": "New customer message on April 21, 2026 at 10:15 am\nYou received a new message from your online store's contact form. Country Code: PT Name: [redacted] Email: [email] Company / Team: Your Country: Portugal If Applicable, Place Of Purchase And Order Number: Order #[order number] What Is Your Request Regarding?: A-Spire Wireless What Do You Need Help With?: Headset is physically damaged Body: Hello, I buy this headphones 1 year ago and today I found out that the thing that holds the left ear( microphone side) is broken. You can say that this was my fault but its not supposed for a high quality product broke like this, and my headphones are always on the case and they didn't fall. I guess it was by the use and the put and take out of head. In this case I think that you should help because this is normal use.. and it should have warranty. Can you help in this matter? They are the best headphones that I ever had... Thank you",
+      "source_thread_id": "5733",
+      "human_reply": "Hi there, Thank you for reaching out! That doesn't look good... You are still covered by warranty, so could you kindly confirm if these details are still correct? [redacted] [address] [redacted] Portugal [phone] [email] I look forward to hearing back from you, so we can initiate a return-for-swap case 😃 Have a lovely day! [Agent]",
+      "language": "da",
+      "intent": "exchange"
+    },
+    {
+      "id": "g-012",
+      "tier": "historical",
+      "subject": "New customer message on 7 May 2026 at 22.46",
+      "body": "You received a new message from your online store's contact form.\n\nCountry Code:\nDK\n\nName:\n[redacted]\n\nEmail:\n[email]\n\nCompany / Team:\n\nYour Country:\nDanmark\n\nIf Applicable, Place Of Purchase And Order Number:\n\nWhat Is Your Request Regarding?:\nA-Spire Wireless\n\nWhat Do You Need Help With?:\nHeadset is physically damaged\n\nBody:\nHej jeg har købt et headset af jer for et par måneder\nsiden. Og er super tilfreds med det! Dog er der sket det at\nhalvdelen af mit headset er spræket uden nogen form for slag\neller tryk. Jeg har taget det af, og den eneste grund til jeg\nopdagede skaden var en flig fra høretlf. faldt af. Jeg vil høre\nom der på nogen måde er mulighed for ombytning?",
+      "source_thread_id": "c50eacd2-d558-4b62-8dac-502ec488d7b0",
+      "human_reply": "Tak fordi du kontakter os. Vi er kede af at høre, at du oplever problemer med dit A-Spire Wireless headset. Vi vil gerne hjælpe dig med en ombytning.\n\nFor at vi kan starte processen, bedes du venligst sende os et foto af skaden samt dit ordrenummer. Når vi har modtaget disse oplysninger, vil vi gå videre med processen.\n\nJeg ser frem til at høre fra dig.",
+      "language": "da",
+      "intent": "exchange"
+    },
+    {
+      "id": "g-021",
+      "tier": "historical",
+      "subject": "New customer message on 3 May 2026 at 17:09",
+      "body": "You received a new message from your online store's contact form.\n\nCountry Code:\nSE\n\nName:\n[redacted]\n\nEmail:\n[email]\n\nCompany / Team:\n\nYour Country:\nSweden\n\nIf Applicable, Place Of Purchase And Order Number:\n\nWhat Is Your Request Regarding?:\nA-Spire\n\nWhat Do You Need Help With?:\nOther\n\nBody:\nHi there, I bought an A‑Spired Cable Version headset a few\nyears ago and I’m unsure if I’m updating it correctly. The\nheadset shows version 146 — is that the latest? The app doesn’t\nshow any available updates for this model.\n\nAlso, the sound feels quite low compared to other headsets — is\nthere a way to improve or increase the audio quality?\n\nKind regards,\n[redacted]",
+      "source_thread_id": "2e5e7ea9-a52f-468f-8b69-e8702867a503",
+      "human_reply": "Hi there,\n\nThank you for reaching out. I'm sorry to hear you're having trouble with your headset.\n\nThe firmware version 146 is indeed the latest for the A-Spire headset, so your device is up to date. Regarding the audio quality, the A-Spire does not support EQ management, so there aren't settings to adjust the sound profile. However, ensure that the headset is securely connected and check for any interferences that might affect the sound.\n\nIf you continue to experience issues, feel free to let us know.",
+      "language": "en",
+      "intent": "product_question"
+    },
+    {
+      "id": "g-024",
+      "tier": "historical",
+      "subject": "New customer message on 14 May 2026 at 23.27",
+      "body": "You received a new message from your online store's contact form.\n\nCountry Code:\nDK\n\nName:\n[redacted]\n\nEmail:\n[email]\n\nCompany / Team:\n\nYour Country:\nDanmark\n\nIf Applicable, Place Of Purchase And Order Number:\n\nWhat Is Your Request Regarding?:\nA-Spire Wireless\n\nWhat Do You Need Help With?:\nHeadset not charging / Not turning on/off\n\nBody:\nhello\n\nmy a-spire wireless dont want to power on even when i have a\ncable connected to it, and it shows that its charging",
+      "source_thread_id": "7353f32e-9901-47be-9603-6b0475beeacd",
+      "human_reply": "Hi there,\n\nLet's try a few troubleshooting steps to resolve the issue with your A-Spire Wireless headset not powering on. Please follow these steps:\n\n1. Ensure the headset is properly connected to a power source using the USB-C cable. Try using a different cable or power source if possible to rule out any issues with the cable or charger.\n\n2. Perform a factory reset on the headset:\n   - Turn the headset off.\n   - Press and hold the power button for 15 seconds until you hear a voice prompt indicating a factory reset has been completed.\n\n3. After the reset, try turning the headset on again.\n\nIf the headset still does not power on after these steps, please try:\n\nLet us try to find the connection issue, which I think is related to bluetooth.\nThe order of the steps are important in order to get a result.\nMake sure not to have the USB Cable connected while pairing Bluetooth or launching the AceZone Control App !\nMake sure your headset is turned on !Turn off Bluetooth on all devices, (Mobiles, iPads, PC´s), that could have established a connection to your headset.Turn Off your headset\n\nThere is a possibility that your headset did not complete the Bluetooth shut down process, before the headset powered off itself.\nTurn On Bluetooth on your mobile (where you keep the AceZone App) and erase the A-Spire Wireless in the list of bluetooth devices.Hold down the headset power button until it goes into pairing mode. Choose A-Spire Wireless in the list of unpaired devices.\n\nNow you should have a fresh Bluetooth connection to your Mobile.\nI hope this solved the connection issue.\n\nI look forward to hearing from you 🙂",
+      "language": "en",
+      "intent": "product_question"
+    },
+    {
+      "id": "g-005",
+      "tier": "historical",
+      "subject": "New customer message on 15 April 2026 at 14.59",
+      "body": "New customer message on 15 April 2026 at 14.59\nYou received a new message from your online store's contact form. Country Code: DK Name: [redacted] Email: [email] Company / Team: [redacted] Country: Denmark If Applicable, Place Of Purchase And Order Number: [redacted] What Is Your Request Regarding?: A-Spire Wireless What Do You Need Help With?: Connectivity / Pairing Body: i had some problems with my email, so my ticket got closed, but my ticket number was [order number] i still have problems with my dongle not connecting to the headset, and if it does. it disconnect maybe 2 minutes after",
+      "source_thread_id": "5674",
+      "human_reply": "Hej igen, Jeg kan se, at vi allerede prøvede at opdatere Firmwaren. For at få donglen til at virke optimalt, anbefaler vi, at du sætter den i USB-stikket tættest på headsettet (og ikke bag ved computeren). Hvis der er andre trådløse forbindelser til headsettet, kan det forstyrre denne forbindelse også. Når donglen hopper af, vælger Windows så en anden enhed, eller forsvinder donglen helt? Prøv eventuelt andre USB indgange, både USB-A med adapteren, og USB-C - hvis muligt. Hvis problemet fortsætter, må du meget gerne skrive igen og eventuelt supplere med informationer om, hvad du har prøvet 🙂 Hav en fortsat god dag! Venlig Hilsen / Kind Regards, [Agent]",
+      "language": "da",
+      "intent": "complaint"
+    },
+    {
+      "id": "g-045",
+      "tier": "historical",
+      "subject": "",
+      "body": "You received a new message from your online store's contact form.\n\nCountry Code:\nDK\n\nName:\n[Customer]\n\nEmail:\n[email]\n\nCompany / Team:\n\nYour Country:\nDanmark\n\nIf Applicable, Place Of Purchase And Order Number:\n[order number]\n\nWhat Is Your Request Regarding?:\nA-Spire Wireless\n\nWhat Do You Need Help With?:\nHeadset is physically damaged\n\nBody:\nHey team AceZone. I bought a AceZone A-Spire Wireless\norder number [order number] the 15.-1-2025 but sadly the plastic holding\nthe right Ear cover has cracked in two as I put them on. It sadly\ndoesn't allow me to attach a picture. Hope we can resolve this as\nit should still be under warranty and I did not use excessive\nforce when putting it on.\n\nBest regards [Customer]",
+      "source_thread_id": "22c158fb-2c00-4d8a-bf5b-6212d537dc71",
+      "human_reply": "Hello [Customer],\n\nThank you for reaching out to us. After checking your order, it seems that this return request is beyond our 30-day return period. However, our support team can conduct a manual review to initiate a return for swap solution.\n\nCould you kindly attempt to attach the images via mobile?\n\nThank you very much in advance.\n\nHave a wonderful day.",
+      "language": "da",
+      "intent": "unknown"
+    }
+  ]
+}
