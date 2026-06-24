@@ -36,6 +36,7 @@ import {
   detectManualCheckoutLinkFlow,
   firstTrustedProductLink,
   isAmbiguousProductRequest,
+  isAccessoryReplacementRequest,
   isCheckoutLinkRequest,
   isPurchaseLinkRequest,
   resolvePublicStorefrontDomain,
@@ -852,11 +853,7 @@ function extractMessageSignals(messageText: string) {
   const hasPurchasePlace =
     /\b(place of purchase|købt|købssted|purchase|purchased|forhandler|retailer|gamebox|official website|webshop|acezone)\b/i
       .test(messageText);
-  const hasAccessoryRequest =
-    /\b(dongle|usb-c|usb c|charging cable|charger|cable|ear pads?|earpads?|lade\s*kabel|ladekabel|kabel|oplader|reservedel|spare part)\b/i
-      .test(messageText) &&
-    /\b(lost|forgot|missing|buy|purchase|order|new|replacement|mistet|glemt|mangler|købe|bestille|ny)\b/i
-      .test(messageText);
+  const hasAccessoryRequest = isAccessoryReplacementRequest(messageText);
   const hasPhysicalDamage =
     /\b(damaged|damage|broken|break|breaking|crack|cracked|loose|fell off|falling off|coming apart|falling apart|worn out|worn-out|wearing out|peeling|peel|frayed|tear|torn|seam|physical|skade|ødelagt|knækket|knækker|revne|revner|løs|fysisk|slidt|slidt op|går op|går i stykker|falder fra hinanden|pillet af|smuldrer)\b/i
       .test(messageText);
@@ -890,10 +887,11 @@ export function buildSendReadyNextStepStandardBlock(opts: {
   if (signals.hasAccessoryRequest) {
     lines.push(
       "# Send-ready next-step standard — accessory/spare-part request",
-      "- The customer is asking about a lost/missing/new/replacement accessory or spare part.",
-      "- Lead with asking for the order number OR purchase context (where/when it was purchased) so support can identify the exact replacement part.",
-      "- Explain briefly that the order/purchase context is needed to find the correct compatible replacement part.",
-      "- Do NOT answer only with a generic webshop, stock, restock, or availability message. If availability is relevant, mention it only after the order/purchase-context ask.",
+      "- This appears to be an accessory/spare-part/replacement request.",
+      "- Use merchant knowledge, retrieved sources, and shop configuration to determine the required next step.",
+      "- If merchant knowledge requires a field such as order number, purchase context, product model, or photo/video, ask for that field.",
+      "- If merchant knowledge does not specify the process, ask one neutral clarification question about the exact part/accessory needed and which product/model it is for.",
+      "- Do NOT default to ordinary webshop, stock, restock, or product-page guidance unless merchant knowledge explicitly supports that path.",
     );
   }
 

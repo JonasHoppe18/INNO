@@ -4,6 +4,7 @@ import {
   buildPurchaseLinkDirective,
   containsLinkPlaceholder,
   detectOrdinaryProductLinkCheckoutViolation,
+  isAccessoryReplacementRequest,
   isCheckoutLinkRequest,
   buildStockUnknownLinkFallbackDirective,
   buildTrustedProductUrl,
@@ -34,6 +35,48 @@ Deno.test("isPurchaseLinkRequest detects Danish + English buy-link intents", () 
   assert(isPurchaseLinkRequest("Where can I buy the A-Rise headset?"));
   assert(isPurchaseLinkRequest("I want to buy A-Rise"));
   assert(isPurchaseLinkRequest("Jeg vil gerne købe A-Rise"));
+});
+
+Deno.test("lost/missing accessory replacement requests are not ordinary purchase-link requests", () => {
+  const message =
+    "Jeg har smidt min adapter væk til min model X200 stol. Er der mulighed for at købe en ny?";
+  assert(isAccessoryReplacementRequest(message));
+  assertEquals(isPurchaseLinkRequest(message), false);
+  assertEquals(
+    buildPurchaseLinkDirective({
+      isPurchaseLinkRequest: isPurchaseLinkRequest(message),
+      groundedProductUrl: "https://example-shop.test/products/x200-chair",
+      ambiguousProduct: false,
+      threadMentionsCheckoutLink: false,
+    }),
+    "",
+  );
+});
+
+Deno.test("generic replacement-part wording is not ordinary purchase-link behavior", () => {
+  for (const message of [
+    "I lost the remote for my X200 chair. Can I buy a new one?",
+    "Can I buy a replacement part for my X200?",
+    "Mit tilbehør mangler til min model X200. Kan jeg købe et nyt?",
+  ]) {
+    assert(isAccessoryReplacementRequest(message), message);
+    assertEquals(isPurchaseLinkRequest(message), false, message);
+  }
+});
+
+Deno.test("normal product purchase questions still use ordinary purchase-link behavior", () => {
+  const message = "Where can I buy the X200 keyboard?";
+  assertEquals(isAccessoryReplacementRequest(message), false);
+  assert(isPurchaseLinkRequest(message));
+  const d = buildPurchaseLinkDirective({
+    isPurchaseLinkRequest: isPurchaseLinkRequest(message),
+    isCheckoutLinkRequest: false,
+    groundedProductUrl: "https://example-shop.test/products/x200-keyboard",
+    ambiguousProduct: false,
+    threadMentionsCheckoutLink: false,
+  });
+  assert(d.includes("https://example-shop.test/products/x200-keyboard"));
+  assert(/Product-page link request/i.test(d));
 });
 
 Deno.test("isPurchaseLinkRequest does NOT fire on pure stock questions", () => {
