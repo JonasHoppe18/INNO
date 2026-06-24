@@ -291,6 +291,28 @@ Deno.test("technical support doc blocks product comparison questions", () => {
   assertEquals(result, { allowed: false, reason: "not_technical_support_context" });
 });
 
+Deno.test("General knowledge documents are allowed by the runtime document gate", () => {
+  const result = decision({
+    category: "general",
+    content:
+      "# General Knowledge\n\n## Spare parts\nUse merchant knowledge for spare-part handling.",
+    customerMessage: "I lost the remote for my X200 chair. Can I buy a new one?",
+    intent: "product_question",
+  });
+  assertEquals(result, { allowed: true, reason: "general_document_context" });
+});
+
+Deno.test("unsupported random knowledge document categories remain blocked", () => {
+  const result = decision({
+    category: "random_custom_doc",
+    content:
+      "# Random Document\n\n## Procedure\nThis category is not enabled for runtime knowledge documents.",
+    customerMessage: "I lost the remote for my X200 chair. Can I buy a new one?",
+    intent: "product_question",
+  });
+  assertEquals(result, { allowed: false, reason: "unsupported_document_category" });
+});
+
 Deno.test("legacy non-document knowledge remains allowed by the document gate", () => {
   const result = evaluateRuntimeKnowledgeDocumentAccess({
     source_provider: "manual_text",
