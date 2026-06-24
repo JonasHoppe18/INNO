@@ -105,12 +105,15 @@ export function computeAggregate(results) {
   // Non-comparable action anchors (human reply IS a completed action confirmation)
   // are reported separately and kept OUT of the headline averages — judging a
   // draft directly against an action confirmation deflates and distorts scores.
-  const excludedResults = allScored.filter(
-    (r) => r.anchor_class === "non_comparable_anchor",
-  );
-  const scored = allScored.filter(
-    (r) => r.anchor_class !== "non_comparable_anchor",
-  );
+  const isNonComparable = (r) => r.anchor_class === "non_comparable_anchor";
+  // live_fact_dependent cases (human reply used live order/shipping/refund data
+  // the AI cannot resolve in eval) are likewise kept out of the headline and
+  // reported separately. A case already excluded as non_comparable is not
+  // double-counted in the live-fact bucket.
+  const isLiveFact = (r) => r.live_fact_dependent === true && !isNonComparable(r);
+  const excludedResults = allScored.filter(isNonComparable);
+  const liveFactResults = allScored.filter(isLiveFact);
+  const scored = allScored.filter((r) => !isNonComparable(r) && !isLiveFact(r));
   const aggregate = {};
   for (const dim of DIMS) {
     aggregate[dim] = scored.length
@@ -174,6 +177,22 @@ export function computeAggregate(results) {
     ),
   };
 
+  const excludedLiveFact = {
+    n: liveFactResults.length,
+    avg_overall_10: liveFactResults.length
+      ? round2(
+        liveFactResults.reduce((s, r) => s + (r.scores.overall_10 || 0), 0) /
+          liveFactResults.length,
+      )
+      : 0,
+    ids: liveFactResults.map((r) => r.id),
+    per_case: Object.fromEntries(
+      liveFactResults.map((r) => [r.id, r.scores.overall_10]),
+    ),
+    reason:
+      "live data the human reply used is unresolvable in eval (redacted identifier); assess these on live-fact grounding, not similarity to the old human reply",
+  };
+
   return {
     n_cases: scored.length,
     n_excluded: excludedResults.length,
@@ -182,6 +201,7 @@ export function computeAggregate(results) {
     per_case,
     coherence,
     excluded,
+    excluded_live_fact_dependent: excludedLiveFact,
   };
 }
 
