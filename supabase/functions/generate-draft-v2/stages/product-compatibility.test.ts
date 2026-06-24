@@ -3,11 +3,101 @@ import {
   buildCompatibilityDirective,
   buildCompatibilityOutcome,
   buildCompatibilityProvenance,
+  detectCompatibilityProduct,
   detectCompatibilityQuery,
   isCompatibilityQuestion,
   resolveCompatibility,
   type CompatibilityRow,
 } from "./product-compatibility.ts";
+
+// --- Slice J: product-identity wiring --------------------------------------
+
+const ACEZONE_PRODUCTS = [
+  { id: 44, title: "A-Blaze" },
+  { id: 46, title: "A-Rise" },
+  { id: 47, title: "A-Spire" },
+  { id: 48, title: "A-Spire Wireless" },
+];
+
+Deno.test("detectCompatibilityProduct: a single named product resolves its id", () => {
+  assertEquals(
+    detectCompatibilityProduct("Can I use my A-Rise with Xbox over AUX?", ACEZONE_PRODUCTS),
+    46,
+  );
+});
+
+Deno.test("detectCompatibilityProduct: prefix-variant resolves to the MOST specific (A-Spire Wireless, not A-Spire)", () => {
+  assertEquals(
+    detectCompatibilityProduct(
+      "Does the A-Spire Wireless work with PlayStation using the wireless dongle?",
+      ACEZONE_PRODUCTS,
+    ),
+    48,
+  );
+});
+
+Deno.test("detectCompatibilityProduct: ambiguous (two products) returns null — never guess", () => {
+  assertEquals(
+    detectCompatibilityProduct("Is the A-Rise or the A-Blaze better for Xbox?", ACEZONE_PRODUCTS),
+    null,
+  );
+});
+
+Deno.test("detectCompatibilityProduct: no product mentioned returns null (brand-wide fallback)", () => {
+  assertEquals(
+    detectCompatibilityProduct("Does your headset work with PlayStation?", ACEZONE_PRODUCTS),
+    null,
+  );
+});
+
+// Realistic AceZone rows: product-specific CONFIRMED + brand-wide CONFIRMED Xbox
+// + the two SUGGESTED OCR conflict rows (ids 5/16 → product 44/48 xbox/aux).
+const ACEZONE_ROWS: CompatibilityRow[] = [
+  // brand-wide confirmed Xbox
+  { product_id: null, target: "xbox", connection: "aux_3_5mm", compatible: "yes", reason: null, workaround: null, confidence: "confirmed" },
+  { product_id: null, target: "xbox", connection: "usb_c", compatible: "no", reason: null, workaround: null, confidence: "confirmed" },
+  { product_id: null, target: "xbox", connection: "wireless_dongle", compatible: "no", reason: null, workaround: null, confidence: "confirmed" },
+  // A-Spire Wireless (48) confirmed PlayStation
+  { product_id: 48, target: "playstation", connection: "wireless_dongle", compatible: "yes", reason: null, workaround: null, confidence: "confirmed" },
+  { product_id: 48, target: "playstation", connection: "usb_c", compatible: "yes", reason: null, workaround: null, confidence: "confirmed" },
+  // A-Rise (46) confirmed Xbox AUX (body_html)
+  { product_id: 46, target: "xbox", connection: "aux_3_5mm", compatible: "yes", reason: null, workaround: null, confidence: "confirmed" },
+  // SUGGESTED OCR conflicts — must NEVER be served
+  { product_id: 44, target: "xbox", connection: "aux_3_5mm", compatible: "partial", reason: null, workaround: null, confidence: "suggested" },
+  { product_id: 48, target: "xbox", connection: "aux_3_5mm", compatible: "partial", reason: null, workaround: null, confidence: "suggested" },
+];
+
+Deno.test("Slice J: A-Spire Wireless (48) + PlayStation resolves confirmed product-specific yes", () => {
+  const r = resolveCompatibility(ACEZONE_ROWS, { target: "playstation", productId: 48 });
+  assertEquals(r.known, true);
+  const byConn = Object.fromEntries(r.results.map((x) => [x.connection, x.compatible]));
+  assertEquals(byConn["wireless_dongle"], "yes");
+  assertEquals(byConn["usb_c"], "yes");
+});
+
+Deno.test("Slice J: A-Rise (46) + Xbox + AUX resolves confirmed yes", () => {
+  const r = resolveCompatibility(ACEZONE_ROWS, { target: "xbox", productId: 46 });
+  const byConn = Object.fromEntries(r.results.map((x) => [x.connection, x.compatible]));
+  assertEquals(byConn["aux_3_5mm"], "yes");
+});
+
+Deno.test("Slice J: unknown product + PlayStation abstains when no brand-wide row exists", () => {
+  const r = resolveCompatibility(ACEZONE_ROWS, { target: "playstation", productId: 999 });
+  assertEquals(r.known, false); // product 999 has no rows; no brand-wide PlayStation row
+});
+
+Deno.test("Slice J: suggested OCR rows (ids 5/16) stay ignored — A-Blaze Xbox falls back to brand-wide", () => {
+  const r = resolveCompatibility(ACEZONE_ROWS, { target: "xbox", productId: 44 });
+  const aux = r.results.find((x) => x.connection === "aux_3_5mm");
+  assertEquals(aux?.compatible, "yes"); // brand-wide yes, NOT the suggested 'partial'
+});
+
+Deno.test("Slice J: brand-wide Xbox still works when no productId is passed", () => {
+  const r = resolveCompatibility(ACEZONE_ROWS, { target: "xbox" });
+  const byConn = Object.fromEntries(r.results.map((x) => [x.connection, x.compatible]));
+  assertEquals(byConn["aux_3_5mm"], "yes");
+  assertEquals(byConn["usb_c"], "no");
+});
 
 const brandXbox: CompatibilityRow[] = [
   { product_id: null, target: "xbox", connection: "usb_c", compatible: "no", reason: "Xbox does not support USB Audio Class driver", workaround: "Use a 3.5mm AUX cable to the Xbox controller", confidence: "confirmed" },
