@@ -436,6 +436,10 @@ export function evaluateRuntimeKnowledgeDocumentAccess(input: {
       : { allowed: false, reason: "not_technical_support_context" };
   }
 
+  if (category === GENERAL_DOCUMENT_CATEGORY) {
+    return { allowed: true, reason: "general_document_context" };
+  }
+
   if (category !== PRODUCT_SUPPORT_DOCUMENT_CATEGORY) {
     return { allowed: false, reason: "unsupported_document_category" };
   }
@@ -618,6 +622,7 @@ const KNOWLEDGE_DOCUMENT_ENVIRONMENTS = new Set(["preview", "production"]);
 const PRODUCT_SUPPORT_DOCUMENT_CATEGORY = "product_support";
 const RETURNS_DOCUMENT_CATEGORY = "returns";
 const TECHNICAL_SUPPORT_DOCUMENT_CATEGORY = "technical_support";
+const GENERAL_DOCUMENT_CATEGORY = "general";
 
 // Intents whose messages warrant a technical/troubleshooting probe.
 const TECHNICAL_INTENTS = new Set([

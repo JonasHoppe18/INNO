@@ -628,6 +628,7 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
   const Icon = categoryMeta ? categoryMeta.icon : Tag;
   const isProductCategory = categorySlug === "product-questions";
   const hasPolicySection = categorySlug === "returns" || categorySlug === "shipping";
+  const hasGeneralDocument = categorySlug === "general";
 
   const [snippets, setSnippets] = useState([]);
   const [shopId, setShopId] = useState(null);
@@ -771,6 +772,18 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
             onSynced={fetchShopPolicy}
           />
         )
+      )}
+
+      {/* General document — store-wide procedures */}
+      {hasGeneralDocument && (
+        <KnowledgeDocumentEditorCard
+          shopId={shopId}
+          onShopId={setShopId}
+          category="general"
+          documentType="general"
+          title="General Knowledge"
+          description="Define store-wide procedures, contact details, and merchant-specific handling."
+        />
       )}
 
       {/* Products section — product-questions only */}

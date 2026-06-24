@@ -34,6 +34,14 @@ export const RETURNS_DOCUMENT_TEMPLATE = `## Return window
 // custom heading.
 export const PRODUCT_SUPPORT_DOCUMENT_TEMPLATE = "";
 
+export const GENERAL_DOCUMENT_CATEGORY = "general";
+export const GENERAL_DOCUMENT_TYPE = "general";
+export const GENERAL_DOCUMENT_TEMPLATE = `## Store-wide procedures
+
+## Contact information
+
+## Special handling`;
+
 export type KnowledgeDocumentRecord = {
   id: string | null;
   category: string;
@@ -73,17 +81,23 @@ function requireProductScopeIfProductSupport(category: string, documentType: str
 export function defaultKnowledgeDocument(category: string, documentType: string): KnowledgeDocumentRecord {
   const isProductSupport = category === PRODUCT_SUPPORT_CATEGORY
     && Boolean(productScopeFromDocumentType(documentType));
+  const isGeneralDocument = category === GENERAL_DOCUMENT_CATEGORY
+    && documentType === GENERAL_DOCUMENT_TYPE;
   return {
     id: null,
     category,
     document_type: documentType,
     title: category === "returns" && documentType === "returns_refunds"
       ? "Returns & Refunds"
+      : isGeneralDocument
+        ? "General Knowledge"
       : isProductSupport
         ? "Product Support"
         : "Knowledge Document",
     draft_markdown: category === "returns" && documentType === "returns_refunds"
       ? RETURNS_DOCUMENT_TEMPLATE
+      : isGeneralDocument
+        ? GENERAL_DOCUMENT_TEMPLATE
       : isProductSupport
         ? PRODUCT_SUPPORT_DOCUMENT_TEMPLATE
         : "# Knowledge Document\n\n## Overview",
