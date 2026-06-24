@@ -99,6 +99,38 @@ Deno.test("Slice J: brand-wide Xbox still works when no productId is passed", ()
   assertEquals(byConn["usb_c"], "no");
 });
 
+// --- Slice K: hard guardrail enforcement on the NOT-CONFIRMED path ----------
+
+Deno.test("Slice K: A-Live (no confirmed row) + PlayStation/AUX → NOT-CONFIRMED, never a positive claim", () => {
+  // A-Live is product 45 — it has NO compatibility rows and there is no
+  // brand-wide PlayStation row, so the lookup is genuinely unknown.
+  const resolved = resolveCompatibility(ACEZONE_ROWS, { target: "playstation", productId: 45 });
+  assertEquals(resolved.known, false);
+
+  const outcome = buildCompatibilityOutcome([resolved]);
+  // No structured facts, and the safe guardrail is emitted.
+  assertEquals(outcome.structuredFacts.length, 0);
+  assertEquals(outcome.guardrails[0]?.reason, "no_confirmed_row");
+  // The directive must NOT contain the confirmed-facts header / a positive claim.
+  assert(!/CONFIRMED FACTS \(authoritative\)/.test(outcome.directive));
+});
+
+Deno.test("Slice K: NOT-CONFIRMED directive hard-forbids a positive claim and overrides retrieval/product/stock", () => {
+  const d = buildCompatibilityDirective(
+    [{ target: "playstation", known: false, results: [] }],
+    { wasAsked: true },
+  );
+  assert(/NOT CONFIRMED/i.test(d));
+  assert(/MUST NOT/.test(d), "must hard-forbid the positive claim");
+  assert(/compatible|works with|can be used with/i.test(d), "names the forbidden claim");
+  assert(/ignore/i.test(d), "must tell the writer to ignore non-authoritative signals");
+  assert(
+    /retriev|product (page|description)|stock/i.test(d),
+    "must call out retrieval/product/stock as non-authoritative",
+  );
+  assert(/overrides all other context/i.test(d), "must outrank all other context regardless of position");
+});
+
 const brandXbox: CompatibilityRow[] = [
   { product_id: null, target: "xbox", connection: "usb_c", compatible: "no", reason: "Xbox does not support USB Audio Class driver", workaround: "Use a 3.5mm AUX cable to the Xbox controller", confidence: "confirmed" },
   { product_id: null, target: "xbox", connection: "wireless_dongle", compatible: "no", reason: "Xbox does not support USB Audio Class driver", workaround: "Use a 3.5mm AUX cable to the Xbox controller", confidence: "confirmed" },
@@ -183,9 +215,10 @@ Deno.test("buildCompatibilityDirective renders confirmed facts and a no-guess ru
 Deno.test("buildCompatibilityDirective on an unknown question emits a no-guess directive, no invented facts", () => {
   const resolved = [resolveCompatibility(brandXbox, { target: "playstation", connection: "bluetooth" })];
   const block = buildCompatibilityDirective(resolved, { wasAsked: true });
-  assert(/do not guess|not confirmed/i.test(block));
-  // Must not assert a compatibility verdict it doesn't have.
-  assert(!/\b(yes|compatible)\b/i.test(block.replace(/not confirmed/gi, "")));
+  assert(/not confirmed/i.test(block));
+  assert(/MUST NOT/.test(block)); // hard prohibition (Slice K)
+  // Must not assert a positive compatibility verdict (no confirmed-facts block).
+  assert(!/CONFIRMED FACTS \(authoritative\)/.test(block));
 });
 
 Deno.test("buildCompatibilityDirective returns empty string when not a compatibility question", () => {
@@ -245,12 +278,12 @@ Deno.test("buildCompatibilityOutcome (unknown): NOT-CONFIRMED directive + guardr
   const resolved = [resolveCompatibility(brandXbox, { target: "playstation", connection: "bluetooth" })];
   const out = buildCompatibilityOutcome(resolved);
   assert(/NOT CONFIRMED/i.test(out.directive), "must inject the NOT-CONFIRMED directive");
-  assert(/do not guess/i.test(out.directive));
+  assert(/MUST NOT/.test(out.directive)); // hard prohibition (Slice K)
   assertEquals(out.structuredFacts.length, 0, "no confirmed structured fact when unknown");
   assertEquals(out.guardrails.length, 1);
   assertEquals(out.guardrails[0].topic, "compatibility");
   assertEquals(out.guardrails[0].reason, "no_confirmed_row");
   assert(out.guardrails[0].message.length > 0);
-  // The directive must NOT assert a compatibility verdict it doesn't have.
-  assert(!/\b(yes|compatible)\b/i.test(out.directive.replace(/not confirmed/gi, "")));
+  // The directive must NOT assert a positive verdict (no confirmed-facts block).
+  assert(!/CONFIRMED FACTS \(authoritative\)/.test(out.directive));
 });

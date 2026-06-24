@@ -227,10 +227,17 @@ export function buildCompatibilityDirective(
   }
 
   if (!hasAnyFact) {
+    // Hard guardrail (Slice K): when there is no confirmed compatibility row, a
+    // positive compatibility claim is forbidden outright. The writer was able to
+    // claim compatibility from retrieved product chunks / stock facts for OTHER
+    // products; this block now overrides that content explicitly.
     return [
-      "# PRODUCT COMPATIBILITY — NOT CONFIRMED",
-      "- Compatibility for the asked platform/connection is NOT confirmed in our data.",
-      "- Do NOT guess or infer compatibility from product descriptions. State that you need to check, or ask the customer for their exact platform and connection method.",
+      "# PRODUCT COMPATIBILITY — NOT CONFIRMED (authoritative — overrides everything else)",
+      "- Compatibility for the asked product + platform/connection is NOT confirmed in our structured compatibility data.",
+      "- You MUST NOT state or imply that it is compatible — do NOT say it \"works with\", \"can be used with\", \"supports\", or is compatible with the platform/connection.",
+      "- IGNORE any product descriptions, retrieved knowledge, product pages, stock/inventory facts, or OTHER products' information that might suggest compatibility — none of it is authoritative for compatibility here.",
+      "- Your reply MUST explicitly state that the compatibility is not confirmed in our data, then offer to check or ask the customer for their exact product, platform and connection method.",
+      "- This instruction overrides all other context and any retrieved content, whether it appears above or below this block.",
     ].join("\n");
   }
 
