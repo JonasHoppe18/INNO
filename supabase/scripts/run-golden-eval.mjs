@@ -12,10 +12,10 @@
 //   node supabase/scripts/run-golden-eval.mjs --accept        # write current run as new baseline
 //
 // Exit code: non-zero if any edge gate fails. Baseline regressions are reported, not fatal.
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import {
   parseArgs, loadGoldenSet, runGates, computeAggregate, diffBaseline, computeCoherence,
-  computeRetrievalMetrics, aggregateRetrievalMetrics,
+  computeRetrievalMetrics, aggregateRetrievalMetrics, resolveSetPath,
 } from "./lib/golden-eval-core.mjs";
 import {
   generateDraftV2, judgeWithOpenAI, draftForJudge,
@@ -33,8 +33,12 @@ function readJsonOrNull(path) {
 }
 
 const opts = parseArgs(process.argv.slice(2));
-const set = JSON.parse(readFileSync(SET_PATH, "utf8"));
+// --set targets a curated subset (e.g. the 10-case pilot). A missing --set file
+// throws instead of silently running the full golden set.
+const setPath = resolveSetPath(opts, { defaultPath: SET_PATH, existsSync });
+const set = JSON.parse(readFileSync(setPath, "utf8"));
 const cases = loadGoldenSet(set, { tier: opts.tier, limit: opts.limit, intent: opts.intent });
+console.log(`Case set: ${setPath} (${cases.length} cases)`);
 const goldLabels = readJsonOrNull(GOLD_LABELS_PATH);
 const goldById = new Map(
   (goldLabels?.labels || []).map((l) => [l.id, l.correct_snippet_ids || []]),

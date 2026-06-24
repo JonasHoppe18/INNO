@@ -7,6 +7,21 @@ export function parseArgs(argv) {
     const i = argv.indexOf(f);
     return i >= 0 ? argv[i + 1] : null;
   };
+  // Fail loudly on unknown flags so a typo (or an unsupported flag like an old
+  // --set) can never silently fall through to running the full golden set.
+  // Value tokens (which never start with "--") are skipped.
+  const KNOWN_FLAGS = new Set([
+    "--shop", "--set", "--tier", "--limit", "--intent",
+    "--abs-floor", "--pq-budget", "--accept",
+    "--issue-tiebreak", "--source-consolidate",
+  ]);
+  for (const tok of argv) {
+    if (typeof tok === "string" && tok.startsWith("--") && !KNOWN_FLAGS.has(tok)) {
+      throw new Error(
+        `Unknown argument: ${tok}. Known flags: ${[...KNOWN_FLAGS].join(", ")}`,
+      );
+    }
+  }
   const tier = val("--tier");
   if (tier !== null && tier !== "historical" && tier !== "edge") {
     throw new Error('tier must be "historical" or "edge"');
@@ -17,6 +32,8 @@ export function parseArgs(argv) {
   const pqBudgetRaw = val("--pq-budget");
   return {
     shop: val("--shop") || ACEZONE_SHOP_ID,
+    // Path to a curated subset file. null = use the default full golden set.
+    set: val("--set"),
     tier,
     limit: limitRaw !== null ? parseInt(limitRaw, 10) : null,
     // Comma-separated list of intents to keep (e.g. "complaint,product_question").
@@ -30,6 +47,16 @@ export function parseArgs(argv) {
     retrievalIssueTiebreak: has("--issue-tiebreak"),
     retrievalSourceConsolidate: has("--source-consolidate"),
   };
+}
+
+// Resolve which case-set file to load. When --set is given it MUST exist — never
+// silently fall back to the full golden set (that is the cost bug this guards).
+export function resolveSetPath(opts, { defaultPath, existsSync }) {
+  if (!opts || !opts.set) return defaultPath;
+  if (!existsSync(opts.set)) {
+    throw new Error(`--set file not found: ${opts.set}`);
+  }
+  return opts.set;
 }
 
 export function validateCase(c) {
