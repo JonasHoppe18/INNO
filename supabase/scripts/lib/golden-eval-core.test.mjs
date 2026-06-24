@@ -84,6 +84,51 @@ test("runGates: passes when all conditions met", () => {
   assert.deepEqual(g.failures, []);
 });
 
+test("runGates: photo must_contain accepts conservative media synonyms", () => {
+  const mediaTerms = [
+    "photo",
+    "photos",
+    "picture",
+    "pictures",
+    "image",
+    "images",
+    "video",
+    "videos",
+    "short video",
+    "video showing",
+  ];
+
+  for (const term of mediaTerms) {
+    const g = runGates(
+      `Please send ${term} of the issue so we can help.`,
+      [{ type: "return" }],
+      { ...edge, must_contain: ["photo"] },
+    );
+    assert.equal(g.passed, true, `${term} should satisfy must_contain photo`);
+    assert.deepEqual(g.failures, []);
+  }
+});
+
+test("runGates: must_not_contain photo remains strict", () => {
+  const g = runGates(
+    "Please send pictures or a short video of the issue.",
+    [{ type: "return" }],
+    { ...edge, must_contain: [], must_not_contain: ["photo"] },
+  );
+  assert.equal(g.passed, true);
+  assert.deepEqual(g.failures, []);
+});
+
+test("runGates: photo must_contain synonyms do not match partial words", () => {
+  const g = runGates(
+    "Please send photography notes from the videographer.",
+    [{ type: "return" }],
+    { ...edge, must_contain: ["photo"] },
+  );
+  assert.equal(g.passed, false);
+  assert.match(g.failures.join("|"), /must_contain.*photo/i);
+});
+
 test("runGates: fails missing must_contain", () => {
   const g = runGates("Send a photo please.", [{ type: "return" }], edge);
   assert.equal(g.passed, false);

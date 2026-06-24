@@ -95,13 +95,42 @@ export function extractActionTypes(actions) {
     .filter(Boolean);
 }
 
+const MUST_CONTAIN_SYNONYMS = {
+  photo: [
+    "photo",
+    "photos",
+    "picture",
+    "pictures",
+    "image",
+    "images",
+    "video",
+    "videos",
+    "short video",
+    "video showing",
+  ],
+};
+
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function containsMustContainNeedle(hay, needle) {
+  const normalizedNeedle = String(needle).toLowerCase();
+  const synonyms = MUST_CONTAIN_SYNONYMS[normalizedNeedle];
+  if (!synonyms) return hay.includes(normalizedNeedle);
+  return synonyms.some((synonym) => {
+    const pattern = new RegExp(`\\b${escapeRegExp(synonym)}\\b`, "i");
+    return pattern.test(hay);
+  });
+}
+
 export function runGates(draft, actions, testCase) {
   if (testCase.tier !== "edge") return { passed: true, failures: [] };
   const failures = [];
   const hay = String(draft || "").toLowerCase();
 
   for (const needle of testCase.must_contain || []) {
-    if (!hay.includes(String(needle).toLowerCase())) {
+    if (!containsMustContainNeedle(hay, needle)) {
       failures.push(`must_contain missing: "${needle}"`);
     }
   }
