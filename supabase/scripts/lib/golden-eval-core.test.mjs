@@ -431,3 +431,161 @@ test("--set loads exactly the 10-case pilot; default loads all 44", () => {
   assert.equal(loadGoldenSet(loadFile(PILOT_SET), {}).length, 10);
   assert.equal(loadGoldenSet(loadFile(FULL_SET), {}).length, 44);
 });
+
+// ---------------------------------------------------------------------------
+// summarizeCandidateDiagnostics — retrieval funnel observability
+// ---------------------------------------------------------------------------
+import {
+  summarizeCandidateDiagnostics,
+  formatCandidateDiagnosticsSummary,
+} from "./golden-eval-core.mjs";
+
+// Minimal candidate_diagnostics fixture builder mirroring the shape emitted by
+// generate-draft-v2's buildRetrievalCandidateDiagnostics.
+function makeDiag({ raw = [], scored = [], postDedupe = [], pool = [], final = [], abstain = null } = {}) {
+  return {
+    planner_queries: ["q"],
+    fallback_queries: [],
+    query_results: raw.map((r, i) => ({
+      query: "q",
+      query_index: 0,
+      source: "vector",
+      chunk_id: r.id,
+      raw_rank: i + 1,
+      raw_score: r.score,
+      source_type: r.source_type ?? "document",
+      usable_as: r.usable_as ?? "policy",
+      title: r.title,
+      question: null,
+      products: [],
+      issue_types: [],
+    })),
+    merged_candidates_pre_score: raw.map((r) => ({
+      chunk_id: r.id, vector_rank: 1, bm25_rank: null, rrf_score: r.score,
+    })),
+    scored_candidates_pre_dedupe: scored.map((id) => ({ chunk_id: id, final_score: 1 })),
+    candidates_post_dedupe: postDedupe,
+    matcher_pool_top15: pool,
+    matcher_selected_ids: final,
+    matcher_abstain: abstain,
+    final_selected_ids: final,
+  };
+}
+
+const GEN = { id: "gen-1", title: "Missing accessories and spare parts", score: 0.81 };
+const OTHER = { id: "x-1", title: "A-Spire pairing guide", source_type: "document", usable_as: "guide", score: 0.42 };
+
+test("summarizeCandidateDiagnostics: null/garbage input => not available", () => {
+  assert.deepEqual(summarizeCandidateDiagnostics(null), { available: false });
+  assert.deepEqual(summarizeCandidateDiagnostics(undefined), { available: false });
+  assert.deepEqual(summarizeCandidateDiagnostics("nope"), { available: false });
+});
+
+test("summarizeCandidateDiagnostics: counts the full funnel", () => {
+  const cd = makeDiag({
+    raw: [GEN, OTHER],
+    scored: ["gen-1", "x-1"],
+    postDedupe: ["gen-1", "x-1"],
+    pool: ["gen-1", "x-1"],
+    final: ["x-1"],
+    abstain: false,
+  });
+  const s = summarizeCandidateDiagnostics(cd, { matcher: { fell_back: false } });
+  assert.equal(s.available, true);
+  assert.equal(s.distinct_raw_candidates, 2);
+  assert.equal(s.scored, 2);
+  assert.equal(s.post_dedupe, 2);
+  assert.equal(s.pool, 2);
+  assert.equal(s.final, 1);
+  assert.equal(s.matcher_abstain, false);
+  assert.equal(s.fell_back, false);
+  // Top candidate is the higher raw_score (General doc).
+  assert.equal(s.top_candidates[0].chunk_id, "gen-1");
+  assert.equal(s.top_candidates[0].title, "Missing accessories and spare parts");
+});
+
+test("summarizeCandidateDiagnostics: General doc dropped by gate (before pool)", () => {
+  const cd = makeDiag({
+    raw: [GEN, OTHER],
+    scored: ["x-1"],        // General doc gated out at scoring
+    postDedupe: ["x-1"],
+    pool: ["x-1"],
+    final: [],
+    abstain: false,
+  });
+  const s = summarizeCandidateDiagnostics(cd);
+  const gen = s.tracked.find((t) => t.key === "gen-1");
+  assert.ok(gen, "General doc traced");
+  assert.equal(gen.raw, true);
+  assert.equal(gen.scored, false);
+  assert.equal(gen.final, false);
+  assert.equal(gen.ever_seen, true);
+  assert.equal(gen.dropped_after, "raw"); // present in raw, gone by scored
+});
+
+test("summarizeCandidateDiagnostics: General doc in pool but matcher abstains", () => {
+  const cd = makeDiag({
+    raw: [GEN, OTHER],
+    scored: ["gen-1", "x-1"],
+    postDedupe: ["gen-1", "x-1"],
+    pool: ["gen-1", "x-1"],
+    final: [],              // matcher selected nothing
+    abstain: true,
+  });
+  const s = summarizeCandidateDiagnostics(cd);
+  assert.equal(s.matcher_abstain, true);
+  assert.equal(s.final, 0);
+  const gen = s.tracked.find((t) => t.key === "gen-1");
+  assert.equal(gen.pool, true);
+  assert.equal(gen.final, false);
+  assert.equal(gen.dropped_after, "pool");
+});
+
+test("summarizeCandidateDiagnostics: General doc reaches the writer", () => {
+  const cd = makeDiag({
+    raw: [GEN, OTHER],
+    scored: ["gen-1", "x-1"],
+    postDedupe: ["gen-1", "x-1"],
+    pool: ["gen-1", "x-1"],
+    final: ["gen-1"],
+    abstain: false,
+  });
+  const s = summarizeCandidateDiagnostics(cd);
+  const gen = s.tracked.find((t) => t.key === "gen-1");
+  assert.equal(gen.final, true);
+  assert.equal(gen.dropped_after, null);
+});
+
+test("summarizeCandidateDiagnostics: empty funnel (n_chunks=0 with no candidates)", () => {
+  const cd = makeDiag({ raw: [], scored: [], pool: [], final: [] });
+  const s = summarizeCandidateDiagnostics(cd);
+  assert.equal(s.distinct_raw_candidates, 0);
+  assert.equal(s.final, 0);
+  assert.deepEqual(s.tracked, []);
+});
+
+test("summarizeCandidateDiagnostics: explicit trackChunkIds override", () => {
+  const cd = makeDiag({
+    raw: [{ id: "z-9", title: "Unlabelled chunk", score: 0.5 }],
+    scored: [], pool: [], final: [],
+  });
+  const s = summarizeCandidateDiagnostics(cd, { trackChunkIds: ["z-9"] });
+  const z = s.tracked.find((t) => t.key === "z-9");
+  assert.ok(z);
+  assert.equal(z.raw, true);
+  assert.equal(z.dropped_after, "raw");
+});
+
+test("formatCandidateDiagnosticsSummary: unavailable + rendered lines", () => {
+  assert.match(
+    formatCandidateDiagnosticsSummary({ available: false }),
+    /no candidate_diagnostics/,
+  );
+  const cd = makeDiag({
+    raw: [GEN, OTHER], scored: ["x-1"], postDedupe: ["x-1"], pool: ["x-1"], final: [], abstain: false,
+  });
+  const out = formatCandidateDiagnosticsSummary(summarizeCandidateDiagnostics(cd));
+  assert.match(out, /retrieval funnel: raw=2/);
+  assert.match(out, /final=0/);
+  assert.match(out, /dropped after raw/);
+});

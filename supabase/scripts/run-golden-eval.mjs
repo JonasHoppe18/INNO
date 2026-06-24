@@ -16,6 +16,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import {
   parseArgs, loadGoldenSet, runGates, computeAggregate, diffBaseline, computeCoherence,
   computeRetrievalMetrics, aggregateRetrievalMetrics, resolveSetPath,
+  summarizeCandidateDiagnostics, formatCandidateDiagnosticsSummary,
 } from "./lib/golden-eval-core.mjs";
 import {
   generateDraftV2, judgeWithOpenAI, draftForJudge,
@@ -74,6 +75,13 @@ for (const c of cases) {
     const retrieval = goldById.has(c.id) && gen.matcherDebug && !live_fact_dependent
       ? computeRetrievalMetrics(goldById.get(c.id), gen.matcherDebug)
       : null;
+    // Eval-only retrieval funnel diagnostics: localize where candidates collapse
+    // to zero (raw -> scored -> dedupe -> pool -> final). Read-only; null when the
+    // deployed function did not emit candidate_diagnostics.
+    const candidateDiagnostics = gen.candidateDiagnostics || null;
+    const retrievalFunnel = summarizeCandidateDiagnostics(candidateDiagnostics, {
+      matcher: gen.matcherDebug || null,
+    });
     results.push({
       id: c.id, intent: c.intent || null, tier: c.tier, status: "scored",
       anchor_class: anchorClass,
@@ -84,10 +92,13 @@ for (const c of cases) {
         overall_10: judged.overall_10, send_ready: judged.send_ready,
       },
       gate, coherence, retrieval, retrievalDebug: gen.retrievalDebug || [],
+      candidate_diagnostics: candidateDiagnostics,
+      retrieval_funnel: retrievalFunnel,
       draft: gen.draft, actions: gen.actions, latencyMs: gen.latencyMs,
     });
     const flag = c.tier === "edge" ? (gate.passed ? "gate:PASS" : "gate:FAIL") : "";
     console.log(`  [${c.id}] overall_10=${judged.overall_10} ${flag}`);
+    console.log(formatCandidateDiagnosticsSummary(retrievalFunnel));
   } catch (err) {
     results.push({ id: c.id, intent: c.intent || null, tier: c.tier, status: "failed", error: err.message });
     console.error(`  [${c.id}] ERROR: ${err.message}`);

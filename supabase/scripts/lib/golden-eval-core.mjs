@@ -382,3 +382,201 @@ export function aggregateRetrievalMetrics(perCase) {
     abstention_correct: avg("abstention_correct"),
   };
 }
+
+// ---- Retrieval funnel diagnostics summarization (eval-only observability) ----
+// `candidate_diagnostics` is emitted by generate-draft-v2 (gated on eval_payload)
+// and captured by eval-runner. It exposes the full retrieval funnel so a run with
+// n_chunks=0 can be attributed to the exact stage where candidates vanish.
+// This summarizer is PURE: no IO, no network, fully deterministic.
+
+// Default title substrings that identify AceZone "General" knowledge-document
+// chunks. candidate_diagnostics does not carry source_provider/category per
+// candidate, so General-doc presence is detected heuristically by section-heading
+// title. Override via opts.trackTitlePatterns (or opts.trackChunkIds) when needed.
+export const GENERAL_DOC_TITLE_PATTERNS = [
+  "general knowledge",
+  "missing accessories",
+  "spare parts",
+  "office visits",
+  "warranty claims",
+  "proof of purchase",
+  "defects, failures",
+  "complaints and customer tone",
+  "technical issues",
+];
+
+function uniqueIds(list) {
+  const out = [];
+  const seen = new Set();
+  for (const v of list || []) {
+    const id = String(v ?? "").trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
+// Funnel stage order, matching how candidate_diagnostics is produced:
+// raw retrieval -> scored -> post-dedupe -> matcher pool (top15) -> final.
+const FUNNEL_STAGE_ORDER = ["raw", "scored", "post_dedupe", "pool", "final"];
+
+export function summarizeCandidateDiagnostics(cd, opts = {}) {
+  if (!cd || typeof cd !== "object") {
+    return { available: false };
+  }
+  const queryResults = Array.isArray(cd.query_results) ? cd.query_results : [];
+  const merged = Array.isArray(cd.merged_candidates_pre_score)
+    ? cd.merged_candidates_pre_score
+    : [];
+  const scored = Array.isArray(cd.scored_candidates_pre_dedupe)
+    ? cd.scored_candidates_pre_dedupe
+    : [];
+  const postDedupe = Array.isArray(cd.candidates_post_dedupe)
+    ? cd.candidates_post_dedupe
+    : [];
+  const pool = Array.isArray(cd.matcher_pool_top15) ? cd.matcher_pool_top15 : [];
+  const finalSel = Array.isArray(cd.final_selected_ids) ? cd.final_selected_ids : [];
+
+  // chunk_id -> best metadata. Raw query results are the only stage carrying
+  // titles/source_type/usable_as, so we key off them (keeping the best raw_score).
+  const metaById = new Map();
+  for (const r of queryResults) {
+    const id = String(r?.chunk_id ?? "").trim();
+    if (!id) continue;
+    const score = typeof r?.raw_score === "number" ? r.raw_score : null;
+    const prev = metaById.get(id);
+    if (!prev || (score !== null && (prev.score === null || score > prev.score))) {
+      metaById.set(id, {
+        chunk_id: id,
+        title: r?.title ?? null,
+        source_type: r?.source_type ?? null,
+        usable_as: r?.usable_as ?? null,
+        score,
+      });
+    }
+  }
+
+  const rawIds = uniqueIds([
+    ...queryResults.map((r) => r?.chunk_id),
+    ...merged.map((r) => r?.chunk_id),
+  ]);
+  const scoredIds = uniqueIds(scored.map((r) => r?.chunk_id));
+  const postDedupeIds = uniqueIds(postDedupe);
+  const poolIds = uniqueIds(pool);
+  const finalIds = uniqueIds(finalSel);
+
+  const topN = Number.isInteger(opts.topN) ? opts.topN : 5;
+  const top_candidates = [...metaById.values()]
+    .sort((a, b) => (b.score ?? -Infinity) - (a.score ?? -Infinity))
+    .slice(0, topN);
+
+  // Trace tracked chunks (default: General doc) through the funnel so we can tell
+  // whether they were present in the pool and where they disappeared.
+  const titlePatterns = (opts.trackTitlePatterns ?? GENERAL_DOC_TITLE_PATTERNS)
+    .map((p) => String(p).toLowerCase());
+  const trackChunkIds = new Set(
+    (opts.trackChunkIds ?? []).map((x) => String(x).trim()).filter(Boolean),
+  );
+  const matchesTracked = (id) => {
+    if (trackChunkIds.has(id)) return true;
+    const title = String(metaById.get(id)?.title ?? "").toLowerCase();
+    return title ? titlePatterns.some((p) => title.includes(p)) : false;
+  };
+
+  const stageSets = {
+    raw: new Set(rawIds),
+    scored: new Set(scoredIds),
+    post_dedupe: new Set(postDedupeIds),
+    pool: new Set(poolIds),
+    final: new Set(finalIds),
+  };
+  const trackedIds = uniqueIds([
+    ...rawIds.filter(matchesTracked),
+    ...trackChunkIds,
+  ]);
+  const tracked = trackedIds.map((id) => {
+    const presence = {};
+    for (const name of FUNNEL_STAGE_ORDER) presence[name] = stageSets[name].has(id);
+    // The last funnel stage where it was still present (null if never seen).
+    let lastPresent = null;
+    for (const name of FUNNEL_STAGE_ORDER) {
+      if (presence[name]) lastPresent = name;
+    }
+    return {
+      key: id,
+      title: metaById.get(id)?.title ?? null,
+      ...presence,
+      ever_seen: lastPresent !== null,
+      // Stage after which the chunk dropped out (null when it reached final or
+      // was never seen at all).
+      dropped_after: presence.final || lastPresent === null ? null : lastPresent,
+    };
+  });
+
+  const matcherAbstain = typeof cd.matcher_abstain === "boolean"
+    ? cd.matcher_abstain
+    : (cd.matcher_abstain ?? null);
+  const fellBack = opts.matcher && typeof opts.matcher.fell_back === "boolean"
+    ? opts.matcher.fell_back
+    : null;
+
+  return {
+    available: true,
+    raw_query_results: queryResults.length,
+    distinct_raw_candidates: rawIds.length,
+    scored: scoredIds.length,
+    post_dedupe: postDedupeIds.length,
+    pool: poolIds.length,
+    final: finalIds.length,
+    matcher_abstain: matcherAbstain,
+    fell_back: fellBack,
+    top_candidates,
+    tracked,
+  };
+}
+
+// Render the summary as compact human-readable lines for the run log. Pure.
+export function formatCandidateDiagnosticsSummary(summary, { indent = "    " } = {}) {
+  if (!summary || !summary.available) {
+    return `${indent}retrieval funnel: (no candidate_diagnostics in response)`;
+  }
+  const lines = [];
+  lines.push(
+    `${indent}retrieval funnel: raw=${summary.distinct_raw_candidates} ` +
+      `scored=${summary.scored} post_dedupe=${summary.post_dedupe} ` +
+      `pool=${summary.pool} final=${summary.final} ` +
+      `(query_results=${summary.raw_query_results})`,
+  );
+  lines.push(
+    `${indent}matcher: abstain=${summary.matcher_abstain} fell_back=${summary.fell_back}`,
+  );
+  if (summary.top_candidates.length) {
+    lines.push(`${indent}top candidates:`);
+    for (const c of summary.top_candidates) {
+      const score = typeof c.score === "number" ? c.score.toFixed(3) : "n/a";
+      lines.push(
+        `${indent}  - [${score}] ${c.source_type ?? "?"}/${c.usable_as ?? "?"} ` +
+          `${c.title ?? "(untitled)"}`,
+      );
+    }
+  }
+  if (summary.tracked.length) {
+    for (const t of summary.tracked) {
+      const path = FUNNEL_STAGE_ORDER.map((s) => (t[s] ? s : `~${s}`)).join(">");
+      const verdict = t.final
+        ? "reached writer"
+        : t.ever_seen
+          ? `dropped after ${t.dropped_after}`
+          : "never retrieved";
+      lines.push(
+        `${indent}tracked ${t.title ?? t.key}: ${path}  => ${verdict}`,
+      );
+    }
+  } else {
+    lines.push(
+      `${indent}tracked: no General-doc chunks matched in candidate pool`,
+    );
+  }
+  return lines.join("\n");
+}

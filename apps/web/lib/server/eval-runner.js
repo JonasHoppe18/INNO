@@ -384,6 +384,15 @@ async function generateDraftV2(shopId, subject, emailBody, options = {}) {
     data?.retrieval_debug && data.retrieval_debug.matcher
       ? data.retrieval_debug.matcher
       : null;
+  // Eval-only retrieval funnel diagnostics. Already emitted by generate-draft-v2
+  // (gated on eval_payload) but previously dropped by the harness. Captured here
+  // read-only so the golden runner can show where candidates collapse to zero.
+  const candidateDiagnostics =
+    data?.retrieval_debug &&
+      data.retrieval_debug.candidate_diagnostics &&
+      typeof data.retrieval_debug.candidate_diagnostics === "object"
+      ? data.retrieval_debug.candidate_diagnostics
+      : null;
   return {
     draft,
     actions,
@@ -392,6 +401,7 @@ async function generateDraftV2(shopId, subject, emailBody, options = {}) {
     routingHint,
     retrievalDebug,
     matcherDebug,
+    candidateDiagnostics,
     // Additive fields — already present in the eval-mode response — so the gold
     // runner can couple by generation_id and grade intent without a second call.
     generationId: typeof data?.generation_id === "string" ? data.generation_id : null,
