@@ -96,6 +96,42 @@ export function isCompatibilityQuestion(
   return connections.length > 0 || COMPAT_KEYWORD.test(String(text ?? ""));
 }
 
+/**
+ * Slice J — resolve the SINGLE product the customer is asking about, by matching
+ * shop product titles against the message. Returns the product id ONLY when
+ * exactly one product resolves; returns null when none or several match, so the
+ * caller falls back to brand-wide rows and never guesses a product.
+ *
+ * Prefix-variant safe: when both "A-Spire" and "A-Spire Wireless" titles appear
+ * in the text, only the most specific ("A-Spire Wireless") is kept — mirrors
+ * resolveMostSpecificProductTerms in the retriever.
+ */
+export function detectCompatibilityProduct(
+  text: string | null | undefined,
+  products: Array<{ id: number; title: string }> | null | undefined,
+): number | null {
+  const lower = String(text ?? "").toLowerCase();
+  const list = Array.isArray(products) ? products : [];
+
+  const matched = list
+    .map((p) => ({ id: p?.id, title: String(p?.title ?? "").toLowerCase().trim() }))
+    .filter((p) => p.title.length > 0 && Number.isFinite(p.id) && lower.includes(p.title));
+  if (matched.length === 0) return null;
+
+  // Drop any matched title that is a substring of another, longer matched title
+  // (e.g. "a-spire" when "a-spire wireless" is also present).
+  const mostSpecific = matched.filter((p) =>
+    !matched.some((other) =>
+      other.title !== p.title &&
+      other.title.length > p.title.length &&
+      other.title.includes(p.title)
+    )
+  );
+
+  const ids = Array.from(new Set(mostSpecific.map((p) => p.id as number)));
+  return ids.length === 1 ? ids[0] : null;
+}
+
 export function resolveCompatibility(
   rows: CompatibilityRow[] | null | undefined,
   opts: { target: string; connection?: string; productId?: number | null },

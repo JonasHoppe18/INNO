@@ -12,6 +12,7 @@ import type { RetrievalCandidateDiagnostics } from "./stages/retriever.ts";
 import { runInternalRules } from "./stages/internal-rules.ts";
 import {
   buildCompatibilityOutcome,
+  detectCompatibilityProduct,
   detectCompatibilityQuery,
   isCompatibilityQuestion,
   resolveCompatibility,
@@ -1415,8 +1416,24 @@ export async function runDraftV2Pipeline(
         const rows = !compatErr && Array.isArray(compatRows)
           ? (compatRows as Parameters<typeof resolveCompatibility>[0])
           : [];
+        // Slice J: resolve the asked product (if exactly one is named) so
+        // confirmed product-specific rows are served; null => brand-wide only,
+        // never a guess. Best-effort: a failed lookup leaves productId null.
+        let compatProductId: number | null = null;
+        try {
+          const { data: prodRows } = await supabase
+            .from("shop_products")
+            .select("id, title")
+            .eq("shop_ref_id", shop_id);
+          compatProductId = detectCompatibilityProduct(
+            latestBody,
+            (Array.isArray(prodRows) ? prodRows : []) as Array<{ id: number; title: string }>,
+          );
+        } catch (_err) {
+          compatProductId = null;
+        }
         const resolved = targets.map((target) =>
-          resolveCompatibility(rows, { target })
+          resolveCompatibility(rows, { target, productId: compatProductId })
         );
         // Stage 5, Slice 2B: ALWAYS inject a directive once a lookup was
         // attempted — the confirmed-facts block when known, otherwise the
