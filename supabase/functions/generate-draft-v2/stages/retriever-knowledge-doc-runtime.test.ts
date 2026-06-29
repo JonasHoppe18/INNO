@@ -19,7 +19,11 @@ const SHOP = {
 };
 
 function plan(primary_intent: string, resolution_stage?: string) {
-  return { primary_intent, resolution_stage: resolution_stage ?? "info_only", sub_queries: [] } as any;
+  return {
+    primary_intent,
+    resolution_stage: resolution_stage ?? "info_only",
+    sub_queries: [],
+  } as any;
 }
 
 function decision(input: {
@@ -79,6 +83,131 @@ function finalScore(
     issueTerms: options.issueTerms,
   }).final_score;
 }
+
+Deno.test("General Missing accessories section gets narrow replacement-policy boost", () => {
+  const doc = chunk({
+    id: "general-missing-accessories",
+    content:
+      "# General Knowledge\n\n## Missing accessories and spare parts\nAsk which accessory is missing and explain the replacement process.",
+    source_label: "knowledge_document: Missing accessories and spare parts",
+    source_provider: "knowledge_document",
+    document_category: "general",
+    usable_as: "policy",
+    similarity: 0.04,
+  });
+
+  const boosted = buildScoreBreakdown({
+    chunk: doc,
+    mentionedProducts: ["A-Spire Wireless"],
+    otherProducts: [],
+    issueTerms: [],
+    intentText:
+      "Kan jeg købe en ny dongle til mit A-Spire Wireless headset? missing accessories spare parts replacement policy instructions",
+  });
+  const ordinary = buildScoreBreakdown({
+    chunk: doc,
+    mentionedProducts: ["A-Spire Wireless"],
+    otherProducts: [],
+    issueTerms: [],
+    intentText: "My headset is not connecting to the dongle.",
+  });
+
+  assertEquals(boosted.general_policy_boost > 0, true);
+  assertEquals(ordinary.general_policy_boost, 0);
+  assertEquals(boosted.final_score > ordinary.final_score, true);
+});
+
+Deno.test("General docs are not boosted for ordinary specs, stock, or compatibility", () => {
+  const doc = chunk({
+    id: "general-doc",
+    content:
+      "# General Knowledge\n\n## Missing accessories and spare parts\nAsk which accessory is missing.",
+    source_label: "knowledge_document: Missing accessories and spare parts",
+    source_provider: "knowledge_document",
+    document_category: "general",
+    usable_as: "policy",
+  });
+
+  for (
+    const intentText of [
+      "Is the A-Spire Wireless in stock?",
+      "Can I use a USB-C adapter with the dongle?",
+      "What are the product specs for A-Spire Wireless?",
+    ]
+  ) {
+    const breakdown = buildScoreBreakdown({
+      chunk: doc,
+      mentionedProducts: ["A-Spire Wireless"],
+      otherProducts: [],
+      issueTerms: [],
+      intentText,
+    });
+    assertEquals(breakdown.general_policy_boost, 0);
+  }
+});
+
+Deno.test("Factory reset receives power-reset boost and outranks cable compatibility", () => {
+  const reset = chunk({
+    id: "factory-reset",
+    content:
+      "## Factory reset\nTurn the headset off and hold the power button for 15 seconds.",
+    source_label: "knowledge_document: Factory reset",
+    source_provider: "knowledge_document",
+    document_category: "product_support",
+    usable_as: "policy",
+    similarity: 0.04,
+  });
+  const cable = chunk({
+    id: "cable-compat",
+    content:
+      "## Cable and adapter compatibility\nAny standard USB-C cable works.",
+    source_label: "knowledge_document: Cable and adapter compatibility",
+    source_provider: "knowledge_document",
+    document_category: "product_support",
+    usable_as: "policy",
+    similarity: 0.06,
+  });
+
+  const resetScore = buildScoreBreakdown({
+    chunk: reset,
+    mentionedProducts: ["A-Spire Wireless"],
+    otherProducts: [],
+    issueTerms: ["battery"],
+    intentText: "My A-Spire Wireless will not power on. Factory reset?",
+  });
+  const cableScore = buildScoreBreakdown({
+    chunk: cable,
+    mentionedProducts: ["A-Spire Wireless"],
+    otherProducts: [],
+    issueTerms: ["battery"],
+    intentText: "My A-Spire Wireless will not power on. Factory reset?",
+  });
+
+  assertEquals(resetScore.power_reset_boost > 0, true);
+  assertEquals(cableScore.power_reset_boost, 0);
+  assertEquals(resetScore.final_score > cableScore.final_score, true);
+});
+
+Deno.test("Cable compatibility remains unboosted for explicit cable compatibility", () => {
+  const cable = chunk({
+    id: "cable-compat",
+    content:
+      "## Cable and adapter compatibility\nAny standard USB-C cable works.",
+    source_label: "knowledge_document: Cable and adapter compatibility",
+    source_provider: "knowledge_document",
+    document_category: "product_support",
+    usable_as: "policy",
+    similarity: 0.06,
+  });
+  const breakdown = buildScoreBreakdown({
+    chunk: cable,
+    mentionedProducts: ["A-Spire Wireless"],
+    otherProducts: [],
+    issueTerms: ["audio"],
+    intentText: "Can I use any USB-C cable with my A-Spire Wireless?",
+  });
+  assertEquals(breakdown.power_reset_boost, 0);
+});
 
 Deno.test("inbox runtime may include same-product Product Support document chunks", () => {
   const result = decision({
@@ -266,7 +395,10 @@ Deno.test("technical support doc blocks order status questions", () => {
       "# General PC Audio Troubleshooting\n\n## Windows microphone format\nSet Headset Microphone to 48000Hz.",
     customerMessage: "Where is my order?",
   });
-  assertEquals(result, { allowed: false, reason: "not_technical_support_context" });
+  assertEquals(result, {
+    allowed: false,
+    reason: "not_technical_support_context",
+  });
 });
 
 Deno.test("technical support doc blocks return questions", () => {
@@ -277,7 +409,10 @@ Deno.test("technical support doc blocks return questions", () => {
     customerMessage: "Can I return my headset?",
     intent: "return",
   });
-  assertEquals(result, { allowed: false, reason: "not_technical_support_context" });
+  assertEquals(result, {
+    allowed: false,
+    reason: "not_technical_support_context",
+  });
 });
 
 Deno.test("technical support doc blocks product comparison questions", () => {
@@ -288,7 +423,10 @@ Deno.test("technical support doc blocks product comparison questions", () => {
     customerMessage: "Which headset should I choose?",
     intent: "product_question",
   });
-  assertEquals(result, { allowed: false, reason: "not_technical_support_context" });
+  assertEquals(result, {
+    allowed: false,
+    reason: "not_technical_support_context",
+  });
 });
 
 Deno.test("General knowledge documents are allowed by the runtime document gate", () => {
@@ -296,7 +434,8 @@ Deno.test("General knowledge documents are allowed by the runtime document gate"
     category: "general",
     content:
       "# General Knowledge\n\n## Spare parts\nUse merchant knowledge for spare-part handling.",
-    customerMessage: "I lost the remote for my X200 chair. Can I buy a new one?",
+    customerMessage:
+      "I lost the remote for my X200 chair. Can I buy a new one?",
     intent: "product_question",
   });
   assertEquals(result, { allowed: true, reason: "general_document_context" });
@@ -307,10 +446,14 @@ Deno.test("unsupported random knowledge document categories remain blocked", () 
     category: "random_custom_doc",
     content:
       "# Random Document\n\n## Procedure\nThis category is not enabled for runtime knowledge documents.",
-    customerMessage: "I lost the remote for my X200 chair. Can I buy a new one?",
+    customerMessage:
+      "I lost the remote for my X200 chair. Can I buy a new one?",
     intent: "product_question",
   });
-  assertEquals(result, { allowed: false, reason: "unsupported_document_category" });
+  assertEquals(result, {
+    allowed: false,
+    reason: "unsupported_document_category",
+  });
 });
 
 Deno.test("legacy non-document knowledge remains allowed by the document gate", () => {
@@ -630,7 +773,10 @@ Deno.test("app question without product allows app-related document sections", (
     customerMessage: "Can I use the AceZone app with my headset?",
     metadata: { section_heading: "App and Bluetooth setup" },
   });
-  assertEquals(result, { allowed: true, reason: "cross_product_software_context" });
+  assertEquals(result, {
+    allowed: true,
+    reason: "cross_product_software_context",
+  });
 });
 
 Deno.test("firmware question without product allows firmware-related document sections", () => {
@@ -641,7 +787,10 @@ Deno.test("firmware question without product allows firmware-related document se
     customerMessage: "How do I update the firmware on my headset?",
     metadata: { section_heading: "Firmware update" },
   });
-  assertEquals(result, { allowed: true, reason: "cross_product_software_context" });
+  assertEquals(result, {
+    allowed: true,
+    reason: "cross_product_software_context",
+  });
 });
 
 Deno.test("bluetooth question without product allows bluetooth-related document sections", () => {
@@ -652,7 +801,10 @@ Deno.test("bluetooth question without product allows bluetooth-related document 
     customerMessage: "My headset won't connect via Bluetooth.",
     metadata: { section_heading: "Bluetooth pairing" },
   });
-  assertEquals(result, { allowed: true, reason: "cross_product_software_context" });
+  assertEquals(result, {
+    allowed: true,
+    reason: "cross_product_software_context",
+  });
 });
 
 Deno.test("software context does NOT allow sections without software/app signals", () => {
@@ -687,7 +839,10 @@ Deno.test("adapter question without product allows cable/adapter document sectio
     customerMessage: "Can I use a USB-C to USB-A adapter with the dongle?",
     metadata: { section_heading: "Cable and adapter compatibility" },
   });
-  assertEquals(result, { allowed: true, reason: "cross_product_accessory_context" });
+  assertEquals(result, {
+    allowed: true,
+    reason: "cross_product_accessory_context",
+  });
 });
 
 Deno.test("cable question without product allows cable/adapter document sections", () => {
@@ -698,7 +853,10 @@ Deno.test("cable question without product allows cable/adapter document sections
     customerMessage: "Can I use any USB-C cable with my headset?",
     metadata: { section_heading: "Cable and adapter compatibility" },
   });
-  assertEquals(result, { allowed: true, reason: "cross_product_accessory_context" });
+  assertEquals(result, {
+    allowed: true,
+    reason: "cross_product_accessory_context",
+  });
 });
 
 Deno.test("accessory context does NOT allow non-accessory document sections", () => {
@@ -740,7 +898,8 @@ Deno.test("warranty/replacement cable question still retrieves Returns & Refunds
     category: "returns",
     content:
       "# Returns & Refunds\n\n## Cable, adapter and accessory replacements\nWarranty handling for accessories.",
-    customerMessage: "My cable is defective, can I get a replacement under warranty?",
+    customerMessage:
+      "My cable is defective, can I get a replacement under warranty?",
     intent: "return",
     metadata: { section_heading: "Cable, adapter and accessory replacements" },
   });
@@ -766,7 +925,10 @@ Deno.test("cross-product software context Knowledge Doc receives post-gate retri
     customerMessage: "Can I use the AceZone app with my headset?",
     metadata: { section_heading: "App and Bluetooth setup" },
   });
-  assertEquals(access, { allowed: true, reason: "cross_product_software_context" });
+  assertEquals(access, {
+    allowed: true,
+    reason: "cross_product_software_context",
+  });
 
   const doc = chunk({
     id: "doc-app-rise",

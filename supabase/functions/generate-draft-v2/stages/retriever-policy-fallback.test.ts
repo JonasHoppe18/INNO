@@ -53,6 +53,27 @@ Deno.test("Warranty claims beats Return for swap when customer/planner says warr
   assertEquals(result.debug[0].overlap_reason !== "none", true);
 });
 
+Deno.test("Generic return flow still allows Return for swap over Warranty claims", () => {
+  const result = selectPolicyFallback([
+    chunk("return", "policy", 0.8, {
+      source_title: "Return for swap",
+      content: "Return the product for swap after troubleshooting.",
+    }),
+    chunk("claims", "policy", 0.75, {
+      source_title: "Warranty claims",
+      content: "For warranty claims, ask for proof of purchase.",
+    }),
+  ], {
+    max: 2,
+    scoreRatio: 0.6,
+    customerMessage: "I want to return my headset.",
+    plannerQueries: ["return swap process"],
+    issueTerms: ["return"],
+  });
+
+  assertEquals(ids(result)[0], "return");
+});
+
 Deno.test("Cable and adapter compatibility is not rescued for power/reset intent without reset/power overlap", () => {
   const result = selectPolicyFallback([
     chunk("cable", "policy", 0.9, {

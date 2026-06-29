@@ -369,6 +369,45 @@ function hasAccessoryCompatibilityHeading(text: string): boolean {
   return ACCESSORY_HEADING_RE.test(text);
 }
 
+const ACCESSORY_REPLACEMENT_INTENT_RE =
+  /\b(missing|lost|broken|replacement|replace|spare\s*parts?|accessor(?:y|ies)|dongle|mangler|mistet|ødelagt|defekt|reservedele|tilbehør|erstatning|ny|købe|buy)\b/i;
+const ACCESSORY_REPLACEMENT_PROCEDURE_RE =
+  /\b(missing|lost|broken|replacement|replace|spare\s*parts?|mangler|mistet|ødelagt|defekt|reservedele|erstatning|ny|købe|buy)\b/i;
+const ACCESSORY_REPLACEMENT_OBJECT_RE =
+  /\b(accessor(?:y|ies)|dongle|spare\s*parts?|parts?|tilbehør|reservedele)\b/i;
+
+function isAccessoryReplacementContext(text?: string): boolean {
+  const normalized = stripHtml(text || "");
+  return ACCESSORY_REPLACEMENT_INTENT_RE.test(normalized) &&
+    (
+      ACCESSORY_REPLACEMENT_PROCEDURE_RE.test(normalized) &&
+      ACCESSORY_REPLACEMENT_OBJECT_RE.test(normalized)
+    );
+}
+
+function hasAccessoryReplacementSignal(text: string): boolean {
+  return ACCESSORY_REPLACEMENT_INTENT_RE.test(stripHtml(text));
+}
+
+const POWER_RESET_INTENT_RE =
+  /\b(power(?:\s+on)?|won'?t\s+power\s+on|will\s+not\s+power\s+on|charging|charge|reset|factory\s+reset|tænder|oplade|oplader|nulstil)\b/i;
+const RESET_PROCEDURE_RE =
+  /\b(factory\s+reset|nulstil|15\s*seconds?|power\s+button)\b/i;
+
+function isPowerResetContext(text?: string): boolean {
+  return POWER_RESET_INTENT_RE.test(stripHtml(text || ""));
+}
+
+function hasResetProcedureSignal(text: string): boolean {
+  return RESET_PROCEDURE_RE.test(stripHtml(text));
+}
+
+function isPureCableAdapterCompatibility(text: string): boolean {
+  const normalized = stripHtml(text);
+  return /\b(cable|kabel|adapter|adaptor|compatibility|usb-?c|usb-?a)\b/i
+    .test(normalized) && !hasResetProcedureSignal(normalized);
+}
+
 function extractKnowledgeDocumentProductTerms(input: {
   content?: string;
   metadata?: Record<string, unknown> | null;
@@ -710,6 +749,8 @@ export interface RetrievalCandidateDiagnostics {
     issue_type_boost: number;
     lexical_issue_boost: number;
     product_support_doc_boost: number;
+    general_policy_boost: number;
+    power_reset_boost: number;
     source_type_boost: number;
     usable_as_boost: number;
     cross_product_penalty: number;
@@ -791,6 +832,13 @@ export function buildFallbackQueries(
     queries.push({
       text: `${products[0]} compatibility product specs accessories`,
       productAgnostic: false,
+    });
+  }
+
+  if (isAccessoryReplacementContext(text)) {
+    queries.push({
+      text: "missing accessories spare parts replacement policy instructions",
+      productAgnostic: true,
     });
   }
 
@@ -1016,7 +1064,7 @@ function policyFallbackCandidateScore(input: {
 
   const warrantyClaimsBonus =
     intentKinds.includes("warranty") && /\bwarranty claims?\b/i.test(lowerTitle)
-      ? 0.18
+      ? 0.35
       : 0;
   const procedureBonus = chunk.usable_as === "procedure" ? 0.03 : 0;
   const rankingScore = chunk.similarity +
@@ -1346,6 +1394,8 @@ type ScoreBreakdown = {
   issue_type_boost: number;
   lexical_issue_boost: number;
   product_support_doc_boost: number;
+  general_policy_boost: number;
+  power_reset_boost: number;
   source_type_boost: number;
   usable_as_boost: number;
   cross_product_penalty: number;
@@ -1371,6 +1421,7 @@ export function buildScoreBreakdown(input: {
   mentionedProducts: string[];
   otherProducts: string[];
   issueTerms: string[];
+  intentText?: string;
 }): ScoreBreakdown {
   const { chunk, mentionedProducts, issueTerms } = input;
   const text = `${chunk.source_label} ${chunk.content}`;
@@ -1415,6 +1466,20 @@ export function buildScoreBreakdown(input: {
       hasLexicalIssueSignal(text, issueTerms)
     ? 0.16
     : 0;
+  const intentText = input.intentText ?? "";
+  const isGeneralKnowledgeDoc =
+    isKnowledgeDocumentProvider(chunk.source_provider) &&
+    chunk.document_category === GENERAL_DOCUMENT_CATEGORY;
+  const generalPolicyBoost = isAccessoryReplacementContext(intentText) &&
+      isGeneralKnowledgeDoc &&
+      hasAccessoryReplacementSignal(text)
+    ? 0.18
+    : 0;
+  const powerResetBoost = isPowerResetContext(intentText) &&
+      hasResetProcedureSignal(text) &&
+      !isPureCableAdapterCompatibility(text)
+    ? 0.18
+    : 0;
   const sourceTypeBoost =
     /manual_text|snippet/i.test(`${chunk.source_label} ${chunk.kind}`)
       ? 0.04
@@ -1427,6 +1492,8 @@ export function buildScoreBreakdown(input: {
     issueTypeBoost +
     lexicalIssueBoost +
     productSupportDocBoost +
+    generalPolicyBoost +
+    powerResetBoost +
     sourceTypeBoost +
     usableAsBoost -
     crossProductPenalty;
@@ -1436,6 +1503,8 @@ export function buildScoreBreakdown(input: {
     issue_type_boost: issueTypeBoost,
     lexical_issue_boost: lexicalIssueBoost,
     product_support_doc_boost: productSupportDocBoost,
+    general_policy_boost: generalPolicyBoost,
+    power_reset_boost: powerResetBoost,
     source_type_boost: sourceTypeBoost,
     usable_as_boost: usableAsBoost,
     cross_product_penalty: crossProductPenalty,
@@ -1978,6 +2047,7 @@ export async function runRetriever(
       mentionedProducts,
       otherProducts,
       issueTerms,
+      intentText: queryText,
     });
 
   const scoredChunks: RetrievedChunk[] = fused
