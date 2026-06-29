@@ -1404,7 +1404,7 @@ export async function runDraftV2Pipeline(
     const provenanceGuardrails: GuardrailUnavailableProvenance[] = [];
     let compatibilityBlock = "";
     if (isCompatibilityQuestion(latestBody)) {
-      const { targets } = detectCompatibilityQuery(latestBody);
+      const { targets, connections } = detectCompatibilityQuery(latestBody);
       if (targets.length > 0) {
         const { data: compatRows, error: compatErr } = await supabase
           .from("shop_product_compatibility")
@@ -1440,7 +1440,9 @@ export async function runDraftV2Pipeline(
         // NOT-CONFIRMED abstention block so the writer does not fall back to
         // retrieval/guessing. Known cases also emit structured provenance;
         // unknown cases emit a compatibility/no_confirmed_row guardrail.
-        const compatOutcome = buildCompatibilityOutcome(resolved);
+        // Slice L: pass the asked connection(s) so the directive marks the exact
+        // requested method's confirmed status and offers alternatives safely.
+        const compatOutcome = buildCompatibilityOutcome(resolved, connections);
         compatibilityBlock = compatOutcome.directive;
         structuredFactsProvenance.push(...compatOutcome.structuredFacts);
         provenanceGuardrails.push(...compatOutcome.guardrails);

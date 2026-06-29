@@ -193,20 +193,40 @@ const TARGET_LABEL: Record<string, string> = {
   android: "Android",
 };
 
+// Hard safety meaning, kept verbatim across confirmed and not-confirmed paths
+// (Slice K). These are INTERNAL instructions to the writer — never customer text.
+const COMPAT_SAFETY_RULES: string[] = [
+  "- You MUST NOT state or imply compatibility for any method that is not confirmed above — never say it \"works with\", \"can be used with\", \"supports\", or is compatible unless it is listed as confirmed compatible above.",
+  "- IGNORE product descriptions, retrieved knowledge, product pages, stock/inventory, and OTHER products' information — none of it can establish compatibility here.",
+  "- This compatibility guardrail overrides all other context, including any conflicting retrieved or product content, whether it appears above or below.",
+];
+
+// Send-ready style (Slice L). Turns the directive from a script the writer
+// parrots into facts it expresses naturally — and strips internal/system
+// wording and filler from the customer-facing reply.
+const COMPAT_SEND_READY_RULES: string[] = [
+  "- Write like a support colleague: warm, direct and natural. Express the facts in your own words — never copy these bullet lines verbatim.",
+  "- Lead with what IS confirmed. Mention any unconfirmed method once, framed as a recommendation to use a confirmed option instead — never as a system disclaimer.",
+  "- Do NOT expose internal mechanics or data-source wording, and never tell the customer to test or try the setup themselves to find out.",
+  "- No generic filler and no padded sign-off; every sentence should carry information.",
+];
+
 /**
  * Render a deterministic writer directive from resolved compatibility. Only
  * confirmed facts are stated; for anything unknown the writer is told not to
- * guess. Returns "" when the message was not a compatibility question.
+ * guess. When the customer asked for a specific connection/method, that exact
+ * method must be confirmed before Sona may answer yes for it — other confirmed
+ * methods may be offered as alternatives but never as proof the asked method
+ * works (Slice L). Returns "" when the message was not a compatibility question.
  */
 export function buildCompatibilityDirective(
   resolved: ResolvedCompatibility[],
-  opts: { wasAsked: boolean },
+  opts: { wasAsked: boolean; requestedConnections?: string[] },
 ): string {
   if (!opts.wasAsked) return "";
+  const requested = (opts.requestedConnections ?? []).filter(Boolean);
 
-  const lines: string[] = [
-    "# PRODUCT COMPATIBILITY — CONFIRMED FACTS (authoritative)",
-  ];
+  const factLines: string[] = [];
   let hasAnyFact = false;
   for (const r of resolved) {
     const targetLabel = TARGET_LABEL[r.target] ?? r.target;
@@ -222,28 +242,50 @@ export function buildCompatibilityDirective(
       let line = `- ${targetLabel} via ${connLabel}: ${verdict}.`;
       if (res.reason) line += ` Reason: ${res.reason}.`;
       if (res.workaround) line += ` Workaround: ${res.workaround}.`;
-      lines.push(line);
+      factLines.push(line);
     }
   }
 
   if (!hasAnyFact) {
-    // Hard guardrail (Slice K): when there is no confirmed compatibility row, a
-    // positive compatibility claim is forbidden outright. The writer was able to
-    // claim compatibility from retrieved product chunks / stock facts for OTHER
-    // products; this block now overrides that content explicitly.
+    // No confirmed row at all (Slice K hard guardrail + Slice L send-ready
+    // wording): a positive claim is forbidden outright, and the customer-facing
+    // reply must read like a colleague — not an internal data disclaimer.
     return [
-      "# PRODUCT COMPATIBILITY — NOT CONFIRMED (authoritative — overrides everything else)",
-      "- Compatibility for the asked product + platform/connection is NOT confirmed in our structured compatibility data.",
-      "- You MUST NOT state or imply that it is compatible — do NOT say it \"works with\", \"can be used with\", \"supports\", or is compatible with the platform/connection.",
-      "- IGNORE any product descriptions, retrieved knowledge, product pages, stock/inventory facts, or OTHER products' information that might suggest compatibility — none of it is authoritative for compatibility here.",
-      "- Your reply MUST explicitly state that the compatibility is not confirmed in our data, then offer to check or ask the customer for their exact product, platform and connection method.",
-      "- This instruction overrides all other context and any retrieved content, whether it appears above or below this block.",
+      "# PRODUCT COMPATIBILITY — NOT CONFIRMED (internal directive — express in your own words)",
+      ...COMPAT_SAFETY_RULES,
+      "- Nothing about the asked product + platform/method is confirmed compatible, so you have no compatible setup to offer for it.",
+      "- Either recommend an option or product that DOES have confirmed compatibility for the asked platform, or ask ONE precise question (exact product, platform and connection) — whichever is more helpful.",
+      ...COMPAT_SEND_READY_RULES,
     ].join("\n");
   }
 
-  lines.push(
-    "- Use ONLY the confirmed facts above. For any platform/connection not listed, do NOT guess — say it is not confirmed or ask for details.",
-  );
+  const lines: string[] = [
+    "# PRODUCT COMPATIBILITY — CONFIRMED FACTS (internal directive — express in your own words)",
+    ...factLines,
+  ];
+
+  // Slice L: exact requested-method status. A specifically asked connection must
+  // be confirmed for THAT method before Sona answers yes; otherwise it is offered
+  // an alternative, never claimed.
+  if (requested.length > 0) {
+    for (const r of resolved) {
+      if (!r.known) continue;
+      const byConn = new Map(r.results.map((x) => [x.connection, x]));
+      for (const conn of requested) {
+        const connLabel = CONNECTION_LABEL[conn] ?? conn;
+        const hit = byConn.get(conn);
+        if (hit && hit.compatible === "yes") {
+          lines.push(`- Requested method (${connLabel}): CONFIRMED — you may confirm it works.`);
+        } else if (hit && hit.compatible === "no") {
+          lines.push(`- Requested method (${connLabel}): confirmed it does NOT work — do not claim it works; steer to a confirmed option above.`);
+        } else {
+          lines.push(`- Requested method (${connLabel}): NOT confirmed — you MUST NOT claim it works; recommend a confirmed option above instead.`);
+        }
+      }
+    }
+  }
+
+  lines.push(...COMPAT_SAFETY_RULES, ...COMPAT_SEND_READY_RULES);
   return lines.join("\n");
 }
 
@@ -272,9 +314,13 @@ export interface CompatibilityOutcome {
  */
 export function buildCompatibilityOutcome(
   resolved: ResolvedCompatibility[] | null | undefined,
+  requestedConnections?: string[],
 ): CompatibilityOutcome {
   const list = Array.isArray(resolved) ? resolved : [];
-  const directive = buildCompatibilityDirective(list, { wasAsked: true });
+  const directive = buildCompatibilityDirective(list, {
+    wasAsked: true,
+    requestedConnections,
+  });
   if (list.some((r) => r.known)) {
     return {
       directive,

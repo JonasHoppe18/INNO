@@ -287,3 +287,110 @@ Deno.test("buildCompatibilityOutcome (unknown): NOT-CONFIRMED directive + guardr
   // The directive must NOT assert a positive verdict (no confirmed-facts block).
   assert(!/CONFIRMED FACTS \(authoritative\)/.test(out.directive));
 });
+
+// --- Slice L: exact requested-method handling + send-ready wording ----------
+
+const SLICE_L_ROWS: CompatibilityRow[] = [
+  // A-Spire (47) PlayStation: USB-C + AUX confirmed, NO wireless dongle.
+  { product_id: 47, target: "playstation", connection: "usb_c", compatible: "yes", reason: null, workaround: null, confidence: "confirmed" },
+  { product_id: 47, target: "playstation", connection: "aux_3_5mm", compatible: "yes", reason: null, workaround: null, confidence: "confirmed" },
+  // A-Spire Wireless (48) PlayStation: dongle + USB-C confirmed.
+  { product_id: 48, target: "playstation", connection: "wireless_dongle", compatible: "yes", reason: null, workaround: null, confidence: "confirmed" },
+  { product_id: 48, target: "playstation", connection: "usb_c", compatible: "yes", reason: null, workaround: null, confidence: "confirmed" },
+  // brand-wide Xbox.
+  { product_id: null, target: "xbox", connection: "aux_3_5mm", compatible: "yes", reason: null, workaround: null, confidence: "confirmed" },
+  { product_id: null, target: "xbox", connection: "usb_c", compatible: "no", reason: null, workaround: null, confidence: "confirmed" },
+  // SUGGESTED A-Spire dongle row — must stay ignored (dongle must NOT become confirmed for 47).
+  { product_id: 47, target: "playstation", connection: "wireless_dongle", compatible: "partial", reason: null, workaround: null, confidence: "suggested" },
+];
+
+// Part A — exact requested-method handling
+
+Deno.test("Slice L/A: A-Spire + PlayStation + wireless dongle → dongle NOT claimed, USB-C/AUX offered as alternatives", () => {
+  const resolved = [resolveCompatibility(SLICE_L_ROWS, { target: "playstation", productId: 47 })];
+  const d = buildCompatibilityDirective(resolved, { wasAsked: true, requestedConnections: ["wireless_dongle"] });
+  assert(/USB-C/i.test(d), "confirmed USB-C alternative present");
+  assert(/AUX/i.test(d), "confirmed AUX alternative present");
+  assert(/Requested method \(wireless dongle\): NOT confirmed/i.test(d));
+  // Never a positive dongle verdict (suggested row stayed out of the facts).
+  assert(!/wireless dongle: compatible/i.test(d));
+});
+
+Deno.test("Slice L/A: A-Spire Wireless + PlayStation + wireless dongle → requested method CONFIRMED", () => {
+  const resolved = [resolveCompatibility(SLICE_L_ROWS, { target: "playstation", productId: 48 })];
+  const d = buildCompatibilityDirective(resolved, { wasAsked: true, requestedConnections: ["wireless_dongle"] });
+  assert(/Requested method \(wireless dongle\): CONFIRMED/i.test(d));
+});
+
+Deno.test("Slice L/A: A-Spire + PlayStation + USB-C → requested method CONFIRMED", () => {
+  const resolved = [resolveCompatibility(SLICE_L_ROWS, { target: "playstation", productId: 47 })];
+  const d = buildCompatibilityDirective(resolved, { wasAsked: true, requestedConnections: ["usb_c"] });
+  assert(/Requested method \(USB-C\): CONFIRMED/i.test(d));
+});
+
+Deno.test("Slice L/A: A-Spire + PlayStation + AUX → requested method CONFIRMED", () => {
+  const resolved = [resolveCompatibility(SLICE_L_ROWS, { target: "playstation", productId: 47 })];
+  const d = buildCompatibilityDirective(resolved, { wasAsked: true, requestedConnections: ["aux_3_5mm"] });
+  assert(/Requested method \(3\.5mm AUX\): CONFIRMED/i.test(d));
+});
+
+Deno.test("Slice L/A: A-Spire + PlayStation with no method → summarize confirmed USB-C/AUX, no requested-method section", () => {
+  const resolved = [resolveCompatibility(SLICE_L_ROWS, { target: "playstation", productId: 47 })];
+  const d = buildCompatibilityDirective(resolved, { wasAsked: true });
+  assert(/USB-C/i.test(d) && /AUX/i.test(d));
+  assert(!/Requested method/i.test(d));
+});
+
+Deno.test("Slice L/A: suggested A-Spire dongle row stays ignored (dongle never resolves for product 47)", () => {
+  const r = resolveCompatibility(SLICE_L_ROWS, { target: "playstation", productId: 47 });
+  assert(!r.results.some((x) => x.connection === "wireless_dongle"));
+});
+
+Deno.test("Slice L/A: brand-wide Xbox still resolves where applicable", () => {
+  const r = resolveCompatibility(SLICE_L_ROWS, { target: "xbox" });
+  const byConn = Object.fromEntries(r.results.map((x) => [x.connection, x.compatible]));
+  assertEquals(byConn["aux_3_5mm"], "yes");
+  assertEquals(byConn["usb_c"], "no");
+});
+
+// Part B — send-ready wording (no internal data language, no filler)
+
+const BANNED_CUSTOMER_WORDING: RegExp[] = [
+  /not confirmed in our data/i,
+  /structured compatibility data/i,
+  /in our system/i,
+  /I cannot confirm/i,
+];
+
+Deno.test("Slice L/B: NOT-CONFIRMED directive keeps hard safety but drops internal data wording", () => {
+  const d = buildCompatibilityDirective(
+    [{ target: "playstation", known: false, results: [] }],
+    { wasAsked: true, requestedConnections: ["aux_3_5mm"] },
+  );
+  // Hard safety preserved.
+  assert(/MUST NOT/.test(d));
+  assert(/works with|can be used with|compatible/i.test(d));
+  assert(/IGNORE/.test(d));
+  assert(/retrieved knowledge|product (descriptions|pages)|stock/i.test(d));
+  assert(/overrides all other context/i.test(d));
+  // No internal/system data wording leaks to the customer.
+  for (const re of BANNED_CUSTOMER_WORDING) assert(!re.test(d), `directive must not contain ${re}`);
+  // Discourage "try it directly", discourage filler, instruct natural voice.
+  assert(/try the setup themselves|test or try/i.test(d));
+  assert(/filler/i.test(d));
+  assert(/like a support colleague/i.test(d));
+});
+
+Deno.test("Slice L/B: CONFIRMED directive is send-ready and free of internal data wording", () => {
+  const resolved = [resolveCompatibility(SLICE_L_ROWS, { target: "playstation", productId: 47 })];
+  const d = buildCompatibilityDirective(resolved, { wasAsked: true, requestedConnections: ["wireless_dongle"] });
+  assert(/like a support colleague/i.test(d));
+  assert(/filler/i.test(d));
+  for (const re of BANNED_CUSTOMER_WORDING) assert(!re.test(d), `directive must not contain ${re}`);
+});
+
+Deno.test("Slice L/B: buildCompatibilityOutcome forwards requestedConnections into the directive", () => {
+  const resolved = [resolveCompatibility(SLICE_L_ROWS, { target: "playstation", productId: 47 })];
+  const out = buildCompatibilityOutcome(resolved, ["wireless_dongle"]);
+  assert(/Requested method \(wireless dongle\): NOT confirmed/i.test(out.directive));
+});
