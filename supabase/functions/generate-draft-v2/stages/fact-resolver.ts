@@ -783,6 +783,22 @@ export interface FactResolverInput {
   latestCustomerMessage?: string | null;
 }
 
+// Resolve the shipping country from a Shopify address, tolerating both the full
+// country name and the ISO code field (REST `country_code`, GraphQL
+// `countryCode`/`countryCodeV2`). Prefer the full name; fall back to the code so
+// the return-address selector still has a country signal when Shopify omits the
+// name. Pure; the selector normalises "US"/"United States" equivalently.
+export function shippingCountrySignal(
+  shipping: Record<string, unknown> | null | undefined,
+): string {
+  const s = (shipping ?? {}) as Record<string, unknown>;
+  for (const key of ["country", "countryCode", "country_code", "countryCodeV2"]) {
+    const v = String(s[key] ?? "").trim();
+    if (v) return v;
+  }
+  return "";
+}
+
 function orderFromCustomerContext(
   customerContext?: Record<string, unknown> | null,
 ): Order | null {
@@ -836,7 +852,7 @@ function orderFromCustomerContext(
       address2: String(shipping.address2 ?? ""),
       city: String(shipping.city ?? ""),
       zip: String(shipping.zip ?? ""),
-      country: String(shipping.country ?? ""),
+      country: shippingCountrySignal(shipping),
       first_name: String(shipping.name ?? "").split(/\s+/)[0] || undefined,
       last_name: String(shipping.name ?? "").split(/\s+/).slice(1).join(" ") ||
         undefined,
