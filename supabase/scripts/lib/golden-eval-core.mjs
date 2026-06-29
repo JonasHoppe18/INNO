@@ -530,6 +530,10 @@ export function summarizeCandidateDiagnostics(cd, opts = {}) {
     opts.matcher && typeof opts.matcher.policy_fallback_count === "number"
       ? opts.matcher.policy_fallback_count
       : null;
+  const policyFallbackScoreBasis =
+    opts.matcher && typeof opts.matcher.policy_fallback_score_basis === "string"
+      ? opts.matcher.policy_fallback_score_basis
+      : null;
 
   return {
     available: true,
@@ -543,6 +547,7 @@ export function summarizeCandidateDiagnostics(cd, opts = {}) {
     fell_back: fellBack,
     policy_fallback: policyFallback,
     policy_fallback_count: policyFallbackCount,
+    policy_fallback_score_basis: policyFallbackScoreBasis,
     top_candidates,
     tracked,
   };
@@ -563,7 +568,10 @@ export function formatCandidateDiagnosticsSummary(summary, { indent = "    " } =
   lines.push(
     `${indent}matcher: abstain=${summary.matcher_abstain} fell_back=${summary.fell_back}` +
       ` policy_fallback=${summary.policy_fallback}` +
-      (summary.policy_fallback_count ? `(${summary.policy_fallback_count})` : ""),
+      (summary.policy_fallback_count ? `(${summary.policy_fallback_count})` : "") +
+      (summary.policy_fallback_score_basis
+        ? ` basis=${summary.policy_fallback_score_basis}`
+        : ""),
   );
   if (summary.top_candidates.length) {
     lines.push(`${indent}top candidates:`);

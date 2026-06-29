@@ -8,7 +8,7 @@ import {
   resolveKnowledgeBudget,
   type RetrievalCoherenceFlags,
 } from "./retriever-coherence.ts";
-import { type MatchCandidate, matchSnippets, type MatchResult } from "./snippet-matcher.ts";
+import { type MatchCandidate, matchSnippets } from "./snippet-matcher.ts";
 import { embedText } from "../../_shared/embed-text.ts";
 import { filterSoftDisabledRows } from "../../_shared/knowledge-flags.ts";
 
@@ -20,14 +20,16 @@ const SNIPPET_MATCHER_MARGIN = 0.15;
 // Candidate-pool size handed to the matcher (recall layer). Above this we trust
 // hybrid ranking; the matcher (precision layer) picks the final chunks from here.
 const MATCH_POOL_SIZE = 15;
-// Conservative policy/procedure fallback (Fix B). When the matcher abstains
+// Conservative policy/procedure fallback (Fix B.2). When the matcher abstains
 // (finalChunks empty) but the already-scored/gated pool still contains a
-// moderately-relevant policy or procedure chunk, pass through the top few rather
-// than leave the writer with zero knowledge. Floor sits BELOW the matcher's hard
-// 0.6 selection threshold but above noise, so we only rescue chunks the matcher
-// judged moderately relevant — never ones it scored as unrelated. Pool-only: no
-// new chunks, no gate bypass, capped, and policy/procedure only.
-const POLICY_FALLBACK_RELEVANCE_FLOOR = 0.45;
+// well-retrieved policy or procedure chunk, pass through the top few rather than
+// leave the writer with zero knowledge. Gated on the chunk's RETRIEVAL score —
+// not the matcher relevance: the matcher scores policy/procedure low precisely
+// because they are guardrails/process, not Q&A answers, so re-using its relevance
+// to decide what to rescue from abstention is circular. A policy/procedure chunk
+// must instead be retrieval-competitive with the strongest pool candidate. Pool-
+// only: no new chunks, no gate bypass, capped, policy/procedure only.
+const POLICY_FALLBACK_SCORE_RATIO = 0.6;
 const POLICY_FALLBACK_MAX = 2;
 const POLICY_FALLBACK_USABLE_AS: ReadonlySet<RetrievedChunk["usable_as"]> =
   new Set<RetrievedChunk["usable_as"]>(["policy", "procedure"]);
@@ -120,10 +122,12 @@ export interface RetrieverResult {
     selected_ids: string[];
     abstained: boolean;
     fell_back: boolean;
-    // Fix B: true when the matcher abstained but a conservative policy/procedure
-    // passthrough rescued one or more already-pooled chunks. Eval-only.
+    // Fix B/B.2: true when the matcher abstained but a conservative
+    // policy/procedure passthrough rescued one or more already-pooled chunks.
+    // score_basis records what the passthrough gated on. Eval-only.
     policy_fallback?: boolean;
     policy_fallback_count?: number;
+    policy_fallback_score_basis?: string | null;
   };
   candidate_diagnostics?: RetrievalCandidateDiagnostics;
 }
@@ -805,35 +809,36 @@ export function buildFallbackQueries(
   return [...byText.values()];
 }
 
-// Fix B — conservative policy/procedure fallback. Selects from the EXISTING
+// Fix B.2 — conservative policy/procedure fallback. Selects from the EXISTING
 // matcher pool only (already product/category/runtime-gated and score-ordered);
 // it never pulls new chunks and never bypasses a gate. Eligibility:
 //   - usable_as ∈ {policy, procedure} (never fact/saved_reply/background/etc.)
-//   - the chunk has a matcher relevance score ≥ relevanceFloor (so a chunk the
-//     matcher omitted, or scored as unrelated, is not rescued)
-// Returns at most `max` chunks, ordered by matcher relevance (pool order — i.e.
-// retrieval score — as the stable tiebreak). Pure: no IO, deterministic.
+//   - retrieval score (chunk.similarity) is competitive with the strongest pool
+//     candidate: similarity >= topPoolScore * scoreRatio and > 0.
+// Deliberately does NOT use matcher relevance (the matcher de-ranks guardrail
+// chunks by design, so gating on it is circular). Returns at most `max` chunks,
+// ordered by retrieval score desc. Pure: no IO, deterministic.
 export function selectPolicyFallback(
   pool: RetrievedChunk[],
-  ranked: MatchResult[],
-  opts: { max: number; relevanceFloor: number },
+  opts: { max: number; scoreRatio: number },
 ): RetrievedChunk[] {
-  const relevanceById = new Map(
-    (ranked ?? []).map((r) => [String(r.id), r.relevance]),
-  );
-  return (pool ?? [])
-    .map((chunk) => ({
-      chunk,
-      relevance: relevanceById.get(String(chunk.id)) ?? null,
-    }))
-    .filter((x): x is { chunk: RetrievedChunk; relevance: number } =>
-      POLICY_FALLBACK_USABLE_AS.has(x.chunk.usable_as) &&
-      x.relevance !== null &&
-      x.relevance >= opts.relevanceFloor
+  const chunks = pool ?? [];
+  const score = (c: RetrievedChunk) =>
+    typeof c.similarity === "number" ? c.similarity : 0;
+  // Top retrieval score across the WHOLE pool, so a rescued policy/procedure
+  // chunk must be competitive with the best retrieved candidate, not merely the
+  // best among weak policy chunks.
+  const topPoolScore = chunks.reduce((m, c) => Math.max(m, score(c)), 0);
+  if (!(topPoolScore > 0)) return [];
+  const floor = topPoolScore * opts.scoreRatio;
+  return chunks
+    .filter((c) =>
+      POLICY_FALLBACK_USABLE_AS.has(c.usable_as) &&
+      score(c) > 0 &&
+      score(c) >= floor
     )
-    .sort((a, b) => b.relevance - a.relevance)
-    .slice(0, Math.max(0, opts.max))
-    .map((x) => x.chunk);
+    .sort((a, b) => score(b) - score(a))
+    .slice(0, Math.max(0, opts.max));
 }
 
 // Resolve a human-readable label from a chunk's metadata. Document chunks (e.g.
@@ -1870,14 +1875,15 @@ export async function runRetriever(
       finalChunks = matched.selected
         .map((s) => byId.get(s.id))
         .filter((c): c is RetrievedChunk => Boolean(c));
-      // Fix B: when the matcher selected nothing, rescue the top already-pooled
-      // policy/procedure chunks (conservative, capped) so the writer is not left
-      // with zero knowledge. Normal selection is untouched when it picked chunks.
+      // Fix B.2: when the matcher selected nothing, rescue the top already-pooled
+      // policy/procedure chunks by RETRIEVAL score (not matcher relevance, which
+      // de-ranks guardrail chunks by design). Conservative + capped; normal
+      // selection is untouched when the matcher picked anything.
       let policyFallback = false;
       if (finalChunks.length === 0) {
-        const rescued = selectPolicyFallback(pool, matched.ranked, {
+        const rescued = selectPolicyFallback(pool, {
           max: POLICY_FALLBACK_MAX,
-          relevanceFloor: POLICY_FALLBACK_RELEVANCE_FLOOR,
+          scoreRatio: POLICY_FALLBACK_SCORE_RATIO,
         });
         if (rescued.length > 0) {
           finalChunks = rescued;
@@ -1907,6 +1913,7 @@ export async function runRetriever(
         fell_back: false,
         policy_fallback: policyFallback,
         policy_fallback_count: policyFallback ? finalChunks.length : 0,
+        policy_fallback_score_basis: policyFallback ? "retrieval_score" : null,
       };
     } catch (err) {
       // Additive layer: never make things worse than today. Keep regularChunks.
