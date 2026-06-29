@@ -603,12 +603,19 @@ test("summarizeCandidateDiagnostics: policy_fallback surfaced from opts.matcher"
     abstain: true,
   });
   const s = summarizeCandidateDiagnostics(cd, {
-    matcher: { abstained: true, fell_back: false, policy_fallback: true, policy_fallback_count: 1 },
+    matcher: {
+      abstained: true,
+      fell_back: false,
+      policy_fallback: true,
+      policy_fallback_count: 1,
+      policy_fallback_score_basis: "retrieval_score",
+    },
   });
   assert.equal(s.policy_fallback, true);
   assert.equal(s.policy_fallback_count, 1);
+  assert.equal(s.policy_fallback_score_basis, "retrieval_score");
   const out = formatCandidateDiagnosticsSummary(s);
-  assert.match(out, /policy_fallback=true\(1\)/);
+  assert.match(out, /policy_fallback=true\(1\) basis=retrieval_score/);
 });
 
 test("summarizeCandidateDiagnostics: policy_fallback null when matcher omits it", () => {
@@ -616,4 +623,5 @@ test("summarizeCandidateDiagnostics: policy_fallback null when matcher omits it"
   const s = summarizeCandidateDiagnostics(cd, { matcher: { fell_back: false } });
   assert.equal(s.policy_fallback, null);
   assert.equal(s.policy_fallback_count, null);
+  assert.equal(s.policy_fallback_score_basis, null);
 });

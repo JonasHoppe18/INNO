@@ -1,109 +1,99 @@
 import { assertEquals } from "jsr:@std/assert@1";
 import { type RetrievedChunk, selectPolicyFallback } from "./retriever.ts";
 
-// Fix B: when the snippet matcher abstains (selects nothing), allow the top
-// already-pooled policy/procedure chunks through as writer context. These tests
-// exercise the pure selectPolicyFallback helper (no OpenAI, no IO).
+// Fix B.2: when the snippet matcher abstains (selects nothing), allow the top
+// already-pooled policy/procedure chunks through, gated on RETRIEVAL score
+// (chunk.similarity) relative to the strongest pool candidate — NOT matcher
+// relevance (which de-ranks guardrail chunks by design). Pure helper: no OpenAI.
 
-const OPTS = { max: 2, relevanceFloor: 0.45 };
+const OPTS = { max: 2, scoreRatio: 0.6 };
 
 function chunk(
   id: string,
   usable_as: RetrievedChunk["usable_as"],
-  overrides: Partial<RetrievedChunk> = {},
+  similarity: number,
 ): RetrievedChunk {
   return {
     id,
     content: `content ${id}`,
     kind: "document",
     source_label: `knowledge_document: ${id}`,
-    similarity: 0.5,
+    similarity,
     usable_as,
     risk_flags: [],
     applies_to_all_products: false,
     chunk_issue_types: [],
     products: [],
-    ...overrides,
   } as RetrievedChunk;
 }
 
-function ranked(entries: Array<[string, number]>) {
-  return entries.map(([id, relevance]) => ({ id, relevance, reason: "" }));
-}
-
-Deno.test("1. abstained + policy chunk in pool with relevance >= floor => rescued", () => {
-  const pool = [chunk("4577", "policy")];
-  const result = selectPolicyFallback(pool, ranked([["4577", 0.5]]), OPTS);
-  assertEquals(result.map((c) => c.id), ["4577"]);
+Deno.test("1. policy chunk with strong retrieval score is rescued (no matcher relevance needed)", () => {
+  // Top pool score 0.80; policy at 0.78 clears 0.60*0.80=0.48. No ranked/relevance
+  // input exists at all — the helper does not depend on it.
+  const pool = [chunk("x-1", "fact", 0.80), chunk("4576", "policy", 0.78)];
+  const result = selectPolicyFallback(pool, OPTS);
+  assertEquals(result.map((c) => c.id), ["4576"]);
 });
 
-Deno.test("2. procedure chunk with relevance >= floor => rescued", () => {
-  const pool = [chunk("g024-1", "procedure")];
-  const result = selectPolicyFallback(pool, ranked([["g024-1", 0.55]]), OPTS);
-  assertEquals(result.map((c) => c.id), ["g024-1"]);
+Deno.test("2. policy chunk rescued on strong retrieval score even though matcher de-ranked it", () => {
+  // The fact that the matcher abstained (would have scored this low) is irrelevant
+  // here — eligibility is purely retrieval score. Top=0.70, floor=0.42, policy=0.69.
+  const pool = [chunk("top", "fact", 0.70), chunk("p1", "policy", 0.69)];
+  assertEquals(selectPolicyFallback(pool, OPTS).map((c) => c.id), ["p1"]);
 });
 
-Deno.test("3. fact/saved_reply/background chunks are not rescued", () => {
+Deno.test("3. procedure chunk with strong retrieval score is rescued", () => {
+  const pool = [chunk("g024", "procedure", 0.66), chunk("o", "background", 0.70)];
+  // top=0.70, floor=0.42, procedure 0.66 >= floor.
+  assertEquals(selectPolicyFallback(pool, OPTS).map((c) => c.id), ["g024"]);
+});
+
+Deno.test("4. policy/procedure chunk below the relative floor is not rescued", () => {
+  // top=0.90, floor=0.54; policy at 0.50 is below floor.
+  const pool = [chunk("strong", "fact", 0.90), chunk("weak-policy", "policy", 0.50)];
+  assertEquals(selectPolicyFallback(pool, OPTS), []);
+});
+
+Deno.test("5. fact/saved_reply/background/tone_example are never rescued, even with high score", () => {
   const pool = [
-    chunk("f1", "fact"),
-    chunk("s1", "saved_reply"),
-    chunk("b1", "background"),
-    chunk("t1", "tone_example"),
+    chunk("f", "fact", 0.99),
+    chunk("s", "saved_reply", 0.98),
+    chunk("b", "background", 0.97),
+    chunk("t", "tone_example", 0.96),
   ];
-  const result = selectPolicyFallback(
-    pool,
-    ranked([["f1", 0.9], ["s1", 0.9], ["b1", 0.9], ["t1", 0.9]]),
-    OPTS,
-  );
-  assertEquals(result, []);
+  assertEquals(selectPolicyFallback(pool, OPTS), []);
 });
 
-Deno.test("4. policy chunk below relevance floor is not rescued", () => {
-  const pool = [chunk("p1", "policy")];
-  const result = selectPolicyFallback(pool, ranked([["p1", 0.44]]), OPTS);
-  assertEquals(result, []);
-});
-
-Deno.test("5. cap max 2 is respected, ordered by relevance desc", () => {
+Deno.test("6. cap max 2, ordered by retrieval score desc", () => {
   const pool = [
-    chunk("p1", "policy"),
-    chunk("p2", "policy"),
-    chunk("p3", "procedure"),
+    chunk("p1", "policy", 0.70),
+    chunk("p2", "policy", 0.85),
+    chunk("p3", "procedure", 0.80),
+    chunk("p4", "policy", 0.78),
   ];
-  const result = selectPolicyFallback(
-    pool,
-    ranked([["p1", 0.50], ["p2", 0.59], ["p3", 0.47]]),
-    OPTS,
-  );
-  assertEquals(result.map((c) => c.id), ["p2", "p1"]);
+  // top=0.85, floor=0.51; all four clear it; top two by score = p2(0.85), p3(0.80).
+  assertEquals(selectPolicyFallback(pool, OPTS).map((c) => c.id), ["p2", "p3"]);
 });
 
-Deno.test("6. helper only consulted on empty selection (call-site guard); when used it ignores matcher 'selected' state", () => {
-  // The helper itself is selection-agnostic; the retriever only calls it when
-  // finalChunks is empty. Here we assert it still returns from the pool purely by
-  // eligibility, so the call-site guard (finalChunks.length === 0) is what keeps
-  // normal selection unchanged — verified by an empty pool yielding nothing.
-  assertEquals(selectPolicyFallback([], ranked([]), OPTS), []);
-  // And a populated eligible pool yields a result (so the guard, not the helper,
-  // decides whether to override a non-empty selection).
-  const pool = [chunk("p1", "policy")];
+Deno.test("7. helper is selection-agnostic; call-site guard keeps normal selection unchanged", () => {
+  // The retriever only invokes the helper when finalChunks is empty. The helper
+  // itself just reads the pool; an empty pool yields nothing.
+  assertEquals(selectPolicyFallback([], OPTS), []);
+  const pool = [chunk("p1", "policy", 0.7)];
+  assertEquals(selectPolicyFallback(pool, OPTS).map((c) => c.id), ["p1"]);
+});
+
+Deno.test("8. no chunks outside the supplied pool are introduced", () => {
+  const pool = [chunk("p1", "policy", 0.7), chunk("p2", "procedure", 0.65)];
+  const result = selectPolicyFallback(pool, OPTS);
+  const poolIds = new Set(pool.map((c) => c.id));
+  for (const c of result) assertEquals(poolIds.has(c.id), true);
+});
+
+Deno.test("empty / non-positive scores yield nothing (defensive)", () => {
+  assertEquals(selectPolicyFallback([chunk("p", "policy", 0)], OPTS), []);
   assertEquals(
-    selectPolicyFallback(pool, ranked([["p1", 0.7]]), OPTS).map((c) => c.id),
-    ["p1"],
-  );
-});
-
-Deno.test("7. chunk absent from ranked list is not rescued", () => {
-  const pool = [chunk("p1", "policy"), chunk("p2", "policy")];
-  // Only p2 was ranked by the matcher; p1 has no relevance => ineligible.
-  const result = selectPolicyFallback(pool, ranked([["p2", 0.5]]), OPTS);
-  assertEquals(result.map((c) => c.id), ["p2"]);
-});
-
-Deno.test("max 0 returns nothing (defensive)", () => {
-  const pool = [chunk("p1", "policy")];
-  assertEquals(
-    selectPolicyFallback(pool, ranked([["p1", 0.9]]), { max: 0, relevanceFloor: 0.45 }),
+    selectPolicyFallback([chunk("p", "policy", 0.9)], { max: 0, scoreRatio: 0.6 }),
     [],
   );
 });
