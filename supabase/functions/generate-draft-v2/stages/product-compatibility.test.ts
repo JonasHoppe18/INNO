@@ -394,3 +394,75 @@ Deno.test("Slice L/B: buildCompatibilityOutcome forwards requestedConnections in
   const out = buildCompatibilityOutcome(resolved, ["wireless_dongle"]);
   assert(/Requested method \(wireless dongle\): NOT confirmed/i.test(out.directive));
 });
+
+// --- Slice M: broad compatibility routing + exact product scoping -----------
+
+const SLICE_M_PRODUCTS = [
+  { id: 44, title: "A-Blaze" },
+  { id: 45, title: "A-Live" },
+  { id: 46, title: "A-Rise" },
+  { id: 47, title: "A-Spire" },
+  { id: 48, title: "A-Spire Wireless" },
+];
+
+// A broad "product + platform" question (no connection, no compat keyword) is a
+// compatibility question once we know a product was named.
+Deno.test("Slice M: broad product+platform question is a compatibility question when a product is named", () => {
+  // Pure text alone is NOT enough (keeps unrelated platform mentions out).
+  assertEquals(isCompatibilityQuestion("Can I use A-Spire with PlayStation?"), false);
+  // With a named product, it IS a compatibility question.
+  assertEquals(
+    isCompatibilityQuestion("Can I use A-Spire with PlayStation?", { productMentioned: true }),
+    true,
+  );
+});
+
+Deno.test("Slice M: a platform mention without a product/keyword is still NOT a compatibility question", () => {
+  assertEquals(isCompatibilityQuestion("Where is my PlayStation order?", { productMentioned: false }), false);
+  // productMentioned cannot force-true without a platform target present.
+  assertEquals(isCompatibilityQuestion("I really like my A-Spire", { productMentioned: true }), false);
+});
+
+Deno.test("Slice M: explicit keyword / connection still trigger regardless of productMentioned", () => {
+  assertEquals(isCompatibilityQuestion("Is A-Spire compatible with PlayStation?"), true);
+  assertEquals(isCompatibilityQuestion("Can I use it with PlayStation via the wireless dongle?"), true);
+});
+
+Deno.test("Slice M: A-Spire (broad) resolves product 47 — not A-Spire Wireless (48)", () => {
+  assertEquals(detectCompatibilityProduct("Can I use A-Spire with PlayStation?", SLICE_M_PRODUCTS), 47);
+});
+
+Deno.test("Slice M: A-Spire Wireless (broad) resolves product 48", () => {
+  assertEquals(detectCompatibilityProduct("Can I use A-Spire Wireless with PlayStation?", SLICE_M_PRODUCTS), 48);
+});
+
+Deno.test("Slice M: broad A-Spire + PlayStation surfaces confirmed USB-C/AUX, never the wireless dongle", () => {
+  const resolved = [resolveCompatibility(SLICE_L_ROWS, { target: "playstation", productId: 47 })];
+  const out = buildCompatibilityOutcome(resolved, []); // broad: no requested connection
+  assert(out.structuredFacts.length > 0);
+  assert(/USB-C/i.test(out.directive));
+  assert(/AUX/i.test(out.directive));
+  assert(!/wireless dongle: compatible/i.test(out.directive));
+  assert(!/Requested method/i.test(out.directive));
+});
+
+Deno.test("Slice M: broad A-Spire Wireless + PlayStation includes the confirmed wireless dongle", () => {
+  const resolved = [resolveCompatibility(SLICE_L_ROWS, { target: "playstation", productId: 48 })];
+  const out = buildCompatibilityOutcome(resolved, []);
+  assert(/wireless dongle: compatible/i.test(out.directive));
+});
+
+Deno.test("Slice M: A-Live never borrows A-Rise/A-Spire facts — stays no_confirmed_row", () => {
+  const resolved = [resolveCompatibility(SLICE_L_ROWS, { target: "playstation", productId: 45 })];
+  assertEquals(resolved[0].known, false);
+  const out = buildCompatibilityOutcome(resolved, ["aux_3_5mm"]);
+  assertEquals(out.structuredFacts.length, 0);
+  assertEquals(out.guardrails[0]?.reason, "no_confirmed_row");
+});
+
+Deno.test("Slice M: ambiguous product mention still does not guess", () => {
+  assertEquals(
+    detectCompatibilityProduct("Is the A-Spire or A-Rise better for PlayStation?", SLICE_M_PRODUCTS),
+    null,
+  );
+});

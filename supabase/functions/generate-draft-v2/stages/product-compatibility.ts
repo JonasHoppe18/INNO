@@ -88,12 +88,19 @@ export function detectCompatibilityQuery(
 
 export function isCompatibilityQuestion(
   text: string | null | undefined,
+  opts?: { productMentioned?: boolean },
 ): boolean {
   const { targets, connections } = detectCompatibilityQuery(text);
   if (targets.length === 0) return false;
   // A platform target plus either an explicit connection or a compatibility
   // keyword. Keeps this conservative so unrelated mentions don't trigger.
-  return connections.length > 0 || COMPAT_KEYWORD.test(String(text ?? ""));
+  if (connections.length > 0 || COMPAT_KEYWORD.test(String(text ?? ""))) return true;
+  // Slice M: a broad "<known product> + <platform>" question (e.g. "Can I use
+  // A-Spire with PlayStation?") carries no connection or keyword, but naming a
+  // specific product alongside a platform target IS a compatibility question.
+  // The caller passes productMentioned when product detection resolved exactly
+  // one product, so this never fires on unrelated platform mentions.
+  return opts?.productMentioned === true;
 }
 
 /**

@@ -1403,23 +1403,15 @@ export async function runDraftV2Pipeline(
     const structuredFactsProvenance: StructuredFactProvenance[] = [];
     const provenanceGuardrails: GuardrailUnavailableProvenance[] = [];
     let compatibilityBlock = "";
-    if (isCompatibilityQuestion(latestBody)) {
+    {
       const { targets, connections } = detectCompatibilityQuery(latestBody);
+      // Slice J/M: resolve the asked product (if exactly one is named) BEFORE the
+      // compatibility gate. confirmed product-specific rows are served; null =>
+      // brand-wide only, never a guess. Doing this first also lets a broad
+      // "<product> + <platform>" question (no connection/keyword) be recognized
+      // as a compatibility question. Best-effort: a failed lookup leaves it null.
+      let compatProductId: number | null = null;
       if (targets.length > 0) {
-        const { data: compatRows, error: compatErr } = await supabase
-          .from("shop_product_compatibility")
-          .select(
-            "product_id, target, connection, compatible, reason, workaround, confidence",
-          )
-          .eq("shop_ref_id", shop_id)
-          .in("target", targets);
-        const rows = !compatErr && Array.isArray(compatRows)
-          ? (compatRows as Parameters<typeof resolveCompatibility>[0])
-          : [];
-        // Slice J: resolve the asked product (if exactly one is named) so
-        // confirmed product-specific rows are served; null => brand-wide only,
-        // never a guess. Best-effort: a failed lookup leaves productId null.
-        let compatProductId: number | null = null;
         try {
           const { data: prodRows } = await supabase
             .from("shop_products")
@@ -1432,6 +1424,23 @@ export async function runDraftV2Pipeline(
         } catch (_err) {
           compatProductId = null;
         }
+      }
+      if (
+        targets.length > 0 &&
+        isCompatibilityQuestion(latestBody, {
+          productMentioned: compatProductId != null,
+        })
+      ) {
+        const { data: compatRows, error: compatErr } = await supabase
+          .from("shop_product_compatibility")
+          .select(
+            "product_id, target, connection, compatible, reason, workaround, confidence",
+          )
+          .eq("shop_ref_id", shop_id)
+          .in("target", targets);
+        const rows = !compatErr && Array.isArray(compatRows)
+          ? (compatRows as Parameters<typeof resolveCompatibility>[0])
+          : [];
         const resolved = targets.map((target) =>
           resolveCompatibility(rows, { target, productId: compatProductId })
         );
