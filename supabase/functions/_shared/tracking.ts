@@ -1,5 +1,9 @@
 import { getGlsTrackingSnapshot, type TrackingSnapshot as GlsProviderSnapshot } from "./tracking/providers/gls/index.ts";
 import {
+  fetchShip24Status,
+  isShip24Configured,
+} from "./tracking/providers/ship24/index.ts";
+import {
   normalizeTrackingDetail,
   shopifyShipmentStatusToState,
   type TrackingFact,
@@ -1199,8 +1203,20 @@ export function collectTrackingCandidates(order: any): TrackingCandidate[] {
 // returning a TrackingDetail. Extracted from fetchTrackingDetailsForOrders so the
 // normalized resolver can reuse the EXACT same fetch path (backward-compatible —
 // no behavior change to the live GLS/PostNord fetchers).
+// Optional seams for the Ship24 unknown-carrier fallback (P2-1). Both default to
+// the real implementations; tests inject stubs. The native GLS/PostNord/etc.
+// paths are untouched — Ship24 only runs in the carrier === "unknown" branch.
+type FetchTrackingDetailDeps = {
+  ship24Configured?: () => boolean;
+  fetchShip24?: (
+    trackingNumber: string,
+    opts?: { trackingUrl?: string },
+  ) => Promise<TrackingDetail>;
+};
+
 export async function fetchTrackingDetailForCandidate(
   candidate: { company?: string; trackingNumber: string; trackingUrl?: string },
+  deps?: FetchTrackingDetailDeps,
 ): Promise<TrackingDetail> {
   const trackingNumber = candidate.trackingNumber;
   const trackingUrl = candidate.trackingUrl || "";
@@ -1223,6 +1239,14 @@ export async function fetchTrackingDetailForCandidate(
   if (carrier === "bring") return await fetchBringStatus(trackingNumber, trackingUrl);
   if (carrier === "dhl") return await fetchDhlStatus(trackingNumber, trackingUrl);
   if (carrier === "ups") return await fetchUpsStatus(trackingNumber, trackingUrl);
+
+  // Unknown carrier: read-only Ship24 fallback when configured, else the prior
+  // generic carrier_unknown fallback (unchanged behavior).
+  const ship24Enabled = deps?.ship24Configured ?? isShip24Configured;
+  const ship24 = deps?.fetchShip24 ?? fetchShip24Status;
+  if (ship24Enabled()) {
+    return await ship24(trackingNumber, { trackingUrl });
+  }
   const fallback = buildShopifyFallbackTracking(
     { company: candidate.company || "Carrier", trackingNumber, trackingUrl },
     candidate.company || "Carrier",
