@@ -152,7 +152,7 @@ test("runGates: historical tier has no gates (always passes)", () => {
   assert.equal(g.passed, true);
 });
 
-import { computeAggregate, diffBaseline } from "./golden-eval-core.mjs";
+import { buildGoldenEvalResult, computeAggregate, diffBaseline } from "./golden-eval-core.mjs";
 
 const results = [
   { id: "g-001", intent: "complaint", status: "scored",
@@ -184,6 +184,70 @@ test("diffBaseline: null baseline yields no diff", () => {
   const d = diffBaseline(computeAggregate(results), null);
   assert.equal(d.aggregateDeltas, null);
   assert.deepEqual(d.regressedCases, []);
+});
+
+test("buildGoldenEvalResult: persists scan-friendly safety provenance fields", () => {
+  const result = buildGoldenEvalResult({
+    testCase: { id: "e-001", intent: "refund", tier: "edge" },
+    gen: {
+      draft: "Needs review.",
+      actions: [],
+      latencyMs: 123,
+      routingHint: "review",
+      blockSendRecommended: true,
+      retrievalDebug: [],
+      safety: {
+        routing_hint: "review",
+        block_send_recommended: true,
+        live_fact_action_claim_check: {
+          checked: true,
+          compliant: false,
+          violations: [{ type: "unsupported_refund_status" }],
+          requires_review: true,
+        },
+        unsupported_commitment_check: {
+          checked: true,
+          compliant: true,
+          violations: [],
+          requires_review: false,
+        },
+        unsupported_assumption_check: {
+          checked: true,
+          compliant: true,
+          violations: [],
+          requires_review: false,
+        },
+        guardrails: [{ id: "live_fact_action_claim_check", status: "review" }],
+      },
+    },
+    judged: {
+      correctness: 3,
+      completeness: 3,
+      tone: 4,
+      actionability: 3,
+      overall_10: 6,
+      send_ready: false,
+    },
+    gate: { passed: true, failures: [] },
+    coherence: { n_chunks: 0 },
+    retrieval: null,
+    candidateDiagnostics: null,
+    retrievalFunnel: { available: false },
+    anchorClass: "comparable",
+    liveFactDependent: false,
+  });
+
+  assert.equal(result.routing_hint, "review");
+  assert.equal(result.block_send_recommended, true);
+  assert.equal(result.safety.live_fact_action_claim_check.compliant, false);
+  assert.deepEqual(result.safety.live_fact_action_claim_check.violations, [
+    { type: "unsupported_refund_status" },
+  ]);
+  assert.equal(result.safety.unsupported_commitment_check.compliant, true);
+  assert.equal(result.safety.unsupported_assumption_check.compliant, true);
+  assert.deepEqual(result.safety.guardrails, [
+    { id: "live_fact_action_claim_check", status: "review" },
+  ]);
 });
 
 import { computeCoherence } from "./golden-eval-core.mjs";

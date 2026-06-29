@@ -236,6 +236,46 @@ async function judgeWithOpenAI(
   };
 }
 
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function buildSafetyFromGenerateDraftV2Response(data) {
+  const routingHint = typeof data?.routing_hint === "string" ? data.routing_hint : null;
+  const blockSendRecommended = typeof data?.block_send_recommended === "boolean"
+    ? data.block_send_recommended
+    : null;
+  const unsupportedChecks = {};
+  if (isPlainObject(data)) {
+    for (const [key, value] of Object.entries(data)) {
+      if (
+        key.startsWith("unsupported_") &&
+        key.endsWith("_check") &&
+        isPlainObject(value)
+      ) {
+        unsupportedChecks[key] = value;
+      }
+    }
+  }
+  return {
+    routing_hint: routingHint,
+    block_send_recommended: blockSendRecommended,
+    live_fact_action_claim_check: isPlainObject(data?.live_fact_action_claim_check)
+      ? data.live_fact_action_claim_check
+      : null,
+    unsupported_commitment_check: isPlainObject(data?.unsupported_commitment_check)
+      ? data.unsupported_commitment_check
+      : null,
+    unsupported_assumption_check: isPlainObject(data?.unsupported_assumption_check)
+      ? data.unsupported_assumption_check
+      : null,
+    ...unsupportedChecks,
+    guardrails: isPlainObject(data?.provenance) && Array.isArray(data.provenance.guardrails)
+      ? data.provenance.guardrails
+      : null,
+  };
+}
+
 async function generateDraft(shopId, subject, emailBody) {
   const startTime = Date.now();
   const endpoint = `${SUPABASE_URL}/functions/v1/generate-draft-unified`;
@@ -376,6 +416,10 @@ async function generateDraftV2(shopId, subject, emailBody, options = {}) {
   const confidence = typeof data?.confidence === "number" ? data.confidence : null;
   const sources = Array.isArray(data?.sources) ? data.sources : [];
   const routingHint = typeof data?.routing_hint === "string" ? data.routing_hint : null;
+  const blockSendRecommended = typeof data?.block_send_recommended === "boolean"
+    ? data.block_send_recommended
+    : null;
+  const safety = buildSafetyFromGenerateDraftV2Response(data);
   const retrievalDebug =
     data?.retrieval_debug && Array.isArray(data.retrieval_debug.chunks)
       ? data.retrieval_debug.chunks
@@ -399,6 +443,10 @@ async function generateDraftV2(shopId, subject, emailBody, options = {}) {
     confidence,
     sources,
     routingHint,
+    routing_hint: routingHint,
+    blockSendRecommended,
+    block_send_recommended: blockSendRecommended,
+    safety,
     retrievalDebug,
     matcherDebug,
     candidateDiagnostics,
@@ -417,5 +465,6 @@ export {
   draftForJudge,
   generateDraft,
   generateDraftV2,
+  buildSafetyFromGenerateDraftV2Response,
   judgeWithOpenAI,
 };

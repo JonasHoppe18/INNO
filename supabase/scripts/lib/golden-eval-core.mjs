@@ -383,6 +383,51 @@ export function aggregateRetrievalMetrics(perCase) {
   };
 }
 
+export function buildGoldenEvalResult({
+  testCase,
+  gen,
+  judged,
+  gate,
+  coherence,
+  retrieval,
+  candidateDiagnostics,
+  retrievalFunnel,
+  anchorClass,
+  liveFactDependent,
+}) {
+  const routingHint = gen?.routingHint ?? gen?.routing_hint ?? null;
+  const blockSendRecommended =
+    gen?.blockSendRecommended ?? gen?.block_send_recommended ?? null;
+  return {
+    id: testCase.id,
+    intent: testCase.intent || null,
+    tier: testCase.tier,
+    status: "scored",
+    anchor_class: anchorClass,
+    live_fact_dependent: liveFactDependent,
+    scores: {
+      correctness: judged.correctness,
+      completeness: judged.completeness,
+      tone: judged.tone,
+      actionability: judged.actionability,
+      overall_10: judged.overall_10,
+      send_ready: judged.send_ready,
+    },
+    gate,
+    coherence,
+    retrieval,
+    retrievalDebug: gen.retrievalDebug || [],
+    candidate_diagnostics: candidateDiagnostics,
+    retrieval_funnel: retrievalFunnel,
+    routing_hint: routingHint,
+    block_send_recommended: blockSendRecommended,
+    safety: gen?.safety ?? null,
+    draft: gen.draft,
+    actions: gen.actions,
+    latencyMs: gen.latencyMs,
+  };
+}
+
 // ---- Retrieval funnel diagnostics summarization (eval-only observability) ----
 // `candidate_diagnostics` is emitted by generate-draft-v2 (gated on eval_payload)
 // and captured by eval-runner. It exposes the full retrieval funnel so a run with

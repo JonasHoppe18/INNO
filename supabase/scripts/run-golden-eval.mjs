@@ -17,6 +17,7 @@ import {
   parseArgs, loadGoldenSet, runGates, computeAggregate, diffBaseline, computeCoherence,
   computeRetrievalMetrics, aggregateRetrievalMetrics, resolveSetPath,
   summarizeCandidateDiagnostics, formatCandidateDiagnosticsSummary,
+  buildGoldenEvalResult,
 } from "./lib/golden-eval-core.mjs";
 import {
   generateDraftV2, judgeWithOpenAI, draftForJudge,
@@ -82,20 +83,18 @@ for (const c of cases) {
     const retrievalFunnel = summarizeCandidateDiagnostics(candidateDiagnostics, {
       matcher: gen.matcherDebug || null,
     });
-    results.push({
-      id: c.id, intent: c.intent || null, tier: c.tier, status: "scored",
-      anchor_class: anchorClass,
-      live_fact_dependent,
-      scores: {
-        correctness: judged.correctness, completeness: judged.completeness,
-        tone: judged.tone, actionability: judged.actionability,
-        overall_10: judged.overall_10, send_ready: judged.send_ready,
-      },
-      gate, coherence, retrieval, retrievalDebug: gen.retrievalDebug || [],
-      candidate_diagnostics: candidateDiagnostics,
-      retrieval_funnel: retrievalFunnel,
-      draft: gen.draft, actions: gen.actions, latencyMs: gen.latencyMs,
-    });
+    results.push(buildGoldenEvalResult({
+      testCase: c,
+      gen,
+      judged,
+      gate,
+      coherence,
+      retrieval,
+      candidateDiagnostics,
+      retrievalFunnel,
+      anchorClass,
+      liveFactDependent: live_fact_dependent,
+    }));
     const flag = c.tier === "edge" ? (gate.passed ? "gate:PASS" : "gate:FAIL") : "";
     console.log(`  [${c.id}] overall_10=${judged.overall_10} ${flag}`);
     console.log(formatCandidateDiagnosticsSummary(retrievalFunnel));
