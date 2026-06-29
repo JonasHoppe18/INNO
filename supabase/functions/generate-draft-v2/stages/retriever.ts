@@ -402,6 +402,52 @@ function hasResetProcedureSignal(text: string): boolean {
   return RESET_PROCEDURE_RE.test(stripHtml(text));
 }
 
+const RETURN_POLICY_CONTEXT_RE =
+  /\b(return|returns|refund|refunded|refunds|warranty|claim|claims|defect|defective|broken|crack|cracked|repair|replacement|exchange|proof\s+of\s+purchase|retur|refundering|reklamation|garanti|ombytning|defekt|ødelagt|reparation)\b/i;
+const RETURN_POLICY_FOCUSED_RE =
+  /\b(return|returns|refund|refunds|warranty|claim|claims|return\s+shipping|return\s+address|return\s+label|return\s+portal|defect|defective|broken|crack|cracked|repair|replacement\s+under\s+warranty|proof\s+of\s+purchase|exchange|retur|refundering|reklamation|garanti|ombytning|defekt|ødelagt|reparation)\b/i;
+
+function isReturnPolicyBoostContext(
+  intentText: string,
+  issueTerms: string[],
+): boolean {
+  const normalized = stripHtml(intentText || "");
+  return RETURN_POLICY_CONTEXT_RE.test(normalized) ||
+    issueTerms.some((term) => RETURN_ISSUE_TERMS.has(term));
+}
+
+function returnPolicyBoostForChunk(input: {
+  chunk: RetrievedChunk;
+  intentText: string;
+  issueTerms: string[];
+}): number {
+  const { chunk, intentText, issueTerms } = input;
+  if (!isReturnPolicyBoostContext(intentText, issueTerms)) return 0;
+  if (chunk.usable_as !== "policy" && chunk.usable_as !== "procedure") return 0;
+  const isReturnsKnowledgeDoc =
+    isKnowledgeDocumentProvider(chunk.source_provider) &&
+    chunk.document_category === RETURNS_DOCUMENT_CATEGORY;
+  const isProductSupportKnowledgeDoc =
+    isKnowledgeDocumentProvider(chunk.source_provider) &&
+    chunk.document_category === PRODUCT_SUPPORT_DOCUMENT_CATEGORY;
+  // Product-support sections already receive product/issue boosts. Q1 is only
+  // to keep shared policy/procedure context from falling out of the matcher pool
+  // behind troubleshooting chunks.
+  if (isProductSupportKnowledgeDoc) return 0;
+
+  const titleQuestion = [
+    chunk.source_title ?? "",
+    chunk.source_label ?? "",
+    chunk.question ?? "",
+  ].join(" ");
+  const focusedText = `${titleQuestion} ${
+    String(chunk.content ?? "").slice(0, 1200)
+  }`;
+  const focused = RETURN_POLICY_FOCUSED_RE.test(stripHtml(focusedText));
+  if (!focused && !isReturnsKnowledgeDoc) return 0;
+  return focused ? 0.18 : 0.08;
+}
+
 function isPureCableAdapterCompatibility(text: string): boolean {
   const normalized = stripHtml(text);
   return /\b(cable|kabel|adapter|adaptor|compatibility|usb-?c|usb-?a)\b/i
@@ -780,6 +826,7 @@ export interface RetrievalCandidateDiagnostics {
     product_support_doc_boost: number;
     general_policy_boost: number;
     power_reset_boost: number;
+    return_policy_boost: number;
     source_type_boost: number;
     usable_as_boost: number;
     cross_product_penalty: number;
@@ -1431,6 +1478,7 @@ type ScoreBreakdown = {
   product_support_doc_boost: number;
   general_policy_boost: number;
   power_reset_boost: number;
+  return_policy_boost: number;
   source_type_boost: number;
   usable_as_boost: number;
   cross_product_penalty: number;
@@ -1515,6 +1563,11 @@ export function buildScoreBreakdown(input: {
       !isPureCableAdapterCompatibility(text)
     ? 0.18
     : 0;
+  const returnPolicyBoost = returnPolicyBoostForChunk({
+    chunk,
+    intentText,
+    issueTerms,
+  });
   const sourceTypeBoost =
     /manual_text|snippet/i.test(`${chunk.source_label} ${chunk.kind}`)
       ? 0.04
@@ -1529,6 +1582,7 @@ export function buildScoreBreakdown(input: {
     productSupportDocBoost +
     generalPolicyBoost +
     powerResetBoost +
+    returnPolicyBoost +
     sourceTypeBoost +
     usableAsBoost -
     crossProductPenalty;
@@ -1540,6 +1594,7 @@ export function buildScoreBreakdown(input: {
     product_support_doc_boost: productSupportDocBoost,
     general_policy_boost: generalPolicyBoost,
     power_reset_boost: powerResetBoost,
+    return_policy_boost: returnPolicyBoost,
     source_type_boost: sourceTypeBoost,
     usable_as_boost: usableAsBoost,
     cross_product_penalty: crossProductPenalty,

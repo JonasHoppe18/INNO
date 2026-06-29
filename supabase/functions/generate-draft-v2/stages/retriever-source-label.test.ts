@@ -157,6 +157,7 @@ Deno.test("diagnosticChunkMeta (via diagnostics): section_heading surfaces as qu
       product_support_doc_boost: 0,
       general_policy_boost: 0,
       power_reset_boost: 0,
+      return_policy_boost: 0,
       source_type_boost: 0,
       usable_as_boost: 0,
       cross_product_penalty: 0,

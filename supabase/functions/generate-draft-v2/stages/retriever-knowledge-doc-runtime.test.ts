@@ -741,6 +741,124 @@ Deno.test("Returns & Refunds Knowledge Doc scoring is unchanged by Product Suppo
   assertEquals(breakdown.product_support_doc_boost, 0);
 });
 
+Deno.test("Returns & Refunds policy receives narrow return/refund pre-pool boost", () => {
+  const returnsDoc = chunk({
+    id: "doc-returns",
+    content:
+      "# Returns & Refunds\n\n## Refund processing\nRefunds are processed after the returned product is received.",
+    source_label: "knowledge_document: Refund processing",
+    source_provider: "knowledge_document",
+    document_category: "returns",
+    knowledge_document_access_reason: "returns_context",
+    usable_as: "policy",
+    similarity: 0.54,
+  });
+  const troubleshooting = chunk({
+    id: "doc-troubleshooting",
+    content:
+      "# A-Spire Wireless — Product Support\n\n## Microphone Issues\nCheck Windows microphone settings and firmware.",
+    source_label: "knowledge_document: Microphone Issues",
+    source_provider: "knowledge_document",
+    document_category: "product_support",
+    knowledge_document_access_reason: "same_product_context",
+    usable_as: "policy",
+    products: ["a-spire wireless"],
+    similarity: 0.66,
+  });
+
+  const returnsBreakdown = buildScoreBreakdown({
+    chunk: returnsDoc,
+    mentionedProducts: ["A-Spire Wireless"],
+    otherProducts: [],
+    issueTerms: ["return", "refund", "microphone"],
+    intentText:
+      "I want a refund because my A-Spire Wireless microphone is defective return refund policy instructions",
+  });
+  const troubleshootingBreakdown = buildScoreBreakdown({
+    chunk: troubleshooting,
+    mentionedProducts: ["A-Spire Wireless"],
+    otherProducts: [],
+    issueTerms: ["return", "refund", "microphone"],
+    intentText:
+      "I want a refund because my A-Spire Wireless microphone is defective return refund policy instructions",
+  });
+
+  assertEquals(returnsBreakdown.return_policy_boost > 0, true);
+  assertEquals(returnsBreakdown.final_score > 0.7, true);
+  assertEquals(troubleshootingBreakdown.final_score > returnsBreakdown.final_score, true);
+});
+
+Deno.test("Warranty/proof-of-purchase policy receives narrow warranty pre-pool boost", () => {
+  const warrantyDoc = chunk({
+    id: "doc-warranty",
+    content:
+      "# Returns & Refunds\n\n## Warranty claims and proof of purchase\nAsk for proof of purchase before assessing warranty coverage.",
+    source_label: "knowledge_document: Warranty claims and proof of purchase",
+    source_provider: "knowledge_document",
+    document_category: "returns",
+    knowledge_document_access_reason: "returns_context",
+    usable_as: "policy",
+    similarity: 0.52,
+  });
+  const physicalDamageDoc = chunk({
+    id: "doc-physical",
+    content:
+      "# A-Spire Wireless — Product Support\n\n## Physical damage or cracked plastic casing\nUse this guide for cracked headbands.",
+    source_label: "knowledge_document: Physical damage or cracked plastic casing",
+    source_provider: "knowledge_document",
+    document_category: "product_support",
+    knowledge_document_access_reason: "same_product_context",
+    usable_as: "policy",
+    products: ["a-spire wireless"],
+    similarity: 0.64,
+  });
+
+  const warrantyBreakdown = buildScoreBreakdown({
+    chunk: warrantyDoc,
+    mentionedProducts: ["A-Spire Wireless"],
+    otherProducts: [],
+    issueTerms: ["physical_damage", "return"],
+    intentText:
+      "My A-Spire Wireless is cracked and I want to make a warranty claim proof of purchase replacement under warranty",
+  });
+  const physicalBreakdown = buildScoreBreakdown({
+    chunk: physicalDamageDoc,
+    mentionedProducts: ["A-Spire Wireless"],
+    otherProducts: [],
+    issueTerms: ["physical_damage", "return"],
+    intentText:
+      "My A-Spire Wireless is cracked and I want to make a warranty claim proof of purchase replacement under warranty",
+  });
+
+  assertEquals(warrantyBreakdown.return_policy_boost > 0, true);
+  assertEquals(warrantyBreakdown.final_score > 0.7, true);
+  assertEquals(physicalBreakdown.final_score > warrantyBreakdown.final_score, true);
+});
+
+Deno.test("Unrelated troubleshooting does not boost Returns & Refunds policy", () => {
+  const returnsDoc = chunk({
+    id: "doc-returns",
+    content:
+      "# Returns & Refunds\n\n## Return window\nCustomers can return within the documented window.",
+    source_label: "knowledge_document: Return window",
+    source_provider: "knowledge_document",
+    document_category: "returns",
+    knowledge_document_access_reason: "returns_context",
+    usable_as: "policy",
+    similarity: 0.54,
+  });
+  const breakdown = buildScoreBreakdown({
+    chunk: returnsDoc,
+    mentionedProducts: ["A-Spire Wireless"],
+    otherProducts: [],
+    issueTerms: ["microphone", "connectivity"],
+    intentText:
+      "My A-Spire Wireless microphone is not connecting to Windows after firmware update",
+  });
+
+  assertEquals(breakdown.return_policy_boost, 0);
+});
+
 Deno.test("Ear pads Knowledge Doc is boosted only for ear-pad context", () => {
   const doc = chunk({
     id: "doc-ear-pads",
