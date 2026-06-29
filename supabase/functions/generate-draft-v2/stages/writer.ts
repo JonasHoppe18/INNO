@@ -357,6 +357,112 @@ function cleanDraftText(text: string): string {
     .trim();
 }
 
+// Send-ready support-style cleanup (Slice O). REMOVAL-ONLY by contract: these
+// helpers strip support-template artifacts (a duplicate second greeting, pure
+// pleasantry closers) so correct drafts read like a real support employee wrote
+// them. They never add, rephrase, or strengthen any claim — so they cannot make
+// a draft more assertive about live commerce/tracking/refund/compatibility facts.
+
+// Greeting tokens, ordered longest/multi-word first so e.g. "hi there" wins over
+// "hi". Used to detect a redundant greeting the model emitted as the body's start.
+const GREETING_TOKENS =
+  "hi there|hello there|hej igen|guten tag|hejsa|hello|hallo|halloj|goddag|bonjour|ciao|salut|hola|hey|hej|davs|dav|hi";
+
+// Whole line is ONLY a greeting (canonical opening), e.g. "Hi there," / "Hej,".
+const GREETING_LINE_RE = new RegExp(
+  `^(?:${GREETING_TOKENS})(?:\\s+[A-Za-zÆØÅæøåÄÖÜäöüÉéÈèÀ-ÿ'-]{1,30})?\\s*[,.!]?$`,
+  "i",
+);
+
+// A greeting at the START of a body paragraph, with optional short name and
+// required greeting punctuation (so "Hello world ..." with no comma is NOT a
+// greeting and stays untouched).
+const GREETING_PREFIX_RE = new RegExp(
+  `^(?:${GREETING_TOKENS})(?:\\s+[A-Za-zÆØÅæøåÄÖÜäöüÉéÈèÀ-ÿ'-]{1,30})?\\s*[,.!]`,
+  "i",
+);
+
+export function stripDuplicateGreeting(text: string): string {
+  const trimmed = String(text ?? "").trim();
+  if (!trimmed) return trimmed;
+  const parts = trimmed.split(/\n{2,}/);
+  if (parts.length < 2) return trimmed;
+  // Only dedupe when there is genuinely a leading greeting line to duplicate.
+  if (!GREETING_LINE_RE.test(parts[0].trim())) return trimmed;
+  const second = parts[1];
+  const match = second.match(GREETING_PREFIX_RE);
+  if (!match) return trimmed;
+  const remainder = second
+    .slice(match[0].length)
+    .replace(/^[\s,.!]+/, "")
+    .trimStart();
+  if (remainder) {
+    // Inline duplicate ("Hejsa, det er ..."): keep the content, drop the greeting.
+    parts[1] = remainder.charAt(0).toUpperCase() + remainder.slice(1);
+  } else {
+    // Standalone duplicate greeting paragraph ("Hi there,."): drop it entirely.
+    parts.splice(1, 1);
+  }
+  return parts.join("\n\n");
+}
+
+// A pure-pleasantry trailing closer is matched as: optional filler lead-in
+// clause + a pleasantry core + optional filler tail clause. Matching the WHOLE
+// closing sentence (not just its core) is what prevents dangling fragments like
+// "If you have any questions or need assistance," or "I hope this helps, and".
+// Cores are curated so a real next step or specific question is never matched
+// (e.g. "let me know which version you have" stays; only generic "anything else"
+// filler is removed).
+const CLOSER_PREFIXES = [
+  "i hope (?:this|that) (?:helps|clarifies)[^.!?\\n]*?,?\\s*(?:and\\s+)?",
+  "if you have any (?:other |further )?questions(?: or (?:need|require)[^.!?\\n]*?)?,?\\s*",
+];
+
+const CLOSER_CORES = [
+  // English
+  "(?:please )?(?:feel free to|do(?:n['’]?t| not) hesitate to) (?:ask|reach out|contact us|get in touch)",
+  "(?:i(?:'m| am)? )?look(?:ing)? forward to hearing (?:back )?from you",
+  "thank(?:s| you)(?: so much)? for your (?:understanding|patience)",
+  "i hope (?:this|that) (?:helps|clarifies)[^.!?\\n]*",
+  "(?:please )?let (?:me|us) know if (?:you (?:have any (?:other |further )?(?:questions|concerns)|need (?:anything else|any (?:other |further )?help))|there(?:'s| is) (?:anything|something) else(?: I can (?:assist|help)[^.!?\\n]*)?)",
+  "we(?:'re| are)? (?:always )?here (?:to help|if you need anything)",
+  // Danish
+  "jeg ser frem til at høre fra dig",
+  "du er (?:altid )?velkommen til at (?:skrive|kontakte os|spørge)",
+  "(?:er du velkommen til at (?:skrive|kontakte os)|tøv ikke med at (?:skrive|kontakte os)|så skriv (?:gerne )?til os)",
+  "tak for din (?:forståelse|tålmodighed)",
+  "sig (?:gerne )?til,? hvis (?:du har (?:flere |yderligere )?spørgsmål|der er (?:noget )?andet|jeg kan hjælpe (?:dig )?med (?:noget )?andet)",
+];
+
+// Optional filler tail after a core (e.g. "... from you, if you need any help" /
+// "... fra dig, hvis du har brug for hjælp"). Restricted to generic-help tails so
+// a concrete instruction is never swallowed.
+const CLOSER_SUFFIX =
+  "(?:,?\\s*(?:if you (?:have any|need)[^.!?\\n]*|hvis du har brug for (?:yderligere |mere )?hjælp[^.!?\\n]*|hvis du har (?:yderligere |flere )?spørgsmål[^.!?\\n]*|hvis du har brug for (?:yderligere |mere )?assistance[^.!?\\n]*))?";
+
+const GENERIC_CLOSER_RE = new RegExp(
+  `\\s*(?:${CLOSER_PREFIXES.join("|")})?(?:${
+    CLOSER_CORES.join("|")
+  })${CLOSER_SUFFIX}[.!]?\\s*$`,
+  "i",
+);
+
+export function stripGenericClosers(text: string): string {
+  let out = String(text ?? "").trim();
+  // Closers can stack ("Feel free to reach out. I look forward to hearing from
+  // you."); peel them off one at a time until none remain.
+  for (let i = 0; i < 5; i++) {
+    const next = out.replace(GENERIC_CLOSER_RE, "").trimEnd();
+    if (next === out) break;
+    out = next.trim();
+  }
+  return out;
+}
+
+export function applySendReadyStyleCleanup(text: string): string {
+  return stripGenericClosers(stripDuplicateGreeting(String(text ?? "").trim()));
+}
+
 function greetingPrefix(language: string): string {
   switch (language) {
     case "da":
@@ -2018,11 +2124,13 @@ Returner JSON:
       },
     );
     return {
-      draft_text: normalizeOpeningGreeting(
-        cleanedDraft,
-        salutationName.name,
-        replyLanguage,
-        resolvedCustomerName?.first_name === null,
+      draft_text: applySendReadyStyleCleanup(
+        normalizeOpeningGreeting(
+          cleanedDraft,
+          salutationName.name,
+          replyLanguage,
+          resolvedCustomerName?.first_name === null,
+        ),
       ),
       proposed_actions: actionProposals ?? [],
       citations: Array.isArray(parsed.citations) ? parsed.citations : [],
