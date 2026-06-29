@@ -74,6 +74,32 @@ Deno.test("Generic return flow still allows Return for swap over Warranty claims
   assertEquals(ids(result)[0], "return");
 });
 
+Deno.test("Missing accessories and spare parts is selected for buy/new replacement dongle intent", () => {
+  const result = selectPolicyFallback([
+    chunk("pairing", "policy", 0.9, {
+      source_title: "Dongle pairing",
+      content: "Pair the headset with the dongle.",
+    }),
+    chunk("missing", "policy", 0.82, {
+      source_title: "Missing accessories and spare parts",
+      content:
+        "Ask which accessory is missing and explain the spare-part replacement process.",
+    }),
+  ], {
+    max: 2,
+    scoreRatio: 0.6,
+    customerMessage: "Kan jeg købe en ny dongle til mit headset?",
+    plannerQueries: ["how to buy a replacement dongle"],
+    issueTerms: ["accessory"],
+  });
+
+  assertEquals(ids(result), ["missing"]);
+  assertEquals(
+    result.debug[0].overlap_reason.includes("accessory_family"),
+    true,
+  );
+});
+
 Deno.test("Cable and adapter compatibility is not rescued for power/reset intent without reset/power overlap", () => {
   const result = selectPolicyFallback([
     chunk("cable", "policy", 0.9, {
@@ -132,12 +158,25 @@ Deno.test("No fallback selection when policy chunks have no title/question/conte
   assertEquals(ids(result), []);
 });
 
-Deno.test("Accessory/missing-part intent does not rescue unrelated dongle troubleshooting chunks", () => {
+Deno.test("Accessory/missing-part intent does not rescue Dongle pairing", () => {
   const result = selectPolicyFallback([
     chunk("pairing", "policy", 0.9, {
       source_title: "Dongle pairing",
       content: "Pair the headset with the dongle.",
     }),
+  ], {
+    max: 2,
+    scoreRatio: 0.6,
+    customerMessage: "I lost my dongle. Can I buy a replacement spare part?",
+    plannerQueries: ["missing dongle replacement spare part"],
+    issueTerms: ["accessory"],
+  });
+
+  assertEquals(ids(result), []);
+});
+
+Deno.test("Accessory/missing-part intent does not rescue microphone dongle troubleshooting", () => {
+  const result = selectPolicyFallback([
     chunk("mic", "policy", 0.85, {
       source_title: "Microphone works with the cable but not with the dongle",
       content: "Reset the dongle driver in Device Manager.",
