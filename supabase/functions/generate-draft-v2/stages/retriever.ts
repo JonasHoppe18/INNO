@@ -555,6 +555,35 @@ export function evaluateRuntimeKnowledgeDocumentAccess(input: {
     }
   }
 
+  // Cross-product power/reset exception: reset procedures are shared enough to
+  // be useful when product resolution fails, but keep this constrained to reset
+  // procedure headings/content so cable compatibility and generic power docs do
+  // not enter on power-on tickets.
+  if (scopedMentionedProducts.length === 0) {
+    const powerResetIntentText = [
+      input.customerMessage ?? "",
+      ...(input.plan.sub_queries ?? []),
+    ].join(" ");
+    const powerResetIssue = isPowerResetContext(powerResetIntentText);
+    if (powerResetIssue) {
+      const sectionHeading = String(metadata.section_heading || "")
+        .toLowerCase();
+      const titleText = extractKnowledgeDocumentTitleText({
+        content: input.content,
+        metadata,
+      }).toLowerCase();
+      const combinedText = `${sectionHeading} ${titleText} ${
+        String(input.content || "").slice(0, 1500)
+      }`;
+      if (
+        hasResetProcedureSignal(combinedText) &&
+        !isPureCableAdapterCompatibility(combinedText)
+      ) {
+        return { allowed: true, reason: "cross_product_power_reset_context" };
+      }
+    }
+  }
+
   // Cross-product accessory exception: cable / adapter / charger compatibility
   // is the same across every headset (any standard USB-C cable works; any
   // standard USB-C to USB-A adapter works on the dongle). When no specific
@@ -1028,10 +1057,14 @@ function policyFallbackCandidateScore(input: {
       issueTerms.includes(tag) || includesAnyText(intentText, [tag])
     ).length;
 
-  const hasDirectOverlap = titleQuestionOverlap > 0 || contentOverlap > 0 ||
-    issueTagOverlap > 0;
   const lowerTitle = parts.titleQuestion.toLowerCase();
   const lowerAll = parts.all.toLowerCase();
+  const accessoryFamilyOverlap = intentKinds.includes("accessory") &&
+    isAccessoryReplacementContext(intentText) &&
+    hasAccessoryReplacementSignal(lowerAll) &&
+    includesAnyText(lowerAll, ACCESSORY_REQUIRED_TERMS);
+  const hasDirectOverlap = titleQuestionOverlap > 0 || contentOverlap > 0 ||
+    issueTagOverlap > 0 || accessoryFamilyOverlap;
   const isCompatibilityOnly =
     /\b(cable|adapter|compatibility|usb-c|usb)\b/i.test(lowerTitle) &&
     !includesAnyText(lowerAll, POWER_RESET_REQUIRED_TERMS);
@@ -1043,6 +1076,7 @@ function policyFallbackCandidateScore(input: {
   }
   if (contentOverlap > 0) reasons.push(`content:${contentOverlap}`);
   if (issueTagOverlap > 0) reasons.push(`issue_tag:${issueTagOverlap}`);
+  if (accessoryFamilyOverlap) reasons.push("accessory_family");
 
   if (intentKinds.includes("power_reset")) {
     if (!includesAnyText(lowerAll, POWER_RESET_REQUIRED_TERMS)) {
@@ -1071,6 +1105,7 @@ function policyFallbackCandidateScore(input: {
     titleQuestionOverlap * 0.04 +
     contentOverlap * 0.015 +
     issueTagOverlap * 0.025 +
+    (accessoryFamilyOverlap ? 0.08 : 0) +
     procedureBonus +
     warrantyClaimsBonus;
 

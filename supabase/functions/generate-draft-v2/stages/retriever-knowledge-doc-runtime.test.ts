@@ -34,7 +34,10 @@ function decision(input: {
   resolution_stage?: string;
   environment?: string;
   metadata?: Record<string, unknown>;
+  sub_queries?: string[];
 }): RuntimeKnowledgeDocumentDecision {
+  const runtimePlan = plan(input.intent ?? "complaint", input.resolution_stage);
+  runtimePlan.sub_queries = input.sub_queries ?? [];
   return evaluateRuntimeKnowledgeDocumentAccess({
     source_provider: "knowledge_document",
     content: input.content,
@@ -44,7 +47,7 @@ function decision(input: {
       section_heading: "Runtime section",
       ...input.metadata,
     },
-    plan: plan(input.intent ?? "complaint", input.resolution_stage),
+    plan: runtimePlan,
     customerMessage: input.customerMessage,
     shop: SHOP,
   });
@@ -188,6 +191,37 @@ Deno.test("Factory reset receives power-reset boost and outranks cable compatibi
   assertEquals(resetScore.final_score > cableScore.final_score, true);
 });
 
+Deno.test("Factory reset survives runtime access without resolved product for charging power intent", () => {
+  const result = decision({
+    category: "product_support",
+    content:
+      "# A-Spire Wireless — Product Support\n\n## Factory reset\nTurn the headset off and hold the power button for 15 seconds.",
+    customerMessage: "My headset is not charging and will not power on.",
+    metadata: { section_heading: "Factory reset" },
+  });
+
+  assertEquals(result, {
+    allowed: true,
+    reason: "cross_product_power_reset_context",
+  });
+});
+
+Deno.test("Factory reset runtime access can use planner power reset intent", () => {
+  const result = decision({
+    category: "product_support",
+    content:
+      "# A-Spire Wireless — Product Support\n\n## Factory reset\nTurn the headset off and hold the power button for 15 seconds.",
+    customerMessage: "My headset is not working.",
+    metadata: { section_heading: "Factory reset" },
+    sub_queries: ["A-Spire Wireless won't power on", "factory reset steps"],
+  });
+
+  assertEquals(result, {
+    allowed: true,
+    reason: "cross_product_power_reset_context",
+  });
+});
+
 Deno.test("Cable compatibility remains unboosted for explicit cable compatibility", () => {
   const cable = chunk({
     id: "cable-compat",
@@ -207,6 +241,21 @@ Deno.test("Cable compatibility remains unboosted for explicit cable compatibilit
     intentText: "Can I use any USB-C cable with my A-Spire Wireless?",
   });
   assertEquals(breakdown.power_reset_boost, 0);
+});
+
+Deno.test("Cable compatibility remains valid for explicit cable adapter questions", () => {
+  const result = decision({
+    category: "product_support",
+    content:
+      "# A-Spire Wireless — Product Support\n\n## Cable and adapter compatibility\nAny standard USB-C cable works.",
+    customerMessage: "Can I use any USB-C cable or adapter with my headset?",
+    metadata: { section_heading: "Cable and adapter compatibility" },
+  });
+
+  assertEquals(result, {
+    allowed: true,
+    reason: "cross_product_accessory_context",
+  });
 });
 
 Deno.test("inbox runtime may include same-product Product Support document chunks", () => {
