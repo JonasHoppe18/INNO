@@ -5,8 +5,10 @@ import {
   buildCompatibilityProvenance,
   detectCompatibilityProduct,
   detectCompatibilityQuery,
+  detectCompatibilityToneViolations,
   isCompatibilityQuestion,
   resolveCompatibility,
+  sanitizeCompatibilityDraft,
   type CompatibilityRow,
 } from "./product-compatibility.ts";
 
@@ -376,7 +378,7 @@ Deno.test("Slice L/B: NOT-CONFIRMED directive keeps hard safety but drops intern
   // No internal/system data wording leaks to the customer.
   for (const re of BANNED_CUSTOMER_WORDING) assert(!re.test(d), `directive must not contain ${re}`);
   // Discourage "try it directly", discourage filler, instruct natural voice.
-  assert(/try the setup themselves|test or try/i.test(d));
+  assert(/test the setup themselves/i.test(d));
   assert(/filler/i.test(d));
   assert(/like a support colleague/i.test(d));
 });
@@ -465,4 +467,59 @@ Deno.test("Slice M: ambiguous product mention still does not guess", () => {
     detectCompatibilityProduct("Is the A-Spire or A-Rise better for PlayStation?", SLICE_M_PRODUCTS),
     null,
   );
+});
+
+// --- Slice N: send-ready tone enforcement -----------------------------------
+
+Deno.test("Slice N: detector flags each banned compatibility phrase", () => {
+  assert(detectCompatibilityToneViolations("I cannot confirm compatibility.").includes("cannot_confirm"));
+  assert(detectCompatibilityToneViolations("This is not confirmed in our data.").includes("internal_data_wording"));
+  assert(detectCompatibilityToneViolations("Please check the exact product specifications.").includes("check_specs"));
+  assert(detectCompatibilityToneViolations("You could try it directly to see.").includes("try_it_directly"));
+  assert(detectCompatibilityToneViolations("If you have any other questions, feel free to ask.").includes("generic_filler"));
+});
+
+Deno.test("Slice N: detector passes a clean send-ready draft", () => {
+  const good =
+    "Hi there,\n\nA-Live isn't confirmed for PlayStation over AUX, so I wouldn't recommend relying on that setup.\n\nFor PlayStation, I'd recommend choosing a model with confirmed PlayStation compatibility instead.";
+  assertEquals(detectCompatibilityToneViolations(good), []);
+});
+
+Deno.test("Slice N: sanitizer strips generic filler and the in-our-data qualifier, keeps real content", () => {
+  const bad =
+    "A-Spire works via USB-C or 3.5mm AUX. The wireless dongle is not confirmed in our data. If you have any other questions, feel free to ask.";
+  const out = sanitizeCompatibilityDraft(bad);
+  assert(!/in our data/i.test(out));
+  assert(!/if you have any other questions/i.test(out));
+  assert(!/feel free to ask/i.test(out));
+  assert(/A-Spire works via USB-C or 3\.5mm AUX\./.test(out));
+  assert(/not confirmed\b/i.test(out)); // keeps the fact, drops the qualifier
+});
+
+Deno.test("Slice N: sanitizer rewrites 'I cannot confirm' to a non-robotic equivalent", () => {
+  const out = sanitizeCompatibilityDraft(
+    "Unfortunately, I cannot confirm compatibility for the A-Live with PlayStation via AUX.",
+  );
+  assert(!/I cannot confirm/i.test(out));
+  assert(/haven['’]?t confirmed/i.test(out));
+});
+
+Deno.test("Slice N: sanitizer is idempotent and leaves a clean draft unchanged", () => {
+  const good = "A-Spire works with PlayStation over USB-C or 3.5mm AUX.";
+  assertEquals(sanitizeCompatibilityDraft(good), good);
+  const bad = "Yes. If you have any further questions, feel free to ask.";
+  const once = sanitizeCompatibilityDraft(bad);
+  assertEquals(sanitizeCompatibilityDraft(once), once);
+  assert(!/feel free to ask/i.test(once));
+});
+
+Deno.test("Slice N: directive steers to a recommendation and bans inability/check-specs framing without the banned literals", () => {
+  const d = buildCompatibilityDirective(
+    [{ target: "playstation", known: false, results: [] }],
+    { wasAsked: true, requestedConnections: ["aux_3_5mm"] },
+  );
+  assert(/recommend/i.test(d));
+  assert(/inability/i.test(d));
+  assert(/check specs|manuals|test the setup/i.test(d));
+  for (const re of BANNED_CUSTOMER_WORDING) assert(!re.test(d), `directive must not contain ${re}`);
 });

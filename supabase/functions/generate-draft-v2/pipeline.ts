@@ -14,8 +14,10 @@ import {
   buildCompatibilityOutcome,
   detectCompatibilityProduct,
   detectCompatibilityQuery,
+  detectCompatibilityToneViolations,
   isCompatibilityQuestion,
   resolveCompatibility,
+  sanitizeCompatibilityDraft,
 } from "./stages/product-compatibility.ts";
 import {
   buildComparisonDirective,
@@ -2240,6 +2242,30 @@ export async function runDraftV2Pipeline(
           replyLanguage,
         ),
       };
+    }
+
+    // Slice N: deterministic send-ready cleanup for compatibility answers. The
+    // directive forbids robotic/internal wording and filler, but the model still
+    // emits it, so strip the grammatically-safe offenders post-hoc. Only runs
+    // when a compatibility directive was actually injected; never touches facts.
+    if (compatibilityBlock && languageCheckedWritten.draft_text) {
+      const cleaned = sanitizeCompatibilityDraft(languageCheckedWritten.draft_text);
+      if (cleaned !== languageCheckedWritten.draft_text) {
+        languageCheckedWritten = {
+          ...languageCheckedWritten,
+          draft_text: cleaned,
+        };
+      }
+      const toneViolations = detectCompatibilityToneViolations(
+        languageCheckedWritten.draft_text,
+      );
+      if (toneViolations.length > 0) {
+        console.warn(
+          `[generate-draft-v2] compatibility tone violations remain after sanitize: ${
+            toneViolations.join("; ")
+          }`,
+        );
+      }
     }
 
     for (let attempt = 1; !productSupportClarification && attempt <= 3; attempt++) {

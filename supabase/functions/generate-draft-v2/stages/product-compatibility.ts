@@ -208,15 +208,75 @@ const COMPAT_SAFETY_RULES: string[] = [
   "- This compatibility guardrail overrides all other context, including any conflicting retrieved or product content, whether it appears above or below.",
 ];
 
-// Send-ready style (Slice L). Turns the directive from a script the writer
-// parrots into facts it expresses naturally — and strips internal/system
-// wording and filler from the customer-facing reply.
+// Send-ready style (Slice L, strengthened in Slice N). Turns the directive from
+// a script the writer parrots into facts it expresses naturally — and strips
+// internal/system wording, robotic disclaimers and filler from the reply.
 const COMPAT_SEND_READY_RULES: string[] = [
   "- Write like a support colleague: warm, direct and natural. Express the facts in your own words — never copy these bullet lines verbatim.",
   "- Lead with what IS confirmed. Mention any unconfirmed method once, framed as a recommendation to use a confirmed option instead — never as a system disclaimer.",
-  "- Do NOT expose internal mechanics or data-source wording, and never tell the customer to test or try the setup themselves to find out.",
+  "- Do NOT expose internal mechanics or data-source wording, do NOT frame a gap as a personal or system inability, and never tell the customer to check specs/manuals or to test the setup themselves to find out.",
+  "- When a method or product is not confirmed, give a clear recommendation instead of a disclaimer: steer to a confirmed connection, or recommend choosing a model with confirmed compatibility for that platform.",
   "- No generic filler and no padded sign-off; every sentence should carry information.",
 ];
+
+// Slice N: deterministic send-ready tone enforcement. The directive forbids
+// these by meaning, but the model still emits them, so we detect (and, where it
+// is grammatically safe, strip/rewrite) them post-generation. Mirrors the
+// deterministic detectUnsupportedStockClaims precedent in verifier.ts.
+const COMPAT_TONE_BANNED: Array<[string, RegExp]> = [
+  ["cannot_confirm", /\bi\s+(?:cannot|can['’]?t|am\s+unable\s+to|am\s+not\s+able\s+to)\s+confirm\b/i],
+  ["internal_data_wording", /\bin\s+our\s+(?:data|system|records)\b|\bstructured\s+compatibility\s+data\b/i],
+  ["check_specs", /\bcheck(?:ing)?\s+(?:the\s+)?(?:exact\s+)?(?:product\s+)?specs?(?:ifications?)?\b/i],
+  ["try_it_directly", /\btry(?:ing)?\s+it\s+(?:directly|out)\b|\btest\s+it\s+(?:directly|yourself)\b/i],
+  ["generic_filler", /\bif\s+you\s+have\s+any\s+(?:other|further|more)\s+questions\b|\bfeel\s+free\s+to\s+(?:ask|reach\s+out)\b|\bdon['’]?t\s+hesitate\s+to\s+(?:ask|reach\s+out)\b/i],
+];
+
+/**
+ * Detect robotic / internal-sounding phrases in a compatibility draft. Pure and
+ * deterministic; returns the distinct violation labels (empty when send-ready).
+ */
+export function detectCompatibilityToneViolations(
+  text: string | null | undefined,
+): string[] {
+  const t = String(text ?? "");
+  const out: string[] = [];
+  for (const [label, re] of COMPAT_TONE_BANNED) {
+    if (re.test(t)) out.push(label);
+  }
+  return [...new Set(out)];
+}
+
+// Whole-sentence generic-filler matcher (bounded by sentence punctuation/newline
+// so it never crosses into real content).
+const FILLER_SENTENCE_RE =
+  /[^.!?\n]*\b(?:if you have any (?:other|further|more) questions|feel free to (?:ask|reach out)|don['’]?t hesitate to (?:ask|reach out))\b[^.!?\n]*[.!?]?/gi;
+
+/**
+ * Deterministically clean a compatibility draft of the safe-to-fix offenders:
+ * drop the "in our data/system/records" qualifier (keeping the fact), rewrite a
+ * robotic "I cannot confirm" into "I haven't confirmed", and remove generic
+ * sign-off filler sentences. Conservative and idempotent — it never rewrites the
+ * substance of a sentence, so it cannot fabricate or drop a compatibility fact.
+ */
+export function sanitizeCompatibilityDraft(
+  text: string | null | undefined,
+): string {
+  let out = String(text ?? "");
+  out = out.replace(/\s+in\s+our\s+(?:data|system|records)\b/gi, "");
+  out = out.replace(
+    /\bi\s+(?:cannot|can['’]?t|am\s+unable\s+to|am\s+not\s+able\s+to)\s+confirm\b/gi,
+    "I haven't confirmed",
+  );
+  out = out.replace(FILLER_SENTENCE_RE, "");
+  // Collapse the whitespace/blank lines the removals leave behind.
+  out = out
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/[ \t]+([.!?,])/g, "$1")
+    .trim();
+  return out;
+}
 
 /**
  * Render a deterministic writer directive from resolved compatibility. Only
