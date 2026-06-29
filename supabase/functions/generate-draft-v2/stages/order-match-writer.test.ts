@@ -28,6 +28,17 @@ Deno.test("authority block states live facts override stale knowledge", () => {
   }
 });
 
+// 11b. never claim an action already happened unless it was executed
+Deno.test("authority block forbids unsupported completed-action claims", () => {
+  const block = buildLiveFactAuthorityBlock().toLowerCase();
+  // must forbid claiming an invoice/refund/cancel/address/replacement action
+  // already happened unless an executed action result confirms it
+  assertStringIncludes(block, "udført");
+  for (const term of ["faktura", "annuller", "adresse"]) {
+    assertStringIncludes(block, term);
+  }
+});
+
 // 12. missing facts lead to clarification rather than guessing
 Deno.test("integration_error directive avoids 'order not found' and asks safely", () => {
   const d = buildOrderMatchDirective(match("integration_error")).toLowerCase();

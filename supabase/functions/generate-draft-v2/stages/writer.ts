@@ -551,7 +551,8 @@ export function buildLiveFactAuthorityBlock(): string {
 4. Legacy/øvrig viden er kun sekundær fallback.
 5. Lad ALDRIG forældet viden (inkl. cachede shop_products pris/lager) overstyre verificerede live-fakta ved konflikt — live-fakta vinder. Dette gælder også refund-status: live refund-fakta vinder over enhver knowledge/legacy-kilde.
 6. GÆT ALDRIG ordre-, tracking-, lager-, refunderings-, annullerings- eller fulfillment-status når verificerede live-fakta mangler — spørg eller brug sikker formulering i stedet.
-7. Påstå ALDRIG at en refundering er udstedt, et refund-beløb, et refund-tidspunkt, at en returnering er modtaget, eller hvornår pengene ankommer, uden verificerede live-fakta eller verificeret politik-kontekst.`;
+7. Påstå ALDRIG at en refundering er udstedt, et refund-beløb, et refund-tidspunkt, at en returnering er modtaget, eller hvornår pengene ankommer, uden verificerede live-fakta eller verificeret politik-kontekst.
+8. Påstå ALDRIG at en handling allerede er udført (fx "jeg har sendt fakturaen", "din ordre er annulleret", "jeg har opdateret din adresse", "vi har sendt en erstatning", "beløbet er refunderet") medmindre et udført action-resultat bekræfter det. En foreslået action der afventer godkendelse er IKKE udført — formuler den som igangsat/anmodet/under behandling. Ved fakturaanmodning uden en udført faktura-action: brug fx "Jeg har bedt vores shop-manager om at sende din faktura" — sig ikke at den allerede er sendt.`;
 }
 
 // Detects when the customer states (in their own words) that the package has

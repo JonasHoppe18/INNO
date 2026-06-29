@@ -76,6 +76,7 @@ import { detectCustomerProvidedReturnTracking } from "./stages/return-tracking-a
 import { resolveCustomerName } from "./stages/customer-name-resolution.ts";
 import { checkUnsupportedCommitments } from "./stages/unsupported-commitment-check.ts";
 import { checkUnsupportedAssumptions } from "./stages/unsupported-assumption-check.ts";
+import { checkLiveFactAndActionClaims } from "./stages/live-fact-action-claim-check.ts";
 
 export interface EvalPayload {
   subject: string;
@@ -145,6 +146,12 @@ export interface PipelineResult {
     requires_review: boolean;
   };
   unsupported_assumption_check?: {
+    checked: boolean;
+    compliant: boolean;
+    violations: Array<{ type: string; excerpt: string }>;
+    requires_review: boolean;
+  };
+  live_fact_action_claim_check?: {
     checked: boolean;
     compliant: boolean;
     violations: Array<{ type: string; excerpt: string }>;
@@ -2530,6 +2537,36 @@ export async function runDraftV2Pipeline(
       );
     }
 
+    // 12c. Deterministic guard against unsupported live-fact / action-completed
+    // claims (fabricated tracking/delivery/refund status, or "I've sent the
+    // invoice / cancelled your order / updated your address / sent a
+    // replacement" with no executed action). Executed actions come ONLY from a
+    // post-action pass (postActionResult) — never from proposed/requires_approval
+    // actions. Same additive posture: never rewrites, only escalates to review.
+    const executedActionTypes = postActionResult &&
+        String(postActionResult.outcome || "executed") !== "declined" &&
+        typeof postActionResult.action_type === "string"
+      ? [String(postActionResult.action_type)]
+      : [];
+    const liveFactActionClaimCheck = checkLiveFactAndActionClaims({
+      draft_text: finalDraft ?? "",
+      facts: facts.facts,
+      tracking_facts: facts.tracking_facts,
+      executed_action_types: executedActionTypes,
+      language: replyLanguage,
+    });
+    if (liveFactActionClaimCheck.requires_review) {
+      finalRoutingHint = "review";
+      blockSendRecommended = true;
+      console.warn(
+        `[generate-draft-v2] unsupported live-fact/action claim flagged ${
+          liveFactActionClaimCheck.violations
+            .map((v) => v.type)
+            .join(", ")
+        } — routing to review`,
+      );
+    }
+
     const policyChunkCount = retrieved.chunks.filter((c) =>
       c.usable_as === "policy"
     ).length;
@@ -2745,6 +2782,12 @@ export async function runDraftV2Pipeline(
         compliant: unsupportedAssumptionCheck.compliant,
         violations: unsupportedAssumptionCheck.violations,
         requires_review: unsupportedAssumptionCheck.requires_review,
+      },
+      live_fact_action_claim_check: {
+        checked: true,
+        compliant: liveFactActionClaimCheck.compliant,
+        violations: liveFactActionClaimCheck.violations,
+        requires_review: liveFactActionClaimCheck.requires_review,
       },
       is_test_mode: isTestMode,
       confidence: finalConfidence,
