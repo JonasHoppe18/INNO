@@ -22,9 +22,10 @@ import {
 } from "./replacement-flow.ts";
 import {
   buildReturnsGroundingDirective,
-  extractReturnAddresses,
+  extractCustomerCountryFromText,
   isReturnRefundIntent,
-  resolveReturnCountryPreference,
+  parseReturnAddresses,
+  selectReturnAddress,
   selectReturnsPolicyContents,
   stripAddressLinesFromExample,
 } from "./returns-grounding.ts";
@@ -1594,15 +1595,18 @@ Support replied: "${agentReply.slice(0, 500)}"`;
   // the canonical returns doc + route by customer/order country. Prevents the
   // writer from hallucinating a return address (T-050835).
   const returnsPolicyContents = selectReturnsPolicyContents(retrieved.chunks);
-  const returnAddresses = extractReturnAddresses(returnsPolicyContents);
-  const returnCountryPreference = resolveReturnCountryPreference({
+  const returnAddressEntries = parseReturnAddresses(returnsPolicyContents);
+  const returnAddressSelection = selectReturnAddress({
+    entries: returnAddressEntries,
     orderCountry: facts.order?.shipping_address?.country ?? null,
-    customerCountry: caseState.entities.customer_country ?? null,
+    // LLM-extracted country first, then a deterministic contact-form fallback so
+    // a clearly-stated foreign country (e.g. US contact form) is not lost.
+    customerCountry: caseState.entities.customer_country ??
+      extractCustomerCountryFromText(latestCustomerMessage),
   });
   const returnsGroundingBlock = buildReturnsGroundingDirective({
     isReturnRefundIntent: isReturnRefund,
-    addresses: returnAddresses,
-    countryPreference: returnCountryPreference,
+    selection: returnAddressSelection,
     orderNumber: caseState.entities.order_numbers[0] ??
       (factValue(facts, "Ordre fundet") || null),
   });

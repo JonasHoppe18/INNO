@@ -59,87 +59,205 @@ export function selectReturnsPolicyContents(
     .filter(Boolean);
 }
 
-function normalizeWhitespace(value: string): string {
-  return value.replace(/\r/g, "").replace(/[ \t]+/g, " ").replace(/\n{2,}/g, "\n").trim();
+// A parsed return-address section. `kind` is "default" for a general/default
+// address (no country qualifier), "country" for a country-specific one. The
+// model is shop-agnostic: nothing here knows about AceZone, DK, EU, UK or US —
+// classification and matching are driven entirely by the section headings.
+export interface ReturnAddressEntry {
+  kind: "default" | "country";
+  countries: string[]; // normalized country aliases for "country"; [] for default
+  address: string;
+  heading: string;
 }
 
-// Parse "## Default return address" / "## US return address" sections out of the
-// returns doc contents. Returns trimmed multi-line address blocks (or null).
-export function extractReturnAddresses(
+export interface ReturnAddressSelection {
+  // The address to ground, or null when we must not guess.
+  address: string | null;
+  // "country_match": exact country-specific address; "default": general/default
+  // address; "ask_or_route": ambiguous/unknown → ask for country/order or route.
+  basis: "country_match" | "default" | "ask_or_route";
+  matchedCountry?: string | null;
+}
+
+// Country identity aliases (NOT region routing): purely normalises that e.g.
+// "US"/"USA"/"United States" name the same country. Generic — any shop whose
+// headings use these forms benefits; shops using other forms still match via
+// raw heading tokens below.
+const COUNTRY_ALIAS_GROUPS: string[][] = [
+  ["us", "usa", "u s a", "u s", "united states", "united states of america", "america"],
+  ["uk", "gb", "united kingdom", "great britain", "britain"],
+  ["dk", "denmark", "danmark"],
+  ["de", "germany", "deutschland"],
+  ["se", "sweden", "sverige"],
+  ["no", "norway", "norge"],
+  ["nl", "netherlands", "holland"],
+  ["fr", "france"],
+  ["es", "spain", "españa", "espana"],
+  ["it", "italy", "italia"],
+  ["pt", "portugal"],
+  ["ca", "canada"],
+];
+
+function normCountry(value: string | null | undefined): string {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Expand a normalised country phrase into the set of equivalent aliases, so that
+// "us" and "united states" compare equal.
+function expandCountry(value: string): Set<string> {
+  const norm = normCountry(value);
+  const out = new Set<string>(norm ? [norm] : []);
+  if (!norm) return out;
+  for (const group of COUNTRY_ALIAS_GROUPS) {
+    if (group.some((g) => g === norm || new RegExp(`\\b${g}\\b`).test(norm))) {
+      for (const g of group) out.add(g);
+    }
+  }
+  return out;
+}
+
+const RETURN_ADDRESS_HEADING_RE = /return\s+address|returadresse/i;
+const DEFAULT_HEADING_RE = /\b(default|general)\b/i;
+
+// Parse every "## ... return address" section out of the returns doc contents
+// and classify each as default/general or country-specific. Pure; no IO.
+export function parseReturnAddresses(
   returnsContents: string[],
-): { default: string | null; us: string | null } {
-  let def: string | null = null;
-  let us: string | null = null;
+): ReturnAddressEntry[] {
+  const entries: ReturnAddressEntry[] = [];
   for (const content of returnsContents) {
     const text = String(content || "").replace(/\r/g, "");
-    // Split into "## heading\n body" sections.
     const sectionRe = /##\s*(.+?)\n([\s\S]*?)(?=\n##\s|\n#\s|$)/g;
     let match: RegExpExecArray | null;
     while ((match = sectionRe.exec(text)) !== null) {
-      const heading = match[1].trim().toLowerCase();
+      const heading = match[1].trim();
       const body = match[2].trim();
-      if (!body) continue;
-      if (!def && /default\s+return\s+address|return\s+address\b(?!.*\bus\b)/i.test(heading) &&
-        !/\bus\b|united\s+states/i.test(heading)) {
-        def = body;
-      } else if (!us && /(us|u\.s\.|united\s+states)\s+return\s+address/i.test(heading)) {
-        us = body;
+      if (!body || !RETURN_ADDRESS_HEADING_RE.test(heading)) continue;
+      const label = heading.replace(RETURN_ADDRESS_HEADING_RE, " ");
+      const isDefault = DEFAULT_HEADING_RE.test(label) ||
+        normCountry(label).replace(/\b(amazon|orders?|and|the|for)\b/g, "").trim() === "";
+      if (isDefault) {
+        entries.push({ kind: "default", countries: [], address: body, heading });
+        continue;
       }
+      // Country-specific: collect alias-group members present anywhere in the
+      // heading, plus the raw label token(s) so unknown countries still match.
+      const blob = normCountry(heading);
+      const countries = new Set<string>();
+      for (const group of COUNTRY_ALIAS_GROUPS) {
+        if (group.some((g) => new RegExp(`\\b${g}\\b`).test(blob))) {
+          for (const g of group) countries.add(g);
+        }
+      }
+      for (const tok of normCountry(label).split(" ")) {
+        if (tok && !["amazon", "orders", "order", "and", "the", "for"].includes(tok)) {
+          countries.add(tok);
+        }
+      }
+      entries.push({ kind: "country", countries: [...countries], address: body, heading });
     }
   }
-  return { default: def, us };
+  return entries;
 }
 
-const US_COUNTRY_RE = /^(us|usa|u\.s\.a?\.?|united\s+states(?:\s+of\s+america)?)$/i;
+// Deterministic fallback country signal: standard Shopify contact-form fields
+// ("Your Country", "Shipping Country", "Country", then "Country Code"). Generic
+// across shops (same form fields parsed in customer-context.ts / language.ts);
+// used only when the LLM-extracted customer_country is empty, so the address
+// selector does not silently fall back to the default for a clearly-stated
+// foreign country (g-034). Pure; returns the raw value or null.
+const COUNTRY_FIELD_RES = [
+  /(?:^|\n)\s*(?:Your\s+Country|Shipping\s+Country|Country)\s*:\s*([^\n]+?)\s*(?=\n|$)/i,
+  /(?:^|\n)\s*Country\s+Code\s*:\s*([^\n]+?)\s*(?=\n|$)/i,
+];
+export function extractCustomerCountryFromText(
+  text: string | null | undefined,
+): string | null {
+  const body = String(text ?? "");
+  for (const re of COUNTRY_FIELD_RES) {
+    const m = body.match(re);
+    const v = m?.[1]?.trim();
+    if (v) return v;
+  }
+  return null;
+}
 
-// Choose which grounded address applies. US only when country clearly says US;
-// everything else (incl. unknown) → default (Denmark).
-export function resolveReturnCountryPreference(input: {
+function countryMatches(entry: ReturnAddressEntry, country: string): boolean {
+  const wanted = expandCountry(country);
+  if (wanted.size === 0) return false;
+  return entry.countries.some((c) => wanted.has(c));
+}
+
+// Select the return address for a customer. Country-specific exact match wins;
+// otherwise a single clear default; otherwise we refuse to guess (ask/route).
+export function selectReturnAddress(input: {
+  entries: ReturnAddressEntry[];
   orderCountry?: string | null;
   customerCountry?: string | null;
-}): "us" | "default" {
-  for (const c of [input.orderCountry, input.customerCountry]) {
-    const v = String(c ?? "").trim();
-    if (v && US_COUNTRY_RE.test(v)) return "us";
+}): ReturnAddressSelection {
+  const entries = Array.isArray(input.entries) ? input.entries : [];
+  const defaults = entries.filter((e) => e.kind === "default");
+  const countrySpecific = entries.filter((e) => e.kind === "country");
+  const country = [input.orderCountry, input.customerCountry]
+    .map((c) => String(c ?? "").trim())
+    .find((c) => c.length > 0) ?? "";
+
+  if (country) {
+    const match = countrySpecific.find((e) => countryMatches(e, country));
+    if (match) {
+      return { address: match.address, basis: "country_match", matchedCountry: country };
+    }
   }
-  return "default";
+  // Unknown country, or known but no country-specific match: fall back to a
+  // SINGLE clearly-marked default. Multiple defaults (or none) → never guess.
+  if (defaults.length === 1) {
+    return { address: defaults[0].address, basis: "default", matchedCountry: null };
+  }
+  return { address: null, basis: "ask_or_route", matchedCountry: null };
 }
 
-// All grounded return addresses (for the verifier guard).
+// All grounded return addresses (for the verifier guard). Pure.
 export function groundedReturnAddresses(
   returnsContents: string[],
 ): string[] {
-  const { default: def, us } = extractReturnAddresses(returnsContents);
-  return [def, us].filter((a): a is string => Boolean(a));
+  return parseReturnAddresses(returnsContents).map((e) => e.address);
 }
 
-// Writer directive: ground the return address + ordinary-return policy.
+// True when at least one parseable return-address section is present among the
+// retrieved chunks. Used by the pipeline to decide whether the deterministic
+// returns-doc fetch must run (vector recall often misses the tiny address chunk
+// even when other returns sections — return window, refund processing — are
+// retrieved). Pure.
+export function hasGroundedReturnAddressChunk(
+  chunks: ReturnsChunkLike[] | null | undefined,
+): boolean {
+  return parseReturnAddresses(selectReturnsPolicyContents(chunks)).length > 0;
+}
+
+// Writer directive: ground the selected return address + ordinary-return policy.
 export function buildReturnsGroundingDirective(opts: {
   isReturnRefundIntent: boolean;
-  addresses: { default: string | null; us: string | null };
-  countryPreference: "us" | "default";
+  selection: ReturnAddressSelection;
   orderNumber?: string | null;
 }): string {
   if (!opts.isReturnRefundIntent) return "";
-  const chosen = opts.countryPreference === "us"
-    ? (opts.addresses.us ?? opts.addresses.default)
-    : (opts.addresses.default ?? opts.addresses.us);
+  const chosen = opts.selection.address;
 
   const lines = ["# Returns & Refunds grounding (canonical — use VERBATIM)"];
   if (chosen) {
     lines.push(
-      `- Use ONLY this grounded return address (do NOT invent, paraphrase, or take an address from example emails):\n${chosen}`,
+      `- Use ONLY this grounded return address (do NOT invent, paraphrase, substitute another country's address, or take an address from example emails):\n${chosen}`,
     );
-    if (opts.countryPreference === "us") {
-      lines.push("- This is a US customer → use the US return address above.");
-    } else {
-      lines.push(
-        "- This is a non-US / EU / unknown-country customer → use the default (Denmark) return address above. Do NOT use the US address.",
-      );
-    }
+    lines.push(
+      "- This is the correct return address for this customer. Do NOT use any other return address that may appear elsewhere in context.",
+    );
   } else {
     lines.push(
-      "- No grounded return address is available. Do NOT state any return address — never invent one or use a placeholder. Say that we will send the correct return details, or ask for the order so we can follow up.",
+      "- No return address can be safely selected for this customer (unknown or ambiguous country). Do NOT state any return address — never invent, guess, or use a placeholder. Ask for the customer's country / order details, or route to review.",
     );
   }
   if (opts.orderNumber) {

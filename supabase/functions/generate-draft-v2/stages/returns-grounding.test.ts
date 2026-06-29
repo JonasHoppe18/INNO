@@ -1,11 +1,9 @@
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import {
-  buildReturnsGroundingDirective,
   detectFabricatedReturnAddress,
-  extractReturnAddresses,
   groundedReturnAddresses,
   isReturnRefundIntent,
-  resolveReturnCountryPreference,
+  parseReturnAddresses,
   type ReturnsChunkLike,
   selectReturnsPolicyContents,
   stripAddressLinesFromExample,
@@ -60,46 +58,7 @@ Deno.test("selectReturnsPolicyContents picks only the returns knowledge_document
   assert(got.some((c) => /Default return address/.test(c)));
 });
 
-Deno.test("extractReturnAddresses parses default + US blocks", () => {
-  const a = extractReturnAddresses(selectReturnsPolicyContents(returnsChunks));
-  assert(a.default?.includes("Øster Allé 56"));
-  assert(a.default?.includes("Denmark"));
-  assert(a.us?.includes("Prep Partners"));
-  assert(a.us?.includes("Rochester NH 03867"));
-});
-
-Deno.test("resolveReturnCountryPreference: US only when clearly US, else default", () => {
-  assertEquals(resolveReturnCountryPreference({ orderCountry: "US" }), "us");
-  assertEquals(resolveReturnCountryPreference({ customerCountry: "United States" }), "us");
-  assertEquals(resolveReturnCountryPreference({ orderCountry: "DE" }), "default");
-  assertEquals(resolveReturnCountryPreference({ orderCountry: "Germany" }), "default");
-  assertEquals(resolveReturnCountryPreference({}), "default");
-});
-
-Deno.test("directive: Germany/EU uses Denmark address, not US", () => {
-  const a = extractReturnAddresses(selectReturnsPolicyContents(returnsChunks));
-  const d = buildReturnsGroundingDirective({ isReturnRefundIntent: true, addresses: a, countryPreference: "default", orderNumber: "#4542" });
-  assert(d.includes("Øster Allé 56"));
-  assert(!d.includes("Prep Partners"));
-  assert(/Do NOT use the US address/i.test(d));
-  assert(/customer arranges and pays for return shipping|CUSTOMER arranges and pays/i.test(d));
-  assert(/Do NOT promise a prepaid return label/i.test(d));
-  assert(/assessed based on the returned item/i.test(d));
-  assert(d.includes("#4542"));
-});
-
-Deno.test("directive: US customer uses US address", () => {
-  const a = extractReturnAddresses(selectReturnsPolicyContents(returnsChunks));
-  const d = buildReturnsGroundingDirective({ isReturnRefundIntent: true, addresses: a, countryPreference: "us" });
-  assert(d.includes("Prep Partners"));
-  assert(d.includes("Rochester NH 03867"));
-});
-
-Deno.test("directive: no grounded address → forbid inventing, no placeholder", () => {
-  const d = buildReturnsGroundingDirective({ isReturnRefundIntent: true, addresses: { default: null, us: null }, countryPreference: "default" });
-  assert(/Do NOT state any return address/i.test(d));
-  assert(/never invent one or use a placeholder/i.test(d));
-});
+// Generic parse/select behavior is covered in return-address-selector.test.ts.
 
 Deno.test("verifier guard: blocks the fake placeholder address", () => {
   const draft = "Hi,\nPlease return to:\nAceZone Returns\n1234 Return St.\nCity, Postal Code";
@@ -143,7 +102,8 @@ Deno.test("selectReturnsPolicyContents works with RetrievedChunk document_catego
   ];
   const contents = selectReturnsPolicyContents(chunks);
   assertEquals(contents.length, 1);
-  assert(extractReturnAddresses(contents).default?.includes("Øster Allé 56"));
+  const entries = parseReturnAddresses(contents);
+  assert(entries.find((e) => e.kind === "default")?.address.includes("Øster Allé 56"));
 });
 
 Deno.test("groundedReturnAddresses returns both blocks", () => {

@@ -34,7 +34,10 @@ import {
   type StructuredFactProvenance,
 } from "./stages/provenance.ts";
 import { partitionLiveCommerceLegacy } from "./stages/live-commerce-retrieval-gate.ts";
-import { isReturnRefundIntent } from "./stages/returns-grounding.ts";
+import {
+  hasGroundedReturnAddressChunk,
+  isReturnRefundIntent,
+} from "./stages/returns-grounding.ts";
 import { runFactResolver } from "./stages/fact-resolver.ts";
 import {
   ActionProposal,
@@ -2087,10 +2090,16 @@ export async function runDraftV2Pipeline(
     // doc reaches the writer/verifier even when vector recall missed the tiny
     // address chunk (T-050835). Read-only; appended only for return/refund
     // intent and only when not already retrieved. No DB writes, no mutations.
+    //
+    // Gate on the ADDRESS chunk specifically (Q2b): the returns doc is chunked
+    // into many sections (return window, refund processing, opened/tested,
+    // addresses…). Retrieving a non-address section is NOT enough — it used to
+    // satisfy the old "any returns chunk" gate and skip the fetch, so the tiny
+    // address chunks (default + country-specific) never reached the selector and
+    // a US customer got the default address (g-034).
     if (isReturnRefundIntent(plan.primary_intent, latestBody)) {
-      const hasReturnsDoc = retrieved.chunks.some((c) =>
-        String(c.source_provider || "").toLowerCase() === "knowledge_document" &&
-        String(c.document_category || "").toLowerCase() === "returns"
+      const hasReturnsDoc = hasGroundedReturnAddressChunk(
+        retrieved.chunks as unknown as Parameters<typeof hasGroundedReturnAddressChunk>[0],
       );
       if (!hasReturnsDoc) {
         try {
