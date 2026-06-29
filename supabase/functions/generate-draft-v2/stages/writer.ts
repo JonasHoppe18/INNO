@@ -540,6 +540,100 @@ function factValue(facts: FactResolverResult, label: string): string {
   return facts.facts.find((f) => f.label === label)?.value ?? "";
 }
 
+type PolicyUseChunkLike = {
+  source_label?: string | null;
+  content?: string | null;
+  usable_as?: string | null;
+  source_provider?: string | null;
+  document_category?: string | null;
+};
+
+const POLICY_USE_INTENTS = new Set(["return", "refund", "exchange"]);
+const POLICY_USE_CONTEXT_RE =
+  /\b(return|refund|money\s+back|replacement|replace|repair|warranty|claim|defect|defective|broken|damaged|cracked|swap|send\s+(?:it|the\s+headset)\s+back|retur|refusion|garanti|reklamation|ombyt|erstatning)\b/i;
+const DIRECT_POLICY_CHUNK_RE =
+  /\b(return\s+for\s+swap|warranty\s+claims?|warranty\s+and\s+returns?|refund\s+policy|proof\s+of\s+purchase|repair\s+or\s+physical\s+damage|returns?\s*&\s*refunds?|return\s+window|return\s+shipping|refund\s+processing)\b/i;
+const TROUBLESHOOTING_POLICY_RE =
+  /\b(firmware|factory\s+reset|usb\s+driver|bluetooth|pairing|microphone\s+issues?|audio\s+troubleshooting|sound\s+enhancements|dongle)\b/i;
+
+function policyUseContextMatches(
+  plan: Plan,
+  latestCustomerMessage?: string,
+): boolean {
+  return POLICY_USE_INTENTS.has(plan.primary_intent) ||
+    plan.resolution_stage === "initiate_warranty_repair" ||
+    plan.resolution_stage === "request_evidence" ||
+    POLICY_USE_CONTEXT_RE.test(String(latestCustomerMessage ?? ""));
+}
+
+function policyUseChunkLabel(chunk: PolicyUseChunkLike): string {
+  const label = String(chunk.source_label ?? "").trim();
+  if (label) return label;
+  const text = String(chunk.content ?? "");
+  const heading = text.match(/^\s*#{1,3}\s+(.+)$/m)?.[1]?.trim();
+  return heading || "selected policy";
+}
+
+function isDirectPolicyUseChunk(chunk: PolicyUseChunkLike): boolean {
+  const labelAndContent = [
+    chunk.source_label,
+    chunk.document_category,
+    chunk.source_provider,
+    String(chunk.content ?? "").slice(0, 1000),
+  ].filter(Boolean).join("\n");
+  if (!DIRECT_POLICY_CHUNK_RE.test(labelAndContent)) return false;
+  if (String(chunk.usable_as ?? "").toLowerCase() === "ignore") return false;
+  // Troubleshooting chunks can be tagged policy/procedure; do not turn those
+  // into a policy workflow directive unless they also carry an explicit
+  // return/refund/warranty section.
+  if (
+    TROUBLESHOOTING_POLICY_RE.test(labelAndContent) &&
+    !/\b(return\s+for\s+swap|warranty\s+claims?|refund\s+policy|returns?\s*&\s*refunds?)\b/i
+      .test(labelAndContent)
+  ) {
+    return false;
+  }
+  return true;
+}
+
+export function buildSelectedPolicyUseDirective(input: {
+  plan: Plan;
+  latestCustomerMessage?: string;
+  chunks?: PolicyUseChunkLike[] | null;
+}): string {
+  if (!policyUseContextMatches(input.plan, input.latestCustomerMessage)) {
+    return "";
+  }
+  const policyChunks = (input.chunks ?? []).filter(isDirectPolicyUseChunk);
+  if (policyChunks.length === 0) return "";
+
+  const labels = [...new Set(policyChunks.map(policyUseChunkLabel))]
+    .slice(0, 3)
+    .join("; ");
+  const broadReturnsAppend = policyChunks.some((chunk) =>
+    /^returns\s*&\s*refunds$/i.test(String(chunk.source_label ?? "").trim())
+  );
+
+  const lines = [
+    "# Selected policy workflow (use before generic troubleshooting when it directly matches)",
+    `- Directly relevant selected policy context is present: ${labels}.`,
+    "- Use this selected policy path as the PRIMARY workflow when it matches the customer's requested outcome (return, refund, exchange, warranty, defect, replacement or repair).",
+    "- Explicitly name the workflow in the reply, e.g. warranty review, repair review, refund/return process, or return-for-swap process. Do not merely ask for a photo/order number without saying what policy path it supports.",
+    "- Ask only for fields listed in missing_required_fields or clearly required by the selected policy. Do not add extra requirements.",
+    "- Do not let troubleshooting context override this policy path when the customer is already asking for return/refund/warranty/replacement or reports physical damage/defect.",
+    "- Pure technical troubleshooting still comes first when the latest customer message only asks how to fix a technical issue and does not ask for return/refund/warranty/replacement.",
+  ];
+  if (broadReturnsAppend) {
+    lines.push(
+      "- The Returns & Refunds context may contain multiple broad sections. Use only the specific policy section that matches the current request; do not recite or dump the whole Returns & Refunds policy.",
+    );
+  }
+  lines.push(
+    "- Do NOT choose or invent a region-specific return address here. If an address is needed, use only the separate Returns & Refunds grounding block.",
+  );
+  return lines.join("\n");
+}
+
 // Concise authority hierarchy: verified live commerce/tracking facts outrank
 // Knowledge Docs and legacy knowledge, and missing live facts must never be
 // guessed. Rendered into every writer prompt.
@@ -1512,6 +1606,11 @@ Support replied: "${agentReply.slice(0, 500)}"`;
     orderNumber: caseState.entities.order_numbers[0] ??
       (factValue(facts, "Ordre fundet") || null),
   });
+  const selectedPolicyUseBlock = buildSelectedPolicyUseDirective({
+    plan,
+    latestCustomerMessage,
+    chunks: chunksForPrompt,
+  });
 
   // --- Verificerede fakta (deterministiske — brug disse frem for viden) ---
   const factsBlock = facts.facts.length > 0
@@ -1976,6 +2075,7 @@ ${stageDirectives[resolutionStage] ?? stageDirectives.info_only}`;
     stockLinkFallbackBlock,
     replacementFlowBlock,
     returnsGroundingBlock,
+    selectedPolicyUseBlock,
     sendReadyNextStepBlock,
     stockAvailabilityBlock,
     factsBlock,
