@@ -589,3 +589,31 @@ test("formatCandidateDiagnosticsSummary: unavailable + rendered lines", () => {
   assert.match(out, /final=0/);
   assert.match(out, /dropped after raw/);
 });
+
+// ---------------------------------------------------------------------------
+// Fix B: policy_fallback surfaced from matcher_debug into the funnel summary
+// ---------------------------------------------------------------------------
+test("summarizeCandidateDiagnostics: policy_fallback surfaced from opts.matcher", () => {
+  const cd = makeDiag({
+    raw: [GEN, OTHER],
+    scored: ["gen-1", "x-1"],
+    postDedupe: ["gen-1", "x-1"],
+    pool: ["gen-1", "x-1"],
+    final: ["gen-1"],
+    abstain: true,
+  });
+  const s = summarizeCandidateDiagnostics(cd, {
+    matcher: { abstained: true, fell_back: false, policy_fallback: true, policy_fallback_count: 1 },
+  });
+  assert.equal(s.policy_fallback, true);
+  assert.equal(s.policy_fallback_count, 1);
+  const out = formatCandidateDiagnosticsSummary(s);
+  assert.match(out, /policy_fallback=true\(1\)/);
+});
+
+test("summarizeCandidateDiagnostics: policy_fallback null when matcher omits it", () => {
+  const cd = makeDiag({ raw: [GEN], scored: ["gen-1"], pool: ["gen-1"], final: [] });
+  const s = summarizeCandidateDiagnostics(cd, { matcher: { fell_back: false } });
+  assert.equal(s.policy_fallback, null);
+  assert.equal(s.policy_fallback_count, null);
+});
