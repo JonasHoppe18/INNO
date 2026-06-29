@@ -520,6 +520,16 @@ export function summarizeCandidateDiagnostics(cd, opts = {}) {
   const fellBack = opts.matcher && typeof opts.matcher.fell_back === "boolean"
     ? opts.matcher.fell_back
     : null;
+  // Fix B: conservative policy/procedure passthrough that rescued already-pooled
+  // chunks after the matcher abstained. Lives on matcher_debug (opts.matcher).
+  const policyFallback =
+    opts.matcher && typeof opts.matcher.policy_fallback === "boolean"
+      ? opts.matcher.policy_fallback
+      : null;
+  const policyFallbackCount =
+    opts.matcher && typeof opts.matcher.policy_fallback_count === "number"
+      ? opts.matcher.policy_fallback_count
+      : null;
 
   return {
     available: true,
@@ -531,6 +541,8 @@ export function summarizeCandidateDiagnostics(cd, opts = {}) {
     final: finalIds.length,
     matcher_abstain: matcherAbstain,
     fell_back: fellBack,
+    policy_fallback: policyFallback,
+    policy_fallback_count: policyFallbackCount,
     top_candidates,
     tracked,
   };
@@ -549,7 +561,9 @@ export function formatCandidateDiagnosticsSummary(summary, { indent = "    " } =
       `(query_results=${summary.raw_query_results})`,
   );
   lines.push(
-    `${indent}matcher: abstain=${summary.matcher_abstain} fell_back=${summary.fell_back}`,
+    `${indent}matcher: abstain=${summary.matcher_abstain} fell_back=${summary.fell_back}` +
+      ` policy_fallback=${summary.policy_fallback}` +
+      (summary.policy_fallback_count ? `(${summary.policy_fallback_count})` : ""),
   );
   if (summary.top_candidates.length) {
     lines.push(`${indent}top candidates:`);
