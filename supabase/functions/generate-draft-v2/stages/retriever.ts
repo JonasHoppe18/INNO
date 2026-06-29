@@ -790,12 +790,23 @@ export function buildFallbackQueries(
   return [...byText.values()];
 }
 
-function sourceLabel(chunk: Record<string, unknown>): string {
+// Resolve a human-readable label from a chunk's metadata. Document chunks (e.g.
+// General knowledge) store their H2 under metadata.section_heading /
+// normalized_heading rather than metadata.title, so fall back to those. This is
+// label-only: it surfaces the existing heading to retrieval diagnostics and the
+// matcher's candidate title; it does not change retrieval, scoring, or selection.
+export function metadataLabelText(metadata: Record<string, unknown>): string {
+  return String(
+    metadata.title || metadata.name || metadata.label ||
+      metadata.section_heading || metadata.normalized_heading || "",
+  ).trim();
+}
+
+export function sourceLabel(chunk: Record<string, unknown>): string {
   const metadata = chunk.metadata && typeof chunk.metadata === "object"
     ? chunk.metadata as Record<string, unknown>
     : {};
-  const title = String(metadata.title || metadata.name || metadata.label || "")
-    .trim();
+  const title = metadataLabelText(metadata);
   const provider = String(
     chunk.source_provider ?? chunk.source_type ?? "knowledge",
   );
@@ -985,9 +996,7 @@ function diagnosticChunkMeta(row: Record<string, unknown>): {
   return {
     source_type: row.source_type != null ? String(row.source_type) : null,
     usable_as: classified.usable_as,
-    title: shortDiagnosticText(
-      metadata.title || metadata.name || metadata.label,
-    ),
+    title: shortDiagnosticText(metadataLabelText(metadata)),
     question: typeof metadata.question === "string"
       ? shortDiagnosticText(metadata.question)
       : null,
