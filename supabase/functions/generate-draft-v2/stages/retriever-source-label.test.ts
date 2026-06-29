@@ -14,14 +14,18 @@ import {
 
 Deno.test("metadataLabelText: section_heading is used when title/name/label absent", () => {
   assertEquals(
-    metadataLabelText({ section_heading: "Missing accessories and spare parts" }),
+    metadataLabelText({
+      section_heading: "Missing accessories and spare parts",
+    }),
     "Missing accessories and spare parts",
   );
 });
 
 Deno.test("metadataLabelText: normalized_heading is used as a fallback", () => {
   assertEquals(
-    metadataLabelText({ normalized_heading: "missing accessories and spare parts" }),
+    metadataLabelText({
+      normalized_heading: "missing accessories and spare parts",
+    }),
     "missing accessories and spare parts",
   );
 });
@@ -95,7 +99,10 @@ Deno.test("sourceLabel: provider only when no label available (unchanged)", () =
 
 // diagnosticChunkMeta is internal; exercise it through buildRetrievalCandidateDiagnostics,
 // which sets each query_results[].title via diagnosticChunkMeta.
-function chunk(id: string, overrides: Partial<RetrievedChunk> = {}): RetrievedChunk {
+function chunk(
+  id: string,
+  overrides: Partial<RetrievedChunk> = {},
+): RetrievedChunk {
   return {
     id,
     content: "policy content that must not be copied",
@@ -118,7 +125,8 @@ Deno.test("diagnosticChunkMeta (via diagnostics): section_heading surfaces as qu
   const id = "4577";
   const rowWithHeading = {
     id,
-    content: "# General Knowledge\n\n## Missing accessories and spare parts\n\n...",
+    content:
+      "# General Knowledge\n\n## Missing accessories and spare parts\n\n...",
     source_type: "document",
     source_provider: "knowledge_document",
     similarity: 0.7,
@@ -130,7 +138,12 @@ Deno.test("diagnosticChunkMeta (via diagnostics): section_heading surfaces as qu
     fallbackQueries: [],
     queryDefs: [{ text: "dongle replacement", productAgnostic: false }],
     queryPairs: [{ vector: [rowWithHeading], bm25: [] }],
-    fusedRaw: [{ id, score: 0.03, vectorSimilarity: 0.7, chunk: rowWithHeading }],
+    fusedRaw: [{
+      id,
+      score: 0.03,
+      vectorSimilarity: 0.7,
+      chunk: rowWithHeading,
+    }],
     scoredChunks: [c],
     candidatesPostDedupe: [c],
     matcherPool: [c],
@@ -141,6 +154,7 @@ Deno.test("diagnosticChunkMeta (via diagnostics): section_heading surfaces as qu
       product_boost: 0,
       issue_type_boost: 0,
       lexical_issue_boost: 0,
+      product_support_doc_boost: 0,
       source_type_boost: 0,
       usable_as_boost: 0,
       cross_product_penalty: 0,
@@ -162,7 +176,11 @@ Deno.test("runtime gate: unsupported category still blocked (unchanged by Fix A)
       category: "totally_unsupported_category",
       section_heading: "Random",
     },
-    plan: { primary_intent: "complaint", resolution_stage: "info_only", sub_queries: [] } as any,
+    plan: {
+      primary_intent: "complaint",
+      resolution_stage: "info_only",
+      sub_queries: [],
+    } as any,
     customerMessage: "hello",
     shop: { product_overview: "- A-Spire Wireless" },
   });

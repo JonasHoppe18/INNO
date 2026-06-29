@@ -1,99 +1,180 @@
 import { assertEquals } from "jsr:@std/assert@1";
 import { type RetrievedChunk, selectPolicyFallback } from "./retriever.ts";
 
-// Fix B.2: when the snippet matcher abstains (selects nothing), allow the top
-// already-pooled policy/procedure chunks through, gated on RETRIEVAL score
-// (chunk.similarity) relative to the strongest pool candidate — NOT matcher
-// relevance (which de-ranks guardrail chunks by design). Pure helper: no OpenAI.
-
-const OPTS = { max: 2, scoreRatio: 0.6 };
+const OPTS = {
+  max: 2,
+  scoreRatio: 0.6,
+  customerMessage: "I need help with a warranty claim",
+  plannerQueries: ["warranty claim procedure"],
+  issueTerms: ["warranty"],
+};
 
 function chunk(
   id: string,
   usable_as: RetrievedChunk["usable_as"],
   similarity: number,
+  overrides: Partial<RetrievedChunk> = {},
 ): RetrievedChunk {
   return {
     id,
     content: `content ${id}`,
     kind: "document",
     source_label: `knowledge_document: ${id}`,
+    source_title: id,
     similarity,
     usable_as,
     risk_flags: [],
     applies_to_all_products: false,
     chunk_issue_types: [],
     products: [],
+    ...overrides,
   } as RetrievedChunk;
 }
 
-Deno.test("1. policy chunk with strong retrieval score is rescued (no matcher relevance needed)", () => {
-  // Top pool score 0.80; policy at 0.78 clears 0.60*0.80=0.48. No ranked/relevance
-  // input exists at all — the helper does not depend on it.
-  const pool = [chunk("x-1", "fact", 0.80), chunk("4576", "policy", 0.78)];
-  const result = selectPolicyFallback(pool, OPTS);
-  assertEquals(result.map((c) => c.id), ["4576"]);
+function ids(result: ReturnType<typeof selectPolicyFallback>): string[] {
+  return result.chunks.map((c) => c.id);
+}
+
+Deno.test("Warranty claims beats Return for swap when customer/planner says warranty claim", () => {
+  const result = selectPolicyFallback([
+    chunk("return", "policy", 0.9, {
+      source_title: "Return for swap (warranty replacement)",
+      content: "Return the product for swap after troubleshooting.",
+    }),
+    chunk("claims", "policy", 0.75, {
+      source_title: "Warranty claims",
+      content:
+        "For warranty claims, ask for proof of purchase and issue evidence.",
+    }),
+  ], OPTS);
+
+  assertEquals(ids(result), ["claims", "return"]);
+  assertEquals(result.debug[0].chunk_id, "claims");
+  assertEquals(result.debug[0].overlap_reason !== "none", true);
 });
 
-Deno.test("2. policy chunk rescued on strong retrieval score even though matcher de-ranked it", () => {
-  // The fact that the matcher abstained (would have scored this low) is irrelevant
-  // here — eligibility is purely retrieval score. Top=0.70, floor=0.42, policy=0.69.
-  const pool = [chunk("top", "fact", 0.70), chunk("p1", "policy", 0.69)];
-  assertEquals(selectPolicyFallback(pool, OPTS).map((c) => c.id), ["p1"]);
+Deno.test("Cable and adapter compatibility is not rescued for power/reset intent without reset/power overlap", () => {
+  const result = selectPolicyFallback([
+    chunk("cable", "policy", 0.9, {
+      source_title: "Cable and adapter compatibility",
+      content: "Any standard USB-C cable works for charging.",
+    }),
+  ], {
+    max: 2,
+    scoreRatio: 0.6,
+    customerMessage:
+      "My A-Spire Wireless will not power on. How do I reset it?",
+    plannerQueries: ["A-Spire Wireless power reset"],
+    issueTerms: ["battery"],
+  });
+
+  assertEquals(ids(result), []);
 });
 
-Deno.test("3. procedure chunk with strong retrieval score is rescued", () => {
-  const pool = [chunk("g024", "procedure", 0.66), chunk("o", "background", 0.70)];
-  // top=0.70, floor=0.42, procedure 0.66 >= floor.
-  assertEquals(selectPolicyFallback(pool, OPTS).map((c) => c.id), ["g024"]);
+Deno.test("Factory reset is preferred over cable compatibility when both are in pool", () => {
+  const result = selectPolicyFallback([
+    chunk("cable", "policy", 0.9, {
+      source_title: "Cable and adapter compatibility",
+      content: "Any standard USB-C cable works for charging.",
+    }),
+    chunk("reset", "procedure", 0.7, {
+      source_title: "Factory reset",
+      content:
+        "To factory reset the headset, hold the power button for 15 seconds.",
+    }),
+  ], {
+    max: 2,
+    scoreRatio: 0.6,
+    customerMessage:
+      "My A-Spire Wireless will not power on. How do I reset it?",
+    plannerQueries: ["A-Spire Wireless factory reset power issue"],
+    issueTerms: ["battery"],
+  });
+
+  assertEquals(ids(result), ["reset"]);
 });
 
-Deno.test("4. policy/procedure chunk below the relative floor is not rescued", () => {
-  // top=0.90, floor=0.54; policy at 0.50 is below floor.
-  const pool = [chunk("strong", "fact", 0.90), chunk("weak-policy", "policy", 0.50)];
-  assertEquals(selectPolicyFallback(pool, OPTS), []);
+Deno.test("No fallback selection when policy chunks have no title/question/content intent overlap", () => {
+  const result = selectPolicyFallback([
+    chunk("policy", "policy", 0.9, {
+      source_title: "Shipping address changes",
+      content: "Ask the customer for the new delivery address.",
+    }),
+  ], {
+    max: 2,
+    scoreRatio: 0.6,
+    customerMessage: "I need help with a warranty claim",
+    plannerQueries: ["warranty claim procedure"],
+    issueTerms: ["warranty"],
+  });
+
+  assertEquals(ids(result), []);
 });
 
-Deno.test("5. fact/saved_reply/background/tone_example are never rescued, even with high score", () => {
-  const pool = [
-    chunk("f", "fact", 0.99),
-    chunk("s", "saved_reply", 0.98),
-    chunk("b", "background", 0.97),
-    chunk("t", "tone_example", 0.96),
-  ];
-  assertEquals(selectPolicyFallback(pool, OPTS), []);
+Deno.test("Accessory/missing-part intent does not rescue unrelated dongle troubleshooting chunks", () => {
+  const result = selectPolicyFallback([
+    chunk("pairing", "policy", 0.9, {
+      source_title: "Dongle pairing",
+      content: "Pair the headset with the dongle.",
+    }),
+    chunk("mic", "policy", 0.85, {
+      source_title: "Microphone works with the cable but not with the dongle",
+      content: "Reset the dongle driver in Device Manager.",
+    }),
+  ], {
+    max: 2,
+    scoreRatio: 0.6,
+    customerMessage: "I lost my dongle. Can I buy a replacement spare part?",
+    plannerQueries: ["missing dongle replacement spare part"],
+    issueTerms: ["accessory"],
+  });
+
+  assertEquals(ids(result), []);
 });
 
-Deno.test("6. cap max 2, ordered by retrieval score desc", () => {
-  const pool = [
-    chunk("p1", "policy", 0.70),
-    chunk("p2", "policy", 0.85),
-    chunk("p3", "procedure", 0.80),
-    chunk("p4", "policy", 0.78),
-  ];
-  // top=0.85, floor=0.51; all four clear it; top two by score = p2(0.85), p3(0.80).
-  assertEquals(selectPolicyFallback(pool, OPTS).map((c) => c.id), ["p2", "p3"]);
+Deno.test("Existing cap max 2 still applies after lexical ranking", () => {
+  const result = selectPolicyFallback([
+    chunk("p1", "policy", 0.9, {
+      source_title: "Warranty claims",
+      content: "Warranty claim process.",
+    }),
+    chunk("p2", "procedure", 0.85, {
+      source_title: "Warranty repair procedure",
+      content: "Warranty repair process.",
+    }),
+    chunk("p3", "policy", 0.84, {
+      source_title: "Warranty documentation",
+      content: "Warranty documentation process.",
+    }),
+  ], OPTS);
+
+  assertEquals(ids(result).length, 2);
 });
 
-Deno.test("7. helper is selection-agnostic; call-site guard keeps normal selection unchanged", () => {
-  // The retriever only invokes the helper when finalChunks is empty. The helper
-  // itself just reads the pool; an empty pool yields nothing.
-  assertEquals(selectPolicyFallback([], OPTS), []);
-  const pool = [chunk("p1", "policy", 0.7)];
-  assertEquals(selectPolicyFallback(pool, OPTS).map((c) => c.id), ["p1"]);
+Deno.test("fact/saved_reply/background/tone_example chunks are still never rescued", () => {
+  const result = selectPolicyFallback([
+    chunk("f", "fact", 0.99, { source_title: "Warranty claims" }),
+    chunk("s", "saved_reply", 0.98, { source_title: "Warranty claims" }),
+    chunk("b", "background", 0.97, { source_title: "Warranty claims" }),
+    chunk("t", "tone_example", 0.96, { source_title: "Warranty claims" }),
+  ], OPTS);
+
+  assertEquals(ids(result), []);
 });
 
-Deno.test("8. no chunks outside the supplied pool are introduced", () => {
-  const pool = [chunk("p1", "policy", 0.7), chunk("p2", "procedure", 0.65)];
-  const result = selectPolicyFallback(pool, OPTS);
-  const poolIds = new Set(pool.map((c) => c.id));
-  for (const c of result) assertEquals(poolIds.has(c.id), true);
-});
-
-Deno.test("empty / non-positive scores yield nothing (defensive)", () => {
-  assertEquals(selectPolicyFallback([chunk("p", "policy", 0)], OPTS), []);
+Deno.test("empty / below floor / non-positive scores yield nothing", () => {
+  assertEquals(ids(selectPolicyFallback([], OPTS)), []);
   assertEquals(
-    selectPolicyFallback([chunk("p", "policy", 0.9)], { max: 0, scoreRatio: 0.6 }),
+    ids(selectPolicyFallback([chunk("p", "policy", 0, {
+      source_title: "Warranty claims",
+    })], OPTS)),
+    [],
+  );
+  assertEquals(
+    ids(selectPolicyFallback([
+      chunk("strong", "fact", 0.9),
+      chunk("weak", "policy", 0.5, { source_title: "Warranty claims" }),
+    ], OPTS)),
     [],
   );
 });

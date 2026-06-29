@@ -33,6 +33,7 @@ const POLICY_FALLBACK_SCORE_RATIO = 0.6;
 const POLICY_FALLBACK_MAX = 2;
 const POLICY_FALLBACK_USABLE_AS: ReadonlySet<RetrievedChunk["usable_as"]> =
   new Set<RetrievedChunk["usable_as"]>(["policy", "procedure"]);
+const POLICY_FALLBACK_CONTENT_CHARS = 1200;
 const MAX_DIAGNOSTIC_QUERY_RESULTS = 200;
 const MAX_DIAGNOSTIC_CANDIDATES = 60;
 const MAX_DIAGNOSTIC_TEXT = 120;
@@ -80,6 +81,7 @@ export interface RetrievedChunk {
   product_id?: string | null;
   source_provider?: string | null;
   document_category?: string | null;
+  document_type?: string | null;
   knowledge_document_access_reason?: string | null;
   // Max cosine similarity (1 - distance) seen for this chunk across the vector
   // queries that surfaced it. null for BM25-only chunks (no vector score).
@@ -128,6 +130,7 @@ export interface RetrieverResult {
     policy_fallback?: boolean;
     policy_fallback_count?: number;
     policy_fallback_score_basis?: string | null;
+    policy_fallback_details?: PolicyFallbackDebug[];
   };
   candidate_diagnostics?: RetrievalCandidateDiagnostics;
 }
@@ -500,7 +503,8 @@ export function evaluateRuntimeKnowledgeDocumentAccess(input: {
   if (scopedMentionedProducts.length === 0) {
     const softwareIssue = isSoftwareConnectivityContext(input.customerMessage);
     if (softwareIssue) {
-      const sectionHeading = String(metadata.section_heading || "").toLowerCase();
+      const sectionHeading = String(metadata.section_heading || "")
+        .toLowerCase();
       const titleText = extractKnowledgeDocumentTitleText({
         content: input.content,
         metadata,
@@ -520,9 +524,12 @@ export function evaluateRuntimeKnowledgeDocumentAccess(input: {
   // adapter / accessory compatibility. Heading-constrained so unrelated product
   // sections never leak in on a bare accessory question.
   if (scopedMentionedProducts.length === 0) {
-    const accessoryIssue = isAccessoryCompatibilityContext(input.customerMessage);
+    const accessoryIssue = isAccessoryCompatibilityContext(
+      input.customerMessage,
+    );
     if (accessoryIssue) {
-      const sectionHeading = String(metadata.section_heading || "").toLowerCase();
+      const sectionHeading = String(metadata.section_heading || "")
+        .toLowerCase();
       if (hasAccessoryCompatibilityHeading(sectionHeading)) {
         return { allowed: true, reason: "cross_product_accessory_context" };
       }
@@ -713,6 +720,24 @@ export interface RetrievalCandidateDiagnostics {
   matcher_selected_ids: string[];
   matcher_abstain: boolean | null;
   final_selected_ids: string[];
+  final_chunks: Array<{
+    id: string;
+    title: string | null;
+    usable_as: RetrievedChunk["usable_as"];
+    source_type: string | null;
+    source_provider: string | null;
+    category: string | null;
+    document_category: string | null;
+    document_type: string | null;
+    score: number;
+    base_score: number;
+    final_score: number;
+    vector_similarity: number | null;
+    excerpt: string;
+    selected_by_policy_fallback: boolean;
+    fallback_ranking_score: number | null;
+    fallback_overlap_reason: string | null;
+  }>;
   // B2 eval-only observability for the metadata-based product scorer. Lets the
   // golden runner see exactly which resolved product term matched which chunk's
   // products[] metadata, and the resulting boost/penalty — without re-deriving
@@ -809,19 +834,228 @@ export function buildFallbackQueries(
   return [...byText.values()];
 }
 
-// Fix B.2 — conservative policy/procedure fallback. Selects from the EXISTING
-// matcher pool only (already product/category/runtime-gated and score-ordered);
-// it never pulls new chunks and never bypasses a gate. Eligibility:
+type PolicyFallbackIntentKind = "power_reset" | "warranty" | "accessory";
+
+export type PolicyFallbackDebug = {
+  chunk_id: string;
+  ranking_score: number;
+  overlap_reason: string;
+  title_question_overlap: number;
+  content_overlap: number;
+  issue_tag_overlap: number;
+};
+
+export type PolicyFallbackResult = {
+  chunks: RetrievedChunk[];
+  debug: PolicyFallbackDebug[];
+};
+
+const POWER_RESET_TERMS = [
+  "power",
+  "powers",
+  "reset",
+  "factory",
+  "charging",
+  "charge",
+  "charger",
+  "tænder",
+  "oplade",
+  "oplader",
+];
+const POWER_RESET_REQUIRED_TERMS = [
+  "power",
+  "powers",
+  "reset",
+  "factory",
+  "tænder",
+];
+const WARRANTY_TERMS = [
+  "warranty",
+  "claim",
+  "claims",
+  "defect",
+  "defective",
+  "repair",
+  "replacement",
+  "garanti",
+  "reklamation",
+];
+const ACCESSORY_TERMS = [
+  "accessory",
+  "accessories",
+  "replacement",
+  "replace",
+  "missing",
+  "lost",
+  "broken",
+  "spare",
+  "part",
+  "parts",
+  "dongle",
+  "tilbehør",
+  "reservedele",
+  "mangler",
+  "mistet",
+];
+const ACCESSORY_REQUIRED_TERMS = ACCESSORY_TERMS.filter((term) =>
+  term !== "dongle"
+);
+
+function includesAnyText(haystack: string, terms: string[]): boolean {
+  const normalized = stripHtml(haystack).toLowerCase();
+  return terms.some((term) => normalized.includes(term.toLowerCase()));
+}
+
+function fallbackIntentKinds(text: string): PolicyFallbackIntentKind[] {
+  const kinds: PolicyFallbackIntentKind[] = [];
+  if (includesAnyText(text, POWER_RESET_TERMS)) kinds.push("power_reset");
+  if (includesAnyText(text, WARRANTY_TERMS)) kinds.push("warranty");
+  if (includesAnyText(text, ACCESSORY_TERMS)) kinds.push("accessory");
+  return kinds;
+}
+
+function fallbackIntentTerms(input: {
+  customerMessage?: string;
+  plannerQueries?: string[];
+  issueTerms?: string[];
+}): string[] {
+  const source = [
+    input.customerMessage ?? "",
+    ...(input.plannerQueries ?? []),
+    ...(input.issueTerms ?? []),
+  ].join(" ");
+  const focused = [
+    ...POWER_RESET_TERMS,
+    ...WARRANTY_TERMS,
+    ...ACCESSORY_TERMS,
+    ...(input.issueTerms ?? []),
+  ].filter((term) => includesAnyText(source, [term]));
+  return uniqueStrings(focused);
+}
+
+function fallbackTextParts(chunk: RetrievedChunk): {
+  titleQuestion: string;
+  content: string;
+  all: string;
+} {
+  const titleQuestion = [
+    chunk.source_title ?? "",
+    chunk.source_label ?? "",
+    chunk.question ?? "",
+  ].join(" ");
+  const content = String(chunk.content ?? "").slice(
+    0,
+    POLICY_FALLBACK_CONTENT_CHARS,
+  );
+  return {
+    titleQuestion,
+    content,
+    all: `${titleQuestion} ${content}`,
+  };
+}
+
+function tokenOverlapSize(haystack: string, needles: string[]): number {
+  const haystackTokens = new Set(tokenize(haystack));
+  return needles.filter((term) =>
+    haystackTokens.has(term) || includesAnyText(haystack, [term])
+  ).length;
+}
+
+function policyFallbackCandidateScore(input: {
+  chunk: RetrievedChunk;
+  intentText: string;
+  intentTerms: string[];
+  intentKinds: PolicyFallbackIntentKind[];
+  issueTerms: string[];
+}): PolicyFallbackDebug & { eligible: boolean } {
+  const { chunk, intentText, intentTerms, intentKinds, issueTerms } = input;
+  const parts = fallbackTextParts(chunk);
+  const titleQuestionOverlap = tokenOverlapSize(
+    parts.titleQuestion,
+    intentTerms,
+  );
+  const contentOverlap = tokenOverlapSize(parts.content, intentTerms);
+  const issueTagOverlap =
+    (chunk.chunk_issue_types ?? []).filter((tag) =>
+      issueTerms.includes(tag) || includesAnyText(intentText, [tag])
+    ).length;
+
+  const hasDirectOverlap = titleQuestionOverlap > 0 || contentOverlap > 0 ||
+    issueTagOverlap > 0;
+  const lowerTitle = parts.titleQuestion.toLowerCase();
+  const lowerAll = parts.all.toLowerCase();
+  const isCompatibilityOnly =
+    /\b(cable|adapter|compatibility|usb-c|usb)\b/i.test(lowerTitle) &&
+    !includesAnyText(lowerAll, POWER_RESET_REQUIRED_TERMS);
+
+  let eligible = hasDirectOverlap;
+  const reasons: string[] = [];
+  if (titleQuestionOverlap > 0) {
+    reasons.push(`title_question:${titleQuestionOverlap}`);
+  }
+  if (contentOverlap > 0) reasons.push(`content:${contentOverlap}`);
+  if (issueTagOverlap > 0) reasons.push(`issue_tag:${issueTagOverlap}`);
+
+  if (intentKinds.includes("power_reset")) {
+    if (!includesAnyText(lowerAll, POWER_RESET_REQUIRED_TERMS)) {
+      eligible = false;
+      reasons.push("blocked:missing_power_reset_overlap");
+    }
+    if (isCompatibilityOnly) {
+      eligible = false;
+      reasons.push("blocked:compatibility_only_for_power_reset");
+    }
+  }
+
+  if (intentKinds.includes("accessory")) {
+    if (!includesAnyText(lowerAll, ACCESSORY_REQUIRED_TERMS)) {
+      eligible = false;
+      reasons.push("blocked:accessory_intent_without_accessory_overlap");
+    }
+  }
+
+  const warrantyClaimsBonus =
+    intentKinds.includes("warranty") && /\bwarranty claims?\b/i.test(lowerTitle)
+      ? 0.18
+      : 0;
+  const procedureBonus = chunk.usable_as === "procedure" ? 0.03 : 0;
+  const rankingScore = chunk.similarity +
+    titleQuestionOverlap * 0.04 +
+    contentOverlap * 0.015 +
+    issueTagOverlap * 0.025 +
+    procedureBonus +
+    warrantyClaimsBonus;
+
+  return {
+    chunk_id: String(chunk.id),
+    ranking_score: Number(rankingScore.toFixed(12)),
+    overlap_reason: reasons.join(",") || "none",
+    title_question_overlap: titleQuestionOverlap,
+    content_overlap: contentOverlap,
+    issue_tag_overlap: issueTagOverlap,
+    eligible,
+  };
+}
+
+// Fix B.2 narrowing — conservative policy/procedure fallback. Selects from the
+// EXISTING matcher pool only (already product/category/runtime-gated); it never
+// pulls new chunks and never bypasses a gate. Eligibility:
 //   - usable_as ∈ {policy, procedure} (never fact/saved_reply/background/etc.)
-//   - retrieval score (chunk.similarity) is competitive with the strongest pool
-//     candidate: similarity >= topPoolScore * scoreRatio and > 0.
-// Deliberately does NOT use matcher relevance (the matcher de-ranks guardrail
-// chunks by design, so gating on it is circular). Returns at most `max` chunks,
-// ordered by retrieval score desc. Pure: no IO, deterministic.
+//   - retrieval score is competitive with the strongest pool candidate
+//   - direct lexical intent overlap with title/question/content/issue tags
+// Low-risk intent guards prevent generic compatibility or unrelated dongle
+// troubleshooting chunks from being rescued for power/reset or missing-part
+// requests. Pure: no IO, deterministic.
 export function selectPolicyFallback(
   pool: RetrievedChunk[],
-  opts: { max: number; scoreRatio: number },
-): RetrievedChunk[] {
+  opts: {
+    max: number;
+    scoreRatio: number;
+    customerMessage?: string;
+    plannerQueries?: string[];
+    issueTerms?: string[];
+  },
+): PolicyFallbackResult {
   const chunks = pool ?? [];
   const score = (c: RetrievedChunk) =>
     typeof c.similarity === "number" ? c.similarity : 0;
@@ -829,16 +1063,45 @@ export function selectPolicyFallback(
   // chunk must be competitive with the best retrieved candidate, not merely the
   // best among weak policy chunks.
   const topPoolScore = chunks.reduce((m, c) => Math.max(m, score(c)), 0);
-  if (!(topPoolScore > 0)) return [];
+  if (!(topPoolScore > 0)) return { chunks: [], debug: [] };
   const floor = topPoolScore * opts.scoreRatio;
-  return chunks
-    .filter((c) =>
-      POLICY_FALLBACK_USABLE_AS.has(c.usable_as) &&
-      score(c) > 0 &&
-      score(c) >= floor
+  const intentText = [
+    opts.customerMessage ?? "",
+    ...(opts.plannerQueries ?? []),
+    ...(opts.issueTerms ?? []),
+  ].join(" ");
+  const intentTerms = fallbackIntentTerms(opts);
+  const intentKinds = fallbackIntentKinds(intentText);
+  const issueTerms = opts.issueTerms ?? [];
+  const ranked = chunks
+    .map((chunk) => ({
+      chunk,
+      debug: policyFallbackCandidateScore({
+        chunk,
+        intentText,
+        intentTerms,
+        intentKinds,
+        issueTerms,
+      }),
+    }))
+    .filter(({ chunk, debug }) =>
+      POLICY_FALLBACK_USABLE_AS.has(chunk.usable_as) &&
+      score(chunk) > 0 &&
+      score(chunk) >= floor &&
+      debug.eligible
     )
-    .sort((a, b) => score(b) - score(a))
+    .sort((a, b) =>
+      b.debug.ranking_score - a.debug.ranking_score ||
+      score(b.chunk) - score(a.chunk)
+    )
     .slice(0, Math.max(0, opts.max));
+  return {
+    chunks: ranked.map(({ chunk }) => chunk),
+    debug: ranked.map(({ debug }) => {
+      const { eligible: _eligible, ...rest } = debug;
+      return rest;
+    }),
+  };
 }
 
 // Resolve a human-readable label from a chunk's metadata. Document chunks (e.g.
@@ -1144,15 +1407,14 @@ export function buildScoreBreakdown(input: {
   const issueTypeBoost = taggedIssueOverlap * 0.06;
   const lexicalIssueOverlap = overlapCount(text, issueTerms);
   const lexicalIssueBoost = lexicalIssueOverlap * 0.02;
-  const productSupportDocBoost =
-    isProductSupportKnowledgeDoc &&
+  const productSupportDocBoost = isProductSupportKnowledgeDoc &&
       (chunk.knowledge_document_access_reason === "same_product_context" ||
         isEarPadsAccess ||
         isCrossProductSoftwareAccess) &&
       (productSupportScopeMatch || isCrossProductSoftwareAccess) &&
       hasLexicalIssueSignal(text, issueTerms)
-      ? 0.16
-      : 0;
+    ? 0.16
+    : 0;
   const sourceTypeBoost =
     /manual_text|snippet/i.test(`${chunk.source_label} ${chunk.kind}`)
       ? 0.04
@@ -1260,6 +1522,35 @@ export function buildRetrievalCandidateDiagnostics(input: {
     ),
     matcher_abstain: input.matcherDebug?.abstained ?? null,
     final_selected_ids: input.finalChunks.map((chunk) => String(chunk.id)),
+    final_chunks: input.finalChunks.map((chunk) => {
+      const breakdown = input.scoreBreakdown(chunk);
+      const fallbackDetails = input.matcherDebug?.policy_fallback_details?.find(
+        (d) => String(d.chunk_id) === String(chunk.id),
+      );
+      const selectedByPolicyFallback =
+        Boolean(input.matcherDebug?.policy_fallback) &&
+        Boolean(fallbackDetails);
+      return {
+        id: String(chunk.id),
+        title: shortDiagnosticText(
+          chunk.source_title ?? chunk.source_label ?? "",
+        ),
+        usable_as: chunk.usable_as,
+        source_type: chunk.kind ?? null,
+        source_provider: chunk.source_provider ?? null,
+        category: chunk.document_category ?? null,
+        document_category: chunk.document_category ?? null,
+        document_type: chunk.document_type ?? null,
+        score: chunk.similarity,
+        base_score: breakdown.base_score,
+        final_score: breakdown.final_score,
+        vector_similarity: chunk.vector_similarity ?? null,
+        excerpt: shortDiagnosticText(chunk.content ?? "") ?? "",
+        selected_by_policy_fallback: selectedByPolicyFallback,
+        fallback_ranking_score: fallbackDetails?.ranking_score ?? null,
+        fallback_overlap_reason: fallbackDetails?.overlap_reason ?? null,
+      };
+    }),
     ...(input.mentionedProductsResolved
       ? {
         product_scoring: {
@@ -1770,6 +2061,7 @@ export async function runRetriever(
         document_category: isKnowledgeDocumentProvider(sourceProvider)
           ? String(meta.category || "").trim() || null
           : null,
+        document_type: String(meta.document_type || "").trim() || null,
         knowledge_document_access_reason: accessDecision?.reason ?? null,
         vector_similarity: r.vectorSimilarity,
         question: typeof meta.question === "string" ? meta.question : null,
@@ -1880,13 +2172,18 @@ export async function runRetriever(
       // de-ranks guardrail chunks by design). Conservative + capped; normal
       // selection is untouched when the matcher picked anything.
       let policyFallback = false;
+      let policyFallbackDetails: PolicyFallbackDebug[] = [];
       if (finalChunks.length === 0) {
         const rescued = selectPolicyFallback(pool, {
           max: POLICY_FALLBACK_MAX,
           scoreRatio: POLICY_FALLBACK_SCORE_RATIO,
+          customerMessage,
+          plannerQueries,
+          issueTerms,
         });
-        if (rescued.length > 0) {
-          finalChunks = rescued;
+        if (rescued.chunks.length > 0) {
+          finalChunks = rescued.chunks;
+          policyFallbackDetails = rescued.debug;
           policyFallback = true;
         }
       }
@@ -1913,7 +2210,10 @@ export async function runRetriever(
         fell_back: false,
         policy_fallback: policyFallback,
         policy_fallback_count: policyFallback ? finalChunks.length : 0,
-        policy_fallback_score_basis: policyFallback ? "retrieval_score" : null,
+        policy_fallback_score_basis: policyFallback
+          ? "retrieval_score_plus_lexical_intent"
+          : null,
+        policy_fallback_details: policyFallback ? policyFallbackDetails : [],
       };
     } catch (err) {
       // Additive layer: never make things worse than today. Keep regularChunks.
