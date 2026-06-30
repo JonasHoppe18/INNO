@@ -40,8 +40,10 @@ export type ImageEvidenceClaimCheckResult = {
 
 // Image-anchored "I have seen / the image shows / from the image" assertions.
 const CLAIM_PATTERNS: RegExp[] = [
-  // DA — "jeg har set (de/dine/det) (vedhæftede) billede(t|rne|r)"
-  /\bjeg\s+har\s+set\s+(?:de\s+|dine\s+|det\s+)?(?:vedhæftede\s+)?billede(?:rne|r|t)?\b/i,
+  // DA — "jeg har set/kigget (nærmere) (på) (de/dine/det) (vedhæftede)
+  // billede(t|rne|r) / foto(et|s)". The image noun stays required, so
+  // "jeg har kigget på din ordre" does NOT match.
+  /\bjeg\s+har\s+(?:set|kigget)\s+(?:nærmere\s+)?(?:på\s+)?(?:de\s+|dine\s+|det\s+)?(?:vedhæftede\s+)?(?:billede(?:rne|r|t)?|foto(?:et|s)?)\b/i,
   // DA — "ud fra billedet/billederne"
   /\bud\s+fra\s+billede(?:rne|t|r)?\b/i,
   // DA — "på billedet/billederne kan jeg se"

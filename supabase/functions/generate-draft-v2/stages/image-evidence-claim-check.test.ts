@@ -141,3 +141,58 @@ Deno.test("regression: deployed smoke-D failure string with no evidence → viol
   assertEquals(r.compliant, false);
   assert(r.violations.some((v) => v.type === VIOLATION));
 });
+
+// ── AZ-1b.1: preposition variants the v297 guard misses ─────────────────────
+
+// ── 13. "set PÅ de vedhæftede billeder" (v297 smoke-A2 miss) → violation ─────
+Deno.test("DA 'har set på de vedhæftede billeder' with no evidence → no_image_evidence", () => {
+  const r = checkImageEvidenceClaims({
+    draft_text:
+      "Jeg har set på de vedhæftede billeder, og det ser ud til at være en fysisk skade.",
+    image_evidence_count: 0,
+  });
+  assertEquals(r.compliant, false);
+  assertEquals(r.requires_review, true);
+  assert(r.violations.some((v) => v.type === VIOLATION));
+});
+
+// ── 14. Same "set på" variant WITH real image evidence → compliant ──────────
+Deno.test("DA 'har set på de vedhæftede billeder' with 1 real image → compliant", () => {
+  const r = checkImageEvidenceClaims({
+    draft_text:
+      "Jeg har set på de vedhæftede billeder, og det ser ud til at være en fysisk skade.",
+    image_evidence_count: 1,
+  });
+  assertEquals(r.compliant, true);
+  assertEquals(r.violations.length, 0);
+});
+
+// ── 15. "kigget på billederne" with no evidence → violation ─────────────────
+Deno.test("DA 'har kigget på billederne' with no evidence → no_image_evidence", () => {
+  const r = checkImageEvidenceClaims({
+    draft_text: "Jeg har kigget på billederne, og det ligner en fysisk skade.",
+    image_evidence_count: 0,
+  });
+  assertEquals(r.compliant, false);
+  assert(r.violations.some((v) => v.type === VIOLATION));
+});
+
+// ── 16. Same "kigget på billederne" WITH real image evidence → compliant ────
+Deno.test("DA 'har kigget på billederne' with 1 real image → compliant", () => {
+  const r = checkImageEvidenceClaims({
+    draft_text: "Jeg har kigget på billederne, og det ligner en fysisk skade.",
+    image_evidence_count: 1,
+  });
+  assertEquals(r.compliant, true);
+  assertEquals(r.violations.length, 0);
+});
+
+// ── 17. False-positive guard: "kigget på" without an image noun → compliant ─
+Deno.test("DA 'har kigget på din ordre' (no image noun) → compliant", () => {
+  const r = checkImageEvidenceClaims({
+    draft_text: "Jeg har kigget på din ordre.",
+    image_evidence_count: 0,
+  });
+  assertEquals(r.compliant, true);
+  assertEquals(r.violations.length, 0);
+});
