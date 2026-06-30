@@ -136,6 +136,37 @@ Deno.test("invoice-sent claim with executed invoice action → compliant", () =>
   assertEquals(r.violations.length, 0);
 });
 
+// ── 8b. AZ-1: "forwarded the invoice" (no executed action) → violation ──────
+Deno.test("invoice-forwarded claim without executed invoice action → not_executed_invoice", () => {
+  const r = checkLiveFactAndActionClaims({
+    draft_text: "I've forwarded the invoice to your email.",
+    facts: [],
+  });
+  assertEquals(r.compliant, false);
+  assert(r.violations.some((v) => v.type === "action/not_executed_invoice"));
+});
+
+// ── 8c. AZ-1: Danish "videresendt din faktura" (no executed action) → violation ──
+Deno.test("Danish: invoice forwarded (videresendt) without executed action → not_executed_invoice", () => {
+  const r = checkLiveFactAndActionClaims({
+    draft_text: "Jeg har videresendt din faktura.",
+    facts: [],
+  });
+  assertEquals(r.compliant, false);
+  assert(r.violations.some((v) => v.type === "action/not_executed_invoice"));
+});
+
+// ── 8d. AZ-1: forwarded invoice WITH executed invoice action → compliant ─────
+Deno.test("invoice-forwarded claim with executed invoice action → compliant", () => {
+  const r = checkLiveFactAndActionClaims({
+    draft_text: "Jeg har videresendt din faktura.",
+    facts: [],
+    executed_action_types: ["resend_confirmation_or_invoice"],
+  });
+  assertEquals(r.compliant, true);
+  assertEquals(r.violations.length, 0);
+});
+
 // ── 9. Order cancelled, no executed cancel → violation ──────────────────────
 Deno.test("cancelled claim without executed cancel_order → not_executed_cancel", () => {
   const r = checkLiveFactAndActionClaims({

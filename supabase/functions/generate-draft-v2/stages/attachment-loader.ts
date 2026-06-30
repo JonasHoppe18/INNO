@@ -35,6 +35,10 @@ function parseInlineStoragePath(
 
 const MAX_IMAGES = 3;
 const MAX_TOTAL_BYTES = 4 * 1024 * 1024;
+// Inline (cid:) images at or below this size are treated as email signature /
+// logo assets, not customer evidence. Large inline images (e.g. an embedded
+// screenshot) are kept — the gate is ContentID AND small, never ContentID alone.
+const INLINE_LOGO_MAX_BYTES = 50 * 1024;
 
 export async function loadImageAttachments(
   supabase: SupabaseClient,
@@ -44,7 +48,7 @@ export async function loadImageAttachments(
 
   const { data: rows, error } = await supabase
     .from("mail_attachments")
-    .select("filename, mime_type, size_bytes, storage_path")
+    .select("filename, mime_type, size_bytes, storage_path, provider_attachment_id")
     .eq("message_id", messageId)
     .order("created_at", { ascending: true })
     .limit(8);
@@ -62,6 +66,11 @@ export async function loadImageAttachments(
     if (!parsed) continue;
     const bytes = Math.floor((parsed.contentBase64.length * 3) / 4);
     if (bytes <= 0) continue;
+    // Skip inline signature/logo assets: a Content-ID (provider_attachment_id)
+    // marks an embedded cid: image, and a small size marks it as a logo rather
+    // than real customer evidence. Both conditions must hold.
+    const isInline = String(row?.provider_attachment_id || "").trim().length > 0;
+    if (isInline && bytes <= INLINE_LOGO_MAX_BYTES) continue;
     if (totalBytes + bytes > MAX_TOTAL_BYTES) break;
     totalBytes += bytes;
     accepted.push({

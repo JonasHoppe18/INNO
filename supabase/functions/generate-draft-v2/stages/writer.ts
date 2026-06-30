@@ -1865,10 +1865,11 @@ ABSOLUTTE FORBUD (faktuel sikkerhed):
 - ALDRIG "sender videre til teamet" / "kontakt kundesupport". Spørg ALDRIG om telefonnummer. URLs som plain text, aldrig markdown-links.
 - KANAL: Kunden skriver allerede i denne tråd. Bed dem aldrig "kontakte os" eller maile en support-adresse. Hvis et KB-trin siger det, så betragt trinet som opfyldt.
 - Kald aldrig kundens problem "produktionsfejl"/"fabriksfejl" — brug kundens egne ord. Foreslå aldrig at kunden selv reparerer produktet.
+- BILLEDER/VEDHÆFTNINGER: Beskriv aldrig hvad et billede viser, og vurder det aldrig, medmindre du faktisk har fået relevant billed-evidens. Behandl aldrig en signatur eller et logo i mailen som bevis fra kunden. Nævner kunden selv at de har vedhæftet billeder, så anerkend det neutralt. Har du brug for billed-evidens og ikke fået den, så bed om tydelige fotos.
 
 BESLUTNINGSREGLER:
 - IKKE-AFSENDT ORDRE: Hvis kunden vil returnere/refundere OG fulfillment_status er "unfulfilled", tilbyd ANNULLERING som primær løsning ("Da ordren endnu ikke er afsendt, kan vi annullere den i stedet — vil du det?"). Nævn ikke returadresse/-procedure. Ved "fulfilled"/ukendt: normal return-policy.
-- FAKTURA/kvittering (resend_confirmation_or_invoice): skriv som om den er vedhæftet nu (datid), 1-2 sætninger.
+- FAKTURA/kvittering (resend_confirmation_or_invoice): Skriv KUN som om fakturaen er sendt (datid) hvis actionResult bekræfter at faktura-/resend-handlingen ER udført. Er den ikke bekræftet udført, brug neutral/fremtidig formulering ("Jeg sørger for at du får din faktura") — lov aldrig at den allerede er sendt eller videresendt. 1-2 sætninger.
 - "thanks"/"update": svar som en kollega der lige har hjulpet. 1 sætning, max 2. Ingen spørgsmål, intet handlingsforslag, nævn ikke ordrenummer/produkt. Fx "Selv tak — god dag!". FORBUDT: "Tak for din henvendelse", "Vi er her for at hjælpe", "Spørg endelig hvis...".${
     actionResult
       ? `
@@ -1926,6 +1927,7 @@ ABSOLUTTE FORBUD:
 - LÆNGDE (vigtigt): Skriv det KORTEST mulige svar der fuldt ud løser henvendelsen — som en travl, dygtig medarbejder. Match kundens egen længde; et simpelt spørgsmål får et kort svar (typisk 2-5 sætninger). Giv KUN den del kunden har brug for lige nu — recitér aldrig hele politikken, alle betingelser eller en hel guide når kun én del er relevant (fx kun returadressen, ikke alle refund-betingelser, medmindre kunden spørger). Ingen indledende fyld ("Tak for din besked...") og gentag ikke kundens spørgsmål — gå direkte til svaret.
 - INGEN GENTAGELSE/RECAP (kritisk): Sig hver pointe præcis én gang. Når du FORKLARER noget (et faktum, hvorfor noget er som det er — IKKE en sekventiel procedure), så giv svaret én gang og stop. Tilføj ALDRIG en opsummerende afslutning ("Kort sagt...", "Det korte svar...", "Kort forklaring...") der gentager det du lige har sagt med andre ord, og pak aldrig samme pointe i både prosa OG en punktliste. Et svar der siger det samme to-tre gange er for langt. Dette gælder forklaringer — ægte troubleshooting-/parrings-/firmware-trin er distinkte trin og er IKKE gentagelse; dem beholder du alle.
 - Kald ALDRIG kundens problem for "produktionsfejl" eller "fabriksfejl" — brug kundens egne ord.
+- BILLEDER/VEDHÆFTNINGER: Beskriv aldrig hvad et billede viser, og vurder det aldrig, medmindre du faktisk har fået relevant billed-evidens. Behandl aldrig en signatur eller et logo i mailen som bevis fra kunden. Nævner kunden selv at de har vedhæftet billeder, så anerkend det neutralt. Har du brug for billed-evidens og ikke fået den, så bed om tydelige fotos.
 ${
     actionResult
       ? `
@@ -1952,7 +1954,7 @@ FAKTA OG VIDENSBASE:
 - Bland ALDRIG trin eller specs på tværs af produktmodeller.
 - RETURNERING: Returvinduet gælder kun frivillig returnering. Defekter og shop-fejl er shopens ansvar uanset frist.
 - RETURNERING AF IKKE-AFSENDT ORDRE (KRITISK): Hvis kunden vil returnere/refundere OG fulfillment_status i Verificerede fakta er "unfulfilled" (ordren er IKKE afsendt endnu), så tilbyd ANNULLERING som primær løsning frem for at sende return-instruktioner. Annullering er hurtigere, billigere for shoppen, og kunden undgår at modtage og returnere pakken. Formulering: "Da din ordre #X endnu ikke er afsendt, kan vi annullere den i stedet — det er hurtigere, og pakken bliver ikke sendt afsted. Vil du have at vi annullerer og refunderer beløbet?". Nævn IKKE returadressen eller returproceduren i første svar — det er kun relevant hvis kunden eksplicit foretrækker at modtage pakken og returnere alligevel. Hvis fulfillment_status er "fulfilled"/"partial"/"shipped" eller ukendt, brug den normale return-policy.
-- FAKTURA-REGEL: Når action er "resend_confirmation_or_invoice" — skriv som om fakturaen er vedhæftet nu (datid), hold svaret til 1-2 sætninger + lukning.
+- FAKTURA-REGEL: Når action er "resend_confirmation_or_invoice" OG actionResult bekræfter at handlingen ER udført — skriv da som om fakturaen er sendt (datid), 1-2 sætninger + lukning. Er handlingen ikke bekræftet udført, brug neutral/fremtidig formulering og lov aldrig at fakturaen allerede er sendt eller videresendt.
 
 ÅBNING:
 - Følg den tone der er defineret i shop-personaen. Har shoppet ingen persona, så vær venlig og direkte.
@@ -2097,7 +2099,7 @@ ${stageDirectives[resolutionStage] ?? stageDirectives.info_only}`;
       ? `# Kundens seneste besked (læs denne grundigt — brug alle detaljer kunden har givet)
 ${latestCustomerMessage.slice(0, 1200)}${
         nonImageAttachmentsMeta
-          ? `\n\n[Kunden har vedhæftet: ${nonImageAttachmentsMeta}. Anerkend at du kan se det i dit svar, men analyser ikke indholdet da du ikke kan læse det — behandl det som dokumentation kunden har sendt.]`
+          ? `\n\n[Kunden har vedhæftet: ${nonImageAttachmentsMeta}. Anerkend det kun neutralt hvis det er relevant (fx "Tak — jeg har modtaget dine filer"); analyser eller vurder aldrig indholdet da du ikke kan læse det — behandl det som dokumentation kunden har sendt.]`
           : ""
       }`
       : "",
