@@ -12,6 +12,8 @@ import {
   loadEmailSignatureConfig,
   normalizePlainText,
 } from "@/lib/server/email-signature";
+import { emitDraftEvent } from "@/lib/server/draft-feedback-events";
+import { buildDraftSentEvents } from "@/lib/server/draft-feedback-builders";
 
 const SUPABASE_URL = (
   process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -1791,6 +1793,9 @@ export async function POST(request, { params }) {
 
   let editDeltaPct = null;
   let editClassification = null;
+  // Feedback-1b: captured for the draft_sent_with_edit subtype emitted below.
+  let sentEditDistance = null;
+  let sentEventDraftId = null;
 
   const draftThreadKeys = [thread.provider_thread_id, threadId].filter(Boolean);
   if (draftThreadKeys.length) {
@@ -1854,6 +1859,8 @@ export async function POST(request, { params }) {
             : null;
         editDeltaPct = deltaPct;
         editClassification = editClass;
+        sentEditDistance = dist;
+        sentEventDraftId = draftRow?.draft_id ?? pendingDraftRows[0]?.draft_id ?? null;
 
         let sentDraftQuery = serviceClient
           .from("drafts")
@@ -1966,6 +1973,28 @@ export async function POST(request, { params }) {
         edit_delta_pct: typeof editDeltaPct === "number" ? editDeltaPct : null,
       }),
     }).catch(() => null);
+  }
+
+  // Feedback-1b: best-effort draft_sent (+ optional subtype) events. Never
+  // throws, never blocks the send response. Umbrella always; subtype only when
+  // an AI baseline existed (editClassification set).
+  {
+    const eventWorkspaceId = thread?.workspace_id ?? scope?.workspaceId ?? null;
+    const sentEvents = buildDraftSentEvents({
+      threadId,
+      shopId: mailbox.shop_id || null,
+      workspaceId: eventWorkspaceId,
+      agentUserId: clerkUserId,
+      draftId: sentEventDraftId,
+      providerMessageId: persistedProviderMessageId,
+      provider: mailbox.provider,
+      editClassification,
+      editDistance: sentEditDistance,
+      editDeltaPct,
+    });
+    for (const event of sentEvents) {
+      await emitDraftEvent({ serviceClient, logger: console, ...event });
+    }
   }
 
   return NextResponse.json(

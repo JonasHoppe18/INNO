@@ -3,6 +3,8 @@ import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 import { applySavedEditToGeneration } from "@/lib/server/draft-generation-coupling";
+import { emitDraftEvent } from "@/lib/server/draft-feedback-events";
+import { buildDraftEditedEvent } from "@/lib/server/draft-feedback-builders";
 import {
   composeEmailBodyWithSignature,
   loadEmailSignatureConfig,
@@ -481,15 +483,32 @@ export async function POST(request, { params }) {
     }).catch((error) => {
       console.warn("[threads/draft] draft edit feedback capture failed", error?.message || error);
     });
+    const editClassification = classifyDraftEdit(originalAiDraftText, nextBodyText);
     await applySavedEditToGeneration({
       serviceClient,
       draftId: pipelineDraftId,
       threadId,
       workspaceId: scope.workspaceId || null,
-      editClassification: classifyDraftEdit(originalAiDraftText, nextBodyText),
+      editClassification,
       editDistance: null,
       fallback: { originalAiText: originalAiDraftText },
       logger: console,
+    });
+    // Feedback-1b: best-effort draft_edited event (never throws, never blocks the
+    // save). Once-per-composer dedup — repeated autosaves collapse to one row.
+    await emitDraftEvent({
+      serviceClient,
+      logger: console,
+      ...buildDraftEditedEvent({
+        threadId,
+        shopId: mailbox?.shop_id || null,
+        workspaceId: scope.workspaceId || null,
+        agentUserId: clerkUserId,
+        draftId: pipelineDraftId,
+        composerMessageId: draftId,
+        editClassification,
+        provider: thread.provider,
+      }),
     });
   }
 
