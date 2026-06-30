@@ -16,6 +16,8 @@ import {
   buildFeedbackCandidateSuggestion,
   matchesHighMagnitude,
   isVeryHighRewrite,
+  applyFeedbackCandidates,
+  APPLY_ONCONFLICT,
   DETECTOR_VERSION,
   CANDIDATE_SUGGESTION_TYPE,
 } from "../apps/web/lib/server/feedback-candidate-detector.js";
@@ -188,32 +190,109 @@ test("mapper module references no auto-promotion / pipeline path", () => {
   }
 });
 
-// --- dry-run script structural guarantees --------------------------------------
+// --- apply orchestration (pure, injected upsert) -------------------------------
 
-test("dry-run script: no insert/update/upsert, no auto-promotion, --apply hard-fails", () => {
+function candidateRow(overrides = {}) {
+  const res = buildFeedbackCandidateSuggestion(draftRow(overrides));
+  return res.row;
+}
+
+function makeUpsert({ returnInserted } = {}) {
+  const calls = [];
+  return {
+    calls,
+    fn: async (rows, options) => {
+      calls.push({ rows, options });
+      const data = (returnInserted ?? rows).map((r) => ({ id: "x", dedup_key: r.dedup_key }));
+      return { data, error: null };
+    },
+  };
+}
+
+test("apply: dry-run (default) never calls upsert", async () => {
+  const u = makeUpsert();
+  const res = await applyFeedbackCandidates([candidateRow()], { upsert: u.fn, dryRun: true });
+  assert.equal(u.calls.length, 0);
+  assert.equal(res.dryRun, true);
+  assert.equal(res.inserted, 0);
+});
+
+test("apply: inserts suggested rows with onConflict=dedup_key ignoreDuplicates", async () => {
+  const u = makeUpsert();
+  const rows = [candidateRow({ id: 1 }), candidateRow({ id: 2 })];
+  const res = await applyFeedbackCandidates(rows, { upsert: u.fn, dryRun: false });
+  assert.equal(u.calls.length, 1);
+  assert.equal(u.calls[0].options.onConflict, "dedup_key");
+  assert.equal(APPLY_ONCONFLICT, "dedup_key");
+  assert.equal(u.calls[0].options.ignoreDuplicates, true);
+  assert.equal(res.attempted, 2);
+  assert.equal(res.inserted, 2);
+  assert.equal(res.duplicates, 0);
+  // every row written carries status 'suggested', never 'applied'
+  for (const r of u.calls[0].rows) assert.equal(r.status, "suggested");
+});
+
+test("apply: duplicate dedup_key is a skipped success, not fatal", async () => {
+  const rows = [candidateRow({ id: 1 }), candidateRow({ id: 2 })];
+  const u = makeUpsert({ returnInserted: [rows[0]] }); // row 2 already existed
+  const res = await applyFeedbackCandidates(rows, { upsert: u.fn, dryRun: false });
+  assert.equal(res.inserted, 1);
+  assert.equal(res.duplicates, 1);
+});
+
+test("apply: repeated apply is idempotent (all duplicates -> 0 inserted)", async () => {
+  const rows = [candidateRow({ id: 1 }), candidateRow({ id: 2 })];
+  const u = makeUpsert({ returnInserted: [] }); // everything already present
+  const res = await applyFeedbackCandidates(rows, { upsert: u.fn, dryRun: false });
+  assert.equal(res.inserted, 0);
+  assert.equal(res.duplicates, 2);
+});
+
+test("apply: refuses to write a row whose status is not 'suggested'", async () => {
+  const u = makeUpsert();
+  const bad = { ...candidateRow(), status: "applied" };
+  await assert.rejects(
+    () => applyFeedbackCandidates([bad], { upsert: u.fn, dryRun: false }),
+    /suggested/,
+  );
+  assert.equal(u.calls.length, 0, "nothing written when guard trips");
+});
+
+test("apply: surfaces upsert error without throwing", async () => {
+  const u = { fn: async () => ({ data: null, error: { message: "boom" } }) };
+  const res = await applyFeedbackCandidates([candidateRow()], { upsert: u.fn, dryRun: false });
+  assert.equal(res.inserted, 0);
+  assert.ok(res.error);
+});
+
+// --- script structural guarantees (2a-3) ---------------------------------------
+
+test("script: dry-run default, upsert guarded by --apply, no bodies, no auto-promotion", () => {
   const src = readFileSync(
     fileURLToPath(new URL("../supabase/scripts/feedback-detect-candidates.mjs", import.meta.url)),
     "utf8",
   );
-  // No write calls anywhere in the dry-run script.
-  for (const writeCall of [".insert(", ".update(", ".upsert(", ".delete("]) {
-    assert.ok(!src.includes(writeCall), `dry-run script must not call ${writeCall}`);
+  // Writes go only through upsert (insert-only via ignoreDuplicates); never
+  // update/delete existing rows.
+  for (const writeCall of [".insert(", ".update(", ".delete("]) {
+    assert.ok(!src.includes(writeCall), `script must not call ${writeCall}`);
   }
+  assert.ok(src.includes(".upsert("), "apply path uses upsert");
+  assert.ok(src.includes("opts.apply"), "upsert is guarded by --apply");
+  assert.ok(/dry.?run/i.test(src), "has a dry-run path");
+  // Never writes status='applied'.
+  assert.ok(!/status['"\s:]+['"]applied['"]/.test(src), "must not set status='applied'");
   // No auto-promotion references.
   for (const forbidden of [
     "draft_previews", "ticket_examples", "promoteEditToTicketExample",
     "captureV2DraftPreviewFeedback", "draft_preview_id",
   ]) {
-    assert.ok(!src.includes(forbidden), `dry-run script must not reference ${forbidden}`);
+    assert.ok(!src.includes(forbidden), `script must not reference ${forbidden}`);
   }
-  // It must read drafts and import the mapper.
-  assert.ok(src.includes("feedback-candidate-detector"), "script imports the mapper");
-  // An --apply path, if mentioned, must hard-fail as not implemented.
-  if (src.includes("--apply") || src.includes('"apply"') || src.includes("'apply'")) {
-    assert.ok(/not implemented/i.test(src), "--apply must hard-fail with 'not implemented'");
-  }
-  // Must not select raw body columns.
-  for (const bodyCol of ["final_sent_text", "clean_body_text", "body_text", "body_html"]) {
+  // No raw body columns selected.
+  for (const bodyCol of ["final_sent_text", "clean_body_text", "body_text", "body_html", "quoted_body_text"]) {
     assert.ok(!src.includes(bodyCol), `script must not select ${bodyCol}`);
   }
+  assert.ok(src.includes("feedback-candidate-detector"), "script imports the mapper");
+  assert.ok(src.includes("applyFeedbackCandidates"), "script uses the apply orchestrator");
 });

@@ -1,26 +1,32 @@
 // supabase/scripts/feedback-detect-candidates.mjs
 //
-// Feedback-2a-2: DRY-RUN deterministic candidate detector for feedback_suggestions.
+// Feedback-2a-2/2a-3: deterministic candidate detector for feedback_suggestions.
 //
 // Finds sent drafts that were heavily human-edited (Rule 1: major_edit OR
-// edit_delta_pct >= 0.5) and prints the would-be feedback_suggestions rows. It
-// INSERTS NOTHING. There is no apply path yet — `--apply` hard-fails with
-// "not implemented" (that is Feedback-2a-3, a separately-approved slice).
+// edit_delta_pct >= 0.5) and shapes review-only feedback_suggestions rows.
+//
+// DRY-RUN IS THE DEFAULT and writes nothing. Pass --apply to persist rows
+// (insert-only, idempotent via dedup_key ON CONFLICT DO NOTHING — existing rows
+// are never updated and status is never changed; rows are always 'suggested').
 //
 // Privacy: it selects only ids / enums / numbers / timestamps. No reply/body
 // columns are selected at all, so no raw bodies are pulled, printed, or stored.
-// The reply-length metric is deferred to the apply slice (2a-3), which can
-// compute it server-side without returning the text.
+// PostgREST cannot compute length() server-side via the column selector, so the
+// reply-length metric (final_sent_len) is left null — privacy beats completeness.
 //
-// Run (read-only):
+// Run:
 //   set -a && source apps/web/.env.local && set +a
-//   node supabase/scripts/feedback-detect-candidates.mjs --workspace <workspace_id>
-//   node supabase/scripts/feedback-detect-candidates.mjs --workspace <ws> --limit 5 --sample 3
+//   node supabase/scripts/feedback-detect-candidates.mjs --workspace <ws>            # dry run
+//   node supabase/scripts/feedback-detect-candidates.mjs --workspace <ws> --limit 5  # safety cap
+//   node supabase/scripts/feedback-detect-candidates.mjs --workspace <ws> --apply    # persist
 //
-// Exit code: 0 on success. Non-zero on misconfiguration or if --apply is passed.
+// Exit code: 0 on success; non-zero on misconfiguration or apply failure.
 
 import { createClient } from "@supabase/supabase-js";
-import { buildFeedbackCandidateSuggestion } from "../../apps/web/lib/server/feedback-candidate-detector.js";
+import {
+  buildFeedbackCandidateSuggestion,
+  applyFeedbackCandidates,
+} from "../../apps/web/lib/server/feedback-candidate-detector.js";
 
 // Node < 22 has no native WebSocket; supabase-js initializes realtime in its
 // constructor. We only do table reads, but the constructor still needs a
@@ -49,11 +55,8 @@ function parseArgs(argv) {
 
 const opts = parseArgs(process.argv.slice(2));
 
-// Guard: there is intentionally no write path in Feedback-2a-2.
-if (opts.apply) {
-  console.error("--apply is not implemented in Feedback-2a-2 (dry-run only). Insertion is a separate, approved slice (2a-3).");
-  process.exit(2);
-}
+// Dry-run is the DEFAULT. Writes happen only when --apply is passed explicitly.
+const isApply = opts.apply === true;
 
 const SUPABASE_URL = (process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "").replace(/\/$/, "");
 const SERVICE_ROLE_KEY =
@@ -116,7 +119,7 @@ for (const raw of rows || []) {
     edit_classification: raw.edit_classification,
     edit_delta_pct: raw.edit_delta_pct,
     edit_distance: raw.edit_distance,
-    final_sent_len: null, // deferred to 2a-3 (server-side length, no body pulled)
+    final_sent_len: null, // kept null: no body-free server-side length via PostgREST
     sent_at: raw.created_at ? String(raw.created_at).slice(0, 10) : null,
   };
   // Coupling is deferred (Rule 3/4) — always 'none' in 2a-2.
@@ -130,12 +133,31 @@ for (const raw of rows || []) {
   candidates.push(res.row);
 }
 
-console.log("=== Feedback-2a-2 DRY RUN (no inserts) ===");
+console.log(`=== Feedback-2a-3 ${isApply ? "APPLY" : "DRY RUN (no inserts)"} ===`);
 console.log(`workspace:        ${opts.workspace}`);
 console.log(`resolved shop_id: ${resolvedShopId ?? "(not 1:1 — per-draft only)"}`);
 console.log(`candidates:       ${candidates.length}`);
 console.log(`  very_high (>=0.75): ${veryHigh}`);
 console.log(`  skipped (missing scope): ${skipped}`);
+
+// Apply only when explicitly requested. Insert-only + idempotent via dedup_key
+// (ON CONFLICT DO NOTHING); existing rows are never updated and status is never
+// changed. All writes use the service-role client.
+const result = await applyFeedbackCandidates(candidates, {
+  dryRun: !isApply,
+  upsert: (upsertRows, options) =>
+    supabase.from("feedback_suggestions").upsert(upsertRows, options).select("id, dedup_key"),
+});
+
+if (isApply) {
+  if (result.error) {
+    console.error("apply failed:", result.error.message);
+    process.exit(1);
+  }
+  console.log(`  rows attempted:    ${result.attempted}`);
+  console.log(`  rows inserted:     ${result.inserted}`);
+  console.log(`  duplicates skipped: ${result.duplicates}`);
+}
 console.log("");
 
 // Redacted samples: dedup_key + classification + scalars only. No bodies.
@@ -155,4 +177,8 @@ if (sample.length) {
   }
 }
 console.log("");
-console.log("Dry run complete. Nothing was written. Use a separately-approved 2a-3 slice to persist.");
+console.log(
+  isApply
+    ? "Apply complete (insert-only, idempotent via dedup_key)."
+    : "Dry run complete. Nothing was written. Pass --apply to persist (review-only rows).",
+);
