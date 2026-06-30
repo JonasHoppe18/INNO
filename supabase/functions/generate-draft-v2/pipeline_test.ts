@@ -1,6 +1,7 @@
 import { assertEquals, assertNotEquals } from "jsr:@std/assert@1";
 import {
   applyAutomationConstraints,
+  applyImageEvidenceClaimGuard,
   shouldDeferDraftUntilActionDecision,
 } from "./pipeline.ts";
 import type { ActionProposal } from "./stages/action-decision.ts";
@@ -46,6 +47,44 @@ Deno.test("applyAutomationConstraints requires review when automation flag is di
 
   assertEquals(result.routing_hint, "review");
   assertEquals(result.proposals[0].requires_approval, true);
+});
+
+// ── AZ-1b Stage 12d wiring ──────────────────────────────────────────────────
+const IMAGE_CLAIM_DRAFT =
+  "Jeg har set de vedhæftede billeder, og det ser ud til at være en fysisk skade.";
+
+Deno.test("image guard: unsupported image claim with 0 images → review + block", () => {
+  const r = applyImageEvidenceClaimGuard(
+    { routingHint: "auto", blockSendRecommended: false },
+    { draftText: IMAGE_CLAIM_DRAFT, imageEvidenceCount: 0, language: "da" },
+  );
+  assertEquals(r.routingHint, "review");
+  assertEquals(r.blockSendRecommended, true);
+  assertNotEquals(r.violations.length, 0);
+});
+
+Deno.test("image guard: same claim WITH real image evidence → not forced to review/block", () => {
+  const r = applyImageEvidenceClaimGuard(
+    { routingHint: "auto", blockSendRecommended: false },
+    { draftText: IMAGE_CLAIM_DRAFT, imageEvidenceCount: 2, language: "da" },
+  );
+  assertEquals(r.routingHint, "auto");
+  assertEquals(r.blockSendRecommended, false);
+  assertEquals(r.violations.length, 0);
+});
+
+Deno.test("image guard: broad 'det ser ud til' with 0 images → not triggered", () => {
+  const r = applyImageEvidenceClaimGuard(
+    { routingHint: "auto", blockSendRecommended: false },
+    {
+      draftText: "Det ser ud til at din ordre er forsinket.",
+      imageEvidenceCount: 0,
+      language: "da",
+    },
+  );
+  assertEquals(r.routingHint, "auto");
+  assertEquals(r.blockSendRecommended, false);
+  assertEquals(r.violations.length, 0);
 });
 
 Deno.test("shouldDeferDraftUntilActionDecision defers only action review flows", () => {

@@ -81,6 +81,10 @@ import { resolveCustomerName } from "./stages/customer-name-resolution.ts";
 import { checkUnsupportedCommitments } from "./stages/unsupported-commitment-check.ts";
 import { checkUnsupportedAssumptions } from "./stages/unsupported-assumption-check.ts";
 import { checkLiveFactAndActionClaims } from "./stages/live-fact-action-claim-check.ts";
+import {
+  checkImageEvidenceClaims,
+  type ImageEvidenceViolationType,
+} from "./stages/image-evidence-claim-check.ts";
 
 export interface EvalPayload {
   subject: string;
@@ -780,6 +784,45 @@ export function applyAutomationConstraints(
 
   // All actions are approved by business logic AND automation flags — honour AI hint
   return { proposals: updatedProposals, routing_hint: aiRoutingHint };
+}
+
+// AZ-1b Stage 12d helper — deterministic image-evidence claim guard.
+// Additive only: when the draft claims to have seen/assessed an image but no
+// real image evidence reached the model (image_evidence_count === 0), escalate
+// routing to "review" and recommend blocking send. Never downgrades an existing
+// review/block and never rewrites the draft. Pure — exported for unit testing.
+export function applyImageEvidenceClaimGuard(
+  current: {
+    routingHint: "auto" | "review" | "block";
+    blockSendRecommended: boolean;
+  },
+  input: {
+    draftText: string;
+    imageEvidenceCount: number;
+    language?: string | null;
+  },
+): {
+  routingHint: "auto" | "review" | "block";
+  blockSendRecommended: boolean;
+  violations: Array<{ type: ImageEvidenceViolationType; excerpt: string }>;
+} {
+  const check = checkImageEvidenceClaims({
+    draft_text: input.draftText,
+    image_evidence_count: input.imageEvidenceCount,
+    language: input.language ?? null,
+  });
+  if (check.requires_review) {
+    return {
+      routingHint: "review",
+      blockSendRecommended: true,
+      violations: check.violations,
+    };
+  }
+  return {
+    routingHint: current.routingHint,
+    blockSendRecommended: current.blockSendRecommended,
+    violations: [],
+  };
 }
 
 export function shouldDeferDraftUntilActionDecision(
@@ -2573,6 +2616,29 @@ export async function runDraftV2Pipeline(
           liveFactActionClaimCheck.violations
             .map((v) => v.type)
             .join(", ")
+        } — routing to review`,
+      );
+    }
+
+    // 12d. Deterministic guard against unsupported image-evidence claims — the
+    // draft says it has seen/assessed an image when no real image reached the
+    // model (imageAttachments is the AZ-1-filtered vision set; eval-mode and
+    // logo-only mails yield 0). Same additive posture: never rewrites, only
+    // escalates routing_hint to "review".
+    const imageEvidenceGuard = applyImageEvidenceClaimGuard(
+      { routingHint: finalRoutingHint, blockSendRecommended },
+      {
+        draftText: finalDraft ?? "",
+        imageEvidenceCount: imageAttachments.length,
+        language: replyLanguage,
+      },
+    );
+    finalRoutingHint = imageEvidenceGuard.routingHint;
+    blockSendRecommended = imageEvidenceGuard.blockSendRecommended;
+    if (imageEvidenceGuard.violations.length > 0) {
+      console.warn(
+        `[generate-draft-v2] unsupported image-evidence claim flagged ${
+          imageEvidenceGuard.violations.map((v) => v.type).join(", ")
         } — routing to review`,
       );
     }
