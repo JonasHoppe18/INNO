@@ -2784,7 +2784,6 @@ export async function runDraftV2Pipeline(
       generationId,
       draftId,
       threadId: thread_id,
-      messageId: input.message_id,
       shopId: shop_id,
       workspaceId,
       routingHint: finalRoutingHint,

@@ -51,7 +51,6 @@ Deno.test("builds a correct draft_generated row", () => {
   assertEquals(row.generation_id, "gen_1");
   assertEquals(row.draft_id, "draft_uuid_1");
   assertEquals(row.thread_id, "thread_1");
-  assertEquals(row.message_id, "msg_1");
   assertEquals(row.shop_id, "shop_1");
   assertEquals(row.workspace_id, "ws_1");
   assertEquals(row.routing_hint, "review");
@@ -65,6 +64,22 @@ Deno.test("builds a correct draft_generated row", () => {
 Deno.test("dedup_key is gen:{generationId}", () => {
   const row = buildDraftGeneratedRow({ ...BASE, generationId: "abc" }) as Record<string, unknown>;
   assertEquals(row.dedup_key, "gen:abc");
+});
+
+// Guard against the v294 regression: every top-level key in the insert row must
+// be a real draft_feedback_events column. message_id is NOT a column.
+Deno.test("insert row contains only real draft_feedback_events columns (no message_id)", () => {
+  const REAL_COLUMNS = new Set([
+    "id", "generation_id", "draft_id", "thread_id", "shop_id", "workspace_id",
+    "agent_user_id", "event_type", "routing_hint", "block_send_recommended",
+    "edit_classification", "edit_distance", "edit_delta_pct", "payload_json",
+    "dedup_key", "created_at",
+  ]);
+  const row = buildDraftGeneratedRow(BASE) as Record<string, unknown>;
+  for (const key of Object.keys(row)) {
+    assert(REAL_COLUMNS.has(key), `'${key}' is not a draft_feedback_events column`);
+  }
+  assert(!("message_id" in row), "message_id must not be a top-level insert column");
 });
 
 Deno.test("payload_json whitelist strips raw body / unknown keys", () => {
@@ -104,7 +119,7 @@ Deno.test("null-safe metadata: missing intent/language/product does not fail", (
     messageId: undefined,
     payload: { pipeline_version: "v2" },
   }) as Record<string, unknown>;
-  assertEquals(row.message_id, null);
+  assert(!("message_id" in row), "message_id is not an insert column");
   assertEquals(row.payload_json, { pipeline_version: "v2" });
 });
 

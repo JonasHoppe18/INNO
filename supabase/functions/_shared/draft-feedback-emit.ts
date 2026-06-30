@@ -50,6 +50,8 @@ export interface DraftGeneratedInput {
   generationId: string;
   draftId?: string | null;
   threadId?: string | null;
+  // messageId is accepted for caller convenience but is intentionally NOT a
+  // top-level insert column — draft_feedback_events has no message_id column.
   messageId?: string | null;
   shopId?: string | null;
   workspaceId?: string | null;
@@ -59,12 +61,12 @@ export interface DraftGeneratedInput {
 }
 
 // Build the draft_feedback_events insert row for a draft_generated event.
+// Only real columns are emitted (no message_id — that column does not exist).
 export function buildDraftGeneratedRow(input: DraftGeneratedInput): Record<string, unknown> {
   return {
     generation_id: input.generationId,
     draft_id: input.draftId != null ? String(input.draftId) : null,
     thread_id: input.threadId ?? null,
-    message_id: input.messageId ?? null,
     shop_id: input.shopId ?? null,
     workspace_id: input.workspaceId ?? null,
     event_type: "draft_generated",
