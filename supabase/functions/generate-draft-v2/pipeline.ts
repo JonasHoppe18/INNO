@@ -53,6 +53,7 @@ import {
 } from "../_shared/policy-context.ts";
 import { parseEmailReplyBodies } from "../_shared/email-reply-parser.ts";
 import { embedText } from "../_shared/embed-text.ts";
+import { emitDraftGeneratedEvent } from "../_shared/draft-feedback-emit.ts";
 import { loadImageAttachments } from "./stages/attachment-loader.ts";
 import {
   cleanupMixedLanguageDraft,
@@ -2771,6 +2772,29 @@ export async function runDraftV2Pipeline(
       completed_at: new Date().toISOString(),
       total_latency_ms: Date.now() - pipelineStartedAt,
       final_draft_text: deferDraftUntilActionDecision ? null : finalDraft,
+    });
+
+    // Feedback-1c-1: best-effort draft_generated coupling event. Never throws,
+    // never alters the draft; suppressed on no-write (eval/dry-run) runs. The AI
+    // draft text stays in draft_generations.final_draft_text (reached via
+    // generation_id) — only ids/enums/small metadata are recorded here.
+    await emitDraftGeneratedEvent({
+      supabase,
+      isNoWrite: isDryRun,
+      generationId,
+      draftId,
+      threadId: thread_id,
+      messageId: input.message_id,
+      shopId: shop_id,
+      workspaceId,
+      routingHint: finalRoutingHint,
+      blockSendRecommended,
+      payload: {
+        intent: plan.primary_intent,
+        language: caseState.language,
+        pipeline_version: "v2",
+        verifier_block_send: blockSendRecommended,
+      },
     });
 
     return {
