@@ -1,5 +1,7 @@
 // supabase/functions/generate-draft-v2/stages/gate.ts
 
+import { CARRIER_NOTIFICATION_DOMAINS } from "../../_shared/inbox-classification.ts";
+
 export interface GateInput {
   thread: Record<string, unknown>;
   latestMessage: Record<string, unknown>;
@@ -83,6 +85,11 @@ export async function runGate(
 
   if (msg.from_me === true) {
     return { should_process: false, reason: "latest_message_from_agent" };
+  }
+
+  const senderDomain = String(msg.from_email || "").trim().toLowerCase().split("@")[1] || "";
+  if (senderDomain && CARRIER_NOTIFICATION_DOMAINS.has(senderDomain)) {
+    return { should_process: false, reason: "carrier_notification_domain" };
   }
 
   if (!body || body.trim().length < 5) {

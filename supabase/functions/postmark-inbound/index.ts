@@ -4,6 +4,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { shouldSkipInboxMessage } from "../_shared/inbox-filter.ts";
 import { classifyInboxBucket } from "../_shared/inbox-classification.ts";
+import { shouldTriggerDraftGeneration } from "./draft-trigger-decision.ts";
 import {
   categorizeEmail,
   EmailCategory,
@@ -2120,7 +2121,13 @@ Deno.serve(async (req) => {
       userId: mailbox.user_id,
       workspaceId: mailbox.workspace_id,
     });
-    if (autoDraftEnabled && routeDecision.isEffectiveSupport) {
+    if (
+      shouldTriggerDraftGeneration({
+        autoDraftEnabled,
+        isEffectiveSupport: routeDecision.isEffectiveSupport,
+        notificationBucket: inboxClassification.bucket,
+      })
+    ) {
       const shopId = mailbox.shop_id;
       if (shopId) {
         const draftOutcome = await triggerDraftForInbound({

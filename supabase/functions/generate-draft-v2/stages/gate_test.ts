@@ -48,6 +48,43 @@ Deno.test("runGate blocks latest message from agent", async () => {
   }
 });
 
+Deno.test("runGate blocks a known hard-block notification sender domain", async () => {
+  const result = await runGate({
+    thread: {},
+    shop: {},
+    latestMessage: {
+      clean_body_text: "Vi glæder os til at levere din pakke fra ACEZONE ApS.",
+      from_email: "noreply@gls-group.eu",
+      from_me: false,
+    },
+  });
+
+  if (result.should_process || result.reason !== "carrier_notification_domain") {
+    throw new Error(
+      `Expected carrier notification domain to be blocked, got ${result.reason}`,
+    );
+  }
+});
+
+Deno.test("runGate allows a normal customer sender mentioning GLS in the body", async () => {
+  const result = await runGate({
+    thread: {},
+    shop: {},
+    latestMessage: {
+      clean_body_text:
+        "Hej, GLS siger min pakke er leveret, men jeg har ikke modtaget noget. Kan I hjælpe?",
+      from_email: "anna.jensen@gmail.com",
+      from_me: false,
+    },
+  });
+
+  if (!result.should_process || result.reason !== "ok") {
+    throw new Error(
+      `Expected normal customer sender mentioning GLS to pass, got ${result.reason}`,
+    );
+  }
+});
+
 Deno.test("runGate blocks forwarded internal status note", async () => {
   const result = await runGate({
     thread: {},

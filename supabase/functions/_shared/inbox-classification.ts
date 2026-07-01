@@ -10,7 +10,7 @@ export type InboxClassification = {
 // ─── Carrier & service domains that are NEVER customer emails ─────────────────
 // Emails from these domains are always auto-generated system notifications.
 // They must never receive an AI reply and should be routed to notifications.
-const CARRIER_NOTIFICATION_DOMAINS = new Set([
+export const CARRIER_NOTIFICATION_DOMAINS = new Set([
   // PostNord (Nordic)
   "postnord.com", "postnord.se", "postnord.dk", "postnord.no", "postnord.fi",
   // GLS
