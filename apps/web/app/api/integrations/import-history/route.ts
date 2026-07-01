@@ -252,7 +252,18 @@ async function resolveShopId(
   return row.id;
 }
 
+// HIST-0: raw historical-ticket import into agent_knowledge is disabled until a
+// redaction/review onboarding flow exists (see project_historical_ticket_infra_audit
+// memory). This must stay the very first statement in POST — before auth, before any
+// provider fetch, before embedding, before the agent_knowledge insert below — so this
+// writer can never run.
+const HIST0_DISABLED_MESSAGE =
+  "Historical ticket import is temporarily disabled pending redaction/review onboarding flow.";
+
 export async function POST(request: Request) {
+  return NextResponse.json({ error: HIST0_DISABLED_MESSAGE }, { status: 501 });
+
+  /* eslint-disable no-unreachable */
   const { userId: clerkUserId, orgId } = await auth();
   if (!clerkUserId) {
     return NextResponse.json({ error: "You must be signed in." }, { status: 401 });

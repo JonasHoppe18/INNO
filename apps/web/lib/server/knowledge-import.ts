@@ -529,7 +529,39 @@ async function fetchFreshdeskConversation(
   };
 }
 
+// HIST-0: this function's only purpose is historical-ticket import, and every path
+// through it ends by writing raw, unredacted ticket content into agent_knowledge
+// (source_type='ticket'). That is disabled until a redaction/review onboarding flow
+// exists (see project_historical_ticket_infra_audit memory). This guard must stay the
+// very first statement so no provider credentials are read, no provider API is
+// fetched, no embedding is generated, and no agent_knowledge insert can happen —
+// regardless of whether this is called from the worker route, chained internally, or
+// invoked directly.
+const HIST0_DISABLED_MESSAGE =
+  "Historical ticket import is temporarily disabled pending redaction/review onboarding flow.";
+
 export async function processImportJobBatch(serviceClient: any, job: KnowledgeImportJob) {
+  const { data: disabledJob, error: disabledJobError } = await serviceClient
+    .from("knowledge_import_jobs")
+    .update({
+      status: "failed",
+      last_error: HIST0_DISABLED_MESSAGE,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", job.id)
+    .select("*")
+    .maybeSingle();
+  if (disabledJobError) {
+    throw new Error(`Could not update import job: ${disabledJobError.message}`);
+  }
+  return {
+    job: (disabledJob || job) as KnowledgeImportJob,
+    imported: 0,
+    skipped: 0,
+    completed: true,
+  };
+
+  /* eslint-disable no-unreachable */
   const integration = await fetchIntegrationForJob(serviceClient, job);
   const config = (integration?.config || {}) as Record<string, unknown>;
   const baseUrl = normalizeBaseUrl(String(config?.domain || config?.url || ""));
