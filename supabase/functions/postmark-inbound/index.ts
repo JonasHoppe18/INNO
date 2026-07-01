@@ -2126,6 +2126,7 @@ Deno.serve(async (req) => {
         autoDraftEnabled,
         isEffectiveSupport: routeDecision.isEffectiveSupport,
         notificationBucket: inboxClassification.bucket,
+        notificationReason: inboxClassification.reason,
       })
     ) {
       const shopId = mailbox.shop_id;
