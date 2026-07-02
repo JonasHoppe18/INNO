@@ -206,6 +206,7 @@ const COMPAT_SAFETY_RULES: string[] = [
   "- You MUST NOT state or imply compatibility for any method that is not confirmed above — never say it \"works with\", \"can be used with\", \"supports\", or is compatible unless it is listed as confirmed compatible above.",
   "- IGNORE product descriptions, retrieved knowledge, product pages, stock/inventory, and OTHER products' information — none of it can establish compatibility here.",
   "- This compatibility guardrail overrides all other context, including any conflicting retrieved or product content, whether it appears above or below.",
+  "- Equally, you MUST NOT state or imply that something is NOT compatible / does not fit / does not work together unless that negative result is confirmed above (a deterministic guard checks this separately — do not rely on this instruction alone). If you are not sure, say so instead of guessing either way — for example: \"Jeg kan ikke bekræfte kompatibiliteten ud fra informationen her, så den skal lige tjekkes manuelt.\"",
 ];
 
 // Send-ready style (Slice L, strengthened in Slice N). Turns the directive from
@@ -321,7 +322,8 @@ export function buildCompatibilityDirective(
       "# PRODUCT COMPATIBILITY — NOT CONFIRMED (internal directive — express in your own words)",
       ...COMPAT_SAFETY_RULES,
       "- Nothing about the asked product + platform/method is confirmed compatible, so you have no compatible setup to offer for it.",
-      "- Either recommend an option or product that DOES have confirmed compatibility for the asked platform, or ask ONE precise question (exact product, platform and connection) — whichever is more helpful.",
+      "- Either recommend an option or product that DOES have confirmed compatibility for the asked platform, or ask ONE precise question (exact product, platform and connection) — whichever is more helpful. Example neutral phrasing when asking: \"Hvis du sender modellen/produktnavnet, kan vi tjekke det.\"",
+      "- Never guess or state a NOT-compatible verdict here either — you have no confirmed row for or against.",
       ...COMPAT_SEND_READY_RULES,
     ].join("\n");
   }

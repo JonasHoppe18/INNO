@@ -809,7 +809,7 @@ export function buildStockAvailabilityDirective(facts: ResolvedFact[]): string {
     return [
       "# Live stock availability guardrails",
       "- No live Shopify stock availability fact is present. Do NOT claim that a product or variant is in stock, out of stock, available for preorder, reserved, held, discontinued, or expected back on a date.",
-      "- If the customer asks about stock/availability and no live stock fact is present, say that live availability cannot be confirmed right now and ask for the exact product name or link if needed.",
+      "- If the customer asks about stock/availability and no live stock fact is present, say that live availability cannot be confirmed right now and ask for the exact product name or link if needed. Example neutral phrasing: \"Jeg kan ikke se lagerstatus direkte her, så jeg vil ikke love noget forkert. Hvis du sender modellen/produktnavnet, kan vi tjekke det.\"",
       "- Do not use old knowledge-base chunks, product descriptions, or examples as live stock truth.",
       "- CRITICAL: Shopify product catalog chunks (source_label containing 'shopify_product') describe a product's features/specs but are NOT proof that the product is released, available, purchasable, or in stock. A product page may exist in Shopify for a product that is unreleased, on a waitlist, or hidden from the storefront. Never infer availability, release status, or purchasability from product descriptions alone.",
       "- If a knowledge chunk has risk_flags=shopify_product_not_live, the product is explicitly marked as not publicly available (waitlist, hidden price, draft, or placeholder price). Do NOT claim it is available, released, or purchasable. Do NOT provide a purchase link for it.",
@@ -836,7 +836,7 @@ export function buildStockAvailabilityDirective(facts: ResolvedFact[]): string {
     } else if (state === "unavailable" || state === "discontinued") {
       lines.push(`  Writer rule: Do not say ${product} is in stock. Say it is not currently available in the store if the customer asks.`);
     } else {
-      lines.push("  Writer rule: Live availability is inconclusive. Say you cannot confirm live availability right now and ask for the exact product name/link or variant if needed.");
+      lines.push("  Writer rule: Live availability is inconclusive. Say you cannot confirm live availability right now and ask for the exact product name/link or variant if needed. Example neutral phrasing: \"Jeg kan ikke se lagerstatus direkte her, så jeg vil ikke love noget forkert.\"");
     }
   }
   return lines.join("\n");

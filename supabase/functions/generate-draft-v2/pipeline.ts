@@ -81,6 +81,7 @@ import { resolveCustomerName } from "./stages/customer-name-resolution.ts";
 import { checkUnsupportedCommitments } from "./stages/unsupported-commitment-check.ts";
 import { checkUnsupportedAssumptions } from "./stages/unsupported-assumption-check.ts";
 import { checkLiveFactAndActionClaims } from "./stages/live-fact-action-claim-check.ts";
+import { checkUnsupportedNegativeClaims } from "./stages/unsupported-negative-claim-check.ts";
 import {
   checkImageEvidenceClaims,
   type ImageEvidenceViolationType,
@@ -2643,6 +2644,30 @@ export async function runDraftV2Pipeline(
       );
     }
 
+    // 12e. Deterministic guard against unsupported NEGATIVE compatibility /
+    // accessory-fit / availability / purchasability claims ("not compatible",
+    // "does not fit", "not available", "cannot buy") that lack grounding in
+    // structured compatibility provenance, live stock facts, or a retrieved
+    // knowledge chunk. Same additive posture: never rewrites, only escalates
+    // routing_hint to "review".
+    const unsupportedNegativeClaimCheck = checkUnsupportedNegativeClaims({
+      draft_text: finalDraft ?? "",
+      structured_facts: structuredFactsProvenance,
+      facts: facts.facts,
+      retrieved_chunks: retrieved.chunks,
+    });
+    if (unsupportedNegativeClaimCheck.requires_review) {
+      finalRoutingHint = "review";
+      blockSendRecommended = true;
+      console.warn(
+        `[generate-draft-v2] unsupported negative compatibility/availability claim flagged ${
+          unsupportedNegativeClaimCheck.violations
+            .map((v) => v.type)
+            .join(", ")
+        } — routing to review`,
+      );
+    }
+
     const policyChunkCount = retrieved.chunks.filter((c) =>
       c.usable_as === "policy"
     ).length;
@@ -2886,6 +2911,12 @@ export async function runDraftV2Pipeline(
         compliant: liveFactActionClaimCheck.compliant,
         violations: liveFactActionClaimCheck.violations,
         requires_review: liveFactActionClaimCheck.requires_review,
+      },
+      unsupported_negative_claim_check: {
+        checked: true,
+        compliant: unsupportedNegativeClaimCheck.compliant,
+        violations: unsupportedNegativeClaimCheck.violations,
+        requires_review: unsupportedNegativeClaimCheck.requires_review,
       },
       is_test_mode: isTestMode,
       confidence: finalConfidence,
