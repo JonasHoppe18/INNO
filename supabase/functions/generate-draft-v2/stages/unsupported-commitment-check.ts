@@ -51,6 +51,11 @@ type CommitmentFamily = {
   // deliberately do NOT match these — they use "will"/"'ll"/Danish "vil" +
   // an active first-person verb, never "may"/"might"/"could"/"kan".
   commitmentPatterns: RegExp[];
+  // Optional whole-draft context gate. Pronoun-form promises ("vi sørger for,
+  // at du får den tilsendt") only count for this family when the draft
+  // mentions the family's subject noun somewhere — the sentence-scoped
+  // patterns can't resolve the pronoun's antecedent, the draft-level gate can.
+  draftContextRequirement?: RegExp;
 };
 
 // Hedge / conditional markers. If present in the same sentence as an otherwise
@@ -151,6 +156,29 @@ const FAMILIES: CommitmentFamily[] = [
       /\bdu\s+får\s+(?:fakturaen|din\s+faktura|kvitteringen|ordrebekræftelsen)\s+(?:tilsendt|sendt)\b/i,
     ],
   },
+  // READINESS-6b: pronoun-form document-delivery promises ("vi sørger for,
+  // at du får den tilsendt", "we'll send it to you") where the document noun
+  // lives in a NEIGHBOURING sentence. The sentence-scoped noun patterns above
+  // can't see the antecedent, so these pronoun patterns are gated on a
+  // document noun appearing anywhere in the draft.
+  {
+    violationType: "unsupported_document_promise",
+    authorizingActionType: /resend_confirmation_or_invoice/i,
+    draftContextRequirement:
+      /\b(?:faktura(?:en)?|kvittering(?:en)?|ordrebekræftelse(?:n)?|invoice|receipt|order\s+confirmation)\b/i,
+    commitmentPatterns: [
+      // DA active: "jeg/vi sørger for, at du får den/det/dem tilsendt/sendt"
+      /\b(?:jeg|vi)\s+sørger\s+for,?\s+at\s+du\s+får\s+(?:den|det|dem)\s+(?:tilsendt|sendt|fremsendt)\b/i,
+      // DA passive: "du får den/det/dem tilsendt/sendt"
+      /\bdu\s+får\s+(?:den|det|dem)\s+(?:tilsendt|sendt|fremsendt)\b/i,
+      // DA active: "jeg/vi sender den/det/dem (til dig)"
+      /\b(?:jeg|vi)\s+sender\s+(?:den|det|dem)\s+(?:til\s+dig|hurtigst|snarest)\b/i,
+      // EN: "I/we will send it (to you / over / shortly)"
+      /\b(?:i|we)(?:['’]ll| will)\s+send\s+it\s+(?:to\s+you|over|shortly|right\s+away|as\s+soon\s+as)\b/i,
+      // EN: "we'll make sure you get/receive it"
+      /\b(?:i|we)(?:['’]ll| will)\s+make\s+sure\s+you\s+(?:get|receive)\s+it\b/i,
+    ],
+  },
   // READINESS-4: document-delivery promises for document types with no
   // backing action today (credit note, return/shipping label, warranty
   // document). Never authorized — the authorizingActionType intentionally
@@ -201,6 +229,12 @@ export function checkUnsupportedCommitments(
     if (HEDGE_RE.test(sentence)) continue;
 
     for (const family of FAMILIES) {
+      if (
+        family.draftContextRequirement &&
+        !family.draftContextRequirement.test(draftText)
+      ) {
+        continue;
+      }
       const matches = family.commitmentPatterns.some((re) => re.test(sentence));
       if (!matches) continue;
 

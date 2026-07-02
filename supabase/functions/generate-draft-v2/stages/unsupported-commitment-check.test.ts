@@ -499,3 +499,69 @@ Deno.test("result shape is additive/diagnostic only and deterministic", () => {
   // Input is not mutated.
   assertEquals(input.draft_text, "We will issue a refund.");
 });
+
+// ── READINESS-6b: pronoun-form document-delivery promises ───────────────────
+// Night-probe A6: "Jeg kan ikke sende fakturaen direkte herfra, men sagen
+// bliver håndteret manuelt. Vi sørger for, at du får den tilsendt hurtigst
+// muligt." The promise sentence refers to the invoice only via the pronoun
+// "den", so the noun-anchored document patterns never matched. The pronoun
+// patterns require a document noun elsewhere in the draft to stay precise.
+
+Deno.test("READINESS-6b: pronoun promise with invoice antecedent → unsupported_document_promise", () => {
+  const r = checkUnsupportedCommitments({
+    draft_text:
+      "Hej Thomas,\n\nJeg kan ikke sende fakturaen direkte herfra, men sagen bliver håndteret manuelt. Vi sørger for, at du får den tilsendt hurtigst muligt.",
+  });
+  assertEquals(r.compliant, false);
+  assertEquals(r.requires_review, true);
+  assert(
+    r.violations.some((v) => v.type === "unsupported_document_promise"),
+  );
+});
+
+Deno.test("READINESS-6b: passive pronoun promise ('du får den tilsendt') with receipt antecedent → violation", () => {
+  const r = checkUnsupportedCommitments({
+    draft_text:
+      "Vi har modtaget din forespørgsel om en kvittering. Du får den tilsendt hurtigst muligt.",
+  });
+  assertEquals(r.compliant, false);
+  assert(
+    r.violations.some((v) => v.type === "unsupported_document_promise"),
+  );
+});
+
+Deno.test("READINESS-6b: EN pronoun promise ('we'll send it to you') with invoice antecedent → violation", () => {
+  const r = checkUnsupportedCommitments({
+    draft_text:
+      "I can't generate the invoice directly from here. We'll send it to you as soon as possible.",
+  });
+  assertEquals(r.compliant, false);
+  assert(
+    r.violations.some((v) => v.type === "unsupported_document_promise"),
+  );
+});
+
+Deno.test("READINESS-6b: pronoun promise with NO document noun anywhere → compliant", () => {
+  const r = checkUnsupportedCommitments({
+    draft_text:
+      "Tak for din besked. Vi sørger for, at du får den tilsendt hurtigst muligt.",
+  });
+  assertEquals(r.compliant, true);
+});
+
+Deno.test("READINESS-6b: pronoun promise authorized by resend_confirmation_or_invoice → compliant", () => {
+  const r = checkUnsupportedCommitments({
+    draft_text:
+      "Du har bedt om fakturaen for din ordre. Vi sørger for, at du får den tilsendt hurtigst muligt.",
+    approved_actions: [{ type: "resend_confirmation_or_invoice" }],
+  });
+  assertEquals(r.compliant, true);
+});
+
+Deno.test("READINESS-6b: hedged pronoun promise ('efter godkendelse') → compliant", () => {
+  const r = checkUnsupportedCommitments({
+    draft_text:
+      "Du har bedt om fakturaen. Efter godkendelse sørger vi for, at du får den tilsendt.",
+  });
+  assertEquals(r.compliant, true);
+});
