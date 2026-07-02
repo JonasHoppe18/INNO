@@ -167,6 +167,41 @@ Deno.test("invoice-forwarded claim with executed invoice action → compliant", 
   assertEquals(r.violations.length, 0);
 });
 
+// ── 8e. READINESS-4: request-noun variant "fakturaforespørgsel" (no executed
+// action) → violation. A claim of having forwarded the *request* still
+// implies an unexecuted action.
+Deno.test("Danish: invoice-request forwarded (fakturaforespørgsel) without executed action → not_executed_invoice", () => {
+  const r = checkLiveFactAndActionClaims({
+    draft_text: "Jeg har videresendt din fakturaforespørgsel.",
+    facts: [],
+  });
+  assertEquals(r.compliant, false);
+  assert(r.violations.some((v) => v.type === "action/not_executed_invoice"));
+});
+
+// ── 8f. READINESS-4: request-noun variant, split verb construction
+// ("sendt ... videre") without executed action → violation.
+Deno.test("Danish: invoice-request sent onward (sendt ... videre) without executed action → not_executed_invoice", () => {
+  const r = checkLiveFactAndActionClaims({
+    draft_text: "Jeg har sendt din fakturaforespørgsel videre.",
+    facts: [],
+  });
+  assertEquals(r.compliant, false);
+  assert(r.violations.some((v) => v.type === "action/not_executed_invoice"));
+});
+
+// ── 8g. READINESS-4: request-noun variant WITH executed invoice action →
+// compliant (same authorization scope as the base invoice family).
+Deno.test("Danish: invoice-request forwarded claim with executed invoice action → compliant", () => {
+  const r = checkLiveFactAndActionClaims({
+    draft_text: "Jeg har videresendt din fakturaforespørgsel.",
+    facts: [],
+    executed_action_types: ["resend_confirmation_or_invoice"],
+  });
+  assertEquals(r.compliant, true);
+  assertEquals(r.violations.length, 0);
+});
+
 // ── 9. Order cancelled, no executed cancel → violation ──────────────────────
 Deno.test("cancelled claim without executed cancel_order → not_executed_cancel", () => {
   const r = checkLiveFactAndActionClaims({

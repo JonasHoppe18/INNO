@@ -268,6 +268,221 @@ Deno.test("routing override: safe conditional wording leaves auto unchanged", ()
   assertEquals(blockSendRecommended, false);
 });
 
+// ── Document-delivery promises (READINESS-4) ────────────────────────────────
+
+Deno.test("Danish: invoice-send promise → review", () => {
+  const result = checkUnsupportedCommitments({
+    draft_text: "Jeg sender fakturaen til dig.",
+    language: "da",
+  });
+  assertEquals(result.compliant, false);
+  assertEquals(result.violations[0].type, "unsupported_document_promise");
+});
+
+Deno.test("Danish: future invoice-delivery promise → review", () => {
+  const result = checkUnsupportedCommitments({
+    draft_text: "Jeg sørger for, at du får fakturaen tilsendt.",
+    language: "da",
+  });
+  assertEquals(result.compliant, false);
+  assertEquals(result.violations[0].type, "unsupported_document_promise");
+});
+
+Deno.test("English: invoice-send promise → review", () => {
+  const result = checkUnsupportedCommitments({
+    draft_text: "I'll make sure the invoice is sent to you.",
+  });
+  assertEquals(result.compliant, false);
+  assertEquals(result.violations[0].type, "unsupported_document_promise");
+});
+
+Deno.test("Danish: passive return-label promise → review", () => {
+  const result = checkUnsupportedCommitments({
+    draft_text: "Du får en returlabel sendt.",
+    language: "da",
+  });
+  assertEquals(result.compliant, false);
+});
+
+Deno.test("Danish: order-confirmation resend promise → review", () => {
+  const result = checkUnsupportedCommitments({
+    draft_text: "Jeg sender en ny ordrebekræftelse.",
+    language: "da",
+  });
+  assertEquals(result.compliant, false);
+  // "sender ... en ny X" also matches the pre-existing replacement family's
+  // generic "en ny" pattern — both families correctly flag this sentence,
+  // so assert presence rather than a fixed violations[0] position/count.
+  assert(
+    result.violations.some((v) => v.type === "unsupported_document_promise"),
+  );
+});
+
+Deno.test("Danish: credit-note promise → review", () => {
+  const result = checkUnsupportedCommitments({
+    draft_text: "Jeg sender dig en kreditnota.",
+    language: "da",
+  });
+  assertEquals(result.compliant, false);
+  assertEquals(result.violations[0].type, "unsupported_document_promise");
+});
+
+Deno.test("Danish: warranty-document promise → review", () => {
+  const result = checkUnsupportedCommitments({
+    draft_text: "Jeg sender garantidokumentet til dig.",
+    language: "da",
+  });
+  assertEquals(result.compliant, false);
+  assertEquals(result.violations[0].type, "unsupported_document_promise");
+});
+
+Deno.test("Danish: neutral request for order number → allowed", () => {
+  const result = checkUnsupportedCommitments({
+    draft_text: "Kan du sende dit ordrenummer, så vi kan hjælpe med fakturaen?",
+    language: "da",
+  });
+  assertEquals(result.compliant, true);
+  assertEquals(result.violations.length, 0);
+});
+
+Deno.test("Danish: neutral 'cannot send directly' wording → allowed", () => {
+  const result = checkUnsupportedCommitments({
+    draft_text:
+      "Jeg kan ikke sende fakturaen direkte herfra, men teamet kan hjælpe med at tjekke det.",
+    language: "da",
+  });
+  assertEquals(result.compliant, true);
+  assertEquals(result.violations.length, 0);
+});
+
+Deno.test("Danish: neutral manual-handling wording → allowed", () => {
+  const result = checkUnsupportedCommitments({
+    draft_text:
+      "Sagen skal håndteres manuelt, da der ikke er en understøttet faktura-handling.",
+    language: "da",
+  });
+  assertEquals(result.compliant, true);
+  assertEquals(result.violations.length, 0);
+});
+
+Deno.test("Danish: order visible but cannot send invoice → allowed", () => {
+  const result = checkUnsupportedCommitments({
+    draft_text:
+      "Jeg kan se din ordre, men jeg kan ikke sende fakturaen direkte herfra.",
+    language: "da",
+  });
+  assertEquals(result.compliant, true);
+  assertEquals(result.violations.length, 0);
+});
+
+// ── Authorization scoping ────────────────────────────────────────────────
+
+Deno.test("order-confirmation promise authorized by approved resend_confirmation_or_invoice", () => {
+  const result = checkUnsupportedCommitments({
+    draft_text: "Jeg sender ordrebekræftelsen til dig.",
+    approved_actions: [{ type: "resend_confirmation_or_invoice" }],
+    language: "da",
+  });
+  assertEquals(result.compliant, true);
+  assertEquals(result.violations.length, 0);
+});
+
+Deno.test("order-confirmation promise NOT authorized without approved resend_confirmation_or_invoice", () => {
+  const result = checkUnsupportedCommitments({
+    draft_text: "Jeg sender ordrebekræftelsen til dig.",
+    suggested_actions: [{ type: "resend_confirmation_or_invoice" }],
+    language: "da",
+  });
+  assertEquals(result.compliant, false);
+  assertEquals(result.violations[0].type, "unsupported_document_promise");
+});
+
+Deno.test("invoice-send promise authorized by approved resend_confirmation_or_invoice", () => {
+  const result = checkUnsupportedCommitments({
+    draft_text: "Jeg sender fakturaen til dig.",
+    approved_actions: [{ type: "resend_confirmation_or_invoice" }],
+    language: "da",
+  });
+  assertEquals(result.compliant, true);
+  assertEquals(result.violations.length, 0);
+});
+
+Deno.test("return-label promise NOT authorized even when resend_confirmation_or_invoice is approved", () => {
+  const result = checkUnsupportedCommitments({
+    draft_text: "Jeg sender en returlabel til dig.",
+    approved_actions: [{ type: "resend_confirmation_or_invoice" }],
+    language: "da",
+  });
+  assertEquals(result.compliant, false);
+});
+
+Deno.test("credit-note promise NOT authorized even when resend_confirmation_or_invoice is approved", () => {
+  const result = checkUnsupportedCommitments({
+    draft_text: "Jeg sender en kreditnota til dig.",
+    approved_actions: [{ type: "resend_confirmation_or_invoice" }],
+    language: "da",
+  });
+  assertEquals(result.compliant, false);
+  assertEquals(result.violations[0].type, "unsupported_document_promise");
+});
+
+Deno.test("warranty-document promise NOT authorized even when resend_confirmation_or_invoice is approved", () => {
+  const result = checkUnsupportedCommitments({
+    draft_text: "Jeg sender garantidokumentet til dig.",
+    approved_actions: [{ type: "resend_confirmation_or_invoice" }],
+    language: "da",
+  });
+  assertEquals(result.compliant, false);
+  assertEquals(result.violations[0].type, "unsupported_document_promise");
+});
+
+Deno.test("document promise not authorized by an unrelated approved action", () => {
+  const result = checkUnsupportedCommitments({
+    draft_text: "Jeg sender fakturaen til dig.",
+    approved_actions: [{ type: "refund_order" }],
+    language: "da",
+  });
+  assertEquals(result.compliant, false);
+  assertEquals(result.violations[0].type, "unsupported_document_promise");
+});
+
+// ── READINESS-CORE regression ───────────────────────────────────────────────
+// Customer asks: "Kan I sende mig en faktura?" — Sona must not answer with a
+// promise to send it; a neutral/manual-handling or order-number-ask reply
+// must pass, while a promise-style reply must be flagged for review.
+
+Deno.test("READINESS-CORE: promise-style reply to 'Kan I sende mig en faktura?' is flagged", () => {
+  const result = checkUnsupportedCommitments({
+    draft_text: "Ja, jeg sender dig fakturaen med det samme.",
+    language: "da",
+  });
+  assertEquals(result.compliant, false);
+  assertEquals(result.requires_review, true);
+  assertEquals(result.violations[0].type, "unsupported_document_promise");
+});
+
+Deno.test("READINESS-CORE: neutral order-number reply to 'Kan I sende mig en faktura?' is allowed", () => {
+  const result = checkUnsupportedCommitments({
+    draft_text: "Kan du sende dit ordrenummer, så vi kan hjælpe med fakturaen?",
+    language: "da",
+  });
+  assertEquals(result.compliant, true);
+  assertEquals(result.requires_review, false);
+});
+
+// ── Existing families remain unaffected (regression) ───────────────────────
+
+Deno.test("READINESS-4 regression: refund/prepaid_label/replacement/exchange families unaffected", () => {
+  const refund = checkUnsupportedCommitments({ draft_text: "We will issue a refund." });
+  const label = checkUnsupportedCommitments({ draft_text: "I will send you a prepaid return label." });
+  const replacement = checkUnsupportedCommitments({ draft_text: "We will replace your headset." });
+  const exchange = checkUnsupportedCommitments({ draft_text: "We will arrange an exchange." });
+  assertEquals(refund.violations[0].type, "unsupported_refund_promise");
+  assertEquals(label.violations[0].type, "unsupported_prepaid_label_promise");
+  assertEquals(replacement.violations[0].type, "unsupported_replacement_promise");
+  assertEquals(exchange.violations[0].type, "unsupported_exchange_promise");
+});
+
 Deno.test("result shape is additive/diagnostic only and deterministic", () => {
   const input = {
     draft_text: "We will issue a refund.",

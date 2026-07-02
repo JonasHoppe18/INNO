@@ -3,11 +3,11 @@
 // Pure, deterministic post-writer safety check. NO DB / NO API / NO LLM.
 //
 // The writer occasionally promises a high-risk outcome (refund, prepaid return
-// label, replacement, exchange) before any corresponding action has been
-// approved. Prompt-only guardrails do not reliably prevent this on every model.
-// This module catches the four highest-risk commitment families with
-// conservative, precision-first phrase patterns (English + Danish) and reports
-// whether the draft should be routed to human review.
+// label, replacement, exchange, document delivery) before any corresponding
+// action has been approved. Prompt-only guardrails do not reliably prevent
+// this on every model. This module catches these high-risk commitment
+// families with conservative, precision-first phrase patterns (English +
+// Danish) and reports whether the draft should be routed to human review.
 //
 // This module NEVER rewrites the draft, NEVER executes actions, and is
 // shop-agnostic — no shop ids, no per-shop branching.
@@ -16,7 +16,8 @@ export type UnsupportedCommitmentViolationType =
   | "unsupported_refund_promise"
   | "unsupported_prepaid_label_promise"
   | "unsupported_replacement_promise"
-  | "unsupported_exchange_promise";
+  | "unsupported_exchange_promise"
+  | "unsupported_document_promise";
 
 export type UnsupportedCommitmentCheckInput = {
   draft_text: string;
@@ -127,6 +128,45 @@ const FAMILIES: CommitmentFamily[] = [
       /\b(?:vi|jeg)\s+(?:vil\s+)?ombytter?\b/i,
       // DA already-done claims
       /\bvi\s+har\s+(?:ombyttet|startet\s+ombytningen)\b/i,
+    ],
+  },
+  // READINESS-4: document-delivery promises (invoice / receipt / order
+  // confirmation). resend_confirmation_or_invoice is a real, executable
+  // action, so a promise in this narrow scope may be authorized by it —
+  // but only this scope. Split from the credit-note/label/warranty family
+  // below so an approved resend_confirmation_or_invoice can never authorize
+  // those unsupported document types (no action exists for them at all).
+  {
+    violationType: "unsupported_document_promise",
+    authorizingActionType: /resend_confirmation_or_invoice/i,
+    commitmentPatterns: [
+      // EN future
+      /\b(?:i|we)(?:['’]ll| will)\s+send\s+(?:you\s+)?(?:the\s+|your\s+|an?\s+)?(?:invoice|receipt|order confirmation)\b/i,
+      /\b(?:i|we)(?:['’]ll| will)\s+make sure\s+(?:the\s+|your\s+|an?\s+)?(?:invoice|receipt|order confirmation)\s+(?:is|gets)\s+sent\b/i,
+      /\b(?:the\s+|your\s+)?(?:invoice|receipt|order confirmation)\s+will\s+be\s+sent\b/i,
+      // DA future — active
+      /\b(?:jeg|vi)\s+sender\s+(?:dig\s+)?(?:fakturaen|din\s+faktura|en\s+faktura|kvitteringen|din\s+kvittering|en\s+kvittering|ordrebekræftelsen|en\s+(?:ny\s+)?ordrebekræftelse)\b/i,
+      /\b(?:jeg|vi)\s+sørger\s+for,?\s+at\s+du\s+får\s+(?:fakturaen|din\s+faktura|en\s+faktura|kvitteringen|ordrebekræftelsen)\s+(?:tilsendt|sendt)\b/i,
+      // DA future — passive ("du får ... sendt/tilsendt")
+      /\bdu\s+får\s+(?:fakturaen|din\s+faktura|kvitteringen|ordrebekræftelsen)\s+(?:tilsendt|sendt)\b/i,
+    ],
+  },
+  // READINESS-4: document-delivery promises for document types with no
+  // backing action today (credit note, return/shipping label, warranty
+  // document). Never authorized — the authorizingActionType intentionally
+  // matches no real action type so these always require review.
+  {
+    violationType: "unsupported_document_promise",
+    authorizingActionType: /^no_supported_action_exists$/,
+    commitmentPatterns: [
+      // EN future
+      /\b(?:i|we)(?:['’]ll| will)\s+send\s+(?:you\s+)?(?:a\s+|an\s+|the\s+|your\s+)?(?:credit note|warranty document)\b/i,
+      /\b(?:a\s+|the\s+|your\s+)?(?:credit note|return label|shipping label|warranty document)\s+will\s+be\s+sent\b/i,
+      // DA future — active (kreditnota / garantidokument; returlabel/fragtlabel
+      // active-voice already covered by unsupported_prepaid_label_promise above)
+      /\b(?:jeg|vi)\s+sender\s+(?:dig\s+)?(?:en\s+)?(?:kreditnota|garantidokument\w*)\b/i,
+      // DA future — passive ("du får ... sendt/tilsendt")
+      /\bdu\s+får\s+(?:en\s+)?(?:returlabel|kreditnota|fragtlabel|garantidokument\w*)\s+(?:sendt|tilsendt)\b/i,
     ],
   },
 ];

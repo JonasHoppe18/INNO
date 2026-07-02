@@ -181,6 +181,10 @@ const FAMILIES: ClaimFamily[] = [
       /\b(?:jeg|vi)\s+har\s+(?:allerede\s+)?(?:sendt|videresendt|sendt\s+videre)\s+(?:dig\s+)?(?:fakturaen|din\s+faktura|en\s+faktura)\b/i,
       /\b(?:jeg|vi)\s+videresender\s+(?:dig\s+)?(?:fakturaen|din\s+faktura|en\s+faktura)\b/i,
       /\bfakturaen\s+er\s+(?:blevet\s+)?(?:sendt|videresendt|sendt\s+videre)\b/i,
+      // READINESS-4: request-noun variants ("fakturaforespørgsel") — a claim
+      // of having forwarded the *request* is still an unexecuted-action claim.
+      /\b(?:jeg|vi)\s+har\s+(?:allerede\s+)?(?:sendt|videresendt|sendt\s+videre)\s+(?:dig\s+)?(?:din\s+)?fakturaforespørgsel(?:en)?\b/i,
+      /\b(?:jeg|vi)\s+har\s+sendt\s+(?:dig\s+)?(?:din\s+)?fakturaforespørgsel(?:en)?\s+videre\b/i,
     ],
     isSupported: (ctx) =>
       executedMatches(ctx.executed, /resend_confirmation_or_invoice|invoice/i),
