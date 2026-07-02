@@ -2013,6 +2013,8 @@ ${customerHistory}`
     : "";
 
   const stageDirectives: Record<string, string> = {
+    clarify_symptom:
+      "KRITISK — kunden har IKKE beskrevet et konkret produkt, symptom eller problem endnu (kun noget i retning af \"det virker ikke\"/\"problem med min ordre\"). Stil PRÆCIS ét kort, venligt spørgsmål der beder om (a) hvilket produkt eller hvilken ordre det drejer sig om, og (b) hvad der konkret ikke virker/er galt. Giv INGEN troubleshooting-trin, årsagsforslag eller løsningsforslag — problemet er endnu ukendt, så gæt ALDRIG på produkt, symptom eller årsag. Nævn IKKE garanti, retur eller refund medmindre kunden allerede selv har bedt om det. Dette er IKKE en anbefaling der kan fraviges — svar KUN med spørgsmålet, i en naturlig og hjælpsom tone som en rigtig supportmedarbejder, ikke robotagtigt eller proceduremæssigt.",
     troubleshoot_first:
       "Foretrukken sti: giv produkt-specifikke troubleshooting-trin fra hentede sources før garanti/retur/ombytning nævnes. UNDTAGELSE: hvis kunden eksplicit skriver de allerede har prøvet trin, eller eksplicit beder om replacement/refund og kontekst gør det rimeligt, så følg kundens behov i stedet.",
     request_evidence:

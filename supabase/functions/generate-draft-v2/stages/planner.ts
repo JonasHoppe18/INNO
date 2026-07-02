@@ -3,7 +3,12 @@ import { CaseState } from "./case-state-updater.ts";
 import { resolveReplyLanguage } from "./language.ts";
 import { callOpenAIJson } from "./openai-json.ts";
 
+// The LLM call is injectable so unit tests can run deterministically against
+// stubbed plans with no live API (same pattern as snippet-matcher.ts).
+type CallJson = typeof callOpenAIJson;
+
 export type ResolutionStage =
+  | "clarify_symptom"
   | "troubleshoot_first"
   | "request_evidence"
   | "initiate_warranty_repair"
@@ -61,6 +66,7 @@ const PLANNER_SCHEMA = {
     resolution_stage: {
       type: "string",
       enum: [
+        "clarify_symptom",
         "troubleshoot_first",
         "request_evidence",
         "initiate_warranty_repair",
@@ -92,7 +98,9 @@ const PLANNER_SCHEMA = {
 
 export async function runPlanner(
   { caseState, latestMessage, shop }: PlannerInput,
+  deps: { callJson?: CallJson } = {},
 ): Promise<Plan> {
+  const callJson = deps.callJson ?? callOpenAIJson;
   const body =
     (latestMessage as { clean_body_text?: string }).clean_body_text ?? "";
   const shopName = (shop as { name?: string }).name ?? "shop";
@@ -103,7 +111,7 @@ export async function runPlanner(
 Schema:
 {
   "primary_intent": "tracking|return|refund|exchange|address_change|product_question|complaint|thanks|update|other",
-  "resolution_stage": "troubleshoot_first|request_evidence|initiate_warranty_repair|cancel_order|refund_or_exchange|info_only|escalate_human",
+  "resolution_stage": "clarify_symptom|troubleshoot_first|request_evidence|initiate_warranty_repair|cancel_order|refund_or_exchange|info_only|escalate_human",
   "sub_queries": ["query 1"],
   "required_facts": ["order_state"],
   "skills_to_consider": ["get_order"],
@@ -148,11 +156,14 @@ Rules:
   - For "thanks" intent: sub_queries MUST be empty [] — no knowledge retrieval needed
   - For "update" intent: required_facts MUST be empty [] — no order lookup needed
   - For "update" intent: sub_queries MUST be empty [] — no knowledge retrieval needed
+  - When resolution_stage = "clarify_symptom": sub_queries MUST be empty [] — there is nothing concrete to search for yet, and injecting knowledge here risks the writer guessing from it instead of asking. required_facts MUST be empty [] too — do not look up the order before we even know what the customer's actual issue is.
 - skills_to_consider: only actions relevant to intent — get_order | get_tracking | update_shipping_address | cancel_order | refund_order | create_exchange_request
   - For "thanks" intent: skills_to_consider MUST be empty []
   - For "update" intent: skills_to_consider MUST be empty []
+  - When resolution_stage = "clarify_symptom": skills_to_consider MUST be empty []
 - resolution_stage (CRITICAL — defines what the reply must DO, separate from intent which is what it is ABOUT). Pick exactly one:
-  - "troubleshoot_first": Customer reports a technical/functional issue (won't pair, won't charge, won't power on, no sound, dropouts, software glitch) and has NOT stated they already tried troubleshooting. The reply must give product-specific steps from knowledge — NEVER offer warranty/return/replacement yet, even if customer asks for it. Applies to most "complaint" intents about technical symptoms.
+  - "clarify_symptom": Customer expresses malfunction/dissatisfaction/a problem ("det virker ikke", "it doesn't work", "broken", "problem med min ordre") but names NO concrete symptom, feature, product, order detail, or actionable specific — AND the thread context above (order numbers, products discussed, unresolved customer issues, pending context) does NOT already establish what the issue/product is. The reply must ask exactly one short clarification question (which product, and what exactly is wrong) — NEVER guess a symptom, NEVER give troubleshooting steps, NEVER offer warranty/return. This is ecommerce-generic — it applies to ANY vertical, not just technical/audio products. If the thread context already names the product/symptom (e.g. from an earlier message in the same thread), do NOT use this stage — use the stage that fits the now-known issue instead.
+  - "troubleshoot_first": Customer reports a technical/functional issue with enough detail to act on (won't pair, won't charge, won't power on, no sound, dropouts, software glitch, or any other named symptom) and has NOT stated they already tried troubleshooting. The reply must give product-specific steps from knowledge — NEVER offer warranty/return/replacement yet, even if customer asks for it. Applies to most "complaint" intents about technical symptoms where a concrete symptom is actually named. Do NOT use this stage when no concrete symptom is named — use "clarify_symptom" instead.
   - "request_evidence": Customer reports physical damage / defect (broken part, dangling microphone, cracked shell, missing piece) OR is requesting warranty/replacement but evidence is missing (no photos/video, no order number when needed). The reply must ask for the missing evidence before offering a resolution path. Applies to many "complaint" and "exchange" intents on first contact.
   - "initiate_warranty_repair": Customer explicitly states they HAVE tried the troubleshooting steps, OR damage is already documented in the thread (photos/video provided earlier, repair-path already acknowledged). The reply must outline the warranty / send-in-for-repair procedure per knowledge. Do NOT propose more troubleshooting.
   - "cancel_order": Customer asks to cancel. Pair with "cancel" intent.
@@ -161,6 +172,7 @@ Rules:
   - "escalate_human": Truly beyond AI scope (legal threat, multi-party dispute, ambiguous identity, shop policy explicitly requires human). Use sparingly.
 
   CRITICAL decision rules:
+  - intent="complaint" (or "other" when the message is just "it doesn't work"/"problem with my order" with nothing else) + NO concrete symptom/product/order detail named + thread context does not already name one → resolution_stage = "clarify_symptom" (ask before guessing — never invent a symptom)
   - intent="complaint" + technical symptom + customer has NOT said they tried steps → resolution_stage = "troubleshoot_first" (never jump to warranty/return on first contact)
   - intent="complaint" + technical symptom + customer says "I tried X/Y/Z and it still doesn't work" → resolution_stage = "initiate_warranty_repair"
   - intent="complaint" or "exchange" + physical damage + first contact, no images in thread → resolution_stage = "request_evidence"
@@ -204,7 +216,7 @@ IMPORTANT for sub_queries: If the current message is short or vague (e.g. "it st
   const model = Deno.env.get("OPENAI_EXTRACT_MODEL") ?? "gpt-4o-mini";
 
   try {
-    const parsed = await callOpenAIJson<Plan>({
+    const parsed = await callJson<Plan>({
       model,
       systemPrompt,
       userPrompt,

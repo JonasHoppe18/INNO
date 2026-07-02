@@ -139,3 +139,49 @@ Deno.test("stock and compatibility questions emit no accessory replacement recal
     assertEquals(accessoryReplacementProbe(qs), undefined);
   }
 });
+
+// READINESS-3 regression: a symptom-less complaint ("Det virker ikke.") must
+// not surface any technical/troubleshooting probe — with resolution_stage
+// forced to clarify_symptom, the planner also emits sub_queries=[], so this
+// (zero fallback queries too) is what makes runRetriever return zero chunks
+// and leaves the writer nothing to guess a troubleshooting answer from.
+Deno.test("symptom-less complaint (clarify_symptom) surfaces no fallback queries at all", () => {
+  for (
+    const message of [
+      "Det virker ikke.",
+      "It doesn't work.",
+      "Den virker ikke længere.",
+      "Problem med min ordre.",
+    ]
+  ) {
+    const qs = buildFallbackQueries(
+      plan("complaint", "clarify_symptom"),
+      message,
+      { name: "AceZone", product_overview: "A-Spire Wireless" },
+    );
+    assertEquals(
+      qs,
+      [],
+      `expected no fallback queries for symptom-less message "${message}", got ${
+        JSON.stringify(qs)
+      }`,
+    );
+  }
+});
+
+Deno.test("symptom-less complaint never surfaces a microphone/dongle/bluetooth technical probe", () => {
+  const qs = buildFallbackQueries(
+    plan("complaint", "clarify_symptom"),
+    "Hjælp, mit headset virker ikke",
+    { name: "AceZone", product_overview: "A-Spire Wireless" },
+  );
+  const leaksTechnicalContent = qs.some((q) =>
+    /mikrofon|microphone|dongle|bluetooth/i.test(q.text)
+  );
+  assert(
+    !leaksTechnicalContent,
+    `expected no technical probe for a vague headset complaint, got ${
+      JSON.stringify(qs)
+    }`,
+  );
+});
