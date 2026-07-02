@@ -19,7 +19,10 @@ import {
   type RoutingClassification,
 } from "../_shared/email-routing-classifier.ts";
 import { parseEmailReplyBodies } from "../_shared/email-reply-parser.ts";
-import { parseShopifyContactIdentity } from "../_shared/shopify-contact-form.ts";
+import {
+  parseShopifyContactIdentity,
+  shouldBypassShopifyNotificationSenderRule,
+} from "../_shared/shopify-contact-form.ts";
 import { detectCustomerLanguage } from "../_shared/detect-language.ts";
 import { autoTagThread } from "../_shared/autoTagThread.ts";
 import { generateIssueMetadata } from "../_shared/generateIssueMetadata.ts";
@@ -1668,12 +1671,37 @@ Deno.serve(async (req) => {
   const senderRuleInboxSlug = senderRuleTargetsInbox
     ? normalizeInboxSlug(senderRuleOverride?.destinationValue || "")
     : "";
-  if (senderRuleOverride && !senderRuleTargetsInbox) {
+  // READINESS-2c: a workspace sender rule forcing mailer@shopify.com to
+  // "notification" also catches Shopify's own contact-form relay of real
+  // customer messages. When the parser has already confirmed a structured
+  // customer relay (name/email fields extracted), skip applying the
+  // notification override for this message only. The sender rule itself is
+  // left untouched, and any Shopify mail that isn't a clearly structured
+  // customer relay still falls through to the existing notification path.
+  const shopifyRelayCustomerException = shouldBypassShopifyNotificationSenderRule({
+    fromEmail,
+    senderRuleDestinationType: senderRuleOverride?.destinationType,
+    senderRuleDestinationValue: senderRuleOverride?.destinationValue,
+    shopifyContact,
+  });
+  if (shopifyRelayCustomerException) {
+    console.log(
+      "postmark-inbound: skipping sender-rule notification override for structured Shopify customer relay",
+      {
+        storedMessageId: messageId,
+        senderRuleId: senderRuleOverride?.id,
+        extractedCustomerEmail: shopifyContact.customerEmail,
+        reasons: shopifyContact.reasons,
+      },
+    );
+  }
+  const effectiveSenderRuleOverride = shopifyRelayCustomerException ? null : senderRuleOverride;
+  if (effectiveSenderRuleOverride && !senderRuleTargetsInbox) {
     routingClassification = {
       ...routingClassification,
-      category: senderRuleOverride.destinationValue,
+      category: effectiveSenderRuleOverride.destinationValue,
       confidence: 0.99,
-      reason: `sender_rule_override:${senderRuleOverride.id}`,
+      reason: `sender_rule_override:${effectiveSenderRuleOverride.id}`,
       source: "fallback",
     };
   }
@@ -1697,24 +1725,24 @@ Deno.serve(async (req) => {
       value: header?.Value ?? "",
     })),
   });
-  const classificationKey = senderRuleOverride
+  const classificationKey = effectiveSenderRuleOverride
     ? senderRuleTargetsInbox
       ? "support"
-      : normalizeRouteCategory(senderRuleOverride.destinationValue)
+      : normalizeRouteCategory(effectiveSenderRuleOverride.destinationValue)
     : isBlockedSender
       ? "blocked"
     : inboxClassification.bucket === "notification"
       ? "notification"
       : normalizeRouteCategory(routingClassification.category);
-  const classificationConfidence = senderRuleOverride
+  const classificationConfidence = effectiveSenderRuleOverride
     ? 0.99
     : isBlockedSender
       ? 0.99
     : inboxClassification.bucket === "notification"
       ? Math.min(1, Math.max(0.8, inboxClassification.score / 8))
       : routingClassification.confidence;
-  const classificationReason = senderRuleOverride
-    ? `sender_rule_override:${senderRuleOverride.id}`
+  const classificationReason = effectiveSenderRuleOverride
+    ? `sender_rule_override:${effectiveSenderRuleOverride.id}`
     : isBlockedSender
       ? `blocklist:${blockedSender?.id}`
     : inboxClassification.bucket === "notification"

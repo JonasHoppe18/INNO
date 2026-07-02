@@ -38,7 +38,7 @@ function normalizeName(value: unknown): string | null {
 
 function hasStructuredShopifyBody(bodyText: string): boolean {
   const fieldPattern =
-    /^(name|email|phone|message|what is your request regarding\??|what do you need help with\??)\s*:/gim;
+    /^(name|email|e-mail|phone|telefon|message|nachricht|what is your request regarding\??|what do you need help with\??|was ist ihr anliegen\??|wobei ben[oö]tigen sie hilfe\??)\s*:/gim;
   const matches = bodyText.match(fieldPattern);
   return Array.isArray(matches) && matches.length >= 2;
 }
@@ -90,7 +90,7 @@ export function parseShopifyContactIdentity(
     fromEmail === "mailer@shopify.com" || replyToEmail === "mailer@shopify.com";
   if (isShopifySender) reasons.push("shopify_sender");
 
-  const isShopifySubject = /new customer message on/i.test(subject);
+  const isShopifySubject = /(new customer message on|neue kundennachricht)/i.test(subject);
   if (isShopifySubject) reasons.push("shopify_subject");
 
   const hasStructuredBody = hasStructuredShopifyBody(bodyText);
@@ -130,4 +130,32 @@ export function parseShopifyContactIdentity(
     fields,
     reasons,
   };
+}
+
+/**
+ * READINESS-2c: a workspace sender rule that forces mailer@shopify.com to
+ * "notification" also catches Shopify's own contact-form relay of real
+ * customer messages. This decides whether that override should be skipped
+ * for a specific message, based on the already-computed Shopify contact
+ * identity — it does not change the sender rule itself.
+ */
+export function shouldBypassShopifyNotificationSenderRule(input: {
+  fromEmail?: string | null;
+  senderRuleDestinationType?: string | null;
+  senderRuleDestinationValue?: string | null;
+  shopifyContact: ShopifyContactIdentity;
+}): boolean {
+  const fromEmail = normalizeEmail(input.fromEmail);
+  const isShopifyMailerSender = fromEmail === "mailer@shopify.com";
+  const destinationType = String(input.senderRuleDestinationType || "").trim().toLowerCase();
+  const destinationValue = String(input.senderRuleDestinationValue || "").trim().toLowerCase();
+  const senderRuleForcesNotification =
+    destinationType !== "inbox" && destinationValue === "notification";
+
+  return Boolean(
+    senderRuleForcesNotification &&
+      isShopifyMailerSender &&
+      input.shopifyContact.detected &&
+      input.shopifyContact.customerEmail,
+  );
 }
