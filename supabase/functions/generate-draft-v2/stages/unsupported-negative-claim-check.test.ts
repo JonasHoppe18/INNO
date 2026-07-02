@@ -319,3 +319,104 @@ Deno.test("multiple ungrounded negative claims in one draft produce multiple vio
     result.violations.some((v) => v.type === "unsupported_negative_availability_claim"),
   );
 });
+
+// ── READINESS-6d: "ikke på lager" / "udsolgt" / "out of stock" phrasing ─────
+// Night-probe B11: "A-Rise er desværre ikke på lager i øjeblikket." with ZERO
+// retrieved chunks and no live stock fact. The availability family only
+// matched "ikke tilgængelig" / "findes ikke i", so the most common Danish
+// out-of-stock phrasing sailed through ungrounded.
+
+Deno.test("READINESS-6d: ungrounded DA 'ikke på lager' → review", () => {
+  const r = checkUnsupportedNegativeClaims({
+    draft_text: "A-Rise er desværre ikke på lager i øjeblikket.",
+    structured_facts: [],
+    facts: [],
+    retrieved_chunks: [],
+  });
+  assertEquals(r.compliant, false);
+  assert(
+    r.violations.some(
+      (v) => v.type === "unsupported_negative_availability_claim",
+    ),
+  );
+});
+
+Deno.test("READINESS-6d: ungrounded DA 'udsolgt' → review", () => {
+  const r = checkUnsupportedNegativeClaims({
+    draft_text: "Den sorte version er udsolgt.",
+    structured_facts: [],
+    facts: [],
+    retrieved_chunks: [],
+  });
+  assertEquals(r.compliant, false);
+  assert(
+    r.violations.some(
+      (v) => v.type === "unsupported_negative_availability_claim",
+    ),
+  );
+});
+
+Deno.test("READINESS-6d: ungrounded EN 'out of stock' / 'sold out' → review", () => {
+  const oos = checkUnsupportedNegativeClaims({
+    draft_text: "The A-Rise is currently out of stock.",
+    structured_facts: [],
+    facts: [],
+    retrieved_chunks: [],
+  });
+  const soldOut = checkUnsupportedNegativeClaims({
+    draft_text: "The black version is sold out.",
+    structured_facts: [],
+    facts: [],
+    retrieved_chunks: [],
+  });
+  assert(
+    oos.violations.some(
+      (v) => v.type === "unsupported_negative_availability_claim",
+    ),
+  );
+  assert(
+    soldOut.violations.some(
+      (v) => v.type === "unsupported_negative_availability_claim",
+    ),
+  );
+});
+
+Deno.test("READINESS-6d: 'ikke på lager' grounded by live out_of_stock fact → compliant", () => {
+  const r = checkUnsupportedNegativeClaims({
+    draft_text: "A-Rise er desværre ikke på lager i øjeblikket.",
+    structured_facts: [],
+    facts: [
+      {
+        label: "Live stock availability",
+        value: "product=A-Rise; state=out_of_stock",
+      },
+    ],
+    retrieved_chunks: [],
+  });
+  assertEquals(r.compliant, true);
+});
+
+Deno.test("READINESS-6d: 'ikke på lager' grounded by a chunk saying the product is out of stock → compliant", () => {
+  const r = checkUnsupportedNegativeClaims({
+    draft_text: "A-Rise er desværre ikke på lager i øjeblikket.",
+    structured_facts: [],
+    facts: [],
+    retrieved_chunks: [
+      {
+        id: "1",
+        content: "A-Rise er ikke på lager og forventes tilbage i august.",
+      },
+    ],
+  });
+  assertEquals(r.compliant, true);
+});
+
+Deno.test("READINESS-6d: uncertainty phrasing 'jeg kan ikke se lagerstatus' stays compliant", () => {
+  const r = checkUnsupportedNegativeClaims({
+    draft_text: "Jeg kan desværre ikke se lagerstatus for A-Rise herfra.",
+    structured_facts: [],
+    facts: [],
+    retrieved_chunks: [],
+  });
+  assertEquals(r.compliant, true);
+});

@@ -109,9 +109,17 @@ const FAMILIES: ClaimFamily[] = [
       /\baren['’]t\s+available\b/i,
       /\bdoes\s+not\s+come\s+in\b/i,
       /\bdoesn['’]t\s+come\s+in\b/i,
+      // READINESS-6d: plain out-of-stock claims
+      /\bout\s+of\s+stock\b/i,
+      /\bsold\s+out\b/i,
       // DA
       /\bikke\s+tilgængelig\b/i,
       /\bfindes\s+ikke\s+i\b/i,
+      // READINESS-6d: the most common Danish out-of-stock phrasings. The
+      // uncertainty form "kan ikke se lagerstatus" uses a different verb and
+      // never matches.
+      /\bikke\s+på\s+lager\b/i,
+      /\budsolgt\b/i,
     ],
   },
   {
@@ -140,6 +148,9 @@ const CHUNK_NEGATION_PATTERNS: RegExp[] = [
   /\bdiscontinued\b/i,
   /\bnot\s+sold\s+separately\b/i,
   /\bcannot\s+be\s+purchased\b/i,
+  // READINESS-6d: out-of-stock wording in a chunk can ground a stock claim
+  /\bout\s+of\s+stock\b/i,
+  /\bsold\s+out\b/i,
   // DA
   /\bpasser\s+ikke\b/i,
   /\bikke\s+kompatibel\b/i,
@@ -148,6 +159,9 @@ const CHUNK_NEGATION_PATTERNS: RegExp[] = [
   /\bbør\s+ikke\s+fjernes\b/i,
   /\bsælges\s+ikke\s+separat\b/i,
   /\bkan\s+ikke\s+købes\b/i,
+  // READINESS-6d (DA)
+  /\bikke\s+på\s+lager\b/i,
+  /\budsolgt\b/i,
 ];
 
 const NEGATIVE_STOCK_STATES = new Set(["out_of_stock", "unavailable", "discontinued"]);
