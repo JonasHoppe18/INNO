@@ -357,3 +357,88 @@ Deno.test("empty draft → compliant", () => {
   assertEquals(r.compliant, true);
   assertEquals(r.requires_review, false);
 });
+
+// ── READINESS-6a: fabricated tracking-status / tracking-link claims ─────────
+// Probe A2: the writer asserted carrier state and pasted a concrete tracking
+// link for an order that does not exist. Probe A10: "din ordre #4602 allerede
+// er afsendt" escaped the shipped-claim pattern because of the order number
+// and "allerede" between "ordre" and "er afsendt".
+
+Deno.test("Danish: 'trackingdataene viser' with no verified tracking → no_verified_tracking", () => {
+  const r = checkLiveFactAndActionClaims({
+    draft_text:
+      "Trackingdataene viser, at forsendelsen er blevet oprettet hos fragtmanden.",
+    facts: [],
+  });
+  assertEquals(r.compliant, false);
+  assert(r.violations.some((v) => v.type === "live_fact/no_verified_tracking"));
+});
+
+Deno.test("Danish: 'trackingen viser' with no verified tracking → no_verified_tracking", () => {
+  const r = checkLiveFactAndActionClaims({
+    draft_text: "Trackingen viser, at pakken er i transit.",
+    facts: [],
+  });
+  assertEquals(r.compliant, false);
+  assert(r.violations.some((v) => v.type === "live_fact/no_verified_tracking"));
+});
+
+Deno.test("concrete tracking URL (carrier + embedded number) with no verified tracking → no_verified_tracking", () => {
+  const r = checkLiveFactAndActionClaims({
+    draft_text:
+      "Du kan følge pakken her: https://gls-group.eu/DK/da/find-pakke?match=055463231638&txtAction=71000",
+    facts: [],
+  });
+  assertEquals(r.compliant, false);
+  assert(r.violations.some((v) => v.type === "live_fact/no_verified_tracking"));
+});
+
+Deno.test("concrete tracking URL WITH verified carrier tracking fact → compliant", () => {
+  const r = checkLiveFactAndActionClaims({
+    draft_text:
+      "Du kan følge pakken her: https://gls-group.eu/DK/da/find-pakke?match=055463231638",
+    facts: [carrierTrackingFact],
+  });
+  assertEquals(r.compliant, true);
+});
+
+Deno.test("generic tracking portal link without a tracking number → compliant", () => {
+  const r = checkLiveFactAndActionClaims({
+    draft_text:
+      "Du kan altid slå pakken op på https://gls-group.eu/DK/da/find-pakke med dit trackingnummer.",
+    facts: [],
+  });
+  assertEquals(
+    r.violations.some((v) =>
+      v.type === "live_fact/no_verified_tracking" &&
+      v.excerpt.includes("gls-group")
+    ),
+    false,
+  );
+});
+
+Deno.test("Danish: 'din ordre #4602 allerede er afsendt' with no verified tracking → no_verified_tracking", () => {
+  const r = checkLiveFactAndActionClaims({
+    draft_text:
+      "Da din ordre #4602 allerede er afsendt, kan vi desværre ikke ændre leveringsadressen.",
+    facts: [],
+  });
+  assertEquals(r.compliant, false);
+  assert(r.violations.some((v) => v.type === "live_fact/no_verified_tracking"));
+});
+
+Deno.test("Danish: 'ordren er allerede afsendt' variant with verified tracking → compliant", () => {
+  const r = checkLiveFactAndActionClaims({
+    draft_text: "Din ordre #4602 allerede er afsendt.",
+    facts: [carrierTrackingFact],
+  });
+  assertEquals(r.compliant, true);
+});
+
+Deno.test("Danish: 'ordren er endnu ikke afsendt' stays compliant (hedge)", () => {
+  const r = checkLiveFactAndActionClaims({
+    draft_text: "Din ordre er endnu ikke afsendt.",
+    facts: [],
+  });
+  assertEquals(r.compliant, true);
+});

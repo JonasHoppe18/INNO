@@ -138,6 +138,18 @@ const FAMILIES: ClaimFamily[] = [
       /\bdin\s+pakke\s+er\s+(?:blevet\s+)?(?:afsendt|på\s+vej)\b/i,
       /\bdit\s+trackingnummer\s+er\b/i,
       /\bher\s+er\s+(?:dit|dine)\s+track(?:ing|ingnummer|nummer)\b/i,
+      // READINESS-6a: asserted carrier state ("trackingdataene viser at ...",
+      // "trackingen viser ...") — a live-fact claim regardless of what follows.
+      /\btracking(?:en|s|-?data(?:ene)?)?\s+viser\b/i,
+      /\bforsendelsen\s+er\s+(?:blevet\s+)?oprettet\b/i,
+      // READINESS-6a: shipped claim with an order number and/or "allerede"
+      // between "ordre(n)" and "er afsendt" ("din ordre #4602 allerede er
+      // afsendt"). Hedges ("endnu ikke") are filtered before matching.
+      /\bordren?\s+(?:#?\S{1,12}\s+)?(?:allerede\s+)?er\s+(?:blevet\s+)?afsendt\b/i,
+      // READINESS-6a: a concrete tracking link (carrier tracking path + an
+      // embedded 8+ digit tracking number) is itself a live-fact claim. A
+      // generic tracking-portal link without a number does not match.
+      /\bhttps?:\/\/\S*(?:track|sporing|find-pakke|sendungsverfolgung|parcel)\S*\d{8,}/i,
     ],
     isSupported: (ctx) =>
       hasVerifiedTrackingFact(ctx.facts, ctx.trackingFacts),
