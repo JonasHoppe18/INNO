@@ -196,3 +196,53 @@ Deno.test("DA 'har kigget på din ordre' (no image noun) → compliant", () => {
   assertEquals(r.compliant, true);
   assertEquals(r.violations.length, 0);
 });
+
+// ── READINESS-6e: thanking for images is a receipt claim ────────────────────
+// Night-probe B14: "Tak for billederne, de hjælper os med at forstå problemet
+// bedre." with image_evidence_count=0. Thanking for images asserts we received
+// and can use them — a false statement when no vision-capable image reached
+// the model. With real images present it stays compliant as before.
+
+Deno.test("READINESS-6e: DA 'Tak for billederne' with no evidence → no_image_evidence", () => {
+  const r = checkImageEvidenceClaims({
+    draft_text:
+      "Tak for billederne, de hjælper os med at forstå problemet bedre.",
+    image_evidence_count: 0,
+  });
+  assertEquals(r.compliant, false);
+  assert(r.violations.some((v) => v.type === "image_claim/no_image_evidence"));
+});
+
+Deno.test("READINESS-6e: DA 'Tak for billederne' with 1 real image → compliant", () => {
+  const r = checkImageEvidenceClaims({
+    draft_text:
+      "Tak for billederne, de hjælper os med at forstå problemet bedre.",
+    image_evidence_count: 1,
+  });
+  assertEquals(r.compliant, true);
+});
+
+Deno.test("READINESS-6e: EN 'Thanks for the photos' with no evidence → no_image_evidence", () => {
+  const r = checkImageEvidenceClaims({
+    draft_text: "Thanks for the photos, they help us understand the issue.",
+    image_evidence_count: 0,
+  });
+  assertEquals(r.compliant, false);
+  assert(r.violations.some((v) => v.type === "image_claim/no_image_evidence"));
+});
+
+Deno.test("READINESS-6e: 'tak for din besked' (no image noun) stays compliant", () => {
+  const r = checkImageEvidenceClaims({
+    draft_text: "Tak for din besked, vi vender tilbage hurtigst muligt.",
+    image_evidence_count: 0,
+  });
+  assertEquals(r.compliant, true);
+});
+
+Deno.test("READINESS-6e: request to send images stays compliant", () => {
+  const r = checkImageEvidenceClaims({
+    draft_text: "Kan du sende billeder af fejlen? Tak for hjælpen.",
+    image_evidence_count: 0,
+  });
+  assertEquals(r.compliant, true);
+});

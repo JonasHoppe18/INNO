@@ -60,6 +60,11 @@ const CLAIM_PATTERNS: RegExp[] = [
   /\b(?:the\s+)?(?:image|photo|picture)\s+shows\b/i,
   // EN — "it looks like from the image/photo"
   /\b(?:it\s+)?looks\s+like\s+from\s+the\s+(?:image|photo|picture)\b/i,
+  // READINESS-6e — thanking for images asserts receipt ("tak for billederne",
+  // "thanks for the photos"). "Tak for din besked" has no image noun and
+  // never matches; requests to send images are excluded by REQUEST_RE.
+  /\btak\s+for\s+(?:de\s+)?(?:vedhæftede\s+)?(?:billede(?:rne|t|r)?|foto(?:ene|et|s)?)\b/i,
+  /\bthank(?:s|\s+you)\s+for\s+the\s+(?:attached\s+)?(?:image|photo|picture)s?\b/i,
 ];
 
 // Requests / offers to RECEIVE images are never claims of having seen one.
