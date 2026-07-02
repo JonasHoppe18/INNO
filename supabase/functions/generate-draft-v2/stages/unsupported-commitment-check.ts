@@ -131,6 +131,13 @@ const FAMILIES: CommitmentFamily[] = [
       /\bthe\s+exchange\s+has\s+been\s+(?:started|processed)\b/i,
       // DA future
       /\b(?:vi|jeg)\s+(?:vil\s+)?ombytter?\b/i,
+      // READINESS-6c: variant-swap promise phrased as "sende dig den <farve/
+      // anden> model/vare" — an exchange promise without the word "ombytte".
+      // Anchored on a product noun so "vi sender dig et link" never matches.
+      /\b(?:vi|jeg)\s+vil\s+(?:derefter\s+|så\s+)?sende\s+(?:dig\s+)?(?:den|det|en|et)\s+\w+\s+(?:model|vare|produkt|farve|størrelse|version)\b/i,
+      /\bvil\s+(?:vi|jeg)\s+sende\s+(?:dig\s+)?(?:den|det|en|et)\s+\w+\s+(?:model|vare|produkt|farve|størrelse|version)\b/i,
+      // EN variant-swap promise: "we'll (then) send you the black model"
+      /\b(?:we|i)(?:['’]ll| will)\s+(?:then\s+)?send\s+(?:you\s+)?the\s+\w+\s+(?:model|colou?r|size|version|one)\b/i,
       // DA already-done claims
       /\bvi\s+har\s+(?:ombyttet|startet\s+ombytningen)\b/i,
     ],

@@ -565,3 +565,59 @@ Deno.test("READINESS-6b: hedged pronoun promise ('efter godkendelse') → compli
   });
   assertEquals(r.compliant, true);
 });
+
+// ── READINESS-6c: color/variant exchange promises without an exchange action ─
+// Night-probe A14: "Du skal blot returnere den hvide model til os, og vi vil
+// derefter sende dig den sorte model." — an unconditional exchange promise
+// with no exchange action, phrased without "ombytte"/"erstatning", so no
+// exchange-family pattern matched.
+
+Deno.test("READINESS-6c: 'vi vil derefter sende dig den sorte model' → unsupported_exchange_promise", () => {
+  const r = checkUnsupportedCommitments({
+    draft_text:
+      "Du skal blot returnere den hvide model til os, og vi vil derefter sende dig den sorte model.",
+  });
+  assertEquals(r.compliant, false);
+  assert(r.violations.some((v) => v.type === "unsupported_exchange_promise"));
+});
+
+Deno.test("READINESS-6c: inverted word order 'vil vi sende den sorte model til dig' → violation", () => {
+  const r = checkUnsupportedCommitments({
+    draft_text:
+      "Når vi har modtaget og behandlet din returnering, vil vi sende den sorte model til dig.",
+  });
+  assertEquals(r.compliant, false);
+  assert(r.violations.some((v) => v.type === "unsupported_exchange_promise"));
+});
+
+Deno.test("READINESS-6c: EN 'we'll then send you the black model' → violation", () => {
+  const r = checkUnsupportedCommitments({
+    draft_text:
+      "Once we receive the white one, we'll then send you the black model.",
+  });
+  assertEquals(r.compliant, false);
+  assert(r.violations.some((v) => v.type === "unsupported_exchange_promise"));
+});
+
+Deno.test("READINESS-6c: authorized by an exchange action → compliant", () => {
+  const r = checkUnsupportedCommitments({
+    draft_text:
+      "Du skal blot returnere den hvide model til os, og vi vil derefter sende dig den sorte model.",
+    approved_actions: [{ type: "create_exchange_request" }],
+  });
+  assertEquals(r.compliant, true);
+});
+
+Deno.test("READINESS-6c: policy info 'du kan bytte varen inden for 30 dage' stays compliant", () => {
+  const r = checkUnsupportedCommitments({
+    draft_text: "Du kan bytte varen inden for 30 dage, hvis den er ubrugt.",
+  });
+  assertEquals(r.compliant, true);
+});
+
+Deno.test("READINESS-6c: 'vi sender dig et link' stays compliant (not a product promise)", () => {
+  const r = checkUnsupportedCommitments({
+    draft_text: "Vi sender dig et link til returportalen.",
+  });
+  assertEquals(r.compliant, true);
+});
