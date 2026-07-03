@@ -70,6 +70,87 @@ async function loadAssignedCount(serviceClient, scope, mailboxIds, supabaseUserI
   return count ?? 0;
 }
 
+function applyNeedsAttentionFilter(query) {
+  return query
+    .or("status.eq.needs_attention,close_pending.eq.true")
+    .or("classification_key.is.null,classification_key.neq.notification");
+}
+
+async function loadNeedsAttentionCount(serviceClient, scope, mailboxIds) {
+  const { count, error } = await applyScope(
+    applyNeedsAttentionFilter(
+      serviceClient
+        .from("mail_threads")
+        .select("id", { count: "exact", head: true })
+        .in("mailbox_id", mailboxIds)
+    ),
+    scope
+  );
+  if (error) throw new Error(error.message);
+  return count ?? 0;
+}
+
+async function loadMineCount(serviceClient, scope, mailboxIds, supabaseUserId) {
+  if (!supabaseUserId) return 0;
+  const { count, error } = await applyScope(
+    applyNeedsAttentionFilter(
+      serviceClient
+        .from("mail_threads")
+        .select("id", { count: "exact", head: true })
+        .in("mailbox_id", mailboxIds)
+        .eq("assignee_id", supabaseUserId)
+    ),
+    scope
+  );
+  if (error) throw new Error(error.message);
+  return count ?? 0;
+}
+
+async function loadWaitingCounts(serviceClient, scope, mailboxIds) {
+  const countFor = async (status) => {
+    const { count, error } = await applyScope(
+      serviceClient
+        .from("mail_threads")
+        .select("id", { count: "exact", head: true })
+        .in("mailbox_id", mailboxIds)
+        .eq("status", status)
+        .or("classification_key.is.null,classification_key.neq.notification"),
+      scope
+    );
+    if (error) throw new Error(error.message);
+    return count ?? 0;
+  };
+  const [waitingCustomerCount, waitingThirdPartyCount] = await Promise.all([
+    countFor("waiting_customer"),
+    countFor("waiting_third_party"),
+  ]);
+  return { waitingCustomerCount, waitingThirdPartyCount };
+}
+
+async function loadInboxNeedsAttentionCounts(serviceClient, scope, mailboxIds, inboxSlugs) {
+  if (!mailboxIds.length || !inboxSlugs.length) return {};
+  const inboxTags = inboxSlugs.map((slug) => `inbox:${slug}`);
+  const { data, error } = await applyScope(
+    applyNeedsAttentionFilter(
+      serviceClient
+        .from("mail_threads")
+        .select("tags")
+        .in("mailbox_id", mailboxIds)
+        .overlaps("tags", inboxTags)
+        .limit(1000)
+    ),
+    scope
+  );
+  if (error) throw new Error(error.message);
+  const counts = {};
+  for (const slug of inboxSlugs) counts[slug] = 0;
+  for (const row of Array.isArray(data) ? data : []) {
+    const slug = extractInboxSlugFromTags(row?.tags || []);
+    if (counts.hasOwnProperty(slug)) counts[slug] += 1;
+  }
+  return counts;
+}
+
 async function loadNotificationsCount(serviceClient, scope, mailboxIds) {
   if (!mailboxIds.length) return 0;
   const { count, error } = await applyScope(
@@ -162,7 +243,16 @@ export async function GET() {
     const scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
     if (!scope.workspaceId && !scope.supabaseUserId) {
       return NextResponse.json(
-        { assignedCount: 0, notificationsCount: 0, customInboxUnreadCounts: {} },
+        {
+          assignedCount: 0,
+          notificationsCount: 0,
+          customInboxUnreadCounts: {},
+          needsAttentionCount: 0,
+          mineCount: 0,
+          waitingCustomerCount: 0,
+          waitingThirdPartyCount: 0,
+          inboxNeedsAttentionCounts: {},
+        },
         { status: 200 }
       );
     }
@@ -172,18 +262,41 @@ export async function GET() {
       loadWorkspaceInboxSlugs(serviceClient, scope),
     ]);
 
-    const [assignedCount, mailNotificationsCount, mentionNotificationsCount, customInboxUnreadCounts] = await Promise.all([
+    const [
+      assignedCount,
+      mailNotificationsCount,
+      mentionNotificationsCount,
+      customInboxUnreadCounts,
+      needsAttentionCount,
+      mineCount,
+      waitingCounts,
+      inboxNeedsAttentionCounts,
+    ] = await Promise.all([
       mailboxIds.length
         ? loadAssignedCount(serviceClient, scope, mailboxIds, scope.supabaseUserId)
         : 0,
       loadNotificationsCount(serviceClient, scope, mailboxIds),
       loadMentionNotificationsCount(serviceClient, scope),
       loadCustomInboxUnreadCounts(serviceClient, scope, mailboxIds, inboxSlugs),
+      mailboxIds.length ? loadNeedsAttentionCount(serviceClient, scope, mailboxIds) : 0,
+      mailboxIds.length ? loadMineCount(serviceClient, scope, mailboxIds, scope.supabaseUserId) : 0,
+      mailboxIds.length
+        ? loadWaitingCounts(serviceClient, scope, mailboxIds)
+        : { waitingCustomerCount: 0, waitingThirdPartyCount: 0 },
+      loadInboxNeedsAttentionCounts(serviceClient, scope, mailboxIds, inboxSlugs),
     ]);
     const notificationsCount = mailNotificationsCount + mentionNotificationsCount;
 
     return NextResponse.json(
-      { assignedCount, notificationsCount, customInboxUnreadCounts },
+      {
+        assignedCount,
+        notificationsCount,
+        customInboxUnreadCounts,
+        needsAttentionCount,
+        mineCount,
+        ...waitingCounts,
+        inboxNeedsAttentionCounts,
+      },
       { status: 200 }
     );
   } catch (error) {
@@ -191,7 +304,16 @@ export async function GET() {
       console.error("Sidebar counts fallback:", error);
     }
     return NextResponse.json(
-      { assignedCount: 0, notificationsCount: 0, customInboxUnreadCounts: {} },
+      {
+        assignedCount: 0,
+        notificationsCount: 0,
+        customInboxUnreadCounts: {},
+        needsAttentionCount: 0,
+        mineCount: 0,
+        waitingCustomerCount: 0,
+        waitingThirdPartyCount: 0,
+        inboxNeedsAttentionCounts: {},
+      },
       { status: 200 }
     );
   }
