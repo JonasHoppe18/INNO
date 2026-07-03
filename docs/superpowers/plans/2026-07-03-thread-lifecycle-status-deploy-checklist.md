@@ -106,6 +106,11 @@ Do these in order. Each step depends on the ones before it.
   (no live DB/session was available in that task run). This step is the first real confirmation
   that the query behaves as designed against actual data.
 
+  **Caveat:** the SQL above is reconstructed from the route's filter logic (`applyNeedsAttentionFilter`
+  in `apps/web/app/api/inbox/sidebar-counts/route.js`), not copied from a query that was actually
+  executed against a live database. Before trusting a mismatch as a bug, re-derive the query directly
+  from that function's current source — the filter logic may have shifted since this checklist was written.
+
 ## Notes
 
 - Steps 1–4 are infrastructure/deploy actions; steps 5–11 are verification. Do not skip a
