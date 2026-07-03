@@ -45,30 +45,33 @@ async function main() {
     .select("id");
   if (thErr) throw thErr;
 
-  const { error: rpcErr } = await supabase.rpc("tick_thread_lifecycle");
-  if (rpcErr) throw rpcErr;
-
-  const { data: after } = await supabase
-    .from("mail_threads")
-    .select("id, status, attention_reason, close_pending, wake_at")
-    .in("id", threads.map((t) => t.id))
-    .order("created_at");
-
-  const [woken, closeDue, notDue] = after;
-  const checks = [
-    ["wake-due thread woke", woken.status === "needs_attention" && woken.attention_reason === "wake_timer" && woken.wake_at === null],
-    ["silent thread flagged for approve-close", closeDue.status === "waiting_customer" && closeDue.close_pending === true && closeDue.attention_reason === "approve_close"],
-    ["fresh waiting thread untouched", notDue.status === "waiting_customer" && notDue.close_pending === false],
-  ];
   let failed = false;
-  for (const [name, ok] of checks) {
-    console.log(`${ok ? "PASS" : "FAIL"}: ${name}`);
-    if (!ok) failed = true;
-  }
+  try {
+    const { error: rpcErr } = await supabase.rpc("tick_thread_lifecycle");
+    if (rpcErr) throw rpcErr;
 
-  // Cleanup
-  await supabase.from("mail_threads").delete().in("id", threads.map((t) => t.id));
-  await supabase.from("workspaces").delete().eq("id", ws.id);
+    const { data: after, error: afterErr } = await supabase
+      .from("mail_threads")
+      .select("id, status, attention_reason, close_pending, wake_at")
+      .in("id", threads.map((t) => t.id))
+      .order("created_at");
+    if (afterErr) throw afterErr;
+
+    const [woken, closeDue, notDue] = after;
+    const checks = [
+      ["wake-due thread woke", woken.status === "needs_attention" && woken.attention_reason === "wake_timer" && woken.wake_at === null],
+      ["silent thread flagged for approve-close", closeDue.status === "waiting_customer" && closeDue.close_pending === true && closeDue.attention_reason === "approve_close"],
+      ["fresh waiting thread untouched", notDue.status === "waiting_customer" && notDue.close_pending === false],
+    ];
+    for (const [name, ok] of checks) {
+      console.log(`${ok ? "PASS" : "FAIL"}: ${name}`);
+      if (!ok) failed = true;
+    }
+  } finally {
+    // Cleanup: always remove seeded data, even if the body threw.
+    await supabase.from("mail_threads").delete().in("id", threads.map((t) => t.id));
+    await supabase.from("workspaces").delete().eq("id", ws.id);
+  }
   process.exit(failed ? 1 : 0);
 }
 

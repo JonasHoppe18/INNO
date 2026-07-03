@@ -23,6 +23,7 @@ as $$
       waiting_reason = null,
       close_pending = false,
       attention_reason = null,
+      wake_at = null,
       status_changed_at = now(),
       updated_at = now()
   from public.workspaces w
