@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
+import { buildManualStatusPatch } from "@/lib/inbox/status-patch";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -94,9 +95,12 @@ export async function PATCH(request) {
     return NextResponse.json({ error: "Auth scope not found." }, { status: 404 });
   }
 
-  const payload = {};
-  if (typeof body?.status === "string") {
-    payload.status = body.status.trim().toLowerCase();
+  const { payload, error: statusError } = buildManualStatusPatch(
+    body,
+    new Date().toISOString()
+  );
+  if (statusError) {
+    return NextResponse.json({ error: statusError }, { status: 400 });
   }
   if (body?.priority !== undefined) {
     payload.priority = body.priority;
