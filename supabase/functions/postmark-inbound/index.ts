@@ -26,6 +26,7 @@ import {
 import { detectCustomerLanguage } from "../_shared/detect-language.ts";
 import { autoTagThread } from "../_shared/autoTagThread.ts";
 import { generateIssueMetadata } from "../_shared/generateIssueMetadata.ts";
+import { statusOnInboundCustomerMessage } from "../_shared/thread-status/transitions.ts";
 
 const PROJECT_URL = Deno.env.get("SUPABASE_URL") ?? Deno.env.get("PROJECT_URL");
 const SERVICE_ROLE_KEY =
@@ -1830,7 +1831,10 @@ Deno.serve(async (req) => {
         last_message_at: receivedAt,
         unread_count: isBlockedSender ? 0 : 1,
         is_read: isBlockedSender,
-        status: isBlockedSender ? "blocked" : "new",
+        ...statusOnInboundCustomerMessage(
+          { currentStatus: null, waitingReason: null, isBlockedSender, isNewThread: true },
+          new Date().toISOString(),
+        ),
         priority: "normal",
         tags: withInboxTag(buildThreadTags([], inboundCategory), senderRuleInboxSlug || null),
         classification_key: classificationKey,
@@ -1923,7 +1927,7 @@ Deno.serve(async (req) => {
 
   const { data: existingThread } = await supabase
     .from("mail_threads")
-    .select("subject, unread_count, tags, classification_key, classification_confidence, classification_reason, customer_name, customer_email")
+    .select("subject, unread_count, tags, classification_key, classification_confidence, classification_reason, customer_name, customer_email, status, waiting_reason")
     .eq("id", threadId)
     .maybeSingle();
   const currentUnread = Number(existingThread?.unread_count ?? 0);
@@ -1950,11 +1954,21 @@ Deno.serve(async (req) => {
     classification_reason: classificationReason,
     updated_at: new Date().toISOString(),
   };
-  if (isBlockedSender) {
+  if (!createdNewThread) {
+    Object.assign(
+      updatePayload,
+      statusOnInboundCustomerMessage(
+        {
+          currentStatus: (existingThread as any)?.status ?? null,
+          waitingReason: (existingThread as any)?.waiting_reason ?? null,
+          isBlockedSender,
+          isNewThread: false,
+        },
+        new Date().toISOString(),
+      ),
+    );
+  } else if (isBlockedSender) {
     updatePayload.status = "blocked";
-  } else if (!createdNewThread) {
-    // Re-open existing threads when a new inbound customer message arrives.
-    updatePayload.status = "open";
   }
   if (shouldUpdateCategory) {
     updatePayload.tags = buildThreadTags(existingThread?.tags, inboundCategory);
