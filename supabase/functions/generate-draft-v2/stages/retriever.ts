@@ -258,20 +258,39 @@ function normalizeConnectors(text: string): string {
   return text.replace(/\s*[+&]\s*/g, " and ");
 }
 
-function buildShopProductTerms(shop?: Record<string, unknown>): string[] {
+// Canonical product term + its match variants ("iem + sound card" also
+// matches as "iem and sound card"). Matching happens on variants; results
+// always report the canonical term so "IEM and/&/+ Sound Card" resolve to the
+// SAME product term instead of three different strings.
+type ShopProductTerm = { canonical: string; variants: string[] };
+
+function buildShopProductTermIndex(
+  shop?: Record<string, unknown>,
+): ShopProductTerm[] {
   const overview = String(shop?.product_overview || "");
-  const terms = overview
+  const lines = overview
     .split(/\r?\n/)
     .map((line) => line.replace(/^[-*\s]+/, "").trim())
     .filter((line) => line.length >= 3 && line.length <= 80);
+  const seen = new Set<string>();
+  const index: ShopProductTerm[] = [];
+  for (const line of lines) {
+    const canonical = line.toLowerCase();
+    if (seen.has(canonical)) continue;
+    seen.add(canonical);
+    const variants = uniqueStrings([
+      canonical,
+      normalizeConnectors(canonical),
+      ...(canonical === "ear pads" ? ["earpads"] : []),
+    ]);
+    index.push({ canonical, variants });
+  }
+  return index;
+}
+
+function buildShopProductTerms(shop?: Record<string, unknown>): string[] {
   return uniqueStrings(
-    terms.flatMap((term) => {
-      const lower = term.toLowerCase();
-      const normalized = normalizeConnectors(lower);
-      const variants = lower === normalized ? [lower] : [lower, normalized];
-      if (lower === "ear pads") variants.push("earpads");
-      return variants;
-    }),
+    buildShopProductTermIndex(shop).flatMap((t) => t.variants),
   );
 }
 
@@ -301,13 +320,13 @@ export function extractMentionedProductTerms(
 ): string[] {
   const lower = stripHtml(text).toLowerCase();
   const lowerNormalized = normalizeConnectors(lower);
-  const shopTerms = buildShopProductTerms(shop);
-  const matched = shopTerms.filter((term) => {
-    if (lower.includes(term)) return true;
-    if (lowerNormalized.includes(term)) return true;
-    if (term === "ear pads" && lower.includes("earpads")) return true;
-    return false;
-  });
+  const matched = buildShopProductTermIndex(shop)
+    .filter((term) =>
+      term.variants.some((variant) =>
+        lower.includes(variant) || lowerNormalized.includes(variant)
+      )
+    )
+    .map((term) => term.canonical);
   return resolveMostSpecificProductTerms(matched);
 }
 
@@ -2124,11 +2143,18 @@ export async function runRetriever(
   const queryText = `${queries.join(" ")} ${customerMessage || ""}`;
   const productTerms = extractMentionedProductTerms(queryText, shop);
   const issueTerms = extractIssueTerms(queryText);
-  // When exactly one product is mentioned, identify other shop products to penalise
+  // When exactly one product is mentioned, identify other shop products to penalise.
+  // Exclude every VARIANT of the mentioned product ("iem and sound card" is the
+  // same product as "iem + sound card"), so a product never penalises itself.
   const mentionedProducts = productTerms.length > 0 ? productTerms : [];
   const allShopProducts = buildShopProductTerms(shop);
+  const mentionedVariants = new Set(
+    buildShopProductTermIndex(shop)
+      .filter((t) => mentionedProducts.includes(t.canonical))
+      .flatMap((t) => t.variants),
+  );
   const otherProducts = mentionedProducts.length === 1
-    ? allShopProducts.filter((p) => p !== mentionedProducts[0])
+    ? allShopProducts.filter((p) => !mentionedVariants.has(p))
     : [];
 
   const scoreBreakdown = (chunk: RetrievedChunk) =>
