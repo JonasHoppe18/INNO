@@ -34,6 +34,7 @@ import { toast } from "sonner";
 import { useCustomerLookup } from "@/hooks/useCustomerLookup";
 import { useSiteHeaderActions } from "@/components/site-header-actions";
 import { reportClientEvent } from "@/lib/client-events";
+import { toLegacyUiStatus } from "@/lib/inbox/status-model";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -166,16 +167,7 @@ const shortUserId = (value) => {
   return `${raw.slice(0, 8)}...`;
 };
 
-const normalizeStatus = (value) => {
-  if (!value) return null;
-  const normalized = String(value).trim().toLowerCase();
-  if (normalized === "solved" || normalized === "resolved") return "Solved";
-  if (normalized === "pending") return "Pending";
-  if (normalized === "waiting") return "Waiting";
-  if (normalized === "open") return "Open";
-  if (normalized === "new") return "New";
-  return value;
-};
+const normalizeStatus = (value) => toLegacyUiStatus(value);
 
 const toInboxTag = (slug = "") => `inbox:${String(slug || "").trim()}`;
 
