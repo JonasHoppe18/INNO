@@ -14,6 +14,7 @@ import {
 } from "@/lib/server/email-signature";
 import { emitDraftEvent } from "@/lib/server/draft-feedback-events";
 import { buildDraftSentEvents } from "@/lib/server/draft-feedback-builders";
+import { buildAgentReplyStatusPatch } from "@/lib/inbox/status-model";
 
 const SUPABASE_URL = (
   process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -1231,7 +1232,7 @@ export async function POST(request, { params }) {
   let threadQuery = serviceClient
     .from("mail_threads")
     .select(
-      "id, user_id, workspace_id, mailbox_id, provider, provider_thread_id, subject, snippet, classification_key, tags, case_state_json",
+      "id, user_id, workspace_id, mailbox_id, provider, provider_thread_id, subject, snippet, classification_key, tags, case_state_json, status, waiting_reason",
     )
     .eq("id", threadId);
   threadQuery = applyScope(threadQuery, scope);
@@ -1776,6 +1777,7 @@ export async function POST(request, { params }) {
       subject: thread.subject ? thread.subject : subject,
       tags:
         isExchangeThread && !alreadyAwaitingReturn ? updatedTags : undefined,
+      ...buildAgentReplyStatusPatch(thread, nowIso),
       updated_at: nowIso,
     })
     .eq("id", threadId);
