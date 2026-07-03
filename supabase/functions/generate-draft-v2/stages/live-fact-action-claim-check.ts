@@ -140,7 +140,9 @@ const FAMILIES: ClaimFamily[] = [
       /\bher\s+er\s+(?:dit|dine)\s+track(?:ing|ingnummer|nummer)\b/i,
       // READINESS-6a: asserted carrier state ("trackingdataene viser at ...",
       // "trackingen viser ...") — a live-fact claim regardless of what follows.
-      /\btracking(?:en|s|-?data(?:ene)?)?\s+viser\b/i,
+      // Conditional restatements of the customer's own report ("hvis tracking
+      // viser leveret", "if the tracking shows") are excluded via lookbehind.
+      /(?<!\bhvis\s)(?<!\bselv\s+om\s)\btracking(?:en|s|-?data(?:ene)?)?\s+viser\b/i,
       /\bforsendelsen\s+er\s+(?:blevet\s+)?oprettet\b/i,
       // READINESS-6a: shipped claim with an order number and/or "allerede"
       // between "ordre(n)" and "er afsendt" ("din ordre #4602 allerede er

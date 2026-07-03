@@ -442,3 +442,21 @@ Deno.test("Danish: 'ordren er endnu ikke afsendt' stays compliant (hedge)", () =
   });
   assertEquals(r.compliant, true);
 });
+
+Deno.test("Danish: conditional 'hvis tracking viser leveret' (customer-referential) stays compliant", () => {
+  const r = checkLiveFactAndActionClaims({
+    draft_text:
+      "Det er ærgerligt at høre, hvis tracking viser leveret, betyder det ikke nødvendigvis, at du personligt har modtaget pakken.",
+    facts: [],
+  });
+  assertEquals(r.compliant, true);
+});
+
+Deno.test("EN: conditional 'if the tracking shows delivered' stays compliant", () => {
+  const r = checkLiveFactAndActionClaims({
+    draft_text:
+      "If the tracking shows delivered but you have not received the parcel, please check with neighbours first.",
+    facts: [],
+  });
+  assertEquals(r.compliant, true);
+});
