@@ -87,7 +87,11 @@ async function loadMessages(serviceClient, scope, mailboxIds, { query, unreadOnl
 }
 
 async function loadThreads(serviceClient, scope, mailboxIds) {
-  const runQuery = ({ withCustomerFields = true, withTicketNumber = true } = {}) =>
+  const runQuery = ({
+    withCustomerFields = true,
+    withTicketNumber = true,
+    withLifecycleFields = true,
+  } = {}) =>
     applyScope(
       serviceClient
         .from("mail_threads")
@@ -95,36 +99,66 @@ async function loadThreads(serviceClient, scope, mailboxIds) {
           withCustomerFields
             ? `id, user_id, mailbox_id, provider, provider_thread_id, ${
                 withTicketNumber ? "ticket_number, " : ""
-              }subject, snippet, customer_name, customer_email, customer_last_inbound_at, last_message_at, unread_count, is_read, status, assignee_id, priority, tags, classification_key, classification_confidence, classification_reason, created_at, updated_at, customer_language`
+              }subject, snippet, customer_name, customer_email, customer_last_inbound_at, last_message_at, unread_count, is_read, status, assignee_id, priority, tags, classification_key, classification_confidence, classification_reason, created_at, updated_at, customer_language${
+                withLifecycleFields
+                  ? ", waiting_reason, wake_at, close_pending, attention_reason, status_changed_at"
+                  : ""
+              }`
             : `id, user_id, mailbox_id, provider, provider_thread_id, ${
                 withTicketNumber ? "ticket_number, " : ""
-              }subject, snippet, last_message_at, unread_count, is_read, status, assignee_id, priority, tags, classification_key, classification_confidence, classification_reason, created_at, updated_at, customer_language`
+              }subject, snippet, last_message_at, unread_count, is_read, status, assignee_id, priority, tags, classification_key, classification_confidence, classification_reason, created_at, updated_at, customer_language${
+                withLifecycleFields
+                  ? ", waiting_reason, wake_at, close_pending, attention_reason, status_changed_at"
+                  : ""
+              }`
         )
         .in("mailbox_id", mailboxIds)
         .order("last_message_at", { ascending: false, nullsLast: true }),
       scope
     );
-  let { data, error } = await runQuery({ withCustomerFields: true, withTicketNumber: true });
+  let { data, error } = await runQuery({
+    withCustomerFields: true,
+    withTicketNumber: true,
+    withLifecycleFields: true,
+  });
   if (
     error &&
-    /customer_name|customer_email|customer_last_inbound_at|customer_language|ticket_number/i.test(String(error.message || ""))
+    /customer_name|customer_email|customer_last_inbound_at|customer_language|ticket_number|waiting_reason|wake_at|close_pending|attention_reason|status_changed_at/i.test(
+      String(error.message || "")
+    )
   ) {
-    const fallbackWithoutCustomer = await runQuery({
-      withCustomerFields: false,
+    const fallbackWithoutLifecycle = await runQuery({
+      withCustomerFields: true,
       withTicketNumber: true,
+      withLifecycleFields: false,
     });
-    data = fallbackWithoutCustomer.data;
-    error = fallbackWithoutCustomer.error;
+    data = fallbackWithoutLifecycle.data;
+    error = fallbackWithoutLifecycle.error;
     if (
       error &&
-      /ticket_number/i.test(String(error.message || ""))
+      /customer_name|customer_email|customer_last_inbound_at|customer_language|ticket_number/i.test(
+        String(error.message || "")
+      )
     ) {
-      const fallbackWithoutTicket = await runQuery({
+      const fallbackWithoutCustomer = await runQuery({
         withCustomerFields: false,
-        withTicketNumber: false,
+        withTicketNumber: true,
+        withLifecycleFields: false,
       });
-      data = fallbackWithoutTicket.data;
-      error = fallbackWithoutTicket.error;
+      data = fallbackWithoutCustomer.data;
+      error = fallbackWithoutCustomer.error;
+      if (
+        error &&
+        /ticket_number/i.test(String(error.message || ""))
+      ) {
+        const fallbackWithoutTicket = await runQuery({
+          withCustomerFields: false,
+          withTicketNumber: false,
+          withLifecycleFields: false,
+        });
+        data = fallbackWithoutTicket.data;
+        error = fallbackWithoutTicket.error;
+      }
     }
   }
   if (error) throw new Error(error.message);
