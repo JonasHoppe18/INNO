@@ -2557,6 +2557,7 @@ export async function runDraftV2Pipeline(
       suggested_actions: finalProposals
         .filter((p) => p.requires_approval)
         .map((p) => ({ type: p.type })),
+      retrieved_chunks: retrieved.chunks,
       language: replyLanguage,
     });
     let blockSendRecommended = false;

@@ -143,7 +143,10 @@ Deno.test("Danish exchange promise → review", () => {
 Deno.test("Danish approved return authorizes label promise", () => {
   const result = checkUnsupportedCommitments({
     draft_text: "Vi opretter en returlabel til dig.",
-    approved_actions: [{ type: "initiate_return", lifecycle_stage: "approved" }],
+    approved_actions: [{
+      type: "initiate_return",
+      lifecycle_stage: "approved",
+    }],
     language: "da",
   });
   assertEquals(result.compliant, true);
@@ -473,13 +476,24 @@ Deno.test("READINESS-CORE: neutral order-number reply to 'Kan I sende mig en fak
 // ── Existing families remain unaffected (regression) ───────────────────────
 
 Deno.test("READINESS-4 regression: refund/prepaid_label/replacement/exchange families unaffected", () => {
-  const refund = checkUnsupportedCommitments({ draft_text: "We will issue a refund." });
-  const label = checkUnsupportedCommitments({ draft_text: "I will send you a prepaid return label." });
-  const replacement = checkUnsupportedCommitments({ draft_text: "We will replace your headset." });
-  const exchange = checkUnsupportedCommitments({ draft_text: "We will arrange an exchange." });
+  const refund = checkUnsupportedCommitments({
+    draft_text: "We will issue a refund.",
+  });
+  const label = checkUnsupportedCommitments({
+    draft_text: "I will send you a prepaid return label.",
+  });
+  const replacement = checkUnsupportedCommitments({
+    draft_text: "We will replace your headset.",
+  });
+  const exchange = checkUnsupportedCommitments({
+    draft_text: "We will arrange an exchange.",
+  });
   assertEquals(refund.violations[0].type, "unsupported_refund_promise");
   assertEquals(label.violations[0].type, "unsupported_prepaid_label_promise");
-  assertEquals(replacement.violations[0].type, "unsupported_replacement_promise");
+  assertEquals(
+    replacement.violations[0].type,
+    "unsupported_replacement_promise",
+  );
   assertEquals(exchange.violations[0].type, "unsupported_exchange_promise");
 });
 
@@ -684,11 +698,12 @@ Deno.test("READINESS-8: hedged future promise ('hvis sagen bliver godkendt') sta
   assertEquals(r.compliant, true);
 });
 
-// ── READINESS-8: unsupported discount / special-price promises ────────────
+// ── READINESS-9: commercial discount / special-price policy claims ─────────
 // Night-probe B12 found a quality shift from "we cannot offer specific
 // discounts" toward an assertive "we offer team discounts depending on order
-// volume" — an ungrounded commercial commitment. No discount-granting action
-// exists anywhere in the system, so this is never authorized.
+// volume" — an ungrounded commercial commitment. READINESS-9 extends this to
+// negative policy claims too; both are allowed only when retrieved knowledge
+// grounds the commercial policy.
 
 Deno.test("READINESS-8: DA discount promise ('vi tilbyder team-rabatter') → violation", () => {
   const r = checkUnsupportedCommitments({
@@ -702,6 +717,14 @@ Deno.test("READINESS-8: DA discount promise ('vi tilbyder team-rabatter') → vi
 Deno.test("READINESS-8: DA special-price promise ('vi kan give specialpris') → violation", () => {
   const r = checkUnsupportedCommitments({
     draft_text: "Vi kan give dig en specialpris, hvis I køber flere styk.",
+  });
+  assertEquals(r.compliant, false);
+  assertEquals(r.violations[0].type, "unsupported_discount_promise");
+});
+
+Deno.test("READINESS-9: DA customer-facing discount promise ('I kan få rabat') → violation", () => {
+  const r = checkUnsupportedCommitments({
+    draft_text: "I kan få rabat, hvis I køber til hele teamet.",
   });
   assertEquals(r.compliant, false);
   assertEquals(r.violations[0].type, "unsupported_discount_promise");
@@ -724,10 +747,88 @@ Deno.test("READINESS-8: discount promise NOT authorized even when an unrelated a
   assertEquals(r.violations[0].type, "unsupported_discount_promise");
 });
 
-Deno.test("READINESS-8: cautious discount wording ('vi kan desværre ikke tilbyde specifikke rabatter') stays compliant", () => {
+Deno.test("READINESS-9: negative discount policy claim ('vi tilbyder ikke rabatter') → violation", () => {
   const r = checkUnsupportedCommitments({
     draft_text:
       "Vi kan desværre ikke tilbyde specifikke rabatter, men kontakt os endelig ved storordrer.",
   });
+  assertEquals(r.compliant, false);
+  assertEquals(r.violations[0].type, "unsupported_discount_promise");
+});
+
+Deno.test("READINESS-9: negative team-price policy claim ('vi har ikke teampriser') → violation", () => {
+  const r = checkUnsupportedCommitments({
+    draft_text: "Vi har ikke teampriser for esport teams.",
+  });
+  assertEquals(r.compliant, false);
+  assertEquals(r.violations[0].type, "unsupported_discount_promise");
+});
+
+Deno.test("READINESS-9: negative equal-pricing policy claim → violation", () => {
+  const r = checkUnsupportedCommitments({
+    draft_text: "Vores priser er de samme for alle kunder.",
+  });
+  assertEquals(r.compliant, false);
+  assertEquals(r.violations[0].type, "unsupported_discount_promise");
+});
+
+Deno.test("READINESS-9: negative special-price policy claim → violation", () => {
+  const r = checkUnsupportedCommitments({
+    draft_text: "Vi giver ikke specialpriser.",
+  });
+  assertEquals(r.compliant, false);
+  assertEquals(r.violations[0].type, "unsupported_discount_promise");
+});
+
+Deno.test("READINESS-9: grounded positive commercial policy claim → allowed", () => {
+  const r = checkUnsupportedCommitments({
+    draft_text: "Vi tilbyder teamrabatter ved større B2B-ordrer.",
+    retrieved_chunks: [
+      {
+        id: "commercial-policy",
+        content:
+          "B2B policy: Vi tilbyder teamrabatter ved større B2B-ordrer efter manuel vurdering.",
+        kind: "text",
+        source_label: "knowledge_document",
+        similarity: 0.9,
+        usable_as: "policy",
+        risk_flags: [],
+        applies_to_all_products: true,
+        chunk_issue_types: [],
+      },
+    ],
+  });
   assertEquals(r.compliant, true);
+  assertEquals(r.violations.length, 0);
+});
+
+Deno.test("READINESS-9: grounded negative commercial policy claim → allowed", () => {
+  const r = checkUnsupportedCommitments({
+    draft_text: "Vi har ikke teampriser.",
+    retrieved_chunks: [
+      {
+        id: "commercial-policy",
+        content:
+          "Commercial policy: Vi har ikke teampriser eller specialpriser for esport teams.",
+        kind: "text",
+        source_label: "knowledge_document",
+        similarity: 0.9,
+        usable_as: "policy",
+        risk_flags: [],
+        applies_to_all_products: true,
+        chunk_issue_types: [],
+      },
+    ],
+  });
+  assertEquals(r.compliant, true);
+  assertEquals(r.violations.length, 0);
+});
+
+Deno.test("READINESS-9: safe manual-handling fallback for team/B2B requests stays compliant", () => {
+  const r = checkUnsupportedCommitments({
+    draft_text:
+      "Team- eller B2B-forespørgsler skal håndteres manuelt. Send gerne antal og behov, så teamet kan vende tilbage.",
+  });
+  assertEquals(r.compliant, true);
+  assertEquals(r.violations.length, 0);
 });

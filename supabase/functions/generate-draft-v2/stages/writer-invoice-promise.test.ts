@@ -32,7 +32,9 @@ Deno.test("writer.ts invoice fallback guidance no longer instructs 'neutral/frem
 Deno.test("writer.ts invoice rules explicitly forbid promising future delivery", () => {
   const invoiceRuleLines = src
     .split("\n")
-    .filter((line) => line.includes("faktura") && line.toLowerCase().includes("vil blive"));
+    .filter((line) =>
+      line.includes("faktura") && line.toLowerCase().includes("vil blive")
+    );
   assert(
     invoiceRuleLines.length > 0,
     "expected at least one invoice rule that explicitly forbids promising the invoice 'vil blive' sendt/tilsendt",
@@ -41,8 +43,39 @@ Deno.test("writer.ts invoice rules explicitly forbid promising future delivery",
 
 Deno.test("writer.ts fallback wording for unconfirmed invoice requests is neutral, not a promise", () => {
   assert(
-    src.includes("Jeg kan ikke sende fakturaen direkte herfra, men sagen bliver håndteret manuelt"),
+    src.includes(
+      "Jeg kan ikke sende fakturaen direkte herfra, men sagen skal håndteres manuelt",
+    ),
     "writer.ts is missing the neutral non-promising invoice fallback example",
+  );
+});
+
+Deno.test("writer.ts explicitly forbids common future invoice-delivery promises", () => {
+  for (
+    const phrase of [
+      "Du vil modtage fakturaen",
+      "du får den tilsendt",
+      "vi sørger for at du får den",
+      "den bliver sendt til dig",
+    ]
+  ) {
+    assert(
+      src.includes(phrase),
+      `writer.ts is missing explicit invoice-delivery ban for: ${phrase}`,
+    );
+  }
+});
+
+Deno.test("writer.ts routes ungrounded team/B2B discount requests to manual handling", () => {
+  assert(
+    src.includes("Team- eller B2B-forespørgsler skal håndteres manuelt"),
+    "writer.ts is missing the safe manual-handling fallback for team/B2B discount requests",
+  );
+  assert(
+    src.includes(
+      "må du hverken love rabat/teampris/specialpris eller afvise at de findes",
+    ),
+    "writer.ts must forbid both positive and negative ungrounded commercial policy claims",
   );
 });
 
@@ -51,7 +84,10 @@ Deno.test("writer.ts fallback wording for unconfirmed invoice requests is neutra
 // silently reintroducing the promise via buildLiveFactAuthorityBlock().
 Deno.test("buildLiveFactAuthorityBlock, FAKTURA/kvittering rule, and FAKTURA-REGEL all use non-promising language", () => {
   const occurrences = src.split("faktura").length - 1;
-  assert(occurrences > 0, "sanity: writer.ts should still reference faktura at all");
+  assert(
+    occurrences > 0,
+    "sanity: writer.ts should still reference faktura at all",
+  );
   assertEquals(
     src.includes("sørger for at du får din faktura"),
     false,

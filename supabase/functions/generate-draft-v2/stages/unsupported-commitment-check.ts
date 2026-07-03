@@ -12,6 +12,8 @@
 // This module NEVER rewrites the draft, NEVER executes actions, and is
 // shop-agnostic — no shop ids, no per-shop branching.
 
+import type { RetrievedChunk } from "./retriever.ts";
+
 export type UnsupportedCommitmentViolationType =
   | "unsupported_refund_promise"
   | "unsupported_prepaid_label_promise"
@@ -30,6 +32,7 @@ export type UnsupportedCommitmentCheckInput = {
     type: string;
     lifecycle_stage?: string;
   }>;
+  retrieved_chunks?: RetrievedChunk[];
   language?: string | null;
 };
 
@@ -57,6 +60,7 @@ type CommitmentFamily = {
   // mentions the family's subject noun somewhere — the sentence-scoped
   // patterns can't resolve the pronoun's antecedent, the draft-level gate can.
   draftContextRequirement?: RegExp;
+  requiresCommercialGrounding?: boolean;
 };
 
 // Hedge / conditional markers. If present in the same sentence as an otherwise
@@ -64,6 +68,76 @@ type CommitmentFamily = {
 // statement rather than an unconditional promise, and is NOT flagged.
 const HEDGE_RE =
   /\b(?:if (?:approved|the case is approved|eligible)|once approved|subject to approval|after approval|may be eligible|hvis (?:godkendt|sagen (?:bliver |er )?godkendt)|efter godkendelse)\b/i;
+
+const COMMERCIAL_GROUNDING_PATTERNS: RegExp[] = [
+  /\b(?:team[- ]?rabatter?|rabatter?|teampris(?:er)?|special\s?pris(?:er)?|særpris(?:er)?|b2b)\b/i,
+  /\b(?:team\s+discounts?|discounts?|special\s+pric(?:e|ing)|b2b)\b/i,
+  /\bpriserne?\s+er\s+(?:de\s+)?samme\b/i,
+  /\bprices?\s+are\s+the\s+same\b/i,
+];
+
+const COMMERCIAL_OVERLAP_STOPWORDS = new Set([
+  "the",
+  "and",
+  "for",
+  "you",
+  "your",
+  "are",
+  "same",
+  "offer",
+  "offers",
+  "give",
+  "have",
+  "team",
+  "teams",
+  "can",
+  "cannot",
+  "ikke",
+  "kan",
+  "har",
+  "vores",
+  "alle",
+  "tilbyder",
+  "giver",
+  "samme",
+  "kunder",
+]);
+
+function commercialTokens(text: string): Set<string> {
+  const out = new Set<string>();
+  for (
+    const word of String(text ?? "")
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\s-]/gu, " ")
+      .split(/\s+/)
+  ) {
+    if (word.length >= 3 && !COMMERCIAL_OVERLAP_STOPWORDS.has(word)) {
+      out.add(word);
+    }
+  }
+  return out;
+}
+
+function sharesCommercialToken(a: string, b: string): boolean {
+  const tokensA = commercialTokens(a);
+  if (tokensA.size === 0) return false;
+  const tokensB = commercialTokens(b);
+  for (const token of tokensA) {
+    if (tokensB.has(token)) return true;
+  }
+  return false;
+}
+
+function hasCommercialGrounding(
+  sentence: string,
+  chunks: RetrievedChunk[] = [],
+): boolean {
+  return chunks.some((chunk) => {
+    const content = String(chunk?.content ?? "");
+    return COMMERCIAL_GROUNDING_PATTERNS.some((re) => re.test(content)) &&
+      sharesCommercialToken(sentence, content);
+  });
+}
 
 const FAMILIES: CommitmentFamily[] = [
   {
@@ -88,7 +162,8 @@ const FAMILIES: CommitmentFamily[] = [
   },
   {
     violationType: "unsupported_prepaid_label_promise",
-    authorizingActionType: /label|prepaid|initiate_return|create_return|return_instructions/i,
+    authorizingActionType:
+      /label|prepaid|initiate_return|create_return|return_instructions/i,
     commitmentPatterns: [
       // EN future: "we will send/create/email/provide ... (prepaid) return label"
       /\b(?:we|i)(?:'ll| will)\s+(?:[a-z]+\s+){0,4}(?:prepaid\s+)?(?:return\s+)?(?:shipping\s+)?label\b/i,
@@ -226,14 +301,28 @@ const FAMILIES: CommitmentFamily[] = [
   {
     violationType: "unsupported_discount_promise",
     authorizingActionType: /^no_supported_action_exists$/,
+    requiresCommercialGrounding: true,
     commitmentPatterns: [
       // DA: "vi tilbyder (team-)rabat(ter)/specialpris(er)/særpris(er)"
       /\bvi\s+tilbyder\s+(?:team[- ]?rabat(?:ter)?|rabat(?:ter)?|special\s?pris(?:er)?|særpris(?:er)?)\b/i,
       // DA: "vi kan/vil give (dig) (en) specialpris/særpris"
       /\bvi\s+(?:kan|vil)\s+give\s+(?:dig\s+)?(?:en\s+)?(?:special\s?pris|særpris)\b/i,
+      /\bi\s+kan\s+få\s+(?:en\s+)?(?:rabat|team[- ]?rabat|teampris|special\s?pris|særpris)\b/i,
+      // DA negative commercial policy claims.
+      /\bvi\s+tilbyder\s+(?:desværre\s+)?ikke\s+(?:specifikke\s+)?(?:team[- ]?rabat(?:ter)?|rabat(?:ter)?|teampris(?:er)?|special\s?pris(?:er)?|særpris(?:er)?)\b/i,
+      /\bvi\s+kan\s+(?:desværre\s+)?ikke\s+tilbyde\s+(?:specifikke\s+)?(?:team[- ]?rabat(?:ter)?|rabat(?:ter)?|teampris(?:er)?|special\s?pris(?:er)?|særpris(?:er)?)\b/i,
+      /\bvi\s+har\s+ikke\s+(?:teampris(?:er)?|team[- ]?rabat(?:ter)?|rabat(?:ter)?|special\s?pris(?:er)?|særpris(?:er)?)\b/i,
+      /\bvores\s+priser\s+er\s+de\s+samme\s+for\s+alle\b/i,
+      /\bvi\s+giver\s+ikke\s+(?:team[- ]?rabat(?:ter)?|rabat(?:ter)?|teampris(?:er)?|special\s?pris(?:er)?|særpris(?:er)?)\b/i,
       // EN: "we offer (team) discounts / special pricing"
       /\bwe\s+offer\s+(?:team\s+)?(?:discounts?|special\s+pric(?:e|ing))\b/i,
       /\bwe\s+can\s+(?:give|offer)\s+(?:you\s+)?(?:a\s+)?special\s+price\b/i,
+      /\byou\s+can\s+get\s+(?:a\s+)?(?:discount|team\s+discount|special\s+price)\b/i,
+      // EN negative commercial policy claims.
+      /\bwe\s+do\s+not\s+offer\s+(?:team\s+)?(?:discounts?|special\s+pric(?:e|ing))\b/i,
+      /\bwe\s+don['’]t\s+offer\s+(?:team\s+)?(?:discounts?|special\s+pric(?:e|ing))\b/i,
+      /\bwe\s+(?:do\s+not|don['’]t)\s+have\s+(?:team\s+)?(?:prices?|pricing|discounts?)\b/i,
+      /\bour\s+prices?\s+are\s+the\s+same\s+for\s+all\b/i,
     ],
   },
 ];
@@ -281,6 +370,12 @@ export function checkUnsupportedCommitments(
         family.authorizingActionType.test(type)
       );
       if (isAuthorized) continue;
+      if (
+        family.requiresCommercialGrounding &&
+        hasCommercialGrounding(sentence, input.retrieved_chunks)
+      ) {
+        continue;
+      }
 
       violations.push({
         type: family.violationType,
