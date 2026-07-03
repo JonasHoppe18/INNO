@@ -40,4 +40,28 @@ describe("buildManualStatusPatch", () => {
     const { payload } = buildManualStatusPatch({}, NOW);
     expect(payload).toEqual({});
   });
+  it("lets an explicit waitingReason override a waiting_customer status", () => {
+    const { payload } = buildManualStatusPatch(
+      { status: "waiting_customer", waitingReason: "third_party" },
+      NOW
+    );
+    expect(payload.status).toBe("waiting_customer");
+    expect(payload.waiting_reason).toBe("third_party");
+  });
+  it("rejects an empty-string wakeAt the same as an invalid one", () => {
+    const { error } = buildManualStatusPatch(
+      { status: "waiting_third_party", wakeAt: "" },
+      NOW
+    );
+    expect(error).toBeTruthy();
+  });
+  it("composes third-party default reason with a valid wakeAt in one call", () => {
+    const { payload } = buildManualStatusPatch(
+      { status: "waiting_third_party", wakeAt: "2026-07-08T00:00:00.000Z" },
+      NOW
+    );
+    expect(payload.status).toBe("waiting_third_party");
+    expect(payload.waiting_reason).toBe("third_party");
+    expect(payload.wake_at).toBe("2026-07-08T00:00:00.000Z");
+  });
 });
