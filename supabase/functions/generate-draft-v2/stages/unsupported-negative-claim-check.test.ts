@@ -420,3 +420,78 @@ Deno.test("READINESS-6d: uncertainty phrasing 'jeg kan ikke se lagerstatus' stay
   });
   assertEquals(r.compliant, true);
 });
+
+// ── READINESS-8: hedged "passer <adverb> ikke" fit claims ──────────────────
+// Night-probe B8: "A-Blaze ear pads passer desværre ikke på A-Spire
+// headsettet." with ZERO retrieved sources sailed through as compliant
+// because the bare-adjacency pattern requires "passer" immediately followed
+// by "ikke" — inserting a hedging adverb broke the match.
+
+Deno.test("READINESS-8: ungrounded DA 'passer desværre ikke' → review", () => {
+  const r = checkUnsupportedNegativeClaims({
+    draft_text: "A-Blaze ear pads passer desværre ikke på A-Spire headsettet.",
+    structured_facts: [],
+    facts: [],
+    retrieved_chunks: [],
+  });
+  assertEquals(r.compliant, false);
+  assert(
+    r.violations.some((v) => v.type === "unsupported_negative_fit_claim"),
+  );
+});
+
+Deno.test("READINESS-8: ungrounded DA 'passer vist ikke' → review", () => {
+  const r = checkUnsupportedNegativeClaims({
+    draft_text: "Det passer vist ikke på det headset.",
+    structured_facts: [],
+    facts: [],
+    retrieved_chunks: [],
+  });
+  assertEquals(r.compliant, false);
+  assert(
+    r.violations.some((v) => v.type === "unsupported_negative_fit_claim"),
+  );
+});
+
+Deno.test("READINESS-8: ungrounded DA 'passer nok ikke' → review", () => {
+  const r = checkUnsupportedNegativeClaims({
+    draft_text: "Ear pads passer nok ikke på den model.",
+    structured_facts: [],
+    facts: [],
+    retrieved_chunks: [],
+  });
+  assertEquals(r.compliant, false);
+  assert(
+    r.violations.some((v) => v.type === "unsupported_negative_fit_claim"),
+  );
+});
+
+Deno.test("READINESS-8: 'passer desværre ikke' grounded by retrieved chunk wording → allowed", () => {
+  const r = checkUnsupportedNegativeClaims({
+    draft_text: "A-Blaze ear pads passer desværre ikke på A-Spire headsettet.",
+    retrieved_chunks: [
+      {
+        id: "c1",
+        content: "A-Blaze ear pads are not compatible with the A-Spire headset shell.",
+        kind: "text",
+        source_label: "shopify_page",
+        similarity: 0.9,
+        usable_as: "policy",
+        risk_flags: [],
+        applies_to_all_products: false,
+        chunk_issue_types: [],
+      },
+    ],
+  });
+  assertEquals(r.compliant, true);
+});
+
+Deno.test("READINESS-8: unrelated hedge word 'ikke sandt' tag phrasing does NOT false-positive", () => {
+  const r = checkUnsupportedNegativeClaims({
+    draft_text: "Det passer meget godt sammen, ikke sandt?",
+    structured_facts: [],
+    facts: [],
+    retrieved_chunks: [],
+  });
+  assertEquals(r.compliant, true);
+});

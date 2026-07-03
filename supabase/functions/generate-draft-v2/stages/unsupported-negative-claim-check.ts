@@ -98,6 +98,10 @@ const FAMILIES: ClaimFamily[] = [
       /\bdoesn['’]t\s+fit\b/i,
       // DA
       /\bpasser\s+ikke\b/i,
+      // READINESS-8: hedged variants — "passer desværre/vist/nok ikke" — the
+      // bare adjacency pattern above misses these because a hedging adverb
+      // sits between the verb and the negation.
+      /\bpasser\s+(?:desværre|vist|nok)\s+ikke\b/i,
     ],
   },
   {

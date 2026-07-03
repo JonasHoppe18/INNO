@@ -621,3 +621,113 @@ Deno.test("READINESS-6c: 'vi sender dig et link' stays compliant (not a product 
   });
   assertEquals(r.compliant, true);
 });
+
+// ── READINESS-8: future-tense invoice-delivery promises ────────────────────
+// Night-probe A6 found a variant that slipped past READINESS-6b: "Jeg kan
+// ikke sende fakturaen direkte herfra, men sagen bliver håndteret manuelt.
+// Du vil modtage fakturaen snarest." — the existing patterns only covered
+// present-tense "sender"/"får ... tilsendt", not the future-tense "vil
+// modtage" / "vil få ... tilsendt" construction, nor the near-future
+// present-as-promise "modtager ... snart".
+
+Deno.test("READINESS-8: noun future promise ('du vil modtage fakturaen snarest') → violation", () => {
+  const r = checkUnsupportedCommitments({
+    draft_text:
+      "Jeg kan ikke sende fakturaen direkte herfra, men sagen bliver håndteret manuelt. Du vil modtage fakturaen snarest.",
+  });
+  assertEquals(r.compliant, false);
+  assert(
+    r.violations.some((v) => v.type === "unsupported_document_promise"),
+  );
+});
+
+Deno.test("READINESS-8: noun future promise ('du vil få fakturaen tilsendt') → violation", () => {
+  const r = checkUnsupportedCommitments({
+    draft_text: "Du vil få fakturaen tilsendt hurtigst muligt.",
+  });
+  assertEquals(r.compliant, false);
+  assert(
+    r.violations.some((v) => v.type === "unsupported_document_promise"),
+  );
+});
+
+Deno.test("READINESS-8: pronoun near-future promise ('du modtager den snart') with invoice antecedent → violation", () => {
+  const r = checkUnsupportedCommitments({
+    draft_text:
+      "Jeg kan ikke sende fakturaen direkte herfra. Du modtager den snart.",
+  });
+  assertEquals(r.compliant, false);
+  assert(
+    r.violations.some((v) => v.type === "unsupported_document_promise"),
+  );
+});
+
+Deno.test("READINESS-8: pronoun near-future promise ('du modtager den snart') with NO document noun anywhere → compliant", () => {
+  const r = checkUnsupportedCommitments({
+    draft_text: "Tak for din besked. Du modtager den snart.",
+  });
+  assertEquals(r.compliant, true);
+});
+
+Deno.test("READINESS-8: future promise authorized by approved resend_confirmation_or_invoice → compliant", () => {
+  const r = checkUnsupportedCommitments({
+    draft_text: "Du vil modtage fakturaen snarest.",
+    approved_actions: [{ type: "resend_confirmation_or_invoice" }],
+  });
+  assertEquals(r.compliant, true);
+});
+
+Deno.test("READINESS-8: hedged future promise ('hvis sagen bliver godkendt') stays compliant", () => {
+  const r = checkUnsupportedCommitments({
+    draft_text: "Hvis sagen bliver godkendt, vil du modtage fakturaen snarest.",
+  });
+  assertEquals(r.compliant, true);
+});
+
+// ── READINESS-8: unsupported discount / special-price promises ────────────
+// Night-probe B12 found a quality shift from "we cannot offer specific
+// discounts" toward an assertive "we offer team discounts depending on order
+// volume" — an ungrounded commercial commitment. No discount-granting action
+// exists anywhere in the system, so this is never authorized.
+
+Deno.test("READINESS-8: DA discount promise ('vi tilbyder team-rabatter') → violation", () => {
+  const r = checkUnsupportedCommitments({
+    draft_text:
+      "Vi tilbyder team-rabatter, men det afhænger af specifikke faktorer som ordremængde og krav.",
+  });
+  assertEquals(r.compliant, false);
+  assertEquals(r.violations[0].type, "unsupported_discount_promise");
+});
+
+Deno.test("READINESS-8: DA special-price promise ('vi kan give specialpris') → violation", () => {
+  const r = checkUnsupportedCommitments({
+    draft_text: "Vi kan give dig en specialpris, hvis I køber flere styk.",
+  });
+  assertEquals(r.compliant, false);
+  assertEquals(r.violations[0].type, "unsupported_discount_promise");
+});
+
+Deno.test("READINESS-8: EN discount promise ('we offer team discounts') → violation", () => {
+  const r = checkUnsupportedCommitments({
+    draft_text: "We offer team discounts depending on order volume.",
+  });
+  assertEquals(r.compliant, false);
+  assertEquals(r.violations[0].type, "unsupported_discount_promise");
+});
+
+Deno.test("READINESS-8: discount promise NOT authorized even when an unrelated action is approved", () => {
+  const r = checkUnsupportedCommitments({
+    draft_text: "Vi tilbyder team-rabatter afhængigt af ordremængde.",
+    approved_actions: [{ type: "resend_confirmation_or_invoice" }],
+  });
+  assertEquals(r.compliant, false);
+  assertEquals(r.violations[0].type, "unsupported_discount_promise");
+});
+
+Deno.test("READINESS-8: cautious discount wording ('vi kan desværre ikke tilbyde specifikke rabatter') stays compliant", () => {
+  const r = checkUnsupportedCommitments({
+    draft_text:
+      "Vi kan desværre ikke tilbyde specifikke rabatter, men kontakt os endelig ved storordrer.",
+  });
+  assertEquals(r.compliant, true);
+});

@@ -17,7 +17,8 @@ export type UnsupportedCommitmentViolationType =
   | "unsupported_prepaid_label_promise"
   | "unsupported_replacement_promise"
   | "unsupported_exchange_promise"
-  | "unsupported_document_promise";
+  | "unsupported_document_promise"
+  | "unsupported_discount_promise";
 
 export type UnsupportedCommitmentCheckInput = {
   draft_text: string;
@@ -161,6 +162,12 @@ const FAMILIES: CommitmentFamily[] = [
       /\b(?:jeg|vi)\s+sørger\s+for,?\s+at\s+du\s+får\s+(?:fakturaen|din\s+faktura|en\s+faktura|kvitteringen|ordrebekræftelsen)\s+(?:tilsendt|sendt)\b/i,
       // DA future — passive ("du får ... sendt/tilsendt")
       /\bdu\s+får\s+(?:fakturaen|din\s+faktura|kvitteringen|ordrebekræftelsen)\s+(?:tilsendt|sendt)\b/i,
+      // READINESS-8: future-tense noun promises ("du vil modtage fakturaen
+      // snarest", "du vil få fakturaen tilsendt") — the existing patterns only
+      // covered present-tense "sender"/"får ... tilsendt", not "vil modtage" /
+      // "vil få ... tilsendt".
+      /\bdu\s+vil\s+modtage\s+(?:fakturaen|din\s+faktura|en\s+faktura|kvitteringen|din\s+kvittering|en\s+kvittering|ordrebekræftelsen|en\s+(?:ny\s+)?ordrebekræftelse)\b/i,
+      /\bdu\s+vil\s+få\s+(?:fakturaen|din\s+faktura|en\s+faktura|kvitteringen|din\s+kvittering|en\s+kvittering|ordrebekræftelsen|en\s+(?:ny\s+)?ordrebekræftelse)\s+(?:tilsendt|sendt)\b/i,
     ],
   },
   // READINESS-6b: pronoun-form document-delivery promises ("vi sørger for,
@@ -184,6 +191,12 @@ const FAMILIES: CommitmentFamily[] = [
       /\b(?:i|we)(?:['’]ll| will)\s+send\s+it\s+(?:to\s+you|over|shortly|right\s+away|as\s+soon\s+as)\b/i,
       // EN: "we'll make sure you get/receive it"
       /\b(?:i|we)(?:['’]ll| will)\s+make\s+sure\s+you\s+(?:get|receive)\s+it\b/i,
+      // READINESS-8: future-tense pronoun promises ("du vil modtage den
+      // snarest", "du modtager den snart") — only counts when a document
+      // noun appears elsewhere in the draft (draftContextRequirement above),
+      // same rationale as the other pronoun patterns in this family.
+      /\bdu\s+vil\s+modtage\s+(?:den|det|dem)\s+(?:snarest|snart)\b/i,
+      /\bdu\s+modtager\s+(?:den|det|dem)\s+snart\b/i,
     ],
   },
   // READINESS-4: document-delivery promises for document types with no
@@ -202,6 +215,25 @@ const FAMILIES: CommitmentFamily[] = [
       /\b(?:jeg|vi)\s+sender\s+(?:dig\s+)?(?:en\s+)?(?:kreditnota|garantidokument\w*)\b/i,
       // DA future — passive ("du får ... sendt/tilsendt")
       /\bdu\s+får\s+(?:en\s+)?(?:returlabel|kreditnota|fragtlabel|garantidokument\w*)\s+(?:sendt|tilsendt)\b/i,
+    ],
+  },
+  // READINESS-8: unsupported discount / special-price commitments. Night-probe
+  // B12 found a quality shift from a cautious "we cannot offer specific
+  // discounts" toward an assertive "we offer team discounts depending on
+  // order volume" — an ungrounded commercial promise. There is no pricing/
+  // discount-granting action anywhere in the system today, so — same as the
+  // credit-note/warranty family above — this is never authorized.
+  {
+    violationType: "unsupported_discount_promise",
+    authorizingActionType: /^no_supported_action_exists$/,
+    commitmentPatterns: [
+      // DA: "vi tilbyder (team-)rabat(ter)/specialpris(er)/særpris(er)"
+      /\bvi\s+tilbyder\s+(?:team[- ]?rabat(?:ter)?|rabat(?:ter)?|special\s?pris(?:er)?|særpris(?:er)?)\b/i,
+      // DA: "vi kan/vil give (dig) (en) specialpris/særpris"
+      /\bvi\s+(?:kan|vil)\s+give\s+(?:dig\s+)?(?:en\s+)?(?:special\s?pris|særpris)\b/i,
+      // EN: "we offer (team) discounts / special pricing"
+      /\bwe\s+offer\s+(?:team\s+)?(?:discounts?|special\s+pric(?:e|ing))\b/i,
+      /\bwe\s+can\s+(?:give|offer)\s+(?:you\s+)?(?:a\s+)?special\s+price\b/i,
     ],
   },
 ];
