@@ -22,14 +22,14 @@ Første kunde kører stadig i test-mode mens draft-kvaliteten forbedres.
 | Database | Supabase Postgres + RLS |
 | Backend functions | Supabase Edge Functions (Deno runtime) |
 | AI | OpenAI API (embeddings + chat) |
-| Email | Postmark (primær), Gmail/Outlook polling (sekundær) |
+| Email | Postmark (al mail forwardes hertil — eneste aktive ingest-sti); Gmail/Outlook polling er legacy og ikke i brug |
 | E-commerce | Shopify Admin API + OAuth |
 
 ## Vigtige regler — læs inden du koder
 - `generate-draft-v2` er den aktive pipeline — `postmark-inbound` kalder kun denne. `generate-draft-unified` er legacy og bruges ikke i produktion
 - Ny action-logik skal håndtere både manuelt og automatisk mode
 - Al knowledge-ingestion skal enforces med eksplicit `shop_id`
-- Parser-logik i `postmark-inbound` og Gmail/Outlook pollers må ikke divergere stille
+- Gmail/Outlook pollers er legacy og ikke i brug — ny inbound-logik skal kun wires ind i `postmark-inbound`
 - Tenancy-model er under migration fra user-centric til workspace/org — antag ikke at user_id er tilstrækkeligt
 - Commit tidligt og hyppigt med meningsfulde beskeder — actions er destruktive
 
@@ -38,7 +38,6 @@ Eval-systemet er bygget og kørende. Prioritet er nu at bruge eval-resultaterne 
 
 ## Kendte svagheder
 - Tenancy-migration er ikke komplet — workspace-scoping kan være inkonsistent
-- Gmail/Outlook parser-kvalitet matcher muligvis ikke Postmark-stien
 - Policy hentes nu KUN fra agent_knowledge (retrieval); pinned policy leverer kun adfærds-guardrails, ikke data. Recall på den rigtige policy-chunk er nu den kritiske faktor (måles via eval)
 - Email-quoting fra Zendesk-wrappers kan forurene parsed indhold
 

@@ -120,7 +120,7 @@ As auto-send matures, agents shift from answering to supervising. The model must
 ## Data model implications
 
 - **Status:** migrate thread status semantics to the four lifecycle values. Mapping: `open` → `needs_attention`; `new` → `needs_attention` + unread flag; `pending` → `waiting_customer` (verify current pending semantics before migrating); `resolved` → `resolved`.
-- **Transitions:** inbound message handler (postmark-inbound and pollers — must not diverge) sets `needs_attention`; outbound send sets `waiting_customer`; both respect third-party wait markers.
+- **Transitions:** the inbound message handler sets `needs_attention`; outbound send sets `waiting_customer`; both respect third-party wait markers. Postmark is the only active ingest path (all mail is forwarded to it); the Gmail/Outlook pollers are legacy and unused, so transition logic only needs wiring into `postmark-inbound`.
 - **Wake/auto-close fields:** per-thread `waiting_reason` (`customer` | `third_party`), optional `wake_at`, plus workspace-level config (auto-close days, `auto` | `approve` mode) — natural fit alongside `shop_action_config` patterns, but workspace-scoped (tenancy migration caveat applies: scope by workspace, not user).
 - **Inboxes:** `workspace_inboxes` + `inbox:<slug>` tag stays as-is. No schema change required for v1.
 - **Scheduled job:** a periodic task evaluates `wake_at` and auto-close timers (silence measured from the customer's last message).
@@ -136,7 +136,7 @@ As auto-send matures, agents shift from answering to supervising. The model must
 - Unit-test the transition table exhaustively (event × current status → next status), including third-party wake semantics and reopen races.
 - Test count queries: sidebar counts include only `needs_attention`, per inbox and global.
 - Test migration mapping on a copy of production data; verify no ticket becomes invisible (every ticket reachable via View all and exactly one status tab).
-- Parser parity: transition triggers fire identically for Postmark and Gmail/Outlook ingest paths.
+- Ingest coverage: transition triggers fire on the Postmark path (the only active ingest path — Gmail/Outlook pollers are legacy and unused).
 
 ## Design principles (carry into implementation)
 
