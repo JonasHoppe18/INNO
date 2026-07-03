@@ -142,7 +142,10 @@ const FAMILIES: ClaimFamily[] = [
       // "trackingen viser ...") — a live-fact claim regardless of what follows.
       // Conditional restatements of the customer's own report ("hvis tracking
       // viser leveret", "if the tracking shows") are excluded via lookbehind.
-      /(?<!\bhvis\s)(?<!\bselv\s+om\s)\btracking(?:en|s|-?data(?:ene)?)?\s+viser\b/i,
+      // READINESS-7: widened to cover other conditional connectors that
+      // restate the customer's own premise instead of asserting a new fact
+      // ("siden/da/eftersom/fordi tracking viser leveret...").
+      /(?<!\bhvis\s)(?<!\bselv\s+om\s)(?<!\bsiden\s)(?<!\bda\s)(?<!\beftersom\s)(?<!\bfordi\s)\btracking(?:en|s|-?data(?:ene)?)?\s+viser\b/i,
       /\bforsendelsen\s+er\s+(?:blevet\s+)?oprettet\b/i,
       // READINESS-6a: shipped claim with an order number and/or "allerede"
       // between "ordre(n)" and "er afsendt" ("din ordre #4602 allerede er
@@ -291,9 +294,23 @@ export function checkLiveFactAndActionClaims(
   const violations: LiveFactActionClaimCheckResult["violations"] = [];
 
   for (const sentence of sentences) {
-    if (HEDGE_RE.test(sentence)) continue;
     for (const family of FAMILIES) {
-      if (!family.patterns.some((re) => re.test(sentence))) continue;
+      // READINESS-7: a hedge/conditional marker only exempts a claim when it
+      // appears BEFORE that claim in the sentence. A compound sentence like
+      // "Trackingdata viser X, men Y er endnu ikke Z" carries an unconditional
+      // fabricated claim followed by an unrelated hedge about a different
+      // sub-fact — the trailing hedge must not retroactively excuse the
+      // earlier claim. Only text preceding the actual regex match is checked.
+      let violatingMatch: RegExpExecArray | null = null;
+      for (const re of family.patterns) {
+        const match = re.exec(sentence);
+        if (!match) continue;
+        const precedingText = sentence.slice(0, match.index);
+        if (HEDGE_RE.test(precedingText)) continue;
+        violatingMatch = match;
+        break;
+      }
+      if (!violatingMatch) continue;
       if (family.isSupported(ctx)) continue;
       violations.push({
         type: family.violationType,

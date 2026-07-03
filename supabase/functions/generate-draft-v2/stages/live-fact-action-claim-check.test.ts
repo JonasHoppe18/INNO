@@ -460,3 +460,80 @@ Deno.test("EN: conditional 'if the tracking shows delivered' stays compliant", (
   });
   assertEquals(r.compliant, true);
 });
+
+// ── 18. READINESS-7: trailing hedge must not excuse an earlier fabricated
+// claim in the same sentence ─────────────────────────────────────────────────
+Deno.test("READINESS-7: 'trackingdata viser X, men ... endnu ikke Y' is blocked (trailing hedge doesn't excuse leading claim)", () => {
+  const r = checkLiveFactAndActionClaims({
+    draft_text:
+      "Trackingdata viser, at forsendelsen er blevet modtaget af fragtmanden, men der er endnu ikke registreret en afhentning.",
+    facts: [],
+  });
+  assertEquals(r.compliant, false);
+  assertEquals(
+    r.violations.some((v) => v.type === "live_fact/no_verified_tracking"),
+    true,
+  );
+});
+
+Deno.test("READINESS-7: 'tracking viser X, men ... endnu ikke nyt' is blocked", () => {
+  const r = checkLiveFactAndActionClaims({
+    draft_text:
+      "Tracking viser, at pakken er modtaget af fragtmanden, men der er endnu ikke nyt.",
+    facts: [],
+  });
+  assertEquals(r.compliant, false);
+  assertEquals(
+    r.violations.some((v) => v.type === "live_fact/no_verified_tracking"),
+    true,
+  );
+});
+
+Deno.test("READINESS-7: 'forsendelsen er oprettet' with no verified tracking fact is blocked", () => {
+  const r = checkLiveFactAndActionClaims({
+    draft_text: "Jeg kan se på tracking, at forsendelsen er oprettet.",
+    facts: [],
+  });
+  assertEquals(r.compliant, false);
+  assertEquals(
+    r.violations.some((v) => v.type === "live_fact/no_verified_tracking"),
+    true,
+  );
+});
+
+// ── 19. READINESS-7: widened conditional-connector exclusion for
+// customer-referential tracking restatements ────────────────────────────────
+Deno.test("READINESS-7: 'siden tracking viser leveret' (customer-referential) stays compliant", () => {
+  const r = checkLiveFactAndActionClaims({
+    draft_text: "Siden tracking viser leveret, bør vi undersøge sagen nærmere.",
+    facts: [],
+  });
+  assertEquals(r.compliant, true);
+});
+
+Deno.test("READINESS-7: 'da tracking viser leveret' (customer-referential) stays compliant", () => {
+  const r = checkLiveFactAndActionClaims({
+    draft_text:
+      "Da tracking viser leveret, kan det være en god idé at kontakte fragtfirmaet.",
+    facts: [],
+  });
+  assertEquals(r.compliant, true);
+});
+
+Deno.test("READINESS-7: 'eftersom tracking viser leveret' (customer-referential) stays compliant", () => {
+  const r = checkLiveFactAndActionClaims({
+    draft_text:
+      "Eftersom tracking viser leveret, skal vi lige tjekke sagen manuelt.",
+    facts: [],
+  });
+  assertEquals(r.compliant, true);
+});
+
+Deno.test("READINESS-7: 'fordi tracking viser leveret' (customer-referential) stays compliant", () => {
+  const r = checkLiveFactAndActionClaims({
+    draft_text:
+      "Fordi tracking viser leveret, betyder det ikke automatisk, at pakken er modtaget af dig.",
+    facts: [],
+  });
+  assertEquals(r.compliant, true);
+});
