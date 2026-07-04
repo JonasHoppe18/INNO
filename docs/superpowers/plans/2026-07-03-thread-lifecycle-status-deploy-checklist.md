@@ -121,3 +121,66 @@ Do these in order. Each step depends on the ones before it.
   dependencies (e.g. running the tick script before the migration in step 2 has landed will
   simply fail with a missing-function error; deploying the edge function in step 4 before the
   migration in step 2 would have it start writing columns that don't exist yet).
+
+## Plan 2 — Queue workspace UI verification (post-migration)
+
+This section covers `worktree-queue-workspace-ui` (11 tasks, not yet merged), which built the
+visible queue workspace UI — sidebar restructure, status tabs, reason badges, waiting groups,
+approve-close group, send-to-next — on top of the lifecycle backend above. It depends on the
+migrations in step 2 having landed to show anything beyond zero-state.
+
+**Browser-testing limitation, read this first:** every task on this branch verified its UI work
+via unit tests (`view-model.js`'s 64 vitest cases), ESLint, and `next build`, plus manual static
+code tracing (declaration-order analysis, hand-tracing pure functions against constructed inputs)
+— never via an actual browser render. The sandbox's embedded preview browser tool was confirmed
+non-functional (stuck on a placeholder page) across repeated attempts throughout this branch's
+development, so no task could load `/inbox` and look at it. This makes a real human click-through
+of `/inbox` the single most valuable thing to do before or immediately after merging this branch
+— even before the Plan 1 migration runs — to catch any purely-visual/layout issue that static
+analysis cannot.
+
+- [ ] **12. Confirm sidebar counts show real, non-zero numbers matching actual data**
+  Check `needsAttentionCount`, `mineCount`, `waitingCustomerCount`, `waitingThirdPartyCount`, and
+  the per-inbox counts in the sidebar against the workspace's real thread data. Pre-migration
+  these all read `0` because the lifecycle columns they aggregate don't exist yet — this step is
+  the first confirmation they populate correctly once step 2's migration has run.
+
+- [ ] **13. Confirm the Needs attention tab's queue ordering is correct against real data**
+  Expect oldest customer-wait-time first. The ordering logic (`view-model.js`) was verified with
+  constructed fixtures in unit tests only; no real, mixed-age thread set has ever driven it before
+  now.
+
+- [ ] **14. Confirm reason badges show real stored reasons, not just the unread fallback**
+  Open a thread with `attention_reason = 'customer_replied'` and confirm the badge reads "Customer
+  replied" (not the generic "New" fallback used when no reason is stored). Pre-migration every
+  thread lacks `attention_reason`, so only the fallback path has ever rendered in practice.
+
+- [ ] **15. Confirm the Waiting tab splits correctly into "Waiting on customer" / "Waiting on third party"**
+  Requires a real thread with `waiting_reason = 'waiting_third_party'`. Pre-migration every thread
+  defaults into the "customer" group (there's no `waiting_reason` data to disagree with that
+  default), so the third-party branch of the grouping logic has never actually been exercised
+  against real data — only against constructed unit-test fixtures.
+
+- [ ] **16. Confirm wake countdowns render correctly for a thread with a real `wake_at` value**
+  Expect a "wakes in N days" label whose N matches the stored timestamp. No real `wake_at` value
+  has existed to render against before this migration lands, so this is the first live check of
+  the countdown formatting.
+
+- [ ] **17. Confirm the "Approve close" group and its Approve / Keep-waiting actions work end-to-end**
+  Force a real `close_pending` thread by backdating a thread's `status_changed_at` (per step 10's
+  tick-verification approach) and either waiting for the next scheduled tick or manually invoking
+  `tick_thread_lifecycle()`, then confirm the group appears in the UI and both buttons produce the
+  expected status change against the live DB. This exercises UI code that so far has only been
+  covered by unit tests against a hand-built `close_pending` fixture, never a thread flagged by the
+  real tick function.
+
+- [ ] **18. Confirm send-to-next actually advances through a real multi-thread queue in the browser**
+  Send a reply and confirm focus moves to the next thread in the queue, repeated across several
+  sends. This branch's manual verification of `selectNext` was limited to static code tracing (see
+  the note above) — this is the first real browser confirmation of this behavior.
+
+- [ ] **19. Confirm sidebar Settings links navigate with client-side routing and show active-state highlighting**
+  Click each Settings group link and confirm no full page reload occurs (client-side
+  `next/link` transition) and that the active item is highlighted correctly. Task 11 fixed a
+  missing-active-state bug here via code review; it has not been confirmed by an actual click in a
+  browser.
