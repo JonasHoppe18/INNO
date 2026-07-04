@@ -37,6 +37,9 @@ function TicketListItemComponent({
   isExiting = false,
   isNew = false,
   mountIndex = 0,
+  showApproveCloseActions = false,
+  onApproveClose,
+  onKeepWaiting,
   onSelect,
   onContextMenu,
   onPrefetch,
@@ -81,6 +84,12 @@ function TicketListItemComponent({
   );
 
   return (
+    // Task 9, Plan 2: the outer element used to be a bare <button> — approve
+    // close and keep-waiting are now rendered as a sibling row (see below)
+    // rather than nested inside it (nested <button>s are invalid HTML/a11y),
+    // so the row is now wrapped in a plain <div> when those actions can show.
+    // Every other view still gets exactly the same single <button>, unchanged.
+    <div className="relative">
     <button
       type="button"
       onClick={(event) =>
@@ -185,6 +194,31 @@ function TicketListItemComponent({
         </div>
       ) : null}
     </button>
+    {showApproveCloseActions ? (
+      <div className="flex items-center gap-3 border-t border-border/60 px-4 py-1.5">
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onApproveClose?.();
+          }}
+          className="text-[12px] text-muted-foreground transition-colors hover:text-foreground"
+        >
+          Approve
+        </button>
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onKeepWaiting?.();
+          }}
+          className="text-[12px] text-muted-foreground transition-colors hover:text-foreground"
+        >
+          Keep waiting
+        </button>
+      </div>
+    ) : null}
+    </div>
   );
 }
 
@@ -205,5 +239,6 @@ export const TicketListItem = memo(
     prev.wakeDays === next.wakeDays &&
     prev.isExiting === next.isExiting &&
     prev.isNew === next.isNew &&
-    prev.mountIndex === next.mountIndex,
+    prev.mountIndex === next.mountIndex &&
+    prev.showApproveCloseActions === next.showApproveCloseActions,
 );

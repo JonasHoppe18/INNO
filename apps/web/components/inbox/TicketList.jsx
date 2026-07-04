@@ -53,6 +53,9 @@ export function TicketList({
   getAssigneeLabel,
   groups = null,
   showWakeCountdown = false,
+  approveCloseGroupKey = null,
+  onApproveClose,
+  onKeepWaiting,
 }) {
   const [contextMenu, setContextMenu] = useState(null);
   const [contextMenuRoot, setContextMenuRoot] = useState(null);
@@ -76,6 +79,20 @@ export function TicketList({
     });
     return map;
   }, [groups]);
+  // Task 9, Plan 2: thread ids belonging to the "Approve close" group (keyed
+  // by approveCloseGroupKey, e.g. "approve_close" from
+  // groupNeedsAttentionThreads) — drives the Approve/Keep-waiting row actions
+  // further down. Empty set (no rows match) for every other view/group.
+  const approveCloseThreadIds = useMemo(() => {
+    const set = new Set();
+    if (!groups || !approveCloseGroupKey) return set;
+    const match = groups.find((group) => group.key === approveCloseGroupKey);
+    (match?.threads || []).forEach((thread) => {
+      const id = String(thread?.id || "");
+      if (id) set.add(id);
+    });
+    return set;
+  }, [groups, approveCloseGroupKey]);
   const [renderedThreads, setRenderedThreads] = useState(
     (orderedThreads || []).map((thread) => ({ thread, isExiting: false }))
   );
@@ -441,6 +458,9 @@ export function TicketList({
               // Waiting tab only: wake countdown next to the meta line, per
               // Task 8 brief. `wakeInDays` handles null/invalid wake_at.
               const wakeDays = showWakeCountdown ? wakeInDays(thread, Date.now()) : null;
+              // Task 9, Plan 2: rows in the "Approve close" group render two
+              // small quiet text-buttons instead of relying on selection.
+              const isApproveCloseRow = approveCloseThreadIds.has(String(thread.id));
               return (
                 <div key={thread.id}>
                   {groupHeaderLabel ? (
@@ -465,6 +485,17 @@ export function TicketList({
                       isExiting={isExiting}
                       isNew={newThreadIds.has(String(thread.id))}
                       mountIndex={absoluteIndex}
+                      showApproveCloseActions={isApproveCloseRow}
+                      onApproveClose={
+                        isApproveCloseRow && onApproveClose
+                          ? () => onApproveClose(thread.id)
+                          : undefined
+                      }
+                      onKeepWaiting={
+                        isApproveCloseRow && onKeepWaiting
+                          ? () => onKeepWaiting(thread.id)
+                          : undefined
+                      }
                       onSelect={(options) => onSelectThread(thread.id, options)}
                       onPrefetch={onPrefetchThread ? () => onPrefetchThread(thread.id) : undefined}
                       onContextMenu={(event) => {

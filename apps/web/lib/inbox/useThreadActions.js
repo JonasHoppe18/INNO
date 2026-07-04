@@ -101,6 +101,17 @@ export function useThreadActions({
   ] = useState({});
   const [refreshPendingActionByThread, setRefreshPendingActionByThread] =
     useState({});
+  // Task 9, Plan 2: optimistic local override for the "Approve close" group.
+  // close_pending is read straight off the raw thread object in
+  // InboxSplitView.jsx's filteredThreads memo (NOT through ticketStateByThread
+  // — see that memo's comment), so approving/keep-waiting a close_pending
+  // thread needs its own small override map rather than reusing
+  // ticketStateByThread: true means "treat this thread as no-longer-close-
+  // pending regardless of what the raw thread still says", used to remove the
+  // row from the Approve-close group immediately after a PATCH, before the
+  // server-derived thread list catches up. Reverted (deleted) on PATCH failure.
+  const [closePendingOverrideByThread, setClosePendingOverrideByThread] =
+    useState({});
 
   // Keep ticketStateByThread in sync with the server-derived thread list
   // (status/priority/assignee), unless a PATCH for that thread is still
@@ -589,6 +600,62 @@ export function useThreadActions({
     [filteredThreads, selectedThreadId],
   );
 
+  // Task 9, Plan 2: shared PATCH-based body for the "Approve close" group's
+  // two row actions. Both approveClose and keepWaiting optimistically flip
+  // closePendingOverrideByThread[threadId] to true (removing the row from the
+  // Approve-close group immediately — see filteredThreads' close_pending read
+  // in InboxSplitView.jsx) and revert (delete the override) on PATCH failure,
+  // matching handleTicketStateChange/handleOrderUpdateDecision's existing
+  // optimistic-update + toast-on-failure pattern in this file.
+  const patchThreadStatusForCloseDecision = useCallback(
+    (threadId, status, failureMessage) => {
+      if (!threadId) return;
+      setClosePendingOverrideByThread((prev) => ({
+        ...prev,
+        [threadId]: true,
+      }));
+      fetch("/api/inbox/thread-status", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ threadId, status }),
+      })
+        .then(async (response) => {
+          if (response.ok) return;
+          const data = await response.json().catch(() => null);
+          throw new Error(data?.error || failureMessage);
+        })
+        .catch((error) => {
+          setClosePendingOverrideByThread((prev) => {
+            const next = { ...prev };
+            delete next[threadId];
+            return next;
+          });
+          toast.error(error.message || failureMessage);
+        });
+    },
+    [],
+  );
+
+  const approveClose = useCallback(
+    (threadId) =>
+      patchThreadStatusForCloseDecision(
+        threadId,
+        "resolved",
+        "Could not approve close.",
+      ),
+    [patchThreadStatusForCloseDecision],
+  );
+
+  const keepWaiting = useCallback(
+    (threadId) =>
+      patchThreadStatusForCloseDecision(
+        threadId,
+        "waiting_customer",
+        "Could not keep ticket waiting.",
+      ),
+    [patchThreadStatusForCloseDecision],
+  );
+
   const handleOrderUpdateDecision = useCallback(
     async (decision, options = undefined) => {
       if (!selectedThreadId) return;
@@ -892,8 +959,12 @@ export function useThreadActions({
     setMarkReturnReceivedLoadingByThread,
     refreshPendingActionByThread,
     setRefreshPendingActionByThread,
+    closePendingOverrideByThread,
+    setClosePendingOverrideByThread,
     handleMarkReturnReceived,
     handleTicketStateChange,
     handleOrderUpdateDecision,
+    approveClose,
+    keepWaiting,
   };
 }

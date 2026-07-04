@@ -118,6 +118,30 @@ export function groupWaitingThreads(threads) {
   }));
 }
 
+// Task 9, Plan 2: partitions an already-scoped (needs-attention tab) thread
+// list into the default group and a trailing "Approve close" group for
+// threads the auto-close tick flagged (close_pending === true). Mirrors
+// groupWaitingThreads' shape/omit-when-empty semantics above, except the
+// default group's label is null (TicketList only renders a header row for
+// groups with a non-null label, so the primary needs-attention list keeps
+// its current no-header look; only the new bottom group gets a header).
+// filteredThreads already stably sorts close_pending threads to the bottom
+// (Task 6's needsAttentionQueue in InboxSplitView.jsx), so this partition
+// does no re-sorting of its own — it only splits, preserving order.
+export function groupNeedsAttentionThreads(threads) {
+  const list = threads || [];
+  const defaultThreads = list.filter((thread) => thread?.close_pending !== true);
+  const approveCloseThreads = list.filter((thread) => thread?.close_pending === true);
+  const groups = [];
+  if (defaultThreads.length) {
+    groups.push({ key: "default", label: null, threads: defaultThreads });
+  }
+  if (approveCloseThreads.length) {
+    groups.push({ key: "approve_close", label: "Approve close", threads: approveCloseThreads });
+  }
+  return groups;
+}
+
 // Legacy `?view=` values still linked from older bookmarks/emails map onto
 // the new lifecycle-view vocabulary. Anything unrecognized (including "",
 // the omitted-default) passes through unchanged — callers decide what the

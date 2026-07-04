@@ -37,6 +37,7 @@ import { useSiteHeaderActions } from "@/components/site-header-actions";
 import { reportClientEvent } from "@/lib/client-events";
 import { toLegacyUiStatus } from "@/lib/inbox/status-model";
 import {
+  groupNeedsAttentionThreads,
   groupWaitingThreads,
   isAutomated,
   resolveInboxSlug,
@@ -1560,8 +1561,18 @@ export function InboxSplitView({
       // behavior identical to before this refactor. close_pending isn't part
       // of ticketStateByThread's optimistic-override set, so it's read
       // straight off the raw thread (inert pre-migration — no thread has it
-      // set yet, per Task 6 brief).
-      const tab = threadTab({ ...thread, status: effectiveStatus });
+      // set yet, per Task 6 brief) — EXCEPT when Task 9's Approve/Keep-waiting
+      // actions have optimistically cleared it via closePendingOverrideByThread,
+      // in which case we treat it as false immediately (before the server-
+      // derived thread list catches up), so the row leaves the Approve-close
+      // group right away instead of waiting for a refetch.
+      const effectiveClosePending =
+        thread?.close_pending === true && !closePendingOverrideByThread[threadId];
+      const tab = threadTab({
+        ...thread,
+        status: effectiveStatus,
+        close_pending: effectiveClosePending,
+      });
       const isNotification = isAutomated(thread);
       const resolvedInboxSlug = resolveInboxSlug(thread, knownInboxSlugs);
       return {
@@ -1569,6 +1580,7 @@ export function InboxSplitView({
         threadId,
         effectiveAssignee,
         effectiveStatus,
+        effectiveClosePending,
         tab,
         isNotification,
         resolvedInboxSlug,
@@ -1646,13 +1658,16 @@ export function InboxSplitView({
     // approve-close segment) stably partitioned to the bottom. Inert today —
     // no thread has close_pending set pre-migration — but the partition is
     // in place so it activates for free once that field starts arriving.
+    // Reads row.effectiveClosePending (not the raw thread field) so Task 9's
+    // Approve/Keep-waiting optimistic override removes a row from the
+    // approve-close segment immediately.
     const needsAttentionQueue = (rows) => {
       const eligible = rows.filter((row) => row.tab === "needs_attention" && !row.isNotification);
       const sorted = sortForQueue(eligible.map((row) => row.thread));
       const rowByThreadId = new Map(eligible.map((row) => [row.thread, row]));
       const sortedRows = sorted.map((thread) => rowByThreadId.get(thread));
-      const primary = sortedRows.filter((row) => row.thread?.close_pending !== true);
-      const approveClose = sortedRows.filter((row) => row.thread?.close_pending === true);
+      const primary = sortedRows.filter((row) => !row.effectiveClosePending);
+      const approveClose = sortedRows.filter((row) => row.effectiveClosePending);
       return [...primary, ...approveClose];
     };
 
@@ -1700,6 +1715,7 @@ export function InboxSplitView({
 
     return applyCommonFilters(scopedRows).map((row) => row.thread);
   }, [
+    closePendingOverrideByThread,
     currentSupabaseUserId,
     customerByThread,
     derivedThreads,
@@ -1722,6 +1738,24 @@ export function InboxSplitView({
     if (resolvedView !== "waiting" && tab !== "waiting") return null;
     return groupWaitingThreads(filteredThreads);
   }, [filteredThreads, resolvedView, tab]);
+
+  // Task 9, Plan 2: the needs-attention view (default view, "mine", or an
+  // inbox-scoped view sitting on its default/needs_attention tab) gets a
+  // trailing "Approve close" group for close_pending threads. filteredThreads
+  // is already the needs-attention-scoped, queue-sorted set (via
+  // needsAttentionQueue above) whenever one of these routes is active, so —
+  // same as waitingGroups — this is a pure partition on top of it, no extra
+  // filtering. Mutually exclusive with waitingGroups (TicketList's `groups`
+  // prop takes one or the other; never both are non-null at once, since a
+  // single view can't be both the needs-attention queue and the Waiting tab).
+  const isNeedsAttentionRoute =
+    resolvedView === "" ||
+    resolvedView === "mine" ||
+    (resolvedView.startsWith("inbox:") && tab !== "waiting" && tab !== "resolved");
+  const needsAttentionGroups = useMemo(() => {
+    if (!isNeedsAttentionRoute) return null;
+    return groupNeedsAttentionThreads(filteredThreads);
+  }, [filteredThreads, isNeedsAttentionRoute]);
 
   const markThreadReadInstantly = useCallback(
     (threadId) => {
@@ -2510,9 +2544,12 @@ export function InboxSplitView({
     setMarkReturnReceivedLoadingByThread,
     refreshPendingActionByThread,
     setRefreshPendingActionByThread,
+    closePendingOverrideByThread,
     handleMarkReturnReceived,
     handleTicketStateChange,
     handleOrderUpdateDecision,
+    approveClose,
+    keepWaiting,
   } = useThreadActions({
     derivedThreads,
     ticketStateByThread,
@@ -3358,8 +3395,11 @@ export function InboxSplitView({
         onDeleteThread={deleteThreadById}
         hideSolvedFilter={activeView === ""}
         resolvedView={resolvedView}
-        groups={waitingGroups}
+        groups={waitingGroups || needsAttentionGroups}
         showWakeCountdown={Boolean(waitingGroups)}
+        approveCloseGroupKey="approve_close"
+        onApproveClose={approveClose}
+        onKeepWaiting={keepWaiting}
         getInboxName={getInboxNameForThread}
         getAssigneeLabel={getAssigneeLabelForId}
         statusTabs={

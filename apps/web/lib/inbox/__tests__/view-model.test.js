@@ -11,6 +11,7 @@ import {
   wakeInDays,
   formatWakeCountdown,
   groupWaitingThreads,
+  groupNeedsAttentionThreads,
   sortForQueue,
   resolveViewRoute,
 } from "../view-model.js";
@@ -203,6 +204,42 @@ describe("groupWaitingThreads", () => {
     expect(groupWaitingThreads([])).toEqual([]);
     expect(groupWaitingThreads(null)).toEqual([]);
     expect(groupWaitingThreads(undefined)).toEqual([]);
+  });
+});
+
+describe("groupNeedsAttentionThreads", () => {
+  it("splits into a default (unlabeled) group and a trailing 'Approve close' group", () => {
+    const normalA = { ...base, id: "a", close_pending: false };
+    const closePendingA = { ...base, id: "b", close_pending: true };
+    const normalB = { ...base, id: "c" };
+    const groups = groupNeedsAttentionThreads([normalA, closePendingA, normalB]);
+    expect(groups).toEqual([
+      { key: "default", label: null, threads: [normalA, normalB] },
+      { key: "approve_close", label: "Approve close", threads: [closePendingA] },
+    ]);
+  });
+  it("omits the approve_close group when no thread has close_pending (pre-migration data)", () => {
+    const normalA = { ...base, id: "a" };
+    const groups = groupNeedsAttentionThreads([normalA]);
+    expect(groups).toEqual([{ key: "default", label: null, threads: [normalA] }]);
+  });
+  it("omits the default group when every thread is close_pending", () => {
+    const closePendingA = { ...base, id: "a", close_pending: true };
+    const groups = groupNeedsAttentionThreads([closePendingA]);
+    expect(groups).toEqual([
+      { key: "approve_close", label: "Approve close", threads: [closePendingA] },
+    ]);
+  });
+  it("preserves relative order within each group", () => {
+    const a = { ...base, id: "a", close_pending: true };
+    const b = { ...base, id: "b", close_pending: true };
+    const groups = groupNeedsAttentionThreads([a, b]);
+    expect(groups[0].threads).toEqual([a, b]);
+  });
+  it("returns an empty array for an empty/missing input", () => {
+    expect(groupNeedsAttentionThreads([])).toEqual([]);
+    expect(groupNeedsAttentionThreads(null)).toEqual([]);
+    expect(groupNeedsAttentionThreads(undefined)).toEqual([]);
   });
 });
 
