@@ -1,7 +1,8 @@
 "use client"
 
+import Link from "next/link"
 import { useEffect, useState } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import {
   BarChart2Icon,
   BookOpenIcon,
@@ -124,11 +125,15 @@ export function AppSidebar({
   ...props
 }) {
   const router = useRouter()
+  const pathname = usePathname()
   const searchParams = useSearchParams()
   // Same raw `?view=` semantics as useThreadFilters.js (Task 6, Plan 1): the
   // literal param value, "" meaning the needs-attention default. NavQueue
   // compares this directly against each row's target view.
   const activeView = searchParams.get("view") || ""
+
+  const linkActive = (url) =>
+    pathname === url || pathname.startsWith(`${url}/`)
   const [customInboxes, setCustomInboxes] = useState([])
   const [createInboxOpen, setCreateInboxOpen] = useState(false)
   const [createInboxName, setCreateInboxName] = useState("")
@@ -510,12 +515,16 @@ export function AppSidebar({
                     <SidebarMenuButton
                       asChild
                       tooltip={item.name}
-                      className="justify-start"
+                      className={cn(
+                        "justify-start",
+                        linkActive(item.url) &&
+                          "bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground"
+                      )}
                     >
-                      <a href={item.url} className="flex w-full items-center gap-2 text-inherit no-underline">
+                      <Link href={item.url} className="flex w-full items-center gap-2 text-inherit no-underline">
                         <item.icon className="h-4 w-4" />
                         <span>{item.name}</span>
-                      </a>
+                      </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))}
