@@ -28,6 +28,21 @@ export function resolveInboxSlug(thread, knownSlugs) {
   return Array.isArray(knownSlugs) && knownSlugs.includes(slug) ? slug : null;
 }
 
+// Pure formatting helper for the queue row meta line — turns an assignee
+// display name/email into 1-2 uppercase initials. No React, no I/O.
+export function assigneeInitials(label) {
+  const base = String(label || "").trim();
+  if (!base) return null;
+  const parts = base
+    .replace(/[^a-zA-Z0-9\s]/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!parts.length) return null;
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+}
+
 const REASON_LABELS = {
   customer_replied: "Customer replied",
   new: "New",

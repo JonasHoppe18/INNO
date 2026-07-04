@@ -2,6 +2,7 @@ import { memo, useEffect, useRef } from "react";
 import { Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatMessageTime } from "@/components/inbox/inbox-utils";
+import { assigneeInitials } from "@/lib/inbox/view-model";
 
 const STATUS_TEXT_STYLES = {
   New: "text-green-600 dark:text-green-400",
@@ -28,7 +29,10 @@ function TicketListItemComponent({
   timestamp,
   unreadCount,
   assignee,
+  assigneeLabel = null,
   priority,
+  reason = null,
+  inboxName = null,
   isExiting = false,
   isNew = false,
   mountIndex = 0,
@@ -42,6 +46,7 @@ function TicketListItemComponent({
       thread?.draft_ready ||
       thread?.has_ai_draft
   );
+  const assigneeDisplay = assigneeLabel ? assigneeInitials(assigneeLabel) : null;
 
   const classificationKey = String(thread?.classification_key || "").toLowerCase();
   const classificationLabel =
@@ -134,8 +139,36 @@ function TicketListItemComponent({
           </span>
           {hasAiDraft ? <Sparkles className="h-3 w-3 text-amber-400" /> : null}
         </div>
-        <span className={cn("shrink-0 text-[12px]", STATUS_TEXT_STYLES[status] || "text-muted-foreground")}>
-          {status === "Solved" ? "Resolved" : status}
+        {reason ? (
+          <span
+            className={
+              "shrink-0 text-xs whitespace-nowrap " +
+              (reason.key === "customer_replied"
+                ? "text-amber-700 dark:text-amber-500"
+                : reason.key === "approve_close"
+                  ? "text-purple-700 dark:text-purple-400"
+                  : "text-green-700 dark:text-green-500")
+            }
+          >
+            {reason.label}
+          </span>
+        ) : (
+          <span className={cn("shrink-0 text-[12px]", STATUS_TEXT_STYLES[status] || "text-muted-foreground")}>
+            {status === "Solved" ? "Resolved" : status}
+          </span>
+        )}
+      </div>
+      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+        {inboxName ? <span className="truncate">{inboxName}</span> : null}
+        {inboxName ? <span aria-hidden="true">&middot;</span> : null}
+        {hasAiDraft ? (
+          <>
+            <span className="text-purple-700 dark:text-purple-400">Draft ready</span>
+            <span aria-hidden="true">&middot;</span>
+          </>
+        ) : null}
+        <span className={cn(!assigneeDisplay && "text-muted-foreground/70")}>
+          {assigneeDisplay || "Unassigned"}
         </span>
       </div>
       {classificationLabel ? (
@@ -157,7 +190,10 @@ export const TicketListItem = memo(
     prev.timestamp === next.timestamp &&
     prev.unreadCount === next.unreadCount &&
     prev.assignee === next.assignee &&
+    prev.assigneeLabel === next.assigneeLabel &&
     prev.priority === next.priority &&
+    prev.reason === next.reason &&
+    prev.inboxName === next.inboxName &&
     prev.isExiting === next.isExiting &&
     prev.isNew === next.isNew &&
     prev.mountIndex === next.mountIndex,

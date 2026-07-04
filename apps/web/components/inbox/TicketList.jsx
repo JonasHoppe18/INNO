@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { TicketListItem } from "@/components/inbox/TicketListItem";
 import { ArrowDownUp, Filter } from "lucide-react";
+import { deriveReason } from "@/lib/inbox/view-model";
 
 const STATUS_FILTERS = [
   { value: "All", label: "All" },
@@ -47,6 +48,9 @@ export function TicketList({
   hideSolvedFilter = false,
   onPrefetchThread,
   statusTabs = null,
+  resolvedView = "",
+  getInboxName,
+  getAssigneeLabel,
 }) {
   const [contextMenu, setContextMenu] = useState(null);
   const [contextMenuRoot, setContextMenuRoot] = useState(null);
@@ -404,6 +408,13 @@ export function TicketList({
               const customer = customerByThread[thread.id] || "Unknown sender";
               const timestamp = getTimestamp(thread);
               const unreadCount = getUnreadCount(thread);
+              // View-all (lookup) keeps today's status text; every other queue
+              // view shows the "why is this here" reason instead.
+              const reason = resolvedView === "all" ? null : deriveReason(thread);
+              const inboxName = getInboxName ? getInboxName(thread) : null;
+              const assigneeLabel = getAssigneeLabel
+                ? getAssigneeLabel(uiState?.assignee ?? thread.assignee_id ?? null)
+                : null;
               return (
                 <div key={thread.id} ref={(el) => { itemRefs.current[thread.id] = el; }}>
                 <TicketListItem
@@ -414,7 +425,10 @@ export function TicketList({
                   timestamp={timestamp}
                   unreadCount={unreadCount}
                   assignee={uiState?.assignee}
+                  assigneeLabel={assigneeLabel}
                   priority={uiState?.priority}
+                  reason={reason}
+                  inboxName={inboxName}
                   isExiting={isExiting}
                   isNew={newThreadIds.has(String(thread.id))}
                   mountIndex={absoluteIndex}

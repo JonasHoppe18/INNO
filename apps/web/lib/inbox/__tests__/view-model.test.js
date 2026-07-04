@@ -5,6 +5,7 @@ import {
   isAutomated,
   resolveInboxSlug,
   deriveReason,
+  assigneeInitials,
   queueCompare,
   waitingGroup,
   wakeInDays,
@@ -84,6 +85,26 @@ describe("deriveReason", () => {
   it("returns null when nothing applies", () => {
     expect(deriveReason({ ...base, attention_reason: null, unread_count: 0 })).toBe(null);
     expect(deriveReason({ ...base, attention_reason: "garbage" })).toBe(null);
+  });
+});
+
+describe("assigneeInitials", () => {
+  it("builds initials from first + last name", () => {
+    expect(assigneeInitials("Jane Doe")).toBe("JD");
+  });
+  it("uses the first two characters for a single-word name", () => {
+    expect(assigneeInitials("Cher")).toBe("CH");
+  });
+  it("takes first + last of multi-word names", () => {
+    expect(assigneeInitials("Mary Jane Watson")).toBe("MW");
+  });
+  it("returns null for empty/missing input", () => {
+    expect(assigneeInitials("")).toBe(null);
+    expect(assigneeInitials(null)).toBe(null);
+    expect(assigneeInitials(undefined)).toBe(null);
+  });
+  it("strips punctuation before computing initials", () => {
+    expect(assigneeInitials("o'brien, sean")).toBe("OS");
   });
 });
 
