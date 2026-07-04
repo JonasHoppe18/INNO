@@ -16,7 +16,7 @@ export function threadTab(thread) {
 }
 
 export function isAutomated(thread) {
-  return String(thread?.classification_key || "") === "notification";
+  return String(thread?.classification_key || "").trim().toLowerCase() === "notification";
 }
 
 export function resolveInboxSlug(thread, knownSlugs) {

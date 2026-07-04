@@ -47,6 +47,11 @@ describe("isAutomated", () => {
     expect(isAutomated({ ...base, classification_key: "support" })).toBe(false);
     expect(isAutomated(base)).toBe(false);
   });
+  it("normalizes case and whitespace before comparing", () => {
+    expect(isAutomated({ ...base, classification_key: "Notification" })).toBe(true);
+    expect(isAutomated({ ...base, classification_key: "  notification  " })).toBe(true);
+    expect(isAutomated({ ...base, classification_key: "NOTIFICATION" })).toBe(true);
+  });
 });
 
 describe("resolveInboxSlug", () => {
