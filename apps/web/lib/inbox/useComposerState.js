@@ -25,12 +25,12 @@ const DRAFT_FETCH_DELAY_MS = 150;
 //   - Handlers: handleGenerateDraft, handleRefineDraft, handleDraftChange,
 //     saveThreadDraft (+ its 4s auto-save interval effect), and handleSendDraft.
 //
-// handleSendDraft now accepts an optional second `{ onSent }` argument and
+// handleSendDraft accepts an optional second `{ onSent }` argument and
 // invokes it exactly once, at the end of the success path, after the
-// optimistic status update block. This is a new, currently-inert extension
-// point (a future task wires a consumer); no existing call site passes
-// onSent today (JSX still does `onSend={handleSendDraft}`), so behavior is
-// unchanged until something opts in.
+// optimistic status update block. InboxSplitView.jsx wires this to
+// selectNext() (Task 10, Plan 2) when the active view is a queue view
+// (needs_attention/mine/an inbox's needs-attention tab) — outside those
+// views onSent is omitted and behavior is unchanged.
 export function useComposerState({
   // Data this hook reads but does not own.
   selectedThreadId,
@@ -1463,7 +1463,7 @@ export function useComposerState({
           (typeof performance !== "undefined" ? performance.now() : Date.now()) -
           sendStartedAt,
       });
-      // Inert extension point (currently no caller passes onSent) — see file
+      // Wired to selectNext() in queue views (Task 10, Plan 2) — see file
       // header comment.
       if (typeof onSent === "function") onSent();
     } catch (err) {
