@@ -36,7 +36,13 @@ import { useCustomerLookup } from "@/hooks/useCustomerLookup";
 import { useSiteHeaderActions } from "@/components/site-header-actions";
 import { reportClientEvent } from "@/lib/client-events";
 import { toLegacyUiStatus } from "@/lib/inbox/status-model";
-import { isAutomated, resolveInboxSlug, sortForQueue, threadTab } from "@/lib/inbox/view-model";
+import {
+  groupWaitingThreads,
+  isAutomated,
+  resolveInboxSlug,
+  sortForQueue,
+  threadTab,
+} from "@/lib/inbox/view-model";
 import { DEFAULT_FILTERS, useThreadFilters } from "@/lib/inbox/useThreadFilters";
 import { useThreadSelection } from "@/lib/inbox/useThreadSelection";
 import { useThreadActions } from "@/lib/inbox/useThreadActions";
@@ -1706,6 +1712,17 @@ export function InboxSplitView({
     user?.id,
   ]);
 
+  // Task 8, Plan 2: the Waiting view splits into "Waiting on customer" /
+  // "Waiting on third party" sections. filteredThreads is already the
+  // Waiting-tab-scoped, sorted set when resolvedView/tab is "waiting" (both
+  // the top-level `?view=waiting` route and an inbox-scoped `?tab=waiting`
+  // route funnel through the same scopedRows computation above), so grouping
+  // is a pure partition on top of it — no extra filtering here.
+  const waitingGroups = useMemo(() => {
+    if (resolvedView !== "waiting" && tab !== "waiting") return null;
+    return groupWaitingThreads(filteredThreads);
+  }, [filteredThreads, resolvedView, tab]);
+
   const markThreadReadInstantly = useCallback(
     (threadId) => {
       const nextThreadId = String(threadId || "").trim();
@@ -3341,6 +3358,8 @@ export function InboxSplitView({
         onDeleteThread={deleteThreadById}
         hideSolvedFilter={activeView === ""}
         resolvedView={resolvedView}
+        groups={waitingGroups}
+        showWakeCountdown={Boolean(waitingGroups)}
         getInboxName={getInboxNameForThread}
         getAssigneeLabel={getAssigneeLabelForId}
         statusTabs={

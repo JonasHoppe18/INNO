@@ -86,6 +86,38 @@ export function wakeInDays(thread, nowMs) {
   return Math.max(0, Math.ceil((wake - nowMs) / DAY_MS));
 }
 
+// Pure formatting helper for the Waiting-tab wake countdown. Mirrors the
+// wording contract in the Task 8 brief: null (unset/invalid wake_at) renders
+// nothing, 0 is "wakes today", N is "wakes in N days" (singular "day" for 1).
+export function formatWakeCountdown(days) {
+  if (days === null || days === undefined) return null;
+  if (days === 0) return "wakes today";
+  return `wakes in ${days} day${days === 1 ? "" : "s"}`;
+}
+
+const WAITING_GROUP_DEFS = [
+  { key: "customer", label: "Waiting on customer" },
+  { key: "third_party", label: "Waiting on third party" },
+];
+
+// Partitions an already-scoped (Waiting tab) thread list into the two
+// waiting-reason groups, preserving each thread's relative order. A group is
+// included only when it has at least one thread — so if every thread is
+// "customer" (e.g. pre-migration data with no waiting_reason column), only
+// that one group/header renders; "third_party" simply doesn't appear.
+export function groupWaitingThreads(threads) {
+  const buckets = { customer: [], third_party: [] };
+  (threads || []).forEach((thread) => {
+    buckets[waitingGroup(thread)].push(thread);
+  });
+  const nonEmpty = WAITING_GROUP_DEFS.filter((def) => buckets[def.key].length > 0);
+  return nonEmpty.map((def) => ({
+    key: def.key,
+    label: def.label,
+    threads: buckets[def.key],
+  }));
+}
+
 // Legacy `?view=` values still linked from older bookmarks/emails map onto
 // the new lifecycle-view vocabulary. Anything unrecognized (including "",
 // the omitted-default) passes through unchanged — callers decide what the

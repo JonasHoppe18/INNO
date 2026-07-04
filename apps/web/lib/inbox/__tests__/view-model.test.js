@@ -9,6 +9,8 @@ import {
   queueCompare,
   waitingGroup,
   wakeInDays,
+  formatWakeCountdown,
+  groupWaitingThreads,
   sortForQueue,
   resolveViewRoute,
 } from "../view-model.js";
@@ -154,6 +156,53 @@ describe("wakeInDays", () => {
   it("returns null for missing or invalid wake_at", () => {
     expect(wakeInDays(base, NOW)).toBe(null);
     expect(wakeInDays({ ...base, wake_at: "garbage" }, NOW)).toBe(null);
+  });
+});
+
+describe("formatWakeCountdown", () => {
+  it("renders nothing for null (unset/invalid wake_at)", () => {
+    expect(formatWakeCountdown(null)).toBe(null);
+  });
+  it("renders 'wakes today' for 0", () => {
+    expect(formatWakeCountdown(0)).toBe("wakes today");
+  });
+  it("uses singular 'day' for 1", () => {
+    expect(formatWakeCountdown(1)).toBe("wakes in 1 day");
+  });
+  it("uses plural 'days' for N > 1", () => {
+    expect(formatWakeCountdown(5)).toBe("wakes in 5 days");
+  });
+});
+
+describe("groupWaitingThreads", () => {
+  it("partitions threads into customer/third_party groups, preserving order", () => {
+    const customerA = { ...base, id: "a", waiting_reason: "customer" };
+    const thirdPartyA = { ...base, id: "b", waiting_reason: "third_party" };
+    const customerB = { ...base, id: "c", waiting_reason: null };
+    const groups = groupWaitingThreads([customerA, thirdPartyA, customerB]);
+    expect(groups).toEqual([
+      { key: "customer", label: "Waiting on customer", threads: [customerA, customerB] },
+      { key: "third_party", label: "Waiting on third party", threads: [thirdPartyA] },
+    ]);
+  });
+  it("omits the third_party group when empty (pre-migration data)", () => {
+    const customerA = { ...base, id: "a", waiting_reason: null };
+    const groups = groupWaitingThreads([customerA]);
+    expect(groups).toEqual([
+      { key: "customer", label: "Waiting on customer", threads: [customerA] },
+    ]);
+  });
+  it("still shows the sole non-empty group's header when it's third_party only", () => {
+    const thirdPartyA = { ...base, id: "b", waiting_reason: "third_party" };
+    const groups = groupWaitingThreads([thirdPartyA]);
+    expect(groups).toEqual([
+      { key: "third_party", label: "Waiting on third party", threads: [thirdPartyA] },
+    ]);
+  });
+  it("returns an empty array for an empty/missing input", () => {
+    expect(groupWaitingThreads([])).toEqual([]);
+    expect(groupWaitingThreads(null)).toEqual([]);
+    expect(groupWaitingThreads(undefined)).toEqual([]);
   });
 });
 

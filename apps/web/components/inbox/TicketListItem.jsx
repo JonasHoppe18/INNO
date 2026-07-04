@@ -2,7 +2,7 @@ import { memo, useEffect, useRef } from "react";
 import { Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatMessageTime } from "@/components/inbox/inbox-utils";
-import { assigneeInitials } from "@/lib/inbox/view-model";
+import { assigneeInitials, formatWakeCountdown } from "@/lib/inbox/view-model";
 
 const STATUS_TEXT_STYLES = {
   New: "text-green-600 dark:text-green-400",
@@ -33,6 +33,7 @@ function TicketListItemComponent({
   priority,
   reason = null,
   inboxName = null,
+  wakeDays = null,
   isExiting = false,
   isNew = false,
   mountIndex = 0,
@@ -47,6 +48,7 @@ function TicketListItemComponent({
       thread?.has_ai_draft
   );
   const assigneeDisplay = assigneeLabel ? assigneeInitials(assigneeLabel) : null;
+  const wakeCountdownText = formatWakeCountdown(wakeDays);
 
   const classificationKey = String(thread?.classification_key || "").toLowerCase();
   const classificationLabel =
@@ -170,6 +172,12 @@ function TicketListItemComponent({
         <span className={cn(!assigneeDisplay && "text-muted-foreground/70")}>
           {assigneeDisplay || "Unassigned"}
         </span>
+        {wakeCountdownText ? (
+          <>
+            <span aria-hidden="true">&middot;</span>
+            <span className="truncate">{wakeCountdownText}</span>
+          </>
+        ) : null}
       </div>
       {classificationLabel ? (
         <div className="text-[11px] text-muted-foreground">
@@ -194,6 +202,7 @@ export const TicketListItem = memo(
     prev.priority === next.priority &&
     prev.reason === next.reason &&
     prev.inboxName === next.inboxName &&
+    prev.wakeDays === next.wakeDays &&
     prev.isExiting === next.isExiting &&
     prev.isNew === next.isNew &&
     prev.mountIndex === next.mountIndex,

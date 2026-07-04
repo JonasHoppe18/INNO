@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { TicketListItem } from "@/components/inbox/TicketListItem";
 import { ArrowDownUp, Filter } from "lucide-react";
-import { deriveReason } from "@/lib/inbox/view-model";
+import { deriveReason, wakeInDays } from "@/lib/inbox/view-model";
 
 const STATUS_FILTERS = [
   { value: "All", label: "All" },
@@ -51,11 +51,33 @@ export function TicketList({
   resolvedView = "",
   getInboxName,
   getAssigneeLabel,
+  groups = null,
+  showWakeCountdown = false,
 }) {
   const [contextMenu, setContextMenu] = useState(null);
   const [contextMenuRoot, setContextMenuRoot] = useState(null);
+  // Task 8, Plan 2: when `groups` is supplied (Waiting tab), render is driven
+  // by the group-partitioned, concatenated thread order rather than the raw
+  // `threads` prop order — group headers are inserted at each group's first
+  // row further down. Falls back to `threads` unchanged for every other view.
+  const orderedThreads = useMemo(() => {
+    if (!groups) return threads || [];
+    return groups.flatMap((group) => group.threads || []);
+  }, [groups, threads]);
+  // Maps a thread id to the group header that should render immediately
+  // above it (only the first thread of each group carries a header).
+  const groupHeaderByThreadId = useMemo(() => {
+    const map = new Map();
+    if (!groups) return map;
+    groups.forEach((group) => {
+      const firstThread = (group.threads || [])[0];
+      const firstId = firstThread ? String(firstThread.id || "") : "";
+      if (firstId) map.set(firstId, group.label);
+    });
+    return map;
+  }, [groups]);
   const [renderedThreads, setRenderedThreads] = useState(
-    (threads || []).map((thread) => ({ thread, isExiting: false }))
+    (orderedThreads || []).map((thread) => ({ thread, isExiting: false }))
   );
   const exitTimersRef = useRef(new Map());
   const prevThreadIdsRef = useRef(null);
@@ -106,7 +128,7 @@ export function TicketList({
   }, []);
 
   useEffect(() => {
-    const currentIds = new Set((threads || []).map((t) => String(t?.id || "")).filter(Boolean));
+    const currentIds = new Set((orderedThreads || []).map((t) => String(t?.id || "")).filter(Boolean));
     if (prevThreadIdsRef.current !== null) {
       const addedIds = [...currentIds].filter((id) => !prevThreadIdsRef.current.has(id));
       if (addedIds.length > 0) {
@@ -132,11 +154,11 @@ export function TicketList({
     prevThreadIdsRef.current = currentIds;
 
     setRenderedThreads((prev) => {
-      const nextById = new Map((threads || []).map((thread) => [String(thread?.id || ""), thread]));
+      const nextById = new Map((orderedThreads || []).map((thread) => [String(thread?.id || ""), thread]));
       const merged = [];
 
       // Render threads in the sorted order from the parent (newest first).
-      (threads || []).forEach((thread) => {
+      (orderedThreads || []).forEach((thread) => {
         const id = String(thread?.id || "");
         if (!id) return;
         merged.push({ thread, isExiting: false });
@@ -151,7 +173,7 @@ export function TicketList({
 
       return merged;
     });
-  }, [threads]);
+  }, [orderedThreads]);
 
   useEffect(() => {
     renderedThreads.forEach((item) => {
@@ -415,34 +437,46 @@ export function TicketList({
               const assigneeLabel = getAssigneeLabel
                 ? getAssigneeLabel(uiState?.assignee ?? thread.assignee_id ?? null)
                 : null;
+              const groupHeaderLabel = groupHeaderByThreadId.get(String(thread.id));
+              // Waiting tab only: wake countdown next to the meta line, per
+              // Task 8 brief. `wakeInDays` handles null/invalid wake_at.
+              const wakeDays = showWakeCountdown ? wakeInDays(thread, Date.now()) : null;
               return (
-                <div key={thread.id} ref={(el) => { itemRefs.current[thread.id] = el; }}>
-                <TicketListItem
-                  thread={thread}
-                  isActive={thread.id === selectedThreadId}
-                  status={uiState?.status || "New"}
-                  customerLabel={customer}
-                  timestamp={timestamp}
-                  unreadCount={unreadCount}
-                  assignee={uiState?.assignee}
-                  assigneeLabel={assigneeLabel}
-                  priority={uiState?.priority}
-                  reason={reason}
-                  inboxName={inboxName}
-                  isExiting={isExiting}
-                  isNew={newThreadIds.has(String(thread.id))}
-                  mountIndex={absoluteIndex}
-                  onSelect={(options) => onSelectThread(thread.id, options)}
-                  onPrefetch={onPrefetchThread ? () => onPrefetchThread(thread.id) : undefined}
-                  onContextMenu={(event) => {
-                    event.preventDefault();
-                    setContextMenu({
-                      threadId: thread.id,
-                      x: event.clientX,
-                      y: event.clientY,
-                    });
-                  }}
-                />
+                <div key={thread.id}>
+                  {groupHeaderLabel ? (
+                    <div className="px-4 pb-1 pt-3 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                      {groupHeaderLabel}
+                    </div>
+                  ) : null}
+                  <div ref={(el) => { itemRefs.current[thread.id] = el; }}>
+                    <TicketListItem
+                      thread={thread}
+                      isActive={thread.id === selectedThreadId}
+                      status={uiState?.status || "New"}
+                      customerLabel={customer}
+                      timestamp={timestamp}
+                      unreadCount={unreadCount}
+                      assignee={uiState?.assignee}
+                      assigneeLabel={assigneeLabel}
+                      priority={uiState?.priority}
+                      reason={reason}
+                      inboxName={inboxName}
+                      wakeDays={wakeDays}
+                      isExiting={isExiting}
+                      isNew={newThreadIds.has(String(thread.id))}
+                      mountIndex={absoluteIndex}
+                      onSelect={(options) => onSelectThread(thread.id, options)}
+                      onPrefetch={onPrefetchThread ? () => onPrefetchThread(thread.id) : undefined}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        setContextMenu({
+                          threadId: thread.id,
+                          x: event.clientX,
+                          y: event.clientY,
+                        });
+                      }}
+                    />
+                  </div>
                 </div>
               );
             })}
