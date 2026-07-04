@@ -124,7 +124,7 @@ Do these in order. Each step depends on the ones before it.
 
 ## Plan 2 — Queue workspace UI verification (post-migration)
 
-This section covers `worktree-queue-workspace-ui` (11 tasks, not yet merged), which built the
+This section covers `worktree-queue-workspace-ui` (12 tasks, not yet merged), which built the
 visible queue workspace UI — sidebar restructure, status tabs, reason badges, waiting groups,
 approve-close group, send-to-next — on top of the lifecycle backend above. It depends on the
 migrations in step 2 having landed to show anything beyond zero-state.
