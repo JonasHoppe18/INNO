@@ -37,6 +37,7 @@ import { reportClientEvent } from "@/lib/client-events";
 import { toLegacyUiStatus } from "@/lib/inbox/status-model";
 import { isAutomated, threadTab } from "@/lib/inbox/view-model";
 import { DEFAULT_FILTERS, useThreadFilters } from "@/lib/inbox/useThreadFilters";
+import { useThreadSelection } from "@/lib/inbox/useThreadSelection";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -132,7 +133,6 @@ const UUID_REGEX =
 const PREVIEW_CUSTOMER_LOOKUP_LIMIT = 30;
 const SECONDARY_THREAD_FETCH_DELAY_MS = 250;
 const DRAFT_FETCH_DELAY_MS = 150;
-const MAX_PREFETCH_IN_FLIGHT = 2;
 const firstTagCache = new Map();
 
 const deferAfterInteraction = (callback) => {
@@ -1008,12 +1008,9 @@ export function InboxSplitView({
   attachments = [],
 }) {
   const DRAFT_WAIT_TIMEOUT_MS = 12_000;
-  const TAB_STATE_STORAGE_PREFIX = "inbox-open-tabs";
   const [liveThreads, setLiveThreads] = useState(threads || []);
   const [liveMessages, setLiveMessages] = useState(messages || []);
   const [liveAttachments, setLiveAttachments] = useState(attachments || []);
-  const [selectedThreadId, setSelectedThreadId] = useState(null);
-  const [openThreadIds, setOpenThreadIds] = useState([]);
   const [localNewThread, setLocalNewThread] = useState(null);
   const [sentDraftStatsByThread, setSentDraftStatsByThread] = useState({});
   const [draftLogLoading, setDraftLogLoading] = useState(false);
@@ -1081,17 +1078,10 @@ export function InboxSplitView({
   const [currentSupabaseUserId, setCurrentSupabaseUserId] = useState(null);
   const [workspaceInboxes, setWorkspaceInboxes] = useState([]);
   const [isWorkspaceTestMode, setIsWorkspaceTestMode] = useState(false);
-  const [tabStateReady, setTabStateReady] = useState(false);
   const lastAutoReadThreadIdRef = useRef(null);
-  const tabStateHydratedRef = useRef(false);
   const draftLastSavedRef = useRef({});
   const savingDraftThreadIdsRef = useRef(new Set());
   const draftValueRef = useRef("");
-  const selectedThreadIdRef = useRef(null);
-  const lastAppliedRequestedThreadIdRef = useRef("");
-  const messagesCacheRef = useRef(new Map());
-  const prefetchingRef = useRef(new Set());
-  const draftCacheRef = useRef(new Map());
   const ticketSwitchStartedAtRef = useRef(new Map());
   const scrollPositionByThreadRef = useRef({});
   const scrollSaveFrameRef = useRef(null);
@@ -1103,33 +1093,8 @@ export function InboxSplitView({
   const { setTitleContent } = useSiteHeaderActions();
   const currentUserName =
     [user?.firstName, user?.lastName].filter(Boolean).join(" ") || "You";
-  const {
-    data: selectedThreadMessagesFromDb,
-    attachments: selectedThreadAttachmentsFromDb,
-    detail: selectedThreadDetail,
-    loading: selectedThreadMessagesLoading,
-    refresh: refreshSelectedThreadMessages,
-    fetchedThreadId: messagesFetchedForThreadId,
-  } = useThreadMessages(selectedThreadId, {
-    enabled:
-      Boolean(selectedThreadId) &&
-      !String(selectedThreadId || "").startsWith("local-new-ticket-"),
-  });
-  const refreshSelectedThreadMessagesRef = useRef(
-    refreshSelectedThreadMessages,
-  );
-  useEffect(() => {
-    refreshSelectedThreadMessagesRef.current = refreshSelectedThreadMessages;
-  }, [refreshSelectedThreadMessages]);
   const { activeView, filters, setFilters, effectiveFilters } =
     useThreadFilters({ searchParams });
-  const requestedThreadId = String(searchParams?.get("thread") || "").trim();
-  const tabStateStorageKey = useMemo(() => {
-    const viewerId = String(
-      currentSupabaseUserId || user?.id || "anonymous",
-    ).trim();
-    return `${TAB_STATE_STORAGE_PREFIX}:${viewerId}`;
-  }, [currentSupabaseUserId, user?.id]);
 
   useEffect(() => {
     setLiveThreads(Array.isArray(threads) ? threads : []);
@@ -1289,130 +1254,6 @@ export function InboxSplitView({
   }, [supabase, user?.id, currentSupabaseUserId]);
 
   useEffect(() => {
-    if (!supabase || !user?.id || !currentSupabaseUserId) return;
-    let hasSubscribedOnceRef = { current: false };
-    const channel = supabase
-      .channel(`inbox-message-updates:${user.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "mail_messages",
-          filter: `user_id=eq.${currentSupabaseUserId}`,
-        },
-        (payload) => {
-          const nextMessage = payload?.new;
-          const nextMessageId = String(nextMessage?.id || "").trim();
-          if (!nextMessageId) return;
-          const nextThreadId = String(nextMessage?.thread_id || "").trim();
-          if (nextThreadId) {
-            messagesCacheRef.current.delete(nextThreadId);
-            draftCacheRef.current.delete(nextThreadId);
-          }
-          setLiveMessages((prev) => {
-            const existing = Array.isArray(prev) ? prev : [];
-            if (
-              existing.some(
-                (message) => String(message?.id || "") === nextMessageId,
-              )
-            ) {
-              return existing;
-            }
-            return [...existing, nextMessage];
-          });
-          // New AI draft for the selected thread: liveMessages already contains
-          // the row, so just drop stale prefetched message cache.
-          if (
-            nextMessage?.is_draft &&
-            nextMessage?.from_me &&
-            String(nextMessage?.thread_id || "") === selectedThreadIdRef.current
-          ) {
-            messagesCacheRef.current.delete(String(nextMessage.thread_id || ""));
-          }
-        },
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "mail_messages",
-          filter: `user_id=eq.${currentSupabaseUserId}`,
-        },
-        (payload) => {
-          const nextMessage = payload?.new;
-          const prevMessage = payload?.old;
-          const nextMessageId = String(nextMessage?.id || "").trim();
-          if (!nextMessageId) return;
-          const nextThreadId = String(nextMessage?.thread_id || "").trim();
-          if (nextThreadId) {
-            messagesCacheRef.current.delete(nextThreadId);
-            draftCacheRef.current.delete(nextThreadId);
-          }
-          setLiveMessages((prev) => {
-            const existing = Array.isArray(prev) ? prev : [];
-            let found = false;
-            const updated = existing.map((message) => {
-              if (String(message?.id || "") !== nextMessageId) return message;
-              found = true;
-              return { ...message, ...nextMessage };
-            });
-            return found ? updated : [...existing, nextMessage];
-          });
-          // When the pipeline writes ai_draft_text on an inbound message, the primary
-          // rawThreadMessages source (selectedThreadMessagesFromDb) is stale because it
-          // was fetched before the pipeline finished. Re-fetching picks up the new draft.
-          const aiDraftChanged = nextMessage?.ai_draft_text !== undefined &&
-            nextMessage?.ai_draft_text !== (prevMessage?.ai_draft_text ?? null) &&
-            String(nextMessage?.thread_id || "") === selectedThreadIdRef.current;
-          if (aiDraftChanged) {
-            refreshSelectedThreadMessagesRef.current?.().catch(() => null);
-          }
-        },
-      )
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "mail_attachments" },
-        (payload) => {
-          const nextAttachment = payload?.new;
-          const nextAttachmentId = String(nextAttachment?.id || "").trim();
-          if (!nextAttachmentId) return;
-          setLiveAttachments((prev) => {
-            const existing = Array.isArray(prev) ? prev : [];
-            if (
-              existing.some(
-                (attachment) =>
-                  String(attachment?.id || "") === nextAttachmentId,
-              )
-            ) {
-              return existing;
-            }
-            return [...existing, nextAttachment];
-          });
-        },
-      )
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") {
-          if (hasSubscribedOnceRef.current) {
-            refreshInboxDataRef.current?.();
-          } else {
-            hasSubscribedOnceRef.current = true;
-          }
-        }
-      });
-
-    return () => {
-      try {
-        channel.unsubscribe();
-      } catch {
-        // noop
-      }
-      supabase?.removeChannel?.(channel);
-    };
-  }, [supabase, user?.id, currentSupabaseUserId]);
-
-  useEffect(() => {
     draftValueRef.current = draftValue;
   }, [draftValue]);
 
@@ -1425,46 +1266,6 @@ export function InboxSplitView({
     },
     [],
   );
-
-  useEffect(() => {
-    selectedThreadIdRef.current = selectedThreadId;
-  }, [selectedThreadId]);
-
-  // When the user switches threads, eagerly clear any cached pending-action
-  // state for the new thread. Without this, a stale action card briefly
-  // flashes from the previous fetch before the new detail-API response (which
-  // correctly returns no action when superseded) overwrites it.
-  //
-  // Also invalidate any cached draft for the new thread UNLESS the user has
-  // local edits. The cached draft is often stale — the AI may have regenerated
-  // it server-side and the cache would otherwise show the old text. The next
-  // useEffect will fetch fresh.
-  useEffect(() => {
-    if (!selectedThreadId) return;
-    setPendingOrderUpdateByThread((prev) => {
-      if (!prev[selectedThreadId]) return prev;
-      const next = { ...prev };
-      delete next[selectedThreadId];
-      return next;
-    });
-    // Read from ref so this effect doesn't depend on systemDraftUneditedByThread.
-    const userHasEdits =
-      systemDraftUneditedRef.current[selectedThreadId] === false;
-    if (!userHasEdits) {
-      setDraftValueByThread((prev) => {
-        if (!(selectedThreadId in prev)) return prev;
-        const next = { ...prev };
-        delete next[selectedThreadId];
-        return next;
-      });
-      draftCacheRef.current.delete(selectedThreadId);
-    }
-  }, [selectedThreadId]);
-
-  const activeNoteValue = selectedThreadId
-    ? noteValueByThread[selectedThreadId] || ""
-    : "";
-  const composerValue = composerMode === "note" ? activeNoteValue : draftValue;
 
   const isLocalThreadId = useCallback(
     (threadId) => String(threadId || "").startsWith("local-new-ticket-"),
@@ -1522,58 +1323,6 @@ export function InboxSplitView({
       return changed ? next : prev;
     });
   }, [derivedThreads]);
-
-  useEffect(() => {
-    if (!localNewThread) return;
-    if (selectedThreadId === localNewThread.id) return;
-    setLocalNewThread(null);
-  }, [localNewThread, selectedThreadId]);
-
-  useEffect(() => {
-    if (tabStateHydratedRef.current) return;
-    if (typeof window === "undefined") return;
-    if (!derivedThreads.length) return;
-
-    const raw = window.localStorage.getItem(tabStateStorageKey);
-    tabStateHydratedRef.current = true;
-    if (!raw) {
-      setTabStateReady(true);
-      return;
-    }
-
-    try {
-      const parsed = JSON.parse(raw);
-      const validIds = new Set(
-        derivedThreads
-          .map((thread) => String(thread?.id || "").trim())
-          .filter((threadId) => threadId && !isLocalThreadId(threadId)),
-      );
-      const savedOpenIds = Array.isArray(parsed?.openThreadIds)
-        ? parsed.openThreadIds
-            .map((threadId) => String(threadId || "").trim())
-            .filter((threadId) => validIds.has(threadId))
-        : [];
-      const savedSelectedId = String(parsed?.selectedThreadId || "").trim();
-
-      if (savedOpenIds.length) {
-        const restoredSelectedId =
-          savedSelectedId && savedOpenIds.includes(savedSelectedId)
-            ? savedSelectedId
-            : savedOpenIds[0];
-        setOpenThreadIds(restoredSelectedId ? [restoredSelectedId] : []);
-        setSelectedThreadId(restoredSelectedId || null);
-      }
-    } catch {
-      // noop
-    } finally {
-      setTabStateReady(true);
-    }
-  }, [derivedThreads, isLocalThreadId, tabStateStorageKey]);
-
-  useEffect(() => {
-    if (selectedThreadId) return;
-    lastAutoReadThreadIdRef.current = null;
-  }, [selectedThreadId]);
 
   useEffect(() => {
     if (!derivedThreads.length) return;
@@ -1931,142 +1680,266 @@ export function InboxSplitView({
     user?.id,
   ]);
 
+  const markThreadReadInstantly = useCallback(
+    (threadId) => {
+      const nextThreadId = String(threadId || "").trim();
+      if (!nextThreadId || isLocalThreadId(nextThreadId)) return;
+
+      const thread = derivedThreads.find(
+        (item) => String(item?.id || "").trim() === nextThreadId,
+      );
+      const hasUnreadMessages = Number(thread?.unread_count ?? 0) > 0;
+      const isMarkedRead = Boolean(thread?.is_read);
+      if (!hasUnreadMessages && isMarkedRead) return;
+
+      setReadOverrides((prev) =>
+        prev[nextThreadId] ? prev : { ...prev, [nextThreadId]: true },
+      );
+      startInboxTransition(() => {
+        setLiveThreads((prev) =>
+          (prev || []).map((item) =>
+            String(item?.id || "").trim() === nextThreadId
+              ? { ...item, unread_count: 0, is_read: true }
+              : item,
+          ),
+        );
+      });
+
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent("sona:thread-read"));
+
+        fetch("/api/inbox/thread-status", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            threadId: nextThreadId,
+            isRead: true,
+            unreadCount: 0,
+          }),
+        }).catch(() => null);
+      }, 0);
+    },
+    [derivedThreads, isLocalThreadId, startInboxTransition],
+  );
+
+  const {
+    selectedThreadId,
+    setSelectedThreadId,
+    selectedThreadIdRef,
+    openThreadIds,
+    setOpenThreadIds,
+    tabStateReady,
+    tabStateStorageKey,
+    messagesCacheRef,
+    draftCacheRef,
+    prefetchingRef,
+    openThreadInWorkspace,
+    closeThreadTab,
+    handlePrefetchThread,
+    selectNext,
+  } = useThreadSelection({
+    threads: derivedThreads,
+    sortedThreads: filteredThreads,
+    searchParams,
+    isLocalThreadId,
+    currentSupabaseUserId,
+    userId: user?.id,
+    startInboxTransition,
+    markThreadReadInstantly,
+    setLocalNewThread,
+  });
+
+  const {
+    data: selectedThreadMessagesFromDb,
+    attachments: selectedThreadAttachmentsFromDb,
+    detail: selectedThreadDetail,
+    loading: selectedThreadMessagesLoading,
+    refresh: refreshSelectedThreadMessages,
+    fetchedThreadId: messagesFetchedForThreadId,
+  } = useThreadMessages(selectedThreadId, {
+    enabled:
+      Boolean(selectedThreadId) &&
+      !String(selectedThreadId || "").startsWith("local-new-ticket-"),
+  });
+  const refreshSelectedThreadMessagesRef = useRef(
+    refreshSelectedThreadMessages,
+  );
   useEffect(() => {
-    setOpenThreadIds((prev) => {
-      if (!prev.length) return prev;
-      const validIds = new Set(
-        derivedThreads
-          .map((thread) => String(thread?.id || "").trim())
-          .filter(Boolean),
-      );
-      const next = prev.filter((threadId) =>
-        validIds.has(String(threadId || "").trim()),
-      );
-      return next.length === prev.length ? prev : next;
+    refreshSelectedThreadMessagesRef.current = refreshSelectedThreadMessages;
+  }, [refreshSelectedThreadMessages]);
+
+  useEffect(() => {
+    if (!supabase || !user?.id || !currentSupabaseUserId) return;
+    let hasSubscribedOnceRef = { current: false };
+    const channel = supabase
+      .channel(`inbox-message-updates:${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "mail_messages",
+          filter: `user_id=eq.${currentSupabaseUserId}`,
+        },
+        (payload) => {
+          const nextMessage = payload?.new;
+          const nextMessageId = String(nextMessage?.id || "").trim();
+          if (!nextMessageId) return;
+          const nextThreadId = String(nextMessage?.thread_id || "").trim();
+          if (nextThreadId) {
+            messagesCacheRef.current.delete(nextThreadId);
+            draftCacheRef.current.delete(nextThreadId);
+          }
+          setLiveMessages((prev) => {
+            const existing = Array.isArray(prev) ? prev : [];
+            if (
+              existing.some(
+                (message) => String(message?.id || "") === nextMessageId,
+              )
+            ) {
+              return existing;
+            }
+            return [...existing, nextMessage];
+          });
+          // New AI draft for the selected thread: liveMessages already contains
+          // the row, so just drop stale prefetched message cache.
+          if (
+            nextMessage?.is_draft &&
+            nextMessage?.from_me &&
+            String(nextMessage?.thread_id || "") === selectedThreadIdRef.current
+          ) {
+            messagesCacheRef.current.delete(String(nextMessage.thread_id || ""));
+          }
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "mail_messages",
+          filter: `user_id=eq.${currentSupabaseUserId}`,
+        },
+        (payload) => {
+          const nextMessage = payload?.new;
+          const prevMessage = payload?.old;
+          const nextMessageId = String(nextMessage?.id || "").trim();
+          if (!nextMessageId) return;
+          const nextThreadId = String(nextMessage?.thread_id || "").trim();
+          if (nextThreadId) {
+            messagesCacheRef.current.delete(nextThreadId);
+            draftCacheRef.current.delete(nextThreadId);
+          }
+          setLiveMessages((prev) => {
+            const existing = Array.isArray(prev) ? prev : [];
+            let found = false;
+            const updated = existing.map((message) => {
+              if (String(message?.id || "") !== nextMessageId) return message;
+              found = true;
+              return { ...message, ...nextMessage };
+            });
+            return found ? updated : [...existing, nextMessage];
+          });
+          // When the pipeline writes ai_draft_text on an inbound message, the primary
+          // rawThreadMessages source (selectedThreadMessagesFromDb) is stale because it
+          // was fetched before the pipeline finished. Re-fetching picks up the new draft.
+          const aiDraftChanged = nextMessage?.ai_draft_text !== undefined &&
+            nextMessage?.ai_draft_text !== (prevMessage?.ai_draft_text ?? null) &&
+            String(nextMessage?.thread_id || "") === selectedThreadIdRef.current;
+          if (aiDraftChanged) {
+            refreshSelectedThreadMessagesRef.current?.().catch(() => null);
+          }
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "mail_attachments" },
+        (payload) => {
+          const nextAttachment = payload?.new;
+          const nextAttachmentId = String(nextAttachment?.id || "").trim();
+          if (!nextAttachmentId) return;
+          setLiveAttachments((prev) => {
+            const existing = Array.isArray(prev) ? prev : [];
+            if (
+              existing.some(
+                (attachment) =>
+                  String(attachment?.id || "") === nextAttachmentId,
+              )
+            ) {
+              return existing;
+            }
+            return [...existing, nextAttachment];
+          });
+        },
+      )
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          if (hasSubscribedOnceRef.current) {
+            refreshInboxDataRef.current?.();
+          } else {
+            hasSubscribedOnceRef.current = true;
+          }
+        }
+      });
+
+    return () => {
+      try {
+        channel.unsubscribe();
+      } catch {
+        // noop
+      }
+      supabase?.removeChannel?.(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- draftCacheRef, messagesCacheRef, selectedThreadIdRef are refs returned by useThreadSelection (backed by useRef); identity never changes, and their .current is read fresh inside the realtime callbacks at fire-time, not captured at effect-setup-time.
+  }, [supabase, user?.id, currentSupabaseUserId]);
+
+  // When the user switches threads, eagerly clear any cached pending-action
+  // state for the new thread. Without this, a stale action card briefly
+  // flashes from the previous fetch before the new detail-API response (which
+  // correctly returns no action when superseded) overwrites it.
+  //
+  // Also invalidate any cached draft for the new thread UNLESS the user has
+  // local edits. The cached draft is often stale — the AI may have regenerated
+  // it server-side and the cache would otherwise show the old text. The next
+  // useEffect will fetch fresh.
+  useEffect(() => {
+    if (!selectedThreadId) return;
+    setPendingOrderUpdateByThread((prev) => {
+      if (!prev[selectedThreadId]) return prev;
+      const next = { ...prev };
+      delete next[selectedThreadId];
+      return next;
     });
-  }, [derivedThreads]);
+    // Read from ref so this effect doesn't depend on systemDraftUneditedByThread.
+    const userHasEdits =
+      systemDraftUneditedRef.current[selectedThreadId] === false;
+    if (!userHasEdits) {
+      setDraftValueByThread((prev) => {
+        if (!(selectedThreadId in prev)) return prev;
+        const next = { ...prev };
+        delete next[selectedThreadId];
+        return next;
+      });
+      draftCacheRef.current.delete(selectedThreadId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- draftCacheRef is a ref returned by useThreadSelection (backed by useRef); identity never changes.
+  }, [selectedThreadId]);
+
+  const activeNoteValue = selectedThreadId
+    ? noteValueByThread[selectedThreadId] || ""
+    : "";
+  const composerValue = composerMode === "note" ? activeNoteValue : draftValue;
 
   useEffect(() => {
-    if (!requestedThreadId) {
-      lastAppliedRequestedThreadIdRef.current = "";
-      return;
-    }
-    if (lastAppliedRequestedThreadIdRef.current === requestedThreadId) return;
-    const validIds = new Set(
-      derivedThreads
-        .map((thread) => String(thread?.id || "").trim())
-        .filter(Boolean),
-    );
-    if (!validIds.has(requestedThreadId)) return;
-    lastAppliedRequestedThreadIdRef.current = requestedThreadId;
-    setOpenThreadIds((prev) =>
-      prev.includes(requestedThreadId) ? prev : [requestedThreadId, ...prev],
-    );
-    setSelectedThreadId(requestedThreadId);
-  }, [derivedThreads, requestedThreadId]);
-
-  // Keep ?thread= in the URL in sync with the selected thread so page refresh restores it
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const current = new URLSearchParams(window.location.search);
-    const currentThreadParam = current.get("thread") || "";
-    const nextThreadId = selectedThreadId || "";
-    if (currentThreadParam === nextThreadId) return;
-    const next = new URLSearchParams(current);
-    if (nextThreadId) {
-      next.set("thread", nextThreadId);
-    } else {
-      next.delete("thread");
-    }
-    const queryString = next.toString();
-    const newUrl = queryString
-      ? `${window.location.pathname}?${queryString}`
-      : window.location.pathname;
-    window.history.replaceState(window.history.state, "", newUrl);
+    if (selectedThreadId) return;
+    lastAutoReadThreadIdRef.current = null;
   }, [selectedThreadId]);
 
   useEffect(() => {
-    if (!tabStateReady) return;
-    if (openThreadIds.length) {
-      if (selectedThreadId && openThreadIds.includes(selectedThreadId)) return;
-      const visibleOpenThreadIds = openThreadIds.filter((threadId) =>
-        filteredThreads.some((thread) => thread.id === threadId),
-      );
-      if (visibleOpenThreadIds.length) {
-        setSelectedThreadId(visibleOpenThreadIds[0] || null);
-        return;
-      }
-      setSelectedThreadId(openThreadIds[0] || null);
-      return;
-    }
-    if (!filteredThreads.length) {
-      setSelectedThreadId(null);
-      return;
-    }
-    const fallbackThreadId = filteredThreads[0]?.id || null;
-    setOpenThreadIds([fallbackThreadId]);
-    setSelectedThreadId(fallbackThreadId);
-  }, [
-    filteredThreads,
-    openThreadIds,
-    selectedThreadId,
-    tabStateReady,
-  ]);
-
-  // Keep filter/view changes from making the conversation pane feel empty when
-  // the user still has the current ticket open in the workspace tabs.
-  useEffect(() => {
-    if (!tabStateReady) return;
-    if (!selectedThreadId) return;
-    if (openThreadIds.includes(selectedThreadId)) return;
-    if (!filteredThreads.length) {
-      return;
-    }
-    const isInDerived = derivedThreads.some((t) => t.id === selectedThreadId);
-    if (!isInDerived) return;
-    const isVisible = filteredThreads.some((t) => t.id === selectedThreadId);
-    if (isVisible) return;
-    const nextThread = filteredThreads[0];
-    setOpenThreadIds((prev) => {
-      const without = prev.filter((id) => id !== selectedThreadId);
-      return without.includes(nextThread.id)
-        ? without
-        : [nextThread.id, ...without];
-    });
-    setSelectedThreadId(nextThread.id);
-  }, [
-    derivedThreads,
-    filteredThreads,
-    openThreadIds,
-    selectedThreadId,
-    tabStateReady,
-  ]);
-
-  useEffect(() => {
-    if (!tabStateReady) return;
-    if (typeof window === "undefined") return;
-
-    const normalizedSelectedId = String(selectedThreadId || "").trim();
-    const persistedOpenIds =
-      normalizedSelectedId && !isLocalThreadId(normalizedSelectedId)
-        ? [normalizedSelectedId]
-        : [];
-    const persistedSelectedId = String(selectedThreadId || "").trim();
-    const payload = {
-      openThreadIds: persistedOpenIds,
-      selectedThreadId:
-        persistedSelectedId && persistedOpenIds.includes(persistedSelectedId)
-          ? persistedSelectedId
-          : persistedOpenIds[0] || null,
-    };
-    window.localStorage.setItem(tabStateStorageKey, JSON.stringify(payload));
-  }, [
-    isLocalThreadId,
-    openThreadIds,
-    selectedThreadId,
-    tabStateReady,
-    tabStateStorageKey,
-  ]);
+    if (!localNewThread) return;
+    if (selectedThreadId === localNewThread.id) return;
+    setLocalNewThread(null);
+  }, [localNewThread, selectedThreadId]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -2638,6 +2511,7 @@ export function InboxSplitView({
       const bTime = new Date(getMessageTimestamp(b)).getTime();
       return aTime - bTime;
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- messagesCacheRef is a ref returned by useThreadSelection (backed by useRef); identity never changes.
   }, [
     localSentMessagesByThread,
     messagesFetchedForThreadId,
@@ -2652,6 +2526,7 @@ export function InboxSplitView({
       messagesCacheRef.current.has(selectedThreadId) ||
       (messagesByThread.get(selectedThreadId) || []).length > 0
     );
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- messagesCacheRef is a ref returned by useThreadSelection (backed by useRef); identity never changes.
   }, [messagesByThread, selectedThreadId]);
 
   const isSelectedConversationLoading = Boolean(
@@ -2686,6 +2561,7 @@ export function InboxSplitView({
         ticketSwitchStartedAtRef.current.delete(selectedThreadId);
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- messagesCacheRef is a ref returned by useThreadSelection (backed by useRef); identity never changes.
   }, [
     messagesFetchedForThreadId,
     selectedThreadId,
@@ -3700,6 +3576,7 @@ export function InboxSplitView({
         });
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- selectedThreadIdRef is a ref returned by useThreadSelection (backed by useRef); identity never changes.
     [
       derivedThreads,
       isLocalThreadId,
@@ -3777,6 +3654,7 @@ export function InboxSplitView({
         });
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- selectedThreadIdRef is a ref returned by useThreadSelection (backed by useRef); identity never changes.
     [
       selectedThreadId,
       isLocalThreadId,
@@ -3844,6 +3722,7 @@ export function InboxSplitView({
         };
       });
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- selectedThreadIdRef is a ref returned by useThreadSelection (backed by useRef); identity never changes.
     [composerMode, selectedThreadId],
   );
 
@@ -3860,104 +3739,6 @@ export function InboxSplitView({
     router.push("/inbox/tickets");
     // eslint-disable-next-line react-hooks/exhaustive-deps -- setFilters is the stable setter returned by useThreadFilters (backed by useState); identity never changes, so omitting it matches the pre-extraction behavior when it was a local useState setter.
   }, [router]);
-
-  const markThreadReadInstantly = useCallback(
-    (threadId) => {
-      const nextThreadId = String(threadId || "").trim();
-      if (!nextThreadId || isLocalThreadId(nextThreadId)) return;
-
-      const thread = derivedThreads.find(
-        (item) => String(item?.id || "").trim() === nextThreadId,
-      );
-      const hasUnreadMessages = Number(thread?.unread_count ?? 0) > 0;
-      const isMarkedRead = Boolean(thread?.is_read);
-      if (!hasUnreadMessages && isMarkedRead) return;
-
-	      setReadOverrides((prev) =>
-	        prev[nextThreadId] ? prev : { ...prev, [nextThreadId]: true },
-	      );
-      startInboxTransition(() => {
-        setLiveThreads((prev) =>
-          (prev || []).map((item) =>
-            String(item?.id || "").trim() === nextThreadId
-              ? { ...item, unread_count: 0, is_read: true }
-              : item,
-          ),
-        );
-      });
-
-      setTimeout(() => {
-        window.dispatchEvent(new CustomEvent("sona:thread-read"));
-
-        fetch("/api/inbox/thread-status", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            threadId: nextThreadId,
-            isRead: true,
-            unreadCount: 0,
-          }),
-        }).catch(() => null);
-      }, 0);
-	    },
-	    [derivedThreads, isLocalThreadId, startInboxTransition],
-	  );
-
-  const openThreadInWorkspace = useCallback(
-    (threadId, options = {}) => {
-      const nextThreadId = String(threadId || "").trim();
-      if (!nextThreadId) return;
-      const shouldOpenInNewTab = Boolean(options?.newTab);
-      markThreadReadInstantly(nextThreadId);
-
-      startInboxTransition(() => {
-        setOpenThreadIds((prev) => {
-          if (prev.includes(nextThreadId)) return prev;
-          if (!prev.length) return [nextThreadId];
-
-          const currentIndex = prev.indexOf(selectedThreadId);
-          if (shouldOpenInNewTab) {
-            const next = [...prev];
-            const insertAt = currentIndex === -1 ? next.length : currentIndex + 1;
-            next.splice(insertAt, 0, nextThreadId);
-            return next;
-          }
-
-          const next = [...prev];
-          next[currentIndex === -1 || !selectedThreadId ? 0 : currentIndex] =
-            nextThreadId;
-          return Array.from(new Set(next));
-        });
-
-        setSelectedThreadId(nextThreadId);
-      });
-	    },
-	    [markThreadReadInstantly, selectedThreadId, startInboxTransition],
-	  );
-
-  const closeThreadTab = useCallback(
-    (threadId) => {
-      const closingThreadId = String(threadId || "").trim();
-      if (!closingThreadId) return;
-      if (isLocalThreadId(closingThreadId)) {
-        setLocalNewThread((prev) =>
-          prev?.id === closingThreadId ? null : prev,
-        );
-      }
-      setOpenThreadIds((prev) => {
-        const currentIndex = prev.indexOf(closingThreadId);
-        if (currentIndex === -1) return prev;
-        const next = prev.filter((id) => id !== closingThreadId);
-        if (selectedThreadId === closingThreadId) {
-          const replacement =
-            next[currentIndex] || next[currentIndex - 1] || null;
-          setSelectedThreadId(replacement);
-        }
-        return next;
-      });
-    },
-    [isLocalThreadId, selectedThreadId],
-  );
 
   const handleCreateTicket = useCallback(() => {
     const nowIso = new Date().toISOString();
@@ -3983,6 +3764,7 @@ export function InboxSplitView({
     setActiveDraftId(null);
     setDraftReady(true);
     setComposerMode("reply");
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setOpenThreadIds and setSelectedThreadId are the stable setters returned by useThreadSelection (backed by useState); identity never changes, so omitting them matches the pre-extraction behavior when they were local useState setters.
   }, []);
 
   useEffect(() => {
@@ -4017,6 +3799,7 @@ export function InboxSplitView({
       </InboxContentBoundary>,
     );
     return () => setTitleContent(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setSelectedThreadId is the stable setter returned by useThreadSelection (backed by useState); identity never changes, so omitting it matches the pre-extraction behavior when it was a local useState setter.
   }, [
     closeThreadTab,
     handleViewAllTickets,
@@ -4118,6 +3901,7 @@ export function InboxSplitView({
           pendingUpdateThreadIds.current.delete(pendingThreadId);
         });
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setOpenThreadIds and setSelectedThreadId are the stable setters returned by useThreadSelection (backed by useState); identity never changes, so omitting them matches the pre-extraction behavior when they were local useState setters.
     [filteredThreads, selectedThreadId],
   );
 
@@ -4393,6 +4177,7 @@ export function InboxSplitView({
         savingDraftThreadIdsRef.current.delete(threadId);
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- selectedThreadIdRef is a ref returned by useThreadSelection (backed by useRef); identity never changes.
     [
       activeDraftId,
       composerMode,
@@ -4439,6 +4224,7 @@ export function InboxSplitView({
         });
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- messagesCacheRef and selectedThreadIdRef are refs returned by useThreadSelection (backed by useRef); identity never changes.
     [openThreadInWorkspace, saveThreadDraft],
   );
 
@@ -4451,53 +4237,6 @@ export function InboxSplitView({
     },
     [handleSelectThreadInWorkspace],
   );
-
-  // Prefetch on hover. CACHE-RACE SAFETY INVARIANT:
-  //
-  // The prefetched `draftCacheRef` entry could in theory go stale if the user
-  // edits a draft for thread X while prefetch is in-flight. It doesn't cause
-  // a bug because:
-  //
-  // 1. The `loadDraft` effect's early-return guard (~line 3119) only reads
-  //    `draftCacheRef` when `draftValueByThread[threadId]` is NOT set. User
-  //    edits always populate `draftValueByThread`, so any edited thread
-  //    short-circuits before the cache is touched.
-  // 2. Prefetch never runs for the currently-selected thread (line below).
-  //
-  // If you ever loosen the early-return guard, you MUST also add an explicit
-  // `cacheInvalidatedAt` timestamp to prevent stale-cache resurrections.
-  // — 2026-05-26
-  const handlePrefetchThread = useCallback((threadId) => {
-    if (!threadId || isLocalThreadId(threadId)) return;
-    if (String(threadId) === String(selectedThreadIdRef.current || "")) return;
-
-    // Prefetch the same detail payload used by the selected thread view.
-    if (!messagesCacheRef.current.has(threadId) && !prefetchingRef.current.has(threadId)) {
-      if (prefetchingRef.current.size >= MAX_PREFETCH_IN_FLIGHT) return;
-      prefetchingRef.current.add(threadId);
-      fetch(`/api/inbox/threads/${encodeURIComponent(threadId)}/detail`, {
-        method: "GET",
-        credentials: "include",
-      })
-        .then((res) => (res.ok ? res.json() : null))
-        .then((payload) => {
-          const rows = Array.isArray(payload?.messages) ? payload.messages : [];
-          if (rows.length) {
-            messagesCacheRef.current.set(threadId, rows);
-          }
-          if (payload?.draft && typeof payload.draft === "object") {
-            draftCacheRef.current.set(threadId, payload.draft);
-          }
-        })
-        .catch(() => {})
-        .finally(() => {
-          prefetchingRef.current.delete(threadId);
-        });
-    }
-
-    // Draft loading is intentionally left to actual selection. Hovering through
-    // the list used to start draft requests for many tickets the user never opened.
-  }, [isLocalThreadId]);
 
   // Auto-save tick fires every 4s. THREAD-SWITCH SAFETY INVARIANT:
   //
@@ -4959,6 +4698,7 @@ export function InboxSplitView({
         setDeletingThread(false);
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setOpenThreadIds and setSelectedThreadId are the stable setters returned by useThreadSelection (backed by useState); identity never changes, so omitting them matches the pre-extraction behavior when they were local useState setters.
     [deletingThread, isLocalThreadId, selectedThreadId],
   );
 
@@ -5243,6 +4983,7 @@ export function InboxSplitView({
         }));
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- selectedThreadIdRef is a ref returned by useThreadSelection (backed by useRef); identity never changes.
     [
       currentUserName,
       orderUpdateSubmittingByThread,
