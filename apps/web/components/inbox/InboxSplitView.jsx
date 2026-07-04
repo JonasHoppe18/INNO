@@ -12,6 +12,7 @@ import {
 } from "react";
 import { TicketList } from "@/components/inbox/TicketList";
 import { TicketDetail } from "@/components/inbox/TicketDetail";
+import { StatusTabs } from "@/components/inbox/StatusTabs";
 import { SonaInsightsModal } from "@/components/inbox/SonaInsightsModal";
 import { TranslationModal } from "@/components/inbox/TranslationModal";
 import {
@@ -29,13 +30,13 @@ import {
 } from "@/components/inbox/inbox-utils";
 import { useClerkSupabase } from "@/lib/useClerkSupabase";
 import { useUser } from "@clerk/nextjs";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { useCustomerLookup } from "@/hooks/useCustomerLookup";
 import { useSiteHeaderActions } from "@/components/site-header-actions";
 import { reportClientEvent } from "@/lib/client-events";
 import { toLegacyUiStatus } from "@/lib/inbox/status-model";
-import { isAutomated, threadTab } from "@/lib/inbox/view-model";
+import { isAutomated, resolveInboxSlug, sortForQueue, threadTab } from "@/lib/inbox/view-model";
 import { DEFAULT_FILTERS, useThreadFilters } from "@/lib/inbox/useThreadFilters";
 import { useThreadSelection } from "@/lib/inbox/useThreadSelection";
 import { useThreadActions } from "@/lib/inbox/useThreadActions";
@@ -1089,11 +1090,12 @@ export function InboxSplitView({
   const supabase = useClerkSupabase();
   const { user } = useUser();
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const { setTitleContent } = useSiteHeaderActions();
   const currentUserName =
     [user?.firstName, user?.lastName].filter(Boolean).join(" ") || "You";
-  const { activeView, filters, setFilters, effectiveFilters } =
+  const { activeView, resolvedView, tab, filters, setFilters, effectiveFilters } =
     useThreadFilters({ searchParams });
 
   useEffect(() => {
@@ -1516,64 +1518,60 @@ export function InboxSplitView({
     previewMessagesByThread,
   ]);
 
+  // Task 6, Plan 2: known inbox slugs for resolveInboxSlug() — sourced from
+  // workspaceInboxes (declared near the top of the component, well before
+  // this memo) so it's safe to read here without a declaration-order hazard.
+  const knownInboxSlugs = useMemo(
+    () =>
+      (workspaceInboxes || [])
+        .map((inbox) => String(inbox?.slug || "").trim())
+        .filter(Boolean),
+    [workspaceInboxes],
+  );
+
   const filteredThreads = useMemo(() => {
-    return derivedThreads
-      .filter((thread) => {
-        const threadId = String(thread?.id || "").trim();
-        const hasLocalState = Object.prototype.hasOwnProperty.call(
-          ticketStateByThread,
-          thread.id,
-        );
-        const uiState = hasLocalState
-          ? ticketStateByThread[thread.id]
-          : DEFAULT_TICKET_STATE;
-        const effectiveAssignee = hasLocalState
-          ? (uiState?.assignee ?? null)
-          : (thread.assignee_id ?? null);
-        const effectiveStatus = normalizeStatus(
-          (hasLocalState ? uiState?.status : null) ||
-            thread.status ||
-            DEFAULT_TICKET_STATE.status,
-        );
-        const inboxSlug = extractInboxSlugFromTags(thread?.tags || []);
-        // effectiveStatus already folds in any local optimistic override
-        // (ticketStateByThread) on top of thread.status — threadTab() only
-        // sees raw thread fields, so we route the *effective* legacy status
-        // through it rather than the raw thread, to keep the optimistic-UI
-        // behavior identical to before this refactor.
-        const isResolved =
-          threadTab({ ...thread, status: effectiveStatus, close_pending: false }) ===
-          "resolved";
-        const isNotification = isAutomated(thread);
+    const withEffectiveFields = derivedThreads.map((thread) => {
+      const threadId = String(thread?.id || "").trim();
+      const hasLocalState = Object.prototype.hasOwnProperty.call(
+        ticketStateByThread,
+        thread.id,
+      );
+      const uiState = hasLocalState
+        ? ticketStateByThread[thread.id]
+        : DEFAULT_TICKET_STATE;
+      const effectiveAssignee = hasLocalState
+        ? (uiState?.assignee ?? null)
+        : (thread.assignee_id ?? null);
+      const effectiveStatus = normalizeStatus(
+        (hasLocalState ? uiState?.status : null) ||
+          thread.status ||
+          DEFAULT_TICKET_STATE.status,
+      );
+      // effectiveStatus already folds in any local optimistic override
+      // (ticketStateByThread) on top of thread.status — threadTab() only
+      // sees raw thread fields, so we route the *effective* legacy status
+      // through it rather than the raw thread, to keep the optimistic-UI
+      // behavior identical to before this refactor. close_pending isn't part
+      // of ticketStateByThread's optimistic-override set, so it's read
+      // straight off the raw thread (inert pre-migration — no thread has it
+      // set yet, per Task 6 brief).
+      const tab = threadTab({ ...thread, status: effectiveStatus });
+      const isNotification = isAutomated(thread);
+      const resolvedInboxSlug = resolveInboxSlug(thread, knownInboxSlugs);
+      return {
+        thread,
+        threadId,
+        effectiveAssignee,
+        effectiveStatus,
+        tab,
+        isNotification,
+        resolvedInboxSlug,
+      };
+    });
 
-        // Resolved tickets live exclusively in the "Resolved" view.
-        if (isResolved && activeView !== "resolved") {
-          return false;
-        }
-        if (!isResolved && activeView === "resolved") {
-          return false;
-        }
-
-        if (!activeView && (isNotification || inboxSlug)) {
-          return false;
-        }
-        if (activeView === "notifications" && !isNotification) {
-          return false;
-        }
-        if (activeView === "mine") {
-          const assignee = String(effectiveAssignee || "");
-          const mineIds = new Set([
-            String(currentSupabaseUserId || ""),
-            String(user?.id || ""),
-          ]);
-          if (!assignee || !mineIds.has(assignee)) {
-            return false;
-          }
-        }
-        if (activeView.startsWith("inbox:")) {
-          const targetInbox = activeView.slice("inbox:".length);
-          if (!targetInbox || inboxSlug !== targetInbox) return false;
-        }
+    const applyCommonFilters = (rows) =>
+      rows.filter((row) => {
+        const { thread, threadId, effectiveStatus } = row;
         const selectedStatuses = Array.isArray(effectiveFilters.statuses)
           ? effectiveFilters.statuses
           : effectiveFilters.status && effectiveFilters.status !== "All"
@@ -1613,14 +1611,19 @@ export function InboxSplitView({
           }
         }
         return true;
-      })
-      .sort((a, b) => {
-        const getTs = (thread) => {
+      });
+
+    // Sort dropdown behavior (newest activity default) — used by every view
+    // except the default needs_attention queue, which always sorts by
+    // longest-waiting-first via sortForQueue() regardless of the dropdown.
+    const sortByDropdown = (rows) =>
+      [...rows].sort((a, b) => {
+        const getTs = (row) => {
           const value =
             effectiveFilters.sortBy === "oldest_updated" ||
             effectiveFilters.sortBy === "newest_updated"
-              ? thread?.updated_at || thread?.last_message_at || thread?.created_at || 0
-              : thread?.last_message_at || thread?.updated_at || thread?.created_at || 0;
+              ? row.thread?.updated_at || row.thread?.last_message_at || row.thread?.created_at || 0
+              : row.thread?.last_message_at || row.thread?.updated_at || row.thread?.created_at || 0;
           const parsed = Date.parse(value);
           return Number.isFinite(parsed) ? parsed : 0;
         };
@@ -1631,13 +1634,74 @@ export function InboxSplitView({
         }
         return bTs - aTs;
       });
+
+    // needs_attention queue: threadTab === needs_attention, not automated,
+    // sorted oldest-customer-wait-first, with close_pending threads (the
+    // approve-close segment) stably partitioned to the bottom. Inert today —
+    // no thread has close_pending set pre-migration — but the partition is
+    // in place so it activates for free once that field starts arriving.
+    const needsAttentionQueue = (rows) => {
+      const eligible = rows.filter((row) => row.tab === "needs_attention" && !row.isNotification);
+      const sorted = sortForQueue(eligible.map((row) => row.thread));
+      const rowByThreadId = new Map(eligible.map((row) => [row.thread, row]));
+      const sortedRows = sorted.map((thread) => rowByThreadId.get(thread));
+      const primary = sortedRows.filter((row) => row.thread?.close_pending !== true);
+      const approveClose = sortedRows.filter((row) => row.thread?.close_pending === true);
+      return [...primary, ...approveClose];
+    };
+
+    let scopedRows;
+    if (resolvedView === "mine") {
+      const mineIds = new Set([
+        String(currentSupabaseUserId || ""),
+        String(user?.id || ""),
+      ]);
+      scopedRows = needsAttentionQueue(withEffectiveFields).filter((row) => {
+        const assignee = String(row.effectiveAssignee || "");
+        return assignee && mineIds.has(assignee);
+      });
+    } else if (resolvedView === "waiting") {
+      scopedRows = sortByDropdown(
+        withEffectiveFields.filter((row) => row.tab === "waiting" && !row.isNotification),
+      );
+    } else if (resolvedView === "resolved") {
+      scopedRows = sortByDropdown(
+        withEffectiveFields.filter((row) => row.tab === "resolved" && !row.isNotification),
+      );
+    } else if (resolvedView === "automated") {
+      scopedRows = sortByDropdown(withEffectiveFields.filter((row) => row.isNotification));
+    } else if (resolvedView === "all") {
+      // Today's "View all" semantics: no view-based restriction at all —
+      // every status, automated or not, every inbox — only the status
+      // dropdown/search/unread filters below narrow it further.
+      scopedRows = sortByDropdown(withEffectiveFields);
+    } else if (resolvedView.startsWith("inbox:")) {
+      const targetInbox = resolvedView.slice("inbox:".length);
+      const inInbox = withEffectiveFields.filter(
+        (row) => targetInbox && row.resolvedInboxSlug === targetInbox,
+      );
+      if (tab === "waiting") {
+        scopedRows = sortByDropdown(inInbox.filter((row) => row.tab === "waiting"));
+      } else if (tab === "resolved") {
+        scopedRows = sortByDropdown(inInbox.filter((row) => row.tab === "resolved"));
+      } else {
+        scopedRows = needsAttentionQueue(inInbox);
+      }
+    } else {
+      // Default needs_attention view (resolvedView === "").
+      scopedRows = needsAttentionQueue(withEffectiveFields);
+    }
+
+    return applyCommonFilters(scopedRows).map((row) => row.thread);
   }, [
-    activeView,
     currentSupabaseUserId,
     customerByThread,
     derivedThreads,
     effectiveFilters,
+    knownInboxSlugs,
     readOverrides,
+    resolvedView,
+    tab,
     ticketStateByThread,
     user?.id,
   ]);
@@ -2641,6 +2705,83 @@ export function InboxSplitView({
     setFilters((prev) => ({ ...prev, ...updates }));
   };
 
+  // Which of the three StatusTabs buttons is highlighted. Inside inbox:<slug>
+  // views this is the ?tab= subset; everywhere else needs_attention/waiting/
+  // resolved ARE the ?view= value itself, and "mine"/"" both read as the
+  // needs_attention tab (mine has no dedicated tab bucket of its own).
+  const activeStatusTab = resolvedView.startsWith("inbox:")
+    ? tab
+    : resolvedView === "waiting" || resolvedView === "resolved"
+        ? resolvedView
+        : "needs_attention";
+
+  // Task 6, Plan 2: StatusTabs counts. Computed independently of
+  // filteredThreads (which is already narrowed to the ACTIVE tab) so all
+  // three tabs' counts are visible at once. Scoped to the current inbox when
+  // resolvedView is inbox:<slug>, otherwise counts span every thread —
+  // matching the scope each tab's own filtering rule applies within.
+  const statusTabCounts = useMemo(() => {
+    const targetInbox = resolvedView.startsWith("inbox:")
+      ? resolvedView.slice("inbox:".length)
+      : null;
+    const counts = { needs_attention: 0, waiting: 0, resolved: 0 };
+    derivedThreads.forEach((thread) => {
+      if (isAutomated(thread)) return;
+      if (targetInbox && resolveInboxSlug(thread, knownInboxSlugs) !== targetInbox) {
+        return;
+      }
+      const hasLocalState = Object.prototype.hasOwnProperty.call(
+        ticketStateByThread,
+        thread.id,
+      );
+      const uiState = hasLocalState ? ticketStateByThread[thread.id] : DEFAULT_TICKET_STATE;
+      const effectiveStatus = normalizeStatus(
+        (hasLocalState ? uiState?.status : null) || thread.status || DEFAULT_TICKET_STATE.status,
+      );
+      const tabKey = threadTab({ ...thread, status: effectiveStatus });
+      if (tabKey === "needs_attention" || tabKey === "waiting" || tabKey === "resolved") {
+        counts[tabKey] += 1;
+      }
+    });
+    return counts;
+  }, [derivedThreads, knownInboxSlugs, resolvedView, ticketStateByThread]);
+
+  // Tab clicks preserve every other search param — e.g. ?thread= from
+  // useThreadSelection must survive a tab switch. Two distinct behaviors
+  // depending on where StatusTabs is rendered:
+  // - Inside an inbox:<slug> view, the three tabs are a SUBSET of that one
+  //   inbox (per the brief: "?tab= within inbox views"), so only ?tab=
+  //   changes and ?view= stays pinned to the inbox.
+  // - Everywhere else (default/mine/waiting/resolved), needs_attention/
+  //   waiting/resolved are top-level ?view= values themselves — StatusTabs
+  //   acts as a view switcher there, and ?tab= is cleared (not applicable
+  //   outside inbox views). Clicking a tab away from "mine" intentionally
+  //   drops the mine filter, since mine isn't one of the three tab buckets.
+  const handleTabChange = useCallback(
+    (nextTab) => {
+      const params = new URLSearchParams(searchParams?.toString());
+      const isInboxView = resolvedView.startsWith("inbox:");
+      if (isInboxView) {
+        params.set("view", resolvedView);
+        if (nextTab && nextTab !== "needs_attention") {
+          params.set("tab", nextTab);
+        } else {
+          params.delete("tab");
+        }
+      } else {
+        if (nextTab && nextTab !== "needs_attention") {
+          params.set("view", nextTab);
+        } else {
+          params.delete("view");
+        }
+        params.delete("tab");
+      }
+      const queryString = params.toString();
+      router.replace(queryString ? `${pathname}?${queryString}` : pathname);
+    },
+    [pathname, resolvedView, router, searchParams],
+  );
+
   const handleViewAllTickets = useCallback(() => {
     setFilters(DEFAULT_FILTERS);
     if (typeof window !== "undefined") {
@@ -3171,6 +3312,11 @@ export function InboxSplitView({
         }
         onDeleteThread={deleteThreadById}
         hideSolvedFilter={activeView === ""}
+        statusTabs={
+          resolvedView !== "all" && resolvedView !== "automated" ? (
+            <StatusTabs active={activeStatusTab} counts={statusTabCounts} onChange={handleTabChange} />
+          ) : null
+        }
       />
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-sidebar">

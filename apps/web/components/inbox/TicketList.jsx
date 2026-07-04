@@ -46,6 +46,7 @@ export function TicketList({
   onDeleteThread,
   hideSolvedFilter = false,
   onPrefetchThread,
+  statusTabs = null,
 }) {
   const [contextMenu, setContextMenu] = useState(null);
   const [contextMenuRoot, setContextMenuRoot] = useState(null);
@@ -295,6 +296,9 @@ export function TicketList({
   return (
     <aside className="animate-view-enter flex w-full flex-col border-r border-border bg-background lg:w-[clamp(18rem,20vw,24rem)] lg:min-w-[clamp(18rem,20vw,24rem)] lg:max-w-[clamp(18rem,20vw,24rem)] lg:flex-none">
       <div className="border-b border-border px-3 py-2">
+        {statusTabs ? (
+          <div className="mb-1.5 flex items-center">{statusTabs}</div>
+        ) : null}
         <div className="flex items-center gap-1.5">
           <Input
             value={filters.query}

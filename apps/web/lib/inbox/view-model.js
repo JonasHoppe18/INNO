@@ -70,3 +70,28 @@ export function wakeInDays(thread, nowMs) {
   if (Number.isNaN(wake)) return null;
   return Math.max(0, Math.ceil((wake - nowMs) / DAY_MS));
 }
+
+// Legacy `?view=` values still linked from older bookmarks/emails map onto
+// the new lifecycle-view vocabulary. Anything unrecognized (including "",
+// the omitted-default) passes through unchanged — callers decide what the
+// empty string means (needs_attention default).
+const LEGACY_VIEW_ALIASES = {
+  resolved: "resolved",
+  notifications: "automated",
+};
+
+const VALID_TABS = new Set(["needs_attention", "waiting", "resolved"]);
+
+// Normalizes the raw `view`/`tab` URL params into the canonical scheme:
+// "" | "needs_attention" | "mine" | "waiting" | "resolved" | "automated" |
+// "all" | "inbox:<slug>", plus a tab within inbox views. Pure — no React,
+// no I/O — so the legacy-alias mapping can be unit-tested directly.
+export function resolveViewRoute(rawView, rawTab) {
+  const view = String(rawView || "").trim();
+  const mappedView = LEGACY_VIEW_ALIASES[view] || view;
+  const tab = String(rawTab || "").trim();
+  return {
+    view: mappedView,
+    tab: VALID_TABS.has(tab) ? tab : "needs_attention",
+  };
+}

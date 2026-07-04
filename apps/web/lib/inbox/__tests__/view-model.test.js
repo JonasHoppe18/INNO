@@ -9,6 +9,7 @@ import {
   waitingGroup,
   wakeInDays,
   sortForQueue,
+  resolveViewRoute,
 } from "../view-model.js";
 
 const base = { id: "t1", status: "needs_attention", tags: [], unread_count: 0 };
@@ -132,5 +133,36 @@ describe("wakeInDays", () => {
   it("returns null for missing or invalid wake_at", () => {
     expect(wakeInDays(base, NOW)).toBe(null);
     expect(wakeInDays({ ...base, wake_at: "garbage" }, NOW)).toBe(null);
+  });
+});
+
+describe("resolveViewRoute", () => {
+  it("passes canonical views through unchanged", () => {
+    expect(resolveViewRoute("mine", "")).toEqual({ view: "mine", tab: "needs_attention" });
+    expect(resolveViewRoute("waiting", "")).toEqual({ view: "waiting", tab: "needs_attention" });
+    expect(resolveViewRoute("automated", "")).toEqual({ view: "automated", tab: "needs_attention" });
+    expect(resolveViewRoute("all", "")).toEqual({ view: "all", tab: "needs_attention" });
+  });
+  it("maps legacy view aliases", () => {
+    expect(resolveViewRoute("resolved", "")).toEqual({ view: "resolved", tab: "needs_attention" });
+    expect(resolveViewRoute("notifications", "")).toEqual({ view: "automated", tab: "needs_attention" });
+  });
+  it("passes inbox:<slug> views through unchanged", () => {
+    expect(resolveViewRoute("inbox:returns", "")).toEqual({ view: "inbox:returns", tab: "needs_attention" });
+  });
+  it("defaults empty/missing view to the empty string (needs_attention default)", () => {
+    expect(resolveViewRoute("", "")).toEqual({ view: "", tab: "needs_attention" });
+    expect(resolveViewRoute(undefined, undefined)).toEqual({ view: "", tab: "needs_attention" });
+    expect(resolveViewRoute(null, null)).toEqual({ view: "", tab: "needs_attention" });
+  });
+  it("passes through valid tab values", () => {
+    expect(resolveViewRoute("inbox:returns", "waiting")).toEqual({ view: "inbox:returns", tab: "waiting" });
+    expect(resolveViewRoute("inbox:returns", "resolved")).toEqual({ view: "inbox:returns", tab: "resolved" });
+  });
+  it("falls back to needs_attention for an invalid/unknown tab", () => {
+    expect(resolveViewRoute("inbox:returns", "bogus")).toEqual({ view: "inbox:returns", tab: "needs_attention" });
+  });
+  it("trims whitespace on both params", () => {
+    expect(resolveViewRoute("  mine  ", "  waiting  ")).toEqual({ view: "mine", tab: "waiting" });
   });
 });
