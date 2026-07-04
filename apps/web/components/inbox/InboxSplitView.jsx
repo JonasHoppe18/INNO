@@ -35,6 +35,8 @@ import { useCustomerLookup } from "@/hooks/useCustomerLookup";
 import { useSiteHeaderActions } from "@/components/site-header-actions";
 import { reportClientEvent } from "@/lib/client-events";
 import { toLegacyUiStatus } from "@/lib/inbox/status-model";
+import { isAutomated, threadTab } from "@/lib/inbox/view-model";
+import { DEFAULT_FILTERS, useThreadFilters } from "@/lib/inbox/useThreadFilters";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -108,13 +110,6 @@ class InboxContentBoundary extends Component {
     );
   }
 }
-
-const DEFAULT_FILTERS = {
-  query: "",
-  statuses: [],
-  unreadsOnly: false,
-  sortBy: "newest_activity",
-};
 
 const STATUS_OPTIONS = ["New", "Open", "Pending", "Waiting", "Solved"];
 const UNASSIGNED_ASSIGNEE_VALUE = "__unassigned__";
@@ -1029,7 +1024,6 @@ export function InboxSplitView({
   const [localSentMessagesByThread, setLocalSentMessagesByThread] = useState(
     {},
   );
-  const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [composerMode, setComposerMode] = useState("reply");
   const [draftValue, setDraftValue] = useState("");
   const [draftValueByThread, setDraftValueByThread] = useState({});
@@ -1127,7 +1121,8 @@ export function InboxSplitView({
   useEffect(() => {
     refreshSelectedThreadMessagesRef.current = refreshSelectedThreadMessages;
   }, [refreshSelectedThreadMessages]);
-  const activeView = searchParams?.get("view") || "";
+  const { activeView, filters, setFilters, effectiveFilters } =
+    useThreadFilters({ searchParams });
   const requestedThreadId = String(searchParams?.get("thread") || "").trim();
   const tabStateStorageKey = useMemo(() => {
     const viewerId = String(
@@ -1470,23 +1465,6 @@ export function InboxSplitView({
     ? noteValueByThread[selectedThreadId] || ""
     : "";
   const composerValue = composerMode === "note" ? activeNoteValue : draftValue;
-  const deferredFilterQuery = useDeferredValue(filters.query);
-  const effectiveFilters = useMemo(
-    () => ({
-      query: deferredFilterQuery,
-      statuses: filters.statuses,
-      status: filters.status,
-      unreadsOnly: filters.unreadsOnly,
-      sortBy: filters.sortBy,
-    }),
-    [
-      deferredFilterQuery,
-      filters.sortBy,
-      filters.status,
-      filters.statuses,
-      filters.unreadsOnly,
-    ],
-  );
 
   const isLocalThreadId = useCallback(
     (threadId) => String(threadId || "").startsWith("local-new-ticket-"),
@@ -1847,8 +1825,15 @@ export function InboxSplitView({
             DEFAULT_TICKET_STATE.status,
         );
         const inboxSlug = extractInboxSlugFromTags(thread?.tags || []);
-        const isResolved = effectiveStatus === "Solved";
-        const inboxBucket = getInboxBucket(thread);
+        // effectiveStatus already folds in any local optimistic override
+        // (ticketStateByThread) on top of thread.status — threadTab() only
+        // sees raw thread fields, so we route the *effective* legacy status
+        // through it rather than the raw thread, to keep the optimistic-UI
+        // behavior identical to before this refactor.
+        const isResolved =
+          threadTab({ ...thread, status: effectiveStatus, close_pending: false }) ===
+          "resolved";
+        const isNotification = isAutomated(thread);
 
         // Resolved tickets live exclusively in the "Resolved" view.
         if (isResolved && activeView !== "resolved") {
@@ -1858,10 +1843,10 @@ export function InboxSplitView({
           return false;
         }
 
-        if (!activeView && (inboxBucket === "notification" || inboxSlug)) {
+        if (!activeView && (isNotification || inboxSlug)) {
           return false;
         }
-        if (activeView === "notifications" && inboxBucket !== "notification") {
+        if (activeView === "notifications" && !isNotification) {
           return false;
         }
         if (activeView === "mine") {
@@ -3873,6 +3858,7 @@ export function InboxSplitView({
       return;
     }
     router.push("/inbox/tickets");
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setFilters is the stable setter returned by useThreadFilters (backed by useState); identity never changes, so omitting it matches the pre-extraction behavior when it was a local useState setter.
   }, [router]);
 
   const markThreadReadInstantly = useCallback(
@@ -4055,6 +4041,7 @@ export function InboxSplitView({
         status: "All",
       }));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setFilters is the stable setter returned by useThreadFilters (backed by useState); identity never changes, so omitting it matches the pre-extraction behavior when it was a local useState setter.
   }, [activeView, filters.status, filters.statuses]);
 
   const handleTicketStateChange = useCallback(
