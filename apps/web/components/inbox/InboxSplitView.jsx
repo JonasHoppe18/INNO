@@ -1059,6 +1059,15 @@ export function InboxSplitView({
   const [pendingOrderUpdateByThread, setPendingOrderUpdateByThread] = useState(
     {},
   );
+  // closePendingOverrideByThread is likewise hoisted here (not owned inside
+  // useThreadActions) for the same render-order reason: filteredThreads
+  // (below) reads closePendingOverrideByThread to compute each thread's
+  // effectiveClosePending, and useThreadActions (which owns the handlers that
+  // mutate this state — approveClose/keepWaiting) is called after
+  // filteredThreads is computed. Passed INTO useThreadActions as a parameter;
+  // see useThreadActions.js's own header comment.
+  const [closePendingOverrideByThread, setClosePendingOverrideByThread] =
+    useState({});
   // draftValueRef/draftLastSavedRef are hoisted here (rather than declared
   // inside useComposerState, as they were pre-extraction) because
   // useThreadActions's handleOrderUpdateDecision also reads/writes them
@@ -1713,7 +1722,18 @@ export function InboxSplitView({
       scopedRows = needsAttentionQueue(withEffectiveFields);
     }
 
-    return applyCommonFilters(scopedRows).map((row) => row.thread);
+    // Task 9 bugfix: thread row.effectiveClosePending through instead of the
+    // raw thread's close_pending — otherwise groupNeedsAttentionThreads (which
+    // partitions on thread.close_pending) never sees Task 9's Approve/
+    // Keep-waiting optimistic override, and a row stays stuck in the
+    // Approve-close group until the server-derived thread list refetches.
+    // effectiveClosePending already equals the raw value whenever no override
+    // is in effect, so this is a no-op for every other consumer of
+    // filteredThreads.
+    return applyCommonFilters(scopedRows).map((row) => ({
+      ...row.thread,
+      close_pending: row.effectiveClosePending,
+    }));
   }, [
     closePendingOverrideByThread,
     currentSupabaseUserId,
@@ -2526,8 +2546,9 @@ export function InboxSplitView({
   );
 
   const {
-    // ticketStateByThread/setTicketStateByThread/pendingUpdateThreadIds and
-    // pendingOrderUpdateByThread/setPendingOrderUpdateByThread are NOT
+    // ticketStateByThread/setTicketStateByThread/pendingUpdateThreadIds,
+    // pendingOrderUpdateByThread/setPendingOrderUpdateByThread, and
+    // closePendingOverrideByThread/setClosePendingOverrideByThread are NOT
     // re-destructured here: they're already declared above (top-level useState/
     // useRef) and passed IN below. useThreadActions returns them back out as an
     // identity pass-through (same references it received), so re-binding them
@@ -2544,7 +2565,6 @@ export function InboxSplitView({
     setMarkReturnReceivedLoadingByThread,
     refreshPendingActionByThread,
     setRefreshPendingActionByThread,
-    closePendingOverrideByThread,
     handleMarkReturnReceived,
     handleTicketStateChange,
     handleOrderUpdateDecision,
@@ -2557,6 +2577,8 @@ export function InboxSplitView({
     pendingUpdateThreadIds,
     pendingOrderUpdateByThread,
     setPendingOrderUpdateByThread,
+    closePendingOverrideByThread,
+    setClosePendingOverrideByThread,
     selectedThreadId,
     selectedThreadIdRef,
     selectedThreadDetail,

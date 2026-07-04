@@ -55,6 +55,19 @@ export function useThreadActions({
   // strictly before the other unless this piece of state is hoisted.
   pendingOrderUpdateByThread,
   setPendingOrderUpdateByThread,
+  // closePendingOverrideByThread/setClosePendingOverrideByThread are likewise
+  // declared in InboxSplitView.jsx (not owned here) — see this file's own
+  // detailed comment above and InboxSplitView.jsx's declaration site. Same
+  // render-order/circular-hook-call reasoning as ticketStateByThread/
+  // pendingOrderUpdateByThread: filteredThreads (computed in
+  // InboxSplitView.jsx, before this hook is called) reads
+  // closePendingOverrideByThread to compute effectiveClosePending, so this
+  // hook cannot own that piece of state without creating a circular
+  // hook-call order; it still owns the handlers that mutate it
+  // (approveClose/keepWaiting via patchThreadStatusForCloseDecision), just
+  // not the useState declaration.
+  closePendingOverrideByThread,
+  setClosePendingOverrideByThread,
   selectedThreadId,
   selectedThreadIdRef,
   selectedThreadDetail,
@@ -100,17 +113,6 @@ export function useThreadActions({
     setMarkReturnReceivedLoadingByThread,
   ] = useState({});
   const [refreshPendingActionByThread, setRefreshPendingActionByThread] =
-    useState({});
-  // Task 9, Plan 2: optimistic local override for the "Approve close" group.
-  // close_pending is read straight off the raw thread object in
-  // InboxSplitView.jsx's filteredThreads memo (NOT through ticketStateByThread
-  // — see that memo's comment), so approving/keep-waiting a close_pending
-  // thread needs its own small override map rather than reusing
-  // ticketStateByThread: true means "treat this thread as no-longer-close-
-  // pending regardless of what the raw thread still says", used to remove the
-  // row from the Approve-close group immediately after a PATCH, before the
-  // server-derived thread list catches up. Reverted (deleted) on PATCH failure.
-  const [closePendingOverrideByThread, setClosePendingOverrideByThread] =
     useState({});
 
   // Keep ticketStateByThread in sync with the server-derived thread list
@@ -633,6 +635,7 @@ export function useThreadActions({
           toast.error(error.message || failureMessage);
         });
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setClosePendingOverrideByThread is a bare useState setter (stable identity forever), passed in as a parameter from InboxSplitView.jsx; omitting it matches the established pattern for setPendingOrderUpdateByThread/setTicketStateByThread elsewhere in this file.
     [],
   );
 
