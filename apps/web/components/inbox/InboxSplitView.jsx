@@ -2717,6 +2717,25 @@ export function InboxSplitView({
       setPostApprovalDraftLoadingByThread;
   });
 
+  // Task 10, Plan 2: wraps handleSendDraft so a successful send advances to
+  // the next thread in the current queue — but ONLY in queue views
+  // (default needs_attention, "mine", or an inbox-scoped view sitting on its
+  // needs_attention tab — isNeedsAttentionRoute, computed above alongside
+  // needsAttentionGroups). In "all"/"waiting"/"resolved" (and the automated
+  // view) today's stay-on-thread behavior is kept, so onSent is simply
+  // omitted there. No ordering hazard: isNeedsAttentionRoute (declared before
+  // useThreadSelection) and selectNext (from useThreadSelection, called
+  // before useComposerState) are both already in scope by the time this is
+  // declared — no hoisting/bridge required, unlike the composerBridgeRef
+  // cases above.
+  const handleSendDraftWithQueueAdvance = useCallback(
+    (payload) =>
+      handleSendDraft(
+        isNeedsAttentionRoute ? { ...payload, onSent: selectNext } : payload,
+      ),
+    [handleSendDraft, isNeedsAttentionRoute, selectNext],
+  );
+
   const customerLookupParams = useMemo(() => {
     const inboundCandidates = [...threadMessages]
       .filter((message) => !isOutboundMessage(message, mailboxEmails))
@@ -3417,6 +3436,7 @@ export function InboxSplitView({
         onDeleteThread={deleteThreadById}
         hideSolvedFilter={activeView === ""}
         resolvedView={resolvedView}
+        isNeedsAttentionRoute={isNeedsAttentionRoute}
         groups={waitingGroups || needsAttentionGroups}
         showWakeCountdown={Boolean(waitingGroups)}
         approveCloseGroupKey="approve_close"
@@ -3479,7 +3499,7 @@ export function InboxSplitView({
           canSend={
             Boolean(selectedThreadId) && !isLocalThreadId(selectedThreadId)
           }
-          onSend={handleSendDraft}
+          onSend={handleSendDraftWithQueueAdvance}
           pendingOrderUpdate={selectedPendingOrderUpdate}
           returnCase={
             selectedThreadId

@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { TicketListItem } from "@/components/inbox/TicketListItem";
-import { ArrowDownUp, Filter } from "lucide-react";
+import { ArrowDownUp, Filter, Inbox } from "lucide-react";
 import { deriveReason, wakeInDays } from "@/lib/inbox/view-model";
 
 const STATUS_FILTERS = [
@@ -49,6 +49,7 @@ export function TicketList({
   onPrefetchThread,
   statusTabs = null,
   resolvedView = "",
+  isNeedsAttentionRoute = false,
   getInboxName,
   getAssigneeLabel,
   groups = null,
@@ -514,6 +515,19 @@ export function TicketList({
             {virtualWindow.after ? (
               <div style={{ height: virtualWindow.after }} aria-hidden="true" />
             ) : null}
+          </div>
+        ) : isNeedsAttentionRoute ? (
+          // Task 10, Plan 2: quiet inbox-zero state for the needs-attention
+          // queue (default view, "mine", or an inbox-scoped needs_attention
+          // tab) when it has no threads — no confetti, Sona-quiet.
+          <div className="flex h-full min-h-[240px] flex-col items-center justify-center gap-3 px-4 py-8 text-center">
+            <Inbox className="h-8 w-8 text-muted-foreground/50" aria-hidden="true" />
+            <div className="space-y-1">
+              <p className="text-[13px] font-medium text-foreground">Inbox zero</p>
+              <p className="text-[13px] text-muted-foreground">
+                Nothing needs your attention right now.
+              </p>
+            </div>
           </div>
         ) : (
           <div className="px-4 py-8 text-[13px] text-muted-foreground">
