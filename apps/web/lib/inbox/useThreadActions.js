@@ -45,6 +45,16 @@ export function useThreadActions({
   ticketStateByThread,
   setTicketStateByThread,
   pendingUpdateThreadIds,
+  // pendingOrderUpdateByThread/setPendingOrderUpdateByThread are likewise
+  // declared in InboxSplitView.jsx (not owned here) — see this file's own
+  // detailed comment above and InboxSplitView.jsx's declaration site. Same
+  // render-order/circular-hook-call reasoning as ticketStateByThread: this
+  // hook needs useComposerState's draft setters (setDraftValue etc.), and
+  // useComposerState needs to read pendingOrderUpdateByThread synchronously
+  // during render (its auto-draft effect), so neither hook can be called
+  // strictly before the other unless this piece of state is hoisted.
+  pendingOrderUpdateByThread,
+  setPendingOrderUpdateByThread,
   selectedThreadId,
   selectedThreadIdRef,
   selectedThreadDetail,
@@ -79,9 +89,6 @@ export function useThreadActions({
   getDecisionFromActionStatus,
   DEFAULT_TICKET_STATE,
 }) {
-  const [pendingOrderUpdateByThread, setPendingOrderUpdateByThread] = useState(
-    {},
-  );
   const [returnCaseByThread, setReturnCaseByThread] = useState({});
   const [orderUpdateDecisionByThread, setOrderUpdateDecisionByThread] =
     useState({});
@@ -131,6 +138,7 @@ export function useThreadActions({
       });
       return changed ? next : prev;
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- pendingUpdateThreadIds is a bare useRef (stable identity forever) and setTicketStateByThread is a bare useState setter (stable identity forever), both passed in as parameters from InboxSplitView.jsx; omitting them matches pre-extraction behavior.
   }, [derivedThreads, isLocalThreadId, DEFAULT_TICKET_STATE]);
 
   // When the user switches threads, eagerly clear any cached pending-action
@@ -145,6 +153,7 @@ export function useThreadActions({
       delete next[selectedThreadId];
       return next;
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setPendingOrderUpdateByThread is a bare useState setter (stable identity forever), passed in as a parameter from InboxSplitView.jsx; omitting it matches pre-extraction behavior.
   }, [selectedThreadId]);
 
   // Detail-fetch effect: hydrate returnCaseByThread / pendingOrderUpdateByThread /
@@ -465,6 +474,7 @@ export function useThreadActions({
           return next;
         });
       });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setPendingOrderUpdateByThread is a bare useState setter (stable identity forever), passed in as a parameter from InboxSplitView.jsx; omitting it matches pre-extraction behavior.
   }, [
     supabase,
     selectedThreadId,

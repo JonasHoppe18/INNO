@@ -1031,6 +1031,56 @@ export function InboxSplitView({
   const [currentSupabaseUserId, setCurrentSupabaseUserId] = useState(null);
   const [workspaceInboxes, setWorkspaceInboxes] = useState([]);
   const [isWorkspaceTestMode, setIsWorkspaceTestMode] = useState(false);
+  // ticketStateByThread/pendingUpdateThreadIds are declared here (not inside
+  // useThreadActions) purely because of a render-order constraint: filteredThreads
+  // (below) reads ticketStateByThread to resolve each thread's effective status,
+  // and useThreadActions (which owns the sync effect + handler that mutate this
+  // state) is called after filteredThreads is computed. Passed INTO
+  // useThreadActions as a parameter; see useThreadActions.js's own header comment.
+  const [ticketStateByThread, setTicketStateByThread] = useState({});
+  const pendingUpdateThreadIds = useRef(new Set());
+  // pendingOrderUpdateByThread is likewise hoisted here (not owned inside
+  // useThreadActions) for the same render-order reason: useComposerState's
+  // auto-draft effect reads it synchronously (to avoid overwriting a fresh
+  // draft while an order-update approval card is showing), and useThreadActions
+  // needs useComposerState's draft setters (setDraftValue etc.) for its own
+  // post-approval draft reload — the two hooks would otherwise need to be
+  // called before each other, which isn't possible. Hoisting this one piece of
+  // shared state breaks the cycle; both hooks read/write it via the passed-in
+  // setter instead of owning independent state.
+  const [pendingOrderUpdateByThread, setPendingOrderUpdateByThread] = useState(
+    {},
+  );
+  // draftValueRef/draftLastSavedRef are hoisted here (rather than declared
+  // inside useComposerState, as they were pre-extraction) because
+  // useThreadActions's handleOrderUpdateDecision also reads/writes them
+  // (post-approval draft reload). A plain useRef box has no ordering
+  // constraint — both hooks receive and mutate the SAME ref object — so this
+  // is simpler than the setter-bridge approach below.
+  const draftValueRef = useRef("");
+  const draftLastSavedRef = useRef({});
+  // useThreadActions also needs several setters that useComposerState owns
+  // (setDraftValue, setDraftValueByThread, etc. — used by
+  // handleOrderUpdateDecision's post-approval draft reload). useComposerState
+  // is called AFTER useThreadActions (it needs useThreadActions's
+  // setReturnCaseByThread/setOrderUpdateDecisionByThread, which don't have
+  // this problem since they're available by the time useComposerState runs),
+  // so these setters don't exist yet when useThreadActions is called. But
+  // they're used ONLY inside handleOrderUpdateDecision's deferred
+  // loadGeneratedDraft callback, never read during the render body itself —
+  // so we don't need the VALUE to exist at call time, only a stable reference
+  // to call through. useState setters have a stable identity across renders,
+  // so we bridge with a ref populated by a post-render effect (below) instead
+  // of restructuring the call order (not possible either direction: each hook
+  // needs something the other one returns).
+  const composerBridgeRef = useRef({
+    setDraftValue: () => {},
+    setDraftValueByThread: () => {},
+    setSystemDraftUneditedByThread: () => {},
+    setActiveDraftId: () => {},
+    setSignatureByThread: () => {},
+    setPostApprovalDraftLoadingByThread: () => {},
+  });
   const lastAutoReadThreadIdRef = useRef(null);
   const ticketSwitchStartedAtRef = useRef(new Map());
   const scrollPositionByThreadRef = useRef({});
@@ -2333,11 +2383,12 @@ export function InboxSplitView({
   );
 
   const {
-    ticketStateByThread,
-    setTicketStateByThread,
-    pendingUpdateThreadIds,
-    pendingOrderUpdateByThread,
-    setPendingOrderUpdateByThread,
+    // ticketStateByThread/setTicketStateByThread/pendingUpdateThreadIds and
+    // pendingOrderUpdateByThread/setPendingOrderUpdateByThread are NOT
+    // re-destructured here: they're already declared above (top-level useState/
+    // useRef) and passed IN below. useThreadActions returns them back out as an
+    // identity pass-through (same references it received), so re-binding them
+    // here via destructure would be a duplicate `const` declaration.
     returnCaseByThread,
     setReturnCaseByThread,
     orderUpdateDecisionByThread,
@@ -2355,6 +2406,11 @@ export function InboxSplitView({
     handleOrderUpdateDecision,
   } = useThreadActions({
     derivedThreads,
+    ticketStateByThread,
+    setTicketStateByThread,
+    pendingUpdateThreadIds,
+    pendingOrderUpdateByThread,
+    setPendingOrderUpdateByThread,
     selectedThreadId,
     selectedThreadIdRef,
     selectedThreadDetail,
@@ -2368,14 +2424,26 @@ export function InboxSplitView({
     currentUserName,
     setOpenThreadIds,
     setSelectedThreadId,
-    setDraftValue: null,
-    setDraftValueByThread: null,
-    setSystemDraftUneditedByThread: null,
-    setActiveDraftId: null,
-    setSignatureByThread: null,
-    setPostApprovalDraftLoadingByThread: null,
-    draftValueRef: null,
-    draftLastSavedRef: null,
+    // These 6 are owned by useComposerState, which is called AFTER this hook
+    // (useComposerState itself needs setReturnCaseByThread/
+    // setOrderUpdateDecisionByThread from THIS hook's return, so neither call
+    // can come first). All 6 are used only inside handleOrderUpdateDecision's
+    // deferred loadGeneratedDraft callback — never read during the render body
+    // — so a stable wrapper that calls through composerBridgeRef.current at
+    // invocation time is safe; see composerBridgeRef's declaration above for
+    // the full explanation.
+    setDraftValue: (value) => composerBridgeRef.current.setDraftValue(value),
+    setDraftValueByThread: (updater) =>
+      composerBridgeRef.current.setDraftValueByThread(updater),
+    setSystemDraftUneditedByThread: (updater) =>
+      composerBridgeRef.current.setSystemDraftUneditedByThread(updater),
+    setActiveDraftId: (value) => composerBridgeRef.current.setActiveDraftId(value),
+    setSignatureByThread: (updater) =>
+      composerBridgeRef.current.setSignatureByThread(updater),
+    setPostApprovalDraftLoadingByThread: (updater) =>
+      composerBridgeRef.current.setPostApprovalDraftLoadingByThread(updater),
+    draftValueRef,
+    draftLastSavedRef,
     asString,
     isApprovalManagedActionType,
     getDecisionFromActionStatus,
@@ -2423,9 +2491,7 @@ export function InboxSplitView({
     draftLogIdByThread,
     setDraftLogIdByThread,
     sendingStartedAtRef,
-    draftLastSavedRef,
     savingDraftThreadIdsRef,
-    draftValueRef,
     activeNoteValue,
     composerValue,
     handleGenerateDraft,
@@ -2453,6 +2519,8 @@ export function InboxSplitView({
     draftCacheRef,
     refreshSelectedThreadMessages,
     refreshSelectedThreadMessagesRef,
+    draftValueRef,
+    draftLastSavedRef,
     pendingOrderUpdateByThread,
     setPendingOrderUpdateByThread,
     setReturnCaseByThread,
@@ -2464,6 +2532,21 @@ export function InboxSplitView({
     asString,
     getDecisionFromActionStatus,
     DEFAULT_TICKET_STATE,
+  });
+
+  // Populate the composer bridge every render so useThreadActions's wrapper
+  // functions (declared at its call site above) always call through to the
+  // LATEST setters returned here. See composerBridgeRef's declaration above
+  // for the full explanation of why this indirection exists.
+  useEffect(() => {
+    composerBridgeRef.current.setDraftValue = setDraftValue;
+    composerBridgeRef.current.setDraftValueByThread = setDraftValueByThread;
+    composerBridgeRef.current.setSystemDraftUneditedByThread =
+      setSystemDraftUneditedByThread;
+    composerBridgeRef.current.setActiveDraftId = setActiveDraftId;
+    composerBridgeRef.current.setSignatureByThread = setSignatureByThread;
+    composerBridgeRef.current.setPostApprovalDraftLoadingByThread =
+      setPostApprovalDraftLoadingByThread;
   });
 
   const customerLookupParams = useMemo(() => {
@@ -3056,6 +3139,7 @@ export function InboxSplitView({
     }, DRAFT_WAIT_TIMEOUT_MS);
 
     return () => clearTimeout(timerId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setDraftWaitTimedOutByThread is a bare useState setter (stable identity forever) returned by useComposerState; omitting it matches pre-extraction behavior.
   }, [
     DRAFT_WAIT_TIMEOUT_MS,
     draftWaitTimedOutByThread,
