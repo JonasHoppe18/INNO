@@ -1,30 +1,24 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState, useTransition } from "react"
-import Link from "next/link"
-import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { useEffect, useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import {
   BarChart2Icon,
   BookOpenIcon,
   BotIcon,
   CableIcon,
-  CheckCircle2,
+  ChevronRight,
   HelpCircleIcon,
-  Inbox,
   LayoutDashboardIcon,
   MailIcon,
-  Bell,
-  Plus,
-  Settings2,
   SlidersHorizontal,
   TagIcon,
   Trash2,
-  User,
-  UserRoundPenIcon,
 } from "lucide-react"
 
 import { NavAgent } from "@/components/nav-agent"
 import { NavMain } from "@/components/nav-main"
+import { NavQueue } from "@/components/nav-queue"
 import { NavSecondary } from "@/components/nav-secondary"
 import { NavUser } from "@/components/nav-user"
 import { cn } from "@/lib/utils"
@@ -41,16 +35,19 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible"
+import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
-  SidebarGroupContent,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  useSidebar,
 } from "@/components/ui/sidebar"
 
 import { SonaLogo } from "@/components/ui/SonaLogo"
@@ -68,19 +65,24 @@ const baseData = {
       icon: LayoutDashboardIcon,
     },
   ],
-  navSecondary: [
+  // Top-level items per the Task 11 mockup — Knowledge/Analytics stay
+  // one click away, everything else config-shaped moves into Settings.
+  agent: [
     {
-      title: "Integrations",
-      url: "/integrations",
-      icon: CableIcon,
+      name: "Knowledge",
+      url: "/knowledge",
+      icon: BookOpenIcon,
     },
     {
-      title: "Guides",
-      url: "/guides",
-      icon: HelpCircleIcon,
+      name: "Analytics",
+      url: "/analytics",
+      icon: BarChart2Icon,
     },
   ],
-  agent: [
+  // Collapsible "Settings" group at the bottom of the sidebar. Routes are
+  // unchanged from the pre-Task-11 navSecondary/agent arrays — this is pure
+  // navigation regrouping, not a routing change.
+  settings: [
     {
       name: "Mailboxes",
       url: "/mailboxes",
@@ -97,253 +99,23 @@ const baseData = {
       icon: BotIcon,
     },
     {
-      name: "Knowledge",
-      url: "/knowledge",
-      icon: BookOpenIcon,
-    },
-    {
       name: "Tags",
       url: "/tags",
       icon: TagIcon,
     },
     {
-      name: "Analytics",
-      url: "/analytics",
-      icon: BarChart2Icon,
+      name: "Integrations",
+      url: "/integrations",
+      icon: CableIcon,
     },
   ],
-}
-
-function InboxSection({
-  handleCreateInbox,
-  handleConfigureInbox,
-  handleConfigureNotifications,
-  customInboxes = [],
-  customInboxUnreadCounts = {},
-  allTicketsUnreadCount = 0,
-  assignedCount = 0,
-  notificationsCount = 0,
-}) {
-  const pathname = usePathname()
-  const searchParams = useSearchParams()
-  const router = useRouter()
-  const [isPending, startTransition] = useTransition()
-  const { state } = useSidebar()
-  const [contextMenu, setContextMenu] = useState(null)
-  const view = searchParams.get("view")
-  const isCollapsed = state === "collapsed"
-
-  const isInboxPath = pathname === "/inbox" || pathname === "/inbox/tickets"
-  const isAllTicketsActive = isInboxPath && !view
-  const isNotificationsActive = pathname === "/inbox" && view === "notifications"
-  const isAssignedActive = pathname === "/inbox" && view === "mine"
-  const isResolvedActive = pathname === "/inbox" && view === "resolved"
-
-  const currentInboxUrl = useMemo(() => {
-    if (pathname !== "/inbox") return pathname
-    return view ? `/inbox?view=${encodeURIComponent(view)}` : "/inbox"
-  }, [pathname, view])
-
-  const navigateToView = useCallback(
-    (url) => {
-      if (url === currentInboxUrl) return
-      startTransition(() => router.replace(url, { scroll: false }))
+  navSecondary: [
+    {
+      title: "Guides",
+      url: "/guides",
+      icon: HelpCircleIcon,
     },
-    [currentInboxUrl, router, startTransition],
-  )
-
-  useEffect(() => {
-    if (!contextMenu) return undefined
-    const handleClose = () => setContextMenu(null)
-    window.addEventListener("click", handleClose)
-    window.addEventListener("scroll", handleClose, true)
-    window.addEventListener("resize", handleClose)
-    return () => {
-      window.removeEventListener("click", handleClose)
-      window.removeEventListener("scroll", handleClose, true)
-      window.removeEventListener("resize", handleClose)
-    }
-  }, [contextMenu])
-
-  return (
-    <SidebarGroup className="pt-0 relative">
-      <div className="mb-1 flex items-center justify-between px-2 group-data-[collapsible=icon]:hidden">
-        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-          INBOXES
-        </span>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation()
-            handleCreateInbox()
-          }}
-          className="cursor-pointer rounded p-0.5 text-muted-foreground hover:bg-accent"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          <span className="sr-only">Create inbox</span>
-        </button>
-      </div>
-
-      <SidebarGroupContent>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              tooltip="All Tickets"
-              onClick={() => navigateToView("/inbox")}
-              className={cn(
-                "justify-start cursor-pointer",
-                isAllTicketsActive && "bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground",
-                isPending && !isAllTicketsActive && "opacity-60"
-              )}
-            >
-              <Inbox className="h-4 w-4 shrink-0" />
-              <span>All Tickets</span>
-              {allTicketsUnreadCount > 0 ? (
-                <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded px-1.5 text-xs font-semibold leading-none text-muted-foreground tabular-nums">
-                  {allTicketsUnreadCount > 99 ? "99+" : allTicketsUnreadCount}
-                </span>
-              ) : null}
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-
-          {!isCollapsed && (
-            <>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  tooltip="Assigned to me"
-                  onClick={() => navigateToView("/inbox?view=mine")}
-                  className={cn(
-                    "justify-start pl-8 cursor-pointer",
-                    isAssignedActive && "bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground",
-                    isPending && !isAssignedActive && "opacity-60"
-                  )}
-                >
-                  <User className="h-4 w-4 shrink-0" />
-                  <span>Assigned to me</span>
-                  {assignedCount > 0 ? (
-                    <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded px-1.5 text-xs font-semibold leading-none text-muted-foreground tabular-nums">
-                      {assignedCount > 99 ? "99+" : assignedCount}
-                    </span>
-                  ) : null}
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  tooltip="Resolved"
-                  onClick={() => navigateToView("/inbox?view=resolved")}
-                  className={cn(
-                    "justify-start pl-8 cursor-pointer",
-                    isResolvedActive && "bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground",
-                    isPending && !isResolvedActive && "opacity-60"
-                  )}
-                >
-                  <CheckCircle2 className="h-4 w-4 shrink-0" />
-                  <span>Resolved</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <div
-                  className={cn(
-                    "group flex items-center rounded-md px-2 py-1.5 pl-8 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-                    isNotificationsActive && "bg-accent text-accent-foreground",
-                    isPending && !isNotificationsActive && "opacity-60"
-                  )}
-                >
-                  <button
-                    type="button"
-                    onClick={() => navigateToView("/inbox?view=notifications")}
-                    className="flex min-w-0 flex-1 items-center gap-2 cursor-pointer text-inherit"
-                  >
-                    <Bell className="h-4 w-4 shrink-0" />
-                    <span>Notifications</span>
-                    {notificationsCount > 0 ? (
-                      <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded px-1.5 text-xs font-semibold leading-none text-muted-foreground tabular-nums">
-                        {notificationsCount > 99 ? "99+" : notificationsCount}
-                      </span>
-                    ) : null}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); handleConfigureNotifications?.() }}
-                    className="ml-1 flex-shrink-0 rounded p-1 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-opacity duration-150"
-                    title="Configure Notifications"
-                  >
-                    <Settings2 className="h-3 w-3" />
-                  </button>
-                </div>
-              </SidebarMenuItem>
-              {customInboxes.map((inbox) => {
-                const slug = String(inbox?.slug || "")
-                if (!slug) return null
-                const isActive = pathname === "/inbox" && view === `inbox:${slug}`
-                const unreadCount = Number(customInboxUnreadCounts?.[slug] || 0)
-                const inboxUrl = `/inbox?view=${encodeURIComponent(`inbox:${slug}`)}`
-                return (
-                  <SidebarMenuItem key={slug}>
-                    <div
-                      className={cn(
-                        "group flex items-center gap-1 rounded-md px-2 py-1.5 pl-8 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-                        isActive && "bg-accent text-accent-foreground",
-                        isPending && !isActive && "opacity-60"
-                      )}
-                      onContextMenu={(event) => {
-                        event.preventDefault()
-                        event.stopPropagation()
-                        setContextMenu({
-                          inbox,
-                          x: event.clientX,
-                          y: event.clientY,
-                        })
-                      }}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => navigateToView(inboxUrl)}
-                        className="flex min-w-0 flex-1 items-center gap-2 text-inherit cursor-pointer"
-                      >
-                        <Inbox className="h-4 w-4 shrink-0" />
-                        <span className="truncate">{inbox?.name || slug}</span>
-                        {unreadCount > 0 ? (
-                          <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded px-1.5 text-xs font-semibold leading-none text-muted-foreground tabular-nums">
-                            {unreadCount > 99 ? "99+" : unreadCount}
-                          </span>
-                        ) : null}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); handleConfigureInbox?.(inbox) }}
-                        className="ml-1 flex-shrink-0 rounded p-1 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-opacity duration-150"
-                        title="Configure inbox"
-                      >
-                        <Settings2 className="h-3 w-3" />
-                      </button>
-                    </div>
-                  </SidebarMenuItem>
-                )
-              })}
-            </>
-          )}
-        </SidebarMenu>
-      </SidebarGroupContent>
-      {contextMenu ? (
-        <div
-          className="fixed z-50 min-w-[170px] rounded-md border border-border bg-popover p-1 shadow-lg"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-        >
-          <button
-            type="button"
-            onClick={() => {
-              handleConfigureInbox?.(contextMenu.inbox)
-              setContextMenu(null)
-            }}
-            className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-foreground hover:bg-muted"
-          >
-            Configure inbox
-          </button>
-        </div>
-      ) : null}
-    </SidebarGroup>
-  )
+  ],
 }
 
 export function AppSidebar({
@@ -352,6 +124,11 @@ export function AppSidebar({
   ...props
 }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  // Same raw `?view=` semantics as useThreadFilters.js (Task 6, Plan 1): the
+  // literal param value, "" meaning the needs-attention default. NavQueue
+  // compares this directly against each row's target view.
+  const activeView = searchParams.get("view") || ""
   const [customInboxes, setCustomInboxes] = useState([])
   const [createInboxOpen, setCreateInboxOpen] = useState(false)
   const [createInboxName, setCreateInboxName] = useState("")
@@ -369,10 +146,16 @@ export function AppSidebar({
   const [configureInboxError, setConfigureInboxError] = useState("")
   const [newSenderRuleType, setNewSenderRuleType] = useState("email")
   const [newSenderRuleValue, setNewSenderRuleValue] = useState("")
-  const [allTicketsUnreadCount, setAllTicketsUnreadCount] = useState(0)
-  const [assignedCount, setAssignedCount] = useState(0)
   const [notificationsCount, setNotificationsCount] = useState(0)
-  const [customInboxUnreadCounts, setCustomInboxUnreadCounts] = useState({})
+  // Task 11, Plan 2: sidebar-counts payload keys consumed by NavQueue's
+  // QUEUE section. Default 0/{} — pre-migration (Plan 1's migration not yet
+  // applied to the live DB) these read as 0/empty, which is expected.
+  const [needsAttentionCount, setNeedsAttentionCount] = useState(0)
+  const [mineCount, setMineCount] = useState(0)
+  const [waitingCustomerCount, setWaitingCustomerCount] = useState(0)
+  const [waitingThirdPartyCount, setWaitingThirdPartyCount] = useState(0)
+  const [inboxNeedsAttentionCounts, setInboxNeedsAttentionCounts] = useState({})
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const supabase = useClerkSupabase()
 
   const loadCustomInboxes = async () => {
@@ -397,23 +180,23 @@ export function AppSidebar({
     let active = true
 
     const loadCounts = async () => {
-      const [unreadRes, sidebarRes] = await Promise.all([
-        fetch("/api/inbox/unread-count", { method: "GET", cache: "no-store", credentials: "include" }).catch(() => null),
-        fetch("/api/inbox/sidebar-counts", { method: "GET", cache: "no-store", credentials: "include" }).catch(() => null),
-      ])
+      const sidebarRes = await fetch("/api/inbox/sidebar-counts", {
+        method: "GET",
+        cache: "no-store",
+        credentials: "include",
+      }).catch(() => null)
       if (!active) return
-      if (unreadRes?.ok) {
-        const payload = await unreadRes.json().catch(() => ({}))
-        if (active) setAllTicketsUnreadCount(Number(payload?.unreadCount ?? 0))
-      }
       if (sidebarRes?.ok) {
         const payload = await sidebarRes.json().catch(() => ({}))
         if (active) {
-          setAssignedCount(Number(payload?.assignedCount ?? 0))
           setNotificationsCount(Number(payload?.notificationsCount ?? 0))
-          setCustomInboxUnreadCounts(
-            payload?.customInboxUnreadCounts && typeof payload.customInboxUnreadCounts === "object"
-              ? payload.customInboxUnreadCounts
+          setNeedsAttentionCount(Number(payload?.needsAttentionCount ?? 0))
+          setMineCount(Number(payload?.mineCount ?? 0))
+          setWaitingCustomerCount(Number(payload?.waitingCustomerCount ?? 0))
+          setWaitingThirdPartyCount(Number(payload?.waitingThirdPartyCount ?? 0))
+          setInboxNeedsAttentionCounts(
+            payload?.inboxNeedsAttentionCounts && typeof payload.inboxNeedsAttentionCounts === "object"
+              ? payload.inboxNeedsAttentionCounts
               : {}
           )
         }
@@ -658,6 +441,17 @@ export function AppSidebar({
     user: user ?? baseData.user,
   }
 
+  // NavQueue's counts prop mirrors the /api/inbox/sidebar-counts payload
+  // shape (Plan 1 Task 10) — see nav-queue.jsx for per-key rendering rules.
+  const queueCounts = {
+    needsAttentionCount,
+    mineCount,
+    waitingCustomerCount,
+    waitingThirdPartyCount,
+    notificationsCount,
+    inboxNeedsAttentionCounts,
+  }
+
   return (
     <Sidebar
       collapsible="icon"
@@ -682,18 +476,54 @@ export function AppSidebar({
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={data.navMain} />
-        <InboxSection
-          handleCreateInbox={handleOpenCreateInbox}
-          customInboxes={customInboxes}
-          customInboxUnreadCounts={customInboxUnreadCounts}
-          handleConfigureInbox={handleConfigureInbox}
-          handleConfigureNotifications={handleConfigureNotifications}
-          allTicketsUnreadCount={allTicketsUnreadCount}
-          assignedCount={assignedCount}
-          notificationsCount={notificationsCount}
+        <NavQueue
+          counts={queueCounts}
+          inboxes={customInboxes}
+          activeView={activeView}
+          onCreateInbox={handleOpenCreateInbox}
+          onConfigureInbox={handleConfigureInbox}
+          onConfigureNotifications={handleConfigureNotifications}
         />
         <NavAgent items={data.agent} />
-        <NavSecondary items={data.navSecondary} className="mt-auto" />
+        <SidebarGroup className="mt-auto pt-0">
+          <Collapsible open={settingsOpen} onOpenChange={setSettingsOpen}>
+            <div className="mb-1 flex items-center px-2 group-data-[collapsible=icon]:hidden">
+              <CollapsibleTrigger asChild>
+                <button
+                  type="button"
+                  className="flex flex-1 cursor-pointer items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground"
+                >
+                  <ChevronRight
+                    className={cn(
+                      "h-3 w-3 shrink-0 transition-transform duration-150",
+                      settingsOpen && "rotate-90"
+                    )}
+                  />
+                  <span>Settings</span>
+                </button>
+              </CollapsibleTrigger>
+            </div>
+            <CollapsibleContent>
+              <SidebarMenu>
+                {data.settings.map((item) => (
+                  <SidebarMenuItem key={item.name}>
+                    <SidebarMenuButton
+                      asChild
+                      tooltip={item.name}
+                      className="justify-start"
+                    >
+                      <a href={item.url} className="flex w-full items-center gap-2 text-inherit no-underline">
+                        <item.icon className="h-4 w-4" />
+                        <span>{item.name}</span>
+                      </a>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </CollapsibleContent>
+          </Collapsible>
+        </SidebarGroup>
+        <NavSecondary items={data.navSecondary} className="mt-0" />
       </SidebarContent>
       <SidebarFooter>
         <NavUser user={data.user} />
