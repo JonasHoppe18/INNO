@@ -27,6 +27,7 @@ const SORT_OPTIONS = [
   { value: "newest_activity", label: "Newest first" },
   { value: "newest_updated", label: "Newest updated" },
   { value: "oldest_updated", label: "Oldest updated" },
+  { value: "oldest_customer_wait", label: "Oldest waiting customer" },
 ];
 const CONTEXT_MENU_WIDTH_PX = 160;
 const CONTEXT_MENU_HEIGHT_PX = 84;

@@ -43,6 +43,7 @@ import {
   resolveInboxSlug,
   sortForQueue,
   threadTab,
+  waitTimestamp,
   waitingGroup,
 } from "@/lib/inbox/view-model";
 import { DEFAULT_FILTERS, useThreadFilters } from "@/lib/inbox/useThreadFilters";
@@ -1643,12 +1644,16 @@ export function InboxSplitView({
         return true;
       });
 
-    // Sort dropdown behavior (newest activity default) — used by every view
-    // except the default needs_attention queue, which always sorts by
-    // longest-waiting-first via sortForQueue() regardless of the dropdown.
-    // "Unread first" follows the same unread-only convention as the sidebar
-    // badges (computeSidebarCounts): unread rows sort to the top, read rows
-    // stay below, each group still ordered newest-activity-first internally.
+    // Sort dropdown behavior — used by every view, including the default
+    // needs_attention queue once the user has explicitly picked something
+    // (see needsAttentionQueue() below for its own default). "Unread first"
+    // follows the same unread-only convention as the sidebar badges
+    // (computeSidebarCounts): unread rows sort to the top, read rows stay
+    // below, each group still ordered newest-activity-first internally.
+    // "Oldest waiting customer" reuses waitTimestamp() — the exact same
+    // ordering sortForQueue()/queueCompare() give the queue by default — so
+    // picking it explicitly reproduces that ordering on any view, not just
+    // the default one.
     const sortByDropdown = (rows) =>
       [...rows].sort((a, b) => {
         const getTs = (row) => {
@@ -1660,6 +1665,9 @@ export function InboxSplitView({
           const parsed = Date.parse(value);
           return Number.isFinite(parsed) ? parsed : 0;
         };
+        if (effectiveFilters.sortBy === "oldest_customer_wait") {
+          return waitTimestamp(a.thread) - waitTimestamp(b.thread);
+        }
         if (effectiveFilters.sortBy === "unread_first") {
           const aUnread = a.effectiveUnreadCount > 0 ? 1 : 0;
           const bUnread = b.effectiveUnreadCount > 0 ? 1 : 0;
