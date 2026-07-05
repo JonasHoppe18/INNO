@@ -23,8 +23,8 @@ const STATUS_FILTERS = [
   { value: "Solved", label: "Solved" },
 ];
 const SORT_OPTIONS = [
-  { value: "unread_first", label: "Unread first" },
-  { value: "newest_activity", label: "Newest first" },
+  { value: "unread_first", label: "Unread" },
+  { value: "newest_activity", label: "Newest" },
   { value: "newest_updated", label: "Newest updated" },
   { value: "oldest_updated", label: "Oldest updated" },
   { value: "oldest_customer_wait", label: "Oldest waiting customer" },
@@ -119,7 +119,7 @@ export function TicketList({
     selectedStatuses.length + (filters.unreadsOnly ? 1 : 0);
   const selectedSortLabel =
     SORT_OPTIONS.find((option) => option.value === (filters.sortBy || "newest_activity"))
-      ?.label || "Newest first";
+      ?.label || "Newest";
   const handleStatusToggle = (status, checked) => {
     const next = checked
       ? [...new Set([...selectedStatuses, status])]
