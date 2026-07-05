@@ -124,7 +124,7 @@ export function NavQueue({
           <SidebarMenu>
             <QueueRow
               icon={Inbox}
-              label="Needs attention"
+              label="Inbox"
               href="/inbox"
               active={activeView === ""}
               count={needsAttentionCount}

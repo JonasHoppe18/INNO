@@ -130,7 +130,7 @@ export function AppSidebar({
   // while actually on an inbox route — on every other page (e.g. Dashboard)
   // there's no view at all, so this is `null` rather than "", which would
   // otherwise be indistinguishable from "on /inbox with no ?view=" and mark
-  // "Needs attention" active everywhere.
+  // "Inbox" active everywhere.
   const isInboxRoute = pathname.startsWith("/inbox")
   const activeView = isInboxRoute ? searchParams.get("view") || "" : null
 
