@@ -24,7 +24,7 @@ const STATUS_FILTERS = [
 ];
 const SORT_OPTIONS = [
   { value: "unread_first", label: "Unread first" },
-  { value: "newest_activity", label: "Newest activity" },
+  { value: "newest_activity", label: "Newest first" },
   { value: "newest_updated", label: "Newest updated" },
   { value: "oldest_updated", label: "Oldest updated" },
 ];
@@ -118,7 +118,7 @@ export function TicketList({
     selectedStatuses.length + (filters.unreadsOnly ? 1 : 0);
   const selectedSortLabel =
     SORT_OPTIONS.find((option) => option.value === (filters.sortBy || "newest_activity"))
-      ?.label || "Newest activity";
+      ?.label || "Newest first";
   const handleStatusToggle = (status, checked) => {
     const next = checked
       ? [...new Set([...selectedStatuses, status])]
@@ -412,7 +412,7 @@ export function TicketList({
                 title={`Sort: ${selectedSortLabel}`}
               >
                 <ArrowDownUp className="h-4 w-4 shrink-0" />
-                <span className="truncate">{selectedSortLabel.replace(" activity", "")}</span>
+                <span className="truncate">{selectedSortLabel}</span>
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">

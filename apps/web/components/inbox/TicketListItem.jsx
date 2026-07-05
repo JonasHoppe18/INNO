@@ -151,7 +151,7 @@ function TicketListItemComponent({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       className={cn(
-        "relative flex w-full flex-col gap-1 px-4 py-2.5 text-left hover:bg-muted/50 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+        "relative flex w-full flex-col gap-0.5 px-4 py-2 text-left hover:bg-muted/50 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
         isNew ? "animate-ticket-enter" : !isExiting && "animate-list-item-enter",
         // A brand-tinted wash (not gray) so a selected row stays visually
         // distinct even while a different row is hovered at the same time —
