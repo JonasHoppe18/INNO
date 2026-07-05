@@ -3,7 +3,6 @@ import { Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatMessageTime } from "@/components/inbox/inbox-utils";
 import { assigneeInitials, formatWakeCountdown } from "@/lib/inbox/view-model";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 const STATUS_TEXT_STYLES = {
   New: "text-green-600 dark:text-green-400",
@@ -54,7 +53,6 @@ function TicketListItemComponent({
       thread?.has_ai_draft
   );
   const assigneeDisplay = assigneeLabel ? assigneeInitials(assigneeLabel) : null;
-  const customerInitials = assigneeInitials(customerLabel) || "?";
   const wakeCountdownText = formatWakeCountdown(wakeDays);
 
   const classificationKey = String(thread?.classification_key || "").toLowerCase();
@@ -218,16 +216,7 @@ function TicketListItemComponent({
           ) : null}
         </div>
       </div>
-      <div className="flex items-center gap-2">
-        <Avatar className="h-6 w-6 shrink-0">
-          <AvatarFallback className="bg-muted text-[10px] font-medium text-muted-foreground">
-            {customerInitials}
-          </AvatarFallback>
-        </Avatar>
-        <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground">
-          {customerLabel}
-        </span>
-      </div>
+      <span className="block truncate text-[13px] font-semibold text-foreground">{customerLabel}</span>
       <div className="flex min-w-0 items-center gap-1.5 text-[13px] text-muted-foreground">
         <span className={cn("truncate", isUnread && "font-medium text-foreground")}>
           {thread.subject || "Untitled ticket"}
