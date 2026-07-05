@@ -3,9 +3,8 @@
 import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
 import {
-  Bell,
+  Ban,
   CheckCircle2,
-  ChevronRight,
   Clock,
   Inbox,
   Package,
@@ -16,11 +15,6 @@ import {
 
 import { cn } from "@/lib/utils"
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible"
-import {
   SidebarGroup,
   SidebarGroupContent,
   SidebarMenu,
@@ -29,16 +23,21 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar"
 
-// Task 11, Plan 2: QUEUE / INBOXES / AUTOMATED sidebar sections. Replaces the
-// old single INBOXES block in app-sidebar.jsx. Links target `/inbox?view=...`
+// Task 11, Plan 2: TICKETS / INBOXES sidebar sections. Replaces the old
+// single INBOXES block in app-sidebar.jsx. Links target `/inbox?view=...`
 // per the routing scheme owned by useThreadFilters.js (Task 6, Plan 1):
 // needs_attention (default, param omitted), mine, waiting, resolved,
 // automated, all, inbox:<slug>.
 //
+// Spam (classification_key = "notification") is a flat row inside INBOXES,
+// not a separate collapsed section — always visible, same treatment as a
+// user-created inbox, per direct feedback that a collapsed-by-default
+// AUTOMATED group made it feel hidden/hard to find.
+//
 // Count semantics (per brief): needs-attention-style counts render as today's
 // badge; Waiting renders muted (text-muted-foreground, matching this file's
-// existing muted-badge convention — see CountBadge below); Resolved and
-// AUTOMATED entries never show a count.
+// existing muted-badge convention — see CountBadge below); Resolved never
+// shows a count.
 function CountBadge({ count, muted = false }) {
   if (!(count > 0)) return null
   return (
@@ -85,7 +84,6 @@ export function NavQueue({
 }) {
   const { state } = useSidebar()
   const isCollapsed = state === "collapsed"
-  const [automatedOpen, setAutomatedOpen] = useState(false)
   const [contextMenu, setContextMenu] = useState(null)
 
   const needsAttentionCount = Number(counts?.needsAttentionCount ?? 0)
@@ -118,7 +116,7 @@ export function NavQueue({
       <SidebarGroup className="pt-0">
         <div className="mb-1 px-2 group-data-[collapsible=icon]:hidden">
           <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-            QUEUE
+            Tickets
           </span>
         </div>
         <SidebarGroupContent>
@@ -230,6 +228,34 @@ export function NavQueue({
                   </SidebarMenuItem>
                 )
               })}
+              <SidebarMenuItem>
+                <div
+                  className={cn(
+                    "group flex items-center rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                    isViewActive("automated") && "bg-accent text-accent-foreground"
+                  )}
+                >
+                  <Link
+                    href="/inbox?view=automated"
+                    className="flex min-w-0 flex-1 items-center gap-2 text-inherit no-underline"
+                  >
+                    <Ban className="h-4 w-4 shrink-0" />
+                    <span>Spam</span>
+                    <CountBadge count={notificationsCount} />
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onConfigureNotifications?.()
+                    }}
+                    className="ml-1 flex-shrink-0 rounded p-1 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-opacity duration-150"
+                    title="Configure Spam"
+                  >
+                    <Settings2 className="h-3 w-3" />
+                  </button>
+                </div>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         )}
@@ -250,61 +276,6 @@ export function NavQueue({
             </button>
           </div>
         ) : null}
-      </SidebarGroup>
-
-      <SidebarGroup className="pt-0">
-        <Collapsible open={automatedOpen} onOpenChange={setAutomatedOpen}>
-          <div className="mb-1 flex items-center px-2 group-data-[collapsible=icon]:hidden">
-            <CollapsibleTrigger asChild>
-              <button
-                type="button"
-                className="flex flex-1 cursor-pointer items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground"
-              >
-                <ChevronRight
-                  className={cn(
-                    "h-3 w-3 shrink-0 transition-transform duration-150",
-                    automatedOpen && "rotate-90"
-                  )}
-                />
-                <span>AUTOMATED</span>
-              </button>
-            </CollapsibleTrigger>
-          </div>
-          <CollapsibleContent>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                <SidebarMenuItem>
-                  <div
-                    className={cn(
-                      "group flex items-center rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-                      isViewActive("automated") && "bg-accent text-accent-foreground"
-                    )}
-                  >
-                    <Link
-                      href="/inbox?view=automated"
-                      className="flex min-w-0 flex-1 items-center gap-2 text-inherit no-underline"
-                    >
-                      <Bell className="h-4 w-4 shrink-0" />
-                      <span>Notifications</span>
-                      <CountBadge count={notificationsCount} />
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onConfigureNotifications?.()
-                      }}
-                      className="ml-1 flex-shrink-0 rounded p-1 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-opacity duration-150"
-                      title="Configure Notifications"
-                    >
-                      <Settings2 className="h-3 w-3" />
-                    </button>
-                  </div>
-                </SidebarMenuItem>
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </CollapsibleContent>
-        </Collapsible>
       </SidebarGroup>
     </>
   )
