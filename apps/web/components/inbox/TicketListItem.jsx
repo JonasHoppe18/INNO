@@ -183,13 +183,13 @@ function TicketListItemComponent({
           isActive ? "bg-primary" : isUnread ? "bg-indigo-400" : "bg-transparent"
         )}
       />
+      <span className="block truncate font-mono text-[10px] tabular-nums text-muted-foreground/70">
+        {ticketRef}
+      </span>
       <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-1 items-center gap-2 truncate text-[13px] font-semibold text-foreground">
-          <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/70">
-            {ticketRef}
-          </span>
-          <span className="truncate">{customerLabel}</span>
-        </div>
+        <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground">
+          {customerLabel}
+        </span>
         <span className="shrink-0 text-[12px] text-muted-foreground">{formatMessageTime(timestamp)}</span>
       </div>
       <div className="flex items-center justify-between gap-2">
