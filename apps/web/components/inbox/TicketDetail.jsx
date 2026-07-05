@@ -135,6 +135,14 @@ function stripMessageHtml(value = "") {
     .trim();
 }
 
+function formatReturnTrackingError(message = "") {
+  const text = String(message || "");
+  if (text.includes("Return tracking is not set up yet") || text.includes("schema cache")) {
+    return "Return tracking is not set up yet.";
+  }
+  return text || "Could not create return tracking.";
+}
+
 function getMessageTranslationText(message = null, translationItems = []) {
   const item = (Array.isArray(translationItems) ? translationItems : []).find(
     (candidate) => String(candidate?.id || "") === String(message?.id || "")
@@ -206,10 +214,17 @@ function TicketDetailComponent({
   detectedLanguage = null,
   tagsRefreshTrigger = 0,
   sentDraftStats = null,
+  onReturnTrackingActionStateChange = null,
 }) {
   const [composerCollapsed, setComposerCollapsed] = useState(false);
   const [processReturnRestock, setProcessReturnRestock] = useState(true);
   const [dismissedCloseSuggestionByThread, setDismissedCloseSuggestionByThread] = useState({});
+  const [returnTrackingCandidates, setReturnTrackingCandidates] = useState([]);
+  const [returnTrackingSubmitting, setReturnTrackingSubmitting] = useState("");
+  const [returnTrackingError, setReturnTrackingError] = useState("");
+  const [createdReturnTrackingByThread, setCreatedReturnTrackingByThread] = useState({});
+  const [ignoredReturnTrackingByThread, setIgnoredReturnTrackingByThread] = useState({});
+  const [returnTrackingStateByThread, setReturnTrackingStateByThread] = useState({});
   const closeSuggestionEnabled = false; // Temporarily disabled until heuristics are reworked.
   const conversationRef = useRef(null);
   const restoredThreadIdRef = useRef(null);
@@ -416,6 +431,122 @@ function TicketDetailComponent({
     restoredThreadIdRef.current = threadId;
   }, [thread?.id]);
 
+  useEffect(() => {
+    const threadId = String(thread?.id || "").trim();
+    if (!threadId || !Array.isArray(messages) || messages.length === 0) {
+      setReturnTrackingCandidates([]);
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    setReturnTrackingError("");
+    fetch("/api/return-tracking/detect-thread", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ thread_id: threadId }),
+      signal: controller.signal,
+    })
+      .then((response) =>
+        response.json().then((body) => ({ response, body })).catch(() => ({ response, body: {} }))
+      )
+      .then(({ response, body }) => {
+        if (!response.ok) throw new Error(body?.error || "Could not detect return tracking.");
+        const hidden = new Set([
+          ...(createdReturnTrackingByThread[threadId] || []),
+          ...(ignoredReturnTrackingByThread[threadId] || []),
+        ]);
+        const candidates = Array.isArray(body?.candidates) ? body.candidates : [];
+        const alreadyAdded = candidates.filter((candidate) => candidate?.already_added);
+        if (alreadyAdded.length) {
+          setReturnTrackingStateByThread((current) => {
+            const previousThreadState = current[threadId] || {};
+            const nextThreadState = { ...previousThreadState };
+            for (const candidate of alreadyAdded) {
+              const normalized = String(
+                candidate?.normalized_tracking_number || candidate?.tracking_number || "",
+              ).trim();
+              if (normalized) nextThreadState[normalized] = "duplicate";
+            }
+            return { ...current, [threadId]: nextThreadState };
+          });
+        }
+        setReturnTrackingCandidates(
+          candidates.filter((candidate) =>
+            !hidden.has(String(candidate?.normalized_tracking_number || candidate?.tracking_number || ""))
+          )
+        );
+      })
+      .catch((error) => {
+        if (error?.name === "AbortError") return;
+        setReturnTrackingCandidates([]);
+        setReturnTrackingError(formatReturnTrackingError(error?.message || "Could not detect return tracking."));
+      });
+
+    return () => controller.abort();
+  }, [createdReturnTrackingByThread, ignoredReturnTrackingByThread, messages, thread?.id]);
+
+  function hideReturnTrackingCandidate(candidate) {
+    const threadId = String(thread?.id || "").trim();
+    const normalized = String(candidate?.normalized_tracking_number || candidate?.tracking_number || "").trim();
+    if (!threadId || !normalized) return;
+    setIgnoredReturnTrackingByThread((current) => ({
+      ...current,
+      [threadId]: [...new Set([...(current[threadId] || []), normalized])],
+    }));
+    setReturnTrackingCandidates((current) =>
+      current.filter((item) =>
+        String(item?.normalized_tracking_number || item?.tracking_number || "") !== normalized
+      )
+    );
+  }
+
+  async function approveReturnTrackingCandidate(candidate) {
+    const threadId = String(thread?.id || "").trim();
+    const normalized = String(candidate?.normalized_tracking_number || candidate?.tracking_number || "").trim();
+    if (!threadId || !normalized) return;
+    setReturnTrackingSubmitting(normalized);
+    setReturnTrackingError("");
+    try {
+      const response = await fetch("/api/return-tracking", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          thread_id: threadId,
+          source_message_id: candidate?.source_message_id || null,
+          tracking_number: candidate?.tracking_number || normalized,
+          carrier: candidate?.carrier || null,
+          customer_email: candidate?.customer_email || null,
+          customer_name: candidate?.customer_name || null,
+          order_number: candidate?.order_number || null,
+          detected_context: candidate?.detected_context || null,
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body?.error || "Could not create return tracking row.");
+      setReturnTrackingStateByThread((current) => ({
+        ...current,
+        [threadId]: {
+          ...(current[threadId] || {}),
+          [normalized]: body?.duplicate ? "duplicate" : "added",
+        },
+      }));
+      if (body?.duplicate) return;
+      setCreatedReturnTrackingByThread((current) => ({
+        ...current,
+        [threadId]: [...new Set([...(current[threadId] || []), normalized])],
+      }));
+      setReturnTrackingCandidates((current) =>
+        current.filter((item) =>
+          String(item?.normalized_tracking_number || item?.tracking_number || "") !== normalized
+        )
+      );
+    } catch (error) {
+      setReturnTrackingError(formatReturnTrackingError(error?.message || "Could not create return tracking row."));
+    } finally {
+      setReturnTrackingSubmitting("");
+    }
+  }
+
   const threadMessageIdSet = useMemo(
     () => new Set((messages || []).map((msg) => String(msg?.id || "").trim()).filter(Boolean)),
     [messages]
@@ -443,6 +574,31 @@ function TicketDetailComponent({
     }
     return "";
   }, [attachments, mailboxEmails, messages]);
+  const visibleReturnTrackingCandidates = useMemo(
+    () => returnTrackingCandidates.slice(0, 2),
+    [returnTrackingCandidates],
+  );
+
+  useEffect(() => {
+    if (!onReturnTrackingActionStateChange) return;
+    onReturnTrackingActionStateChange({
+      threadId: thread?.id || null,
+      candidates: visibleReturnTrackingCandidates,
+      error: returnTrackingError,
+      submitting: returnTrackingSubmitting,
+      stateByNumber: returnTrackingStateByThread[String(thread?.id || "")] || {},
+      onAdd: approveReturnTrackingCandidate,
+      onDismiss: hideReturnTrackingCandidate,
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    onReturnTrackingActionStateChange,
+    returnTrackingError,
+    returnTrackingSubmitting,
+    returnTrackingStateByThread,
+    thread?.id,
+    visibleReturnTrackingCandidates,
+  ]);
 
   if (!thread) {
     return (
@@ -641,7 +797,7 @@ function TicketDetailComponent({
                   String(message?.id || "") === latestInboundCustomerMessageId ? (
                   <div className="ml-auto flex w-full max-w-[520px] justify-end">
                     <TicketRenderBoundary section="trackingCard" resetKey={`${thread?.id || ""}:tracking`}>
-                      <TrackingCard order={selectedOrderSummary} threadId={thread?.id || null} />
+                      <TrackingCard order={selectedOrderSummary} threadId={thread?.id || null} direction="outbound" />
                     </TicketRenderBoundary>
                   </div>
                 ) : null}

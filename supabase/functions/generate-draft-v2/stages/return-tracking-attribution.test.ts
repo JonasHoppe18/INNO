@@ -65,7 +65,7 @@ Deno.test("tracking URL guidance forbids mismatched outbound links", () => {
   assertStringIncludes(result?.blockText ?? "", "omit the URL when uncertain");
 });
 
-Deno.test("customer-provided return tracking block enforces safe structure + names carrier", () => {
+Deno.test("customer-provided return tracking block enforces safe manual-review structure", () => {
   const block = detectCustomerProvidedReturnTracking({
     latestCustomerMessage:
       "I returned my order #4478. The USPS tracking number is 9588871095290073926950. When will I get my refund?",
@@ -76,10 +76,12 @@ Deno.test("customer-provided return tracking block enforces safe structure + nam
   // Required safe content
   assertStringIncludes(block, "acknowledge we have received the number");
   assertStringIncludes(block, "a refund has NOT been issued yet");
-  assertStringIncludes(block, "the USPS tracking status"); // names the customer's carrier
-  assertStringIncludes(block, "cannot confirm whether the return package has arrived");
-  assertStringIncludes(block, "processed internally");
+  assertStringIncludes(block, "manual review");
+  assertStringIncludes(block, "receipt, internal processing, or refund can be confirmed");
   assertStringIncludes(block, "review/investigate the return status further");
+  if (block.includes("cannot currently verify")) {
+    throw new Error("Block should not force 'cannot currently verify carrier status' wording");
+  }
 
   // The forbidden phrases appear ONLY on the FORBIDDEN line (as prohibitions),
   // never as standalone guidance.
@@ -93,11 +95,12 @@ Deno.test("customer-provided return tracking block enforces safe structure + nam
   }
 });
 
-Deno.test("return tracking block uses generic carrier wording when carrier not named", () => {
+Deno.test("return tracking block avoids carrier verification claims when carrier not named", () => {
   const block = detectCustomerProvidedReturnTracking({
     latestCustomerMessage: "I returned it. Tracking number is 9588871095290073926950. Refund?",
     conversationHistory: [{ role: "customer", text: "return for refund" }],
     plan: { primary_intent: "refund", required_facts: [] },
   })?.blockText ?? "";
-  assertStringIncludes(block, "the carrier tracking status");
+  assertStringIncludes(block, "Do not present carrier status");
+  assertStringIncludes(block, "unless verified facts explicitly support it");
 });

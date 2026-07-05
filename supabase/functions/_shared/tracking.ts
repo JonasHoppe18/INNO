@@ -1203,9 +1203,9 @@ export function collectTrackingCandidates(order: any): TrackingCandidate[] {
 // returning a TrackingDetail. Extracted from fetchTrackingDetailsForOrders so the
 // normalized resolver can reuse the EXACT same fetch path (backward-compatible —
 // no behavior change to the live GLS/PostNord fetchers).
-// Optional seams for the Ship24 unknown-carrier fallback (P2-1). Both default to
-// the real implementations; tests inject stubs. The native GLS/PostNord/etc.
-// paths are untouched — Ship24 only runs in the carrier === "unknown" branch.
+// Optional seams for the Ship24 fallback. Both default to the real
+// implementations; tests inject stubs. Native API routing is intentionally kept
+// to GLS/PostNord because those are the only carrier APIs currently configured.
 type FetchTrackingDetailDeps = {
   ship24Configured?: () => boolean;
   fetchShip24?: (
@@ -1235,13 +1235,9 @@ export async function fetchTrackingDetailForCandidate(
     };
   }
   if (carrier === "postnord") return await fetchPostNordStatus(trackingNumber, trackingUrl);
-  if (carrier === "dao") return await fetchDaoStatus(trackingNumber, trackingUrl);
-  if (carrier === "bring") return await fetchBringStatus(trackingNumber, trackingUrl);
-  if (carrier === "dhl") return await fetchDhlStatus(trackingNumber, trackingUrl);
-  if (carrier === "ups") return await fetchUpsStatus(trackingNumber, trackingUrl);
 
-  // Unknown carrier: read-only Ship24 fallback when configured, else the prior
-  // generic carrier_unknown fallback (unchanged behavior).
+  // All non-GLS/PostNord carriers route through Ship24 when configured. Ship24
+  // auto-detects the courier from the tracking number.
   const ship24Enabled = deps?.ship24Configured ?? isShip24Configured;
   const ship24 = deps?.fetchShip24 ?? fetchShip24Status;
   if (ship24Enabled()) {
@@ -1255,17 +1251,12 @@ export async function fetchTrackingDetailForCandidate(
   return fallback;
 }
 
-// Carriers for which we have a real (or config-gated) live lookup path. Used by
-// the return resolver to decide whether to attempt carrier verification. USPS /
-// FedEx are intentionally absent (Slice 1 adds no new carriers).
+// Carriers for which we can attempt a live lookup path. GLS/PostNord use native
+// APIs; every other carrier can be resolved through Ship24 when configured.
 export function isSupportedTrackingCarrier(
   hint: { company?: string | null; trackingUrl?: string | null; trackingNumber?: string | null },
 ): boolean {
-  return detectCarrier({
-    company: hint.company ?? null,
-    trackingUrl: hint.trackingUrl ?? null,
-    trackingNumber: hint.trackingNumber ?? null,
-  }) !== "unknown";
+  return Boolean(String(hint.trackingNumber ?? "").trim());
 }
 
 export async function fetchTrackingDetailsForOrders(

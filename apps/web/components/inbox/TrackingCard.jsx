@@ -102,16 +102,49 @@ function getCarrierLabel(value = "") {
   return text;
 }
 
+function buildPublicTrackingUrl({ carrier = "", trackingNumber = "" } = {}) {
+  const number = String(trackingNumber || "").trim();
+  if (!number) return "";
+  const encoded = encodeURIComponent(number);
+  const lower = String(carrier || "").toLowerCase();
+  if (lower.includes("postnord") || lower.includes("post nord")) {
+    return `https://www.postnord.dk/track-trace?shipmentId=${encoded}`;
+  }
+  if (lower.includes("gls")) {
+    return `https://gls-group.eu/track?match=${encoded}`;
+  }
+  if (lower.includes("dao")) {
+    return `https://www.dao.as/track-and-trace/?id=${encoded}`;
+  }
+  if (lower.includes("bring") || lower.includes("no-post") || lower.includes("posten")) {
+    return `https://sporing.bring.no/sporing/${encoded}`;
+  }
+  if (lower.includes("dhl")) {
+    return `https://www.dhl.com/global-en/home/tracking/tracking-express.html?submit=1&tracking-id=${encoded}`;
+  }
+  if (lower.includes("ups")) {
+    return `https://www.ups.com/track?tracknum=${encoded}`;
+  }
+  return "";
+}
+
 function getTrackingStatusLabel({ tracking = null, order = null, timeline = [] }) {
   const latestTimelineStatus = String(timeline?.[0]?.title || "").trim();
-  if (latestTimelineStatus) return latestTimelineStatus;
+  if (latestTimelineStatus) return normalizeTrackingStatusLabel(latestTimelineStatus);
   const explicitStatus = normalizeTrackingStatusLabel(tracking?.status);
   if (explicitStatus) return explicitStatus;
   if (String(order?.fulfillmentStatus || "").toLowerCase() === "fulfilled") return "Shipped";
   return "Tracking available";
 }
 
-export function TrackingCard({ order = null, threadId = null, fullWidth = false }) {
+export function TrackingCard({
+  order = null,
+  threadId = null,
+  fullWidth = false,
+  title = "Track shipment",
+  descriptionPrefix = "Live tracking for order",
+  direction = "unknown",
+}) {
   const [open, setOpen] = useState(false);
   // Live snapshot fetched directly from carrier API
   const [liveDetail, setLiveDetail] = useState(null);
@@ -123,6 +156,7 @@ export function TrackingCard({ order = null, threadId = null, fullWidth = false 
   const trackingNumber = String(tracking?.number || "").trim();
   const trackingUrl = String(tracking?.url || "").trim();
   const carrier = getCarrierLabel(tracking?.company);
+  const effectiveTrackingUrl = trackingUrl || buildPublicTrackingUrl({ carrier, trackingNumber });
   // Prefer display number (#4229) over internal Shopify ID
   const orderLabel = String(order?.name || order?.orderNumber || order?.order_number || order?.id || "").trim().replace(/^#/, "");
 
@@ -175,14 +209,16 @@ export function TrackingCard({ order = null, threadId = null, fullWidth = false 
     } catch { return null; }
   }, [liveDetail, timelineLogs]);
 
-  const fetchLive = useCallback(async () => {
+  const fetchLive = useCallback(async (force = false) => {
     if (!trackingNumber || !threadId) return;
     setLoading(true);
     setLiveDetail(null);
     try {
       const params = new URLSearchParams({ trackingNumber });
-      if (trackingUrl) params.set("trackingUrl", trackingUrl);
+      if (effectiveTrackingUrl) params.set("trackingUrl", effectiveTrackingUrl);
       if (tracking?.company) params.set("company", tracking.company);
+      if (direction) params.set("direction", direction);
+      if (force) params.set("force", "true");
       const res = await fetch(
         `/api/threads/${encodeURIComponent(threadId)}/tracking/refresh?${params}`
       ).catch(() => null);
@@ -205,7 +241,7 @@ export function TrackingCard({ order = null, threadId = null, fullWidth = false 
       setTimelineLogs(logs);
     }
     setLoading(false);
-  }, [threadId, trackingNumber, trackingUrl, tracking?.company]);
+  }, [direction, threadId, trackingNumber, effectiveTrackingUrl, tracking?.company]);
 
   useEffect(() => {
     if (open) fetchLive();
@@ -227,7 +263,7 @@ export function TrackingCard({ order = null, threadId = null, fullWidth = false 
       >
         <CarrierLogo carrier={carrier} className="h-8 w-8" />
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-semibold text-slate-900">Track shipment</div>
+          <div className="text-sm font-semibold text-slate-900">{title}</div>
           <div className="mt-0.5 flex items-center gap-1 text-xs text-slate-500">
             <span>{carrier}</span>
             <span className="text-slate-300 mx-0.5">·</span>
@@ -259,7 +295,7 @@ export function TrackingCard({ order = null, threadId = null, fullWidth = false 
               </div>
             </div>
             <DialogDescription className="text-xs text-slate-400 mt-1">
-              Live tracking for order {orderLabel ? `#${orderLabel}` : ""}
+              {descriptionPrefix} {orderLabel ? `#${orderLabel}` : ""}
             </DialogDescription>
           </DialogHeader>
 
@@ -332,14 +368,31 @@ export function TrackingCard({ order = null, threadId = null, fullWidth = false 
           </div>
 
           {/* Footer: carrier link */}
-          {trackingUrl && (
-            <div className="flex justify-end border-t border-slate-100 pt-3">
+          {(effectiveTrackingUrl || trackingNumber) && (
+            <div className="flex justify-end gap-2 border-t border-slate-100 pt-3">
+              {trackingNumber && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  disabled={loading}
+                  onClick={() => fetchLive(true)}
+                >
+                  {loading ? (
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  ) : null}
+                  Refresh
+                </Button>
+              )}
+              {effectiveTrackingUrl && (
               <Button asChild size="sm" className="bg-slate-900 text-white hover:bg-slate-700">
-                <a href={trackingUrl} target="_blank" rel="noreferrer">
+                <a href={effectiveTrackingUrl} target="_blank" rel="noreferrer">
                   Open carrier tracking
                   <ExternalLink className="ml-1.5 h-3.5 w-3.5" />
                 </a>
               </Button>
+              )}
             </div>
           )}
         </DialogContent>

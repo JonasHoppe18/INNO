@@ -81,6 +81,7 @@ export function normalizeTrackingStatusLabel(value = "") {
   const text = asString(value);
   if (!text) return "";
   const lower = text.toLowerCase();
+  if (lower.includes("delivered") || lower.includes("leveret")) return "Delivered";
   if (lower.includes("afsendt - følg pakken via tracking-link")) {
     return "Shipped - follow the parcel via tracking link";
   }
@@ -302,9 +303,13 @@ function buildSnapshotEvents(snapshot, carrier) {
     return !NOISE_EVENT_PATTERN.test(description);
   });
 
-  return filtered.map((event, index) => {
+  const normalizedItems = [];
+  const seen = new Set();
+
+  for (const event of filtered) {
     const description = resolveEventDescription(event, carrier);
     const rawLocation = asString(event?.location || "");
+    const index = normalizedItems.length;
     // For the latest (delivered) event, prefer the recipient delivery city from snapshot over terminal name
     const rawDeliveryCity = snapshot?.deliveryCity || "";
     const deliveryCity = rawDeliveryCity
@@ -317,6 +322,12 @@ function buildSnapshotEvents(snapshot, carrier) {
     const location = index === 0 && deliveryCity
       ? deliveryCity
       : pickupPointLocation || resolveEventLocation(rawLocation);
+    const dedupeKey = [
+      description.toLowerCase(),
+      location.toLowerCase(),
+    ].join("|");
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
     const ts = formatEventTimestamp(event?.occurredAt);
     // For the latest event: embed timestamp in title so it's immediately visible
     const title = index === 0 && ts
@@ -324,7 +335,7 @@ function buildSnapshotEvents(snapshot, carrier) {
       : description;
     // Meta: location only (carrier name is redundant — already in modal header)
     const metaParts = [location].filter(Boolean);
-    return {
+    const item = {
       id: `snapshot-event-${index}-${event?.occurredAt || index}`,
       title,
       meta: metaParts.join(" • "),
@@ -332,7 +343,10 @@ function buildSnapshotEvents(snapshot, carrier) {
       timestamp: event?.occurredAt || null,
       isCurrent: index === 0,
     };
-  });
+    normalizedItems.push(item);
+  }
+
+  return normalizedItems;
 }
 
 

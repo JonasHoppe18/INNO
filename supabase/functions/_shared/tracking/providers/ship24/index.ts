@@ -2,9 +2,9 @@
 //
 // READ-ONLY: POST https://api.ship24.com/public/v1/tracking/search returns live
 // courier status for a tracking number in a single call, with no persistent
-// tracker and no webhook. Used ONLY in the carrier === "unknown" branch of
-// fetchTrackingDetailForCandidate — it never touches the native GLS/PostNord
-// paths and never wires return tracking.
+// tracker and no webhook. Used by fetchTrackingDetailForCandidate for carriers
+// without a native API integration; it never touches the native GLS/PostNord
+// paths.
 //
 // Safe by construction: the provider only ever emits a TrackingDetail and lets
 // the shared normalizeTrackingDetail decide the final state. Verified milestone
@@ -12,7 +12,7 @@
 // real failure (429/5xx/timeout/malformed/network) → request/api_failed
 // (→ lookup_error). It NEVER infers in_transit/delivered from the mere
 // existence of a tracking number.
-import type { TrackingDetail, TrackingSnapshot } from "../../../tracking.ts";
+import type { NormalizedTrackingEvent, TrackingDetail, TrackingSnapshot } from "../../../tracking.ts";
 
 const SHIP24_SEARCH_URL = "https://api.ship24.com/public/v1/tracking/search";
 const DEFAULT_TIMEOUT_MS = Number(Deno.env.get("SHIP24_TIMEOUT_MS") ?? "5000");
@@ -67,6 +67,37 @@ function normalizeIso(value: unknown): string | null {
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return null;
   return parsed.toISOString();
+}
+
+function normalizeShip24Event(event: Record<string, unknown>): NormalizedTrackingEvent | null {
+  const description = asString(event.status) || asString(event.description);
+  const occurredAt = normalizeIso(event.datetime) || normalizeIso(event.occurrenceDatetime);
+  const code = asString(event.statusCode) || asString(event.statusMilestone) || null;
+  const location = asString(event.location) || asString(event.city) || null;
+  if (!description && !occurredAt && !code && !location) return null;
+  return {
+    code,
+    description: description || null,
+    occurredAt,
+    location,
+  };
+}
+
+function dedupeShip24Events(events: NormalizedTrackingEvent[]): NormalizedTrackingEvent[] {
+  const seen = new Set<string>();
+  const deduped: NormalizedTrackingEvent[] = [];
+  for (const event of events) {
+    const key = [
+      String(event.code || "").trim().toLowerCase(),
+      String(event.description || "").trim().toLowerCase(),
+      String(event.location || "").trim().toLowerCase(),
+      String(event.occurredAt || "").trim(),
+    ].join("|");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(event);
+  }
+  return deduped;
 }
 
 function carrierLabel(courierCode: string): string {
@@ -142,6 +173,11 @@ export function ship24PayloadToTrackingDetail(
     return genericFallback(ctx.trackingNumber, trackingUrl, "ship24_no_data");
   }
 
+  const normalizedEvents = dedupeShip24Events(
+    events
+      .map((event) => normalizeShip24Event(event))
+      .filter((event): event is NormalizedTrackingEvent => Boolean(event)),
+  );
   const latest = events[0] ?? null;
   const courierCode = asString(latest?.courierCode) || asString(shipment.courierCode);
   const statusText = asString(latest?.status) || milestone || "Shipped - follow the parcel via tracking link.";
@@ -168,15 +204,8 @@ export function ship24PayloadToTrackingDetail(
     outForDeliveryAt: internalStatusCode === "out_for_delivery" ? (normalizeIso(stats?.outForDeliveryDatetime) || lastEventAt) : null,
     pickupReadyAt: internalStatusCode === "pickup_ready" ? (normalizeIso(stats?.availableForPickupDatetime) || lastEventAt) : null,
     expectedDeliveryAt: normalizeIso(delivery.estimatedDeliveryDate) || null,
-    lastEvent: latest
-      ? {
-        code: asString(latest.statusCode) || null,
-        description: asString(latest.status) || null,
-        occurredAt: lastEventAt,
-        location: asString(latest.location) || null,
-      }
-      : null,
-    events: [],
+    lastEvent: normalizedEvents[0] ?? null,
+    events: normalizedEvents,
   };
 
   return {
