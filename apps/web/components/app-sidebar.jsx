@@ -126,8 +126,13 @@ export function AppSidebar({
   const searchParams = useSearchParams()
   // Same raw `?view=` semantics as useThreadFilters.js (Task 6, Plan 1): the
   // literal param value, "" meaning the needs-attention default. NavQueue
-  // compares this directly against each row's target view.
-  const activeView = searchParams.get("view") || ""
+  // compares this directly against each row's target view. Only meaningful
+  // while actually on an inbox route — on every other page (e.g. Dashboard)
+  // there's no view at all, so this is `null` rather than "", which would
+  // otherwise be indistinguishable from "on /inbox with no ?view=" and mark
+  // "Needs attention" active everywhere.
+  const isInboxRoute = pathname.startsWith("/inbox")
+  const activeView = isInboxRoute ? searchParams.get("view") || "" : null
 
   const [customInboxes, setCustomInboxes] = useState([])
   const [createInboxOpen, setCreateInboxOpen] = useState(false)

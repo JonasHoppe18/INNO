@@ -47,7 +47,6 @@ import {
 } from "@/lib/inbox/view-model";
 import { DEFAULT_FILTERS, useThreadFilters } from "@/lib/inbox/useThreadFilters";
 import {
-  clearLiveSidebarCounts,
   publishLiveSidebarCounts,
 } from "@/lib/inbox/live-sidebar-counts";
 import { useThreadSelection } from "@/lib/inbox/useThreadSelection";
@@ -2923,7 +2922,6 @@ export function InboxSplitView({
   useEffect(() => {
     publishLiveSidebarCounts(liveSidebarCounts);
   }, [liveSidebarCounts]);
-  useEffect(() => () => clearLiveSidebarCounts(), []);
 
   // Tab clicks preserve every other search param — e.g. ?thread= from
   // useThreadSelection must survive a tab switch. Two distinct behaviors

@@ -125,7 +125,7 @@ export function NavQueue({
               icon={Inbox}
               label="Needs attention"
               href="/inbox"
-              active={!activeView}
+              active={activeView === ""}
               count={needsAttentionCount}
             />
             {!isCollapsed && (
