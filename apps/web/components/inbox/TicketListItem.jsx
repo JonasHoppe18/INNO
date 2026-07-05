@@ -63,7 +63,53 @@ function TicketListItemComponent({
   const ticketRef = Number.isFinite(Number(thread?.ticket_number))
     ? `T-${String(Number(thread.ticket_number)).padStart(6, "0")}`
     : "No ticket ID";
-  const hasTicketNumber = ticketRef !== "No ticket ID";
+
+  // One flat meta line instead of a variable-height stack — a ticket with a
+  // classification label used to render a whole extra <div> below this one,
+  // making rows with vs. without it visibly different heights in the list.
+  // Built as an array (rather than a hand-chained "show a dot if the
+  // previous thing rendered" conditional) so a dot only ever appears before
+  // a real entry — no dangling/missing separators possible by construction.
+  const metaEntries = [
+    inboxName ? (
+      <span key="inbox" className="truncate">
+        {inboxName}
+      </span>
+    ) : null,
+    hasAiDraft ? (
+      <span key="draft" className="text-purple-700 dark:text-purple-400">
+        Draft ready
+      </span>
+    ) : null,
+    // Unassigned is the common case pre-migration/for new threads — showing it
+    // on every row was just noise; an assignee is only worth surfacing once
+    // someone actually owns the ticket.
+    assigneeDisplay ? (
+      <span key="assignee" className="truncate">
+        {assigneeDisplay}
+      </span>
+    ) : null,
+    wakeCountdownText ? (
+      <span key="wake" className="truncate">
+        {wakeCountdownText}
+      </span>
+    ) : null,
+    classificationLabel ? (
+      <span key="classification" className="truncate">
+        {classificationLabel}
+      </span>
+    ) : null,
+  ].filter(Boolean);
+  const metaChildren = metaEntries.flatMap((entry, index) =>
+    index === 0
+      ? [entry]
+      : [
+          <span key={`${entry.key}-dot`} aria-hidden="true">
+            &middot;
+          </span>,
+          entry,
+        ],
+  );
 
   const prefetchTimerRef = useRef(null);
 
@@ -107,10 +153,11 @@ function TicketListItemComponent({
       className={cn(
         "relative flex w-full flex-col gap-1 px-4 py-3 text-left hover:bg-muted/50 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
         isNew ? "animate-ticket-enter" : !isExiting && "animate-list-item-enter",
-        // Full-strength bg-accent (not bg-muted/50, same shade hover uses) so a
-        // selected row stays visually distinct even while a different row is
-        // hovered at the same time — otherwise both would render identically.
-        isActive && "bg-accent",
+        // A brand-tinted wash (not gray) so a selected row stays visually
+        // distinct even while a different row is hovered at the same time —
+        // a different hue reads as "selected" faster than a darker gray, and
+        // a light tint feels lighter than a flat solid fill.
+        isActive && "bg-primary/5",
         isExiting && "pointer-events-none"
       )}
       style={{
@@ -138,14 +185,7 @@ function TicketListItemComponent({
       />
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 flex-1 items-center gap-2 truncate text-[13px] font-semibold text-foreground">
-          <span
-            className={cn(
-              "shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] tabular-nums",
-              hasTicketNumber
-                ? "bg-muted font-medium text-muted-foreground"
-                : "text-muted-foreground"
-            )}
-          >
+          <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/70">
             {ticketRef}
           </span>
           <span className="truncate">{customerLabel}</span>
@@ -183,26 +223,8 @@ function TicketListItemComponent({
         ) : null}
       </div>
       <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-        {inboxName ? <span className="truncate">{inboxName}</span> : null}
-        {inboxName ? <span aria-hidden="true">&middot;</span> : null}
-        {hasAiDraft ? (
-          <>
-            <span className="text-purple-700 dark:text-purple-400">Draft ready</span>
-            <span aria-hidden="true">&middot;</span>
-          </>
-        ) : null}
-        {/* Unassigned is the common case pre-migration/for new threads — showing it
-            on every row was just noise; an assignee is only worth surfacing once
-            someone actually owns the ticket. */}
-        {assigneeDisplay ? <span className="truncate">{assigneeDisplay}</span> : null}
-        {assigneeDisplay && wakeCountdownText ? <span aria-hidden="true">&middot;</span> : null}
-        {wakeCountdownText ? <span className="truncate">{wakeCountdownText}</span> : null}
+        {metaChildren}
       </div>
-      {classificationLabel ? (
-        <div className="text-[11px] text-muted-foreground">
-          {classificationLabel}
-        </div>
-      ) : null}
     </button>
     {showApproveCloseActions ? (
       <div className="flex items-center gap-3 border-t border-border/60 px-4 py-1.5">
