@@ -50,7 +50,6 @@ export function TicketList({
   onPrefetchThread,
   resolvedView = "",
   isNeedsAttentionRoute = false,
-  getInboxName,
   getAssigneeLabel,
   groups = null,
   showWakeCountdown = false,
@@ -455,7 +454,6 @@ export function TicketList({
               // the queue is sorted by, so it's genuinely useful, not filler.
               const waitAge =
                 !isLookupView && !reason ? formatWaitAge(thread, Date.now()) : null;
-              const inboxName = getInboxName ? getInboxName(thread) : null;
               const assigneeLabel = getAssigneeLabel
                 ? getAssigneeLabel(uiState?.assignee ?? thread.assignee_id ?? null)
                 : null;
@@ -487,7 +485,6 @@ export function TicketList({
                       reason={reason}
                       waitAge={waitAge}
                       showLegacyStatus={isLookupView}
-                      inboxName={inboxName}
                       wakeDays={wakeDays}
                       isExiting={isExiting}
                       isNew={newThreadIds.has(String(thread.id))}

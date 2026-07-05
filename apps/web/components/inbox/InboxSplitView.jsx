@@ -2257,23 +2257,9 @@ export function InboxSplitView({
     return UNASSIGNED_ASSIGNEE_VALUE;
   }, [selectedTicketState?.assignee]);
 
-  // Task 7, Plan 2: queue row meta line — inbox name + assignee label lookups
-  // for TicketList/TicketListItem. Both reuse data already fetched/derived
-  // above (workspaceInboxes -> inboxOptions, workspaceMembers -> memberLookupById)
-  // so no new fetch is introduced.
-  const inboxNameBySlug = useMemo(() => {
-    const map = new Map();
-    inboxOptions.forEach((option) => map.set(option.value, option.label));
-    return map;
-  }, [inboxOptions]);
-  const getInboxNameForThread = useCallback(
-    (thread) => {
-      const slug = resolveInboxSlug(thread, knownInboxSlugs);
-      if (!slug) return null;
-      return inboxNameBySlug.get(slug) || null;
-    },
-    [inboxNameBySlug, knownInboxSlugs],
-  );
+  // Task 7, Plan 2: assignee label lookup for TicketList/TicketListItem.
+  // Reuses data already fetched/derived above (workspaceMembers ->
+  // memberLookupById) so no new fetch is introduced.
   const getAssigneeLabelForId = useCallback(
     (assigneeId) => {
       const id = String(assigneeId || "").trim();
@@ -3462,7 +3448,6 @@ export function InboxSplitView({
         approveCloseGroupKey="approve_close"
         onApproveClose={approveClose}
         onKeepWaiting={keepWaiting}
-        getInboxName={getInboxNameForThread}
         getAssigneeLabel={getAssigneeLabelForId}
       />
 

@@ -34,7 +34,6 @@ function TicketListItemComponent({
   reason = null,
   waitAge = null,
   showLegacyStatus = false,
-  inboxName = null,
   wakeDays = null,
   isExiting = false,
   isNew = false,
@@ -70,12 +69,13 @@ function TicketListItemComponent({
   // Built as an array (rather than a hand-chained "show a dot if the
   // previous thing rendered" conditional) so a dot only ever appears before
   // a real entry — no dangling/missing separators possible by construction.
+  // ticketRef always renders here (not conditional like the rest), so this
+  // line is never actually empty. inboxName is deliberately NOT included —
+  // dropped per direct feedback that the card shouldn't show its inbox.
   const metaEntries = [
-    inboxName ? (
-      <span key="inbox" className="truncate">
-        {inboxName}
-      </span>
-    ) : null,
+    <span key="ticket-ref" className="shrink-0 font-mono text-[10px] tabular-nums">
+      {ticketRef}
+    </span>,
     hasAiDraft ? (
       <span key="draft" className="text-purple-700 dark:text-purple-400">
         Draft ready
@@ -151,7 +151,7 @@ function TicketListItemComponent({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       className={cn(
-        "relative flex w-full flex-col gap-1 px-4 py-3 text-left hover:bg-muted/50 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+        "relative flex w-full flex-col gap-1 px-4 py-2.5 text-left hover:bg-muted/50 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
         isNew ? "animate-ticket-enter" : !isExiting && "animate-list-item-enter",
         // A brand-tinted wash (not gray) so a selected row stays visually
         // distinct even while a different row is hovered at the same time —
@@ -177,53 +177,48 @@ function TicketListItemComponent({
       }}
       aria-pressed={isActive}
     >
-      <span
-        className={cn(
-          "absolute left-0 top-0 h-full w-[3px] rounded-r transition-[background-color,opacity] duration-150",
-          isActive ? "bg-primary" : isUnread ? "bg-indigo-400" : "bg-transparent"
-        )}
-      />
-      <div className="flex items-center justify-between gap-2">
-        <span className="min-w-0 flex-1 truncate font-mono text-[10px] tabular-nums text-muted-foreground/70">
-          {ticketRef}
+      <div className="flex items-center gap-2">
+        <span
+          aria-hidden="true"
+          className={cn(
+            "h-1.5 w-1.5 shrink-0 rounded-full transition-colors duration-150",
+            isActive || isUnread ? "bg-indigo-500" : "bg-muted-foreground/25"
+          )}
+        />
+        <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground">
+          {customerLabel}
         </span>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <span className="text-[12px] text-muted-foreground">{formatMessageTime(timestamp)}</span>
-          {reason || showLegacyStatus || waitAge ? (
-            <span aria-hidden="true" className="text-muted-foreground/70">
-              &middot;
-            </span>
-          ) : null}
-          {reason ? (
-            <span
-              className={
-                "whitespace-nowrap text-xs " +
-                (reason.key === "customer_replied"
-                  ? "text-amber-700 dark:text-amber-500"
-                  : reason.key === "approve_close"
-                    ? "text-purple-700 dark:text-purple-400"
-                    : "text-green-700 dark:text-green-500")
-              }
-            >
-              {reason.label}
-            </span>
-          ) : showLegacyStatus ? (
-            <span className={cn("text-[12px]", STATUS_TEXT_STYLES[status] || "text-muted-foreground")}>
-              {status === "Solved" ? "Resolved" : status}
-            </span>
-          ) : waitAge ? (
-            <span className="whitespace-nowrap text-xs text-muted-foreground/70">{waitAge}</span>
-          ) : null}
+        <span className="shrink-0 text-[12px] text-muted-foreground">{formatMessageTime(timestamp)}</span>
+      </div>
+      <div className="flex items-center justify-between gap-2 pl-3.5">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px] text-muted-foreground">
+          <span className={cn("truncate", isUnread && "font-medium text-foreground")}>
+            {thread.subject || "Untitled ticket"}
+          </span>
+          {hasAiDraft ? <Sparkles className="h-3 w-3 text-amber-400" /> : null}
         </div>
+        {reason ? (
+          <span
+            className={
+              "shrink-0 whitespace-nowrap text-xs " +
+              (reason.key === "customer_replied"
+                ? "text-amber-700 dark:text-amber-500"
+                : reason.key === "approve_close"
+                  ? "text-purple-700 dark:text-purple-400"
+                  : "text-green-700 dark:text-green-500")
+            }
+          >
+            {reason.label}
+          </span>
+        ) : showLegacyStatus ? (
+          <span className={cn("shrink-0 text-[12px]", STATUS_TEXT_STYLES[status] || "text-muted-foreground")}>
+            {status === "Solved" ? "Resolved" : status}
+          </span>
+        ) : waitAge ? (
+          <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground/70">{waitAge}</span>
+        ) : null}
       </div>
-      <span className="block truncate text-[13px] font-semibold text-foreground">{customerLabel}</span>
-      <div className="flex min-w-0 items-center gap-1.5 text-[13px] text-muted-foreground">
-        <span className={cn("truncate", isUnread && "font-medium text-foreground")}>
-          {thread.subject || "Untitled ticket"}
-        </span>
-        {hasAiDraft ? <Sparkles className="h-3 w-3 text-amber-400" /> : null}
-      </div>
-      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+      <div className="flex items-center gap-1.5 pl-3.5 text-[11px] text-muted-foreground">
         {metaChildren}
       </div>
     </button>
@@ -270,7 +265,6 @@ export const TicketListItem = memo(
     prev.reason === next.reason &&
     prev.waitAge === next.waitAge &&
     prev.showLegacyStatus === next.showLegacyStatus &&
-    prev.inboxName === next.inboxName &&
     prev.wakeDays === next.wakeDays &&
     prev.isExiting === next.isExiting &&
     prev.isNew === next.isNew &&
