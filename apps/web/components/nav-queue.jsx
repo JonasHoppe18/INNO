@@ -134,11 +134,10 @@ export function NavQueue({
               <>
                 <QueueRow
                   icon={User}
-                  label="Mine"
+                  label="Assigned to me"
                   href="/inbox?view=mine"
                   active={isViewActive("mine")}
                   count={mineCount}
-                  pl="pl-8"
                 />
                 <QueueRow
                   icon={Clock}
@@ -147,7 +146,6 @@ export function NavQueue({
                   active={isViewActive("waiting_customer")}
                   count={waitingCustomerCount}
                   muted
-                  pl="pl-8"
                 />
                 <QueueRow
                   icon={Package}
@@ -156,14 +154,12 @@ export function NavQueue({
                   active={isViewActive("waiting_third_party")}
                   count={waitingThirdPartyCount}
                   muted
-                  pl="pl-8"
                 />
                 <QueueRow
                   icon={CheckCircle2}
                   label="Resolved"
                   href="/inbox?view=resolved"
                   active={isViewActive("resolved")}
-                  pl="pl-8"
                 />
               </>
             )}

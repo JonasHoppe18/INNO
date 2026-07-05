@@ -1,8 +1,13 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect, useState } from "react"
+import { useEffect, useState, useSyncExternalStore } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import {
+  getLiveSidebarCountsServerSnapshot,
+  getLiveSidebarCountsSnapshot,
+  subscribeLiveSidebarCounts,
+} from "@/lib/inbox/live-sidebar-counts"
 import {
   BarChart2Icon,
   BookOpenIcon,
@@ -150,6 +155,13 @@ export function AppSidebar({
   const [waitingCustomerCount, setWaitingCustomerCount] = useState(0)
   const [waitingThirdPartyCount, setWaitingThirdPartyCount] = useState(0)
   const [inboxNeedsAttentionCounts, setInboxNeedsAttentionCounts] = useState({})
+  // Exact client-side counts published by InboxSplitView while the inbox is
+  // mounted (null on other pages) — see lib/inbox/live-sidebar-counts.js.
+  const liveCounts = useSyncExternalStore(
+    subscribeLiveSidebarCounts,
+    getLiveSidebarCountsSnapshot,
+    getLiveSidebarCountsServerSnapshot,
+  )
   const supabase = useClerkSupabase()
 
   const loadCustomInboxes = async () => {
@@ -437,13 +449,19 @@ export function AppSidebar({
 
   // NavQueue's counts prop mirrors the /api/inbox/sidebar-counts payload
   // shape (Plan 1 Task 10) — see nav-queue.jsx for per-key rendering rules.
+  // While the inbox is mounted, InboxSplitView publishes exact client-side
+  // counts (computed from the loaded thread list, same source as the status
+  // tabs) via the live-sidebar-counts bridge; those win over the DB-side API
+  // values, which read 0 pre-migration and lag optimistic updates after.
   const queueCounts = {
-    needsAttentionCount,
-    mineCount,
-    waitingCustomerCount,
-    waitingThirdPartyCount,
+    needsAttentionCount: liveCounts?.needsAttentionCount ?? needsAttentionCount,
+    mineCount: liveCounts?.mineCount ?? mineCount,
+    waitingCustomerCount: liveCounts?.waitingCustomerCount ?? waitingCustomerCount,
+    waitingThirdPartyCount:
+      liveCounts?.waitingThirdPartyCount ?? waitingThirdPartyCount,
     notificationsCount,
-    inboxNeedsAttentionCounts,
+    inboxNeedsAttentionCounts:
+      liveCounts?.inboxNeedsAttentionCounts ?? inboxNeedsAttentionCounts,
   }
 
   return (

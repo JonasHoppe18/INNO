@@ -46,6 +46,10 @@ import {
   waitingGroup,
 } from "@/lib/inbox/view-model";
 import { DEFAULT_FILTERS, useThreadFilters } from "@/lib/inbox/useThreadFilters";
+import {
+  clearLiveSidebarCounts,
+  publishLiveSidebarCounts,
+} from "@/lib/inbox/live-sidebar-counts";
 import { useThreadSelection } from "@/lib/inbox/useThreadSelection";
 import { useThreadActions } from "@/lib/inbox/useThreadActions";
 import { useComposerState } from "@/lib/inbox/useComposerState";
@@ -2891,6 +2895,66 @@ export function InboxSplitView({
     });
     return counts;
   }, [derivedThreads, knownInboxSlugs, resolvedView, ticketStateByThread]);
+
+  // Live sidebar counts: computed from the same client-side thread list the
+  // tabs use (exact + optimistic-aware, works pre-migration where the
+  // DB-side /api/inbox/sidebar-counts fields still read 0) and published to
+  // the app sidebar via the live-sidebar-counts bridge. Same exclusion
+  // semantics as statusTabCounts: automated/notification threads never count.
+  const liveSidebarCounts = useMemo(() => {
+    const mineIds = new Set([
+      String(currentSupabaseUserId || ""),
+      String(user?.id || ""),
+    ]);
+    mineIds.delete("");
+    const payload = {
+      needsAttentionCount: 0,
+      mineCount: 0,
+      waitingCustomerCount: 0,
+      waitingThirdPartyCount: 0,
+      inboxNeedsAttentionCounts: {},
+    };
+    for (const slug of knownInboxSlugs) payload.inboxNeedsAttentionCounts[slug] = 0;
+    derivedThreads.forEach((thread) => {
+      if (isAutomated(thread)) return;
+      const hasLocalState = Object.prototype.hasOwnProperty.call(
+        ticketStateByThread,
+        thread.id,
+      );
+      const uiState = hasLocalState ? ticketStateByThread[thread.id] : DEFAULT_TICKET_STATE;
+      const effectiveStatus = normalizeStatus(
+        (hasLocalState ? uiState?.status : null) || thread.status || DEFAULT_TICKET_STATE.status,
+      );
+      const tabKey = threadTab({ ...thread, status: effectiveStatus });
+      if (tabKey === "needs_attention") {
+        payload.needsAttentionCount += 1;
+        const assignee = String(
+          (hasLocalState ? uiState?.assignee : null) ?? thread.assignee_id ?? "",
+        );
+        if (assignee && mineIds.has(assignee)) payload.mineCount += 1;
+        const slug = resolveInboxSlug(thread, knownInboxSlugs);
+        if (slug) payload.inboxNeedsAttentionCounts[slug] += 1;
+      } else if (tabKey === "waiting") {
+        if (waitingGroup(thread) === "third_party") {
+          payload.waitingThirdPartyCount += 1;
+        } else {
+          payload.waitingCustomerCount += 1;
+        }
+      }
+    });
+    return payload;
+  }, [
+    derivedThreads,
+    knownInboxSlugs,
+    ticketStateByThread,
+    currentSupabaseUserId,
+    user?.id,
+  ]);
+
+  useEffect(() => {
+    publishLiveSidebarCounts(liveSidebarCounts);
+  }, [liveSidebarCounts]);
+  useEffect(() => () => clearLiveSidebarCounts(), []);
 
   // Tab clicks preserve every other search param — e.g. ?thread= from
   // useThreadSelection must survive a tab switch. Two distinct behaviors
