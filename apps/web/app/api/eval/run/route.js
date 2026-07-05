@@ -131,10 +131,16 @@ export async function POST(request) {
   const strong_model = String(body?.strong_model || "").trim() || "";
   const judge_model = String(body?.judge_model || "").trim() || "gpt-4o-mini";
   const disable_escalation = body?.disable_escalation === true;
-  const pipeline = String(body?.pipeline || "legacy").trim() || "legacy";
+  const pipeline = String(body?.pipeline || "v2").trim() || "v2";
 
   if (!run_label) {
     return NextResponse.json({ error: "run_label required" }, { status: 400 });
+  }
+  if (pipeline !== "v2") {
+    return NextResponse.json(
+      { error: "Only the v2 eval pipeline is supported." },
+      { status: 400 },
+    );
   }
 
   const { mode, items } = normalizeItems(body || {});

@@ -1,7 +1,6 @@
 import { detectHardCapSignals } from "./judge-hardcaps.js";
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
-const INTERNAL_AGENT_SECRET = process.env.INTERNAL_AGENT_SECRET || "";
 const SUPABASE_URL = (
   process.env.NEXT_PUBLIC_SUPABASE_URL ||
   process.env.EXPO_PUBLIC_SUPABASE_URL ||
@@ -276,69 +275,6 @@ function buildSafetyFromGenerateDraftV2Response(data) {
   };
 }
 
-async function generateDraft(shopId, subject, emailBody) {
-  const startTime = Date.now();
-  const endpoint = `${SUPABASE_URL}/functions/v1/generate-draft-unified`;
-  let res;
-  try {
-    res = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-        ...(INTERNAL_AGENT_SECRET
-          ? { "x-internal-secret": INTERNAL_AGENT_SECRET }
-          : {}),
-      },
-      body: JSON.stringify({
-        shop_id: shopId,
-        provider: "smtp",
-        force_process: true,
-        email_data: {
-          subject: subject || "",
-          body: emailBody,
-          from: "eval@eval.internal",
-          fromEmail: "eval@eval.internal",
-          headers: [],
-        },
-      }),
-    });
-  } catch (fetchErr) {
-    throw new Error(
-      `Could not reach generate-draft-unified: ${fetchErr.message}`,
-    );
-  }
-  const raw = await res.text();
-  let data;
-  try {
-    data = JSON.parse(raw);
-  } catch {
-    data = {};
-  }
-  if (!res.ok) {
-    throw new Error(
-      `generate-draft-unified ${res.status}: ${
-        data?.error || raw.slice(0, 200)
-      }`,
-    );
-  }
-  const draft = String(data?.reply || data?.draft_text || "").trim();
-  if (!draft) {
-    throw new Error(
-      `generate-draft-unified returned no reply. Raw: ${raw.slice(0, 300)}`,
-    );
-  }
-  const actions = Array.isArray(data?.actions) ? data.actions : [];
-  return {
-    draft,
-    actions,
-    confidence: null,
-    sources: [],
-    routingHint: null,
-    latencyMs: Date.now() - startTime,
-  };
-}
-
 async function generateDraftV2(shopId, subject, emailBody, options = {}) {
   const startTime = Date.now();
   const endpoint = `${SUPABASE_URL}/functions/v1/generate-draft-v2`;
@@ -463,7 +399,6 @@ async function generateDraftV2(shopId, subject, emailBody, options = {}) {
 
 export {
   draftForJudge,
-  generateDraft,
   generateDraftV2,
   buildSafetyFromGenerateDraftV2Response,
   judgeWithOpenAI,

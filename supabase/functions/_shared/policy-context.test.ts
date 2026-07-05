@@ -4,7 +4,6 @@ import {
   buildHeuristicPolicySummary,
   buildPinnedPolicyContext,
 } from "./policy-context.ts";
-import { buildMailPrompt } from "./prompt.ts";
 
 Deno.test("policy context is guardrails-only (no pinned summary or excerpt)", () => {
   const context = buildPinnedPolicyContext({
@@ -26,64 +25,6 @@ Deno.test("policy context is guardrails-only (no pinned summary or excerpt)", ()
   assertEquals(context.policyExcerptText, "");
   assertEquals(context.policyExcerptIncluded, false);
   assertMatch(context.policyRulesText, /Never invent URLs, return portals, labels, or processes/);
-});
-
-Deno.test("return prompt carries guardrails (never-invent-portal + channel rule)", () => {
-  const context = buildPinnedPolicyContext({
-    subject: "Return label",
-    body: "Where is your return portal?",
-    policies: {
-      policy_refund:
-        "Returns accepted within 30 days. Customer must pay return shipping. Email support@example.com.",
-      policy_shipping: "",
-      policy_terms: "",
-      policy_summary_json: null,
-    },
-  });
-
-  const prompt = buildMailPrompt({
-    emailBody: "Where is your return portal?",
-    orderSummary: "No order data.",
-    policySummary: context.policySummaryText,
-    policyRules: context.policyRulesText,
-    policyExcerpt: context.policyExcerptText,
-  });
-
-  assertMatch(prompt, /Never invent URLs, return portals, labels, or processes/);
-  assertMatch(prompt, /RETURNS - CHANNEL RULE/i);
-});
-
-Deno.test("return prompt asks only for missing details when details are present", () => {
-  const context = buildPinnedPolicyContext({
-    subject: "Return request",
-    body: "Order #1050. I want to return because size was too small.",
-    policies: {
-      policy_refund:
-        "Returns accepted within 30 days. Contact support@example.com and include order number, name and reason.",
-      policy_shipping: "",
-      policy_terms: "",
-      policy_summary_json: null,
-    },
-  });
-
-  const prompt = buildMailPrompt({
-    emailBody: "Order #1050. I want to return because size was too small.",
-    orderSummary: "No order data.",
-    policySummary: context.policySummaryText,
-    policyRules: context.policyRulesText,
-    policyExcerpt: context.policyExcerptText,
-    policyIntent: "RETURN",
-    returnDetailsFound: [
-      "RETURN DETAILS FOUND (PINNED):",
-      "- order_number: #1050",
-      "- name_used_at_purchase: Jonas",
-      "- reason: size was too small",
-    ].join("\n"),
-    returnDetailsMissing: [],
-  });
-
-  assertMatch(prompt, /ask only for missing details/i);
-  assertMatch(prompt, /All required details are already present/i);
 });
 
 Deno.test("Acezone-like fixture extracts 30 days and customer return shipping", () => {

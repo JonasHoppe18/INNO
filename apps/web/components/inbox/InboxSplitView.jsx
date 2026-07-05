@@ -3390,7 +3390,7 @@ export function InboxSplitView({
 
   // Detect new inbound customer message:
   // • Always reset send-guards so the new AI draft can auto-load
-  // • If draft is unedited → clear compose box (a fresh draft will arrive from generate-draft-unified)
+  // • If draft is unedited → clear compose box (a fresh draft will arrive from generate-draft-v2)
   // • If draft was edited by the agent → show stale-draft banner so they know context changed
   useEffect(() => {
     if (!selectedThreadId) return;
@@ -3421,14 +3421,14 @@ export function InboxSplitView({
       delete next[selectedThreadId];
       return next;
     });
-    // Refresh API data so the new AI draft from generate-draft-unified is picked up
+    // Refresh API data so the new AI draft from generate-draft-v2 is picked up
     refreshSelectedThreadMessagesRef.current?.().catch(() => null);
 
     const currentDraftText = draftValueRef.current;
     if (!currentDraftText) return; // compose box already empty, nothing more to do
     const isUnedited = systemDraftUneditedRef.current[selectedThreadId];
     if (isUnedited) {
-      // Unedited system draft → clear immediately; generate-draft-unified will repopulate
+      // Unedited system draft → clear immediately; generate-draft-v2 will repopulate
       setDraftValue("");
       setDraftValueByThread((p) => ({ ...p, [selectedThreadId]: "" }));
       setSystemDraftUneditedByThread((p) => ({
