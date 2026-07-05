@@ -32,6 +32,7 @@ function TicketListItemComponent({
   assigneeLabel = null,
   priority,
   reason = null,
+  showLegacyStatus = false,
   inboxName = null,
   wakeDays = null,
   isExiting = false,
@@ -163,11 +164,11 @@ function TicketListItemComponent({
           >
             {reason.label}
           </span>
-        ) : (
+        ) : showLegacyStatus ? (
           <span className={cn("shrink-0 text-[12px]", STATUS_TEXT_STYLES[status] || "text-muted-foreground")}>
             {status === "Solved" ? "Resolved" : status}
           </span>
-        )}
+        ) : null}
       </div>
       <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
         {inboxName ? <span className="truncate">{inboxName}</span> : null}
@@ -235,6 +236,7 @@ export const TicketListItem = memo(
     prev.assigneeLabel === next.assigneeLabel &&
     prev.priority === next.priority &&
     prev.reason === next.reason &&
+    prev.showLegacyStatus === next.showLegacyStatus &&
     prev.inboxName === next.inboxName &&
     prev.wakeDays === next.wakeDays &&
     prev.isExiting === next.isExiting &&

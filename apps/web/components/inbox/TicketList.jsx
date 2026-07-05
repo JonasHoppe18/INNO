@@ -481,6 +481,7 @@ export function TicketList({
                       assigneeLabel={assigneeLabel}
                       priority={uiState?.priority}
                       reason={reason}
+                      showLegacyStatus={resolvedView === "all"}
                       inboxName={inboxName}
                       wakeDays={wakeDays}
                       isExiting={isExiting}
