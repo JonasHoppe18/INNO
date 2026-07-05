@@ -43,6 +43,7 @@ import {
   resolveInboxSlug,
   sortForQueue,
   threadTab,
+  waitingGroup,
 } from "@/lib/inbox/view-model";
 import { DEFAULT_FILTERS, useThreadFilters } from "@/lib/inbox/useThreadFilters";
 import { useThreadSelection } from "@/lib/inbox/useThreadSelection";
@@ -1694,6 +1695,24 @@ export function InboxSplitView({
       scopedRows = sortByDropdown(
         withEffectiveFields.filter((row) => row.tab === "waiting" && !row.isNotification),
       );
+    } else if (resolvedView === "waiting_customer") {
+      scopedRows = sortByDropdown(
+        withEffectiveFields.filter(
+          (row) =>
+            row.tab === "waiting" &&
+            !row.isNotification &&
+            waitingGroup(row.thread) === "customer",
+        ),
+      );
+    } else if (resolvedView === "waiting_third_party") {
+      scopedRows = sortByDropdown(
+        withEffectiveFields.filter(
+          (row) =>
+            row.tab === "waiting" &&
+            !row.isNotification &&
+            waitingGroup(row.thread) === "third_party",
+        ),
+      );
     } else if (resolvedView === "resolved") {
       scopedRows = sortByDropdown(
         withEffectiveFields.filter((row) => row.tab === "resolved" && !row.isNotification),
@@ -2834,8 +2853,12 @@ export function InboxSplitView({
   // needs_attention tab (mine has no dedicated tab bucket of its own).
   const activeStatusTab = resolvedView.startsWith("inbox:")
     ? tab
-    : resolvedView === "waiting" || resolvedView === "resolved"
-        ? resolvedView
+    : resolvedView === "waiting" ||
+        resolvedView === "waiting_customer" ||
+        resolvedView === "waiting_third_party"
+      ? "waiting"
+      : resolvedView === "resolved"
+        ? "resolved"
         : "needs_attention";
 
   // Task 6, Plan 2: StatusTabs counts. Computed independently of
@@ -3438,7 +3461,11 @@ export function InboxSplitView({
         resolvedView={resolvedView}
         isNeedsAttentionRoute={isNeedsAttentionRoute}
         groups={waitingGroups || needsAttentionGroups}
-        showWakeCountdown={Boolean(waitingGroups)}
+        showWakeCountdown={
+          Boolean(waitingGroups) ||
+          resolvedView === "waiting_customer" ||
+          resolvedView === "waiting_third_party"
+        }
         approveCloseGroupKey="approve_close"
         onApproveClose={approveClose}
         onKeepWaiting={keepWaiting}

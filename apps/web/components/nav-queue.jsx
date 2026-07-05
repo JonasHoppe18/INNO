@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Clock,
   Inbox,
+  Package,
   Plus,
   Settings2,
   User,
@@ -91,7 +92,6 @@ export function NavQueue({
   const mineCount = Number(counts?.mineCount ?? 0)
   const waitingCustomerCount = Number(counts?.waitingCustomerCount ?? 0)
   const waitingThirdPartyCount = Number(counts?.waitingThirdPartyCount ?? 0)
-  const waitingCount = waitingCustomerCount + waitingThirdPartyCount
   const notificationsCount = Number(counts?.notificationsCount ?? 0)
   const inboxNeedsAttentionCounts =
     counts?.inboxNeedsAttentionCounts && typeof counts.inboxNeedsAttentionCounts === "object"
@@ -142,10 +142,19 @@ export function NavQueue({
                 />
                 <QueueRow
                   icon={Clock}
-                  label="Waiting"
-                  href="/inbox?view=waiting"
-                  active={isViewActive("waiting")}
-                  count={waitingCount}
+                  label="Waiting on customer"
+                  href="/inbox?view=waiting_customer"
+                  active={isViewActive("waiting_customer")}
+                  count={waitingCustomerCount}
+                  muted
+                  pl="pl-8"
+                />
+                <QueueRow
+                  icon={Package}
+                  label="Waiting on third party"
+                  href="/inbox?view=waiting_third_party"
+                  active={isViewActive("waiting_third_party")}
+                  count={waitingThirdPartyCount}
                   muted
                   pl="pl-8"
                 />

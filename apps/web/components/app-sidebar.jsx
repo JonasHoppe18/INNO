@@ -8,7 +8,6 @@ import {
   BookOpenIcon,
   BotIcon,
   CableIcon,
-  ChevronRight,
   HelpCircleIcon,
   LayoutDashboardIcon,
   MailIcon,
@@ -36,15 +35,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible"
-import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
-  SidebarGroup,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -66,24 +59,11 @@ const baseData = {
       icon: LayoutDashboardIcon,
     },
   ],
-  // Top-level items per the Task 11 mockup — Knowledge/Analytics stay
-  // one click away, everything else config-shaped moves into Settings.
+  // Flat "Configuration" group (always visible), matching the approved
+  // mockup and the original pre-Plan-2 layout — the queue/inboxes/automated
+  // sections above are the new part; the config area stays flat rather than
+  // collapsed behind a Settings group.
   agent: [
-    {
-      name: "Knowledge",
-      url: "/knowledge",
-      icon: BookOpenIcon,
-    },
-    {
-      name: "Analytics",
-      url: "/analytics",
-      icon: BarChart2Icon,
-    },
-  ],
-  // Collapsible "Settings" group at the bottom of the sidebar. Routes are
-  // unchanged from the pre-Task-11 navSecondary/agent arrays — this is pure
-  // navigation regrouping, not a routing change.
-  settings: [
     {
       name: "Mailboxes",
       url: "/mailboxes",
@@ -100,17 +80,29 @@ const baseData = {
       icon: BotIcon,
     },
     {
+      name: "Knowledge",
+      url: "/knowledge",
+      icon: BookOpenIcon,
+    },
+    {
       name: "Tags",
       url: "/tags",
       icon: TagIcon,
     },
     {
-      name: "Integrations",
+      name: "Analytics",
+      url: "/analytics",
+      icon: BarChart2Icon,
+    },
+  ],
+  // Bottom section (mt-auto) — Integrations sits back next to Guides where
+  // it lived before Plan 2.
+  navSecondary: [
+    {
+      title: "Integrations",
       url: "/integrations",
       icon: CableIcon,
     },
-  ],
-  navSecondary: [
     {
       title: "Guides",
       url: "/guides",
@@ -132,8 +124,6 @@ export function AppSidebar({
   // compares this directly against each row's target view.
   const activeView = searchParams.get("view") || ""
 
-  const linkActive = (url) =>
-    pathname === url || pathname.startsWith(`${url}/`)
   const [customInboxes, setCustomInboxes] = useState([])
   const [createInboxOpen, setCreateInboxOpen] = useState(false)
   const [createInboxName, setCreateInboxName] = useState("")
@@ -160,7 +150,6 @@ export function AppSidebar({
   const [waitingCustomerCount, setWaitingCustomerCount] = useState(0)
   const [waitingThirdPartyCount, setWaitingThirdPartyCount] = useState(0)
   const [inboxNeedsAttentionCounts, setInboxNeedsAttentionCounts] = useState({})
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const supabase = useClerkSupabase()
 
   const loadCustomInboxes = async () => {
@@ -490,49 +479,7 @@ export function AppSidebar({
           onConfigureNotifications={handleConfigureNotifications}
         />
         <NavAgent items={data.agent} />
-        <SidebarGroup className="mt-auto pt-0">
-          <Collapsible open={settingsOpen} onOpenChange={setSettingsOpen}>
-            <div className="mb-1 flex items-center px-2 group-data-[collapsible=icon]:hidden">
-              <CollapsibleTrigger asChild>
-                <button
-                  type="button"
-                  className="flex flex-1 cursor-pointer items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground"
-                >
-                  <ChevronRight
-                    className={cn(
-                      "h-3 w-3 shrink-0 transition-transform duration-150",
-                      settingsOpen && "rotate-90"
-                    )}
-                  />
-                  <span>Settings</span>
-                </button>
-              </CollapsibleTrigger>
-            </div>
-            <CollapsibleContent>
-              <SidebarMenu>
-                {data.settings.map((item) => (
-                  <SidebarMenuItem key={item.name}>
-                    <SidebarMenuButton
-                      asChild
-                      tooltip={item.name}
-                      className={cn(
-                        "justify-start",
-                        linkActive(item.url) &&
-                          "bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground"
-                      )}
-                    >
-                      <Link href={item.url} className="flex w-full items-center gap-2 text-inherit no-underline">
-                        <item.icon className="h-4 w-4" />
-                        <span>{item.name}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </CollapsibleContent>
-          </Collapsible>
-        </SidebarGroup>
-        <NavSecondary items={data.navSecondary} className="mt-0" />
+        <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>
       <SidebarFooter>
         <NavUser user={data.user} />
