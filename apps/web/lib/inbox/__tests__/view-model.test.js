@@ -174,11 +174,21 @@ describe("formatWaitAge", () => {
       ),
     ).toBe("3h");
   });
-  it("formats minutes, hours, days, and months at their tiers", () => {
+  it("formats minutes, hours, and days at their tiers", () => {
     expect(formatWaitAge({ ...base, last_message_at: "2026-07-03T11:45:00Z" }, NOW)).toBe("15m");
     expect(formatWaitAge({ ...base, last_message_at: "2026-07-03T03:00:00Z" }, NOW)).toBe("9h");
     expect(formatWaitAge({ ...base, last_message_at: "2026-06-28T12:00:00Z" }, NOW)).toBe("5d");
+  });
+  it("keeps showing exact days out to 90 days, so nearby-but-distinct dates stay distinguishable", () => {
+    const sixtyDaysAgo = new Date(NOW - 60 * 24 * 60 * 60 * 1000).toISOString();
+    const seventyFiveDaysAgo = new Date(NOW - 75 * 24 * 60 * 60 * 1000).toISOString();
+    expect(formatWaitAge({ ...base, last_message_at: sixtyDaysAgo }, NOW)).toBe("60d");
+    expect(formatWaitAge({ ...base, last_message_at: seventyFiveDaysAgo }, NOW)).toBe("75d");
+  });
+  it("switches to months past 90 days, and years past 365 days", () => {
     expect(formatWaitAge({ ...base, last_message_at: "2026-04-03T12:00:00Z" }, NOW)).toBe("3mo");
+    const overAYearAgo = new Date(NOW - 400 * 24 * 60 * 60 * 1000).toISOString();
+    expect(formatWaitAge({ ...base, last_message_at: overAYearAgo }, NOW)).toBe("1y");
   });
   it("returns 'just now' for under a minute", () => {
     expect(formatWaitAge({ ...base, last_message_at: "2026-07-03T11:59:45Z" }, NOW)).toBe(

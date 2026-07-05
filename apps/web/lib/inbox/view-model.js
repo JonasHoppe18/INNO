@@ -92,6 +92,11 @@ export function wakeInDays(thread, nowMs) {
 // with the single most useful piece of information a queue row can carry:
 // how old this wait actually is, matching the queue's own sort key
 // (waitTimestamp, the same function queueCompare uses).
+//
+// Days are shown out to 90 (not the usual 30) specifically so that threads a
+// few weeks apart don't collapse into the same "Nmo" bucket and read as
+// identical/stale-looking in a list — exact day counts stay distinguishable
+// for the entire range legacy/abandoned threads actually fall into.
 export function formatWaitAge(thread, nowMs) {
   const ts = waitTimestamp(thread);
   if (!Number.isFinite(ts)) return null;
@@ -100,11 +105,14 @@ export function formatWaitAge(thread, nowMs) {
   const hour = 60 * minute;
   const day = 24 * hour;
   const month = 30 * day;
+  const year = 365 * day;
+  const dayTierLimit = 90 * day;
   if (diffMs < minute) return "just now";
   if (diffMs < hour) return `${Math.floor(diffMs / minute)}m`;
   if (diffMs < day) return `${Math.floor(diffMs / hour)}h`;
-  if (diffMs < month) return `${Math.floor(diffMs / day)}d`;
-  return `${Math.floor(diffMs / month)}mo`;
+  if (diffMs < dayTierLimit) return `${Math.floor(diffMs / day)}d`;
+  if (diffMs < year) return `${Math.floor(diffMs / month)}mo`;
+  return `${Math.floor(diffMs / year)}y`;
 }
 
 // Pure formatting helper for the Waiting-tab wake countdown. Mirrors the
