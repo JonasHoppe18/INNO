@@ -1675,18 +1675,24 @@ export function InboxSplitView({
       });
 
     // needs_attention queue: threadTab === needs_attention, not automated,
-    // sorted oldest-customer-wait-first, with close_pending threads (the
-    // approve-close segment) stably partitioned to the bottom. Inert today —
-    // no thread has close_pending set pre-migration — but the partition is
-    // in place so it activates for free once that field starts arriving.
-    // Reads row.effectiveClosePending (not the raw thread field) so Task 9's
-    // Approve/Keep-waiting optimistic override removes a row from the
-    // approve-close segment immediately.
+    // with close_pending threads (the approve-close segment) stably
+    // partitioned to the bottom regardless of sort choice — that's a
+    // workflow grouping, not a chronological preference. Defaults to
+    // oldest-customer-wait-first via sortForQueue() (the self-maintaining
+    // queue's own ordering), UNLESS the user has explicitly picked something
+    // from the sort dropdown (effectiveFilters.sortBy is only set once they
+    // do — see DEFAULT_FILTERS.sortBy: null in useThreadFilters.js), in which
+    // case that choice wins here too, same as every other view.
     const needsAttentionQueue = (rows) => {
       const eligible = rows.filter((row) => row.tab === "needs_attention" && !row.isNotification);
-      const sorted = sortForQueue(eligible.map((row) => row.thread));
-      const rowByThreadId = new Map(eligible.map((row) => [row.thread, row]));
-      const sortedRows = sorted.map((thread) => rowByThreadId.get(thread));
+      let sortedRows;
+      if (effectiveFilters.sortBy) {
+        sortedRows = sortByDropdown(eligible);
+      } else {
+        const sorted = sortForQueue(eligible.map((row) => row.thread));
+        const rowByThreadId = new Map(eligible.map((row) => [row.thread, row]));
+        sortedRows = sorted.map((thread) => rowByThreadId.get(thread));
+      }
       const primary = sortedRows.filter((row) => !row.effectiveClosePending);
       const approveClose = sortedRows.filter((row) => row.effectiveClosePending);
       return [...primary, ...approveClose];
