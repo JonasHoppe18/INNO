@@ -45,7 +45,7 @@ function CountBadge({ count, muted = false, fadeOnHover = false }) {
   return (
     <span
       className={cn(
-        "ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded px-1.5 text-xs font-semibold leading-none tabular-nums transition-opacity duration-150",
+        "ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded px-1.5 text-xs font-normal leading-none tabular-nums transition-opacity duration-150",
         muted ? "text-muted-foreground" : "bg-muted text-foreground",
         fadeOnHover && "group-hover:opacity-0"
       )}
