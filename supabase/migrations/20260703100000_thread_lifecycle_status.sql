@@ -40,6 +40,29 @@ update public.mail_threads set
     else attention_reason
   end;
 
+-- Stale-thread archival: a legacy open/new thread that's already been read
+-- and hasn't seen any activity in 30+ days is dead weight, not real queue
+-- work — surfacing it as needs_attention would flood day-one production
+-- queues with abandoned threads instead of giving teams an honest inbox
+-- zero. Archive these to resolved instead. Never destructive: the thread
+-- stays visible under Resolved/View all, and a customer reply reopens it to
+-- needs_attention via the normal reopen transition (statusOnInboundCustomerMessage).
+-- Scoped to unread_count = 0 (never touches a thread still carrying an
+-- unread customer message) and only threads this migration itself just
+-- classified as needs_attention (so canonical waiting/resolved/blocked
+-- threads are untouched).
+update public.mail_threads
+set
+  status = 'resolved',
+  attention_reason = null,
+  waiting_reason = null,
+  close_pending = false
+where
+  status = 'needs_attention'
+  and coalesce(unread_count, 0) = 0
+  and last_message_at is not null
+  and last_message_at < now() - interval '30 days';
+
 -- Queue count performance: partial index on the hot query
 create index if not exists mail_threads_needs_attention_idx
   on public.mail_threads (workspace_id, mailbox_id)
