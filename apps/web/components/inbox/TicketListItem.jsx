@@ -187,38 +187,41 @@ function TicketListItemComponent({
         <span className="min-w-0 flex-1 truncate font-mono text-[10px] tabular-nums text-muted-foreground/70">
           {ticketRef}
         </span>
-        <span className="shrink-0 text-[12px] text-muted-foreground">{formatMessageTime(timestamp)}</span>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <span className="text-[12px] text-muted-foreground">{formatMessageTime(timestamp)}</span>
+          {reason || showLegacyStatus || waitAge ? (
+            <span aria-hidden="true" className="text-muted-foreground/70">
+              &middot;
+            </span>
+          ) : null}
+          {reason ? (
+            <span
+              className={
+                "whitespace-nowrap text-xs " +
+                (reason.key === "customer_replied"
+                  ? "text-amber-700 dark:text-amber-500"
+                  : reason.key === "approve_close"
+                    ? "text-purple-700 dark:text-purple-400"
+                    : "text-green-700 dark:text-green-500")
+              }
+            >
+              {reason.label}
+            </span>
+          ) : showLegacyStatus ? (
+            <span className={cn("text-[12px]", STATUS_TEXT_STYLES[status] || "text-muted-foreground")}>
+              {status === "Solved" ? "Resolved" : status}
+            </span>
+          ) : waitAge ? (
+            <span className="whitespace-nowrap text-xs text-muted-foreground/70">{waitAge}</span>
+          ) : null}
+        </div>
       </div>
       <span className="block truncate text-[13px] font-semibold text-foreground">{customerLabel}</span>
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px] text-muted-foreground">
-          <span className={cn("truncate", isUnread && "font-medium text-foreground")}>
-            {thread.subject || "Untitled ticket"}
-          </span>
-          {hasAiDraft ? <Sparkles className="h-3 w-3 text-amber-400" /> : null}
-        </div>
-        {reason ? (
-          <span
-            className={
-              "shrink-0 text-xs whitespace-nowrap " +
-              (reason.key === "customer_replied"
-                ? "text-amber-700 dark:text-amber-500"
-                : reason.key === "approve_close"
-                  ? "text-purple-700 dark:text-purple-400"
-                  : "text-green-700 dark:text-green-500")
-            }
-          >
-            {reason.label}
-          </span>
-        ) : showLegacyStatus ? (
-          <span className={cn("shrink-0 text-[12px]", STATUS_TEXT_STYLES[status] || "text-muted-foreground")}>
-            {status === "Solved" ? "Resolved" : status}
-          </span>
-        ) : waitAge ? (
-          <span className="shrink-0 text-xs text-muted-foreground/70 whitespace-nowrap">
-            {waitAge}
-          </span>
-        ) : null}
+      <div className="flex min-w-0 items-center gap-1.5 text-[13px] text-muted-foreground">
+        <span className={cn("truncate", isUnread && "font-medium text-foreground")}>
+          {thread.subject || "Untitled ticket"}
+        </span>
+        {hasAiDraft ? <Sparkles className="h-3 w-3 text-amber-400" /> : null}
       </div>
       <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
         {metaChildren}
