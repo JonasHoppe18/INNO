@@ -105,9 +105,12 @@ function TicketListItemComponent({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       className={cn(
-        "relative flex w-full flex-col gap-1 px-4 py-3 text-left hover:bg-muted/50 active:scale-[0.99]",
+        "relative flex w-full flex-col gap-1 px-4 py-3 text-left hover:bg-muted/50 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
         isNew ? "animate-ticket-enter" : !isExiting && "animate-list-item-enter",
-        isActive && "bg-muted/50",
+        // Full-strength bg-accent (not bg-muted/50, same shade hover uses) so a
+        // selected row stays visually distinct even while a different row is
+        // hovered at the same time — otherwise both would render identically.
+        isActive && "bg-accent",
         isExiting && "pointer-events-none"
       )}
       style={{
