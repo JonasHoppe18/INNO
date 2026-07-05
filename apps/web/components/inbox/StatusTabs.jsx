@@ -8,7 +8,7 @@ const TABS = [
 
 export function StatusTabs({ active, counts = {}, onChange }) {
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {TABS.map((tab) => {
         const isActive = active === tab.key;
         const count = counts[tab.key];
@@ -18,7 +18,7 @@ export function StatusTabs({ active, counts = {}, onChange }) {
             type="button"
             onClick={() => onChange?.(tab.key)}
             className={
-              "rounded-md px-2.5 py-1 text-xs transition-colors " +
+              "shrink-0 whitespace-nowrap rounded-md px-2.5 py-1 text-xs transition-colors " +
               (isActive
                 ? "bg-muted font-medium text-foreground"
                 : "text-muted-foreground hover:text-foreground")
