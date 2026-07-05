@@ -171,6 +171,53 @@ export function groupNeedsAttentionThreads(threads) {
   return groups;
 }
 
+function isUnreadThread(thread) {
+  return Number(thread?.unread_count ?? 0) > 0;
+}
+
+// Sidebar badge counts, unread-only across every bucket — a bucket with 20
+// threads but 0 unread reads as 0, never the total sitting in it. mineIds:
+// set of assignee ids counted as "assigned to me" (still scoped to the
+// needs_attention bucket, matching the existing "mine" view). knownInboxSlugs:
+// custom inbox slugs to tally separately, each defaulting to 0 so a slug with
+// no unread threads still appears in the result (callers render every known
+// inbox, not just ones with matches).
+export function computeSidebarCounts(threads, { mineIds, knownInboxSlugs } = {}) {
+  const ids = mineIds instanceof Set ? mineIds : new Set(mineIds || []);
+  const slugs = Array.isArray(knownInboxSlugs) ? knownInboxSlugs : [];
+  const counts = {
+    needsAttentionCount: 0,
+    mineCount: 0,
+    waitingCustomerCount: 0,
+    waitingThirdPartyCount: 0,
+    notificationsCount: 0,
+    inboxUnreadCounts: {},
+  };
+  for (const slug of slugs) counts.inboxUnreadCounts[slug] = 0;
+  (threads || []).forEach((thread) => {
+    if (!isUnreadThread(thread)) return;
+    if (isAutomated(thread)) {
+      counts.notificationsCount += 1;
+      return;
+    }
+    const tabKey = threadTab(thread);
+    if (tabKey === "needs_attention") {
+      counts.needsAttentionCount += 1;
+      const assignee = String(thread?.assignee_id ?? "");
+      if (assignee && ids.has(assignee)) counts.mineCount += 1;
+      const slug = resolveInboxSlug(thread, slugs);
+      if (slug) counts.inboxUnreadCounts[slug] += 1;
+    } else if (tabKey === "waiting") {
+      if (waitingGroup(thread) === "third_party") {
+        counts.waitingThirdPartyCount += 1;
+      } else {
+        counts.waitingCustomerCount += 1;
+      }
+    }
+  });
+  return counts;
+}
+
 // Legacy `?view=` values still linked from older bookmarks/emails map onto
 // the new lifecycle-view vocabulary. Anything unrecognized (including "",
 // the omitted-default) passes through unchanged — callers decide what the

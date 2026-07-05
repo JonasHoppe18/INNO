@@ -15,6 +15,7 @@ import {
   groupNeedsAttentionThreads,
   sortForQueue,
   resolveViewRoute,
+  computeSidebarCounts,
 } from "../view-model.js";
 
 const base = { id: "t1", status: "needs_attention", tags: [], unread_count: 0 };
@@ -314,5 +315,87 @@ describe("resolveViewRoute", () => {
   });
   it("trims whitespace on both params", () => {
     expect(resolveViewRoute("  mine  ", "  waiting  ")).toEqual({ view: "mine", tab: "waiting" });
+  });
+});
+
+describe("computeSidebarCounts", () => {
+  const unread = { ...base, unread_count: 3 };
+  const read = { ...base, unread_count: 0 };
+
+  it("Inbox count bruger unread", () => {
+    const counts = computeSidebarCounts([
+      { ...unread, id: "a", status: "needs_attention" },
+      { ...read, id: "b", status: "needs_attention" },
+    ]);
+    expect(counts.needsAttentionCount).toBe(1);
+  });
+
+  it("hides a bucket entirely full of read threads (0 unread, not the total)", () => {
+    const counts = computeSidebarCounts([
+      { ...read, id: "a", status: "needs_attention" },
+      { ...read, id: "b", status: "needs_attention" },
+      { ...read, id: "c", status: "needs_attention" },
+    ]);
+    expect(counts.needsAttentionCount).toBe(0);
+  });
+
+  it("Assigned to me count bruger unread", () => {
+    const mineIds = new Set(["u1"]);
+    const counts = computeSidebarCounts(
+      [
+        { ...unread, id: "a", status: "needs_attention", assignee_id: "u1" },
+        { ...read, id: "b", status: "needs_attention", assignee_id: "u1" },
+      ],
+      { mineIds },
+    );
+    expect(counts.mineCount).toBe(1);
+  });
+
+  it("Waiting on customer count bruger unread", () => {
+    const counts = computeSidebarCounts([
+      { ...unread, id: "a", status: "waiting_customer" },
+      { ...read, id: "b", status: "waiting_customer" },
+    ]);
+    expect(counts.waitingCustomerCount).toBe(1);
+  });
+
+  it("Waiting on third party count bruger unread", () => {
+    const counts = computeSidebarCounts([
+      { ...unread, id: "a", status: "waiting_third_party", waiting_reason: "third_party" },
+      { ...read, id: "b", status: "waiting_third_party", waiting_reason: "third_party" },
+    ]);
+    expect(counts.waitingThirdPartyCount).toBe(1);
+  });
+
+  it("Spam count bruger unread", () => {
+    const counts = computeSidebarCounts([
+      { ...unread, id: "a", classification_key: "notification" },
+      { ...read, id: "b", classification_key: "notification" },
+    ]);
+    expect(counts.notificationsCount).toBe(1);
+  });
+
+  it("Custom inbox count bruger unread", () => {
+    const knownInboxSlugs = ["returns"];
+    const counts = computeSidebarCounts(
+      [
+        { ...unread, id: "a", status: "needs_attention", tags: ["inbox:returns"] },
+        { ...read, id: "b", status: "needs_attention", tags: ["inbox:returns"] },
+      ],
+      { knownInboxSlugs },
+    );
+    expect(counts.inboxUnreadCounts.returns).toBe(1);
+  });
+
+  it("defaults every count to 0 and every known inbox slug to 0 for an empty input", () => {
+    const counts = computeSidebarCounts([], { knownInboxSlugs: ["returns"] });
+    expect(counts).toEqual({
+      needsAttentionCount: 0,
+      mineCount: 0,
+      waitingCustomerCount: 0,
+      waitingThirdPartyCount: 0,
+      notificationsCount: 0,
+      inboxUnreadCounts: { returns: 0 },
+    });
   });
 });

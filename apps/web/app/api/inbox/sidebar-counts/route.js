@@ -70,10 +70,14 @@ async function loadAssignedCount(serviceClient, scope, mailboxIds, supabaseUserI
   return count ?? 0;
 }
 
+// Sidebar counts are unread-only everywhere (see computeSidebarCounts in
+// lib/inbox/view-model.js for the client-side equivalent) — a bucket with
+// threads in it but 0 unread reads as 0, never the total sitting in it.
 function applyNeedsAttentionFilter(query) {
   return query
     .or("status.eq.needs_attention,close_pending.eq.true")
-    .or("classification_key.is.null,classification_key.neq.notification");
+    .or("classification_key.is.null,classification_key.neq.notification")
+    .gt("unread_count", 0);
 }
 
 async function loadNeedsAttentionCount(serviceClient, scope, mailboxIds) {
@@ -114,7 +118,8 @@ async function loadWaitingCounts(serviceClient, scope, mailboxIds) {
         .select("id", { count: "exact", head: true })
         .in("mailbox_id", mailboxIds)
         .eq("status", status)
-        .or("classification_key.is.null,classification_key.neq.notification"),
+        .or("classification_key.is.null,classification_key.neq.notification")
+        .gt("unread_count", 0),
       scope
     );
     if (error) throw new Error(error.message);

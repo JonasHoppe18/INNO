@@ -23,6 +23,7 @@ const STATUS_FILTERS = [
   { value: "Solved", label: "Solved" },
 ];
 const SORT_OPTIONS = [
+  { value: "unread_first", label: "Unread first" },
   { value: "newest_activity", label: "Newest activity" },
   { value: "newest_updated", label: "Newest updated" },
   { value: "oldest_updated", label: "Oldest updated" },

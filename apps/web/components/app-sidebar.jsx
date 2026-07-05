@@ -454,17 +454,20 @@ export function AppSidebar({
 
   // NavQueue's counts prop mirrors the /api/inbox/sidebar-counts payload
   // shape (Plan 1 Task 10) — see nav-queue.jsx for per-key rendering rules.
-  // While the inbox is mounted, InboxSplitView publishes exact client-side
-  // counts (computed from the loaded thread list, same source as the status
-  // tabs) via the live-sidebar-counts bridge; those win over the DB-side API
-  // values, which read 0 pre-migration and lag optimistic updates after.
+  // Every count here is unread-only: a bucket with 20 threads but 0 unread
+  // reads as 0, never the total sitting in it (see computeSidebarCounts in
+  // view-model.js). While the inbox is mounted, InboxSplitView publishes
+  // exact client-side counts (computed from the loaded thread list, same
+  // source as the status tabs) via the live-sidebar-counts bridge; those win
+  // over the DB-side API values, which read 0 pre-migration and lag
+  // optimistic updates after.
   const queueCounts = {
     needsAttentionCount: liveCounts?.needsAttentionCount ?? needsAttentionCount,
     mineCount: liveCounts?.mineCount ?? mineCount,
     waitingCustomerCount: liveCounts?.waitingCustomerCount ?? waitingCustomerCount,
     waitingThirdPartyCount:
       liveCounts?.waitingThirdPartyCount ?? waitingThirdPartyCount,
-    notificationsCount,
+    notificationsCount: liveCounts?.notificationsCount ?? notificationsCount,
     inboxNeedsAttentionCounts:
       liveCounts?.inboxNeedsAttentionCounts ?? inboxNeedsAttentionCounts,
   }

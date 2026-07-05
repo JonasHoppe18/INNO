@@ -36,6 +36,7 @@ import { useSiteHeaderActions } from "@/components/site-header-actions";
 import { reportClientEvent } from "@/lib/client-events";
 import { toLegacyUiStatus } from "@/lib/inbox/status-model";
 import {
+  computeSidebarCounts,
   groupNeedsAttentionThreads,
   groupWaitingThreads,
   isAutomated,
@@ -1587,6 +1588,8 @@ export function InboxSplitView({
       });
       const isNotification = isAutomated(thread);
       const resolvedInboxSlug = resolveInboxSlug(thread, knownInboxSlugs);
+      const effectiveUnreadCount =
+        readOverrides[threadId] || thread?.is_read ? 0 : Number(thread?.unread_count ?? 0);
       return {
         thread,
         threadId,
@@ -1596,12 +1599,13 @@ export function InboxSplitView({
         tab,
         isNotification,
         resolvedInboxSlug,
+        effectiveUnreadCount,
       };
     });
 
     const applyCommonFilters = (rows) =>
       rows.filter((row) => {
-        const { thread, threadId, effectiveStatus } = row;
+        const { thread, effectiveStatus, effectiveUnreadCount } = row;
         const selectedStatuses = Array.isArray(effectiveFilters.statuses)
           ? effectiveFilters.statuses
           : effectiveFilters.status && effectiveFilters.status !== "All"
@@ -1610,11 +1614,7 @@ export function InboxSplitView({
         if (selectedStatuses.length && !selectedStatuses.includes(effectiveStatus)) {
           return false;
         }
-        const unreadCount =
-          readOverrides[threadId] || thread?.is_read
-            ? 0
-            : Number(thread?.unread_count ?? 0);
-        if (effectiveFilters.unreadsOnly && unreadCount === 0) return false;
+        if (effectiveFilters.unreadsOnly && effectiveUnreadCount === 0) return false;
         if (effectiveFilters.query) {
           const query = effectiveFilters.query.toLowerCase();
           const subject = (thread.subject || "").toLowerCase();
@@ -1646,6 +1646,9 @@ export function InboxSplitView({
     // Sort dropdown behavior (newest activity default) — used by every view
     // except the default needs_attention queue, which always sorts by
     // longest-waiting-first via sortForQueue() regardless of the dropdown.
+    // "Unread first" follows the same unread-only convention as the sidebar
+    // badges (computeSidebarCounts): unread rows sort to the top, read rows
+    // stay below, each group still ordered newest-activity-first internally.
     const sortByDropdown = (rows) =>
       [...rows].sort((a, b) => {
         const getTs = (row) => {
@@ -1657,6 +1660,12 @@ export function InboxSplitView({
           const parsed = Date.parse(value);
           return Number.isFinite(parsed) ? parsed : 0;
         };
+        if (effectiveFilters.sortBy === "unread_first") {
+          const aUnread = a.effectiveUnreadCount > 0 ? 1 : 0;
+          const bUnread = b.effectiveUnreadCount > 0 ? 1 : 0;
+          if (aUnread !== bUnread) return bUnread - aUnread;
+          return getTs(b) - getTs(a);
+        }
         const aTs = getTs(a);
         const bTs = getTs(b);
         if (effectiveFilters.sortBy === "oldest_updated") {
@@ -2852,24 +2861,21 @@ export function InboxSplitView({
   // Live sidebar counts: computed from the same client-side thread list the
   // tabs use (exact + optimistic-aware, works pre-migration where the
   // DB-side /api/inbox/sidebar-counts fields still read 0) and published to
-  // the app sidebar via the live-sidebar-counts bridge. Automated/notification
-  // threads never count.
+  // the app sidebar via the live-sidebar-counts bridge. Unread-only across
+  // every bucket (including Spam) — a bucket sitting on old-but-read threads
+  // shows 0, never its total size. computeSidebarCounts is pure/tested
+  // (view-model.test.js); this just resolves each thread's OPTIMISTIC status
+  // and read state (ticketStateByThread / readOverrides) before handing the
+  // list off to it, since those are component-local concerns the pure
+  // function has no business knowing about.
   const liveSidebarCounts = useMemo(() => {
     const mineIds = new Set([
       String(currentSupabaseUserId || ""),
       String(user?.id || ""),
     ]);
     mineIds.delete("");
-    const payload = {
-      needsAttentionCount: 0,
-      mineCount: 0,
-      waitingCustomerCount: 0,
-      waitingThirdPartyCount: 0,
-      inboxNeedsAttentionCounts: {},
-    };
-    for (const slug of knownInboxSlugs) payload.inboxNeedsAttentionCounts[slug] = 0;
-    derivedThreads.forEach((thread) => {
-      if (isAutomated(thread)) return;
+    const effectiveThreads = derivedThreads.map((thread) => {
+      const threadId = String(thread?.id || "").trim();
       const hasLocalState = Object.prototype.hasOwnProperty.call(
         ticketStateByThread,
         thread.id,
@@ -2878,28 +2884,35 @@ export function InboxSplitView({
       const effectiveStatus = normalizeStatus(
         (hasLocalState ? uiState?.status : null) || thread.status || DEFAULT_TICKET_STATE.status,
       );
-      const tabKey = threadTab({ ...thread, status: effectiveStatus });
-      if (tabKey === "needs_attention") {
-        payload.needsAttentionCount += 1;
-        const assignee = String(
-          (hasLocalState ? uiState?.assignee : null) ?? thread.assignee_id ?? "",
-        );
-        if (assignee && mineIds.has(assignee)) payload.mineCount += 1;
-        const slug = resolveInboxSlug(thread, knownInboxSlugs);
-        if (slug) payload.inboxNeedsAttentionCounts[slug] += 1;
-      } else if (tabKey === "waiting") {
-        if (waitingGroup(thread) === "third_party") {
-          payload.waitingThirdPartyCount += 1;
-        } else {
-          payload.waitingCustomerCount += 1;
-        }
-      }
+      const effectiveAssignee = String(
+        (hasLocalState ? uiState?.assignee : null) ?? thread.assignee_id ?? "",
+      );
+      const effectiveUnreadCount =
+        readOverrides[threadId] || thread?.is_read ? 0 : Number(thread?.unread_count ?? 0);
+      return {
+        ...thread,
+        status: effectiveStatus,
+        assignee_id: effectiveAssignee,
+        unread_count: effectiveUnreadCount,
+      };
     });
-    return payload;
+    const counts = computeSidebarCounts(effectiveThreads, {
+      mineIds,
+      knownInboxSlugs,
+    });
+    return {
+      needsAttentionCount: counts.needsAttentionCount,
+      mineCount: counts.mineCount,
+      waitingCustomerCount: counts.waitingCustomerCount,
+      waitingThirdPartyCount: counts.waitingThirdPartyCount,
+      notificationsCount: counts.notificationsCount,
+      inboxNeedsAttentionCounts: counts.inboxUnreadCounts,
+    };
   }, [
     derivedThreads,
     knownInboxSlugs,
     ticketStateByThread,
+    readOverrides,
     currentSupabaseUserId,
     user?.id,
   ]);
