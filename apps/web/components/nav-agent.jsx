@@ -6,7 +6,6 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   SidebarGroup,
-  SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
@@ -21,8 +20,15 @@ export function NavAgent({
     pathname === url || pathname.startsWith(`${url}/`);
 
   return (
-    <SidebarGroup>
-      <SidebarGroupLabel>Configuration</SidebarGroupLabel>
+    <SidebarGroup className="pt-0">
+      {/* Matches nav-queue.jsx's QUEUE/INBOXES/AUTOMATED label styling exactly
+          (rather than the generic SidebarGroupLabel default) so every sidebar
+          section header reads as one consistent system. */}
+      <div className="mb-1 px-2 group-data-[collapsible=icon]:hidden">
+        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+          Configuration
+        </span>
+      </div>
       <SidebarMenu>
         {items.map((item) => (
           <SidebarMenuItem key={item.name}>
