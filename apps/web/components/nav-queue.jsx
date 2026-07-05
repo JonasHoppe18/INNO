@@ -261,7 +261,7 @@ export function NavQueue({
         )}
         {contextMenu ? (
           <div
-            className="fixed z-50 min-w-[170px] rounded-md border border-border bg-popover p-1 shadow-lg"
+            className="fixed z-50 min-w-[170px] origin-top-left rounded-md border border-border bg-popover p-1 shadow-lg animate-context-menu-enter"
             style={{ left: contextMenu.x, top: contextMenu.y }}
           >
             <button

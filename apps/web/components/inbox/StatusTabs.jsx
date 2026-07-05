@@ -6,12 +6,11 @@ const TABS = [
   { key: "resolved", label: "Resolved" },
 ];
 
-export function StatusTabs({ active, counts = {}, onChange }) {
+export function StatusTabs({ active, onChange }) {
   return (
-    <div className="flex items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="flex items-center gap-1">
       {TABS.map((tab) => {
         const isActive = active === tab.key;
-        const count = counts[tab.key];
         return (
           <button
             key={tab.key}
@@ -25,7 +24,6 @@ export function StatusTabs({ active, counts = {}, onChange }) {
             }
           >
             {tab.label}
-            {typeof count === "number" && count > 0 ? ` · ${count}` : ""}
           </button>
         );
       })}

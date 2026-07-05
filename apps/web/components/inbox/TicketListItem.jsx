@@ -105,7 +105,7 @@ function TicketListItemComponent({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       className={cn(
-        "relative flex w-full flex-col gap-1 px-4 py-3 text-left transition-colors duration-150 hover:bg-muted/50",
+        "relative flex w-full flex-col gap-1 px-4 py-3 text-left hover:bg-muted/50 active:scale-[0.99]",
         isNew ? "animate-ticket-enter" : !isExiting && "animate-list-item-enter",
         isActive && "bg-muted/50",
         isExiting && "pointer-events-none"
@@ -113,9 +113,13 @@ function TicketListItemComponent({
       style={{
         animationDelay: !isNew && !isExiting && mountIndex > 0 ? `${Math.min(mountIndex, 8) * 28}ms` : undefined,
         transition:
-          "opacity 200ms cubic-bezier(0.23,1,0.32,1), transform 200ms cubic-bezier(0.23,1,0.32,1), max-height 240ms cubic-bezier(0.23,1,0.32,1), padding 240ms cubic-bezier(0.23,1,0.32,1)",
+          "opacity 200ms cubic-bezier(0.23,1,0.32,1), transform 200ms cubic-bezier(0.23,1,0.32,1), max-height 240ms cubic-bezier(0.23,1,0.32,1), padding 240ms cubic-bezier(0.23,1,0.32,1), background-color 150ms ease-out",
         opacity: isExiting ? 0 : 1,
-        transform: isExiting ? "translateX(12px) scale(0.98)" : "translateX(0) scale(1)",
+        // Left unset (not forced to an identity value) so the active:scale-[0.99]
+        // Tailwind class can still apply its own transform on press — an inline
+        // transform always wins over a class, so forcing one here would silently
+        // kill any transform utility on this element.
+        transform: isExiting ? "translateX(12px) scale(0.98)" : undefined,
         maxHeight: isExiting ? "0px" : "220px",
         paddingTop: isExiting ? "0px" : undefined,
         paddingBottom: isExiting ? "0px" : undefined,

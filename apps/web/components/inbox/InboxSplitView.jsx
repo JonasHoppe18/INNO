@@ -2865,42 +2865,11 @@ export function InboxSplitView({
         ? "resolved"
         : "needs_attention";
 
-  // Task 6, Plan 2: StatusTabs counts. Computed independently of
-  // filteredThreads (which is already narrowed to the ACTIVE tab) so all
-  // three tabs' counts are visible at once. Scoped to the current inbox when
-  // resolvedView is inbox:<slug>, otherwise counts span every thread —
-  // matching the scope each tab's own filtering rule applies within.
-  const statusTabCounts = useMemo(() => {
-    const targetInbox = resolvedView.startsWith("inbox:")
-      ? resolvedView.slice("inbox:".length)
-      : null;
-    const counts = { needs_attention: 0, waiting: 0, resolved: 0 };
-    derivedThreads.forEach((thread) => {
-      if (isAutomated(thread)) return;
-      if (targetInbox && resolveInboxSlug(thread, knownInboxSlugs) !== targetInbox) {
-        return;
-      }
-      const hasLocalState = Object.prototype.hasOwnProperty.call(
-        ticketStateByThread,
-        thread.id,
-      );
-      const uiState = hasLocalState ? ticketStateByThread[thread.id] : DEFAULT_TICKET_STATE;
-      const effectiveStatus = normalizeStatus(
-        (hasLocalState ? uiState?.status : null) || thread.status || DEFAULT_TICKET_STATE.status,
-      );
-      const tabKey = threadTab({ ...thread, status: effectiveStatus });
-      if (tabKey === "needs_attention" || tabKey === "waiting" || tabKey === "resolved") {
-        counts[tabKey] += 1;
-      }
-    });
-    return counts;
-  }, [derivedThreads, knownInboxSlugs, resolvedView, ticketStateByThread]);
-
   // Live sidebar counts: computed from the same client-side thread list the
   // tabs use (exact + optimistic-aware, works pre-migration where the
   // DB-side /api/inbox/sidebar-counts fields still read 0) and published to
-  // the app sidebar via the live-sidebar-counts bridge. Same exclusion
-  // semantics as statusTabCounts: automated/notification threads never count.
+  // the app sidebar via the live-sidebar-counts bridge. Automated/notification
+  // threads never count.
   const liveSidebarCounts = useMemo(() => {
     const mineIds = new Set([
       String(currentSupabaseUserId || ""),
@@ -3537,7 +3506,7 @@ export function InboxSplitView({
         getAssigneeLabel={getAssigneeLabelForId}
         statusTabs={
           resolvedView !== "all" && resolvedView !== "automated" ? (
-            <StatusTabs active={activeStatusTab} counts={statusTabCounts} onChange={handleTabChange} />
+            <StatusTabs active={activeStatusTab} onChange={handleTabChange} />
           ) : null
         }
       />
