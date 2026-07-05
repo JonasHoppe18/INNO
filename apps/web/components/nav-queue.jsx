@@ -38,13 +38,14 @@ import {
 // badge; Waiting renders muted (text-muted-foreground, matching this file's
 // existing muted-badge convention — see CountBadge below); Resolved never
 // shows a count.
-function CountBadge({ count, muted = false }) {
+function CountBadge({ count, muted = false, fadeOnHover = false }) {
   if (!(count > 0)) return null
   return (
     <span
       className={cn(
-        "ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded px-1.5 text-xs font-semibold leading-none tabular-nums",
-        muted ? "text-muted-foreground" : "text-foreground"
+        "ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded px-1.5 text-xs font-semibold leading-none tabular-nums transition-opacity duration-150",
+        muted ? "text-muted-foreground" : "text-foreground",
+        fadeOnHover && "group-hover:opacity-0"
       )}
     >
       {count > 99 ? "99+" : count}
@@ -196,7 +197,7 @@ export function NavQueue({
                   <SidebarMenuItem key={slug}>
                     <div
                       className={cn(
-                        "group flex items-center gap-1 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                        "group relative flex items-center rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground",
                         active && "bg-accent text-accent-foreground"
                       )}
                       onContextMenu={(event) => {
@@ -211,15 +212,20 @@ export function NavQueue({
                       >
                         <Inbox className="h-4 w-4 shrink-0" />
                         <span className="truncate">{inbox?.name || slug}</span>
-                        <CountBadge count={count} />
+                        <CountBadge count={count} fadeOnHover />
                       </Link>
+                      {/* Absolutely positioned (out of flex flow) so it never
+                          reserves layout width — otherwise the count above
+                          would sit closer in than every TICKETS row's count,
+                          since those rows have no trailing icon to make room
+                          for. Swaps in over the count on hover instead. */}
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation()
                           onConfigureInbox?.(inbox)
                         }}
-                        className="ml-1 flex-shrink-0 rounded p-1 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-opacity duration-150"
+                        className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-opacity duration-150"
                         title="Configure inbox"
                       >
                         <Settings2 className="h-3 w-3" />
@@ -231,7 +237,7 @@ export function NavQueue({
               <SidebarMenuItem>
                 <div
                   className={cn(
-                    "group flex items-center rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                    "group relative flex items-center rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground",
                     isViewActive("automated") && "bg-accent text-accent-foreground"
                   )}
                 >
@@ -241,7 +247,7 @@ export function NavQueue({
                   >
                     <Ban className="h-4 w-4 shrink-0" />
                     <span>Spam</span>
-                    <CountBadge count={notificationsCount} />
+                    <CountBadge count={notificationsCount} fadeOnHover />
                   </Link>
                   <button
                     type="button"
@@ -249,7 +255,7 @@ export function NavQueue({
                       e.stopPropagation()
                       onConfigureNotifications?.()
                     }}
-                    className="ml-1 flex-shrink-0 rounded p-1 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-opacity duration-150"
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-opacity duration-150"
                     title="Configure Spam"
                   >
                     <Settings2 className="h-3 w-3" />

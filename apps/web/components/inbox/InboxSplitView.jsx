@@ -12,7 +12,6 @@ import {
 } from "react";
 import { TicketList } from "@/components/inbox/TicketList";
 import { TicketDetail } from "@/components/inbox/TicketDetail";
-import { StatusTabs } from "@/components/inbox/StatusTabs";
 import { SonaInsightsModal } from "@/components/inbox/SonaInsightsModal";
 import { TranslationModal } from "@/components/inbox/TranslationModal";
 import {
@@ -2850,20 +2849,6 @@ export function InboxSplitView({
     setFilters((prev) => ({ ...prev, ...updates }));
   };
 
-  // Which of the three StatusTabs buttons is highlighted. Inside inbox:<slug>
-  // views this is the ?tab= subset; everywhere else needs_attention/waiting/
-  // resolved ARE the ?view= value itself, and "mine"/"" both read as the
-  // needs_attention tab (mine has no dedicated tab bucket of its own).
-  const activeStatusTab = resolvedView.startsWith("inbox:")
-    ? tab
-    : resolvedView === "waiting" ||
-        resolvedView === "waiting_customer" ||
-        resolvedView === "waiting_third_party"
-      ? "waiting"
-      : resolvedView === "resolved"
-        ? "resolved"
-        : "needs_attention";
-
   // Live sidebar counts: computed from the same client-side thread list the
   // tabs use (exact + optimistic-aware, works pre-migration where the
   // DB-side /api/inbox/sidebar-counts fields still read 0) and published to
@@ -2922,42 +2907,6 @@ export function InboxSplitView({
   useEffect(() => {
     publishLiveSidebarCounts(liveSidebarCounts);
   }, [liveSidebarCounts]);
-
-  // Tab clicks preserve every other search param — e.g. ?thread= from
-  // useThreadSelection must survive a tab switch. Two distinct behaviors
-  // depending on where StatusTabs is rendered:
-  // - Inside an inbox:<slug> view, the three tabs are a SUBSET of that one
-  //   inbox (per the brief: "?tab= within inbox views"), so only ?tab=
-  //   changes and ?view= stays pinned to the inbox.
-  // - Everywhere else (default/mine/waiting/resolved), needs_attention/
-  //   waiting/resolved are top-level ?view= values themselves — StatusTabs
-  //   acts as a view switcher there, and ?tab= is cleared (not applicable
-  //   outside inbox views). Clicking a tab away from "mine" intentionally
-  //   drops the mine filter, since mine isn't one of the three tab buckets.
-  const handleTabChange = useCallback(
-    (nextTab) => {
-      const params = new URLSearchParams(searchParams?.toString());
-      const isInboxView = resolvedView.startsWith("inbox:");
-      if (isInboxView) {
-        params.set("view", resolvedView);
-        if (nextTab && nextTab !== "needs_attention") {
-          params.set("tab", nextTab);
-        } else {
-          params.delete("tab");
-        }
-      } else {
-        if (nextTab && nextTab !== "needs_attention") {
-          params.set("view", nextTab);
-        } else {
-          params.delete("view");
-        }
-        params.delete("tab");
-      }
-      const queryString = params.toString();
-      router.replace(queryString ? `${pathname}?${queryString}` : pathname);
-    },
-    [pathname, resolvedView, router, searchParams],
-  );
 
   const handleViewAllTickets = useCallback(() => {
     setFilters(DEFAULT_FILTERS);
@@ -3502,11 +3451,6 @@ export function InboxSplitView({
         onKeepWaiting={keepWaiting}
         getInboxName={getInboxNameForThread}
         getAssigneeLabel={getAssigneeLabelForId}
-        statusTabs={
-          resolvedView !== "all" && resolvedView !== "automated" ? (
-            <StatusTabs active={activeStatusTab} onChange={handleTabChange} />
-          ) : null
-        }
       />
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-sidebar">
