@@ -184,15 +184,12 @@ function TicketListItemComponent({
             <span aria-hidden="true">&middot;</span>
           </>
         ) : null}
-        <span className={cn(!assigneeDisplay && "text-muted-foreground/70")}>
-          {assigneeDisplay || "Unassigned"}
-        </span>
-        {wakeCountdownText ? (
-          <>
-            <span aria-hidden="true">&middot;</span>
-            <span className="truncate">{wakeCountdownText}</span>
-          </>
-        ) : null}
+        {/* Unassigned is the common case pre-migration/for new threads — showing it
+            on every row was just noise; an assignee is only worth surfacing once
+            someone actually owns the ticket. */}
+        {assigneeDisplay ? <span className="truncate">{assigneeDisplay}</span> : null}
+        {assigneeDisplay && wakeCountdownText ? <span aria-hidden="true">&middot;</span> : null}
+        {wakeCountdownText ? <span className="truncate">{wakeCountdownText}</span> : null}
       </div>
       {classificationLabel ? (
         <div className="text-[11px] text-muted-foreground">
