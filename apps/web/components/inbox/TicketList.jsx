@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { TicketListItem } from "@/components/inbox/TicketListItem";
 import { ArrowDownUp, Filter, Inbox } from "lucide-react";
-import { deriveReason, wakeInDays } from "@/lib/inbox/view-model";
+import { deriveReason, formatWaitAge, wakeInDays } from "@/lib/inbox/view-model";
 
 const STATUS_FILTERS = [
   { value: "All", label: "All" },
@@ -450,7 +450,14 @@ export function TicketList({
               const unreadCount = getUnreadCount(thread);
               // View-all (lookup) keeps today's status text; every other queue
               // view shows the "why is this here" reason instead.
-              const reason = resolvedView === "all" ? null : deriveReason(thread);
+              const isLookupView = resolvedView === "all";
+              const reason = isLookupView ? null : deriveReason(thread);
+              // When there's no stored reason (nothing new/no reply since the
+              // agent last touched it), fall back to how long the customer has
+              // been waiting rather than leaving the slot empty — same value
+              // the queue is sorted by, so it's genuinely useful, not filler.
+              const waitAge =
+                !isLookupView && !reason ? formatWaitAge(thread, Date.now()) : null;
               const inboxName = getInboxName ? getInboxName(thread) : null;
               const assigneeLabel = getAssigneeLabel
                 ? getAssigneeLabel(uiState?.assignee ?? thread.assignee_id ?? null)
@@ -481,7 +488,8 @@ export function TicketList({
                       assigneeLabel={assigneeLabel}
                       priority={uiState?.priority}
                       reason={reason}
-                      showLegacyStatus={resolvedView === "all"}
+                      waitAge={waitAge}
+                      showLegacyStatus={isLookupView}
                       inboxName={inboxName}
                       wakeDays={wakeDays}
                       isExiting={isExiting}

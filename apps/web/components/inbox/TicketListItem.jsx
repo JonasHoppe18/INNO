@@ -32,6 +32,7 @@ function TicketListItemComponent({
   assigneeLabel = null,
   priority,
   reason = null,
+  waitAge = null,
   showLegacyStatus = false,
   inboxName = null,
   wakeDays = null,
@@ -168,6 +169,10 @@ function TicketListItemComponent({
           <span className={cn("shrink-0 text-[12px]", STATUS_TEXT_STYLES[status] || "text-muted-foreground")}>
             {status === "Solved" ? "Resolved" : status}
           </span>
+        ) : waitAge ? (
+          <span className="shrink-0 text-xs text-muted-foreground/70 whitespace-nowrap">
+            {waitAge}
+          </span>
         ) : null}
       </div>
       <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
@@ -236,6 +241,7 @@ export const TicketListItem = memo(
     prev.assigneeLabel === next.assigneeLabel &&
     prev.priority === next.priority &&
     prev.reason === next.reason &&
+    prev.waitAge === next.waitAge &&
     prev.showLegacyStatus === next.showLegacyStatus &&
     prev.inboxName === next.inboxName &&
     prev.wakeDays === next.wakeDays &&

@@ -58,7 +58,7 @@ export function deriveReason(thread) {
   return null;
 }
 
-function waitTimestamp(thread) {
+export function waitTimestamp(thread) {
   const inbound = Date.parse(thread?.customer_last_inbound_at || "");
   if (!Number.isNaN(inbound)) return inbound;
   const last = Date.parse(thread?.last_message_at || "");
@@ -84,6 +84,27 @@ export function wakeInDays(thread, nowMs) {
   const wake = Date.parse(thread?.wake_at || "");
   if (Number.isNaN(wake)) return null;
   return Math.max(0, Math.ceil((wake - nowMs) / DAY_MS));
+}
+
+// Compact "how long has the customer been waiting" fallback, shown in the
+// reason slot whenever deriveReason() has nothing to say (no stored
+// attention_reason and the thread is already read) — replaces an empty gap
+// with the single most useful piece of information a queue row can carry:
+// how old this wait actually is, matching the queue's own sort key
+// (waitTimestamp, the same function queueCompare uses).
+export function formatWaitAge(thread, nowMs) {
+  const ts = waitTimestamp(thread);
+  if (!Number.isFinite(ts)) return null;
+  const diffMs = Math.max(0, nowMs - ts);
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  const month = 30 * day;
+  if (diffMs < minute) return "just now";
+  if (diffMs < hour) return `${Math.floor(diffMs / minute)}m`;
+  if (diffMs < day) return `${Math.floor(diffMs / hour)}h`;
+  if (diffMs < month) return `${Math.floor(diffMs / day)}d`;
+  return `${Math.floor(diffMs / month)}mo`;
 }
 
 // Pure formatting helper for the Waiting-tab wake countdown. Mirrors the

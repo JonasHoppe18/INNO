@@ -10,6 +10,7 @@ import {
   waitingGroup,
   wakeInDays,
   formatWakeCountdown,
+  formatWaitAge,
   groupWaitingThreads,
   groupNeedsAttentionThreads,
   sortForQueue,
@@ -157,6 +158,38 @@ describe("wakeInDays", () => {
   it("returns null for missing or invalid wake_at", () => {
     expect(wakeInDays(base, NOW)).toBe(null);
     expect(wakeInDays({ ...base, wake_at: "garbage" }, NOW)).toBe(null);
+  });
+});
+
+describe("formatWaitAge", () => {
+  const NOW = Date.parse("2026-07-03T12:00:00Z");
+  it("uses customer_last_inbound_at, falling back to last_message_at", () => {
+    expect(
+      formatWaitAge({ ...base, customer_last_inbound_at: "2026-07-03T09:00:00Z" }, NOW),
+    ).toBe("3h");
+    expect(
+      formatWaitAge(
+        { ...base, customer_last_inbound_at: null, last_message_at: "2026-07-03T09:00:00Z" },
+        NOW,
+      ),
+    ).toBe("3h");
+  });
+  it("formats minutes, hours, days, and months at their tiers", () => {
+    expect(formatWaitAge({ ...base, last_message_at: "2026-07-03T11:45:00Z" }, NOW)).toBe("15m");
+    expect(formatWaitAge({ ...base, last_message_at: "2026-07-03T03:00:00Z" }, NOW)).toBe("9h");
+    expect(formatWaitAge({ ...base, last_message_at: "2026-06-28T12:00:00Z" }, NOW)).toBe("5d");
+    expect(formatWaitAge({ ...base, last_message_at: "2026-04-03T12:00:00Z" }, NOW)).toBe("3mo");
+  });
+  it("returns 'just now' for under a minute", () => {
+    expect(formatWaitAge({ ...base, last_message_at: "2026-07-03T11:59:45Z" }, NOW)).toBe(
+      "just now",
+    );
+  });
+  it("returns null when neither timestamp is present or valid", () => {
+    expect(formatWaitAge(base, NOW)).toBe(null);
+    expect(
+      formatWaitAge({ ...base, customer_last_inbound_at: "garbage", last_message_at: null }, NOW),
+    ).toBe(null);
   });
 });
 
