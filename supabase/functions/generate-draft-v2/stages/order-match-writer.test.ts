@@ -44,7 +44,7 @@ Deno.test("integration_error directive avoids 'order not found' and asks safely"
   const d = buildOrderMatchDirective(match("integration_error")).toLowerCase();
   assert(!d.includes("kunne ikke findes") && !d.includes("not found") && !d.includes("ikke fundet"));
   // safe "unable to verify right now" wording, not a not-found claim
-  assertStringIncludes(d, "i øjeblikket");
+  assertStringIncludes(d, "lige nu");
   assertStringIncludes(d, "kan desværre ikke verificere");
 });
 

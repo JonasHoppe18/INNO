@@ -50,9 +50,9 @@ Deno.test("no_refund + customer claims returned → safe acknowledgement directi
   // 4. acknowledge the customer's statement
   assertStringIncludes(d, "kunden oplyser"); // acknowledge customer-stated return
   // 5. do not claim received
-  assert(/ikke kan (se|verificere)[^.]*(modtaget|ankommet)/.test(d), "must say receipt cannot be verified");
+  assert(/ikke kan bekræfte[^.]*(registreret|modtaget)/.test(d), "must say receipt cannot be confirmed");
   // 6. do not claim processed
-  assertStringIncludes(d, "behandlet");
+  assertStringIncludes(d, "færdig");
   // 7. do not promise notification
   assert(/lov ikke[^.]*(besked|underret|notifikation)/.test(d), "must forbid promising notification");
   // 8. do not promise timing (no day-count, no arrival promise)
@@ -61,8 +61,8 @@ Deno.test("no_refund + customer claims returned → safe acknowledgement directi
   // 9. ask for return tracking number or link
   assertStringIncludes(d, "tracking");
   assert(/nummer|link/.test(d), "must ask for tracking number or link");
-  // review status further
-  assertStringIncludes(d, "undersøges nærmere");
+  // tracking is asked for so the return can be matched to the order
+  assertStringIncludes(d, "matches med ordren");
   // 10. must not assert return-shipping cost responsibility unless asked
   assert(!/dit ansvar|din regning|kundens ansvar/.test(d), "must not assert shipping responsibility");
   assert(/medmindre kunden/.test(d), "must gate any shipping-cost mention behind the customer asking");
