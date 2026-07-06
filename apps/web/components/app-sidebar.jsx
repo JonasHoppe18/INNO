@@ -20,7 +20,6 @@ import {
 
 import { NavMain } from "@/components/nav-main"
 import { NavQueue } from "@/components/nav-queue"
-import { NavSecondary } from "@/components/nav-secondary"
 import { NavUser } from "@/components/nav-user"
 import { cn } from "@/lib/utils"
 import { useClerkSupabase } from "@/lib/useClerkSupabase"
@@ -78,10 +77,6 @@ const baseData = {
       url: "/analytics",
       icon: BarChart2Icon,
     },
-  ],
-  // Bottom section (mt-auto). Guides moved into the user menu (nav-user.jsx)
-  // alongside Settings/Billing, per direct feedback.
-  navSecondary: [
     {
       title: "Integrations",
       url: "/integrations",
@@ -478,7 +473,6 @@ export function AppSidebar({
           onConfigureInbox={handleConfigureInbox}
           onConfigureNotifications={handleConfigureNotifications}
         />
-        <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>
       <SidebarFooter>
         <NavUser user={data.user} />
