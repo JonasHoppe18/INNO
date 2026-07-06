@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
 import {
-  Ban,
   CheckCircle2,
   Clock,
   Inbox,
@@ -29,12 +28,13 @@ import {
 // needs_attention (default, param omitted), mine, waiting, resolved,
 // automated, all, inbox:<slug>.
 //
-// Spam (classification_key = "notification") sits at the bottom of TICKETS,
-// right after Resolved — both are "done, no action needed" terminal states,
-// whereas INBOXES below is purely user-created routing buckets (Lager etc.).
-// Always a flat, always-visible row (not a collapsed section), per direct
-// feedback that a collapsed-by-default AUTOMATED group made it feel
-// hidden/hard to find.
+// Spam (classification_key = "notification") sits at the bottom of INBOXES,
+// after any custom inboxes, using the same Inbox icon as every custom
+// inbox row — it's effectively just another routing bucket from the
+// sidebar's point of view, not a lifecycle state like the TICKETS rows
+// above it. Always a flat, always-visible row (not a collapsed section),
+// per direct feedback that a collapsed-by-default AUTOMATED group made it
+// feel hidden/hard to find.
 //
 // Count semantics (per brief): needs-attention-style counts render as today's
 // badge; Waiting renders muted (text-muted-foreground, matching this file's
@@ -162,34 +162,6 @@ export function NavQueue({
                   href="/inbox?view=resolved"
                   active={isViewActive("resolved")}
                 />
-                <SidebarMenuItem>
-                  <div
-                    className={cn(
-                      "group relative flex items-center rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-                      isViewActive("automated") && "bg-accent text-accent-foreground"
-                    )}
-                  >
-                    <Link
-                      href="/inbox?view=automated"
-                      className="flex min-w-0 flex-1 items-center gap-2 text-inherit no-underline"
-                    >
-                      <Ban className="h-4 w-4 shrink-0" />
-                      <span>Spam</span>
-                      <CountBadge count={notificationsCount} fadeOnHover />
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onConfigureNotifications?.()
-                      }}
-                      className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-opacity duration-150"
-                      title="Configure Spam"
-                    >
-                      <Settings2 className="h-3 w-3" />
-                    </button>
-                  </div>
-                </SidebarMenuItem>
               </>
             )}
           </SidebarMenu>
@@ -264,6 +236,34 @@ export function NavQueue({
                   </SidebarMenuItem>
                 )
               })}
+              <SidebarMenuItem>
+                <div
+                  className={cn(
+                    "group relative flex items-center rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                    isViewActive("automated") && "bg-accent text-accent-foreground"
+                  )}
+                >
+                  <Link
+                    href="/inbox?view=automated"
+                    className="flex min-w-0 flex-1 items-center gap-2 text-inherit no-underline"
+                  >
+                    <Inbox className="h-4 w-4 shrink-0" />
+                    <span>Spam</span>
+                    <CountBadge count={notificationsCount} fadeOnHover />
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onConfigureNotifications?.()
+                    }}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-opacity duration-150"
+                    title="Configure Spam"
+                  >
+                    <Settings2 className="h-3 w-3" />
+                  </button>
+                </div>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         )}
