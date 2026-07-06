@@ -12,7 +12,6 @@ import {
   BarChart2Icon,
   BookOpenIcon,
   CableIcon,
-  HelpCircleIcon,
   LayoutDashboardIcon,
   MailIcon,
   SquarePenIcon,
@@ -80,18 +79,13 @@ const baseData = {
       icon: BarChart2Icon,
     },
   ],
-  // Bottom section (mt-auto) — Integrations sits back next to Guides where
-  // it lived before Plan 2.
+  // Bottom section (mt-auto). Guides moved into the user menu (nav-user.jsx)
+  // alongside Settings/Billing, per direct feedback.
   navSecondary: [
     {
       title: "Integrations",
       url: "/integrations",
       icon: CableIcon,
-    },
-    {
-      title: "Guides",
-      url: "/guides",
-      icon: HelpCircleIcon,
     },
   ],
 }

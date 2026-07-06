@@ -3,6 +3,7 @@
 import Link from "next/link"
 import {
   CreditCardIcon,
+  HelpCircleIcon,
   LogOutIcon,
   MoreVerticalIcon,
   SettingsIcon,
@@ -85,6 +86,12 @@ export function NavUser({
                 <Link href="/settings">
                   <SettingsIcon />
                   Settings
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/guides">
+                  <HelpCircleIcon />
+                  Guides
                 </Link>
               </DropdownMenuItem>
             </DropdownMenuGroup>
