@@ -72,7 +72,7 @@ export function NavMain({ items }) {
                   asChild={!hasChildren}
                   tooltip={item.title}
                   className={cn(
-                    "group/entry justify-start",
+                    "group/entry justify-start text-muted-foreground",
                     isActive &&
                       "bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground"
                   )}

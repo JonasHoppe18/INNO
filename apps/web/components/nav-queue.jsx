@@ -62,7 +62,7 @@ function QueueRow({ icon: Icon, label, href, active, count, muted, pl }) {
         asChild
         tooltip={label}
         className={cn(
-          "justify-start cursor-pointer",
+          "justify-start cursor-pointer text-muted-foreground",
           pl,
           active && "bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground"
         )}

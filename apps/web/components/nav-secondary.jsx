@@ -34,7 +34,7 @@ export function NavSecondary({
                 asChild
                 tooltip={item.title}
                 className={cn(
-                  "justify-start",
+                  "justify-start text-muted-foreground",
                   linkActive(item.url) &&
                     "bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground"
                 )}
