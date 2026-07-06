@@ -10,10 +10,12 @@ import {
   Clock,
   CreditCard,
   Globe,
+  Inbox,
   Mail,
   Lock,
   PenLine,
   Settings,
+  Tag,
   Trash2,
   User,
   Users2,
@@ -22,6 +24,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EditSignatureModal } from "@/components/settings/EditSignatureModal";
+import { MailboxesSettingsTab } from "@/components/settings/MailboxesSettingsTab";
+import { TagsSettings } from "@/components/settings/TagsSettings";
+import { AutomationPanel } from "@/components/agent/AutomationPanel";
+import { AutomationPageHeader } from "@/components/agent/AutomationPageHeader";
 import { useClerkSupabase } from "@/lib/useClerkSupabase";
 import {
   SUPPORTED_SUPPORT_LANGUAGE_CODES,
@@ -66,6 +72,14 @@ const MENU_SECTIONS = [
       { key: "members", label: "Members", icon: Users2 },
       { key: "email", label: "Email", icon: Mail },
       { key: "billing", label: "Billing", icon: CreditCard },
+    ],
+  },
+  {
+    label: "WORKSPACE",
+    items: [
+      { key: "mailboxes", label: "Mailboxes", icon: Inbox },
+      { key: "automation", label: "Automation", icon: Bot },
+      { key: "tags", label: "Tags", icon: Tag },
     ],
   },
   {
@@ -3974,6 +3988,20 @@ export function SettingsPanel() {
         );
       case "billing":
         return <BillingTab />;
+      case "mailboxes":
+        return <MailboxesSettingsTab />;
+      case "automation":
+        return (
+          <AutomationPanel>
+            <AutomationPageHeader />
+          </AutomationPanel>
+        );
+      case "tags":
+        return (
+          <div className="max-w-3xl">
+            <TagsSettings />
+          </div>
+        );
       case "email":
         return (
           <EmailSettings

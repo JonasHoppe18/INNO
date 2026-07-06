@@ -26,7 +26,7 @@ export function NavAgent({
           section header reads as one consistent system. */}
       <div className="mb-1 px-2 group-data-[collapsible=icon]:hidden">
         <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-          Configuration
+          Tools
         </span>
       </div>
       <SidebarMenu>

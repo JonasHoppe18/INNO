@@ -42,6 +42,10 @@ export function MailboxRow({
   domainDns,
   fromEmail,
   fromName,
+  // Optional: fires alongside router.refresh() so client-fetched consumers
+  // (the Settings page's Mailboxes tab, which has no server-rendered data
+  // for router.refresh() to re-run) can refetch instead of relying on it.
+  onChanged,
 }) {
   const router = useRouter();
   const [isDisconnecting, setIsDisconnecting] = useState(false);
@@ -72,6 +76,7 @@ export function MailboxRow({
       }
       toast.success(`${config.label} disconnected.`);
       router.refresh();
+      onChanged?.();
     } catch (error) {
       toast.error(error?.message || "Disconnect failed.");
     } finally {
@@ -256,7 +261,10 @@ export function MailboxRow({
         initialDomainDns={domainDns}
         initialFromEmail={fromEmail}
         initialFromName={fromName}
-        onChanged={() => router.refresh()}
+        onChanged={() => {
+          router.refresh();
+          onChanged?.();
+        }}
       />
     </>
   );

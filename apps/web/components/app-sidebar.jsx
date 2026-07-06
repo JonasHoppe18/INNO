@@ -11,13 +11,11 @@ import {
 import {
   BarChart2Icon,
   BookOpenIcon,
-  BotIcon,
   CableIcon,
   HelpCircleIcon,
   LayoutDashboardIcon,
   MailIcon,
   SlidersHorizontal,
-  TagIcon,
   Trash2,
 } from "lucide-react"
 
@@ -64,35 +62,20 @@ const baseData = {
       icon: LayoutDashboardIcon,
     },
   ],
-  // Flat "Configuration" group (always visible), matching the approved
-  // mockup and the original pre-Plan-2 layout — the queue/inboxes/automated
-  // sections above are the new part; the config area stays flat rather than
-  // collapsed behind a Settings group.
+  // "Tools" group — daily-use surfaces, not configuration. Mailboxes,
+  // Automation, and Tags moved into /settings (its own WORKSPACE menu
+  // section) since those are set-up-once/revisit-occasionally screens, not
+  // things worked from daily the way this group's three are.
   agent: [
-    {
-      name: "Mailboxes",
-      url: "/mailboxes",
-      icon: MailIcon,
-    },
     {
       name: "Playground",
       url: "/playground",
       icon: SlidersHorizontal,
     },
     {
-      name: "Automation",
-      url: "/automation",
-      icon: BotIcon,
-    },
-    {
       name: "Knowledge",
       url: "/knowledge",
       icon: BookOpenIcon,
-    },
-    {
-      name: "Tags",
-      url: "/tags",
-      icon: TagIcon,
     },
     {
       name: "Analytics",

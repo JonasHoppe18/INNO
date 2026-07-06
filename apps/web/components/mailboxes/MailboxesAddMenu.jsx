@@ -23,7 +23,7 @@ import { useClerkSupabase } from "@/lib/useClerkSupabase";
 
 const INBOUND_DOMAIN = "inbound.sona-ai.dk";
 
-export function MailboxesAddMenu({ buttonClassName = "" }) {
+export function MailboxesAddMenu({ buttonClassName = "", onCreated }) {
   const router = useRouter();
   const { supabase } = useClerkSupabase();
   const { settings: automationSettings, loading: automationLoading, refresh, save } =
@@ -114,6 +114,7 @@ export function MailboxesAddMenu({ buttonClassName = "" }) {
       }
       toast.success("Forwarding address created.");
       router.refresh();
+      onCreated?.();
     } catch (error) {
       toast.error(error?.message || "Could not create forwarding address.");
     } finally {
