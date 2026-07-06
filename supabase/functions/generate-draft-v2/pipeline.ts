@@ -54,6 +54,12 @@ import {
 import { parseEmailReplyBodies } from "../_shared/email-reply-parser.ts";
 import { embedText } from "../_shared/embed-text.ts";
 import { emitDraftGeneratedEvent } from "../_shared/draft-feedback-emit.ts";
+import {
+  buildSupportVoiceRewriteInstruction,
+  detectSupportVoiceViolations,
+  sanitizeSupportVoiceDraft,
+  type SupportVoiceViolation,
+} from "../_shared/support-voice.ts";
 import { loadImageAttachments } from "./stages/attachment-loader.ts";
 import {
   cleanupMixedLanguageDraft,
@@ -164,6 +170,18 @@ export interface PipelineResult {
     checked: boolean;
     compliant: boolean;
     violations: Array<{ type: string; excerpt: string }>;
+    requires_review: boolean;
+  };
+  unsupported_negative_claim_check?: {
+    checked: boolean;
+    compliant: boolean;
+    violations: Array<{ type: string; excerpt: string }>;
+    requires_review: boolean;
+  };
+  support_voice_check?: {
+    checked: boolean;
+    compliant: boolean;
+    violations: SupportVoiceViolation[];
     requires_review: boolean;
   };
   is_test_mode: boolean;
@@ -2403,6 +2421,88 @@ export async function runDraftV2Pipeline(
       };
     }
 
+    if (languageCheckedWritten.draft_text) {
+      const cleaned = sanitizeSupportVoiceDraft(languageCheckedWritten.draft_text);
+      if (cleaned !== languageCheckedWritten.draft_text) {
+        languageCheckedWritten = {
+          ...languageCheckedWritten,
+          draft_text: cleaned,
+        };
+      }
+    }
+
+    const supportVoiceViolations = detectSupportVoiceViolations(
+      languageCheckedWritten.draft_text,
+    );
+    if (!productSupportClarification && supportVoiceViolations.length > 0) {
+      console.warn(
+        `[generate-draft-v2] support voice retry: ${
+          supportVoiceViolations.join(",")
+        }`,
+      );
+      try {
+        const correctionWritten = await runWriter({
+          products: productLinkRows,
+          plan,
+          caseState,
+          retrieved,
+          facts,
+          shop: shopWithPersona,
+          latestCustomerMessage,
+          conversationHistory,
+          actionProposals: finalProposals,
+          policyContext,
+          internalRulesBlock,
+          authoritativePreviewDocumentContext,
+          productSupportTopicLock,
+          completedTroubleshootingBlock:
+            previewDocument.completedTroubleshootingBlock ?? undefined,
+          resolvedCustomerName,
+          replyLanguageFallback: writerReplyLanguageFallback,
+          model: firstPassModel,
+          attachments: imageAttachments,
+          actionResult: postActionResult,
+          customerHistory: customerHistory ?? undefined,
+          nonImageAttachmentsMeta: nonImageAttachmentsMeta || undefined,
+          languageCorrectionInstruction: buildSupportVoiceRewriteInstruction({
+            language: replyLanguage,
+            violations: supportVoiceViolations,
+          }),
+        });
+        if (correctionWritten.draft_text) {
+          let correctedDraft = sanitizeSupportVoiceDraft(
+            correctionWritten.draft_text,
+          );
+          if (!mixedLanguageCheck(correctedDraft, replyLanguage).ok) {
+            correctedDraft = cleanupMixedLanguageDraft(
+              correctedDraft,
+              replyLanguage,
+            );
+          }
+          languageCheckedWritten = {
+            ...correctionWritten,
+            draft_text: correctedDraft,
+          };
+        }
+      } catch (err) {
+        console.warn(
+          "[generate-draft-v2] support voice correction retry failed:",
+          err,
+        );
+      }
+
+      const remainingSupportVoiceViolations = detectSupportVoiceViolations(
+        languageCheckedWritten.draft_text,
+      );
+      if (remainingSupportVoiceViolations.length > 0) {
+        console.warn(
+          `[generate-draft-v2] support voice violations remain after retry: ${
+            remainingSupportVoiceViolations.join(",")
+          }`,
+        );
+      }
+    }
+
     // 10. Verificér grounding og kvalitet. Skipped for the clarification-only
     // preview branch: there is nothing to ground (it is a single question) and
     // we must not trigger a verifier-driven rewrite (an extra LLM call) that
@@ -2545,6 +2645,21 @@ export async function runDraftV2Pipeline(
       );
     }
 
+    let blockSendRecommended = false;
+    const finalSupportVoiceViolations = detectSupportVoiceViolations(
+      finalDraft ?? "",
+    );
+    if (finalSupportVoiceViolations.length > 0) {
+      finalRoutingHint = "review";
+      blockSendRecommended = true;
+      finalConfidence = Math.min(finalConfidence, 0.72);
+      console.warn(
+        `[generate-draft-v2] support voice guard flagged ${
+          finalSupportVoiceViolations.join(",")
+        } — routing to review`,
+      );
+    }
+
     // 12. Deterministic post-writer safety check — catches unsupported
     // refund/prepaid-label/replacement/exchange promises that prompt-only
     // guardrails do not reliably prevent. Additive only: never rewrites the
@@ -2560,7 +2675,6 @@ export async function runDraftV2Pipeline(
       retrieved_chunks: retrieved.chunks,
       language: replyLanguage,
     });
-    let blockSendRecommended = false;
     if (unsupportedCommitmentCheck.requires_review) {
       finalRoutingHint = "review";
       blockSendRecommended = true;
@@ -2918,6 +3032,12 @@ export async function runDraftV2Pipeline(
         compliant: unsupportedNegativeClaimCheck.compliant,
         violations: unsupportedNegativeClaimCheck.violations,
         requires_review: unsupportedNegativeClaimCheck.requires_review,
+      },
+      support_voice_check: {
+        checked: true,
+        compliant: finalSupportVoiceViolations.length === 0,
+        violations: finalSupportVoiceViolations,
+        requires_review: finalSupportVoiceViolations.length > 0,
       },
       is_test_mode: isTestMode,
       confidence: finalConfidence,

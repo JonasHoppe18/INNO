@@ -1288,7 +1288,7 @@ export async function runFactResolver(
         facts.push({
           label: "Ordre IKKE fundet",
           value:
-            `Ordrenummer ${orderNumbers.join(", ")} kunne IKKE findes i vores system. ` +
+            `Ordrenummer ${orderNumbers.join(", ")} kunne IKKE findes. ` +
             `Bekræft aldrig ordren som eksisterende, og udfør/lov ingen handlinger på den. ` +
             `Forklar venligt at vi ikke kan finde et ordrenummer i det format, og spørg hvor produktet er købt (vores website eller en forhandler/platform) — antag ikke website.`,
         });

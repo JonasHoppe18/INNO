@@ -91,7 +91,7 @@ Deno.test("mapFactGuardrails emits safe order/stock guardrails without leaking d
     {
       label: "Ordre IKKE fundet",
       value:
-        "Ordrenummer #999 kunne IKKE findes i vores system. Bekræft aldrig ordren som eksisterende, og udfør/lov ingen handlinger på den.",
+        "Ordrenummer #999 kunne IKKE findes. Bekræft aldrig ordren som eksisterende, og udfør/lov ingen handlinger på den.",
     },
     {
       label: "Ordreopslag midlertidigt utilgængeligt",

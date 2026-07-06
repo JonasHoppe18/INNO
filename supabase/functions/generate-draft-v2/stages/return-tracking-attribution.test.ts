@@ -65,7 +65,7 @@ Deno.test("tracking URL guidance forbids mismatched outbound links", () => {
   assertStringIncludes(result?.blockText ?? "", "omit the URL when uncertain");
 });
 
-Deno.test("customer-provided return tracking block enforces safe manual-review structure", () => {
+Deno.test("customer-provided return tracking block enforces safe employee-ready structure", () => {
   const block = detectCustomerProvidedReturnTracking({
     latestCustomerMessage:
       "I returned my order #4478. The USPS tracking number is 9588871095290073926950. When will I get my refund?",
@@ -74,24 +74,41 @@ Deno.test("customer-provided return tracking block enforces safe manual-review s
   })?.blockText ?? "";
 
   // Required safe content
-  assertStringIncludes(block, "acknowledge we have received the number");
-  assertStringIncludes(block, "a refund has NOT been issued yet");
-  assertStringIncludes(block, "manual review");
-  assertStringIncludes(block, "receipt, internal processing, or refund can be confirmed");
-  assertStringIncludes(block, "review/investigate the return status further");
+  assertStringIncludes(block, "plain employee wording");
+  assertStringIncludes(block, "Do NOT write 'we have noted'");
+  assertStringIncludes(block, "refund has not been issued/made yet");
+  assertStringIncludes(block, "receipt of the return is not confirmed yet");
+  assertStringIncludes(block, "Do NOT write 'registered with us'");
+  assertStringIncludes(block, "customer-facing next step only");
   if (block.includes("cannot currently verify")) {
     throw new Error("Block should not force 'cannot currently verify carrier status' wording");
   }
+  if (block.includes("Say the team can")) {
+    throw new Error("Block must not instruct the writer to use team-handoff wording");
+  }
 
-  // The forbidden phrases appear ONLY on the FORBIDDEN line (as prohibitions),
-  // never as standalone guidance.
+  // Core forbidden phrases still appear as prohibitions, never as standalone
+  // positive guidance.
   const lines = block.split("\n");
   const forbiddenLine = lines.find((l) => l.startsWith("FORBIDDEN")) ?? "";
-  for (const phrase of ["the refund will be issued", "once processed", "keep an eye on the tracking", "you will be notified"]) {
+  for (const phrase of [
+    "we have noted",
+    "registered with us",
+    "confirm next steps",
+    "manual review",
+    "teamet kan",
+    "the refund will be issued",
+    "once processed",
+    "keep an eye on the tracking",
+    "you will be notified",
+  ]) {
     assertStringIncludes(forbiddenLine, phrase);
-    // not present on any non-FORBIDDEN line
-    const elsewhere = lines.filter((l) => !l.startsWith("FORBIDDEN")).join("\n");
-    if (elsewhere.includes(phrase)) throw new Error(`"${phrase}" leaked outside the FORBIDDEN line`);
+    const elsewhere = lines
+      .filter((l) => !l.startsWith("FORBIDDEN") && !l.includes("Do NOT write"))
+      .join("\n");
+    if (elsewhere.includes(phrase)) {
+      throw new Error(`"${phrase}" leaked outside the FORBIDDEN line`);
+    }
   }
 });
 

@@ -5,6 +5,11 @@ import {
   fetchRelevantKnowledge,
 } from "../_shared/agent-context.ts";
 import { buildPinnedPolicyContext } from "../_shared/policy-context.ts";
+import {
+  buildSupportVoiceRewriteInstruction,
+  detectSupportVoiceViolations,
+  sanitizeSupportVoiceDraft,
+} from "../_shared/support-voice.ts";
 
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY") ?? "";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
@@ -114,9 +119,16 @@ Deno.serve(async (req) => {
     "2. If the agent says 'include X' or 'add Y', you MUST add concrete content about X/Y to the draft — write the actual steps, info, or procedures. Do NOT just say the draft already includes it.",
     "3. If the instruction asks for troubleshooting guides (firmware update, factory reset, re-pairing, etc.), write out the actual steps in the reply — use RELEVANT KNOWLEDGE below if available, otherwise use standard support steps for the device type.",
     "4. If the instruction asks to change tone, length, or style, rewrite the draft fully in that new style.",
-    "5. Preserve the original draft's structure (greeting, body, sign-off) unless the instruction says otherwise.",
+    "5. Preserve the original draft's structure (greeting and body) unless the instruction says otherwise.",
     "6. Preserve the language of the existing draft unless the instruction explicitly says to change it.",
-    "7. Return ONLY the refined draft text — no explanation, no preamble, no surrounding quotes, no meta-commentary about what you changed.",
+    "7. Do NOT add, preserve, or invent an agent signature, sender name, team name, footer, or closing block such as 'Best regards'. The application adds the user's configured signature after refinement.",
+    "8. Return ONLY the refined draft text — no explanation, no preamble, no surrounding quotes, no meta-commentary about what you changed.",
+    "",
+    "SUPPORT VOICE — always apply:",
+    "- Write like an experienced customer support employee, not an AI model or internal workflow system.",
+    "- Preserve facts and safety limits, but express them as customer-facing outcomes and next steps.",
+    "- Do not expose internal process wording, internal data/system wording, team handoff language, manual-review wording, AI/meta wording, or generic filler.",
+    "- Forbidden customer-facing patterns include: 'teamet kan', 'our team can', 'vores system', 'in our system', 'manuel gennemgang', 'manual review', 'undersøge yderligere', 'investigate further', 'feel free to reach out', and 'tak for din henvendelse'.",
     "",
     "If the instruction would conflict with shop policy below, follow the policy and ignore that part of the instruction (but still apply the rest).",
     policyContext.policyRulesText,
@@ -160,9 +172,54 @@ Deno.serve(async (req) => {
   }
 
   const openaiData = await openaiRes.json();
-  const refinedDraft = String(
+  let refinedDraft = sanitizeSupportVoiceDraft(String(
     (openaiData as any)?.choices?.[0]?.message?.content || ""
-  ).trim();
+  ).trim());
+
+  const supportVoiceViolations = detectSupportVoiceViolations(refinedDraft);
+  if (supportVoiceViolations.length > 0) {
+    const supportVoiceRes = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o",
+        temperature: 0.2,
+        max_tokens: 1600,
+        messages: [
+          { role: "system", content: systemPrompt },
+          {
+            role: "user",
+            content: [
+              "CURRENT REFINED DRAFT:",
+              refinedDraft,
+              "",
+              "REWRITE INSTRUCTION:",
+              buildSupportVoiceRewriteInstruction({
+                language: "the same language as the current draft",
+                violations: supportVoiceViolations,
+              }),
+            ].join("\n"),
+          },
+        ],
+      }),
+    });
+
+    if (supportVoiceRes.ok) {
+      const supportVoiceData = await supportVoiceRes.json().catch(() => ({}));
+      const supportVoiceDraft = sanitizeSupportVoiceDraft(String(
+        (supportVoiceData as any)?.choices?.[0]?.message?.content || "",
+      ).trim());
+      if (supportVoiceDraft) refinedDraft = supportVoiceDraft;
+    } else {
+      console.warn(
+        "[refine-draft] support voice rewrite failed:",
+        supportVoiceRes.status,
+      );
+    }
+  }
 
   return new Response(JSON.stringify({ draft: refinedDraft }), {
     status: 200,

@@ -26,11 +26,11 @@ Deno.test("tracking directive never promises monitoring / notification / auto-re
   }
 });
 
-// 14. delivered return → does not imply internal processing
-Deno.test("return delivered: carrier delivered but not internally processed", () => {
+// 14. delivered return → does not imply shop registration/completion
+Deno.test("return delivered: carrier delivered but not registered or completed by shop", () => {
   const d = buildTrackingDirective([f({ direction: "return", verification: "carrier_verified", state: "delivered" })]).toLowerCase();
   assertStringIncludes(d, "leveret");
-  assert(/ikke[^.]*behandlet|ikke[^.]*intern/.test(d), "must say not internally processed");
+  assert(/ikke[^.]*registreret|ikke[^.]*færdig/.test(d), "must say not registered/completed by the shop");
 });
 
 // 15. delivered outbound → does not imply customer personally received
@@ -398,13 +398,16 @@ Deno.test("return customer_provided/unknown directive contains no unsafe workflo
 // 2. it DOES include the required safe content (+ carrier name when known)
 Deno.test("return customer_provided/unknown directive includes required safe content", () => {
   const d = buildTrackingDirective([f({ direction: "return", verification: "customer_provided", state: "unknown", carrier: "USPS" })]).toLowerCase();
-  assertStringIncludes(d, "modtaget retur-tracking-nummeret"); // acknowledged
+  assertStringIncludes(d, "trackingnummeret nu"); // acknowledged in employee wording
   assertStringIncludes(d, "usps-trackingstatus"); // names the carrier
-  assertStringIncludes(d, "ikke kan verificere"); // cannot verify carrier status
-  assert(/ankommet|modtaget/.test(d)); // cannot confirm arrived/received
-  assertStringIncludes(d, "behandlet internt"); // cannot confirm internally processed
-  assertStringIncludes(d, "refunderingen endnu ikke er udstedt"); // no refund issued
-  assertStringIncludes(d, "undersøge returstatus nærmere"); // can be reviewed further
+  assert(/ikke påstå/.test(d)); // cannot claim arrived/received/registered
+  assert(/ankommet|modtaget|registreret/.test(d)); // cannot confirm arrived/received/registered
+  assertStringIncludes(d, "refunderingen ikke er lavet endnu"); // no refund issued, natural wording
+  assertStringIncludes(d, "returen ikke er bekræftet modtaget endnu"); // receipt not confirmed
+  assertStringIncludes(d, "kunden ikke skal sende mere lige nu"); // customer-facing next step
+  assertStringIncludes(d, "manuel gennemgang"); // forbidden only
+  assertStringIncludes(d, "teamet kan"); // forbidden only
+  assertStringIncludes(d, "undersøge returstatus nærmere/yderligere"); // forbidden only
 });
 
 // unknown carrier (no carrier name) → generic carrier wording
@@ -417,8 +420,8 @@ Deno.test("return unverified without carrier name → generic carrier wording", 
 Deno.test("return lookup_error directive follows the same safe structure", () => {
   const d = buildTrackingDirective([f({ direction: "return", verification: "customer_provided", state: "lookup_error", carrier: "USPS" })]).toLowerCase();
   for (const phrase of FORBIDDEN_EN) assert(!d.includes(phrase), `lookup_error must not contain "${phrase}"`);
-  assertStringIncludes(d, "ikke kan verificere");
-  assertStringIncludes(d, "undersøge returstatus nærmere");
+  assertStringIncludes(d, "ikke påstå");
+  assertStringIncludes(d, "kunden ikke skal sende mere lige nu");
 });
 
 // 4 & 5. outbound GLS/PostNord delivered directive unchanged + free of return wording
