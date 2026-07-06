@@ -2958,6 +2958,20 @@ export function InboxSplitView({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- setOpenThreadIds and setSelectedThreadId are the stable setters returned by useThreadSelection (backed by useState); identity never changes, so omitting them matches the pre-extraction behavior when they were local useState setters.
   }, []);
 
+  // Sidebar's "New Ticket" row (visible from every page, not just /inbox)
+  // links to /inbox?new=1 rather than calling handleCreateTicket directly —
+  // it lives outside this component's tree. Picks the param up on arrival,
+  // creates the ticket, then strips it so back/refresh doesn't re-trigger.
+  useEffect(() => {
+    if (searchParams?.get("new") !== "1") return;
+    handleCreateTicket();
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("new");
+    const queryString = params.toString();
+    router.replace(queryString ? `${pathname}?${queryString}` : pathname);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-run when the "new" param itself changes; handleCreateTicket/router/pathname are stable across renders that matter here.
+  }, [searchParams]);
+
   useEffect(() => {
     setTitleContent(
       <InboxContentBoundary resetKey={`tabs:${selectedThreadId || "no-thread"}`}>

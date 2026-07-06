@@ -15,6 +15,7 @@ import {
   Lock,
   PenLine,
   Settings,
+  SlidersHorizontal,
   Tag,
   Trash2,
   User,
@@ -28,6 +29,8 @@ import { MailboxesSettingsTab } from "@/components/settings/MailboxesSettingsTab
 import { TagsSettings } from "@/components/settings/TagsSettings";
 import { AutomationPanel } from "@/components/agent/AutomationPanel";
 import { AutomationPageHeader } from "@/components/agent/AutomationPageHeader";
+import { PlaygroundPanel } from "@/components/agent/PlaygroundPanel";
+import { PlaygroundPageHeader } from "@/components/agent/PlaygroundPageHeader";
 import { useClerkSupabase } from "@/lib/useClerkSupabase";
 import {
   SUPPORTED_SUPPORT_LANGUAGE_CODES,
@@ -80,6 +83,7 @@ const MENU_SECTIONS = [
       { key: "mailboxes", label: "Mailboxes", icon: Inbox },
       { key: "automation", label: "Automation", icon: Bot },
       { key: "tags", label: "Tags", icon: Tag },
+      { key: "playground", label: "Playground", icon: SlidersHorizontal },
     ],
   },
   {
@@ -4001,6 +4005,12 @@ export function SettingsPanel() {
           <div className="max-w-3xl">
             <TagsSettings />
           </div>
+        );
+      case "playground":
+        return (
+          <PlaygroundPanel>
+            <PlaygroundPageHeader />
+          </PlaygroundPanel>
         );
       case "email":
         return (

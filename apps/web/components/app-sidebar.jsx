@@ -15,11 +15,10 @@ import {
   HelpCircleIcon,
   LayoutDashboardIcon,
   MailIcon,
-  SlidersHorizontal,
+  SquarePenIcon,
   Trash2,
 } from "lucide-react"
 
-import { NavAgent } from "@/components/nav-agent"
 import { NavMain } from "@/components/nav-main"
 import { NavQueue } from "@/components/nav-queue"
 import { NavSecondary } from "@/components/nav-secondary"
@@ -55,30 +54,28 @@ const baseData = {
     email: "m@example.com",
     avatar: "/avatars/shadcn.jpg",
   },
+  // Top tier — overview/reference surfaces you check often, ahead of the
+  // work-queue sections below. Playground moved into /settings (its own
+  // WORKSPACE menu section, alongside Mailboxes/Automation/Tags) since it
+  // isn't in active use right now, unlike Knowledge/Analytics.
   navMain: [
     {
       title: "Dashboard",
       url: "/dashboard",
       icon: LayoutDashboardIcon,
     },
-  ],
-  // "Tools" group — daily-use surfaces, not configuration. Mailboxes,
-  // Automation, and Tags moved into /settings (its own WORKSPACE menu
-  // section) since those are set-up-once/revisit-occasionally screens, not
-  // things worked from daily the way this group's three are.
-  agent: [
     {
-      name: "Playground",
-      url: "/playground",
-      icon: SlidersHorizontal,
+      title: "New Ticket",
+      url: "/inbox?new=1",
+      icon: SquarePenIcon,
     },
     {
-      name: "Knowledge",
+      title: "Knowledge",
       url: "/knowledge",
       icon: BookOpenIcon,
     },
     {
-      name: "Analytics",
+      title: "Analytics",
       url: "/analytics",
       icon: BarChart2Icon,
     },
@@ -487,7 +484,6 @@ export function AppSidebar({
           onConfigureInbox={handleConfigureInbox}
           onConfigureNotifications={handleConfigureNotifications}
         />
-        <NavAgent items={data.agent} />
         <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>
       <SidebarFooter>
