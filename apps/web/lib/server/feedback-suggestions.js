@@ -39,6 +39,52 @@ export const SUGGESTION_STATUSES = new Set([
 ]);
 
 export const MAX_SUMMARY_LEN = 600;
+export const MAX_REVIEW_NOTE_LEN = 2000;
+
+// Statuses a human review decision may set. 'applied' is reserved for a future
+// controlled apply flow and 'suggested' is not re-enterable.
+const REVIEWABLE_TARGET_STATUSES = new Set(["reviewed", "approved", "rejected"]);
+
+// Shape the UPDATE for a review decision on a feedback_suggestions row.
+// Pure: no client, no writes. Returns { ok: true, patch } or { ok: false, error }.
+export function buildSuggestionReviewPatch({
+  currentStatus,
+  nextStatus,
+  reviewerUserId,
+  reviewNote = null,
+  now = new Date().toISOString(),
+} = {}) {
+  if (!SUGGESTION_STATUSES.has(currentStatus)) {
+    return { ok: false, error: `unknown current status: ${currentStatus}` };
+  }
+  if (currentStatus === "applied") {
+    return { ok: false, error: "applied suggestions are immutable" };
+  }
+  if (!REVIEWABLE_TARGET_STATUSES.has(nextStatus)) {
+    return { ok: false, error: `invalid target status: ${nextStatus}` };
+  }
+  if (!reviewerUserId || !String(reviewerUserId).trim()) {
+    return { ok: false, error: "reviewer user id is required" };
+  }
+
+  const trimmedNote = reviewNote == null ? null : String(reviewNote).trim();
+  const boundedNote = !trimmedNote
+    ? null
+    : trimmedNote.length > MAX_REVIEW_NOTE_LEN
+      ? trimmedNote.slice(0, MAX_REVIEW_NOTE_LEN)
+      : trimmedNote;
+
+  return {
+    ok: true,
+    patch: {
+      status: nextStatus,
+      reviewer_user_id: String(reviewerUserId).trim(),
+      review_note: boundedNote,
+      reviewed_at: now,
+      updated_at: now,
+    },
+  };
+}
 
 // Body-like keys that must never be persisted into evidence_json. Matched
 // case-insensitively at any depth. Evidence is for ids / scalars / paraphrased

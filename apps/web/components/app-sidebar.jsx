@@ -12,6 +12,7 @@ import {
   HelpCircleIcon,
   Inbox,
   LayoutDashboardIcon,
+  LightbulbIcon,
   MailIcon,
   Bell,
   Plus,
@@ -110,6 +111,11 @@ const baseData = {
       name: "Analytics",
       url: "/analytics",
       icon: BarChart2Icon,
+    },
+    {
+      name: "Feedback",
+      url: "/feedback",
+      icon: LightbulbIcon,
     },
   ],
 }
