@@ -14,6 +14,7 @@ export function parseArgs(argv) {
     "--shop", "--set", "--tier", "--limit", "--intent",
     "--abs-floor", "--pq-budget", "--accept",
     "--issue-tiebreak", "--source-consolidate",
+    "--writer-model", "--strong-model", "--disable-escalation",
   ]);
   for (const tok of argv) {
     if (typeof tok === "string" && tok.startsWith("--") && !KNOWN_FLAGS.has(tok)) {
@@ -46,6 +47,11 @@ export function parseArgs(argv) {
     retrievalPqBudget: pqBudgetRaw !== null ? parseInt(pqBudgetRaw, 10) : null,
     retrievalIssueTiebreak: has("--issue-tiebreak"),
     retrievalSourceConsolidate: has("--source-consolidate"),
+    // Writer-model A/B (e.g. --writer-model gpt-5.4-mini --strong-model
+    // gpt-5.4): forwarded to the deployed pipeline via eval_options.
+    writerModel: val("--writer-model"),
+    strongModel: val("--strong-model"),
+    disableEscalation: has("--disable-escalation"),
   };
 }
 

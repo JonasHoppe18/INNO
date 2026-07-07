@@ -53,6 +53,9 @@ for (const c of cases) {
   try {
     const gen = await generateDraftV2(opts.shop, c.subject, c.body, {
       sourceThreadId: c.source_thread_id || undefined,
+      writerModel: opts.writerModel ?? undefined,
+      strongModel: opts.strongModel ?? undefined,
+      disableEscalation: opts.disableEscalation || undefined,
       retrievalAbsFloor: opts.retrievalAbsFloor ?? undefined,
       retrievalPqBudget: opts.retrievalPqBudget ?? undefined,
       retrievalIssueTiebreak: opts.retrievalIssueTiebreak || undefined,
