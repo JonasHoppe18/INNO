@@ -58,7 +58,9 @@ export async function callOpenAIJson<T>({
             model,
             instructions: systemPrompt,
             input: userPrompt,
-            reasoning: { effort: "minimal" },
+            // "low" is the lowest effort supported across the whole gpt-5
+            // family — gpt-5.4 models reject the older "minimal" value.
+            reasoning: { effort: "low" },
             max_output_tokens: maxTokens,
             store: false,
             text: {

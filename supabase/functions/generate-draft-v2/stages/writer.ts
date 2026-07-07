@@ -2200,7 +2200,9 @@ Returner JSON:
               model: resolvedModel,
               instructions: systemPrompt,
               input: responsesInput,
-              reasoning: { effort: "minimal" },
+              // "low" is the lowest effort supported across the whole gpt-5
+              // family — gpt-5.4 models reject the older "minimal" value.
+              reasoning: { effort: "low" },
               max_output_tokens: 1800,
               store: false,
               text: {
