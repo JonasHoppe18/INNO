@@ -272,6 +272,32 @@ function usageNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+// USD per 1M tokens (input, output) — OpenAI list prices, July 2026. Unknown
+// models yield null cost rather than a wrong number; update alongside model
+// changes. Costs are analytics-only (draft_generations trace).
+const MODEL_PRICES_PER_M: Record<string, [number, number]> = {
+  "gpt-4o": [2.5, 10],
+  "gpt-4o-mini": [0.15, 0.6],
+  "gpt-5-mini": [0.25, 2],
+  "gpt-5.4": [2.5, 15],
+  "gpt-5.4-mini": [0.75, 4.5],
+  "gpt-5.4-nano": [0.2, 1.25],
+};
+
+export function computeWriterCostUsd(
+  model: string,
+  inputTokens: number | null,
+  outputTokens: number | null,
+): number | null {
+  // Snapshot ids ("gpt-5.4-mini-2026-03-17") map to their base price row.
+  const base = Object.keys(MODEL_PRICES_PER_M)
+    .sort((a, b) => b.length - a.length)
+    .find((key) => model === key || model.startsWith(`${key}-`));
+  if (!base || inputTokens == null || outputTokens == null) return null;
+  const [inPerM, outPerM] = MODEL_PRICES_PER_M[base];
+  return (inputTokens * inPerM + outputTokens * outPerM) / 1_000_000;
+}
+
 function extractTokenUsage(
   data: Record<string, unknown>,
   useResponsesApi: boolean,
@@ -2268,7 +2294,11 @@ Returner JSON:
         prompt_hash: await hashPromptForTrace(systemPrompt, userContent),
         input_tokens: tokenUsage.input_tokens,
         output_tokens: tokenUsage.output_tokens,
-        cost_usd: null,
+        cost_usd: computeWriterCostUsd(
+          resolvedModel,
+          tokenUsage.input_tokens,
+          tokenUsage.output_tokens,
+        ),
         latency_ms: writerLatencyMs,
       },
     };
