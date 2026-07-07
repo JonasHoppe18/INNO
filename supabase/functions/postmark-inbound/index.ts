@@ -2175,7 +2175,10 @@ Deno.serve(async (req) => {
       if (shopId) {
         const draftOutcome = await triggerDraftForInbound({
           shopId,
-          messageId: storedMessageId,
+          // The mail_messages ROW id — not the RFC Message-ID header. The
+          // header string broke the uuid insert on draft_generations, so no
+          // postmark-triggered generation ever persisted a trace.
+          messageId: messageDbId ?? storedMessageId,
           threadId,
           subject,
           fromRaw,

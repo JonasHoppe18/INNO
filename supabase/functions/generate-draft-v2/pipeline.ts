@@ -346,6 +346,9 @@ export function mintGenerationId(isNoWrite: boolean): string {
     : crypto.randomUUID();
 }
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function createDraftGenerationTrace(input: {
   supabase: SupabaseClient;
   id: string;
@@ -356,11 +359,17 @@ export async function createDraftGenerationTrace(input: {
 }) {
   // Dry-run / eval: no-op. Never insert a trace row.
   if (isDryRunGenerationId(input.id)) return;
+  // Callers have passed the RFC Message-ID header here (postmark-inbound) —
+  // the uuid column then rejected the INSERT and the whole trace row was
+  // silently lost. Null a non-uuid message_id instead of losing the trace.
+  const messageId = input.message_id && UUID_RE.test(input.message_id)
+    ? input.message_id
+    : null;
   const { error } = await input.supabase.from("draft_generations").insert({
     id: input.id,
     shop_id: input.shop_id,
     thread_id: input.thread_id ?? null,
-    message_id: input.message_id ?? null,
+    message_id: messageId,
     draft_id: input.draft_id,
     pipeline_version: "v2",
     created_at: new Date().toISOString(),
