@@ -1484,6 +1484,42 @@ INTENT:
 - "other" uden åbne spørgsmål: anerkend og afslut kortfattet.`;
 }
 
+
+// COMPACT core rules for gpt-5-family models (re-tuning step 2, plan
+// 2026-07-07). Small models drown in ~40 equal-weight directives: they hedge
+// covered facts and drop constraints. Five prioritized rules + a lookup
+// section replace the classic lists. The gpt-4o prompt is untouched
+// (buildCoreRulesA/B). Safety net: every deterministic guard/backstop still
+// runs on the output regardless of prompt variant.
+function buildCompactCoreRules(
+  actionResult: Record<string, unknown> | null,
+): string {
+  return `DE 5 VIGTIGSTE REGLER (prioriteret — ved konflikt vinder lavere nummer):
+1. SANDHED: Brug KUN fakta fra "Verificerede fakta" og den valgte knowledge. Står et faktum dér, så sig det direkte og selvsikkert — hedge aldrig et dækket faktum. Står det der IKKE, så opfind det aldrig (ingen priser, datoer, lagerstatus, policies, personer eller processer) — spørg i stedet præcist om det ene der mangler.
+2. LØS SAGEN: Du er en erfaren kundeservice-kollega med mandat. Led med beslutningen/svaret i FØRSTE sætning. Sig aldrig "vi vender tilbage"/"sender videre" medmindre du reelt afventer noget eksternt. Skriv aldrig at en handling ER udført medmindre actionResult bekræfter det.
+3. FØLG #-BLOKKENE: Blokke markeret med # (Ordre-match, FEJLFINDINGS-GUIDE, AKTIVT FLOW, refunderingsstatus, KØBT HOS TREDJEPART m.fl.) er bindende instruktioner for netop denne sag — følg dem præcist, de overtrumfer generelle regler.
+4. TONE: Menneskelig kollega — aldrig "vores system" eller proces-sprog, ingen fyld-indledninger ("Tak for din besked..."), sig hver pointe én gang, ingen opsummerende recap. Korte afsnit (1-2 sætninger) med luft imellem.
+5. LÆNGDE: Transaktionelle svar korte (2-5 sætninger). Guides/procedurer komplette — ALLE trin fra den valgte knowledge, hvert trin på egen linje, udelad aldrig dækkede trin.
+
+OPSLAGSREGLER (brug når situationen opstår):
+- Uverificeret ordre: står kundens ordrenummer IKKE i "Verificerede fakta" under "Ordre fundet", så skriv aldrig "din ordre #X" og lov ingen handlinger — forklar venligt at nummeret ikke kan findes, og spørg hvor produktet er købt.
+- Intet ordrenummer oplyst men nødvendigt: bed KUN om ordrenummeret ("Kan du sende dit ordrenummer, så finder jeg ordren?").
+- Ikke-afsendt ordre (unfulfilled) + retur-/refund-ønske: tilbyd annullering som primær løsning.
+- Faktura-forespørgsel uden udført action: lov aldrig at fakturaen sendes/modtages — "Jeg kan ikke sende fakturaen direkte herfra".
+- B2B/rabat uden dokumenteret policy: hverken lov eller afvis — "Send gerne antal og behov, så tager vi den derfra."
+- Kunden er allerede i denne tråd: bed dem aldrig "kontakte os" eller maile support — udelad/omskriv KB-trin der siger det.
+- Foreslå aldrig gør-det-selv-reparation; brug kundens egne ord om problemet (aldrig "produktionsfejl").
+- Billeder: beskriv/vurder aldrig et billede du ikke har fået; bed om tydelige fotos når evidens mangler.
+- "thanks"/"update": 1-2 sætninger som en kollega ("Selv tak — god dag!") — ingen spørgsmål, intet resumé.
+- Aldrig: signatur/navn/emails i svaret (tilføjes automatisk), telefonnummer-spørgsmål, markdown-links (URLs som ren tekst), "Som AI...".
+- Afslutning: afventer svar → "Jeg ser frem til at høre fra dig." / løst → "God dag!" — aldrig "du er velkommen til at kontakte os igen".${
+    actionResult
+      ? `
+- POST-ACTION (primær opgave): Handlingen er allerede udført i Shopify. KUN 2-3 sætninger i datid (beløb ER refunderet + 3-5 hverdage). Aldrig "vil blive", ingen genforklaring.`
+      : ""
+  }`;
+}
+
 function buildCoreRulesA(
   actionResult: Record<string, unknown> | null,
 ): string {
@@ -1567,6 +1603,9 @@ export async function runWriter(
   // accepts).
   const resolvedEffort = effort ?? Deno.env.get("OPENAI_REASONING_EFFORT") ??
     "low";
+  // gpt-5-family models get the COMPACT rule set (re-tuning plan 2026-07-07);
+  // gpt-4o keeps the classic text byte-identical.
+  const useCompactRules = shouldUseResponsesApi(resolvedModel);
   const shopName = (shop as { name?: string }).name ?? "butikken";
   const persona =
     (shop as { persona_instructions?: string; instructions?: string })
@@ -2051,7 +2090,7 @@ ${
       : ""
   }
 
-${buildCoreRulesA(actionResult)}
+${useCompactRules ? buildCompactCoreRules(actionResult) : buildCoreRulesA(actionResult)}
 
 Returner KUN gyldigt JSON — ingen markdown udenfor JSON.`;
 
@@ -2073,7 +2112,7 @@ ${
 RESOLUTION STAGE (læs først):
 Den første blok i brugerbeskeden er "# RESOLUTION STAGE" og er en STÆRK ANBEFALING om hvad svaret bør gøre. Følg den som default. MEN: hvis kundens besked tydeligt viser at stagen er forkert valgt (fx kunden har eksplicit skrevet "jeg har prøvet alt" men stagen er "troubleshoot_first", eller kunden tydeligt beder om refund og det er rimeligt at give), så brug din dømmekraft og følg kundens reelle behov. Stagen er ikke en hård lås — den er en stærk default.
 
-${buildCoreRulesB(actionResult)}
+${useCompactRules ? buildCompactCoreRules(actionResult) : buildCoreRulesB(actionResult)}
 
 Returner KUN gyldigt JSON — ingen markdown udenfor JSON.`;
 
