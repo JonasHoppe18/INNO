@@ -53,7 +53,13 @@ function extractStructuredFields(bodyText: string): ShopifyContactFieldMap {
     const value = normalizeWhitespace(match[2]);
     if (!label || !value) continue;
     const nextIndex = regex.lastIndex;
-    const nextMatch = normalized.slice(nextIndex).match(/^\n(?![A-Za-z][A-Za-z0-9&/'(),?. \-]{0,80}:)(.+)$/m);
+    // Continuation: ONLY the immediately following line may extend the value
+    // (no /m flag — anchored at the slice start). The old document-wide scan
+    // glued far-away prose onto field values ("Name" absorbed a Body sentence
+    // and the order field picked "2026" out of a date, T-051002).
+    const nextMatch = normalized.slice(nextIndex).match(
+      /^\n(?![A-Za-z][A-Za-z0-9&/'(),?. \-]{0,80}:)(?!\n)(.+)/,
+    );
     const finalValue = nextMatch?.[1]
       ? `${value}\n${normalizeWhitespace(nextMatch[1])}`
       : value;

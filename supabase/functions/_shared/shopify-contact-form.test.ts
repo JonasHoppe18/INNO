@@ -272,3 +272,54 @@ Deno.test("returns [] when the form has no order-number field", () => {
   });
   assertEquals(extractContactFormOrderNumbers(identity), []);
 });
+
+// Continuation must only look at the IMMEDIATELY following line. With the real
+// T-051002 body, the old logic scanned the whole remaining document and glued
+// far-away prose onto field values: Name became "Mark Brandt\nI purchased my
+// Aspire Wireless headset on **27/02/2026**, and" and the order field picked
+// up "2026" from that date.
+const REAL_T051002_BODY = `You received a new message from your online store's contact form.
+
+Country Code:
+DK
+
+Name:
+Mark Brandt
+
+Email:
+marc452c@outlook.dk
+
+Company / Team:
+
+Your Country:
+Danmark
+
+If Applicable, Place Of Purchase And Order Number:
+3955
+
+What Is Your Request Regarding?:
+A-Spire Wireless
+
+What Do You Need Help With?:
+Other
+
+Body:
+Hello,
+
+I purchased my Aspire Wireless headset on **27/02/2026**, and
+I've recently run into an issue with the microphone.
+
+A small plastic piece on the microphone, shaped like a
+gem/diamond, has broken off.`;
+
+Deno.test("real contact-form body: clean name, clean single order number", () => {
+  const identity = parseShopifyContactIdentity({
+    fromEmail: "mailer@shopify.com",
+    subject: "New customer message on 6 July 2026 at 9.44 pm",
+    bodyText: REAL_T051002_BODY,
+  });
+  assertEquals(identity.detected, true);
+  assertEquals(identity.customerName, "Mark Brandt");
+  assertEquals(identity.customerEmail, "marc452c@outlook.dk");
+  assertEquals(extractContactFormOrderNumbers(identity), ["3955"]);
+});
