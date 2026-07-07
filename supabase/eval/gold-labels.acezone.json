@@ -1,29 +1,41 @@
 {
   "shop_id": "38df5fef-2a23-47f3-803e-39f2d6f1ed99",
-  "generated_at": "2026-05-31T12:17:36.303Z",
+  "generated_at": "2026-07-07T07:01:59.929Z",
   "labels": [
     {
       "id": "g-001",
       "correct_snippet_ids": [],
-      "rationale": "None of the snippets provide information on how to change a shipping address."
+      "rationale": "The customer is requesting to change their shipping address, but none of the snippets in the catalog provide information or guidance on changing shipping addresses.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-002",
       "correct_snippet_ids": [
-        "bluetooth - workaround for interrupted shutdown process",
         "my headset cant't turn on for a-spire wireless?",
-        "headset not charging",
-        "my headset a-spire wireless powers off at random intervals, why?"
+        "bluetooth - workaround for interrupted shutdown process",
+        "headset will not power on or keeps powering off",
+        "my headset a-spire wireless powers off at random intervals, why?",
+        "factory reset"
       ],
-      "rationale": "The customer is experiencing issues with their AceZone headset not turning on and showing a red light, along with error messages when trying to connect. Snippet [11] provides troubleshooting steps for a headset that doesn't power on, which directly addresses the customer's issue. Snippet [22] also discusses a similar issue with the A-Spire Wireless not turning on and suggests disabling Bluetooth on connected devices. Snippet [49] explains that Bluetooth issues can block the power-on function, which is relevant to the customer's situation. Snippet [76] provides instructions for performing a factory reset, which the customer mentioned trying."
+      "rationale": "The customer is experiencing issues with their AceZone headset not turning on, showing a red light, and having problems with pairing and connecting to the dongle. Snippet [1] provides a workaround for headsets that won't power on, which is relevant to the customer's issue. Snippet [19] specifically addresses the situation where the headset shows pairing options but doesn't power on, which aligns with the customer's description. Snippet [67] discusses troubleshooting steps for headsets that won't power on or keep disconnecting, which is also applicable. Snippet [115] outlines the factory reset process, which the customer mentioned attempting, and snippet [145] reiterates the factory reset steps, confirming the need to remove saved Bluetooth connections. All these snippets provide relevant solutions or troubleshooting steps for the customer's specific request.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-003",
       "correct_snippet_ids": [
-        "i can't pair my headset to the app for a-spire wireless?",
-        "acezone app - connect a-spire wireless"
+        "bluetooth - workaround for interrupted shutdown process",
+        "bluetooth pairing with the acezone app",
+        "pair a-spire wireless to dongle",
+        "bluetooth reconnect after interrupted shutdown",
+        "headset will not power on or keeps powering off",
+        "my headset a-spire wireless powers off at random intervals, why?",
+        "factory reset"
       ],
-      "rationale": "The customer is experiencing issues with connecting their A-Spire Wireless headset to the app. Snippet [45] provides specific instructions on how to pair the A-Spire Wireless headset to the app, which directly addresses the customer's request for help with connectivity and pairing. Snippet [129] also offers guidance on connecting the A-Spire Wireless to the AceZone app, further supporting the customer's need for assistance with the app connection."
+      "rationale": "The customer is experiencing issues with connectivity and pairing of the A-Spire Wireless headset with the app. Snippets 19, 37, 44, 62, 67, 115, and 145 provide troubleshooting steps and solutions related to Bluetooth connectivity, pairing issues, and factory reset procedures that directly address the customer's request.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-004",
@@ -31,122 +43,161 @@
         "i would like to return my headphones, as they unfortunately do not meet my expectations.",
         "i want a refund/i wish to return the product",
         "return - policy and instructions",
-        "cancellation policy"
+        "return window"
       ],
-      "rationale": "The customer is inquiring about the inability to cancel their order and the return process for the headset they received. Snippets [13] and [14] provide information on the return policy and instructions, which directly address the customer's concerns about returning the headset. Snippet [31] also outlines the return policy, confirming that returns are accepted within a specified period. Snippet [67] discusses the cancellation policy, explaining the conditions under which an order can be canceled, which is relevant to the customer's experience."
+      "rationale": "The customer is expressing frustration about their inability to cancel an order and the subsequent hassle of returning an unwanted headset. Snippets [30] and [33] provide information about the return policy, including the conditions under which returns are accepted, which directly addresses the customer's concerns about returning the headset. Snippet [69] also outlines the return instructions, which are relevant to the customer's situation. Snippet [82] reiterates the return window, which is important for the customer to know.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-005",
       "correct_snippet_ids": [
+        "dongle pairing",
+        "firmware update for audio cracking or repeated disconnects",
         "why does my headset a-spire wireless keep disconnecting?",
-        "a-spire wireless - update firmware windows app"
+        "headset will not power on or keeps powering off"
       ],
-      "rationale": "The customer is experiencing connectivity issues with their A-Spire Wireless headset, specifically that it disconnects after a short period. Snippet [65] provides troubleshooting steps for why the headset keeps disconnecting, which directly addresses the customer's issue. Snippet [125] also offers guidance on updating the firmware, which is relevant to resolving connectivity problems."
+      "rationale": "The customer is experiencing connectivity issues with their A-Spire Wireless dongle and headset, specifically mentioning disconnections. Snippets [32] and [36] provide troubleshooting steps for reconnecting the headset to the dongle and addressing disconnect issues. Snippet [104] also addresses why the headset may keep disconnecting, which is relevant to the customer's problem. Snippet [67] discusses resetting the Bluetooth connection, which is another relevant troubleshooting step.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-006",
       "correct_snippet_ids": [
+        "bluetooth pairing with the acezone app",
         "i can't pair my headset to the app for a-spire wireless?",
         "acezone app - connect a-spire wireless"
       ],
-      "rationale": "The customer is experiencing issues with pairing their A-Spire Wireless headset to the app, specifically mentioning that the headset is found but does not connect. Snippet [45] provides detailed steps on how to troubleshoot pairing issues with the A-Spire Wireless headset, which directly addresses the customer's request. Snippet [129] also offers guidance on connecting the A-Spire Wireless to the AceZone app, which is relevant to the customer's issue."
+      "rationale": "The customer is experiencing issues with connectivity and pairing of their A-Spire Wireless headset with the app. Snippet [37] provides a detailed guide on how to reconnect the headset to the AceZone app, which directly addresses the customer's issue. Snippet [78] also offers steps for pairing the A-Spire Wireless to the app, which is relevant to the customer's request. Snippet [196] reiterates the pairing process for the A-Spire Wireless, ensuring the customer has the correct steps to follow.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-007",
       "correct_snippet_ids": [
+        "my headset cant't turn on for a-spire wireless?",
         "headset not charging",
         "my headset a-spire wireless powers off at random intervals, why?"
       ],
-      "rationale": "The customer is experiencing issues with their A-Spire Wireless headset, specifically that it shuts off during use and cannot charge while in use. Snippet [49] addresses the issue of the headset not charging, indicating that Bluetooth may block the power-on function. Snippet [76] provides a solution for the headset powering off at random intervals, which could relate to the customer's issue of it shutting off during gameplay."
+      "rationale": "The customer is experiencing issues with their A-Spire Wireless headset, specifically that it shuts off during use and cannot charge while in use. Snippet [1] addresses the issue of the headset not powering on, which could relate to the shutdown issue. Snippet [86] discusses why the headset isn't charging, which directly addresses the customer's concern about charging while using the headset. Snippet [115] provides a factory reset procedure, which is a common troubleshooting step for issues like the headset powering off unexpectedly.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-008",
       "correct_snippet_ids": [
+        "my headset has a physical crack",
         "why does the plastic break so easily for a-spire wireless?",
-        "my headset has a physical crack"
+        "physical damage or cracked plastic casing"
       ],
-      "rationale": "The customer is requesting assistance regarding a physically damaged headset, specifically mentioning that the part holding the left ear is broken. Snippet [12] addresses the issue of a broken plastic on the headset and outlines the process for initiating a Return for Swap case, which is relevant to the customer's situation. Snippet [79] also discusses the process for initiating a Return for Swap case for a headset with a physical crack, which aligns with the customer's request for help with their damaged headset."
+      "rationale": "The customer is reporting physical damage to their A-Spire Wireless headset and is seeking assistance regarding warranty coverage for this issue. Snippet [27] discusses the process for initiating a Return for Swap case for headsets with physical damage, while snippet [41] addresses the specific issue of broken plastic on the headset and outlines the warranty handling process. Snippet [148] provides guidance on how to handle cases of physical damage, including the need for proof of purchase and photos of the damage.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-009",
       "correct_snippet_ids": [
+        "my microphone sounds like its \"pulsating\" for a-blaze",
+        "why am i hearing weird noises in 1 earcup for a-blaze?",
         "headset still doesn't work after following guides and solutions.",
-        "usb driver reinstall and factory reset for a-blaze",
-        "repair on a-rise"
+        "headset powers off or disconnects randomly",
+        "my headset powers off at random intervals for a-blaze, why?"
       ],
-      "rationale": "The customer is experiencing issues with their A-Blaze headset, specifically that it connects but does not produce sound most of the time. They have already tried troubleshooting steps like using a different computer and changing cables. Snippet [10] addresses the situation where a customer still has issues after following guides and solutions, offering a return for swap case if under warranty. Snippet [78] provides instructions for troubleshooting the A-Blaze headset, which includes uninstalling drivers and performing a factory reset. Snippet [119] outlines the process for sending in a headset for repair, which is relevant since the customer is asking about repair or replacement options."
+      "rationale": "The customer is experiencing issues with their A-Blaze headset, specifically that it connects but does not produce sound most of the time. The snippets provide troubleshooting steps relevant to audio issues, including factory reset instructions and guidance for addressing sound problems. Snippets 7 and 9 specifically address factory resets for the A-Blaze, while snippets 17, 127, and 130 provide additional troubleshooting steps for audio issues and potential solutions.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-011",
       "correct_snippet_ids": [
-        "why does the plastic break so easily for a-spire wireless?",
-        "my headset has a physical crack"
+        "my headset has a physical crack",
+        "customer - personal information / details"
       ],
-      "rationale": "The customer message requests specific personal information (full name, full address, phone number, and email address) to initiate a return for a headset. Snippet [12] provides the exact information needed to initiate a Return for Swap case, including the requirement for full name, full address, phone number, and email address. Snippet [79] also mentions the same information needed for initiating a return due to a physical crack in the headset, which aligns with the customer's request."
+      "rationale": "The customer message includes a request for their full name, address, phone number, and email address, which matches the information required in snippet [27] for initiating a Return for Swap case. Snippet [66] also explicitly asks for the same information (full name, full address, phone number, email address) when requesting personal information.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-012",
       "correct_snippet_ids": [
         "headset still doesn't work after following guides and solutions.",
-        "why does the plastic break so easily for a-spire wireless?",
-        "my headset has a physical crack"
+        "my headset has a physical crack",
+        "physical damage or cracked plastic casing"
       ],
-      "rationale": "The customer is requesting assistance regarding a physically damaged headset and inquiring about the possibility of a replacement. Snippet [10] discusses the process for initiating a Return for Swap case for technical issues, which includes physical damages if under warranty. Snippet [12] specifically addresses the issue of broken plastic on the headset and outlines the necessary steps for a return, including the information required from the customer. Snippet [79] also provides information on initiating a Return for Swap case for a headset with a physical crack, which aligns with the customer's situation."
+      "rationale": "The customer is requesting assistance regarding a physically damaged headset and inquiring about the possibility of a replacement. Snippet [17] discusses the procedure for initiating a Return For Swap case if the customer is still under warranty, which is relevant to the request for a replacement. Snippet [27] specifically addresses cases of physical damage, outlining the information needed to process such claims. Snippet [148] also pertains to physical damage and provides guidance on how to handle cases of cracked or broken plastic casing, which aligns with the customer's situation.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-013",
       "correct_snippet_ids": [
-        "headset still doesn't work after following guides and solutions.",
-        "i want a refund/i wish to return the product",
-        "return - policy and instructions"
+        "i would like to return my headphones, as they unfortunately do not meet my expectations.",
+        "i want a refund/i wish to return the product"
       ],
-      "rationale": "The customer is requesting a return or refund for a defective headset. Snippet [10] discusses the process for initiating a Return For Swap case for technical issues, which aligns with the customer's request for a replacement or refund. Snippet [14] provides information on how to return the headset for a refund, which is directly relevant to the customer's request. Snippet [31] outlines the return policy, confirming that returns are accepted within a specified period, which supports the customer's inquiry about returning the defective product."
+      "rationale": "The customer is requesting a refund or exchange for a defective headset. Snippet [30] provides information on how to return the headset, while snippet [33] outlines the return policy, including conditions for refunds. Both snippets directly address the customer's request for a return and refund.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-014",
       "correct_snippet_ids": [],
-      "rationale": "None of the snippets address the customer's specific request regarding the missing package that was claimed to be delivered to their front door."
+      "rationale": "The customer is inquiring about a package that was claimed to be delivered but is not at their location. None of the snippets in the catalog address issues related to package delivery, tracking, or missing items. They focus on headset-related issues and troubleshooting, which do not pertain to the customer's request.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-015",
       "correct_snippet_ids": [
-        "why does the plastic break so easily for a-spire wireless?"
+        "can i replace my earpads for a-spire wireless?",
+        "can i replace my earpads for a-spire?"
       ],
-      "rationale": "Snippet [12] provides information on how to initiate a Return for Swap case for a broken headset, which is relevant to the customer's request for a replacement of their misplaced headset receiver."
+      "rationale": "The customer is requesting a replacement for a misplaced headset receiver. Snippet [21] confirms that earpads can be replaced and mentions availability, which is relevant to the request for a replacement part. Snippet [158] also discusses the possibility of replacing earpads for the A-Spire, indicating that replacements are possible, which aligns with the customer's need for a replacement receiver.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-016",
       "correct_snippet_ids": [
         "contact",
-        "address - company address + phone + email",
-        "a-live b2b"
+        "address - company address + phone + email"
       ],
-      "rationale": "The customer is inquiring about an email address for partnership inquiries. Snippet [1] provides a general support email (support@acezone.io), which could be relevant for partnership inquiries. Snippet [7] also provides the same email address in a different context. Snippet [27] specifically mentions the sales manager's email (oscar@acezone.io), which is directly related to sales and partnerships. Therefore, these snippets are relevant to the customer's request."
+      "rationale": "The customer is requesting an email address for partnership inquiries. Snippet [4] provides the email address (support@acezone.io) which can be used for contacting the company, and snippet [54] also includes the same email address in a contact context.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-019",
       "correct_snippet_ids": [
         "my headset cant't turn on for a-spire wireless?",
-        "my headset a-spire wireless powers off at random intervals, why?",
-        "headset not charging"
+        "bluetooth - workaround for interrupted shutdown process",
+        "my headset a-spire wireless powers off at random intervals, why?"
       ],
-      "rationale": "The customer is experiencing issues with their A-Spire Wireless headset randomly turning off and only powering on when connected to a charger, despite having a full battery. Snippet [22] provides a solution for the headset not turning on, which may relate to the customer's issue. Snippet [76] addresses the problem of the headset powering off at random intervals, which directly corresponds to the customer's experience. Snippet [49] discusses why the headset isn't charging, which could also be relevant to the customer's situation."
+      "rationale": "The customer is experiencing issues with their A-Spire Wireless headset randomly turning off and only powering on when connected to a charger, despite having a full battery. Snippet [1] addresses why a headset may not power on, which is relevant to the customer's issue. Snippet [19] provides a workaround for interrupted shutdown processes, which could explain the random power-off behavior. Snippet [115] specifically addresses the issue of the headset powering off at random intervals, providing a factory reset solution that could help resolve the customer's problem.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-020",
       "correct_snippet_ids": [
-        "my dongle is broken."
+        "my dongle is broken.",
+        "my cable is broken."
       ],
-      "rationale": "The customer is asking if they can purchase a new dongle for their A-Spire Wireless headset after losing the original one. Snippet [21] directly addresses this by stating that if the customer is covered by warranty, a spare dongle will be sent from the office. This snippet provides a solution to the customer's request."
+      "rationale": "The customer is asking if they can purchase a new dongle for their A-Spire Wireless headset after losing the original one. Snippet [59] addresses the situation of a broken or missing dongle and explains the process for replacement, while snippet [70] clarifies that any standard USB-C cable will work, which is relevant to the customer's inquiry about needing a new dongle.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-021",
       "correct_snippet_ids": [
-        "firmware update fails in app / keeps showing error — a-spire (wired)",
-        "why is my audio quality bad for a-spire wireless? (cracking)",
-        "a-spire wireless - update firmware windows app"
+        "why can't i change my eq for a-spire?",
+        "microphone issues",
+        "firmware update fails or headset does not play audio",
+        "a-spire wireless - update firmware windows app",
+        "why is my audio quality bad for a-spire wireless? (cracking)"
       ],
-      "rationale": "The customer is inquiring about updating their A-Spire headset and whether version 146 is the latest, as well as seeking advice on improving audio quality. Snippet [23] provides information on updating the firmware for the A-Spire headset, which directly addresses the customer's concern about updates. Snippet [52] discusses audio quality issues and suggests steps to resolve them, which aligns with the customer's request for improving audio quality. Snippet [125] also provides instructions for updating the firmware, which is relevant to the customer's inquiry."
+      "rationale": "The customer is inquiring about the firmware version of their A-Spire headset and whether version 146 is the latest, as well as seeking advice on improving audio quality. Snippet [12] directly addresses the inability to change EQ settings for A-Spire, which relates to audio quality. Snippet [18] discusses microphone issues, which can affect audio quality. Snippet [31] provides guidance on firmware updates, which is relevant to the customer's question about the latest version. Snippet [43] also discusses updating firmware for the A-Spire Wireless. Snippet [89] addresses audio quality issues specifically for A-Spire Wireless, which is relevant to the customer's concerns about low sound quality.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-022",
@@ -154,84 +205,107 @@
         "can i replace my earpads for a-spire wireless?",
         "can i replace my earpads for a-spire?"
       ],
-      "rationale": "The customer is inquiring about the compatibility of earpads for their A-Spire headset and whether they can replace them. Snippet [40] directly addresses the question of replacing earpads for the A-Spire Wireless, confirming that earpads are available as spare parts. Snippet [113] also discusses the possibility of replacing earpads for the A-Spire, although it mentions that the removal process is riskier. Both snippets provide relevant information regarding the customer's request."
+      "rationale": "The customer is inquiring about the compatibility of earpads for their A-Spire Wired headset and is looking for options if the earpads on the site are not compatible. Snippet [21] confirms that earpads are available as spare parts for A-Spire Wireless, and snippet [158] discusses the possibility of removing earpads for A-Spire, although it mentions the risk involved. Both snippets provide relevant information regarding earpad options for the A-Spire headset.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-023",
       "correct_snippet_ids": [
-        "my dongle is broken.",
+        "my microphone doesn't work with dongle connection. it works with cable connection.",
         "my microphone doesn't work with dongle connection. it only works with cabled connection.",
-        "my microphone doesn't work for a-spire wireless, why?"
+        "microphone works with the cable but not with the dongle",
+        "my dongle is broken."
       ],
-      "rationale": "The customer is experiencing issues with connectivity and pairing of their A-Spire Wireless headset, specifically mentioning problems with the dongle and delays when using Bluetooth. Snippet [21] addresses the replacement of a broken dongle, which is relevant to the customer's request for assistance with the dongle. Snippet [15] provides troubleshooting steps for microphone issues when using the dongle, which aligns with the customer's connectivity concerns. Snippet [44] offers guidance on microphone settings, which may help resolve the delay issue mentioned by the customer."
+      "rationale": "The customer is experiencing issues with connectivity and pairing of their A-Spire Wireless headset, specifically mentioning problems with the dongle not working while the headset works with a cable. Snippets [10], [39], and [167] provide troubleshooting steps for issues related to the microphone not working with the dongle connection, including ensuring firmware is updated and checking Windows sound settings. Snippet [59] directly addresses the possibility of sending a replacement dongle, which aligns with the customer's request for assistance.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-024",
       "correct_snippet_ids": [
         "my headset cant't turn on for a-spire wireless?",
-        "headset not charging"
+        "bluetooth - workaround for interrupted shutdown process",
+        "headset will not power on or keeps powering off",
+        "headset not charging",
+        "headset will not power on or keeps disconnecting"
       ],
-      "rationale": "Snippet [22] directly addresses the issue of the A-Spire Wireless not turning on, providing a workaround for the problem. Snippet [49] explains why the headset may not be charging, which is relevant to the customer's issue of the headset showing that it's charging but not powering on."
+      "rationale": "The customer is experiencing issues with their A-Spire Wireless headset not charging or turning on. Snippet [1] provides a workaround for when the headset does not power on, which is relevant to the customer's issue. Snippet [19] offers a detailed guide for troubleshooting when the headset does not power on, which is also applicable. Snippet [67] addresses the issue of the headset not powering on or disconnecting, providing steps to reset the Bluetooth connection. Snippet [86] explains why the headset might not be charging, which directly relates to the customer's concern. Snippet [122] reiterates the troubleshooting steps for when the headset will not power on or keeps disconnecting, further supporting the customer's request.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-025",
       "correct_snippet_ids": [],
-      "rationale": "The customer message expresses satisfaction with the Gamebox and headset, but does not request any specific information or assistance that is addressed in the snippets. Therefore, none of the snippets provide a relevant answer to the customer's message."
+      "rationale": "The customer message expresses satisfaction with the Gamebox and headset, but does not ask for any specific information or assistance that is addressed in the snippets. Therefore, none of the snippets in the catalog provide a relevant answer to the customer's message.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-027",
       "correct_snippet_ids": [
+        "i would like to return my headphones, as they unfortunately do not meet my expectations.",
         "i want a refund/i wish to return the product",
-        "return - policy and instructions",
-        "refund policy"
+        "warranty and returns policy"
       ],
-      "rationale": "The customer is requesting a refund due to repeated issues with the headset. Snippet [14] provides information on how to return the headset for a refund, which directly addresses the customer's request. Snippet [31] also outlines the return policy, confirming that returns are accepted within a specified period, which is relevant to the customer's situation. Snippet [108] discusses the refund policy, which is pertinent to the customer's inquiry about obtaining a refund."
+      "rationale": "The customer is requesting a refund due to repeated issues with the headset. Snippet [30] provides information on the return process, including the policy for returns within a 30-day period, which is relevant to the customer's request. Snippet [33] also outlines the return process for refunds, including conditions for opened products. Snippet [61] discusses the refund policy, which is pertinent to the customer's inquiry about getting a refund.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-028",
       "correct_snippet_ids": [
-        "headset still doesn't work after following guides and solutions.",
-        "i want a refund/i wish to return the product",
-        "return - policy and instructions",
-        "repair on a-rise"
+        "i would like to return my headphones, as they unfortunately do not meet my expectations.",
+        "i want a refund/i wish to return the product"
       ],
-      "rationale": "The customer is requesting a new pair or a refund for their A-Rise headset due to issues with the microphone and sound quality. Snippet [10] discusses the process for initiating a Return For Swap case if the headset is still under warranty, which aligns with the customer's request for a replacement. Snippet [14] provides information on how to return the headset for a refund, which is also relevant to the customer's inquiry. Snippet [31] outlines the return policy, confirming that returns are accepted within a specified period, which supports the customer's request. Snippet [119] specifically addresses the repair process for the A-Rise headset, indicating that it needs to be sent in for repair, which is relevant to the customer's issues."
+      "rationale": "The customer is requesting a refund or replacement for their A-Rise headset due to issues with the microphone and sound quality. Snippet [30] provides information on the return policy, stating that returns are accepted within a 30-day period, even if the product has been opened. Snippet [33] outlines the process for returning the headset for a refund, which directly addresses the customer's request.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-029",
       "correct_snippet_ids": [
-        "why does the plastic break so easily for a-spire wireless?",
         "my headset has a physical crack",
         "i want a refund/i wish to return the product",
-        "return - policy and instructions"
+        "warranty and returns policy"
       ],
-      "rationale": "The customer is requesting a refund for their A-Spire Wireless headset due to multiple issues with the product, including physical damage and poor performance. Snippet [12] addresses the process for initiating a return for a headset with a broken plastic casing, which is relevant to the customer's complaint about their headset cracking. Snippet [79] also discusses the return process for a headset with a crack in the plastic, providing necessary information for the return. Snippet [14] outlines the return policy and conditions for returning a headset for a refund, which directly relates to the customer's request for a refund. Snippet [31] reiterates the return policy and instructions, confirming the acceptance of returns within a specified period, which is pertinent to the customer's situation."
+      "rationale": "The customer is requesting a refund due to multiple issues with their A-Spire Wireless headsets, including physical damage and poor performance. Snippet [27] addresses the process for initiating a return for a headset with a crack in the plastic, which is relevant to the customer's situation. Snippet [33] outlines the return policy, including conditions for refunds. Snippet [61] provides additional details about the refund process, including potential deductions based on the condition of the returned item.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-031",
       "correct_snippet_ids": [
-        "sidetone on a-spire - how to disable or reduce it",
-        "why can i hear myself in my headset a-spire?"
+        "pulsating or distorted microphone",
+        "sidetone or hearing own voice"
       ],
-      "rationale": "The customer is experiencing an issue with hearing their own voice in a metallic sound while using the headset, which is related to the sidetone feature. Snippet [109] explains how to disable or reduce sidetone when connected via USB to a PC, and snippet [110] describes sidetone and its purpose, confirming that it is a feature of the headset."
+      "rationale": "The customer is experiencing a metallic sound when speaking, which suggests issues with microphone quality or sidetone. Snippet [23] addresses pulsating or distorted microphone issues, providing steps to resolve it, while snippet [202] explains sidetone, which is relevant to the customer's experience of hearing themselves in the headset.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-032",
       "correct_snippet_ids": [
         "i would like to return my headphones, as they unfortunately do not meet my expectations.",
         "i want a refund/i wish to return the product",
-        "return - policy and instructions"
+        "return - policy and instructions",
+        "return window"
       ],
-      "rationale": "The customer is inquiring about the return process and when they can expect their refund for the returned headset. Snippets [13] and [14] provide information about the return policy and the conditions under which refunds are processed. Snippet [31] also outlines the return policy, which is relevant to the customer's request."
+      "rationale": "The customer is inquiring about the return process and when they will receive their refund for the headset they sent back. Snippets [30], [33], [69], and [82] provide information about the return policy, including the conditions under which returns are accepted, the refund process, and the time frame for refunds.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-033",
       "correct_snippet_ids": [
         "i would like to return my headphones, as they unfortunately do not meet my expectations.",
         "i want a refund/i wish to return the product",
-        "return - policy and instructions"
+        "return - policy and instructions",
+        "return window"
       ],
-      "rationale": "The customer is inquiring about returning the A-Spire Wireless headset, which they have opened and tried but found uncomfortable. Snippets [13] and [14] provide information about the return policy, stating that returns are accepted within a 30-day period even if the product has been opened. Snippet [31] also outlines the return policy and instructions, confirming that the headset can be returned despite being unsealed."
+      "rationale": "The customer is inquiring about returning the A-Spire Wireless headset, which they have opened and tested. Snippets [30], [33], [69], and [82] provide information about the return policy, including the acceptance of returns for opened products and the conditions under which returns are processed, which directly addresses the customer's request.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-034",
@@ -240,124 +314,159 @@
         "i want a refund/i wish to return the product",
         "return - policy and instructions"
       ],
-      "rationale": "The customer is requesting to set up a refund for their A-Spire Wireless headphones due to dissatisfaction with sound quality. Snippets [13] and [14] provide information on how to return the headset for a refund, which directly addresses the customer's request. Snippet [31] also outlines the return policy, confirming that returns are accepted even if the product has been opened and briefly tested."
+      "rationale": "The customer is requesting a refund for their A-Spire Wireless headphones due to dissatisfaction with sound quality. Snippets [30], [33], and [69] provide information about the return policy and instructions for returning the headset for a refund, which directly addresses the customer's request.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-035",
       "correct_snippet_ids": [
         "headset still doesn't work after following guides and solutions.",
-        "i want a refund/i wish to return the product",
-        "return - policy and instructions"
+        "i would like to return my headphones, as they unfortunately do not meet my expectations.",
+        "i want a refund/i wish to return the product"
       ],
-      "rationale": "The customer is experiencing microphone issues with their A-Spire Wireless headset and is requesting a refund or replacement. Snippet [10] addresses the process for initiating a Return For Swap case for technical issues, which aligns with the customer's request for a replacement. Snippet [14] provides information on how to return the headset for a refund, which is also part of the customer's request. Snippet [31] outlines the return policy and instructions, confirming that returns are accepted within a specified period, which is relevant to the customer's situation."
+      "rationale": "The customer is experiencing microphone issues with their A-Spire Wireless headset and is requesting a refund or replacement. Snippet [17] outlines the procedure for initiating a Return For Swap case for technical issues, which aligns with the customer's request for a replacement. Snippet [30] provides the return policy, confirming that returns are accepted within a specified period, which is relevant to the customer's inquiry about returning the headset. Snippet [33] also details the return process for a refund, which is directly related to the customer's request.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-036",
       "correct_snippet_ids": [
+        "shipping",
         "when does my order arrive? / where is my order?"
       ],
-      "rationale": "Snippet [64] provides information on how to check the order status and offers to reach out to the warehouse partner for any delays, which directly addresses the customer's request for an update on the shipping status of their order."
+      "rationale": "The customer is requesting an update on the shipping status of their order. Snippet [71] provides information about the shipping process and mentions that customers will receive a tracking number when their order is shipped. Snippet [177] addresses inquiries about order status and suggests providing the order number for tracking, which is relevant to the customer's request.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-037",
       "correct_snippet_ids": [
+        "shipping",
         "when does my order arrive? / where is my order?"
       ],
-      "rationale": "Snippet [64] directly addresses the customer's inquiry about the status of their order, providing information on how to check the order status and what to do if there are delays."
+      "rationale": "The customer is inquiring about the status of their order #4305 for an A-Spire Wireless headset. Snippet [71] provides information about order processing and shipping, indicating that orders are fulfilled within 1-3 business days and that tracking information will be emailed once shipped. Snippet [177] addresses how to find the order status and suggests providing the order number for tracking, which directly relates to the customer's request for order status.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-038",
-      "correct_snippet_ids": [
-        "when does my order arrive? / where is my order?"
-      ],
-      "rationale": "Snippet [64] directly addresses the customer's inquiry about the status of their order, providing information on how to check the order status and what to do if there are delays."
+      "correct_snippet_ids": [],
+      "rationale": "The customer is asking for the status of their order, but none of the snippets in the catalog provide information related to order status or tracking. All snippets are focused on product support and troubleshooting for headsets, which do not address the customer's inquiry about their order.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-039",
-      "correct_snippet_ids": [
-        "when does my order arrive? / where is my order?"
-      ],
-      "rationale": "Snippet [64] directly addresses the customer's inquiry about the status of their order, specifically asking when it will arrive and providing information on how to track it."
+      "correct_snippet_ids": [],
+      "rationale": "The customer is inquiring about the status of their order and whether their package has been shipped. None of the snippets in the catalog provide information related to order status, shipping, or package tracking.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-040",
       "correct_snippet_ids": [
         "my address doesn't accept/register"
       ],
-      "rationale": "Snippet [59] directly addresses the customer's issue regarding the address not being accepted at checkout, providing guidance on ensuring the address is correct and suggesting to clear the browser cache or try a different browser."
+      "rationale": "The snippet provides guidance on ensuring the address is correctly entered and suggests clearing the browser cache or trying a different browser, which directly addresses the customer's issue of their address not being an option at checkout.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-041",
       "correct_snippet_ids": [
+        "shipping",
+        "delivery",
         "when does my order arrive? / where is my order?"
       ],
-      "rationale": "Snippet [64] directly addresses the customer's inquiry about the shipping status of their headset, providing information on how to track their order and what to do if there are delays."
+      "rationale": "The customer is inquiring about the shipping status of their headset order, specifically if it will be sent today. Snippets [71] and [107] provide information about order processing and shipping timelines, which directly address the customer's request. Snippet [177] also mentions tracking and reaching out for delays, which is relevant to the customer's concern.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-043",
       "correct_snippet_ids": [
-        "i can't pair my headset to the app for a-spire wireless?",
-        "acezone app - connect a-spire wireless"
+        "bluetooth - workaround for interrupted shutdown process",
+        "bluetooth pairing with the acezone app",
+        "factory reset"
       ],
-      "rationale": "The customer is seeking help with setting up their A-Spire Wireless headset, specifically regarding connection issues with the app. Snippet [45] provides detailed steps on how to pair the A-Spire Wireless headset to the app, which directly addresses the customer's request. Snippet [129] also offers guidance on connecting the A-Spire Wireless to the AceZone app, further supporting the customer's need for assistance in setting up their headset."
+      "rationale": "The customer is experiencing issues with connecting their A-Spire Wireless headset to the app on their phone, despite attempting a factory reset and using a different phone. Snippet [19] provides a workaround for Bluetooth connection issues, which directly addresses the customer's problem. Snippet [37] offers specific steps for Bluetooth pairing with the AceZone app, which is relevant to the customer's request. Snippet [145] outlines the factory reset process, which the customer has already attempted, but it also emphasizes the importance of removing saved Bluetooth connections, which may help in resolving the issue.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-044",
-      "correct_snippet_ids": [],
-      "rationale": "The customer is requesting an invoice to be sent via mail, which is not addressed by any of the snippets in the catalog. All snippets relate to product support, technical issues, or company information, but none provide information on sending invoices."
+      "correct_snippet_ids": [
+        "contact"
+      ],
+      "rationale": "The customer is requesting an invoice to be sent via email, and snippet [4] provides the contact email for support, which is relevant for the customer to reach out for their request.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-045",
       "correct_snippet_ids": [
+        "my headset has a physical crack",
         "why does the plastic break so easily for a-spire wireless?",
-        "my headset has a physical crack"
+        "physical damage or cracked plastic casing"
       ],
-      "rationale": "The customer is reporting physical damage to their A-Spire Wireless headset, specifically a crack in the plastic. Snippet [12] addresses the issue of a broken plastic casing on the A-Spire Wireless and outlines the process for initiating a Return for Swap case, which is relevant to the customer's request. Snippet [79] also provides information on how to initiate a Return for Swap case for a headset with a physical crack, which directly relates to the customer's situation."
+      "rationale": "The customer reported physical damage to their A-Spire Wireless headset, specifically a crack in the plastic. Snippet [27] directly addresses the issue of a cracked headset and outlines the process for initiating a Return for Swap case, which is relevant to the customer's request. Snippet [41] also discusses the handling of plastic damage and warranty coverage, providing additional context. Snippet [148] further elaborates on the procedure for reporting physical damage, which is pertinent to the customer's situation.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-046",
       "correct_snippet_ids": [
-        "headset not charging",
-        "my headset a-spire wireless powers off at random intervals, why?"
+        "my headset cant't turn on for a-spire wireless?",
+        "bluetooth - workaround for interrupted shutdown process",
+        "my headset a-spire wireless powers off at random intervals, why?",
+        "headset will not power on or keeps powering off",
+        "headset not charging"
       ],
-      "rationale": "The customer is experiencing issues with their A-Spire Wireless headset, specifically that it powers off during use and cannot charge while in use. Snippet [49] addresses the issue of the headset not charging, indicating that Bluetooth may block the power-on function. Snippet [76] provides a solution for the headset powering off at random intervals, suggesting a factory reset as a potential fix."
+      "rationale": "The customer is experiencing issues with their A-Spire Wireless headset, specifically that it turns off during use and cannot charge while in use. Snippets [1] and [19] provide troubleshooting steps for power issues and interrupted shutdown processes. Snippet [115] addresses random power-off issues, which aligns with the customer's description. Snippet [67] discusses headset power issues, and snippet [86] mentions charging problems related to Bluetooth interference.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "g-047",
       "correct_snippet_ids": [
         "i would like to return my headphones, as they unfortunately do not meet my expectations.",
-        "i want a refund/i wish to return the product",
-        "return - policy and instructions"
+        "i want a refund/i wish to return the product"
       ],
-      "rationale": "The customer is inquiring about the return policy for the A-Spire Wireless headset, specifically whether they can return it after use and if they will be reimbursed. Snippets [13] and [14] directly address the return policy, stating that returns are accepted within a 30-day period even if the product has been opened and briefly tested, and they outline the conditions under which a refund may be deducted. Snippet [31] also provides information about the return policy, confirming the acceptance of returns under similar conditions."
+      "rationale": "The customer is inquiring about the return policy for the A-Spire Wireless headset, specifically whether they can return it after use and if they will be reimbursed. Snippet [30] directly addresses the return policy, stating that returns are accepted within a 30-day period even if the product has been opened and briefly tested. Snippet [33] also provides information on the return process and conditions for refunds, making both snippets relevant to the customer's request.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "e-001",
       "correct_snippet_ids": [
-        "my dongle is broken.",
-        "dongle doesn't connect to headset.",
-        "a-spire wireless - uninstall/reinstall usb drivers + factory reset",
-        "a-spire wireless - update firmware windows app",
-        "acezone app - connect a-spire wireless"
+        "dongle pairing",
+        "pair a-spire wireless to dongle",
+        "dongle connectivity"
       ],
-      "rationale": "These snippets provide troubleshooting steps for issues related to the USB dongle connection for the A-Spire Wireless headset, which is the specific request of the customer."
+      "rationale": "These snippets provide troubleshooting steps specifically for reconnecting the A-Spire Wireless headset to its USB dongle, which directly addresses the customer's issue of the USB dongle not connecting to their PC.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "e-002",
       "correct_snippet_ids": [
-        "repair on a-rise",
-        "a-rise repair instructions"
+        "headset still doesn't work after following guides and solutions.",
+        "repair on a-rise"
       ],
-      "rationale": "Snippet 119 provides information on how to initiate a repair for the A-Rise headset, which is relevant to the customer's request for repair or replacement under warranty. Snippet 134 gives specific instructions on how to send the headset for repair, which is also pertinent to the customer's inquiry."
+      "rationale": "Both snippets provide information about warranty replacements and repair processes for the A-Rise headset, which directly addresses the customer's inquiry about getting their A-Rise repaired or replaced under warranty.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     },
     {
       "id": "e-004",
       "correct_snippet_ids": [
-        "my headset has a physical crack"
+        "my headset has a physical crack",
+        "physical damage or cracked plastic casing"
       ],
-      "rationale": "Snippet 79 directly addresses the issue of a cracked headset and provides instructions on how to initiate a Return for Swap case, which is relevant to the customer's request for assistance with their cracked A-Spire headset."
+      "rationale": "The customer is reporting a physical crack in their A-Spire headset. Snippet [27] provides instructions on how to initiate a Return for Swap case for a headset with a crack, while snippet [148] specifically addresses physical damage or cracked plastic casing, detailing the process for handling such issues.",
+      "_proposed_by": "gpt-4o-mini",
+      "_needs_human_review": true
     }
-  ],
-  "human_reviewed_at": "2026-05-31T13:22:49.568Z",
-  "human_reviewed_note": "Spot-checked g-020 (kept: AceZone sends spare dongles), g-021, and abstain cases g-001/g-014/g-025/g-044."
+  ]
 }
