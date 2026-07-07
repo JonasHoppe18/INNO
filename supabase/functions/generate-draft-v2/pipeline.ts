@@ -87,6 +87,7 @@ import {
   visibleEmailText,
 } from "./stages/email-thread-normalizer.ts";
 import { detectCustomerProvidedReturnTracking } from "./stages/return-tracking-attribution.ts";
+import { detectVerifiedOrderProofAsks } from "./stages/verified-order-proof-ask.ts";
 import { resolveCustomerName } from "./stages/customer-name-resolution.ts";
 import { checkUnsupportedCommitments } from "./stages/unsupported-commitment-check.ts";
 import { checkUnsupportedAssumptions } from "./stages/unsupported-assumption-check.ts";
@@ -2472,6 +2473,71 @@ export async function runDraftV2Pipeline(
           replyLanguage,
         ),
       };
+    }
+
+    // Verified-order proof-of-purchase backstop (T-051002): the
+    // exact_order_number directive forbids re-asking for receipt/purchase
+    // details/where-bought, but the model still slips. Deterministic detect →
+    // correction rewrite, mirroring the post-action retry.
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const proofAskViolations = detectVerifiedOrderProofAsks(
+        languageCheckedWritten.draft_text,
+        facts.match?.state ?? null,
+      );
+      if (proofAskViolations.length === 0) break;
+      console.warn(
+        `[generate-draft-v2] verified-order proof-ask retry ${attempt}: ${
+          proofAskViolations.join("; ")
+        }`,
+      );
+      try {
+        const correctionWritten = await runWriter({
+          products: productLinkRows,
+          plan,
+          caseState,
+          retrieved,
+          facts,
+          shop: shopWithPersona,
+          latestCustomerMessage,
+          conversationHistory,
+          actionProposals: finalProposals,
+          policyContext,
+          internalRulesBlock,
+          authoritativePreviewDocumentContext,
+          productSupportTopicLock,
+          completedTroubleshootingBlock:
+            previewDocument.completedTroubleshootingBlock ?? undefined,
+          resolvedCustomerName,
+          replyLanguageFallback: writerReplyLanguageFallback,
+          model: firstPassModel,
+          attachments: imageAttachments,
+          actionResult: postActionResult,
+          languageCorrectionInstruction:
+            `Rewrite the full draft in ${replyLanguage}. The customer's order is already VERIFIED in the shop's own system (exact order-number match) — proof of purchase, place of purchase and the order number are established facts. REMOVE every request for purchase details, receipt, proof of purchase, invoice, order number/confirmation, or where the product was bought. Do NOT ask the customer to confirm warranty coverage. For warranty/defect cases, ask instead for the next concrete step (e.g. clear photos or a short video of the damage) if that ask is not already present. Keep all other content and the greeting unchanged. Fix these issues: ${
+              proofAskViolations.join("; ")
+            }. Do not add a signature or support email.`,
+        });
+        if (correctionWritten.draft_text) {
+          languageCheckedWritten = correctionWritten;
+          if (
+            !mixedLanguageCheck(languageCheckedWritten.draft_text, replyLanguage)
+              .ok
+          ) {
+            languageCheckedWritten = {
+              ...languageCheckedWritten,
+              draft_text: cleanupMixedLanguageDraft(
+                languageCheckedWritten.draft_text,
+                replyLanguage,
+              ),
+            };
+          }
+        }
+      } catch (err) {
+        console.warn(
+          "[generate-draft-v2] verified-order proof-ask retry failed:",
+          err,
+        );
+      }
     }
 
     if (languageCheckedWritten.draft_text) {
