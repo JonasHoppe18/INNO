@@ -202,3 +202,73 @@ Deno.test("shouldBypassShopifyNotificationSenderRule does not bypass when the se
     false,
   );
 });
+
+// ---- extractContactFormOrderNumbers (T-051002 regression) ----
+// The customer typed a bare "3955" under "If Applicable, Place Of Purchase And
+// Order Number:". Nothing downstream used the field, so order-match never ran
+// on it and the writer asked "where did you purchase" although the order was
+// stated (and exists).
+
+import { extractContactFormOrderNumbers } from "./shopify-contact-form.ts";
+
+const FORM_BODY = (orderField: string) =>
+  `You received a new message from your online store's contact form.
+
+Country Code:
+DK
+
+Name:
+Mark Brandt
+
+Email:
+marc452c@outlook.dk
+
+If Applicable, Place Of Purchase And Order Number:
+${orderField}
+
+What Is Your Request Regarding?:
+A-Spire Wireless
+
+Body:
+Hello, my microphone broke.`;
+
+function identityFor(orderField: string) {
+  return parseShopifyContactIdentity({
+    fromEmail: "mailer@shopify.com",
+    subject: "New customer message on 6 July 2026",
+    bodyText: FORM_BODY(orderField),
+  });
+}
+
+Deno.test("extracts a bare numeric order number from the order field", () => {
+  assertEquals(extractContactFormOrderNumbers(identityFor("3955")), ["3955"]);
+});
+
+Deno.test("extracts '#1234' and 'Order #1234' forms", () => {
+  assertEquals(extractContactFormOrderNumbers(identityFor("#1234")), ["1234"]);
+  assertEquals(extractContactFormOrderNumbers(identityFor("Order #1234")), ["1234"]);
+});
+
+Deno.test("extracts the number out of combined place-of-purchase text", () => {
+  assertEquals(
+    extractContactFormOrderNumbers(identityFor("Webshop, ordre 4683")),
+    ["4683"],
+  );
+});
+
+Deno.test("returns [] for place-of-purchase text without any number", () => {
+  assertEquals(extractContactFormOrderNumbers(identityFor("Amazon")), []);
+});
+
+Deno.test("ignores short/implausible numbers (quantity-like)", () => {
+  assertEquals(extractContactFormOrderNumbers(identityFor("2")), []);
+});
+
+Deno.test("returns [] when the form has no order-number field", () => {
+  const identity = parseShopifyContactIdentity({
+    fromEmail: "mailer@shopify.com",
+    subject: "New customer message",
+    bodyText: "Name:\nX Y\n\nEmail:\nx@y.dk\n\nBody:\nhello",
+  });
+  assertEquals(extractContactFormOrderNumbers(identity), []);
+});

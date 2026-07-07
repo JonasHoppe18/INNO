@@ -52,6 +52,10 @@ import {
   PolicyIntent,
 } from "../_shared/policy-context.ts";
 import { parseEmailReplyBodies } from "../_shared/email-reply-parser.ts";
+import {
+  extractContactFormOrderNumbers,
+  parseShopifyContactIdentity,
+} from "../_shared/shopify-contact-form.ts";
 import { embedText } from "../_shared/embed-text.ts";
 import { emitDraftGeneratedEvent } from "../_shared/draft-feedback-emit.ts";
 import {
@@ -1210,6 +1214,52 @@ export async function runDraftV2Pipeline(
     };
     const isTestMode = testModeResult.data?.test_mode === true;
 
+    // Deterministic contact-form identity: Shopify relays (mailer@shopify.com)
+    // carry the REAL customer name/email/order number only as structured body
+    // fields. postmark-inbound detects this but only logs it — the LLM
+    // case-state misses a bare order number under the field label (T-051002)
+    // and name resolution otherwise sees just the relay sender. Merge parsed
+    // fields into the case state before planning/fact-resolution.
+    const contactFormIdentity = parseShopifyContactIdentity({
+      fromEmail: String(
+        (latestMessage as Record<string, unknown>).from_email || "",
+      ),
+      fromName: String(
+        (latestMessage as Record<string, unknown>).from_name || "",
+      ),
+      subject: String(
+        (latestMessage as Record<string, unknown>).subject ||
+          (thread as Record<string, unknown>).subject || "",
+      ),
+      bodyText: visibleEmailText(latestMessage),
+    });
+    if (contactFormIdentity.detected) {
+      const formOrderNumbers = extractContactFormOrderNumbers(
+        contactFormIdentity,
+      );
+      const existingOrderNumbers = Array.isArray(
+          caseState.entities.order_numbers,
+        )
+        ? caseState.entities.order_numbers
+        : [];
+      for (const number of formOrderNumbers) {
+        const known = existingOrderNumbers.some((existing) =>
+          String(existing).replace(/^#/, "") === number
+        );
+        if (!known) existingOrderNumbers.push(number);
+      }
+      caseState.entities.order_numbers = existingOrderNumbers;
+
+      const currentEmail = String(caseState.entities.customer_email || "")
+        .trim().toLowerCase();
+      if (
+        contactFormIdentity.customerEmail &&
+        (!currentEmail || currentEmail.endsWith("@shopify.com"))
+      ) {
+        caseState.entities.customer_email = contactFormIdentity.customerEmail;
+      }
+    }
+
     await updateDraftGenerationTrace(supabase, generationId, {
       workspace_id: workspaceId,
       case_state_json: caseState,
@@ -1606,6 +1656,9 @@ export async function runDraftV2Pipeline(
       latestCustomerMessage: latestBody,
       senderEmail: latestSenderEmail,
       senderDisplayName: latestSenderDisplayName,
+      contactFormName: contactFormIdentity.detected
+        ? contactFormIdentity.customerName
+        : null,
       orderCustomerName: facts.facts.find((fact) => fact.label === "Kundenavn")?.value ?? null,
       orderCustomerEmail: facts.order?.email ?? null,
       recentCustomerMessages: messages

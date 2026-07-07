@@ -4,6 +4,10 @@ export type ResolveCustomerNameInput = {
   senderDisplayName?: string | null;
   orderCustomerName?: string | null;
   orderCustomerEmail?: string | null;
+  // Customer-entered "Name:" field from a detected Shopify contact-form relay.
+  // The relay sender is mailer@shopify.com, so display-name/signature sources
+  // usually have nothing — this field is the customer's own statement.
+  contactFormName?: string | null;
   recentCustomerMessages?: Array<{
     text?: string | null;
     senderEmail?: string | null;
@@ -12,7 +16,12 @@ export type ResolveCustomerNameInput = {
 
 export type ResolveCustomerNameResult = {
   first_name: string | null;
-  source: "signature" | "sender_display_name" | "verified_order_customer" | "none";
+  source:
+    | "signature"
+    | "sender_display_name"
+    | "verified_order_customer"
+    | "contact_form"
+    | "none";
   confidence: "high" | "medium" | "low";
   reason: string;
 };
@@ -140,6 +149,18 @@ function currentSenderRecentMessages(input: ResolveCustomerNameInput) {
 }
 
 export function resolveCustomerName(input: ResolveCustomerNameInput): ResolveCustomerNameResult {
+  // Customer-entered contact-form name field wins: it is the customer's own
+  // explicit statement, and relay messages rarely carry any other name signal.
+  const contactFormName = credibleSenderDisplayName(input.contactFormName);
+  if (contactFormName) {
+    return {
+      first_name: firstName(contactFormName),
+      source: "contact_form",
+      confidence: "high",
+      reason: "customer-entered name field in shop contact form",
+    };
+  }
+
   const latestSignature = extractSignatureName(input.latestCustomerMessage);
   if (latestSignature) {
     return {
