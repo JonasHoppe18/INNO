@@ -2336,9 +2336,13 @@ export async function runRetriever(
   let matcherDebug: RetrieverResult["matcher_debug"] | undefined;
 
   if (customerMessage && pool.length > 0) {
-    const byId = new Map(pool.map((c) => [c.id, c]));
+    // Chunk ids are bigints at runtime (numbers from the RPC), but the matcher
+    // contract is string ids — normalize at the boundary or id round-trips
+    // (validIds membership, byId lookup) silently fail and the matcher abstains
+    // on everything (observed live on g-020).
+    const byId = new Map(pool.map((c) => [String(c.id), c]));
     const candidates: MatchCandidate[] = pool.map((c) => ({
-      id: c.id,
+      id: String(c.id),
       question: c.question ?? null,
       title: c.source_label,
       excerpt: c.content,
