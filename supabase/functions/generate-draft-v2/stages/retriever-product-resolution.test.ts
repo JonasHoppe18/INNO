@@ -112,3 +112,47 @@ Deno.test("generic headset message does not match any product", () => {
   );
   assertEquals(out, []);
 });
+
+// Production regression: real product_overview lines are "Name: long description"
+// (~120+ chars). The index treated the WHOLE line as the term and the ≥3/≤80
+// length filter then dropped every product — extraction returned [] for the
+// entire shop, silently disabling the product-support document gate and all
+// cross-product logic (observed live on e-004/g-020).
+const PROD_SHOP = {
+  product_overview: [
+    "- A-Blaze: The A-Blaze brings tournament-level precision to wireless gaming. Featuring Hybrid ANC and sound-isolating earcups, it b",
+    "- A-Spire: The A-Spire is a premium gaming headset, equipped with cutting-edge Advanced Hybrid Active Noise Cancellation (ANC) tail",
+    "- A-Spire Wireless: The A-Spire Wireless is the pinnacle of wireless gaming headsets, introducing Advanced Hybrid ANC specifically designed",
+    "- Ear pads: Spare Ear Pads for AceZone Headsets ⚠️ Note: When ordering, please write in the comment field at checkout which headset",
+    "- IEM + Sound Card: At AceZone, years of experience in professional esports audio engineering have led us here.",
+  ].join("\n"),
+};
+
+Deno.test("extracts product name from 'Name: description' overview lines", () => {
+  assertEquals(
+    extractMentionedProductTerms("my A-Spire headset cracked near the headband", PROD_SHOP),
+    ["a-spire"],
+  );
+});
+
+Deno.test("most-specific resolution still applies with description-format overview", () => {
+  assertEquals(
+    extractMentionedProductTerms("problem med mit A-Spire Wireless headset", PROD_SHOP),
+    ["a-spire wireless"],
+  );
+});
+
+Deno.test("hyphen-less mention matches hyphenated product name", () => {
+  // g-020: "mit a spire acezone headset" — no hyphen in the customer text.
+  assertEquals(
+    extractMentionedProductTerms("Jeg har smidt min dongle væk til mit a spire acezone headset", PROD_SHOP),
+    ["a-spire"],
+  );
+});
+
+Deno.test("connector variants still resolve with description-format overview", () => {
+  assertEquals(
+    extractMentionedProductTerms("spørgsmål om IEM and Sound Card", PROD_SHOP),
+    ["iem + sound card"],
+  );
+});

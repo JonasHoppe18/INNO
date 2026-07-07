@@ -268,9 +268,18 @@ function buildShopProductTermIndex(
   shop?: Record<string, unknown>,
 ): ShopProductTerm[] {
   const overview = String(shop?.product_overview || "");
+  // Overview lines are either bare names ("- A-Spire") or "Name: description"
+  // (production format, often 120+ chars). The term is the NAME — taking the
+  // whole line made the ≤80 length filter drop every product, so extraction
+  // returned [] for the entire shop and silently disabled the product-support
+  // document gate and all cross-product logic.
   const lines = overview
     .split(/\r?\n/)
     .map((line) => line.replace(/^[-*\s]+/, "").trim())
+    .map((line) => {
+      const colon = line.indexOf(": ");
+      return colon > 0 ? line.slice(0, colon).trim() : line;
+    })
     .filter((line) => line.length >= 3 && line.length <= 80);
   const seen = new Set<string>();
   const index: ShopProductTerm[] = [];
@@ -278,9 +287,13 @@ function buildShopProductTermIndex(
     const canonical = line.toLowerCase();
     if (seen.has(canonical)) continue;
     seen.add(canonical);
+    const dehyphenated = canonical.replace(/-/g, " ").replace(/\s+/g, " ")
+      .trim();
     const variants = uniqueStrings([
       canonical,
       normalizeConnectors(canonical),
+      dehyphenated,
+      normalizeConnectors(dehyphenated),
       ...(canonical === "ear pads" ? ["earpads"] : []),
     ]);
     index.push({ canonical, variants });
