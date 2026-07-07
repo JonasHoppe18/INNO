@@ -119,6 +119,39 @@ export function selectFromRanked(
   return { selected: eligible.slice(0, opts.maxSelected), abstained: false };
 }
 
+// Same-document sibling augmentation: one troubleshooting fix often spans
+// complementary sections of the SAME document (clear pairing list + pairing
+// guide) — a human pastes both, the margin rule selects only #1. Add ranked
+// above-threshold sections from a selected chunk's document, up to the
+// knowledge budget. Pure; chunk shape only needs id + document_id.
+export function augmentWithSameDocumentSiblings<
+  T extends { id: string | number; document_id?: string | null },
+>(input: {
+  selected: T[];
+  ranked: MatchResult[];
+  byId: Map<string, T>;
+  threshold: number;
+  budget: number;
+}): T[] {
+  const out = [...input.selected];
+  if (out.length === 0) return out;
+  const selectedDocIds = new Set(
+    out.map((c) => c.document_id).filter(Boolean) as string[],
+  );
+  if (selectedDocIds.size === 0) return out;
+  const seen = new Set(out.map((c) => String(c.id)));
+  for (const r of input.ranked) {
+    if (out.length >= input.budget) break;
+    if (r.relevance < input.threshold) continue;
+    if (seen.has(String(r.id))) continue;
+    const chunk = input.byId.get(String(r.id));
+    if (!chunk?.document_id || !selectedDocIds.has(chunk.document_id)) continue;
+    out.push(chunk);
+    seen.add(String(chunk.id));
+  }
+  return out;
+}
+
 export async function matchSnippets(
   customerMessage: string,
   candidates: MatchCandidate[],

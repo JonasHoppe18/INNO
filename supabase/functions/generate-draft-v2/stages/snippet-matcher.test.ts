@@ -195,3 +195,87 @@ Deno.test("matchSnippets: exact chunk-id match wins over positional reading", as
   });
   assertEquals(r.ranked.map((x) => x.id), ["3"]);
 });
+
+// Send-ready analysis round 2 (2026-07-07): with guide-mode live, the judge
+// still flags "missing steps" — the matcher selects ONE section while the
+// human's fix spans complementary sibling sections of the same document
+// (clear pairing list + pairing guide). Above-threshold sibling sections from
+// the same document join the selection, capped at the knowledge budget.
+import { augmentWithSameDocumentSiblings } from "./snippet-matcher.ts";
+
+Deno.test("adds above-threshold sibling sections from the same document", () => {
+  const byId = new Map<string, { id: string; document_id?: string | null }>([
+    ["1", { id: "1", document_id: "doc-A" }],
+    ["2", { id: "2", document_id: "doc-A" }],
+    ["3", { id: "3", document_id: "doc-B" }],
+  ]);
+  const out = augmentWithSameDocumentSiblings({
+    selected: [byId.get("1")!],
+    ranked: [
+      { id: "1", relevance: 0.9, reason: "" },
+      { id: "2", relevance: 0.7, reason: "" },
+      { id: "3", relevance: 0.8, reason: "" },
+    ],
+    byId,
+    threshold: 0.6,
+    budget: 2,
+  });
+  // sibling "2" (same doc, above threshold) joins; "3" (other doc) does not.
+  assertEquals(out.map((c) => c.id), ["1", "2"]);
+});
+
+Deno.test("respects the budget and skips below-threshold siblings", () => {
+  const byId = new Map<string, { id: string; document_id?: string | null }>([
+    ["1", { id: "1", document_id: "doc-A" }],
+    ["2", { id: "2", document_id: "doc-A" }],
+    ["4", { id: "4", document_id: "doc-A" }],
+  ]);
+  const ranked = [
+    { id: "1", relevance: 0.9, reason: "" },
+    { id: "2", relevance: 0.5, reason: "" }, // below threshold — never added
+    { id: "4", relevance: 0.65, reason: "" },
+  ];
+  const capped = augmentWithSameDocumentSiblings({
+    selected: [byId.get("1")!],
+    ranked,
+    byId,
+    threshold: 0.6,
+    budget: 1, // already full — nothing added
+  });
+  assertEquals(capped.map((c) => c.id), ["1"]);
+  const roomy = augmentWithSameDocumentSiblings({
+    selected: [byId.get("1")!],
+    ranked,
+    byId,
+    threshold: 0.6,
+    budget: 3,
+  });
+  assertEquals(roomy.map((c) => c.id), ["1", "4"]);
+});
+
+Deno.test("no-op when nothing selected or chunks lack document identity", () => {
+  const byId = new Map<string, { id: string; document_id?: string | null }>([
+    ["1", { id: "1", document_id: null }],
+    ["2", { id: "2", document_id: null }],
+  ]);
+  assertEquals(
+    augmentWithSameDocumentSiblings({
+      selected: [],
+      ranked: [{ id: "2", relevance: 0.9, reason: "" }],
+      byId,
+      threshold: 0.6,
+      budget: 3,
+    }),
+    [],
+  );
+  assertEquals(
+    augmentWithSameDocumentSiblings({
+      selected: [byId.get("1")!],
+      ranked: [{ id: "2", relevance: 0.9, reason: "" }],
+      byId,
+      threshold: 0.6,
+      budget: 3,
+    }).map((c) => c.id),
+    ["1"],
+  );
+});
