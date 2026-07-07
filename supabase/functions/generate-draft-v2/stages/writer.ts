@@ -5,6 +5,7 @@ import {
   buildCaseContinuityDirective,
   filterCustomerOpenQuestions,
 } from "./case-continuity.ts";
+import { detectStepGuideChunks } from "./step-guide-mode.ts";
 import { RetrieverResult } from "./retriever.ts";
 import { FactResolverResult, deriveRefundStatus, isStockAvailabilityQuestion, type OrderMatch, type RefundStatus, type ResolvedFact } from "./fact-resolver.ts";
 import type { TrackingFact } from "../../_shared/tracking/normalized-tracking.ts";
@@ -1686,6 +1687,16 @@ Support replied: "${agentReply.slice(0, 500)}"`;
   // (ikke kun passiv info — writeren skal handle på dem) ---
   const caseContinuityBlock = buildCaseContinuityDirective(caseState);
 
+  // --- Guide-mode: en valgt trin-guide skal gengives KOMPLET (mode-split af
+  // kortheds-reglerne — beslutsom OG komplet, som en medarbejder der indsætter
+  // hele guiden) ---
+  const stepGuideBlock = detectStepGuideChunks(chunksForPrompt)
+    ? `# FEJLFINDINGS-GUIDE VALGT — komplethed slår korthed her
+- Den valgte knowledge indeholder en trin-for-trin guide der løser kundens problem. Gengiv guidens TRIN KOMPLET og i rækkefølge — alle trin, ingen opsummering, udelad aldrig trin (fx factory reset eller firmware-tjek).
+- Rammen omkring trinnene følger stadig posturen: kort beslutsom indledning (1 sætning), derefter trinnene som liste, derefter højst 1 kort afslutning med næste skridt hvis trinnene ikke løser det.
+- Gengiv KUN trin fra den valgte guide — opfind aldrig egne trin, og bland ikke trin fra flere guider.`
+    : "";
+
   const pendingAsks = caseState.pending_asks.length > 0
     ? `# Vi venter stadig på fra kunden
 ` + caseState.pending_asks.map((a) => `- ${a}`).join("\n")
@@ -1888,9 +1899,9 @@ HOLDNING (vigtigst af alt — læs først):
 - Beslutsom = commit til den policy-/knowledge-understøttede løsning som en FREMTIDIG handling ("vi annullerer den for dig"), ALDRIG som falsk datid ("er annulleret") og ALDRIG ud over hvad policy/knowledge dækker. Opfind aldrig gavmildhed (rabat, gratis del, undtagelse) der ikke står i knowledge.
 
 SÅDAN SVARER DU (vigtigst):
-- Svar som en travl, erfaren senior-medarbejder der allerede har besluttet sig. Led med beslutningen / svaret / næste konkrete handling i den FØRSTE sætning. Højst 1-2 sætninger mere.
+- Svar som en travl, erfaren senior-medarbejder der allerede har besluttet sig. Led med beslutningen / svaret / næste konkrete handling i den FØRSTE sætning. Højst 1-2 sætninger mere — UNDTAGELSE: følg "FEJLFINDINGS-GUIDE"-blokken hvis den findes nedenfor.
 - Reciter ALDRIG policy, betingelser, frister, specs eller edge-cases kunden ikke spurgte om. Giv kun den ene del der er relevant lige nu (fx kun returadressen — ikke hele return-policyen).
-- Udtræk højst ÉT relevant faktum fra knowledge. Gengiv aldrig knowledge ordret, og lim aldrig flere kilder sammen.
+- Udtræk højst ÉT relevant faktum fra knowledge. Gengiv aldrig knowledge ordret, og lim aldrig flere kilder sammen — UNDTAGELSE: en valgt fejlfindings-guides TRIN skal gengives komplet (se "FEJLFINDINGS-GUIDE"-blokken).
 - Hvis vi har nok info til at handle, så gør det — bed ikke om mere. Spørg KUN om felter i missing_required_fields, og kun hvis de faktisk mangler.
 - Undgå defensivt proces-sprog: "vi vurderer", "når vi har bekræftet", "hvis du er berettiget", "send flere billeder", "vi vender tilbage", "sagen sendes videre". Tag beslutningen nu, eller bed præcist om det ene der mangler.
 - Korte afsnit på 1-2 sætninger med tom linje imellem. Ingen indledende fyld ("Tak for din besked..."), gentag ikke kundens spørgsmål.
@@ -2134,6 +2145,7 @@ ${stageDirectives[resolutionStage] ?? stageDirectives.info_only}`;
     variantBlock,
     suppress(infoRequirementsBlock),
     suppress(caseContinuityBlock),
+    suppress(stepGuideBlock),
     suppress(decisionsMade),
     suppress(pendingAsks),
     suppress(actionResultBlock),
