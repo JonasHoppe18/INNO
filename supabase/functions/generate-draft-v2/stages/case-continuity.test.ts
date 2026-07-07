@@ -60,3 +60,30 @@ Deno.test("own-store purchase and plain decisions yield no directive", () => {
   assertEquals(buildCaseContinuityDirective(mk(["address_confirmed: X"])), "");
   assertEquals(buildCaseContinuityDirective(mk([])), "");
 });
+
+// Persisted case-states can carry the AGENT's own asks in open_questions
+// ("Er det muligt for dig at tage en video?") — the writer then 'answers'
+// its own question as if the customer asked it ("Jeg kan desværre ikke tage
+// en video"). Second-person-directed request forms are agent asks, not
+// customer problems; filter them deterministically at render time.
+import { filterCustomerOpenQuestions } from "./case-continuity.ts";
+
+Deno.test("filters agent-ask-shaped questions (DA + EN)", () => {
+  const out = filterCustomerOpenQuestions([
+    "Er det muligt for dig at tage en video af selve headsettet, hvor lyden kan høres?",
+    "Kan du sende dit ordrenummer?",
+    "Could you please confirm your shipping address?",
+    "Can you send us a photo of the damage?",
+  ]);
+  assertEquals(out, []);
+});
+
+Deno.test("keeps genuine customer problems and questions", () => {
+  const qs = [
+    "A-Blaze headset kan ikke parre til PC",
+    "Hvorfor er min refundering ikke kommet endnu?",
+    "Why does the headset disconnect briefly before shutting off?",
+    "Headset tænder ikke",
+  ];
+  assertEquals(filterCustomerOpenQuestions(qs), qs);
+});

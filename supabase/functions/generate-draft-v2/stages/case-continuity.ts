@@ -39,6 +39,20 @@ function thirdPartyName(caseState: CaseState): string | null {
   return null;
 }
 
+// Second-person-directed request forms are the AGENT asking the CUSTOMER for
+// something — they belong in pending_asks, never in open_questions. Persisted
+// case-states from before the extraction rule carry this pollution, and the
+// writer then "answers" its own question ("Jeg kan desværre ikke tage en
+// video..."). Filter at render time, deterministically.
+const AGENT_ASK_RE =
+  /^(?:kan|kunne|vil|vil du|er det muligt for)\s+(?:du|dig|i)\b|^(?:can|could|would|will)\s+you\b|^is it possible for you\b|^(?:please\s+)?(?:send|bekræft|confirm|oplys|provide|attach)\s+(?:os|us|venligst|please|your|dit|din|dine)\b/i;
+
+export function filterCustomerOpenQuestions(questions: string[]): string[] {
+  return (questions || []).filter((q) =>
+    !AGENT_ASK_RE.test(String(q || "").trim())
+  );
+}
+
 export function buildCaseContinuityDirective(caseState: CaseState): string {
   const blocks: string[] = [];
 

@@ -1,7 +1,10 @@
 // supabase/functions/generate-draft-v2/stages/writer.ts
 import { Plan } from "./planner.ts";
 import { CaseState } from "./case-state-updater.ts";
-import { buildCaseContinuityDirective } from "./case-continuity.ts";
+import {
+  buildCaseContinuityDirective,
+  filterCustomerOpenQuestions,
+} from "./case-continuity.ts";
 import { RetrieverResult } from "./retriever.ts";
 import { FactResolverResult, deriveRefundStatus, isStockAvailabilityQuestion, type OrderMatch, type RefundStatus, type ResolvedFact } from "./fact-resolver.ts";
 import type { TrackingFact } from "../../_shared/tracking/normalized-tracking.ts";
@@ -1663,9 +1666,14 @@ Support replied: "${agentReply.slice(0, 500)}"`;
     : "";
 
   // --- Åbne spørgsmål der SKAL besvares (primær driver for svaret) ---
-  const openQBlock = caseState.open_questions.length > 0
+  // Persisted case-states may carry the agent's own asks here; filter them or
+  // the writer "answers" its own question.
+  const customerOpenQuestions = filterCustomerOpenQuestions(
+    caseState.open_questions,
+  );
+  const openQBlock = customerOpenQuestions.length > 0
     ? `# Kundens åbne spørgsmål — DIT SVAR SKAL BESVARE DISSE (brug fakta til at informere svaret)
-` + caseState.open_questions.map((q, i) => `${i + 1}. ${q}`).join("\n")
+` + customerOpenQuestions.map((q, i) => `${i + 1}. ${q}`).join("\n")
     : "";
 
   // --- Foreslåede actions fra deterministisk action-decision ---
