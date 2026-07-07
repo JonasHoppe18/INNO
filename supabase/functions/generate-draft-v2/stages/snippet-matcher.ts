@@ -141,15 +141,34 @@ export async function matchSnippets(
     temperature: 0,
   });
   const validIds = new Set(candidates.map((c) => c.id));
-  // Chunk ids are numeric strings; the model routinely echoes them as JSON
-  // numbers. Coerce before membership-testing or every ranking is dropped and
-  // the matcher silently abstains (observed live on g-020).
+  // The model flip-flops on the id namespace: chunk ids come back as JSON
+  // numbers (g-020) or as the "#N" positional numbering from the prompt
+  // (e-002). Resolve exact chunk id first; otherwise a small integer that is
+  // a valid 1-based position (and NOT a valid chunk id) maps to that
+  // candidate. Anything else is dropped.
+  const resolveId = (rawId: unknown): string | null => {
+    const s = String(rawId ?? "").trim();
+    if (validIds.has(s)) return s;
+    const positional = /^#?(\d+)$/.exec(s);
+    if (positional) {
+      const idx = Number(positional[1]);
+      if (Number.isInteger(idx) && idx >= 1 && idx <= candidates.length) {
+        return candidates[idx - 1].id;
+      }
+    }
+    return null;
+  };
   const ranked: MatchResult[] = (raw?.rankings ?? [])
-    .filter((r) =>
-      r && validIds.has(String(r.id)) && typeof r.relevance === "number"
+    .map((r) =>
+      r && typeof r.relevance === "number"
+        ? { resolved: resolveId(r.id), r }
+        : { resolved: null, r }
     )
-    .map((r) => ({
-      id: String(r.id),
+    .filter((x): x is { resolved: string; r: MatchResult } =>
+      x.resolved !== null
+    )
+    .map(({ resolved, r }) => ({
+      id: resolved,
       relevance: Math.max(0, Math.min(1, r.relevance)),
       reason: String(r.reason ?? ""),
     }))

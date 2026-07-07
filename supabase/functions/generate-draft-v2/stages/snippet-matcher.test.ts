@@ -145,3 +145,53 @@ Deno.test("matchSnippets: accepts numeric ids returned for numeric-string candid
   assertEquals(r.ranked.map((x) => x.id), ["4436", "4516"]);
   assertEquals(r.selected.map((s) => s.id), ["4436"]);
 });
+
+// Positional-index regression (observed live on e-002): the prompt numbers
+// candidates "#N [id: 4443]" and the model sometimes echoes the position
+// ("id": 14) instead of the chunk id. Resolve exact ids first; a small integer
+// that is NOT a valid chunk id but IS a valid 1-based position maps to that
+// candidate. "#14" form counts too.
+Deno.test("matchSnippets: resolves positional indexes when ids don't match", async () => {
+  const pool: MatchCandidate[] = Array.from({ length: 15 }, (_, i) => ({
+    id: String(4400 + i),
+    question: null,
+    title: `Doc ${i + 1}`,
+    excerpt: "...",
+  }));
+  const r = await matchSnippets("warranty repair?", pool, OPTS, {
+    // deno-lint-ignore no-explicit-any
+    callJson: (_args: any) =>
+      Promise.resolve({
+        rankings: [
+          { id: 14, relevance: 1, reason: "warranty claims" },
+          { id: "#12", relevance: 0.9, reason: "return for swap" },
+          { id: 3, relevance: 0, reason: "refunds" },
+        ],
+        // deno-lint-ignore no-explicit-any
+      } as any),
+  });
+  assertEquals(r.abstained, false);
+  // #14 → pool[13] = 4413, #12 → pool[11] = 4411, #3 → pool[2] = 4402
+  assertEquals(r.ranked.map((x) => x.id), ["4413", "4411", "4402"]);
+  // 1.0 vs 0.9 is inside marginMin 0.15 → both selected up to the budget.
+  assertEquals(r.selected.map((s) => s.id), ["4413", "4411"]);
+});
+
+Deno.test("matchSnippets: exact chunk-id match wins over positional reading", async () => {
+  // Candidate genuinely has id "3" — a returned 3 must mean that chunk,
+  // not position #3.
+  const pool: MatchCandidate[] = [
+    { id: "3", question: null, title: "A", excerpt: "..." },
+    { id: "200", question: null, title: "B", excerpt: "..." },
+    { id: "300", question: null, title: "C", excerpt: "..." },
+  ];
+  const r = await matchSnippets("q", pool, OPTS, {
+    // deno-lint-ignore no-explicit-any
+    callJson: (_args: any) =>
+      Promise.resolve({
+        rankings: [{ id: 3, relevance: 0.9, reason: "" }],
+        // deno-lint-ignore no-explicit-any
+      } as any),
+  });
+  assertEquals(r.ranked.map((x) => x.id), ["3"]);
+});
