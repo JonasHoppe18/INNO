@@ -120,3 +120,28 @@ Deno.test("matchSnippets: clamps out-of-range relevance", async () => {
   assertEquals(r.ranked.find((x) => x.id === "c1")?.relevance, 1);
   assertEquals(r.ranked.find((x) => x.id === "c2")?.relevance, 0);
 });
+
+// Numeric-id regression (observed live on g-020): chunk ids are numeric strings
+// ("4436"), and gpt-4o-mini returns them as JSON numbers. The id filter must
+// coerce before comparing — otherwise every ranking is dropped and the matcher
+// silently abstains even when the LLM scored the right chunk 1.0.
+Deno.test("matchSnippets: accepts numeric ids returned for numeric-string candidates", async () => {
+  const numericCands: MatchCandidate[] = [
+    { id: "4436", question: null, title: "Missing accessories and spare parts", excerpt: "..." },
+    { id: "4516", question: null, title: "Dongle pairing", excerpt: "..." },
+  ];
+  const r = await matchSnippets("Jeg har smidt min dongle væk — kan jeg købe en ny?", numericCands, OPTS, {
+    // deno-lint-ignore no-explicit-any
+    callJson: (_args: any) =>
+      Promise.resolve({
+        rankings: [
+          { id: 4436, relevance: 1, reason: "answers the spare-part request" },
+          { id: 4516, relevance: 0, reason: "pairing, not purchase" },
+        ],
+        // deno-lint-ignore no-explicit-any
+      } as any),
+  });
+  assertEquals(r.abstained, false);
+  assertEquals(r.ranked.map((x) => x.id), ["4436", "4516"]);
+  assertEquals(r.selected.map((s) => s.id), ["4436"]);
+});

@@ -133,16 +133,23 @@ export async function matchSnippets(
     model: opts.model,
     systemPrompt: SYSTEM_PROMPT,
     userPrompt: buildUserPrompt(customerMessage, candidates),
-    maxTokens: 800,
+    // One entry per candidate (pool can be 15) with a reason each — 800 was
+    // within truncation range of a verbose response.
+    maxTokens: 2000,
     schema: RANKING_SCHEMA,
     schemaName: "snippet_rankings",
     temperature: 0,
   });
   const validIds = new Set(candidates.map((c) => c.id));
+  // Chunk ids are numeric strings; the model routinely echoes them as JSON
+  // numbers. Coerce before membership-testing or every ranking is dropped and
+  // the matcher silently abstains (observed live on g-020).
   const ranked: MatchResult[] = (raw?.rankings ?? [])
-    .filter((r) => r && validIds.has(r.id) && typeof r.relevance === "number")
+    .filter((r) =>
+      r && validIds.has(String(r.id)) && typeof r.relevance === "number"
+    )
     .map((r) => ({
-      id: r.id,
+      id: String(r.id),
       relevance: Math.max(0, Math.min(1, r.relevance)),
       reason: String(r.reason ?? ""),
     }))
