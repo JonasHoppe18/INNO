@@ -10,6 +10,9 @@ export interface CaseState {
     customer_email: string;
     products_mentioned: string[];
     customer_country?: string;
+    // Cross-turn purchase location: "own_store", "third_party:<navn>" or null
+    // (unknown). Drives the third-party warranty-routing writer directive.
+    purchase_place?: string | null;
   };
   decisions_made: Array<{ decision: string; timestamp: string }>;
   open_questions: string[];
@@ -63,6 +66,7 @@ const CASE_STATE_SCHEMA = {
     customer_email: { type: "string" },
     products_mentioned: { type: "array", items: { type: "string" } },
     customer_country: { type: ["string", "null"] },
+    purchase_place: { type: ["string", "null"] },
     open_questions: { type: "array", items: { type: "string" } },
     pending_asks: { type: "array", items: { type: "string" } },
     decisions_made: { type: "array", items: { type: "string" } },
@@ -74,6 +78,7 @@ const CASE_STATE_SCHEMA = {
     "customer_email",
     "products_mentioned",
     "customer_country",
+    "purchase_place",
     "open_questions",
     "pending_asks",
     "decisions_made",
@@ -147,6 +152,7 @@ Ekstraher og output JSON:
   "customer_email": "kunde@example.com eller tom streng",
   "products_mentioned": ["produktnavn"],
   "customer_country": "DK eller null",
+  "purchase_place": "own_store | third_party:<forhandlernavn> | null",
   "open_questions": ["Hvad er status på min pakke?"],
   "pending_asks": ["Vi venter på ordrenummer fra kunden"],
   "decisions_made": ["refund_offered", "replacement_sent"]
@@ -157,6 +163,8 @@ Regler:
 - pending_asks: information eller bekræftelse vi HAR BEDT kunden om, men ENDNU IKKE modtaget svar på. Fjern straks når kunden har svaret — selv med et kort "ja", "ok" eller "det er korrekt".
 - decisions_made: hvad agenten allerede har tilbudt, gjort, eller hvad kunden har bekræftet. Eksempler: "cable_replacement_initiated", "address_confirmed: Højrupvej 48 5750 Ringe", "warranty_replacement_offered", "refund_offered". Inkludér bekræftede kundeoplysninger som en del af decisions_made så næste svar ved hvad der allerede er på plads.
 - Vigtigste regel: Når kunden bekræfter noget vi har spurgt om (adresse, ordrenummer, situation), skal pending_asks være TOM og decisions_made skal indeholde hvad der nu er bekræftet.
+- purchase_place: hvor produktet er købt, udvundet på tværs af ALLE beskeder inkl. citeret historik. "own_store" hvis kunden bekræfter køb i shoppens egen webshop/butik; "third_party:<forhandlernavn>" hvis købt hos en forhandler/anden platform (fx "third_party:Maxgaming.se", "third_party:Amazon"); null hvis ukendt. Dette faktum FORÆLDES IKKE — bevar det fra tidligere beskeder.
+- customer_email: KUN kundens egen email. ALDRIG shoppens/supportens egen adresse (fx support@..., info@..., mailer@shopify.com) — brug tom streng hvis kun shoppens adresse optræder.
 - Kun inkludér det der faktisk er i samtalen
 
 AGENT-FORPLIGTELSER (KRITISK): Læs alle [Agent]-beskeder OG "TIDLIGERE I TRÅDEN (citeret historik)" grundigt og fang hvad agenten har lovet eller arrangeret. Tilføj til decisions_made:
@@ -174,6 +182,7 @@ AGENT-FORPLIGTELSER (KRITISK): Læs alle [Agent]-beskeder OG "TIDLIGERE I TRÅDE
     customer_email?: string;
     products_mentioned?: string[];
     customer_country?: string;
+    purchase_place?: string | null;
     open_questions?: string[];
     pending_asks?: string[];
     decisions_made?: string[];
@@ -250,6 +259,10 @@ AGENT-FORPLIGTELSER (KRITISK): Læs alle [Agent]-beskeder OG "TIDLIGERE I TRÅDE
       ],
       customer_country: llmResult.customer_country ??
         existing.entities.customer_country,
+      // Sticky cross-turn fact: once known, a missing/null extraction must not
+      // erase it (the customer rarely repeats where they bought the product).
+      purchase_place: llmResult.purchase_place ??
+        existing.entities.purchase_place ?? null,
     },
     decisions_made: [...existing.decisions_made, ...newDecisions],
     open_questions: llmResult.open_questions ?? existing.open_questions,

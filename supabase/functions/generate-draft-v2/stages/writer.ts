@@ -1,6 +1,7 @@
 // supabase/functions/generate-draft-v2/stages/writer.ts
 import { Plan } from "./planner.ts";
 import { CaseState } from "./case-state-updater.ts";
+import { buildCaseContinuityDirective } from "./case-continuity.ts";
 import { RetrieverResult } from "./retriever.ts";
 import { FactResolverResult, deriveRefundStatus, isStockAvailabilityQuestion, type OrderMatch, type RefundStatus, type ResolvedFact } from "./fact-resolver.ts";
 import type { TrackingFact } from "../../_shared/tracking/normalized-tracking.ts";
@@ -1652,6 +1653,10 @@ Support replied: "${agentReply.slice(0, 500)}"`;
 ` + caseState.decisions_made.map((d) => `- ${d.decision}`).join("\n")
     : "";
 
+  // --- Multi-turn kontinuitet: tredjeparts-køb + aktive flows som DIREKTIVER
+  // (ikke kun passiv info — writeren skal handle på dem) ---
+  const caseContinuityBlock = buildCaseContinuityDirective(caseState);
+
   const pendingAsks = caseState.pending_asks.length > 0
     ? `# Vi venter stadig på fra kunden
 ` + caseState.pending_asks.map((a) => `- ${a}`).join("\n")
@@ -2094,6 +2099,7 @@ ${stageDirectives[resolutionStage] ?? stageDirectives.info_only}`;
     salutationBlock,
     variantBlock,
     suppress(infoRequirementsBlock),
+    suppress(caseContinuityBlock),
     suppress(decisionsMade),
     suppress(pendingAsks),
     suppress(actionResultBlock),
