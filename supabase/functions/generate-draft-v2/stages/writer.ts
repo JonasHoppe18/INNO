@@ -2247,7 +2247,13 @@ Returner JSON:
               instructions: systemPrompt,
               input: responsesInput,
               reasoning: { effort: resolvedEffort },
-              max_output_tokens: 1800,
+              // Responses-API max_output_tokens INCLUDES reasoning tokens —
+              // at medium+ effort 1800 was consumed by reasoning alone and
+              // the writer returned empty content (9/44 cases, 2026-07-07).
+              max_output_tokens: resolvedEffort === "low" ||
+                  resolvedEffort === "none"
+                ? 1800
+                : 6000,
               store: false,
               text: {
                 format: {
