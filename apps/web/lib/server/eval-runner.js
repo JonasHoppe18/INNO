@@ -282,6 +282,9 @@ async function generateDraftV2(shopId, subject, emailBody, options = {}) {
   try {
     res = await fetch(endpoint, {
       method: "POST",
+      // The edge function normally answers in 10-30s; a lost connection
+      // otherwise hangs eval/probe scripts forever (observed 54+ min).
+      signal: AbortSignal.timeout(120_000),
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,

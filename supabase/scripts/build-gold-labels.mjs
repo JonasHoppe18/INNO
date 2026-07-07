@@ -86,7 +86,11 @@ const SYSTEM = "You build a retrieval ground-truth set for a customer-support AI
   "which snippet(s) actually ANSWER the customer's specific request — match on " +
   "meaning, across languages. A snippet that is merely the same TOPIC does not " +
   "count. If NO snippet answers the request, return an empty list (this is correct " +
-  "and expected).";
+  "and expected). " +
+  "IMPORTANT: the knowledge base contains multiple generations of the same content " +
+  "(legacy FAQ snippets AND curated document sections). When several catalog entries " +
+  "are content-equivalent answers to the request, include ALL of them — retrieval is " +
+  "correct if it finds ANY equivalent. Do not pick just the FAQ-style variant.";
 
 async function callOpenAI(body, attempts = 3) {
   let lastErr;

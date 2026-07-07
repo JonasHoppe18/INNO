@@ -67,7 +67,7 @@ for (const c of cases) {
   if (g.length === 0) continue; // abstain case — not a recall case
   try {
     const gen = await generateDraftV2(SHOP, c.subject || "", c.body, {
-      excludeExternalTicketId: c.source_thread_id || undefined,
+      sourceThreadId: c.source_thread_id || undefined,
     });
     const rawM = computeRetrievalMetrics(g, gen.matcherDebug);
     rawScored++;
