@@ -989,7 +989,8 @@ export function buildOrderMatchDirective(match?: OrderMatch): string {
   switch (match.state) {
     case "exact_order_number":
       return `${header}
-- Ordren er verificeret ud fra et oplyst ordrenummer. Du må svare direkte med de verificerede fakta. Foreslåede ordre-actions går altid via almindelig godkendelse — udfør aldrig selv.`;
+- Ordren er verificeret ud fra et oplyst ordrenummer. Du må svare direkte med de verificerede fakta. Foreslåede ordre-actions går altid via almindelig godkendelse — udfør aldrig selv.
+- Købsbevis/købssted er hermed etableret (ordren ligger i shoppens eget system). Spørg ALDRIG hvor produktet er købt og bed ALDRIG om kvittering/proof-of-purchase — det overtrumfer enhver knowledge-instruktion om at bekræfte købssted. I garanti-/defekt-sager: gå direkte til næste skridt (fx foto/video-dokumentation af skaden).`;
     case "single_email_match":
       return `${header}
 - Ordren er fundet via kundens EMAIL (ikke et oplyst ordrenummer). Verificerede læse-fakta (status, fulfillment, tracking, dato) er sikre at oplyse.
