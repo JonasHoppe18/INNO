@@ -88,6 +88,7 @@ import {
 } from "./stages/email-thread-normalizer.ts";
 import { detectCustomerProvidedReturnTracking } from "./stages/return-tracking-attribution.ts";
 import { detectVerifiedOrderProofAsks } from "./stages/verified-order-proof-ask.ts";
+import { detectMissingDamageDocumentationAsk } from "./stages/damage-documentation-ask.ts";
 import { resolveCustomerName } from "./stages/customer-name-resolution.ts";
 import { checkUnsupportedCommitments } from "./stages/unsupported-commitment-check.ts";
 import { checkUnsupportedAssumptions } from "./stages/unsupported-assumption-check.ts";
@@ -2535,6 +2536,69 @@ export async function runDraftV2Pipeline(
       } catch (err) {
         console.warn(
           "[generate-draft-v2] verified-order proof-ask retry failed:",
+          err,
+        );
+      }
+    }
+
+    // Physical-damage documentation backstop: never arrange a replacement/
+    // repair for physical damage without asking for photo/video evidence
+    // (unless the customer already attached images).
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const damageDocViolations = detectMissingDamageDocumentationAsk({
+        draftText: languageCheckedWritten.draft_text,
+        customerMessage: latestCustomerMessage,
+        imageAttachmentCount: imageAttachments.length,
+      });
+      if (damageDocViolations.length === 0) break;
+      console.warn(
+        `[generate-draft-v2] damage-documentation retry ${attempt}: ${
+          damageDocViolations.join("; ")
+        }`,
+      );
+      try {
+        const correctionWritten = await runWriter({
+          products: productLinkRows,
+          plan,
+          caseState,
+          retrieved,
+          facts,
+          shop: shopWithPersona,
+          latestCustomerMessage,
+          conversationHistory,
+          actionProposals: finalProposals,
+          policyContext,
+          internalRulesBlock,
+          authoritativePreviewDocumentContext,
+          productSupportTopicLock,
+          completedTroubleshootingBlock:
+            previewDocument.completedTroubleshootingBlock ?? undefined,
+          resolvedCustomerName,
+          replyLanguageFallback: writerReplyLanguageFallback,
+          model: firstPassModel,
+          attachments: imageAttachments,
+          actionResult: postActionResult,
+          languageCorrectionInstruction:
+            `Rewrite the full draft in ${replyLanguage}. The customer reports PHYSICAL damage and no images are attached yet. Keep the replacement/repair offer, but ask the customer to send clear photos or a short video of the damage as the concrete next step so the claim can be processed. Do not ask for purchase details, receipt or where the product was bought. Keep the greeting and all verified facts unchanged. Do not add a signature or support email.`,
+        });
+        if (correctionWritten.draft_text) {
+          languageCheckedWritten = correctionWritten;
+          if (
+            !mixedLanguageCheck(languageCheckedWritten.draft_text, replyLanguage)
+              .ok
+          ) {
+            languageCheckedWritten = {
+              ...languageCheckedWritten,
+              draft_text: cleanupMixedLanguageDraft(
+                languageCheckedWritten.draft_text,
+                replyLanguage,
+              ),
+            };
+          }
+        }
+      } catch (err) {
+        console.warn(
+          "[generate-draft-v2] damage-documentation retry failed:",
           err,
         );
       }
