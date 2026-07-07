@@ -61,6 +61,7 @@ const cases = loadGoldenSet(set, {}).filter(
 let rawHits = 0, rawScored = 0;
 let reachHits = 0, reachScored = 0;
 let droppedAll = 0; // cases whose entire gold became unreachable
+let abstains = 0, p1Hits = 0, p1Scored = 0; // selection layer (post-pool)
 
 for (const c of cases) {
   const g = goldById.get(c.id) || [];
@@ -72,6 +73,11 @@ for (const c of cases) {
     const rawM = computeRetrievalMetrics(g, gen.matcherDebug);
     rawScored++;
     if (rawM.recall_at_k === 1) rawHits++;
+    if (gen.matcherDebug?.abstained === true) abstains++;
+    if (typeof rawM.precision_at_1 === "number") {
+      p1Scored++;
+      if (rawM.precision_at_1 === 1) p1Hits++;
+    }
 
     const gReach = g.filter(isReachable);
     let reachStr = "";
@@ -94,4 +100,9 @@ console.log(`\nRaw recall:       ${rawHits}/${rawScored} = ${(rawHits / rawScore
 console.log(
   `Reachable recall: ${reachHits}/${reachScored} = ${(reachHits / reachScored).toFixed(2)}` +
     `  (${droppedAll} cases had only unreachable gold)`,
+);
+console.log(
+  `Selection layer:  abstain ${abstains}/${rawScored}, precision@1 ${p1Hits}/${p1Scored} = ${
+    p1Scored ? (p1Hits / p1Scored).toFixed(2) : "n/a"
+  }`,
 );
