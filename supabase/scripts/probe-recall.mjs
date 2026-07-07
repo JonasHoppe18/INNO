@@ -17,7 +17,12 @@
 //   node supabase/scripts/probe-recall.mjs g-013 g-035
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
-import { loadGoldenSet, computeRetrievalMetrics } from "./lib/golden-eval-core.mjs";
+import {
+  loadGoldenSet,
+  computeRetrievalMetrics,
+  knowledgeIdentityFromMetadata,
+  normalizeRetrievalIdentity,
+} from "./lib/golden-eval-core.mjs";
 import { generateDraftV2 } from "../../apps/web/lib/server/eval-runner.js";
 
 const SET_PATH = "supabase/eval/golden-set.acezone.json";
@@ -38,14 +43,12 @@ const { data: kb } = await sb
   .neq("source_type", "ticket");
 const reachableById = new Map();
 for (const r of kb || []) {
-  const m = r.metadata || {};
-  const title = String(m.title || m.name || m.label || "").trim().toLowerCase();
-  const id = String(m.source_id ?? title).trim().toLowerCase();
+  const id = knowledgeIdentityFromMetadata(r.metadata);
   if (!id) continue;
   const ok = !UNREACHABLE_PROVIDERS.has(r.source_provider || "");
   reachableById.set(id, (reachableById.get(id) || false) || ok);
 }
-const isReachable = (id) => reachableById.get(String(id).trim().toLowerCase()) === true;
+const isReachable = (id) => reachableById.get(normalizeRetrievalIdentity(id)) === true;
 
 const argIds = new Set(process.argv.slice(2));
 const set = JSON.parse(readFileSync(SET_PATH, "utf8"));

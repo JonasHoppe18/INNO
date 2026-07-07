@@ -15,7 +15,11 @@
 //   node supabase/scripts/build-gold-labels.mjs --shop 38df5fef-... --limit 3
 import { readFileSync, writeFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
-import { parseArgs, loadGoldenSet } from "./lib/golden-eval-core.mjs";
+import {
+  parseArgs,
+  loadGoldenSet,
+  knowledgeIdentityFromMetadata,
+} from "./lib/golden-eval-core.mjs";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -49,8 +53,11 @@ if (error) {
 const snippets = new Map();
 for (const r of rows || []) {
   const meta = r.metadata && typeof r.metadata === "object" ? r.metadata : {};
-  const title = String(meta.title || meta.name || meta.label || "").trim();
-  const identity = String(meta.source_id ?? title).trim().toLowerCase();
+  const title = String(
+    meta.title || meta.name || meta.label || meta.section_heading ||
+      meta.normalized_heading || "",
+  ).trim();
+  const identity = knowledgeIdentityFromMetadata(meta);
   if (!identity) continue;
   if (!snippets.has(identity)) {
     snippets.set(identity, {
