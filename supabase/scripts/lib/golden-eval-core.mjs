@@ -462,6 +462,12 @@ export function buildGoldenEvalResult({
       actionability: judged.actionability,
       overall_10: judged.overall_10,
       send_ready: judged.send_ready,
+      // Diagnosis fields — required to analyze WHY a draft is not send-ready
+      // (the >50% send-ready target is unactionable without them).
+      primary_gap: judged.primary_gap ?? null,
+      missing_for_10: judged.missing_for_10 ?? null,
+      likely_root_cause: judged.likely_root_cause ?? null,
+      reasoning: judged.reasoning ?? null,
     },
     gate,
     coherence,
