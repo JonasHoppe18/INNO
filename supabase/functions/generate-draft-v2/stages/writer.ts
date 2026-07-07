@@ -85,6 +85,8 @@ export interface WriterInput {
   actionProposals?: ActionProposal[];
   policyContext?: PolicyContextInput;
   model?: string;
+  // Reasoning-effort override for gpt-5-family models (eval A/B).
+  effort?: string;
   languageCorrectionInstruction?: string;
   attachments?: InlineImageAttachment[];
   actionResult?: Record<string, unknown> | null;
@@ -1391,6 +1393,7 @@ export async function runWriter(
     actionProposals,
     policyContext,
     model,
+    effort,
     languageCorrectionInstruction,
     attachments = [],
     actionResult = null,
@@ -1407,6 +1410,11 @@ export async function runWriter(
   }: WriterInput,
 ): Promise<WriterResult> {
   const resolvedModel = model ?? Deno.env.get("OPENAI_MODEL") ?? "gpt-5-mini";
+  // Reasoning effort for gpt-5-family models. Per-request override (eval A/B)
+  // beats the env default beats "low" (the lowest value the whole family
+  // accepts).
+  const resolvedEffort = effort ?? Deno.env.get("OPENAI_REASONING_EFFORT") ??
+    "low";
   const shopName = (shop as { name?: string }).name ?? "butikken";
   const persona =
     (shop as { persona_instructions?: string; instructions?: string })
@@ -2238,9 +2246,7 @@ Returner JSON:
               model: resolvedModel,
               instructions: systemPrompt,
               input: responsesInput,
-              // "low" is the lowest effort supported across the whole gpt-5
-              // family — gpt-5.4 models reject the older "minimal" value.
-              reasoning: { effort: "low" },
+              reasoning: { effort: resolvedEffort },
               max_output_tokens: 1800,
               store: false,
               text: {

@@ -303,6 +303,7 @@ async function generateDraftV2(shopId, subject, emailBody, options = {}) {
         eval_options: {
           writer_model: options.writerModel || undefined,
           strong_model: options.strongModel || undefined,
+          writer_effort: options.writerEffort || undefined,
           disable_escalation: options.disableEscalation === true,
           retrieval_abs_floor:
             typeof options.retrievalAbsFloor === "number"

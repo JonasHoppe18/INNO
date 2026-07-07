@@ -14,7 +14,7 @@ export function parseArgs(argv) {
     "--shop", "--set", "--tier", "--limit", "--intent",
     "--abs-floor", "--pq-budget", "--accept",
     "--issue-tiebreak", "--source-consolidate",
-    "--writer-model", "--strong-model", "--disable-escalation",
+    "--writer-model", "--strong-model", "--disable-escalation", "--writer-effort",
   ]);
   for (const tok of argv) {
     if (typeof tok === "string" && tok.startsWith("--") && !KNOWN_FLAGS.has(tok)) {
@@ -51,6 +51,7 @@ export function parseArgs(argv) {
     // gpt-5.4): forwarded to the deployed pipeline via eval_options.
     writerModel: val("--writer-model"),
     strongModel: val("--strong-model"),
+    writerEffort: val("--writer-effort"),
     disableEscalation: has("--disable-escalation"),
   };
 }

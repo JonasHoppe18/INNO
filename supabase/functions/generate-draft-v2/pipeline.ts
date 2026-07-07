@@ -126,6 +126,7 @@ export interface PipelineInput {
   eval_options?: {
     writer_model?: string;
     strong_model?: string;
+    writer_effort?: string;
     disable_escalation?: boolean;
     // Retrieval coherence rules (default off → production unchanged).
     retrieval_abs_floor?: number | null;
@@ -1030,6 +1031,9 @@ export async function runDraftV2Pipeline(
       : undefined;
     const strongModelOverride = eval_payload
       ? eval_options?.strong_model
+      : undefined;
+    const writerEffortOverride = eval_payload
+      ? eval_options?.writer_effort
       : undefined;
     const disableEscalation = eval_payload
       ? eval_options?.disable_escalation === true
@@ -2305,6 +2309,7 @@ export async function runDraftV2Pipeline(
       resolvedCustomerName,
       replyLanguageFallback: writerReplyLanguageFallback,
       model: firstPassModel,
+          effort: writerEffortOverride,
       attachments: imageAttachments,
       actionResult: postActionResult,
       customerHistory: customerHistory ?? undefined,
@@ -2355,6 +2360,7 @@ export async function runDraftV2Pipeline(
           resolvedCustomerName,
           replyLanguageFallback: writerReplyLanguageFallback,
           model: firstPassModel,
+          effort: writerEffortOverride,
           attachments: imageAttachments,
           actionResult: postActionResult,
           languageCorrectionInstruction:
@@ -2443,6 +2449,7 @@ export async function runDraftV2Pipeline(
           resolvedCustomerName,
           replyLanguageFallback: writerReplyLanguageFallback,
           model: firstPassModel,
+          effort: writerEffortOverride,
           attachments: imageAttachments,
           actionResult: postActionResult,
           languageCorrectionInstruction:
@@ -2520,6 +2527,7 @@ export async function runDraftV2Pipeline(
           resolvedCustomerName,
           replyLanguageFallback: writerReplyLanguageFallback,
           model: firstPassModel,
+          effort: writerEffortOverride,
           attachments: imageAttachments,
           actionResult: postActionResult,
           languageCorrectionInstruction:
@@ -2585,6 +2593,7 @@ export async function runDraftV2Pipeline(
           resolvedCustomerName,
           replyLanguageFallback: writerReplyLanguageFallback,
           model: firstPassModel,
+          effort: writerEffortOverride,
           attachments: imageAttachments,
           actionResult: postActionResult,
           languageCorrectionInstruction:
@@ -2652,6 +2661,7 @@ export async function runDraftV2Pipeline(
           resolvedCustomerName,
           replyLanguageFallback: writerReplyLanguageFallback,
           model: firstPassModel,
+          effort: writerEffortOverride,
           attachments: imageAttachments,
           actionResult: postActionResult,
           customerHistory: customerHistory ?? undefined,

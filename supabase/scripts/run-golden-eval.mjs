@@ -55,6 +55,7 @@ for (const c of cases) {
       sourceThreadId: c.source_thread_id || undefined,
       writerModel: opts.writerModel ?? undefined,
       strongModel: opts.strongModel ?? undefined,
+      writerEffort: opts.writerEffort ?? undefined,
       disableEscalation: opts.disableEscalation || undefined,
       retrievalAbsFloor: opts.retrievalAbsFloor ?? undefined,
       retrievalPqBudget: opts.retrievalPqBudget ?? undefined,
