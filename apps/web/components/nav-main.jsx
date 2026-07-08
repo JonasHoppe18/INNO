@@ -97,7 +97,7 @@ export function NavMain({ items }) {
                       </Link>
                     </div>
                   ) : (
-                     <Link prefetch href={item.url} className="flex w-full items-center gap-2 text-inherit no-underline">
+                     <Link prefetch href={item.url} className="flex w-full items-center gap-2 no-underline">
                        {item.icon && <item.icon className="h-4 w-4" />}
                        <span>{item.title}</span>
                      </Link>

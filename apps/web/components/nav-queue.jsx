@@ -49,7 +49,7 @@ function CountBadge({ count, muted = false, fadeOnHover = false }) {
       className={cn(
         "ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded px-1.5 text-xs font-normal leading-none tabular-nums transition-opacity duration-150",
         muted ? "text-muted-foreground" : "bg-muted text-foreground",
-        fadeOnHover && "group-hover:opacity-0"
+        fadeOnHover && "group-hover/inbox:opacity-0"
       )}
     >
       {count > 99 ? "99+" : count}
@@ -71,9 +71,14 @@ function QueueRow({ icon: Icon, label, href, active, count, muted, pl, dropProps
           isDropPulse && "animate-inbox-drop"
         )}
       >
+        {/* No text-inherit here: with asChild this Link IS the button, so
+            text-inherit would inherit the sidebar root's darker
+            --sidebar-foreground and beat the button's text-muted-foreground
+            (Radix Slot concatenates classes without tailwind-merge). Dropping
+            it lets the muted color apply, matching the custom-div inbox rows. */}
         <Link
           href={href}
-          className="flex w-full items-center gap-2 text-inherit no-underline"
+          className="flex w-full items-center gap-2 no-underline"
           {...dropProps}
         >
           {hideIcon ? null : <Icon className="h-4 w-4 shrink-0" />}
@@ -355,7 +360,7 @@ export function NavQueue({
                   <SidebarMenuItem key={slug}>
                     <div
                       className={cn(
-                        "group relative flex items-center rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                        "group/inbox relative flex items-center rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground",
                         active && "bg-accent text-accent-foreground",
                         dragOverKey === dropKey &&
                           "bg-primary/10 ring-2 ring-inset ring-primary text-foreground",
@@ -390,7 +395,7 @@ export function NavQueue({
                           e.stopPropagation()
                           onConfigureInbox?.(inbox)
                         }}
-                        className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-opacity duration-150"
+                        className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 opacity-0 group-hover/inbox:opacity-100 text-muted-foreground hover:text-foreground transition-opacity duration-150"
                         title="Configure inbox"
                       >
                         <Settings2 className="h-3 w-3" />
@@ -402,7 +407,7 @@ export function NavQueue({
               <SidebarMenuItem>
                 <div
                   className={cn(
-                    "group relative flex items-center rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                    "group/inbox relative flex items-center rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground",
                     isViewActive("automated") && "bg-accent text-accent-foreground",
                     dragOverKey === "spam" &&
                       "bg-primary/10 ring-2 ring-inset ring-primary text-foreground",
@@ -427,7 +432,7 @@ export function NavQueue({
                       e.stopPropagation()
                       onConfigureNotifications?.()
                     }}
-                    className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-opacity duration-150"
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 opacity-0 group-hover/inbox:opacity-100 text-muted-foreground hover:text-foreground transition-opacity duration-150"
                     title="Configure Spam"
                   >
                     <Settings2 className="h-3 w-3" />
