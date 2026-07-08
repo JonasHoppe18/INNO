@@ -318,17 +318,6 @@ function InboxHeaderActions({
         .includes(query),
     );
   }, [destinationOptions, inboxFilter]);
-  const selectedInboxLabel = useMemo(() => {
-    if (selectedDestinationValue === "__notifications__")
-      return "Notifications";
-    if (!selectedInboxSlug) return null;
-    const hit = (inboxOptions || []).find(
-      (option) =>
-        String(option?.value || "").trim() ===
-        String(selectedInboxSlug || "").trim(),
-    );
-    return String(hit?.label || selectedInboxSlug).trim() || null;
-  }, [inboxOptions, selectedDestinationValue, selectedInboxSlug]);
   const normalizedSenderRuleEmail = useMemo(() => {
     const value = String(senderRuleSourceEmail || "")
       .trim()
@@ -413,16 +402,10 @@ function InboxHeaderActions({
         </DropdownMenuContent>
       </DropdownMenu>
       <FirstTagPill threadId={threadId} refreshTrigger={tagsRefreshTrigger} />
-      {selectedInboxLabel ? (
-        <button
-          type="button"
-          onClick={() => setInboxPickerOpen(true)}
-          className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 hover:border-amber-400 hover:bg-amber-100"
-          title="Change tag"
-        >
-          {selectedInboxLabel}
-        </button>
-      ) : null}
+      {/* The current-inbox chip used to render here; removed per feedback —
+          the inbox a ticket lives in is shown by the sidebar (it sits under
+          that inbox), and it's moved via drag-and-drop or More > Move, so the
+          header chip was redundant. */}
       <Dialog
         open={inboxPickerOpen}
         onOpenChange={(open) => {
