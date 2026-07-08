@@ -255,6 +255,12 @@ export function NavQueue({
                   label="Resolved"
                   href="/inbox?view=resolved"
                   active={isViewActive("resolved")}
+                  isDropActive={dragOverKey === "resolved"}
+                  isDropPulse={justDroppedKey === "resolved"}
+                  dropProps={makeDropProps("resolved", {
+                    kind: "status",
+                    status: "resolved",
+                  })}
                 />
               </>
             )}

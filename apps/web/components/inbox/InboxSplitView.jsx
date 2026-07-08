@@ -3212,13 +3212,20 @@ export function InboxSplitView({
         // stays in the Inbox — no advance
       } else if (kind === "status") {
         const status = String(action?.status || "").trim();
-        const waitingReason =
-          String(action?.waitingReason || "").trim() === "third_party"
-            ? "third_party"
-            : "customer";
         if (!status) return;
+        // waiting_reason only applies to the waiting_* statuses; resolved (and
+        // any other) clears it, matching buildManualStatusPatch server-side.
+        const isWaiting = status === "waiting_customer" || status === "waiting_third_party";
+        const waitingReason = isWaiting
+          ? String(action?.waitingReason || "").trim() === "third_party"
+            ? "third_party"
+            : "customer"
+          : null;
         const currentLifecycle = getLifecycleStatus(previousThread);
-        if (currentLifecycle === status && String(snapshot.waiting_reason || "") === waitingReason) {
+        if (
+          currentLifecycle === status &&
+          String(snapshot.waiting_reason || "") === String(waitingReason || "")
+        ) {
           return; // no-op
         }
         patchBody = { threadId: id, status, waitingReason };
