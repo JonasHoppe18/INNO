@@ -1670,12 +1670,11 @@ export function InboxSplitView({
     // needs_attention queue: threadTab === needs_attention, not automated,
     // with close_pending threads (the approve-close segment) stably
     // partitioned to the bottom regardless of sort choice — that's a
-    // workflow grouping, not a chronological preference. Defaults to
-    // oldest-customer-wait-first via sortForQueue() (the self-maintaining
-    // queue's own ordering), UNLESS the user has explicitly picked something
-    // from the sort dropdown (effectiveFilters.sortBy is only set once they
-    // do — see DEFAULT_FILTERS.sortBy: null in useThreadFilters.js), in which
-    // case that choice wins here too, same as every other view.
+    // workflow grouping, not a chronological preference. Follows the sort
+    // dropdown (default "newest_activity" — see DEFAULT_FILTERS). The else
+    // branch (sortForQueue, oldest-customer-wait-first) is only a fallback if
+    // sortBy is ever cleared; the explicit "Oldest waiting customer" option
+    // reaches that ordering through sortByDropdown instead.
     const needsAttentionQueue = (rows) => {
       const eligible = rows.filter((row) => row.tab === "needs_attention" && !row.isNotification);
       let sortedRows;
