@@ -3172,6 +3172,15 @@ export function InboxSplitView({
       const previousClassificationConfidence = previousThread.classification_confidence ?? null;
       const previousClassificationReason = previousThread.classification_reason || null;
 
+      // If you dragged the ticket you're currently viewing into a folder,
+      // advance to the next one (Outlook/Superhuman-style) — done BEFORE the
+      // optimistic removal below, so selectNext still sees the moved ticket in
+      // the list and can pick its neighbor. Uses the ref (not selectedThreadId)
+      // so this handler doesn't re-register on every selection change.
+      if (id === String(selectedThreadIdRef?.current || "").trim()) {
+        selectNext();
+      }
+
       setLiveThreads((prev) =>
         (prev || []).map((thread) => {
           if (thread.id !== id) return thread;
@@ -3222,7 +3231,7 @@ export function InboxSplitView({
           toast.error(error.message || "Could not move ticket.");
         });
     },
-    [derivedThreads, knownInboxSlugs],
+    [derivedThreads, knownInboxSlugs, selectNext, selectedThreadIdRef],
   );
 
   useEffect(() => registerThreadMoveHandler(moveThreadToInbox), [moveThreadToInbox]);
