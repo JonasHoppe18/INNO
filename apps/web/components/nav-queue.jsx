@@ -192,8 +192,10 @@ export function NavQueue({
         </div>
         <SidebarGroupContent>
           <SidebarMenu>
-            {/* Inbox parent — a chevron toggles the nested lifecycle rows; the
-                rest of the row still navigates to /inbox and is a drop target. */}
+            {/* Inbox parent — icon+label sit in the standard row position (flush
+                with Dashboard etc.); a trailing chevron on the RIGHT toggles the
+                nested lifecycle rows without navigating. The row still links to
+                /inbox and is a drop target. */}
             <SidebarMenuItem>
               <div
                 className={cn(
@@ -209,6 +211,14 @@ export function NavQueue({
                   classificationKey: "support",
                 })}
               >
+                <Link
+                  href="/inbox"
+                  className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-inherit no-underline"
+                >
+                  <Inbox className="h-4 w-4 shrink-0" />
+                  <span>Inbox</span>
+                  <CountBadge count={needsAttentionCount} />
+                </Link>
                 {!isCollapsed && (
                   <button
                     type="button"
@@ -216,7 +226,7 @@ export function NavQueue({
                       e.stopPropagation()
                       setTicketsOpen((open) => !open)
                     }}
-                    className="flex h-8 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+                    className="mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground"
                     aria-label={ticketsOpen ? "Collapse" : "Expand"}
                   >
                     {ticketsOpen ? (
@@ -226,24 +236,13 @@ export function NavQueue({
                     )}
                   </button>
                 )}
-                <Link
-                  href="/inbox"
-                  className={cn(
-                    "flex min-w-0 flex-1 items-center gap-2 py-1.5 pr-2 text-inherit no-underline",
-                    isCollapsed && "pl-2"
-                  )}
-                >
-                  <Inbox className="h-4 w-4 shrink-0" />
-                  <span>Inbox</span>
-                  <CountBadge count={needsAttentionCount} />
-                </Link>
               </div>
             </SidebarMenuItem>
             {!isCollapsed && ticketsOpen && (
               <>
                 <QueueRow
                   hideIcon
-                  pl="pl-9"
+                  pl="pl-8"
                   label="Assigned to me"
                   href="/inbox?view=mine"
                   active={isViewActive("mine")}
@@ -257,7 +256,7 @@ export function NavQueue({
                 />
                 <QueueRow
                   hideIcon
-                  pl="pl-9"
+                  pl="pl-8"
                   label="Waiting on customer"
                   href="/inbox?view=waiting_customer"
                   active={isViewActive("waiting_customer")}
@@ -273,7 +272,7 @@ export function NavQueue({
                 />
                 <QueueRow
                   hideIcon
-                  pl="pl-9"
+                  pl="pl-8"
                   label="Waiting on third party"
                   href="/inbox?view=waiting_third_party"
                   active={isViewActive("waiting_third_party")}
@@ -289,7 +288,7 @@ export function NavQueue({
                 />
                 <QueueRow
                   hideIcon
-                  pl="pl-9"
+                  pl="pl-8"
                   label="Resolved"
                   href="/inbox?view=resolved"
                   active={isViewActive("resolved")}
