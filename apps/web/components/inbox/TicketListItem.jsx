@@ -1,8 +1,9 @@
-import { memo, useEffect, useRef } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatMessageTime } from "@/components/inbox/inbox-utils";
 import { assigneeInitials, formatWakeCountdown } from "@/lib/inbox/view-model";
+import { THREAD_DRAG_MIME } from "@/lib/inbox/thread-drag-bridge";
 
 const STATUS_TEXT_STYLES = {
   New: "text-green-600 dark:text-green-400",
@@ -131,6 +132,28 @@ function TicketListItemComponent({
     [],
   );
 
+  // Drag-to-move: the row can be dragged onto a sidebar inbox (see
+  // nav-queue.jsx drop targets). Native HTML5 DnD carries just the threadId
+  // via dataTransfer. Not draggable for local/unsaved new-ticket rows (no
+  // server id to move) or while the row is animating out.
+  const [isDragging, setIsDragging] = useState(false);
+  const threadId = String(thread?.id || "").trim();
+  const isDraggable = Boolean(threadId) && !thread?.is_local && !isExiting;
+
+  const handleDragStart = (event) => {
+    if (!isDraggable) {
+      event.preventDefault();
+      return;
+    }
+    event.dataTransfer.setData(THREAD_DRAG_MIME, threadId);
+    // Plain-text fallback keeps some browsers from rejecting the drag.
+    event.dataTransfer.setData("text/plain", threadId);
+    event.dataTransfer.effectAllowed = "move";
+    setIsDragging(true);
+  };
+
+  const handleDragEnd = () => setIsDragging(false);
+
   return (
     // Task 9, Plan 2: the outer element used to be a bare <button> — approve
     // close and keep-waiting are now rendered as a sibling row (see below)
@@ -140,6 +163,9 @@ function TicketListItemComponent({
     <div className="relative">
     <button
       type="button"
+      draggable={isDraggable}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
       onClick={(event) =>
         isExiting
           ? null
@@ -152,6 +178,7 @@ function TicketListItemComponent({
       onMouseLeave={handleMouseLeave}
       className={cn(
         "relative flex w-full flex-col gap-0.5 px-4 py-2 text-left hover:bg-muted/50 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+        isDraggable && "cursor-grab active:cursor-grabbing",
         isNew ? "animate-ticket-enter" : !isExiting && "animate-list-item-enter",
         // A brand-tinted wash (not gray) so a selected row stays visually
         // distinct even while a different row is hovered at the same time —
@@ -164,7 +191,7 @@ function TicketListItemComponent({
         animationDelay: !isNew && !isExiting && mountIndex > 0 ? `${Math.min(mountIndex, 8) * 28}ms` : undefined,
         transition:
           "opacity 200ms cubic-bezier(0.23,1,0.32,1), transform 200ms cubic-bezier(0.23,1,0.32,1), max-height 240ms cubic-bezier(0.23,1,0.32,1), padding 240ms cubic-bezier(0.23,1,0.32,1), background-color 150ms ease-out",
-        opacity: isExiting ? 0 : 1,
+        opacity: isExiting ? 0 : isDragging ? 0.4 : 1,
         // Left unset (not forced to an identity value) so the active:scale-[0.99]
         // Tailwind class can still apply its own transform on press — an inline
         // transform always wins over a class, so forcing one here would silently

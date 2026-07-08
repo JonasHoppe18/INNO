@@ -21,6 +21,10 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar"
+import {
+  THREAD_DRAG_MIME,
+  dispatchThreadMove,
+} from "@/lib/inbox/thread-drag-bridge"
 
 // Task 11, Plan 2: TICKETS / INBOXES sidebar sections. Replaces the old
 // single INBOXES block in app-sidebar.jsx. Links target `/inbox?view=...`
@@ -55,7 +59,7 @@ function CountBadge({ count, muted = false, fadeOnHover = false }) {
   )
 }
 
-function QueueRow({ icon: Icon, label, href, active, count, muted, pl }) {
+function QueueRow({ icon: Icon, label, href, active, count, muted, pl, dropProps, isDropActive }) {
   return (
     <SidebarMenuItem>
       <SidebarMenuButton
@@ -64,10 +68,15 @@ function QueueRow({ icon: Icon, label, href, active, count, muted, pl }) {
         className={cn(
           "justify-start cursor-pointer text-muted-foreground",
           pl,
-          active && "bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground"
+          active && "bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground",
+          isDropActive && "bg-primary/10 ring-2 ring-inset ring-primary text-foreground"
         )}
       >
-        <Link href={href} className="flex w-full items-center gap-2 text-inherit no-underline">
+        <Link
+          href={href}
+          className="flex w-full items-center gap-2 text-inherit no-underline"
+          {...dropProps}
+        >
           <Icon className="h-4 w-4 shrink-0" />
           <span>{label}</span>
           <CountBadge count={count} muted={muted} />
@@ -88,6 +97,42 @@ export function NavQueue({
   const { state } = useSidebar()
   const isCollapsed = state === "collapsed"
   const [contextMenu, setContextMenu] = useState(null)
+  // Which drop target (if any) a dragged ticket is currently hovering. Keys:
+  // "inbox" | "spam" | `inbox:${slug}`. See makeDropProps below.
+  const [dragOverKey, setDragOverKey] = useState(null)
+
+  // Wires a sidebar row as a ticket drop target. destination:
+  // { inboxSlug, classificationKey } handed straight to the InboxSplitView
+  // move handler (via the drag bridge). Highlight is gated on the drag
+  // carrying our thread MIME so unrelated drags (files, text) don't light
+  // rows up. dragLeave only clears when the pointer actually leaves the row
+  // (not when crossing between its child icon/label/badge).
+  const makeDropProps = useCallback(
+    (key, destination) => ({
+      onDragOver: (event) => {
+        if (!Array.from(event.dataTransfer.types).includes(THREAD_DRAG_MIME)) return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = "move"
+      },
+      onDragEnter: (event) => {
+        if (Array.from(event.dataTransfer.types).includes(THREAD_DRAG_MIME)) {
+          setDragOverKey(key)
+        }
+      },
+      onDragLeave: (event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+          setDragOverKey((current) => (current === key ? null : current))
+        }
+      },
+      onDrop: (event) => {
+        event.preventDefault()
+        const threadId = event.dataTransfer.getData(THREAD_DRAG_MIME)
+        setDragOverKey(null)
+        if (threadId) dispatchThreadMove(threadId, destination)
+      },
+    }),
+    [],
+  )
 
   const needsAttentionCount = Number(counts?.needsAttentionCount ?? 0)
   const mineCount = Number(counts?.mineCount ?? 0)
@@ -130,6 +175,11 @@ export function NavQueue({
               href="/inbox"
               active={activeView === ""}
               count={needsAttentionCount}
+              isDropActive={dragOverKey === "inbox"}
+              dropProps={makeDropProps("inbox", {
+                inboxSlug: null,
+                classificationKey: "support",
+              })}
             />
             {!isCollapsed && (
               <>
@@ -195,18 +245,25 @@ export function NavQueue({
                 const active = isViewActive(view)
                 const count = Number(inboxNeedsAttentionCounts?.[slug] || 0)
                 const href = `/inbox?view=${encodeURIComponent(view)}`
+                const dropKey = `inbox:${slug}`
                 return (
                   <SidebarMenuItem key={slug}>
                     <div
                       className={cn(
                         "group relative flex items-center rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-                        active && "bg-accent text-accent-foreground"
+                        active && "bg-accent text-accent-foreground",
+                        dragOverKey === dropKey &&
+                          "bg-primary/10 ring-2 ring-inset ring-primary text-foreground"
                       )}
                       onContextMenu={(event) => {
                         event.preventDefault()
                         event.stopPropagation()
                         setContextMenu({ inbox, x: event.clientX, y: event.clientY })
                       }}
+                      {...makeDropProps(dropKey, {
+                        inboxSlug: slug,
+                        classificationKey: "support",
+                      })}
                     >
                       <Link
                         href={href}
@@ -240,8 +297,14 @@ export function NavQueue({
                 <div
                   className={cn(
                     "group relative flex items-center rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-                    isViewActive("automated") && "bg-accent text-accent-foreground"
+                    isViewActive("automated") && "bg-accent text-accent-foreground",
+                    dragOverKey === "spam" &&
+                      "bg-primary/10 ring-2 ring-inset ring-primary text-foreground"
                   )}
+                  {...makeDropProps("spam", {
+                    inboxSlug: null,
+                    classificationKey: "notification",
+                  })}
                 >
                   <Link
                     href="/inbox?view=automated"

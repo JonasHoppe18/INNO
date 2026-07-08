@@ -50,6 +50,7 @@ import { DEFAULT_FILTERS, useThreadFilters } from "@/lib/inbox/useThreadFilters"
 import {
   publishLiveSidebarCounts,
 } from "@/lib/inbox/live-sidebar-counts";
+import { registerThreadMoveHandler } from "@/lib/inbox/thread-drag-bridge";
 import { useThreadSelection } from "@/lib/inbox/useThreadSelection";
 import { useThreadActions } from "@/lib/inbox/useThreadActions";
 import { useComposerState } from "@/lib/inbox/useComposerState";
@@ -3143,6 +3144,97 @@ export function InboxSplitView({
     },
     [derivedThreads, selectedThreadId],
   );
+
+  // Drag-and-drop move: same optimistic tag/classification update + PATCH +
+  // rollback as handleInboxChange, but for an ARBITRARY dragged thread (not
+  // the selected one) and without the sender-rule side effect — a drag is a
+  // one-off "move this ticket here", not a "always route this sender" rule.
+  // destination: { inboxSlug: string | null, classificationKey }. Registered
+  // with the drag bridge below so the sidebar's drop targets can invoke it.
+  const moveThreadToInbox = useCallback(
+    (threadId, destination) => {
+      const id = String(threadId || "").trim();
+      if (!id) return;
+      const normalized =
+        typeof destination?.inboxSlug === "string" ? destination.inboxSlug.trim() : "";
+      const nextClassificationKey =
+        String(destination?.classificationKey || "support").trim().toLowerCase() ===
+        "notification"
+          ? "notification"
+          : "support";
+
+      const previousThread = derivedThreads.find((thread) => thread.id === id) || null;
+      if (!previousThread) return;
+      // No-op guard: dropping a thread onto the inbox it already lives in.
+      const currentSlug = resolveInboxSlug(previousThread, knownInboxSlugs) || "";
+      const currentClassification = String(previousThread.classification_key || "support")
+        .trim()
+        .toLowerCase();
+      if (
+        currentSlug === normalized &&
+        (currentClassification === "notification") === (nextClassificationKey === "notification")
+      ) {
+        return;
+      }
+      const previousTags = Array.isArray(previousThread.tags) ? previousThread.tags : [];
+      const previousClassificationKey = previousThread.classification_key || null;
+      const previousClassificationConfidence = previousThread.classification_confidence ?? null;
+      const previousClassificationReason = previousThread.classification_reason || null;
+
+      setLiveThreads((prev) =>
+        (prev || []).map((thread) => {
+          if (thread.id !== id) return thread;
+          const tags = Array.isArray(thread.tags) ? thread.tags : [];
+          const withoutInbox = tags.filter(
+            (tag) => !String(tag || "").startsWith("inbox:"),
+          );
+          return {
+            ...thread,
+            tags: normalized ? [...withoutInbox, toInboxTag(normalized)] : withoutInbox,
+            classification_key: nextClassificationKey,
+            classification_confidence: 1,
+            classification_reason:
+              nextClassificationKey === "notification"
+                ? "manual_move_to_notifications"
+                : "manual_move_to_tickets",
+          };
+        }),
+      );
+
+      fetch("/api/inbox/thread-status", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          threadId: id,
+          inboxSlug: normalized || null,
+          classificationKey: nextClassificationKey,
+        }),
+      })
+        .then(async (response) => {
+          const data = await response.json().catch(() => null);
+          if (response.ok && data?.thread?.id) return;
+          throw new Error(data?.error || "Could not move ticket.");
+        })
+        .catch((error) => {
+          setLiveThreads((prev) =>
+            (prev || []).map((thread) => {
+              if (thread.id !== id) return thread;
+              return {
+                ...thread,
+                tags: previousTags,
+                classification_key: previousClassificationKey,
+                classification_confidence: previousClassificationConfidence,
+                classification_reason: previousClassificationReason,
+              };
+            }),
+          );
+          toast.error(error.message || "Could not move ticket.");
+        });
+    },
+    [derivedThreads, knownInboxSlugs],
+  );
+
+  useEffect(() => registerThreadMoveHandler(moveThreadToInbox), [moveThreadToInbox]);
 
   useEffect(() => {
     const handleKeyDown = (event) => {
