@@ -562,17 +562,62 @@ function formatActionAmountForLanguage(
   }
 }
 
+// Intents where a cheaper current-gen model matched or beat the strong model
+// in eval (measured 2026-07-08: compact gpt-5.4-mini vs gpt-4o on the golden
+// set — exchange +0.6, other +1.0, both n≥4). Deliberately conservative:
+// noisy single-case parity (return|refund, address_change) is excluded, and
+// the expensive/hard intents (complaint, return, refund, product_question)
+// always stay on the strong model. Grow this set only from real-traffic
+// no-edit-rate evidence per intent.
+export const CHEAP_MODEL_INTENTS: ReadonlySet<string> = new Set([
+  "exchange",
+  "other",
+]);
+
+// Pure routing decision (unit-tested). All inputs explicit so it needs no env.
+// cheapModel is the OPENAI_CHEAP_MODEL secret: unset/empty => the cheap route
+// is DISABLED and parity intents fall through to the strong model, i.e. the
+// whole feature is a no-op until the secret is deliberately set.
+export function pickWriterModel(input: {
+  intent: string;
+  hasOrderFacts: boolean;
+  overrideModel?: string;
+  simpleModel: string;
+  strongModel: string;
+  cheapModel?: string | null;
+  cheapIntents?: ReadonlySet<string>;
+}): string {
+  const {
+    intent,
+    hasOrderFacts,
+    overrideModel,
+    simpleModel,
+    strongModel,
+    cheapModel,
+    cheapIntents = CHEAP_MODEL_INTENTS,
+  } = input;
+  if (overrideModel) return overrideModel;
+  // tracking only qualifies as simple when we actually found the order —
+  // otherwise there's nothing to report and the model needs to improvise.
+  if (intent === "thanks" || intent === "update") return simpleModel;
+  if (intent === "tracking" && hasOrderFacts) return simpleModel;
+  if (cheapModel && cheapIntents.has(intent)) return cheapModel;
+  return strongModel;
+}
+
 function resolveWriterModel(
   intent: string,
   hasOrderFacts: boolean,
   overrideModel?: string,
 ): string {
-  if (overrideModel) return overrideModel;
-  // tracking only qualifies as simple when we actually found the order —
-  // otherwise there's nothing to report and the model needs to improvise.
-  if (intent === "thanks" || intent === "update") return SIMPLE_MODEL;
-  if (intent === "tracking" && hasOrderFacts) return SIMPLE_MODEL;
-  return Deno.env.get("OPENAI_MODEL") ?? "gpt-5-mini";
+  return pickWriterModel({
+    intent,
+    hasOrderFacts,
+    overrideModel,
+    simpleModel: SIMPLE_MODEL,
+    strongModel: Deno.env.get("OPENAI_MODEL") ?? "gpt-5-mini",
+    cheapModel: Deno.env.get("OPENAI_CHEAP_MODEL") ?? null,
+  });
 }
 
 const INTENT_GAP_SUGGESTIONS: Record<string, { title: string; hint: string }> =
