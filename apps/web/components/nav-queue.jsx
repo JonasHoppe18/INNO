@@ -103,34 +103,44 @@ export function NavQueue({
 
   // Wires a sidebar row as a ticket drop target. destination:
   // { inboxSlug, classificationKey } handed straight to the InboxSplitView
-  // move handler (via the drag bridge). Highlight is gated on the drag
-  // carrying our thread MIME so unrelated drags (files, text) don't light
-  // rows up. dragLeave only clears when the pointer actually leaves the row
-  // (not when crossing between its child icon/label/badge).
+  // move handler (via the drag bridge).
+  //
+  // preventDefault() runs UNCONDITIONALLY on both dragEnter and dragOver:
+  // the HTML5 spec requires cancelling BOTH for an element to count as a
+  // valid drop zone, and gating that on a dataTransfer.types check is
+  // unreliable mid-drag (some browsers withhold custom types during
+  // dragover), which silently kills the drop. So the row is always a valid
+  // zone; the MIME check only decides the *highlight* and dropEffect, and
+  // the actual move only fires when a real threadId is present on drop — so
+  // dropping a file/text here is a harmless no-op, never a broken move.
+  // dragLeave only clears when the pointer truly leaves the row (not when
+  // crossing between its child icon/label/badge).
   const makeDropProps = useCallback(
-    (key, destination) => ({
-      onDragOver: (event) => {
-        if (!Array.from(event.dataTransfer.types).includes(THREAD_DRAG_MIME)) return
-        event.preventDefault()
-        event.dataTransfer.dropEffect = "move"
-      },
-      onDragEnter: (event) => {
-        if (Array.from(event.dataTransfer.types).includes(THREAD_DRAG_MIME)) {
-          setDragOverKey(key)
-        }
-      },
-      onDragLeave: (event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) {
-          setDragOverKey((current) => (current === key ? null : current))
-        }
-      },
-      onDrop: (event) => {
-        event.preventDefault()
-        const threadId = event.dataTransfer.getData(THREAD_DRAG_MIME)
-        setDragOverKey(null)
-        if (threadId) dispatchThreadMove(threadId, destination)
-      },
-    }),
+    (key, destination) => {
+      const carriesThread = (event) =>
+        Array.from(event.dataTransfer?.types || []).includes(THREAD_DRAG_MIME)
+      return {
+        onDragEnter: (event) => {
+          event.preventDefault()
+          if (carriesThread(event)) setDragOverKey(key)
+        },
+        onDragOver: (event) => {
+          event.preventDefault()
+          if (carriesThread(event)) event.dataTransfer.dropEffect = "move"
+        },
+        onDragLeave: (event) => {
+          if (!event.currentTarget.contains(event.relatedTarget)) {
+            setDragOverKey((current) => (current === key ? null : current))
+          }
+        },
+        onDrop: (event) => {
+          event.preventDefault()
+          const threadId = event.dataTransfer.getData(THREAD_DRAG_MIME)
+          setDragOverKey(null)
+          if (threadId) dispatchThreadMove(threadId, destination)
+        },
+      }
+    },
     [],
   )
 
