@@ -77,7 +77,18 @@ async function loadMailboxIds(serviceClient, scope) {
 }
 
 async function loadThreads(serviceClient, scope, mailboxIds) {
-  const runQuery = ({ withCustomerFields = true, withTicketNumber = true } = {}) =>
+  // Field/limit parity with lib/server/inbox-data.js is load-bearing: this poll
+  // REPLACES the whole liveThreads list in InboxSplitView (not a merge), and
+  // both the reason-badges/waiting-groups/wake-info AND the unread-only sidebar
+  // counts are derived from that list. Dropping the lifecycle columns here made
+  // tags vanish on every refetch; capping at 150 made the counts undercount a
+  // >150-thread backlog. Keep this select (and the no-limit) mirroring the
+  // server query, including its graceful column-missing fallback tiers.
+  const runQuery = ({
+    withCustomerFields = true,
+    withTicketNumber = true,
+    withLifecycleFields = true,
+  } = {}) =>
     applyScope(
       serviceClient
         .from("mail_threads")
@@ -85,24 +96,52 @@ async function loadThreads(serviceClient, scope, mailboxIds) {
           withCustomerFields
             ? `id, user_id, mailbox_id, provider, provider_thread_id, ${
                 withTicketNumber ? "ticket_number, " : ""
-              }subject, snippet, customer_name, customer_email, customer_last_inbound_at, last_message_at, unread_count, is_read, status, assignee_id, priority, tags, classification_key, classification_confidence, classification_reason, created_at, updated_at`
+              }subject, snippet, customer_name, customer_email, customer_last_inbound_at, last_message_at, unread_count, is_read, status, assignee_id, priority, tags, classification_key, classification_confidence, classification_reason, created_at, updated_at, customer_language${
+                withLifecycleFields
+                  ? ", waiting_reason, wake_at, close_pending, attention_reason, status_changed_at"
+                  : ""
+              }`
             : `id, user_id, mailbox_id, provider, provider_thread_id, ${
                 withTicketNumber ? "ticket_number, " : ""
-              }subject, snippet, last_message_at, unread_count, is_read, status, assignee_id, priority, tags, classification_key, classification_confidence, classification_reason, created_at, updated_at`
+              }subject, snippet, last_message_at, unread_count, is_read, status, assignee_id, priority, tags, classification_key, classification_confidence, classification_reason, created_at, updated_at, customer_language${
+                withLifecycleFields
+                  ? ", waiting_reason, wake_at, close_pending, attention_reason, status_changed_at"
+                  : ""
+              }`
         )
         .in("mailbox_id", mailboxIds)
-        .order("last_message_at", { ascending: false, nullsLast: true })
-        .limit(150),
+        .order("last_message_at", { ascending: false, nullsLast: true }),
       scope
     );
-  let { data, error } = await runQuery({ withCustomerFields: true, withTicketNumber: true });
+  let { data, error } = await runQuery({
+    withCustomerFields: true,
+    withTicketNumber: true,
+    withLifecycleFields: true,
+  });
   if (
     error &&
-    /customer_name|customer_email|customer_last_inbound_at|ticket_number/i.test(String(error.message || ""))
+    /waiting_reason|wake_at|close_pending|attention_reason|status_changed_at/i.test(
+      String(error.message || "")
+    )
+  ) {
+    const fallbackWithoutLifecycle = await runQuery({
+      withCustomerFields: true,
+      withTicketNumber: true,
+      withLifecycleFields: false,
+    });
+    data = fallbackWithoutLifecycle.data;
+    error = fallbackWithoutLifecycle.error;
+  }
+  if (
+    error &&
+    /customer_name|customer_email|customer_last_inbound_at|customer_language|ticket_number/i.test(
+      String(error.message || "")
+    )
   ) {
     const fallbackWithoutCustomer = await runQuery({
       withCustomerFields: false,
       withTicketNumber: true,
+      withLifecycleFields: false,
     });
     data = fallbackWithoutCustomer.data;
     error = fallbackWithoutCustomer.error;
@@ -110,6 +149,7 @@ async function loadThreads(serviceClient, scope, mailboxIds) {
       const fallbackWithoutTicket = await runQuery({
         withCustomerFields: false,
         withTicketNumber: false,
+        withLifecycleFields: false,
       });
       data = fallbackWithoutTicket.data;
       error = fallbackWithoutTicket.error;
