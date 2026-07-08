@@ -3,13 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import {
-  CheckCircle2,
-  Clock,
+  ChevronDown,
+  ChevronRight,
   Inbox,
-  Package,
   Plus,
   Settings2,
-  User,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -59,7 +57,7 @@ function CountBadge({ count, muted = false, fadeOnHover = false }) {
   )
 }
 
-function QueueRow({ icon: Icon, label, href, active, count, muted, pl, dropProps, isDropActive, isDropPulse }) {
+function QueueRow({ icon: Icon, label, href, active, count, muted, pl, dropProps, isDropActive, isDropPulse, hideIcon }) {
   return (
     <SidebarMenuItem>
       <SidebarMenuButton
@@ -78,7 +76,7 @@ function QueueRow({ icon: Icon, label, href, active, count, muted, pl, dropProps
           className="flex w-full items-center gap-2 text-inherit no-underline"
           {...dropProps}
         >
-          <Icon className="h-4 w-4 shrink-0" />
+          {hideIcon ? null : <Icon className="h-4 w-4 shrink-0" />}
           <span>{label}</span>
           <CountBadge count={count} muted={muted} />
         </Link>
@@ -98,6 +96,9 @@ export function NavQueue({
   const { state } = useSidebar()
   const isCollapsed = state === "collapsed"
   const [contextMenu, setContextMenu] = useState(null)
+  // Inbox is a collapsible parent; Assigned to me / Waiting / Resolved nest
+  // under it (iconless, indented). Default expanded.
+  const [ticketsOpen, setTicketsOpen] = useState(true)
   // Which drop target (if any) a dragged ticket is currently hovering. Keys:
   // "inbox" | "spam" | `inbox:${slug}`. See makeDropProps below.
   const [dragOverKey, setDragOverKey] = useState(null)
@@ -191,24 +192,58 @@ export function NavQueue({
         </div>
         <SidebarGroupContent>
           <SidebarMenu>
-            <QueueRow
-              icon={Inbox}
-              label="Inbox"
-              href="/inbox"
-              active={activeView === ""}
-              count={needsAttentionCount}
-              isDropActive={dragOverKey === "inbox"}
-              isDropPulse={justDroppedKey === "inbox"}
-              dropProps={makeDropProps("inbox", {
-                kind: "inbox",
-                inboxSlug: null,
-                classificationKey: "support",
-              })}
-            />
-            {!isCollapsed && (
+            {/* Inbox parent — a chevron toggles the nested lifecycle rows; the
+                rest of the row still navigates to /inbox and is a drop target. */}
+            <SidebarMenuItem>
+              <div
+                className={cn(
+                  "group relative flex items-center rounded-md text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                  activeView === "" && "bg-accent text-accent-foreground",
+                  dragOverKey === "inbox" &&
+                    "bg-primary/10 ring-2 ring-inset ring-primary text-foreground",
+                  justDroppedKey === "inbox" && "animate-inbox-drop"
+                )}
+                {...makeDropProps("inbox", {
+                  kind: "inbox",
+                  inboxSlug: null,
+                  classificationKey: "support",
+                })}
+              >
+                {!isCollapsed && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setTicketsOpen((open) => !open)
+                    }}
+                    className="flex h-8 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+                    aria-label={ticketsOpen ? "Collapse" : "Expand"}
+                  >
+                    {ticketsOpen ? (
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                )}
+                <Link
+                  href="/inbox"
+                  className={cn(
+                    "flex min-w-0 flex-1 items-center gap-2 py-1.5 pr-2 text-inherit no-underline",
+                    isCollapsed && "pl-2"
+                  )}
+                >
+                  <Inbox className="h-4 w-4 shrink-0" />
+                  <span>Inbox</span>
+                  <CountBadge count={needsAttentionCount} />
+                </Link>
+              </div>
+            </SidebarMenuItem>
+            {!isCollapsed && ticketsOpen && (
               <>
                 <QueueRow
-                  icon={User}
+                  hideIcon
+                  pl="pl-9"
                   label="Assigned to me"
                   href="/inbox?view=mine"
                   active={isViewActive("mine")}
@@ -221,7 +256,8 @@ export function NavQueue({
                   })}
                 />
                 <QueueRow
-                  icon={Clock}
+                  hideIcon
+                  pl="pl-9"
                   label="Waiting on customer"
                   href="/inbox?view=waiting_customer"
                   active={isViewActive("waiting_customer")}
@@ -236,7 +272,8 @@ export function NavQueue({
                   })}
                 />
                 <QueueRow
-                  icon={Package}
+                  hideIcon
+                  pl="pl-9"
                   label="Waiting on third party"
                   href="/inbox?view=waiting_third_party"
                   active={isViewActive("waiting_third_party")}
@@ -251,7 +288,8 @@ export function NavQueue({
                   })}
                 />
                 <QueueRow
-                  icon={CheckCircle2}
+                  hideIcon
+                  pl="pl-9"
                   label="Resolved"
                   href="/inbox?view=resolved"
                   active={isViewActive("resolved")}
