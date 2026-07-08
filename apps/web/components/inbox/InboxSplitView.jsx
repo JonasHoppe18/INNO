@@ -3189,7 +3189,12 @@ export function InboxSplitView({
       };
 
       let patchBody = null;
-      let optimistic = null; // (thread) => partial fields to merge
+      let optimistic = null; // (thread) => partial liveThreads fields to merge
+      // Partial ticketStateByThread override. Status/assignee are read from
+      // this UI layer (effectiveStatus/effectiveAssignee prefer it over the raw
+      // thread), so a liveThreads-only update is invisible AND gets clobbered
+      // before the PATCH lands — this is the layer handleTicketStateChange uses.
+      let uiUpdate = null;
       let advances = false;
       let errorLabel = "Could not update ticket.";
 
@@ -3208,6 +3213,7 @@ export function InboxSplitView({
         if (String(snapshot.assignee_id ?? "") === assigneeId) return; // no-op
         patchBody = { threadId: id, assigneeId };
         optimistic = () => ({ assignee_id: assigneeId });
+        uiUpdate = { assignee: assigneeId };
         errorLabel = "Could not assign ticket.";
         // stays in the Inbox — no advance
       } else if (kind === "status") {
@@ -3230,6 +3236,9 @@ export function InboxSplitView({
         }
         patchBody = { threadId: id, status, waitingReason };
         optimistic = () => ({ status, waiting_reason: waitingReason });
+        // uiState stores the LEGACY status (what effectiveStatus/the sync
+        // effect use); normalizeStatus maps the lifecycle value to it.
+        uiUpdate = { status: normalizeStatus(status) };
         advances = true;
         errorLabel = "Could not update status.";
       } else {
@@ -3274,6 +3283,18 @@ export function InboxSplitView({
 
       if (advances) advanceSelectionPast(id);
 
+      // Guard the optimistic ticketStateByThread override from being clobbered
+      // by a stale server refetch before the PATCH lands (mirrors
+      // handleTicketStateChange). Cleared in .finally, by which point the
+      // server holds the new value so a refetch reconciles correctly.
+      if (uiUpdate) {
+        pendingUpdateThreadIds.current.add(id);
+        setTicketStateByThread((prev) => ({
+          ...prev,
+          [id]: { ...(prev[id] || DEFAULT_TICKET_STATE), ...uiUpdate },
+        }));
+      }
+
       setLiveThreads((prev) =>
         (prev || []).map((thread) =>
           thread.id === id ? { ...thread, ...optimistic(thread) } : thread,
@@ -3291,10 +3312,15 @@ export function InboxSplitView({
           throw new Error(data?.error || errorLabel);
         })
         .catch((error) => {
+          // Revert liveThreads; the ticketStateByThread override re-derives
+          // from it via the sync effect once the pending guard is cleared below.
           setLiveThreads((prev) =>
             (prev || []).map((thread) => (thread.id === id ? { ...thread, ...snapshot } : thread)),
           );
           toast.error(error.message || errorLabel);
+        })
+        .finally(() => {
+          if (uiUpdate) pendingUpdateThreadIds.current.delete(id);
         });
     },
     [derivedThreads, knownInboxSlugs, advanceSelectionPast, currentSupabaseUserId],
