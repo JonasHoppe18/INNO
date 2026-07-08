@@ -200,6 +200,7 @@ export function NavQueue({
               isDropActive={dragOverKey === "inbox"}
               isDropPulse={justDroppedKey === "inbox"}
               dropProps={makeDropProps("inbox", {
+                kind: "inbox",
                 inboxSlug: null,
                 classificationKey: "support",
               })}
@@ -212,6 +213,12 @@ export function NavQueue({
                   href="/inbox?view=mine"
                   active={isViewActive("mine")}
                   count={mineCount}
+                  isDropActive={dragOverKey === "mine"}
+                  isDropPulse={justDroppedKey === "mine"}
+                  dropProps={makeDropProps("mine", {
+                    kind: "assign",
+                    assigneeId: "__me__",
+                  })}
                 />
                 <QueueRow
                   icon={Clock}
@@ -220,6 +227,13 @@ export function NavQueue({
                   active={isViewActive("waiting_customer")}
                   count={waitingCustomerCount}
                   muted
+                  isDropActive={dragOverKey === "waiting_customer"}
+                  isDropPulse={justDroppedKey === "waiting_customer"}
+                  dropProps={makeDropProps("waiting_customer", {
+                    kind: "status",
+                    status: "waiting_customer",
+                    waitingReason: "customer",
+                  })}
                 />
                 <QueueRow
                   icon={Package}
@@ -228,6 +242,13 @@ export function NavQueue({
                   active={isViewActive("waiting_third_party")}
                   count={waitingThirdPartyCount}
                   muted
+                  isDropActive={dragOverKey === "waiting_third_party"}
+                  isDropPulse={justDroppedKey === "waiting_third_party"}
+                  dropProps={makeDropProps("waiting_third_party", {
+                    kind: "status",
+                    status: "waiting_third_party",
+                    waitingReason: "third_party",
+                  })}
                 />
                 <QueueRow
                   icon={CheckCircle2}

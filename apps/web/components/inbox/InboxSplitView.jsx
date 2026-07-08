@@ -37,6 +37,7 @@ import { reportClientEvent } from "@/lib/client-events";
 import { toLegacyUiStatus } from "@/lib/inbox/status-model";
 import {
   computeSidebarCounts,
+  getLifecycleStatus,
   groupNeedsAttentionThreads,
   groupWaitingThreads,
   isAutomated,
@@ -3136,74 +3137,121 @@ export function InboxSplitView({
     [derivedThreads, selectedThreadId],
   );
 
-  // Drag-and-drop move: same optimistic tag/classification update + PATCH +
-  // rollback as handleInboxChange, but for an ARBITRARY dragged thread (not
-  // the selected one) and without the sender-rule side effect — a drag is a
-  // one-off "move this ticket here", not a "always route this sender" rule.
-  // destination: { inboxSlug: string | null, classificationKey }. Registered
-  // with the drag bridge below so the sidebar's drop targets can invoke it.
-  const moveThreadToInbox = useCallback(
-    (threadId, destination) => {
+  // If the dragged ticket is the one you're viewing, advance to its neighbor
+  // (Outlook/Superhuman-style) and drop its open tab — otherwise
+  // useThreadSelection's tab-reconciliation effect snaps selection back to it
+  // once it leaves the filtered list. Only used for actions that REMOVE the
+  // ticket from the current view (inbox move / status change), not assignment
+  // (which keeps it in place). Ref-based "was selected" check so callers don't
+  // re-register on every selection change.
+  const advanceSelectionPast = useCallback(
+    (id) => {
+      if (id !== String(selectedThreadIdRef?.current || "").trim()) return;
+      const idx = filteredThreads.findIndex((t) => String(t?.id) === id);
+      const neighbor = idx >= 0 ? filteredThreads[idx + 1] || filteredThreads[idx - 1] : null;
+      const neighborId = neighbor?.id ? String(neighbor.id) : null;
+      setOpenThreadIds((prev) => {
+        const without = prev.filter((tabId) => String(tabId) !== id);
+        return neighborId && !without.includes(neighborId) ? [neighborId, ...without] : without;
+      });
+      setSelectedThreadId(neighborId);
+    },
+    [filteredThreads, selectedThreadIdRef, setOpenThreadIds, setSelectedThreadId],
+  );
+
+  // Drag-and-drop handler for an ARBITRARY dragged thread (not necessarily the
+  // selected one). Registered with the drag bridge; the sidebar's drop targets
+  // invoke it. Three action kinds, each an optimistic liveThreads update +
+  // thread-status PATCH + rollback:
+  //   { kind: "inbox",  inboxSlug, classificationKey }  — move to inbox / Spam
+  //   { kind: "status", status, waitingReason }          — set waiting_*/etc.
+  //   { kind: "assign", assigneeId }                     — assign (e.g. to me)
+  // No sender-rule side effect (a drag is a one-off, not a routing rule).
+  // "inbox"/"status" remove the ticket from the Inbox view → advance selection;
+  // "assign" keeps it in place → don't.
+  const handleThreadDrop = useCallback(
+    (threadId, action) => {
       const id = String(threadId || "").trim();
       if (!id) return;
-      const normalized =
-        typeof destination?.inboxSlug === "string" ? destination.inboxSlug.trim() : "";
-      const nextClassificationKey =
-        String(destination?.classificationKey || "support").trim().toLowerCase() ===
-        "notification"
-          ? "notification"
-          : "support";
-
+      const kind = String(action?.kind || "inbox");
       const previousThread = derivedThreads.find((thread) => thread.id === id) || null;
       if (!previousThread) return;
-      // No-op guard: dropping a thread onto the inbox it already lives in.
-      const currentSlug = resolveInboxSlug(previousThread, knownInboxSlugs) || "";
-      const currentClassification = String(previousThread.classification_key || "support")
-        .trim()
-        .toLowerCase();
-      if (
-        currentSlug === normalized &&
-        (currentClassification === "notification") === (nextClassificationKey === "notification")
-      ) {
-        return;
-      }
-      const previousTags = Array.isArray(previousThread.tags) ? previousThread.tags : [];
-      const previousClassificationKey = previousThread.classification_key || null;
-      const previousClassificationConfidence = previousThread.classification_confidence ?? null;
-      const previousClassificationReason = previousThread.classification_reason || null;
 
-      // If you dragged the ticket you're currently viewing into a folder,
-      // advance to the next one (Outlook/Superhuman-style). Must ALSO drop the
-      // moved ticket from the open workspace tabs — otherwise useThreadSelection's
-      // tab-reconciliation effect snaps selection right back to it (it re-asserts
-      // an open tab as selected once the ticket leaves the filtered list). So we
-      // pick the neighbor from the CURRENT list (next, else previous), point both
-      // selection AND the tabs at it, and remove the moved ticket's tab. Uses the
-      // ref for the "was selected" check so this handler doesn't re-register on
-      // every selection change.
-      if (id === String(selectedThreadIdRef?.current || "").trim()) {
-        const idx = filteredThreads.findIndex((t) => String(t?.id) === id);
-        const neighbor =
-          idx >= 0 ? filteredThreads[idx + 1] || filteredThreads[idx - 1] : null;
-        const neighborId = neighbor?.id ? String(neighbor.id) : null;
-        setOpenThreadIds((prev) => {
-          const without = prev.filter((tabId) => String(tabId) !== id);
-          return neighborId && !without.includes(neighborId)
-            ? [neighborId, ...without]
-            : without;
-        });
-        setSelectedThreadId(neighborId);
-      }
+      // Snapshot for rollback (all mutable fields any branch might touch).
+      const snapshot = {
+        tags: Array.isArray(previousThread.tags) ? previousThread.tags : [],
+        classification_key: previousThread.classification_key || null,
+        classification_confidence: previousThread.classification_confidence ?? null,
+        classification_reason: previousThread.classification_reason || null,
+        status: previousThread.status || null,
+        waiting_reason: previousThread.waiting_reason || null,
+        assignee_id: previousThread.assignee_id ?? null,
+      };
 
-      setLiveThreads((prev) =>
-        (prev || []).map((thread) => {
-          if (thread.id !== id) return thread;
+      let patchBody = null;
+      let optimistic = null; // (thread) => partial fields to merge
+      let advances = false;
+      let errorLabel = "Could not update ticket.";
+
+      if (kind === "assign") {
+        // The sidebar can't know the Supabase user id, so "Assigned to me"
+        // sends the "__me__" sentinel; resolve it to the current user here.
+        const assigneeId =
+          action?.assigneeId === "__me__"
+            ? currentSupabaseUserId
+              ? String(currentSupabaseUserId)
+              : null
+            : action?.assigneeId
+              ? String(action.assigneeId)
+              : null;
+        if (!assigneeId) return; // don't know who "me" is yet
+        if (String(snapshot.assignee_id ?? "") === assigneeId) return; // no-op
+        patchBody = { threadId: id, assigneeId };
+        optimistic = () => ({ assignee_id: assigneeId });
+        errorLabel = "Could not assign ticket.";
+        // stays in the Inbox — no advance
+      } else if (kind === "status") {
+        const status = String(action?.status || "").trim();
+        const waitingReason =
+          String(action?.waitingReason || "").trim() === "third_party"
+            ? "third_party"
+            : "customer";
+        if (!status) return;
+        const currentLifecycle = getLifecycleStatus(previousThread);
+        if (currentLifecycle === status && String(snapshot.waiting_reason || "") === waitingReason) {
+          return; // no-op
+        }
+        patchBody = { threadId: id, status, waitingReason };
+        optimistic = () => ({ status, waiting_reason: waitingReason });
+        advances = true;
+        errorLabel = "Could not update status.";
+      } else {
+        // inbox / Spam
+        const normalized =
+          typeof action?.inboxSlug === "string" ? action.inboxSlug.trim() : "";
+        const nextClassificationKey =
+          String(action?.classificationKey || "support").trim().toLowerCase() === "notification"
+            ? "notification"
+            : "support";
+        const currentSlug = resolveInboxSlug(previousThread, knownInboxSlugs) || "";
+        const currentClassification = String(snapshot.classification_key || "support")
+          .trim()
+          .toLowerCase();
+        if (
+          currentSlug === normalized &&
+          (currentClassification === "notification") === (nextClassificationKey === "notification")
+        ) {
+          return; // no-op
+        }
+        patchBody = {
+          threadId: id,
+          inboxSlug: normalized || null,
+          classificationKey: nextClassificationKey,
+        };
+        optimistic = (thread) => {
           const tags = Array.isArray(thread.tags) ? thread.tags : [];
-          const withoutInbox = tags.filter(
-            (tag) => !String(tag || "").startsWith("inbox:"),
-          );
+          const withoutInbox = tags.filter((tag) => !String(tag || "").startsWith("inbox:"));
           return {
-            ...thread,
             tags: normalized ? [...withoutInbox, toInboxTag(normalized)] : withoutInbox,
             classification_key: nextClassificationKey,
             classification_confidence: 1,
@@ -3212,50 +3260,40 @@ export function InboxSplitView({
                 ? "manual_move_to_notifications"
                 : "manual_move_to_tickets",
           };
-        }),
+        };
+        advances = true;
+        errorLabel = "Could not move ticket.";
+      }
+
+      if (advances) advanceSelectionPast(id);
+
+      setLiveThreads((prev) =>
+        (prev || []).map((thread) =>
+          thread.id === id ? { ...thread, ...optimistic(thread) } : thread,
+        ),
       );
 
       fetch("/api/inbox/thread-status", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          threadId: id,
-          inboxSlug: normalized || null,
-          classificationKey: nextClassificationKey,
-        }),
+        body: JSON.stringify(patchBody),
       })
         .then(async (response) => {
           const data = await response.json().catch(() => null);
           if (response.ok && data?.thread?.id) return;
-          throw new Error(data?.error || "Could not move ticket.");
+          throw new Error(data?.error || errorLabel);
         })
         .catch((error) => {
           setLiveThreads((prev) =>
-            (prev || []).map((thread) => {
-              if (thread.id !== id) return thread;
-              return {
-                ...thread,
-                tags: previousTags,
-                classification_key: previousClassificationKey,
-                classification_confidence: previousClassificationConfidence,
-                classification_reason: previousClassificationReason,
-              };
-            }),
+            (prev || []).map((thread) => (thread.id === id ? { ...thread, ...snapshot } : thread)),
           );
-          toast.error(error.message || "Could not move ticket.");
+          toast.error(error.message || errorLabel);
         });
     },
-    [
-      derivedThreads,
-      knownInboxSlugs,
-      filteredThreads,
-      selectedThreadIdRef,
-      setOpenThreadIds,
-      setSelectedThreadId,
-    ],
+    [derivedThreads, knownInboxSlugs, advanceSelectionPast, currentSupabaseUserId],
   );
 
-  useEffect(() => registerThreadMoveHandler(moveThreadToInbox), [moveThreadToInbox]);
+  useEffect(() => registerThreadMoveHandler(handleThreadDrop), [handleThreadDrop]);
 
   useEffect(() => {
     const handleKeyDown = (event) => {
