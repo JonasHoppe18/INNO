@@ -351,17 +351,17 @@ Deno.test("Danish: neutral request for order number → allowed", () => {
 Deno.test("Danish: neutral 'cannot send directly' wording → allowed", () => {
   const result = checkUnsupportedCommitments({
     draft_text:
-      "Jeg kan ikke sende fakturaen direkte herfra, men teamet kan hjælpe med at tjekke det.",
+      "Jeg kan ikke sende fakturaen direkte herfra.",
     language: "da",
   });
   assertEquals(result.compliant, true);
   assertEquals(result.violations.length, 0);
 });
 
-Deno.test("Danish: neutral manual-handling wording → allowed", () => {
+Deno.test("Danish: neutral non-promising invoice wording → allowed", () => {
   const result = checkUnsupportedCommitments({
     draft_text:
-      "Sagen skal håndteres manuelt, da der ikke er en understøttet faktura-handling.",
+      "Kan du sende dit ordrenummer, så vi kan finde den rigtige ordre?",
     language: "da",
   });
   assertEquals(result.compliant, true);
@@ -824,10 +824,10 @@ Deno.test("READINESS-9: grounded negative commercial policy claim → allowed", 
   assertEquals(r.violations.length, 0);
 });
 
-Deno.test("READINESS-9: safe manual-handling fallback for team/B2B requests stays compliant", () => {
+Deno.test("READINESS-9: customer-ready fallback for team/B2B requests stays compliant", () => {
   const r = checkUnsupportedCommitments({
     draft_text:
-      "Team- eller B2B-forespørgsler skal håndteres manuelt. Send gerne antal og behov, så teamet kan vende tilbage.",
+      "Send gerne antal og behov, så tager vi den derfra.",
   });
   assertEquals(r.compliant, true);
   assertEquals(r.violations.length, 0);

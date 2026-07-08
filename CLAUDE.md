@@ -26,7 +26,7 @@ Første kunde kører stadig i test-mode mens draft-kvaliteten forbedres.
 | E-commerce | Shopify Admin API + OAuth |
 
 ## Vigtige regler — læs inden du koder
-- `generate-draft-v2` er den aktive pipeline — `postmark-inbound` kalder kun denne. `generate-draft-unified` er legacy og bruges ikke i produktion
+- `generate-draft-v2` er den eneste draft pipeline — `postmark-inbound` og eval-flowet kalder kun denne
 - Ny action-logik skal håndtere både manuelt og automatisk mode
 - Al knowledge-ingestion skal enforces med eksplicit `shop_id`
 - Gmail/Outlook pollers er legacy og ikke i brug — ny inbound-logik skal kun wires ind i `postmark-inbound`
@@ -45,9 +45,9 @@ Eval-systemet er bygget og kørende. Prioritet er nu at bruge eval-resultaterne 
 
 **OpenAI model:** Sættes via OPENAI_MODEL env var. Default er gpt-4o
 
-**V2 pipeline:** `generate-draft-v2` er aktiv produktion — kaldt direkte fra `postmark-inbound`. `generate-draft-unified` er legacy og er ikke i brug.
+**V2 pipeline:** `generate-draft-v2` er aktiv produktion — kaldt direkte fra `postmark-inbound` og eval-flowet.
 
-**Routing pre-classification:** `classifyInboundRouting` kører FØR AI-pipelinen og kan short-circuite hele flowet. Non-support emails forwardes direkte uden at ramme generate-draft-unified.
+**Routing pre-classification:** `classifyInboundRouting` kører FØR AI-pipelinen og kan short-circuite hele flowet. Non-support emails forwardes direkte uden at ramme draft-generering.
 
 **Action types:** UI understøtter langt flere actions end dokumenteret (exchange, return, shipping method, hold fulfillment osv.)
 

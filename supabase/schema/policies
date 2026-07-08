@@ -122,49 +122,6 @@ create policy "shops_delete_own"
 
 ---
 
-## public.agent_persona
-
-```sql
-alter table public.agent_persona enable row level security;
-
-drop policy if exists "agent_persona_select_own" on public.agent_persona;
-drop policy if exists "agent_persona_modify_own" on public.agent_persona;
-
-create policy "agent_persona_select_own"
-  on public.agent_persona
-  for select
-  using (
-    user_id::text = coalesce(auth.jwt()->>'supabase_user_id', '')
-    or exists (
-      select 1 from public.profiles p
-      where p.user_id = public.agent_persona.user_id
-        and p.clerk_user_id = coalesce(auth.jwt()->>'sub', '')
-    )
-  );
-
-create policy "agent_persona_modify_own"
-  on public.agent_persona
-  for all
-  using (
-    user_id::text = coalesce(auth.jwt()->>'supabase_user_id', '')
-    or exists (
-      select 1 from public.profiles p
-      where p.user_id = public.agent_persona.user_id
-        and p.clerk_user_id = coalesce(auth.jwt()->>'sub', '')
-    )
-  )
-  with check (
-    user_id::text = coalesce(auth.jwt()->>'supabase_user_id', '')
-    or exists (
-      select 1 from public.profiles p
-      where p.user_id = public.agent_persona.user_id
-        and p.clerk_user_id = coalesce(auth.jwt()->>'sub', '')
-    )
-  );
-```
-
----
-
 ## public.agent_documents
 
 ```sql
@@ -210,34 +167,6 @@ create policy "agent_automation_select_own"
 
 create policy "agent_automation_modify_own"
   on public.agent_automation
-  for all
-  using (
-    user_id::text = coalesce(auth.jwt()->>'supabase_user_id', '')
-  )
-  with check (
-    user_id::text = coalesce(auth.jwt()->>'supabase_user_id', '')
-  );
-```
-
----
-
-## public.mail_learning_profiles
-
-```sql
-alter table public.mail_learning_profiles enable row level security;
-
-drop policy if exists "mail_learning_profiles_select_own" on public.mail_learning_profiles;
-drop policy if exists "mail_learning_profiles_modify_own" on public.mail_learning_profiles;
-
-create policy "mail_learning_profiles_select_own"
-  on public.mail_learning_profiles
-  for select
-  using (
-    user_id::text = coalesce(auth.jwt()->>'supabase_user_id', '')
-  );
-
-create policy "mail_learning_profiles_modify_own"
-  on public.mail_learning_profiles
   for all
   using (
     user_id::text = coalesce(auth.jwt()->>'supabase_user_id', '')

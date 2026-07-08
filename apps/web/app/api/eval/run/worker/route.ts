@@ -6,7 +6,6 @@ import { createClient } from "@supabase/supabase-js";
 import { listScopedShops, resolveAuthScope } from "@/lib/server/workspace-auth";
 import {
   draftForJudge,
-  generateDraft,
   generateDraftV2,
   judgeWithOpenAI,
 } from "@/lib/server/eval-runner";
@@ -53,7 +52,6 @@ async function scoreEmail({
   runLabel,
   model,
   judgeModel,
-  pipeline,
   supabase,
   ticket,
   v2Options,
@@ -62,7 +60,6 @@ async function scoreEmail({
   runLabel: string;
   model: string;
   judgeModel: string;
-  pipeline: string;
   supabase: ReturnType<typeof createClient>;
   ticket: { subject?: string; body?: string };
   v2Options: { writerModel: string; strongModel?: string; disableEscalation: boolean };
@@ -72,9 +69,7 @@ async function scoreEmail({
   if (!ticketBody) return;
 
   const { draft, actions, confidence, sources, routingHint, latencyMs } =
-    pipeline === "v2"
-      ? await generateDraftV2(shopId, ticketSubject, ticketBody, v2Options)
-      : await generateDraft(shopId, ticketSubject, ticketBody);
+    await generateDraftV2(shopId, ticketSubject, ticketBody, v2Options);
 
   const scores = await judgeWithOpenAI(
     ticketBody,
@@ -90,7 +85,7 @@ async function scoreEmail({
       thread_id: null,
       run_label: runLabel,
       model,
-      pipeline_version: pipeline,
+      pipeline_version: "v2",
       ticket_subject: ticketSubject,
       ticket_body: ticketBody.slice(0, 2000),
       draft_content: draft.slice(0, 2000),
@@ -120,7 +115,6 @@ async function scoreZendesk({
   runLabel,
   model,
   judgeModel,
-  pipeline,
   supabase,
   ticket,
   v2Options,
@@ -129,7 +123,6 @@ async function scoreZendesk({
   runLabel: string;
   model: string;
   judgeModel: string;
-  pipeline: string;
   supabase: ReturnType<typeof createClient>;
   ticket: Record<string, unknown>;
   v2Options: { writerModel: string; strongModel?: string; disableEscalation: boolean };
@@ -142,19 +135,11 @@ async function scoreZendesk({
   if (!ticketBody) return;
 
   const { draft, actions, confidence, sources, routingHint, latencyMs } =
-    pipeline === "v2"
-      ? await generateDraftV2(shopId, ticketSubject, ticketBody, {
-        ...v2Options,
-        conversationHistory,
-        sourceThreadId: zendeskId || undefined,
-      })
-      : await generateDraft(
-        shopId,
-        ticketSubject,
-        conversationHistory
-          ? `[Previous conversation:\n${conversationHistory}\n]\n\n${ticketBody}`
-          : ticketBody,
-      );
+    await generateDraftV2(shopId, ticketSubject, ticketBody, {
+      ...v2Options,
+      conversationHistory,
+      sourceThreadId: zendeskId || undefined,
+    });
 
   const judgeBody = conversationHistory
     ? `[Previous conversation:\n${conversationHistory}\n]\n\n${ticketBody}`
@@ -183,7 +168,7 @@ async function scoreZendesk({
       thread_id: null,
       run_label: runLabel,
       model,
-      pipeline_version: pipeline,
+      pipeline_version: "v2",
       ticket_subject: ticketSubject,
       ticket_body: ticketBody.slice(0, 2000),
       draft_content: draft.slice(0, 2000),
@@ -400,7 +385,22 @@ export async function POST(request: Request) {
   const runLabel = String(job.run_label || "");
   const model = String(job.model || "gpt-4o-mini");
   const judgeModel = String(job.judge_model || "gpt-4o-mini");
-  const pipeline = String(job.pipeline_version || "legacy");
+  const pipeline = String(job.pipeline_version || "v2").trim() || "v2";
+  if (pipeline !== "v2") {
+    await supabase
+      .from("eval_runs")
+      .update({
+        status: "failed",
+        last_error: `Unsupported eval pipeline '${pipeline}'. Only v2 is supported.`,
+        updated_at: new Date().toISOString(),
+        finished_at: new Date().toISOString(),
+      })
+      .eq("id", job.id);
+    return NextResponse.json(
+      { error: `Unsupported eval pipeline '${pipeline}'. Only v2 is supported.` },
+      { status: 400 },
+    );
+  }
   const payload = typeof job.payload === "object" && job.payload !== null ? job.payload : {};
   const payloadOptions =
     typeof payload.options === "object" && payload.options !== null ? payload.options : {};
@@ -441,7 +441,6 @@ export async function POST(request: Request) {
           runLabel,
           model,
           judgeModel,
-          pipeline,
           supabase,
           ticket: item as { subject?: string; body?: string },
           v2Options,
@@ -452,7 +451,6 @@ export async function POST(request: Request) {
           runLabel,
           model,
           judgeModel,
-          pipeline,
           supabase,
           ticket: item as Record<string, unknown>,
           v2Options,

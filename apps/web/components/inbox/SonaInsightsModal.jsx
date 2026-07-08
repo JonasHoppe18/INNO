@@ -106,12 +106,39 @@ const normalizeTrackingStatusLabel = (value) => {
   const text = asString(value);
   if (!text) return "";
   const lower = text.toLowerCase();
+  if (lower.includes("delivered") || lower.includes("leveret")) return "Delivered";
   if (lower.includes("afsendt - følg pakken via tracking-link")) {
     return "Shipped - follow the parcel via tracking link";
   }
   if (lower === "afsendt") return "Shipped";
   return text;
 };
+
+function buildPublicTrackingUrl({ carrier = "", trackingNumber = "" } = {}) {
+  const number = String(trackingNumber || "").trim();
+  if (!number) return "";
+  const encoded = encodeURIComponent(number);
+  const lower = String(carrier || "").toLowerCase();
+  if (lower.includes("postnord") || lower.includes("post nord")) {
+    return `https://www.postnord.dk/track-trace?shipmentId=${encoded}`;
+  }
+  if (lower.includes("gls")) {
+    return `https://gls-group.eu/track?match=${encoded}`;
+  }
+  if (lower.includes("dao")) {
+    return `https://www.dao.as/track-and-trace/?id=${encoded}`;
+  }
+  if (lower.includes("bring") || lower.includes("no-post") || lower.includes("posten")) {
+    return `https://sporing.bring.no/sporing/${encoded}`;
+  }
+  if (lower.includes("dhl")) {
+    return `https://www.dhl.com/global-en/home/tracking/tracking-express.html?submit=1&tracking-id=${encoded}`;
+  }
+  if (lower.includes("ups")) {
+    return `https://www.ups.com/track?tracknum=${encoded}`;
+  }
+  return "";
+}
 
 const GENERIC_TRACKING_EVENT_PATTERN = /^tracking event$/i;
 const COUNTRY_ONLY_LOCATION_PATTERN = /^[a-z]{2}$/i;
@@ -205,9 +232,12 @@ export function SonaInsightsModal({
   onCustomerRefresh,
   customerLookupParams,
   onOpenTicket,
+  returnTrackingActionState = null,
 }) {
   const [logs, setLogs] = useState([]);
   const [logsLoading, setLogsLoading] = useState(false);
+  const [returnTrackingDetail, setReturnTrackingDetail] = useState(null);
+  const [returnTrackingLoading, setReturnTrackingLoading] = useState(false);
   const containerElRef = useRef(null);
   const containerRef = useCallback((node) => {
     containerElRef.current = node;
@@ -233,10 +263,67 @@ export function SonaInsightsModal({
     const orders = Array.isArray(effectiveLookup?.orders) ? effectiveLookup.orders : [];
     return orders.find((order) => order?.tracking?.number || order?.tracking?.url) || null;
   }, [effectiveLookup?.orders]);
+  const returnTrackingCandidate = returnTrackingActionState?.candidates?.[0] || null;
+  const returnTrackingNumber = String(
+    returnTrackingCandidate?.normalized_tracking_number ||
+      returnTrackingCandidate?.tracking_number ||
+      "",
+  );
+  const returnTrackingState = returnTrackingNumber
+    ? returnTrackingActionState?.stateByNumber?.[returnTrackingNumber] ||
+      (returnTrackingCandidate?.already_added ? "duplicate" : "")
+    : "";
+  const returnTrackingStatusLabel =
+    normalizeTrackingStatusLabel(returnTrackingDetail?.statusText || returnTrackingDetail?.status || "") ||
+    (returnTrackingLoading ? "Checking carrier..." : "Tracking available");
+  const returnTrackingOrder = useMemo(() => {
+    if (!returnTrackingCandidate || !returnTrackingNumber) return null;
+    const carrier = returnTrackingDetail?.carrier || returnTrackingCandidate.carrier || "";
+    const trackingNumber = returnTrackingCandidate.tracking_number || returnTrackingNumber;
+    return {
+      id: returnTrackingCandidate.order_number || returnTrackingNumber,
+      name: returnTrackingCandidate.order_number || "",
+      orderNumber: returnTrackingCandidate.order_number || "",
+      order_number: returnTrackingCandidate.order_number || "",
+      tracking: {
+        number: trackingNumber,
+        company: carrier,
+        url: buildPublicTrackingUrl({ carrier, trackingNumber }),
+        status: returnTrackingStatusLabel,
+      },
+    };
+  }, [returnTrackingCandidate, returnTrackingDetail?.carrier, returnTrackingNumber, returnTrackingStatusLabel]);
 
   useEffect(() => {
     setDiagnostic(null);
   }, [threadId]);
+
+  useEffect(() => {
+    let active = true;
+    const fetchReturnTracking = async () => {
+      setReturnTrackingDetail(null);
+      if (!open || !threadId || !returnTrackingNumber) return;
+      setReturnTrackingLoading(true);
+      try {
+        const params = new URLSearchParams({ trackingNumber: returnTrackingNumber });
+        if (returnTrackingCandidate?.carrier) params.set("company", returnTrackingCandidate.carrier);
+        const response = await fetch(
+          `/api/threads/${encodeURIComponent(threadId)}/tracking/refresh?${params.toString()}`
+        ).catch(() => null);
+        if (!active) return;
+        const body = await response?.json?.().catch(() => ({}));
+        if (response?.ok && body?.detail) {
+          setReturnTrackingDetail(body.detail);
+        }
+      } finally {
+        if (active) setReturnTrackingLoading(false);
+      }
+    };
+    fetchReturnTracking();
+    return () => {
+      active = false;
+    };
+  }, [open, returnTrackingCandidate?.carrier, returnTrackingNumber, threadId]);
 
   useEffect(() => {
     let active = true;
@@ -333,9 +420,53 @@ export function SonaInsightsModal({
                 <TicketMetadataPanel threadId={threadId} />
               </div>
 
+              {returnTrackingCandidate || returnTrackingActionState?.error ? (
+                <div>
+                  {returnTrackingOrder ? (
+                    <div className="space-y-3">
+                      <TrackingCard
+                        order={returnTrackingOrder}
+                        threadId={threadId}
+                        fullWidth
+                        title="Return tracking"
+                        descriptionPrefix="Live return tracking for order"
+                        direction="return"
+                      />
+                      {!returnTrackingState ? (
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="h-7 bg-slate-900 px-2.5 text-xs text-white shadow-none hover:bg-slate-800"
+                            disabled={returnTrackingActionState?.submitting === returnTrackingNumber}
+                            onClick={() => returnTrackingActionState?.onAdd?.(returnTrackingCandidate)}
+                          >
+                            {returnTrackingActionState?.submitting === returnTrackingNumber ? "Adding..." : "Add"}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2.5 text-xs text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+                            onClick={() => returnTrackingActionState?.onDismiss?.(returnTrackingCandidate)}
+                          >
+                            Dismiss
+                          </Button>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {returnTrackingActionState?.error ? (
+                    <div className={returnTrackingCandidate ? "mt-3 text-xs text-red-600" : "text-xs text-red-600"}>
+                      {returnTrackingActionState.error}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
               {trackingOrder ? (
                 <div className="w-full">
-                  <TrackingCard order={trackingOrder} threadId={threadId} fullWidth />
+                  <TrackingCard order={trackingOrder} threadId={threadId} fullWidth direction="outbound" />
                 </div>
               ) : trackingInfo ? (
                 <div className="rounded-2xl border border-border bg-card/90 p-4 space-y-3">

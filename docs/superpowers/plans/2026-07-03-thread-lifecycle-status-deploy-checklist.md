@@ -39,6 +39,14 @@ Do these in order. Each step depends on the ones before it.
   appears, the migration's CASE mapping missed a legacy variant still live in production and must
   be investigated before proceeding.
 
+  Also expect the `needs_attention` count to be noticeably SMALLER than a naive read of legacy
+  open/new statuses would suggest. The migration now archives already-read, 30+ day silent
+  threads straight to `resolved` during backfill (added after a live count on AceZone's data
+  showed 345 such threads — old, read, dead weight that would otherwise flood the queue on day
+  one). Cross-check: `select count(*) from public.mail_threads where status = 'resolved' and
+  attention_reason is null and unread_count = 0;` should roughly match the number of legacy
+  open/new threads that were stale and already read before the migration ran.
+
 - [ ] **4. Deploy the updated `postmark-inbound` edge function**
   `supabase functions deploy postmark-inbound --no-verify-jwt --use-api`
   Per this repo's CLAUDE.md deploy rule (`postmark-inbound` always deploys with

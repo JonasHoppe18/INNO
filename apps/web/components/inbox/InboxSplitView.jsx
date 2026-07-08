@@ -1021,6 +1021,7 @@ export function InboxSplitView({
   // Shadow preview (v2 pipeline) — per thread
   // Shape: { [threadId]: { loading: boolean, draft_text: string|null, confidence: number, sources: [], proposed_actions: [], error: string|null } }
   const [insightsOpen, setInsightsOpen] = useState(false);
+  const [returnTrackingActionState, setReturnTrackingActionState] = useState(null);
   const [translationModalOpen, setTranslationModalOpen] = useState(false);
   const [translationCache, setTranslationCache] = useState({});
   // Shape: { [threadId]: { loading: boolean, items: Array<{id, translatedText, originalLanguage, role}>, draft: {translatedText} | null } }
@@ -1099,6 +1100,19 @@ export function InboxSplitView({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { setTitleContent } = useSiteHeaderActions();
+  const hasActionableReturnTrackingAction = useMemo(() => {
+    if (!selectedThreadId || returnTrackingActionState?.threadId !== selectedThreadId) {
+      return false;
+    }
+    const stateByNumber = returnTrackingActionState?.stateByNumber || {};
+    return (returnTrackingActionState?.candidates || []).some((candidate) => {
+      const normalized = String(
+        candidate?.normalized_tracking_number || candidate?.tracking_number || "",
+      ).trim();
+      const state = stateByNumber[normalized] || (candidate?.already_added ? "duplicate" : "");
+      return !state;
+    });
+  }, [returnTrackingActionState, selectedThreadId]);
   const currentUserName =
     [user?.firstName, user?.lastName].filter(Boolean).join(" ") || "You";
   const { activeView, resolvedView, tab, filters, setFilters, effectiveFilters } =
@@ -3768,9 +3782,15 @@ export function InboxSplitView({
               <button
                 type="button"
                 onClick={() => setInsightsOpen(true)}
-                className="cursor-pointer rounded-md border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:border-gray-300"
+                className="relative cursor-pointer rounded-md border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-700 hover:border-gray-300"
               >
                 View actions
+                {hasActionableReturnTrackingAction ? (
+                  <span
+                    className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-violet-500 ring-2 ring-white"
+                    aria-label="Return tracking action available"
+                  />
+                ) : null}
               </button>
             ) : null
           }
@@ -3812,6 +3832,7 @@ export function InboxSplitView({
           onRequestTranslation={() =>
             fetchTranslationForThread(selectedThreadId)
           }
+          onReturnTrackingActionStateChange={setReturnTrackingActionState}
           />
         </InboxContentBoundary>
       </div>
@@ -3830,6 +3851,11 @@ export function InboxSplitView({
           onCustomerRefresh={refreshCustomerLookup}
           customerLookupParams={customerLookupParams}
           onOpenTicket={handleOpenPreviousTicket}
+          returnTrackingActionState={
+            returnTrackingActionState?.threadId === selectedThread?.id
+              ? returnTrackingActionState
+              : null
+          }
         />
       </InboxContentBoundary>
 

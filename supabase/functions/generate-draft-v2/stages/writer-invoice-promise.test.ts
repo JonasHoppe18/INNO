@@ -43,9 +43,7 @@ Deno.test("writer.ts invoice rules explicitly forbid promising future delivery",
 
 Deno.test("writer.ts fallback wording for unconfirmed invoice requests is neutral, not a promise", () => {
   assert(
-    src.includes(
-      "Jeg kan ikke sende fakturaen direkte herfra, men sagen skal håndteres manuelt",
-    ),
+    src.includes("Jeg kan ikke sende fakturaen direkte herfra"),
     "writer.ts is missing the neutral non-promising invoice fallback example",
   );
 });
@@ -66,10 +64,10 @@ Deno.test("writer.ts explicitly forbids common future invoice-delivery promises"
   }
 });
 
-Deno.test("writer.ts routes ungrounded team/B2B discount requests to manual handling", () => {
+Deno.test("writer.ts routes ungrounded team/B2B discount requests to customer-ready fallback", () => {
   assert(
-    src.includes("Team- eller B2B-forespørgsler skal håndteres manuelt"),
-    "writer.ts is missing the safe manual-handling fallback for team/B2B discount requests",
+    src.includes("Send gerne antal og behov, så tager vi den derfra"),
+    "writer.ts is missing the customer-ready fallback for team/B2B discount requests",
   );
   assert(
     src.includes(

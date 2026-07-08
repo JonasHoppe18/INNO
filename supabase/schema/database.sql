@@ -27,16 +27,6 @@ CREATE TABLE public.agent_documents (
   CONSTRAINT agent_documents_pkey PRIMARY KEY (id),
   CONSTRAINT agent_documents_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
-CREATE TABLE public.agent_persona (
-  user_id uuid NOT NULL,
-  signature text,
-  scenario text,
-  instructions text,
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  updated_at timestamp with time zone NOT NULL DEFAULT now(),
-  CONSTRAINT agent_persona_pkey PRIMARY KEY (user_id),
-  CONSTRAINT agent_persona_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
-);
 CREATE TABLE public.agent_templates (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
@@ -95,16 +85,6 @@ CREATE TABLE public.mail_accounts (
   updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT mail_accounts_pkey PRIMARY KEY (id),
   CONSTRAINT mail_accounts_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
-);
-CREATE TABLE public.mail_learning_profiles (
-  mailbox_id uuid NOT NULL,
-  user_id uuid NOT NULL,
-  enabled boolean DEFAULT true,
-  style_rules text,
-  updated_at timestamp with time zone NOT NULL DEFAULT now(),
-  CONSTRAINT mail_learning_profiles_pkey PRIMARY KEY (mailbox_id),
-  CONSTRAINT mail_learning_profiles_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
-  CONSTRAINT mail_learning_profiles_mailbox_id_fkey FOREIGN KEY (mailbox_id) REFERENCES public.mail_accounts(id)
 );
 CREATE TABLE public.user_onboarding (
   user_id uuid NOT NULL,

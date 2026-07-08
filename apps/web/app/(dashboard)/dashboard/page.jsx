@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 
 import DashboardGreeting from "@/components/dashboard/DashboardGreeting";
+import { ReturnTrackingDashboardCard } from "@/components/dashboard/ReturnTrackingDashboardCard";
 import { LearningCard } from "@/components/agent/LearningCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
+import { listReturnTrackingShipments } from "@/lib/server/return-tracking";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -137,20 +139,6 @@ async function loadPendingActions(serviceClient, shopId) {
     .limit(5);
   if (error) return { actions: [], count: 0 };
   return { actions: data ?? [], count: count ?? 0 };
-}
-
-async function loadReturnsInTransit(serviceClient, shopId) {
-  if (!shopId) return { returns: [], count: 0 };
-  const { data, count, error } = await serviceClient
-    .from("thread_actions")
-    .select("id, action_type, payload, thread_id, created_at, updated_at", { count: "exact" })
-    .eq("shop_id", shopId)
-    .eq("action_type", "initiate_return")
-    .eq("status", "applied")
-    .order("updated_at", { ascending: false })
-    .limit(5);
-  if (error) return { returns: [], count: 0 };
-  return { returns: data ?? [], count: count ?? 0 };
 }
 
 function actionLabel(actionType) {
@@ -291,8 +279,7 @@ export default async function Page() {
   let awaitingCount = 0;
   let pendingCount = 0;
   let exampleCount = 0;
-  let returnsInTransit = [];
-  let returnsCount = 0;
+  let returnTrackingRows = [];
   let missingTrackingCount = 0;
   let recentActivity = [];
 
@@ -327,7 +314,7 @@ export default async function Page() {
         awaitingResult,
         pendingResult,
         exampleResult,
-        returnsResult,
+        returnTrackingResult,
         missingTracking,
         activityResult,
       ] = await Promise.all([
@@ -335,7 +322,7 @@ export default async function Page() {
         loadAwaitingThreads(serviceClient, scope, mailboxIds),
         loadPendingActions(serviceClient, shopId),
         exampleQuery,
-        loadReturnsInTransit(serviceClient, shopId),
+        listReturnTrackingShipments(serviceClient, scope).catch(() => []),
         loadMissingTrackingCount(serviceClient, shopId),
         loadRecentActivity(serviceClient, scope, shopId),
       ]);
@@ -348,8 +335,9 @@ export default async function Page() {
       awaitingCount = awaitingResult.count;
       pendingCount = pendingResult.count;
       exampleCount = exampleResult.count ?? 0;
-      returnsInTransit = returnsResult.returns;
-      returnsCount = returnsResult.count;
+      returnTrackingRows = Array.isArray(returnTrackingResult)
+        ? returnTrackingResult
+        : [];
       missingTrackingCount = missingTracking;
       recentActivity = activityResult;
     } catch (error) {
@@ -586,7 +574,7 @@ export default async function Page() {
           </div>
         </div>
 
-        {/* Bottom row: Recent AI activity + Returns in transit */}
+        {/* Bottom row: Recent AI activity + Returns on the way back */}
         <div className="grid grid-cols-1 gap-4 px-4 lg:grid-cols-2 lg:px-6">
           {/* Recent AI activity */}
           <Card className="flex flex-col">
@@ -644,72 +632,8 @@ export default async function Page() {
             </CardFooter>
           </Card>
 
-          {/* Returns in transit */}
-          <Card className={returnsCount > 0 ? "border-amber-500/20" : ""}>
-            <CardHeader>
-              <div className="flex items-start justify-between">
-                <div>
-                  <CardTitle>Returns in transit</CardTitle>
-                  <CardDescription>Packages on their way back — refund after inspection</CardDescription>
-                </div>
-                {returnsCount > 0 && (
-                  <Link href="/inbox" className="shrink-0 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:underline underline-offset-2">
-                    View all
-                  </Link>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent>
-              {returnsInTransit.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No active returns.</p>
-              ) : (
-                <>
-                  {/* Mini stats row */}
-                  <div className="mb-4 grid grid-cols-3 gap-2">
-                    <div className="rounded-lg bg-muted/50 px-3 py-2">
-                      <p className="text-xl font-bold tabular-nums text-amber-600 dark:text-amber-400">{returnsCount}</p>
-                      <p className="text-xs text-muted-foreground">In transit</p>
-                    </div>
-                    <div className="rounded-lg bg-muted/50 px-3 py-2">
-                      <p className="text-xl font-bold tabular-nums">0</p>
-                      <p className="text-xs text-muted-foreground">In inspection</p>
-                    </div>
-                    <div className="rounded-lg bg-muted/50 px-3 py-2">
-                      <p className="text-xl font-bold tabular-nums">0</p>
-                      <p className="text-xs text-muted-foreground">Refund pending</p>
-                    </div>
-                  </div>
-                  <div className="divide-y divide-border">
-                    {returnsInTransit.map((ret) => {
-                      const reason = ret.payload?.return_reason || ret.payload?.reason || null;
-                      return (
-                        <div key={ret.id} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
-                          <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-amber-500/15">
-                            <PackageMinusIcon className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-medium">
-                              Order #{ret.payload?.orderId ?? ret.thread_id?.slice(0, 8) ?? "—"}
-                            </p>
-                            {reason && (
-                              <p className="truncate text-xs text-muted-foreground">{reason}</p>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <span className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
-                              <span className="size-1.5 rounded-full bg-amber-500" />
-                              In transit
-                            </span>
-                            <span className="text-xs text-muted-foreground">{formatTimeAgo(ret.updated_at)}</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
+          {/* Returns on the way back */}
+          <ReturnTrackingDashboardCard rows={returnTrackingRows} />
         </div>
 
         {/* AI Self Learning — full width */}

@@ -1,7 +1,7 @@
 // deno test --no-check -A supabase/functions/_shared/tracking/providers/ship24/ship24.test.ts
 //
-// TDD for the P2-1 Ship24 outbound fallback adapter. Ship24 is a READ-ONLY
-// fallback used ONLY in the carrier === "unknown" branch. All mapping is pure;
+// TDD for the Ship24 outbound fallback adapter. Ship24 is a READ-ONLY fallback
+// for carriers without a native API integration. All mapping is pure;
 // the fetch wrapper degrades safely (empty/null → unknown, real failure →
 // lookup_error) and NEVER infers in_transit/delivered from a number's existence.
 import { assert, assertEquals } from "jsr:@std/assert@1";
@@ -27,6 +27,7 @@ function ship24Payload(opts: {
   courierCode?: string;
   events?: number;
   deliveredAt?: string | null;
+  duplicateExactEvents?: boolean;
 }): unknown {
   const events = [];
   const count = opts.events ?? (opts.milestone ? 1 : 0);
@@ -38,7 +39,9 @@ function ship24Payload(opts: {
       datetime: "2026-06-26T13:18:03.000Z",
       location: "DK",
       courierCode: opts.courierCode ?? "gls",
-      statusCode: i === 0 ? (opts.eventStatusCode ?? opts.statusCode ?? null) : null,
+      statusCode: opts.duplicateExactEvents
+        ? (opts.eventStatusCode ?? opts.statusCode ?? null)
+        : (i === 0 ? (opts.eventStatusCode ?? opts.statusCode ?? null) : null),
       statusCategory: "delivery",
       statusMilestone: opts.milestone,
     });
@@ -114,6 +117,21 @@ Deno.test("Ship24 delivered → normalized delivered carrier_verified", () => {
   assertEquals(fact.verification, "carrier_verified");
   // deliveredDatetime "…+02:00" normalized to UTC.
   assertEquals(fact.delivered_at, "2026-06-26T11:18:03.000Z");
+  assertEquals(detail.snapshot?.events.length, 1);
+  assertEquals(detail.snapshot?.events[0]?.description, "An event happened.");
+});
+
+Deno.test("Ship24 duplicate events are collapsed", () => {
+  const detail = ship24PayloadToTrackingDetail(
+    ship24Payload({
+      milestone: "delivered",
+      statusCode: "delivery_delivered",
+      events: 2,
+      duplicateExactEvents: true,
+    }),
+    { trackingNumber: "922070136177", trackingUrl: "https://x/track" },
+  );
+  assertEquals(detail.snapshot?.events.length, 1);
 });
 
 Deno.test("Ship24 in_transit → normalized in_transit carrier_verified", () => {
@@ -268,14 +286,35 @@ Deno.test("unknown carrier + ship24 NOT configured → existing carrier_unknown 
   assertEquals(detail.lookupSource, "shopify_fallback");
 });
 
-// ── 14. GLS/PostNord native carriers never reach the unknown (Ship24) branch ──
-Deno.test("GLS/PostNord still route to their native carriers (not unknown)", () => {
-  assert(isSupportedTrackingCarrier({ company: "GLS" }));
-  assert(isSupportedTrackingCarrier({ company: "PostNord" }));
-  assert(isSupportedTrackingCarrier({ company: "DHL" }));
-  assert(isSupportedTrackingCarrier({ company: "UPS" }));
-  // A genuinely unknown carrier IS routed to the fallback branch.
-  assert(!isSupportedTrackingCarrier({ company: "SomeRandomCourier", trackingNumber: "X123" }));
+// ── 14. GLS/PostNord native carriers stay native; others can use Ship24 ─────
+Deno.test("GLS/PostNord stay native; other carriers remain eligible for live lookup", () => {
+  assert(isSupportedTrackingCarrier({ company: "GLS", trackingNumber: "123456789" }));
+  assert(isSupportedTrackingCarrier({ company: "PostNord", trackingNumber: "123456789" }));
+  assert(isSupportedTrackingCarrier({ company: "DHL", trackingNumber: "123456789" }));
+  assert(isSupportedTrackingCarrier({ company: "UPS", trackingNumber: "123456789" }));
+  assert(isSupportedTrackingCarrier({ company: "SomeRandomCourier", trackingNumber: "X123" }));
+});
+
+Deno.test("non-GLS/PostNord carrier + ship24 configured → Ship24 adapter called", async () => {
+  let called = false;
+  const detail = await fetchTrackingDetailForCandidate(
+    { company: "Bring", trackingNumber: "370438109757988982", trackingUrl: "" },
+    {
+      ship24Configured: () => true,
+      fetchShip24: (tn) => {
+        called = true;
+        return Promise.resolve(
+          ship24PayloadToTrackingDetail(
+            ship24Payload({ milestone: "in_transit", courierCode: "bring" }),
+            { trackingNumber: tn },
+          ),
+        );
+      },
+    },
+  );
+  assertEquals(called, true);
+  assertEquals(detail.lookupSource, "ship24_api");
+  assertEquals(detail.carrier, "Bring");
 });
 
 // ── 15. P1 regression: Ship24-derived facts respected by the claim guardrail ──
