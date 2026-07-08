@@ -1100,19 +1100,6 @@ export function InboxSplitView({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { setTitleContent } = useSiteHeaderActions();
-  const hasActionableReturnTrackingAction = useMemo(() => {
-    if (!selectedThreadId || returnTrackingActionState?.threadId !== selectedThreadId) {
-      return false;
-    }
-    const stateByNumber = returnTrackingActionState?.stateByNumber || {};
-    return (returnTrackingActionState?.candidates || []).some((candidate) => {
-      const normalized = String(
-        candidate?.normalized_tracking_number || candidate?.tracking_number || "",
-      ).trim();
-      const state = stateByNumber[normalized] || (candidate?.already_added ? "duplicate" : "");
-      return !state;
-    });
-  }, [returnTrackingActionState, selectedThreadId]);
   const currentUserName =
     [user?.firstName, user?.lastName].filter(Boolean).join(" ") || "You";
   const { activeView, resolvedView, tab, filters, setFilters, effectiveFilters } =
@@ -1895,6 +1882,25 @@ export function InboxSplitView({
     markThreadReadInstantly,
     setLocalNewThread,
   });
+
+  // Must sit AFTER useThreadSelection (which declares selectedThreadId) — it
+  // reads selectedThreadId, so placing it earlier is a TDZ ReferenceError at
+  // runtime (invisible to build/lint since this component is ssr:false). Main's
+  // return-tracking wiring originally lived above the branch's extracted hooks;
+  // the merge preserved that position and crashed /inbox until moved here.
+  const hasActionableReturnTrackingAction = useMemo(() => {
+    if (!selectedThreadId || returnTrackingActionState?.threadId !== selectedThreadId) {
+      return false;
+    }
+    const stateByNumber = returnTrackingActionState?.stateByNumber || {};
+    return (returnTrackingActionState?.candidates || []).some((candidate) => {
+      const normalized = String(
+        candidate?.normalized_tracking_number || candidate?.tracking_number || "",
+      ).trim();
+      const state = stateByNumber[normalized] || (candidate?.already_added ? "duplicate" : "");
+      return !state;
+    });
+  }, [returnTrackingActionState, selectedThreadId]);
 
   const {
     data: selectedThreadMessagesFromDb,
