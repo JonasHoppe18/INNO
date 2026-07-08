@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import {
   CheckCircle2,
@@ -59,7 +59,7 @@ function CountBadge({ count, muted = false, fadeOnHover = false }) {
   )
 }
 
-function QueueRow({ icon: Icon, label, href, active, count, muted, pl, dropProps, isDropActive }) {
+function QueueRow({ icon: Icon, label, href, active, count, muted, pl, dropProps, isDropActive, isDropPulse }) {
   return (
     <SidebarMenuItem>
       <SidebarMenuButton
@@ -69,7 +69,8 @@ function QueueRow({ icon: Icon, label, href, active, count, muted, pl, dropProps
           "justify-start cursor-pointer text-muted-foreground",
           pl,
           active && "bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground",
-          isDropActive && "bg-primary/10 ring-2 ring-inset ring-primary text-foreground"
+          isDropActive && "bg-primary/10 ring-2 ring-inset ring-primary text-foreground",
+          isDropPulse && "animate-inbox-drop"
         )}
       >
         <Link
@@ -100,6 +101,13 @@ export function NavQueue({
   // Which drop target (if any) a dragged ticket is currently hovering. Keys:
   // "inbox" | "spam" | `inbox:${slug}`. See makeDropProps below.
   const [dragOverKey, setDragOverKey] = useState(null)
+  // The row a ticket was JUST dropped on — briefly pulses to confirm the
+  // ticket landed there (the "flew to the folder" Outlook feedback), cleared
+  // after the pulse. Distinct from dragOverKey, which clears the instant the
+  // drop happens.
+  const [justDroppedKey, setJustDroppedKey] = useState(null)
+  const dropPulseTimerRef = useRef(null)
+  useEffect(() => () => clearTimeout(dropPulseTimerRef.current), [])
 
   // Wires a sidebar row as a ticket drop target. destination:
   // { inboxSlug, classificationKey } handed straight to the InboxSplitView
@@ -137,7 +145,11 @@ export function NavQueue({
           event.preventDefault()
           const threadId = event.dataTransfer.getData(THREAD_DRAG_MIME)
           setDragOverKey(null)
-          if (threadId) dispatchThreadMove(threadId, destination)
+          if (!threadId) return
+          dispatchThreadMove(threadId, destination)
+          setJustDroppedKey(key)
+          clearTimeout(dropPulseTimerRef.current)
+          dropPulseTimerRef.current = setTimeout(() => setJustDroppedKey(null), 600)
         },
       }
     },
@@ -186,6 +198,7 @@ export function NavQueue({
               active={activeView === ""}
               count={needsAttentionCount}
               isDropActive={dragOverKey === "inbox"}
+              isDropPulse={justDroppedKey === "inbox"}
               dropProps={makeDropProps("inbox", {
                 inboxSlug: null,
                 classificationKey: "support",
@@ -263,7 +276,8 @@ export function NavQueue({
                         "group relative flex items-center rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground",
                         active && "bg-accent text-accent-foreground",
                         dragOverKey === dropKey &&
-                          "bg-primary/10 ring-2 ring-inset ring-primary text-foreground"
+                          "bg-primary/10 ring-2 ring-inset ring-primary text-foreground",
+                        justDroppedKey === dropKey && "animate-inbox-drop"
                       )}
                       onContextMenu={(event) => {
                         event.preventDefault()
@@ -309,7 +323,8 @@ export function NavQueue({
                     "group relative flex items-center rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground",
                     isViewActive("automated") && "bg-accent text-accent-foreground",
                     dragOverKey === "spam" &&
-                      "bg-primary/10 ring-2 ring-inset ring-primary text-foreground"
+                      "bg-primary/10 ring-2 ring-inset ring-primary text-foreground",
+                    justDroppedKey === "spam" && "animate-inbox-drop"
                   )}
                   {...makeDropProps("spam", {
                     inboxSlug: null,
