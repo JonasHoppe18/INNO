@@ -192,34 +192,52 @@ export function NavQueue({
         </div>
         <SidebarGroupContent>
           <SidebarMenu>
-            {/* Inbox parent — icon+label sit in the standard row position (flush
-                with Dashboard etc.); a trailing chevron on the RIGHT toggles the
-                nested lifecycle rows without navigating. The row still links to
-                /inbox and is a drop target. */}
-            <SidebarMenuItem>
-              <div
-                className={cn(
-                  "group relative flex items-center rounded-md text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-                  activeView === "" && "bg-accent text-accent-foreground",
-                  dragOverKey === "inbox" &&
-                    "bg-primary/10 ring-2 ring-inset ring-primary text-foreground",
-                  justDroppedKey === "inbox" && "animate-inbox-drop"
-                )}
-                {...makeDropProps("inbox", {
+            {/* Inbox parent. Collapsed (icon) sidebar: fall back to the plain
+                QueueRow/SidebarMenuButton, which handles icon-only mode (our
+                custom chevron row below is a bare div that would leak the
+                label). Expanded: icon+label in the standard row position (flush
+                with Dashboard etc.) + a trailing chevron on the RIGHT that
+                toggles the nested lifecycle rows without navigating. Both link
+                to /inbox and are drop targets. */}
+            {isCollapsed ? (
+              <QueueRow
+                icon={Inbox}
+                label="Inbox"
+                href="/inbox"
+                active={activeView === ""}
+                count={needsAttentionCount}
+                isDropActive={dragOverKey === "inbox"}
+                isDropPulse={justDroppedKey === "inbox"}
+                dropProps={makeDropProps("inbox", {
                   kind: "inbox",
                   inboxSlug: null,
                   classificationKey: "support",
                 })}
-              >
-                <Link
-                  href="/inbox"
-                  className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-inherit no-underline"
+              />
+            ) : (
+              <SidebarMenuItem>
+                <div
+                  className={cn(
+                    "group relative flex items-center rounded-md text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                    activeView === "" && "bg-accent text-accent-foreground",
+                    dragOverKey === "inbox" &&
+                      "bg-primary/10 ring-2 ring-inset ring-primary text-foreground",
+                    justDroppedKey === "inbox" && "animate-inbox-drop"
+                  )}
+                  {...makeDropProps("inbox", {
+                    kind: "inbox",
+                    inboxSlug: null,
+                    classificationKey: "support",
+                  })}
                 >
-                  <Inbox className="h-4 w-4 shrink-0" />
-                  <span>Inbox</span>
-                  <CountBadge count={needsAttentionCount} />
-                </Link>
-                {!isCollapsed && (
+                  <Link
+                    href="/inbox"
+                    className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-inherit no-underline"
+                  >
+                    <Inbox className="h-4 w-4 shrink-0" />
+                    <span>Inbox</span>
+                    <CountBadge count={needsAttentionCount} />
+                  </Link>
                   <button
                     type="button"
                     onClick={(e) => {
@@ -235,9 +253,9 @@ export function NavQueue({
                       <ChevronRight className="h-3.5 w-3.5" />
                     )}
                   </button>
-                )}
-              </div>
-            </SidebarMenuItem>
+                </div>
+              </SidebarMenuItem>
+            )}
             {!isCollapsed && ticketsOpen && (
               <>
                 <QueueRow
