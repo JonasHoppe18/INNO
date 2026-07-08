@@ -3173,12 +3173,26 @@ export function InboxSplitView({
       const previousClassificationReason = previousThread.classification_reason || null;
 
       // If you dragged the ticket you're currently viewing into a folder,
-      // advance to the next one (Outlook/Superhuman-style) — done BEFORE the
-      // optimistic removal below, so selectNext still sees the moved ticket in
-      // the list and can pick its neighbor. Uses the ref (not selectedThreadId)
-      // so this handler doesn't re-register on every selection change.
+      // advance to the next one (Outlook/Superhuman-style). Must ALSO drop the
+      // moved ticket from the open workspace tabs — otherwise useThreadSelection's
+      // tab-reconciliation effect snaps selection right back to it (it re-asserts
+      // an open tab as selected once the ticket leaves the filtered list). So we
+      // pick the neighbor from the CURRENT list (next, else previous), point both
+      // selection AND the tabs at it, and remove the moved ticket's tab. Uses the
+      // ref for the "was selected" check so this handler doesn't re-register on
+      // every selection change.
       if (id === String(selectedThreadIdRef?.current || "").trim()) {
-        selectNext();
+        const idx = filteredThreads.findIndex((t) => String(t?.id) === id);
+        const neighbor =
+          idx >= 0 ? filteredThreads[idx + 1] || filteredThreads[idx - 1] : null;
+        const neighborId = neighbor?.id ? String(neighbor.id) : null;
+        setOpenThreadIds((prev) => {
+          const without = prev.filter((tabId) => String(tabId) !== id);
+          return neighborId && !without.includes(neighborId)
+            ? [neighborId, ...without]
+            : without;
+        });
+        setSelectedThreadId(neighborId);
       }
 
       setLiveThreads((prev) =>
@@ -3231,7 +3245,14 @@ export function InboxSplitView({
           toast.error(error.message || "Could not move ticket.");
         });
     },
-    [derivedThreads, knownInboxSlugs, selectNext, selectedThreadIdRef],
+    [
+      derivedThreads,
+      knownInboxSlugs,
+      filteredThreads,
+      selectedThreadIdRef,
+      setOpenThreadIds,
+      setSelectedThreadId,
+    ],
   );
 
   useEffect(() => registerThreadMoveHandler(moveThreadToInbox), [moveThreadToInbox]);
