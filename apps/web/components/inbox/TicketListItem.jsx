@@ -189,14 +189,20 @@ function TicketListItemComponent({
       )}
       style={{
         animationDelay: !isNew && !isExiting && mountIndex > 0 ? `${Math.min(mountIndex, 8) * 28}ms` : undefined,
+        // Exit: the row glides LEFT (toward the sidebar inboxes it's moving
+        // to) and fades, THEN the vertical gap closes — the max-height/padding
+        // collapse is delayed 130ms so the horizontal glide reads first and
+        // the list settling doesn't stomp on it. Outlook-style "flew to the
+        // folder, then the list closed up". Fully completes well inside the
+        // 520ms removal timer in TicketList.jsx.
         transition:
-          "opacity 200ms cubic-bezier(0.23,1,0.32,1), transform 200ms cubic-bezier(0.23,1,0.32,1), max-height 240ms cubic-bezier(0.23,1,0.32,1), padding 240ms cubic-bezier(0.23,1,0.32,1), background-color 150ms ease-out",
+          "opacity 260ms cubic-bezier(0.23,1,0.32,1), transform 300ms cubic-bezier(0.23,1,0.32,1), max-height 260ms cubic-bezier(0.23,1,0.32,1) 130ms, padding 260ms cubic-bezier(0.23,1,0.32,1) 130ms, background-color 150ms ease-out",
         opacity: isExiting ? 0 : isDragging ? 0.4 : 1,
         // Left unset (not forced to an identity value) so the active:scale-[0.99]
         // Tailwind class can still apply its own transform on press — an inline
         // transform always wins over a class, so forcing one here would silently
         // kill any transform utility on this element.
-        transform: isExiting ? "translateX(12px) scale(0.98)" : undefined,
+        transform: isExiting ? "translateX(-64px) scale(0.96)" : undefined,
         maxHeight: isExiting ? "0px" : "220px",
         paddingTop: isExiting ? "0px" : undefined,
         paddingBottom: isExiting ? "0px" : undefined,
