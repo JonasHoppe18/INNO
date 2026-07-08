@@ -177,11 +177,16 @@ function isUnreadThread(thread) {
 
 // Sidebar badge counts, unread-only across every bucket — a bucket with 20
 // threads but 0 unread reads as 0, never the total sitting in it. mineIds:
-// set of assignee ids counted as "assigned to me" (still scoped to the
-// needs_attention bucket, matching the existing "mine" view). knownInboxSlugs:
-// custom inbox slugs to tally separately, each defaulting to 0 so a slug with
-// no unread threads still appears in the result (callers render every known
-// inbox, not just ones with matches).
+// set of assignee ids counted as "assigned to me" (spans every inbox, like
+// the "mine" view). knownInboxSlugs: custom inbox slugs to tally separately,
+// each defaulting to 0 so a slug with no unread threads still appears in the
+// result (callers render every known inbox, not just ones with matches).
+//
+// The Inbox badge (needsAttentionCount) excludes threads that live in a
+// custom inbox — a ticket in Lager counts toward Lager, NOT the main Inbox,
+// exactly matching the folder-style default-Inbox view (which filters out
+// custom-inbox threads). Otherwise the Inbox badge and its list would
+// disagree.
 export function computeSidebarCounts(threads, { mineIds, knownInboxSlugs } = {}) {
   const ids = mineIds instanceof Set ? mineIds : new Set(mineIds || []);
   const slugs = Array.isArray(knownInboxSlugs) ? knownInboxSlugs : [];
@@ -202,11 +207,14 @@ export function computeSidebarCounts(threads, { mineIds, knownInboxSlugs } = {})
     }
     const tabKey = threadTab(thread);
     if (tabKey === "needs_attention") {
-      counts.needsAttentionCount += 1;
+      const slug = resolveInboxSlug(thread, slugs);
+      if (slug) {
+        counts.inboxUnreadCounts[slug] += 1;
+      } else {
+        counts.needsAttentionCount += 1;
+      }
       const assignee = String(thread?.assignee_id ?? "");
       if (assignee && ids.has(assignee)) counts.mineCount += 1;
-      const slug = resolveInboxSlug(thread, slugs);
-      if (slug) counts.inboxUnreadCounts[slug] += 1;
     } else if (tabKey === "waiting") {
       if (waitingGroup(thread) === "third_party") {
         counts.waitingThirdPartyCount += 1;

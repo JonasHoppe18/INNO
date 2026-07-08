@@ -1763,8 +1763,16 @@ export function InboxSplitView({
         scopedRows = needsAttentionQueue(inInbox);
       }
     } else {
-      // Default needs_attention view (resolvedView === "").
-      scopedRows = needsAttentionQueue(withEffectiveFields);
+      // Default Inbox view (resolvedView === ""). Excludes threads that live
+      // in a custom inbox (row.resolvedInboxSlug) — a ticket routed/dragged
+      // into e.g. Lager MOVES there and leaves the main Inbox, folder-style,
+      // rather than showing in both. Assigned-to-me / Waiting / Resolved
+      // stay cross-cutting (they span every inbox), so this exclusion is
+      // scoped to the default bucket only. Spam is already excluded via
+      // isNotification inside needsAttentionQueue.
+      scopedRows = needsAttentionQueue(
+        withEffectiveFields.filter((row) => !row.resolvedInboxSlug),
+      );
     }
 
     // Task 9 bugfix: thread row.effectiveClosePending through instead of the

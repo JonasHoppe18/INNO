@@ -387,6 +387,28 @@ describe("computeSidebarCounts", () => {
     expect(counts.inboxUnreadCounts.returns).toBe(1);
   });
 
+  it("a thread in a custom inbox counts toward that inbox, NOT the main Inbox", () => {
+    const knownInboxSlugs = ["returns"];
+    const counts = computeSidebarCounts(
+      [
+        { ...unread, id: "a", status: "needs_attention" }, // main Inbox
+        { ...unread, id: "b", status: "needs_attention", tags: ["inbox:returns"] }, // Lager-style
+      ],
+      { knownInboxSlugs },
+    );
+    expect(counts.needsAttentionCount).toBe(1);
+    expect(counts.inboxUnreadCounts.returns).toBe(1);
+  });
+
+  it("still counts a custom-inbox thread toward mine when it's assigned to me", () => {
+    const counts = computeSidebarCounts(
+      [{ ...unread, id: "a", status: "needs_attention", tags: ["inbox:returns"], assignee_id: "u1" }],
+      { mineIds: new Set(["u1"]), knownInboxSlugs: ["returns"] },
+    );
+    expect(counts.mineCount).toBe(1);
+    expect(counts.needsAttentionCount).toBe(0);
+  });
+
   it("defaults every count to 0 and every known inbox slug to 0 for an empty input", () => {
     const counts = computeSidebarCounts([], { knownInboxSlugs: ["returns"] });
     expect(counts).toEqual({
