@@ -501,25 +501,6 @@ export function useComposerState({
   ]);
 
   useEffect(() => {
-    if (!selectedThreadId || !draftReady || !latestRealMessageIsOutbound) return;
-    if (!draftValueRef.current) return;
-    if (!systemDraftUneditedRef.current[selectedThreadId]) return;
-    setDraftValue("");
-    setDraftValueByThread((prev) => ({
-      ...prev,
-      [selectedThreadId]: "",
-    }));
-    setSystemDraftUneditedByThread((prev) => ({
-      ...prev,
-      [selectedThreadId]: false,
-    }));
-    setSuppressAutoDraftByThread((prev) => ({
-      ...prev,
-      [selectedThreadId]: true,
-    }));
-  }, [draftReady, latestRealMessageIsOutbound, selectedThreadId]);
-
-  useEffect(() => {
     if (!selectedThreadId) return;
     if (!suppressAutoDraftByThread[selectedThreadId]) return;
     if (aiDraft || draftMessage) return;
