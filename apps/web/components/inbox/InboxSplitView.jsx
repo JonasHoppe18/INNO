@@ -2354,26 +2354,6 @@ export function InboxSplitView({
       window.dispatchEvent(new CustomEvent("sona:thread-read"));
     }
 
-    const currentState = ticketStateByThread[selectedThreadId];
-    if (
-      isNewSelection &&
-      (hasUnreadMessages || !thread.is_read) &&
-      currentState?.status === "New"
-    ) {
-      setTicketStateByThread((prev) => ({
-        ...prev,
-        [selectedThreadId]: {
-          ...prev[selectedThreadId],
-          status: "Open",
-        },
-      }));
-      fetch("/api/inbox/thread-status", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ threadId: selectedThreadId, status: "Open" }),
-      }).catch(() => null);
-    }
-
     if (isNewSelection && isUuid(selectedThreadId)) {
       fetch("/api/notifications", {
         method: "PATCH",
