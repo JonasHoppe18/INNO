@@ -238,19 +238,28 @@ export function NavQueue({
                 >
                   <Link
                     href="/inbox"
-                    className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 no-underline"
+                    className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 pr-8 no-underline"
                   >
                     <Inbox className="h-4 w-4 shrink-0" />
                     <span>Inbox</span>
                     <CountBadge count={needsAttentionCount} />
                   </Link>
+                  {/* Absolutely positioned (out of flex flow), at the same
+                      right-inset every other row's trailing icon uses — so
+                      the count badge above (ml-auto within the Link, which
+                      reserves pr-8 for this) lands in the same column as
+                      every INBOXES row's count, instead of sitting to the
+                      left of a flex-sibling chevron. Unlike those rows'
+                      hover-only configure icon, this stays always visible:
+                      collapsing Inbox is a persistent action, not a hover
+                      affordance. */}
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation()
                       setTicketsOpen((open) => !open)
                     }}
-                    className="mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+                    className="absolute right-1 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:text-foreground"
                     aria-label={ticketsOpen ? "Collapse" : "Expand"}
                   >
                     {ticketsOpen ? (
@@ -379,17 +388,18 @@ export function NavQueue({
                     >
                       <Link
                         href={href}
-                        className="flex min-w-0 flex-1 items-center gap-2 no-underline"
+                        className="flex min-w-0 flex-1 items-center gap-2 pr-8 no-underline"
                       >
                         <Inbox className="h-4 w-4 shrink-0" />
                         <span className="truncate">{inbox?.name || slug}</span>
                         <CountBadge count={count} fadeOnHover />
                       </Link>
-                      {/* Absolutely positioned (out of flex flow) so it never
-                          reserves layout width — otherwise the count above
-                          would sit closer in than every TICKETS row's count,
-                          since those rows have no trailing icon to make room
-                          for. Swaps in over the count on hover instead. */}
+                      {/* Absolutely positioned (out of flex flow), at the same
+                          right-inset the Inbox row's chevron uses — the Link
+                          above reserves pr-8 for it, so the count badge lands
+                          in the same column as every other row's count.
+                          Swaps in over the count on hover instead of staying
+                          always visible, unlike Inbox's chevron. */}
                       <button
                         type="button"
                         onClick={(e) => {
@@ -421,7 +431,7 @@ export function NavQueue({
                 >
                   <Link
                     href="/inbox?view=automated"
-                    className="flex min-w-0 flex-1 items-center gap-2 no-underline"
+                    className="flex min-w-0 flex-1 items-center gap-2 pr-8 no-underline"
                   >
                     <Inbox className="h-4 w-4 shrink-0" />
                     <span>Spam</span>
