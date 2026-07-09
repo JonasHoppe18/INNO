@@ -72,7 +72,7 @@ export function NavMain({ items }) {
                   asChild={!hasChildren}
                   tooltip={item.title}
                   className={cn(
-                    "group/entry justify-start text-muted-foreground",
+                    "group/entry justify-start text-foreground",
                     isActive &&
                       "bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground"
                   )}
@@ -90,7 +90,7 @@ export function NavMain({ items }) {
                       <Link
                         prefetch
                         href={item.url}
-                        className="flex flex-1 items-center gap-2 text-inherit no-underline"
+                        className="flex flex-1 items-center gap-2 no-underline"
                       >
                         {item.icon && <item.icon className="h-4 w-4" />}
                         <span>{item.title}</span>

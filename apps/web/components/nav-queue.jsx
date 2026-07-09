@@ -64,7 +64,7 @@ function QueueRow({ icon: Icon, label, href, active, count, muted, pl, dropProps
         asChild
         tooltip={label}
         className={cn(
-          "justify-start cursor-pointer text-muted-foreground",
+          "justify-start cursor-pointer text-foreground",
           pl,
           active && "bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground",
           isDropActive && "bg-primary/10 ring-2 ring-inset ring-primary text-foreground",
@@ -72,10 +72,11 @@ function QueueRow({ icon: Icon, label, href, active, count, muted, pl, dropProps
         )}
       >
         {/* No text-inherit here: with asChild this Link IS the button, so
-            text-inherit would inherit the sidebar root's darker
-            --sidebar-foreground and beat the button's text-muted-foreground
-            (Radix Slot concatenates classes without tailwind-merge). Dropping
-            it lets the muted color apply, matching the custom-div inbox rows. */}
+            text-inherit would inherit the sidebar root's --sidebar-foreground
+            and beat the button's own text color (Radix Slot concatenates
+            classes without tailwind-merge). Dropping it lets the button's
+            text-foreground apply, so every sidebar row renders the same
+            solid color. */}
         <Link
           href={href}
           className="flex w-full items-center gap-2 no-underline"
@@ -223,7 +224,7 @@ export function NavQueue({
               <SidebarMenuItem>
                 <div
                   className={cn(
-                    "group relative flex items-center rounded-md text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                    "group relative flex items-center rounded-md text-sm text-foreground hover:bg-accent hover:text-accent-foreground",
                     activeView === "" && "bg-accent text-accent-foreground",
                     dragOverKey === "inbox" &&
                       "bg-primary/10 ring-2 ring-inset ring-primary text-foreground",
@@ -237,7 +238,7 @@ export function NavQueue({
                 >
                   <Link
                     href="/inbox"
-                    className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-inherit no-underline"
+                    className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 no-underline"
                   >
                     <Inbox className="h-4 w-4 shrink-0" />
                     <span>Inbox</span>
@@ -360,7 +361,7 @@ export function NavQueue({
                   <SidebarMenuItem key={slug}>
                     <div
                       className={cn(
-                        "group/inbox relative flex items-center rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                        "group/inbox relative flex items-center rounded-md px-2 py-1.5 text-sm text-foreground hover:bg-accent hover:text-accent-foreground",
                         active && "bg-accent text-accent-foreground",
                         dragOverKey === dropKey &&
                           "bg-primary/10 ring-2 ring-inset ring-primary text-foreground",
@@ -378,7 +379,7 @@ export function NavQueue({
                     >
                       <Link
                         href={href}
-                        className="flex min-w-0 flex-1 items-center gap-2 text-inherit no-underline"
+                        className="flex min-w-0 flex-1 items-center gap-2 no-underline"
                       >
                         <Inbox className="h-4 w-4 shrink-0" />
                         <span className="truncate">{inbox?.name || slug}</span>
@@ -407,7 +408,7 @@ export function NavQueue({
               <SidebarMenuItem>
                 <div
                   className={cn(
-                    "group/inbox relative flex items-center rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                    "group/inbox relative flex items-center rounded-md px-2 py-1.5 text-sm text-foreground hover:bg-accent hover:text-accent-foreground",
                     isViewActive("automated") && "bg-accent text-accent-foreground",
                     dragOverKey === "spam" &&
                       "bg-primary/10 ring-2 ring-inset ring-primary text-foreground",
@@ -420,7 +421,7 @@ export function NavQueue({
                 >
                   <Link
                     href="/inbox?view=automated"
-                    className="flex min-w-0 flex-1 items-center gap-2 text-inherit no-underline"
+                    className="flex min-w-0 flex-1 items-center gap-2 no-underline"
                   >
                     <Inbox className="h-4 w-4 shrink-0" />
                     <span>Spam</span>
