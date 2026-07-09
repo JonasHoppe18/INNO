@@ -2986,7 +2986,7 @@ export function InboxSplitView({
               <ArrowUpRight className="h-3.5 w-3.5" />
             </button>
             {unreadThreadCount > 0 ? (
-              <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-sm bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground">
+              <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-sm bg-muted px-1.5 text-[11px] font-semibold text-muted-foreground">
                 {unreadThreadCount}
               </span>
             ) : null}
