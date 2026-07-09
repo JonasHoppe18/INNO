@@ -127,26 +127,17 @@ export function useComposerState({
     setComposerMode("reply");
   }, [selectedThreadId]);
 
-  // Clear the cached draft for the newly-selected thread UNLESS the user has
-  // local edits. The cached draft is often stale — the AI may have regenerated
-  // it server-side and the cache would otherwise show the old text. The next
-  // useEffect (loadDraft) fetches fresh.
+  // Keep the per-thread draft map across ticket switches. A draft can be
+  // generated or autosaved while the agent is switching away, so deleting the
+  // local entry here can make the composer briefly (or permanently) empty when
+  // the agent returns before the server response has landed.
   useEffect(() => {
     if (!selectedThreadId) return;
-    // Read from ref so this effect doesn't depend on systemDraftUneditedByThread.
-    const userHasEdits =
-      systemDraftUneditedRef.current[selectedThreadId] === false;
-    if (!userHasEdits) {
-      setDraftValueByThread((prev) => {
-        if (!(selectedThreadId in prev)) return prev;
-        const next = { ...prev };
-        delete next[selectedThreadId];
-        return next;
-      });
+    // A hover-prefetched server payload must never replace an in-session draft.
+    if (Object.prototype.hasOwnProperty.call(draftValueByThread, selectedThreadId)) {
       draftCacheRef.current.delete(selectedThreadId);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- draftCacheRef is a ref returned by useThreadSelection (backed by useRef); identity never changes.
-  }, [selectedThreadId]);
+  }, [draftCacheRef, draftValueByThread, selectedThreadId]);
 
   // Detail-fetch effect: hydrate draft state (signature/proposalOnly/draftValue/
   // systemDraftUnedited/activeDraftId/draftReady) and sentDraftStatsByThread from
@@ -311,17 +302,12 @@ export function useComposerState({
         return;
       }
       if (!selectedThreadId) return;
-      // Only skip the server fetch if we have BOTH a cached local value AND a
-      // confirmed server baseline (draftLastSavedRef set). Without the second
-      // guard, a stale cached draft can persist in the composer after a DB
-      // cleanup: draftLastSavedRef stays undefined, auto-save then sees
-      // trimmed !== "" and re-writes the old content back to the server. — 2026-05-26
+      // Once a thread has a local draft entry, keep it authoritative for this
+      // session. This prevents a slow/stale server response (including an
+      // empty response while a save is in flight) from clearing the composer
+      // during a ticket switch.
       if (
-        Object.prototype.hasOwnProperty.call(
-          draftValueByThread,
-          selectedThreadId,
-        ) &&
-        selectedThreadId in draftLastSavedRef.current
+        Object.prototype.hasOwnProperty.call(draftValueByThread, selectedThreadId)
       ) {
         setDraftReady(true);
         return;
