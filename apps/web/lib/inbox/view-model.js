@@ -6,6 +6,29 @@ export function getLifecycleStatus(thread) {
   return normalizeLifecycleStatus(thread?.status);
 }
 
+export const CANONICAL_STATUS_OPTIONS = [
+  { value: "needs_attention", label: "Needs attention" },
+  { value: "waiting_customer", label: "Waiting on customer" },
+  { value: "waiting_third_party", label: "Waiting on third party" },
+  { value: "resolved", label: "Resolved" },
+];
+
+// Canonical status key for the ticket-header status control. getLifecycleStatus
+// already folds legacy strings + canonical values down to the 4 lifecycle
+// statuses; the only thing it can't recover is the waiting subtype when the raw
+// status is a generic "waiting"/"waiting_customer" but waiting_reason says
+// third_party — so we layer that in explicitly.
+export function canonicalStatusOption(thread) {
+  const base = getLifecycleStatus(thread || {});
+  if (
+    (base === "waiting_customer" || base === "waiting_third_party") &&
+    String(thread?.waiting_reason || "").trim() === "third_party"
+  ) {
+    return "waiting_third_party";
+  }
+  return base;
+}
+
 export function threadTab(thread) {
   if (thread?.close_pending === true) return "needs_attention";
   const status = getLifecycleStatus(thread);
