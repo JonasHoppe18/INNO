@@ -74,7 +74,7 @@ export function NavMain({ items }) {
                   className={cn(
                     "group/entry justify-start text-foreground",
                     isActive &&
-                      "bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground"
+                      "bg-accent text-foreground hover:bg-accent hover:text-foreground"
                   )}
                   onClick={
                     hasChildren
@@ -111,7 +111,7 @@ export function NavMain({ items }) {
                         prefetch
                         href={child.url}
                         className={cn(
-                          "flex items-center gap-2 rounded-lg px-2 py-1 text-sm text-muted-foreground no-underline hover:bg-muted hover:text-foreground",
+                          "flex items-center gap-2 rounded-lg px-2 py-1 text-sm text-foreground no-underline hover:bg-muted hover:text-foreground",
                           pathname.startsWith(child.url) && "bg-muted text-foreground"
                         )}
                       >
