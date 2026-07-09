@@ -6,7 +6,7 @@ import { assigneeInitials, formatWakeCountdown } from "@/lib/inbox/view-model";
 import { THREAD_DRAG_MIME } from "@/lib/inbox/thread-drag-bridge";
 
 const STATUS_TEXT_STYLES = {
-  New: "text-green-600 dark:text-green-400",
+  New: "text-primary dark:text-primary",
   Open: "text-blue-600 dark:text-blue-400",
   Pending: "text-orange-500 dark:text-orange-400",
   Waiting: "text-violet-500 dark:text-violet-400",
