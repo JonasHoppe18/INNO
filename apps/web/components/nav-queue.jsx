@@ -224,7 +224,7 @@ export function NavQueue({
               <SidebarMenuItem>
                 <div
                   className={cn(
-                    "group relative flex items-center rounded-md text-sm text-foreground hover:bg-accent hover:text-foreground",
+                    "group/inbox relative flex items-center rounded-md text-sm text-foreground hover:bg-accent hover:text-foreground",
                     activeView === "" && "bg-accent text-foreground",
                     dragOverKey === "inbox" &&
                       "bg-primary/10 ring-2 ring-inset ring-primary text-foreground",
@@ -238,28 +238,28 @@ export function NavQueue({
                 >
                   <Link
                     href="/inbox"
-                    className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 pr-8 no-underline"
+                    className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 no-underline"
                   >
                     <Inbox className="h-4 w-4 shrink-0" />
                     <span>Inbox</span>
-                    <CountBadge count={needsAttentionCount} />
+                    <CountBadge count={needsAttentionCount} fadeOnHover />
                   </Link>
-                  {/* Absolutely positioned (out of flex flow), at the same
-                      right-inset every other row's trailing icon uses — so
-                      the count badge above (ml-auto within the Link, which
-                      reserves pr-8 for this) lands in the same column as
-                      every INBOXES row's count, instead of sitting to the
-                      left of a flex-sibling chevron. Unlike those rows'
-                      hover-only configure icon, this stays always visible:
-                      collapsing Inbox is a persistent action, not a hover
-                      affordance. */}
+                  {/* Absolutely positioned (out of flex flow) and hover-only,
+                      matching the Courier/Spam configure-gear pattern exactly
+                      — so the count badge above (ml-auto within the Link,
+                      which reserves no space for this) sits flush at the
+                      row's true right edge, same as every other row, instead
+                      of a permanently-reserved gutter creating dead space on
+                      rows with nothing to put there. The collapse toggle is
+                      used rarely (Inbox defaults open) — hover-reveal keeps
+                      it reachable without costing every row layout space. */}
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation()
                       setTicketsOpen((open) => !open)
                     }}
-                    className="absolute right-1 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+                    className="absolute right-1.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded opacity-0 transition-opacity duration-150 group-hover/inbox:opacity-100 text-muted-foreground hover:text-foreground"
                     aria-label={ticketsOpen ? "Collapse" : "Expand"}
                   >
                     {ticketsOpen ? (
@@ -388,18 +388,19 @@ export function NavQueue({
                     >
                       <Link
                         href={href}
-                        className="flex min-w-0 flex-1 items-center gap-2 pr-8 no-underline"
+                        className="flex min-w-0 flex-1 items-center gap-2 no-underline"
                       >
                         <Inbox className="h-4 w-4 shrink-0" />
                         <span className="truncate">{inbox?.name || slug}</span>
                         <CountBadge count={count} fadeOnHover />
                       </Link>
-                      {/* Absolutely positioned (out of flex flow), at the same
-                          right-inset the Inbox row's chevron uses — the Link
-                          above reserves pr-8 for it, so the count badge lands
-                          in the same column as every other row's count.
-                          Swaps in over the count on hover instead of staying
-                          always visible, unlike Inbox's chevron. */}
+                      {/* Absolutely positioned (out of flex flow) so it never
+                          reserves layout width — the count above sits flush
+                          at the row's true right edge (ml-auto, no reserved
+                          padding), matching every other row's count, incl.
+                          Inbox's (whose collapse chevron is now the same
+                          hover-only pattern as this button). Swaps in over
+                          the count on hover. */}
                       <button
                         type="button"
                         onClick={(e) => {
@@ -431,7 +432,7 @@ export function NavQueue({
                 >
                   <Link
                     href="/inbox?view=automated"
-                    className="flex min-w-0 flex-1 items-center gap-2 pr-8 no-underline"
+                    className="flex min-w-0 flex-1 items-center gap-2 no-underline"
                   >
                     <Inbox className="h-4 w-4 shrink-0" />
                     <span>Spam</span>
