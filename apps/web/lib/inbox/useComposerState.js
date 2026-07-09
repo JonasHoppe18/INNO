@@ -1097,6 +1097,23 @@ export function useComposerState({
     ],
   );
 
+  // Auto-generated drafts must be persisted as soon as they become visible.
+  // The regular 4s autosave is a safety net for manual edits, but waiting for
+  // it lets a fast ticket switch lose the generated draft before the next
+  // ticket load can recover it.
+  useEffect(() => {
+    if (!selectedThreadId || !draftReady || !aiDraft) return;
+    if (isLocalThreadId(selectedThreadId)) return;
+    const trimmed = String(aiDraft || "").trim();
+    if (!trimmed) return;
+    if (draftLastSavedRef.current[selectedThreadId] === trimmed) return;
+    saveThreadDraft({
+      immediate: true,
+      threadIdOverride: selectedThreadId,
+      valueOverride: aiDraft,
+    });
+  }, [aiDraft, draftReady, isLocalThreadId, saveThreadDraft, selectedThreadId]);
+
   // Auto-save tick fires every 4s. THREAD-SWITCH SAFETY INVARIANT:
   //
   // It looks like this could race with a thread switch (tick fires mid-switch
