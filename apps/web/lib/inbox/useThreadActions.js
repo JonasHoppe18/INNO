@@ -538,7 +538,7 @@ export function useThreadActions({
       // When a ticket is resolved/closed it disappears from the current view —
       // automatically advance to the next visible ticket instead of leaving an
       // orphaned selection with nothing highlighted in the list.
-      if (updates.status === "Solved") {
+      if (updates.status === "resolved" || updates.status === "Solved") {
         // Trigger AI solution summary generation (fire-and-forget)
         fetch(
           `/api/threads/${encodeURIComponent(selectedThreadId)}/solution-summary`,

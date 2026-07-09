@@ -36,6 +36,8 @@ import { useSiteHeaderActions } from "@/components/site-header-actions";
 import { reportClientEvent } from "@/lib/client-events";
 import { toLegacyUiStatus } from "@/lib/inbox/status-model";
 import {
+  CANONICAL_STATUS_OPTIONS,
+  canonicalStatusOption,
   computeSidebarCounts,
   getLifecycleStatus,
   groupNeedsAttentionThreads,
@@ -89,7 +91,7 @@ import {
 } from "lucide-react";
 
 const DEFAULT_TICKET_STATE = {
-  status: "New",
+  status: null,
   assignee: null,
   priority: null,
 };
@@ -129,7 +131,6 @@ class InboxContentBoundary extends Component {
   }
 }
 
-const STATUS_OPTIONS = ["New", "Open", "Pending", "Waiting", "Solved"];
 const UNASSIGNED_ASSIGNEE_VALUE = "__unassigned__";
 const APPROVAL_ACTION_TYPES = new Set([
   "update_shipping_address",
@@ -279,6 +280,7 @@ function InboxHeaderActions({
   senderRuleSourceEmail,
   tagsRefreshTrigger,
   ticketState,
+  canonicalStatus,
   assignmentOptions,
   selectedAssignmentValue,
   inboxOptions,
@@ -326,39 +328,39 @@ function InboxHeaderActions({
     if (!value) return "";
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? value : "";
   }, [senderRuleSourceEmail]);
-  const statusStylesByStatus = {
-    New: "bg-green-50 text-green-700 border-green-200",
-    Open: "bg-blue-50 text-blue-700 border-blue-200",
-    Pending: "bg-orange-50 text-orange-700 border-orange-200",
-    Waiting: "bg-violet-50 text-violet-700 border-violet-200",
-    Solved: "bg-red-50 text-red-700 border-red-200",
-  };
   if (!ticketState) return null;
-  const statusLabel =
-    ticketState.status === "Solved" ? "Resolved" : ticketState.status;
-  const statusStyles =
-    statusStylesByStatus[ticketState.status] || statusStylesByStatus.Open;
+  const currentStatus = canonicalStatus || "needs_attention";
+  const currentLabel =
+    CANONICAL_STATUS_OPTIONS.find((o) => o.value === currentStatus)?.label ||
+    "Needs attention";
+  const statusStylesByStatus = {
+    needs_attention: "bg-blue-50 text-blue-700 border-blue-200",
+    waiting_customer: "bg-violet-50 text-violet-700 border-violet-200",
+    waiting_third_party: "bg-amber-50 text-amber-700 border-amber-200",
+    resolved: "bg-green-50 text-green-700 border-green-200",
+  };
+  const statusStyles = statusStylesByStatus[currentStatus] || statusStylesByStatus.needs_attention;
   return (
     <div className="flex items-center gap-2">
       <Select
-        value={ticketState.status}
+        value={currentStatus}
         onValueChange={(value) => onTicketStateChange({ status: value })}
       >
         <SelectTrigger
           aria-label="Ticket status"
           className={`h-auto w-auto cursor-pointer gap-1.5 rounded-md border px-3 py-1 text-xs font-medium ${statusStyles}`}
         >
-          {ticketState.status === "Solved" ? (
+          {currentStatus === "resolved" ? (
             <CheckCircle2 className="h-3.5 w-3.5" />
           ) : (
             <CheckCircle className="h-3.5 w-3.5" />
           )}
-          <SelectValue placeholder={statusLabel} />
+          <SelectValue placeholder={currentLabel} />
         </SelectTrigger>
         <SelectContent>
-          {STATUS_OPTIONS.map((option) => (
-            <SelectItem key={option} value={option}>
-              {option}
+          {CANONICAL_STATUS_OPTIONS.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
             </SelectItem>
           ))}
         </SelectContent>
@@ -2152,6 +2154,12 @@ export function InboxSplitView({
   }, [derivedThreads, openThreadIds]);
   const selectedTicketState =
     ticketStateByThread[selectedThreadId] || DEFAULT_TICKET_STATE;
+  const selectedCanonicalStatus = selectedTicketState?.status
+    ? canonicalStatusOption({
+        status: selectedTicketState.status,
+        waiting_reason: selectedThread?.waiting_reason,
+      })
+    : canonicalStatusOption(selectedThread || {});
   const memberLookupById = useMemo(() => {
     const map = new Map();
     (workspaceMembers || []).forEach((member) => {
@@ -3343,7 +3351,7 @@ export function InboxSplitView({
       if (event.key.toLowerCase() !== "e") return;
       if (!selectedThreadId || isLocalThreadId(selectedThreadId)) return;
       event.preventDefault();
-      handleTicketStateChange({ status: "Solved" });
+      handleTicketStateChange({ status: "resolved" });
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
@@ -3751,6 +3759,7 @@ export function InboxSplitView({
                   tagsRefreshTriggerByThread[selectedThreadId] || 0
                 }
                 ticketState={selectedTicketState}
+                canonicalStatus={selectedCanonicalStatus}
                 assignmentOptions={assignmentOptions}
                 selectedAssignmentValue={selectedAssignmentValue}
                 inboxOptions={inboxOptions}
