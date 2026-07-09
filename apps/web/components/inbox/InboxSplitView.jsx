@@ -3007,8 +3007,21 @@ export function InboxSplitView({
             tabs={openThreads}
             activeThreadId={selectedThreadId}
             unreadByThread={unreadByThread}
-            onSelectTab={setSelectedThreadId}
-            onCloseTab={closeThreadTab}
+            onSelectTab={(threadId) =>
+              handleSelectThreadInWorkspace(threadId, { newTab: false })
+            }
+            onCloseTab={(threadId) => {
+              const closingId = String(threadId || "").trim();
+              const activeId = String(selectedThreadIdRef.current || "").trim();
+              if (closingId && closingId === activeId) {
+                saveThreadDraft({
+                  immediate: true,
+                  threadIdOverride: closingId,
+                  valueOverride: draftValueRef.current,
+                });
+              }
+              closeThreadTab(threadId);
+            }}
             onAddTab={handleCreateTicket}
             inline
           />
@@ -3016,7 +3029,7 @@ export function InboxSplitView({
       </InboxContentBoundary>,
     );
     return () => setTitleContent(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- setSelectedThreadId is the stable setter returned by useThreadSelection (backed by useState); identity never changes, so omitting it matches the pre-extraction behavior when it was a local useState setter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- handleSelectThreadInWorkspace is declared below this title effect because it depends on composer state. The callback is created only when the effect runs, after the full render has initialized it.
   }, [
     closeThreadTab,
     handleViewAllTickets,

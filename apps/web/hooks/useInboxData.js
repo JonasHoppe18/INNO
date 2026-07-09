@@ -327,6 +327,7 @@ export function useThreadMessages(threadId, options = {}) {
         const response = await fetch(`/api/inbox/threads/${threadId}/detail`, {
           method: "GET",
           credentials: "include",
+          cache: "no-store",
           signal: abortController.signal,
         });
         if (response.ok) {
