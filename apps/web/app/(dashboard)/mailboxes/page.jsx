@@ -5,6 +5,7 @@ import { DashboardPageShell } from "@/components/dashboard-page-shell";
 import { MailboxRow } from "@/components/mailboxes/MailboxRow";
 import { MailboxesAddMenu } from "@/components/mailboxes/MailboxesAddMenu";
 import { MailboxesOnboardingTracker } from "@/components/onboarding/MailboxesOnboardingTracker";
+import { buildSharedSonaFromEmail } from "@/lib/server/sending-identity";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 
 const SUPABASE_URL =
@@ -27,7 +28,7 @@ async function loadMailAccounts(serviceClient, scope) {
     serviceClient
     .from("mail_accounts")
     .select(
-      "id, provider, provider_email, status, inbound_slug, sending_type, sending_domain, domain_status, domain_dns, from_email, from_name"
+      "id, provider, provider_email, status, inbound_slug, shop_id, sending_type, sending_domain, domain_status, domain_dns, from_email, from_name"
     )
     .in("provider", ["gmail", "outlook", "smtp"])
     .order("created_at", { ascending: true }),
@@ -46,11 +47,23 @@ export default async function MailboxesPage() {
 
   const serviceClient = createServiceClient();
   let mailAccounts = [];
+  const shopsById = new Map();
   if (serviceClient) {
     try {
       const scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
       if (scope.workspaceId || scope.supabaseUserId) {
         mailAccounts = await loadMailAccounts(serviceClient, scope);
+        const shopIds = Array.from(
+          new Set(mailAccounts.map((account) => account?.shop_id).filter(Boolean))
+        );
+        if (shopIds.length) {
+          const { data: shops, error: shopsError } = await serviceClient
+            .from("shops")
+            .select("id, shop_name, team_name, shop_domain")
+            .in("id", shopIds);
+          if (shopsError) throw new Error(shopsError.message);
+          for (const shop of shops || []) shopsById.set(shop.id, shop);
+        }
       }
     } catch (error) {
       console.error("Mailboxes mail account lookup failed:", error);
@@ -77,6 +90,10 @@ export default async function MailboxesPage() {
       domainDns: account.domain_dns || null,
       fromEmail: account.from_email || null,
       fromName: account.from_name || null,
+      sharedFromEmail: buildSharedSonaFromEmail({
+        shop: shopsById.get(account.shop_id) || null,
+        mailbox: account,
+      }),
     }));
 
   return (
@@ -119,6 +136,7 @@ export default async function MailboxesPage() {
                   domainDns={mailbox.domainDns}
                   fromEmail={mailbox.fromEmail}
                   fromName={mailbox.fromName}
+                  sharedFromEmail={mailbox.sharedFromEmail}
                 />
               ))}
             </div>

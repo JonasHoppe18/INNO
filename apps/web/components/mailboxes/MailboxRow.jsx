@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { Copy, Mail, ShieldCheck, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { SendingIdentityModal } from "@/components/mailboxes/SendingIdentityModal";
+import { SendingIdentityPanel } from "@/components/mailboxes/SendingIdentityPanel";
 import gmailLogo from "../../../../assets/Gmail-logo.webp";
 import outlookLogo from "../../../../assets/Outlook-logo.png";
 
@@ -42,6 +42,7 @@ export function MailboxRow({
   domainDns,
   fromEmail,
   fromName,
+  sharedFromEmail,
   // Optional: fires alongside router.refresh() so client-fetched consumers
   // (the Settings page's Mailboxes tab, which has no server-rendered data
   // for router.refresh() to re-run) can refetch instead of relying on it.
@@ -51,7 +52,6 @@ export function MailboxRow({
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [copyingForwarding, setCopyingForwarding] = useState(false);
   const [forwardingCopied, setForwardingCopied] = useState(false);
-  const [identityModalOpen, setIdentityModalOpen] = useState(false);
 
   const config = PROVIDER_CONFIG[provider] || {
     label: provider,
@@ -121,6 +121,8 @@ export function MailboxRow({
       ? "Custom domain verified"
       : sendingType === "custom"
       ? "Custom domain (pending verification)"
+      : sharedFromEmail
+      ? `Send from ${sharedFromEmail}`
       : "Send from sona-ai.dk";
   const sendingIdentityStyles =
     sendingType === "custom" && domainStatus === "verified"
@@ -217,55 +219,45 @@ export function MailboxRow({
         </div>
 
         {isForwarding ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2">
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                Sending identity
-              </p>
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs",
-                  sendingIdentityStyles
-                )}
-              >
-                <ShieldCheck className="h-3.5 w-3.5" />
-                {sendingIdentityLabel}
-              </span>
+          <div className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+              <div className={cn("mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border", sendingIdentityStyles)}>
+                <ShieldCheck className="h-4 w-4" />
+              </div>
+              <div className="min-w-0 space-y-1">
+                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Sending identity
+                </p>
+                <p className="break-all text-sm font-medium text-slate-900">{sendingIdentityLabel}</p>
               {sendingType === "custom" && fromEmail ? (
-                <span className="text-xs text-slate-600">
+                <p className="break-all text-xs text-slate-600">
                   {fromName ? `${fromName} ` : ""}
                   {fromEmail}
                   {sendingDomain ? ` (${sendingDomain})` : ""}
-                </span>
+                </p>
               ) : null}
+              </div>
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setIdentityModalOpen(true)}
-            >
-              Use my own domain
-            </Button>
           </div>
         ) : null}
-      </div>
 
-      <SendingIdentityModal
-        open={identityModalOpen}
-        onOpenChange={setIdentityModalOpen}
-        mailboxId={mailboxId}
-        initialSendingType={sendingType}
-        initialSendingDomain={sendingDomain}
-        initialDomainStatus={domainStatus}
-        initialDomainDns={domainDns}
-        initialFromEmail={fromEmail}
-        initialFromName={fromName}
-        onChanged={() => {
-          router.refresh();
-          onChanged?.();
-        }}
-      />
+        {isForwarding ? (
+          <SendingIdentityPanel
+            mailboxId={mailboxId}
+            initialSendingType={sendingType}
+            initialSendingDomain={sendingDomain}
+            initialDomainStatus={domainStatus}
+            initialDomainDns={domainDns}
+            initialFromEmail={fromEmail}
+            initialFromName={fromName}
+            sharedFromEmail={sharedFromEmail}
+            onChanged={() => {
+              router.refresh();
+              onChanged?.();
+            }}
+          />
+        ) : null}
+      </div>
     </>
   );
 }

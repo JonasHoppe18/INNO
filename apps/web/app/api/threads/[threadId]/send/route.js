@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 import { sendPostmarkEmail } from "@/lib/server/postmark";
 import { getReplyTargetEmail } from "@/lib/inbox/sender";
+import { buildSharedSonaFromEmail } from "@/lib/server/sending-identity";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 import { autoTagThread } from "@/lib/ai/autoTagThread";
 import { embedTexts } from "@/lib/server/shopify-policy-sync";
@@ -32,8 +33,6 @@ const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
 const MICROSOFT_CLIENT_ID = process.env.MICROSOFT_CLIENT_ID || "";
 const MICROSOFT_CLIENT_SECRET = process.env.MICROSOFT_CLIENT_SECRET || "";
 const MICROSOFT_TENANT_ID = process.env.MICROSOFT_TENANT_ID || "common";
-const POSTMARK_FROM_EMAIL =
-  process.env.POSTMARK_FROM_EMAIL || "support@sona-ai.dk";
 const POSTMARK_FROM_NAME = process.env.POSTMARK_FROM_NAME || "Sona";
 
 function createServiceClient() {
@@ -868,12 +867,12 @@ function buildFromAddress(name, email) {
   return `${safeName} <${email}>`;
 }
 
-function resolvePostmarkSender(mailbox, senderName) {
-  const safeSharedFromEmail = String(POSTMARK_FROM_EMAIL || "")
+function resolvePostmarkSender(mailbox, senderName, { shop = null } = {}) {
+  const safeSharedFromEmail = String(buildSharedSonaFromEmail({ shop, mailbox }) || "")
     .trim()
     .toLowerCase();
   if (!safeSharedFromEmail) {
-    throw new Error("POSTMARK_FROM_EMAIL is missing.");
+    throw new Error("Shared Sona sender email could not be resolved.");
   }
 
   const safeCustomFromEmail = String(mailbox?.from_email || "")
@@ -1254,6 +1253,19 @@ export async function POST(request, { params }) {
     return NextResponse.json({ error: "Mailbox not found." }, { status: 404 });
   }
 
+  let shop = null;
+  if (mailbox.shop_id) {
+    const { data: shopRow, error: shopError } = await serviceClient
+      .from("shops")
+      .select("id, shop_name, team_name, shop_domain")
+      .eq("id", mailbox.shop_id)
+      .maybeSingle();
+    if (shopError) {
+      console.warn("[threads/send] failed to load shop for sending identity", shopError.message);
+    }
+    shop = shopRow || null;
+  }
+
   let aiDraftText = "";
   if (scope?.workspaceId || supabaseUserId) {
     let aiQuery = serviceClient
@@ -1389,7 +1401,7 @@ export async function POST(request, { params }) {
         intended_bcc: bccEmails,
       });
     } else if (mailbox.provider === "smtp") {
-      const senderConfig = resolvePostmarkSender(mailbox, senderName);
+      const senderConfig = resolvePostmarkSender(mailbox, senderName, { shop });
       sentFromEmail = senderConfig.fromEmail;
       sentFromName = senderConfig.fromName;
       const references = (Array.isArray(inboundMessages) ? inboundMessages : [])

@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Copy } from "lucide-react";
+import { CheckCircle2, Copy, Globe2, MailCheck, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 
 function normalizeDomain(input) {
   return String(input || "").trim().toLowerCase().replace(/\.$/, "");
@@ -17,9 +17,7 @@ function getInitialStep(domainDns) {
     : "form";
 }
 
-export function SendingIdentityModal({
-  open,
-  onOpenChange,
+export function SendingIdentityPanel({
   mailboxId,
   initialSendingType,
   initialSendingDomain,
@@ -27,6 +25,7 @@ export function SendingIdentityModal({
   initialDomainDns,
   initialFromEmail,
   initialFromName,
+  sharedFromEmail,
   onChanged,
 }) {
   const [domain, setDomain] = useState(initialSendingDomain || "");
@@ -42,7 +41,6 @@ export function SendingIdentityModal({
   const [copiedKey, setCopiedKey] = useState(null);
 
   useEffect(() => {
-    if (!open) return;
     setDomain(initialSendingDomain || "");
     const normalizedDomain = normalizeDomain(initialSendingDomain || "");
     const normalizedFromEmail = String(initialFromEmail || "").trim().toLowerCase();
@@ -58,7 +56,6 @@ export function SendingIdentityModal({
     setDnsData(initialDomainDns || null);
     setStep(getInitialStep(initialDomainDns));
   }, [
-    open,
     initialSendingType,
     initialSendingDomain,
     initialFromEmail,
@@ -79,6 +76,9 @@ export function SendingIdentityModal({
     fromLocalPart.trim() && domainSuffix
       ? `${fromLocalPart.trim().toLowerCase()}${domainSuffix}`
       : null;
+  const activeFromEmail = isVerified
+    ? resolvedFromEmail || initialFromEmail
+    : sharedFromEmail || "kundeservice@webshop.sona-ai.dk";
 
   const handleSetup = async (event) => {
     event.preventDefault();
@@ -160,7 +160,6 @@ export function SendingIdentityModal({
       setSendingType("shared");
       toast.success("Shared sending enabled.");
       onChanged?.();
-      onOpenChange(false);
     } catch (error) {
       toast.error(error?.message || "Could not switch to shared sending.");
     } finally {
@@ -182,80 +181,111 @@ export function SendingIdentityModal({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[640px]">
-        <DialogHeader>
-          <DialogTitle>Use my own domain</DialogTitle>
-          <DialogDescription>
-            Verify your domain in DNS and then send replies from your own support email.
-          </DialogDescription>
-        </DialogHeader>
+    <section className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50/60">
+      <div className="border-b bg-white px-4 py-4">
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-lg border bg-slate-50 text-slate-700">
+            <Globe2 className="h-4 w-4" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-base font-semibold text-slate-950">Sending domain</h3>
+            <p className="text-sm text-slate-500">
+              Verify your own domain, or keep sending from the branded Sona fallback.
+            </p>
+          </div>
+        </div>
+      </div>
 
-        {hasDnsSetup ? (
-          <div className="space-y-4">
-            <div className="rounded-lg border bg-slate-50 px-4 py-3 text-sm text-slate-700">
-              Add these DNS records for <strong>{dnsData?.domain || domain}</strong>.
+      {hasDnsSetup ? (
+        <div className="space-y-5 p-4">
+            <div
+              className={cn(
+                "flex items-start gap-3 rounded-lg border px-4 py-3",
+                isVerified
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                  : "border-amber-200 bg-amber-50 text-amber-900"
+              )}
+            >
+              <div
+                className={cn(
+                  "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white",
+                  isVerified ? "text-emerald-600" : "text-amber-600"
+                )}
+              >
+                {isVerified ? <CheckCircle2 className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
+              </div>
+              <div className="min-w-0 space-y-1">
+                <p className="text-sm font-medium">
+                  {isVerified ? "Custom domain is verified" : "Waiting for DNS verification"}
+                </p>
+                <p className="text-sm leading-5">
+                  {isVerified
+                    ? `Sona will send from ${activeFromEmail}.`
+                    : `Until DNS is verified, Sona sends from ${activeFromEmail}.`}
+                </p>
+              </div>
             </div>
 
-            <div className="overflow-x-auto rounded-lg border">
-              <table className="w-full min-w-[560px] table-fixed text-sm">
-                <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                  <tr>
-                    <th className="w-24 px-3 py-2">Type</th>
-                    <th className="w-56 px-3 py-2">Host</th>
-                    <th className="px-3 py-2">Value</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {records.map((record, index) => (
-                    <tr key={`${record.type}-${record.host}-${index}`} className="border-t">
-                      <td className="px-3 py-2 font-medium">{record.type}</td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <code className="max-w-[190px] truncate">{record.host}</code>
+            <div className="space-y-3">
+              <div>
+                <h3 className="text-sm font-medium text-slate-900">DNS records for {dnsData?.domain || domain}</h3>
+                <p className="text-sm text-slate-500">
+                  Add these at your DNS provider, then check the status.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                {records.map((record, index) => (
+                  <div
+                    key={`${record.type}-${record.host}-${index}`}
+                    className="rounded-lg border bg-white p-3 shadow-sm"
+                  >
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
+                        {record.type}
+                      </span>
+                      <span className="text-xs text-slate-400">Record {index + 1}</span>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-[180px_1fr]">
+                      <div className="min-w-0 space-y-1">
+                        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Host</p>
+                        <div className="flex items-center gap-2 rounded-md bg-slate-50 px-2 py-1.5">
+                          <code className="min-w-0 flex-1 truncate text-xs text-slate-800">{record.host}</code>
                           <Button
                             type="button"
                             variant="ghost"
                             size="sm"
-                            className="h-7 px-2 text-xs"
+                            className="h-7 shrink-0 px-2 text-xs"
                             onClick={() => copyText(record.host)}
                           >
                             <Copy className="h-3.5 w-3.5" />
                             {copiedKey === record.host ? "Copied!" : "Copy"}
                           </Button>
                         </div>
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <code className="max-w-[280px] break-all text-xs leading-5 sm:max-w-[320px]">
-                            {record.value}
-                          </code>
+                      </div>
+                      <div className="min-w-0 space-y-1">
+                        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Value</p>
+                        <div className="flex items-start gap-2 rounded-md bg-slate-50 px-2 py-1.5">
+                          <code className="min-w-0 flex-1 break-all text-xs leading-5 text-slate-800">{record.value}</code>
                           <Button
                             type="button"
                             variant="ghost"
                             size="sm"
-                            className="h-7 px-2 text-xs"
+                            className="h-7 shrink-0 px-2 text-xs"
                             onClick={() => copyText(record.value)}
                           >
                             <Copy className="h-3.5 w-3.5" />
                             {copiedKey === record.value ? "Copied!" : "Copy"}
                           </Button>
                         </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
 
-            {isVerified ? (
-              <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                <CheckCircle2 className="h-4 w-4" />
-                Custom domain verified. Sona will now send from {resolvedFromEmail || initialFromEmail}.
-              </div>
-            ) : null}
-
-            <DialogFooter className="flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex flex-wrap items-center gap-2">
                 <Button
                   type="button"
@@ -279,63 +309,85 @@ export function SendingIdentityModal({
                 ) : null}
               </div>
               <div className="flex w-full justify-end gap-2 sm:w-auto">
-                <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="min-w-24">
-                  Close
-                </Button>
                 {!isVerified ? (
                   <Button type="button" onClick={handleCheckStatus} disabled={checking} className="min-w-32">
                     {checking ? "Checking..." : "Check status"}
                   </Button>
                 ) : null}
               </div>
-            </DialogFooter>
+            </div>
           </div>
         ) : (
-          <form onSubmit={handleSetup} className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">Domain</label>
-              <Input
-                value={domain}
-                onChange={(event) => setDomain(event.target.value)}
-                placeholder="company.com"
-                autoComplete="off"
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">From email (optional)</label>
-              <div className="flex items-center overflow-hidden rounded-md border border-input bg-background">
-                <Input
-                  value={fromLocalPart}
-                  onChange={(event) => setFromLocalPart(event.target.value.replace(/\s+/g, ""))}
-                  placeholder="support"
-                  autoComplete="off"
-                  className="rounded-none border-0 shadow-none focus-visible:ring-0"
-                />
-                <div className="px-3 text-sm text-slate-500">{domainSuffix || "@domain.com"}</div>
+          <form onSubmit={handleSetup} className="space-y-5 p-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-lg border bg-slate-50 p-4">
+                <div className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-900">
+                  <MailCheck className="h-4 w-4 text-slate-500" />
+                  Current sender
+                </div>
+                <p className="break-all text-sm text-slate-700">
+                  {sharedFromEmail || "kundeservice@webshop.sona-ai.dk"}
+                </p>
+                <p className="mt-2 text-xs leading-5 text-slate-500">
+                  Used automatically until your own domain is verified.
+                </p>
+              </div>
+              <div className="rounded-lg border bg-white p-4">
+                <div className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-900">
+                  <ShieldCheck className="h-4 w-4 text-slate-500" />
+                  Custom sender
+                </div>
+                <p className="break-all text-sm text-slate-700">
+                  {resolvedFromEmail || `support${domainSuffix || "@company.com"}`}
+                </p>
+                <p className="mt-2 text-xs leading-5 text-slate-500">
+                  Becomes active after DNS verification.
+                </p>
               </div>
             </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">From name (optional)</label>
-              <Input
-                value={fromName}
-                onChange={(event) => setFromName(event.target.value)}
-                placeholder="Customer Support"
-                autoComplete="off"
-              />
+
+            <div className="space-y-4 rounded-lg border bg-white p-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">Domain</label>
+                <Input
+                  value={domain}
+                  onChange={(event) => setDomain(event.target.value)}
+                  placeholder="company.com"
+                  autoComplete="off"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">From email</label>
+                <div className="flex items-center overflow-hidden rounded-md border border-input bg-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2">
+                  <Input
+                    value={fromLocalPart}
+                    onChange={(event) => setFromLocalPart(event.target.value.replace(/\s+/g, ""))}
+                    placeholder="support"
+                    autoComplete="off"
+                    className="rounded-none border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                  />
+                  <div className="shrink-0 border-l px-3 text-sm text-slate-500">{domainSuffix || "@domain.com"}</div>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">From name</label>
+                <Input
+                  value={fromName}
+                  onChange={(event) => setFromName(event.target.value)}
+                  placeholder="Customer Support"
+                  autoComplete="off"
+                />
+              </div>
             </div>
 
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                Cancel
-              </Button>
+            <div className="flex justify-end border-t pt-4">
               <Button type="submit" disabled={submitting}>
                 {submitting ? "Starting..." : "Start domain setup"}
               </Button>
-            </DialogFooter>
+            </div>
           </form>
         )}
-      </DialogContent>
-    </Dialog>
+    </section>
   );
 }

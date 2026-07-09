@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
+import { buildSharedSonaFromEmail } from "@/lib/server/sending-identity";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,7 @@ async function loadMailAccounts(serviceClient, scope) {
     serviceClient
       .from("mail_accounts")
       .select(
-        "id, provider, provider_email, status, inbound_slug, sending_type, sending_domain, domain_status, domain_dns, from_email, from_name"
+        "id, provider, provider_email, status, inbound_slug, shop_id, sending_type, sending_domain, domain_status, domain_dns, from_email, from_name"
       )
       .in("provider", ["gmail", "outlook", "smtp"])
       .order("created_at", { ascending: true }),
@@ -61,6 +62,18 @@ export async function GET() {
     }
 
     const mailAccounts = await loadMailAccounts(serviceClient, scope);
+    const shopIds = Array.from(
+      new Set(mailAccounts.map((account) => account?.shop_id).filter(Boolean))
+    );
+    const shopsById = new Map();
+    if (shopIds.length) {
+      const { data: shops, error: shopsError } = await serviceClient
+        .from("shops")
+        .select("id, shop_name, team_name, shop_domain")
+        .in("id", shopIds);
+      if (shopsError) throw new Error(shopsError.message);
+      for (const shop of shops || []) shopsById.set(shop.id, shop);
+    }
     const mailboxes = mailAccounts
       .filter((account) => account?.provider)
       .sort(
@@ -79,6 +92,10 @@ export async function GET() {
         domainDns: account.domain_dns || null,
         fromEmail: account.from_email || null,
         fromName: account.from_name || null,
+        sharedFromEmail: buildSharedSonaFromEmail({
+          shop: shopsById.get(account.shop_id) || null,
+          mailbox: account,
+        }),
       }));
 
     return NextResponse.json({ mailboxes }, { status: 200 });
