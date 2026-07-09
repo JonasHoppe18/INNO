@@ -58,6 +58,14 @@ as $$
   -- coalesces a NULL/absent workspace to the global default (7), so
   -- NULL-workspace_id threads are covered. A window of 0 disables the policy
   -- for that workspace (the > 0 guard skips those rows).
+  --
+  -- Interaction with step 1: a thread woken by step 1 in this same tick (its
+  -- wake_at fired, pulling it back to needs_attention) can be immediately
+  -- re-resolved here if last_message_at is already past the stale window —
+  -- i.e. a wake timer silently no-ops for a thread with no recent customer
+  -- activity. This is accepted as correct (a woken thread nobody has written
+  -- in for N days genuinely is stale) rather than a bug; it cannot loop or
+  -- corrupt state since this step's write is idempotent and terminal.
   with eff as (
     select t.id,
            coalesce(
