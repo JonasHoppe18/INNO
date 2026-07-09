@@ -66,7 +66,7 @@ function QueueRow({ icon: Icon, label, href, active, count, muted, pl, dropProps
         className={cn(
           "justify-start cursor-pointer text-foreground",
           pl,
-          active && "bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground",
+          active && "bg-accent text-foreground hover:bg-accent hover:text-foreground",
           isDropActive && "bg-primary/10 ring-2 ring-inset ring-primary text-foreground",
           isDropPulse && "animate-inbox-drop"
         )}
@@ -224,8 +224,8 @@ export function NavQueue({
               <SidebarMenuItem>
                 <div
                   className={cn(
-                    "group relative flex items-center rounded-md text-sm text-foreground hover:bg-accent hover:text-accent-foreground",
-                    activeView === "" && "bg-accent text-accent-foreground",
+                    "group relative flex items-center rounded-md text-sm text-foreground hover:bg-accent hover:text-foreground",
+                    activeView === "" && "bg-accent text-foreground",
                     dragOverKey === "inbox" &&
                       "bg-primary/10 ring-2 ring-inset ring-primary text-foreground",
                     justDroppedKey === "inbox" && "animate-inbox-drop"
@@ -370,8 +370,8 @@ export function NavQueue({
                   <SidebarMenuItem key={slug}>
                     <div
                       className={cn(
-                        "group/inbox relative flex items-center rounded-md px-2 py-1.5 text-sm text-foreground hover:bg-accent hover:text-accent-foreground",
-                        active && "bg-accent text-accent-foreground",
+                        "group/inbox relative flex items-center rounded-md px-2 py-1.5 text-sm text-foreground hover:bg-accent hover:text-foreground",
+                        active && "bg-accent text-foreground",
                         dragOverKey === dropKey &&
                           "bg-primary/10 ring-2 ring-inset ring-primary text-foreground",
                         justDroppedKey === dropKey && "animate-inbox-drop"
@@ -418,8 +418,8 @@ export function NavQueue({
               <SidebarMenuItem>
                 <div
                   className={cn(
-                    "group/inbox relative flex items-center rounded-md px-2 py-1.5 text-sm text-foreground hover:bg-accent hover:text-accent-foreground",
-                    isViewActive("automated") && "bg-accent text-accent-foreground",
+                    "group/inbox relative flex items-center rounded-md px-2 py-1.5 text-sm text-foreground hover:bg-accent hover:text-foreground",
+                    isViewActive("automated") && "bg-accent text-foreground",
                     dragOverKey === "spam" &&
                       "bg-primary/10 ring-2 ring-inset ring-primary text-foreground",
                     justDroppedKey === "spam" && "animate-inbox-drop"

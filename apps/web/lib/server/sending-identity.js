@@ -1,0 +1,59 @@
+const DEFAULT_SHARED_LOCAL_PART = "kundeservice";
+const DEFAULT_SHARED_DOMAIN = "sona-ai.dk";
+
+function asString(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeDanishCharacters(value) {
+  return String(value || "")
+    .replace(/æ/g, "ae")
+    .replace(/ø/g, "oe")
+    .replace(/å/g, "aa")
+    .replace(/Æ/g, "ae")
+    .replace(/Ø/g, "oe")
+    .replace(/Å/g, "aa");
+}
+
+export function slugifyDomainLabel(value, fallback = "webshop") {
+  const normalized = normalizeDanishCharacters(value)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 63)
+    .replace(/^-+|-+$/g, "");
+
+  return normalized || fallback;
+}
+
+export function shopLabelSource(shop = {}, mailbox = {}) {
+  const namedSource =
+    asString(shop?.shop_name) ||
+    asString(shop?.team_name) ||
+    asString(shop?.name);
+  if (namedSource) return namedSource;
+
+  const shopDomain = asString(shop?.shop_domain);
+  if (shopDomain) return shopDomain.replace(/^https?:\/\//i, "").split(".")[0];
+
+  const providerEmail = asString(mailbox?.provider_email);
+  const providerDomain = providerEmail.includes("@")
+    ? providerEmail.split("@").pop()
+    : "";
+  if (providerDomain) return providerDomain.split(".")[0];
+
+  return "webshop";
+}
+
+export function buildSharedSonaFromEmail({ shop = {}, mailbox = {} } = {}) {
+  const localPart = slugifyDomainLabel(
+    process.env.SONA_SHARED_FROM_LOCAL_PART || DEFAULT_SHARED_LOCAL_PART,
+    DEFAULT_SHARED_LOCAL_PART
+  );
+  const rootDomain = asString(process.env.SONA_SHARED_SENDING_DOMAIN) || DEFAULT_SHARED_DOMAIN;
+  const shopLabel = slugifyDomainLabel(shopLabelSource(shop, mailbox));
+  return `${localPart}@${shopLabel}.${rootDomain.toLowerCase()}`;
+}

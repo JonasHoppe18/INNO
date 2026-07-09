@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { decryptString } from "@/lib/server/shopify-oauth";
 import { sendPostmarkEmail } from "@/lib/server/postmark";
+import { buildSharedSonaFromEmail } from "@/lib/server/sending-identity";
 import { getEffectiveSenderEmail, getEffectiveSenderName, getReplyTargetEmail } from "@/lib/inbox/sender";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 
@@ -17,7 +18,6 @@ const SUPABASE_SERVICE_ROLE_KEY =
   "";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || "2024-07";
-const POSTMARK_FROM_EMAIL = process.env.POSTMARK_FROM_EMAIL || "support@sona-ai.dk";
 const POSTMARK_FROM_NAME = process.env.POSTMARK_FROM_NAME || "Sona";
 
 function createServiceClient() {
@@ -260,6 +260,43 @@ function extractOrderNumber(value = "") {
 }
 
 const asString = (value) => (typeof value === "string" ? value.trim() : "");
+function parseEmailDomain(email) {
+  const value = asString(email).toLowerCase();
+  const atIndex = value.lastIndexOf("@");
+  if (atIndex <= 0 || atIndex === value.length - 1) return null;
+  return value.slice(atIndex + 1);
+}
+
+async function loadShopForSendingIdentity(serviceClient, shopId) {
+  const safeShopId = asString(shopId);
+  if (!serviceClient || !safeShopId) return null;
+  const { data, error } = await serviceClient
+    .from("shops")
+    .select("id, shop_name, team_name, shop_domain")
+    .eq("id", safeShopId)
+    .maybeSingle();
+  if (error) {
+    console.warn("order-updates/accept: failed to load shop for sending identity", error.message);
+    return null;
+  }
+  return data || null;
+}
+
+function resolvePostmarkSender(mailbox, shop) {
+  const customFromEmail = asString(mailbox?.from_email).toLowerCase();
+  const sendingDomain = asString(mailbox?.sending_domain).toLowerCase();
+  const customIsAllowed =
+    mailbox?.sending_type === "custom" &&
+    mailbox?.domain_status === "verified" &&
+    customFromEmail &&
+    sendingDomain &&
+    parseEmailDomain(customFromEmail) === sendingDomain;
+
+  return customIsAllowed
+    ? customFromEmail
+    : buildSharedSonaFromEmail({ shop, mailbox });
+}
+
 const normalizeRegionLookupToken = (value) =>
   String(value || "")
     .normalize("NFD")
@@ -503,11 +540,12 @@ async function loadForwardingContext(serviceClient, scope, thread, payload) {
 
   let mailboxQuery = serviceClient
     .from("mail_accounts")
-    .select("id, provider_email, from_email, from_name")
+    .select("id, shop_id, provider_email, sending_type, sending_domain, domain_status, from_email, from_name")
     .eq("id", thread.mailbox_id)
     .limit(1);
   mailboxQuery = applyScope(mailboxQuery, scope);
   const { data: mailbox } = await mailboxQuery.maybeSingle();
+  const shop = await loadShopForSendingIdentity(serviceClient, mailbox?.shop_id);
 
   const sourceSubject = asString(inboundMessage?.subject || thread.subject || "Inbound message");
   const sourceBody = asString(inboundMessage?.body_text || inboundMessage?.body_html || "");
@@ -519,10 +557,7 @@ async function loadForwardingContext(serviceClient, scope, thread, payload) {
       : sourceFromEmail
     : "Unknown sender";
 
-  const fromEmail =
-    asString(mailbox?.from_email || "").toLowerCase() ||
-    asString(mailbox?.provider_email || "").toLowerCase() ||
-    POSTMARK_FROM_EMAIL;
+  const fromEmail = resolvePostmarkSender(mailbox, shop);
   const fromName = asString(mailbox?.from_name || "") || POSTMARK_FROM_NAME;
   return {
     sourceSubject,
@@ -573,21 +608,19 @@ async function loadLatestInboundMessage(serviceClient, scope, threadId) {
 async function loadMailboxSender(serviceClient, scope, mailboxId) {
   if (!mailboxId) {
     return {
-      fromEmail: POSTMARK_FROM_EMAIL,
+      fromEmail: buildSharedSonaFromEmail(),
       fromName: POSTMARK_FROM_NAME,
     };
   }
   let query = serviceClient
     .from("mail_accounts")
-    .select("id, provider_email, from_email, from_name")
+    .select("id, shop_id, provider_email, sending_type, sending_domain, domain_status, from_email, from_name")
     .eq("id", mailboxId)
     .limit(1);
   query = applyScope(query, scope);
   const { data } = await query.maybeSingle();
-  const fromEmail =
-    asString(data?.from_email || "").toLowerCase() ||
-    asString(data?.provider_email || "").toLowerCase() ||
-    POSTMARK_FROM_EMAIL;
+  const shop = await loadShopForSendingIdentity(serviceClient, data?.shop_id);
+  const fromEmail = resolvePostmarkSender(data, shop);
   const fromName = asString(data?.from_name || "") || POSTMARK_FROM_NAME;
   return { fromEmail, fromName };
 }

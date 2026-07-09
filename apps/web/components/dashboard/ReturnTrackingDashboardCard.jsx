@@ -19,6 +19,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { buildTrackingTimeline } from "@/components/inbox/tracking-utils";
 
 function returnTrackingStatusLabel(status) {
   const labels = {
@@ -85,7 +86,80 @@ function ticketHref(threadId) {
   return id ? `/inbox/tickets?thread=${encodeURIComponent(id)}` : "/inbox/tickets";
 }
 
-function ReturnTrackingRow({ ret, live, dense = false }) {
+function buildCarrierTrackingUrl({ carrier = "", trackingNumber = "", trackingUrl = "" } = {}) {
+  const directUrl = String(trackingUrl || "").trim();
+  if (directUrl) return directUrl;
+  const number = String(trackingNumber || "").trim();
+  if (!number) return "";
+  const encoded = encodeURIComponent(number);
+  const lower = String(carrier || "").toLowerCase();
+  if (lower.includes("bring")) return `https://www.bring.com/tracking?trackingNumber=${encoded}`;
+  if (lower.includes("gls")) return `https://gls-group.com/DK/da/pakkesporing?match=${encoded}`;
+  if (lower.includes("postnord")) return `https://www.postnord.dk/varktojer/track-trace?shipmentId=${encoded}`;
+  if (lower.includes("dhl")) return `https://www.dhl.com/global-en/home/tracking/tracking-express.html?submit=1&tracking-id=${encoded}`;
+  return "";
+}
+
+function DetailRow({ label, value }) {
+  return (
+    <div className="grid gap-1 sm:grid-cols-[140px_minmax(0,1fr)] sm:items-start">
+      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 break-words text-sm">{value || "—"}</dd>
+    </div>
+  );
+}
+
+function buildReturnTrackingTimeline(ret, live) {
+  if (live?.detail?.snapshot) {
+    return buildTrackingTimeline({
+      logs: [
+        {
+          id: `return-live-${ret?.id || "tracking"}`,
+          step_name: "carrier_tracking",
+          step_detail: JSON.stringify({
+            carrier: live.detail.carrier || ret?.carrier || "",
+            status: live.detail.statusText || live.detail.status || live.status || "",
+            snapshot: live.detail.snapshot,
+          }),
+          created_at: new Date().toISOString(),
+        },
+      ],
+      order: {
+        orderNumber: ret?.order_number || "",
+        tracking: {
+          number: ret?.tracking_number || "",
+          company: ret?.carrier || "",
+          status: live?.status || "",
+        },
+      },
+    });
+  }
+
+  if (live?.checkpoint || live?.error || ret?.suggested_action) {
+    return [
+      {
+        id: `return-fallback-${ret?.id || "tracking"}`,
+        title: live?.checkpoint || live?.error || ret?.suggested_action,
+        meta: ret?.carrier || "",
+        isCurrent: true,
+      },
+    ];
+  }
+
+  return [];
+}
+
+function TimelineDot({ current }) {
+  return (
+    <div
+      className={`size-2.5 rounded-full ${
+        current ? "bg-violet-500 ring-4 ring-violet-500/15" : "bg-border"
+      }`}
+    />
+  );
+}
+
+function ReturnTrackingRow({ ret, live, dense = false, onOpen }) {
   const ticketNumber = ret.mail_threads?.ticket_number
     ? `#${ret.mail_threads.ticket_number}`
     : ret.mail_thread_id?.slice(0, 8);
@@ -95,7 +169,18 @@ function ReturnTrackingRow({ ret, live, dense = false }) {
   const href = ticketHref(ret.mail_thread_id);
 
   return (
-    <div className={`flex items-center gap-3 ${dense ? "py-3" : "py-2.5"} first:pt-0 last:pb-0`}>
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpen?.(ret)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpen?.(ret);
+        }
+      }}
+      className={`flex cursor-pointer items-center gap-3 rounded-lg px-2 transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${dense ? "py-3" : "py-2.5"} first:pt-0 last:pb-0`}
+    >
       <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-violet-500/10">
         <PackageMinusIcon className="h-3.5 w-3.5 text-violet-600 dark:text-violet-400" />
       </span>
@@ -111,6 +196,7 @@ function ReturnTrackingRow({ ret, live, dense = false }) {
           {ret.mail_thread_id ? (
             <Link
               href={href}
+              onClick={(event) => event.stopPropagation()}
               className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-indigo-600 transition-colors hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300"
             >
               <TicketIcon className="size-3" />
@@ -139,12 +225,28 @@ export function ReturnTrackingDashboardCard({ rows = [] }) {
   const returnTrackingRows = useMemo(() => (Array.isArray(rows) ? rows : []), [rows]);
   const [liveById, setLiveById] = useState({});
   const [allOpen, setAllOpen] = useState(false);
+  const [selectedReturn, setSelectedReturn] = useState(null);
   const previewRows = useMemo(() => returnTrackingRows.slice(0, 5), [returnTrackingRows]);
+  const selectedLive = selectedReturn ? liveById[selectedReturn.id] || {} : {};
+  const selectedStatus = selectedReturn ? selectedLive.status || returnTrackingStatusLabel(selectedReturn.status) : "";
+  const selectedTrackingUrl = selectedReturn
+    ? buildCarrierTrackingUrl({
+        carrier: selectedReturn.carrier,
+        trackingNumber: selectedReturn.tracking_number,
+        trackingUrl: selectedReturn.tracking_url,
+      })
+    : "";
+  const selectedTimeline = selectedReturn ? buildReturnTrackingTimeline(selectedReturn, selectedLive) : [];
 
   const lookupRows = useMemo(
     () => returnTrackingRows.filter((row) => row?.mail_thread_id && row?.tracking_number).slice(0, 25),
     [returnTrackingRows],
   );
+
+  const openReturnDetail = (ret) => {
+    setAllOpen(false);
+    setSelectedReturn(ret);
+  };
 
   useEffect(() => {
     let active = true;
@@ -178,6 +280,7 @@ export function ReturnTrackingDashboardCard({ rows = [] }) {
               loading: false,
               status: status || "Unknown",
               checkpoint: latestCheckpoint(body.detail),
+              detail: body.detail,
             },
           }));
           return;
@@ -200,11 +303,11 @@ export function ReturnTrackingDashboardCard({ rows = [] }) {
   }, [lookupRows]);
 
   return (
-    <Card className={returnTrackingRows.length > 0 ? "border-violet-500/20" : ""}>
-      <CardHeader>
+    <Card className={`min-h-[340px] rounded-xl shadow-sm ${returnTrackingRows.length > 0 ? "border-violet-500/20" : ""}`}>
+      <CardHeader className="p-5 pb-3">
         <div className="flex items-start justify-between">
           <div>
-            <CardTitle>Returns on the way back</CardTitle>
+            <CardTitle className="text-lg">Returns on the way back</CardTitle>
             <CardDescription>Customer-provided return tracking awaiting review</CardDescription>
           </div>
           {returnTrackingRows.length > 0 && (
@@ -218,13 +321,15 @@ export function ReturnTrackingDashboardCard({ rows = [] }) {
           )}
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="p-5 pt-0">
         {returnTrackingRows.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No return tracking rows yet.</p>
+          <div className="flex min-h-[210px] items-center justify-center rounded-xl border border-dashed p-6 text-center">
+            <p className="text-sm text-muted-foreground">No return tracking rows yet.</p>
+          </div>
         ) : (
           <div className="divide-y divide-border">
             {previewRows.map((ret) => (
-              <ReturnTrackingRow key={ret.id} ret={ret} live={liveById[ret.id] || {}} />
+              <ReturnTrackingRow key={ret.id} ret={ret} live={liveById[ret.id] || {}} onOpen={openReturnDetail} />
             ))}
           </div>
         )}
@@ -243,7 +348,7 @@ export function ReturnTrackingDashboardCard({ rows = [] }) {
             ) : (
               <div className="divide-y divide-border">
                 {returnTrackingRows.map((ret) => (
-                  <ReturnTrackingRow key={ret.id} ret={ret} live={liveById[ret.id] || {}} dense />
+                  <ReturnTrackingRow key={ret.id} ret={ret} live={liveById[ret.id] || {}} dense onOpen={openReturnDetail} />
                 ))}
               </div>
             )}
@@ -253,6 +358,98 @@ export function ReturnTrackingDashboardCard({ rows = [] }) {
               Close
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={Boolean(selectedReturn)} onOpenChange={(open) => !open && setSelectedReturn(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Return tracking</DialogTitle>
+            <DialogDescription>
+              Live tracking details for the selected return.
+            </DialogDescription>
+          </DialogHeader>
+          {selectedReturn ? (
+            <div className="flex flex-col gap-4">
+              <div className="rounded-lg border bg-muted/30 p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">
+                      {selectedReturn.customer_name || selectedReturn.customer_email || "Unknown customer"}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {selectedReturn.order_number || "No order linked"} · {selectedReturn.carrier || "Carrier unknown"}
+                    </p>
+                  </div>
+                  <span className={`flex shrink-0 items-center gap-1 text-xs ${statusTone(selectedStatus).split(" ").slice(0, 2).join(" ")}`}>
+                    {selectedLive.loading ? (
+                      <Loader2Icon className="size-3 animate-spin" />
+                    ) : (
+                      <span className={`size-1.5 rounded-full ${statusTone(selectedStatus).split(" ").at(-1)}`} />
+                    )}
+                    {selectedStatus || "Unknown"}
+                  </span>
+                </div>
+              </div>
+
+              <dl className="flex flex-col gap-3">
+                <DetailRow label="Tracking number" value={selectedReturn.tracking_number} />
+                <DetailRow label="Carrier" value={selectedReturn.carrier} />
+                <DetailRow label="Latest update" value={selectedLive.loading ? "Checking live tracking..." : selectedLive.checkpoint || selectedLive.error || selectedReturn.suggested_action} />
+                <DetailRow label="Ticket" value={selectedReturn.mail_threads?.ticket_number ? `#${selectedReturn.mail_threads.ticket_number}` : selectedReturn.mail_thread_id} />
+                <DetailRow label="Created" value={formatTimeAgo(selectedReturn.created_at)} />
+              </dl>
+
+              <div className="border-t pt-4">
+                <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Tracking events
+                </p>
+                {selectedLive.loading ? (
+                  <div className="flex items-center gap-2 py-3 text-sm text-muted-foreground">
+                    <Loader2Icon className="size-4 animate-spin" />
+                    Loading tracking events...
+                  </div>
+                ) : selectedTimeline.length ? (
+                  <div>
+                    {selectedTimeline.map((event, index) => (
+                      <div key={event.id} className="flex gap-3">
+                        <div className="flex w-5 flex-col items-center pt-1">
+                          <TimelineDot current={event.isCurrent} />
+                          {index < selectedTimeline.length - 1 ? (
+                            <div className="mt-1 min-h-5 w-px flex-1 bg-border" />
+                          ) : null}
+                        </div>
+                        <div className="min-w-0 pb-4">
+                          <p className={`text-sm font-medium ${event.isCurrent ? "text-foreground" : "text-muted-foreground"}`}>
+                            {event.title}
+                          </p>
+                          {event.meta ? (
+                            <p className="mt-0.5 text-xs text-muted-foreground">{event.meta}</p>
+                          ) : null}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="py-3 text-sm text-muted-foreground">No tracking events available.</p>
+                )}
+              </div>
+
+              <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-end">
+                {selectedReturn.mail_thread_id ? (
+                  <Button variant="outline" size="sm" asChild>
+                    <Link href={ticketHref(selectedReturn.mail_thread_id)}>Open ticket</Link>
+                  </Button>
+                ) : null}
+                {selectedTrackingUrl ? (
+                  <Button size="sm" asChild>
+                    <a href={selectedTrackingUrl} target="_blank" rel="noreferrer">
+                      Open carrier tracking
+                    </a>
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
         </DialogContent>
       </Dialog>
     </Card>

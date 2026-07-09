@@ -2,10 +2,22 @@
 
 import Link from "next/link";
 import { useDeferredValue, useMemo, useState } from "react";
-import { Inbox, Search, SlidersHorizontal } from "lucide-react";
+import { CheckCircle2, Inbox, Search, Ticket, UserRound, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Separator } from "@/components/ui/separator";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -14,6 +26,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
+
+const FILTERS = [
+  { value: "all", label: "All" },
+  { value: "open", label: "Open" },
+  { value: "waiting", label: "Waiting" },
+  { value: "resolved", label: "Resolved" },
+  { value: "unassigned", label: "Unassigned" },
+];
 
 function formatAssignee(member = null) {
   if (!member) return "Unassigned";
@@ -47,6 +68,13 @@ function formatLastActivity(value) {
   });
 }
 
+function getTime(value) {
+  if (!value) return 0;
+  const date = new Date(value);
+  const time = date.getTime();
+  return Number.isNaN(time) ? 0 : time;
+}
+
 function normalizeStatusLabel(value) {
   const normalized = String(value || "").trim().toLowerCase();
   if (normalized === "solved" || normalized === "resolved") return "Resolved";
@@ -57,7 +85,7 @@ function normalizeStatusLabel(value) {
 }
 
 function statusClasses(status) {
-  if (status === "Resolved") return "border-red-200 bg-red-50 text-red-700";
+  if (status === "Resolved") return "border-green-200 bg-green-50 text-green-700";
   if (status === "Pending") return "border-orange-200 bg-orange-50 text-orange-700";
   if (status === "Waiting") return "border-violet-200 bg-violet-50 text-violet-700";
   if (status === "New") return "border-green-200 bg-green-50 text-green-700";
@@ -66,6 +94,9 @@ function statusClasses(status) {
 
 export function InboxTicketsTable({ threads = [], members = [] }) {
   const [query, setQuery] = useState("");
+  const [activeFilter, setActiveFilter] = useState("all");
+  const [assigneeFilter, setAssigneeFilter] = useState("all");
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
   const deferredQuery = useDeferredValue(query);
 
   const membersById = useMemo(() => {
@@ -77,8 +108,7 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
     return map;
   }, [members]);
 
-  const rows = useMemo(() => {
-    const normalizedQuery = String(deferredQuery || "").trim().toLowerCase();
+  const allRows = useMemo(() => {
     return (threads || [])
       .map((thread) => {
         const assigneeId = String(thread?.assignee_id || "").trim();
@@ -105,6 +135,36 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
           lastActivity,
         };
       })
+      .sort((a, b) => getTime(b.lastActivity) - getTime(a.lastActivity));
+  }, [membersById, threads]);
+
+  const filterCounts = useMemo(() => {
+    return {
+      all: allRows.length,
+      open: allRows.filter((row) => row.status !== "Resolved").length,
+      waiting: allRows.filter((row) => row.status === "Waiting" || row.status === "Pending").length,
+      resolved: allRows.filter((row) => row.status === "Resolved").length,
+      unassigned: allRows.filter((row) => row.assigneeLabel === "Unassigned").length,
+    };
+  }, [allRows]);
+
+  const assigneeOptions = useMemo(() => {
+    return Array.from(new Set(allRows.map((row) => row.assigneeLabel))).sort((a, b) =>
+      a.localeCompare(b)
+    );
+  }, [allRows]);
+
+  const rows = useMemo(() => {
+    const normalizedQuery = String(deferredQuery || "").trim().toLowerCase();
+    return allRows
+      .filter((row) => {
+        if (activeFilter === "open") return row.status !== "Resolved";
+        if (activeFilter === "waiting") return row.status === "Waiting" || row.status === "Pending";
+        if (activeFilter === "resolved") return row.status === "Resolved";
+        if (activeFilter === "unassigned") return row.assigneeLabel === "Unassigned";
+        return true;
+      })
+      .filter((row) => assigneeFilter === "all" || row.assigneeLabel === assigneeFilter)
       .filter((row) => {
         if (!normalizedQuery) return true;
         const ticketMatch = normalizedQuery.startsWith("t-")
@@ -119,88 +179,219 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
             .includes(normalizedQuery)
         );
       });
-  }, [deferredQuery, membersById, threads]);
+  }, [activeFilter, allRows, assigneeFilter, deferredQuery]);
+
+  const visibleRowIds = useMemo(() => rows.map((row) => row.id).filter(Boolean), [rows]);
+  const selectedVisibleCount = visibleRowIds.filter((id) => selectedIds.has(id)).length;
+  const allVisibleSelected = visibleRowIds.length > 0 && selectedVisibleCount === visibleRowIds.length;
+  const selectedCount = selectedIds.size;
+  const firstSelectedId = selectedIds.values().next().value || "";
+
+  function setAllVisibleSelected(checked) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      visibleRowIds.forEach((id) => {
+        if (checked) next.add(id);
+        else next.delete(id);
+      });
+      return next;
+    });
+  }
+
+  function setRowSelected(id, checked) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
 
   return (
-    <div className="min-h-full bg-[radial-gradient(circle_at_top_left,rgba(15,23,42,0.04),transparent_28%),linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)]">
-      <div className="border-b border-slate-200 bg-white/88 backdrop-blur">
-        <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 px-6 py-6 lg:px-10">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                <Inbox className="h-3.5 w-3.5" />
-                Inbox overview
-              </div>
-              <h1 className="mt-3 text-4xl font-semibold tracking-tight text-slate-950">Tickets</h1>
-              <p className="mt-2 max-w-2xl text-sm text-slate-500">
-                Browse every conversation in one long operational view and jump back into the inbox when needed.
-              </p>
+    <div className="min-h-full bg-muted/30">
+      <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-4 px-5 py-5 lg:px-8">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+              <Inbox className="size-4" />
+              Inbox overview
             </div>
-            <div className="text-sm text-slate-500">{rows.length} tickets</div>
+            <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">Tickets</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Search, filter, and jump into customer conversations.
+            </p>
           </div>
-
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-            <div className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm">
-              <Inbox className="h-4 w-4" />
-              Inbox
-            </div>
-            <div className="relative min-w-0 flex-1">
-              <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <Input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search tickets..."
-                className="h-11 rounded-xl border-slate-200 bg-white pl-11 text-sm shadow-sm"
-              />
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              className="h-11 justify-start gap-2 rounded-xl border-slate-200 bg-white px-4 text-slate-700 shadow-sm"
-              disabled
-            >
-              <SlidersHorizontal className="h-4 w-4" />
-              Filters
-            </Button>
-          </div>
+          <Button asChild className="w-full justify-center lg:w-auto">
+            <Link href="/inbox">
+              Open inbox
+              <Inbox className="size-4" />
+            </Link>
+          </Button>
         </div>
-      </div>
 
-      <div className="mx-auto w-full max-w-[1600px] px-6 py-6 lg:px-10">
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_18px_40px_-24px_rgba(15,23,42,0.18)]">
-          <div className="overflow-x-auto">
-            <Table>
+        <Card className="overflow-hidden rounded-lg border-border shadow-sm">
+          <CardHeader className="gap-4 p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <div className="rounded-lg border bg-background px-3 py-2">
+                  <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                    <Ticket className="size-3.5" />
+                    Total
+                  </div>
+                  <div className="mt-1 text-xl font-semibold">{filterCounts.all}</div>
+                </div>
+                <div className="rounded-lg border bg-background px-3 py-2">
+                  <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                    <Inbox className="size-3.5" />
+                    Open
+                  </div>
+                  <div className="mt-1 text-xl font-semibold">{filterCounts.open}</div>
+                </div>
+                <div className="rounded-lg border bg-background px-3 py-2">
+                  <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                    <UserRound className="size-3.5" />
+                    Unassigned
+                  </div>
+                  <div className="mt-1 text-xl font-semibold">{filterCounts.unassigned}</div>
+                </div>
+                <div className="rounded-lg border bg-background px-3 py-2">
+                  <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                    <CheckCircle2 className="size-3.5" />
+                    Resolved
+                  </div>
+                  <div className="mt-1 text-xl font-semibold">{filterCounts.resolved}</div>
+                </div>
+              </div>
+
+              <div className="text-sm text-muted-foreground">
+                Showing <span className="font-medium text-foreground">{rows.length}</span> of{" "}
+                <span className="font-medium text-foreground">{allRows.length}</span>
+              </div>
+            </div>
+
+            <Separator />
+
+            <div className="grid min-w-0 grid-cols-1 gap-2 xl:grid-cols-[auto_minmax(0,1fr)_auto]">
+              <Tabs value={activeFilter} onValueChange={setActiveFilter} className="min-w-0 overflow-x-auto">
+                <TabsList className="h-10 justify-start">
+                  {FILTERS.map((filter) => (
+                    <TabsTrigger key={filter.value} value={filter.value} className="gap-2">
+                      {filter.label}
+                      <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                        {filterCounts[filter.value]}
+                      </span>
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </Tabs>
+
+              <div className="grid min-w-0 grid-cols-1 gap-2 md:grid-cols-[minmax(0,1fr)_220px]">
+                <div className="relative min-w-0">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder="Search by subject, ticket ID, assignee..."
+                    className="h-10 pl-9"
+                  />
+                </div>
+
+                <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
+                  <SelectTrigger className="h-10">
+                    <SelectValue placeholder="Assigned to" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="all">All assignees</SelectItem>
+                      {assigneeOptions.map((assignee) => (
+                        <SelectItem key={assignee} value={assignee}>
+                          {assignee}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                className="h-10 justify-start gap-2"
+                onClick={() => {
+                  setQuery("");
+                  setActiveFilter("all");
+                  setAssigneeFilter("all");
+                }}
+              >
+                <X className="size-4" />
+                Clear filters
+              </Button>
+            </div>
+          </CardHeader>
+
+          <CardContent className="p-0">
+            {selectedCount > 0 ? (
+              <div className="flex flex-col gap-2 border-t bg-muted/40 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="text-sm font-medium">
+                  {selectedCount} ticket{selectedCount === 1 ? "" : "s"} selected
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Button type="button" variant="outline" size="sm" onClick={() => setSelectedIds(new Set())}>
+                    Clear selection
+                  </Button>
+                  <Button asChild size="sm">
+                    <Link href={`/inbox?thread=${encodeURIComponent(firstSelectedId)}`}>Open selected</Link>
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+
+            <Table className="table-fixed">
               <TableHeader className="sticky top-0 z-10 bg-white">
                 <TableRow className="border-b border-slate-200 bg-slate-50/70 hover:bg-slate-50/70">
-                  <TableHead className="min-w-[420px]">Subject</TableHead>
-                  <TableHead className="w-[180px]">Status</TableHead>
-                  <TableHead className="w-[260px]">Assigned</TableHead>
-                  <TableHead className="w-[180px]">Created</TableHead>
-                  <TableHead className="w-[180px]">Last Activity</TableHead>
+                  <TableHead className="w-12 px-5 py-3">
+                    <Checkbox
+                      checked={allVisibleSelected ? true : selectedVisibleCount > 0 ? "indeterminate" : false}
+                      onCheckedChange={(checked) => setAllVisibleSelected(checked === true)}
+                      aria-label="Select visible tickets"
+                    />
+                  </TableHead>
+                  <TableHead className="w-[56%] px-5 py-3">Conversation</TableHead>
+                  <TableHead className="w-[14%] px-5 py-3">Status</TableHead>
+                  <TableHead className="w-[26%] px-5 py-3">Owner and timing</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-              {rows.length ? (
-                rows.map((row) => (
-                  <TableRow key={row.id} className="border-b border-slate-200/80 hover:bg-slate-50/60">
-                    <TableCell className="align-top">
-                      <Link href={`/inbox?thread=${encodeURIComponent(row.id)}`} className="block py-1">
-                        <div
-                          className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-[0.06em] ${
-                            row.ticketRef !== "No ticket ID"
-                              ? "border border-indigo-200 bg-gradient-to-b from-indigo-50 to-white font-mono text-indigo-700"
-                              : "border border-slate-200 bg-slate-50 text-slate-500"
-                          }`}
-                        >
-                          {row.ticketRef}
-                        </div>
-                        <div className="font-medium text-slate-900">{row.subject}</div>
-                          <div className="mt-1 line-clamp-2 text-sm leading-6 text-slate-500">
+                {rows.length ? (
+                  rows.map((row) => (
+                    <TableRow key={row.id} className="border-b border-slate-200/80 hover:bg-slate-50/60">
+                      <TableCell className="px-5 py-4 align-top">
+                        <Checkbox
+                          checked={selectedIds.has(row.id)}
+                          onCheckedChange={(checked) => setRowSelected(row.id, checked === true)}
+                          aria-label={`Select ${row.ticketRef}`}
+                        />
+                      </TableCell>
+                      <TableCell className="px-5 py-4 align-top">
+                        <Link href={`/inbox?thread=${encodeURIComponent(row.id)}`} className="block min-w-0">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <div
+                              className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-[0.06em] ${
+                                row.ticketRef !== "No ticket ID"
+                                  ? "border border-indigo-200 bg-indigo-50 font-mono text-indigo-700"
+                                  : "border border-slate-200 bg-slate-50 text-slate-500"
+                              }`}
+                            >
+                              {row.ticketRef}
+                            </div>
+                            <div className="truncate font-medium text-foreground">{row.subject}</div>
+                          </div>
+                          <div className="mt-1 line-clamp-2 text-sm leading-6 text-muted-foreground">
                             {row.snippet || "No preview available."}
                           </div>
                         </Link>
                       </TableCell>
-                      <TableCell className="align-top">
+                      <TableCell className="px-5 py-4 align-top">
                         <Badge
                           variant="outline"
                           className={`mt-1 rounded-full px-2.5 py-1 text-xs font-semibold ${statusClasses(row.status)}`}
@@ -208,22 +399,33 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
                           {row.status}
                         </Badge>
                       </TableCell>
-                      <TableCell className="align-top text-slate-600">{row.assigneeLabel}</TableCell>
-                      <TableCell className="align-top text-slate-500">{formatCreated(row.createdAt)}</TableCell>
-                      <TableCell className="align-top text-slate-500">{formatLastActivity(row.lastActivity)}</TableCell>
+                      <TableCell className="px-5 py-4 align-top text-sm">
+                        <div
+                          className={cn(
+                            "font-medium",
+                            row.assigneeLabel === "Unassigned" ? "text-orange-700" : "text-foreground"
+                          )}
+                        >
+                          {row.assigneeLabel}
+                        </div>
+                        <div className="mt-1 text-muted-foreground">Created {formatCreated(row.createdAt)}</div>
+                        <div className="text-muted-foreground">
+                          Last activity {formatLastActivity(row.lastActivity)}
+                        </div>
+                      </TableCell>
                     </TableRow>
                   ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={5} className="h-28 text-center text-sm text-slate-500">
-                    No tickets matched your search.
-                  </TableCell>
-                </TableRow>
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={4} className="h-28 text-center text-sm text-slate-500">
+                      No tickets match this view.
+                    </TableCell>
+                  </TableRow>
                 )}
               </TableBody>
             </Table>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

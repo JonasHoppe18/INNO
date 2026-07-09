@@ -65,6 +65,7 @@ export function MailboxesSettingsTab() {
                   domainDns={mailbox.domainDns}
                   fromEmail={mailbox.fromEmail}
                   fromName={mailbox.fromName}
+                  sharedFromEmail={mailbox.sharedFromEmail}
                   onChanged={loadMailboxes}
                 />
               ))}
