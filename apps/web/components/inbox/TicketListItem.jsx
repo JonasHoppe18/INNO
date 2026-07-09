@@ -180,12 +180,10 @@ function TicketListItemComponent({
         "relative flex w-full flex-col gap-0.5 px-4 py-2 text-left hover:bg-muted/50 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
         isDraggable && "cursor-grab active:cursor-grabbing",
         isNew ? "animate-ticket-enter" : !isExiting && "animate-list-item-enter",
-        isUnread && "bg-primary/5 hover:bg-primary/10",
-        // A brand-tinted wash (not gray) so a selected row stays visually
-        // distinct even while a different row is hovered at the same time —
-        // a different hue reads as "selected" faster than a darker gray, and
-        // a light tint feels lighter than a flat solid fill.
-        isActive && "bg-primary/10",
+        // Outlook-style state language: unread is a lightweight emphasis,
+        // while the selected ticket gets the stronger rail + lavender wash.
+        isUnread && "bg-violet-50/40 hover:bg-violet-50 dark:bg-violet-500/[0.06] dark:hover:bg-violet-500/[0.1]",
+        isActive && "bg-violet-50 hover:bg-violet-100/70 dark:bg-violet-500/[0.14] dark:hover:bg-violet-500/[0.2] before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-violet-600 dark:before:bg-violet-400",
         isExiting && "pointer-events-none"
       )}
       style={{
@@ -212,7 +210,13 @@ function TicketListItemComponent({
       aria-pressed={isActive}
     >
       <div className="flex items-center gap-2">
-        <span className={cn("min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground", isUnread && "text-primary")}>
+        {isUnread ? (
+          <span
+            aria-label="Unread"
+            className="size-1.5 shrink-0 rounded-full bg-violet-600 dark:bg-violet-400"
+          />
+        ) : null}
+        <span className={cn("min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground", isUnread && "font-bold text-foreground")}>
           {customerLabel}
         </span>
         <span className="shrink-0 text-[12px] text-muted-foreground">{formatMessageTime(timestamp)}</span>

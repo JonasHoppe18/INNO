@@ -173,23 +173,29 @@ export function useComposerState({
         [selectedThreadId]: detailDraftPayload.proposal_only === true,
       }));
       const draft = detailDraftPayload.draft || null;
-      if (draft?.id) setActiveDraftId(draft.id);
-      if (
-        !Object.prototype.hasOwnProperty.call(draftValueByThread, selectedThreadId)
-      ) {
-        const draftText = draft?.body_text || draft?.body_html || "";
-        setDraftValue(draftText);
-        setDraftValueByThread((prev) => ({
-          ...prev,
-          [selectedThreadId]: draftText,
-        }));
-        setSystemDraftUneditedByThread((prev) => ({
-          ...prev,
-          [selectedThreadId]: Boolean(draftText),
-        }));
-        draftLastSavedRef.current[selectedThreadId] = String(draftText || "").trim();
+      // The detail endpoint always returns a draft payload wrapper, even when
+      // there is no persisted draft. Only hydrate the composer when the
+      // wrapper contains an actual draft row; otherwise the dedicated draft
+      // fetch below must still be allowed to run.
+      if (draft && typeof draft === "object") {
+        if (draft?.id) setActiveDraftId(draft.id);
+        if (
+          !Object.prototype.hasOwnProperty.call(draftValueByThread, selectedThreadId)
+        ) {
+          const draftText = draft?.body_text || draft?.body_html || "";
+          setDraftValue(draftText);
+          setDraftValueByThread((prev) => ({
+            ...prev,
+            [selectedThreadId]: draftText,
+          }));
+          setSystemDraftUneditedByThread((prev) => ({
+            ...prev,
+            [selectedThreadId]: Boolean(draftText),
+          }));
+          draftLastSavedRef.current[selectedThreadId] = String(draftText || "").trim();
+        }
+        setDraftReady(true);
       }
-      setDraftReady(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- draftValueByThread is intentionally omitted: it's only read once for a "first-time-seeing-this-thread" guard. Including it in deps caused React error #185 (Maximum update depth exceeded) pre-extraction — every composer keystroke mutates draftValueByThread, which would re-run this effect and fire fresh-object-ref setStates on every keystroke. Preserved verbatim from InboxSplitView.jsx.
   }, [
@@ -326,6 +332,8 @@ export function useComposerState({
         ? { ok: true, json: async () => cachedDraftPayload }
         : await fetch(`/api/threads/${selectedThreadId}/draft`, {
             method: "GET",
+            cache: "no-store",
+            credentials: "include",
           }).catch(() => null);
       if (!active) return;
       if (!res?.ok) {
@@ -355,6 +363,18 @@ export function useComposerState({
       const hasExistingLocalDraft = Boolean(
         existingThreadDraft.trim() || activeThreadDraft.trim(),
       );
+      const hasLocalUserEdits =
+        Object.prototype.hasOwnProperty.call(draftValueByThread, selectedThreadId) &&
+        systemDraftUneditedRef.current[selectedThreadId] === false;
+
+      // A quick ticket switch can finish the server request after the agent
+      // has already typed in this thread. Keep that local value authoritative
+      // until autosave catches up; an older server draft must not overwrite it.
+      if (hasLocalUserEdits) {
+        setDraftReady(true);
+        return;
+      }
+
       if (proposalOnly && !draft) {
         // Guard: never clobber an existing local draft when server says proposal_only + no draft.
         // This can happen due timing/race between thread refreshes and draft fetches.
@@ -445,7 +465,7 @@ export function useComposerState({
         return;
       if (
         messagesFetchedForThreadId === selectedThreadId &&
-        selectedThreadDetail?.draft
+        selectedThreadDetail?.draft?.draft
       ) {
         setDraftReady(true);
         return;
