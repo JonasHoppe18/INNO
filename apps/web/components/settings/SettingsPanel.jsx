@@ -37,6 +37,7 @@ import {
   SUPPORT_LANGUAGE_LABELS,
   normalizeSupportLanguage,
 } from "@/lib/translation/languages";
+import { normalizeStaleDays, DEFAULT_STALE_DAYS } from "@/lib/inbox/stale-days";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
@@ -351,6 +352,8 @@ function GeneralTab({
   onSupportLanguageChange,
   closeSuggestionDelayHours,
   onCloseSuggestionDelayHoursChange,
+  needsAttentionStaleDays,
+  onNeedsAttentionStaleDaysChange,
   hasWorkspaceScope,
   onSave,
   onReset,
@@ -479,6 +482,29 @@ function GeneralTab({
               value={closeSuggestionDelayHours}
               onChange={(e) => onCloseSuggestionDelayHoursChange(e.target.value)}
               placeholder="336"
+              className="h-9 text-sm"
+              disabled={!hasWorkspaceScope}
+            />
+          </StoreTeamRow>
+          <StoreTeamRow
+            icon={Clock}
+            label="Auto-resolve inbox tickets"
+            description="Inbox tickets with no new customer activity for this many days move to Resolved automatically. Set to 0 to disable."
+            value={
+              Number(needsAttentionStaleDays) === 0
+                ? "Disabled"
+                : `${needsAttentionStaleDays} days`
+            }
+            editing={isEditing}
+          >
+            <Input
+              type="number"
+              min={0}
+              max={365}
+              step={1}
+              value={needsAttentionStaleDays}
+              onChange={(e) => onNeedsAttentionStaleDaysChange(e.target.value)}
+              placeholder="7"
               className="h-9 text-sm"
               disabled={!hasWorkspaceScope}
             />
@@ -2734,6 +2760,12 @@ export function SettingsPanel() {
   const [initialCloseSuggestionDelayHours, setInitialCloseSuggestionDelayHours] = useState(
     String(DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS)
   );
+  const [needsAttentionStaleDays, setNeedsAttentionStaleDays] = useState(
+    String(DEFAULT_STALE_DAYS)
+  );
+  const [initialNeedsAttentionStaleDays, setInitialNeedsAttentionStaleDays] = useState(
+    String(DEFAULT_STALE_DAYS)
+  );
   const [members, setMembers] = useState([]);
   const [workspaceCurrentRole, setWorkspaceCurrentRole] = useState("");
   const [canManageWorkspaceMembers, setCanManageWorkspaceMembers] = useState(false);
@@ -2913,6 +2945,8 @@ export function SettingsPanel() {
         setInitialSupportLanguage("en");
         setCloseSuggestionDelayHours(String(DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS));
         setInitialCloseSuggestionDelayHours(String(DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS));
+        setNeedsAttentionStaleDays(String(DEFAULT_STALE_DAYS));
+        setInitialNeedsAttentionStaleDays(String(DEFAULT_STALE_DAYS));
         setMembers([]);
         setWorkspaceCurrentRole("");
         setCanManageWorkspaceMembers(false);
@@ -2942,11 +2976,15 @@ export function SettingsPanel() {
       setInitialTestEmail("");
       setCloseSuggestionDelayHours(String(DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS));
       setInitialCloseSuggestionDelayHours(String(DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS));
+      setNeedsAttentionStaleDays(String(DEFAULT_STALE_DAYS));
+      setInitialNeedsAttentionStaleDays(String(DEFAULT_STALE_DAYS));
       if (!workspaceId) {
         setSupportLanguage("en");
         setInitialSupportLanguage("en");
         setCloseSuggestionDelayHours(String(DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS));
         setInitialCloseSuggestionDelayHours(String(DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS));
+        setNeedsAttentionStaleDays(String(DEFAULT_STALE_DAYS));
+        setInitialNeedsAttentionStaleDays(String(DEFAULT_STALE_DAYS));
       }
 
       const memberOwnerId = shopRow?.owner_user_id ?? supabaseUserId;
@@ -3027,6 +3065,9 @@ export function SettingsPanel() {
         const resolvedCloseSuggestionDelayHours = String(
           normalizeCloseSuggestionDelayHours(testModePayload?.close_suggestion_delay_hours)
         );
+        const resolvedNeedsAttentionStaleDays = String(
+          normalizeStaleDays(testModePayload?.needs_attention_stale_days)
+        );
         setTestMode(resolvedTestMode);
         setInitialTestMode(resolvedTestMode);
         setTestEmail(resolvedTestEmail);
@@ -3035,6 +3076,8 @@ export function SettingsPanel() {
         setInitialSupportLanguage(resolvedSupportLanguage);
         setCloseSuggestionDelayHours(resolvedCloseSuggestionDelayHours);
         setInitialCloseSuggestionDelayHours(resolvedCloseSuggestionDelayHours);
+        setNeedsAttentionStaleDays(resolvedNeedsAttentionStaleDays);
+        setInitialNeedsAttentionStaleDays(resolvedNeedsAttentionStaleDays);
       }
       if (workspaceId && personaResponse?.ok) {
         const resolved = String(personaPayload?.instructions || "").trim();
@@ -3152,10 +3195,13 @@ export function SettingsPanel() {
       normalizeSupportLanguage(supportLanguage) !== normalizeSupportLanguage(initialSupportLanguage) ||
       normalizeCloseSuggestionDelayHours(closeSuggestionDelayHours) !==
         normalizeCloseSuggestionDelayHours(initialCloseSuggestionDelayHours) ||
+      normalizeStaleDays(needsAttentionStaleDays) !== normalizeStaleDays(initialNeedsAttentionStaleDays) ||
       String(aiPrompt || "").trim() !== String(initialAiPrompt || "").trim(),
     [
       closeSuggestionDelayHours,
       initialCloseSuggestionDelayHours,
+      needsAttentionStaleDays,
+      initialNeedsAttentionStaleDays,
       initialAiPrompt,
       initialSupportLanguage,
       initialTeamName,
@@ -3182,6 +3228,7 @@ export function SettingsPanel() {
       const nextCloseSuggestionDelayHours = normalizeCloseSuggestionDelayHours(
         closeSuggestionDelayHours
       );
+      const nextNeedsAttentionStaleDays = normalizeStaleDays(needsAttentionStaleDays);
       if (workspaceId) {
         const { error: workspaceNameError } = await supabase
           .from("workspaces")
@@ -3198,6 +3245,7 @@ export function SettingsPanel() {
             test_email: nextTestEmail,
             support_language: nextSupportLanguage,
             close_suggestion_delay_hours: nextCloseSuggestionDelayHours,
+            needs_attention_stale_days: nextNeedsAttentionStaleDays,
           }),
         });
         const testModePayload = await testModeResponse.json().catch(() => ({}));
@@ -3211,10 +3259,15 @@ export function SettingsPanel() {
           testModePayload?.close_suggestion_delay_hours,
           nextCloseSuggestionDelayHours
         );
+        const persistedNeedsAttentionStaleDays = normalizeStaleDays(
+          testModePayload?.needs_attention_stale_days ?? nextNeedsAttentionStaleDays
+        );
         setSupportLanguage(persistedSupportLanguage);
         setInitialSupportLanguage(persistedSupportLanguage);
         setCloseSuggestionDelayHours(String(persistedCloseSuggestionDelayHours));
         setInitialCloseSuggestionDelayHours(String(persistedCloseSuggestionDelayHours));
+        setNeedsAttentionStaleDays(String(persistedNeedsAttentionStaleDays));
+        setInitialNeedsAttentionStaleDays(String(persistedNeedsAttentionStaleDays));
       } else if (shopId) {
         const { error } = await supabase.from("shops").update({ team_name: nextTeamName }).eq("id", shopId);
         if (error) throw error;
@@ -3244,6 +3297,8 @@ export function SettingsPanel() {
         setInitialSupportLanguage(nextSupportLanguage);
         setCloseSuggestionDelayHours(String(DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS));
         setInitialCloseSuggestionDelayHours(String(DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS));
+        setNeedsAttentionStaleDays(String(DEFAULT_STALE_DAYS));
+        setInitialNeedsAttentionStaleDays(String(DEFAULT_STALE_DAYS));
       }
       toast.success("Settings saved.");
     } catch (error) {
@@ -3264,6 +3319,7 @@ export function SettingsPanel() {
     supabase,
     supportLanguage,
     closeSuggestionDelayHours,
+    needsAttentionStaleDays,
     teamName,
     testEmail,
     testMode,
@@ -3278,10 +3334,14 @@ export function SettingsPanel() {
     setCloseSuggestionDelayHours(
       String(normalizeCloseSuggestionDelayHours(initialCloseSuggestionDelayHours))
     );
+    setNeedsAttentionStaleDays(
+      String(normalizeStaleDays(initialNeedsAttentionStaleDays))
+    );
     setAiPrompt(String(initialAiPrompt || ""));
   }, [
     initialAiPrompt,
     initialCloseSuggestionDelayHours,
+    initialNeedsAttentionStaleDays,
     initialSupportLanguage,
     initialTeamName,
     initialTestEmail,
@@ -4064,6 +4124,8 @@ export function SettingsPanel() {
             onSupportLanguageChange={setSupportLanguage}
             closeSuggestionDelayHours={closeSuggestionDelayHours}
             onCloseSuggestionDelayHoursChange={setCloseSuggestionDelayHours}
+            needsAttentionStaleDays={needsAttentionStaleDays}
+            onNeedsAttentionStaleDaysChange={setNeedsAttentionStaleDays}
             hasWorkspaceScope={Boolean(workspaceId)}
             onSave={handleSaveGeneral}
             onReset={handleResetGeneral}
