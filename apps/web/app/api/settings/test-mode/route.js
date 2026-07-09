@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { resolveAuthScope } from "@/lib/server/workspace-auth";
 import { normalizeSupportLanguage } from "@/lib/translation/languages";
+import { normalizeStaleDays, DEFAULT_STALE_DAYS } from "@/lib/inbox/stale-days";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -50,7 +51,7 @@ function normalizeCloseSuggestionDelayHours(value) {
 async function getWorkspaceSettings(serviceClient, workspaceId) {
   let query = await serviceClient
     .from("workspaces")
-    .select("id, test_mode, test_email, support_language, close_suggestion_delay_hours")
+    .select("id, test_mode, test_email, support_language, close_suggestion_delay_hours, needs_attention_stale_days")
     .eq("id", workspaceId)
     .maybeSingle();
   if (query.error?.code === "42703") {
@@ -68,6 +69,9 @@ async function getWorkspaceSettings(serviceClient, workspaceId) {
     support_language: normalizeSupportLanguage(data?.support_language || "en"),
     close_suggestion_delay_hours: normalizeCloseSuggestionDelayHours(
       data?.close_suggestion_delay_hours
+    ),
+    needs_attention_stale_days: normalizeStaleDays(
+      data?.needs_attention_stale_days ?? DEFAULT_STALE_DAYS
     ),
   };
 }
@@ -92,6 +96,7 @@ export async function GET() {
           test_email: null,
           support_language: "en",
           close_suggestion_delay_hours: DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS,
+          needs_attention_stale_days: DEFAULT_STALE_DAYS,
           workspace_found: false,
         },
         { status: 200 }
@@ -142,6 +147,7 @@ export async function PUT(request) {
     const closeSuggestionDelayHours = normalizeCloseSuggestionDelayHours(
       body?.close_suggestion_delay_hours
     );
+    const needsAttentionStaleDays = normalizeStaleDays(body?.needs_attention_stale_days);
 
     const { error: updateError } = await serviceClient
       .from("workspaces")
@@ -150,6 +156,7 @@ export async function PUT(request) {
         test_email: testEmail,
         support_language: supportLanguage,
         close_suggestion_delay_hours: closeSuggestionDelayHours,
+        needs_attention_stale_days: needsAttentionStaleDays,
         updated_at: nowIso,
       })
       .eq("id", scope.workspaceId);
@@ -158,7 +165,8 @@ export async function PUT(request) {
       const message = String(updateError.message || "");
       if (
         message.includes("updated_at") ||
-        message.includes("close_suggestion_delay_hours")
+        message.includes("close_suggestion_delay_hours") ||
+        message.includes("needs_attention_stale_days")
       ) {
         const fallback = await serviceClient
           .from("workspaces")
