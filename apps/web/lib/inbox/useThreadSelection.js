@@ -307,6 +307,7 @@ export function useThreadSelection({
       fetch(`/api/inbox/threads/${encodeURIComponent(threadId)}/detail`, {
         method: "GET",
         credentials: "include",
+        cache: "no-store",
       })
         .then((res) => (res.ok ? res.json() : null))
         .then((payload) => {

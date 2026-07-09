@@ -684,6 +684,8 @@ export function useThreadActions({
         for (let attempt = 0; attempt < 6; attempt += 1) {
           const draftRes = await fetch(`/api/threads/${threadId}/draft`, {
             method: "GET",
+            cache: "no-store",
+            credentials: "include",
           }).catch(() => null);
           if (draftRes?.ok) {
             const draftPayload = await draftRes.json().catch(() => ({}));
