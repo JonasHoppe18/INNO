@@ -1,5 +1,6 @@
-const DEFAULT_SHARED_LOCAL_PART = "kundeservice";
+const DEFAULT_SHARED_LOCAL_PART = "support";
 const DEFAULT_SHARED_DOMAIN = "sona-ai.dk";
+const DEFAULT_SHARED_FROM_EMAIL = `${DEFAULT_SHARED_LOCAL_PART}@${DEFAULT_SHARED_DOMAIN}`;
 
 function asString(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -49,11 +50,23 @@ export function shopLabelSource(shop = {}, mailbox = {}) {
 }
 
 export function buildSharedSonaFromEmail({ shop = {}, mailbox = {} } = {}) {
+  const configuredFromEmail = asString(process.env.POSTMARK_FROM_EMAIL).toLowerCase();
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(configuredFromEmail)) {
+    return configuredFromEmail;
+  }
+
   const localPart = slugifyDomainLabel(
     process.env.SONA_SHARED_FROM_LOCAL_PART || DEFAULT_SHARED_LOCAL_PART,
     DEFAULT_SHARED_LOCAL_PART
   );
   const rootDomain = asString(process.env.SONA_SHARED_SENDING_DOMAIN) || DEFAULT_SHARED_DOMAIN;
-  const shopLabel = slugifyDomainLabel(shopLabelSource(shop, mailbox));
-  return `${localPart}@${shopLabel}.${rootDomain.toLowerCase()}`;
+  const normalizedRootDomain = rootDomain.toLowerCase().replace(/^\.+|\.+$/g, "");
+  if (!normalizedRootDomain) return DEFAULT_SHARED_FROM_EMAIL;
+
+  // Postmark verifies the shared root domain. Per-shop subdomains are separate
+  // sender identities and are rejected unless each subdomain is configured in
+  // Postmark, so workspace branding belongs in the display name/Reply-To.
+  void shop;
+  void mailbox;
+  return `${localPart}@${normalizedRootDomain}`;
 }
