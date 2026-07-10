@@ -255,8 +255,28 @@ function trimAtSignature(lines: string[]): string[] {
   return kept;
 }
 
+// Shopify contact-form relays wrap the customer's real message in form
+// scaffolding whose "What Is Your Request Regarding?" dropdown value (e.g.
+// "Partnership") routinely poisons routing — customers pick arbitrary
+// categories, and the dropdown word sits early in the excerpt while the actual
+// message (the "Body:" field) gets truncated away. When the text looks like a
+// structured form (≥2 known labels) and has a non-empty Body field, classify
+// on the customer's own words only. A genuine partnership pitch keeps its
+// signal because those words appear in the Body itself.
+const CONTACT_FORM_LABEL_PATTERN =
+  /^(?:country code|name|email|e-mail|phone|telefon|company \/ team|your country|if applicable[^:\n]*|what is your request regarding\??|what do you need help with\??|message|body)\s*:/gim;
+
+function extractContactFormMessage(text: string): string {
+  const value = String(text || "");
+  const labels = value.match(CONTACT_FORM_LABEL_PATTERN);
+  if (!labels || labels.length < 2) return value;
+  const bodyMatch = value.match(/^body:\s*([\s\S]+)$/im);
+  const body = bodyMatch?.[1]?.trim();
+  return body || value;
+}
+
 function cleanBodyForRouting(rawBody: string): string {
-  const raw = stripHtmlPreservingLines(rawBody);
+  const raw = extractContactFormMessage(stripHtmlPreservingLines(rawBody));
   if (!raw) return "";
   const lines = raw
     .split("\n")
