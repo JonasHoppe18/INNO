@@ -1,6 +1,8 @@
 import { assertEquals, assertNotEquals } from "jsr:@std/assert@1";
 import {
   applyAutomationConstraints,
+  CHEAP_MODEL_INTENTS,
+  pickWriterModel,
   applyImageEvidenceClaimGuard,
   shouldDeferDraftUntilActionDecision,
 } from "./pipeline.ts";
@@ -185,4 +187,95 @@ Deno.test("action-decision: proposes exchange when pending_asks is empty", async
   );
 
   assertNotEquals(result.length, 0, "should propose exchange when no pending asks");
+});
+
+// --- Hybrid writer-model routing (cost optimization, 2026-07-08) ------------
+// Cheap current-gen model on measured-parity intents; strong model (gpt-4o)
+// everywhere else. Gated behind OPENAI_CHEAP_MODEL: unset = zero behavior
+// change so the deploy is a provable no-op until the secret is set.
+
+Deno.test("pickWriterModel: explicit override beats all routing", () => {
+  assertEquals(
+    pickWriterModel({
+      intent: "complaint",
+      hasOrderFacts: true,
+      overrideModel: "gpt-5.4-mini",
+      simpleModel: "gpt-4o-mini",
+      strongModel: "gpt-4o",
+      cheapModel: "gpt-5.4-nano",
+    }),
+    "gpt-5.4-mini",
+  );
+});
+
+Deno.test("pickWriterModel: thanks/update stay on the simple model even if cheap is set", () => {
+  for (const intent of ["thanks", "update"]) {
+    assertEquals(
+      pickWriterModel({
+        intent,
+        hasOrderFacts: false,
+        simpleModel: "gpt-4o-mini",
+        strongModel: "gpt-4o",
+        cheapModel: "gpt-5.4-mini",
+      }),
+      "gpt-4o-mini",
+    );
+  }
+});
+
+Deno.test("pickWriterModel: tracking uses simple only when the order was found", () => {
+  const base = {
+    intent: "tracking",
+    simpleModel: "gpt-4o-mini",
+    strongModel: "gpt-4o",
+  };
+  assertEquals(pickWriterModel({ ...base, hasOrderFacts: true }), "gpt-4o-mini");
+  assertEquals(pickWriterModel({ ...base, hasOrderFacts: false }), "gpt-4o");
+});
+
+Deno.test("pickWriterModel: GATED OFF — no cheap model => parity intents use the strong model (deploy is a no-op)", () => {
+  for (const intent of ["exchange", "other"]) {
+    assertEquals(
+      pickWriterModel({
+        intent,
+        hasOrderFacts: false,
+        simpleModel: "gpt-4o-mini",
+        strongModel: "gpt-4o",
+        cheapModel: null,
+      }),
+      "gpt-4o",
+    );
+  }
+  // empty string is also "disabled"
+  assertEquals(
+    pickWriterModel({
+      intent: "exchange",
+      hasOrderFacts: false,
+      simpleModel: "gpt-4o-mini",
+      strongModel: "gpt-4o",
+      cheapModel: "",
+    }),
+    "gpt-4o",
+  );
+});
+
+Deno.test("pickWriterModel: ENABLED — cheap model routes ONLY the measured-parity intents", () => {
+  const enabled = {
+    hasOrderFacts: false,
+    simpleModel: "gpt-4o-mini",
+    strongModel: "gpt-4o",
+    cheapModel: "gpt-5.4-mini",
+  };
+  // parity intents -> cheap
+  for (const intent of ["exchange", "other"]) {
+    assertEquals(pickWriterModel({ ...enabled, intent }), "gpt-5.4-mini", intent);
+  }
+  // the expensive/hard intents stay on the strong model
+  for (const intent of ["complaint", "return", "refund", "product_question"]) {
+    assertEquals(pickWriterModel({ ...enabled, intent }), "gpt-4o", intent);
+  }
+});
+
+Deno.test("CHEAP_MODEL_INTENTS is the conservative measured-parity set", () => {
+  assertEquals([...CHEAP_MODEL_INTENTS].sort(), ["exchange", "other"]);
 });

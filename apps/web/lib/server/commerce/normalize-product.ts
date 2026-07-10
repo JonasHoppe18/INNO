@@ -40,6 +40,7 @@ export interface NormalizedProduct {
   min_price: number | null;
   max_price: number | null;
   is_placeholder_price: boolean;
+  presentment_prices: Record<string, string>;
   recommendable: boolean;
   product_updated_at: string | null;
   /**
@@ -67,6 +68,7 @@ export interface ShopProductRow {
   min_price: number | null;
   max_price: number | null;
   is_placeholder_price: boolean;
+  presentment_prices: Record<string, string>;
   recommendable: boolean;
   product_updated_at: string | null;
   synced_at: string;
@@ -192,6 +194,7 @@ export function mapShopifyProductToNormalizedProduct(
   opts: {
     publicStorefrontDomain?: string | null;
     currency?: string | null;
+    presentmentPrices?: Record<string, string>;
   } = {},
 ): NormalizedProduct {
   const externalId = String((raw as { id?: unknown })?.id ?? "").trim();
@@ -252,6 +255,10 @@ export function mapShopifyProductToNormalizedProduct(
     min_price: minPrice,
     max_price: maxPrice,
     is_placeholder_price: isPlaceholderPrice,
+    presentment_prices:
+      opts.presentmentPrices && typeof opts.presentmentPrices === "object"
+        ? opts.presentmentPrices
+        : {},
     recommendable,
     product_updated_at: (raw as { updated_at?: unknown })?.updated_at
       ? String((raw as { updated_at?: unknown }).updated_at)
@@ -288,6 +295,7 @@ export function toShopProductRow(
     min_price: product.min_price,
     max_price: product.max_price,
     is_placeholder_price: product.is_placeholder_price,
+    presentment_prices: product.presentment_prices ?? {},
     recommendable: product.recommendable,
     product_updated_at: product.product_updated_at,
     synced_at: opts.syncedAt,

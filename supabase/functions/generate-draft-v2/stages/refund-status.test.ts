@@ -195,6 +195,6 @@ Deno.test("authority block asserts live refund facts override stale knowledge", 
 // pending directive forbids inventing amount/date
 Deno.test("pending directive forbids inventing amount or date", () => {
   const d = buildRefundStatusDirective(mk("refund_pending_or_unclear")).toLowerCase();
-  assertStringIncludes(d, "gennemgå"); // needs review
+  assertStringIncludes(d, "kan ikke fastslås"); // status not determinable yet
   assert(d.includes("opfind ikke") || d.includes("ikke opfinde"));
 });

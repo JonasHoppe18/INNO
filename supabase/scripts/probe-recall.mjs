@@ -17,7 +17,12 @@
 //   node supabase/scripts/probe-recall.mjs g-013 g-035
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
-import { loadGoldenSet, computeRetrievalMetrics } from "./lib/golden-eval-core.mjs";
+import {
+  loadGoldenSet,
+  computeRetrievalMetrics,
+  knowledgeIdentityFromMetadata,
+  normalizeRetrievalIdentity,
+} from "./lib/golden-eval-core.mjs";
 import { generateDraftV2 } from "../../apps/web/lib/server/eval-runner.js";
 
 const SET_PATH = "supabase/eval/golden-set.acezone.json";
@@ -38,14 +43,12 @@ const { data: kb } = await sb
   .neq("source_type", "ticket");
 const reachableById = new Map();
 for (const r of kb || []) {
-  const m = r.metadata || {};
-  const title = String(m.title || m.name || m.label || "").trim().toLowerCase();
-  const id = String(m.source_id ?? title).trim().toLowerCase();
+  const id = knowledgeIdentityFromMetadata(r.metadata);
   if (!id) continue;
   const ok = !UNREACHABLE_PROVIDERS.has(r.source_provider || "");
   reachableById.set(id, (reachableById.get(id) || false) || ok);
 }
-const isReachable = (id) => reachableById.get(String(id).trim().toLowerCase()) === true;
+const isReachable = (id) => reachableById.get(normalizeRetrievalIdentity(id)) === true;
 
 const argIds = new Set(process.argv.slice(2));
 const set = JSON.parse(readFileSync(SET_PATH, "utf8"));
@@ -58,17 +61,23 @@ const cases = loadGoldenSet(set, {}).filter(
 let rawHits = 0, rawScored = 0;
 let reachHits = 0, reachScored = 0;
 let droppedAll = 0; // cases whose entire gold became unreachable
+let abstains = 0, p1Hits = 0, p1Scored = 0; // selection layer (post-pool)
 
 for (const c of cases) {
   const g = goldById.get(c.id) || [];
   if (g.length === 0) continue; // abstain case — not a recall case
   try {
     const gen = await generateDraftV2(SHOP, c.subject || "", c.body, {
-      excludeExternalTicketId: c.source_thread_id || undefined,
+      sourceThreadId: c.source_thread_id || undefined,
     });
     const rawM = computeRetrievalMetrics(g, gen.matcherDebug);
     rawScored++;
     if (rawM.recall_at_k === 1) rawHits++;
+    if (gen.matcherDebug?.abstained === true) abstains++;
+    if (typeof rawM.precision_at_1 === "number") {
+      p1Scored++;
+      if (rawM.precision_at_1 === 1) p1Hits++;
+    }
 
     const gReach = g.filter(isReachable);
     let reachStr = "";
@@ -91,4 +100,9 @@ console.log(`\nRaw recall:       ${rawHits}/${rawScored} = ${(rawHits / rawScore
 console.log(
   `Reachable recall: ${reachHits}/${reachScored} = ${(reachHits / reachScored).toFixed(2)}` +
     `  (${droppedAll} cases had only unreachable gold)`,
+);
+console.log(
+  `Selection layer:  abstain ${abstains}/${rawScored}, precision@1 ${p1Hits}/${p1Scored} = ${
+    p1Scored ? (p1Hits / p1Scored).toFixed(2) : "n/a"
+  }`,
 );

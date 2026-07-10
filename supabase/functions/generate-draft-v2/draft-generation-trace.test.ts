@@ -147,3 +147,37 @@ Deno.test("production: empty patch is still a no-op (pre-existing guard preserve
   await updateDraftGenerationTrace(client, id, {});
   assertEquals(calls.update.length, 0);
 });
+
+// Trace-persistence regression: postmark-inbound passed the RFC Message-ID
+// header ("<abc@mail.gmail.com>") as message_id. The uuid column rejected the
+// insert, the warn was swallowed, and NO postmark-triggered generation ever
+// got a trace row (drafts vs draft_generations: 0 trace rows on most days).
+// A non-uuid message_id must be nulled, never lose the whole trace row.
+Deno.test("production: non-uuid message_id is nulled, trace row still inserted", async () => {
+  const { client, calls } = spyClient();
+  await createDraftGenerationTrace({
+    supabase: client,
+    id: crypto.randomUUID(),
+    shop_id: "38df5fef-2a23-47f3-803e-39f2d6f1ed99",
+    thread_id: crypto.randomUUID(),
+    message_id: "<CAKw0be9xyz@mail.gmail.com>",
+    draft_id: "d-1",
+  });
+  assertEquals(calls.insert.length, 1);
+  const row = calls.insert[0].row as Record<string, unknown>;
+  assertEquals(row.message_id, null);
+});
+
+Deno.test("production: uuid message_id is preserved on the trace row", async () => {
+  const { client, calls } = spyClient();
+  const msgId = crypto.randomUUID();
+  await createDraftGenerationTrace({
+    supabase: client,
+    id: crypto.randomUUID(),
+    shop_id: "38df5fef-2a23-47f3-803e-39f2d6f1ed99",
+    thread_id: crypto.randomUUID(),
+    message_id: msgId,
+    draft_id: "d-1",
+  });
+  assertEquals((calls.insert[0].row as Record<string, unknown>).message_id, msgId);
+});

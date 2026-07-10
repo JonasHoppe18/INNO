@@ -3,6 +3,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { encryptShopifyToken } from "../_shared/shopify-credentials.ts";
 
 const SHOPIFY_API_VERSION = "2024-07"; // Holder API-version ét sted så vi nemt kan opgradere
+const WEBHOOK_TOPICS = [
+  "shop/update", "products/create", "products/update", "products/delete",
+];
 
 const PROJECT_URL = Deno.env.get("PROJECT_URL") ?? Deno.env.get("SUPABASE_URL");
 const SERVICE_ROLE_KEY =
@@ -195,7 +198,7 @@ async function upsertShop(options: {
   }
 }
 
-async function registerShopUpdateWebhook(domain: string, accessToken: string): Promise<void> {
+async function registerShopifyWebhooks(domain: string, accessToken: string): Promise<void> {
   const appUrl = (Deno.env.get("APP_URL") ?? "").replace(/\/$/, "");
   if (!appUrl) {
     console.warn("[webhook] APP_URL ikke sat — springer webhook-registrering over");
@@ -207,49 +210,29 @@ async function registerShopUpdateWebhook(domain: string, accessToken: string): P
     "Content-Type": "application/json",
     "X-Shopify-Access-Token": accessToken,
   };
-
-  // Forsøg at oprette webhook
-  const createRes = await fetch(`${apiBase}/webhooks.json`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      webhook: { topic: "shop/update", address: webhookAddress, format: "json" },
-    }),
-  });
-
-  if (createRes.ok || createRes.status === 201) {
-    console.info(`[webhook] Registreret shop/update webhook for ${domain} → ${webhookAddress}`);
-    return;
-  }
-
-  if (createRes.status !== 422) {
-    const text = await createRes.text();
-    console.warn(`[webhook] Kunne ikke registrere webhook for ${domain}: ${createRes.status} ${text}`);
-    return;
-  }
-
-  // 422 = webhook eksisterer allerede — opdater adressen hvis den er anderledes
-  const listRes = await fetch(`${apiBase}/webhooks.json?topic=shop/update`, { headers });
-  if (!listRes.ok) return;
-  const listData = await listRes.json().catch(() => null) as any;
-  const existing = (listData?.webhooks ?? []).find((w: any) => w.topic === "shop/update");
-  if (!existing) return;
-
-  if (existing.address === webhookAddress) {
-    console.info(`[webhook] shop/update webhook allerede opdateret for ${domain}`);
-    return;
-  }
-
-  const updateRes = await fetch(`${apiBase}/webhooks/${existing.id}.json`, {
-    method: "PUT",
-    headers,
-    body: JSON.stringify({ webhook: { address: webhookAddress } }),
-  });
-  if (updateRes.ok) {
-    console.info(`[webhook] Opdateret shop/update webhook for ${domain} → ${webhookAddress}`);
-  } else {
-    const text = await updateRes.text();
-    console.warn(`[webhook] Kunne ikke opdatere webhook for ${domain}: ${text}`);
+  for (const topic of WEBHOOK_TOPICS) {
+    try {
+      const createRes = await fetch(`${apiBase}/webhooks.json`, {
+        method: "POST", headers,
+        body: JSON.stringify({ webhook: { topic, address: webhookAddress, format: "json" } }),
+      });
+      if (createRes.ok || createRes.status === 201) continue;
+      if (createRes.status !== 422) {
+        console.warn(`[webhook] kunne ikke registrere ${topic}: ${createRes.status}`);
+        continue;
+      }
+      const listRes = await fetch(`${apiBase}/webhooks.json?topic=${encodeURIComponent(topic)}`, { headers });
+      if (!listRes.ok) continue;
+      const listData = await listRes.json().catch(() => null) as any;
+      const existing = (listData?.webhooks ?? []).find((w: any) => w.topic === topic);
+      if (!existing || existing.address === webhookAddress) continue;
+      await fetch(`${apiBase}/webhooks/${existing.id}.json`, {
+        method: "PUT", headers,
+        body: JSON.stringify({ webhook: { address: webhookAddress } }),
+      });
+    } catch (err) {
+      console.warn(`[webhook] ${topic} fejlede:`, (err as any)?.message ?? err);
+    }
   }
 }
 
@@ -286,8 +269,8 @@ Deno.serve(async (req) => {
       token: accessToken,
     });
 
-    // Register shop/update webhook — fire-and-forget, doesn't block the response
-    registerShopUpdateWebhook(domain, accessToken).catch((err) =>
+    // Register Shopify webhooks — fire-and-forget, doesn't block the response
+    registerShopifyWebhooks(domain, accessToken).catch((err) =>
       console.warn("[webhook] Registrering fejlede (ikke kritisk):", err?.message ?? err)
     );
 

@@ -8,7 +8,11 @@ import {
   resolveKnowledgeBudget,
   type RetrievalCoherenceFlags,
 } from "./retriever-coherence.ts";
-import { type MatchCandidate, matchSnippets } from "./snippet-matcher.ts";
+import {
+  augmentWithSameDocumentSiblings,
+  type MatchCandidate,
+  matchSnippets,
+} from "./snippet-matcher.ts";
 import { embedText } from "../../_shared/embed-text.ts";
 import { filterSoftDisabledRows } from "../../_shared/knowledge-flags.ts";
 
@@ -81,6 +85,9 @@ export interface RetrievedChunk {
   product_id?: string | null;
   source_provider?: string | null;
   document_category?: string | null;
+  // Parent knowledge-document id — lets selection add complementary sibling
+  // sections of the same document (one fix often spans several sections).
+  document_id?: string | null;
   document_type?: string | null;
   knowledge_document_access_reason?: string | null;
   // Max cosine similarity (1 - distance) seen for this chunk across the vector
@@ -268,9 +275,18 @@ function buildShopProductTermIndex(
   shop?: Record<string, unknown>,
 ): ShopProductTerm[] {
   const overview = String(shop?.product_overview || "");
+  // Overview lines are either bare names ("- A-Spire") or "Name: description"
+  // (production format, often 120+ chars). The term is the NAME — taking the
+  // whole line made the ≤80 length filter drop every product, so extraction
+  // returned [] for the entire shop and silently disabled the product-support
+  // document gate and all cross-product logic.
   const lines = overview
     .split(/\r?\n/)
     .map((line) => line.replace(/^[-*\s]+/, "").trim())
+    .map((line) => {
+      const colon = line.indexOf(": ");
+      return colon > 0 ? line.slice(0, colon).trim() : line;
+    })
     .filter((line) => line.length >= 3 && line.length <= 80);
   const seen = new Set<string>();
   const index: ShopProductTerm[] = [];
@@ -278,9 +294,13 @@ function buildShopProductTermIndex(
     const canonical = line.toLowerCase();
     if (seen.has(canonical)) continue;
     seen.add(canonical);
+    const dehyphenated = canonical.replace(/-/g, " ").replace(/\s+/g, " ")
+      .trim();
     const variants = uniqueStrings([
       canonical,
       normalizeConnectors(canonical),
+      dehyphenated,
+      normalizeConnectors(dehyphenated),
       ...(canonical === "ear pads" ? ["earpads"] : []),
     ]);
     index.push({ canonical, variants });
@@ -2247,6 +2267,7 @@ export async function runRetriever(
         document_category: isKnowledgeDocumentProvider(sourceProvider)
           ? String(meta.category || "").trim() || null
           : null,
+        document_id: String(meta.document_id || "").trim() || null,
         document_type: String(meta.document_type || "").trim() || null,
         knowledge_document_access_reason: accessDecision?.reason ?? null,
         vector_similarity: r.vectorSimilarity,
@@ -2336,9 +2357,13 @@ export async function runRetriever(
   let matcherDebug: RetrieverResult["matcher_debug"] | undefined;
 
   if (customerMessage && pool.length > 0) {
-    const byId = new Map(pool.map((c) => [c.id, c]));
+    // Chunk ids are bigints at runtime (numbers from the RPC), but the matcher
+    // contract is string ids — normalize at the boundary or id round-trips
+    // (validIds membership, byId lookup) silently fail and the matcher abstains
+    // on everything (observed live on g-020).
+    const byId = new Map(pool.map((c) => [String(c.id), c]));
     const candidates: MatchCandidate[] = pool.map((c) => ({
-      id: c.id,
+      id: String(c.id),
       question: c.question ?? null,
       title: c.source_label,
       excerpt: c.content,
@@ -2353,6 +2378,17 @@ export async function runRetriever(
       finalChunks = matched.selected
         .map((s) => byId.get(s.id))
         .filter((c): c is RetrievedChunk => Boolean(c));
+      // One fix often spans complementary sibling sections of the same
+      // document (clear pairing list + pairing guide) — the human pastes
+      // both, the margin rule selects only #1. Add above-threshold siblings
+      // up to the knowledge budget.
+      finalChunks = augmentWithSameDocumentSiblings({
+        selected: finalChunks,
+        ranked: matched.ranked,
+        byId,
+        threshold: SNIPPET_MATCHER_THRESHOLD,
+        budget: knowledgeBudget,
+      });
       // Fix B.2: when the matcher selected nothing, rescue the top already-pooled
       // policy/procedure chunks by RETRIEVAL score (not matcher relevance, which
       // de-ranks guardrail chunks by design). Conservative + capped; normal

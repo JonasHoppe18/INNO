@@ -53,7 +53,13 @@ function extractStructuredFields(bodyText: string): ShopifyContactFieldMap {
     const value = normalizeWhitespace(match[2]);
     if (!label || !value) continue;
     const nextIndex = regex.lastIndex;
-    const nextMatch = normalized.slice(nextIndex).match(/^\n(?![A-Za-z][A-Za-z0-9&/'(),?. \-]{0,80}:)(.+)$/m);
+    // Continuation: ONLY the immediately following line may extend the value
+    // (no /m flag — anchored at the slice start). The old document-wide scan
+    // glued far-away prose onto field values ("Name" absorbed a Body sentence
+    // and the order field picked "2026" out of a date, T-051002).
+    const nextMatch = normalized.slice(nextIndex).match(
+      /^\n(?![A-Za-z][A-Za-z0-9&/'(),?. \-]{0,80}:)(?!\n)(.+)/,
+    );
     const finalValue = nextMatch?.[1]
       ? `${value}\n${normalizeWhitespace(nextMatch[1])}`
       : value;
@@ -130,6 +136,34 @@ export function parseShopifyContactIdentity(
     fields,
     reasons,
   };
+}
+
+// Field labels that carry an order reference in Shopify contact forms, across
+// the store languages we see (EN/DA/DE). Matched as a substring of the label.
+const ORDER_FIELD_LABEL_RE = /order\s*number|ordrenummer|bestellnummer/i;
+
+/**
+ * Pull order-number candidates out of the structured contact-form fields
+ * (e.g. "If Applicable, Place Of Purchase And Order Number:" → "3955").
+ * The field often mixes place-of-purchase text with the number ("Webshop,
+ * ordre 4683"), so extract plausible order tokens: 3+ digit runs, optionally
+ * #-prefixed. Returns [] when the field is absent or has no plausible number.
+ */
+export function extractContactFormOrderNumbers(
+  identity: ShopifyContactIdentity,
+): string[] {
+  const values = Object.entries(identity.fields || {})
+    .filter(([label]) => ORDER_FIELD_LABEL_RE.test(label))
+    .map(([, value]) => normalizeWhitespace(value))
+    .filter(Boolean);
+  const numbers: string[] = [];
+  for (const value of values) {
+    for (const match of value.matchAll(/#?(\d{3,})/g)) {
+      const token = match[1];
+      if (!numbers.includes(token)) numbers.push(token);
+    }
+  }
+  return numbers;
 }
 
 /**

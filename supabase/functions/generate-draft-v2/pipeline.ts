@@ -52,6 +52,10 @@ import {
   PolicyIntent,
 } from "../_shared/policy-context.ts";
 import { parseEmailReplyBodies } from "../_shared/email-reply-parser.ts";
+import {
+  extractContactFormOrderNumbers,
+  parseShopifyContactIdentity,
+} from "../_shared/shopify-contact-form.ts";
 import { embedText } from "../_shared/embed-text.ts";
 import { emitDraftGeneratedEvent } from "../_shared/draft-feedback-emit.ts";
 import {
@@ -63,9 +67,15 @@ import {
 import { loadImageAttachments } from "./stages/attachment-loader.ts";
 import {
   cleanupMixedLanguageDraft,
+  detectReplyLanguageFromText,
   mixedLanguageCheck,
   resolveReplyLanguage,
 } from "./stages/language.ts";
+import { resolveCustomerCurrency } from "./stages/customer-currency.ts";
+import {
+  buildPriceLocalizationBlock,
+  isPriceQuestion,
+} from "./stages/price-localization.ts";
 import {
   buildKnowledgeDocPreviewContext,
   type KnowledgeDocPreviewContextInput,
@@ -83,6 +93,8 @@ import {
   visibleEmailText,
 } from "./stages/email-thread-normalizer.ts";
 import { detectCustomerProvidedReturnTracking } from "./stages/return-tracking-attribution.ts";
+import { detectVerifiedOrderProofAsks } from "./stages/verified-order-proof-ask.ts";
+import { detectMissingDamageDocumentationAsk } from "./stages/damage-documentation-ask.ts";
 import { resolveCustomerName } from "./stages/customer-name-resolution.ts";
 import { checkUnsupportedCommitments } from "./stages/unsupported-commitment-check.ts";
 import { checkUnsupportedAssumptions } from "./stages/unsupported-assumption-check.ts";
@@ -120,6 +132,7 @@ export interface PipelineInput {
   eval_options?: {
     writer_model?: string;
     strong_model?: string;
+    writer_effort?: string;
     disable_escalation?: boolean;
     // Retrieval coherence rules (default off → production unchanged).
     retrieval_abs_floor?: number | null;
@@ -340,6 +353,9 @@ export function mintGenerationId(isNoWrite: boolean): string {
     : crypto.randomUUID();
 }
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function createDraftGenerationTrace(input: {
   supabase: SupabaseClient;
   id: string;
@@ -350,11 +366,17 @@ export async function createDraftGenerationTrace(input: {
 }) {
   // Dry-run / eval: no-op. Never insert a trace row.
   if (isDryRunGenerationId(input.id)) return;
+  // Callers have passed the RFC Message-ID header here (postmark-inbound) —
+  // the uuid column then rejected the INSERT and the whole trace row was
+  // silently lost. Null a non-uuid message_id instead of losing the trace.
+  const messageId = input.message_id && UUID_RE.test(input.message_id)
+    ? input.message_id
+    : null;
   const { error } = await input.supabase.from("draft_generations").insert({
     id: input.id,
     shop_id: input.shop_id,
     thread_id: input.thread_id ?? null,
-    message_id: input.message_id ?? null,
+    message_id: messageId,
     draft_id: input.draft_id,
     pipeline_version: "v2",
     created_at: new Date().toISOString(),
@@ -546,17 +568,62 @@ function formatActionAmountForLanguage(
   }
 }
 
+// Intents where a cheaper current-gen model matched or beat the strong model
+// in eval (measured 2026-07-08: compact gpt-5.4-mini vs gpt-4o on the golden
+// set — exchange +0.6, other +1.0, both n≥4). Deliberately conservative:
+// noisy single-case parity (return|refund, address_change) is excluded, and
+// the expensive/hard intents (complaint, return, refund, product_question)
+// always stay on the strong model. Grow this set only from real-traffic
+// no-edit-rate evidence per intent.
+export const CHEAP_MODEL_INTENTS: ReadonlySet<string> = new Set([
+  "exchange",
+  "other",
+]);
+
+// Pure routing decision (unit-tested). All inputs explicit so it needs no env.
+// cheapModel is the OPENAI_CHEAP_MODEL secret: unset/empty => the cheap route
+// is DISABLED and parity intents fall through to the strong model, i.e. the
+// whole feature is a no-op until the secret is deliberately set.
+export function pickWriterModel(input: {
+  intent: string;
+  hasOrderFacts: boolean;
+  overrideModel?: string;
+  simpleModel: string;
+  strongModel: string;
+  cheapModel?: string | null;
+  cheapIntents?: ReadonlySet<string>;
+}): string {
+  const {
+    intent,
+    hasOrderFacts,
+    overrideModel,
+    simpleModel,
+    strongModel,
+    cheapModel,
+    cheapIntents = CHEAP_MODEL_INTENTS,
+  } = input;
+  if (overrideModel) return overrideModel;
+  // tracking only qualifies as simple when we actually found the order —
+  // otherwise there's nothing to report and the model needs to improvise.
+  if (intent === "thanks" || intent === "update") return simpleModel;
+  if (intent === "tracking" && hasOrderFacts) return simpleModel;
+  if (cheapModel && cheapIntents.has(intent)) return cheapModel;
+  return strongModel;
+}
+
 function resolveWriterModel(
   intent: string,
   hasOrderFacts: boolean,
   overrideModel?: string,
 ): string {
-  if (overrideModel) return overrideModel;
-  // tracking only qualifies as simple when we actually found the order —
-  // otherwise there's nothing to report and the model needs to improvise.
-  if (intent === "thanks" || intent === "update") return SIMPLE_MODEL;
-  if (intent === "tracking" && hasOrderFacts) return SIMPLE_MODEL;
-  return Deno.env.get("OPENAI_MODEL") ?? "gpt-5-mini";
+  return pickWriterModel({
+    intent,
+    hasOrderFacts,
+    overrideModel,
+    simpleModel: SIMPLE_MODEL,
+    strongModel: Deno.env.get("OPENAI_MODEL") ?? "gpt-5-mini",
+    cheapModel: Deno.env.get("OPENAI_CHEAP_MODEL") ?? null,
+  });
 }
 
 const INTENT_GAP_SUGGESTIONS: Record<string, { title: string; hint: string }> =
@@ -1016,6 +1083,9 @@ export async function runDraftV2Pipeline(
     const strongModelOverride = eval_payload
       ? eval_options?.strong_model
       : undefined;
+    const writerEffortOverride = eval_payload
+      ? eval_options?.writer_effort
+      : undefined;
     const disableEscalation = eval_payload
       ? eval_options?.disable_escalation === true
       : false;
@@ -1209,6 +1279,52 @@ export async function runDraftV2Pipeline(
       automatic_refunds: automationResult.data?.automatic_refunds === true,
     };
     const isTestMode = testModeResult.data?.test_mode === true;
+
+    // Deterministic contact-form identity: Shopify relays (mailer@shopify.com)
+    // carry the REAL customer name/email/order number only as structured body
+    // fields. postmark-inbound detects this but only logs it — the LLM
+    // case-state misses a bare order number under the field label (T-051002)
+    // and name resolution otherwise sees just the relay sender. Merge parsed
+    // fields into the case state before planning/fact-resolution.
+    const contactFormIdentity = parseShopifyContactIdentity({
+      fromEmail: String(
+        (latestMessage as Record<string, unknown>).from_email || "",
+      ),
+      fromName: String(
+        (latestMessage as Record<string, unknown>).from_name || "",
+      ),
+      subject: String(
+        (latestMessage as Record<string, unknown>).subject ||
+          (thread as Record<string, unknown>).subject || "",
+      ),
+      bodyText: visibleEmailText(latestMessage),
+    });
+    if (contactFormIdentity.detected) {
+      const formOrderNumbers = extractContactFormOrderNumbers(
+        contactFormIdentity,
+      );
+      const existingOrderNumbers = Array.isArray(
+          caseState.entities.order_numbers,
+        )
+        ? caseState.entities.order_numbers
+        : [];
+      for (const number of formOrderNumbers) {
+        const known = existingOrderNumbers.some((existing) =>
+          String(existing).replace(/^#/, "") === number
+        );
+        if (!known) existingOrderNumbers.push(number);
+      }
+      caseState.entities.order_numbers = existingOrderNumbers;
+
+      const currentEmail = String(caseState.entities.customer_email || "")
+        .trim().toLowerCase();
+      if (
+        contactFormIdentity.customerEmail &&
+        (!currentEmail || currentEmail.endsWith("@shopify.com"))
+      ) {
+        caseState.entities.customer_email = contactFormIdentity.customerEmail;
+      }
+    }
 
     await updateDraftGenerationTrace(supabase, generationId, {
       workspace_id: workspaceId,
@@ -1590,11 +1706,45 @@ export async function runDraftV2Pipeline(
         }
       }
     }
+    // Multi-currency price localization: only for explicit price questions,
+    // and only when we can resolve a currency + matching product rows — so
+    // unrelated drafts are unchanged. Mirrors compatibilityBlock/comparisonBlock:
+    // detect → look up shop_products → build directive.
+    let priceBlock = "";
+    if (isPriceQuestion(latestBody ?? "")) {
+      const orderCurrencyForDraft = facts.order?.currency || null;
+      const { data: shopRow } = await supabase
+        .from("shops")
+        .select("primary_market_currency")
+        .eq("id", shop_id)
+        .maybeSingle();
+      const { data: priceRows } = await supabase
+        .from("shop_products")
+        .select("title, presentment_prices, price, currency")
+        .eq("shop_ref_id", shop_id);
+      const currency = resolveCustomerCurrency({
+        orderCurrency: orderCurrencyForDraft,
+        customerLanguage: detectReplyLanguageFromText(latestBody ?? ""),
+        primaryMarketCurrency: shopRow?.primary_market_currency ?? null,
+        baseCurrency: null,
+      });
+      priceBlock = buildPriceLocalizationBlock({
+        text: latestBody ?? "",
+        currency,
+        products: (Array.isArray(priceRows) ? priceRows : []).map((r: any) => ({
+          title: r.title,
+          presentment_prices: r.presentment_prices ?? {},
+          price: r.price ?? null,
+          base_currency: r.currency ?? null,
+        })),
+      });
+    }
     const internalRulesBlock = [
       internalRules.block || "",
       returnTrackingAttribution?.blockText || "",
       compatibilityBlock || "",
       comparisonBlock || "",
+      priceBlock || "",
     ].filter(Boolean).join("\n\n") || undefined;
     const latestSenderEmail = String(
       (latestMessage as Record<string, unknown>).from_email || "",
@@ -1606,6 +1756,9 @@ export async function runDraftV2Pipeline(
       latestCustomerMessage: latestBody,
       senderEmail: latestSenderEmail,
       senderDisplayName: latestSenderDisplayName,
+      contactFormName: contactFormIdentity.detected
+        ? contactFormIdentity.customerName
+        : null,
       orderCustomerName: facts.facts.find((fact) => fact.label === "Kundenavn")?.value ?? null,
       orderCustomerEmail: facts.order?.email ?? null,
       recentCustomerMessages: messages
@@ -2241,6 +2394,7 @@ export async function runDraftV2Pipeline(
       resolvedCustomerName,
       replyLanguageFallback: writerReplyLanguageFallback,
       model: firstPassModel,
+          effort: writerEffortOverride,
       attachments: imageAttachments,
       actionResult: postActionResult,
       customerHistory: customerHistory ?? undefined,
@@ -2291,6 +2445,7 @@ export async function runDraftV2Pipeline(
           resolvedCustomerName,
           replyLanguageFallback: writerReplyLanguageFallback,
           model: firstPassModel,
+          effort: writerEffortOverride,
           attachments: imageAttachments,
           actionResult: postActionResult,
           languageCorrectionInstruction:
@@ -2379,6 +2534,7 @@ export async function runDraftV2Pipeline(
           resolvedCustomerName,
           replyLanguageFallback: writerReplyLanguageFallback,
           model: firstPassModel,
+          effort: writerEffortOverride,
           attachments: imageAttachments,
           actionResult: postActionResult,
           languageCorrectionInstruction:
@@ -2421,6 +2577,136 @@ export async function runDraftV2Pipeline(
       };
     }
 
+    // Verified-order proof-of-purchase backstop (T-051002): the
+    // exact_order_number directive forbids re-asking for receipt/purchase
+    // details/where-bought, but the model still slips. Deterministic detect →
+    // correction rewrite, mirroring the post-action retry.
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const proofAskViolations = detectVerifiedOrderProofAsks(
+        languageCheckedWritten.draft_text,
+        facts.match?.state ?? null,
+      );
+      if (proofAskViolations.length === 0) break;
+      console.warn(
+        `[generate-draft-v2] verified-order proof-ask retry ${attempt}: ${
+          proofAskViolations.join("; ")
+        }`,
+      );
+      try {
+        const correctionWritten = await runWriter({
+          products: productLinkRows,
+          plan,
+          caseState,
+          retrieved,
+          facts,
+          shop: shopWithPersona,
+          latestCustomerMessage,
+          conversationHistory,
+          actionProposals: finalProposals,
+          policyContext,
+          internalRulesBlock,
+          authoritativePreviewDocumentContext,
+          productSupportTopicLock,
+          completedTroubleshootingBlock:
+            previewDocument.completedTroubleshootingBlock ?? undefined,
+          resolvedCustomerName,
+          replyLanguageFallback: writerReplyLanguageFallback,
+          model: firstPassModel,
+          effort: writerEffortOverride,
+          attachments: imageAttachments,
+          actionResult: postActionResult,
+          languageCorrectionInstruction:
+            `Rewrite the full draft in ${replyLanguage}. The customer's order is already VERIFIED in the shop's own system (exact order-number match) — proof of purchase, place of purchase and the order number are established facts. REMOVE every request for purchase details, receipt, proof of purchase, invoice, order number/confirmation, or where the product was bought. Do NOT ask the customer to confirm warranty coverage. For warranty/defect cases, ask instead for the next concrete step (e.g. clear photos or a short video of the damage) if that ask is not already present. Keep all other content and the greeting unchanged. Fix these issues: ${
+              proofAskViolations.join("; ")
+            }. Do not add a signature or support email.`,
+        });
+        if (correctionWritten.draft_text) {
+          languageCheckedWritten = correctionWritten;
+          if (
+            !mixedLanguageCheck(languageCheckedWritten.draft_text, replyLanguage)
+              .ok
+          ) {
+            languageCheckedWritten = {
+              ...languageCheckedWritten,
+              draft_text: cleanupMixedLanguageDraft(
+                languageCheckedWritten.draft_text,
+                replyLanguage,
+              ),
+            };
+          }
+        }
+      } catch (err) {
+        console.warn(
+          "[generate-draft-v2] verified-order proof-ask retry failed:",
+          err,
+        );
+      }
+    }
+
+    // Physical-damage documentation backstop: never arrange a replacement/
+    // repair for physical damage without asking for photo/video evidence
+    // (unless the customer already attached images).
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const damageDocViolations = detectMissingDamageDocumentationAsk({
+        draftText: languageCheckedWritten.draft_text,
+        customerMessage: latestCustomerMessage,
+        imageAttachmentCount: imageAttachments.length,
+      });
+      if (damageDocViolations.length === 0) break;
+      console.warn(
+        `[generate-draft-v2] damage-documentation retry ${attempt}: ${
+          damageDocViolations.join("; ")
+        }`,
+      );
+      try {
+        const correctionWritten = await runWriter({
+          products: productLinkRows,
+          plan,
+          caseState,
+          retrieved,
+          facts,
+          shop: shopWithPersona,
+          latestCustomerMessage,
+          conversationHistory,
+          actionProposals: finalProposals,
+          policyContext,
+          internalRulesBlock,
+          authoritativePreviewDocumentContext,
+          productSupportTopicLock,
+          completedTroubleshootingBlock:
+            previewDocument.completedTroubleshootingBlock ?? undefined,
+          resolvedCustomerName,
+          replyLanguageFallback: writerReplyLanguageFallback,
+          model: firstPassModel,
+          effort: writerEffortOverride,
+          attachments: imageAttachments,
+          actionResult: postActionResult,
+          languageCorrectionInstruction:
+            `Rewrite the full draft in ${replyLanguage}. The customer reports PHYSICAL damage and no images are attached yet. Keep the replacement/repair offer, but ask the customer to send clear photos or a short video of the damage as the concrete next step so the claim can be processed. Do not ask for purchase details, receipt or where the product was bought. Keep the greeting and all verified facts unchanged. Do not add a signature or support email.`,
+        });
+        if (correctionWritten.draft_text) {
+          languageCheckedWritten = correctionWritten;
+          if (
+            !mixedLanguageCheck(languageCheckedWritten.draft_text, replyLanguage)
+              .ok
+          ) {
+            languageCheckedWritten = {
+              ...languageCheckedWritten,
+              draft_text: cleanupMixedLanguageDraft(
+                languageCheckedWritten.draft_text,
+                replyLanguage,
+              ),
+            };
+          }
+        }
+      } catch (err) {
+        console.warn(
+          "[generate-draft-v2] damage-documentation retry failed:",
+          err,
+        );
+      }
+    }
+
     if (languageCheckedWritten.draft_text) {
       const cleaned = sanitizeSupportVoiceDraft(languageCheckedWritten.draft_text);
       if (cleaned !== languageCheckedWritten.draft_text) {
@@ -2460,6 +2746,7 @@ export async function runDraftV2Pipeline(
           resolvedCustomerName,
           replyLanguageFallback: writerReplyLanguageFallback,
           model: firstPassModel,
+          effort: writerEffortOverride,
           attachments: imageAttachments,
           actionResult: postActionResult,
           customerHistory: customerHistory ?? undefined,

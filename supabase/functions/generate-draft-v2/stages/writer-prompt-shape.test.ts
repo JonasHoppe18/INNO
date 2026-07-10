@@ -76,3 +76,21 @@ Deno.test("writer prompt includes image-honesty guidance", () => {
     "missing rule: ask for clear photos when image evidence is required but unavailable",
   );
 });
+
+import { computeWriterCostUsd } from "./writer.ts";
+
+Deno.test("computeWriterCostUsd: known models, snapshot ids, unknowns", () => {
+  // gpt-4o: 8500 in × $2.5/M + 130 out × $10/M = 0.02125 + 0.0013
+  const c = computeWriterCostUsd("gpt-4o", 8500, 130);
+  if (Math.abs((c ?? 0) - 0.02255) > 1e-9) throw new Error(`gpt-4o cost ${c}`);
+  // Snapshot id maps to base price; nano must not match the gpt-5.4 row.
+  if (computeWriterCostUsd("gpt-5.4-nano-2026-03-17", 1_000_000, 0) !== 0.2) {
+    throw new Error("nano snapshot mapping");
+  }
+  if (computeWriterCostUsd("unknown-model", 100, 10) !== null) {
+    throw new Error("unknown model must be null");
+  }
+  if (computeWriterCostUsd("gpt-4o", null, 10) !== null) {
+    throw new Error("missing tokens must be null");
+  }
+});

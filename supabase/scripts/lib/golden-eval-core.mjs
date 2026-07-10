@@ -14,6 +14,7 @@ export function parseArgs(argv) {
     "--shop", "--set", "--tier", "--limit", "--intent",
     "--abs-floor", "--pq-budget", "--accept",
     "--issue-tiebreak", "--source-consolidate",
+    "--writer-model", "--strong-model", "--disable-escalation", "--writer-effort",
   ]);
   for (const tok of argv) {
     if (typeof tok === "string" && tok.startsWith("--") && !KNOWN_FLAGS.has(tok)) {
@@ -46,6 +47,12 @@ export function parseArgs(argv) {
     retrievalPqBudget: pqBudgetRaw !== null ? parseInt(pqBudgetRaw, 10) : null,
     retrievalIssueTiebreak: has("--issue-tiebreak"),
     retrievalSourceConsolidate: has("--source-consolidate"),
+    // Writer-model A/B (e.g. --writer-model gpt-5.4-mini --strong-model
+    // gpt-5.4): forwarded to the deployed pipeline via eval_options.
+    writerModel: val("--writer-model"),
+    strongModel: val("--strong-model"),
+    writerEffort: val("--writer-effort"),
+    disableEscalation: has("--disable-escalation"),
   };
 }
 
@@ -320,8 +327,52 @@ export function diffBaseline(current, baseline) {
 // ---- Retrieval metrics (matcher precision, separate from answer quality) ----
 // Identity convention: source_id when present, else title; lowercased+trimmed.
 // Matches computeCoherence's grouping so gold-labels and live chunks line up.
+//
+// Curated knowledge_document sections have neither metadata.source_id nor
+// metadata.title — their heading lives in section_heading/normalized_heading,
+// and their matcher-candidate title is source_label-shaped
+// ("knowledge_document: <heading>"). Both sides normalize through the helpers
+// below so all three identity generations compare equal.
+
+// Provider prefixes a source_label-shaped title may carry. Only these are
+// stripped — a colon inside real content ("Important: read this") is kept.
+const KNOWN_PROVIDER_PREFIXES = [
+  "knowledge_document",
+  "manual_text",
+  "saved_reply",
+  "shopify_page",
+  "shopify_policy",
+  "shopify_file",
+  "shopify_product",
+  "document",
+  "snippet",
+  "knowledge",
+];
+
+export function normalizeRetrievalIdentity(value) {
+  let s = String(value ?? "").trim().toLowerCase();
+  for (const prefix of KNOWN_PROVIDER_PREFIXES) {
+    if (s.startsWith(`${prefix}: `)) {
+      s = s.slice(prefix.length + 2).trim();
+      break;
+    }
+  }
+  return s;
+}
+
+// Identity for a knowledge chunk given its metadata (KB-side: gold-label
+// builder, recall probe). Mirrors the pipeline's metadataLabelText fallback.
+export function knowledgeIdentityFromMetadata(metadata) {
+  const m = metadata && typeof metadata === "object" ? metadata : {};
+  const title = String(
+    m.title || m.name || m.label || m.section_heading || m.normalized_heading ||
+      "",
+  ).trim();
+  return normalizeRetrievalIdentity(m.source_id ?? title);
+}
+
 function retrievalIdentity(entry) {
-  return String(entry?.source_id ?? entry?.title ?? "").trim().toLowerCase();
+  return normalizeRetrievalIdentity(entry?.source_id ?? entry?.title ?? "");
 }
 
 // gold: array of correct snippet identities ([] means "no snippet should match").
@@ -329,7 +380,7 @@ function retrievalIdentity(entry) {
 // Returns per-case metrics; fields are null when not applicable so the
 // aggregate can average only over the cases each metric makes sense for.
 export function computeRetrievalMetrics(gold, matcher) {
-  const goldSet = new Set((gold || []).map((g) => String(g).trim().toLowerCase()));
+  const goldSet = new Set((gold || []).map((g) => normalizeRetrievalIdentity(g)));
   const goldEmpty = goldSet.size === 0;
   const m = matcher || {};
   const candidates = Array.isArray(m.candidates) ? m.candidates : [];
@@ -412,6 +463,12 @@ export function buildGoldenEvalResult({
       actionability: judged.actionability,
       overall_10: judged.overall_10,
       send_ready: judged.send_ready,
+      // Diagnosis fields — required to analyze WHY a draft is not send-ready
+      // (the >50% send-ready target is unactionable without them).
+      primary_gap: judged.primary_gap ?? null,
+      missing_for_10: judged.missing_for_10 ?? null,
+      likely_root_cause: judged.likely_root_cause ?? null,
+      reasoning: judged.reasoning ?? null,
     },
     gate,
     coherence,

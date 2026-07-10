@@ -119,6 +119,39 @@ export function selectFromRanked(
   return { selected: eligible.slice(0, opts.maxSelected), abstained: false };
 }
 
+// Same-document sibling augmentation: one troubleshooting fix often spans
+// complementary sections of the SAME document (clear pairing list + pairing
+// guide) — a human pastes both, the margin rule selects only #1. Add ranked
+// above-threshold sections from a selected chunk's document, up to the
+// knowledge budget. Pure; chunk shape only needs id + document_id.
+export function augmentWithSameDocumentSiblings<
+  T extends { id: string | number; document_id?: string | null },
+>(input: {
+  selected: T[];
+  ranked: MatchResult[];
+  byId: Map<string, T>;
+  threshold: number;
+  budget: number;
+}): T[] {
+  const out = [...input.selected];
+  if (out.length === 0) return out;
+  const selectedDocIds = new Set(
+    out.map((c) => c.document_id).filter(Boolean) as string[],
+  );
+  if (selectedDocIds.size === 0) return out;
+  const seen = new Set(out.map((c) => String(c.id)));
+  for (const r of input.ranked) {
+    if (out.length >= input.budget) break;
+    if (r.relevance < input.threshold) continue;
+    if (seen.has(String(r.id))) continue;
+    const chunk = input.byId.get(String(r.id));
+    if (!chunk?.document_id || !selectedDocIds.has(chunk.document_id)) continue;
+    out.push(chunk);
+    seen.add(String(chunk.id));
+  }
+  return out;
+}
+
 export async function matchSnippets(
   customerMessage: string,
   candidates: MatchCandidate[],
@@ -133,16 +166,42 @@ export async function matchSnippets(
     model: opts.model,
     systemPrompt: SYSTEM_PROMPT,
     userPrompt: buildUserPrompt(customerMessage, candidates),
-    maxTokens: 800,
+    // One entry per candidate (pool can be 15) with a reason each — 800 was
+    // within truncation range of a verbose response.
+    maxTokens: 2000,
     schema: RANKING_SCHEMA,
     schemaName: "snippet_rankings",
     temperature: 0,
   });
   const validIds = new Set(candidates.map((c) => c.id));
+  // The model flip-flops on the id namespace: chunk ids come back as JSON
+  // numbers (g-020) or as the "#N" positional numbering from the prompt
+  // (e-002). Resolve exact chunk id first; otherwise a small integer that is
+  // a valid 1-based position (and NOT a valid chunk id) maps to that
+  // candidate. Anything else is dropped.
+  const resolveId = (rawId: unknown): string | null => {
+    const s = String(rawId ?? "").trim();
+    if (validIds.has(s)) return s;
+    const positional = /^#?(\d+)$/.exec(s);
+    if (positional) {
+      const idx = Number(positional[1]);
+      if (Number.isInteger(idx) && idx >= 1 && idx <= candidates.length) {
+        return candidates[idx - 1].id;
+      }
+    }
+    return null;
+  };
   const ranked: MatchResult[] = (raw?.rankings ?? [])
-    .filter((r) => r && validIds.has(r.id) && typeof r.relevance === "number")
-    .map((r) => ({
-      id: r.id,
+    .map((r) =>
+      r && typeof r.relevance === "number"
+        ? { resolved: resolveId(r.id), r }
+        : { resolved: null, r }
+    )
+    .filter((x): x is { resolved: string; r: MatchResult } =>
+      x.resolved !== null
+    )
+    .map(({ resolved, r }) => ({
+      id: resolved,
       relevance: Math.max(0, Math.min(1, r.relevance)),
       reason: String(r.reason ?? ""),
     }))

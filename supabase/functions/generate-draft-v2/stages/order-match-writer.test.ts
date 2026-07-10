@@ -44,7 +44,7 @@ Deno.test("integration_error directive avoids 'order not found' and asks safely"
   const d = buildOrderMatchDirective(match("integration_error")).toLowerCase();
   assert(!d.includes("kunne ikke findes") && !d.includes("not found") && !d.includes("ikke fundet"));
   // safe "unable to verify right now" wording, not a not-found claim
-  assertStringIncludes(d, "i øjeblikket");
+  assertStringIncludes(d, "lige nu");
   assertStringIncludes(d, "kan desværre ikke verificere");
 });
 
@@ -73,4 +73,15 @@ Deno.test("missing_identifiers directive asks for order number first then email"
 Deno.test("exact_order_number directive allows direct verified answer", () => {
   const d = buildOrderMatchDirective(match("exact_order_number"));
   assert(d.length > 0);
+});
+
+// T-051002: with a VERIFIED order (exact_order_number), proof-of-purchase and
+// place-of-purchase are established by the shop's own system — the warranty
+// flow must go straight to documentation (photos), never re-ask where the
+// product was bought.
+Deno.test("exact_order_number directive forbids purchase-place/proof-of-purchase asks", () => {
+  const d = buildOrderMatchDirective(match("exact_order_number")).toLowerCase();
+  assertStringIncludes(d, "købsbevis");
+  assertStringIncludes(d, "spørg aldrig hvor produktet er købt");
+  assertStringIncludes(d, "foto");
 });

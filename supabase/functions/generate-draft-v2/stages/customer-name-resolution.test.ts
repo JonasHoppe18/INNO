@@ -140,3 +140,29 @@ Deno.test("generic resolver has no shop-specific hardcoding", () => {
   assertEquals(result.first_name, null);
   assertEquals(result.source, "none");
 });
+
+// T-051002 regression: Shopify contact-form relays carry the customer's name
+// ONLY in the structured "Name:" field — the sender is mailer@shopify.com and
+// there is usually no signature. The parsed field must win so drafts greet
+// "Hi Mark", not "Hi there".
+Deno.test("contact-form name field resolves with high confidence", () => {
+  const r = resolveCustomerName({
+    latestCustomerMessage:
+      "You received a new message from your online store's contact form.\n\nName:\nMark Brandt\n\nBody:\nHello, my mic broke.",
+    senderEmail: "mailer@shopify.com",
+    senderDisplayName: "mailer@shopify.com",
+    contactFormName: "Mark Brandt",
+  });
+  assertEquals(r.first_name, "Mark");
+  assertEquals(r.source, "contact_form");
+  assertEquals(r.confidence, "high");
+});
+
+Deno.test("non-personal contact-form name (company) does not resolve", () => {
+  const r = resolveCustomerName({
+    latestCustomerMessage: "Name:\nAcme Support Team\n\nBody:\nhi",
+    senderEmail: "mailer@shopify.com",
+    contactFormName: "Acme Support Team",
+  });
+  assertEquals(r.first_name, null);
+});

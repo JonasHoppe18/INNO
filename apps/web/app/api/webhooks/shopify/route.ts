@@ -2,7 +2,10 @@
  * Shopify webhook handler
  *
  * Handles incoming webhooks from Shopify. Currently processes:
- *   - shop/update  → re-syncs policies (refund + shipping) into shops table + agent_knowledge
+ *   - shop/update       → re-syncs policies (refund + shipping) into shops table + agent_knowledge
+ *   - products/create   → indexes the one product's knowledge chunks + shop_products row
+ *   - products/update   → same as products/create (re-index)
+ *   - products/delete   → removes the product's agent_knowledge chunks + shop_products row
  *
  * Shopify sends:
  *   POST /api/webhooks/shopify
@@ -15,8 +18,13 @@ import { createHmac } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { credsFromShopRow, runPolicySyncForCreds } from "@/lib/server/shopify-policy-sync";
+import { upsertProductKnowledge, embedText } from "@/lib/server/commerce/sync-one-product";
+import { fetchPresentmentPrices, fetchShopCurrency } from "@/lib/server/commerce/shopify-presentment";
+import { mapShopifyProductToNormalizedProduct, toShopProductRow } from "@/lib/server/commerce/normalize-product";
 
 const SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET || "";
+const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || "2024-07";
+const PRODUCT_TOPICS = new Set(["products/create", "products/update", "products/delete"]);
 const SUPABASE_URL = (
   process.env.NEXT_PUBLIC_SUPABASE_URL ||
   process.env.EXPO_PUBLIC_SUPABASE_URL ||
@@ -62,11 +70,6 @@ export async function POST(req: NextRequest) {
   // Shopify expects a 200 within 5 seconds — acknowledge immediately
   // then process async if needed. For policy sync we're fast enough to do inline.
 
-  if (topic !== "shop/update") {
-    // Unknown topic — acknowledge so Shopify doesn't retry
-    return NextResponse.json({ ok: true, topic, note: "ignored" });
-  }
-
   if (!shopDomain) {
     return NextResponse.json({ error: "Missing shop domain" }, { status: 400 });
   }
@@ -80,7 +83,7 @@ export async function POST(req: NextRequest) {
   // Look up shop by domain
   const { data: shopRow, error: shopError } = await serviceClient
     .from("shops")
-    .select("id, shop_domain, access_token_encrypted, workspace_id, platform")
+    .select("id, shop_domain, access_token_encrypted, workspace_id, platform, public_storefront_domain")
     .eq("shop_domain", shopDomain)
     .eq("platform", "shopify")
     .is("uninstalled_at", null)
@@ -95,6 +98,84 @@ export async function POST(req: NextRequest) {
   if (!shopRow.access_token_encrypted) {
     console.warn(`[shopify-webhook] No access token for ${shopDomain}`);
     return NextResponse.json({ ok: true, note: "no token" });
+  }
+
+  if (PRODUCT_TOPICS.has(topic)) {
+    try {
+      const payload = JSON.parse(rawBody);
+      const creds = credsFromShopRow(shopRow); // { shop_id, workspace_id, shop_domain, access_token }
+      const productId = String(payload?.id ?? "").trim();
+      if (!productId) return NextResponse.json({ ok: true, note: "no product id" });
+
+      if (topic === "products/delete") {
+        await serviceClient
+          .from("agent_knowledge")
+          .delete()
+          .eq("shop_id", creds.shop_id)
+          .eq("source_provider", "shopify_product")
+          .eq("metadata->>product_id", productId);
+        await serviceClient
+          .from("shop_products")
+          .delete()
+          .eq("shop_ref_id", creds.shop_id)
+          .eq("external_id", productId);
+        return NextResponse.json({ ok: true, topic, product_id: productId, deleted: true });
+      }
+
+      // create/update: refetch presentment prices (webhook payload lacks them),
+      // then upsert one product's knowledge + structured row.
+      const domain = String(creds.shop_domain || shopDomain).replace(/^https?:\/\//, "");
+      const currency = await fetchShopCurrency({
+        domain,
+        accessToken: creds.access_token,
+        apiVersion: SHOPIFY_API_VERSION,
+      });
+      const presentmentPrices = await fetchPresentmentPrices({
+        domain,
+        accessToken: creds.access_token,
+        productId,
+        apiVersion: SHOPIFY_API_VERSION,
+      });
+      const normalized = mapShopifyProductToNormalizedProduct(payload, {
+        currency,
+        presentmentPrices,
+        publicStorefrontDomain: shopRow.public_storefront_domain,
+      });
+      await upsertProductKnowledge({
+        serviceClient,
+        creds,
+        product: payload,
+        normalized,
+        currency,
+        embedText,
+      });
+      const row = toShopProductRow(normalized, {
+        shopRefId: creds.shop_id,
+        syncedAt: new Date().toISOString(),
+      });
+      const rowWithEmbedding = {
+        ...row,
+        embedding: await embedText(`Product: ${row.title}. Details: ${row.description || "No details."}`),
+      };
+      await serviceClient.from("shop_products").upsert(rowWithEmbedding, {
+        onConflict: "shop_ref_id,external_id,platform",
+      });
+      return NextResponse.json({ ok: true, topic, product_id: productId, indexed: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(JSON.stringify({
+        event: "shopify.webhook.product_error",
+        topic,
+        shop_domain: shopDomain,
+        error: message,
+      }));
+      return NextResponse.json({ ok: false, error: message }); // still 200
+    }
+  }
+
+  if (topic !== "shop/update") {
+    // Unknown topic — acknowledge so Shopify doesn't retry
+    return NextResponse.json({ ok: true, topic, note: "ignored" });
   }
 
   try {

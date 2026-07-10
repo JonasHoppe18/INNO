@@ -1451,8 +1451,18 @@ Deno.serve(async (req) => {
   }
 
   if (!mailbox) {
-    await logAgent("postmark_inbound_received", { messageId, slug }, "error");
-    return jsonResponse(404, { error: "Mailbox lookup failed" });
+    // The slug parsed fine but no mailbox matches it — e.g. a deleted tenant
+    // whose external forwarding still points here. This is PERMANENTLY
+    // unroutable, so return 200 (acknowledged, nothing to do) instead of 404:
+    // a 404 makes Postmark retry the same dead message dozens of times. The
+    // transient lookup FAILURE above still returns 500 so real DB errors keep
+    // retrying. Nothing is ingested here either way.
+    await logAgent(
+      "postmark_inbound_skipped",
+      { messageId, slug, reason: "no_mailbox_for_slug" },
+      "info",
+    );
+    return jsonResponse(200, { ok: true, skipped: "no_mailbox_for_slug" });
   }
 
   const receivedAtRaw =
@@ -2175,7 +2185,10 @@ Deno.serve(async (req) => {
       if (shopId) {
         const draftOutcome = await triggerDraftForInbound({
           shopId,
-          messageId: storedMessageId,
+          // The mail_messages ROW id — not the RFC Message-ID header. The
+          // header string broke the uuid insert on draft_generations, so no
+          // postmark-triggered generation ever persisted a trace.
+          messageId: messageDbId ?? storedMessageId,
           threadId,
           subject,
           fromRaw,

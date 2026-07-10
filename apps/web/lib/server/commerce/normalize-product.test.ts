@@ -199,3 +199,21 @@ Deno.test("toShopProductRow emits platform-neutral columns scoped by shop_ref_id
   assertEquals(row.last_seen_at, "2026-06-20T00:00:00Z");
   assertEquals(row.raw, raw);
 });
+
+Deno.test("mapShopifyProductToNormalizedProduct threads presentment prices through", () => {
+  const n = mapShopifyProductToNormalizedProduct(
+    { id: 1, title: "A-Blaze", variants: [{ price: "199.00" }] },
+    { currency: "EUR", presentmentPrices: { EUR: "199.00", DKK: "1499.00" } },
+  );
+  assertEquals(n.presentment_prices, { EUR: "199.00", DKK: "1499.00" });
+  const row = toShopProductRow(n, { shopRefId: "s1", syncedAt: "2026-07-10T00:00:00Z" });
+  assertEquals(row.presentment_prices, { EUR: "199.00", DKK: "1499.00" });
+});
+
+Deno.test("presentment prices default to empty object when not provided", () => {
+  const n = mapShopifyProductToNormalizedProduct(
+    { id: 1, title: "X", variants: [{ price: "10.00" }] },
+    { currency: "EUR" },
+  );
+  assertEquals(n.presentment_prices, {});
+});

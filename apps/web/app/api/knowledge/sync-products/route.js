@@ -1,6 +1,5 @@
 
 import { NextResponse } from "next/server";
-import { createHash } from "node:crypto";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { decryptString } from "@/lib/server/shopify-oauth";
@@ -10,6 +9,20 @@ import {
   mapShopifyProductToNormalizedProduct,
   toShopProductRow,
 } from "@/lib/server/commerce/normalize-product";
+import {
+  buildProductContext,
+  chunkText,
+  buildKnowledgeHash,
+  upsertProductKnowledge,
+  stripHtml,
+  embedText,
+} from "@/lib/server/commerce/sync-one-product";
+import {
+  fetchPresentmentPrices,
+  fetchPrimaryMarketCurrency,
+  fetchShopCurrency,
+} from "@/lib/server/commerce/shopify-presentment";
+import { ensureShopifyWebhooks, PRODUCT_WEBHOOK_TOPICS } from "@/lib/server/commerce/shopify-webhooks";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -21,21 +34,6 @@ const SUPABASE_SERVICE_ROLE_KEY =
   process.env.SUPABASE_SERVICE_KEY ||
   "";
 const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || "2024-07";
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
-const OPENAI_EMBEDDING_MODEL = process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small";
-
-function stripHtml(value = "") {
-  if (typeof value !== "string") return "";
-  return value
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/\s+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-}
 
 function createServiceClient() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null;
@@ -109,95 +107,6 @@ function extractNextPageInfo(linkHeader = "") {
   return null;
 }
 
-async function embedText(text) {
-  if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY missing.");
-  const res = await fetch("https://api.openai.com/v1/embeddings", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      input: text,
-      model: OPENAI_EMBEDDING_MODEL,
-    }),
-  });
-  const json = await res.json().catch(() => null);
-  if (!res.ok) {
-    const message = json?.error?.message || `OpenAI returned ${res.status}`;
-    throw new Error(message);
-  }
-  const vector = json?.data?.[0]?.embedding;
-  if (!Array.isArray(vector)) throw new Error("Embedding not returned.");
-  return vector;
-}
-
-function buildProductContext(product) {
-  const title = String(product?.title || "Untitled product").trim();
-  const descriptionRaw =
-    product?.body_html || product?.body || product?.description || product?.body_text || "";
-  const description = stripHtml(descriptionRaw);
-  const vendor = String(product?.vendor || "").trim();
-  const productType = String(product?.product_type || "").trim();
-  const tags = Array.isArray(product?.tags)
-    ? product.tags.join(", ")
-    : String(product?.tags || "")
-        .split(",")
-        .map((t) => t.trim())
-        .filter(Boolean)
-        .join(", ");
-  const variants = Array.isArray(product?.variants) ? product.variants : [];
-  const variantLines = variants
-    .slice(0, 8)
-    .map((variant) => {
-      const name = String(variant?.title || "Default");
-      const sku = String(variant?.sku || "").trim();
-      const price = String(variant?.price ?? variant?.compare_at_price ?? "").trim();
-      const stock = variant?.inventory_quantity;
-      return `- Variant: ${name}${sku ? ` | SKU: ${sku}` : ""}${price ? ` | Price: ${price}` : ""}${
-        Number.isFinite(stock) ? ` | Inventory: ${stock}` : ""
-      }`;
-    })
-    .join("\n");
-
-  const parts = [
-    `Product: ${title}`,
-    vendor ? `Vendor: ${vendor}` : "",
-    productType ? `Type: ${productType}` : "",
-    tags ? `Tags: ${tags}` : "",
-    description ? `Description:\n${description}` : "",
-    variantLines ? `Variants:\n${variantLines}` : "",
-  ].filter(Boolean);
-
-  return parts.join("\n\n");
-}
-
-function chunkText(text, size = 1200, overlap = 200) {
-  const normalized = String(text || "").trim();
-  if (!normalized) return [];
-  const chunks = [];
-  let start = 0;
-  while (start < normalized.length) {
-    const end = Math.min(normalized.length, start + size);
-    chunks.push(normalized.slice(start, end).trim());
-    if (end >= normalized.length) break;
-    start = Math.max(0, end - overlap);
-  }
-  return chunks.filter(Boolean).slice(0, 6);
-}
-
-function buildKnowledgeHash(product, context) {
-  return createHash("sha256")
-    .update(
-      JSON.stringify({
-        id: product?.id ?? null,
-        updated_at: product?.updated_at ?? null,
-        context,
-      })
-    )
-    .digest("hex");
-}
-
 async function loadExistingProductHashes(serviceClient, shopId) {
   const { data, error } = await serviceClient
     .from("agent_knowledge")
@@ -220,6 +129,12 @@ async function loadExistingProductHashes(serviceClient, shopId) {
 
 async function syncShopify({ serviceClient, creds }) {
   const domain = creds.shop_domain.replace(/^https?:\/\//, "");
+  const currency = await fetchShopCurrency({
+    domain, accessToken: creds.access_token, apiVersion: SHOPIFY_API_VERSION,
+  });
+  const primaryMarketCurrency = await fetchPrimaryMarketCurrency({
+    domain, accessToken: creds.access_token, apiVersion: SHOPIFY_API_VERSION,
+  });
   const products = await fetchShopifyProducts({ domain, accessToken: creds.access_token });
   const existingHashes = await loadExistingProductHashes(serviceClient, creds.shop_id);
 
@@ -232,15 +147,19 @@ async function syncShopify({ serviceClient, creds }) {
     const productId = String(product?.id ?? "").trim();
     if (!productId) continue;
 
+    const presentmentPrices = await fetchPresentmentPrices({
+      domain, accessToken: creds.access_token, productId, apiVersion: SHOPIFY_API_VERSION,
+    });
+
     // Platform-neutral normalization. ALL Shopify-payload parsing stays inside
     // mapShopifyProductToNormalizedProduct; the row written below is the same
     // normalized shape every commerce provider will produce.
     const normalized = mapShopifyProductToNormalizedProduct(product, {
       publicStorefrontDomain: creds.public_storefront_domain,
+      currency,
+      presentmentPrices,
     });
-    const title = normalized.title;
-    const price = normalized.price_display;
-    const context = buildProductContext(product);
+    const context = buildProductContext(product, { currency });
     const contentHash = buildKnowledgeHash(product, context);
 
     rows.push(
@@ -255,54 +174,10 @@ async function syncShopify({ serviceClient, creds }) {
       unchanged += 1;
       continue;
     }
-
-    const chunks = chunkText(context);
-    if (!chunks.length) {
-      unchanged += 1;
-      continue;
-    }
-
-    // Replace prior product chunks to avoid duplicates across resyncs.
-    await serviceClient
-      .from("agent_knowledge")
-      .delete()
-      .eq("shop_id", creds.shop_id)
-      .eq("source_provider", "shopify_product")
-      .eq("metadata->>product_id", productId);
-
-    for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex += 1) {
-      const chunk = chunks[chunkIndex];
-      const embedding = await embedText(chunk);
-      const { error: insertError } = await serviceClient.from("agent_knowledge").insert({
-        workspace_id: creds.workspace_id,
-        shop_id: creds.shop_id,
-        content: chunk,
-        source_type: "document",
-        source_provider: "shopify_product",
-        metadata: {
-          product_id: productId,
-          title: String(title || "").trim(),
-          price: price || null,
-          handle: normalized.handle,
-          product_updated_at: normalized.product_updated_at,
-          // Trusted, customer-facing product URL (public storefront, never the
-          // internal myshopify host). Null when no public domain is configured.
-          url: normalized.product_url,
-          status: normalized.status,
-          // Centralized placeholder-price signal so the runtime retriever can
-          // suppress not-live products without re-deriving the rule (it keeps a
-          // hard-coded fallback for safety).
-          is_placeholder_price: normalized.is_placeholder_price,
-          content_hash: contentHash,
-          chunk_index: chunkIndex,
-          chunk_count: chunks.length,
-          issue_types: ["product_specs"],
-        },
-        embedding,
-      });
-      if (insertError) throw new Error(insertError.message);
-    }
-    indexed += 1;
+    const { indexed: didIndex } = await upsertProductKnowledge({
+      serviceClient, creds, product, normalized, currency, embedText,
+    });
+    if (didIndex) indexed += 1; else unchanged += 1;
   }
 
   if (rows.length) {
@@ -349,6 +224,21 @@ async function syncShopify({ serviceClient, creds }) {
   if (rows.length > 0) {
     await updateShopProductOverview(serviceClient, creds.shop_id, products);
   }
+
+  // Shop-level property — persist once per sync, not per product.
+  if (primaryMarketCurrency) {
+    await serviceClient.from("shops")
+      .update({ primary_market_currency: primaryMarketCurrency })
+      .eq("id", creds.shop_id);
+  }
+
+  // Self-heal: shops connected before product webhooks existed get them
+  // registered here, next time someone clicks "Sync products". Degrades
+  // gracefully on any failure — never throws, never aborts the sync.
+  await ensureShopifyWebhooks({
+    domain, accessToken: creds.access_token, apiVersion: SHOPIFY_API_VERSION,
+    appUrl: (process.env.APP_URL || "").trim(), topics: PRODUCT_WEBHOOK_TOPICS,
+  });
 
   return {
     synced: rows.length,
