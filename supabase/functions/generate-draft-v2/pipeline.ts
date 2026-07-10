@@ -1715,7 +1715,7 @@ export async function runDraftV2Pipeline(
       const orderCurrencyForDraft = facts.order?.currency || null;
       const { data: shopRow } = await supabase
         .from("shops")
-        .select("primary_market_currency, currency")
+        .select("primary_market_currency")
         .eq("id", shop_id)
         .maybeSingle();
       const { data: priceRows } = await supabase
@@ -1726,7 +1726,7 @@ export async function runDraftV2Pipeline(
         orderCurrency: orderCurrencyForDraft,
         customerLanguage: detectReplyLanguageFromText(latestBody ?? ""),
         primaryMarketCurrency: shopRow?.primary_market_currency ?? null,
-        baseCurrency: shopRow?.currency ?? null,
+        baseCurrency: null,
       });
       priceBlock = buildPriceLocalizationBlock({
         text: latestBody ?? "",
