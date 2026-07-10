@@ -14,12 +14,28 @@ import { MailboxesAddMenu } from "@/components/mailboxes/MailboxesAddMenu";
 export function MailboxesSettingsTab() {
   const [mailboxes, setMailboxes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   const loadMailboxes = useCallback(async () => {
-    const res = await fetch("/api/mail-accounts", { cache: "no-store" }).catch(() => null);
-    const payload = res?.ok ? await res.json().catch(() => ({})) : {};
-    setMailboxes(Array.isArray(payload?.mailboxes) ? payload.mailboxes : []);
-    setLoading(false);
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/mail-accounts", { cache: "no-store" });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload?.error || "Could not load connected mailboxes.");
+      }
+      setMailboxes(Array.isArray(payload?.mailboxes) ? payload.mailboxes : []);
+    } catch (loadError) {
+      setMailboxes([]);
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Could not load connected mailboxes.",
+      );
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -48,6 +64,18 @@ export function MailboxesSettingsTab() {
         <div className="overflow-hidden rounded-lg border border-border bg-background">
           {loading ? (
             <div className="px-6 py-12 text-center text-sm text-muted-foreground">Loading…</div>
+          ) : error ? (
+            <div role="alert" className="flex flex-col items-center gap-3 px-6 py-12 text-center">
+              <p className="text-base font-medium text-foreground">Couldn’t load connected mailboxes.</p>
+              <p className="text-sm text-muted-foreground">{error}</p>
+              <button
+                type="button"
+                onClick={loadMailboxes}
+                className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+              >
+                Try again
+              </button>
+            </div>
           ) : mailboxes.length ? (
             <div className="divide-y divide-border">
               {mailboxes.map((mailbox) => (

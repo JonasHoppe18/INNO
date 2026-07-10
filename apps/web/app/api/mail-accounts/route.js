@@ -69,7 +69,10 @@ export async function GET() {
     if (shopIds.length) {
       const { data: shops, error: shopsError } = await serviceClient
         .from("shops")
-        .select("id, shop_name, team_name, shop_domain")
+        // A mailbox only needs a stable shop label for its shared sending
+        // identity. Keep this lookup compatible with older workspaces while
+        // the optional team_name field is being backfilled by migration.
+        .select("id, shop_name, shop_domain")
         .in("id", shopIds);
       if (shopsError) throw new Error(shopsError.message);
       for (const shop of shops || []) shopsById.set(shop.id, shop);
@@ -101,6 +104,11 @@ export async function GET() {
     return NextResponse.json({ mailboxes }, { status: 200 });
   } catch (error) {
     console.error("List mail accounts failed:", error);
-    return NextResponse.json({ mailboxes: [] }, { status: 200 });
+    // A failed lookup must not masquerade as an empty workspace. The settings
+    // UI needs to distinguish "no mailboxes" from an actual server failure.
+    return NextResponse.json(
+      { error: "Could not load connected mailboxes." },
+      { status: 500 },
+    );
   }
 }

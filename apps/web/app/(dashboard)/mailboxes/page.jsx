@@ -47,6 +47,7 @@ export default async function MailboxesPage() {
 
   const serviceClient = createServiceClient();
   let mailAccounts = [];
+  let mailboxLoadError = "";
   const shopsById = new Map();
   if (serviceClient) {
     try {
@@ -59,7 +60,7 @@ export default async function MailboxesPage() {
         if (shopIds.length) {
           const { data: shops, error: shopsError } = await serviceClient
             .from("shops")
-            .select("id, shop_name, team_name, shop_domain")
+            .select("id, shop_name, shop_domain")
             .in("id", shopIds);
           if (shopsError) throw new Error(shopsError.message);
           for (const shop of shops || []) shopsById.set(shop.id, shop);
@@ -67,6 +68,7 @@ export default async function MailboxesPage() {
       }
     } catch (error) {
       console.error("Mailboxes mail account lookup failed:", error);
+      mailboxLoadError = "Couldn’t load connected mailboxes. Please refresh and try again.";
     }
   }
 
@@ -119,7 +121,18 @@ export default async function MailboxesPage() {
           </p>
         </div>
         <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-          {mailboxes.length ? (
+          {mailboxLoadError ? (
+            <div role="alert" className="flex flex-col items-center gap-2 px-6 py-12 text-center">
+              <p className="text-base font-medium text-slate-900">Couldn’t load connected mailboxes.</p>
+              <p className="text-sm text-muted-foreground">{mailboxLoadError}</p>
+              <a
+                href="/mailboxes"
+                className="mt-1 rounded-md border border-gray-200 px-3 py-1.5 text-sm font-medium text-slate-900 transition-colors hover:bg-gray-50"
+              >
+                Try again
+              </a>
+            </div>
+          ) : mailboxes.length ? (
             <div className="divide-y divide-gray-100">
               {mailboxes.map((mailbox) => (
                 <MailboxRow
