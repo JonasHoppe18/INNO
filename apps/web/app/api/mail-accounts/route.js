@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
-import { buildEffectiveSharedFromEmail } from "@/lib/server/sending-identity";
+import {
+  buildEffectiveSharedFromEmail,
+  getManagedSenderFromMailbox,
+} from "@/lib/server/sending-identity";
 
 export const dynamic = "force-dynamic";
 
@@ -82,24 +85,33 @@ export async function GET() {
       .sort(
         (a, b) => (PROVIDER_ORDER[a.provider] ?? 99) - (PROVIDER_ORDER[b.provider] ?? 99)
       )
-      .map((account) => ({
-        id: account.id,
-        provider: account.provider,
-        email: account.provider_email || "",
-        isActive: Boolean(account.provider_email),
-        status: account.status || null,
-        inboundSlug: account.inbound_slug || null,
-        sendingType: account.sending_type || "shared",
-        sendingDomain: account.sending_domain || null,
-        domainStatus: account.domain_status || "pending",
-        domainDns: account.domain_dns || null,
-        fromEmail: account.from_email || null,
-        fromName: account.from_name || null,
-        sharedFromEmail: buildEffectiveSharedFromEmail({
-          shop: shopsById.get(account.shop_id) || null,
-          mailbox: account,
-        }),
-      }));
+      .map((account) => {
+        const managedSender = getManagedSenderFromMailbox(account);
+        return {
+          id: account.id,
+          provider: account.provider,
+          email: account.provider_email || "",
+          isActive: Boolean(account.provider_email),
+          status: account.status || null,
+          inboundSlug: account.inbound_slug || null,
+          sendingType: account.sending_type || "shared",
+          sendingDomain: account.sending_domain || null,
+          domainStatus: account.domain_status || "pending",
+          domainDns: account.domain_dns || null,
+          fromEmail: account.from_email || null,
+          fromName: account.from_name || null,
+          sharedFromEmail: buildEffectiveSharedFromEmail({
+            shop: shopsById.get(account.shop_id) || null,
+            mailbox: account,
+          }),
+          managedSenderStatus: managedSender?.status || "unprovisioned",
+          managedSenderDomain: managedSender?.domain || null,
+          managedSenderEmail: managedSender?.from_email || null,
+          managedSenderDkimVerified: managedSender?.dkim_verified === true,
+          managedSenderReturnPathVerified:
+            managedSender?.return_path_verified === true,
+        };
+      });
 
     return NextResponse.json({ mailboxes }, { status: 200 });
   } catch (error) {

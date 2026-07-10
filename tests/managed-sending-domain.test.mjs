@@ -46,3 +46,26 @@ test("forwarded mailbox creation and sending both ensure managed provisioning", 
   );
   assert.match(mailboxes, /buildEffectiveSharedFromEmail/);
 });
+
+test("mailbox settings expose and refresh managed sender verification", () => {
+  const mailboxesApi = read("../apps/web/app/api/mail-accounts/route.js");
+  const statusApi = read(
+    "../apps/web/app/api/mail-accounts/[id]/managed-domain/status/route.js",
+  );
+  const mailboxRow = read("../apps/web/components/mailboxes/MailboxRow.jsx");
+  const settingsTab = read(
+    "../apps/web/components/settings/MailboxesSettingsTab.jsx",
+  );
+
+  assert.match(mailboxesApi, /managedSenderStatus/);
+  assert.match(mailboxesApi, /managedSenderDkimVerified/);
+  assert.match(mailboxesApi, /managedSenderReturnPathVerified/);
+  assert.match(statusApi, /ensureManagedSendingDomain/);
+  assert.match(statusApi, /refreshPending: true/);
+  assert.match(mailboxRow, /Verified/);
+  assert.match(mailboxRow, /Verifying/);
+  assert.match(mailboxRow, /Fallback active/);
+  assert.match(mailboxRow, /Check status/);
+  assert.match(settingsTab, /pendingManagedSenders/);
+  assert.match(settingsTab, /managed-domain\/status/);
+});

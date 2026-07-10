@@ -5,7 +5,10 @@ import { DashboardPageShell } from "@/components/dashboard-page-shell";
 import { MailboxRow } from "@/components/mailboxes/MailboxRow";
 import { MailboxesAddMenu } from "@/components/mailboxes/MailboxesAddMenu";
 import { MailboxesOnboardingTracker } from "@/components/onboarding/MailboxesOnboardingTracker";
-import { buildEffectiveSharedFromEmail } from "@/lib/server/sending-identity";
+import {
+  buildEffectiveSharedFromEmail,
+  getManagedSenderFromMailbox,
+} from "@/lib/server/sending-identity";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 
 const SUPABASE_URL =
@@ -79,24 +82,33 @@ export default async function MailboxesPage() {
       (a, b) =>
         (providerOrder[a.provider] ?? 99) - (providerOrder[b.provider] ?? 99)
     )
-    .map((account) => ({
-      id: account.id,
-      provider: account.provider,
-      email: account.provider_email || "",
-      isActive: Boolean(account.provider_email),
-      status: account.status || null,
-      inboundSlug: account.inbound_slug || null,
-      sendingType: account.sending_type || "shared",
-      sendingDomain: account.sending_domain || null,
-      domainStatus: account.domain_status || "pending",
-      domainDns: account.domain_dns || null,
-      fromEmail: account.from_email || null,
-      fromName: account.from_name || null,
-      sharedFromEmail: buildEffectiveSharedFromEmail({
-        shop: shopsById.get(account.shop_id) || null,
-        mailbox: account,
-      }),
-    }));
+    .map((account) => {
+      const managedSender = getManagedSenderFromMailbox(account);
+      return {
+        id: account.id,
+        provider: account.provider,
+        email: account.provider_email || "",
+        isActive: Boolean(account.provider_email),
+        status: account.status || null,
+        inboundSlug: account.inbound_slug || null,
+        sendingType: account.sending_type || "shared",
+        sendingDomain: account.sending_domain || null,
+        domainStatus: account.domain_status || "pending",
+        domainDns: account.domain_dns || null,
+        fromEmail: account.from_email || null,
+        fromName: account.from_name || null,
+        sharedFromEmail: buildEffectiveSharedFromEmail({
+          shop: shopsById.get(account.shop_id) || null,
+          mailbox: account,
+        }),
+        managedSenderStatus: managedSender?.status || "unprovisioned",
+        managedSenderDomain: managedSender?.domain || null,
+        managedSenderEmail: managedSender?.from_email || null,
+        managedSenderDkimVerified: managedSender?.dkim_verified === true,
+        managedSenderReturnPathVerified:
+          managedSender?.return_path_verified === true,
+      };
+    });
 
   return (
     <DashboardPageShell className="space-y-10">
@@ -150,6 +162,11 @@ export default async function MailboxesPage() {
                   fromEmail={mailbox.fromEmail}
                   fromName={mailbox.fromName}
                   sharedFromEmail={mailbox.sharedFromEmail}
+                  managedSenderStatus={mailbox.managedSenderStatus}
+                  managedSenderDomain={mailbox.managedSenderDomain}
+                  managedSenderEmail={mailbox.managedSenderEmail}
+                  managedSenderDkimVerified={mailbox.managedSenderDkimVerified}
+                  managedSenderReturnPathVerified={mailbox.managedSenderReturnPathVerified}
                 />
               ))}
             </div>

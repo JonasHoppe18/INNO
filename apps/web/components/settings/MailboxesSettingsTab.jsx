@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { MailboxRow } from "@/components/mailboxes/MailboxRow";
 import { MailboxesAddMenu } from "@/components/mailboxes/MailboxesAddMenu";
 
@@ -15,6 +15,7 @@ export function MailboxesSettingsTab() {
   const [mailboxes, setMailboxes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const checkedManagedSenders = useRef(new Set());
 
   const loadMailboxes = useCallback(async () => {
     setLoading(true);
@@ -25,7 +26,40 @@ export function MailboxesSettingsTab() {
       if (!res.ok) {
         throw new Error(payload?.error || "Could not load connected mailboxes.");
       }
-      setMailboxes(Array.isArray(payload?.mailboxes) ? payload.mailboxes : []);
+      const nextMailboxes = Array.isArray(payload?.mailboxes) ? payload.mailboxes : [];
+      setMailboxes(nextMailboxes);
+
+      const pendingManagedSenders = nextMailboxes.filter(
+        (mailbox) =>
+          mailbox?.provider === "smtp" &&
+          mailbox?.sendingType !== "custom" &&
+          ["pending", "provisioning"].includes(mailbox?.managedSenderStatus) &&
+          !checkedManagedSenders.current.has(mailbox.id),
+      );
+      for (const mailbox of pendingManagedSenders) {
+        checkedManagedSenders.current.add(mailbox.id);
+      }
+      if (pendingManagedSenders.length) {
+        void Promise.allSettled(
+          pendingManagedSenders.map((mailbox) =>
+            fetch(`/api/mail-accounts/${mailbox.id}/managed-domain/status`, {
+              method: "POST",
+            }),
+          ),
+        )
+          .then(async () => {
+            const refreshedResponse = await fetch("/api/mail-accounts", {
+              cache: "no-store",
+            });
+            const refreshedPayload = await refreshedResponse.json().catch(() => ({}));
+            if (refreshedResponse.ok && Array.isArray(refreshedPayload?.mailboxes)) {
+              setMailboxes(refreshedPayload.mailboxes);
+            }
+          })
+          .catch(() => {
+            // The saved status remains visible and can still be refreshed manually.
+          });
+      }
     } catch (loadError) {
       setMailboxes([]);
       setError(
@@ -94,6 +128,11 @@ export function MailboxesSettingsTab() {
                   fromEmail={mailbox.fromEmail}
                   fromName={mailbox.fromName}
                   sharedFromEmail={mailbox.sharedFromEmail}
+                  managedSenderStatus={mailbox.managedSenderStatus}
+                  managedSenderDomain={mailbox.managedSenderDomain}
+                  managedSenderEmail={mailbox.managedSenderEmail}
+                  managedSenderDkimVerified={mailbox.managedSenderDkimVerified}
+                  managedSenderReturnPathVerified={mailbox.managedSenderReturnPathVerified}
                   onChanged={loadMailboxes}
                 />
               ))}
