@@ -48,6 +48,7 @@ import {
   resolvePublicStorefrontDomain,
   selectGroundedProductLinkFromChunks,
   selectGroundedProductLinkFromProducts,
+  shouldSuppressProductLinkForAccessory,
   threadMentionsCheckoutLink,
   type ProductSourceRow,
 } from "./purchase-link.ts";
@@ -1756,7 +1757,7 @@ Support replied: "${agentReply.slice(0, 500)}"`;
   // trusted shopify_product retrieval chunk — both rebuilt on the PUBLIC
   // storefront domain. Never a myshopify host. Null when no public domain is
   // configured (debug: missing_public_storefront_domain).
-  const groundedProductUrl = firstTrustedProductLink(facts.facts) ??
+  const rawGroundedProductUrl = firstTrustedProductLink(facts.facts) ??
     selectGroundedProductLinkFromProducts({
       requestedProduct: requestedProductForLink,
       products,
@@ -1767,6 +1768,16 @@ Support replied: "${agentReply.slice(0, 500)}"`;
       chunks: retrieved.chunks,
       publicStorefrontDomain: publicStorefront.domain,
     })?.url ?? null;
+  // Accessory-link guard: an ear-pad / cable / dongle request whose resolved
+  // product is the base headset model must not link the headset's own page
+  // (real traffic 2026-07-10: an A-Rise ear-pad request linked the A-Rise
+  // headset). Suppress it unless the resolved product is itself the accessory.
+  const groundedProductUrl = shouldSuppressProductLinkForAccessory(
+      latestCustomerMessage,
+      requestedProductForLink,
+    )
+    ? null
+    : rawGroundedProductUrl;
   const noPublicStorefrontDomain = !groundedProductUrl &&
     publicStorefront.reason === "missing_public_storefront_domain";
   const checkoutLinkInThread = threadMentionsCheckoutLink([

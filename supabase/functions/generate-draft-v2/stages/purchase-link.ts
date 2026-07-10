@@ -70,10 +70,10 @@ export function isAccessoryReplacementRequest(message: string | null | undefined
   const text = lower(message);
   if (!text) return false;
   const hasReplacementIntent =
-    /\b(lost|forgot|missing|misplaced|replacement|replace|new|spare|mistet|glemt|mangler|er\s+væk|væk|forsvundet|erstatning|ny|reservedel|tilbehør)\b/i
+    /\b(lost|forgot|missing|misplaced|replacement|replace|new|spare|mistet|glemt|mangler|er\s+væk|væk|forsvundet|erstatning|nye?|reservedel|tilbehør)\b/i
       .test(text) ||
     /\b(?:smidt|tabt)[^.?!]{0,40}\bvæk\b/i.test(text) ||
-    /\b(?:buy|purchase|order|køb|købe|bestil|bestille)[^.?!]{0,40}\b(?:new|replacement|spare|ny|erstatning|reservedel|tilbehør)\b/i
+    /\b(?:buy|purchase|order|køb|købe|bestil|bestille)[^.?!]{0,40}\b(?:new|replacement|spare|nye?|erstatning|reservedel|tilbehør)\b/i
       .test(text);
   if (!hasReplacementIntent) return false;
 
@@ -81,13 +81,38 @@ export function isAccessoryReplacementRequest(message: string | null | undefined
     /\b(accessor(?:y|ies)|spare[- ]?parts?|replacement\s+parts?|parts?|component|components|tilbehør|reservedele?|reservedel)\b/i
       .test(text);
   const hasCommonAccessoryCategory =
-    /\b(dongle|adapter|adaptor|charger|charging cable|cables?|usb-?c|usb c|lade\s*kabel|ladekabel|kabler?|oplader)\b/i
-      .test(text);
+    /\b(dongle|adapter|adaptor|charger|charging cable|cables?|usb-?c|usb c|lade\s*kabel|ladekabel|kabler?|oplader|ear\s?pads?|earpads?|cushions?)\b/i
+      .test(text) ||
+    // \b fails before "ø" (non-ASCII), so match the distinctive Danish
+    // ear-pad term as a substring instead.
+    /ørepud|orepud/i.test(text);
   const lostItemForProduct =
     /\b(?:lost|forgot|misplaced|missing|mistet|glemt|mangler|smidt|tabt)\b[^.?!]{0,80}\b(?:for|to|til|for)\s+(?:my|the|mit|min|mine|det|den)\b/i
       .test(text);
 
   return hasGenericPartSignal || hasCommonAccessoryCategory || lostItemForProduct;
+}
+
+// Purchasable accessory/spare-part nouns (multi-language). Used to tell whether
+// a resolved product token IS the accessory the customer wants, vs the base
+// headset model.
+// Substring match (not \b-anchored): requestedProduct is a short controlled
+// product token, and \b fails before "ø" (non-ASCII) anyway.
+const ACCESSORY_ITEM_RE =
+  /ear\s?pads?|earpads?|cushions?|ørepud|orepud|cable|kabel|dongle|adapter|charger|oplader/i;
+
+// Accessory-link guard: when a customer asks for a spare part / accessory (ear
+// pads, cable, dongle) OF a headset but the RESOLVED product is the base model
+// (e.g. "A-Rise"), a grounded product link points at the headset's own page —
+// the wrong item (real traffic 2026-07-10: A-Rise ear-pad request linked the
+// A-Rise headset). Suppress the link in that case; keep it when the resolved
+// product is itself the accessory. Generic, no shop-specific logic.
+export function shouldSuppressProductLinkForAccessory(
+  message: string | null | undefined,
+  requestedProduct: string | null | undefined,
+): boolean {
+  if (!isAccessoryReplacementRequest(message)) return false;
+  return !ACCESSORY_ITEM_RE.test(String(requestedProduct ?? ""));
 }
 
 export function normalizeProductText(value: string | null | undefined): string {

@@ -672,3 +672,47 @@ Deno.test("selectGroundedProductLinkFromProducts returns null when no public dom
   });
   assertEquals(result, null);
 });
+
+// Accessory-link guard (real traffic 2026-07-10, Jaina/A-Rise ear pads):
+// customer asks for ear pads for their A-Rise; products_mentioned[0]="A-Rise",
+// so the grounded link matched the A-Rise HEADSET page — the wrong item. The
+// link must be suppressed unless the resolved product IS the accessory.
+import { shouldSuppressProductLinkForAccessory } from "./purchase-link.ts";
+
+Deno.test("suppresses a base-model link when the request is for an accessory", () => {
+  // accessory request + base-model product => suppress
+  assertEquals(
+    shouldSuppressProductLinkForAccessory("I need new ear pads for my A-Rise", "A-Rise"),
+    true,
+  );
+  assertEquals(
+    shouldSuppressProductLinkForAccessory("kan jeg købe nye ørepuder til mit A-Spire?", "A-Spire Wireless"),
+    true,
+  );
+  assertEquals(
+    shouldSuppressProductLinkForAccessory("my dongle is lost, can I buy a replacement for the A-Rise", "A-Rise"),
+    true,
+  );
+});
+
+Deno.test("keeps the link when the resolved product IS the accessory", () => {
+  assertEquals(
+    shouldSuppressProductLinkForAccessory("where can I buy replacement ear pads", "Ear pads"),
+    false,
+  );
+  assertEquals(
+    shouldSuppressProductLinkForAccessory("nye ørepuder tak", "ørepuder"),
+    false,
+  );
+});
+
+Deno.test("does not suppress for a normal product purchase request", () => {
+  assertEquals(
+    shouldSuppressProductLinkForAccessory("where can I buy the A-Rise headset?", "A-Rise"),
+    false,
+  );
+  assertEquals(
+    shouldSuppressProductLinkForAccessory("", "A-Rise"),
+    false,
+  );
+});
