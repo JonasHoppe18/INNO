@@ -62,6 +62,26 @@ async function fetchShopifyCredentials(serviceClient, scope, requestedShopId) {
   };
 }
 
+// The shop's base currency (e.g. "EUR"). Admin /products.json returns variant
+// prices in this currency only — never the storefront's presentment currency —
+// so we must capture it to label prices correctly (a null currency made the UI
+// and the writer default to "kr" even for EUR-priced shops).
+async function fetchShopCurrency({ domain, accessToken }) {
+  try {
+    const url =
+      `https://${domain}/admin/api/${SHOPIFY_API_VERSION}/shop.json?fields=currency`;
+    const res = await fetch(url, {
+      headers: { Accept: "application/json", "X-Shopify-Access-Token": accessToken },
+    });
+    if (!res.ok) return null;
+    const payload = await res.json().catch(() => null);
+    const currency = payload?.shop?.currency;
+    return currency ? String(currency).trim().toUpperCase() : null;
+  } catch {
+    return null;
+  }
+}
+
 async function fetchShopifyProducts({ domain, accessToken }) {
   const products = [];
   let pageInfo = null;
@@ -132,7 +152,10 @@ async function embedText(text) {
   return vector;
 }
 
-function buildProductContext(product) {
+function buildProductContext(product, { currency } = {}) {
+  // Prices are in the shop's base currency; label them so the writer never
+  // quotes a bare number that the reader (or the writer) assumes is DKK.
+  const cur = currency ? `${String(currency).trim().toUpperCase()} ` : "";
   const title = String(product?.title || "Untitled product").trim();
   const descriptionRaw =
     product?.body_html || product?.body || product?.description || product?.body_text || "";
@@ -154,15 +177,20 @@ function buildProductContext(product) {
       const sku = String(variant?.sku || "").trim();
       const price = String(variant?.price ?? variant?.compare_at_price ?? "").trim();
       const stock = variant?.inventory_quantity;
-      return `- Variant: ${name}${sku ? ` | SKU: ${sku}` : ""}${price ? ` | Price: ${price}` : ""}${
+      return `- Variant: ${name}${sku ? ` | SKU: ${sku}` : ""}${price ? ` | Price: ${cur}${price}` : ""}${
         Number.isFinite(stock) ? ` | Inventory: ${stock}` : ""
       }`;
     })
     .join("\n");
 
+  const firstVariantPrice = String(
+    variants[0]?.price ?? variants[0]?.compare_at_price ?? "",
+  ).trim();
+
   const parts = [
     `Product: ${title}`,
     vendor ? `Vendor: ${vendor}` : "",
+    firstVariantPrice ? `Price: ${cur}${firstVariantPrice}` : "",
     productType ? `Type: ${productType}` : "",
     tags ? `Tags: ${tags}` : "",
     description ? `Description:\n${description}` : "",
@@ -220,6 +248,7 @@ async function loadExistingProductHashes(serviceClient, shopId) {
 
 async function syncShopify({ serviceClient, creds }) {
   const domain = creds.shop_domain.replace(/^https?:\/\//, "");
+  const currency = await fetchShopCurrency({ domain, accessToken: creds.access_token });
   const products = await fetchShopifyProducts({ domain, accessToken: creds.access_token });
   const existingHashes = await loadExistingProductHashes(serviceClient, creds.shop_id);
 
@@ -237,10 +266,11 @@ async function syncShopify({ serviceClient, creds }) {
     // normalized shape every commerce provider will produce.
     const normalized = mapShopifyProductToNormalizedProduct(product, {
       publicStorefrontDomain: creds.public_storefront_domain,
+      currency,
     });
     const title = normalized.title;
     const price = normalized.price_display;
-    const context = buildProductContext(product);
+    const context = buildProductContext(product, { currency });
     const contentHash = buildKnowledgeHash(product, context);
 
     rows.push(
@@ -283,6 +313,7 @@ async function syncShopify({ serviceClient, creds }) {
           product_id: productId,
           title: String(title || "").trim(),
           price: price || null,
+          currency: normalized.currency || null,
           handle: normalized.handle,
           product_updated_at: normalized.product_updated_at,
           // Trusted, customer-facing product URL (public storefront, never the
