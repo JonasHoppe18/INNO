@@ -19,7 +19,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { credsFromShopRow, runPolicySyncForCreds } from "@/lib/server/shopify-policy-sync";
 import { upsertProductKnowledge, embedText } from "@/lib/server/commerce/sync-one-product";
-import { fetchPresentmentPrices } from "@/lib/server/commerce/shopify-presentment";
+import { fetchPresentmentPrices, fetchShopCurrency } from "@/lib/server/commerce/shopify-presentment";
 import { mapShopifyProductToNormalizedProduct, toShopProductRow } from "@/lib/server/commerce/normalize-product";
 
 const SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET || "";
@@ -125,8 +125,11 @@ export async function POST(req: NextRequest) {
       // create/update: refetch presentment prices (webhook payload lacks them),
       // then upsert one product's knowledge + structured row.
       const domain = String(creds.shop_domain || shopDomain).replace(/^https?:\/\//, "");
-      const currency =
-        String(payload?.variants?.[0]?.price_currency || "").trim().toUpperCase() || null;
+      const currency = await fetchShopCurrency({
+        domain,
+        accessToken: creds.access_token,
+        apiVersion: SHOPIFY_API_VERSION,
+      });
       const presentmentPrices = await fetchPresentmentPrices({
         domain,
         accessToken: creds.access_token,

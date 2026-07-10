@@ -53,6 +53,26 @@ export async function fetchPresentmentPrices(args: {
   }
 }
 
+export async function fetchShopCurrency(args: {
+  domain: string;
+  accessToken: string;
+  apiVersion: string;
+}): Promise<string | null> {
+  const { domain, accessToken, apiVersion } = args;
+  try {
+    const res = await fetch(
+      `https://${domain}/admin/api/${apiVersion}/shop.json?fields=currency`,
+      { headers: { Accept: "application/json", "X-Shopify-Access-Token": accessToken } },
+    );
+    if (!res.ok) return null;
+    const json = await res.json().catch(() => null);
+    const currency = (json as any)?.shop?.currency;
+    return currency ? String(currency).trim().toUpperCase() : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchPrimaryMarketCurrency(args: {
   domain: string;
   accessToken: string;

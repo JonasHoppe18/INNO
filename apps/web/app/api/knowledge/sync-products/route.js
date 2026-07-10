@@ -17,7 +17,11 @@ import {
   stripHtml,
   embedText,
 } from "@/lib/server/commerce/sync-one-product";
-import { fetchPresentmentPrices, fetchPrimaryMarketCurrency } from "@/lib/server/commerce/shopify-presentment";
+import {
+  fetchPresentmentPrices,
+  fetchPrimaryMarketCurrency,
+  fetchShopCurrency,
+} from "@/lib/server/commerce/shopify-presentment";
 import { ensureShopifyWebhooks, PRODUCT_WEBHOOK_TOPICS } from "@/lib/server/commerce/shopify-webhooks";
 
 const SUPABASE_URL =
@@ -54,26 +58,6 @@ async function fetchShopifyCredentials(serviceClient, scope, requestedShopId) {
     public_storefront_domain: data.public_storefront_domain ?? null,
     access_token: decryptString(data.access_token_encrypted),
   };
-}
-
-// The shop's base currency (e.g. "EUR"). Admin /products.json returns variant
-// prices in this currency only — never the storefront's presentment currency —
-// so we must capture it to label prices correctly (a null currency made the UI
-// and the writer default to "kr" even for EUR-priced shops).
-async function fetchShopCurrency({ domain, accessToken }) {
-  try {
-    const url =
-      `https://${domain}/admin/api/${SHOPIFY_API_VERSION}/shop.json?fields=currency`;
-    const res = await fetch(url, {
-      headers: { Accept: "application/json", "X-Shopify-Access-Token": accessToken },
-    });
-    if (!res.ok) return null;
-    const payload = await res.json().catch(() => null);
-    const currency = payload?.shop?.currency;
-    return currency ? String(currency).trim().toUpperCase() : null;
-  } catch {
-    return null;
-  }
 }
 
 async function fetchShopifyProducts({ domain, accessToken }) {
@@ -145,7 +129,9 @@ async function loadExistingProductHashes(serviceClient, shopId) {
 
 async function syncShopify({ serviceClient, creds }) {
   const domain = creds.shop_domain.replace(/^https?:\/\//, "");
-  const currency = await fetchShopCurrency({ domain, accessToken: creds.access_token });
+  const currency = await fetchShopCurrency({
+    domain, accessToken: creds.access_token, apiVersion: SHOPIFY_API_VERSION,
+  });
   const primaryMarketCurrency = await fetchPrimaryMarketCurrency({
     domain, accessToken: creds.access_token, apiVersion: SHOPIFY_API_VERSION,
   });
