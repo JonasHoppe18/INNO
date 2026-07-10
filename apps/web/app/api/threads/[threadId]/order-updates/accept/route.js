@@ -3,7 +3,11 @@ import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { decryptString } from "@/lib/server/shopify-oauth";
 import { sendPostmarkEmail } from "@/lib/server/postmark";
-import { buildSharedSonaFromEmail } from "@/lib/server/sending-identity";
+import {
+  buildEffectiveSharedFromEmail,
+  buildSharedSonaFromEmail,
+} from "@/lib/server/sending-identity";
+import { ensureManagedSendingDomain } from "@/lib/server/managed-sending-domain";
 import { getEffectiveSenderEmail, getEffectiveSenderName, getReplyTargetEmail } from "@/lib/inbox/sender";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 
@@ -272,7 +276,7 @@ async function loadShopForSendingIdentity(serviceClient, shopId) {
   if (!serviceClient || !safeShopId) return null;
   const { data, error } = await serviceClient
     .from("shops")
-    .select("id, shop_name, team_name, shop_domain")
+    .select("id, shop_name, shop_domain")
     .eq("id", safeShopId)
     .maybeSingle();
   if (error) {
@@ -294,7 +298,7 @@ function resolvePostmarkSender(mailbox, shop) {
 
   return customIsAllowed
     ? customFromEmail
-    : buildSharedSonaFromEmail({ shop, mailbox });
+    : buildEffectiveSharedFromEmail({ shop, mailbox });
 }
 
 const normalizeRegionLookupToken = (value) =>
@@ -540,12 +544,27 @@ async function loadForwardingContext(serviceClient, scope, thread, payload) {
 
   let mailboxQuery = serviceClient
     .from("mail_accounts")
-    .select("id, shop_id, provider_email, sending_type, sending_domain, domain_status, from_email, from_name")
+    .select("id, workspace_id, shop_id, provider, provider_email, sending_type, sending_domain, domain_status, from_email, from_name, metadata")
     .eq("id", thread.mailbox_id)
     .limit(1);
   mailboxQuery = applyScope(mailboxQuery, scope);
   const { data: mailbox } = await mailboxQuery.maybeSingle();
   const shop = await loadShopForSendingIdentity(serviceClient, mailbox?.shop_id);
+  if (mailbox?.provider === "smtp") {
+    try {
+      await ensureManagedSendingDomain({
+        serviceClient,
+        mailbox,
+        shop,
+        refreshPending: true,
+      });
+    } catch (error) {
+      console.warn(
+        "order-updates/accept: managed sender provisioning unavailable",
+        error?.message || error,
+      );
+    }
+  }
 
   const sourceSubject = asString(inboundMessage?.subject || thread.subject || "Inbound message");
   const sourceBody = asString(inboundMessage?.body_text || inboundMessage?.body_html || "");
@@ -614,12 +633,27 @@ async function loadMailboxSender(serviceClient, scope, mailboxId) {
   }
   let query = serviceClient
     .from("mail_accounts")
-    .select("id, shop_id, provider_email, sending_type, sending_domain, domain_status, from_email, from_name")
+    .select("id, workspace_id, shop_id, provider, provider_email, sending_type, sending_domain, domain_status, from_email, from_name, metadata")
     .eq("id", mailboxId)
     .limit(1);
   query = applyScope(query, scope);
   const { data } = await query.maybeSingle();
   const shop = await loadShopForSendingIdentity(serviceClient, data?.shop_id);
+  if (data?.provider === "smtp") {
+    try {
+      await ensureManagedSendingDomain({
+        serviceClient,
+        mailbox: data,
+        shop,
+        refreshPending: true,
+      });
+    } catch (error) {
+      console.warn(
+        "order-updates/accept: managed sender provisioning unavailable",
+        error?.message || error,
+      );
+    }
+  }
   const fromEmail = resolvePostmarkSender(data, shop);
   const fromName = asString(data?.from_name || "") || POSTMARK_FROM_NAME;
   return { fromEmail, fromName };

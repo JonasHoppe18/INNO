@@ -5,7 +5,7 @@ import { DashboardPageShell } from "@/components/dashboard-page-shell";
 import { MailboxRow } from "@/components/mailboxes/MailboxRow";
 import { MailboxesAddMenu } from "@/components/mailboxes/MailboxesAddMenu";
 import { MailboxesOnboardingTracker } from "@/components/onboarding/MailboxesOnboardingTracker";
-import { buildSharedSonaFromEmail } from "@/lib/server/sending-identity";
+import { buildEffectiveSharedFromEmail } from "@/lib/server/sending-identity";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 
 const SUPABASE_URL =
@@ -28,7 +28,7 @@ async function loadMailAccounts(serviceClient, scope) {
     serviceClient
     .from("mail_accounts")
     .select(
-      "id, provider, provider_email, status, inbound_slug, shop_id, sending_type, sending_domain, domain_status, domain_dns, from_email, from_name"
+      "id, provider, provider_email, status, inbound_slug, shop_id, sending_type, sending_domain, domain_status, domain_dns, from_email, from_name, metadata"
     )
     .in("provider", ["gmail", "outlook", "smtp"])
     .order("created_at", { ascending: true }),
@@ -92,7 +92,7 @@ export default async function MailboxesPage() {
       domainDns: account.domain_dns || null,
       fromEmail: account.from_email || null,
       fromName: account.from_name || null,
-      sharedFromEmail: buildSharedSonaFromEmail({
+      sharedFromEmail: buildEffectiveSharedFromEmail({
         shop: shopsById.get(account.shop_id) || null,
         mailbox: account,
       }),
