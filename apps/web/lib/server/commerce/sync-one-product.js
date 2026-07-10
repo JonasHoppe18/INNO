@@ -97,6 +97,7 @@ export async function upsertProductKnowledge({
   serviceClient,
   creds,
   product,
+  normalized,
   currency,
   embedText,
 }) {
@@ -127,7 +128,13 @@ export async function upsertProductKnowledge({
       metadata: {
         product_id: productId,
         title: String(product?.title || "").trim(),
+        price: normalized?.price_display || null,
         currency: currency || null,
+        handle: normalized?.handle ?? null,
+        product_updated_at: normalized?.product_updated_at ?? null,
+        url: normalized?.product_url ?? null,
+        status: normalized?.status ?? null,
+        is_placeholder_price: normalized?.is_placeholder_price ?? false,
         content_hash: contentHash,
         chunk_index: chunkIndex,
         chunk_count: chunks.length,

@@ -203,7 +203,7 @@ async function syncShopify({ serviceClient, creds }) {
       continue;
     }
     const { indexed: didIndex } = await upsertProductKnowledge({
-      serviceClient, creds, product, currency, embedText,
+      serviceClient, creds, product, normalized, currency, embedText,
     });
     if (didIndex) indexed += 1; else unchanged += 1;
   }
