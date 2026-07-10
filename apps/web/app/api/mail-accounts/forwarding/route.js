@@ -3,6 +3,8 @@ import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 import { resolveAuthScope, resolveScopedShop } from "@/lib/server/workspace-auth";
+import { ensureManagedSendingDomain } from "@/lib/server/managed-sending-domain";
+import { buildEffectiveSharedFromEmail } from "@/lib/server/sending-identity";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -75,7 +77,7 @@ export async function POST(request) {
   let shop = null;
   try {
     shop = await resolveScopedShop(serviceClient, scope, requestedShopId, {
-      fields: "id",
+      fields: "id, shop_name, shop_domain",
       allowSingleScopedFallback: true,
       missingShopMessage: "shop_id is required to bind a forwarding mailbox in a multi-shop workspace.",
     });
@@ -99,19 +101,36 @@ export async function POST(request) {
         status: "inactive",
         access_token_enc: "\\x",
         refresh_token_enc: "\\x",
+        metadata: {},
         created_at: now,
         updated_at: now,
       })
-      .select("id, provider_email, inbound_slug")
+      .select(
+        "id, provider, provider_email, inbound_slug, workspace_id, shop_id, sending_type, domain_status, metadata",
+      )
       .maybeSingle();
 
     if (!error && data) {
+      try {
+        await ensureManagedSendingDomain({
+          serviceClient,
+          mailbox: data,
+          shop,
+          refreshPending: true,
+        });
+      } catch (provisionError) {
+        console.warn(
+          "Managed sender provisioning will retry on send:",
+          provisionError?.message || provisionError,
+        );
+      }
       return NextResponse.json(
         {
           id: data.id,
           provider_email: data.provider_email,
           inbound_slug: data.inbound_slug,
           forwarding_address: `${data.inbound_slug}@inbound.sona-ai.dk`,
+          shared_from_email: buildEffectiveSharedFromEmail({ mailbox: data, shop }),
         },
         { status: 200 }
       );

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
-import { buildSharedSonaFromEmail } from "@/lib/server/sending-identity";
+import { buildEffectiveSharedFromEmail } from "@/lib/server/sending-identity";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +29,7 @@ async function loadMailAccounts(serviceClient, scope) {
     serviceClient
       .from("mail_accounts")
       .select(
-        "id, provider, provider_email, status, inbound_slug, shop_id, sending_type, sending_domain, domain_status, domain_dns, from_email, from_name"
+        "id, provider, provider_email, status, inbound_slug, shop_id, sending_type, sending_domain, domain_status, domain_dns, from_email, from_name, metadata"
       )
       .in("provider", ["gmail", "outlook", "smtp"])
       .order("created_at", { ascending: true }),
@@ -95,7 +95,7 @@ export async function GET() {
         domainDns: account.domain_dns || null,
         fromEmail: account.from_email || null,
         fromName: account.from_name || null,
-        sharedFromEmail: buildSharedSonaFromEmail({
+        sharedFromEmail: buildEffectiveSharedFromEmail({
           shop: shopsById.get(account.shop_id) || null,
           mailbox: account,
         }),

@@ -4,7 +4,11 @@ import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 import { sendPostmarkEmail } from "@/lib/server/postmark";
 import { getReplyTargetEmail } from "@/lib/inbox/sender";
-import { buildSharedSonaFromEmail } from "@/lib/server/sending-identity";
+import {
+  buildEffectiveSharedFromEmail,
+  getVerifiedManagedSenderEmail,
+} from "@/lib/server/sending-identity";
+import { ensureManagedSendingDomain } from "@/lib/server/managed-sending-domain";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 import { autoTagThread } from "@/lib/ai/autoTagThread";
 import { embedTexts } from "@/lib/server/shopify-policy-sync";
@@ -868,7 +872,8 @@ function buildFromAddress(name, email) {
 }
 
 function resolvePostmarkSender(mailbox, senderName, { shop = null } = {}) {
-  const safeSharedFromEmail = String(buildSharedSonaFromEmail({ shop, mailbox }) || "")
+  const verifiedManagedFromEmail = getVerifiedManagedSenderEmail(mailbox);
+  const safeSharedFromEmail = String(buildEffectiveSharedFromEmail({ shop, mailbox }) || "")
     .trim()
     .toLowerCase();
   if (!safeSharedFromEmail) {
@@ -905,7 +910,7 @@ function resolvePostmarkSender(mailbox, senderName, { shop = null } = {}) {
     fromEmail: safeSharedFromEmail,
     fromDisplay: buildFromAddress(resolvedName, safeSharedFromEmail),
     fromName: resolvedName || null,
-    mode: "shared",
+    mode: verifiedManagedFromEmail ? "managed_shared" : "shared",
   };
 }
 
@@ -1243,7 +1248,7 @@ export async function POST(request, { params }) {
   let mailboxQuery = serviceClient
     .from("mail_accounts")
     .select(
-      "id, user_id, workspace_id, shop_id, provider, provider_email, access_token_enc, refresh_token_enc, token_expires_at, status, smtp_host, smtp_port, smtp_secure, smtp_username_enc, smtp_password_enc, smtp_status, sending_type, sending_domain, domain_status, from_email, from_name",
+      "id, user_id, workspace_id, shop_id, provider, provider_email, access_token_enc, refresh_token_enc, token_expires_at, status, smtp_host, smtp_port, smtp_secure, smtp_username_enc, smtp_password_enc, smtp_status, sending_type, sending_domain, domain_status, from_email, from_name, metadata",
     )
     .eq("id", thread.mailbox_id);
   mailboxQuery = applyScope(mailboxQuery, scope);
@@ -1257,13 +1262,29 @@ export async function POST(request, { params }) {
   if (mailbox.shop_id) {
     const { data: shopRow, error: shopError } = await serviceClient
       .from("shops")
-      .select("id, shop_name, team_name, shop_domain")
+      .select("id, shop_name, shop_domain")
       .eq("id", mailbox.shop_id)
       .maybeSingle();
     if (shopError) {
       console.warn("[threads/send] failed to load shop for sending identity", shopError.message);
     }
     shop = shopRow || null;
+  }
+
+  if (mailbox.provider === "smtp") {
+    try {
+      await ensureManagedSendingDomain({
+        serviceClient,
+        mailbox,
+        shop,
+        refreshPending: true,
+      });
+    } catch (error) {
+      console.warn(
+        "[threads/send] managed sender provisioning unavailable; using root fallback",
+        error?.message || error,
+      );
+    }
   }
 
   let aiDraftText = "";

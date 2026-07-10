@@ -105,6 +105,27 @@ export async function getPostmarkDomain(domainId) {
   });
 }
 
+export async function listPostmarkDomains({ count = 500, offset = 0 } = {}) {
+  return await postmarkRequest(
+    `/domains?count=${encodeURIComponent(count)}&offset=${encodeURIComponent(offset)}`,
+    {
+      method: "GET",
+      accountLevel: true,
+    },
+  );
+}
+
+export async function findPostmarkDomainByName(domainName) {
+  const target = String(domainName || "").trim().toLowerCase();
+  if (!target) return null;
+  const payload = await listPostmarkDomains({ count: 500, offset: 0 });
+  return (
+    (Array.isArray(payload?.Domains) ? payload.Domains : []).find(
+      (domain) => String(domain?.Name || "").trim().toLowerCase() === target,
+    ) || null
+  );
+}
+
 export function buildDomainDns(domainName, domainPayload) {
   const records = extractDomainDnsRecords(domainPayload, domainName);
   return {

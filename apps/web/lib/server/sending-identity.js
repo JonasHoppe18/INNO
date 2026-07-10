@@ -70,3 +70,36 @@ export function buildSharedSonaFromEmail({ shop = {}, mailbox = {} } = {}) {
   void mailbox;
   return `${localPart}@${normalizedRootDomain}`;
 }
+
+export function getManagedSenderFromMailbox(mailbox = {}) {
+  const metadata =
+    mailbox?.metadata && typeof mailbox.metadata === "object" ? mailbox.metadata : {};
+  const managed =
+    metadata?.managed_sender && typeof metadata.managed_sender === "object"
+      ? metadata.managed_sender
+      : null;
+  if (!managed) return null;
+  return {
+    ...managed,
+    domain: asString(managed.domain).toLowerCase() || null,
+    from_email: asString(managed.from_email).toLowerCase() || null,
+    status: asString(managed.status).toLowerCase() || "unprovisioned",
+  };
+}
+
+export function getVerifiedManagedSenderEmail(mailbox = {}) {
+  const managed = getManagedSenderFromMailbox(mailbox);
+  if (
+    managed?.status !== "verified" ||
+    !managed?.from_email ||
+    !managed?.domain ||
+    !managed.from_email.endsWith(`@${managed.domain}`)
+  ) {
+    return null;
+  }
+  return managed.from_email;
+}
+
+export function buildEffectiveSharedFromEmail({ shop = {}, mailbox = {} } = {}) {
+  return getVerifiedManagedSenderEmail(mailbox) || buildSharedSonaFromEmail({ shop, mailbox });
+}
