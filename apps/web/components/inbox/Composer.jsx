@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { toast } from "sonner";
 import {
   ChevronDown,
   X,
@@ -17,6 +18,12 @@ import {
   SUPPORTED_SUPPORT_LANGUAGE_CODES,
   SUPPORT_LANGUAGE_LABELS,
 } from "@/lib/translation/languages";
+import {
+  extractClipboardHtmlImages,
+  isLikelyClipboardContentImage,
+  isZendeskImageUrl,
+  replaceClipboardHtmlImagesWithMarkers,
+} from "@/lib/inbox/clipboard-inline-images";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -306,6 +313,130 @@ const getSavedReplyInlineContentIdSet = (reply) => {
       .map((image) => normalizeContentId(image?.content_id || image?.contentId))
       .filter(Boolean)
   );
+};
+
+const MAX_REPLY_ATTACHMENTS = 10;
+const MAX_REPLY_ATTACHMENT_BYTES = 15 * 1024 * 1024;
+
+const readFileAsBase64 = (file) =>
+  new Promise((resolve) => {
+    try {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = String(reader.result || "");
+        const comma = result.indexOf(",");
+        resolve(comma >= 0 ? result.slice(comma + 1) : "");
+      };
+      reader.onerror = () => resolve("");
+      reader.readAsDataURL(file);
+    } catch {
+      resolve("");
+    }
+  });
+
+const imageExtensionForMimeType = (mimeType = "") => {
+  const normalized = String(mimeType || "").toLowerCase();
+  if (normalized === "image/jpeg") return "jpg";
+  if (normalized === "image/svg+xml") return "svg";
+  return normalized.split("/")[1]?.replace(/[^a-z0-9]+/g, "") || "png";
+};
+
+const buildPastedImageFilename = (image = {}, mimeType = "image/png", index = 0) => {
+  let candidate = "";
+  try {
+    const url = new URL(String(image?.src || ""));
+    candidate =
+      url.searchParams.get("name") ||
+      url.searchParams.get("filename") ||
+      decodeURIComponent(url.pathname.split("/").filter(Boolean).pop() || "");
+  } catch {
+    candidate = "";
+  }
+  const safeCandidate = String(candidate || "")
+    .replace(/[^A-Za-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120);
+  if (safeCandidate && /\.[A-Za-z0-9]{2,8}$/.test(safeCandidate)) return safeCandidate;
+  const extension = imageExtensionForMimeType(mimeType);
+  return `${safeCandidate || `pasted-image-${index + 1}`}.${extension}`;
+};
+
+const responseToPastedImageFile = async (response, image, index) => {
+  if (!response?.ok) return null;
+  const blob = await response.blob();
+  const mimeType = String(blob.type || response.headers.get("content-type") || "")
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
+  if (!mimeType.startsWith("image/") || blob.size <= 0) return null;
+  if (blob.size > MAX_REPLY_ATTACHMENT_BYTES) return null;
+  return new File([blob], buildPastedImageFilename(image, mimeType, index), {
+    type: mimeType,
+    lastModified: Date.now(),
+  });
+};
+
+const loadPastedHtmlImageFile = async (image, index) => {
+  const src = String(image?.src || "").trim();
+  if (!src || !/^(?:data:image\/|blob:|https?:\/\/)/i.test(src)) return null;
+
+  try {
+    const isSameOrigin =
+      typeof window !== "undefined" &&
+      /^https?:\/\//i.test(src) &&
+      new URL(src).origin === window.location.origin;
+    const directResponse = await fetch(src, {
+      credentials: isSameOrigin ? "include" : "omit",
+    });
+    const directFile = await responseToPastedImageFile(directResponse, image, index);
+    if (directFile) return directFile;
+  } catch {
+    // Cross-origin Zendesk attachments commonly block browser reads. The
+    // authenticated proxy below imports only public Zendesk image URLs.
+  }
+
+  if (!isZendeskImageUrl(src)) return null;
+  try {
+    const proxyResponse = await fetch("/api/attachments/fetch-inline", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: src }),
+    });
+    return await responseToPastedImageFile(proxyResponse, image, index);
+  } catch {
+    return null;
+  }
+};
+
+const buildInlinePasteAttachment = async (sourceFile, image, index) => {
+  if (!sourceFile || sourceFile.size <= 0 || sourceFile.size > MAX_REPLY_ATTACHMENT_BYTES) {
+    return null;
+  }
+  const mimeType = String(sourceFile.type || "image/png").toLowerCase();
+  if (!mimeType.startsWith("image/")) return null;
+  const contentBase64 = await readFileAsBase64(sourceFile);
+  if (!contentBase64) return null;
+  const filename =
+    String(sourceFile.name || "").trim() || buildPastedImageFilename(image, mimeType, index);
+  const contentId = normalizeContentId(
+    `paste-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 8)}`,
+    filename,
+  );
+  if (!contentId) return null;
+
+  const inlineFile = new File([sourceFile], filename, {
+    type: mimeType,
+    lastModified: sourceFile.lastModified || Date.now(),
+  });
+  inlineFile.__innoDeliveryMode = "inline";
+  inlineFile.__innoInline = true;
+  inlineFile.__innoContentId = contentId;
+  inlineFile.__innoContentBase64 = contentBase64;
+  inlineFile.__innoMimeType = mimeType;
+  return {
+    file: inlineFile,
+    marker: buildCidMarker(contentId, image?.width, image?.height),
+  };
 };
 
 function ComposerComponent({
@@ -1235,87 +1366,114 @@ function ComposerComponent({
     syncingReplyHtmlRef.current = false;
   };
 
-  // Paste from clipboard — supports text WITH inline images (e.g. screenshots
-  // pasted from Slack/Mail, content copied from a Notion page). Plain-text
-  // pastes pass through to the browser's default behavior. Image-bearing
-  // pastes: extract each image as a File, attach it as an inline base64
-  // attachment (same shape saved replies use), and insert a [cid:xxx] marker
-  // at the caret so it renders inline via the existing markers→<img> pipeline.
+  // Paste from clipboard — supports both direct image clipboard items and
+  // copied HTML with in-text images (notably Zendesk). HTML image positions
+  // become CID markers while the image bytes become inline attachments.
   const handleReplyEditorPaste = async (event) => {
     if (disabled || showDraftLoadingState) return;
     const clipboard = event.clipboardData;
     if (!clipboard) return;
 
-    const imageFiles = [];
+    const clipboardImageFiles = [];
     const items = Array.from(clipboard.items || []);
     for (const item of items) {
       if (item.kind === "file" && String(item.type || "").startsWith("image/")) {
         const file = item.getAsFile();
-        if (file) imageFiles.push(file);
+        if (file) clipboardImageFiles.push(file);
       }
     }
-    // No images → let the browser handle the paste (text, etc.) normally.
-    if (imageFiles.length === 0) return;
+    const clipboardHtml = String(clipboard.getData("text/html") || "");
+    const htmlImages = extractClipboardHtmlImages(clipboardHtml);
+    const contentImages = htmlImages.filter(isLikelyClipboardContentImage);
+    if (clipboardImageFiles.length === 0 && contentImages.length === 0) return;
 
     event.preventDefault();
 
-    const readAsBase64 = (file) =>
-      new Promise((resolve) => {
-        try {
-          const reader = new FileReader();
-          reader.onload = () => {
-            const result = String(reader.result || "");
-            const comma = result.indexOf(",");
-            resolve(comma >= 0 ? result.slice(comma + 1) : "");
-          };
-          reader.onerror = () => resolve("");
-          reader.readAsDataURL(file);
-        } catch {
-          resolve("");
-        }
-      });
-
-    const inlineAttachments = [];
-    const markers = [];
-    for (const file of imageFiles) {
-      const base64 = await readAsBase64(file);
-      if (!base64) continue;
-      const ext = String(file.type || "").split("/")[1] || "png";
-      const filename = file.name || `pasted-image-${Date.now()}.${ext}`;
-      const contentId = normalizeContentId(
-        `paste-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        filename,
-      );
-      if (!contentId) continue;
-      // Wrap in a fresh File so we can attach the __inno* marker props
-      // without mutating the original clipboard file.
-      const inlineFile = new File([file], filename, {
-        type: file.type || "image/png",
-        lastModified: file.lastModified || Date.now(),
-      });
-      inlineFile.__innoDeliveryMode = "inline";
-      inlineFile.__innoInline = true;
-      inlineFile.__innoContentId = contentId;
-      inlineFile.__innoContentBase64 = base64;
-      inlineFile.__innoMimeType = file.type || "image/png";
-      inlineAttachments.push(inlineFile);
-      const marker = buildCidMarker(contentId);
-      if (marker) markers.push(marker);
+    const selection = typeof window !== "undefined" ? window.getSelection() : null;
+    const pasteRange =
+      selection && selection.rangeCount > 0 ? selection.getRangeAt(0).cloneRange() : null;
+    const availableSlots = Math.max(0, MAX_REPLY_ATTACHMENTS - attachments.length);
+    if (!availableSlots) {
+      toast.error("A reply can contain at most 10 attachments.");
+      return;
     }
 
-    if (inlineAttachments.length === 0) return;
+    const inlineAttachments = [];
+    const markersByHtmlImage = Array(htmlImages.length).fill("");
+    const trailingMarkers = [];
+    let clipboardFileIndex = 0;
+    let failedImages = 0;
 
-    // Combine any pasted plain text with the markers. Text first, then a
-    // newline, then markers stacked one per line — the rendering pipeline
-    // turns each marker into an <img> on its own line.
+    for (const image of contentImages) {
+      if (inlineAttachments.length >= availableSlots) {
+        failedImages += 1;
+        continue;
+      }
+      let sourceFile = clipboardImageFiles[clipboardFileIndex] || null;
+      if (sourceFile) clipboardFileIndex += 1;
+      if (!sourceFile) sourceFile = await loadPastedHtmlImageFile(image, image.index);
+      const inline = await buildInlinePasteAttachment(sourceFile, image, image.index);
+      if (!inline?.file || !inline?.marker) {
+        failedImages += 1;
+        continue;
+      }
+      inlineAttachments.push(inline.file);
+      markersByHtmlImage[image.index] = inline.marker;
+    }
+
+    while (
+      clipboardFileIndex < clipboardImageFiles.length &&
+      inlineAttachments.length < availableSlots
+    ) {
+      const file = clipboardImageFiles[clipboardFileIndex];
+      const inline = await buildInlinePasteAttachment(
+        file,
+        {},
+        htmlImages.length + clipboardFileIndex,
+      );
+      clipboardFileIndex += 1;
+      if (!inline?.file || !inline?.marker) {
+        failedImages += 1;
+        continue;
+      }
+      inlineAttachments.push(inline.file);
+      trailingMarkers.push(inline.marker);
+    }
+    failedImages += Math.max(0, clipboardImageFiles.length - clipboardFileIndex);
+
     const pastedText = String(clipboard.getData("text/plain") || "").trim();
-    const insertPayload = [pastedText, ...markers].filter(Boolean).join("\n");
+    const orderedHtmlText = clipboardHtml
+      ? extractPlainTextFromReplyHtml(
+          replaceClipboardHtmlImagesWithMarkers(clipboardHtml, markersByHtmlImage),
+        )
+      : "";
+    const insertPayload = [orderedHtmlText || pastedText, ...trailingMarkers]
+      .filter(Boolean)
+      .join("\n");
 
-    setAttachments((prev) => [...prev, ...inlineAttachments]);
-    // execCommand is the most reliable cross-browser way to insert text at
-    // the caret in a contentEditable — it triggers the onInput handler so
-    // the parent value stays in sync.
-    document.execCommand("insertText", false, insertPayload);
+    if (inlineAttachments.length) {
+      setAttachments((prev) => [...prev, ...inlineAttachments]);
+    }
+    if (pasteRange && replyEditorRef.current?.contains(pasteRange.commonAncestorContainer)) {
+      const currentSelection = window.getSelection();
+      currentSelection?.removeAllRanges();
+      currentSelection?.addRange(pasteRange);
+    }
+    if (insertPayload) {
+      const inlineHtml = plainTextToReplyHtmlWithInlineImages(
+        insertPayload,
+        inlineAttachments,
+      );
+      const inserted = document.execCommand("insertHTML", false, inlineHtml);
+      if (!inserted) document.execCommand("insertText", false, insertPayload);
+    }
+    if (failedImages > 0) {
+      toast.warning(
+        failedImages === 1
+          ? "One pasted image could not be imported. Try downloading and attaching it."
+          : `${failedImages} pasted images could not be imported. Try downloading and attaching them.`,
+      );
+    }
   };
 
   const getReplyInlineResizeTarget = (event) => {
