@@ -180,10 +180,11 @@ function TicketListItemComponent({
         "relative flex w-full flex-col gap-0.5 px-4 py-2 text-left hover:bg-muted/50 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
         isDraggable && "cursor-grab active:cursor-grabbing",
         isNew ? "animate-ticket-enter" : !isExiting && "animate-list-item-enter",
-        // Outlook-style state language: unread is a lightweight emphasis,
-        // while the selected ticket gets the stronger rail + lavender wash.
-        isUnread && "bg-violet-50/40 hover:bg-violet-50 dark:bg-violet-500/[0.06] dark:hover:bg-violet-500/[0.1]",
-        isActive && "bg-violet-50 hover:bg-violet-100/70 dark:bg-violet-500/[0.14] dark:hover:bg-violet-500/[0.2] before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-violet-600 dark:before:bg-violet-400",
+        // State hierarchy: unread calls for attention with type + a dot; the
+        // active ticket is the current location, so it alone gets the calm
+        // lavender surface and stronger brand rail.
+        isUnread && "hover:bg-violet-50/60 dark:hover:bg-violet-500/[0.08]",
+        isActive && "bg-violet-100/80 ring-1 ring-inset ring-violet-200/70 hover:bg-violet-100 dark:bg-violet-500/[0.18] dark:ring-violet-300/20 dark:hover:bg-violet-500/[0.22] before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-violet-600 dark:before:bg-violet-400",
         isExiting && "pointer-events-none"
       )}
       style={{
@@ -208,22 +209,25 @@ function TicketListItemComponent({
         overflow: "hidden",
       }}
       aria-pressed={isActive}
+      aria-current={isActive ? "page" : undefined}
     >
       <div className="flex items-center gap-2">
         {isUnread ? (
           <span
             aria-label="Unread"
-            className="size-1.5 shrink-0 rounded-full bg-violet-600 dark:bg-violet-400"
+            className="size-2 shrink-0 rounded-full bg-violet-600 ring-2 ring-violet-100 dark:bg-violet-400 dark:ring-violet-500/20"
           />
         ) : null}
-        <span className={cn("min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground", isUnread && "font-bold text-foreground")}>
+        <span className={cn("min-w-0 flex-1 truncate text-[13px] font-medium text-foreground", isUnread && "font-bold")}>
           {customerLabel}
         </span>
-        <span className="shrink-0 text-[12px] text-muted-foreground">{formatMessageTime(timestamp)}</span>
+        <span className={cn("shrink-0 text-[12px] text-muted-foreground", isUnread && "font-semibold text-foreground/70")}>
+          {formatMessageTime(timestamp)}
+        </span>
       </div>
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px] text-muted-foreground">
-          <span className={cn("truncate", isUnread && "font-medium text-foreground")}>
+          <span className={cn("truncate", isUnread && "font-semibold text-foreground")}>
             {thread.subject || "Untitled ticket"}
           </span>
           {hasAiDraft ? <Sparkles className="h-3 w-3 text-amber-400" /> : null}
