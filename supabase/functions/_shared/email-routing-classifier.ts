@@ -367,7 +367,13 @@ async function classifyWithLlm(
 
   const systemPrompt =
     "Classify inbound email intent into exactly one allowed category. " +
-    "Use support for customer order/help issues. Return strict JSON only.";
+    "Use 'support' for ANYTHING from a customer about a product they own or an " +
+    "order — help/questions, complaints, product feedback or reviews, warranty, " +
+    "defects, returns, refunds, delivery. A customer complaining about or giving " +
+    "feedback on a product they bought is ALWAYS 'support', never partnership. " +
+    "Only use a non-support category for a genuine business proposal from another " +
+    "company (reseller, affiliate, sponsorship, wholesale/B2B, distribution). " +
+    "Return strict JSON only.";
   const userPrompt =
     `allowed:${keySet.join("|")}\nlabels:${labels || "none"}\n` +
     `subject:${subject || "(none)"}\nexcerpt:${excerpt || "(empty)"}\n` +

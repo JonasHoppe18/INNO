@@ -1098,6 +1098,25 @@ function extractMessageSignals(messageText: string) {
   const hasTechnicalIssue =
     /\b(connect|connection|pair|paired|app|firmware|update|audio|sound|usb|usb-c|cable|charging|battery|mic|microphone|forbind|forbinde|opdater|lyd|kabel|strøm|batteri|mikrofon)\b/i
       .test(messageText);
+  // Does the customer actually ask for a remedy (repair/replacement/swap)? Used
+  // to tell a remedy REQUEST apart from a customer merely sharing that a product
+  // broke as feedback.
+  const wantsRepairOrReplacement =
+    /\b(replace|replacement|repair|swap|exchange|ombyt|ombytning|erstatning|reparation|reparer|reparere|udskift|nyt eksemplar|new one)\b/i
+      .test(messageText);
+  // Customer says they have already taken the warranty/claim to a third-party
+  // retailer (retailer name AND a contact/claim verb). When true the warranty
+  // channel is already handled elsewhere — we must not restart a repair flow.
+  const contactedThirdPartyRetailer =
+    /\b(power|elgiganten|mediamarkt|proshop|komplett|coolshop|expert|cdon|bilka)\b/i
+      .test(messageText) &&
+    /\b(kontaktet|contacted|henvendt|reached out|reklamation|reklamere|claim|garanti|warranty|handled)\b/i
+      .test(messageText);
+  // Customer is sharing product feedback / a review of their experience rather
+  // than requesting an action.
+  const givingProductFeedback =
+    /\b(feedback|dele (?:lidt|min|noget)|min oplevelse|jeres (?:videre )?produktudvikling|product development|share (?:my|some) (?:experience|feedback)|constructive|konstruktiv|just wanted to (?:let you know|share)|til orientering)\b/i
+      .test(messageText);
 
   return {
     emails: unique(emails),
@@ -1112,6 +1131,9 @@ function extractMessageSignals(messageText: string) {
     hasAccessoryRequest,
     hasPhysicalDamage,
     hasTechnicalIssue,
+    wantsRepairOrReplacement,
+    contactedThirdPartyRetailer,
+    givingProductFeedback,
   };
 }
 
@@ -1204,6 +1226,19 @@ function buildInfoRequirementsBlock(
     (plan.primary_intent === "refund" && signals.hasPhysicalDamage) ||
     (plan.primary_intent === "complaint" &&
       (signals.hasPhysicalDamage || signals.wantsRefund));
+  // Feedback-acknowledge mode: the customer is sharing product feedback / a
+  // complaint WITHOUT requesting a remedy, or has already taken the warranty to
+  // a third-party retailer themselves. Either way, demanding photos / order
+  // number / shipping details and opening a repair flow is wrong — acknowledge
+  // the feedback instead. Gated tightly (needs an explicit feedback cue or a
+  // retailer-contact cue) so a normal "my headset broke, please replace it"
+  // still runs the warranty flow.
+  const wantsRemedy = signals.wantsRefund || signals.wantsReturn ||
+    signals.wantsRepairOrReplacement;
+  const feedbackAcknowledgeMode = !signals.hasAccessoryRequest &&
+    (signals.contactedThirdPartyRetailer ||
+      (plan.primary_intent === "complaint" && signals.givingProductFeedback &&
+        !wantsRemedy));
   const orderLookupLike = [
     "tracking",
     "return",
@@ -1226,7 +1261,7 @@ function buildInfoRequirementsBlock(
     missing.push(
       "order_reference: ordrenummer eller købskontekst (hvor/hvornår produktet er købt), så vi kan identificere den rigtige kompatible reservedel",
     );
-  } else if (warrantyLike) {
+  } else if (warrantyLike && !feedbackAcknowledgeMode) {
     const isFollowUp = caseState.decisions_made.length > 0 ||
       caseState.pending_asks.length > 0;
     if (!hasOrderReference && !signals.hasPurchasePlace) {
@@ -1312,8 +1347,13 @@ ${
       : ""
   }
 ${
-    replyMode !== "concise" && warrantyLike
+    replyMode !== "concise" && warrantyLike && !feedbackAcknowledgeMode
       ? "For garanti/refund/defekt-sager skal første prioritet være proof-of-purchase/ordrenummer/købssted og dokumentation (foto/video). Spørg kun om telefonnummer hvis order/proof-of-purchase allerede er kendt, eller kunden allerede har oplyst hvor produktet er købt. Hvis kunden allerede har bedt om refund/refusion, må du ikke bede kunden vælge mellem refund og replacement."
+      : ""
+  }
+${
+    feedbackAcknowledgeMode
+      ? "Kunden DELER FEEDBACK eller en klage over et produkt UDEN at bede om reparation, ombytning eller refusion — eller har allerede selv kontaktet forhandleren/købsstedet om reklamationen. Bed derfor IKKE om billeder, ordrenummer, købssted eller forsendelsesoplysninger, og start IKKE en garanti-/reparations-proces. Anerkend feedbacken oprigtigt, tag kritikken (fx holdbarhed, komfort, materialevalg) alvorligt og konkret, og skriv at den bringes videre til produktteamet/produktudviklingen. Har kunden allerede kontaktet forhandleren om reklamationen, så bekræft kort at det er den rette vej, og tilbyd at hjælpe yderligere hvis de får brug for det. Stil ikke et informationsspørgsmål og lov ingen kompensation."
       : ""
   }
 ${
