@@ -1757,12 +1757,52 @@ export async function runDraftV2Pipeline(
         })),
       });
     }
+    // Subject anchor: keep the writer on the exact product the customer asked
+    // about, so a strongly on-topic tone example or accessory knowledge chunk
+    // can't swap in a different product/spare part (a headset availability
+    // question drifting into "ear pads out of stock"). Derived from the
+    // customer's own words — the Shopify contact-form "request regarding" field
+    // and the case-state products the updater extracted. Phrased generally (no
+    // hardcoded accessory names) so it never suppresses a legitimate spare-part
+    // question where the accessory IS what the customer asked about.
+    let subjectAnchorBlock = "";
+    {
+      const anchored = new Set<string>();
+      const fields =
+        (contactFormIdentity as { fields?: Record<string, string> })?.fields;
+      if (fields && typeof fields === "object") {
+        const entry = Object.entries(fields).find(([k]) =>
+          k.toLowerCase() === "what is your request regarding?"
+        );
+        const v = entry?.[1]?.trim();
+        if (v && v.toLowerCase() !== "other") anchored.add(v);
+      }
+      const mentioned =
+        (caseState as { entities?: { products_mentioned?: unknown } })
+          ?.entities?.products_mentioned;
+      if (Array.isArray(mentioned)) {
+        for (const p of mentioned) {
+          const s = String(p ?? "").trim();
+          if (s && s.toLowerCase() !== "other") anchored.add(s);
+        }
+      }
+      const names = [...anchored].filter((n) => n.length > 1);
+      if (names.length > 0) {
+        subjectAnchorBlock =
+          `EMNE — kunden spørger om: ${names.join(", ")}. Din besked skal handle ` +
+          `om netop dette. Hvis et eksempel, en videns-chunk eller et fakta handler ` +
+          `om et ANDET produkt eller en reservedel end det kunden spurgte om, så nævn ` +
+          `eller anvend det IKKE. Angiv fx lager-/tilgængeligheds-status for præcis ` +
+          `det produkt kunden spurgte om — aldrig for et tilbehør kunden ikke har nævnt.`;
+      }
+    }
     const internalRulesBlock = [
       internalRules.block || "",
       returnTrackingAttribution?.blockText || "",
       compatibilityBlock || "",
       comparisonBlock || "",
       priceBlock || "",
+      subjectAnchorBlock || "",
     ].filter(Boolean).join("\n\n") || undefined;
     const latestSenderEmail = String(
       (latestMessage as Record<string, unknown>).from_email || "",
