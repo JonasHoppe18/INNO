@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
+import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   PRODUCT_SUPPORT_CATEGORY,
@@ -49,6 +51,17 @@ export function KnowledgeProductDetail({ productId, productTitle }) {
 
   return (
     <div className="space-y-4">
+      <Button
+        asChild
+        variant="ghost"
+        size="sm"
+        className="-ml-3 h-8 px-3 text-sm text-muted-foreground hover:text-foreground"
+      >
+        <Link href="/knowledge/product-questions">
+          <ArrowLeft className="h-4 w-4" />
+          Back to products
+        </Link>
+      </Button>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-lg font-semibold leading-tight">{productTitle || "Product"}</h1>
