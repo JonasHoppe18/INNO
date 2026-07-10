@@ -15,6 +15,7 @@ import {
   buildKnowledgeHash,
   upsertProductKnowledge,
   stripHtml,
+  embedText,
 } from "@/lib/server/commerce/sync-one-product";
 import { fetchPresentmentPrices, fetchPrimaryMarketCurrency } from "@/lib/server/commerce/shopify-presentment";
 import { ensureShopifyWebhooks, PRODUCT_WEBHOOK_TOPICS } from "@/lib/server/commerce/shopify-webhooks";
@@ -29,8 +30,6 @@ const SUPABASE_SERVICE_ROLE_KEY =
   process.env.SUPABASE_SERVICE_KEY ||
   "";
 const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || "2024-07";
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
-const OPENAI_EMBEDDING_MODEL = process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small";
 
 function createServiceClient() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null;
@@ -122,29 +121,6 @@ function extractNextPageInfo(linkHeader = "") {
     }
   }
   return null;
-}
-
-async function embedText(text) {
-  if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY missing.");
-  const res = await fetch("https://api.openai.com/v1/embeddings", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      input: text,
-      model: OPENAI_EMBEDDING_MODEL,
-    }),
-  });
-  const json = await res.json().catch(() => null);
-  if (!res.ok) {
-    const message = json?.error?.message || `OpenAI returned ${res.status}`;
-    throw new Error(message);
-  }
-  const vector = json?.data?.[0]?.embedding;
-  if (!Array.isArray(vector)) throw new Error("Embedding not returned.");
-  return vector;
 }
 
 async function loadExistingProductHashes(serviceClient, shopId) {

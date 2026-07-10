@@ -1,5 +1,36 @@
 import { createHash } from "node:crypto";
 
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
+const OPENAI_EMBEDDING_MODEL = process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small";
+
+/**
+ * Embeds a single string via OpenAI's embeddings endpoint. Shared by the bulk
+ * sync route and the Shopify product webhook so there's exactly one
+ * implementation of this OpenAI call.
+ */
+export async function embedText(text) {
+  if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY missing.");
+  const res = await fetch("https://api.openai.com/v1/embeddings", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      input: text,
+      model: OPENAI_EMBEDDING_MODEL,
+    }),
+  });
+  const json = await res.json().catch(() => null);
+  if (!res.ok) {
+    const message = json?.error?.message || `OpenAI returned ${res.status}`;
+    throw new Error(message);
+  }
+  const vector = json?.data?.[0]?.embedding;
+  if (!Array.isArray(vector)) throw new Error("Embedding not returned.");
+  return vector;
+}
+
 export function stripHtml(value = "") {
   if (typeof value !== "string") return "";
   return value
