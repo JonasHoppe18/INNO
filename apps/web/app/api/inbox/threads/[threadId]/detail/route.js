@@ -113,6 +113,33 @@ async function loadMessagesAndAttachments(serviceClient, threadId, mailboxId) {
   };
 }
 
+async function loadLatestAiDraft(serviceClient, scope, thread) {
+  const { data, error } = await applyScope(
+    serviceClient
+      .from("mail_messages")
+      .select("ai_draft_text, updated_at")
+      .eq("thread_id", thread.id)
+      .eq("from_me", false)
+      .not("ai_draft_text", "is", null)
+      .order("updated_at", { ascending: false, nullsLast: true })
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    scope,
+  );
+  if (error) throw new Error(error.message);
+
+  const bodyText = String(data?.ai_draft_text || "").trim();
+  if (!bodyText) return null;
+  return {
+    id: null,
+    body_text: bodyText,
+    body_html: null,
+    subject: thread.subject || "",
+    updated_at: data?.updated_at || null,
+  };
+}
+
 async function loadDraft(serviceClient, scope, thread) {
   const legacySignature = await loadLegacyUserSignature(serviceClient, scope.supabaseUserId);
   const { data: mailbox } = await applyScope(
@@ -134,7 +161,7 @@ async function loadDraft(serviceClient, scope, thread) {
     scope,
     thread.provider_thread_id || thread.id,
   );
-  const { data: draft, error } = await applyScope(
+  const { data: savedDraft, error } = await applyScope(
     serviceClient
       .from("mail_messages")
       .select("id, body_text, body_html, subject, updated_at")
@@ -147,6 +174,13 @@ async function loadDraft(serviceClient, scope, thread) {
     scope,
   );
   if (error) throw new Error(error.message);
+  // A generated reply is persisted on the latest inbound message. Treat it as
+  // a draft when there is no agent-edited `is_draft` row, so the detail payload
+  // alone can restore the composer after a ticket switch.
+  const proposalOnly = isProposalOnlyDraftMeta(latestPendingDraftMeta);
+  const draft =
+    savedDraft ||
+    (!proposalOnly ? await loadLatestAiDraft(serviceClient, scope, thread) : null);
   const rendered = draft
     ? composeEmailBodyWithSignature({
         bodyText: draft.body_text || "",
@@ -156,7 +190,7 @@ async function loadDraft(serviceClient, scope, thread) {
     : null;
   return {
     signature: signatureConfig.closingText || "",
-    proposal_only: isProposalOnlyDraftMeta(latestPendingDraftMeta),
+    proposal_only: proposalOnly,
     draft_kind: latestPendingDraftMeta?.kind || null,
     draft: draft
       ? {

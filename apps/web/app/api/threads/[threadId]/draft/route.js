@@ -58,6 +58,33 @@ function isProposalOnlyDraftMeta(meta) {
   return kind !== "final_customer_reply";
 }
 
+async function loadLatestAiDraft(serviceClient, scope, threadId, subject = "") {
+  const { data, error } = await applyScope(
+    serviceClient
+      .from("mail_messages")
+      .select("ai_draft_text, updated_at")
+      .eq("thread_id", threadId)
+      .eq("from_me", false)
+      .not("ai_draft_text", "is", null)
+      .order("updated_at", { ascending: false, nullsLast: true })
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    scope,
+  );
+  if (error) throw new Error(error.message);
+
+  const bodyText = String(data?.ai_draft_text || "").trim();
+  if (!bodyText) return null;
+  return {
+    id: null,
+    body_text: bodyText,
+    body_html: null,
+    subject,
+    updated_at: data?.updated_at || null,
+  };
+}
+
 function buildSnippet(text, maxLength = 240) {
   const cleaned = String(text || "").replace(/\s+/g, " ").trim();
   if (!cleaned) return "";
@@ -200,7 +227,7 @@ export async function GET(_request, { params }) {
   const { data: thread, error: threadError } = await applyScope(
     serviceClient
       .from("mail_threads")
-      .select("id, provider_thread_id, mailbox_id")
+      .select("id, provider_thread_id, mailbox_id, subject")
       .eq("id", threadId)
       .maybeSingle(),
     scope
@@ -229,7 +256,7 @@ export async function GET(_request, { params }) {
     legacySignature,
   });
 
-  const { data: draft, error } = await applyScope(
+  const { data: savedDraft, error } = await applyScope(
     serviceClient
       .from("mail_messages")
       .select("id, body_text, body_html, subject, updated_at")
@@ -245,6 +272,15 @@ export async function GET(_request, { params }) {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+  // AI drafts live on the inbound message until an agent edits them. Returning
+  // that canonical value here makes the dedicated draft endpoint a complete
+  // recovery path instead of relying on a separate messages fetch to win a
+  // navigation race.
+  const draft =
+    savedDraft ||
+    (!proposalOnly
+      ? await loadLatestAiDraft(serviceClient, scope, threadId, thread.subject || "")
+      : null);
 
   return NextResponse.json(
     {

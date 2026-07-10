@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { reportClientEvent } from "@/lib/client-events";
 
@@ -52,6 +52,12 @@ export function useComposerState({
   draftCacheRef,
   refreshSelectedThreadMessages,
   refreshSelectedThreadMessagesRef,
+  // These refs are deliberately owned by InboxSplitView and shared with
+  // useThreadActions. Keeping a single source of truth is essential: ticket
+  // navigation reads them before switching, so a private copy here can turn a
+  // visible draft into an empty save (and previously a destructive DELETE).
+  draftValueRef,
+  draftLastSavedRef,
   // Thread-actions state/setters this hook's guards/handlers read or write
   // (owned by useThreadActions, passed in the same way Task 4 threaded
   // useThreadSelection's setters into handlers that needed them).
@@ -102,16 +108,24 @@ export function useComposerState({
   const [draftLogIdByThread, setDraftLogIdByThread] = useState({});
 
   const sendingStartedAtRef = useRef(0);
-  const draftLastSavedRef = useRef({});
   const savingDraftThreadIdsRef = useRef(new Set());
-  const draftValueRef = useRef("");
+  // An empty editor is not automatically a discard request: ticket switches,
+  // async hydration, and contentEditable teardown can all produce an empty
+  // transient value. Only an actual user edit from content to empty may delete.
+  const draftClearRequestedByThreadRef = useRef(new Set());
   // Ref that always holds the latest systemDraftUneditedByThread value so effects
   // can read it without needing it as a dependency.
   const systemDraftUneditedRef = useRef({});
 
-  useEffect(() => {
+  // A visible value must be reflected in the shared ref before the browser can
+  // dispatch a click to another ticket. useLayoutEffect closes the paint-to-
+  // effect window that let a fast ticket switch observe an older value.
+  useLayoutEffect(() => {
     draftValueRef.current = draftValue;
-  }, [draftValue]);
+    if (selectedThreadId && String(draftValue || "").trim()) {
+      draftClearRequestedByThreadRef.current.delete(selectedThreadId);
+    }
+  }, [draftValue, draftValueRef, selectedThreadId]);
 
   useEffect(() => {
     systemDraftUneditedRef.current = systemDraftUneditedByThread;
@@ -591,7 +605,13 @@ export function useComposerState({
       // Agent was editing → warn without destroying their work
       setStaleDraftByThread((p) => ({ ...p, [selectedThreadId]: true }));
     }
-  }, [inboundMessageCount, selectedThreadId, refreshSelectedThreadMessagesRef]);
+  }, [
+    draftLastSavedRef,
+    draftValueRef,
+    inboundMessageCount,
+    selectedThreadId,
+    refreshSelectedThreadMessagesRef,
+  ]);
 
   // Clear stale banner + compose when switching threads
   useEffect(() => {
@@ -943,12 +963,26 @@ export function useComposerState({
         }));
         return;
       }
+      const nextDraftValue = String(nextValue || "");
+      const currentDraftValue =
+        targetThreadId === selectedThreadIdRef.current
+          ? String(draftValueRef.current || "")
+          : String(draftValueByThread[targetThreadId] || "");
+      if (nextDraftValue.trim()) {
+        draftClearRequestedByThreadRef.current.delete(targetThreadId);
+      } else if (currentDraftValue.trim()) {
+        draftClearRequestedByThreadRef.current.add(targetThreadId);
+      }
       if (selectedThreadIdRef.current === targetThreadId) {
-        setDraftValue(String(nextValue || ""));
+        // Keep the shared navigation ref current in the same event that
+        // updates React state. A click on another ticket can follow this input
+        // event before any effect has had a chance to run.
+        draftValueRef.current = nextDraftValue;
+        setDraftValue(nextDraftValue);
       }
       setDraftValueByThread((prev) => ({
         ...prev,
-        [targetThreadId]: String(nextValue || ""),
+        [targetThreadId]: nextDraftValue,
       }));
       setSystemDraftUneditedByThread((prev) => {
         if (!prev[targetThreadId]) return prev;
@@ -959,11 +993,16 @@ export function useComposerState({
       });
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- selectedThreadIdRef is a ref returned by useThreadSelection (backed by useRef); identity never changes.
-    [composerMode, selectedThreadId],
+    [composerMode, draftValueByThread, selectedThreadId],
   );
 
   const saveThreadDraft = useCallback(
-    async ({ immediate = false, valueOverride, threadIdOverride } = {}) => {
+    async ({
+      immediate = false,
+      valueOverride,
+      threadIdOverride,
+      allowDelete = false,
+    } = {}) => {
       const startedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
       const getDurationMs = () =>
         Math.round((typeof performance !== "undefined" ? performance.now() : Date.now()) - startedAt);
@@ -981,6 +1020,12 @@ export function useComposerState({
       const text = String(valueOverride ?? fallbackValue ?? "");
       const trimmed = text.trim();
       if (!trimmed) {
+        // Autosave, tab close, and ticket navigation are persistence paths,
+        // never discard actions. During teardown they can legitimately see an
+        // empty/stale value, so they must not turn that into a DELETE request.
+        const hasExplicitDiscardIntent =
+          allowDelete && draftClearRequestedByThreadRef.current.has(threadId);
+        if (!hasExplicitDiscardIntent) return;
         const hasKnownServerDraft =
           Boolean(String(draftLastSavedRef.current[threadId] || "").trim()) ||
           (threadId === selectedThreadIdRef.current && Boolean(activeDraftId));
@@ -996,6 +1041,7 @@ export function useComposerState({
             prev?.[threadId] === false ? prev : { ...prev, [threadId]: false },
           );
           draftLastSavedRef.current[threadId] = "";
+          draftClearRequestedByThreadRef.current.delete(threadId);
           return;
         }
         if (!immediate || savingDraftThreadIdsRef.current.has(threadId)) return;
@@ -1024,6 +1070,7 @@ export function useComposerState({
           [threadId]: false,
         }));
         draftLastSavedRef.current[threadId] = "";
+        draftClearRequestedByThreadRef.current.delete(threadId);
         setSuppressAutoDraftByThread((prev) => ({
           ...prev,
           [threadId]: true,
@@ -1043,6 +1090,7 @@ export function useComposerState({
       }
       if (trimmed === String(draftLastSavedRef.current[threadId] || ""))
         return;
+      draftClearRequestedByThreadRef.current.delete(threadId);
       if (savingDraftThreadIdsRef.current.has(threadId)) return;
       savingDraftThreadIdsRef.current.add(threadId);
       try {
@@ -1112,7 +1160,14 @@ export function useComposerState({
       threadIdOverride: selectedThreadId,
       valueOverride: aiDraft,
     });
-  }, [aiDraft, draftReady, isLocalThreadId, saveThreadDraft, selectedThreadId]);
+  }, [
+    aiDraft,
+    draftLastSavedRef,
+    draftReady,
+    isLocalThreadId,
+    saveThreadDraft,
+    selectedThreadId,
+  ]);
 
   // Auto-save tick fires every 4s. THREAD-SWITCH SAFETY INVARIANT:
   //
@@ -1123,11 +1178,9 @@ export function useComposerState({
   //    When the user switches threads, useCallback re-creates `saveThreadDraft`
   //    with the new threadId, which triggers this effect to re-run — cleanup
   //    clears the old interval before a new one starts.
-  // 2. `draftValueRef.current` is updated by a separate effect that runs AFTER
-  //    React commits. So during a single tick, the interval callback's
-  //    `saveThreadDraft` closure and `draftValueRef.current` are guaranteed to
-  //    reference the SAME thread's state — both are one React-commit cycle
-  //    behind, but they're behind by the same amount.
+  // 2. The shared `draftValueRef.current` is updated in a layout effect (and
+  //    synchronously during input), so it reflects the visible value before
+  //    another browser interaction can start a ticket switch.
   // 3. `saveThreadDraft` itself derives `threadId` from `selectedThreadId` (its
   //    closure), and the POST URL uses that threadId — never `draftValueRef`.
   //
@@ -1144,7 +1197,13 @@ export function useComposerState({
       });
     }, 4000);
     return () => clearInterval(timer);
-  }, [draftReady, isLocalThreadId, saveThreadDraft, selectedThreadId]);
+  }, [
+    draftReady,
+    draftValueRef,
+    isLocalThreadId,
+    saveThreadDraft,
+    selectedThreadId,
+  ]);
 
   // Draft-generation-timeout watchdog is intentionally NOT owned here — it lives
   // in InboxSplitView.jsx because it depends on latestMessageIsInbound/
