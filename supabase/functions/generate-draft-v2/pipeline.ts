@@ -1713,6 +1713,23 @@ export async function runDraftV2Pipeline(
     let priceBlock = "";
     if (isPriceQuestion(latestBody ?? "")) {
       const orderCurrencyForDraft = facts.order?.currency || null;
+      // Customer country is the strongest currency signal when there is no
+      // order: the order's shipping country first, then the Shopify contact
+      // form's "Country Code"/"Your Country" fields. More reliable than
+      // language detection (which abstains on short "hej"-only messages) and
+      // correct cross-border (a US customer gets USD, not the shop's DKK).
+      const contactCountry = (() => {
+        const fields = (contactFormIdentity as { fields?: Record<string, string> })?.fields;
+        if (!fields || typeof fields !== "object") return null;
+        const entries = Object.entries(fields);
+        const find = (label: string) =>
+          entries.find(([k]) => k.toLowerCase() === label)?.[1] ?? null;
+        return find("country code") || find("your country") || null;
+      })();
+      const customerCountry =
+        String(facts.order?.shipping_address?.country ?? "").trim() ||
+        contactCountry ||
+        null;
       const { data: shopRow } = await supabase
         .from("shops")
         .select("primary_market_currency")
@@ -1724,6 +1741,7 @@ export async function runDraftV2Pipeline(
         .eq("shop_ref_id", shop_id);
       const currency = resolveCustomerCurrency({
         orderCurrency: orderCurrencyForDraft,
+        customerCountry,
         customerLanguage: detectReplyLanguageFromText(latestBody ?? ""),
         primaryMarketCurrency: shopRow?.primary_market_currency ?? null,
         baseCurrency: null,

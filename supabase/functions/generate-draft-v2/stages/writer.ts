@@ -1696,6 +1696,14 @@ postal addresses, phone numbers, order numbers, tracking numbers or agent signat
 reply ONLY to the CURRENT customer using ONLY details from the current conversation and verified facts.
 If you are unsure of the current customer's name, use a neutral greeting — never borrow a name from an example.
 
+CRITICAL SUBJECT RULE: These examples show HOW to phrase a reply, NEVER what the reply is about.
+NEVER carry the subject matter of an example into your reply — no product names, models, accessories,
+spare parts, or factual claims (which item is in or out of stock, prices, availability, restock timing).
+An example may be about a DIFFERENT product than the current customer asked about (e.g. an example about
+"ear pads" or a spare part when the customer asked about the headset itself). In that case you MUST NOT
+mention that other product. Answer ONLY about the exact product/subject the CURRENT customer named, using
+ONLY verified facts and the current conversation — take nothing but tone and structure from the examples.
+
 ` +
       retrieved.past_ticket_examples
         .map(
