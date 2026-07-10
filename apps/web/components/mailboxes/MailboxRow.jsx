@@ -4,7 +4,8 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Copy, Mail, ShieldCheck, Trash2 } from "lucide-react";
+import { Copy, Mail, RotateCw, ShieldCheck, Trash2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { SendingIdentityPanel } from "@/components/mailboxes/SendingIdentityPanel";
@@ -43,6 +44,11 @@ export function MailboxRow({
   fromEmail,
   fromName,
   sharedFromEmail,
+  managedSenderStatus = "unprovisioned",
+  managedSenderDomain,
+  managedSenderEmail,
+  managedSenderDkimVerified = false,
+  managedSenderReturnPathVerified = false,
   // Optional: fires alongside router.refresh() so client-fetched consumers
   // (the Settings page's Mailboxes tab, which has no server-rendered data
   // for router.refresh() to re-run) can refetch instead of relying on it.
@@ -52,6 +58,7 @@ export function MailboxRow({
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [copyingForwarding, setCopyingForwarding] = useState(false);
   const [forwardingCopied, setForwardingCopied] = useState(false);
+  const [checkingManagedSender, setCheckingManagedSender] = useState(false);
 
   const config = PROVIDER_CONFIG[provider] || {
     label: provider,
@@ -116,20 +123,32 @@ export function MailboxRow({
     ? "bg-emerald-500"
     : "bg-rose-500";
 
-  const sendingIdentityLabel =
-    sendingType === "custom" && domainStatus === "verified"
-      ? "Custom domain verified"
-      : sendingType === "custom"
-      ? "Custom domain (pending verification)"
-      : sharedFromEmail
-      ? `Send from ${sharedFromEmail}`
-      : "Send from sona-ai.dk";
-  const sendingIdentityStyles =
-    sendingType === "custom" && domainStatus === "verified"
-      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-      : sendingType === "custom"
-      ? "border-amber-200 bg-amber-50 text-amber-700"
-      : "border-slate-200 bg-slate-50 text-slate-700";
+  const usesCustomSender = sendingType === "custom";
+  const customSenderVerified = usesCustomSender && domainStatus === "verified";
+  const managedSenderVerified =
+    !usesCustomSender &&
+    managedSenderStatus === "verified" &&
+    managedSenderDkimVerified &&
+    managedSenderReturnPathVerified;
+  const managedSenderPending =
+    !usesCustomSender && ["pending", "provisioning"].includes(managedSenderStatus);
+  const senderVerified = customSenderVerified || managedSenderVerified;
+  const sendingAddress =
+    (customSenderVerified && fromEmail) || sharedFromEmail || managedSenderEmail || "support@sona-ai.dk";
+  const verificationLabel = senderVerified
+    ? "Verified"
+    : usesCustomSender || managedSenderPending
+    ? "Verifying"
+    : "Fallback active";
+  const verificationDescription = customSenderVerified
+    ? `${sendingDomain || "Your custom domain"} is authenticated for sending.`
+    : usesCustomSender
+    ? "Add the DNS records below, then check the verification status."
+    : managedSenderVerified
+    ? `${managedSenderDomain} is authenticated and managed by Sona.`
+    : managedSenderPending
+    ? `${managedSenderDomain || "Your Sona sender domain"} is being verified. Replies use ${sendingAddress} until it is ready.`
+    : `Replies currently send safely from ${sendingAddress}. Set up a branded Sona sender when you are ready.`;
 
   const handleCopyForwarding = async () => {
     if (!forwardingAddress || copyingForwarding) return;
@@ -143,6 +162,34 @@ export function MailboxRow({
       toast.error("Could not copy forwarding address.");
     } finally {
       setCopyingForwarding(false);
+    }
+  };
+
+  const handleCheckManagedSender = async () => {
+    if (!mailboxId || checkingManagedSender) return;
+    setCheckingManagedSender(true);
+    try {
+      const response = await fetch(
+        `/api/mail-accounts/${mailboxId}/managed-domain/status`,
+        { method: "POST" },
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || "Could not check the sender domain.");
+      }
+      toast.success(
+        payload?.managed_sender?.status === "verified"
+          ? "Sender domain verified."
+          : "Verification is still in progress.",
+      );
+      router.refresh();
+      onChanged?.();
+    } catch (error) {
+      toast.error(error?.message || "Could not check the sender domain.");
+      router.refresh();
+      onChanged?.();
+    } finally {
+      setCheckingManagedSender(false);
     }
   };
 
@@ -221,23 +268,55 @@ export function MailboxRow({
         {isForwarding ? (
           <div className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-start gap-3">
-              <div className={cn("mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border", sendingIdentityStyles)}>
-                <ShieldCheck className="h-4 w-4" />
+              <div
+                className={cn(
+                  "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg border",
+                  senderVerified
+                    ? "border-primary/20 bg-primary/10 text-primary"
+                    : "border-border bg-muted text-muted-foreground",
+                )}
+              >
+                <ShieldCheck className="size-4" />
               </div>
-              <div className="min-w-0 space-y-1">
+              <div className="flex min-w-0 flex-col gap-1">
                 <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
                   Sending identity
                 </p>
-                <p className="break-all text-sm font-medium text-slate-900">{sendingIdentityLabel}</p>
-              {sendingType === "custom" && fromEmail ? (
-                <p className="break-all text-xs text-slate-600">
-                  {fromName ? `${fromName} ` : ""}
-                  {fromEmail}
-                  {sendingDomain ? ` (${sendingDomain})` : ""}
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="break-all text-sm font-medium text-foreground">
+                    {fromName && customSenderVerified ? `${fromName} ` : ""}
+                    {sendingAddress}
+                  </p>
+                  <Badge
+                    variant={senderVerified ? "default" : "secondary"}
+                    className={cn(
+                      senderVerified && "bg-primary/10 text-primary shadow-none hover:bg-primary/10",
+                    )}
+                  >
+                    {verificationLabel}
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {verificationDescription}
                 </p>
-              ) : null}
               </div>
             </div>
+            {!usesCustomSender && !managedSenderVerified ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleCheckManagedSender}
+                disabled={checkingManagedSender}
+              >
+                <RotateCw data-icon="inline-start" />
+                {checkingManagedSender
+                  ? "Checking…"
+                  : managedSenderStatus === "unprovisioned"
+                  ? "Set up sender"
+                  : "Check status"}
+              </Button>
+            ) : null}
           </div>
         ) : null}
 
