@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
   // Look up shop by domain
   const { data: shopRow, error: shopError } = await serviceClient
     .from("shops")
-    .select("id, shop_domain, access_token_encrypted, workspace_id, platform")
+    .select("id, shop_domain, access_token_encrypted, workspace_id, platform, public_storefront_domain")
     .eq("shop_domain", shopDomain)
     .eq("platform", "shopify")
     .is("uninstalled_at", null)
@@ -136,7 +136,11 @@ export async function POST(req: NextRequest) {
         productId,
         apiVersion: SHOPIFY_API_VERSION,
       });
-      const normalized = mapShopifyProductToNormalizedProduct(payload, { currency, presentmentPrices });
+      const normalized = mapShopifyProductToNormalizedProduct(payload, {
+        currency,
+        presentmentPrices,
+        publicStorefrontDomain: shopRow.public_storefront_domain,
+      });
       await upsertProductKnowledge({
         serviceClient,
         creds,
