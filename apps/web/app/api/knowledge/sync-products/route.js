@@ -16,6 +16,8 @@ import {
   upsertProductKnowledge,
   stripHtml,
 } from "@/lib/server/commerce/sync-one-product";
+import { fetchPresentmentPrices, fetchPrimaryMarketCurrency } from "@/lib/server/commerce/shopify-presentment";
+import { ensureShopifyWebhooks, PRODUCT_WEBHOOK_TOPICS } from "@/lib/server/commerce/shopify-webhooks";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -168,6 +170,9 @@ async function loadExistingProductHashes(serviceClient, shopId) {
 async function syncShopify({ serviceClient, creds }) {
   const domain = creds.shop_domain.replace(/^https?:\/\//, "");
   const currency = await fetchShopCurrency({ domain, accessToken: creds.access_token });
+  const primaryMarketCurrency = await fetchPrimaryMarketCurrency({
+    domain, accessToken: creds.access_token, apiVersion: SHOPIFY_API_VERSION,
+  });
   const products = await fetchShopifyProducts({ domain, accessToken: creds.access_token });
   const existingHashes = await loadExistingProductHashes(serviceClient, creds.shop_id);
 
@@ -180,12 +185,17 @@ async function syncShopify({ serviceClient, creds }) {
     const productId = String(product?.id ?? "").trim();
     if (!productId) continue;
 
+    const presentmentPrices = await fetchPresentmentPrices({
+      domain, accessToken: creds.access_token, productId, apiVersion: SHOPIFY_API_VERSION,
+    });
+
     // Platform-neutral normalization. ALL Shopify-payload parsing stays inside
     // mapShopifyProductToNormalizedProduct; the row written below is the same
     // normalized shape every commerce provider will produce.
     const normalized = mapShopifyProductToNormalizedProduct(product, {
       publicStorefrontDomain: creds.public_storefront_domain,
       currency,
+      presentmentPrices,
     });
     const context = buildProductContext(product, { currency });
     const contentHash = buildKnowledgeHash(product, context);
@@ -252,6 +262,21 @@ async function syncShopify({ serviceClient, creds }) {
   if (rows.length > 0) {
     await updateShopProductOverview(serviceClient, creds.shop_id, products);
   }
+
+  // Shop-level property — persist once per sync, not per product.
+  if (primaryMarketCurrency) {
+    await serviceClient.from("shops")
+      .update({ primary_market_currency: primaryMarketCurrency })
+      .eq("id", creds.shop_id);
+  }
+
+  // Self-heal: shops connected before product webhooks existed get them
+  // registered here, next time someone clicks "Sync products". Degrades
+  // gracefully on any failure — never throws, never aborts the sync.
+  await ensureShopifyWebhooks({
+    domain, accessToken: creds.access_token, apiVersion: SHOPIFY_API_VERSION,
+    appUrl: (process.env.APP_URL || "").trim(), topics: PRODUCT_WEBHOOK_TOPICS,
+  });
 
   return {
     synced: rows.length,
