@@ -153,14 +153,6 @@ const SECONDARY_THREAD_FETCH_DELAY_MS = 250;
 const DRAFT_FETCH_DELAY_MS = 150;
 const firstTagCache = new Map();
 
-const deferAfterInteraction = (callback) => {
-  if (typeof window !== "undefined" && typeof window.requestIdleCallback === "function") {
-    window.requestIdleCallback(callback, { timeout: 1200 });
-    return;
-  }
-  setTimeout(callback, 0);
-};
-
 const isUuid = (value) => typeof value === "string" && UUID_REGEX.test(value);
 
 const getAssigneeLabel = (profile, fallbackValue) => {
@@ -3409,16 +3401,17 @@ export function InboxSplitView({
           ticketSwitchStartedAtRef.current.delete(nextThreadId);
         }
       }
-      openThreadInWorkspace(threadId, options);
       if (previousThreadId && previousThreadId !== nextThreadId) {
-        deferAfterInteraction(() => {
-          saveThreadDraft({
-            immediate: true,
-            threadIdOverride: previousThreadId,
-            valueOverride: previousDraftValue,
-          });
+        // Start persistence while the previous ticket is still selected. This
+        // keeps the shared composer ref, the draft-ready flag, and the target
+        // thread aligned; the request itself is non-blocking.
+        void saveThreadDraft({
+          immediate: true,
+          threadIdOverride: previousThreadId,
+          valueOverride: previousDraftValue,
         });
       }
+      openThreadInWorkspace(threadId, options);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- messagesCacheRef and selectedThreadIdRef are refs returned by useThreadSelection (backed by useRef); identity never changes.
     [openThreadInWorkspace, saveThreadDraft],
@@ -3714,6 +3707,10 @@ export function InboxSplitView({
           onDraftBlur={(threadId) =>
             saveThreadDraft({
               immediate: true,
+              // This merely permits a discard. useComposerState still requires
+              // an explicit user edit from content to empty; navigation and
+              // autosave keep the default false.
+              allowDelete: true,
               threadIdOverride: threadId,
               valueOverride:
                 String(threadId || "") ===

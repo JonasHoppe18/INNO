@@ -2825,18 +2825,18 @@ export async function runDraftV2Pipeline(
         .at(-1) as Record<string, unknown> | undefined;
 
       if (latestInbound?.id && !deferDraftUntilActionDecision) {
-        supabase
+        const { error: aiDraftPersistError } = await supabase
           .from("mail_messages")
           .update({ ai_draft_text: finalDraft, updated_at: nowIso })
-          .eq("id", latestInbound.id as string)
-          .then(({ error }) => {
-            if (error) {
-              console.warn(
-                "[pipeline] ai_draft_text update failed:",
-                error.message,
-              );
-            }
-          });
+          .eq("id", latestInbound.id as string);
+        if (aiDraftPersistError) {
+          // The response must never say a draft was generated before the
+          // canonical composer source has been written. Edge runtimes may end
+          // after the response, so a fire-and-forget write is not durable.
+          throw new Error(
+            `[pipeline] failed to persist ai_draft_text: ${aiDraftPersistError.message}`,
+          );
+        }
       }
 
       // 2. Gem proposed actions i thread_actions → action cards i inbox
