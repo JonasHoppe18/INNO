@@ -22,19 +22,23 @@ export function buildPriceLocalizationBlock(input: {
 }): string {
   if (!isPriceQuestion(input.text)) return "";
   const currency = String(input.currency ?? "").trim().toUpperCase();
+  let resolvedCurrencyUsed = false;
   const named = input.products
     .filter((p) =>
       p.title && input.text.toLowerCase().includes(p.title.toLowerCase())
     )
     .map((p) => {
       const map = p.presentment_prices ?? {};
-      if (currency && map[currency]) return `- ${p.title}: ${map[currency]} ${currency}`;
+      if (currency && map[currency]) {
+        resolvedCurrencyUsed = true;
+        return `- ${p.title}: ${map[currency]} ${currency}`;
+      }
       const base = String(p.base_currency ?? "").trim().toUpperCase();
       if (p.price) return `- ${p.title}: ${p.price} ${base}`.trimEnd();
       return `- ${p.title}: pris ikke tilgængelig`;
     });
   if (!named.length) return "";
-  const label = currency || "";
+  const label = resolvedCurrencyUsed ? currency : "";
   return [
     `PRISER — angiv produktpriser i ${label || "produktets valuta"} og brug PRÆCIST disse tal (ingen omregning, ingen gæt):`,
     ...named,
