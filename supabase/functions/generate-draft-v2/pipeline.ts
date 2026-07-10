@@ -67,9 +67,15 @@ import {
 import { loadImageAttachments } from "./stages/attachment-loader.ts";
 import {
   cleanupMixedLanguageDraft,
+  detectReplyLanguageFromText,
   mixedLanguageCheck,
   resolveReplyLanguage,
 } from "./stages/language.ts";
+import { resolveCustomerCurrency } from "./stages/customer-currency.ts";
+import {
+  buildPriceLocalizationBlock,
+  isPriceQuestion,
+} from "./stages/price-localization.ts";
 import {
   buildKnowledgeDocPreviewContext,
   type KnowledgeDocPreviewContextInput,
@@ -1700,11 +1706,45 @@ export async function runDraftV2Pipeline(
         }
       }
     }
+    // Multi-currency price localization: only for explicit price questions,
+    // and only when we can resolve a currency + matching product rows — so
+    // unrelated drafts are unchanged. Mirrors compatibilityBlock/comparisonBlock:
+    // detect → look up shop_products → build directive.
+    let priceBlock = "";
+    if (isPriceQuestion(latestBody ?? "")) {
+      const orderCurrencyForDraft = facts.order?.currency || null;
+      const { data: shopRow } = await supabase
+        .from("shops")
+        .select("primary_market_currency, currency")
+        .eq("id", shop_id)
+        .maybeSingle();
+      const { data: priceRows } = await supabase
+        .from("shop_products")
+        .select("title, presentment_prices, price, currency")
+        .eq("shop_ref_id", shop_id);
+      const currency = resolveCustomerCurrency({
+        orderCurrency: orderCurrencyForDraft,
+        customerLanguage: detectReplyLanguageFromText(latestBody ?? ""),
+        primaryMarketCurrency: shopRow?.primary_market_currency ?? null,
+        baseCurrency: shopRow?.currency ?? null,
+      });
+      priceBlock = buildPriceLocalizationBlock({
+        text: latestBody ?? "",
+        currency,
+        products: (Array.isArray(priceRows) ? priceRows : []).map((r: any) => ({
+          title: r.title,
+          presentment_prices: r.presentment_prices ?? {},
+          price: r.price ?? null,
+          base_currency: r.currency ?? null,
+        })),
+      });
+    }
     const internalRulesBlock = [
       internalRules.block || "",
       returnTrackingAttribution?.blockText || "",
       compatibilityBlock || "",
       comparisonBlock || "",
+      priceBlock || "",
     ].filter(Boolean).join("\n\n") || undefined;
     const latestSenderEmail = String(
       (latestMessage as Record<string, unknown>).from_email || "",
