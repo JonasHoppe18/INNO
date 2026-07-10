@@ -314,7 +314,7 @@ async function fetchProductsPreview(serviceClient, shopIds, limit = 100) {
   // Primary source: structured shop_products table.
   const { data, error } = await serviceClient
     .from("shop_products")
-    .select("external_id, title, price")
+    .select("external_id, title, price, currency")
     .in("shop_ref_id", shopIds)
     .limit(normalizedLimit);
 
@@ -340,6 +340,7 @@ async function fetchProductsPreview(serviceClient, shopIds, limit = 100) {
       metaByProduct.set(productId, {
         updated_at: metadata?.product_updated_at || row?.created_at || null,
         price: metadata?.price ?? null,
+        currency: metadata?.currency ?? null,
       });
     }
 
@@ -350,6 +351,7 @@ async function fetchProductsPreview(serviceClient, shopIds, limit = 100) {
         external_id: row?.external_id || productId,
         title: row?.title || meta?.title || "Untitled product",
         price: row?.price ?? meta?.price ?? null,
+        currency: row?.currency ?? meta?.currency ?? null,
         updated_at: meta?.updated_at || null,
       };
     });
@@ -377,6 +379,7 @@ async function fetchProductsPreview(serviceClient, shopIds, limit = 100) {
       external_id: productId,
       title: String(metadata?.title || "Untitled product"),
       price: metadata?.price ?? null,
+      currency: metadata?.currency ?? null,
       updated_at: metadata?.product_updated_at || row?.created_at || null,
     });
     if (byProduct.size >= normalizedLimit) break;

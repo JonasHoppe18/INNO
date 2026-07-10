@@ -114,7 +114,8 @@ function ProductCard({ product, onClick }) {
             <p className="text-sm font-medium truncate">{product.title}</p>
             {product.price && (
               <p className="text-xs text-muted-foreground">
-                {Number(product.price).toLocaleString("da-DK", { minimumFractionDigits: 2 })} kr
+                {Number(product.price).toLocaleString("da-DK", { minimumFractionDigits: 2 })}
+                {product.currency ? ` ${product.currency}` : ""}
               </p>
             )}
           </div>
