@@ -669,9 +669,13 @@ export async function POST(req: Request) {
       .update({ cursor: leaseCursor, updated_at: new Date().toISOString() })
       .eq("id", job.id)
       .eq("status", "running");
+    // NB: .eq() on a jsonb column needs the filter VALUE as JSON text — passing
+    // the raw object serializes as "[object Object]" and Postgres rejects it
+    // with `invalid input syntax for type json` (22P02). jsonb equality is
+    // structural, so a stringified round-trip compares correctly.
     claimQuery = job.cursor == null
       ? claimQuery.is("cursor", null)
-      : claimQuery.eq("cursor", job.cursor);
+      : claimQuery.eq("cursor", JSON.stringify(job.cursor));
     const { data: claimed, error: claimErr } = await claimQuery.select("*").maybeSingle();
     if (claimErr) return NextResponse.json({ error: claimErr.message }, { status: 500 });
     if (!claimed) {
@@ -730,7 +734,7 @@ export async function POST(req: Request) {
         })
         .eq("id", job.id)
         .eq("shop_id", shop.id)
-        .eq("cursor", leaseCursor)
+        .eq("cursor", JSON.stringify(leaseCursor))
         .select("*")
         .single();
       if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
@@ -748,7 +752,7 @@ export async function POST(req: Request) {
         })
         .eq("id", job.id)
         .eq("shop_id", shop.id)
-        .eq("cursor", leaseCursor)
+        .eq("cursor", JSON.stringify(leaseCursor))
         .select("*")
         .maybeSingle();
       return NextResponse.json(
