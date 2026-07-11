@@ -4,6 +4,9 @@
 // - redaction: gpt-4o-mini, ~700 input + ~500 output tokens
 //   ($0.15/1M in, $0.60/1M out) => ~$0.000405/ticket
 // - embedding: text-embedding-3-small, ~400 tokens ($0.02/1M) => ~$0.000008
+// Total: ~$0.000413/ticket. Rounded to 0.0004 (<3% variance) so that 2-decimal
+// display rounding remains exactly linear in tests — this is a coarse pre-run estimate,
+// not billing.
 const USD_PER_TICKET = 0.0004;
 const DKK_PER_USD = 7.0; // coarse — this is an ESTIMATE shown pre-run, not billing
 
