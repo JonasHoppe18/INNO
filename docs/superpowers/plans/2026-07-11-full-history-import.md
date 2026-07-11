@@ -315,31 +315,39 @@ git commit -m "feat(import): estimate/confirm + resumable job-chunked full-histo
 
 ---
 
-### Task 4: UI — estimat → bekræft → fremdrift
+### Task 4: UI — integrations-sheet med historik-statistik + estimat → bekræft → fremdrift
+
+**Bruger-beslutning 2026-07-11:** UI'et bor i INTEGRATIONS-fladen (Wilmo-mønster: klik på integrationen → se hvad den har hentet), ikke på Knowledge-siden. Zendesk-sheetet udvides; Knowledge-sidens gamle knap røres ikke i denne omgang.
 
 **Files:**
-- Modify: `apps/web/components/knowledge/KnowledgePageClient.jsx` (den eksisterende import-zendesk-knap/handler — grep "import-zendesk" i filen)
+- Modify: `apps/web/components/integrations/ZendeskSheet.jsx` (det eksisterende detaljepanel der åbner fra `ZendeskConnectCard.jsx` — læs filen først og følg dens sektion/stil-mønstre)
+- Modify (kun hvis nødvendigt for stats): `apps/web/app/api/knowledge/import-zendesk/route.ts` — GET-endpointet skal returnere `{ imported_examples: <count fra ticket_examples for shoppen>, last_job: <seneste knowledge_import_jobs-række med provider='zendesk' for shoppen, eller null> }` (udvid det eksisterende GET; scope som POST)
 
 **Interfaces:**
-- Consumes: Task 3's POST-kontrakt (`estimate`/`start`/`continue`).
+- Consumes: Task 3's POST-kontrakt (`estimate`/`start`/`continue`) + det udvidede GET.
 
-- [ ] **Step 1: Udvid handleren**
+- [ ] **Step 0: Udvid GET-endpointet med stats**
 
-Erstat den eksisterende ét-kliks-import-handler med et tre-trins-flow i samme komponent (brug komponentens eksisterende state/toast-mønstre — læs filen først og følg dens stil):
+I `route.ts`'s eksisterende `GET()`: efter samme scope/shop-resolution som POST, hent (a) `select count(*) from ticket_examples` scoped på shop_id + source_provider='zendesk' (verificér den faktiske source_provider-værdi de eksisterende rækker bruger — grep insert-koden), (b) seneste jobrække: `from("knowledge_import_jobs").select("*").eq("shop_id", ...).eq("provider","zendesk").order("created_at",{ascending:false}).limit(1).maybeSingle()`. Returnér `{ imported_examples, last_job }`.
 
-1. Klik → `POST { mode: "estimate" }` → vis bekræftelses-dialog: "X tickets fundet. Estimeret engangsomkostning: ~Y kr (Z USD). Fortsæt?" (brug eksisterende dialog/confirm-mønster i filen; findes intet, brug den eksisterende Radix `Dialog`-primitiv fra `components/ui/`).
+- [ ] **Step 1: Udvid ZendeskSheet med en "Historik"-sektion**
+
+Ny sektion i sheetet (følg sheetets eksisterende sektions-markup), med tre-trins-flowet:
+
+0. Ved sheet-åbning: `GET` → vis statistik-rækker: "Importerede eksempler i Sona: {imported_examples}", og hvis `last_job` findes: "Seneste import: {imported_count} importeret · {skipped_count} skippet · {dropped_count} droppet af ~{total_count} ({status}, {dato})".
+1. Klik "Importér fuld historik" → `POST { mode: "estimate" }` → vis bekræftelses-dialog: "X tickets fundet i Zendesk. Estimeret engangsomkostning: ~Y kr (Z USD). Fortsæt?" (brug eksisterende dialog/confirm-mønster i filen; findes intet, brug den eksisterende Radix `Dialog`-primitiv fra `components/ui/`).
 2. Bekræft → `POST { mode: "start", confirm: true }` → gem `job` i state.
 3. Poll-løkke: så længe `job.status === "running"`, kald `POST { mode: "continue", jobId: job.id }` sekventielt (ingen timer nødvendig — hvert kald ER chunk'en) og opdatér en fremdriftslinje: `importeret {imported_count} · skippet {skipped_count} · droppet {dropped_count} af ~{total_count}`. Ved `completed`: succes-toast. Ved fejl-response: vis fejl + "Fortsæt import"-knap der genoptager med samme jobId.
 
 - [ ] **Step 2: Verificér**
 
-`npx next lint --file components/knowledge/KnowledgePageClient.jsx` fra `apps/web/` (eller komponent-gennemlæsning hvis lint-setup fejler i worktree uden node_modules — notér hvad der blev kørt).
+`node --check` gælder ikke JSX/TS — verificér ved fuld gennemlæsning af begge ændrede filer + kør helper-testene igen (uændrede). Notér i rapporten hvad der blev verificeret.
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add apps/web/components/knowledge/KnowledgePageClient.jsx
-git commit -m "feat(import): estimate/confirm dialog + progress for full-history import"
+git add apps/web/components/integrations/ZendeskSheet.jsx apps/web/app/api/knowledge/import-zendesk/route.ts
+git commit -m "feat(import): Zendesk integration sheet shows import stats + estimate/confirm/progress"
 ```
 
 ---
