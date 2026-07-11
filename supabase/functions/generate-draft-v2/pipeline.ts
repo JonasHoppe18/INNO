@@ -45,6 +45,7 @@ import {
   ShopActionConfig,
 } from "./stages/action-decision.ts";
 import { buildRetrievalLogPayload } from "./stages/retrieval-log.ts";
+import { assessGroundingCoverage, buildOwnsTheCaseBlock } from "./stages/grounding-coverage.ts";
 import { runWriter } from "./stages/writer.ts";
 import { runVerifier, type VerifierResult } from "./stages/verifier.ts";
 import {
@@ -1796,6 +1797,44 @@ export async function runDraftV2Pipeline(
           `det produkt kunden spurgte om — aldrig for et tilbehør kunden ikke har nævnt.`;
       }
     }
+    // Owns-the-case fallback: when nothing grounds the customer's core ask,
+    // instruct the writer to acknowledge + investigate instead of inventing a
+    // refusal. Pure assessment; fail-safe (missing signals => grounded).
+    let ownsTheCaseBlock = "";
+    const groundingCoverage = assessGroundingCoverage({
+      intent: plan.primary_intent,
+      chunkCount: Array.isArray(retrieved.chunks) ? retrieved.chunks.length : null,
+      matcherAbstained: retrieved.matcher_debug?.abstained === true,
+      verifiedFactsCount: Array.isArray(facts.facts) ? facts.facts.length : null,
+      structuredFactsCount: structuredFactsProvenance.length,
+    });
+    if (groundingCoverage.ungrounded) {
+      ownsTheCaseBlock = buildOwnsTheCaseBlock({
+        customerAsk: caseState.open_questions?.[0] ?? null,
+        intent: plan.primary_intent,
+      });
+      console.log(
+        `[generate-draft-v2] grounding-coverage: ungrounded (${groundingCoverage.reason}) — owns-the-case directive injected`,
+      );
+      if (!isDryRun) {
+        supabase.from("agent_logs").insert({
+          workspace_id: workspaceId ?? null,
+          step_name: "draft_ungrounded_gap",
+          step_detail: JSON.stringify({
+            thread_id: thread_id ?? null,
+            intent: plan.primary_intent,
+            reason: groundingCoverage.reason,
+            customer_ask: caseState.open_questions?.[0] ?? null,
+          }),
+          status: "info",
+          created_at: new Date().toISOString(),
+        }).then(({ error }) => {
+          if (error) {
+            console.warn("[pipeline] draft_ungrounded_gap log failed:", error.message);
+          }
+        });
+      }
+    }
     const internalRulesBlock = [
       internalRules.block || "",
       returnTrackingAttribution?.blockText || "",
@@ -1803,6 +1842,7 @@ export async function runDraftV2Pipeline(
       comparisonBlock || "",
       priceBlock || "",
       subjectAnchorBlock || "",
+      ownsTheCaseBlock || "",
     ].filter(Boolean).join("\n\n") || undefined;
     const latestSenderEmail = String(
       (latestMessage as Record<string, unknown>).from_email || "",
