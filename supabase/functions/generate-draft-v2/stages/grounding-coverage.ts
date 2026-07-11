@@ -70,5 +70,7 @@ export function buildOwnsTheCaseBlock(input: {
     "2. Ellers: anerkend kundens spørgsmål konkret, svar på den del der FAKTISK er groundet (delvist svar er fint), og skriv at du undersøger resten og vender tilbage hurtigst muligt.",
     "3. Opfind ALDRIG en afvisning, begrænsning, kapabilitet eller tredjepart. Sig IKKE 'det kan vi ikke', 'det tilbyder vi ikke' eller 'kontakt X i stedet', medmindre en kilde i konteksten eksplicit siger det.",
     "4. Deler kunden blot feedback uden at bede om noget, har feedback-anerkendelses-instruktionen forrang over denne.",
+    "FORBUDTE formuleringer (medmindre en kilde eksplicit siger det): 'det kan vi ikke', 'vi har ikke mulighed for', 'det tilbyder vi ikke', 'we don't have', 'we don't offer', 'we can't', 'not available for purchase'.",
+    "Svaret SKAL indeholde en sætning hvor du skriver at du undersøger spørgsmålet og vender tilbage til kunden.",
   ].filter(Boolean).join("\n");
 }

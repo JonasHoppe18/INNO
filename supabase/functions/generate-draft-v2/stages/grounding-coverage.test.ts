@@ -49,6 +49,9 @@ Deno.test("directive forbids invented refusals and includes the customer's ask",
   assert(/undersøger .* vender tilbage|undersøger det og vender tilbage/i.test(block));
   assert(/missing_required_fields/.test(block)); // arbitration hook til kunde-hul
   assert(/feedback/i.test(block)); // precedence for feedback-acknowledge (Kasper-fixet)
+  assert(block.includes("FORBUDTE")); // explicit forbidden-phrases line
+  assert(/SKAL indeholde/.test(block)); // required investigate-and-return sentence
+  assert(/undersøger spørgsmålet/i.test(block));
 });
 
 Deno.test("directive works without a customerAsk", () => {

@@ -1809,6 +1809,20 @@ export async function runDraftV2Pipeline(
       structuredFactsCount: structuredFactsProvenance.length,
     });
     if (groundingCoverage.ungrounded) {
+      // Matcher-abstention means the retrieved chunks are topic-adjacent, not
+      // grounding — they don't actually answer the ask. Leaving them in the
+      // writer's set seduces it into grounding an invented refusal on a
+      // fallback chunk that merely mentions the topic. Suppress them here,
+      // BEFORE internalRulesBlock is built, the same way the live-commerce
+      // gate (above) reassigns retrieved.chunks when it suppresses legacy
+      // factual chunks.
+      if (groundingCoverage.reason === "matcher_abstained_no_facts") {
+        const suppressedCount = Array.isArray(retrieved.chunks) ? retrieved.chunks.length : 0;
+        retrieved.chunks = [];
+        console.log(
+          `[generate-draft-v2] grounding-coverage: suppressed ${suppressedCount} abstained noise chunk(s) from writer set (matcher_abstained_no_facts)`,
+        );
+      }
       ownsTheCaseBlock = buildOwnsTheCaseBlock({
         customerAsk: caseState.open_questions?.[0] ?? null,
         intent: plan.primary_intent,
