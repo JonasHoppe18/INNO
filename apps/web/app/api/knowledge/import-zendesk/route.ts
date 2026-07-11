@@ -494,30 +494,76 @@ export async function POST(req: Request) {
 
     let job: any;
     if (mode === "start") {
-      let totalCount: number;
-      try {
-        totalCount = await countZendeskTickets({ baseUrl, authorization });
-      } catch (err: any) {
-        return NextResponse.json({ error: String(err?.message ?? err) }, { status: 502 });
-      }
-      const { data, error } = await supabase
+      // Adopt-existing-job guard: `knowledge_import_jobs_active_unique` is a
+      // partial unique index ON (provider, shop_id) WHERE status IN
+      // ('queued','running'). A stale job can already exist here — a crashed
+      // tab, an abandoned continue-loop, or a second tab clicking "Import
+      // full history" concurrently. Rather than let a plain insert violate
+      // that index (raw Postgres 500 on a normal click), check for an active
+      // job first and, if found, adopt it and fall straight into the SAME
+      // claim + chunk-processing path `continue` uses below — i.e. treat
+      // this exactly like `mode: "continue"` on that job.
+      const { data: existingJob, error: existingErr } = await supabase
         .from("knowledge_import_jobs")
-        .insert({
-          provider: "zendesk",
-          shop_id: shop.id,
-          workspace_id: scope?.workspaceId ?? null,
-          user_id: scope?.supabaseUserId ?? null,
-          status: "running",
-          batch_size: CHUNK_TICKETS,
-          imported_count: 0,
-          skipped_count: 0,
-          dropped_count: 0,
-          total_count: totalCount,
-        })
         .select("*")
-        .single();
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-      job = data;
+        .eq("provider", "zendesk")
+        .eq("shop_id", shop.id)
+        .in("status", ["queued", "running"])
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (existingErr) return NextResponse.json({ error: existingErr.message }, { status: 500 });
+
+      if (existingJob) {
+        job = existingJob;
+      } else {
+        let totalCount: number;
+        try {
+          totalCount = await countZendeskTickets({ baseUrl, authorization });
+        } catch (err: any) {
+          return NextResponse.json({ error: String(err?.message ?? err) }, { status: 502 });
+        }
+        const { data, error } = await supabase
+          .from("knowledge_import_jobs")
+          .insert({
+            provider: "zendesk",
+            shop_id: shop.id,
+            workspace_id: scope?.workspaceId ?? null,
+            user_id: scope?.supabaseUserId ?? null,
+            status: "running",
+            batch_size: CHUNK_TICKETS,
+            imported_count: 0,
+            skipped_count: 0,
+            dropped_count: 0,
+            total_count: totalCount,
+          })
+          .select("*")
+          .single();
+        if (error) {
+          // Unique-violation (23505) means another request won the race and
+          // inserted its own active job between our existing-job check and
+          // this insert (e.g. two tabs starting simultaneously). Re-fetch and
+          // return it as a friendly 409 instead of surfacing the raw
+          // Postgres error — a normal user click should never 500.
+          if (error.code === "23505") {
+            const { data: raceJob } = await supabase
+              .from("knowledge_import_jobs")
+              .select("*")
+              .eq("provider", "zendesk")
+              .eq("shop_id", shop.id)
+              .in("status", ["queued", "running"])
+              .order("created_at", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            return NextResponse.json(
+              { error: "import already in progress", job: raceJob ?? null },
+              { status: 409 }
+            );
+          }
+          return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+        job = data;
+      }
     } else {
       const { data, error } = await supabase
         .from("knowledge_import_jobs")
