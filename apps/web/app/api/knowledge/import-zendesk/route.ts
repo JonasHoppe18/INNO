@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { resolveAuthScope, listScopedShops } from "@/lib/server/workspace-auth";
+import { estimateImportCost, nextCursor } from "@/lib/server/zendesk-import-helpers";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -25,6 +26,8 @@ const OPENAI_REDACT_MODEL = process.env.OPENAI_REDACT_MODEL || "gpt-4o-mini";
 const SOURCE_PROVIDER = "zendesk";
 const MAX_TICKETS = 200;
 const EMBED_BATCH_SIZE = 50;
+const CHUNK_TICKETS = 50;
+const IMPORT_STATUSES = ["solved", "closed"];
 
 function createServiceClient() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return null;
@@ -195,6 +198,186 @@ async function redactPairs<
   return out;
 }
 
+/**
+ * Fetch one chunk of tickets for job-mode import. One Zendesk page IS one
+ * chunk (ticketsPerPage == CHUNK_TICKETS), so no further slicing is needed —
+ * the cursor advances exactly one page per call.
+ */
+async function fetchTicketChunk(opts: {
+  baseUrl: string;
+  authorization: string;
+  cursor: { status: string; page: number };
+}): Promise<{ tickets: any[]; pageHadFullBatch: boolean }> {
+  const ticketsPerPage = CHUNK_TICKETS;
+  const res = await fetch(
+    `${opts.baseUrl}/api/v2/tickets.json?status=${opts.cursor.status}&sort_by=created_at&sort_order=desc&per_page=${ticketsPerPage}&page=${opts.cursor.page}`,
+    { headers: { Authorization: opts.authorization, "Content-Type": "application/json" }, cache: "no-store" },
+  );
+  if (!res.ok) throw new Error(`Zendesk tickets fetch failed: ${res.status}`);
+  const data = await res.json().catch(() => ({ tickets: [] }));
+  const batch = Array.isArray(data.tickets) ? data.tickets : [];
+  return { tickets: batch, pageHadFullBatch: Boolean(data.next_page) && batch.length === ticketsPerPage };
+}
+
+/** Sum Zendesk's search count across both import statuses (solved + closed). */
+async function countZendeskTickets(opts: {
+  baseUrl: string;
+  authorization: string;
+}): Promise<number> {
+  let total = 0;
+  for (const status of IMPORT_STATUSES) {
+    const res = await fetch(
+      `${opts.baseUrl}/api/v2/search/count.json?query=${encodeURIComponent(`type:ticket status:${status}`)}`,
+      { headers: { Authorization: opts.authorization }, cache: "no-store" },
+    );
+    if (!res.ok) throw new Error(`Zendesk count failed: ${res.status}`);
+    const data = await res.json().catch(() => ({ count: 0 }));
+    total += Number(data?.count ?? 0);
+  }
+  return total;
+}
+
+/**
+ * Build ticket_examples rows from a raw ticket batch: fetch comments per
+ * ticket, apply the non-support/auto-reply/empty-body filters, redact PII,
+ * embed, and upsert (ignoreDuplicates). This is the exact pipeline the
+ * legacy POST body ran inline — extracted verbatim so both legacy and
+ * job-chunk mode share the same redaction/quality/dedupe core.
+ *
+ * Returns:
+ * - imported: rows newly inserted by the upsert (new-row count is measured
+ *   as pre-upsert DB count -> post-upsert DB count for this shop, since
+ *   supabase-js's ignoreDuplicates upsert does not report affected rows).
+ * - skipped: tickets that never became a safe pair (no comments, filtered as
+ *   non-support/auto-reply, or missing customer/agent body) PLUS pairs whose
+ *   redaction succeeded but were duplicates already in ticket_examples.
+ * - dropped: pairs whose PII redaction failed (never stored raw).
+ */
+async function importTicketBatch(opts: {
+  supabase: ReturnType<typeof createServiceClient>;
+  tickets: any[];
+  baseUrl: string;
+  authorization: string;
+  shopId: string;
+  workspaceId: string | null;
+}): Promise<{ imported: number; skipped: number; dropped: number }> {
+  const { supabase, tickets, baseUrl, authorization, shopId, workspaceId } = opts;
+  if (!supabase) throw new Error("Supabase not configured");
+
+  const NON_SUPPORT = /\b(faktura|invoice|payment reminder|påmindelse|bill|betaling)\b/i;
+  const pairs: Array<{ ticketId: string; subject: string; customerBody: string; agentReply: string }> = [];
+  let skippedPreRedaction = 0;
+
+  for (const ticket of tickets) {
+    if (NON_SUPPORT.test(String(ticket.subject || ""))) {
+      skippedPreRedaction++;
+      continue;
+    }
+
+    const commentsRes = await fetch(
+      `${baseUrl}/api/v2/tickets/${ticket.id}/comments.json?sort_order=asc`,
+      { headers: { Authorization: authorization }, cache: "no-store" }
+    );
+    if (!commentsRes.ok) {
+      skippedPreRedaction++;
+      continue;
+    }
+
+    const { comments = [] } = await commentsRes.json().catch(() => ({ comments: [] }));
+    const publicComments = comments.filter((c: any) => c.public);
+    const customerComment = publicComments.find((c: any) => c.author_id === ticket.requester_id) || publicComments[0];
+    const agentComment = publicComments.find((c: any) => c.author_id !== ticket.requester_id);
+
+    if (!customerComment || !agentComment) {
+      skippedPreRedaction++;
+      continue;
+    }
+
+    const customerBody = normalizeText(stripHtml(customerComment.html_body || customerComment.body || ""));
+    const agentReply = normalizeText(stripHtml(agentComment.html_body || agentComment.body || ""));
+
+    if (!customerBody || !agentReply || isAutoReply(agentReply)) {
+      skippedPreRedaction++;
+      continue;
+    }
+
+    pairs.push({
+      ticketId: String(ticket.id),
+      subject: String(ticket.subject || "").trim(),
+      customerBody: customerBody.slice(0, 2000),
+      agentReply: agentReply.slice(0, 2000),
+    });
+  }
+
+  if (!pairs.length) {
+    return { imported: 0, skipped: skippedPreRedaction, dropped: 0 };
+  }
+
+  // GDPR: redact PII out of every pair BEFORE embedding/storing. Tickets that
+  // fail redaction are dropped so raw customer data is never persisted as a
+  // few-shot example.
+  const redacted = await redactPairs(pairs);
+  const droppedForPii = redacted.filter((r) => r === null).length;
+  const safePairs = redacted.filter((p): p is NonNullable<typeof p> => p !== null);
+
+  if (!safePairs.length) {
+    return { imported: 0, skipped: skippedPreRedaction, dropped: droppedForPii };
+  }
+
+  // Embed on customer message — semantic search must match similar customer questions, not agent replies
+  const customerMsgs = safePairs.map((p) => buildCustomerMsg(p.subject, p.customerBody));
+  const allEmbeddings: number[][] = [];
+
+  for (let i = 0; i < customerMsgs.length; i += EMBED_BATCH_SIZE) {
+    const batch = customerMsgs.slice(i, i + EMBED_BATCH_SIZE);
+    const embeddings = await embedBatch(batch);
+    allEmbeddings.push(...embeddings);
+  }
+
+  const rows = safePairs.map((pair, idx) => ({
+    shop_id: shopId,
+    workspace_id: workspaceId,
+    source_provider: SOURCE_PROVIDER,
+    external_ticket_id: pair.ticketId,
+    customer_msg: customerMsgs[idx],
+    agent_reply: pair.agentReply,
+    subject: pair.subject,
+    embedding: allEmbeddings[idx],
+    tags: ["pii_scrubbed"],
+  }));
+
+  // Count how many rows for this shop exist BEFORE the upsert, so we can
+  // measure exactly how many were newly inserted (ignoreDuplicates upsert
+  // does not tell us which rows were skipped as dupes).
+  const { count: countBefore } = await supabase
+    .from("ticket_examples")
+    .select("id", { count: "exact", head: true })
+    .eq("shop_id", shopId)
+    .eq("source_provider", SOURCE_PROVIDER);
+
+  // Dedup enforced by DB constraint (shop_id, source_provider, external_ticket_id)
+  const { error: insertError } = await supabase
+    .from("ticket_examples")
+    .upsert(rows, { onConflict: "shop_id,source_provider,external_ticket_id", ignoreDuplicates: true });
+
+  if (insertError) throw new Error(insertError.message);
+
+  const { count: countAfter } = await supabase
+    .from("ticket_examples")
+    .select("id", { count: "exact", head: true })
+    .eq("shop_id", shopId)
+    .eq("source_provider", SOURCE_PROVIDER);
+
+  const newRows = Math.max(0, (countAfter ?? 0) - (countBefore ?? 0));
+  const duplicates = rows.length - newRows;
+
+  return {
+    imported: newRows,
+    skipped: skippedPreRedaction + duplicates,
+    dropped: droppedForPii,
+  };
+}
+
 export async function GET() {
   // Return count of already-imported zendesk tickets for this shop
   const { userId: clerkUserId, orgId } = await auth();
@@ -268,6 +451,117 @@ export async function POST(req: Request) {
   }
 
   const authorization = `Basic ${Buffer.from(`${email}/token:${token}`).toString("base64")}`;
+
+  // Body is read exactly once here, for all modes (legacy path included —
+  // legacy requests simply omit `mode` and every branch below is skipped).
+  const body = await req.json().catch(() => ({}));
+  const mode = String(body?.mode || "").trim();
+
+  if (mode === "estimate") {
+    let total: number;
+    try {
+      total = await countZendeskTickets({ baseUrl, authorization });
+    } catch (err: any) {
+      return NextResponse.json({ error: String(err?.message ?? err) }, { status: 502 });
+    }
+    return NextResponse.json({ estimate: estimateImportCost({ ticketCount: total }) });
+  }
+
+  if (mode === "start" || mode === "continue") {
+    if (mode === "start" && body?.confirm !== true) {
+      return NextResponse.json({ error: "confirm:true required to start import" }, { status: 400 });
+    }
+
+    let job: any;
+    if (mode === "start") {
+      let totalCount: number;
+      try {
+        totalCount = await countZendeskTickets({ baseUrl, authorization });
+      } catch (err: any) {
+        return NextResponse.json({ error: String(err?.message ?? err) }, { status: 502 });
+      }
+      const { data, error } = await supabase
+        .from("knowledge_import_jobs")
+        .insert({
+          provider: "zendesk",
+          shop_id: shop.id,
+          workspace_id: scope?.workspaceId ?? null,
+          user_id: scope?.supabaseUserId ?? null,
+          status: "running",
+          cursor: null,
+          batch_size: CHUNK_TICKETS,
+          imported_count: 0,
+          skipped_count: 0,
+          dropped_count: 0,
+          total_count: totalCount,
+        })
+        .select("*")
+        .single();
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      job = data;
+    } else {
+      const { data, error } = await supabase
+        .from("knowledge_import_jobs")
+        .select("*")
+        .eq("id", String(body?.jobId || ""))
+        .eq("shop_id", shop.id)
+        .maybeSingle();
+      if (error || !data) return NextResponse.json({ error: "job not found" }, { status: 404 });
+      if (data.status !== "running") return NextResponse.json({ job: data });
+      job = data;
+    }
+
+    // Convention: job.cursor stores the page that must be fetched NEXT.
+    // null means "not started yet" -> first page of the first status.
+    const effectiveCursor = job.cursor ?? { status: IMPORT_STATUSES[0], page: 1 };
+
+    try {
+      const { tickets, pageHadFullBatch } = await fetchTicketChunk({ baseUrl, authorization, cursor: effectiveCursor });
+
+      const { imported: importedThisChunk, skipped: skippedThisChunk, dropped: droppedThisChunk } =
+        await importTicketBatch({
+          supabase,
+          tickets,
+          baseUrl,
+          authorization,
+          shopId: shop.id,
+          workspaceId: scope?.workspaceId ?? null,
+        });
+
+      const newCursor = nextCursor({ statuses: IMPORT_STATUSES, cursor: effectiveCursor, pageHadFullBatch });
+      const done = newCursor === null;
+
+      const { data: updated, error: updErr } = await supabase
+        .from("knowledge_import_jobs")
+        .update({
+          cursor: newCursor,
+          status: done ? "completed" : "running",
+          imported_count: job.imported_count + importedThisChunk,
+          skipped_count: job.skipped_count + skippedThisChunk,
+          dropped_count: (job.dropped_count ?? 0) + droppedThisChunk,
+          last_error: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", job.id)
+        .eq("shop_id", shop.id)
+        .select("*")
+        .single();
+      if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+      return NextResponse.json({ job: updated });
+    } catch (err: any) {
+      // Job stays "running" — cursor is untouched, so the next continue call
+      // retries the same chunk. Only last_error is recorded.
+      await supabase
+        .from("knowledge_import_jobs")
+        .update({
+          last_error: String(err?.message ?? err),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", job.id)
+        .eq("shop_id", shop.id);
+      return NextResponse.json({ error: String(err?.message ?? err), jobId: job.id }, { status: 502 });
+    }
+  }
 
   // Fetch solved + closed tickets (both statuses)
   const ticketsPerPage = 100;
