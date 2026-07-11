@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Mail } from "lucide-react";
 import { MailboxRow } from "@/components/mailboxes/MailboxRow";
 import { MailboxesAddMenu } from "@/components/mailboxes/MailboxesAddMenu";
 
@@ -17,6 +18,18 @@ export function MailboxesSettingsTab() {
   const [error, setError] = useState("");
   const checkedManagedSenders = useRef(new Set());
 
+  const normalizeConnectedChannels = useCallback(
+    (rows = []) =>
+      (Array.isArray(rows) ? rows : [])
+        .filter(
+          (mailbox) =>
+            String(mailbox?.status || "").toLowerCase() !== "disconnected" &&
+            mailbox?.isActive !== false,
+        )
+        .slice(0, 1),
+    [],
+  );
+
   const loadMailboxes = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -24,9 +37,9 @@ export function MailboxesSettingsTab() {
       const res = await fetch("/api/mail-accounts", { cache: "no-store" });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(payload?.error || "Could not load connected mailboxes.");
+        throw new Error(payload?.error || "Could not load the email channel.");
       }
-      const nextMailboxes = Array.isArray(payload?.mailboxes) ? payload.mailboxes : [];
+      const nextMailboxes = normalizeConnectedChannels(payload?.mailboxes);
       setMailboxes(nextMailboxes);
 
       const pendingManagedSenders = nextMailboxes.filter(
@@ -53,7 +66,7 @@ export function MailboxesSettingsTab() {
             });
             const refreshedPayload = await refreshedResponse.json().catch(() => ({}));
             if (refreshedResponse.ok && Array.isArray(refreshedPayload?.mailboxes)) {
-              setMailboxes(refreshedPayload.mailboxes);
+              setMailboxes(normalizeConnectedChannels(refreshedPayload.mailboxes));
             }
           })
           .catch(() => {
@@ -65,53 +78,63 @@ export function MailboxesSettingsTab() {
       setError(
         loadError instanceof Error
           ? loadError.message
-          : "Could not load connected mailboxes.",
+          : "Could not load the email channel.",
       );
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [normalizeConnectedChannels]);
 
   useEffect(() => {
     loadMailboxes();
   }, [loadMailboxes]);
 
   return (
-    <div className="max-w-3xl space-y-6">
-      <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold">Mailboxes</h1>
-          <p className="text-sm text-muted-foreground">
-            Manage the email accounts Sona uses to draft replies.
+    <div className="w-full space-y-5">
+      <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="max-w-2xl space-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Channels</h1>
+          <p className="text-sm leading-6 text-muted-foreground">
+            Manage where customer conversations enter Sona. Email is the first supported channel.
           </p>
         </div>
-        <MailboxesAddMenu onCreated={loadMailboxes} />
+        {!loading && !error && mailboxes.length === 0 ? (
+          <MailboxesAddMenu
+            onCreated={loadMailboxes}
+            buttonLabel="Connect email"
+            buttonClassName="shrink-0 active:scale-[0.97]"
+          />
+        ) : null}
       </header>
 
-      <section className="space-y-4">
-        <div>
-          <h2 className="text-lg font-semibold text-foreground">Connected accounts</h2>
-          <p className="text-sm text-muted-foreground">
-            Gmail, Outlook, and forwarded inboxes currently linked to Sona.
+      <section className="overflow-hidden rounded-xl border border-border/90 bg-card">
+        <div className="px-6 pb-2 pt-5">
+          <h2 className="text-base font-semibold text-foreground">Email</h2>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            Your support inbox, forwarding address and sender identity.
           </p>
         </div>
-        <div className="overflow-hidden rounded-lg border border-border bg-background">
+        <div className="px-6 pb-2">
           {loading ? (
-            <div className="px-6 py-12 text-center text-sm text-muted-foreground">Loading…</div>
+            <div className="space-y-3 py-8">
+              <div className="h-5 w-48 animate-pulse rounded bg-muted" />
+              <div className="h-4 w-72 max-w-full animate-pulse rounded bg-muted" />
+              <div className="h-16 animate-pulse rounded-lg bg-muted/70" />
+            </div>
           ) : error ? (
-            <div role="alert" className="flex flex-col items-center gap-3 px-6 py-12 text-center">
-              <p className="text-base font-medium text-foreground">Couldn’t load connected mailboxes.</p>
+            <div role="alert" className="flex flex-col items-center gap-3 py-10 text-center">
+              <p className="text-base font-medium text-foreground">Couldn’t load the email channel.</p>
               <p className="text-sm text-muted-foreground">{error}</p>
               <button
                 type="button"
                 onClick={loadMailboxes}
-                className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+                className="rounded-md bg-background px-3 py-1.5 text-sm font-medium text-foreground shadow-sm transition-transform duration-150 hover:bg-muted active:scale-[0.97]"
               >
                 Try again
               </button>
             </div>
           ) : mailboxes.length ? (
-            <div className="divide-y divide-border">
+            <div className="divide-y divide-border/80">
               {mailboxes.map((mailbox) => (
                 <MailboxRow
                   key={`${mailbox.provider}-${mailbox.email}`}
@@ -125,6 +148,8 @@ export function MailboxesSettingsTab() {
                   sendingDomain={mailbox.sendingDomain}
                   domainStatus={mailbox.domainStatus}
                   domainDns={mailbox.domainDns}
+                  domainMailboxId={mailbox.domainMailboxId}
+                  domainInherited={mailbox.domainInherited}
                   fromEmail={mailbox.fromEmail}
                   fromName={mailbox.fromName}
                   sharedFromEmail={mailbox.sharedFromEmail}
@@ -138,15 +163,22 @@ export function MailboxesSettingsTab() {
               ))}
             </div>
           ) : (
-            <div className="flex flex-col items-center gap-2 px-6 py-12 text-center">
-              <p className="text-base font-medium text-foreground">
-                No mailboxes connected yet. Connect your support email to start
-                generating drafts.
+            <div className="flex flex-col items-center py-10 text-center">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+                <Mail className="h-5 w-5" />
+              </div>
+              <h3 className="mt-4 text-base font-semibold text-foreground">Connect your support email</h3>
+              <p className="mt-1 max-w-md text-sm leading-6 text-muted-foreground">
+                Forward your existing support inbox to Sona to receive conversations and generate replies.
               </p>
             </div>
           )}
         </div>
       </section>
+
+      <p className="text-xs leading-5 text-muted-foreground">
+        Additional channel types, including chat and social, will appear here when available.
+      </p>
     </div>
   );
 }

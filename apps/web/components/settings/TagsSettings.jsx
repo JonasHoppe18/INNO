@@ -102,7 +102,7 @@ function TagFormModal({ open, onClose, onSave, initial }) {
         </DialogHeader>
         <div className="space-y-4 py-2">
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold tracking-wide text-slate-500">NAME</label>
+            <label className="text-xs font-semibold tracking-wide text-muted-foreground">NAME</label>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -112,14 +112,14 @@ function TagFormModal({ open, onClose, onSave, initial }) {
             />
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold tracking-wide text-slate-500">COLOR</label>
+            <label className="text-xs font-semibold tracking-wide text-muted-foreground">COLOR</label>
             <ColorPicker value={color} onChange={setColor} />
             <div className="mt-2">
               <TagBadge tag={{ name: name || "Example", color }} />
             </div>
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold tracking-wide text-slate-500">WHEN SHOULD THIS TAG BE APPLIED? (optional)</label>
+            <label className="text-xs font-semibold tracking-wide text-muted-foreground">WHEN SHOULD THIS TAG BE APPLIED? (optional)</label>
             <textarea
               value={aiPrompt}
               onChange={(e) => setAiPrompt(e.target.value)}
@@ -128,10 +128,10 @@ function TagFormModal({ open, onClose, onSave, initial }) {
               maxLength={500}
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
             />
-            <p className="text-xs text-slate-400">AI uses this to determine when the tag is relevant. If left empty, AI will judge based on the tag name.</p>
+            <p className="text-xs text-muted-foreground">AI uses this to determine when the tag is relevant. If left empty, AI will judge based on the tag name.</p>
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold tracking-wide text-slate-500">CATEGORY (optional)</label>
+            <label className="text-xs font-semibold tracking-wide text-muted-foreground">CATEGORY (optional)</label>
             <Input
               value={category}
               onChange={(e) => setCategory(e.target.value)}
@@ -257,11 +257,11 @@ export function TagsSettings() {
   });
 
   return (
-    <div className="max-w-2xl space-y-6">
+    <div className="w-full space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-slate-900">Tags</h2>
-          <p className="text-sm text-slate-500 mt-0.5">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Tags</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             Create tags to categorize tickets. AI automatically applies relevant tags as soon as a new email is received.
           </p>
         </div>
@@ -272,9 +272,9 @@ export function TagsSettings() {
       </div>
 
       {loading ? (
-        <div className="text-sm text-slate-400 py-8 text-center">Loading tags…</div>
+        <div className="py-8 text-center text-sm text-muted-foreground">Loading tags…</div>
       ) : tags.length === 0 ? (
-        <div className="border border-dashed rounded-xl p-10 text-center text-slate-400">
+        <div className="rounded-xl border border-dashed border-border bg-card p-10 text-center text-muted-foreground">
           <Tag className="w-8 h-8 mx-auto mb-3 opacity-30" />
           <p className="text-sm font-medium">No tags yet</p>
           <p className="text-xs mt-1">Create your first tag to get started.</p>
@@ -284,27 +284,27 @@ export function TagsSettings() {
           {groupKeys.map((groupKey) => (
             <div key={groupKey || "__none__"}>
               {groupKey && (
-                <p className="text-xs font-semibold tracking-wide text-slate-400 uppercase mb-2">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   {groupKey}
                 </p>
               )}
-              <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
+              <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
                 {grouped[groupKey].map((tag) => (
-                  <div key={tag.id} className="flex items-center justify-between px-4 py-3 bg-white hover:bg-slate-50 transition-colors">
+                  <div key={tag.id} className="flex items-center justify-between px-4 py-3 transition-colors hover:bg-muted/50">
                     <div className="flex items-center gap-3 min-w-0">
                       <span
                         className="w-3 h-3 rounded-full flex-shrink-0"
                         style={{ backgroundColor: tag.color }}
                       />
                       <div className="min-w-0">
-                        <span className={`text-sm font-medium ${tag.is_active ? "text-slate-800" : "text-slate-400 line-through"}`}>
+                        <span className={`text-sm font-medium ${tag.is_active ? "text-foreground" : "text-muted-foreground line-through"}`}>
                           {tag.name}
                         </span>
                         {!tag.is_active && (
-                          <span className="ml-2 text-xs text-slate-400 italic">inactive</span>
+                            <span className="ml-2 text-xs italic text-muted-foreground">inactive</span>
                         )}
                         {tag.ai_prompt && (
-                          <p className="text-xs text-slate-400 truncate max-w-xs mt-0.5">{tag.ai_prompt}</p>
+                          <p className="mt-0.5 max-w-xs truncate text-xs text-muted-foreground">{tag.ai_prompt}</p>
                         )}
                       </div>
                     </div>
@@ -313,14 +313,14 @@ export function TagsSettings() {
                         type="button"
                         onClick={() => handleToggleActive(tag)}
                         disabled={!!togglingId}
-                        className="text-xs text-slate-400 hover:text-slate-600 px-2 py-1 rounded transition-colors"
+                        className="rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                       >
                         {tag.is_active ? "Deactivate" : "Activate"}
                       </button>
                       <button
                         type="button"
                         onClick={() => { setEditTarget(tag); setModalOpen(true); }}
-                        className="p-1.5 text-slate-400 hover:text-slate-700 rounded transition-colors"
+                        className="rounded p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                         aria-label="Edit"
                       >
                         <Pencil className="w-3.5 h-3.5" />
@@ -329,7 +329,7 @@ export function TagsSettings() {
                         type="button"
                         onClick={() => handleDelete(tag)}
                         disabled={deletingId === tag.id}
-                        className="p-1.5 text-slate-400 hover:text-red-500 rounded transition-colors"
+                        className="rounded p-1.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600"
                         aria-label="Delete"
                       >
                         <Trash2 className="w-3.5 h-3.5" />

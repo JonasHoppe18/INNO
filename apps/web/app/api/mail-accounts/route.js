@@ -27,12 +27,34 @@ function createServiceClient() {
 
 const PROVIDER_ORDER = { gmail: 0, outlook: 1, smtp: 2 };
 
+function accountScopeKey(account) {
+  if (account?.workspace_id) return `workspace:${account.workspace_id}`;
+  if (account?.user_id) return `user:${account.user_id}`;
+  return null;
+}
+
+function hasSavedDomainSetup(account) {
+  return Boolean(
+    account?.sending_domain &&
+      account?.postmark_domain_id &&
+      Array.isArray(account?.domain_dns?.records) &&
+      account.domain_dns.records.length,
+  );
+}
+
+function domainSourceScore(account) {
+  const connected = String(account?.status || "").toLowerCase() === "disconnected" ? 0 : 4;
+  const verified = account?.domain_status === "verified" ? 2 : 0;
+  const enabled = account?.sending_type === "custom" ? 1 : 0;
+  return connected + verified + enabled;
+}
+
 async function loadMailAccounts(serviceClient, scope) {
   const { data, error } = await applyScope(
     serviceClient
       .from("mail_accounts")
       .select(
-        "id, provider, provider_email, status, inbound_slug, shop_id, sending_type, sending_domain, domain_status, domain_dns, from_email, from_name, metadata"
+        "id, user_id, workspace_id, provider, provider_email, status, inbound_slug, shop_id, sending_type, sending_domain, postmark_domain_id, domain_status, domain_dns, from_email, from_name, metadata, updated_at"
       )
       .in("provider", ["gmail", "outlook", "smtp"])
       .order("created_at", { ascending: true }),
@@ -65,6 +87,24 @@ export async function GET() {
     }
 
     const mailAccounts = await loadMailAccounts(serviceClient, scope);
+    const domainSourcesByScope = new Map();
+    for (const account of mailAccounts) {
+      if (!hasSavedDomainSetup(account)) continue;
+      const key = accountScopeKey(account);
+      if (!key) continue;
+      const current = domainSourcesByScope.get(key);
+      const nextScore = domainSourceScore(account);
+      const currentScore = current ? domainSourceScore(current) : -1;
+      const nextUpdatedAt = Date.parse(account?.updated_at || 0) || 0;
+      const currentUpdatedAt = Date.parse(current?.updated_at || 0) || 0;
+      if (
+        !current ||
+        nextScore > currentScore ||
+        (nextScore === currentScore && nextUpdatedAt > currentUpdatedAt)
+      ) {
+        domainSourcesByScope.set(key, account);
+      }
+    }
     const shopIds = Array.from(
       new Set(mailAccounts.map((account) => account?.shop_id).filter(Boolean))
     );
@@ -87,6 +127,10 @@ export async function GET() {
       )
       .map((account) => {
         const managedSender = getManagedSenderFromMailbox(account);
+        const inheritedDomainSource = domainSourcesByScope.get(accountScopeKey(account));
+        const domainSource = hasSavedDomainSetup(account)
+          ? account
+          : inheritedDomainSource || account;
         return {
           id: account.id,
           provider: account.provider,
@@ -94,12 +138,14 @@ export async function GET() {
           isActive: Boolean(account.provider_email),
           status: account.status || null,
           inboundSlug: account.inbound_slug || null,
-          sendingType: account.sending_type || "shared",
-          sendingDomain: account.sending_domain || null,
-          domainStatus: account.domain_status || "pending",
-          domainDns: account.domain_dns || null,
-          fromEmail: account.from_email || null,
-          fromName: account.from_name || null,
+          sendingType: domainSource.sending_type || "shared",
+          sendingDomain: domainSource.sending_domain || null,
+          domainStatus: domainSource.domain_status || "pending",
+          domainDns: domainSource.domain_dns || null,
+          fromEmail: domainSource.from_email || null,
+          fromName: domainSource.from_name || null,
+          domainMailboxId: domainSource.id || account.id,
+          domainInherited: domainSource.id !== account.id,
           sharedFromEmail: buildEffectiveSharedFromEmail({
             shop: shopsById.get(account.shop_id) || null,
             mailbox: account,

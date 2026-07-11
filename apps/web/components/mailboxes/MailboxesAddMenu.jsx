@@ -23,7 +23,7 @@ import { useClerkSupabase } from "@/lib/useClerkSupabase";
 
 const INBOUND_DOMAIN = "inbound.sona-ai.dk";
 
-export function MailboxesAddMenu({ buttonClassName = "", onCreated }) {
+export function MailboxesAddMenu({ buttonClassName = "", buttonLabel = "Connect mail", onCreated }) {
   const router = useRouter();
   const { supabase } = useClerkSupabase();
   const { settings: automationSettings, loading: automationLoading, refresh, save } =
@@ -98,7 +98,7 @@ export function MailboxesAddMenu({ buttonClassName = "", onCreated }) {
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(payload?.error || "Could not create forwarding address.");
+        throw new Error(payload?.error || "Could not connect the email channel.");
       }
       setResult(payload);
       await fetch("/api/onboarding/mark", {
@@ -112,11 +112,11 @@ export function MailboxesAddMenu({ buttonClassName = "", onCreated }) {
       if (automationSettings?.draftDestination !== "sona_inbox") {
         await save({ draftDestination: "sona_inbox" });
       }
-      toast.success("Forwarding address created.");
+      toast.success("Email channel created.");
       router.refresh();
       onCreated?.();
     } catch (error) {
-      toast.error(error?.message || "Could not create forwarding address.");
+      toast.error(error?.message || "Could not connect the email channel.");
     } finally {
       setSubmitting(false);
     }
@@ -139,15 +139,15 @@ export function MailboxesAddMenu({ buttonClassName = "", onCreated }) {
         className={cn("w-full lg:w-auto", buttonClassName)}
         onClick={() => setOpen(true)}
       >
-        Connect mail
+        {buttonLabel}
       </Button>
 
       <Dialog open={open} onOpenChange={handleClose}>
         <DialogContent className="sm:max-w-[520px]">
           <DialogHeader>
-            <DialogTitle>Connect email (forwarding)</DialogTitle>
+            <DialogTitle>Connect email channel</DialogTitle>
             <DialogDescription>
-              Use the same forwarding setup for Gmail, Outlook, one.com, Simply, and other providers.
+              Forward your existing support inbox from Gmail, Outlook or another provider into Sona.
             </DialogDescription>
           </DialogHeader>
 
@@ -209,7 +209,7 @@ export function MailboxesAddMenu({ buttonClassName = "", onCreated }) {
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-slate-700">
-                  Email address
+                  Support email address
                 </label>
                 <Input
                   value={email}
@@ -221,7 +221,7 @@ export function MailboxesAddMenu({ buttonClassName = "", onCreated }) {
               </div>
               <DialogFooter>
                 <Button type="submit" disabled={submitting || !shopId}>
-                  {submitting ? "Creating..." : "Create forwarding address"}
+                  {submitting ? "Connecting..." : "Connect email"}
                 </Button>
               </DialogFooter>
             </form>

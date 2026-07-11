@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth, useOrganization, useUser } from "@clerk/nextjs";
 import { useTheme } from "next-themes";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Bot,
   Building2,
@@ -70,27 +70,41 @@ import {
 
 const MENU_SECTIONS = [
   {
-    label: "TEAM",
+    label: "WORKSPACE",
     items: [
       { key: "general", label: "General", icon: Building2 },
       { key: "members", label: "Members", icon: Users2 },
-      { key: "email", label: "Email", icon: Mail },
-      { key: "billing", label: "Billing", icon: CreditCard },
+      { key: "mailboxes", label: "Channels", icon: Inbox },
+      { key: "tags", label: "Tags", icon: Tag },
     ],
   },
   {
-    label: "WORKSPACE",
+    label: "AI & AUTOMATION",
     items: [
-      { key: "mailboxes", label: "Mailboxes", icon: Inbox },
+      { key: "ai", label: "AI instructions", icon: Bot },
       { key: "automation", label: "Automation", icon: Bot },
-      { key: "tags", label: "Tags", icon: Tag },
       { key: "playground", label: "Playground", icon: SlidersHorizontal },
     ],
   },
   {
-    label: "PERSONAL",
-    items: [{ key: "profile", label: "Profile", icon: User }],
+    label: "COMMUNICATION",
+    items: [{ key: "email", label: "Email", icon: Mail }],
   },
+  {
+    label: "ACCOUNT",
+    items: [
+      { key: "profile", label: "Profile & appearance", icon: User },
+      { key: "billing", label: "Billing", icon: CreditCard },
+    ],
+  },
+];
+
+const EMAIL_SECTIONS = [
+  { key: "auto-reply", label: "Auto-reply" },
+  { key: "routing", label: "Routing" },
+  { key: "sender-rules", label: "Sender rules" },
+  { key: "blocklist", label: "Blocklist" },
+  { key: "signatures", label: "Signatures" },
 ];
 
 const UUID_REGEX =
@@ -287,28 +301,44 @@ function AiPromptModal({ value, onChange, onSave, saving }) {
     setOpen(false);
   };
 
-  const preview = value
-    ? `${value.slice(0, 55)}${value.length > 55 ? "…" : ""}`
-    : "Not configured";
-
   return (
     <>
-      <button
-        type="button"
-        onClick={handleOpen}
-        className="flex items-center gap-4 border-b border-border/80 py-5 w-full text-left hover:bg-muted/40 transition-colors -mx-6 px-6"
-      >
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
-          <Bot className="h-4 w-4 text-primary" />
+      <div className="py-5">
+        <div className="flex items-center gap-4">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
+            <Bot className="h-4 w-4 text-primary" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-foreground">AI Prompt</p>
+            <p className="text-xs text-muted-foreground">The shared instruction Sona reads before drafting every reply.</p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleOpen}
+            className="shrink-0 gap-1.5 transition-transform duration-150 active:scale-[0.97]"
+          >
+            <PenLine className="h-3.5 w-3.5" />
+            {value ? "Edit" : "Add prompt"}
+          </Button>
         </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-foreground">AI Prompt</p>
-          <p className="text-xs text-muted-foreground">Describe your brand, products and tone of voice.</p>
+
+        <div className="mt-4 rounded-lg bg-muted/40 px-4 py-3.5">
+          {value ? (
+            <p className="whitespace-pre-wrap break-words text-sm leading-6 text-foreground">
+              {value}
+            </p>
+          ) : (
+            <div>
+              <p className="text-sm font-medium text-foreground">No prompt configured</p>
+              <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                Add brand context, tone of voice and reply guidelines for Sona.
+              </p>
+            </div>
+          )}
         </div>
-        <span className={`shrink-0 text-sm font-medium ${value ? "text-slate-500" : "text-muted-foreground/50"}`}>
-          {preview}
-        </span>
-      </button>
+      </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-lg">
@@ -342,8 +372,6 @@ function GeneralTab({
   shopDomain,
   teamName,
   onTeamNameChange,
-  aiPrompt,
-  onAiPromptChange,
   testMode,
   onTestModeChange,
   testEmail,
@@ -360,56 +388,21 @@ function GeneralTab({
   saving,
   canSave,
 }) {
-  const [isEditing, setIsEditing] = useState(false);
-
-  const handleSave = async () => {
-    await onSave();
-    setIsEditing(false);
-  };
-
-  const handleCancel = () => {
-    onReset();
-    setIsEditing(false);
-  };
-
   const langLabel = SUPPORT_LANGUAGE_LABELS[supportLanguage] || supportLanguage;
 
   return (
-    <section className="w-full max-w-[1280px] space-y-5">
+    <section className="w-full space-y-5">
       <div className="mb-6">
-        <h2 className="text-2xl font-semibold tracking-tight text-foreground">Team Settings</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Manage your team, store connection and preferences.</p>
+        <h2 className="text-2xl font-semibold tracking-tight text-foreground">General</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Manage workspace details and ticket lifecycle defaults.</p>
       </div>
 
-      {/* Store & Team */}
       <div className="rounded-xl border border-border/90 bg-card">
-        <div className="flex items-center justify-between px-6 pt-5 pb-2">
+        <div className="px-6 pb-2 pt-5">
           <div>
-            <h3 className="text-base font-semibold text-foreground">Store &amp; Team</h3>
-            <p className="mt-0.5 text-sm text-muted-foreground">Your store connection and basic team settings.</p>
+            <h3 className="text-base font-semibold text-foreground">Workspace details</h3>
+            <p className="mt-0.5 text-sm text-muted-foreground">Your connected store and shared workspace preferences.</p>
           </div>
-          {!isEditing ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="gap-1.5"
-              onClick={() => setIsEditing(true)}
-              disabled={!hasWorkspaceScope}
-            >
-              <PenLine className="h-3.5 w-3.5" />
-              Edit
-            </Button>
-          ) : (
-            <div className="flex gap-2">
-              <Button type="button" variant="outline" size="sm" onClick={handleCancel} disabled={saving}>
-                Cancel
-              </Button>
-              <Button type="button" size="sm" onClick={handleSave} disabled={!canSave || saving}>
-                {saving ? "Saving..." : "Save"}
-              </Button>
-            </div>
-          )}
         </div>
         <div className="px-6 pb-2">
           <StoreTeamRow
@@ -424,7 +417,7 @@ function GeneralTab({
             label="Team name"
             description="This is your team's visible name within Sona."
             value={teamName}
-            editing={isEditing}
+            editing
           >
             <Input
               value={teamName}
@@ -433,26 +426,12 @@ function GeneralTab({
               className="h-9 text-sm"
             />
           </StoreTeamRow>
-          <AiPromptModal
-            value={aiPrompt}
-            onChange={onAiPromptChange}
-            saving={saving}
-            onSave={async (newPrompt) => {
-              onAiPromptChange(newPrompt);
-              await fetch("/api/persona", {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                credentials: "include",
-                body: JSON.stringify({ instructions: newPrompt }),
-              });
-            }}
-          />
           <StoreTeamRow
             icon={Globe}
             label="Support language"
             description="The language your team prefers to read messages in."
             value={langLabel}
-            editing={isEditing}
+            editing
           >
             <Select value={supportLanguage} onValueChange={onSupportLanguageChange} disabled={!hasWorkspaceScope}>
               <SelectTrigger className="h-9 text-sm">
@@ -467,12 +446,21 @@ function GeneralTab({
               </SelectContent>
             </Select>
           </StoreTeamRow>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-border/90 bg-card">
+        <div className="px-6 pb-2 pt-5">
+          <h3 className="text-base font-semibold text-foreground">Ticket lifecycle</h3>
+          <p className="mt-0.5 text-sm text-muted-foreground">Choose when inactive tickets should move forward automatically.</p>
+        </div>
+        <div className="px-6 pb-2">
           <StoreTeamRow
             icon={Clock}
             label="Auto close (hours)"
             description="Automatically close tickets after this many hours in Pending with no customer reply."
             value={`${closeSuggestionDelayHours} hours`}
-            editing={isEditing}
+            editing
           >
             <Input
               type="number"
@@ -495,7 +483,7 @@ function GeneralTab({
                 ? "Disabled"
                 : `${needsAttentionStaleDays} days`
             }
-            editing={isEditing}
+            editing
           >
             <Input
               type="number"
@@ -512,7 +500,6 @@ function GeneralTab({
         </div>
       </div>
 
-      {/* Test Mode */}
       <div className="rounded-xl border border-border/90 bg-card">
         <div className="flex items-center justify-between px-6 py-5">
           <div>
@@ -566,23 +553,31 @@ function GeneralTab({
         )}
       </div>
 
-      {/* Danger Zone */}
-      <div className="rounded-xl border border-red-200/80 bg-card px-6 py-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-base font-semibold text-red-600">Danger Zone</h3>
-            <p className="mt-0.5 text-sm text-muted-foreground">Permanently delete this team and all data. This action cannot be undone.</p>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            className="shrink-0 gap-1.5 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            Delete Team
-          </Button>
-        </div>
+      <StickySaveBar
+        isVisible={canSave}
+        isSaving={saving}
+        onSave={onSave}
+        onDiscard={onReset}
+      />
+    </section>
+  );
+}
+
+function AiInstructionsTab({ value, onChange, onSave, saving }) {
+  return (
+    <section className="w-full space-y-5">
+      <div className="mb-6">
+        <h2 className="text-2xl font-semibold tracking-tight text-foreground">AI instructions</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Define the shared brand context and tone Sona uses when drafting replies.
+        </p>
       </div>
+      <div className="overflow-hidden rounded-xl border border-border bg-card px-6">
+        <AiPromptModal value={value} onChange={onChange} onSave={onSave} saving={saving} />
+      </div>
+      <p className="text-xs leading-5 text-muted-foreground">
+        Automation-specific behavior is configured separately under Automation.
+      </p>
     </section>
   );
 }
@@ -885,7 +880,7 @@ function MembersTab({
 
   return (
     <>
-      <section className="w-full max-w-[1320px] space-y-5">
+      <section className="w-full space-y-5">
         <div className="mb-6">
           <p className="text-[11px] font-bold uppercase tracking-wider text-primary">TEAM</p>
           <div className="mt-1 flex items-center justify-between gap-3">
@@ -1152,26 +1147,22 @@ function MembersTab({
 
 function BillingTab() {
   return (
-    <section className="max-w-2xl space-y-5">
+    <section className="w-full space-y-5">
       <div className="mb-6">
-        <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Billing</p>
-        <h2 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">Billing</h2>
+        <h2 className="text-2xl font-semibold tracking-tight text-foreground">Billing</h2>
         <p className="mt-1 text-sm text-muted-foreground">Manage your subscription and plan.</p>
       </div>
 
-      <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-slate-700">Plan:</span>
+      <div className="rounded-xl border border-border bg-card p-6">
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-medium text-foreground">Current plan</span>
           <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
             Free Beta
           </Badge>
         </div>
-        <p className="mt-3 text-sm text-slate-600">
-          You are currently on the free beta plan.
+        <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
+          Your workspace has full beta access. Billing controls will become available before paid plans launch.
         </p>
-        <Button disabled className="mt-4 bg-slate-200 text-slate-500 hover:bg-slate-200">
-          Manage Subscription
-        </Button>
       </div>
     </section>
   );
@@ -1384,6 +1375,8 @@ function parseSignatureBuilderFromTemplate(templateHtml = "") {
 }
 
 function EmailSettings({
+  activeSection = "auto-reply",
+  onSectionChange,
   enabled,
   onEnabledChange,
   subjectTemplate,
@@ -1642,17 +1635,38 @@ function EmailSettings({
   }, [signatureBuilderOpen, signatureTemplateHtml]);
 
   return (
-    <section className="w-full max-w-[1320px] space-y-5">
+    <section className="w-full space-y-5">
       <div className="mb-6">
-        <p className="text-[11px] font-bold uppercase tracking-wider text-primary">EMAIL</p>
-        <h2 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">Email &amp; Templates</h2>
+        <h2 className="text-2xl font-semibold tracking-tight text-foreground">Email</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Configure auto-reply behavior and outbound email settings.
+          Configure customer-facing messages, routing and sender controls.
         </p>
       </div>
 
+      <div className="overflow-x-auto border-b border-border" aria-label="Email settings sections">
+        <div className="flex min-w-max gap-1">
+          {EMAIL_SECTIONS.map((section) => {
+            const active = activeSection === section.key;
+            return (
+              <button
+                key={section.key}
+                type="button"
+                onClick={() => onSectionChange?.(section.key)}
+                className={cn(
+                  "relative px-3 py-2.5 text-sm font-medium transition-colors duration-150 active:scale-[0.98]",
+                  active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {section.label}
+                {active ? <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-primary" /> : null}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <div className="space-y-4">
-        <div className="rounded-2xl border border-border bg-card p-6">
+        <div className={cn("rounded-2xl border border-border bg-card p-6", activeSection !== "auto-reply" && "hidden")}>
           <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(260px,40%)_1fr] md:items-center">
             <div>
               <h3 className="font-medium text-foreground">Enable Auto-Reply</h3>
@@ -1684,7 +1698,7 @@ function EmailSettings({
           </div>
         </div>
 
-        <div className="rounded-2xl border border-border bg-card p-6">
+        <div className={cn("rounded-2xl border border-border bg-card p-6", activeSection !== "auto-reply" && "hidden")}>
           <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(260px,40%)_1fr]">
             <div className="min-w-0">
               <h3 className="font-medium text-foreground">Auto-Reply Message</h3>
@@ -1726,7 +1740,7 @@ function EmailSettings({
           </div>
         </div>
 
-        <div className="rounded-2xl border border-border bg-card p-6">
+        <div className={cn("rounded-2xl border border-border bg-card p-6", activeSection !== "routing" && "hidden")}>
           <div className="space-y-5">
             <div className="max-w-3xl">
               <h3 className="font-medium text-foreground">Email Routing</h3>
@@ -1845,7 +1859,7 @@ function EmailSettings({
           </div>
         </div>
 
-        <div className="rounded-2xl border border-border bg-card p-6">
+        <div className={cn("rounded-2xl border border-border bg-card p-6", activeSection !== "sender-rules" && "hidden")}>
           <div className="space-y-5">
             <div className="max-w-3xl">
               <h3 className="font-medium text-foreground">Sender Rules</h3>
@@ -2021,7 +2035,7 @@ function EmailSettings({
           </div>
         </div>
 
-        <div className="rounded-2xl border border-border bg-card p-6">
+        <div className={cn("rounded-2xl border border-border bg-card p-6", activeSection !== "blocklist" && "hidden")}>
           <div className="space-y-5">
             <div className="max-w-3xl">
               <h3 className="font-medium text-foreground">Blocked Senders</h3>
@@ -2153,7 +2167,105 @@ function EmailSettings({
             </div>
           </div>
         </div>
+
+        <div className={cn("rounded-2xl border border-border bg-card p-6", activeSection !== "signatures" && "hidden")}>
+          <div className="space-y-5">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="max-w-2xl">
+                <h3 className="font-medium text-foreground">Outbound signature</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Add a consistent workspace signature below outgoing replies.
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={Boolean(signatureIsActive)}
+                onClick={() => onSignatureIsActiveChange?.(!signatureIsActive)}
+                disabled={saving}
+                className={cn(
+                  "relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors duration-150",
+                  signatureIsActive ? "bg-primary" : "bg-muted-foreground/25",
+                  saving && "cursor-not-allowed opacity-60"
+                )}
+              >
+                <span className={cn("inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-150", signatureIsActive ? "translate-x-6" : "translate-x-1")} />
+              </button>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)]">
+              <div className="rounded-xl border border-border bg-muted/30 p-4">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Current signature</p>
+                <p className="mt-2 text-sm text-foreground">{signatureSummary}</p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={() => setSignatureBuilderOpen(true)}>
+                    <PenLine className="mr-1.5 h-3.5 w-3.5" />
+                    Edit signature
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={onSendSignatureTest} disabled={sendingSignatureTest || !String(signatureTemplateHtml || "").trim()}>
+                    {sendingSignatureTest ? "Sending…" : "Send test"}
+                  </Button>
+                  {String(signatureTemplateHtml || "").trim() ? (
+                    <Button type="button" variant="ghost" size="sm" className="text-muted-foreground hover:text-red-600" onClick={handleClearSignatureTemplate}>
+                      Clear
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+              <div className="overflow-hidden rounded-xl border border-border bg-background">
+                <div className="border-b border-border bg-muted/40 px-4 py-2 text-xs text-muted-foreground">Preview</div>
+                <div className="min-h-28 p-4 text-sm text-foreground" dangerouslySetInnerHTML={{ __html: signaturePreviewHtml }} />
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
+
+      <Dialog open={signatureBuilderOpen} onOpenChange={setSignatureBuilderOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Edit outbound signature</DialogTitle>
+            <DialogDescription>Choose the details shown below workspace replies.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(260px,0.8fr)]">
+            <div className="grid gap-3 sm:grid-cols-2">
+              {[
+                ["fullName", "Full name", "Alex Morgan"],
+                ["jobTitle", "Job title", "Customer Support"],
+                ["phone", "Phone", "+45 12 34 56 78"],
+                ["email", "Email", "support@example.com"],
+                ["companyName", "Company", "Company name"],
+              ].map(([field, label, placeholder]) => (
+                <label key={field} className={cn("space-y-1.5", field === "logoUrl" && "sm:col-span-2")}>
+                  <span className="text-sm font-medium text-foreground">{label}</span>
+                  <Input value={signatureDraft[field] || ""} onChange={(event) => handleSignatureDraftField(field, event.target.value)} placeholder={placeholder} />
+                </label>
+              ))}
+              <label className="space-y-1.5 sm:col-span-2">
+                <span className="text-sm font-medium text-foreground">Logo</span>
+                <Input type="file" accept="image/*" onChange={handleLogoUpload} />
+                <span className="block text-xs text-muted-foreground">PNG, JPG or WebP up to 5 MB.</span>
+              </label>
+              <label className="space-y-1.5 sm:col-span-2">
+                <span className="text-sm font-medium text-foreground">Accent color</span>
+                <div className="flex items-center gap-2">
+                  <input type="color" value={signatureDraft.accentColor || "#6d5dfc"} onChange={(event) => handleSignatureDraftField("accentColor", event.target.value)} className="h-9 w-12 rounded-md border border-input bg-background p-1" />
+                  <Input value={signatureDraft.accentColor || ""} onChange={(event) => handleSignatureDraftField("accentColor", event.target.value)} placeholder="#6d5dfc" />
+                </div>
+              </label>
+              {signatureLogoUploadError ? <p className="text-sm text-red-600 sm:col-span-2">{signatureLogoUploadError}</p> : null}
+            </div>
+            <div className="overflow-hidden rounded-xl border border-border bg-background">
+              <div className="border-b border-border bg-muted/40 px-4 py-2 text-xs text-muted-foreground">Preview</div>
+              <div className="min-h-44 p-4 text-sm" dangerouslySetInnerHTML={{ __html: signatureDraftPreviewHtml }} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setSignatureBuilderOpen(false)}>Cancel</Button>
+            <Button type="button" onClick={handleApplySignatureBuilder}>Apply signature</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={messageModalOpen} onOpenChange={setMessageModalOpen}>
         <DialogContent className="max-w-3xl">
@@ -2596,7 +2708,7 @@ function ProfileTab({ user, isLoaded }) {
 
   return (
     <>
-      <section className="w-full max-w-[1320px] space-y-5">
+      <section className="w-full space-y-5">
         <div className="mb-6">
           <p className="text-[11px] font-bold uppercase tracking-wider text-primary">PROFILE</p>
           <h2 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">Personal Profile</h2>
@@ -2735,10 +2847,13 @@ function ProfileTab({ user, isLoaded }) {
 
 export function SettingsPanel() {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const supabase = useClerkSupabase();
   const { user, isLoaded } = useUser();
   const { orgId, orgRole } = useAuth();
   const [activeTab, setActiveTab] = useState("general");
+  const [emailSection, setEmailSection] = useState("auto-reply");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [workspaceId, setWorkspaceId] = useState(null);
@@ -2820,6 +2935,10 @@ export function SettingsPanel() {
     );
     if (isValidTab) {
       setActiveTab(requestedTab);
+    }
+    const requestedSection = String(searchParams?.get("section") || "").trim().toLowerCase();
+    if (EMAIL_SECTIONS.some((section) => section.key === requestedSection)) {
+      setEmailSection(requestedSection);
     }
   }, [searchParams]);
   const loadData = useCallback(async () => {
@@ -4020,12 +4139,88 @@ export function SettingsPanel() {
     savingEmailRouting,
   ]);
 
+  const hasCurrentTabChanges =
+    (activeTab === "general" && canSave) ||
+    (activeTab === "email" && canSaveEmailSettings);
+
+  useEffect(() => {
+    if (!hasCurrentTabChanges) return undefined;
+    const handleBeforeUnload = (event) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [hasCurrentTabChanges]);
+
+  const updateSettingsUrl = useCallback(
+    (tab, section = null) => {
+      const params = new URLSearchParams(searchParams?.toString() || "");
+      params.set("tab", tab);
+      if (tab === "email") {
+        params.set("section", section || emailSection || "auto-reply");
+      } else {
+        params.delete("section");
+      }
+      router.push(`${pathname}?${params.toString()}`, { scroll: false });
+    },
+    [emailSection, pathname, router, searchParams]
+  );
+
+  const handleSelectTab = useCallback(
+    (nextTab) => {
+      if (nextTab === activeTab) return;
+      if (hasCurrentTabChanges && !window.confirm("Discard your unsaved changes?")) return;
+      if (activeTab === "general" && canSave) handleResetGeneral();
+      if (activeTab === "email" && canSaveEmailSettings) handleDiscardEmailSettings();
+      setActiveTab(nextTab);
+      updateSettingsUrl(nextTab);
+    },
+    [
+      activeTab,
+      canSave,
+      canSaveEmailSettings,
+      handleDiscardEmailSettings,
+      handleResetGeneral,
+      hasCurrentTabChanges,
+      updateSettingsUrl,
+    ]
+  );
+
+  const handleSelectEmailSection = useCallback(
+    (nextSection) => {
+      if (!EMAIL_SECTIONS.some((section) => section.key === nextSection)) return;
+      setEmailSection(nextSection);
+      updateSettingsUrl("email", nextSection);
+    },
+    [updateSettingsUrl]
+  );
+
   const renderContent = () => {
     if (loading) {
       return <TabSkeleton />;
     }
 
     switch (activeTab) {
+      case "ai":
+        return (
+          <AiInstructionsTab
+            value={aiPrompt}
+            onChange={setAiPrompt}
+            saving={saving}
+            onSave={async (newPrompt) => {
+              const response = await fetch("/api/persona", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({ instructions: newPrompt }),
+              });
+              if (!response.ok) throw new Error("Could not save AI instructions.");
+              setInitialAiPrompt(String(newPrompt || ""));
+              toast.success("AI instructions saved.");
+            }}
+          />
+        );
       case "profile":
         return <ProfileTab user={user} isLoaded={isLoaded} />;
       case "members":
@@ -4062,7 +4257,7 @@ export function SettingsPanel() {
         );
       case "tags":
         return (
-          <div className="max-w-3xl">
+          <div className="w-full">
             <TagsSettings />
           </div>
         );
@@ -4075,6 +4270,8 @@ export function SettingsPanel() {
       case "email":
         return (
           <EmailSettings
+            activeSection={emailSection}
+            onSectionChange={handleSelectEmailSection}
             enabled={autoReplyEnabled}
             onEnabledChange={setAutoReplyEnabled}
             subjectTemplate={autoReplySubjectTemplate}
@@ -4114,8 +4311,6 @@ export function SettingsPanel() {
             shopDomain={shopDomain}
             teamName={teamName}
             onTeamNameChange={setTeamName}
-            aiPrompt={aiPrompt}
-            onAiPromptChange={setAiPrompt}
             testMode={testMode}
             onTestModeChange={setTestMode}
             testEmail={testEmail}
@@ -4137,15 +4332,35 @@ export function SettingsPanel() {
   };
 
   return (
-    <main className="settings-theme flex h-[calc(100svh_-_2.5rem_-_var(--app-top-offset,0px))] min-h-0 overflow-hidden bg-background">
-      {/* Sidebar — matches app's sidebar design system */}
-      <aside className="flex h-full w-[256px] shrink-0 flex-col overflow-y-auto border-r border-sidebar-border bg-sidebar">
-        <nav className="flex-1 space-y-6 px-5 pb-7 pt-12">
+    <main className="settings-theme flex h-[calc(100svh_-_2.5rem_-_var(--app-top-offset,0px))] min-h-0 flex-col overflow-hidden bg-background md:flex-row">
+      <div className="flex items-center gap-3 border-b border-border bg-background px-4 py-3 md:hidden">
+        <span className="text-sm font-semibold text-foreground">Settings</span>
+        <select
+          aria-label="Settings section"
+          value={activeTab}
+          onChange={(event) => handleSelectTab(event.target.value)}
+          className="ml-auto h-9 min-w-0 max-w-[220px] rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring"
+        >
+          {MENU_SECTIONS.map((section) => (
+            <optgroup key={section.label} label={section.label}>
+              {section.items.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
+            </optgroup>
+          ))}
+        </select>
+      </div>
+      <aside className="hidden h-full w-[224px] shrink-0 flex-col border-r border-border bg-background md:flex">
+        <div className="border-b border-border px-5 pb-5 pt-8">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Workspace</p>
+          <h1 className="mt-1 text-lg font-semibold tracking-tight text-foreground">Settings</h1>
+        </div>
+        <nav aria-label="Settings navigation" className="flex-1 space-y-6 overflow-y-auto px-3 py-5">
           {MENU_SECTIONS.map((section) => (
             <div key={section.label}>
-              <p className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                {section.label}
-              </p>
+              {section.label ? (
+                <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+                  {section.label}
+                </p>
+              ) : null}
               <div className="space-y-1">
                 {section.items.map((item) => {
                   const active = activeTab === item.key;
@@ -4153,18 +4368,18 @@ export function SettingsPanel() {
                     <button
                       key={item.key}
                       type="button"
-                      onClick={() => setActiveTab(item.key)}
+                      onClick={() => handleSelectTab(item.key)}
                       className={cn(
-                        "group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[14px] transition-colors duration-150",
+                        "group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] transition-[background-color,color,transform] duration-150 active:scale-[0.98]",
                         active
-                          ? "bg-primary/12 font-semibold text-primary"
-                          : "font-medium text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                          ? "bg-primary/10 font-semibold text-primary"
+                          : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
                       )}
                     >
                       <item.icon
                         className={cn(
-                          "h-[18px] w-[18px] shrink-0 transition-colors duration-150",
-                          active ? "text-primary" : "text-muted-foreground group-hover:text-sidebar-accent-foreground"
+                          "h-4 w-4 shrink-0 transition-colors duration-150",
+                          active ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
                         )}
                       />
                       <span>{item.label}</span>
@@ -4177,10 +4392,9 @@ export function SettingsPanel() {
         </nav>
       </aside>
 
-      {/* Content */}
-      <div className="min-w-0 flex-1 overflow-y-auto bg-muted/[0.24]">
-        <div className="px-6 py-10 lg:px-12">
-          <div key={activeTab} className="settings-tab-enter min-w-0">
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-muted/[0.18]">
+        <div className="px-4 py-6 sm:px-6 sm:py-8 lg:px-10 xl:px-14">
+          <div className="min-w-0">
             {renderContent()}
           </div>
         </div>
