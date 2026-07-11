@@ -118,7 +118,7 @@ export function ZendeskSheet({ children, onConnected, initialData = null }) {
   // --- Full-history import (Historik section) ------------------------------
   const [historyStats, setHistoryStats] = useState(null); // { imported_examples, last_job }
   const [historyStatsLoading, setHistoryStatsLoading] = useState(false);
-  const [estimate, setEstimate] = useState(null); // { ticketCount, usd, dkk }
+  const [estimate, setEstimate] = useState(null); // { ticketCount }
   const [showEstimateDialog, setShowEstimateDialog] = useState(false);
   const [historyJob, setHistoryJob] = useState(null);
   const [historyError, setHistoryError] = useState("");
@@ -212,12 +212,14 @@ export function ZendeskSheet({ children, onConnected, initialData = null }) {
           // this call, so back off briefly instead of hammering the endpoint
           // while the other chunk finishes.
           setHistoryJob(payload.job);
-          await new Promise((resolve) => setTimeout(resolve, 1000));
+          await new Promise((resolve) => setTimeout(resolve, Number(payload?.retry_after_ms) || 1500));
           continue;
         }
 
         if (response.status === 502) {
-          setHistoryError(payload?.error || "Import chunk failed.");
+          if (payload?.job) setHistoryJob(payload.job);
+          const detail = payload?.error || "Import chunk failed.";
+          setHistoryError(`${detail} The import is paused and can be continued safely.`);
           return;
         }
 
@@ -658,7 +660,7 @@ export function ZendeskSheet({ children, onConnected, initialData = null }) {
             <DialogTitle>Import full ticket history?</DialogTitle>
             <DialogDescription>
               {estimate
-                ? `${estimate.ticketCount} tickets found in Zendesk. Estimated one-time cost: ~${estimate.dkk} DKK (${estimate.usd} USD). Continue?`
+                ? `${estimate.ticketCount} tickets found in Zendesk. Tickets are imported in small batches, and you can safely resume later if you leave this page.`
                 : ""}
             </DialogDescription>
           </DialogHeader>

@@ -3,7 +3,12 @@ import { createHash } from "node:crypto";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { resolveAuthScope, listScopedShops } from "@/lib/server/workspace-auth";
-import { estimateImportCost, nextCursor } from "@/lib/server/zendesk-import-helpers";
+import {
+  importRetryDelayMs,
+  isRetryableImportStatus,
+  nextExportCursor,
+  parseRetryAfterMs,
+} from "@/lib/server/zendesk-import-helpers";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -24,10 +29,52 @@ const OPENAI_EMBEDDING_MODEL =
 const OPENAI_REDACT_MODEL = process.env.OPENAI_REDACT_MODEL || "gpt-4o-mini";
 
 const SOURCE_PROVIDER = "zendesk";
-const MAX_TICKETS = 200;
 const EMBED_BATCH_SIZE = 50;
-const CHUNK_TICKETS = 50;
+const CHUNK_TICKETS = 10;
+const MAX_EXTERNAL_RETRIES = 3;
 const IMPORT_STATUSES = ["solved", "closed"];
+
+class RetryableImportError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RetryableImportError";
+  }
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchExternalWithRetry(
+  input: string,
+  init: RequestInit,
+  context: string,
+): Promise<Response> {
+  let lastNetworkError: unknown = null;
+  for (let attempt = 0; attempt <= MAX_EXTERNAL_RETRIES; attempt += 1) {
+    let response: Response;
+    try {
+      response = await fetch(input, init);
+    } catch (error) {
+      lastNetworkError = error;
+      if (attempt === MAX_EXTERNAL_RETRIES) break;
+      await sleep(importRetryDelayMs({ attempt }));
+      continue;
+    }
+
+    if (!isRetryableImportStatus(response.status)) return response;
+    if (attempt === MAX_EXTERNAL_RETRIES) {
+      throw new RetryableImportError(`${context} is temporarily unavailable (${response.status}).`);
+    }
+    await sleep(importRetryDelayMs({
+      attempt,
+      retryAfterMs: parseRetryAfterMs(response.headers.get("retry-after")),
+    }));
+  }
+
+  const detail = lastNetworkError instanceof Error ? `: ${lastNetworkError.message}` : "";
+  throw new RetryableImportError(`${context} could not be reached${detail}`);
+}
 
 function createServiceClient() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return null;
@@ -86,14 +133,14 @@ function ticketHash(ticketId: string) {
 
 async function embedBatch(texts: string[]): Promise<number[][]> {
   if (!texts.length) return [];
-  const response = await fetch("https://api.openai.com/v1/embeddings", {
+  const response = await fetchExternalWithRetry("https://api.openai.com/v1/embeddings", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${OPENAI_API_KEY}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ model: OPENAI_EMBEDDING_MODEL, input: texts }),
-  });
+  }, "OpenAI embeddings");
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
     throw new Error(
@@ -132,7 +179,7 @@ async function redactOne(input: {
   customer_msg: string;
   agent_reply: string;
 }): Promise<{ subject: string; customer_msg: string; agent_reply: string }> {
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const res = await fetchExternalWithRetry("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${OPENAI_API_KEY}`,
@@ -147,7 +194,7 @@ async function redactOne(input: {
         { role: "user", content: JSON.stringify(input) },
       ],
     }),
-  });
+  }, "OpenAI redaction");
   if (!res.ok) throw new Error(`Redaction failed (${res.status})`);
   const payload = await res.json();
   const parsed = JSON.parse(payload.choices[0].message.content);
@@ -169,8 +216,9 @@ async function redactPairs<
   const CONCURRENCY = 5;
   const out: (T | null)[] = new Array(pairs.length).fill(null);
   let cursor = 0;
+  let retryableError: RetryableImportError | null = null;
   async function worker() {
-    while (cursor < pairs.length) {
+    while (cursor < pairs.length && !retryableError) {
       const idx = cursor++;
       const p = pairs[idx];
       try {
@@ -189,12 +237,17 @@ async function redactPairs<
           customerBody: r.customer_msg,
           agentReply: r.agent_reply,
         };
-      } catch {
-        out[idx] = null; // drop on failure — never store raw PII
+      } catch (error) {
+        if (error instanceof RetryableImportError) {
+          retryableError = error;
+          continue;
+        }
+        out[idx] = null; // malformed/unsafe model output is never stored raw
       }
     }
   }
   await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
+  if (retryableError) throw retryableError;
   return out;
 }
 
@@ -206,17 +259,29 @@ async function redactPairs<
 async function fetchTicketChunk(opts: {
   baseUrl: string;
   authorization: string;
-  cursor: { status: string; page: number };
-}): Promise<{ tickets: any[]; pageHadFullBatch: boolean }> {
-  const ticketsPerPage = CHUNK_TICKETS;
-  const res = await fetch(
-    `${opts.baseUrl}/api/v2/tickets.json?status=${opts.cursor.status}&sort_by=created_at&sort_order=desc&per_page=${ticketsPerPage}&page=${opts.cursor.page}`,
+  cursor: { status: string; after: string | null };
+  batchSize: number;
+}): Promise<{ tickets: any[]; hasMore: boolean; afterCursor: string | null }> {
+  const ticketsPerPage = Math.max(1, Math.min(opts.batchSize, CHUNK_TICKETS));
+  const params = new URLSearchParams({
+    query: `status:${opts.cursor.status}`,
+    "filter[type]": "ticket",
+    "page[size]": String(ticketsPerPage),
+  });
+  if (opts.cursor.after) params.set("page[after]", opts.cursor.after);
+  const res = await fetchExternalWithRetry(
+    `${opts.baseUrl}/api/v2/search/export?${params.toString()}`,
     { headers: { Authorization: opts.authorization, "Content-Type": "application/json" }, cache: "no-store" },
+    "Zendesk ticket export",
   );
-  if (!res.ok) throw new Error(`Zendesk tickets fetch failed: ${res.status}`);
-  const data = await res.json().catch(() => ({ tickets: [] }));
-  const batch = Array.isArray(data.tickets) ? data.tickets : [];
-  return { tickets: batch, pageHadFullBatch: Boolean(data.next_page) && batch.length === ticketsPerPage };
+  if (!res.ok) throw new Error(`Zendesk ticket export failed: ${res.status}`);
+  const data = await res.json().catch(() => ({ results: [], meta: {} }));
+  const tickets = Array.isArray(data.results) ? data.results : [];
+  return {
+    tickets,
+    hasMore: Boolean(data?.meta?.has_more),
+    afterCursor: typeof data?.meta?.after_cursor === "string" ? data.meta.after_cursor : null,
+  };
 }
 
 /** Sum Zendesk's search count across both import statuses (solved + closed). */
@@ -226,9 +291,10 @@ async function countZendeskTickets(opts: {
 }): Promise<number> {
   let total = 0;
   for (const status of IMPORT_STATUSES) {
-    const res = await fetch(
+    const res = await fetchExternalWithRetry(
       `${opts.baseUrl}/api/v2/search/count.json?query=${encodeURIComponent(`type:ticket status:${status}`)}`,
       { headers: { Authorization: opts.authorization }, cache: "no-store" },
+      "Zendesk ticket count",
     );
     if (!res.ok) throw new Error(`Zendesk count failed: ${res.status}`);
     const data = await res.json().catch(() => ({ count: 0 }));
@@ -274,11 +340,15 @@ async function importTicketBatch(opts: {
       continue;
     }
 
-    const commentsRes = await fetch(
+    const commentsRes = await fetchExternalWithRetry(
       `${baseUrl}/api/v2/tickets/${ticket.id}/comments.json?sort_order=asc`,
-      { headers: { Authorization: authorization }, cache: "no-store" }
+      { headers: { Authorization: authorization }, cache: "no-store" },
+      `Zendesk comments for ticket ${ticket.id}`,
     );
     if (!commentsRes.ok) {
+      if (commentsRes.status !== 404) {
+        throw new Error(`Zendesk comments fetch failed (${commentsRes.status}).`);
+      }
       skippedPreRedaction++;
       continue;
     }
@@ -472,8 +542,8 @@ export async function POST(req: Request) {
 
   const authorization = `Basic ${Buffer.from(`${email}/token:${token}`).toString("base64")}`;
 
-  // Body is read exactly once here, for all modes (legacy path included —
-  // legacy requests simply omit `mode` and every branch below is skipped).
+  // Body is read exactly once and every import must use the resumable
+  // estimate -> start -> continue protocol below.
   const body = await req.json().catch(() => ({}));
   const mode = String(body?.mode || "").trim();
 
@@ -484,113 +554,125 @@ export async function POST(req: Request) {
     } catch (err: any) {
       return NextResponse.json({ error: String(err?.message ?? err) }, { status: 502 });
     }
-    return NextResponse.json({ estimate: estimateImportCost({ ticketCount: total }) });
+    return NextResponse.json({ estimate: { ticketCount: total } });
   }
 
-  if (mode === "start" || mode === "continue") {
-    if (mode === "start" && body?.confirm !== true) {
+  if (mode === "start") {
+    if (body?.confirm !== true) {
       return NextResponse.json({ error: "confirm:true required to start import" }, { status: 400 });
     }
 
-    let job: any;
-    if (mode === "start") {
-      // Adopt-existing-job guard: `knowledge_import_jobs_active_unique` is a
-      // partial unique index ON (provider, shop_id) WHERE status IN
-      // ('queued','running'). A stale job can already exist here — a crashed
-      // tab, an abandoned continue-loop, or a second tab clicking "Import
-      // full history" concurrently. Rather than let a plain insert violate
-      // that index (raw Postgres 500 on a normal click), check for an active
-      // job first and, if found, adopt it and fall straight into the SAME
-      // claim + chunk-processing path `continue` uses below — i.e. treat
-      // this exactly like `mode: "continue"` on that job.
-      const { data: existingJob, error: existingErr } = await supabase
-        .from("knowledge_import_jobs")
-        .select("*")
-        .eq("provider", "zendesk")
-        .eq("shop_id", shop.id)
-        .in("status", ["queued", "running"])
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (existingErr) return NextResponse.json({ error: existingErr.message }, { status: 500 });
+    const activeJobQuery = () => supabase
+      .from("knowledge_import_jobs")
+      .select("*")
+      .eq("provider", "zendesk")
+      .eq("shop_id", shop.id)
+      .in("status", ["queued", "running"])
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-      if (existingJob) {
-        job = existingJob;
-      } else {
-        let totalCount: number;
-        try {
-          totalCount = await countZendeskTickets({ baseUrl, authorization });
-        } catch (err: any) {
-          return NextResponse.json({ error: String(err?.message ?? err) }, { status: 502 });
-        }
-        const { data, error } = await supabase
-          .from("knowledge_import_jobs")
-          .insert({
-            provider: "zendesk",
-            shop_id: shop.id,
-            workspace_id: scope?.workspaceId ?? null,
-            user_id: scope?.supabaseUserId ?? null,
-            status: "running",
-            batch_size: CHUNK_TICKETS,
-            imported_count: 0,
-            skipped_count: 0,
-            dropped_count: 0,
-            total_count: totalCount,
-          })
-          .select("*")
-          .single();
-        if (error) {
-          // Unique-violation (23505) means another request won the race and
-          // inserted its own active job between our existing-job check and
-          // this insert (e.g. two tabs starting simultaneously). Re-fetch and
-          // return it as a friendly 409 instead of surfacing the raw
-          // Postgres error — a normal user click should never 500.
-          if (error.code === "23505") {
-            const { data: raceJob } = await supabase
-              .from("knowledge_import_jobs")
-              .select("*")
-              .eq("provider", "zendesk")
-              .eq("shop_id", shop.id)
-              .in("status", ["queued", "running"])
-              .order("created_at", { ascending: false })
-              .limit(1)
-              .maybeSingle();
-            return NextResponse.json(
-              { error: "import already in progress", job: raceJob ?? null },
-              { status: 409 }
-            );
-          }
-          return NextResponse.json({ error: error.message }, { status: 500 });
-        }
-        job = data;
-      }
-    } else {
-      const { data, error } = await supabase
-        .from("knowledge_import_jobs")
-        .select("*")
-        .eq("id", String(body?.jobId || ""))
-        .eq("shop_id", shop.id)
-        .maybeSingle();
-      if (error || !data) return NextResponse.json({ error: "job not found" }, { status: 404 });
-      if (data.status !== "running") return NextResponse.json({ job: data });
-      job = data;
+    const { data: existingJob, error: existingErr } = await activeJobQuery();
+    if (existingErr) return NextResponse.json({ error: existingErr.message }, { status: 500 });
+    if (existingJob) {
+      return NextResponse.json({ job: existingJob, resumed: true });
     }
 
-    // Cheap atomic claim: a chunk mutates imported/skipped/dropped counters
-    // and the cursor via a read-then-write cycle, so two concurrent
-    // `continue` calls on the same job could both read the same cursor and
-    // double-process a page. Claim the job by conditionally bumping
-    // updated_at on the exact row version we just read (status still
-    // "running", updated_at unchanged since our read) — if no row comes
-    // back, another request already claimed it.
-    const { data: claimed, error: claimErr } = await supabase
+    let totalCount: number;
+    try {
+      totalCount = await countZendeskTickets({ baseUrl, authorization });
+    } catch (err: any) {
+      return NextResponse.json({ error: String(err?.message ?? err) }, { status: 502 });
+    }
+
+    const { data: insertedJob, error: insertError } = await supabase
       .from("knowledge_import_jobs")
-      .update({ updated_at: new Date().toISOString() })
-      .eq("id", job.id)
-      .eq("status", "running")
-      .eq("updated_at", job.updated_at)
+      .insert({
+        provider: "zendesk",
+        shop_id: shop.id,
+        workspace_id: scope?.workspaceId ?? null,
+        user_id: scope?.supabaseUserId ?? null,
+        status: "running",
+        batch_size: CHUNK_TICKETS,
+        imported_count: 0,
+        skipped_count: 0,
+        dropped_count: 0,
+        total_count: totalCount,
+      })
       .select("*")
+      .single();
+
+    if (insertError?.code === "23505") {
+      const { data: raceJob, error: raceError } = await activeJobQuery();
+      if (raceError || !raceJob) {
+        return NextResponse.json({ error: raceError?.message || "Import job could not be resumed." }, { status: 500 });
+      }
+      return NextResponse.json({ job: raceJob, resumed: true });
+    }
+    if (insertError) {
+      return NextResponse.json({ error: insertError.message }, { status: 500 });
+    }
+
+    // Starting is intentionally cheap. The client invokes `continue` only
+    // after this response, so job creation can never time out while importing.
+    return NextResponse.json({ job: insertedJob, resumed: false }, { status: 201 });
+  }
+
+  if (mode === "continue") {
+    const { data, error } = await supabase
+      .from("knowledge_import_jobs")
+      .select("*")
+      .eq("id", String(body?.jobId || ""))
+      .eq("shop_id", shop.id)
       .maybeSingle();
+    if (error || !data) return NextResponse.json({ error: "job not found" }, { status: 404 });
+    let job = data;
+    if (job.status !== "running") return NextResponse.json({ job });
+
+    // A short lease lives inside the JSON cursor. Unlike an updated_at-only
+    // claim, a later request can see that the current cursor is actively being
+    // processed and must wait. If a serverless invocation is killed, the lease
+    // expires and the exact same page can be reclaimed safely.
+    const rawCursor = job.cursor && typeof job.cursor === "object" ? job.cursor : {};
+    const rawAfterCreatedAt = Date.parse(String(rawCursor.after_created_at || ""));
+    const exportCursorIsFresh =
+      typeof rawCursor.after === "string" &&
+      Number.isFinite(rawAfterCreatedAt) &&
+      Date.now() - rawAfterCreatedAt < 50 * 60 * 1000;
+    const effectiveCursor =
+      typeof rawCursor.status === "string" && IMPORT_STATUSES.includes(rawCursor.status)
+        ? {
+            status: rawCursor.status,
+            after: exportCursorIsFresh ? rawCursor.after : null,
+            ...(exportCursorIsFresh ? { after_created_at: rawCursor.after_created_at } : {}),
+          }
+        : { status: IMPORT_STATUSES[0], after: null };
+    const leaseExpiresAt = Date.parse(String(rawCursor.lease_expires_at || ""));
+    if (Number.isFinite(leaseExpiresAt) && leaseExpiresAt > Date.now()) {
+      return NextResponse.json(
+        {
+          error: "job busy",
+          job,
+          retry_after_ms: Math.min(5000, Math.max(1000, leaseExpiresAt - Date.now())),
+        },
+        { status: 409 },
+      );
+    }
+
+    const leaseCursor = {
+      ...effectiveCursor,
+      lease_token: crypto.randomUUID(),
+      lease_expires_at: new Date(Date.now() + 3 * 60 * 1000).toISOString(),
+    };
+    let claimQuery = supabase
+      .from("knowledge_import_jobs")
+      .update({ cursor: leaseCursor, updated_at: new Date().toISOString() })
+      .eq("id", job.id)
+      .eq("status", "running");
+    claimQuery = job.cursor == null
+      ? claimQuery.is("cursor", null)
+      : claimQuery.eq("cursor", job.cursor);
+    const { data: claimed, error: claimErr } = await claimQuery.select("*").maybeSingle();
     if (claimErr) return NextResponse.json({ error: claimErr.message }, { status: 500 });
     if (!claimed) {
       const { data: freshJob } = await supabase
@@ -599,22 +681,20 @@ export async function POST(req: Request) {
         .eq("id", job.id)
         .eq("shop_id", shop.id)
         .maybeSingle();
-      return NextResponse.json({ error: "job busy", job: freshJob ?? job }, { status: 409 });
+      return NextResponse.json(
+        { error: "job busy", job: freshJob ?? job, retry_after_ms: 1500 },
+        { status: 409 },
+      );
     }
     job = claimed;
 
-    // Convention: job.cursor stores the page that must be fetched NEXT.
-    // The column is NOT NULL with a '{}' default, so a fresh job's cursor is
-    // `{}` (not null) — and a legacy/corrupt row could still have `null`.
-    // Treat anything that isn't a well-formed {status, page} object as
-    // "not started yet" -> first page of the first status.
-    const effectiveCursor =
-      job.cursor && typeof job.cursor === "object" && typeof job.cursor.status === "string"
-        ? job.cursor
-        : { status: IMPORT_STATUSES[0], page: 1 };
-
     try {
-      const { tickets, pageHadFullBatch } = await fetchTicketChunk({ baseUrl, authorization, cursor: effectiveCursor });
+      const { tickets, hasMore, afterCursor } = await fetchTicketChunk({
+        baseUrl,
+        authorization,
+        cursor: effectiveCursor,
+        batchSize: Number(job.batch_size) || CHUNK_TICKETS,
+      });
 
       const { imported: importedThisChunk, skipped: skippedThisChunk, dropped: droppedThisChunk } =
         await importTicketBatch({
@@ -626,17 +706,21 @@ export async function POST(req: Request) {
           workspaceId: scope?.workspaceId ?? null,
         });
 
-      const newCursor = nextCursor({ statuses: IMPORT_STATUSES, cursor: effectiveCursor, pageHadFullBatch });
+      const newCursor = nextExportCursor({
+        statuses: IMPORT_STATUSES,
+        cursor: effectiveCursor,
+        hasMore,
+        afterCursor,
+      });
       const done = newCursor === null;
 
-      // `cursor` is NOT NULL — on the final chunk `newCursor` is `null`
-      // (meaning "no more pages"), so we must NOT write it. Leave the last
-      // real cursor value in place; `status: "completed"` is what marks the
-      // job done, not the cursor value.
       const { data: updated, error: updErr } = await supabase
         .from("knowledge_import_jobs")
         .update({
-          ...(done ? {} : { cursor: newCursor }),
+          // Always replace the leased cursor so the lease is released. On the
+          // last page the completed status is authoritative; retaining the
+          // last plain cursor keeps the NOT NULL constraint intact.
+          cursor: done ? effectiveCursor : newCursor,
           status: done ? "completed" : "running",
           imported_count: job.imported_count + importedThisChunk,
           skipped_count: job.skipped_count + skippedThisChunk,
@@ -646,6 +730,7 @@ export async function POST(req: Request) {
         })
         .eq("id", job.id)
         .eq("shop_id", shop.id)
+        .eq("cursor", leaseCursor)
         .select("*")
         .single();
       if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
@@ -653,143 +738,34 @@ export async function POST(req: Request) {
     } catch (err: any) {
       // Job stays "running" — cursor is untouched, so the next continue call
       // retries the same chunk. Only last_error is recorded.
-      await supabase
+      const message = String(err?.message ?? err);
+      const { data: pausedJob } = await supabase
         .from("knowledge_import_jobs")
         .update({
-          last_error: String(err?.message ?? err),
+          cursor: effectiveCursor,
+          last_error: message,
           updated_at: new Date().toISOString(),
         })
         .eq("id", job.id)
-        .eq("shop_id", shop.id);
-      return NextResponse.json({ error: String(err?.message ?? err), jobId: job.id }, { status: 502 });
-    }
-  }
-
-  // Fetch solved + closed tickets (both statuses)
-  const ticketsPerPage = 100;
-  const allTickets: any[] = [];
-  const seenIds = new Set<string>();
-
-  for (const status of ["solved", "closed"]) {
-    let page = 1;
-    while (allTickets.length < MAX_TICKETS) {
-      const res = await fetch(
-        `${baseUrl}/api/v2/tickets.json?status=${status}&sort_by=created_at&sort_order=desc&per_page=${ticketsPerPage}&page=${page}`,
-        { headers: { Authorization: authorization, "Content-Type": "application/json" }, cache: "no-store" }
+        .eq("shop_id", shop.id)
+        .eq("cursor", leaseCursor)
+        .select("*")
+        .maybeSingle();
+      return NextResponse.json(
+        {
+          error: message,
+          job: pausedJob ?? job,
+          retryable: true,
+        },
+        { status: 502 },
       );
-      if (!res.ok) break;
-      const data = await res.json().catch(() => ({ tickets: [] }));
-      const batch = Array.isArray(data.tickets) ? data.tickets : [];
-      if (!batch.length) break;
-
-      for (const t of batch) {
-        if (!seenIds.has(String(t.id))) {
-          seenIds.add(String(t.id));
-          allTickets.push(t);
-        }
-      }
-      if (!data.next_page || batch.length < ticketsPerPage) break;
-      page++;
     }
-    if (allTickets.length >= MAX_TICKETS) break;
   }
 
-  // For each ticket, fetch comments to get customer Q + agent reply
-  const NON_SUPPORT = /\b(faktura|invoice|payment reminder|påmindelse|bill|betaling)\b/i;
-  const pairs: Array<{ ticketId: string; subject: string; customerBody: string; agentReply: string }> = [];
-
-  for (const ticket of allTickets.slice(0, MAX_TICKETS)) {
-    if (NON_SUPPORT.test(String(ticket.subject || ""))) continue;
-
-    const commentsRes = await fetch(
-      `${baseUrl}/api/v2/tickets/${ticket.id}/comments.json?sort_order=asc`,
-      { headers: { Authorization: authorization }, cache: "no-store" }
-    );
-    if (!commentsRes.ok) continue;
-
-    const { comments = [] } = await commentsRes.json().catch(() => ({ comments: [] }));
-    const publicComments = comments.filter((c: any) => c.public);
-    const customerComment = publicComments.find((c: any) => c.author_id === ticket.requester_id) || publicComments[0];
-    const agentComment = publicComments.find((c: any) => c.author_id !== ticket.requester_id);
-
-    if (!customerComment || !agentComment) continue;
-
-    const customerBody = normalizeText(stripHtml(customerComment.html_body || customerComment.body || ""));
-    const agentReply = normalizeText(stripHtml(agentComment.html_body || agentComment.body || ""));
-
-    if (!customerBody || !agentReply || isAutoReply(agentReply)) continue;
-
-    pairs.push({
-      ticketId: String(ticket.id),
-      subject: String(ticket.subject || "").trim(),
-      customerBody: customerBody.slice(0, 2000),
-      agentReply: agentReply.slice(0, 2000),
-    });
-  }
-
-  if (!pairs.length) {
-    return NextResponse.json({ imported: 0, skipped: 0, message: "No usable tickets found." });
-  }
-
-  // GDPR: redact PII out of every pair BEFORE embedding/storing. Tickets that
-  // fail redaction are dropped so raw customer data is never persisted as a
-  // few-shot example.
-  const redacted = await redactPairs(pairs);
-  const droppedForPii = redacted.filter((r) => r === null).length;
-  const safePairs = redacted.filter((p): p is NonNullable<typeof p> => p !== null);
-
-  if (!safePairs.length) {
-    return NextResponse.json({
-      imported: 0,
-      skipped: pairs.length,
-      message: "No tickets could be safely redacted.",
-    });
-  }
-
-  // Embed on customer message — semantic search must match similar customer questions, not agent replies
-  const customerMsgs = safePairs.map((p) => buildCustomerMsg(p.subject, p.customerBody));
-  const allEmbeddings: number[][] = [];
-
-  for (let i = 0; i < customerMsgs.length; i += EMBED_BATCH_SIZE) {
-    const batch = customerMsgs.slice(i, i + EMBED_BATCH_SIZE);
-    const embeddings = await embedBatch(batch);
-    allEmbeddings.push(...embeddings);
-  }
-
-  const rows = safePairs.map((pair, idx) => ({
-    shop_id: shop.id,
-    workspace_id: scope?.workspaceId ?? null,
-    source_provider: SOURCE_PROVIDER,
-    external_ticket_id: pair.ticketId,
-    customer_msg: customerMsgs[idx],
-    agent_reply: pair.agentReply,
-    subject: pair.subject,
-    embedding: allEmbeddings[idx],
-    tags: ["pii_scrubbed"],
-  }));
-
-  // Dedup enforced by DB constraint (shop_id, source_provider, external_ticket_id)
-  const { error: insertError } = await supabase
-    .from("ticket_examples")
-    .upsert(rows, { onConflict: "shop_id,source_provider,external_ticket_id", ignoreDuplicates: true });
-
-  if (insertError) {
-    return NextResponse.json({ error: insertError.message }, { status: 500 });
-  }
-
-  // Count how many were actually new (upsert with ignoreDuplicates skips existing)
-  const { count: totalCount } = await supabase
-    .from("ticket_examples")
-    .select("id", { count: "exact", head: true })
-    .eq("shop_id", shop.id)
-    .eq("source_provider", SOURCE_PROVIDER);
-
-  return NextResponse.json({
-    imported: rows.length,
-    total_in_db: totalCount ?? 0,
-    total_fetched: pairs.length,
-    dropped_for_pii: droppedForPii,
-  });
+  return NextResponse.json(
+    { error: "Unsupported import mode. Use estimate, start, or continue." },
+    { status: 400 },
+  );
 }
 
 export async function DELETE(req: Request) {

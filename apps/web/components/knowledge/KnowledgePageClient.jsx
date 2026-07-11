@@ -386,8 +386,6 @@ export function KnowledgePageClient() {
   const [bulkTagging, setBulkTagging] = useState(false);
   const [historyProvider, setHistoryProvider] = useState(null);
   const [zendeskImportCount, setZendeskImportCount] = useState(null);
-  const [zendeskImporting, setZendeskImporting] = useState(false);
-  const [zendeskImportResult, setZendeskImportResult] = useState(null);
   const [uploadingPdf, setUploadingPdf] = useState(false);
   const [snippetMode, setSnippetMode] = useState("text");
   const [pdfFile, setPdfFile] = useState(null);
@@ -517,25 +515,6 @@ export function KnowledgePageClient() {
       setZendeskImportCount(0);
     }
   }, []);
-
-  const handleZendeskImport = useCallback(async () => {
-    setZendeskImporting(true);
-    setZendeskImportResult(null);
-    try {
-      const res = await fetch("/api/knowledge/import-zendesk", {
-        method: "POST",
-        credentials: "include",
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || "Import failed");
-      setZendeskImportResult({ ok: true, imported: data.imported, skipped: data.skipped });
-      await loadZendeskImportCount();
-    } catch (err) {
-      setZendeskImportResult({ ok: false, error: err.message });
-    } finally {
-      setZendeskImporting(false);
-    }
-  }, [loadZendeskImportCount]);
 
   const loadShops = useCallback(async () => {
     const { data, error } = await supabase
@@ -2482,41 +2461,17 @@ export function KnowledgePageClient() {
                     )}
                   </div>
 
-                  {/* Import result feedback */}
-                  {zendeskImportResult && (
-                    <div className={`rounded-lg border px-4 py-3 text-sm ${zendeskImportResult.ok ? "border-emerald-100 bg-emerald-50 text-emerald-700" : "border-red-100 bg-red-50 text-red-700"}`}>
-                      {zendeskImportResult.ok
-                        ? `✓ ${zendeskImportResult.imported} tickets imported${zendeskImportResult.skipped > 0 ? `, ${zendeskImportResult.skipped} already up to date` : ""}.`
-                        : `Error: ${zendeskImportResult.error}`}
-                    </div>
-                  )}
-
-                  {/* Import button */}
                   <Button
-                    type="button"
-                    onClick={handleZendeskImport}
-                    disabled={zendeskImporting}
                     className="w-full"
+                    asChild
                   >
-                    {zendeskImporting ? (
-                      <>
-                        <RefreshCw className="h-4 w-4 animate-spin" />
-                        Importing tickets…
-                      </>
-                    ) : zendeskImportCount > 0 ? (
-                      <>
-                        <RefreshCw className="h-4 w-4" />
-                        Re-import from {String(historyProvider).charAt(0).toUpperCase() + String(historyProvider).slice(1)}
-                      </>
-                    ) : (
-                      <>
-                        <Database className="h-4 w-4" />
-                        Import tickets from {String(historyProvider).charAt(0).toUpperCase() + String(historyProvider).slice(1)}
-                      </>
-                    )}
+                    <Link href={historyProvider === "zendesk" ? "/integrations/zendesk" : "/integrations"}>
+                      <Database data-icon="inline-start" />
+                      Manage ticket import
+                    </Link>
                   </Button>
                   <p className="text-xs text-gray-400 text-center">
-                    Imports up to 200 solved tickets. Re-import anytime to sync new tickets.
+                    Import and track ticket history from the integration details page.
                   </p>
                 </CardContent>
               </Card>

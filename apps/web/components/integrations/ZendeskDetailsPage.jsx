@@ -193,10 +193,16 @@ export function ZendeskDetailsPage() {
         const payload = await response.json().catch(() => ({}));
         if (response.status === 409 && payload?.job) {
           setHistory((current) => ({ ...(current || {}), last_job: payload.job }));
-          await new Promise((resolve) => setTimeout(resolve, 1000));
+          await new Promise((resolve) => setTimeout(resolve, Number(payload?.retry_after_ms) || 1500));
           continue;
         }
-        if (!response.ok) throw new Error(payload?.error || "Zendesk history import failed.");
+        if (!response.ok) {
+          if (payload?.job) {
+            setHistory((current) => ({ ...(current || {}), last_job: payload.job }));
+          }
+          const detail = payload?.error || "Zendesk history import failed.";
+          throw new Error(payload?.retryable ? `${detail} The import is paused and can be continued safely.` : detail);
+        }
         const job = payload?.job;
         setHistory((current) => ({ ...(current || {}), last_job: job }));
         if (job?.status === "completed") {
@@ -483,7 +489,7 @@ export function ZendeskDetailsPage() {
             <DialogTitle>Import full ticket history?</DialogTitle>
             <DialogDescription>
               {estimate
-                ? `${estimate.ticketCount} tickets found. Estimated one-time cost: ~${estimate.dkk} DKK (${estimate.usd} USD).`
+                ? `${estimate.ticketCount} tickets found in Zendesk. Tickets are imported in small batches, and you can safely resume later if you leave this page.`
                 : "Review the estimated import before continuing."}
             </DialogDescription>
           </DialogHeader>
