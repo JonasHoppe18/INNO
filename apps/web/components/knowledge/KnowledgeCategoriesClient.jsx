@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -1027,7 +1028,6 @@ export function KnowledgeCategoriesClient() {
   const [createOpen, setCreateOpen] = useState(false);
   const [newLabel, setNewLabel] = useState("");
   const [creating, setCreating] = useState(false);
-  const [importingTickets, setImportingTickets] = useState(false);
   const [ticketExamplesCount, setTicketExamplesCount] = useState(null);
 
   const fetchTicketExamplesCount = useCallback(async () => {
@@ -1098,30 +1098,6 @@ export function KnowledgeCategoriesClient() {
       setCreating(false);
     }
   };
-
-  const handleImportTickets = useCallback(async () => {
-    if (importingTickets) return;
-    setImportingTickets(true);
-    try {
-      const res = await fetch("/api/knowledge/import-zendesk", {
-        method: "POST",
-        credentials: "include",
-      });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(payload?.error || "Could not import Zendesk tickets.");
-      }
-      const imported = Number(payload?.imported ?? 0);
-      const totalInDb = Number(payload?.total_in_db ?? 0);
-      if (Number.isFinite(totalInDb)) setTicketExamplesCount(totalInDb);
-      toast.success(`Imported ${imported} tickets to ticket_examples.`);
-    } catch (error) {
-      toast.error(error?.message || "Could not import Zendesk tickets.");
-    } finally {
-      setImportingTickets(false);
-      fetchTicketExamplesCount();
-    }
-  }, [fetchTicketExamplesCount, importingTickets]);
 
   const handleCreateFromGap = useCallback((suggestedTitle) => {
     setNewLabel(suggestedTitle);
@@ -1217,13 +1193,11 @@ export function KnowledgeCategoriesClient() {
           </p>
         ) : null}
         <Button
-          type="button"
           variant="ghost"
-          onClick={handleImportTickets}
-          disabled={importingTickets}
           className="h-7 px-2 text-[11px] text-gray-500 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-300"
+          asChild
         >
-          {importingTickets ? "Importing..." : "Import tickets"}
+          <Link href="/integrations/zendesk">Manage ticket import</Link>
         </Button>
       </div>
       <SavedRepliesSection />

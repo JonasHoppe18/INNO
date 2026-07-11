@@ -24,3 +24,21 @@ test("the shops team-name schema required by mailbox identity queries is migrate
   assert.match(migration, /alter table public\.shops/i);
   assert.match(migration, /add column if not exists team_name text/i);
 });
+
+test("custom domains expose DNS records and verify each required record", () => {
+  const panel = read("../apps/web/components/mailboxes/SendingIdentityPanel.jsx");
+  const mailboxRoute = read("../apps/web/app/api/mail-accounts/route.js");
+  const statusRoute = read("../apps/web/app/api/mail-accounts/[id]/domain/status/route.js");
+
+  assert.match(panel, /DNS records for/);
+  assert.match(panel, /Verify DNS/);
+  assert.match(panel, /Continue to DNS records/);
+  assert.doesNotMatch(panel, /<Dialog/);
+  assert.match(panel, /verificationFlags\.dkim_verified/);
+  assert.match(panel, /verificationFlags\.return_path_verified/);
+  assert.match(statusRoute, /dkim_verified: Boolean\(domainResponse\?\.DKIMVerified\)/);
+  assert.match(statusRoute, /return_path_verified: Boolean\(domainResponse\?\.ReturnPathDomainVerified\)/);
+  assert.match(mailboxRoute, /domainSourcesByScope/);
+  assert.match(mailboxRoute, /domainMailboxId: domainSource\.id \|\| account\.id/);
+  assert.match(mailboxRoute, /domainInherited: domainSource\.id !== account\.id/);
+});

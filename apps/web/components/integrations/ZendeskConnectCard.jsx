@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { CheckCircle2 } from "lucide-react";
 import { useUser } from "@clerk/nextjs";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -51,7 +52,7 @@ export function ZendeskConnectCard() {
     if (workspaceId) {
       const response = await supabase
         .from("integrations")
-        .select("*")
+        .select("id, provider, config, is_active, created_at, updated_at")
         .eq("provider", "zendesk")
         .eq("workspace_id", workspaceId)
         .maybeSingle();
@@ -60,7 +61,7 @@ export function ZendeskConnectCard() {
     } else if (userId) {
       const response = await supabase
         .from("integrations")
-        .select("*")
+        .select("id, provider, config, is_active, created_at, updated_at")
         .eq("provider", "zendesk")
         .eq("user_id", userId)
         .maybeSingle();
@@ -158,11 +159,15 @@ export function ZendeskConnectCard() {
           <span className="text-xs font-medium text-muted-foreground">Not connected</span>
         )}
 
-        <ZendeskSheet initialData={integration} onConnected={loadIntegration}>
-          <Button size="sm" variant={isConnected ? "outline" : "default"} disabled={loading}>
-            {isConnected ? "Manage" : "Connect"}
+        {isConnected ? (
+          <Button size="sm" variant="outline" asChild>
+            <Link href="/integrations/zendesk">View details</Link>
           </Button>
-        </ZendeskSheet>
+        ) : (
+          <ZendeskSheet initialData={null} onConnected={loadIntegration}>
+            <Button size="sm" disabled={loading}>Connect</Button>
+          </ZendeskSheet>
+        )}
       </CardFooter>
     </Card>
   );
