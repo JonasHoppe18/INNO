@@ -349,11 +349,14 @@ async function importTicketBatch(opts: {
   // Count how many rows for this shop exist BEFORE the upsert, so we can
   // measure exactly how many were newly inserted (ignoreDuplicates upsert
   // does not tell us which rows were skipped as dupes).
-  const { count: countBefore } = await supabase
+  const { count: countBefore, error: countBeforeError } = await supabase
     .from("ticket_examples")
     .select("id", { count: "exact", head: true })
     .eq("shop_id", shopId)
     .eq("source_provider", SOURCE_PROVIDER);
+  if (countBeforeError) {
+    console.warn("[import-zendesk] count failed:", countBeforeError.message);
+  }
 
   // Dedup enforced by DB constraint (shop_id, source_provider, external_ticket_id)
   const { error: insertError } = await supabase
@@ -362,11 +365,14 @@ async function importTicketBatch(opts: {
 
   if (insertError) throw new Error(insertError.message);
 
-  const { count: countAfter } = await supabase
+  const { count: countAfter, error: countAfterError } = await supabase
     .from("ticket_examples")
     .select("id", { count: "exact", head: true })
     .eq("shop_id", shopId)
     .eq("source_provider", SOURCE_PROVIDER);
+  if (countAfterError) {
+    console.warn("[import-zendesk] count failed:", countAfterError.message);
+  }
 
   const newRows = Math.max(0, (countAfter ?? 0) - (countBefore ?? 0));
   const duplicates = rows.length - newRows;
@@ -488,7 +494,6 @@ export async function POST(req: Request) {
           workspace_id: scope?.workspaceId ?? null,
           user_id: scope?.supabaseUserId ?? null,
           status: "running",
-          cursor: null,
           batch_size: CHUNK_TICKETS,
           imported_count: 0,
           skipped_count: 0,
@@ -511,9 +516,42 @@ export async function POST(req: Request) {
       job = data;
     }
 
+    // Cheap atomic claim: a chunk mutates imported/skipped/dropped counters
+    // and the cursor via a read-then-write cycle, so two concurrent
+    // `continue` calls on the same job could both read the same cursor and
+    // double-process a page. Claim the job by conditionally bumping
+    // updated_at on the exact row version we just read (status still
+    // "running", updated_at unchanged since our read) — if no row comes
+    // back, another request already claimed it.
+    const { data: claimed, error: claimErr } = await supabase
+      .from("knowledge_import_jobs")
+      .update({ updated_at: new Date().toISOString() })
+      .eq("id", job.id)
+      .eq("status", "running")
+      .eq("updated_at", job.updated_at)
+      .select("*")
+      .maybeSingle();
+    if (claimErr) return NextResponse.json({ error: claimErr.message }, { status: 500 });
+    if (!claimed) {
+      const { data: freshJob } = await supabase
+        .from("knowledge_import_jobs")
+        .select("*")
+        .eq("id", job.id)
+        .eq("shop_id", shop.id)
+        .maybeSingle();
+      return NextResponse.json({ error: "job busy", job: freshJob ?? job }, { status: 409 });
+    }
+    job = claimed;
+
     // Convention: job.cursor stores the page that must be fetched NEXT.
-    // null means "not started yet" -> first page of the first status.
-    const effectiveCursor = job.cursor ?? { status: IMPORT_STATUSES[0], page: 1 };
+    // The column is NOT NULL with a '{}' default, so a fresh job's cursor is
+    // `{}` (not null) — and a legacy/corrupt row could still have `null`.
+    // Treat anything that isn't a well-formed {status, page} object as
+    // "not started yet" -> first page of the first status.
+    const effectiveCursor =
+      job.cursor && typeof job.cursor === "object" && typeof job.cursor.status === "string"
+        ? job.cursor
+        : { status: IMPORT_STATUSES[0], page: 1 };
 
     try {
       const { tickets, pageHadFullBatch } = await fetchTicketChunk({ baseUrl, authorization, cursor: effectiveCursor });
@@ -531,10 +569,14 @@ export async function POST(req: Request) {
       const newCursor = nextCursor({ statuses: IMPORT_STATUSES, cursor: effectiveCursor, pageHadFullBatch });
       const done = newCursor === null;
 
+      // `cursor` is NOT NULL — on the final chunk `newCursor` is `null`
+      // (meaning "no more pages"), so we must NOT write it. Leave the last
+      // real cursor value in place; `status: "completed"` is what marks the
+      // job done, not the cursor value.
       const { data: updated, error: updErr } = await supabase
         .from("knowledge_import_jobs")
         .update({
-          cursor: newCursor,
+          ...(done ? {} : { cursor: newCursor }),
           status: done ? "completed" : "running",
           imported_count: job.imported_count + importedThisChunk,
           skipped_count: job.skipped_count + skippedThisChunk,
