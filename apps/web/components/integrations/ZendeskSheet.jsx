@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth, useUser } from "@clerk/nextjs";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,7 +15,26 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useClerkSupabase } from "@/lib/useClerkSupabase";
+
+function formatDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
 
 const SUPABASE_TEMPLATE =
   process.env.NEXT_PUBLIC_CLERK_SUPABASE_TEMPLATE?.trim() || "supabase";
@@ -95,6 +115,35 @@ export function ZendeskSheet({ children, onConnected, initialData = null }) {
   const hasExistingConfig = Boolean(initialData);
   const importCompleted = Boolean(initialData?.config?.import_completed);
 
+  // --- Full-history import (Historik section) ------------------------------
+  const [historyStats, setHistoryStats] = useState(null); // { imported_examples, last_job }
+  const [historyStatsLoading, setHistoryStatsLoading] = useState(false);
+  const [estimate, setEstimate] = useState(null); // { ticketCount, usd, dkk }
+  const [showEstimateDialog, setShowEstimateDialog] = useState(false);
+  const [historyJob, setHistoryJob] = useState(null);
+  const [historyError, setHistoryError] = useState("");
+  const [isImporting, setIsImporting] = useState(false);
+  // Hard concurrency guard for the continue-loop. `isImporting` disables the
+  // buttons, but state reads are stale until the next render — this ref makes
+  // a second concurrent loop impossible even on double-click in the same tick.
+  const importLoopBusyRef = useRef(false);
+
+  const loadHistoryStats = useCallback(async () => {
+    setHistoryStatsLoading(true);
+    try {
+      const response = await fetch("/api/knowledge/import-zendesk", { method: "GET" });
+      const payload = await response.json().catch(() => ({}));
+      if (response.ok) {
+        setHistoryStats(payload);
+        if (payload?.last_job) setHistoryJob(payload.last_job);
+      }
+    } catch (_error) {
+      // noop — stats are best-effort
+    } finally {
+      setHistoryStatsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (open) {
       setDomain(initialData?.config?.domain ?? "");
@@ -102,6 +151,8 @@ export function ZendeskSheet({ children, onConnected, initialData = null }) {
       setApiToken("");
       setStatus("");
       setError("");
+      setHistoryError("");
+      loadHistoryStats();
     } else if (!initialData) {
       setDomain("");
       setEmail("");
@@ -109,7 +160,125 @@ export function ZendeskSheet({ children, onConnected, initialData = null }) {
       setStatus("");
       setError("");
     }
-  }, [open, initialData]);
+  }, [open, initialData, loadHistoryStats]);
+
+  const handleImportFullHistoryClick = async () => {
+    if (isImporting) return;
+    setIsImporting(true);
+    setHistoryError("");
+    try {
+      const response = await fetch("/api/knowledge/import-zendesk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "estimate" }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || "Could not estimate import cost.");
+      }
+      setEstimate(payload.estimate);
+      setShowEstimateDialog(true);
+    } catch (estimateError) {
+      setHistoryError(
+        estimateError instanceof Error ? estimateError.message : "Could not estimate import cost."
+      );
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  // Sequential continue-loop: each iteration awaits the previous response
+  // before issuing the next `continue` call, so this can never run twice
+  // concurrently as long as callers only enter through handleConfirmImport /
+  // handleResumeImport, both of which are gated by `isImporting`.
+  const runContinueLoop = useCallback(async (jobId) => {
+    if (importLoopBusyRef.current) return;
+    importLoopBusyRef.current = true;
+    setIsImporting(true);
+    setHistoryError("");
+    try {
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const response = await fetch("/api/knowledge/import-zendesk", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode: "continue", jobId }),
+        });
+        const payload = await response.json().catch(() => ({}));
+
+        if (response.status === 409 && payload?.job) {
+          // Job busy (already claimed by another in-flight chunk) — non-fatal,
+          // adopt the latest job state and retry. A 409 means NO chunk ran on
+          // this call, so back off briefly instead of hammering the endpoint
+          // while the other chunk finishes.
+          setHistoryJob(payload.job);
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          continue;
+        }
+
+        if (response.status === 502) {
+          setHistoryError(payload?.error || "Import chunk failed.");
+          return;
+        }
+
+        if (!response.ok) {
+          setHistoryError(payload?.error || "Import failed.");
+          return;
+        }
+
+        const job = payload.job;
+        setHistoryJob(job);
+
+        if (job?.status === "completed") {
+          toast.success("Full ticket history imported.");
+          loadHistoryStats();
+          return;
+        }
+
+        if (job?.status === "failed") {
+          setHistoryError(job?.last_error || "Import failed.");
+          return;
+        }
+
+        // status === "running" -> loop again immediately, no delay needed;
+        // each continue call IS one chunk of work.
+      }
+    } finally {
+      importLoopBusyRef.current = false;
+      setIsImporting(false);
+    }
+  }, [loadHistoryStats]);
+
+  const handleConfirmImport = async () => {
+    if (isImporting) return;
+    setShowEstimateDialog(false);
+    setIsImporting(true);
+    setHistoryError("");
+    try {
+      const response = await fetch("/api/knowledge/import-zendesk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "start", confirm: true }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload?.error || "Could not start import.");
+      }
+      setHistoryJob(payload.job);
+      setIsImporting(false);
+      if (payload.job?.status === "running") {
+        await runContinueLoop(payload.job.id);
+      }
+    } catch (startError) {
+      setIsImporting(false);
+      setHistoryError(startError instanceof Error ? startError.message : "Could not start import.");
+    }
+  };
+
+  const handleResumeImport = async () => {
+    if (isImporting || !historyJob?.id) return;
+    await runContinueLoop(historyJob.id);
+  };
 
   const resolveUserIdFromToken = useCallback(async () => {
     if (typeof getToken !== "function") return null;
@@ -404,7 +573,105 @@ export function ZendeskSheet({ children, onConnected, initialData = null }) {
             ) : null}
           </SheetFooter>
         </form>
+
+        {hasExistingConfig ? (
+          <div className="mt-6 space-y-3 border-t border-slate-100 pt-6">
+            <div>
+              <h3 className="text-sm font-semibold">History</h3>
+              <p className="text-xs text-muted-foreground">
+                Import your full Zendesk ticket history as tone examples for Sona&apos;s drafts.
+              </p>
+            </div>
+
+            {historyStatsLoading ? (
+              <p className="text-xs text-muted-foreground">Loading stats...</p>
+            ) : (
+              <div className="space-y-1 rounded-md bg-muted/40 px-3 py-2">
+                <p className="text-xs text-muted-foreground">
+                  Imported examples in Sona: {historyStats?.imported_examples ?? 0}
+                </p>
+                {historyJob && historyJob.status !== "running" ? (
+                  <p className="text-xs text-muted-foreground">
+                    Last import: {historyJob.imported_count ?? 0} imported ·{" "}
+                    {historyJob.skipped_count ?? 0} skipped · {historyJob.dropped_count ?? 0} dropped of ~
+                    {historyJob.total_count ?? 0} ({historyJob.status}, {formatDate(historyJob.created_at)})
+                  </p>
+                ) : null}
+              </div>
+            )}
+
+            {historyJob?.status === "running" ? (
+              <p className="text-xs text-muted-foreground">
+                Imported {historyJob.imported_count ?? 0} · skipped {historyJob.skipped_count ?? 0} · dropped{" "}
+                {historyJob.dropped_count ?? 0} of ~{historyJob.total_count ?? 0}
+              </p>
+            ) : null}
+
+            {historyError ? (
+              <div className="space-y-2">
+                <p className="text-xs text-red-600">{historyError}</p>
+                {historyJob?.id ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={handleResumeImport}
+                    disabled={isImporting}
+                  >
+                    {isImporting ? "Importing..." : "Continue import"}
+                  </Button>
+                ) : null}
+              </div>
+            ) : historyJob?.status === "running" ? (
+              // A "running" job with no active loop (e.g. the sheet was closed
+              // or the page reloaded mid-import) is resumable — same jobId.
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={handleResumeImport}
+                disabled={isImporting}
+              >
+                {isImporting ? "Importing..." : "Continue import"}
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={handleImportFullHistoryClick}
+                disabled={isImporting}
+              >
+                {isImporting ? "Importing..." : "Import full history"}
+              </Button>
+            )}
+          </div>
+        ) : null}
       </SheetContent>
+
+      <Dialog open={showEstimateDialog} onOpenChange={setShowEstimateDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Import full ticket history?</DialogTitle>
+            <DialogDescription>
+              {estimate
+                ? `${estimate.ticketCount} tickets found in Zendesk. Estimated one-time cost: ~${estimate.dkk} DKK (${estimate.usd} USD). Continue?`
+                : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setShowEstimateDialog(false)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={handleConfirmImport} disabled={isImporting}>
+              Continue
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Sheet>
   );
 }

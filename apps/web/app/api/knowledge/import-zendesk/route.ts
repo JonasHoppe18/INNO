@@ -396,7 +396,7 @@ export async function GET() {
   const shops = await listScopedShops(supabase, scope, { fields: "id" }).catch(() => []);
   const shopIds = shops.map((s: any) => s.id).filter(Boolean);
 
-  if (!shopIds.length) return NextResponse.json({ count: 0 });
+  if (!shopIds.length) return NextResponse.json({ count: 0, imported_examples: 0, last_job: null });
 
   const { count } = await supabase
     .from("ticket_examples")
@@ -404,7 +404,21 @@ export async function GET() {
     .in("shop_id", shopIds)
     .eq("source_provider", SOURCE_PROVIDER);
 
-  return NextResponse.json({ count: count ?? 0 });
+  const { data: lastJob } = await supabase
+    .from("knowledge_import_jobs")
+    .select("*")
+    .in("shop_id", shopIds)
+    .eq("provider", "zendesk")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  return NextResponse.json({
+    // `count` kept for backwards compatibility with any existing callers.
+    count: count ?? 0,
+    imported_examples: count ?? 0,
+    last_job: lastJob ?? null,
+  });
 }
 
 export async function POST(req: Request) {
