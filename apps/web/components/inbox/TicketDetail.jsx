@@ -759,10 +759,11 @@ function TicketDetailComponent({
                         error={orderUpdateError || ""}
                         loading={Boolean(orderUpdateSubmitting)}
                         extraContent={processReturnExtraContent}
-                        onApprove={() =>
+                        forwardRecipients={mailboxEmails}
+                        onApprove={(options) =>
                           onOrderUpdateDecision?.(
                             "accepted",
-                            isProcessReturnAction ? { restock: processReturnRestock } : undefined
+                            isProcessReturnAction ? { restock: processReturnRestock } : options
                           )
                         }
                         onDecline={() => onOrderUpdateDecision?.("denied")}
@@ -822,10 +823,11 @@ function TicketDetailComponent({
                   error={orderUpdateError || ""}
                   loading={Boolean(orderUpdateSubmitting)}
                   extraContent={processReturnExtraContent}
-                  onApprove={() =>
+                  forwardRecipients={mailboxEmails}
+                  onApprove={(options) =>
                     onOrderUpdateDecision?.(
                       "accepted",
-                      isProcessReturnAction ? { restock: processReturnRestock } : undefined
+                      isProcessReturnAction ? { restock: processReturnRestock } : options
                     )
                   }
                   onDecline={() => onOrderUpdateDecision?.("denied")}

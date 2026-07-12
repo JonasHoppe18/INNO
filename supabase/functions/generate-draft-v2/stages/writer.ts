@@ -1167,6 +1167,19 @@ export function buildSendReadyNextStepStandardBlock(opts: {
   return lines.join("\n");
 }
 
+export function hasUsableReplacementShippingAddress(message = ""): boolean {
+  const text = String(message || "");
+  const hasStreet =
+    /\b[A-Za-zÆØÅæøåÄÖÜäöüß .'-]+(?:vej|gade|all[eé]|plads|stræde|vænge|vaenge|street|st\.?|road|rd\.?|avenue|ave\.?|boulevard|blvd|drive|lane)\s+\d+[A-Za-z0-9 -]*\b/i.test(text) ||
+    /\b(?:address|adresse|address 1|address1|street)\s*:\s*[^\n,;]*\d+[^\n,;]*/i.test(text);
+  const hasZipAndCity =
+    /\b[A-Z]{0,3}-?\d{3,10}\s+[A-Za-zÆØÅæøåÄÖÜäöüß][A-Za-zÆØÅæøåÄÖÜäöüß .'-]{1,}\b/i.test(text) ||
+    (/\b(?:zip(?: code)?|postal code|postcode|postnummer)\s*:\s*[A-Z0-9 -]{3,10}\b/i.test(text) &&
+      /\b(?:city|town|by)\s*:\s*[A-Za-zÆØÅæøåÄÖÜäöüß][^\n,;]*/i.test(text));
+
+  return hasStreet && hasZipAndCity;
+}
+
 function buildInfoRequirementsBlock(
   facts: FactResolverResult,
   caseState: CaseState,
@@ -1306,12 +1319,10 @@ function buildInfoRequirementsBlock(
   }
 
   if (plan.primary_intent === "address_change") {
-    const hasAddressLike =
-      /\b\d{1,5}\s+[A-Za-zÆØÅæøåÄÖÜäöüß][\w\s.'-]{2,}\b/.test(messageText) ||
-      /\b(address|adresse|gade|street|road|vej|gata|zip|postal|postnummer)\b/i
-        .test(messageText);
-    if (!hasAddressLike) {
-      missing.push("new_shipping_address: den nye leveringsadresse");
+    if (!hasUsableReplacementShippingAddress(messageText)) {
+      missing.push(
+        "new_shipping_address: den fulde nye leveringsadresse inkl. vej, husnummer, postnummer og by",
+      );
     }
   }
 

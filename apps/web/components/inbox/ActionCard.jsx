@@ -197,6 +197,19 @@ function getApproveButtonLabel({ actionType = "", actionName = "", payload = {},
 
 function getActionValidationError({ actionType = "", payload = {} }) {
   const normalizedAction = String(actionType || "").trim().toLowerCase();
+  if (normalizedAction === "update_shipping_address") {
+    const address = payload?.shipping_address ?? payload?.shippingAddress;
+    const hasCompleteAddress =
+      address &&
+      typeof address === "object" &&
+      String(address.address1 || "").trim() &&
+      String(address.city || "").trim() &&
+      String(address.zip || address.postal_code || address.postcode || "").trim();
+    if (!hasCompleteAddress) {
+      return "The customer has not provided a complete new shipping address yet. Ask for the street, house number, postal code, and city before approving an update.";
+    }
+    return "";
+  }
   if (normalizedAction !== "create_exchange_request") return "";
   const variantId =
     payload?.exchange_variant_id ??
@@ -249,6 +262,22 @@ function getImpactSummaryLines({ actionType = "", payload = {}, orderDisplayNumb
     lines.push(`Applies to ${orderDisplayNumber}.`);
   }
   return lines;
+}
+
+function getForwardTarget(payload = {}, detail = "") {
+  const fromPayload =
+    payload?.target_email ||
+    payload?.forward_to_email ||
+    payload?.email ||
+    "";
+  if (String(fromPayload).trim()) return String(fromPayload).trim().toLowerCase();
+
+  const match = String(detail || "").match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+  return match ? match[0].toLowerCase() : "";
+}
+
+function isValidEmail(value = "") {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value).trim());
 }
 
 function parseAmount(value) {
@@ -304,6 +333,7 @@ export function ActionCard({
   loading = false,
   onApprove,
   onDecline,
+  forwardRecipients = [],
   extraContent = null,
   testMode = false,
   approvedAt = "",
@@ -312,6 +342,12 @@ export function ActionCard({
   const [expanded, setExpanded] = useState(false);
   const [showApprovedDetail, setShowApprovedDetail] = useState(false);
   const [nowMs, setNowMs] = useState(null);
+  const initialForwardTarget = useMemo(
+    () => getForwardTarget(payload, detail),
+    [detail, payload]
+  );
+  const [forwardTarget, setForwardTarget] = useState(initialForwardTarget);
+  const [isAddingForwardEmail, setIsAddingForwardEmail] = useState(false);
   const isProposed = status === "proposed";
   const isExecuting = status === "executing";
   const isCompleted = status === "completed";
@@ -331,6 +367,11 @@ export function ActionCard({
     }, 60_000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    setForwardTarget(initialForwardTarget);
+    setIsAddingForwardEmail(false);
+  }, [initialForwardTarget]);
 
   const resultMeta = useMemo(() => {
     if (!isResultState) return "";
@@ -356,6 +397,16 @@ export function ActionCard({
     [actionType, status, testMode]
   );
   const normalizedAction = String(actionType || "").trim().toLowerCase();
+  const forwardEmailOptions = useMemo(() => {
+    const emails = new Set(
+      [initialForwardTarget, ...forwardRecipients]
+        .map((email) => String(email || "").trim().toLowerCase())
+        .filter(isValidEmail)
+    );
+    return Array.from(emails);
+  }, [forwardRecipients, initialForwardTarget]);
+  const isForwardEmailAction = normalizedAction === "forward_email";
+  const forwardTargetIsValid = isValidEmail(forwardTarget);
   // Prefer display name (#4229) over internal ID — name/orderNumber before id
   const resolvedOrderNumber = String(
     orderSummary?.name ||
@@ -597,11 +648,73 @@ export function ActionCard({
 
         <div className="mt-3 rounded-md border border-violet-200/70 dark:border-violet-500/20 bg-muted/40 p-2.5">
           <div className="space-y-0.5 text-sm text-foreground/80">
-            {impactSummaryLines.map((line, index) => (
+            {(isForwardEmailAction
+              ? [`Forward this email to ${forwardTarget || "the selected recipient"}.`]
+              : impactSummaryLines
+            ).map((line, index) => (
               <div key={`impact-line-${index}`}>{line}</div>
             ))}
           </div>
         </div>
+
+        {isForwardEmailAction ? (
+          <div className="mt-2.5">
+            <label className="block text-xs font-medium text-muted-foreground" htmlFor="forward-recipient">
+              Forward to
+            </label>
+            {isAddingForwardEmail ? (
+              <div className="mt-1.5 flex gap-2">
+                <input
+                  id="forward-recipient"
+                  type="email"
+                  value={forwardTarget}
+                  onChange={(event) => setForwardTarget(event.target.value)}
+                  placeholder="name@company.com"
+                  disabled={loading}
+                  autoFocus
+                  className="h-9 min-w-0 flex-1 rounded-md border border-violet-200 bg-background px-2.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAddingForwardEmail(false);
+                    setForwardTarget(initialForwardTarget);
+                  }}
+                  disabled={loading}
+                  className="rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <div className="relative mt-1.5">
+                <select
+                  id="forward-recipient"
+                  value={forwardTarget}
+                  onChange={(event) => {
+                    if (event.target.value === "__add_new_email__") {
+                      setForwardTarget("");
+                      setIsAddingForwardEmail(true);
+                      return;
+                    }
+                    setForwardTarget(event.target.value);
+                  }}
+                  disabled={loading}
+                  className="h-9 w-full appearance-none rounded-md border border-violet-200 bg-background px-2.5 pr-8 text-sm text-foreground outline-none transition-colors focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {forwardEmailOptions.map((email) => (
+                    <option key={email} value={email}>{email}</option>
+                  ))}
+                  <option value="__add_new_email__">Add new email…</option>
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              </div>
+            )}
+            {!forwardTargetIsValid ? (
+              <p className="mt-1.5 text-xs text-red-600 dark:text-red-400">Enter a valid email address to continue.</p>
+            ) : null}
+          </div>
+        ) : null}
 
         {error ? <div className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</div> : null}
         {validationError ? (
@@ -624,8 +737,8 @@ export function ActionCard({
         <button
           type="button"
           className="inline-flex items-center gap-1 rounded-md bg-violet-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
-          onClick={onApprove}
-          disabled={loading || Boolean(validationError)}
+          onClick={() => onApprove?.(isForwardEmailAction ? { target_email: forwardTarget.trim() } : undefined)}
+          disabled={loading || Boolean(validationError) || (isForwardEmailAction && !forwardTargetIsValid)}
         >
           <CheckCircle2 className="h-3.5 w-3.5" />
           {loading ? "Applying..." : approveButtonLabel}

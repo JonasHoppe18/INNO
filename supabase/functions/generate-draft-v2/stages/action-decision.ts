@@ -918,7 +918,13 @@ export async function runActionDecision(
   //    b) ELLER: deterministiske regler gav ingen forslag men der er skills at overveje
   const shouldUseLlmFallback = proposals.length === 0 &&
     plan.skills_to_consider.length > 0 &&
-    !["tracking", "product_question", "thanks", "update"].includes(plan.primary_intent);
+    // Address changes are handled completely by the deterministic path above,
+    // including dedicated address extraction. If extraction found no complete
+    // replacement address, an LLM fallback must not turn the customer's mere
+    // request/intent into a mutating Shopify action.
+    !["tracking", "product_question", "thanks", "update", "address_change"].includes(
+      plan.primary_intent,
+    );
 
   if (shouldUseLlmFallback) {
     proposals = await llmFallbackActions(plan, caseState, facts, shopConfig);
