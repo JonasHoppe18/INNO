@@ -189,7 +189,10 @@ export async function GET(request) {
 
     const scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
     if (!scope.workspaceId && !scope.supabaseUserId) {
-      return NextResponse.json({ threads: [], messages: [], attachments: [] }, { status: 200 });
+      return NextResponse.json(
+        { workspaceId: null, threads: [], messages: [], attachments: [] },
+        { status: 200 },
+      );
     }
 
     const [mailboxIds, autoCloseDelayHours] = await Promise.all([
@@ -200,7 +203,15 @@ export async function GET(request) {
       }),
     ]);
     if (!mailboxIds.length) {
-      return NextResponse.json({ threads: [], messages: [], attachments: [] }, { status: 200 });
+      return NextResponse.json(
+        {
+          workspaceId: scope.workspaceId ?? null,
+          threads: [],
+          messages: [],
+          attachments: [],
+        },
+        { status: 200 },
+      );
     }
 
     const throttleKey = scope.workspaceId || scope.supabaseUserId;
@@ -225,7 +236,15 @@ export async function GET(request) {
         })
       : [];
 
-    return NextResponse.json({ threads, messages, attachments: [] }, { status: 200 });
+    return NextResponse.json(
+      {
+        workspaceId: scope.workspaceId ?? null,
+        threads,
+        messages,
+        attachments: [],
+      },
+      { status: 200 },
+    );
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to load inbox live data." },

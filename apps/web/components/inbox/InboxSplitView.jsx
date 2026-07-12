@@ -1022,6 +1022,7 @@ export function InboxSplitView({
   const [deletingThread, setDeletingThread] = useState(false);
   const [workspaceMembers, setWorkspaceMembers] = useState([]);
   const [currentSupabaseUserId, setCurrentSupabaseUserId] = useState(null);
+  const [currentWorkspaceId, setCurrentWorkspaceId] = useState(null);
   const [workspaceInboxes, setWorkspaceInboxes] = useState([]);
   const [isWorkspaceTestMode, setIsWorkspaceTestMode] = useState(false);
   // ticketStateByThread/pendingUpdateThreadIds are declared here (not inside
@@ -1140,6 +1141,7 @@ export function InboxSplitView({
         const attachmentRows = Array.isArray(payload?.attachments)
           ? payload.attachments
           : [];
+        setCurrentWorkspaceId(payload?.workspaceId || null);
         if (threadRows.length > 0) setLiveThreads(threadRows);
         if (messageRows.length > 0) setLiveMessages(messageRows);
         if (attachmentRows.length > 0) setLiveAttachments(attachmentRows);
@@ -1172,7 +1174,7 @@ export function InboxSplitView({
   }, []);
 
   useEffect(() => {
-    if (!supabase || !user?.id || !currentSupabaseUserId) return;
+    if (!supabase || !user?.id || !currentWorkspaceId) return;
     let hasSubscribedOnceRef = { current: false };
     const upsertThread = (incomingThread) => {
       const nextThreadId = String(incomingThread?.id || "").trim();
@@ -1193,14 +1195,14 @@ export function InboxSplitView({
     };
 
     const channel = supabase
-      .channel(`inbox-thread-updates:${user.id}`)
+      .channel(`inbox-thread-updates:${currentWorkspaceId}`)
       .on(
         "postgres_changes",
         {
           event: "INSERT",
           schema: "public",
           table: "mail_threads",
-          filter: `user_id=eq.${currentSupabaseUserId}`,
+          filter: `workspace_id=eq.${currentWorkspaceId}`,
         },
         (payload) => {
           upsertThread(payload?.new);
@@ -1214,7 +1216,7 @@ export function InboxSplitView({
           event: "UPDATE",
           schema: "public",
           table: "mail_threads",
-          filter: `user_id=eq.${currentSupabaseUserId}`,
+          filter: `workspace_id=eq.${currentWorkspaceId}`,
         },
         (payload) => {
           upsertThread(payload?.new);
@@ -1254,7 +1256,7 @@ export function InboxSplitView({
       }
       supabase?.removeChannel?.(channel);
     };
-  }, [supabase, user?.id, currentSupabaseUserId]);
+  }, [supabase, user?.id, currentWorkspaceId]);
 
   useEffect(
     () => () => {
@@ -1916,17 +1918,17 @@ export function InboxSplitView({
   }, [refreshSelectedThreadMessages]);
 
   useEffect(() => {
-    if (!supabase || !user?.id || !currentSupabaseUserId) return;
+    if (!supabase || !user?.id || !currentWorkspaceId) return;
     let hasSubscribedOnceRef = { current: false };
     const channel = supabase
-      .channel(`inbox-message-updates:${user.id}`)
+      .channel(`inbox-message-updates:${currentWorkspaceId}`)
       .on(
         "postgres_changes",
         {
           event: "INSERT",
           schema: "public",
           table: "mail_messages",
-          filter: `user_id=eq.${currentSupabaseUserId}`,
+          filter: `workspace_id=eq.${currentWorkspaceId}`,
         },
         (payload) => {
           const nextMessage = payload?.new;
@@ -1965,7 +1967,7 @@ export function InboxSplitView({
           event: "UPDATE",
           schema: "public",
           table: "mail_messages",
-          filter: `user_id=eq.${currentSupabaseUserId}`,
+          filter: `workspace_id=eq.${currentWorkspaceId}`,
         },
         (payload) => {
           const nextMessage = payload?.new;
@@ -2038,7 +2040,7 @@ export function InboxSplitView({
       supabase?.removeChannel?.(channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- draftCacheRef, messagesCacheRef, selectedThreadIdRef are refs returned by useThreadSelection (backed by useRef); identity never changes, and their .current is read fresh inside the realtime callbacks at fire-time, not captured at effect-setup-time.
-  }, [supabase, user?.id, currentSupabaseUserId]);
+  }, [supabase, user?.id, currentWorkspaceId]);
 
   useEffect(() => {
     if (selectedThreadId) return;
@@ -2089,7 +2091,7 @@ export function InboxSplitView({
       if (!active) return;
       if (error) {
         console.warn(
-          "InboxSplitView: failed to load supabase user id — realtime subscriptions will not activate",
+          "InboxSplitView: failed to load supabase user id",
           error,
         );
         return;
@@ -2098,7 +2100,6 @@ export function InboxSplitView({
         console.warn(
           "InboxSplitView: no profile found for clerk user",
           user.id,
-          "— realtime subscriptions will not activate",
         );
         return;
       }

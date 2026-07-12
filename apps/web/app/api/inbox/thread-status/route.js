@@ -154,7 +154,7 @@ export async function PATCH(request) {
       .from("mail_threads")
       .update(payload)
       .eq("id", threadId)
-      .select("id, status, priority, assignee_id, tags, classification_key, classification_confidence, classification_reason")
+      .select("id, status, priority, assignee_id, tags, classification_key, classification_confidence, classification_reason, is_read, unread_count")
       .maybeSingle(),
     scope
   );

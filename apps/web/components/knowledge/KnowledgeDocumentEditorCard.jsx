@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Separator } from "@/components/ui/separator";
 import {
   buildKnowledgeDocumentSimulationHref,
   getKnowledgeDocumentPreviewBlockedReason,
@@ -25,7 +27,6 @@ export function KnowledgeDocumentEditorCard({
   category,
   documentType,
   title,
-  description,
   helperText = "Use section headings to organise the guide. Each section heading becomes a focused knowledge section for the AI.",
   allowPublish = true,
 }) {
@@ -154,15 +155,18 @@ export function KnowledgeDocumentEditorCard({
 
   if (loading) {
     return (
-      <div className="rounded-xl border bg-card overflow-hidden">
-        <div className="px-6 py-5 border-b space-y-2">
+      <div className="flex flex-col gap-5">
+        <div className="flex flex-col gap-2">
           <Skeleton className="h-5 w-44" />
           <Skeleton className="h-4 w-72" />
         </div>
-        <div className="px-6 py-5 space-y-2">
-          <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-4 w-3/4" />
+        <div className="overflow-hidden rounded-xl border bg-card">
+          <Skeleton className="h-12 w-full rounded-none" />
+          <div className="flex flex-col gap-3 p-8">
+            <Skeleton className="h-5 w-1/3" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-5/6" />
+          </div>
         </div>
       </div>
     );
@@ -170,61 +174,42 @@ export function KnowledgeDocumentEditorCard({
 
   return (
     <>
-      <div className="rounded-xl border bg-card overflow-hidden">
-        <div className="flex flex-col gap-4 border-b px-6 py-5 md:flex-row md:items-start md:justify-between">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-base font-semibold">{title}</h2>
-              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-                {currentStatus}
-              </span>
-            </div>
-            <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>
-          </div>
-          <div className="flex flex-wrap items-center justify-end gap-3">
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" size="sm" onClick={openTicketPreview} title={previewBlockedReason || "Run an A/B preview against a ticket"}>
-                Test against ticket
+      <section className="flex flex-col gap-5" aria-label={`${title} editor`}>
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <Badge variant="secondary" className="w-fit font-normal">
+            {currentStatus}
+          </Badge>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" variant="ghost" size="sm" onClick={openTicketPreview} title={previewBlockedReason || "Run an A/B preview against a ticket"}>
+              Test against ticket
+            </Button>
+            <Button type="button" variant="ghost" size="sm" onClick={openSimulation} title={previewBlockedReason || "Open simulation with this draft document preview"}>
+              Simulate
+            </Button>
+            <Separator orientation="vertical" className="mx-1 hidden h-6 md:block" />
+            {allowPublish && (
+              <Button type="button" variant="outline" size="sm" onClick={publishDraft} disabled={publishing || isDirty || !document?.id}>
+                {publishing ? "Publishing..." : "Publish"}
               </Button>
-              <Button type="button" variant="outline" size="sm" onClick={openSimulation} title={previewBlockedReason || "Open simulation with this draft document preview"}>
-                Simulate conversation
-              </Button>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {allowPublish && (
-                <Button type="button" variant="outline" size="sm" onClick={publishDraft} disabled={publishing || isDirty || !document?.id}>
-                  {publishing ? "Publishing..." : "Publish"}
-                </Button>
-              )}
-              <Button type="button" size="sm" onClick={saveDraft} disabled={saving || !isDirty}>
-                {saving ? "Saving..." : "Save changes"}
-              </Button>
-            </div>
+            )}
+            <Button type="button" size="sm" onClick={saveDraft} disabled={saving || !isDirty}>
+              {saving ? "Saving..." : "Save changes"}
+            </Button>
           </div>
         </div>
-        <div className="px-6 py-5">
-          <p className="mb-3 text-xs text-muted-foreground">
-            {helperText}
-          </p>
-          {error && (
-            <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
-              {error}
-            </div>
-          )}
-          {previewError && (
-            <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
-              {previewError}
-            </div>
-          )}
-          <KnowledgeDocsEditor
-            value={value}
-            onChange={(markdown) => {
-              setValue(markdown);
-              setPreviewError("");
-            }}
-          />
+        <div className="flex flex-col gap-3">
+          <p className="text-xs text-muted-foreground">{helperText}</p>
+          {error && <p className="text-xs text-destructive">{error}</p>}
+          {previewError && <p className="text-xs text-amber-700">{previewError}</p>}
         </div>
-      </div>
+        <KnowledgeDocsEditor
+          value={value}
+          onChange={(markdown) => {
+            setValue(markdown);
+            setPreviewError("");
+          }}
+        />
+      </section>
       {document?.id && (
         <SnippetPreviewModal
           open={previewOpen}

@@ -13,6 +13,8 @@ import {
   List,
   ListOrdered,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import {
   SECTION_HEADING_LEVEL,
@@ -36,19 +38,18 @@ const extensions = [
 
 function ToolbarButton({ active, disabled, label, icon: Icon, onClick }) {
   return (
-    <button
+    <Button
       type="button"
+      variant={active ? "secondary" : "ghost"}
+      size="icon"
       aria-label={label}
       title={label}
       disabled={disabled}
       onClick={onClick}
-      className={cn(
-        "inline-flex h-8 w-8 items-center justify-center rounded-md border border-transparent text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800 disabled:pointer-events-none disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100",
-        active && "border-gray-200 bg-gray-100 text-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100",
-      )}
+      className="size-8 text-muted-foreground transition-transform duration-150 active:scale-[0.97]"
     >
-      <Icon className="h-4 w-4" />
-    </button>
+      <Icon />
+    </Button>
   );
 }
 
@@ -60,7 +61,7 @@ export function KnowledgeDocsEditor({ value, onChange }) {
     immediatelyRender: false,
     editorProps: {
       attributes: {
-        class: "min-h-[520px] px-8 py-7 outline-none",
+        class: "mx-auto min-h-[560px] w-full max-w-5xl px-8 py-9 outline-none md:px-12",
       },
       handlePaste(view, event) {
         const text = event.clipboardData?.getData("text/plain") || "";
@@ -104,8 +105,8 @@ export function KnowledgeDocsEditor({ value, onChange }) {
   };
 
   return (
-    <div className="overflow-hidden rounded-lg border bg-white shadow-sm dark:border-gray-800 dark:bg-gray-950">
-      <div className="flex flex-wrap items-center gap-1 border-b bg-gray-50/80 px-3 py-2 dark:border-gray-800 dark:bg-gray-900/60">
+    <div className="overflow-hidden rounded-xl border bg-card">
+      <div className="flex flex-wrap items-center gap-1 border-b bg-muted/30 px-4 py-2">
         <ToolbarButton
           label="Bold"
           icon={Bold}
@@ -127,7 +128,7 @@ export function KnowledgeDocsEditor({ value, onChange }) {
           active={editor?.isActive("heading", { level: SECTION_HEADING_LEVEL })}
           onClick={() => editor?.chain().focus().toggleHeading({ level: SECTION_HEADING_LEVEL }).run()}
         />
-        <span className="mx-1 h-5 w-px bg-gray-200 dark:bg-gray-800" />
+        <Separator orientation="vertical" className="mx-1 h-5" />
         <ToolbarButton
           label="Bullet list"
           icon={List}
@@ -155,14 +156,14 @@ export function KnowledgeDocsEditor({ value, onChange }) {
         className={cn(
           "prose prose-sm max-w-none dark:prose-invert",
           "[&_.ProseMirror_h1]:mb-5 [&_.ProseMirror_h1]:text-2xl [&_.ProseMirror_h1]:font-semibold",
-          "[&_.ProseMirror_h2]:mb-3 [&_.ProseMirror_h2]:mt-7 [&_.ProseMirror_h2]:border-b [&_.ProseMirror_h2]:pb-2 [&_.ProseMirror_h2]:text-lg [&_.ProseMirror_h2]:font-semibold dark:[&_.ProseMirror_h2]:border-gray-800",
+          "[&_.ProseMirror_h2]:mb-3 [&_.ProseMirror_h2]:mt-9 [&_.ProseMirror_h2]:text-lg [&_.ProseMirror_h2]:font-semibold",
           "[&_.ProseMirror_h3]:mb-2 [&_.ProseMirror_h3]:mt-5 [&_.ProseMirror_h3]:text-base [&_.ProseMirror_h3]:font-semibold",
           "[&_.ProseMirror_p]:my-3 [&_.ProseMirror_p]:leading-7",
           "[&_.ProseMirror_ul]:my-3 [&_.ProseMirror_ul]:list-disc [&_.ProseMirror_ul]:pl-6",
           "[&_.ProseMirror_ol]:my-3 [&_.ProseMirror_ol]:list-decimal [&_.ProseMirror_ol]:pl-6",
           "[&_.ProseMirror_li]:my-1 [&_.ProseMirror_li>p]:my-1",
-          "[&_.ProseMirror_a]:text-indigo-600 [&_.ProseMirror_a]:underline dark:[&_.ProseMirror_a]:text-indigo-400",
-          "[&_.ProseMirror]:text-[14px] [&_.ProseMirror]:text-gray-800 dark:[&_.ProseMirror]:text-gray-100",
+          "[&_.ProseMirror_a]:text-primary [&_.ProseMirror_a]:underline",
+          "[&_.ProseMirror]:text-[14px] [&_.ProseMirror]:text-foreground",
         )}
       />
     </div>

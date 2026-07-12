@@ -309,8 +309,10 @@ function AiPromptModal({ value, onChange, onSave, saving }) {
             <Bot className="h-4 w-4 text-primary" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-foreground">AI Prompt</p>
-            <p className="text-xs text-muted-foreground">The shared instruction Sona reads before drafting every reply.</p>
+            <p className="text-sm font-medium text-foreground">Draft prompt instruction</p>
+            <p className="text-xs text-muted-foreground">
+              The exact workspace instruction inserted into every draft prompt.
+            </p>
           </div>
           <Button
             type="button"
@@ -320,7 +322,7 @@ function AiPromptModal({ value, onChange, onSave, saving }) {
             className="shrink-0 gap-1.5 transition-transform duration-150 active:scale-[0.97]"
           >
             <PenLine className="h-3.5 w-3.5" />
-            {value ? "Edit" : "Add prompt"}
+            {value ? "Edit" : "Add instruction"}
           </Button>
         </div>
 
@@ -331,7 +333,7 @@ function AiPromptModal({ value, onChange, onSave, saving }) {
             </p>
           ) : (
             <div>
-              <p className="text-sm font-medium text-foreground">No prompt configured</p>
+              <p className="text-sm font-medium text-foreground">No instruction configured</p>
               <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
                 Add brand context, tone of voice and reply guidelines for Sona.
               </p>
@@ -343,9 +345,9 @@ function AiPromptModal({ value, onChange, onSave, saving }) {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>AI Prompt</DialogTitle>
+            <DialogTitle>Draft prompt instruction</DialogTitle>
             <DialogDescription>
-              Describe your brand and how your AI support agent should sound. This is the primary instruction the AI reads before every reply.
+              This text is inserted into the system prompt used to draft every reply. Describe your brand and how your AI support agent should sound.
             </DialogDescription>
           </DialogHeader>
           <textarea
@@ -3199,7 +3201,7 @@ export function SettingsPanel() {
         setInitialNeedsAttentionStaleDays(resolvedNeedsAttentionStaleDays);
       }
       if (workspaceId && personaResponse?.ok) {
-        const resolved = String(personaPayload?.instructions || "").trim();
+        const resolved = String(personaPayload?.persona?.instructions || "").trim();
         setAiPrompt(resolved);
         setInitialAiPrompt(resolved);
       }
@@ -3395,14 +3397,21 @@ export function SettingsPanel() {
       }
       // Save AI Prompt if changed
       if (nextAiPrompt !== String(initialAiPrompt || "").trim()) {
-        await fetch("/api/persona", {
+        const personaResponse = await fetch("/api/persona", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
           body: JSON.stringify({ instructions: nextAiPrompt }),
         });
-        setAiPrompt(nextAiPrompt);
-        setInitialAiPrompt(nextAiPrompt);
+        const personaPayload = await personaResponse.json().catch(() => ({}));
+        if (!personaResponse.ok) {
+          throw new Error(personaPayload?.error || "Could not save AI instructions.");
+        }
+        const persistedPrompt = String(
+          personaPayload?.persona?.instructions ?? nextAiPrompt
+        ).trim();
+        setAiPrompt(persistedPrompt);
+        setInitialAiPrompt(persistedPrompt);
       }
 
       setTeamName(nextTeamName);
@@ -4215,8 +4224,15 @@ export function SettingsPanel() {
                 credentials: "include",
                 body: JSON.stringify({ instructions: newPrompt }),
               });
-              if (!response.ok) throw new Error("Could not save AI instructions.");
-              setInitialAiPrompt(String(newPrompt || ""));
+              const payload = await response.json().catch(() => ({}));
+              if (!response.ok) {
+                throw new Error(payload?.error || "Could not save AI instructions.");
+              }
+              const persistedPrompt = String(
+                payload?.persona?.instructions ?? newPrompt ?? ""
+              ).trim();
+              setAiPrompt(persistedPrompt);
+              setInitialAiPrompt(persistedPrompt);
               toast.success("AI instructions saved.");
             }}
           />

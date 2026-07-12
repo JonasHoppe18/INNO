@@ -58,5 +58,7 @@ export function buildAgentReplyStatusPatch(thread, nowIso) {
     close_pending: false,
     attention_reason: null,
     status_changed_at: nowIso,
+    is_read: true,
+    unread_count: 0,
   };
 }

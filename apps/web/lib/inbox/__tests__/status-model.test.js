@@ -61,6 +61,8 @@ describe("buildAgentReplyStatusPatch", () => {
       close_pending: false,
       attention_reason: null,
       status_changed_at: now,
+      is_read: true,
+      unread_count: 0,
     });
   });
   it("returns to waiting_third_party when a third-party wait is active", () => {

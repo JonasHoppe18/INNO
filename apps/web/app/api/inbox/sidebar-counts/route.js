@@ -249,6 +249,7 @@ export async function GET() {
     if (!scope.workspaceId && !scope.supabaseUserId) {
       return NextResponse.json(
         {
+          workspaceId: scope.workspaceId ?? null,
           assignedCount: 0,
           notificationsCount: 0,
           customInboxUnreadCounts: {},
@@ -294,6 +295,7 @@ export async function GET() {
 
     return NextResponse.json(
       {
+        workspaceId: scope.workspaceId ?? null,
         assignedCount,
         notificationsCount,
         customInboxUnreadCounts,
@@ -310,6 +312,7 @@ export async function GET() {
     }
     return NextResponse.json(
       {
+        workspaceId: null,
         assignedCount: 0,
         notificationsCount: 0,
         customInboxUnreadCounts: {},

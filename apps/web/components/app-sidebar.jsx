@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect, useState, useSyncExternalStore } from "react"
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import {
   getLiveSidebarCountsServerSnapshot,
@@ -129,6 +129,7 @@ export function AppSidebar({
   const [waitingCustomerCount, setWaitingCustomerCount] = useState(0)
   const [waitingThirdPartyCount, setWaitingThirdPartyCount] = useState(0)
   const [inboxNeedsAttentionCounts, setInboxNeedsAttentionCounts] = useState({})
+  const [currentWorkspaceId, setCurrentWorkspaceId] = useState(null)
   // Exact client-side counts published by InboxSplitView while the inbox is
   // mounted (null on other pages) — see lib/inbox/live-sidebar-counts.js.
   const liveCounts = useSyncExternalStore(
@@ -155,33 +156,29 @@ export function AppSidebar({
     loadCustomInboxes().catch(() => null)
   }, [supabase])
 
+  const loadCounts = useCallback(async () => {
+    const sidebarRes = await fetch("/api/inbox/sidebar-counts", {
+      method: "GET",
+      cache: "no-store",
+      credentials: "include",
+    }).catch(() => null)
+    if (!sidebarRes?.ok) return
+    const payload = await sidebarRes.json().catch(() => ({}))
+    setCurrentWorkspaceId(payload?.workspaceId || null)
+    setNotificationsCount(Number(payload?.notificationsCount ?? 0))
+    setNeedsAttentionCount(Number(payload?.needsAttentionCount ?? 0))
+    setMineCount(Number(payload?.mineCount ?? 0))
+    setWaitingCustomerCount(Number(payload?.waitingCustomerCount ?? 0))
+    setWaitingThirdPartyCount(Number(payload?.waitingThirdPartyCount ?? 0))
+    setInboxNeedsAttentionCounts(
+      payload?.inboxNeedsAttentionCounts && typeof payload.inboxNeedsAttentionCounts === "object"
+        ? payload.inboxNeedsAttentionCounts
+        : {}
+    )
+  }, [])
+
   useEffect(() => {
     if (!supabase) return
-    let active = true
-
-    const loadCounts = async () => {
-      const sidebarRes = await fetch("/api/inbox/sidebar-counts", {
-        method: "GET",
-        cache: "no-store",
-        credentials: "include",
-      }).catch(() => null)
-      if (!active) return
-      if (sidebarRes?.ok) {
-        const payload = await sidebarRes.json().catch(() => ({}))
-        if (active) {
-          setNotificationsCount(Number(payload?.notificationsCount ?? 0))
-          setNeedsAttentionCount(Number(payload?.needsAttentionCount ?? 0))
-          setMineCount(Number(payload?.mineCount ?? 0))
-          setWaitingCustomerCount(Number(payload?.waitingCustomerCount ?? 0))
-          setWaitingThirdPartyCount(Number(payload?.waitingThirdPartyCount ?? 0))
-          setInboxNeedsAttentionCounts(
-            payload?.inboxNeedsAttentionCounts && typeof payload.inboxNeedsAttentionCounts === "object"
-              ? payload.inboxNeedsAttentionCounts
-              : {}
-          )
-        }
-      }
-    }
 
     const onThreadRead = () => loadCounts().catch(() => null)
 
@@ -189,10 +186,49 @@ export function AppSidebar({
     window.addEventListener("sona:thread-read", onThreadRead)
 
     return () => {
-      active = false
       window.removeEventListener("sona:thread-read", onThreadRead)
     }
-  }, [supabase])
+  }, [loadCounts, supabase])
+
+  useEffect(() => {
+    if (!supabase || !currentWorkspaceId) return
+    let subscribedOnce = false
+    const notifyWorkspaceThreadChange = () => {
+      window.dispatchEvent(new CustomEvent("sona:thread-read"))
+    }
+    const channel = supabase
+      .channel(`sidebar-thread-updates:${currentWorkspaceId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "mail_threads",
+          filter: `workspace_id=eq.${currentWorkspaceId}`,
+        },
+        notifyWorkspaceThreadChange,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "mail_threads",
+          filter: `workspace_id=eq.${currentWorkspaceId}`,
+        },
+        notifyWorkspaceThreadChange,
+      )
+      .subscribe((status) => {
+        if (status !== "SUBSCRIBED") return
+        if (subscribedOnce) loadCounts().catch(() => null)
+        subscribedOnce = true
+      })
+
+    return () => {
+      channel.unsubscribe()
+      supabase.removeChannel(channel)
+    }
+  }, [currentWorkspaceId, loadCounts, supabase])
 
   const handleOpenCreateInbox = () => {
     setCreateInboxName("")

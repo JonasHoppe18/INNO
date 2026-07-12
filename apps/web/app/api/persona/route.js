@@ -79,7 +79,7 @@ export async function GET() {
   });
 }
 
-export async function POST(req) {
+async function savePersona(req) {
   const { userId: clerkUserId, orgId } = await auth();
   if (!clerkUserId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -181,4 +181,12 @@ export async function POST(req) {
       brand_description: savedShopData?.brand_description ?? "",
     },
   });
+}
+
+export async function POST(req) {
+  return savePersona(req);
+}
+
+export async function PUT(req) {
+  return savePersona(req);
 }
