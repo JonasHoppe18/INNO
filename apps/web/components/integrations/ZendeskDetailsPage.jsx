@@ -183,14 +183,41 @@ export function ZendeskDetailsPage() {
     importLoopBusyRef.current = true;
     setHistoryBusy(true);
     setHistoryError("");
+    // Gateway timeouts are expected here: a chunk can outlive the reverse
+    // proxy's timeout (Zendesk 429 retry sleeps), in which case nginx returns
+    // 502/504 with an HTML body while the server KEEPS processing the chunk
+    // and finishes it (verified in prod). Those responses carry no JSON
+    // `error` field — treat them as transient: wait, then re-enter the loop.
+    // The cursor lease answers 409 "job busy" until the in-flight chunk is
+    // done, which serializes us safely. Real route errors always carry a JSON
+    // `error` field and keep their existing fatal/retryable handling.
+    let transientRetries = 0;
+    const MAX_TRANSIENT_RETRIES = 30;
     try {
       while (true) {
-        const response = await fetch("/api/knowledge/import-zendesk", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mode: "continue", jobId }),
-        });
-        const payload = await response.json().catch(() => ({}));
+        let response = null;
+        try {
+          response = await fetch("/api/knowledge/import-zendesk", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ mode: "continue", jobId }),
+          });
+        } catch {
+          response = null; // network hiccup — handled as transient below
+        }
+        const payload = response ? await response.json().catch(() => ({})) : {};
+        const isTransient = !response || (!response.ok && payload?.error == null);
+        if (isTransient) {
+          transientRetries += 1;
+          if (transientRetries > MAX_TRANSIENT_RETRIES) {
+            throw new Error(
+              "The import connection keeps timing out. The job is paused and can be continued safely.",
+            );
+          }
+          await new Promise((resolve) => setTimeout(resolve, 10000));
+          continue;
+        }
+        transientRetries = 0;
         if (response.status === 409 && payload?.job) {
           setHistory((current) => ({ ...(current || {}), last_job: payload.job }));
           await new Promise((resolve) => setTimeout(resolve, Number(payload?.retry_after_ms) || 1500));
