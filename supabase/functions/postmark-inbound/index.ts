@@ -27,6 +27,11 @@ import { detectCustomerLanguage } from "../_shared/detect-language.ts";
 import { autoTagThread } from "../_shared/autoTagThread.ts";
 import { generateIssueMetadata } from "../_shared/generateIssueMetadata.ts";
 import { statusOnInboundCustomerMessage } from "../_shared/thread-status/transitions.ts";
+import {
+  addTicketReference,
+  isAutomatedSender,
+  shouldSendCustomerConfirmation,
+} from "./customer-confirmation.ts";
 
 const PROJECT_URL = Deno.env.get("SUPABASE_URL") ?? Deno.env.get("PROJECT_URL");
 const SERVICE_ROLE_KEY =
@@ -69,8 +74,7 @@ type MailboxLookup = {
 type AutoReplySettings = {
   id: string;
   enabled: boolean;
-  trigger_mode: "first_inbound_per_thread" | "every_inbound";
-  cooldown_minutes: number;
+  include_ticket_number: boolean;
   subject_template: string;
   body_text_template: string;
   body_html_template: string | null;
@@ -696,18 +700,6 @@ function firstName(value: string | null | undefined): string {
   return next.split(/\s+/)[0] || "";
 }
 
-function isLikelyAutoSender(fromEmail: string | null, headers: PostmarkHeader[]): boolean {
-  const sender = String(fromEmail || "").toLowerCase();
-  if (/no[-_.]?reply|donotreply|mailer-daemon|postmaster|noreply/.test(sender)) return true;
-  const autoSubmitted = String(findHeader(headers, "Auto-Submitted") || "").toLowerCase();
-  const precedence = String(findHeader(headers, "Precedence") || "").toLowerCase();
-  const xAutoResponseSuppress = String(findHeader(headers, "X-Auto-Response-Suppress") || "").toLowerCase();
-  if (autoSubmitted && autoSubmitted !== "no") return true;
-  if (/bulk|list|junk/.test(precedence)) return true;
-  if (xAutoResponseSuppress.includes("all")) return true;
-  return false;
-}
-
 function fillTemplateTokens(template: string, values: Record<string, string>): string {
   let result = String(template || "");
   Object.entries(values).forEach(([key, value]) => {
@@ -741,12 +733,10 @@ async function loadAutoReplySettings(mailbox: MailboxLookup): Promise<AutoReplyS
   const query = supabase
     .from("mail_auto_reply_settings")
     .select(
-      "id, enabled, trigger_mode, cooldown_minutes, subject_template, body_text_template, body_html_template, template_id, mailbox_id"
+      "id, enabled, include_ticket_number, subject_template, body_text_template, body_html_template, template_id, mailbox_id"
     )
-    .eq("enabled", true)
     .eq("workspace_id", mailbox.workspace_id)
-    .order("updated_at", { ascending: false })
-    .limit(20);
+    .order("updated_at", { ascending: false });
   const { data, error } = await query;
   if (error) {
     console.warn("postmark-inbound: failed to load auto reply settings", error.message);
@@ -757,17 +747,15 @@ async function loadAutoReplySettings(mailbox: MailboxLookup): Promise<AutoReplyS
     rows.find((row) => row?.mailbox_id && row.mailbox_id === mailbox.mailbox_id) ||
     rows.find((row) => !row?.mailbox_id) ||
     null;
-  if (!selected?.id) return null;
+  if (!selected?.id || !selected.enabled) return null;
   return {
     id: selected.id,
     enabled: Boolean(selected.enabled),
-    trigger_mode:
-      selected.trigger_mode === "every_inbound" ? "every_inbound" : "first_inbound_per_thread",
-    cooldown_minutes: Math.max(1, Number(selected.cooldown_minutes ?? 1440)),
-    subject_template: asString(selected.subject_template) || "Tak for din henvendelse",
+    include_ticket_number: selected.include_ticket_number !== false,
+    subject_template: asString(selected.subject_template) || "We've received your message",
     body_text_template:
       asString(selected.body_text_template) ||
-      "Hej,\n\nTak for din henvendelse. Vi har modtaget din besked og vender tilbage hurtigst muligt.",
+      "Hi {{customer_first_name}},\n\nThanks for contacting us. We've received your message and our support team will get back to you as soon as possible. You can reply directly to this email if you would like to add more information.\n\nBest,\n{{team_name}}",
     body_html_template: asString(selected.body_html_template) || null,
     template_id: asString(selected.template_id) || null,
   };
@@ -819,6 +807,7 @@ async function sendPostmarkAutoReply(payload: {
   textBody: string;
   htmlBody: string;
   replyTo?: string | null;
+  replyMessageId?: string | null;
 }): Promise<string | null> {
   if (!POSTMARK_SERVER_TOKEN) {
     console.warn("postmark-inbound: POSTMARK_SERVER_TOKEN missing, auto-reply skipped");
@@ -839,6 +828,12 @@ async function sendPostmarkAutoReply(payload: {
       TextBody: payload.textBody,
       HtmlBody: payload.htmlBody,
       ReplyTo: payload.replyTo || undefined,
+      Headers: payload.replyMessageId
+        ? [
+            { Name: "In-Reply-To", Value: `<${payload.replyMessageId}>` },
+            { Name: "References", Value: `<${payload.replyMessageId}>` },
+          ]
+        : undefined,
     }),
   });
   const data = await response.json().catch(() => null);
@@ -1064,27 +1059,31 @@ async function maybeSendAutoReply(options: {
   mailbox: MailboxLookup;
   threadId: string;
   inboundMessageId: string | null;
+  ticketNumber: number | null;
+  createdNewThread: boolean;
+  isEffectiveSupport: boolean;
+  isBlockedSender: boolean;
   fromEmail: string | null;
   fromName: string | null;
   subject: string;
   headers: PostmarkHeader[];
 }): Promise<{ sent: boolean; providerMessageId: string | null }> {
   if (!supabase) return { sent: false, providerMessageId: null };
-  if (!options.inboundMessageId || !options.fromEmail) return { sent: false, providerMessageId: null };
-  if (isLikelyAutoSender(options.fromEmail, options.headers)) return { sent: false, providerMessageId: null };
+  if (!options.inboundMessageId) return { sent: false, providerMessageId: null };
+  if (!shouldSendCustomerConfirmation({
+    createdNewThread: options.createdNewThread,
+    isEffectiveSupport: options.isEffectiveSupport,
+    isBlockedSender: options.isBlockedSender,
+    hasCustomerEmail: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(options.fromEmail || "").trim()),
+    isLikelyAutoSender: isAutomatedSender({
+      fromEmail: options.fromEmail,
+      headers: options.headers,
+    }),
+  })) return { sent: false, providerMessageId: null };
 
   const setting = await loadAutoReplySettings(options.mailbox);
   if (!setting?.enabled) return { sent: false, providerMessageId: null };
   const workspaceTest = await loadWorkspaceTestSettings(options.mailbox.workspace_id);
-
-  if (setting.trigger_mode === "first_inbound_per_thread") {
-    const { count } = await supabase
-      .from("mail_messages")
-      .select("id", { count: "exact", head: true })
-      .eq("thread_id", options.threadId)
-      .eq("from_me", false);
-    if (Number(count || 0) > 1) return { sent: false, providerMessageId: null };
-  }
 
   const recipient = String(options.fromEmail || "").trim().toLowerCase();
   const effectiveRecipient =
@@ -1106,26 +1105,10 @@ async function maybeSendAutoReply(options: {
     });
     return { sent: false, providerMessageId: null };
   }
-  const { data: previousEvents } = await supabase
-    .from("mail_auto_reply_events")
-    .select("sent_at")
-    .eq("rule_id", setting.id)
-    .eq("thread_id", options.threadId)
-    .eq("recipient_email", recipient)
-    .order("sent_at", { ascending: false })
-    .limit(1);
-  const lastSentAt = asString(previousEvents?.[0]?.sent_at);
-  if (lastSentAt) {
-    const elapsedMinutes = (Date.now() - new Date(lastSentAt).getTime()) / 60000;
-    if (Number.isFinite(elapsedMinutes) && elapsedMinutes < setting.cooldown_minutes) {
-      return { sent: false, providerMessageId: null };
-    }
-  }
-
   const customerFirstName = firstName(options.fromName || options.fromEmail);
   const tokenValues = {
     customer_name: asString(options.fromName),
-    customer_first_name: customerFirstName || "der",
+    customer_first_name: customerFirstName || "there",
     team_name: asString(options.mailbox.from_name) || POSTMARK_FROM_NAME,
     subject: asString(options.subject),
   };
@@ -1134,20 +1117,28 @@ async function maybeSendAutoReply(options: {
   const renderedBodyHtml =
     fillTemplateTokens(setting.body_html_template || "", tokenValues) ||
     `<p style="white-space:pre-wrap">${renderedText.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`;
+  const rendered = addTicketReference({
+    subject: renderedSubject,
+    text: renderedText,
+    html: renderedBodyHtml,
+    ticketNumber: options.ticketNumber,
+    includeTicketNumber: setting.include_ticket_number,
+  });
   const templateHtml = await loadAutoReplyTemplateHtml(options.mailbox, setting.template_id);
   const mergedHtml = templateHtml.includes("{{content}}")
-    ? templateHtml.replace("{{content}}", renderedBodyHtml)
-    : `${templateHtml}\n${renderedBodyHtml}`;
+    ? templateHtml.replace("{{content}}", rendered.html)
+    : `${templateHtml}\n${rendered.html}`;
   const outgoingFrom = asString(options.mailbox.provider_email) || POSTMARK_FROM_EMAIL;
   const outgoingName = asString(options.mailbox.from_name) || POSTMARK_FROM_NAME;
   const providerMessageId = await sendPostmarkAutoReply({
     from: outgoingFrom,
     fromName: outgoingName,
     to: effectiveRecipient,
-    subject: renderedSubject,
-    textBody: toPlainText(renderedText),
+    subject: rendered.subject,
+    textBody: rendered.text,
     htmlBody: mergedHtml,
     replyTo: options.mailbox.provider_email,
+    replyMessageId: normalizeMessageId(findHeader(options.headers, "Message-ID")),
   });
   if (!providerMessageId) return { sent: false, providerMessageId: null };
 
@@ -1159,11 +1150,11 @@ async function maybeSendAutoReply(options: {
     thread_id: options.threadId,
     provider: "smtp",
     provider_message_id: providerMessageId,
-    subject: renderedSubject,
-    snippet: toPlainText(renderedText).slice(0, 240),
-    body_text: renderedText,
+    subject: rendered.subject,
+    snippet: toPlainText(rendered.text).slice(0, 240),
+    body_text: rendered.text,
     body_html: mergedHtml,
-    clean_body_text: renderedText,
+    clean_body_text: rendered.text,
     clean_body_html: mergedHtml,
     quoted_body_text: null,
     quoted_body_html: null,
@@ -1824,6 +1815,7 @@ Deno.serve(async (req) => {
   }
 
   let createdNewThread = false;
+  let ticketNumber: number | null = null;
   if (!threadId) {
     const { data: threadInsert, error: threadError } = await supabase
       .from("mail_threads")
@@ -1852,7 +1844,7 @@ Deno.serve(async (req) => {
         classification_reason: classificationReason,
         updated_at: new Date().toISOString(),
       })
-      .select("id, subject, unread_count")
+      .select("id, subject, unread_count, ticket_number")
       .maybeSingle();
     if (threadError) {
       await logAgent(
@@ -1863,6 +1855,9 @@ Deno.serve(async (req) => {
       return jsonResponse(500, { error: threadError.message });
     }
     threadId = (threadInsert as any)?.id ?? null;
+    ticketNumber = Number.isSafeInteger(Number((threadInsert as any)?.ticket_number))
+      ? Number((threadInsert as any).ticket_number)
+      : null;
     createdNewThread = true;
   }
 
@@ -2143,6 +2138,10 @@ Deno.serve(async (req) => {
       mailbox,
       threadId,
       inboundMessageId: messageDbId,
+      ticketNumber,
+      createdNewThread,
+      isEffectiveSupport: classificationKey === "support" && routeDecision.isEffectiveSupport,
+      isBlockedSender,
       fromEmail: shopifyContact.customerEmail || fromEmail,
       fromName: shopifyContact.customerName || fromName,
       subject,

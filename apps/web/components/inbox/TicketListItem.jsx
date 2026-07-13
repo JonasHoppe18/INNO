@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { formatMessageTime } from "@/components/inbox/inbox-utils";
 import { assigneeInitials, formatWakeCountdown } from "@/lib/inbox/view-model";
 import { THREAD_DRAG_MIME } from "@/lib/inbox/thread-drag-bridge";
+import { formatTicketReference } from "@/lib/tickets/reference";
 
 const STATUS_TEXT_STYLES = {
   New: "text-green-600 dark:text-green-400",
@@ -60,9 +61,7 @@ function TicketListItemComponent({
     classificationKey && classificationKey !== "support"
       ? CLASSIFICATION_LABELS[classificationKey] || null
       : null;
-  const ticketRef = Number.isFinite(Number(thread?.ticket_number))
-    ? `T-${String(Number(thread.ticket_number)).padStart(6, "0")}`
-    : "No ticket ID";
+  const ticketRef = formatTicketReference(thread?.ticket_number);
 
   // One flat meta line instead of a variable-height stack — a ticket with a
   // classification label used to render a whole extra <div> below this one,

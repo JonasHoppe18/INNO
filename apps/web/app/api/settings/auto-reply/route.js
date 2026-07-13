@@ -2,22 +2,19 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { resolveAuthScope } from "@/lib/server/workspace-auth";
+import {
+  CUSTOMER_CONFIRMATION_DEFAULT_LAYOUT,
+  CUSTOMER_CONFIRMATION_DEFAULT_SUBJECT,
+  CUSTOMER_CONFIRMATION_DEFAULT_TEXT,
+} from "@/lib/server/customer-confirmation";
 
 const SUPABASE_URL =
-  (process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    process.env.EXPO_PUBLIC_SUPABASE_URL ||
-    "").replace(/\/$/, "");
+  (process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.EXPO_PUBLIC_SUPABASE_URL || "").replace(/\/$/, "");
 const SUPABASE_SERVICE_ROLE_KEY =
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
   process.env.SERVICE_ROLE_KEY ||
   process.env.SUPABASE_SERVICE_KEY ||
   "";
-
-const DEFAULT_SUBJECT = "Tak for din henvendelse";
-const DEFAULT_TEXT =
-  "Hej,\n\nTak for din henvendelse. Vi har modtaget din besked og vender tilbage hurtigst muligt.\n\nMed venlig hilsen\nSona Team";
-const DEFAULT_TEMPLATE_HTML =
-  "<div style=\"font-family:Arial,sans-serif;line-height:1.6;color:#111\">{{content}}</div>";
 
 function createServiceClient() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null;
@@ -30,129 +27,180 @@ function asString(value, fallback = "") {
 }
 
 function asBool(value, fallback = false) {
-  if (typeof value === "boolean") return value;
-  return fallback;
+  return typeof value === "boolean" ? value : fallback;
 }
 
-function asCooldownMinutes(value) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return 1440;
-  return Math.max(1, Math.min(7 * 24 * 60, Math.round(parsed)));
+const DEFAULT_SETTING = {
+  id: null,
+  workspace_id: null,
+  mailbox_id: null,
+  enabled: false,
+  include_ticket_number: true,
+  subject_template: CUSTOMER_CONFIRMATION_DEFAULT_SUBJECT,
+  body_text_template: CUSTOMER_CONFIRMATION_DEFAULT_TEXT,
+  body_html_template: "",
+  template_id: null,
+};
+
+const DEFAULT_TEMPLATE = {
+  id: null,
+  name: "Customer confirmation template",
+  html_layout: CUSTOMER_CONFIRMATION_DEFAULT_LAYOUT,
+  plain_text_fallback: "",
+};
+
+async function loadConfiguration(serviceClient, workspaceId) {
+  const [{ data: settings, error: settingsError }, { data: templates, error: templatesError }, { data: mailboxes, error: mailboxesError }] =
+    await Promise.all([
+      serviceClient
+        .from("mail_auto_reply_settings")
+        .select("id, workspace_id, mailbox_id, enabled, include_ticket_number, subject_template, body_text_template, body_html_template, template_id, updated_at")
+        .eq("workspace_id", workspaceId)
+        .order("updated_at", { ascending: false }),
+      serviceClient
+        .from("mail_auto_reply_templates")
+        .select("id, name, html_layout, plain_text_fallback, updated_at")
+        .eq("workspace_id", workspaceId),
+      serviceClient
+        .from("mail_accounts")
+        .select("id, provider, provider_email, from_email, from_name, status")
+        .eq("workspace_id", workspaceId)
+        .order("created_at", { ascending: true }),
+    ]);
+  if (settingsError) throw new Error(settingsError.message);
+  if (templatesError) throw new Error(templatesError.message);
+  if (mailboxesError) throw new Error(mailboxesError.message);
+
+  const rows = Array.isArray(settings) ? settings : [];
+  const templatesById = new Map((templates || []).map((template) => [String(template.id), template]));
+  const normalize = (setting, mailboxId = null) => ({
+    ...DEFAULT_SETTING,
+    ...(setting || {}),
+    workspace_id: workspaceId,
+    mailbox_id: mailboxId,
+    enabled: Boolean(setting?.enabled),
+    include_ticket_number: setting?.include_ticket_number !== false,
+    subject_template: asString(setting?.subject_template, CUSTOMER_CONFIRMATION_DEFAULT_SUBJECT),
+    body_text_template: asString(setting?.body_text_template, CUSTOMER_CONFIRMATION_DEFAULT_TEXT),
+    body_html_template: asString(setting?.body_html_template),
+  });
+  const workspaceSetting = normalize(rows.find((row) => !row.mailbox_id) || null, null);
+  const workspaceTemplate = templatesById.get(String(workspaceSetting.template_id || "")) || DEFAULT_TEMPLATE;
+  const mailboxPayload = (mailboxes || []).map((mailbox) => {
+    const overrideRow = rows.find((row) => String(row.mailbox_id || "") === String(mailbox.id));
+    const override = overrideRow ? normalize(overrideRow, mailbox.id) : null;
+    const effective = override || { ...workspaceSetting, mailbox_id: mailbox.id };
+    const effectiveTemplate =
+      templatesById.get(String(effective.template_id || "")) || workspaceTemplate || DEFAULT_TEMPLATE;
+    return {
+      ...mailbox,
+      inherits_workspace: !override,
+      override,
+      effective,
+      template: effectiveTemplate,
+    };
+  });
+
+  return {
+    workspace_setting: workspaceSetting,
+    workspace_template: workspaceTemplate,
+    mailboxes: mailboxPayload,
+    // Compatibility for the current UI during the coordinated web rollout.
+    setting: workspaceSetting,
+    template: workspaceTemplate,
+  };
 }
 
-async function loadSettings(serviceClient, scope) {
-  const query = serviceClient
-    .from("mail_auto_reply_settings")
-    .select(
-      "id, workspace_id, mailbox_id, enabled, trigger_mode, cooldown_minutes, subject_template, body_text_template, body_html_template, template_id, updated_at"
-    )
-    .eq("workspace_id", scope.workspaceId)
-    .order("updated_at", { ascending: false })
-    .limit(10);
-  const { data, error } = await query;
-  if (error) throw new Error(error.message);
-  const rows = Array.isArray(data) ? data : [];
-  return rows.find((row) => !row.mailbox_id) || rows[0] || null;
+async function requireContext() {
+  const { userId: clerkUserId, orgId } = await auth();
+  if (!clerkUserId) return { response: NextResponse.json({ error: "You must be signed in." }, { status: 401 }) };
+  const serviceClient = createServiceClient();
+  if (!serviceClient) {
+    return { response: NextResponse.json({ error: "Supabase service configuration is missing." }, { status: 500 }) };
+  }
+  const scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
+  if (!scope.workspaceId) {
+    return { response: NextResponse.json({ error: "Workspace scope not found." }, { status: 404 }) };
+  }
+  return { serviceClient, scope };
 }
 
-async function loadTemplate(serviceClient, scope, templateId) {
-  if (!templateId) return null;
-  const query = serviceClient
-    .from("mail_auto_reply_templates")
-    .select("id, name, html_layout, plain_text_fallback, updated_at")
-    .eq("workspace_id", scope.workspaceId)
-    .eq("id", templateId)
+async function validateMailbox(serviceClient, workspaceId, mailboxId) {
+  if (!mailboxId) return null;
+  const { data, error } = await serviceClient
+    .from("mail_accounts")
+    .select("id")
+    .eq("workspace_id", workspaceId)
+    .eq("id", mailboxId)
     .maybeSingle();
-  const { data, error } = await query;
   if (error) throw new Error(error.message);
-  return data || null;
+  if (!data?.id) throw new Error("Mailbox not found in this workspace.");
+  return data.id;
 }
 
 export async function GET() {
-  const { userId: clerkUserId, orgId } = await auth();
-  if (!clerkUserId) {
-    return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
-  }
-
-  const serviceClient = createServiceClient();
-  if (!serviceClient) {
-    return NextResponse.json({ error: "Supabase service configuration is missing." }, { status: 500 });
-  }
-
   try {
-    const scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
-    if (!scope.workspaceId) {
-      return NextResponse.json({ error: "Workspace scope not found." }, { status: 404 });
-    }
-
-    const setting = await loadSettings(serviceClient, scope);
-    const template = await loadTemplate(serviceClient, scope, setting?.template_id || null);
-    return NextResponse.json(
-      {
-        setting: setting
-          ? {
-              ...setting,
-              subject_template: setting.subject_template || DEFAULT_SUBJECT,
-              body_text_template: setting.body_text_template || DEFAULT_TEXT,
-              body_html_template: setting.body_html_template || "",
-            }
-          : {
-              id: null,
-              enabled: false,
-              trigger_mode: "first_inbound_per_thread",
-              cooldown_minutes: 1440,
-              subject_template: DEFAULT_SUBJECT,
-              body_text_template: DEFAULT_TEXT,
-              body_html_template: "",
-              template_id: null,
-            },
-        template: template || {
-          id: null,
-          name: "Default template",
-          html_layout: DEFAULT_TEMPLATE_HTML,
-          plain_text_fallback: "",
-        },
-      },
-      { status: 200 }
-    );
+    const context = await requireContext();
+    if (context.response) return context.response;
+    const payload = await loadConfiguration(context.serviceClient, context.scope.workspaceId);
+    return NextResponse.json(payload, { status: 200 });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
 export async function PUT(request) {
-  const { userId: clerkUserId, orgId } = await auth();
-  if (!clerkUserId) {
-    return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
-  }
-
-  const serviceClient = createServiceClient();
-  if (!serviceClient) {
-    return NextResponse.json({ error: "Supabase service configuration is missing." }, { status: 500 });
-  }
-
-  let body = null;
+  let body;
   try {
     body = await request.json();
   } catch {
-    body = null;
+    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
   try {
-    const scope = await resolveAuthScope(serviceClient, { clerkUserId, orgId });
-    if (!scope.workspaceId) {
-      return NextResponse.json({ error: "Workspace scope not found." }, { status: 404 });
+    const context = await requireContext();
+    if (context.response) return context.response;
+    const { serviceClient, scope } = context;
+    const mailboxId = asString(body?.mailbox_id) || null;
+    await validateMailbox(serviceClient, scope.workspaceId, mailboxId);
+
+    let existingQuery = serviceClient
+      .from("mail_auto_reply_settings")
+      .select("id, template_id")
+      .eq("workspace_id", scope.workspaceId);
+    existingQuery = mailboxId
+      ? existingQuery.eq("mailbox_id", mailboxId)
+      : existingQuery.is("mailbox_id", null);
+    const { data: scopedExisting, error: existingError } = await existingQuery.maybeSingle();
+    if (existingError) throw new Error(existingError.message);
+
+    if (mailboxId && body?.inherit === true) {
+      if (scopedExisting?.id) {
+        const { error } = await serviceClient
+          .from("mail_auto_reply_settings")
+          .delete()
+          .eq("workspace_id", scope.workspaceId)
+          .eq("id", scopedExisting.id);
+        if (error) throw new Error(error.message);
+      }
+      return NextResponse.json(
+        await loadConfiguration(serviceClient, scope.workspaceId),
+        { status: 200 },
+      );
     }
 
-    const existing = await loadSettings(serviceClient, scope);
-    const templateName = asString(body?.template_name, "Auto reply template");
-    const templateHtml = asString(body?.template_html, DEFAULT_TEMPLATE_HTML);
-    const templateTextFallback = asString(body?.template_text_fallback, "");
+    const templateName = asString(body?.template_name, "Customer confirmation template");
+    const templateHtml = asString(body?.template_html, CUSTOMER_CONFIRMATION_DEFAULT_LAYOUT);
+    const templateTextFallback = asString(body?.template_text_fallback);
     const nowIso = new Date().toISOString();
+    // A new mailbox override receives its own template. It must never update the
+    // workspace template merely because the effective config exposed that id.
+    let templateId = asString(
+      scopedExisting?.template_id || (!mailboxId ? body?.template_id : ""),
+    );
 
-    let templateId = asString(body?.template_id || existing?.template_id || "");
     if (templateId) {
-      const templateUpdateQuery = serviceClient
+      const { data, error } = await serviceClient
         .from("mail_auto_reply_templates")
         .update({
           name: templateName,
@@ -164,15 +212,9 @@ export async function PUT(request) {
         .eq("id", templateId)
         .select("id")
         .maybeSingle();
-      const { data: updatedTemplate, error: updateTemplateError } = await templateUpdateQuery;
-      if (updateTemplateError || !updatedTemplate?.id) {
-        return NextResponse.json(
-          { error: updateTemplateError?.message || "Could not update template." },
-          { status: 500 }
-        );
-      }
+      if (error || !data?.id) throw new Error(error?.message || "Could not update confirmation template.");
     } else {
-      const { data: insertedTemplate, error: insertTemplateError } = await serviceClient
+      const { data, error } = await serviceClient
         .from("mail_auto_reply_templates")
         .insert({
           workspace_id: scope.workspaceId,
@@ -184,60 +226,44 @@ export async function PUT(request) {
         })
         .select("id")
         .maybeSingle();
-      if (insertTemplateError || !insertedTemplate?.id) {
-        return NextResponse.json(
-          { error: insertTemplateError?.message || "Could not create template." },
-          { status: 500 }
-        );
-      }
-      templateId = insertedTemplate.id;
+      if (error || !data?.id) throw new Error(error?.message || "Could not create confirmation template.");
+      templateId = data.id;
     }
 
-    const payload = {
+    const values = {
+      workspace_id: scope.workspaceId,
+      mailbox_id: mailboxId,
       enabled: asBool(body?.enabled, false),
-      trigger_mode: asString(body?.trigger_mode, "first_inbound_per_thread"),
-      cooldown_minutes: asCooldownMinutes(body?.cooldown_minutes),
-      subject_template: asString(body?.subject_template, DEFAULT_SUBJECT),
-      body_text_template: asString(body?.body_text_template, DEFAULT_TEXT),
-      body_html_template: asString(body?.body_html_template, ""),
-      template_id: templateId || null,
+      include_ticket_number: asBool(body?.include_ticket_number, true),
+      trigger_mode: "first_inbound_per_thread",
+      cooldown_minutes: 1440,
+      subject_template: asString(body?.subject_template, CUSTOMER_CONFIRMATION_DEFAULT_SUBJECT),
+      body_text_template: asString(body?.body_text_template, CUSTOMER_CONFIRMATION_DEFAULT_TEXT),
+      body_html_template: asString(body?.body_html_template),
+      template_id: templateId,
       updated_at: nowIso,
     };
 
-    if (existing?.id) {
-      const updateQuery = serviceClient
+    if (scopedExisting?.id) {
+      const { error } = await serviceClient
         .from("mail_auto_reply_settings")
-        .update({
-          ...payload,
-        })
+        .update(values)
         .eq("workspace_id", scope.workspaceId)
-        .eq("id", existing.id)
-        .select("id")
-        .maybeSingle();
-      const { data: updated, error: updateError } = await updateQuery;
-      if (updateError || !updated?.id) {
-        return NextResponse.json({ error: updateError?.message || "Could not save settings." }, { status: 500 });
-      }
+        .eq("id", scopedExisting.id);
+      if (error) throw new Error(error.message);
     } else {
-      const { data: inserted, error: insertError } = await serviceClient
+      const { error } = await serviceClient
         .from("mail_auto_reply_settings")
-        .insert({
-          workspace_id: scope.workspaceId,
-          mailbox_id: null,
-          ...payload,
-          created_at: nowIso,
-        })
-        .select("id")
-        .maybeSingle();
-      if (insertError || !inserted?.id) {
-        return NextResponse.json({ error: insertError?.message || "Could not save settings." }, { status: 500 });
-      }
+        .insert({ ...values, created_at: nowIso });
+      if (error) throw new Error(error.message);
     }
 
-    const setting = await loadSettings(serviceClient, scope);
-    const template = await loadTemplate(serviceClient, scope, templateId);
-    return NextResponse.json({ setting, template }, { status: 200 });
+    return NextResponse.json(
+      await loadConfiguration(serviceClient, scope.workspaceId),
+      { status: 200 },
+    );
   } catch (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const status = /Mailbox not found/i.test(error.message) ? 400 : 500;
+    return NextResponse.json({ error: error.message }, { status });
   }
 }

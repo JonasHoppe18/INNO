@@ -3,6 +3,7 @@ import shopifyLogo from "../../../../assets/Shopify-Logo.png";
 import { memo } from "react";
 import { ExternalLink, RefreshCw, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { formatTicketReference } from "@/lib/tickets/reference";
 
 const formatTimestamp = (value) => {
   if (!value) return null;
@@ -55,15 +56,7 @@ const formatTicketStatus = (value) => {
   return "Open";
 };
 
-const formatTicketRef = (ticketNumber) => {
-  const raw = String(ticketNumber ?? "").trim();
-  if (!raw) return "No ticket ID";
-  const digits = raw.replace(/\D/g, "");
-  const parsed = Number(digits);
-  return Number.isFinite(parsed) && parsed > 0
-    ? `T-${String(parsed).padStart(6, "0")}`
-    : "No ticket ID";
-};
+const formatTicketRef = (ticketNumber) => formatTicketReference(ticketNumber);
 
 function CustomerTabComponent({ data, loading, error, onRefresh, lookupParams, onOpenTicket }) {
   if (loading) {

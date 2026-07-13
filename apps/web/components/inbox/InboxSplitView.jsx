@@ -57,6 +57,7 @@ import { registerThreadMoveHandler } from "@/lib/inbox/thread-drag-bridge";
 import { useThreadSelection } from "@/lib/inbox/useThreadSelection";
 import { useThreadActions } from "@/lib/inbox/useThreadActions";
 import { useComposerState } from "@/lib/inbox/useComposerState";
+import { matchesTicketReference } from "@/lib/tickets/reference";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -1601,22 +1602,15 @@ export function InboxSplitView({
           const subject = (thread.subject || "").toLowerCase();
           const snippet = (thread.snippet || "").toLowerCase();
           const customer = (customerByThread[thread.id] || "").toLowerCase();
-          const ticketNumber = Number(thread?.ticket_number);
-          const hasTicketNumber =
-            Number.isFinite(ticketNumber) && ticketNumber > 0;
-          const ticketRefDisplay = hasTicketNumber
-            ? `t-${String(ticketNumber).padStart(6, "0")}`
-            : "";
-          const ticketRefRaw = hasTicketNumber ? `t-${ticketNumber}` : "";
-          const shouldMatchTicketRef = query.startsWith("t-");
+          const ticketRefMatches = matchesTicketReference(
+            thread?.ticket_number,
+            query,
+          );
           if (
             !subject.includes(query) &&
             !snippet.includes(query) &&
             !customer.includes(query) &&
-            !(
-              shouldMatchTicketRef &&
-              (ticketRefDisplay.includes(query) || ticketRefRaw.includes(query))
-            )
+            !ticketRefMatches
           ) {
             return false;
           }

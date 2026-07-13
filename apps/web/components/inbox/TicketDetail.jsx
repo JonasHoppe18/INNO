@@ -8,6 +8,7 @@ import { ActionCard } from "@/components/inbox/ActionCard";
 import { TrackingCard } from "@/components/inbox/TrackingCard";
 import { ThreadTagsBar } from "@/components/inbox/ThreadTagsBar";
 import { getReplyTargetEmail, getSenderLabel, isOutboundMessage } from "@/components/inbox/inbox-utils";
+import { formatTicketReference } from "@/lib/tickets/reference";
 
 const APPROVAL_ACTION_TYPES = new Set([
   "update_shipping_address",
@@ -612,9 +613,7 @@ function TicketDetailComponent({
   const toEmail = getReplyTargetEmail(firstMessage);
   const senderLabel = getSenderLabel(firstMessage);
   const toLabel = toEmail ? `${senderLabel} <${toEmail}>` : senderLabel;
-  const threadTicketRef = Number.isFinite(Number(thread?.ticket_number))
-    ? `T-${String(Number(thread.ticket_number)).padStart(6, "0")}`
-    : "No ticket ID";
+  const threadTicketRef = formatTicketReference(thread?.ticket_number);
   const hasTicketNumber = threadTicketRef !== "No ticket ID";
 
   return (

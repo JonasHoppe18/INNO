@@ -27,6 +27,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import {
+  formatTicketReference,
+  ticketReferenceSearchTerms,
+} from "@/lib/tickets/reference";
 
 const FILTERS = [
   { value: "all", label: "All" },
@@ -117,16 +121,12 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
         const status = normalizeStatusLabel(thread?.status);
         const createdAt = thread?.created_at || null;
         const lastActivity = thread?.last_message_at || thread?.updated_at || createdAt || null;
-        const ticketNumber = Number(thread?.ticket_number);
-        const hasTicketNumber = Number.isFinite(ticketNumber) && ticketNumber > 0;
-        const ticketRef = hasTicketNumber
-          ? `T-${String(ticketNumber).padStart(6, "0")}`
-          : "No ticket ID";
-        const ticketRefRaw = hasTicketNumber ? `t-${ticketNumber}` : "";
+        const ticketRef = formatTicketReference(thread?.ticket_number);
+        const ticketRefSearchTerms = ticketReferenceSearchTerms(thread?.ticket_number);
         return {
           id: String(thread?.id || ""),
           ticketRef,
-          ticketRefRaw,
+          ticketRefSearchTerms,
           subject,
           snippet: String(thread?.snippet || "").trim(),
           status,
@@ -169,7 +169,7 @@ export function InboxTicketsTable({ threads = [], members = [] }) {
         if (!normalizedQuery) return true;
         const ticketMatch = normalizedQuery.startsWith("t-")
           ? row.ticketRef.toLowerCase().includes(normalizedQuery) ||
-            row.ticketRefRaw.includes(normalizedQuery)
+            row.ticketRefSearchTerms.some((term) => term.includes(normalizedQuery))
           : false;
         return (
           ticketMatch ||

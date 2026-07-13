@@ -100,7 +100,7 @@ const MENU_SECTIONS = [
 ];
 
 const EMAIL_SECTIONS = [
-  { key: "auto-reply", label: "Auto-reply" },
+  { key: "auto-reply", label: "Customer confirmation" },
   { key: "routing", label: "Routing" },
   { key: "sender-rules", label: "Sender rules" },
   { key: "blocklist", label: "Blocklist" },
@@ -1384,6 +1384,17 @@ function EmailSettings({
   onSubjectTemplateChange,
   bodyTextTemplate,
   onBodyTextTemplateChange,
+  bodyHtmlTemplate = "",
+  onBodyHtmlTemplateChange,
+  confirmationTemplateHtml = "",
+  includeTicketNumber = true,
+  onIncludeTicketNumberChange,
+  confirmationMailboxes = [],
+  selectedConfirmationMailboxId = "",
+  onConfirmationMailboxChange,
+  inheritsWorkspace = false,
+  onInheritsWorkspaceChange,
+  currentUserEmail = "",
   signatureIsActive = true,
   onSignatureIsActiveChange,
   signatureTemplateHtml = "",
@@ -1425,6 +1436,9 @@ function EmailSettings({
   const [signatureBuilderOpen, setSignatureBuilderOpen] = useState(false);
   const [signatureDraft, setSignatureDraft] = useState(DEFAULT_SIGNATURE_BUILDER);
   const [signatureLogoUploadError, setSignatureLogoUploadError] = useState("");
+  const [testConfirmationOpen, setTestConfirmationOpen] = useState(false);
+  const [testConfirmationEmail, setTestConfirmationEmail] = useState(currentUserEmail || "");
+  const [sendingConfirmationTest, setSendingConfirmationTest] = useState(false);
 
   useEffect(() => {
     setDraftSubject(subjectTemplate || "");
@@ -1433,6 +1447,50 @@ function EmailSettings({
   useEffect(() => {
     setDraftBody(bodyTextTemplate || "");
   }, [bodyTextTemplate]);
+
+  useEffect(() => {
+    if (testConfirmationOpen && !testConfirmationEmail) {
+      setTestConfirmationEmail(currentUserEmail || "");
+    }
+  }, [currentUserEmail, testConfirmationEmail, testConfirmationOpen]);
+
+  const handleSendConfirmationTest = useCallback(async () => {
+    if (sendingConfirmationTest) return;
+    setSendingConfirmationTest(true);
+    try {
+      const response = await fetch("/api/settings/auto-reply/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          recipient: testConfirmationEmail,
+          mailbox_id: selectedConfirmationMailboxId || null,
+          include_ticket_number: includeTicketNumber,
+          subject_template: subjectTemplate,
+          body_text_template: bodyTextTemplate,
+          body_html_template: bodyHtmlTemplate,
+          template_html: confirmationTemplateHtml,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error || "Could not send test confirmation.");
+      toast.success(`Test confirmation sent to ${testConfirmationEmail}.`);
+      setTestConfirmationOpen(false);
+    } catch (error) {
+      toast.error(error?.message || "Could not send test confirmation.");
+    } finally {
+      setSendingConfirmationTest(false);
+    }
+  }, [
+    bodyTextTemplate,
+    bodyHtmlTemplate,
+    confirmationTemplateHtml,
+    includeTicketNumber,
+    selectedConfirmationMailboxId,
+    sendingConfirmationTest,
+    subjectTemplate,
+    testConfirmationEmail,
+  ]);
 
   const handleToggleEnabled = useCallback(
     (nextValue) => {
@@ -1444,8 +1502,9 @@ function EmailSettings({
   const handleSaveMessage = useCallback(() => {
     onSubjectTemplateChange(draftSubject);
     onBodyTextTemplateChange(draftBody);
+    onBodyHtmlTemplateChange?.("");
     setMessageModalOpen(false);
-  }, [draftBody, draftSubject, onBodyTextTemplateChange, onSubjectTemplateChange]);
+  }, [draftBody, draftSubject, onBodyHtmlTemplateChange, onBodyTextTemplateChange, onSubjectTemplateChange]);
 
   const handleCreateCategory = useCallback(() => {
     const label = String(newCategoryLabel || "").trim();
@@ -1604,6 +1663,12 @@ function EmailSettings({
     .map((line) => line.trim())
     .filter(Boolean)
     .slice(0, 3);
+  const confirmationControlsDisabled = Boolean(
+    saving || (selectedConfirmationMailboxId && inheritsWorkspace)
+  );
+  const previewSubject = `${includeTicketNumber ? "[T-50001] " : ""}${
+    subjectTemplate || "We've received your message"
+  }`;
 
   const signaturePreviewHtml = useMemo(() => {
     const sampleReply = "Message body preview.";
@@ -1667,12 +1732,61 @@ function EmailSettings({
       </div>
 
       <div className="space-y-4">
+        {confirmationMailboxes.length > 1 ? (
+          <div className={cn("rounded-2xl border border-border bg-card p-6", activeSection !== "auto-reply" && "hidden")}>
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(260px,40%)_1fr] md:items-start">
+            <div>
+              <h3 className="font-medium text-foreground">Configuration scope</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Set the workspace default or override it for one mailbox.
+              </p>
+            </div>
+            <div className="space-y-3">
+              <Select
+                value={selectedConfirmationMailboxId || "workspace"}
+                onValueChange={(value) => onConfirmationMailboxChange?.(value === "workspace" ? "" : value)}
+                disabled={saving}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose configuration" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="workspace">Workspace default</SelectItem>
+                  {confirmationMailboxes.map((mailbox) => (
+                    <SelectItem key={mailbox.id} value={mailbox.id}>
+                      {mailbox.from_name || mailbox.from_email || mailbox.provider_email || "Mailbox"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {selectedConfirmationMailboxId ? (
+                <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-border p-3">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-4 w-4 rounded border-border"
+                    checked={inheritsWorkspace}
+                    onChange={(event) => onInheritsWorkspaceChange?.(event.target.checked)}
+                    disabled={saving}
+                  />
+                  <span>
+                    <span className="block text-sm font-medium text-foreground">Use workspace default</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      Remove this mailbox override and inherit future workspace changes.
+                    </span>
+                  </span>
+                </label>
+              ) : null}
+            </div>
+          </div>
+          </div>
+        ) : null}
+
         <div className={cn("rounded-2xl border border-border bg-card p-6", activeSection !== "auto-reply" && "hidden")}>
           <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(260px,40%)_1fr] md:items-center">
             <div>
-              <h3 className="font-medium text-foreground">Enable Auto-Reply</h3>
+              <h3 className="font-medium text-foreground">Send confirmation email</h3>
               <p className="mt-1 text-sm text-muted-foreground">
-                Automatically send a response when new customers contact you via email.
+                Send once when a customer creates a new support ticket. Follow-up messages never trigger it.
               </p>
             </div>
             <div className="flex items-center justify-end">
@@ -1681,11 +1795,11 @@ function EmailSettings({
                 role="switch"
                 aria-checked={enabled}
                 onClick={() => handleToggleEnabled(!enabled)}
-                disabled={saving}
+                disabled={confirmationControlsDisabled}
                 className={cn(
                   "relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-200",
                   enabled ? "bg-emerald-500" : "bg-slate-200",
-                  saving && "cursor-not-allowed opacity-70"
+                  confirmationControlsDisabled && "cursor-not-allowed opacity-70"
                 )}
               >
                 <span
@@ -1700,11 +1814,41 @@ function EmailSettings({
         </div>
 
         <div className={cn("rounded-2xl border border-border bg-card p-6", activeSection !== "auto-reply" && "hidden")}>
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(260px,40%)_1fr] md:items-center">
+            <div>
+              <h3 className="font-medium text-foreground">Include ticket reference</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Add the system-managed reference to the subject and email footer.
+              </p>
+            </div>
+            <div className="flex items-center justify-end">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={includeTicketNumber}
+                onClick={() => onIncludeTicketNumberChange?.(!includeTicketNumber)}
+                disabled={confirmationControlsDisabled}
+                className={cn(
+                  "relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-200",
+                  includeTicketNumber ? "bg-emerald-500" : "bg-slate-200",
+                  confirmationControlsDisabled && "cursor-not-allowed opacity-70"
+                )}
+              >
+                <span className={cn(
+                  "inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200",
+                  includeTicketNumber ? "translate-x-6" : "translate-x-1"
+                )} />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className={cn("rounded-2xl border border-border bg-card p-6", activeSection !== "auto-reply" && "hidden")}>
           <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(260px,40%)_1fr]">
             <div className="min-w-0">
-              <h3 className="font-medium text-foreground">Auto-Reply Message</h3>
+              <h3 className="font-medium text-foreground">Confirmation message</h3>
               <p className="mt-1 text-sm text-muted-foreground">
-                Message sent to new customers. Click edit to update text and preview.
+                The ticket reference is inserted by Sona and cannot be removed from this text.
               </p>
             </div>
             <div className="min-w-0 space-y-3">
@@ -1714,7 +1858,7 @@ function EmailSettings({
                   variant="outline"
                   className="border border-gray-200 bg-white"
                   onClick={() => setMessageModalOpen(true)}
-                  disabled={saving}
+                  disabled={confirmationControlsDisabled}
                 >
                   <PenLine className="mr-2 h-4 w-4" />
                   Edit
@@ -1723,7 +1867,7 @@ function EmailSettings({
               <div className="min-w-0 rounded-xl border border-border bg-card p-4">
                 <p className="text-xs font-medium tracking-wide text-muted-foreground">Preview</p>
                 <p className="mt-2 text-sm font-medium text-foreground">
-                  {subjectTemplate || "Tak for din henvendelse"}
+                  {previewSubject}
                 </p>
                 <div className="mt-2 space-y-1 text-sm text-muted-foreground">
                   {previewLines.length ? (
@@ -1735,6 +1879,16 @@ function EmailSettings({
                   ) : (
                     <p className="text-slate-400">No message set yet.</p>
                   )}
+                </div>
+                {includeTicketNumber ? (
+                  <p className="mt-4 border-t border-border pt-3 text-xs text-muted-foreground">
+                    Ticket reference: T-50001
+                  </p>
+                ) : null}
+                <div className="mt-4 flex justify-end">
+                  <Button type="button" variant="outline" size="sm" onClick={() => setTestConfirmationOpen(true)}>
+                    Send test email
+                  </Button>
                 </div>
               </div>
             </div>
@@ -2273,10 +2427,10 @@ function EmailSettings({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <PenLine className="h-4 w-4" />
-              Auto-Reply Message
+              Customer confirmation message
             </DialogTitle>
             <DialogDescription>
-              This message will be sent automatically when a new customer contacts you by email.
+              This message is sent once when a customer creates a new support ticket.
             </DialogDescription>
           </DialogHeader>
 
@@ -2286,7 +2440,7 @@ function EmailSettings({
               <Input
                 value={draftSubject}
                 onChange={(event) => setDraftSubject(event.target.value)}
-                placeholder="Tak for din henvendelse"
+                placeholder="We've received your message"
               />
             </div>
 
@@ -2311,7 +2465,10 @@ function EmailSettings({
                 <div className="border-b border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600">
                   <div>From: [sender]</div>
                   <div>To: [recipient]</div>
-                  <div>Subject: {draftSubject || "Tak for din henvendelse"}</div>
+                  <div>
+                    Subject: {includeTicketNumber ? "[T-50001] " : ""}
+                    {draftSubject || "We've received your message"}
+                  </div>
                 </div>
                 <div
                   className="p-4 text-sm text-slate-900"
@@ -2321,6 +2478,9 @@ function EmailSettings({
                       .replace(/>/g, "&gt;")}</div>`,
                   }}
                 />
+                {includeTicketNumber ? (
+                  <div className="px-4 pb-4 text-xs text-slate-500">Ticket reference: T-50001</div>
+                ) : null}
               </div>
             </div>
           </div>
@@ -2335,7 +2495,35 @@ function EmailSettings({
               Cancel
             </Button>
             <Button type="button" onClick={handleSaveMessage} disabled={saving}>
-              {saving ? "Saving..." : "Save Message"}
+              {saving ? "Saving..." : "Save message"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={testConfirmationOpen} onOpenChange={setTestConfirmationOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Send test confirmation</DialogTitle>
+            <DialogDescription>
+              Send the current preview without creating a ticket or conversation event.
+            </DialogDescription>
+          </DialogHeader>
+          <label className="space-y-1.5">
+            <span className="text-sm font-medium text-foreground">Recipient email</span>
+            <Input
+              type="email"
+              value={testConfirmationEmail}
+              onChange={(event) => setTestConfirmationEmail(event.target.value)}
+              placeholder="you@example.com"
+              autoFocus
+            />
+          </label>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setTestConfirmationOpen(false)} disabled={sendingConfirmationTest}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={handleSendConfirmationTest} disabled={sendingConfirmationTest || !testConfirmationEmail.trim()}>
+              {sendingConfirmationTest ? "Sending…" : "Send test email"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2882,11 +3070,10 @@ export function SettingsPanel() {
   const [workspaceCurrentRole, setWorkspaceCurrentRole] = useState("");
   const [canManageWorkspaceMembers, setCanManageWorkspaceMembers] = useState(false);
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
-  const [autoReplyTriggerMode, setAutoReplyTriggerMode] = useState("first_inbound_per_thread");
-  const [autoReplyCooldownMinutes, setAutoReplyCooldownMinutes] = useState("1440");
-  const [autoReplySubjectTemplate, setAutoReplySubjectTemplate] = useState("Tak for din henvendelse");
+  const [autoReplyIncludeTicketNumber, setAutoReplyIncludeTicketNumber] = useState(true);
+  const [autoReplySubjectTemplate, setAutoReplySubjectTemplate] = useState("We've received your message");
   const [autoReplyBodyTextTemplate, setAutoReplyBodyTextTemplate] = useState(
-    "Hej,\n\nTak for din henvendelse. Vi har modtaget din besked og vender tilbage hurtigst muligt.\n\nMed venlig hilsen\nSona Team"
+    "Hi {{customer_first_name}},\n\nThanks for contacting us. We've received your message and our support team will get back to you as soon as possible. You can reply directly to this email if you would like to add more information.\n\nBest,\n{{team_name}}"
   );
   const [autoReplyBodyHtmlTemplate, setAutoReplyBodyHtmlTemplate] = useState("");
   const [autoReplyTemplateId, setAutoReplyTemplateId] = useState(null);
@@ -2898,19 +3085,22 @@ export function SettingsPanel() {
   const [signatureTemplateHtml, setSignatureTemplateHtml] = useState("");
   const [sendingSignatureTest, setSendingSignatureTest] = useState(false);
   const [savingAutoReply, setSavingAutoReply] = useState(false);
+  const [confirmationConfiguration, setConfirmationConfiguration] = useState(null);
+  const [selectedConfirmationMailboxId, setSelectedConfirmationMailboxId] = useState("");
+  const [autoReplyInheritsWorkspace, setAutoReplyInheritsWorkspace] = useState(false);
   const [emailRoutingRows, setEmailRoutingRows] = useState([]);
   const [emailSenderRuleRows, setEmailSenderRuleRows] = useState([]);
   const [emailBlocklistRows, setEmailBlocklistRows] = useState([]);
   const [workspaceInboxesForRules, setWorkspaceInboxesForRules] = useState([]);
   const [savingEmailRouting, setSavingEmailRouting] = useState(false);
   const [initialAutoReplyEnabled, setInitialAutoReplyEnabled] = useState(false);
-  const [initialAutoReplyTriggerMode, setInitialAutoReplyTriggerMode] = useState("first_inbound_per_thread");
-  const [initialAutoReplyCooldownMinutes, setInitialAutoReplyCooldownMinutes] = useState("1440");
+  const [initialAutoReplyIncludeTicketNumber, setInitialAutoReplyIncludeTicketNumber] = useState(true);
+  const [initialAutoReplyInheritsWorkspace, setInitialAutoReplyInheritsWorkspace] = useState(false);
   const [initialAutoReplySubjectTemplate, setInitialAutoReplySubjectTemplate] = useState(
-    "Tak for din henvendelse"
+    "We've received your message"
   );
   const [initialAutoReplyBodyTextTemplate, setInitialAutoReplyBodyTextTemplate] = useState(
-    "Hej,\n\nTak for din henvendelse. Vi har modtaget din besked og vender tilbage hurtigst muligt.\n\nMed venlig hilsen\nSona Team"
+    "Hi {{customer_first_name}},\n\nThanks for contacting us. We've received your message and our support team will get back to you as soon as possible. You can reply directly to this email if you would like to add more information.\n\nBest,\n{{team_name}}"
   );
   const [initialAutoReplyBodyHtmlTemplate, setInitialAutoReplyBodyHtmlTemplate] = useState("");
   const [initialAutoReplyTemplateId, setInitialAutoReplyTemplateId] = useState(null);
@@ -3199,23 +3389,25 @@ export function SettingsPanel() {
         setInitialAiPrompt(resolved);
       }
 
-      // Apply auto-reply state
+      // Apply customer-confirmation workspace default.
       if (autoReplyResponse?.ok) {
-        const setting = autoReplyPayload?.setting || {};
-        const template = autoReplyPayload?.template || {};
+        const setting = autoReplyPayload?.workspace_setting || autoReplyPayload?.setting || {};
+        const template = autoReplyPayload?.workspace_template || autoReplyPayload?.template || {};
+        setConfirmationConfiguration(autoReplyPayload || null);
+        setSelectedConfirmationMailboxId("");
+        setAutoReplyInheritsWorkspace(false);
+        setInitialAutoReplyInheritsWorkspace(false);
         setAutoReplyEnabled(Boolean(setting?.enabled));
         setInitialAutoReplyEnabled(Boolean(setting?.enabled));
-        setAutoReplyTriggerMode(String(setting?.trigger_mode || "first_inbound_per_thread"));
-        setInitialAutoReplyTriggerMode(String(setting?.trigger_mode || "first_inbound_per_thread"));
-        setAutoReplyCooldownMinutes(String(setting?.cooldown_minutes ?? 1440));
-        setInitialAutoReplyCooldownMinutes(String(setting?.cooldown_minutes ?? 1440));
-        setAutoReplySubjectTemplate(String(setting?.subject_template || "Tak for din henvendelse"));
-        setInitialAutoReplySubjectTemplate(String(setting?.subject_template || "Tak for din henvendelse"));
+        setAutoReplyIncludeTicketNumber(setting?.include_ticket_number !== false);
+        setInitialAutoReplyIncludeTicketNumber(setting?.include_ticket_number !== false);
+        setAutoReplySubjectTemplate(String(setting?.subject_template || "We've received your message"));
+        setInitialAutoReplySubjectTemplate(String(setting?.subject_template || "We've received your message"));
         setAutoReplyBodyTextTemplate(
-          String(setting?.body_text_template || "Hej,\n\nTak for din henvendelse. Vi har modtaget din besked og vender tilbage hurtigst muligt.\n\nMed venlig hilsen\nSona Team")
+          String(setting?.body_text_template || "Hi {{customer_first_name}},\n\nThanks for contacting us. We've received your message and our support team will get back to you as soon as possible. You can reply directly to this email if you would like to add more information.\n\nBest,\n{{team_name}}")
         );
         setInitialAutoReplyBodyTextTemplate(
-          String(setting?.body_text_template || "Hej,\n\nTak for din henvendelse. Vi har modtaget din besked og vender tilbage hurtigst muligt.\n\nMed venlig hilsen\nSona Team")
+          String(setting?.body_text_template || "Hi {{customer_first_name}},\n\nThanks for contacting us. We've received your message and our support team will get back to you as soon as possible. You can reply directly to this email if you would like to add more information.\n\nBest,\n{{team_name}}")
         );
         setAutoReplyBodyHtmlTemplate(String(setting?.body_html_template || ""));
         setInitialAutoReplyBodyHtmlTemplate(String(setting?.body_html_template || ""));
@@ -3457,6 +3649,46 @@ export function SettingsPanel() {
     initialTestMode,
   ]);
 
+  const applyConfirmationScope = useCallback((mailboxId, configuration = confirmationConfiguration) => {
+    const normalizedMailboxId = String(mailboxId || "");
+    const mailbox = normalizedMailboxId
+      ? (configuration?.mailboxes || []).find((row) => String(row?.id || "") === normalizedMailboxId)
+      : null;
+    const setting = mailbox?.effective || configuration?.workspace_setting || configuration?.setting || {};
+    const template = mailbox?.template || configuration?.workspace_template || configuration?.template || {};
+    const inherits = Boolean(normalizedMailboxId && mailbox?.inherits_workspace);
+    const subject = String(setting?.subject_template || "We've received your message");
+    const bodyText = String(setting?.body_text_template || "Hi {{customer_first_name}},\n\nThanks for contacting us. We've received your message and our support team will get back to you as soon as possible. You can reply directly to this email if you would like to add more information.\n\nBest,\n{{team_name}}");
+    const bodyHtml = String(setting?.body_html_template || "");
+    const templateName = String(template?.name || "Customer confirmation template");
+    const templateHtml = String(template?.html_layout || "<div style=\"font-family:Arial,sans-serif;line-height:1.6;color:#111\">{{content}}</div>");
+    const includeTicketNumber = setting?.include_ticket_number !== false;
+
+    setSelectedConfirmationMailboxId(normalizedMailboxId);
+    setAutoReplyInheritsWorkspace(inherits);
+    setInitialAutoReplyInheritsWorkspace(inherits);
+    setAutoReplyEnabled(Boolean(setting?.enabled));
+    setInitialAutoReplyEnabled(Boolean(setting?.enabled));
+    setAutoReplyIncludeTicketNumber(includeTicketNumber);
+    setInitialAutoReplyIncludeTicketNumber(includeTicketNumber);
+    setAutoReplySubjectTemplate(subject);
+    setInitialAutoReplySubjectTemplate(subject);
+    setAutoReplyBodyTextTemplate(bodyText);
+    setInitialAutoReplyBodyTextTemplate(bodyText);
+    setAutoReplyBodyHtmlTemplate(bodyHtml);
+    setInitialAutoReplyBodyHtmlTemplate(bodyHtml);
+    setAutoReplyTemplateId(template?.id || setting?.template_id || null);
+    setInitialAutoReplyTemplateId(template?.id || setting?.template_id || null);
+    setAutoReplyTemplateName(templateName);
+    setInitialAutoReplyTemplateName(templateName);
+    setAutoReplyTemplateHtml(templateHtml);
+    setInitialAutoReplyTemplateHtml(templateHtml);
+  }, [confirmationConfiguration]);
+
+  const handleConfirmationMailboxChange = useCallback((mailboxId) => {
+    applyConfirmationScope(mailboxId);
+  }, [applyConfirmationScope]);
+
   const handleSaveAutoReply = useCallback(async (overrides = {}, options = {}) => {
     const showToast = options?.showToast !== false;
     if (savingAutoReply) return;
@@ -3470,12 +3702,10 @@ export function SettingsPanel() {
       const nextBodyText = String(
         overrides.body_text_template ?? autoReplyBodyTextTemplate ?? ""
       );
-      const nextTriggerMode = String(
-        overrides.trigger_mode ?? autoReplyTriggerMode ?? "first_inbound_per_thread"
-      );
-      const nextCooldownMinutes = Number(
-        overrides.cooldown_minutes ?? autoReplyCooldownMinutes ?? 1440
-      );
+      const nextIncludeTicketNumber =
+        typeof overrides.include_ticket_number === "boolean"
+          ? overrides.include_ticket_number
+          : autoReplyIncludeTicketNumber;
       const nextBodyHtml = String(
         overrides.body_html_template ?? autoReplyBodyHtmlTemplate ?? ""
       );
@@ -3493,9 +3723,10 @@ export function SettingsPanel() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          mailbox_id: selectedConfirmationMailboxId || null,
+          inherit: Boolean(selectedConfirmationMailboxId && autoReplyInheritsWorkspace),
           enabled: nextEnabled,
-          trigger_mode: nextTriggerMode,
-          cooldown_minutes: nextCooldownMinutes,
+          include_ticket_number: nextIncludeTicketNumber,
           subject_template: nextSubject,
           body_text_template: nextBodyText,
           body_html_template: nextBodyHtml,
@@ -3505,24 +3736,15 @@ export function SettingsPanel() {
         }),
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload?.error || "Could not save auto reply settings.");
-      setAutoReplyEnabled(nextEnabled);
-      setAutoReplySubjectTemplate(nextSubject);
-      setAutoReplyBodyTextTemplate(nextBodyText);
-      setAutoReplyTriggerMode(nextTriggerMode);
-      setAutoReplyCooldownMinutes(String(nextCooldownMinutes));
-      setAutoReplyBodyHtmlTemplate(nextBodyHtml);
-      setAutoReplyTemplateName(nextTemplateName);
-      setAutoReplyTemplateHtml(nextTemplateHtml);
-      setAutoReplyTemplateId(
-        payload?.template?.id || payload?.setting?.template_id || nextTemplateId
-      );
+      if (!response.ok) throw new Error(payload?.error || "Could not save customer confirmation settings.");
+      setConfirmationConfiguration(payload);
+      applyConfirmationScope(selectedConfirmationMailboxId, payload);
       if (showToast) {
-        toast.success("Auto reply settings saved.");
+        toast.success("Customer confirmation settings saved.");
       }
       return { ok: true };
     } catch (error) {
-      const message = error?.message || "Could not save auto reply settings.";
+      const message = error?.message || "Could not save customer confirmation settings.";
       if (showToast) {
         toast.error(message);
       }
@@ -3531,16 +3753,18 @@ export function SettingsPanel() {
       setSavingAutoReply(false);
     }
   }, [
+    applyConfirmationScope,
     autoReplyBodyHtmlTemplate,
     autoReplyBodyTextTemplate,
-    autoReplyCooldownMinutes,
     autoReplyEnabled,
+    autoReplyIncludeTicketNumber,
+    autoReplyInheritsWorkspace,
     autoReplySubjectTemplate,
     autoReplyTemplateHtml,
     autoReplyTemplateId,
     autoReplyTemplateName,
-    autoReplyTriggerMode,
     savingAutoReply,
+    selectedConfirmationMailboxId,
   ]);
 
   const handleUpdateEmailRoutingRow = useCallback((row) => {
@@ -3733,8 +3957,8 @@ export function SettingsPanel() {
 
   const hasAutoReplyChanges = useMemo(() => {
     if (Boolean(autoReplyEnabled) !== Boolean(initialAutoReplyEnabled)) return true;
-    if (String(autoReplyTriggerMode || "") !== String(initialAutoReplyTriggerMode || "")) return true;
-    if (String(autoReplyCooldownMinutes || "") !== String(initialAutoReplyCooldownMinutes || "")) return true;
+    if (Boolean(autoReplyIncludeTicketNumber) !== Boolean(initialAutoReplyIncludeTicketNumber)) return true;
+    if (Boolean(autoReplyInheritsWorkspace) !== Boolean(initialAutoReplyInheritsWorkspace)) return true;
     if (String(autoReplySubjectTemplate || "") !== String(initialAutoReplySubjectTemplate || "")) return true;
     if (String(autoReplyBodyTextTemplate || "") !== String(initialAutoReplyBodyTextTemplate || "")) return true;
     if (String(autoReplyBodyHtmlTemplate || "") !== String(initialAutoReplyBodyHtmlTemplate || "")) return true;
@@ -3745,22 +3969,22 @@ export function SettingsPanel() {
   }, [
     autoReplyBodyHtmlTemplate,
     autoReplyBodyTextTemplate,
-    autoReplyCooldownMinutes,
     autoReplyEnabled,
+    autoReplyIncludeTicketNumber,
+    autoReplyInheritsWorkspace,
     autoReplySubjectTemplate,
     autoReplyTemplateHtml,
     autoReplyTemplateId,
     autoReplyTemplateName,
-    autoReplyTriggerMode,
     initialAutoReplyBodyHtmlTemplate,
     initialAutoReplyBodyTextTemplate,
-    initialAutoReplyCooldownMinutes,
     initialAutoReplyEnabled,
+    initialAutoReplyIncludeTicketNumber,
+    initialAutoReplyInheritsWorkspace,
     initialAutoReplySubjectTemplate,
     initialAutoReplyTemplateHtml,
     initialAutoReplyTemplateId,
     initialAutoReplyTemplateName,
-    initialAutoReplyTriggerMode,
   ]);
 
   const hasRoutingChanges = useMemo(
@@ -3795,9 +4019,9 @@ export function SettingsPanel() {
 
   const handleDiscardEmailSettings = useCallback(() => {
     setAutoReplyEnabled(Boolean(initialAutoReplyEnabled));
-    setAutoReplyTriggerMode(String(initialAutoReplyTriggerMode || "first_inbound_per_thread"));
-    setAutoReplyCooldownMinutes(String(initialAutoReplyCooldownMinutes || "1440"));
-    setAutoReplySubjectTemplate(String(initialAutoReplySubjectTemplate || "Tak for din henvendelse"));
+    setAutoReplyIncludeTicketNumber(Boolean(initialAutoReplyIncludeTicketNumber));
+    setAutoReplyInheritsWorkspace(Boolean(initialAutoReplyInheritsWorkspace));
+    setAutoReplySubjectTemplate(String(initialAutoReplySubjectTemplate || "We've received your message"));
     setAutoReplyBodyTextTemplate(String(initialAutoReplyBodyTextTemplate || ""));
     setAutoReplyBodyHtmlTemplate(String(initialAutoReplyBodyHtmlTemplate || ""));
     setAutoReplyTemplateId(initialAutoReplyTemplateId || null);
@@ -3811,13 +4035,13 @@ export function SettingsPanel() {
   }, [
     initialAutoReplyBodyHtmlTemplate,
     initialAutoReplyBodyTextTemplate,
-    initialAutoReplyCooldownMinutes,
     initialAutoReplyEnabled,
+    initialAutoReplyIncludeTicketNumber,
+    initialAutoReplyInheritsWorkspace,
     initialAutoReplySubjectTemplate,
     initialAutoReplyTemplateHtml,
     initialAutoReplyTemplateId,
     initialAutoReplyTemplateName,
-    initialAutoReplyTriggerMode,
     initialSignatureIsActive,
     initialSignatureTemplateHtml,
     initialEmailRoutingRows,
@@ -3833,8 +4057,7 @@ export function SettingsPanel() {
         const autoReplyResult = await handleSaveAutoReply(
           {
             enabled: autoReplyEnabled,
-            trigger_mode: autoReplyTriggerMode,
-            cooldown_minutes: autoReplyCooldownMinutes,
+            include_ticket_number: autoReplyIncludeTicketNumber,
             subject_template: autoReplySubjectTemplate,
             body_text_template: autoReplyBodyTextTemplate,
             body_html_template: autoReplyBodyHtmlTemplate,
@@ -3845,7 +4068,7 @@ export function SettingsPanel() {
           { showToast: false }
         );
         if (!autoReplyResult?.ok) {
-          throw new Error(autoReplyResult?.error || "Could not save auto reply settings.");
+          throw new Error(autoReplyResult?.error || "Could not save customer confirmation settings.");
         }
       }
 
@@ -4083,17 +4306,6 @@ export function SettingsPanel() {
         setEmailBlocklistRows(persistedBlocks);
       }
 
-      if (hasAutoReplyChanges) {
-        setInitialAutoReplyEnabled(Boolean(autoReplyEnabled));
-        setInitialAutoReplyTriggerMode(String(autoReplyTriggerMode || "first_inbound_per_thread"));
-        setInitialAutoReplyCooldownMinutes(String(autoReplyCooldownMinutes || "1440"));
-        setInitialAutoReplySubjectTemplate(String(autoReplySubjectTemplate || ""));
-        setInitialAutoReplyBodyTextTemplate(String(autoReplyBodyTextTemplate || ""));
-        setInitialAutoReplyBodyHtmlTemplate(String(autoReplyBodyHtmlTemplate || ""));
-        setInitialAutoReplyTemplateId(autoReplyTemplateId || null);
-        setInitialAutoReplyTemplateName(String(autoReplyTemplateName || "Default template"));
-        setInitialAutoReplyTemplateHtml(String(autoReplyTemplateHtml || ""));
-      }
       toast.success("Email settings saved.");
     } catch (error) {
       toast.error(error?.message || "Could not save email settings.");
@@ -4103,13 +4315,12 @@ export function SettingsPanel() {
   }, [
     autoReplyBodyHtmlTemplate,
     autoReplyBodyTextTemplate,
-    autoReplyCooldownMinutes,
     autoReplyEnabled,
+    autoReplyIncludeTicketNumber,
     autoReplySubjectTemplate,
     autoReplyTemplateHtml,
     autoReplyTemplateId,
     autoReplyTemplateName,
-    autoReplyTriggerMode,
     canSaveEmailSettings,
     emailBlocklistRows,
     emailRoutingRows,
@@ -4268,6 +4479,17 @@ export function SettingsPanel() {
             onSubjectTemplateChange={setAutoReplySubjectTemplate}
             bodyTextTemplate={autoReplyBodyTextTemplate}
             onBodyTextTemplateChange={setAutoReplyBodyTextTemplate}
+            bodyHtmlTemplate={autoReplyBodyHtmlTemplate}
+            onBodyHtmlTemplateChange={setAutoReplyBodyHtmlTemplate}
+            confirmationTemplateHtml={autoReplyTemplateHtml}
+            includeTicketNumber={autoReplyIncludeTicketNumber}
+            onIncludeTicketNumberChange={setAutoReplyIncludeTicketNumber}
+            confirmationMailboxes={confirmationConfiguration?.mailboxes || []}
+            selectedConfirmationMailboxId={selectedConfirmationMailboxId}
+            onConfirmationMailboxChange={handleConfirmationMailboxChange}
+            inheritsWorkspace={autoReplyInheritsWorkspace}
+            onInheritsWorkspaceChange={setAutoReplyInheritsWorkspace}
+            currentUserEmail={user?.primaryEmailAddress?.emailAddress || ""}
             signatureIsActive={signatureIsActive}
             onSignatureIsActiveChange={setSignatureIsActive}
             signatureTemplateHtml={signatureTemplateHtml}
