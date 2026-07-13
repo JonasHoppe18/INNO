@@ -1808,6 +1808,11 @@ export async function runDraftV2Pipeline(
       matcherAbstained: retrieved.matcher_debug?.abstained === true,
       verifiedFactsCount: Array.isArray(facts.facts) ? facts.facts.length : null,
       structuredFactsCount: structuredFactsProvenance.length,
+      strongTicketExampleCount: Array.isArray(retrieved.past_ticket_examples)
+        ? retrieved.past_ticket_examples.filter(
+            (e) => (e as { is_near_duplicate?: boolean }).is_near_duplicate === true,
+          ).length
+        : null,
     });
     if (groundingCoverage.ungrounded) {
       // Matcher-abstention means the retrieved chunks are topic-adjacent, not

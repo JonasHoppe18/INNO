@@ -2043,7 +2043,7 @@ export async function runRetriever(
           ? plan.primary_intent
           : null;
         const groundingThreshold = Number(
-          Deno.env.get("TICKET_EXAMPLE_GROUNDING_MIN_SIMILARITY") ?? "0.86",
+          Deno.env.get("TICKET_EXAMPLE_GROUNDING_MIN_SIMILARITY") ?? "0.75",
         );
         const ticketQueryText = `${queries.join(" ")} ${
           customerMessage || ""
