@@ -65,7 +65,7 @@ Deno.test("order name only is used when sender identity clearly matches", () => 
   assertEquals(result.source, "verified_order_customer");
 });
 
-Deno.test("matching email alone is not enough to use order customer name", () => {
+Deno.test("matching email alone is now sufficient to use order customer name", () => {
   const result = resolveCustomerName({
     latestCustomerMessage: "Where is my order?",
     senderEmail: "estes.britt@gmail.com",
@@ -73,8 +73,8 @@ Deno.test("matching email alone is not enough to use order customer name", () =>
     orderCustomerName: "Evan Estes",
     orderCustomerEmail: "estes.britt@gmail.com",
   });
-  assertEquals(result.first_name, null);
-  assertEquals(result.source, "none");
+  assertEquals(result.first_name, "Evan");
+  assertEquals(result.source, "verified_order_customer");
 });
 
 Deno.test("quoted prior signature is not read from latest customer message", () => {
@@ -165,4 +165,29 @@ Deno.test("non-personal contact-form name (company) does not resolve", () => {
     contactFormName: "Acme Support Team",
   });
   assertEquals(r.first_name, null);
+});
+
+Deno.test("order-email match alone yields the order first name (concatenated local part)", () => {
+  const r = resolveCustomerName({
+    latestCustomerMessage: "Hello, i made an error in my shipping address, order #4845.",
+    senderEmail: "simonboutrup@gmail.com",
+    senderDisplayName: null,
+    orderCustomerName: "Simon Boutrup",
+    orderCustomerEmail: "simonboutrup@gmail.com",
+    recentCustomerMessages: [],
+  });
+  assertEquals(r.first_name, "Simon");
+  assertEquals(r.source, "verified_order_customer");
+});
+
+Deno.test("order name is NOT used when the order email differs from the sender", () => {
+  const r = resolveCustomerName({
+    latestCustomerMessage: "Hi, question about order #4845.",
+    senderEmail: "someone.else@gmail.com",
+    senderDisplayName: null,
+    orderCustomerName: "Simon Boutrup",
+    orderCustomerEmail: "simonboutrup@gmail.com",
+    recentCustomerMessages: [],
+  });
+  assertEquals(r.first_name === "Simon", false);
 });

@@ -125,6 +125,11 @@ function orderIdentityClearlyMatches(input: {
   const senderEmail = canonicalEmail(input.senderEmail);
   if (orderEmail && senderEmail && orderEmail !== senderEmail) return false;
 
+  // An exact order↔sender email match is sufficient on its own: the emailer IS
+  // the order customer. Fixes concatenated locals ("simonboutrup") that don't
+  // tokenize to the first name.
+  if (orderEmail && senderEmail && orderEmail === senderEmail) return true;
+
   const orderFirst = firstName(orderName).toLowerCase();
   const orderTokens = orderName.toLowerCase().split(/\s+/).filter(Boolean);
   const displayName = credibleSenderDisplayName(input.senderDisplayName).toLowerCase();
