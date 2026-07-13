@@ -975,6 +975,53 @@ function parseReplacementShippingAddress(message = "", existingShipping = {}) {
   };
 }
 
+export function parsePartialAddressCorrection(
+  message = "",
+  existingShipping: Record<string, unknown> | unknown = {},
+): {
+  name: string | null;
+  address1: string;
+  address2: string | null;
+  zip: string;
+  city: string;
+  country: string;
+  phone: string | null;
+} | null {
+  const existing = existingShipping && typeof existingShipping === "object"
+    ? existingShipping as Record<string, unknown>
+    : {};
+  const address1 = String(existing.address1 || "").trim();
+  const zip = String(existing.zip || "").trim();
+  const city = String(existing.city || "").trim();
+  if (!address1 || !zip || !city) return null;
+
+  const text = String(message || "");
+  const mentionsAddressLine2 =
+    /\b(?:address\s*line\s*2|line\s*2|address2|adresselinje\s*2|linje\s*2|second line)\b/i
+      .test(text);
+  const mentionsRemoval =
+    /\b(?:remove|removed|delete|clear|slet|fjern|skal væk|should be empty|tom)\b/i
+      .test(text);
+
+  if (mentionsAddressLine2 && mentionsRemoval) {
+    const existingName = [existing.first_name, existing.last_name]
+      .map((value) => String(value || "").trim())
+      .filter(Boolean)
+      .join(" ");
+    return {
+      name: existingName || null,
+      address1,
+      address2: null,
+      zip,
+      city,
+      country: String(existing.country || ""),
+      phone: String(existing.phone || "") || null,
+    };
+  }
+
+  return null;
+}
+
 function buildCustomerHistorySummary(
   priorThreads: Array<Record<string, unknown>>,
 ): string {
@@ -2009,10 +2056,30 @@ export async function runDraftV2Pipeline(
       (facts.order.fulfillment_status === null ||
         facts.order.fulfillment_status === "unfulfilled")
     ) {
-      const shippingAddress = parseReplacementShippingAddress(
-        latestBody,
-        facts.order.shipping_address || {},
-      );
+      let shippingAddress:
+        | ReturnType<typeof parsePartialAddressCorrection>
+        | ReturnType<typeof parseReplacementShippingAddress> =
+          parseReplacementShippingAddress(
+            latestBody,
+            facts.order.shipping_address || {},
+          );
+      let fallbackReason = "Ordren er ikke afsendt — adressen kan ændres";
+      if (
+        !(shippingAddress?.address1 && shippingAddress?.city &&
+          shippingAddress?.zip)
+      ) {
+        const partialCorrection = parsePartialAddressCorrection(
+          latestBody,
+          facts.order.shipping_address || {},
+        );
+        if (
+          partialCorrection?.address1 && partialCorrection?.city &&
+          partialCorrection?.zip
+        ) {
+          shippingAddress = partialCorrection;
+          fallbackReason = "Delvis adresserettelse på uafsendt ordre";
+        }
+      }
       if (
         shippingAddress?.address1 && shippingAddress?.city &&
         shippingAddress?.zip
@@ -2020,7 +2087,7 @@ export async function runDraftV2Pipeline(
         const fallbackProposal: ActionProposal = {
           type: "update_shipping_address",
           confidence: "high",
-          reason: "Ordren er ikke afsendt — adressen kan ændres",
+          reason: fallbackReason,
           params: {
             order_id: facts.order.id,
             order_name: facts.order.name,
