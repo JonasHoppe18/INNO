@@ -23,6 +23,7 @@ export function assessGroundingCoverage(input: {
   matcherAbstained?: boolean | null;
   verifiedFactsCount?: number | null;
   structuredFactsCount?: number | null;
+  strongTicketExampleCount?: number | null;
 }): GroundingCoverage {
   const intent = String(input?.intent ?? "").trim().toLowerCase();
   if (!intent || NEVER_TRIGGER_INTENTS.has(intent)) {
@@ -43,6 +44,10 @@ export function assessGroundingCoverage(input: {
 
   const hasFacts = verifiedFactsCount > 0 || structuredFactsCount > 0;
   if (hasFacts) return { ungrounded: false, reason: null };
+
+  const strongExamples =
+    typeof input?.strongTicketExampleCount === "number" ? input.strongTicketExampleCount : 0;
+  if (strongExamples > 0) return { ungrounded: false, reason: null };
 
   if (chunkCount === 0) {
     return { ungrounded: true, reason: "no_chunks_no_facts" };

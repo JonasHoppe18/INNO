@@ -59,3 +59,36 @@ Deno.test("directive works without a customerAsk", () => {
   assert(block.length > 50);
   assert(!block.includes("null"));
 });
+
+Deno.test("a strong ticket example grounds an otherwise ungrounded case", () => {
+  const r = assessGroundingCoverage({
+    intent: "product_question", chunkCount: 0, verifiedFactsCount: 0,
+    structuredFactsCount: 0, strongTicketExampleCount: 1,
+  });
+  assertEquals(r.ungrounded, false);
+});
+
+Deno.test("strong example overrides matcher abstention", () => {
+  const r = assessGroundingCoverage({
+    intent: "product_question", chunkCount: 3, matcherAbstained: true,
+    verifiedFactsCount: 0, structuredFactsCount: 0, strongTicketExampleCount: 2,
+  });
+  assertEquals(r.ungrounded, false);
+});
+
+Deno.test("zero strong examples leaves ungrounded behavior unchanged", () => {
+  const r = assessGroundingCoverage({
+    intent: "product_question", chunkCount: 0, verifiedFactsCount: 0,
+    structuredFactsCount: 0, strongTicketExampleCount: 0,
+  });
+  assertEquals(r.ungrounded, true);
+  assertEquals(r.reason, "no_chunks_no_facts");
+});
+
+Deno.test("undefined strongTicketExampleCount = today's behavior (fail-safe)", () => {
+  const r = assessGroundingCoverage({
+    intent: "product_question", chunkCount: 0, verifiedFactsCount: 0,
+    structuredFactsCount: 0,
+  });
+  assertEquals(r.ungrounded, true);
+});
