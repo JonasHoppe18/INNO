@@ -42,7 +42,8 @@ export type UnsupportedNegativeClaimViolationType =
   | "unsupported_negative_compatibility_claim"
   | "unsupported_negative_availability_claim"
   | "unsupported_negative_purchasability_claim"
-  | "unsupported_negative_fit_claim";
+  | "unsupported_negative_fit_claim"
+  | "unsupported_capability_claim";
 
 export type UnsupportedNegativeClaimCheckInput = {
   draft_text: string;
@@ -138,6 +139,37 @@ const FAMILIES: ClaimFamily[] = [
       /\bsælger\s+ikke\b/i,
     ],
   },
+  {
+    // Capability-refusal claims: the shop confidently states it does NOT
+    // offer/provide/sell/support/do something ("we don't offer X",
+    // "vi har ikke mulighed for", "det kan vi ikke tilbyde"). Distinct from
+    // the families above (which target compatibility/fit/availability/
+    // purchasability wording specifically) — this catches broader "the shop
+    // itself can't/won't do X" refusals.
+    //
+    // VIGTIGT: patterns require the subject "we"/"vi" plus an offer-verb (or
+    // "mulighed"/"muligt"), so first-person uncertainty phrasing ("jeg kan
+    // ikke se/bekræfte...", "I can't confirm...") never matches — different
+    // subject (jeg/I) and no offer-verb.
+    violationType: "unsupported_capability_claim",
+    patterns: [
+      // EN — confident "the shop doesn't/can't offer/provide/sell/do X"
+      /\bwe\s+(?:do\s+not|don['’]t|can\s?not|cannot|can['’]t)\s+(?:currently\s+)?(?:offer|provide|sell|support|do)\b/i,
+      /\bwe\s+(?:do\s+not|don['’]t)\s+have\s+[^.?!]*\b(?:for\s+purchase|separately|available\s+separately)\b/i,
+      /\b(?:is|are)\s+not\s+sold\s+separately\b/i,
+      /\bnot\s+available\s+for\s+purchase\b/i,
+      /\bunable\s+to\b/i,
+      /\bnot\s+possible\b/i,
+      // DA — "vi tilbyder/sælger/har/kan/yder (desværre) ikke ...", "det kan
+      // vi ikke", "vi har ikke mulighed for"
+      /\bvi\s+(?:tilbyder|sælger|yder|har|kan)\s+(?:desværre\s+|i\s+øjeblikket\s+)?ikke\b/i,
+      /\bdet\s+kan\s+vi\s+(?:desværre\s+)?ikke\b/i,
+      /\bvi\s+har\s+ikke\s+mulighed\s+for\b/i,
+      /\bhar\s+vi\s+ikke\s+mulighed\s+for\b/i,
+      /\bdet\s+er\s+(?:desværre\s+)?ikke\s+muligt\b/i,
+      /\bsælges\s+ikke\s+separat\b/i,
+    ],
+  },
 ];
 
 // Explicit negation wording that, if present in a RETRIEVED chunk, can ground
@@ -166,6 +198,13 @@ const CHUNK_NEGATION_PATTERNS: RegExp[] = [
   // READINESS-6d (DA)
   /\bikke\s+på\s+lager\b/i,
   /\budsolgt\b/i,
+  // Capability-refusal grounding wording — lets a retrieved chunk ground a
+  // "we don't offer/sell X" claim. `not sold separately` reuses the pattern
+  // already defined above (no duplicate needed).
+  /\bwe\s+(?:do\s+not|don['’]t)\s+(?:offer|provide|sell)\b/i,
+  /\bsælges\s+ikke\s+separat\b/i,
+  /\btilbyder\s+ikke\b/i,
+  /\bvi\s+sælger\s+ikke\b/i,
 ];
 
 const NEGATIVE_STOCK_STATES = new Set(["out_of_stock", "unavailable", "discontinued"]);
@@ -229,6 +268,17 @@ const OVERLAP_STOPWORDS = new Set([
   "kun",
   "med",
   "understøttes",
+  "offer",
+  "provide",
+  "sell",
+  "support",
+  "separately",
+  "tilbyder",
+  "sælger",
+  "yder",
+  "mulighed",
+  "muligt",
+  "vi",
 ]);
 
 function contentTokens(text: string): Set<string> {
@@ -254,11 +304,27 @@ function sharesContentToken(a: string, b: string): boolean {
   return false;
 }
 
+// Grounding source C only accepts chunks whose usable_as marks them as
+// genuine knowledge content — policy/procedure/saved_reply/background.
+// Explicitly excludes "fact" (live/structured facts are grounded via A/B
+// above, not via chunk wording), "tone_example" (style reference only, not
+// a content source), and "ignore". A chunk with no usable_as set at all
+// (legacy/partial test doubles, callers that don't populate it) is treated
+// as acceptable — the field is optional metadata, not a security boundary,
+// and pre-existing callers may omit it.
+const DISALLOWED_GROUNDING_USABLE_AS = new Set<RetrievedChunk["usable_as"]>([
+  "fact",
+  "tone_example",
+  "ignore",
+]);
+
 function chunkGroundsSentence(
   sentence: string,
   chunks: RetrievedChunk[],
 ): boolean {
   for (const chunk of chunks) {
+    const usableAs = chunk?.usable_as;
+    if (usableAs != null && DISALLOWED_GROUNDING_USABLE_AS.has(usableAs)) continue;
     const content = String(chunk?.content ?? "");
     if (!content.trim()) continue;
     if (!CHUNK_NEGATION_PATTERNS.some((re) => re.test(content))) continue;

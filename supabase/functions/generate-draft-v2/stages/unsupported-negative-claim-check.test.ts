@@ -495,3 +495,47 @@ Deno.test("READINESS-8: unrelated hedge word 'ikke sandt' tag phrasing does NOT 
   });
   assertEquals(r.compliant, true);
 });
+
+// ── Capability-refusal family: "we don't offer/sell/support X" ────────────
+
+Deno.test("capability refusal without grounding is flagged", () => {
+  const r = checkUnsupportedNegativeClaims({
+    draft_text: "Hi there, unfortunately we don't offer individual mic clips for the A-Spire Wireless separately.",
+    retrieved_chunks: [],
+  });
+  assert(r.violations.some((v) => v.type === "unsupported_capability_claim"), JSON.stringify(r.violations));
+  assertEquals(r.requires_review, true);
+});
+
+Deno.test("Danish capability refusals are flagged", () => {
+  for (const draft of [
+    "Desværre har vi ikke mulighed for at kontakte Maxgaming direkte.",
+    "Det kan vi desværre ikke tilbyde.",
+    "Vi sælger ikke mic clips separat.",
+  ]) {
+    const r = checkUnsupportedNegativeClaims({ draft_text: draft, retrieved_chunks: [] });
+    assert(r.violations.some((v) => v.type === "unsupported_capability_claim"), draft);
+  }
+});
+
+Deno.test("uncertainty phrasing never triggers the capability family", () => {
+  for (const draft of [
+    "Jeg kan ikke se lagerstatus lige nu, så jeg vender tilbage.",
+    "I can't confirm the current stock status right now.",
+    "Det undersøger jeg og vender tilbage til dig om.",
+  ]) {
+    const r = checkUnsupportedNegativeClaims({ draft_text: draft, retrieved_chunks: [] });
+    assertEquals(r.violations.some((v) => v.type === "unsupported_capability_claim"), false, draft);
+  }
+});
+
+Deno.test("capability refusal grounded by a KB chunk is allowed", () => {
+  const r = checkUnsupportedNegativeClaims({
+    draft_text: "We don't sell the mic clip separately.",
+    retrieved_chunks: [{
+      content: "Spare parts: the mic clip is not sold separately; it ships attached to the headset.",
+      usable_as: "policy", source_provider: "manual_text", source_label: "spare parts",
+    } as any],
+  });
+  assertEquals(r.violations.some((v) => v.type === "unsupported_capability_claim"), false, JSON.stringify(r.violations));
+});
