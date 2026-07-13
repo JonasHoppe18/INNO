@@ -118,6 +118,8 @@ export interface RetrieverResult {
     agent_reply: string;
     subject: string | null;
     score: number;
+    similarity: number;
+    is_near_duplicate: boolean;
     csat_score: number | null;
     conversation_context: string | null;
   }>;
@@ -761,6 +763,29 @@ function overlapCount(haystack: string, needles: string[]): number {
   const lower = stripHtml(haystack).toLowerCase();
   return needles.filter((needle) => lower.includes(needle.toLowerCase()))
     .length;
+}
+
+// Decides whether a retrieved past-ticket example is similar enough to the
+// current query to be treated as grounding evidence rather than a loosely
+// related example. High vector similarity alone is not sufficient: a
+// cross-product example ("ear pads" vs a query about "A-Spire") can score
+// high on embedding similarity while being the wrong product. When the
+// customer named a specific product, the example must also lexically
+// mention one of the query's product terms to count as a near-duplicate.
+// When no product was named, similarity alone is allowed to promote.
+export function isNearDuplicateExample(input: {
+  similarity: number;
+  exampleText: string;
+  queryProductTerms: string[];
+  overlap: (text: string, terms: string[]) => number;
+  threshold: number;
+}): boolean {
+  const { similarity, exampleText, queryProductTerms, overlap, threshold } =
+    input;
+  if (!Number.isFinite(similarity)) return false;
+  const productTermMatch = overlap(exampleText, queryProductTerms) > 0;
+  const customerNamedProduct = queryProductTerms.length > 0;
+  return similarity >= threshold && (productTermMatch || !customerNamedProduct);
 }
 
 function hasLexicalIssueSignal(
@@ -2017,6 +2042,16 @@ export async function runRetriever(
         const intent = plan.primary_intent !== "other"
           ? plan.primary_intent
           : null;
+        const groundingThreshold = Number(
+          Deno.env.get("TICKET_EXAMPLE_GROUNDING_MIN_SIMILARITY") ?? "0.86",
+        );
+        const ticketQueryText = `${queries.join(" ")} ${
+          customerMessage || ""
+        }`;
+        const ticketQueryProductTerms = extractMentionedProductTerms(
+          ticketQueryText,
+          shop,
+        );
         const resultMap = new Map<
           string,
           {
@@ -2115,15 +2150,29 @@ export async function runRetriever(
           )
           .sort((a, b) => b.score - a.score)
           .slice(0, 3)
-          .map((item) => ({
-            id: item.id,
-            customer_msg: item.customer_msg,
-            agent_reply: item.agent_reply,
-            subject: item.subject ?? null,
-            score: item.score,
-            csat_score: item.csat_score,
-            conversation_context: item.conversation_context ?? null,
-          }));
+          .map((item) => {
+            const exampleText = `${item.subject || ""} ${item.customer_msg} ${
+              item.agent_reply
+            }`;
+            const similarity = Number(item.similarity || 0);
+            return {
+              id: item.id,
+              customer_msg: item.customer_msg,
+              agent_reply: item.agent_reply,
+              subject: item.subject ?? null,
+              score: item.score,
+              similarity,
+              is_near_duplicate: isNearDuplicateExample({
+                similarity,
+                exampleText,
+                queryProductTerms: ticketQueryProductTerms,
+                overlap: overlapCount,
+                threshold: groundingThreshold,
+              }),
+              csat_score: item.csat_score,
+              conversation_context: item.conversation_context ?? null,
+            };
+          });
       } catch (err) {
         console.warn("[retriever] ticket_examples lookup failed:", err);
         return [];
@@ -2503,6 +2552,8 @@ export async function runRetriever(
       agent_reply: t.agent_reply,
       subject: t.subject ?? null,
       score: t.score,
+      similarity: t.similarity,
+      is_near_duplicate: t.is_near_duplicate,
       csat_score: t.csat_score ?? null,
       conversation_context: t.conversation_context ?? null,
     }));
