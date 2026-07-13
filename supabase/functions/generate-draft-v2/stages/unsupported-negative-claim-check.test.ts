@@ -405,6 +405,7 @@ Deno.test("READINESS-6d: 'ikke på lager' grounded by a chunk saying the product
       {
         id: "1",
         content: "A-Rise er ikke på lager og forventes tilbage i august.",
+        usable_as: "policy",
       },
     ],
   });
@@ -538,4 +539,87 @@ Deno.test("capability refusal grounded by a KB chunk is allowed", () => {
     } as any],
   });
   assertEquals(r.violations.some((v) => v.type === "unsupported_capability_claim"), false, JSON.stringify(r.violations));
+});
+
+// ── Finding 1 (Critical): bare "unable to" / "not possible" must NEVER match
+// the capability family — those are the EXACT forbidden uncertainty phrasings
+// named in the spec ("I'm unable to confirm...", "I am unable to see...").
+// Only a we/shop-scoped refusal ("we're unable to", "not possible for us")
+// should match.
+
+Deno.test("Finding 1: 'I'm unable to confirm...' uncertainty phrasing is NOT a capability claim", () => {
+  const r = checkUnsupportedNegativeClaims({
+    draft_text: "I'm unable to confirm the current stock status right now.",
+    retrieved_chunks: [],
+  });
+  assertEquals(
+    r.violations.some((v) => v.type === "unsupported_capability_claim"),
+    false,
+    JSON.stringify(r.violations),
+  );
+});
+
+Deno.test("Finding 1: 'I am unable to see your order...' uncertainty phrasing is NOT a capability claim", () => {
+  const r = checkUnsupportedNegativeClaims({
+    draft_text: "I am unable to see your order at the moment.",
+    retrieved_chunks: [],
+  });
+  assertEquals(
+    r.violations.some((v) => v.type === "unsupported_capability_claim"),
+    false,
+    JSON.stringify(r.violations),
+  );
+});
+
+Deno.test("Finding 1: 'It's not possible to say for sure right now.' is NOT a capability claim", () => {
+  const r = checkUnsupportedNegativeClaims({
+    draft_text: "It's not possible to say for sure right now.",
+    retrieved_chunks: [],
+  });
+  assertEquals(
+    r.violations.some((v) => v.type === "unsupported_capability_claim"),
+    false,
+    JSON.stringify(r.violations),
+  );
+});
+
+Deno.test("Finding 1: 'We're unable to offer that.' STILL matches the capability family", () => {
+  const r = checkUnsupportedNegativeClaims({
+    draft_text: "We're unable to offer that.",
+    retrieved_chunks: [],
+  });
+  assert(
+    r.violations.some((v) => v.type === "unsupported_capability_claim"),
+    JSON.stringify(r.violations),
+  );
+});
+
+Deno.test("Finding 1: \"It's not possible for us to do that.\" STILL matches the capability family", () => {
+  const r = checkUnsupportedNegativeClaims({
+    draft_text: "It's not possible for us to do that.",
+    retrieved_chunks: [],
+  });
+  assert(
+    r.violations.some((v) => v.type === "unsupported_capability_claim"),
+    JSON.stringify(r.violations),
+  );
+});
+
+// ── Finding 2 (Critical): grounding must be a strict allowlist ────────────
+// {policy, procedure, saved_reply, background} only. A chunk with usable_as
+// OMITTED (undefined) must NOT ground a claim — it must still be flagged.
+
+Deno.test("Finding 2: capability claim + chunk with usable_as OMITTED but matching wording is STILL flagged (not grounded)", () => {
+  const r = checkUnsupportedNegativeClaims({
+    draft_text: "We don't sell the mic clip separately.",
+    retrieved_chunks: [{
+      id: "c1",
+      content: "Spare parts: the mic clip is not sold separately; it ships attached to the headset.",
+      // usable_as intentionally omitted — must NOT ground under the strict allowlist.
+    } as any],
+  });
+  assert(
+    r.violations.some((v) => v.type === "unsupported_capability_claim"),
+    JSON.stringify(r.violations),
+  );
 });

@@ -158,8 +158,12 @@ const FAMILIES: ClaimFamily[] = [
       /\bwe\s+(?:do\s+not|don['’]t)\s+have\s+[^.?!]*\b(?:for\s+purchase|separately|available\s+separately)\b/i,
       /\b(?:is|are)\s+not\s+sold\s+separately\b/i,
       /\bnot\s+available\s+for\s+purchase\b/i,
-      /\bunable\s+to\b/i,
-      /\bnot\s+possible\b/i,
+      // VIGTIGT: scoped to "we" (shop-owned refusal) so first-person
+      // uncertainty phrasing ("I'm unable to confirm...", "I am unable to
+      // see...") never matches — those are legitimate owns-the-case
+      // uncertainty phrasings, not capability refusals.
+      /\bwe(?:\s+are|['’]re)\s+unable\s+to\b/i,
+      /\b(?:it['’]s|it\s+is|that['’]s|that\s+is)\s+not\s+possible\s+for\s+us\b/i,
       // DA — "vi tilbyder/sælger/har/kan/yder (desværre) ikke ...", "det kan
       // vi ikke", "vi har ikke mulighed for"
       /\bvi\s+(?:tilbyder|sælger|yder|har|kan)\s+(?:desværre\s+|i\s+øjeblikket\s+)?ikke\b/i,
@@ -199,10 +203,9 @@ const CHUNK_NEGATION_PATTERNS: RegExp[] = [
   /\bikke\s+på\s+lager\b/i,
   /\budsolgt\b/i,
   // Capability-refusal grounding wording — lets a retrieved chunk ground a
-  // "we don't offer/sell X" claim. `not sold separately` reuses the pattern
-  // already defined above (no duplicate needed).
+  // "we don't offer/sell X" claim. `not sold separately` / `sælges ikke
+  // separat` reuse the patterns already defined above (no duplicate needed).
   /\bwe\s+(?:do\s+not|don['’]t)\s+(?:offer|provide|sell)\b/i,
-  /\bsælges\s+ikke\s+separat\b/i,
   /\btilbyder\s+ikke\b/i,
   /\bvi\s+sælger\s+ikke\b/i,
 ];
@@ -305,17 +308,18 @@ function sharesContentToken(a: string, b: string): boolean {
 }
 
 // Grounding source C only accepts chunks whose usable_as marks them as
-// genuine knowledge content — policy/procedure/saved_reply/background.
-// Explicitly excludes "fact" (live/structured facts are grounded via A/B
-// above, not via chunk wording), "tone_example" (style reference only, not
-// a content source), and "ignore". A chunk with no usable_as set at all
-// (legacy/partial test doubles, callers that don't populate it) is treated
-// as acceptable — the field is optional metadata, not a security boundary,
-// and pre-existing callers may omit it.
-const DISALLOWED_GROUNDING_USABLE_AS = new Set<RetrievedChunk["usable_as"]>([
-  "fact",
-  "tone_example",
-  "ignore",
+// genuine knowledge content — a STRICT allowlist of
+// policy/procedure/saved_reply/background. A chunk with usable_as
+// undefined/null, or any other value ("fact", "tone_example", "ignore",
+// etc.), does NOT ground a claim. This is a security boundary, not just
+// metadata hygiene: live/structured facts are grounded via A/B above, not
+// via chunk wording, and an unclassified chunk must never silently
+// suppress a capability/negative-claim violation.
+const ALLOWED_GROUNDING_USABLE_AS = new Set<string>([
+  "policy",
+  "procedure",
+  "saved_reply",
+  "background",
 ]);
 
 function chunkGroundsSentence(
@@ -324,7 +328,7 @@ function chunkGroundsSentence(
 ): boolean {
   for (const chunk of chunks) {
     const usableAs = chunk?.usable_as;
-    if (usableAs != null && DISALLOWED_GROUNDING_USABLE_AS.has(usableAs)) continue;
+    if (usableAs == null || !ALLOWED_GROUNDING_USABLE_AS.has(String(usableAs))) continue;
     const content = String(chunk?.content ?? "");
     if (!content.trim()) continue;
     if (!CHUNK_NEGATION_PATTERNS.some((re) => re.test(content))) continue;
