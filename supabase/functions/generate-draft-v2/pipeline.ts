@@ -3,6 +3,8 @@ import { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { runGate } from "./stages/gate.ts";
 import { updateCaseState } from "./stages/case-state-updater.ts";
 import { runPlanner } from "./stages/planner.ts";
+import { assessConversationClosing } from "./stages/conversation-closing.ts";
+import { statusOnClosingAcknowledgment } from "../_shared/thread-status/transitions.ts";
 import {
   replacementIntentOverride,
   resolveReplacementFlowState,
@@ -1533,6 +1535,43 @@ export async function runDraftV2Pipeline(
             );
           }
         });
+    }
+
+    // 4b. Closing-acknowledgment gate — pure "yes thanks" on an already
+    // resolved thread: skip the writer/retrieval entirely and flag the
+    // thread ready-to-close instead of generating a (possibly wrong) draft.
+    const priorAgentResolution =
+      (Array.isArray(caseState?.decisions_made) &&
+        caseState.decisions_made.length > 0) ||
+      (thread as { status?: string }).status === "waiting_customer";
+    const closing = assessConversationClosing({
+      intent: plan.primary_intent,
+      latestCustomerText: latestBody ?? "",
+      priorAgentResolution,
+      openAsksCount: Array.isArray(caseState?.pending_asks)
+        ? caseState.pending_asks.length
+        : 0,
+    });
+    if (closing.suggestClose) {
+      if (!isDryRun && thread_id) {
+        await supabase.from("mail_threads")
+          .update({
+            ...statusOnClosingAcknowledgment(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", thread_id);
+        await supabase.from("agent_logs").insert({
+          workspace_id: workspaceId ?? null,
+          step_name: "draft_closing_suggested",
+          step_detail: JSON.stringify({
+            thread_id,
+            intent: plan.primary_intent,
+            reason: closing.reason,
+          }),
+          status: "info",
+        });
+      }
+      return await completeSkippedGeneration("closing_acknowledgment");
     }
 
     // 5. Retrieve + resolve facts + interne regler parallelt (uafhængige)
