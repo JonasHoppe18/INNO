@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
+import { sendPostmarkEmail } from "@/lib/server/postmark";
+import { buildEffectiveSharedFromEmail } from "@/lib/server/sending-identity";
+import { resolveSupabaseServerConfig } from "@/lib/server/supabase-server-config";
 import { resolveAuthScope } from "@/lib/server/workspace-auth";
 import {
   CUSTOMER_CONFIRMATION_DEFAULT_LAYOUT,
@@ -9,10 +12,7 @@ import {
   renderCustomerConfirmation,
 } from "@/lib/server/customer-confirmation";
 
-const SUPABASE_URL = (process.env.NEXT_PUBLIC_SUPABASE_URL || "").replace(/\/$/, "");
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SERVICE_ROLE_KEY || "";
-const POSTMARK_SERVER_TOKEN = process.env.POSTMARK_SERVER_TOKEN || "";
-const POSTMARK_MESSAGE_STREAM = process.env.POSTMARK_MESSAGE_STREAM || "outbound";
+const { url: SUPABASE_URL, serviceKey: SERVICE_KEY } = resolveSupabaseServerConfig();
 const FALLBACK_FROM_EMAIL = process.env.POSTMARK_FROM_EMAIL || "support@sona-ai.dk";
 const FALLBACK_FROM_NAME = process.env.POSTMARK_FROM_NAME || "Sona Support";
 
@@ -29,8 +29,8 @@ export async function POST(request) {
   const { userId: clerkUserId, orgId } = await auth();
   if (!clerkUserId) return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
   const supabase = serviceClient();
-  if (!supabase || !POSTMARK_SERVER_TOKEN) {
-    return NextResponse.json({ error: "Email service configuration is missing." }, { status: 500 });
+  if (!supabase) {
+    return NextResponse.json({ error: "Supabase service configuration is missing." }, { status: 500 });
   }
 
   const body = await request.json().catch(() => null);
@@ -58,7 +58,8 @@ export async function POST(request) {
     }
 
     const mailbox = mailboxes?.[0] || {};
-    const fromEmail = string(mailbox.from_email || mailbox.provider_email) || FALLBACK_FROM_EMAIL;
+    const fromEmail =
+      string(buildEffectiveSharedFromEmail({ mailbox })) || FALLBACK_FROM_EMAIL;
     const fromName = string(mailbox.from_name) || FALLBACK_FROM_NAME;
     const rendered = renderCustomerConfirmation({
       subjectTemplate: string(body?.subject_template) || CUSTOMER_CONFIRMATION_DEFAULT_SUBJECT,
@@ -75,28 +76,18 @@ export async function POST(request) {
       },
     });
 
-    const response = await fetch("https://api.postmarkapp.com/email", {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-        "X-Postmark-Server-Token": POSTMARK_SERVER_TOKEN,
-      },
-      body: JSON.stringify({
-        MessageStream: POSTMARK_MESSAGE_STREAM,
-        From: `${fromName} <${fromEmail}>`,
-        To: recipient,
-        Subject: rendered.subject,
-        TextBody: rendered.text,
-        HtmlBody: rendered.html,
-        ReplyTo: fromEmail,
-        Tag: "customer-confirmation-test",
-      }),
+    await sendPostmarkEmail({
+      From: `${fromName} <${fromEmail}>`,
+      To: recipient,
+      Subject: rendered.subject,
+      TextBody: rendered.text,
+      HtmlBody: rendered.html,
+      ReplyTo: string(mailbox.from_email || mailbox.provider_email) || fromEmail,
+      Tag: "customer-confirmation-test",
     });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload?.Message || "Could not send test confirmation.");
     return NextResponse.json({ ok: true, sent_to: recipient }, { status: 200 });
   } catch (error) {
+    console.error("[customer-confirmation-test] Failed to send test email", error);
     return NextResponse.json({ error: error.message || "Could not send test confirmation." }, { status: 500 });
   }
 }
