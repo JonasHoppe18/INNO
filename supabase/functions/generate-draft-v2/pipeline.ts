@@ -4,7 +4,10 @@ import { runGate } from "./stages/gate.ts";
 import { updateCaseState } from "./stages/case-state-updater.ts";
 import { runPlanner } from "./stages/planner.ts";
 import { assessConversationClosing } from "./stages/conversation-closing.ts";
-import { statusOnClosingAcknowledgment } from "../_shared/thread-status/transitions.ts";
+import {
+  statusOnAutoResolvedAcknowledgment,
+  statusOnClosingAcknowledgment,
+} from "../_shared/thread-status/transitions.ts";
 import {
   replacementIntentOverride,
   resolveReplacementFlowState,
@@ -1291,11 +1294,11 @@ export async function runDraftV2Pipeline(
           .maybeSingle()
         : Promise.resolve({ data: null }),
 
-      // test_mode lives on workspaces table
+      // test_mode + auto_close_mode live on workspaces table
       workspaceId
         ? supabase
           .from("workspaces")
-          .select("test_mode")
+          .select("test_mode,auto_close_mode")
           .eq("id", workspaceId)
           .maybeSingle()
         : Promise.resolve({ data: null }),
@@ -1330,6 +1333,13 @@ export async function runDraftV2Pipeline(
       automatic_refunds: automationResult.data?.automatic_refunds === true,
     };
     const isTestMode = testModeResult.data?.test_mode === true;
+    // Fail-safe: unknown/missing auto_close_mode ⇒ "approve" (suggest only,
+    // never hard-close on an unrecognized value).
+    const autoCloseMode = String(
+      testModeResult.data?.auto_close_mode ?? "approve",
+    ) === "auto"
+      ? "auto"
+      : "approve";
 
     // Deterministic contact-form identity: Shopify relays (mailer@shopify.com)
     // carry the REAL customer name/email/order number only as structured body
@@ -1553,10 +1563,13 @@ export async function runDraftV2Pipeline(
         : 0,
     });
     if (closing.suggestClose) {
+      const closePatch = autoCloseMode === "auto"
+        ? statusOnAutoResolvedAcknowledgment()
+        : statusOnClosingAcknowledgment();
       if (!isDryRun && thread_id) {
         await supabase.from("mail_threads")
           .update({
-            ...statusOnClosingAcknowledgment(),
+            ...closePatch,
             updated_at: new Date().toISOString(),
           })
           .eq("id", thread_id);
@@ -1567,6 +1580,7 @@ export async function runDraftV2Pipeline(
             thread_id,
             intent: plan.primary_intent,
             reason: closing.reason,
+            auto_close_mode: autoCloseMode,
           }),
           status: "info",
         });

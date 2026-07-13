@@ -44,3 +44,12 @@ export function statusOnInboundCustomerMessage(
 export function statusOnClosingAcknowledgment(): { close_pending: true } {
   return { close_pending: true };
 }
+
+// Hard-close patch: used when the workspace's `auto_close_mode` is `'auto'`.
+// Resolves the thread outright instead of merely flagging it for approval.
+export function statusOnAutoResolvedAcknowledgment(): {
+  status: "resolved";
+  close_pending: false;
+} {
+  return { status: "resolved", close_pending: false };
+}

@@ -1,5 +1,9 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { statusOnClosingAcknowledgment, statusOnInboundCustomerMessage } from "./transitions.ts";
+import {
+  statusOnAutoResolvedAcknowledgment,
+  statusOnClosingAcknowledgment,
+  statusOnInboundCustomerMessage,
+} from "./transitions.ts";
 
 const NOW = "2026-07-03T12:00:00.000Z";
 
@@ -76,4 +80,10 @@ Deno.test("closing acknowledgment -> flags close_pending only", () => {
   const patch = statusOnClosingAcknowledgment();
   assertEquals(patch.close_pending, true);
   assertEquals("status" in patch, false);
+});
+
+Deno.test("auto-resolved acknowledgment -> hard-resolves the thread", () => {
+  const patch = statusOnAutoResolvedAcknowledgment();
+  assertEquals(patch.status, "resolved");
+  assertEquals(patch.close_pending, false);
 });
