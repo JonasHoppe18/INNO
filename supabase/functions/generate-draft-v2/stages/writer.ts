@@ -1137,6 +1137,90 @@ function extractMessageSignals(messageText: string) {
   };
 }
 
+// --- Few-shot block (primary tone anchor) ---
+// Examples are STYLE references only by default (see CRITICAL SUBJECT RULE
+// below) — except a "near-duplicate" example (same product, high similarity,
+// see stages/retriever.ts), which the writer MAY treat as a grounding source
+// for its factual resolution. See docs/superpowers/specs/2026-07-13-ticket-example-near-duplicate-grounding-design.md.
+export function buildFewShotBlock(
+  examples: Array<{
+    id?: number;
+    customer_msg: string;
+    agent_reply: string;
+    subject: string | null;
+    score: number;
+    similarity: number;
+    is_near_duplicate: boolean;
+    csat_score: number | null;
+    conversation_context: string | null;
+  }>,
+  opts: { isReturnRefund: boolean },
+): string {
+  if (examples.length === 0) return "";
+
+  const hasNearDuplicate = examples.some((e) => e.is_near_duplicate);
+
+  const nearDuplicateExceptionBlock = hasNearDuplicate
+    ? `
+EXCEPTION — near-duplicate examples: An example labelled
+"[Near-duplicate — SAME product...]" is a near-identical match to the
+current customer's question about the SAME product. For that example ONLY
+you MAY reuse its factual resolution (what we do, whether the item is
+sold/available, the concrete outcome). Still apply it ONLY to the exact
+product the current customer named, and still copy NO personal data.
+`
+    : "";
+
+  return `# Examples of similar cases — use ONLY as a reference for STYLE, TONE and how to resolve the case
+These show the right kind of response and the correct tone/voice in similar situations. "Corrected" means the agent rewrote Sona's draft significantly — the strongest signal of what's expected. "Confirmed" means Sona's draft was nearly correct.
+
+CRITICAL PRIVACY RULE: These examples are from OTHER customers. They are STYLE references only.
+NEVER copy any personal data out of them into your reply — no names, greetings, email addresses,
+postal addresses, phone numbers, order numbers, tracking numbers or agent signatures. Address the
+reply ONLY to the CURRENT customer using ONLY details from the current conversation and verified facts.
+If you are unsure of the current customer's name, use a neutral greeting — never borrow a name from an example.
+
+CRITICAL SUBJECT RULE: These examples show HOW to phrase a reply, NEVER what the reply is about.
+NEVER carry the subject matter of an example into your reply — no product names, models, accessories,
+spare parts, or factual claims (which item is in or out of stock, prices, availability, restock timing).
+An example may be about a DIFFERENT product than the current customer asked about (e.g. an example about
+"ear pads" or a spare part when the customer asked about the headset itself). In that case you MUST NOT
+mention that other product. Answer ONLY about the exact product/subject the CURRENT customer named, using
+ONLY verified facts and the current conversation — take nothing but tone and structure from the examples.
+${nearDuplicateExceptionBlock}
+` +
+    examples
+      .map(
+        (ex, i) => {
+          const isHeavilyCorrected = ex.csat_score !== null &&
+            ex.csat_score < 60;
+          const csatLabel = ex.csat_score === null
+            ? ""
+            : isHeavilyCorrected
+            ? " [Corrected — agent rewrote Sona's reply significantly]"
+            : ex.csat_score >= 90
+            ? " [Confirmed — Sona's reply was nearly correct]"
+            : "";
+          const nearDuplicateLabel = ex.is_near_duplicate
+            ? " [Near-duplicate — SAME product as the current case]"
+            : "";
+          const label = `${csatLabel}${nearDuplicateLabel}`;
+          const contextBlock = ex.conversation_context
+            ? `Earlier in the conversation:\n${
+              ex.conversation_context.slice(0, 400)
+            }\n`
+            : "";
+          const agentReply = opts.isReturnRefund
+            ? stripAddressLinesFromExample(ex.agent_reply)
+            : ex.agent_reply;
+          return `[Example ${i + 1}${label}]
+${contextBlock}Customer: "${ex.customer_msg.slice(0, 350)}"
+Support replied: "${agentReply.slice(0, 500)}"`;
+        },
+      )
+      .join("\n\n");
+}
+
 export function buildSendReadyNextStepStandardBlock(opts: {
   latestCustomerMessage?: string;
   replyMode: "procedure" | "concise";
@@ -1726,52 +1810,9 @@ Intet sikkert kundenavn til hilsenen. Start med en neutral hilsen på kundens sp
     plan.primary_intent,
     latestCustomerMessage,
   );
-  const fewShotBlock = retrieved.past_ticket_examples.length > 0
-    ? `# Examples of similar cases — use ONLY as a reference for STYLE, TONE and how to resolve the case
-These show the right kind of response and the correct tone/voice in similar situations. "Corrected" means the agent rewrote Sona's draft significantly — the strongest signal of what's expected. "Confirmed" means Sona's draft was nearly correct.
-
-CRITICAL PRIVACY RULE: These examples are from OTHER customers. They are STYLE references only.
-NEVER copy any personal data out of them into your reply — no names, greetings, email addresses,
-postal addresses, phone numbers, order numbers, tracking numbers or agent signatures. Address the
-reply ONLY to the CURRENT customer using ONLY details from the current conversation and verified facts.
-If you are unsure of the current customer's name, use a neutral greeting — never borrow a name from an example.
-
-CRITICAL SUBJECT RULE: These examples show HOW to phrase a reply, NEVER what the reply is about.
-NEVER carry the subject matter of an example into your reply — no product names, models, accessories,
-spare parts, or factual claims (which item is in or out of stock, prices, availability, restock timing).
-An example may be about a DIFFERENT product than the current customer asked about (e.g. an example about
-"ear pads" or a spare part when the customer asked about the headset itself). In that case you MUST NOT
-mention that other product. Answer ONLY about the exact product/subject the CURRENT customer named, using
-ONLY verified facts and the current conversation — take nothing but tone and structure from the examples.
-
-` +
-      retrieved.past_ticket_examples
-        .map(
-          (ex, i) => {
-            const isHeavilyCorrected = ex.csat_score !== null &&
-              ex.csat_score < 60;
-            const label = ex.csat_score === null
-              ? ""
-              : isHeavilyCorrected
-              ? " [Corrected — agent rewrote Sona's reply significantly]"
-              : ex.csat_score >= 90
-              ? " [Confirmed — Sona's reply was nearly correct]"
-              : "";
-            const contextBlock = ex.conversation_context
-              ? `Earlier in the conversation:\n${
-                ex.conversation_context.slice(0, 400)
-              }\n`
-              : "";
-            const agentReply = isReturnRefund
-              ? stripAddressLinesFromExample(ex.agent_reply)
-              : ex.agent_reply;
-            return `[Example ${i + 1}${label}]
-${contextBlock}Customer: "${ex.customer_msg.slice(0, 350)}"
-Support replied: "${agentReply.slice(0, 500)}"`;
-          },
-        )
-        .join("\n\n")
-    : "";
+  const fewShotBlock = buildFewShotBlock(retrieved.past_ticket_examples, {
+    isReturnRefund,
+  });
 
   // --- Kilde-autoritet + ordre-match (live-fakta vinder, ingen gætteri) ---
   const authorityBlock = buildLiveFactAuthorityBlock();
