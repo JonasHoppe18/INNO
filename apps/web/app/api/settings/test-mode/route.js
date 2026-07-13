@@ -34,24 +34,14 @@ function parseTestMode(value) {
   return false;
 }
 
-const DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS = 24 * 14;
-const MIN_CLOSE_SUGGESTION_DELAY_HOURS = 1;
-const MAX_CLOSE_SUGGESTION_DELAY_HOURS = 24 * 30;
-
-function normalizeCloseSuggestionDelayHours(value) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS;
-  const rounded = Math.round(parsed);
-  return Math.max(
-    MIN_CLOSE_SUGGESTION_DELAY_HOURS,
-    Math.min(MAX_CLOSE_SUGGESTION_DELAY_HOURS, rounded)
-  );
+function normalizeAutoCloseMode(value) {
+  return value === "auto" ? "auto" : "approve";
 }
 
 async function getWorkspaceSettings(serviceClient, workspaceId) {
   let query = await serviceClient
     .from("workspaces")
-    .select("id, test_mode, test_email, support_language, close_suggestion_delay_hours, needs_attention_stale_days")
+    .select("id, test_mode, test_email, support_language, auto_close_mode, needs_attention_stale_days")
     .eq("id", workspaceId)
     .maybeSingle();
   if (query.error?.code === "42703") {
@@ -67,9 +57,7 @@ async function getWorkspaceSettings(serviceClient, workspaceId) {
     test_mode: Boolean(data?.test_mode),
     test_email: normalizeEmail(data?.test_email),
     support_language: normalizeSupportLanguage(data?.support_language || "en"),
-    close_suggestion_delay_hours: normalizeCloseSuggestionDelayHours(
-      data?.close_suggestion_delay_hours
-    ),
+    auto_close_mode: data?.auto_close_mode === "auto" ? "auto" : "approve",
     needs_attention_stale_days: normalizeStaleDays(
       data?.needs_attention_stale_days ?? DEFAULT_STALE_DAYS
     ),
@@ -95,7 +83,7 @@ export async function GET() {
           test_mode: false,
           test_email: null,
           support_language: "en",
-          close_suggestion_delay_hours: DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS,
+          auto_close_mode: "approve",
           needs_attention_stale_days: DEFAULT_STALE_DAYS,
           workspace_found: false,
         },
@@ -144,9 +132,7 @@ export async function PUT(request) {
     const testMode = parseTestMode(body?.test_mode);
     const testEmail = normalizeEmail(body?.test_email);
     const supportLanguage = normalizeSupportLanguage(body?.support_language || "en");
-    const closeSuggestionDelayHours = normalizeCloseSuggestionDelayHours(
-      body?.close_suggestion_delay_hours
-    );
+    const autoCloseMode = normalizeAutoCloseMode(body?.auto_close_mode);
     const needsAttentionStaleDays = normalizeStaleDays(body?.needs_attention_stale_days);
 
     const { error: updateError } = await serviceClient
@@ -155,7 +141,7 @@ export async function PUT(request) {
         test_mode: testMode,
         test_email: testEmail,
         support_language: supportLanguage,
-        close_suggestion_delay_hours: closeSuggestionDelayHours,
+        auto_close_mode: autoCloseMode,
         needs_attention_stale_days: needsAttentionStaleDays,
         updated_at: nowIso,
       })
@@ -165,7 +151,7 @@ export async function PUT(request) {
       const message = String(updateError.message || "");
       if (
         message.includes("updated_at") ||
-        message.includes("close_suggestion_delay_hours") ||
+        message.includes("auto_close_mode") ||
         message.includes("needs_attention_stale_days")
       ) {
         const fallback = await serviceClient

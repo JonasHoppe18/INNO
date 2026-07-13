@@ -110,14 +110,8 @@ const EMAIL_SECTIONS = [
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS = 24 * 14;
-
-const normalizeCloseSuggestionDelayHours = (value, fallback = DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS) => {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return fallback;
-  const rounded = Math.round(parsed);
-  return Math.max(1, Math.min(720, rounded));
-};
+const normalizeAutoCloseMode = (value, fallback = "approve") =>
+  value === "auto" ? "auto" : fallback === "auto" ? "auto" : "approve";
 
 const normalizeRoutingRows = (rows = []) =>
   (Array.isArray(rows) ? rows : [])
@@ -378,8 +372,8 @@ function GeneralTab({
   onTestEmailChange,
   supportLanguage,
   onSupportLanguageChange,
-  closeSuggestionDelayHours,
-  onCloseSuggestionDelayHoursChange,
+  autoCloseMode,
+  onAutoCloseModeChange,
   needsAttentionStaleDays,
   onNeedsAttentionStaleDaysChange,
   hasWorkspaceScope,
@@ -457,22 +451,29 @@ function GeneralTab({
         <div className="px-6 pb-2">
           <StoreTeamRow
             icon={Clock}
-            label="Auto close (hours)"
-            description="Automatically close tickets after this many hours in Pending with no customer reply."
-            value={`${closeSuggestionDelayHours} hours`}
+            label="Allow automatic closing"
+            description="When on, Sona closes resolved/acknowledged tickets automatically. When off (default) it only flags them for one-click approval."
             editing
           >
-            <Input
-              type="number"
-              min={1}
-              max={720}
-              step={1}
-              value={closeSuggestionDelayHours}
-              onChange={(e) => onCloseSuggestionDelayHoursChange(e.target.value)}
-              placeholder="336"
-              className="h-9 text-sm"
+            <button
+              type="button"
+              role="switch"
+              aria-checked={autoCloseMode === "auto"}
+              onClick={() => onAutoCloseModeChange(autoCloseMode === "auto" ? "approve" : "auto")}
               disabled={!hasWorkspaceScope}
-            />
+              className={cn(
+                "relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors duration-200",
+                autoCloseMode === "auto" ? "bg-primary/80" : "bg-slate-300",
+                !hasWorkspaceScope && "cursor-not-allowed opacity-70"
+              )}
+            >
+              <span
+                className={cn(
+                  "inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200",
+                  autoCloseMode === "auto" ? "translate-x-6" : "translate-x-1"
+                )}
+              />
+            </button>
           </StoreTeamRow>
           <StoreTeamRow
             icon={Clock}
@@ -2869,12 +2870,8 @@ export function SettingsPanel() {
   const [initialTestEmail, setInitialTestEmail] = useState("");
   const [supportLanguage, setSupportLanguage] = useState("en");
   const [initialSupportLanguage, setInitialSupportLanguage] = useState("en");
-  const [closeSuggestionDelayHours, setCloseSuggestionDelayHours] = useState(
-    String(DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS)
-  );
-  const [initialCloseSuggestionDelayHours, setInitialCloseSuggestionDelayHours] = useState(
-    String(DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS)
-  );
+  const [autoCloseMode, setAutoCloseMode] = useState("approve");
+  const [initialAutoCloseMode, setInitialAutoCloseMode] = useState("approve");
   const [needsAttentionStaleDays, setNeedsAttentionStaleDays] = useState(
     String(DEFAULT_STALE_DAYS)
   );
@@ -3062,8 +3059,8 @@ export function SettingsPanel() {
         setInitialTestEmail("");
         setSupportLanguage("en");
         setInitialSupportLanguage("en");
-        setCloseSuggestionDelayHours(String(DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS));
-        setInitialCloseSuggestionDelayHours(String(DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS));
+        setAutoCloseMode("approve");
+        setInitialAutoCloseMode("approve");
         setNeedsAttentionStaleDays(String(DEFAULT_STALE_DAYS));
         setInitialNeedsAttentionStaleDays(String(DEFAULT_STALE_DAYS));
         setMembers([]);
@@ -3093,15 +3090,15 @@ export function SettingsPanel() {
       setInitialTestMode(false);
       setTestEmail("");
       setInitialTestEmail("");
-      setCloseSuggestionDelayHours(String(DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS));
-      setInitialCloseSuggestionDelayHours(String(DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS));
+      setAutoCloseMode("approve");
+      setInitialAutoCloseMode("approve");
       setNeedsAttentionStaleDays(String(DEFAULT_STALE_DAYS));
       setInitialNeedsAttentionStaleDays(String(DEFAULT_STALE_DAYS));
       if (!workspaceId) {
         setSupportLanguage("en");
         setInitialSupportLanguage("en");
-        setCloseSuggestionDelayHours(String(DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS));
-        setInitialCloseSuggestionDelayHours(String(DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS));
+        setAutoCloseMode("approve");
+        setInitialAutoCloseMode("approve");
         setNeedsAttentionStaleDays(String(DEFAULT_STALE_DAYS));
         setInitialNeedsAttentionStaleDays(String(DEFAULT_STALE_DAYS));
       }
@@ -3181,9 +3178,7 @@ export function SettingsPanel() {
         const resolvedTestMode = Boolean(testModePayload?.test_mode);
         const resolvedTestEmail = String(testModePayload?.test_email || "").trim();
         const resolvedSupportLanguage = normalizeSupportLanguage(testModePayload?.support_language || "en");
-        const resolvedCloseSuggestionDelayHours = String(
-          normalizeCloseSuggestionDelayHours(testModePayload?.close_suggestion_delay_hours)
-        );
+        const resolvedAutoCloseMode = normalizeAutoCloseMode(testModePayload?.auto_close_mode);
         const resolvedNeedsAttentionStaleDays = String(
           normalizeStaleDays(testModePayload?.needs_attention_stale_days)
         );
@@ -3193,8 +3188,8 @@ export function SettingsPanel() {
         setInitialTestEmail(resolvedTestEmail);
         setSupportLanguage(resolvedSupportLanguage);
         setInitialSupportLanguage(resolvedSupportLanguage);
-        setCloseSuggestionDelayHours(resolvedCloseSuggestionDelayHours);
-        setInitialCloseSuggestionDelayHours(resolvedCloseSuggestionDelayHours);
+        setAutoCloseMode(resolvedAutoCloseMode);
+        setInitialAutoCloseMode(resolvedAutoCloseMode);
         setNeedsAttentionStaleDays(resolvedNeedsAttentionStaleDays);
         setInitialNeedsAttentionStaleDays(resolvedNeedsAttentionStaleDays);
       }
@@ -3312,13 +3307,12 @@ export function SettingsPanel() {
       Boolean(testMode) !== Boolean(initialTestMode) ||
       String(testEmail || "").trim() !== String(initialTestEmail || "").trim() ||
       normalizeSupportLanguage(supportLanguage) !== normalizeSupportLanguage(initialSupportLanguage) ||
-      normalizeCloseSuggestionDelayHours(closeSuggestionDelayHours) !==
-        normalizeCloseSuggestionDelayHours(initialCloseSuggestionDelayHours) ||
+      normalizeAutoCloseMode(autoCloseMode) !== normalizeAutoCloseMode(initialAutoCloseMode) ||
       normalizeStaleDays(needsAttentionStaleDays) !== normalizeStaleDays(initialNeedsAttentionStaleDays) ||
       String(aiPrompt || "").trim() !== String(initialAiPrompt || "").trim(),
     [
-      closeSuggestionDelayHours,
-      initialCloseSuggestionDelayHours,
+      autoCloseMode,
+      initialAutoCloseMode,
       needsAttentionStaleDays,
       initialNeedsAttentionStaleDays,
       initialAiPrompt,
@@ -3344,9 +3338,7 @@ export function SettingsPanel() {
       const nextTestMode = Boolean(testMode);
       const nextTestEmail = String(testEmail || "").trim() || null;
       const nextSupportLanguage = normalizeSupportLanguage(supportLanguage, "en");
-      const nextCloseSuggestionDelayHours = normalizeCloseSuggestionDelayHours(
-        closeSuggestionDelayHours
-      );
+      const nextAutoCloseMode = normalizeAutoCloseMode(autoCloseMode);
       const nextNeedsAttentionStaleDays = normalizeStaleDays(needsAttentionStaleDays);
       if (workspaceId) {
         const { error: workspaceNameError } = await supabase
@@ -3363,7 +3355,7 @@ export function SettingsPanel() {
             test_mode: nextTestMode,
             test_email: nextTestEmail,
             support_language: nextSupportLanguage,
-            close_suggestion_delay_hours: nextCloseSuggestionDelayHours,
+            auto_close_mode: nextAutoCloseMode,
             needs_attention_stale_days: nextNeedsAttentionStaleDays,
           }),
         });
@@ -3374,17 +3366,17 @@ export function SettingsPanel() {
         const persistedSupportLanguage = normalizeSupportLanguage(
           testModePayload?.support_language || nextSupportLanguage
         );
-        const persistedCloseSuggestionDelayHours = normalizeCloseSuggestionDelayHours(
-          testModePayload?.close_suggestion_delay_hours,
-          nextCloseSuggestionDelayHours
+        const persistedAutoCloseMode = normalizeAutoCloseMode(
+          testModePayload?.auto_close_mode,
+          nextAutoCloseMode
         );
         const persistedNeedsAttentionStaleDays = normalizeStaleDays(
           testModePayload?.needs_attention_stale_days ?? nextNeedsAttentionStaleDays
         );
         setSupportLanguage(persistedSupportLanguage);
         setInitialSupportLanguage(persistedSupportLanguage);
-        setCloseSuggestionDelayHours(String(persistedCloseSuggestionDelayHours));
-        setInitialCloseSuggestionDelayHours(String(persistedCloseSuggestionDelayHours));
+        setAutoCloseMode(persistedAutoCloseMode);
+        setInitialAutoCloseMode(persistedAutoCloseMode);
         setNeedsAttentionStaleDays(String(persistedNeedsAttentionStaleDays));
         setInitialNeedsAttentionStaleDays(String(persistedNeedsAttentionStaleDays));
       } else if (shopId) {
@@ -3414,8 +3406,8 @@ export function SettingsPanel() {
       if (!workspaceId) {
         setSupportLanguage(nextSupportLanguage);
         setInitialSupportLanguage(nextSupportLanguage);
-        setCloseSuggestionDelayHours(String(DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS));
-        setInitialCloseSuggestionDelayHours(String(DEFAULT_CLOSE_SUGGESTION_DELAY_HOURS));
+        setAutoCloseMode("approve");
+        setInitialAutoCloseMode("approve");
         setNeedsAttentionStaleDays(String(DEFAULT_STALE_DAYS));
         setInitialNeedsAttentionStaleDays(String(DEFAULT_STALE_DAYS));
       }
@@ -3437,7 +3429,7 @@ export function SettingsPanel() {
     shopId,
     supabase,
     supportLanguage,
-    closeSuggestionDelayHours,
+    autoCloseMode,
     needsAttentionStaleDays,
     teamName,
     testEmail,
@@ -3450,16 +3442,14 @@ export function SettingsPanel() {
     setTestMode(Boolean(initialTestMode));
     setTestEmail(String(initialTestEmail || ""));
     setSupportLanguage(normalizeSupportLanguage(initialSupportLanguage, "en"));
-    setCloseSuggestionDelayHours(
-      String(normalizeCloseSuggestionDelayHours(initialCloseSuggestionDelayHours))
-    );
+    setAutoCloseMode(normalizeAutoCloseMode(initialAutoCloseMode));
     setNeedsAttentionStaleDays(
       String(normalizeStaleDays(initialNeedsAttentionStaleDays))
     );
     setAiPrompt(String(initialAiPrompt || ""));
   }, [
     initialAiPrompt,
-    initialCloseSuggestionDelayHours,
+    initialAutoCloseMode,
     initialNeedsAttentionStaleDays,
     initialSupportLanguage,
     initialTeamName,
@@ -4317,8 +4307,8 @@ export function SettingsPanel() {
             onTestEmailChange={setTestEmail}
             supportLanguage={supportLanguage}
             onSupportLanguageChange={setSupportLanguage}
-            closeSuggestionDelayHours={closeSuggestionDelayHours}
-            onCloseSuggestionDelayHoursChange={setCloseSuggestionDelayHours}
+            autoCloseMode={autoCloseMode}
+            onAutoCloseModeChange={setAutoCloseMode}
             needsAttentionStaleDays={needsAttentionStaleDays}
             onNeedsAttentionStaleDaysChange={setNeedsAttentionStaleDays}
             hasWorkspaceScope={Boolean(workspaceId)}
