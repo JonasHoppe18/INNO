@@ -101,6 +101,7 @@ import { checkUnsupportedCommitments } from "./stages/unsupported-commitment-che
 import { checkUnsupportedAssumptions } from "./stages/unsupported-assumption-check.ts";
 import { checkLiveFactAndActionClaims } from "./stages/live-fact-action-claim-check.ts";
 import { checkUnsupportedNegativeClaims } from "./stages/unsupported-negative-claim-check.ts";
+import { rewriteCapabilityRefusals } from "./stages/capability-refusal-rewrite.ts";
 import {
   checkImageEvidenceClaims,
   type ImageEvidenceViolationType,
@@ -3180,6 +3181,23 @@ export async function runDraftV2Pipeline(
             .join(", ")
         } — routing to review`,
       );
+    }
+
+    // Deterministic backstop: an ungrounded capability/offer refusal ("we don't
+    // offer X", "det kan vi ikke") is rewritten to an owns-the-case hedge so the
+    // draft behaves like an employee who investigates instead of inventing a
+    // limit. Only capability-family violations are rewritten; the review flag is
+    // already set above. No LLM cost.
+    const capabilityRewrite = rewriteCapabilityRefusals({
+      draft: finalDraft ?? "",
+      violations: unsupportedNegativeClaimCheck.violations,
+      language: replyLanguage,
+    });
+    if (capabilityRewrite.rewritten) {
+      finalDraft = capabilityRewrite.draft;
+      finalRoutingHint = "review";
+      blockSendRecommended = true;
+      console.warn("[generate-draft-v2] ungrounded capability refusal rewritten to owns-the-case hedge");
     }
 
     const policyChunkCount = retrieved.chunks.filter((c) =>
