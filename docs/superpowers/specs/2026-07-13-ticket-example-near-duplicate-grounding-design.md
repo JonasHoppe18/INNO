@@ -48,7 +48,7 @@ type) with:
   final `.map`).
 - `is_near_duplicate: boolean` — computed as:
   ```
-  const threshold = Number(Deno.env.get("TICKET_EXAMPLE_GROUNDING_MIN_SIMILARITY") ?? "0.86");
+  const threshold = Number(Deno.env.get("TICKET_EXAMPLE_GROUNDING_MIN_SIMILARITY") ?? "0.75");
   const productTerms = extractMentionedProductTerms(queryText, shop); // already computed
   const exampleText = `${subject||""} ${customer_msg} ${agent_reply}`;
   const productTermMatch = overlapCount(exampleText, productTerms) > 0;
@@ -104,12 +104,16 @@ the owns-the-case block and abstained-chunk suppression are simply not entered.
 
 ## Calibration
 
-- `TICKET_EXAMPLE_GROUNDING_MIN_SIMILARITY` env var, **default 0.86** raw cosine.
+- `TICKET_EXAMPLE_GROUNDING_MIN_SIMILARITY` env var, **default 0.75** raw cosine.
   Conservative start — prefer missing a grounding over leaking a wrong fact.
+  Calibrated from real AceZone RPC data (2026-07-13): genuine same-topic
+  near-duplicates measured 0.76–0.80 example-to-example (mic-clip 0.799,
+  ear-pads 0.758); order-specific and cross-topic examples sat ≤0.72. 0.75 sits
+  in that gap; the product-term match backstops cross-product regardless.
 - **The threshold is validated empirically before merge**, not assumed: measure
   the similarity a true near-duplicate (mic-clip) actually receives and the
   highest similarity a cross-product example (ear-pads vs. headset) receives,
-  and set the default between them. 0.86 is the starting hypothesis; adjust the
+  and set the default between them. 0.75 chosen from real data (near-dups 0.76-0.80, noise <=0.72); env-tunable; adjust the
   documented default if the data demands it.
 
 ## Verification (before merge)

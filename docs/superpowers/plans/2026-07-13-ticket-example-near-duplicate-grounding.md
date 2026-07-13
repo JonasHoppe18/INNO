@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Threshold env var: `TICKET_EXAMPLE_GROUNDING_MIN_SIMILARITY`, default `0.86` raw cosine.
+- Threshold env var: `TICKET_EXAMPLE_GROUNDING_MIN_SIMILARITY`, default `0.75` raw cosine.
 - Fail-safe everywhere: missing/NaN similarity → `is_near_duplicate=false`; undefined count → no behavior change.
 - Personal-data privacy rule in the writer is untouched and absolute.
 - Deno tests: `deno test --no-check --allow-env <file>`. Only 2 known pre-existing `deno check` errors (`_shared/shopify-credentials.ts:36`, `_shared/tracking/providers/gls/tracking.ts:204`) — no new ones.
@@ -158,7 +158,7 @@ Deno.test("NaN similarity is fail-safe false", () => {
 - [ ] **Step 3: Implement**
   - Add the exported `isNearDuplicateExample` helper near the other pure helpers.
   - Add `similarity: number` and `is_near_duplicate: boolean` to the `RetrieverResult.past_ticket_examples` array type (line ~115).
-  - In the ticket_examples lookup's final `.map` (~2118), compute and include both fields. The `productTerms` for the query are already computed as `extractMentionedProductTerms(queryText, shop)` inside the loop — hoist/recompute once for the query and pass to the helper. Read the threshold once: `const groundingThreshold = Number(Deno.env.get("TICKET_EXAMPLE_GROUNDING_MIN_SIMILARITY") ?? "0.86");`.
+  - In the ticket_examples lookup's final `.map` (~2118), compute and include both fields. The `productTerms` for the query are already computed as `extractMentionedProductTerms(queryText, shop)` inside the loop — hoist/recompute once for the query and pass to the helper. Read the threshold once: `const groundingThreshold = Number(Deno.env.get("TICKET_EXAMPLE_GROUNDING_MIN_SIMILARITY") ?? "0.75");`.
   - `exampleText` = `${subject||""} ${customer_msg} ${agent_reply}` (same text already built for lexical scoring).
 
 - [ ] **Step 4: Run tests, verify pass.**
