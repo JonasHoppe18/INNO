@@ -508,6 +508,17 @@ Deno.test("capability refusal without grounding is flagged", () => {
   assertEquals(r.requires_review, true);
 });
 
+Deno.test("adverb before the negation still flags (fragt-B: 'we currently do not offer')", () => {
+  for (const draft of [
+    "Unfortunately, we currently do not offer shipping to that country.",
+    "We at the moment do not provide that service.",
+    "We do not currently offer international returns.",
+  ]) {
+    const r = checkUnsupportedNegativeClaims({ draft_text: draft, retrieved_chunks: [] });
+    assert(r.violations.some((v) => v.type === "unsupported_capability_claim"), draft);
+  }
+});
+
 Deno.test("Danish capability refusals are flagged", () => {
   for (const draft of [
     "Desværre har vi ikke mulighed for at kontakte Maxgaming direkte.",

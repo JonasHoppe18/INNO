@@ -154,7 +154,9 @@ const FAMILIES: ClaimFamily[] = [
     violationType: "unsupported_capability_claim",
     patterns: [
       // EN — confident "the shop doesn't/can't offer/provide/sell/do X"
-      /\bwe\s+(?:do\s+not|don['’]t|can\s?not|cannot|can['’]t)\s+(?:currently\s+)?(?:offer|provide|sell|support|do)\b/i,
+      // Optional adverb allowed on EITHER side of the negation, so both
+      // "we do not currently offer" and "we currently do not offer" match.
+      /\bwe\s+(?:currently\s+|unfortunately\s+|at\s+(?:the\s+)?(?:moment|present)\s+)?(?:do\s+not|don['’]t|can\s?not|cannot|can['’]t)\s+(?:currently\s+)?(?:offer|provide|sell|support|do)\b/i,
       /\bwe\s+(?:do\s+not|don['’]t)\s+have\s+[^.?!]*\b(?:for\s+purchase|separately|available\s+separately)\b/i,
       /\b(?:is|are)\s+not\s+sold\s+separately\b/i,
       /\bnot\s+available\s+for\s+purchase\b/i,
