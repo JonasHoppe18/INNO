@@ -38,3 +38,9 @@ export function statusOnInboundCustomerMessage(
     status_changed_at: nowIso,
   };
 }
+
+// Minimal patch: flags a thread ready-to-close on a pure closing acknowledgment
+// WITHOUT changing `status` (never force "resolved" — suggest only).
+export function statusOnClosingAcknowledgment(): { close_pending: true } {
+  return { close_pending: true };
+}
