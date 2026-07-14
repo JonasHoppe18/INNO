@@ -86,9 +86,12 @@ Deno.test("directive demands acknowledgment, one apology, tracking explanation, 
   // own the miss: explicit acknowledgment of the customer's observation
   assertStringIncludes(d, "anerkend");
   assertStringIncludes(d, "du har helt ret");
-  // apologize exactly once
+  // apologize exactly once — the example sentence must model the apology,
+  // otherwise the writer copies the example verbatim and skips it
+  // (observed in live replay 2026-07-14)
   assertStringIncludes(d, "beklag");
   assertStringIncludes(d, "én gang");
+  assertStringIncludes(d, "det beklager jeg");
   // tracking isn't broken — explain scan timing
   assertStringIncludes(d, "scannet");
   // template empathy + "men" is banned
