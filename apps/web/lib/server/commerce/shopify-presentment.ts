@@ -73,16 +73,38 @@ export async function fetchShopCurrency(args: {
   }
 }
 
+/**
+ * Resolve the shop's primary-market currency from a combined
+ * markets + shop GraphQL response. A market can return
+ * `currencySettings: null` (observed on AceZone's primary "Germany" market
+ * 2026-07-14) — Shopify implies the shop's base currency for such markets,
+ * so we fall back to `shop.currencyCode` instead of returning null.
+ */
+export function parsePrimaryMarketCurrency(graphqlJson: unknown): string | null {
+  const data = (graphqlJson as any)?.data;
+  const edges = data?.markets?.edges ?? [];
+  const primary = Array.isArray(edges)
+    ? (edges.find((e: any) => e?.node?.primary)?.node ?? edges[0]?.node)
+    : null;
+  const marketCode = primary?.currencySettings?.baseCurrency?.currencyCode;
+  if (marketCode) return String(marketCode).trim().toUpperCase();
+  const shopCode = data?.shop?.currencyCode;
+  return shopCode ? String(shopCode).trim().toUpperCase() : null;
+}
+
 export async function fetchPrimaryMarketCurrency(args: {
   domain: string;
   accessToken: string;
   apiVersion: string;
 }): Promise<string | null> {
   const { domain, accessToken, apiVersion } = args;
-  const query = `query { markets(first: 20) { edges { node {
-    primary
-    currencySettings { baseCurrency { currencyCode } }
-  } } } }`;
+  const query = `query {
+    shop { currencyCode }
+    markets(first: 20) { edges { node {
+      primary
+      currencySettings { baseCurrency { currencyCode } }
+    } } }
+  }`;
   try {
     const res = await fetch(`https://${domain}/admin/api/${apiVersion}/graphql.json`, {
       method: "POST",
@@ -94,11 +116,7 @@ export async function fetchPrimaryMarketCurrency(args: {
     });
     if (!res.ok) return null;
     const json = await res.json().catch(() => null);
-    const edges = (json as any)?.data?.markets?.edges ?? [];
-    const primary = edges.find((e: any) => e?.node?.primary)?.node
-      ?? edges[0]?.node;
-    const code = primary?.currencySettings?.baseCurrency?.currencyCode;
-    return code ? String(code).trim().toUpperCase() : null;
+    return parsePrimaryMarketCurrency(json);
   } catch {
     return null;
   }
