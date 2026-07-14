@@ -56,3 +56,24 @@ test("route exports at least GET and POST", () => {
   assert.ok(exportedMethods.has("GET"));
   assert.ok(exportedMethods.has("POST"));
 });
+
+test("SettingsPanel reads instructions through the route's { persona: ... } wrapper", () => {
+  // GET /api/persona returns { persona: { instructions } }. Reading
+  // personaPayload?.instructions (unwrapped) silently renders an empty
+  // AI-instructions field even when the DB holds a saved prompt.
+  const routeReturnsWrapped = /NextResponse\.json\(\s*\{\s*persona:/.test(routeSrc);
+  assert.ok(routeReturnsWrapped, "route no longer wraps payload in { persona } — update this test");
+
+  const panelSrc = readFileSync(
+    path.join(root, "apps/web/components/settings/SettingsPanel.jsx"),
+    "utf8",
+  );
+  assert.ok(
+    /personaPayload\?\.persona\?\.instructions/.test(panelSrc),
+    "SettingsPanel must read personaPayload?.persona?.instructions (route wraps the payload)",
+  );
+  assert.ok(
+    !/personaPayload\?\.instructions/.test(panelSrc),
+    "SettingsPanel still reads the unwrapped personaPayload?.instructions somewhere",
+  );
+});

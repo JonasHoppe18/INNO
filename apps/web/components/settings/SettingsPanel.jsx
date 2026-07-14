@@ -3384,7 +3384,8 @@ export function SettingsPanel() {
         setInitialNeedsAttentionStaleDays(resolvedNeedsAttentionStaleDays);
       }
       if (workspaceId && personaResponse?.ok) {
-        const resolved = String(personaPayload?.instructions || "").trim();
+        // GET /api/persona wraps the payload: { persona: { instructions } }
+        const resolved = String(personaPayload?.persona?.instructions || "").trim();
         setAiPrompt(resolved);
         setInitialAiPrompt(resolved);
       }
