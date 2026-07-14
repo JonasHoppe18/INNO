@@ -1,6 +1,7 @@
 export type SupportVoiceViolation =
   | "ai_meta"
   | "case_management_wording"
+  | "empathy_deflection"
   | "formal_opening"
   | "generic_filler"
   | "internal_system_wording"
@@ -10,6 +11,12 @@ export type SupportVoiceViolation =
 
 const SUPPORT_VOICE_PATTERNS: Array<[SupportVoiceViolation, RegExp]> = [
   ["ai_meta", /\b(?:as an ai|som ai|kunstig intelligens)\b/i],
+  [
+    // Template empathy immediately dismissed by "men"/"but" — reads as a
+    // deflection of the complaint, not an acknowledgment of it.
+    "empathy_deflection",
+    /\bjeg forstår,? at det (?:kan være|er) (?:frustrerende|irriterende|ærgerligt),? men\b|\bi understand,? (?:that )?(?:this|it) (?:can be|is|may be|must be) (?:frustrating|annoying|inconvenient),? but\b/i,
+  ],
   [
     "formal_opening",
     /\b(?:tak for din henvendelse|tak for din besked|tak for at sende trackingnummeret|thank you for (?:reaching out|your message|contacting us|sending the tracking number))\b/i,

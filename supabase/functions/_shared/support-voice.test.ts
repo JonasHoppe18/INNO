@@ -52,3 +52,27 @@ Deno.test("buildSupportVoiceRewriteInstruction preserves factual safety contract
   assertStringIncludes(instruction, "team_handoff");
   assert(!/change facts/i.test(instruction));
 });
+
+Deno.test("detectSupportVoiceViolations flags template empathy followed by 'men'/'but'", () => {
+  assertEquals(
+    detectSupportVoiceViolations(
+      "Jeg forstår, at det kan være frustrerende, men vi arbejder på at få den sendt hurtigst muligt.",
+    ),
+    ["empathy_deflection"],
+  );
+  assertEquals(
+    detectSupportVoiceViolations(
+      "I understand this can be frustrating, but we are working on it.",
+    ),
+    ["empathy_deflection"],
+  );
+});
+
+Deno.test("empathy without deflection is not flagged", () => {
+  assertEquals(
+    detectSupportVoiceViolations(
+      "Jeg forstår godt din frustration, og jeg beklager ventetiden. Din ordre er ikke afsendt endnu.",
+    ),
+    [],
+  );
+});
