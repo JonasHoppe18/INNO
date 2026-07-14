@@ -123,3 +123,36 @@ Deno.test("MAX_IMAGES cap still holds — at most 3 images returned", async () =
   const out = await loadImageAttachments(fakeSupabaseReturning(rows), "msg-1");
   assertEquals(out.length, 3);
 });
+
+// ── HEIC/unsupported vision formats (Wright T-51051, 2026-07-14) ──
+// OpenAI vision accepts only png/jpeg/gif/webp. iPhone photos arrive as
+// image/heic; shipping them inline made the writer call 400 and killed the
+// whole draft. Unsupported image formats must be skipped (the non-image
+// attachment meta still tells the writer files were received).
+Deno.test("HEIC attachments are skipped, not shipped to vision", async () => {
+  const rows = [
+    inlineRow({ filename: "1000011875.heic", mime: "image/heic", bytes: 500_000 }),
+    inlineRow({ filename: "1000011873.heic", mime: "image/heic", bytes: 400_000 }),
+  ];
+  const out = await loadImageAttachments(fakeSupabaseReturning(rows), "msg-heic");
+  assertEquals(out.length, 0);
+});
+
+Deno.test("supported formats still load alongside skipped HEIC", async () => {
+  const rows = [
+    inlineRow({ filename: "a.heic", mime: "image/heic", bytes: 500_000 }),
+    inlineRow({ filename: "b.jpg", mime: "image/jpeg", bytes: 400_000 }),
+    inlineRow({ filename: "c.webp", mime: "image/webp", bytes: 300_000 }),
+  ];
+  const out = await loadImageAttachments(fakeSupabaseReturning(rows), "msg-mixed");
+  assertEquals(out.map((a) => a.filename), ["b.jpg", "c.webp"]);
+});
+
+Deno.test("tiff and svg are also excluded from vision", async () => {
+  const rows = [
+    inlineRow({ filename: "scan.tiff", mime: "image/tiff", bytes: 500_000 }),
+    inlineRow({ filename: "logo.svg", mime: "image/svg+xml", bytes: 200_000 }),
+  ];
+  const out = await loadImageAttachments(fakeSupabaseReturning(rows), "msg-other");
+  assertEquals(out.length, 0);
+});

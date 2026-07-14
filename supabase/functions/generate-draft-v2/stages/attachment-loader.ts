@@ -35,6 +35,17 @@ function parseInlineStoragePath(
 
 const MAX_IMAGES = 3;
 const MAX_TOTAL_BYTES = 4 * 1024 * 1024;
+// OpenAI vision accepts only these formats. Anything else (HEIC from iPhones,
+// TIFF, SVG, ...) must be skipped — shipping it inline makes the writer call
+// fail with 400 invalid_image_format and kills the whole draft. Skipped images
+// still reach the writer as non-image attachment metadata ("billede (...)").
+const SUPPORTED_VISION_MIME = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/gif",
+  "image/webp",
+]);
 // Inline (cid:) images at or below this size are treated as email signature /
 // logo assets, not customer evidence. Large inline images (e.g. an embedded
 // screenshot) are kept — the gate is ContentID AND small, never ContentID alone.
@@ -62,8 +73,10 @@ export async function loadImageAttachments(
     if (accepted.length >= MAX_IMAGES) break;
     const mimeType = String(row?.mime_type || "").toLowerCase();
     if (!mimeType.startsWith("image/")) continue;
+    if (!SUPPORTED_VISION_MIME.has(mimeType)) continue;
     const parsed = parseInlineStoragePath(row?.storage_path);
     if (!parsed) continue;
+    if (!SUPPORTED_VISION_MIME.has(String(parsed.mimeType).toLowerCase())) continue;
     const bytes = Math.floor((parsed.contentBase64.length * 3) / 4);
     if (bytes <= 0) continue;
     // Skip inline signature/logo assets: a Content-ID (provider_attachment_id)
