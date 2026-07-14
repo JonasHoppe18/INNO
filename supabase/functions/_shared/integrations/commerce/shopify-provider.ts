@@ -444,11 +444,14 @@ export class ShopifyProvider implements CommerceProvider {
       `orders.json?${params}`,
     );
     if (!Array.isArray(payload?.orders) || payload.orders.length === 0) return null;
-    // Shopify name filter is a prefix match — verify exact match
+    // Shopify name filter is a prefix match — only an exact name match may be
+    // treated as the customer's order. A prefix hit (e.g. #4435 for query
+    // "443") is a DIFFERENT order; returning it would let facts and actions
+    // target the wrong order, so no match means null.
     const exact = payload.orders.find(
       (o) => o.name === `#${normalized}` || o.name === normalized,
     );
-    return exact ? mapOrder(exact) : mapOrder(payload.orders[0]);
+    return exact ? mapOrder(exact) : null;
   }
 
   // GET /admin/api/{version}/orders.json?email=...&status=any

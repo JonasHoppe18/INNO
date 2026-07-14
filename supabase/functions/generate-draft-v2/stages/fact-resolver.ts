@@ -1317,7 +1317,8 @@ function integrationErrorFact(): ResolvedFact {
   };
 }
 
-async function buildFactsFromOrder(
+// Exported for unit testing (return-eligibility.test.ts).
+export async function buildFactsFromOrder(
   order: Order,
   facts: ResolvedFact[],
   plan: Plan,
@@ -1512,7 +1513,10 @@ async function buildFactsFromOrder(
   ];
   const isNonReturnCase = NON_RETURN_INTENTS.includes(plan.primary_intent);
 
-  // Return eligibility (simpel 30-dages policy-check)
+  // Return eligibility: the resolver documents the order age but NEVER
+  // passes a verdict — return windows differ per shop and are only known
+  // from the shop's retrieved return policy. An invented "standard" window
+  // is an undocumented factual claim.
   if (
     plan.required_facts.includes("return_eligibility") && !isNonReturnCase &&
     order.created_at
@@ -1523,9 +1527,10 @@ async function buildFactsFromOrder(
     );
     facts.push({
       label: "Returret",
-      value: daysSince <= 30
-        ? `Ja — ordre er ${daysSince} dage gammel (inden for 30-dages returvindue)`
-        : `Nej — ordre er ${daysSince} dage gammel (uden for standard 30-dages returvindue)`,
+      value:
+        `Ordren er ${daysSince} dage gammel (ordredato ${
+          orderDate.toISOString().slice(0, 10)
+        }). Om den kan returneres afgøres UDELUKKENDE af butikkens dokumenterede returpolitik i den valgte viden — antag aldrig et standard-returvindue. Findes ingen dokumenteret returpolitik, så lov ikke returret.`,
     });
   }
 
