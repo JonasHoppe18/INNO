@@ -3580,7 +3580,7 @@ export function SettingsPanel() {
       // Save AI Prompt if changed
       if (nextAiPrompt !== String(initialAiPrompt || "").trim()) {
         await fetch("/api/persona", {
-          method: "PUT",
+          method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
           body: JSON.stringify({ instructions: nextAiPrompt }),
@@ -4411,7 +4411,7 @@ export function SettingsPanel() {
             saving={saving}
             onSave={async (newPrompt) => {
               const response = await fetch("/api/persona", {
-                method: "PUT",
+                method: "POST",
                 headers: { "Content-Type": "application/json" },
                 credentials: "include",
                 body: JSON.stringify({ instructions: newPrompt }),
