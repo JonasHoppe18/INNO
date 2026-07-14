@@ -1,16 +1,17 @@
 // supabase/scripts/distill-major-edits.mjs
 //
-// Feedback Loop v1 (dry-run only): classify major_edit draft pairs
+// Feedback Loop v1: classify major_edit draft pairs
 // (drafts.ai_draft_text vs drafts.final_sent_text) into a root cause via LLM
 // and print the resulting suggestion candidates + a root-cause histogram.
 //
-// v1 NEVER writes to the database: --apply hard-fails (exit 2) until the
-// dry-run quality check has been explicitly approved (same convention as
-// feedback-detect-candidates.mjs).
+// Default is dry-run (no writes). --apply upserts feedback_suggestions rows,
+// idempotent on dedup_key (distill:<draft_id>). Apply was gated until the
+// dry-run quality check on 25 real pairs was approved (2026-07-06).
 //
 // Run:
 //   set -a && source apps/web/.env.local && set +a
 //   node supabase/scripts/distill-major-edits.mjs --limit 5 --dry-run
+//   node supabase/scripts/distill-major-edits.mjs --limit 200 --apply
 import { createClient } from "@supabase/supabase-js";
 import {
   buildDistillerPrompt,
@@ -19,12 +20,7 @@ import {
 } from "../../apps/web/lib/server/major-edit-distiller.js";
 
 const args = process.argv.slice(2);
-if (args.includes("--apply")) {
-  console.error(
-    "distill-major-edits: --apply is not enabled in v1. Run --dry-run and get the classifications approved first.",
-  );
-  process.exit(2);
-}
+const apply = args.includes("--apply");
 const limitIdx = args.indexOf("--limit");
 const limit = limitIdx >= 0 ? Number(args[limitIdx + 1]) : 25;
 if (!Number.isFinite(limit) || limit <= 0) {
@@ -66,10 +62,13 @@ const { data: rows, error } = await supabase
   .limit(limit);
 if (error) throw error;
 
-console.log(`distill-major-edits DRY-RUN — ${rows.length} major_edit pairs, model=${model}\n`);
+console.log(
+  `distill-major-edits ${apply ? "APPLY" : "DRY-RUN"} — ${rows.length} major_edit pairs, model=${model}\n`,
+);
 
 const histogram = {};
 let skipped = 0;
+let written = 0;
 for (const draftRow of rows) {
   const { system, user } = buildDistillerPrompt({
     aiDraftText: draftRow.ai_draft_text,
@@ -113,6 +112,14 @@ for (const draftRow of rows) {
     continue;
   }
 
+  if (apply) {
+    const { error: upsertErr } = await supabase
+      .from("feedback_suggestions")
+      .upsert(built.row, { onConflict: "dedup_key" });
+    if (upsertErr) throw upsertErr;
+    written += 1;
+  }
+
   histogram[classification.root_cause] =
     (histogram[classification.root_cause] || 0) + 1;
   console.log(
@@ -128,4 +135,8 @@ for (const draftRow of rows) {
 
 console.log(`\nRoot-cause histogram (${rows.length - skipped} classified, ${skipped} skipped):`);
 console.log(JSON.stringify(histogram, null, 2));
-console.log("\nDRY-RUN: no database writes performed.");
+console.log(
+  apply
+    ? `\nAPPLY: ${written} feedback_suggestions rows upserted (dedup_key distill:*).`
+    : "\nDRY-RUN: no database writes performed.",
+);
