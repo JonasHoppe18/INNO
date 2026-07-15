@@ -6,6 +6,9 @@ import HowItWorks from "@/components/landing/HowItWorks";
 import FeatureDives from "@/components/landing/FeatureDives";
 import LanguagesSection from "@/components/landing/LanguagesSection";
 import ControlSection from "@/components/landing/ControlSection";
+import PricingSection from "@/components/landing/PricingSection";
+import IntegrationsSection from "@/components/landing/IntegrationsSection";
+import FaqSection from "@/components/landing/FaqSection";
 
 export default async function LandingPage({ params: { locale } }) {
   unstable_setRequestLocale(locale);
@@ -19,6 +22,9 @@ export default async function LandingPage({ params: { locale } }) {
       <FeatureDives />
       <LanguagesSection />
       <ControlSection />
+      <PricingSection locale={locale} />
+      <IntegrationsSection />
+      <FaqSection />
     </main>
   );
 }
