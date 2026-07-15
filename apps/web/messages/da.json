@@ -1,1 +1,120 @@
-{ "landing": { "placeholder": "Sona — ny landing page" } }
+{
+  "landing": {
+    "nav": {
+      "product": "Produkt",
+      "how": "Sådan virker det",
+      "pricing": "Priser",
+      "login": "Log ind",
+      "bookDemo": "Book en demo"
+    },
+    "hero": {
+      "badge": "AI-support til e-commerce",
+      "titleLine1": "Support der besvarer sig selv.",
+      "titleLine2": "Du godkender hvert svar.",
+      "subtitle": "Sona læser hver kundemail, slår ordren op i din butik og skriver det rigtige svar i din tone — klar til godkendelse med ét klik.",
+      "ctaDemo": "Book en demo",
+      "ctaAccess": "Få tidlig adgang",
+      "emailPlaceholder": "Din email",
+      "emailInvalid": "Indtast en gyldig email.",
+      "emailError": "Noget gik galt. Prøv igen.",
+      "emailSuccess": "Tak! Vi skriver til dig, så snart vi åbner flere pladser.",
+      "trust1": "Virker med enhver webshop",
+      "trust2": "Behold din nuværende indbakke",
+      "trust3": "Intet sendes uden godkendelse"
+    },
+    "how": {
+      "kicker": "SÅDAN VIRKER DET",
+      "title": "Kørende på tre trin",
+      "step1Title": "Forbind din butik",
+      "step1Body": "Tilslut din webshop og support-email. Ingen migrering — Sona arbejder oven på det, du allerede har.",
+      "step2Title": "Lær Sona din butik",
+      "step2Body": "Importér politikker, FAQ og gamle tickets. Sona lærer dine produkter, regler og tone.",
+      "step3Title": "Godkend, og automatisér så",
+      "step3Body": "Start med at godkende hvert udkast. Sæt ticket-typer på autopilot i takt med at tilliden vokser."
+    },
+    "dives": {
+      "aKicker": "VIDEN",
+      "aTitle": "Sona kender din butik",
+      "aBody": "Importér returpolitikker, fragtregler, FAQ og gamle tickets. Hvert svar er forankret i din butiks egen viden — og citerer kilden, det bygger på, så du kan verificere med ét blik.",
+      "aPoint1": "Svar citerer præcis den politik, de bygger på",
+      "aPoint2": "Importér fra Zendesk, dokumenter eller din hjemmeside",
+      "aPoint3": "Sona spørger i stedet for at gætte, når viden mangler",
+      "bKicker": "HANDLINGER",
+      "bTitle": "Fra svar til handling",
+      "bBody": "Refusioner, ombytninger, adresseændringer, annulleringer — Sona forbereder handlingen sammen med svaret og udfører den i din butik, i det øjeblik du godkender. Ikke lovet i teksten. Gjort.",
+      "bPoint1": "Refusioner og ombytninger udført i din butik",
+      "bPoint2": "Adresseændringer fanget før pakken afsendes",
+      "bPoint3": "Hver handling kræver din eksplicitte godkendelse",
+      "cKicker": "AUTOPILOT",
+      "cTitle": "Autopilot — én ticket-type ad gangen",
+      "cBody": "Start med forslag alene. Når Sonas udkast konsekvent sendes uredigerede, kan du sætte simple ticket-typer — som tracking-spørgsmål — på autopilot og fortsat godkende resten.",
+      "cPoint1": "Automatisering pr. ticket-type, aldrig alt-eller-intet",
+      "cPoint2": "Kvaliteten måles på hvert udkast, du redigerer",
+      "cPoint3": "Slå det fra med én kontakt, når som helst"
+    },
+    "languages": {
+      "kicker": "ALLE SPROG",
+      "title": "Alle sprog, din stemme",
+      "body": "Dine kunder skriver på deres sprog. Sona svarer på det — samme tone, samme politikker, ingen oversættelses-omveje."
+    },
+    "control": {
+      "kicker": "DU HAR KONTROLLEN",
+      "title": "Du bestemmer, hvor meget Sona gør",
+      "body": "Start med forslag alene. Sæt simple ticket-typer på autopilot, når du er klar — og se præcis hvorfor Sona svarede, som den gjorde, med kilder for hver påstand.",
+      "toggle1Title": "Foreslå udkast",
+      "toggle1Sub": "Alle indkommende tickets",
+      "toggle2Title": "Auto-send tracking-svar",
+      "toggle2Sub": "Kun ved høj sikkerhed",
+      "toggle3Title": "Luk løste tråde automatisk",
+      "toggle3Sub": "Fra — du godkender lukninger"
+    },
+    "pricing": {
+      "kicker": "PRISER",
+      "title": "Enkle priser der vokser med dig",
+      "subtitle": "Alle planer inkluderer alle features og ubegrænsede brugere. Ingen binding — måned til måned.",
+      "perMonth": "/md",
+      "ticketsLabel": "op til {count} tickets/md",
+      "mostPopular": "Mest populær",
+      "cta": "Book en demo",
+      "pilotNote": "Alle planer starter med en guidet pilot.",
+      "enterprise": "Mere end 5.000 tickets om måneden? Tal med os.",
+      "tierMini": "Mini",
+      "tierStarter": "Starter",
+      "tierGrowth": "Growth",
+      "tierScale": "Scale",
+      "feature1": "Ubegrænsede brugere",
+      "feature2": "Alle features inkluderet",
+      "feature3": "Ingen binding — opsig månedligt"
+    },
+    "integrations": {
+      "title": "Virker med de værktøjer, du allerede bruger",
+      "moreSoon": "flere på vej"
+    },
+    "faq": {
+      "title": "Spørgsmål, besvaret",
+      "q1": "Kan mine kunder se, at det er AI?",
+      "a1": "Svar sendes fra din egen support-adresse, i din tone, og du godkender dem, før de sendes. Om du oplyser AI-involvering, er dit valg — Sona virker begge veje.",
+      "q2": "Hvad sker der, når Sona ikke kender svaret?",
+      "a2": "Sona flager ticketen til dig i stedet for at gætte. Ubesvarede spørgsmål bliver forslag til din vidensbase, så dækningen vokser over tid.",
+      "q3": "Skal jeg skifte helpdesk?",
+      "a3": "Nej. Sona arbejder oven på din eksisterende support-email — du kan beholde dit nuværende setup og dine arbejdsgange.",
+      "q4": "Hvor lang tid tager opsætningen?",
+      "a4": "At forbinde butik og email tager minutter. At lære Sona dine politikker er et guidet trin — de fleste butikker ser deres første gode udkast samme dag.",
+      "q5": "Hvad med GDPR og mine kunders data?",
+      "a5": "Kundedata behandles kun for at besvare deres henvendelser, opbevares i EU og bruges aldrig til at træne modeller for andre virksomheder.",
+      "q6": "Hvad tæller som en ticket?",
+      "a6": "En kundesamtale, uanset hvor mange emails den tager. Automatiske notifikationer og spam tæller ikke."
+    },
+    "finalCta": {
+      "title": "Klar til at få support af bordet?",
+      "subtitle": "Book en 20-minutters demo — vi viser Sona besvare tickets som dine.",
+      "ctaDemo": "Book en demo",
+      "ctaAccess": "Få tidlig adgang"
+    },
+    "footer": {
+      "privacy": "Privatliv",
+      "terms": "Vilkår",
+      "contact": "hello@sona.ai"
+    }
+  }
+}

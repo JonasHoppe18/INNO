@@ -1,1 +1,120 @@
-{ "landing": { "placeholder": "Sona — new landing page" } }
+{
+  "landing": {
+    "nav": {
+      "product": "Product",
+      "how": "How it works",
+      "pricing": "Pricing",
+      "login": "Log in",
+      "bookDemo": "Book a demo"
+    },
+    "hero": {
+      "badge": "AI support for e-commerce",
+      "titleLine1": "Support that answers itself.",
+      "titleLine2": "You approve every reply.",
+      "subtitle": "Sona reads every customer email, looks up the order in your store, and drafts the right reply in your brand voice — ready for one-click approval.",
+      "ctaDemo": "Book a demo",
+      "ctaAccess": "Get early access",
+      "emailPlaceholder": "Your email",
+      "emailInvalid": "Please enter a valid email.",
+      "emailError": "Something went wrong. Please try again.",
+      "emailSuccess": "Thanks! We'll email you as soon as we open more spots.",
+      "trust1": "Works with any webshop",
+      "trust2": "Keep your existing inbox",
+      "trust3": "Nothing sent without approval"
+    },
+    "how": {
+      "kicker": "HOW IT WORKS",
+      "title": "Live in three steps",
+      "step1Title": "Connect your shop",
+      "step1Body": "Link your webshop and support email. No migration — Sona works alongside what you already have.",
+      "step2Title": "Teach Sona your shop",
+      "step2Body": "Import your policies, FAQ and past tickets. Sona learns your products, rules and tone of voice.",
+      "step3Title": "Approve, then automate",
+      "step3Body": "Start by approving every draft. Put ticket types on autopilot as trust grows."
+    },
+    "dives": {
+      "aKicker": "KNOWLEDGE",
+      "aTitle": "Sona knows your shop",
+      "aBody": "Import return policies, shipping rules, FAQs and past tickets. Every answer is grounded in your shop's own knowledge — and cites the source it's based on, so you can verify at a glance.",
+      "aPoint1": "Answers cite the exact policy they rely on",
+      "aPoint2": "Import from Zendesk, documents or your website",
+      "aPoint3": "Sona asks instead of guessing when knowledge is missing",
+      "bKicker": "ACTIONS",
+      "bTitle": "From answer to action",
+      "bBody": "Refunds, exchanges, address changes, cancellations — Sona prepares the action alongside the reply, and executes it in your store the moment you approve. Not promised in text. Done.",
+      "bPoint1": "Refunds and exchanges executed in your store",
+      "bPoint2": "Address changes caught before the parcel ships",
+      "bPoint3": "Every action requires your explicit approval",
+      "cKicker": "AUTOPILOT",
+      "cTitle": "Autopilot, one ticket type at a time",
+      "cBody": "Start with suggestions only. When Sona's drafts consistently go out unedited, put simple ticket types — like tracking questions — on autopilot, and keep approving the rest.",
+      "cPoint1": "Automation per ticket type, never all-or-nothing",
+      "cPoint2": "Quality measured on every draft you edit",
+      "cPoint3": "Turn it off with one switch, any time"
+    },
+    "languages": {
+      "kicker": "EVERY LANGUAGE",
+      "title": "Every language, your voice",
+      "body": "Your customers write in their language. Sona replies in it — same tone, same policies, no translation round-trips."
+    },
+    "control": {
+      "kicker": "YOU'RE IN CONTROL",
+      "title": "You decide how much Sona does",
+      "body": "Start with suggestions only. Put simple ticket types on autopilot when you're ready — and see exactly why Sona answered the way it did, with sources for every claim.",
+      "toggle1Title": "Suggest drafts",
+      "toggle1Sub": "All incoming tickets",
+      "toggle2Title": "Auto-send tracking replies",
+      "toggle2Sub": "High confidence only",
+      "toggle3Title": "Auto-close resolved threads",
+      "toggle3Sub": "Off — you approve closures"
+    },
+    "pricing": {
+      "kicker": "PRICING",
+      "title": "Simple pricing that grows with you",
+      "subtitle": "Every plan includes all features and unlimited users. No binding — month to month.",
+      "perMonth": "/month",
+      "ticketsLabel": "up to {count} tickets/month",
+      "mostPopular": "Most popular",
+      "cta": "Book a demo",
+      "pilotNote": "Every plan starts with a guided pilot.",
+      "enterprise": "More than 5,000 tickets a month? Talk to us.",
+      "tierMini": "Mini",
+      "tierStarter": "Starter",
+      "tierGrowth": "Growth",
+      "tierScale": "Scale",
+      "feature1": "Unlimited users",
+      "feature2": "All features included",
+      "feature3": "No binding — cancel monthly"
+    },
+    "integrations": {
+      "title": "Works with the tools you already use",
+      "moreSoon": "more soon"
+    },
+    "faq": {
+      "title": "Questions, answered",
+      "q1": "Will my customers know it's AI?",
+      "a1": "Replies go out from your own support address, in your tone of voice, and you approve them before they're sent. Whether you disclose AI involvement is your choice — Sona works either way.",
+      "q2": "What happens when Sona doesn't know the answer?",
+      "a2": "Sona flags the ticket for you instead of guessing. Unanswered questions become suggestions for your knowledge base, so coverage grows over time.",
+      "q3": "Do I have to switch helpdesk?",
+      "a3": "No. Sona works on top of your existing support email — you can keep your current setup and workflows.",
+      "q4": "How long does setup take?",
+      "a4": "Connecting your store and email takes minutes. Teaching Sona your policies is a guided step — most shops see their first quality drafts the same day.",
+      "q5": "What about GDPR and my customers' data?",
+      "a5": "Customer data is processed only to answer their tickets, stored in the EU, and never used to train models for other companies.",
+      "q6": "What counts as a ticket?",
+      "a6": "A customer conversation, however many emails it takes. Automated notifications and spam don't count."
+    },
+    "finalCta": {
+      "title": "Ready to take support off your plate?",
+      "subtitle": "Book a 20-minute demo — we'll show Sona answering tickets like yours.",
+      "ctaDemo": "Book a demo",
+      "ctaAccess": "Get early access"
+    },
+    "footer": {
+      "privacy": "Privacy",
+      "terms": "Terms",
+      "contact": "hello@sona.ai"
+    }
+  }
+}
