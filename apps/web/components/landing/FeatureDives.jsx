@@ -6,7 +6,7 @@ import { CheckIcon } from "./icons";
 function KnowledgeVisual() {
   return (
     <div className="rounded-xl border border-zinc-200 bg-white p-4 text-left shadow-sm">
-      <p className="text-[10px] font-bold tracking-wider text-zinc-400">SONA'S SOURCES</p>
+      <p className="text-[10px] font-bold tracking-wider text-zinc-400">SONA&apos;S SOURCES</p>
       {["Return policy · §4", "Shipping times · EU", "Past ticket · T-38102"].map((s) => (
         <p key={s} className="mt-2 rounded-md bg-indigo-50/60 px-3 py-2 text-xs font-medium text-indigo-700">{s}</p>
       ))}
