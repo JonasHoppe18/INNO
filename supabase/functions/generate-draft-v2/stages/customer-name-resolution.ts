@@ -21,6 +21,7 @@ export type ResolveCustomerNameResult = {
     | "sender_display_name"
     | "verified_order_customer"
     | "contact_form"
+    | "self_stated"
     | "none";
   confidence: "high" | "medium" | "low";
   reason: string;
@@ -106,6 +107,24 @@ function extractSignatureName(message?: string | null) {
   return "";
 }
 
+// Labeled name field in the customer's own message ("Full name: Liam Wright").
+// Our drafts explicitly ask for these fields on repair/return flows, so the
+// reply carries the name as a labeled line rather than a signature.
+const LABELED_NAME_RE =
+  /^(?:full name|name|navn|fulde navn|dit navn)\s*[:\-]\s*(.{2,60})$/i;
+
+function extractLabeledName(message?: string | null) {
+  const text = normalizeText(String(message || ""));
+  if (!text) return "";
+  for (const rawLine of text.split("\n")) {
+    const match = rawLine.trim().match(LABELED_NAME_RE);
+    if (match?.[1] && isCrediblePersonalName(match[1])) {
+      return cleanNameCandidate(match[1]);
+    }
+  }
+  return "";
+}
+
 function credibleSenderDisplayName(value?: string | null) {
   const name = cleanNameCandidate(String(value || ""));
   if (!name || /@/.test(name)) return "";
@@ -163,6 +182,18 @@ export function resolveCustomerName(input: ResolveCustomerNameInput): ResolveCus
       source: "contact_form",
       confidence: "high",
       reason: "customer-entered name field in shop contact form",
+    };
+  }
+
+  // Labeled "Full name:" field in the customer's own message — an explicit
+  // self-statement on par with the contact form (our drafts ask for it).
+  const labeledName = extractLabeledName(input.latestCustomerMessage);
+  if (labeledName) {
+    return {
+      first_name: firstName(labeledName),
+      source: "self_stated",
+      confidence: "high",
+      reason: "customer stated their name in a labeled field in the message",
     };
   }
 

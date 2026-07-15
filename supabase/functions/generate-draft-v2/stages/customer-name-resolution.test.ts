@@ -191,3 +191,54 @@ Deno.test("order name is NOT used when the order email differs from the sender",
   });
   assertEquals(r.first_name === "Simon", false);
 });
+
+// ── Labeled name fields (Wright T-51051): our own drafts ask customers for
+// "full name / address / phone" — the reply then carries the name as a labeled
+// field, not a signature. That explicit self-statement must be usable. ──
+Deno.test("labeled 'Full name:' field in the message resolves the name", () => {
+  const out = resolveCustomerName({
+    latestCustomerMessage:
+      "Hi there thank you for the quick response here is my details below.\n\n" +
+      "Full name: Liam Wright\n\nFull address: 17 Martin's Road, Ulceby, DN39 6UB\n\n" +
+      "Phone number: 07878 490023\n\nEmail address: liamwright5@hotmail.co.uk\n\n" +
+      "As you can see from the images how it is able to be pulled away.\n\nSent from Outlook for Android",
+    senderEmail: "liamwright5@hotmail.co.uk",
+    senderDisplayName: "liamwright5@hotmail.co.uk",
+  });
+  assertEquals(out.first_name, "Liam");
+  assertEquals(out.source, "self_stated");
+  assertEquals(out.confidence, "high");
+});
+
+Deno.test("Danish 'Fulde navn:' label resolves too", () => {
+  const out = resolveCustomerName({
+    latestCustomerMessage: "Hej, her er mine oplysninger.\nFulde navn: Karen Jensen\nAdresse: Testvej 1",
+    senderEmail: "kj@example.com",
+  });
+  assertEquals(out.first_name, "Karen");
+  assertEquals(out.source, "self_stated");
+});
+
+Deno.test("labeled name field rejects role/team and non-name values", () => {
+  const roleOut = resolveCustomerName({
+    latestCustomerMessage: "Full name: AceZone Support",
+    senderEmail: "x@example.com",
+  });
+  assertEquals(roleOut.first_name, null);
+
+  const junkOut = resolveCustomerName({
+    latestCustomerMessage: "Full name: 12345",
+    senderEmail: "x@example.com",
+  });
+  assertEquals(junkOut.first_name, null);
+});
+
+Deno.test("contact-form name still wins over a labeled body field", () => {
+  const out = resolveCustomerName({
+    latestCustomerMessage: "Full name: Somebody Else",
+    contactFormName: "Liam Wright",
+    senderEmail: "liamwright5@hotmail.co.uk",
+  });
+  assertEquals(out.first_name, "Liam");
+  assertEquals(out.source, "contact_form");
+});
