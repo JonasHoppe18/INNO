@@ -59,6 +59,8 @@ const AUTO_SENDER_PATTERNS = [
   /receipts?/i,
   /billing/i,
   /orders?/i,
+  /(^|[^a-z])notify([^a-z]|$)/i,
+  /(^|[^a-z])alerts?([^a-z]|$)/i,
 ];
 
 const AUTO_HEADER_RULES = [
@@ -99,6 +101,19 @@ const NOTIFICATION_PATTERNS = [
   /\blogin\s+code\b/i,
   /\bsecurity\s+code\b/i,
   /\bpassword\s+reset\b/i,
+  // OTP / verification codes (GitHub "launch code", Hetzner "verification code")
+  /\bverification\s+code\b/i,
+  /\b(?:one[- ]?time|sign[- ]?in|launch|auth(?:entication)?)\s+(?:code|password|link)\b/i,
+  /\bmagic\s+link\b/i,
+  /\b(?:code|pin)\s+is:?\s*\d{4,8}\b/i,
+  /\bentering\s+the\s+code\b/i,
+  /\benter\s+the\s+code\b/i,
+  // Infrastructure / platform events (Railway, CI, hosting)
+  /\b(?:deployment|deploy|build|pipeline|job)\s+(?:crashed|failed|error(?:ed)?|succeeded|completed)\b/i,
+  /\bdeploy\s+logs?\b/i,
+  /\b(?:queued|scheduled)\s+for\s+deletion\b/i,
+  /\bscheduled\s+(?:volume\s+)?deletion\b/i,
+  /\busage\s+(?:limit|alert)\b/i,
   // Danish transactional language
   /\bkvittering\b/i,
   /\bforsendelse\b/i,
@@ -204,7 +219,10 @@ export function classifyInboxBucket(input: InboxClassificationInput): InboxClass
   let ticketScore = 0;
   const reasons: string[] = [];
 
-  const senderHits = countMatches(AUTO_SENDER_PATTERNS, senderLocalPart);
+  // Test sender patterns against the FULL address: automation signals often
+  // live in the domain, not the local part (hello@notify.railway.app,
+  // alerts@status.example.com).
+  const senderHits = countMatches(AUTO_SENDER_PATTERNS, senderEmail);
   if (senderHits > 0) {
     notificationScore += Math.min(3, senderHits + 1);
     reasons.push("auto_sender_pattern");
@@ -223,7 +241,16 @@ export function classifyInboxBucket(input: InboxClassificationInput): InboxClass
     reasons.push("transactional_language");
   }
 
-  const supportHits = countMatches(HUMAN_SUPPORT_PATTERNS, combined);
+  // A lone "?" in a machine mail ("Need help? Visit our docs.") is not human
+  // support intent — only count the bare question mark when the sender does
+  // not already look automated, or when a real support phrase backs it up.
+  const supportHitsBeyondQuestionMark = countMatches(
+    HUMAN_SUPPORT_PATTERNS.filter((p) => p.source !== "\\?"),
+    combined,
+  );
+  const supportHits = supportHitsBeyondQuestionMark === 0 && senderHits > 0
+    ? 0
+    : countMatches(HUMAN_SUPPORT_PATTERNS, combined);
   if (supportHits > 0) {
     ticketScore += Math.min(4, supportHits);
     reasons.push("human_support_intent");
