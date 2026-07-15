@@ -58,11 +58,14 @@ Deep-dives (6-8) skifter venstre/højre-layout. Alle sektioner har anchor-id'er 
 
 ## 5. Pricing
 
-3 tiers, månedspris, valuta følger sprog (DKK på /da, EUR på /en). Growth fremhæves som "Most popular". Alle tiers: ubegrænsede brugere (differentiering — helpdesks tager pr. sæde), alle features, ingen binding (løbende måned). Overage: kontakt/opgradér.
+4 tiers, månedspris, valuta følger sprog (DKK på /da, EUR på /en). Growth fremhæves som "Most popular". Alle tiers: ubegrænsede brugere (differentiering — helpdesks tager pr. sæde), alle features, ingen binding (løbende måned). Overage: kontakt/opgradér.
+
+Prisniveau er bevidst under konkurrenterne (Gorgias+AI ~2.500-2.800 kr og Intercom Fin ~3.500 kr ved 500 tickets) men ikke discount — hæves evt. når AceZone-tal kan bevise værdien.
 
 | Tier | Tickets/md | DKK | EUR |
 |------|-----------|-----|-----|
-| Starter | op til 500 | 1.499 kr | €199 |
+| Mini | op til 150 | 699 kr | €99 |
+| Starter | op til 500 | 1.999 kr | €269 |
 | Growth (Most popular) | op til 2.000 | 3.999 kr | €549 |
 | Scale | op til 5.000 | 6.999 kr | €949 |
 
