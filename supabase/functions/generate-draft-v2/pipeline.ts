@@ -1598,7 +1598,13 @@ export async function runDraftV2Pipeline(
         customerMessage: latestBody,
         shop,
         supabase,
-        excludeExternalTicketId: eval_payload?.source_thread_id ?? undefined,
+        // Self-echo guard: exclude ticket_examples promoted from THIS thread.
+        // Eval passes source_thread_id; live runs must exclude their own
+        // thread_id too, or a sent reply promoted to an example becomes the
+        // few-shot anchor for the very next draft on the same thread and the
+        // writer just parrots its previous phrasing.
+        excludeExternalTicketId: eval_payload?.source_thread_id ?? thread_id ??
+          undefined,
         excludeChunkIds: input.exclude_chunk_ids,
         coherenceFlags: {
           absFloor: eval_options?.retrieval_abs_floor ?? null,
