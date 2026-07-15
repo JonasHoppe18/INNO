@@ -1,11 +1,13 @@
-import { getTranslations, unstable_setRequestLocale } from "next-intl/server";
+import { unstable_setRequestLocale } from "next-intl/server";
+import LandingNav from "@/components/landing/LandingNav";
+import Hero from "@/components/landing/Hero";
 
 export default async function LandingPage({ params: { locale } }) {
   unstable_setRequestLocale(locale);
-  const t = await getTranslations("landing");
   return (
     <main className="min-h-screen bg-white text-zinc-900">
-      <p className="p-8">{t("hero.titleLine1")}</p>
+      <LandingNav locale={locale} />
+      <Hero locale={locale} />
     </main>
   );
 }
