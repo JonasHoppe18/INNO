@@ -5,7 +5,8 @@
       "how": "How it works",
       "pricing": "Pricing",
       "login": "Log in",
-      "bookDemo": "Book a demo"
+      "bookDemo": "Book a demo",
+      "switchLanguage": "Switch language"
     },
     "hero": {
       "badge": "AI support for e-commerce",
