@@ -22,6 +22,7 @@ import {
 } from "./customer-context.ts";
 import { InlineImageAttachment } from "./attachment-loader.ts";
 import { buildServiceRecoveryDirective } from "./service-recovery.ts";
+import { buildMomentumDirective } from "./momentum.ts";
 import {
   buildReplacementFlowDirective,
   resolveReplacementFlowState,
@@ -1840,6 +1841,7 @@ Intet sikkert kundenavn til hilsenen. Start med en neutral hilsen på kundens sp
     latestCustomerMessage,
     facts: facts.facts,
   });
+  const momentumBlock = buildMomentumDirective({ latestCustomerMessage });
   let stockAvailabilityBlock = buildStockAvailabilityDirective(facts.facts);
 
   // Purchase-link / where-to-buy intent + stock-link fallback. Both lean on a
@@ -2321,6 +2323,7 @@ ${stageDirectives[resolutionStage] ?? stageDirectives.info_only}`;
     refundStatusBlock,
     trackingBlock,
     serviceRecoveryBlock,
+    momentumBlock,
     manualCheckoutLinkBlock,
     purchaseLinkBlock,
     stockLinkFallbackBlock,
