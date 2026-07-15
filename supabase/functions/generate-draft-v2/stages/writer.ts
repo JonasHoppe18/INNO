@@ -22,7 +22,7 @@ import {
 } from "./customer-context.ts";
 import { InlineImageAttachment } from "./attachment-loader.ts";
 import { buildServiceRecoveryDirective } from "./service-recovery.ts";
-import { buildMomentumDirective } from "./momentum.ts";
+import { buildMomentumDirective, cleanupMomentumStall } from "./momentum.ts";
 import {
   buildReplacementFlowDirective,
   resolveReplacementFlowState,
@@ -2479,12 +2479,15 @@ Returner JSON:
     }
     const parsed = JSON.parse(content);
 
-    const cleanedDraft = cleanupDeliveredNotReceivedDraft(
-      cleanDraftText(parsed.reply_draft ?? ""),
-      {
-        trackingFacts: facts.tracking_facts ?? [],
-        latestCustomerMessage,
-      },
+    const cleanedDraft = cleanupMomentumStall(
+      cleanupDeliveredNotReceivedDraft(
+        cleanDraftText(parsed.reply_draft ?? ""),
+        {
+          trackingFacts: facts.tracking_facts ?? [],
+          latestCustomerMessage,
+        },
+      ),
+      { latestCustomerMessage, language: replyLanguage },
     );
     return {
       draft_text: applySendReadyStyleCleanup(
