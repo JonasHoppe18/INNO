@@ -75,10 +75,14 @@ export default function DemoInbox() {
             </MessageRenderBoundary>
 
             {/* Mirrors the real TicketDetail wrapper: ActionCard sits right-aligned,
-                inserted before the outbound draft it precedes. */}
-            <div className="ml-auto flex w-full max-w-[520px] justify-end">
-              <ActionCard {...DEMO_ACTION} loading={false} onApprove={noop} onDecline={noop} />
-            </div>
+                inserted before the outbound draft it precedes. Wrapped in the same
+                boundary as the message bubbles so a future ActionCard prop-contract
+                change degrades to a fallback box instead of crashing the hero. */}
+            <MessageRenderBoundary messageId="demo-action">
+              <div className="ml-auto flex w-full max-w-[520px] justify-end">
+                <ActionCard {...DEMO_ACTION} loading={false} onApprove={noop} onDecline={noop} />
+              </div>
+            </MessageRenderBoundary>
 
             <MessageRenderBoundary messageId={DEMO_DRAFT_MESSAGE.id}>
               <MessageBubble
