@@ -1,37 +1,51 @@
 import { getTranslations } from "next-intl/server";
+import SectionHeading from "./SectionHeading";
 import Reveal from "./Reveal";
 
 export default async function ControlSection() {
   const t = await getTranslations("landing.control");
-  const toggles = [
-    { n: 1, on: true },
-    { n: 2, on: true },
-    { n: 3, on: false },
+  // Three modes, set per ticket type. "Suggest" is the default starting point.
+  const modes = [
+    { n: 1, highlighted: false },
+    { n: 2, highlighted: true },
+    { n: 3, highlighted: false },
   ];
   return (
     <section className="px-5 py-24">
-      <div className="mx-auto flex max-w-5xl flex-col items-center gap-12 md:flex-row">
-        <Reveal className="flex-1">
-          <p className="text-xs font-bold uppercase tracking-[0.14em] text-indigo-600">{t("kicker")}</p>
-          <h2 className="mt-2.5 text-3xl font-bold tracking-tight text-zinc-950 sm:text-4xl">{t("title")}</h2>
-          <p className="mt-3.5 text-base leading-relaxed text-zinc-600">{t("body")}</p>
-        </Reveal>
-        <Reveal
-          delay={120}
-          className="w-full max-w-sm flex-1 rounded-2xl border border-zinc-200 bg-white p-5 shadow-[0_12px_40px_-20px_rgba(0,0,0,0.15)]"
-        >
-          {toggles.map(({ n, on }) => (
-            <div key={n} className="flex items-center justify-between border-b border-zinc-50 py-3 last:border-0">
-              <div>
-                <p className="text-sm font-semibold text-zinc-900">{t(`toggle${n}Title`)}</p>
-                <p className="text-xs text-zinc-400">{t(`toggle${n}Sub`)}</p>
+      <div className="mx-auto max-w-5xl">
+        <SectionHeading kicker={t("kicker")} title={t("title")} subtitle={t("subtitle")} />
+        <div className="mt-12 grid gap-4 md:grid-cols-3">
+          {modes.map(({ n, highlighted }, i) => (
+            <Reveal
+              key={n}
+              delay={i * 80}
+              className={`relative rounded-2xl border bg-white p-6 ${
+                highlighted
+                  ? "border-indigo-300 shadow-[0_20px_50px_-24px_rgba(79,70,229,0.4)] ring-1 ring-indigo-200"
+                  : "border-zinc-200"
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                {/* Progress dots: how many of the three "hand-off" levels this mode fills */}
+                <span className="flex gap-1" aria-hidden="true">
+                  {[1, 2, 3].map((dot) => (
+                    <span
+                      key={dot}
+                      className={`h-1.5 w-1.5 rounded-full ${dot <= n ? "bg-indigo-600" : "bg-zinc-200"}`}
+                    />
+                  ))}
+                </span>
+                <h3 className="text-base font-bold text-zinc-900">{t(`mode${n}Name`)}</h3>
+                {highlighted ? (
+                  <span className="ml-auto rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-600">
+                    {t("defaultLabel")}
+                  </span>
+                ) : null}
               </div>
-              <span className={`relative inline-block h-5 w-9 rounded-full transition-colors duration-200 ${on ? "bg-indigo-600" : "bg-zinc-200"}`}>
-                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all duration-200 ${on ? "right-0.5" : "left-0.5"}`} />
-              </span>
-            </div>
+              <p className="mt-3 text-sm leading-relaxed text-zinc-500">{t(`mode${n}Body`)}</p>
+            </Reveal>
           ))}
-        </Reveal>
+        </div>
       </div>
     </section>
   );

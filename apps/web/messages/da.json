@@ -24,6 +24,18 @@
       "trust2": "Behold din nuværende indbakke",
       "trust3": "Intet sendes uden godkendelse"
     },
+    "problem": {
+      "kicker": "PROBLEMET",
+      "title": "De samme spørgsmål. Hver eneste dag.",
+      "card1Title": "“Hvor er min ordre?” — igen",
+      "card1Body": "Nogle få spørgsmål fylder det meste af indbakken, og hvert af dem betyder stadig at grave i butikken for at svare.",
+      "card2Title": "Kunderne venter for længe",
+      "card2Body": "Folk forventer svar på minutter. Manuelle opslag får dem til at vente i timer — og skrive igen imens.",
+      "card3Title": "Chatbots kan ikke rigtig hjælpe",
+      "card3Body": "Gammeldags bots svarer med skabelon-tekst. De kan ikke tjekke en ordre, lave en refusion eller rette en adresse.",
+      "card4Title": "Jeres bedste svar står ingen steder",
+      "card4Body": "Måden I håndterer hver sag på bor i hovedet på én person — så det kan ikke skalere, og det forsvinder ud ad døren med dem."
+    },
     "how": {
       "kicker": "SÅDAN VIRKER DET",
       "title": "Kørende på tre trin",
@@ -56,13 +68,14 @@
     "control": {
       "kicker": "DU HAR KONTROLLEN",
       "title": "Du bestemmer, hvor meget Sona gør",
-      "body": "Start med forslag alene. Sæt simple ticket-typer på autopilot, når du er klar — og se præcis hvorfor Sona svarede, som den gjorde, med kilder for hver påstand.",
-      "toggle1Title": "Foreslå udkast",
-      "toggle1Sub": "Alle indkommende tickets",
-      "toggle2Title": "Auto-send tracking-svar",
-      "toggle2Sub": "Kun ved høj sikkerhed",
-      "toggle3Title": "Luk løste tråde automatisk",
-      "toggle3Sub": "Fra — du godkender lukninger"
+      "subtitle": "Sæt det pr. ticket-type. Start med udkast, du godkender, og slå autopilot til kun der, hvor resultaterne siger, du er klar.",
+      "defaultLabel": "Standard",
+      "mode1Name": "Manuel",
+      "mode1Body": "Sona holder sig ude. Dit team skriver og sender svaret.",
+      "mode2Name": "Foreslå",
+      "mode2Body": "Sona skriver udkastet med live ordredata og citerede kilder. Du godkender, før noget sendes.",
+      "mode3Name": "Autopilot",
+      "mode3Body": "For ticket-typer, du stoler på, sender Sona svaret og udfører handlingen selv."
     },
     "pricing": {
       "kicker": "PRISER",

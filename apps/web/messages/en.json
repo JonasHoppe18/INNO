@@ -24,6 +24,18 @@
       "trust2": "Keep your existing inbox",
       "trust3": "Nothing sent without approval"
     },
+    "problem": {
+      "kicker": "THE PROBLEM",
+      "title": "The same questions. Every single day.",
+      "card1Title": "“Where is my order?” — again",
+      "card1Body": "A handful of questions make up most of your inbox, and every one still means digging through your store to answer.",
+      "card2Title": "Customers wait too long",
+      "card2Body": "People expect an answer in minutes. Manual lookups make them wait hours — and email again while they wait.",
+      "card3Title": "Chatbots can't actually help",
+      "card3Body": "Old-school bots reply with canned text. They can't check an order, issue a refund, or fix an address.",
+      "card4Title": "Your best answers aren't written down",
+      "card4Body": "How you handle each case lives in one person's head — so it can't scale, and it walks out the door when they do."
+    },
     "how": {
       "kicker": "HOW IT WORKS",
       "title": "Live in three steps",
@@ -56,13 +68,14 @@
     "control": {
       "kicker": "YOU'RE IN CONTROL",
       "title": "You decide how much Sona does",
-      "body": "Start with suggestions only. Put simple ticket types on autopilot when you're ready — and see exactly why Sona answered the way it did, with sources for every claim.",
-      "toggle1Title": "Suggest drafts",
-      "toggle1Sub": "All incoming tickets",
-      "toggle2Title": "Auto-send tracking replies",
-      "toggle2Sub": "High confidence only",
-      "toggle3Title": "Auto-close resolved threads",
-      "toggle3Sub": "Off — you approve closures"
+      "subtitle": "Set it per ticket type. Start with drafts you approve, and switch on autopilot only where the results say you're ready.",
+      "defaultLabel": "Default",
+      "mode1Name": "Manual",
+      "mode1Body": "Sona stays out of it. Your team writes and sends the reply.",
+      "mode2Name": "Suggest",
+      "mode2Body": "Sona drafts the reply with live order data and cited sources. You approve before anything sends.",
+      "mode3Name": "Autopilot",
+      "mode3Body": "For ticket types you trust, Sona sends the reply and takes the action on its own."
     },
     "pricing": {
       "kicker": "PRICING",
