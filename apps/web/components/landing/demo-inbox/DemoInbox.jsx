@@ -116,8 +116,13 @@ export default function DemoInbox() {
             </div>
 
             {scenario.action ? (
+              // The real ActionCard is built for the app, where it's the primary
+              // affordance. In the demo it reads as loud next to the message
+              // bubbles, so we keep the real component but constrain it to a
+              // narrower, right-aligned footprint so it sits as one calm step in
+              // the flow rather than a full-width competing CTA block.
               <MessageRenderBoundary messageId={`${scenario.id}-action`}>
-                <div className="ml-auto flex w-full max-w-[520px] justify-end">
+                <div className="ml-auto flex w-full max-w-[360px] justify-end [&_.text-l]:text-sm">
                   <ActionCard {...scenario.action} loading={false} onApprove={noop} onDecline={noop} />
                 </div>
               </MessageRenderBoundary>
