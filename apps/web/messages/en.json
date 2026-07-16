@@ -4,6 +4,7 @@
       "product": "Product",
       "how": "How it works",
       "pricing": "Pricing",
+      "demo": "Demo",
       "login": "Log in",
       "bookDemo": "Book a demo",
       "switchLanguage": "Switch language"
@@ -105,6 +106,16 @@
       "title": "Ready to take support off your plate?",
       "subtitle": "Book a 20-minute demo — we'll show Sona answering tickets like yours.",
       "ctaDemo": "Book a demo"
+    },
+    "demo": {
+      "watchLink": "Watch the 2-minute demo",
+      "title": "See Sona in action",
+      "subtitle": "A short walkthrough: Sona reads a ticket, finds the order in your store, and drafts the reply you approve — end to end.",
+      "placeholderTitle": "Demo video coming soon",
+      "placeholderBody": "We're putting the finishing touches on it. In the meantime, book a live demo and we'll walk you through Sona on your own tickets.",
+      "bookCta": "Book a live demo",
+      "tryInteractive": "Try the interactive demo",
+      "back": "Back to home"
     },
     "footer": {
       "privacy": "Privacy",

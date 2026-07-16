@@ -4,6 +4,7 @@
       "product": "Produkt",
       "how": "Sådan virker det",
       "pricing": "Priser",
+      "demo": "Demo",
       "login": "Log ind",
       "bookDemo": "Book en demo",
       "switchLanguage": "Skift sprog"
@@ -105,6 +106,16 @@
       "title": "Klar til at få support af bordet?",
       "subtitle": "Book en 20-minutters demo — vi viser Sona besvare tickets som dine.",
       "ctaDemo": "Book en demo"
+    },
+    "demo": {
+      "watchLink": "Se 2-minutters demoen",
+      "title": "Se Sona i aktion",
+      "subtitle": "En kort gennemgang: Sona læser en ticket, finder ordren i din butik og skriver svaret, du godkender — hele vejen.",
+      "placeholderTitle": "Demovideo på vej",
+      "placeholderBody": "Vi lægger sidste hånd på den. Book i mellemtiden en live-demo, så viser vi dig Sona på dine egne tickets.",
+      "bookCta": "Book en live-demo",
+      "tryInteractive": "Prøv den interaktive demo",
+      "back": "Tilbage til forsiden"
     },
     "footer": {
       "privacy": "Privatliv",

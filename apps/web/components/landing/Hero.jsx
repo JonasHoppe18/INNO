@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 import SignupForm from "./SignupForm";
 import Reveal from "./Reveal";
@@ -5,6 +6,7 @@ import { CheckIcon } from "./icons";
 
 export default async function Hero({ locale, children }) {
   const t = await getTranslations("landing.hero");
+  const tDemo = await getTranslations("landing.demo");
   return (
     <section id="product" className="relative overflow-hidden px-5 pt-24 text-center">
       <div
@@ -59,9 +61,21 @@ export default async function Hero({ locale, children }) {
           aria-hidden="true"
           className="pointer-events-none absolute inset-x-0 bottom-0 top-16 bg-[radial-gradient(ellipse_at_50%_55%,rgba(99,102,241,0.16),rgba(147,51,234,0.07)_55%,transparent_80%)]"
         />
-        <p className="relative mb-5 text-xs font-medium uppercase tracking-[0.14em] text-zinc-400">
-          {t("demoCaption")}
-        </p>
+        <div className="relative mb-5 flex flex-col items-center gap-1.5">
+          <p className="text-xs font-medium uppercase tracking-[0.14em] text-zinc-400">
+            {t("demoCaption")}
+          </p>
+          <Link
+            href={`/${locale}/demo`}
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-indigo-600 transition-colors hover:text-indigo-700"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+              <circle cx="7" cy="7" r="6.25" fill="none" stroke="currentColor" strokeWidth="1.2" />
+              <path d="M5.6 4.5v5l4-2.5-4-2.5z" fill="currentColor" />
+            </svg>
+            {tDemo("watchLink")}
+          </Link>
+        </div>
         <div className="relative">{children}</div>
       </Reveal>
 
