@@ -15,8 +15,8 @@ export default function SignupForm({ source = "landing-hero", variant = "light" 
     : "h-11 flex-1 rounded-lg border border-zinc-200 bg-white px-4 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100";
 
   const buttonClasses = variant === "dark"
-    ? "h-11 rounded-lg border border-zinc-700 px-5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60"
-    : "h-11 rounded-lg border border-zinc-200 px-5 text-sm font-medium text-zinc-900 hover:bg-zinc-50 disabled:opacity-60";
+    ? "h-11 rounded-lg border border-zinc-700 px-5 text-sm font-medium text-white transition-all duration-200 hover:bg-zinc-800 active:scale-[0.97] disabled:opacity-60"
+    : "h-11 rounded-lg border border-zinc-200 px-5 text-sm font-medium text-zinc-900 transition-all duration-200 hover:bg-zinc-50 active:scale-[0.97] disabled:opacity-60";
 
   const handleSubmit = async (event) => {
     event.preventDefault();

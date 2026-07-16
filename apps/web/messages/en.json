@@ -15,6 +15,7 @@
       "subtitle": "Sona reads every customer email, looks up the order in your store, and drafts the right reply in your brand voice — ready for one-click approval.",
       "ctaDemo": "Book a demo",
       "ctaAccess": "Get early access",
+      "demoCaption": "See Sona handle a real ticket — pick one",
       "emailPlaceholder": "Your email",
       "emailInvalid": "Please enter a valid email.",
       "emailError": "Something went wrong. Please try again.",
@@ -45,13 +46,7 @@
       "bBody": "Refunds, exchanges, address changes, cancellations — Sona prepares the action alongside the reply, and executes it in your store the moment you approve. Not promised in text. Done.",
       "bPoint1": "Refunds and exchanges executed in your store",
       "bPoint2": "Address changes caught before the parcel ships",
-      "bPoint3": "Every action requires your explicit approval",
-      "cKicker": "AUTOPILOT",
-      "cTitle": "Autopilot, one ticket type at a time",
-      "cBody": "Start with suggestions only. When Sona's drafts consistently go out unedited, put simple ticket types — like tracking questions — on autopilot, and keep approving the rest.",
-      "cPoint1": "Automation per ticket type, never all-or-nothing",
-      "cPoint2": "Quality measured on every draft you edit",
-      "cPoint3": "Turn it off with one switch, any time"
+      "bPoint3": "Every action requires your explicit approval"
     },
     "languages": {
       "kicker": "EVERY LANGUAGE",

@@ -1,14 +1,19 @@
 import { getTranslations } from "next-intl/server";
+import Reveal from "./Reveal";
 import { CheckIcon } from "./icons";
 
-// Visuals er stiliserede produkt-udsnit (statisk markup — bevidst simple;
-// DemoInbox i hero bærer den fulde produkt-gengivelse).
+// Supporting visuals — stylised product fragments (the interactive DemoInbox in
+// the hero carries the full, real-component rendering). Kept deliberately small
+// and calm so they read as illustration, not a second product surface.
 function KnowledgeVisual() {
   return (
-    <div className="rounded-xl border border-zinc-200 bg-white p-4 text-left shadow-sm">
-      <p className="text-[10px] font-bold tracking-wider text-zinc-400">SONA&apos;S SOURCES</p>
+    <div className="rounded-2xl border border-zinc-200 bg-white p-5 text-left shadow-[0_12px_40px_-20px_rgba(0,0,0,0.15)]">
+      <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Sona&apos;s sources</p>
       {["Return policy · §4", "Shipping times · EU", "Past ticket · T-38102"].map((s) => (
-        <p key={s} className="mt-2 rounded-md bg-indigo-50/60 px-3 py-2 text-xs font-medium text-indigo-700">{s}</p>
+        <p key={s} className="mt-2 flex items-center gap-2 rounded-lg bg-indigo-50/70 px-3 py-2 text-xs font-medium text-indigo-700">
+          <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
+          {s}
+        </p>
       ))}
     </div>
   );
@@ -16,54 +21,38 @@ function KnowledgeVisual() {
 
 function ActionsVisual() {
   return (
-    <div className="rounded-xl border border-indigo-100 bg-white p-4 text-left shadow-sm">
-      <p className="text-xs font-bold text-zinc-900">Refund suggested</p>
+    <div className="rounded-2xl border border-indigo-100 bg-white p-5 text-left shadow-[0_12px_40px_-20px_rgba(79,70,229,0.25)]">
+      <p className="text-sm font-bold text-zinc-900">Refund suggested</p>
       <p className="mt-0.5 text-xs text-zinc-500">Ceramic vase · €89.00 · damage documented</p>
-      <div className="mt-3 flex gap-2">
-        <span className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white">Approve refund (€89.00)</span>
-        <span className="rounded-md border border-zinc-200 px-3 py-1.5 text-xs text-zinc-600">Decline</span>
+      <div className="mt-4 flex gap-2">
+        <span className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white">Approve refund (€89.00)</span>
+        <span className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs text-zinc-600">Decline</span>
       </div>
-    </div>
-  );
-}
-
-function AutopilotVisual() {
-  const rows = [
-    ["Tracking questions", true],
-    ["Order status", true],
-    ["Refund requests", false],
-  ];
-  return (
-    <div className="rounded-xl border border-zinc-200 bg-white p-4 text-left shadow-sm">
-      {rows.map(([label, on]) => (
-        <div key={label} className="flex items-center justify-between border-b border-zinc-50 py-2 last:border-0">
-          <span className="text-xs font-medium text-zinc-800">{label}</span>
-          <span className={`relative inline-block h-4 w-8 rounded-full ${on ? "bg-indigo-600" : "bg-zinc-200"}`}>
-            <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white ${on ? "right-0.5" : "left-0.5"}`} />
-          </span>
-        </div>
-      ))}
     </div>
   );
 }
 
 export default async function FeatureDives() {
   const t = await getTranslations("landing.dives");
+  // "Autopilot" (dive c) intentionally omitted here — the "You're in control"
+  // section owns the automation story, so keeping it here duplicated it.
   const dives = [
     { key: "a", visual: <KnowledgeVisual /> },
     { key: "b", visual: <ActionsVisual /> },
-    { key: "c", visual: <AutopilotVisual /> },
   ];
   return (
-    <section className="px-5 py-20">
-      <div className="mx-auto flex max-w-5xl flex-col gap-16">
+    <section className="px-5 py-24">
+      <div className="mx-auto flex max-w-5xl flex-col gap-20">
         {dives.map(({ key, visual }, i) => (
-          <div key={key} className={`flex flex-col items-center gap-8 md:flex-row ${i % 2 ? "md:flex-row-reverse" : ""}`}>
+          <Reveal
+            key={key}
+            className={`flex flex-col items-center gap-10 md:flex-row ${i % 2 ? "md:flex-row-reverse" : ""}`}
+          >
             <div className="flex-1">
-              <p className="text-xs font-bold tracking-[0.1em] text-indigo-600">{t(`${key}Kicker`)}</p>
-              <h3 className="mt-2 text-2xl font-bold tracking-tight text-zinc-950">{t(`${key}Title`)}</h3>
-              <p className="mt-3 text-sm leading-relaxed text-zinc-600">{t(`${key}Body`)}</p>
-              <ul className="mt-4 space-y-2">
+              <p className="text-xs font-bold uppercase tracking-[0.14em] text-indigo-600">{t(`${key}Kicker`)}</p>
+              <h3 className="mt-2.5 text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl">{t(`${key}Title`)}</h3>
+              <p className="mt-3.5 text-base leading-relaxed text-zinc-600">{t(`${key}Body`)}</p>
+              <ul className="mt-5 space-y-2.5">
                 {[1, 2, 3].map((n) => (
                   <li key={n} className="flex items-center gap-2 text-sm text-zinc-700">
                     <CheckIcon /> {t(`${key}Point${n}`)}
@@ -72,7 +61,7 @@ export default async function FeatureDives() {
               </ul>
             </div>
             <div className="w-full max-w-sm flex-1">{visual}</div>
-          </div>
+          </Reveal>
         ))}
       </div>
     </section>
