@@ -7,6 +7,7 @@ import HowItWorks from "@/components/landing/HowItWorks";
 import FeatureDives from "@/components/landing/FeatureDives";
 import LanguagesSection from "@/components/landing/LanguagesSection";
 import ControlSection from "@/components/landing/ControlSection";
+import TrustSection from "@/components/landing/TrustSection";
 import PricingSection from "@/components/landing/PricingSection";
 import IntegrationsSection from "@/components/landing/IntegrationsSection";
 import FaqSection from "@/components/landing/FaqSection";
@@ -41,6 +42,7 @@ export default async function LandingPage({ params: { locale } }) {
       <FeatureDives />
       <LanguagesSection />
       <ControlSection />
+      <TrustSection locale={locale} />
       <PricingSection locale={locale} />
       <IntegrationsSection />
       <FaqSection />

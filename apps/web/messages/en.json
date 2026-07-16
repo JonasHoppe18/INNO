@@ -132,7 +132,61 @@
     "footer": {
       "privacy": "Privacy",
       "terms": "Terms",
-      "contact": "hello@sona.ai"
+      "contact": "hello@sona.ai",
+      "security": "Security",
+      "integrations": "Integrations"
+    },
+    "trust": {
+      "kicker": "WHY SONA",
+      "title": "New — and hands-on with every store",
+      "body": "Sona is early, and that's the point. We work directly with each store we onboard, so setup isn't a ticket queue — it's the people who built Sona helping you get your first great drafts.",
+      "pillar1Title": "You approve everything",
+      "pillar1Body": "Until you switch on autopilot, every reply is yours to send.",
+      "pillar2Title": "Your data stays in the EU",
+      "pillar2Body": "Customer data is processed only to answer tickets, and never used to train models for other companies.",
+      "pillar3Title": "Onboarded by the makers",
+      "pillar3Body": "You get the people who built Sona on setup — not a support queue.",
+      "securityLink": "Read about security & data"
+    },
+    "security": {
+      "title": "Security & data",
+      "subtitle": "How Sona handles your customers' data — and why you stay in control of it.",
+      "p1Title": "Your data stays in the EU",
+      "p1Body": "Customer data is stored and processed in the EU.",
+      "p2Title": "Used only to answer tickets",
+      "p2Body": "A customer's data is used to draft replies to their own tickets — nothing else.",
+      "p3Title": "Never trains models for others",
+      "p3Body": "Your data is never used to train models for other companies.",
+      "p4Title": "You stay in control",
+      "p4Body": "Nothing reaches a customer without your approval, until you turn on autopilot per ticket type.",
+      "p5Title": "Scoped integrations",
+      "p5Body": "Sona connects to your store and inbox with the access it needs to do the job, and no more.",
+      "note": "We're working toward formal certifications. Have specific compliance requirements? Talk to us.",
+      "cta": "Book a demo"
+    },
+    "integrationsPage": {
+      "title": "Integrations",
+      "subtitle": "Sona works on top of the tools you already use — no migration required.",
+      "availableKicker": "Available now",
+      "roadmapKicker": "On the roadmap",
+      "roadmapLabel": "Coming soon",
+      "ecommerce": "E-commerce",
+      "email": "Email",
+      "helpdesk": "Helpdesk import",
+      "shopifyBody": "Read live order, fulfilment and customer data, and take actions like refunds and address changes.",
+      "emailBody": "Forward your support inbox to Sona — it works alongside your existing email, no new helpdesk to learn.",
+      "zendeskBody": "Import your past tickets so Sona learns how your team already answers.",
+      "wooBody": "Live order and customer data for WooCommerce stores.",
+      "magentoBody": "Live order and customer data for Magento stores.",
+      "moreBody": "More e-commerce, email and helpdesk connections are on the way.",
+      "cta": "Book a demo"
+    },
+    "legal": {
+      "privacyTitle": "Privacy Policy",
+      "termsTitle": "Terms of Service",
+      "updatedLabel": "Last updated",
+      "placeholder": "This page is a placeholder. The final, legally reviewed text will be published here before launch.",
+      "contactLine": "Questions? Reach us at hello@sona.ai."
     }
   }
 }

@@ -132,7 +132,61 @@
     "footer": {
       "privacy": "Privatliv",
       "terms": "Vilkår",
-      "contact": "hello@sona.ai"
+      "contact": "hello@sona.ai",
+      "security": "Sikkerhed",
+      "integrations": "Integrationer"
+    },
+    "trust": {
+      "kicker": "HVORFOR SONA",
+      "title": "Ny — og med hands-on på hver butik",
+      "body": "Sona er tidlig, og det er hele pointen. Vi arbejder direkte med hver butik, vi onboarder, så opsætning ikke er en ticket-kø — det er dem, der har bygget Sona, der hjælper dig til dine første gode udkast.",
+      "pillar1Title": "Du godkender alt",
+      "pillar1Body": "Indtil du slår autopilot til, er hvert svar dit at sende.",
+      "pillar2Title": "Dine data bliver i EU",
+      "pillar2Body": "Kundedata behandles kun for at besvare tickets og bruges aldrig til at træne modeller for andre virksomheder.",
+      "pillar3Title": "Onboardet af dem, der byggede det",
+      "pillar3Body": "Du får dem, der har bygget Sona, med på opsætningen — ikke en support-kø.",
+      "securityLink": "Læs om sikkerhed & data"
+    },
+    "security": {
+      "title": "Sikkerhed & data",
+      "subtitle": "Sådan håndterer Sona dine kunders data — og hvorfor du beholder kontrollen.",
+      "p1Title": "Dine data bliver i EU",
+      "p1Body": "Kundedata opbevares og behandles i EU.",
+      "p2Title": "Bruges kun til at besvare tickets",
+      "p2Body": "En kundes data bruges til at skrive udkast til deres egne tickets — intet andet.",
+      "p3Title": "Træner aldrig modeller for andre",
+      "p3Body": "Dine data bruges aldrig til at træne modeller for andre virksomheder.",
+      "p4Title": "Du beholder kontrollen",
+      "p4Body": "Intet når en kunde uden din godkendelse, indtil du slår autopilot til pr. ticket-type.",
+      "p5Title": "Afgrænsede integrationer",
+      "p5Body": "Sona forbinder til din butik og indbakke med den adgang, den skal bruge — og ikke mere.",
+      "note": "Vi arbejder hen imod formelle certificeringer. Har I specifikke compliance-krav? Tal med os.",
+      "cta": "Book en demo"
+    },
+    "integrationsPage": {
+      "title": "Integrationer",
+      "subtitle": "Sona arbejder oven på de værktøjer, du allerede bruger — ingen migrering nødvendig.",
+      "availableKicker": "Tilgængelige nu",
+      "roadmapKicker": "På vej",
+      "roadmapLabel": "Kommer snart",
+      "ecommerce": "E-commerce",
+      "email": "Email",
+      "helpdesk": "Helpdesk-import",
+      "shopifyBody": "Læs live ordre-, fulfilment- og kundedata, og udfør handlinger som refusioner og adresseændringer.",
+      "emailBody": "Videresend din support-indbakke til Sona — den arbejder oven på din nuværende email, ingen ny helpdesk at lære.",
+      "zendeskBody": "Importér dine gamle tickets, så Sona lærer, hvordan dit team allerede svarer.",
+      "wooBody": "Live ordre- og kundedata for WooCommerce-butikker.",
+      "magentoBody": "Live ordre- og kundedata for Magento-butikker.",
+      "moreBody": "Flere e-commerce-, email- og helpdesk-forbindelser er på vej.",
+      "cta": "Book en demo"
+    },
+    "legal": {
+      "privacyTitle": "Privatlivspolitik",
+      "termsTitle": "Handelsbetingelser",
+      "updatedLabel": "Sidst opdateret",
+      "placeholder": "Denne side er en placeholder. Den endelige, juridisk gennemgåede tekst offentliggøres her før launch.",
+      "contactLine": "Spørgsmål? Skriv til os på hello@sona.ai."
     }
   }
 }
