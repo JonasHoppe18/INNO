@@ -403,7 +403,7 @@ function extractAddressCandidate(body: string) {
     .map((line) => line.trim())
     .filter(Boolean);
   const joined = lines.join(" ");
-  if (!/\b(address|adresse|leveringsadresse|ship to|send(?:es)? til|street|road|avenue|ave|city|by|zip|postal|postnummer|state|province|country|land|apo|fpo|dpo)\b/i.test(joined)) {
+  if (!/\b(address|(?:leverings)?adresse(?:n|r|rne)?|ship to|send(?:es)? til|street|road|avenue|ave|city|by|zip|postal|postnummer|state|province|country|land|apo|fpo|dpo)\b/i.test(joined)) {
     return null;
   }
   const contentLines = lines.filter((line) =>

@@ -2,6 +2,7 @@
 import { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { resolveReplyLanguage } from "./language.ts";
 import { callOpenAIJson } from "./openai-json.ts";
+import { withoutUnsentComposerDrafts } from "./email-thread-normalizer.ts";
 
 export interface CaseState {
   intents: Array<{ type: string; confidence: number }>;
@@ -92,7 +93,12 @@ export async function updateCaseState(
     (thread as { case_state_json?: CaseState }).case_state_json ??
       DEFAULT_CASE_STATE;
 
-  const latestMsg = messages[messages.length - 1] as {
+  // A composer draft is an unsent UI autosave, even though it lives in the
+  // same table and carries from_me=true. Treating it as an agent turn leaks
+  // tentative promises/questions into decisions_made and pending_asks.
+  const visibleMessages = withoutUnsentComposerDrafts(messages);
+
+  const latestMsg = visibleMessages[visibleMessages.length - 1] as {
     clean_body_text?: string;
     body_text?: string;
     quoted_body_text?: string;
@@ -107,7 +113,7 @@ export async function updateCaseState(
   // (ingen direction-kolonne), mens eval-parsede beskeder kun har direction. Tjek
   // begge, ellers labeles agent-svar fejlagtigt som [Kunde] og AGENT-FORPLIGTELSER-
   // udvindingen nedenfor fyrer aldrig.
-  const recentMessages = messages.slice(-8).map((m) => {
+  const recentMessages = visibleMessages.slice(-8).map((m) => {
     const msg = m as {
       clean_body_text?: string;
       body_text?: string;
@@ -207,7 +213,7 @@ AGENT-FORPLIGTELSER (KRITISK): Læs alle [Agent]-beskeder OG "TIDLIGERE I TRÅDE
   // Regex fallback for order numbers — scan ALL messages so order numbers from agent replies are captured too
   const allBodies = [
     String((thread as { subject?: unknown }).subject ?? ""),
-    ...messages.map((m) => {
+    ...visibleMessages.map((m) => {
       const msg = m as { clean_body_text?: string; body_text?: string };
       return msg.clean_body_text ?? msg.body_text ?? "";
     }),

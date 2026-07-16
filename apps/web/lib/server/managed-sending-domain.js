@@ -6,6 +6,7 @@ import {
 } from "@/lib/server/postmark";
 import { toGoDaddyRecordName, upsertGoDaddyDnsRecord } from "@/lib/server/godaddy-dns";
 import {
+  buildManagedSenderEmail,
   getManagedSenderFromMailbox,
   shopLabelSource,
   slugifyDomainLabel,
@@ -17,11 +18,6 @@ const MANAGED_ROOT_DOMAIN = String(
   .trim()
   .toLowerCase()
   .replace(/^\.+|\.+$/g, "");
-const MANAGED_FROM_LOCAL_PART = slugifyDomainLabel(
-  process.env.SONA_MANAGED_FROM_LOCAL_PART || "kundeservice",
-  "kundeservice",
-);
-
 const nowIso = () => new Date().toISOString();
 
 function mailboxMetadata(mailbox) {
@@ -102,6 +98,7 @@ async function refreshManagedSender(serviceClient, mailbox, managedSender) {
   const status = isPostmarkDomainVerified(domainPayload) ? "verified" : "pending";
   return await persistManagedSender(serviceClient, mailbox, {
     ...managedSender,
+    from_email: buildManagedSenderEmail(managedSender.domain),
     status,
     error: null,
     dkim_verified: Boolean(domainPayload?.DKIMVerified),
@@ -121,7 +118,17 @@ export async function ensureManagedSendingDomain({
   if (mailbox?.sending_type === "custom" && mailbox?.domain_status === "verified") {
     return current;
   }
-  if (current?.status === "verified") return current;
+  if (current?.status === "verified") {
+    const desiredFromEmail = buildManagedSenderEmail(current.domain);
+    if (desiredFromEmail && current.from_email !== desiredFromEmail) {
+      return await persistManagedSender(serviceClient, mailbox, {
+        ...current,
+        from_email: desiredFromEmail,
+        updated_at: nowIso(),
+      });
+    }
+    return current;
+  }
   if (current?.postmark_domain_id && current?.status === "pending") {
     if (!refreshPending) return current;
     return await refreshManagedSender(serviceClient, mailbox, current);
@@ -129,7 +136,7 @@ export async function ensureManagedSendingDomain({
 
   const slug = current?.slug || (await chooseManagedSlug(serviceClient, mailbox, shop));
   const domain = current?.domain || `${slug}.${MANAGED_ROOT_DOMAIN}`;
-  const fromEmail = `${MANAGED_FROM_LOCAL_PART}@${domain}`;
+  const fromEmail = buildManagedSenderEmail(domain);
   const provisioning = {
     ...current,
     slug,

@@ -7,15 +7,21 @@ import { assert, assertEquals } from "jsr:@std/assert@1";
 
 const src = await Deno.readTextFile(new URL("./writer.ts", import.meta.url));
 
-// The directive is a JS string literal containing escaped quotes (\"...\"),
-// so it can't be pulled out with a single non-greedy regex — scan char by
-// char honoring backslash escapes to find the literal's real closing quote.
+// The formatter may choose either a single- or double-quoted JS literal. Scan
+// character by character, honoring escapes and the actual opening delimiter,
+// rather than coupling this contract test to one formatting choice.
 function extractStringLiteralAfter(marker: string): string {
   const startOfMarker = src.indexOf(marker);
   if (startOfMarker === -1) {
     throw new Error(`marker not found: ${marker}`);
   }
-  const openQuote = src.indexOf('"', startOfMarker + marker.length);
+  const remainder = src.slice(startOfMarker + marker.length);
+  const relativeOpenQuote = remainder.search(/["']/);
+  if (relativeOpenQuote === -1) {
+    throw new Error(`string literal not found after marker: ${marker}`);
+  }
+  const openQuote = startOfMarker + marker.length + relativeOpenQuote;
+  const quote = src[openQuote];
   let i = openQuote + 1;
   let out = "";
   while (i < src.length) {
@@ -25,7 +31,7 @@ function extractStringLiteralAfter(marker: string): string {
       i += 2;
       continue;
     }
-    if (ch === '"') break;
+    if (ch === quote) break;
     out += ch;
     i += 1;
   }
@@ -38,14 +44,18 @@ function clarifySymptomDirective(): string {
 
 Deno.test("writer has a clarify_symptom stage directive", () => {
   const directive = clarifySymptomDirective();
-  assert(directive.length > 20, "stageDirectives is missing a clarify_symptom entry");
+  assert(
+    directive.length > 20,
+    "stageDirectives is missing a clarify_symptom entry",
+  );
 });
 
 Deno.test("clarify_symptom directive asks exactly one question and forbids troubleshooting/guessing", () => {
   const directive = clarifySymptomDirective().toLowerCase();
 
   assert(
-    directive.includes("præcis ét kort") || directive.includes("præcis et kort"),
+    directive.includes("præcis ét kort") ||
+      directive.includes("præcis et kort"),
     "directive must require exactly one short question",
   );
   assert(
@@ -67,7 +77,16 @@ Deno.test("clarify_symptom directive asks exactly one question and forbids troub
 Deno.test("clarify_symptom directive is ecommerce-generic, not audio/headset-specific", () => {
   const directive = clarifySymptomDirective().toLowerCase();
 
-  for (const term of ["mikrofon", "dongle", "bluetooth", "headset", "øreprop", "anc"]) {
+  for (
+    const term of [
+      "mikrofon",
+      "dongle",
+      "bluetooth",
+      "headset",
+      "øreprop",
+      "anc",
+    ]
+  ) {
     assert(
       !directive.includes(term),
       `clarify_symptom directive should stay vertical-agnostic but contains "${term}"`,
@@ -86,7 +105,9 @@ Deno.test("clarify_symptom is not a procedure stage (stays in concise reply mode
 
 Deno.test("resolutionStage fallback stays info_only (clarify_symptom is never a silent default)", () => {
   assert(
-    src.includes('const resolutionStage = plan.resolution_stage || "info_only";'),
+    src.includes(
+      'const resolutionStage = plan.resolution_stage || "info_only";',
+    ),
     "unexpected change to the resolution_stage default fallback",
   );
 });

@@ -24,6 +24,16 @@ const { createClient } = await import("jsr:@supabase/supabase-js@2");
 const { runDraftV2Pipeline } = await import(
   "../functions/generate-draft-v2/pipeline.ts"
 );
+const { anchorFinalAgentReply, isZendeskAutoReply, stripZendeskHtml } =
+  await import(
+    "../../apps/web/lib/server/zendesk-import-helpers.ts"
+  );
+const { classifyAnchor } = await import(
+  "../../apps/web/lib/server/eval-anchor.js"
+);
+const { classifyLiveFactDependency } = await import(
+  "../../apps/web/lib/server/eval-live-fact.js"
+);
 
 const SUPABASE_URL = (
   Deno.env.get("SUPABASE_URL") ??
@@ -68,6 +78,10 @@ type Ticket = {
   humanReply?: string | null;
   conversationHistory?: string | null;
   source: string;
+  anchorClass?: "comparable" | "action_required" | "non_comparable_anchor";
+  liveFactDependent?: boolean;
+  excludedFromAggregate?: boolean;
+  exclusionReasons?: string[];
 };
 
 type JudgeResult = {
@@ -83,17 +97,6 @@ type JudgeResult = {
   reasoning: string;
 };
 
-function stripHtml(html: string): string {
-  return String(html || "")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 function decodeCredentials(raw: string | null | undefined): string {
   if (!raw) return "";
   const hex = raw.startsWith("\\x") ? raw.slice(2) : raw;
@@ -103,16 +106,6 @@ function decodeCredentials(raw: string | null | undefined): string {
     bytes[i / 2] = parseInt(hex.slice(i, i + 2), 16);
   }
   return new TextDecoder().decode(bytes);
-}
-
-function isAutoReply(text: string): boolean {
-  const lower = String(text || "").toLowerCase();
-  return lower.includes("automated reply") ||
-    lower.includes("we have received your request") ||
-    lower.includes("thank you for contacting us") ||
-    lower.includes("auto-reply") ||
-    lower.includes("out of office") ||
-    lower.length < 30;
 }
 
 // B2B/internal senders that should not be evaluated with end-customer criteria.
@@ -128,11 +121,16 @@ const B2B_INDICATORS = [
   "speditør",
   "freight",
   "savfournisseurs",
+  "warehouse manager",
+  "ready to be fulfilled",
+  "new uk order",
+  "sales@",
+  "purchase order",
 ];
 
 function isB2BSender(ticket: Ticket): boolean {
-  const combined =
-    ((ticket.customerBody ?? "") + " " + (ticket.subject ?? "")).toLowerCase();
+  const combined = ((ticket.customerBody ?? "") + " " + (ticket.subject ?? ""))
+    .toLowerCase();
   return B2B_INDICATORS.some((indicator) => combined.includes(indicator));
 }
 
@@ -309,38 +307,53 @@ async function fetchZendeskTickets(
     const { comments = [] } = await commentsRes.json().catch(() => ({
       comments: [],
     }));
-    const publicComments = comments
-      .filter((c: Record<string, unknown>) => c.public)
-      .map((c: Record<string, unknown>) => ({
-        role: c.author_id === ticket.requester_id ? "customer" : "agent",
-        body: stripHtml(String(c.html_body || c.body || "")),
-      }))
-      .filter((c: { body: string }) => c.body && !isAutoReply(c.body));
+    const publicComments: Array<{ role: "customer" | "agent"; body: string }> =
+      comments
+        .filter((c: Record<string, unknown>) => c.public)
+        .map((c: Record<string, unknown>) => ({
+          role: c.author_id === ticket.requester_id
+            ? "customer" as const
+            : "agent" as const,
+          body: stripZendeskHtml(String(c.html_body || c.body || "")),
+        }))
+        .filter((c: { role: "customer" | "agent"; body: string }) =>
+          c.body && (c.role === "customer" || !isZendeskAutoReply(c.body))
+        );
     if (publicComments.length < 2) continue;
 
-    const lastCustomerIdx = publicComments.map((c, i) =>
-      c.role === "customer" ? i : -1
-    ).filter((i) => i >= 0).pop();
-    if (lastCustomerIdx === undefined) continue;
-    const nextAgent = publicComments.slice(lastCustomerIdx + 1).find((c) =>
-      c.role === "agent"
-    ) ??
-      publicComments.find((c) =>
-        c.role === "agent"
-      );
-    if (!nextAgent) continue;
-
-    const prior = publicComments.slice(0, lastCustomerIdx);
-    tickets.push({
+    const anchored = anchorFinalAgentReply(publicComments);
+    if (!anchored) continue;
+    const anchor = classifyAnchor({ humanReply: anchored.agentReply });
+    const liveFact = classifyLiveFactDependency({
+      body: anchored.customerBody,
+      humanReply: anchored.agentReply,
+    });
+    const exclusionReasons = [
+      ...(anchor.anchor_class === "non_comparable_anchor"
+        ? ["non_comparable_action_anchor"]
+        : []),
+      ...(liveFact.live_fact_dependent
+        ? [liveFact.reason || "unresolvable_live_fact"]
+        : []),
+    ];
+    const candidate: Ticket = {
       id: String(ticket.id),
       subject: String(ticket.subject || ""),
-      customerBody: publicComments[lastCustomerIdx].body.slice(0, 5000),
-      humanReply: nextAgent.body.slice(0, 5000),
-      conversationHistory: prior.map((m) =>
-        `${m.role === "customer" ? "Customer" : "Agent"}: ${m.body}`
-      ).join("\n\n").slice(0, 5000),
+      customerBody: anchored.customerBody.slice(0, 5000),
+      humanReply: anchored.agentReply.slice(0, 5000),
+      conversationHistory: String(anchored.conversationContext || "").slice(
+        -5000,
+      ),
       source: "zendesk",
-    });
+      anchorClass: anchor.anchor_class,
+      liveFactDependent: liveFact.live_fact_dependent,
+      excludedFromAggregate: exclusionReasons.length > 0,
+      exclusionReasons,
+    };
+    // Keep the end-customer benchmark clean. Internal fulfilment/vendor threads
+    // belong in a separate operations eval with different success criteria.
+    if (isB2BSender(candidate)) continue;
+    tickets.push(candidate);
     if (tickets.length >= LIMIT) break;
   }
   return tickets;
@@ -356,12 +369,9 @@ async function judge(
     `You are a strict support QA evaluator. Score the AI draft from 1 to 10.
 10 means a senior human agent could send it as-is: it answers the exact latest customer request, uses the right language, is factually grounded, includes the necessary next step, avoids irrelevant process/policy, and is natural.
 
-Intent-specific quality requirements (apply strictly):
-- TRACKING STATUS: Must include the actual delivery status and date/time if delivered. Vague "your order is on its way" without specifics = max 7.
-- WARRANTY CONFIRMATION (customer confirmed details for replacement): Must commit to creating an order AND promise a tracking link. "We'll send you an update" alone = max 7.
-- TECHNICAL SUPPORT: Must include ALL steps from KB procedure — truncated guides are not acceptable. If the customer described firmware as already updated, must skip to next-level troubleshooting or warranty, not repeat firmware.
-- BACK-ORDER FOLLOW-UP (customer asking about payment/address after back-order was arranged): Must explain that we will contact them with invoice when stock returns — NOT ask for order number again.
-- DOCUMENT/ATTACHMENT REQUEST: Must help the customer directly (e.g. ask for preferred format, provide content as text) — NOT promise to send a file or defer to "a colleague".
+Treat the historical human reply as a strong resolution reference, not automatic policy truth. It may include a warehouse conversation, repair estimate, refund, shipment or other out-of-band action that the eval payload cannot reproduce. Never require the AI to claim that such an action happened when it has no executed action or live fact. A precise request for the one missing identifier can be the correct response.
+
+Hard caps: fabricated facts/actions/policies or invented availability => max 2 and not send-ready; wrong language => max 2; wrong product or reversed conversation direction => max 3. Fluent tone cannot compensate for a wrong or unsupported resolution.
 
 Return ONLY JSON.`;
   const user = `SUBJECT:
@@ -381,6 +391,9 @@ ${draft}
 
 V2 VERIFIER CONFIDENCE: ${confidence ?? "null"}
 V2 SOURCES COUNT: ${sourcesCount}
+ANCHOR CLASS: ${ticket.anchorClass || "comparable"}
+LIVE FACT UNRESOLVABLE IN EVAL: ${ticket.liveFactDependent === true}
+EXCLUDED FROM HEADLINE: ${ticket.excludedFromAggregate === true}
 
 Return this JSON:
 {
@@ -441,7 +454,47 @@ const tickets = SOURCE === "threads"
 if (!tickets.length) throw new Error(`No tickets found for source=${SOURCE}`);
 console.log(`Running V2 audit on ${tickets.length} ${SOURCE} tickets`);
 
-const results = [];
+// Resolve each evaluated ticket's own few-shot row up front. The pipeline also
+// receives the external ticket id and must exclude these rows. Keeping the ids
+// here lets the harness prove the exclusion and refuse to judge a leaked run.
+const sourceExampleIdsByTicket = new Map<string, Set<number>>();
+{
+  const { data, error } = await supabase
+    .from("ticket_examples")
+    .select("id, external_ticket_id")
+    .eq("shop_id", shop.id)
+    .in("external_ticket_id", tickets.map((ticket) => ticket.id));
+  if (error) {
+    throw new Error(`Could not load source ticket examples: ${error.message}`);
+  }
+  for (const row of data ?? []) {
+    const externalId = String(row.external_ticket_id ?? "");
+    if (!externalId || typeof row.id !== "number") continue;
+    const ids = sourceExampleIdsByTicket.get(externalId) ?? new Set<number>();
+    ids.add(row.id);
+    sourceExampleIdsByTicket.set(externalId, ids);
+  }
+}
+
+type LeakageGuard = {
+  source_example_count: number;
+  retrieved_example_ids: number[];
+  excluded_external_id_matches: number[];
+  excluded_duplicate_question_matches: number[];
+  self_example_retrieved: boolean;
+  leaked_example_ids: number[];
+};
+type AuditResult = {
+  ticket: Ticket;
+  draft?: string;
+  qa?: JudgeResult;
+  error?: string;
+  leakage_guard?: LeakageGuard;
+  latency_ms: number;
+  v2?: Record<string, unknown>;
+};
+
+const results: AuditResult[] = [];
 const skippedB2B = [];
 for (let i = 0; i < tickets.length; i++) {
   const ticket = tickets[i];
@@ -471,6 +524,9 @@ for (let i = 0; i < tickets.length; i++) {
         body: ticket.customerBody,
         from_email: "eval@eval.internal",
         conversation_history: ticket.conversationHistory || undefined,
+        // Critical leakage guard: never let an imported historical ticket find
+        // its own human answer in ticket_examples during evaluation.
+        source_thread_id: ticket.id,
       },
       eval_options: {
         writer_model: WRITER_MODEL,
@@ -482,6 +538,45 @@ for (let i = 0; i < tickets.length; i++) {
       throw new Error(
         `empty draft: ${pipeline.skip_reason || pipeline.routing_hint}`,
       );
+    }
+    const retrievedTicketExamples = pipeline.retrieval_debug?.ticket_examples ??
+      [];
+    const retrievedTicketExampleIds = new Set(
+      retrievedTicketExamples
+        .map((example) => example?.id)
+        .filter((id): id is number => typeof id === "number"),
+    );
+    const ownExampleIds = sourceExampleIdsByTicket.get(ticket.id) ??
+      new Set<number>();
+    const leakedOwnExampleIds = [...ownExampleIds].filter((id) =>
+      retrievedTicketExampleIds.has(id)
+    );
+    const leakageGuard = {
+      source_example_count: ownExampleIds.size,
+      retrieved_example_ids: [...retrievedTicketExampleIds],
+      excluded_external_id_matches:
+        pipeline.retrieval_debug?.ticket_example_exclusions
+          ?.external_id_matches ?? [],
+      excluded_duplicate_question_matches:
+        pipeline.retrieval_debug?.ticket_example_exclusions
+          ?.duplicate_question_matches ?? [],
+      self_example_retrieved: leakedOwnExampleIds.length > 0,
+      leaked_example_ids: leakedOwnExampleIds,
+    };
+    if (leakageGuard.self_example_retrieved) {
+      const message =
+        `eval leakage: source ticket ${ticket.id} retrieved its own example(s) ${
+          leakedOwnExampleIds.join(",")
+        }`;
+      console.log(`ERROR: ${message}`);
+      results.push({
+        ticket,
+        draft,
+        error: message,
+        leakage_guard: leakageGuard,
+        latency_ms: Date.now() - startedAt,
+      });
+      continue;
     }
     const qa = await judge(
       ticket,
@@ -502,6 +597,7 @@ for (let i = 0; i < tickets.length; i++) {
         proposed_actions: pipeline.proposed_actions,
         sources: pipeline.sources,
       },
+      leakage_guard: leakageGuard,
       latency_ms: Date.now() - startedAt,
     });
   } catch (err) {
@@ -515,25 +611,44 @@ for (let i = 0; i < tickets.length; i++) {
   }
 }
 
-const judged = results.filter((r) => r.qa);
-const scores = judged.map((r) => Number(r.qa.overall_10));
+const judged = results.filter(
+  (result): result is AuditResult & { qa: JudgeResult } => Boolean(result.qa),
+);
+const headline = judged.filter((result) =>
+  result.ticket.excludedFromAggregate !== true
+);
+const scores = headline.map((result) => Number(result.qa.overall_10));
 const summary = {
   source: SOURCE,
   limit: LIMIT,
   judged: judged.length,
+  headline_judged: headline.length,
+  excluded_from_headline: judged.length - headline.length,
   errors: results.length - judged.length,
   skipped_b2b: skippedB2B.length,
+  self_example_leaks:
+    results.filter((r) => r.leakage_guard?.self_example_retrieved === true)
+      .length,
+  duplicate_question_examples_excluded: results.reduce(
+    (count, result) =>
+      count +
+      (result.leakage_guard?.excluded_duplicate_question_matches?.length ?? 0),
+    0,
+  ),
   average_score_10: scores.length
     ? Number((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(2))
     : 0,
   median_score_10: median(scores),
-  ten_out_of_ten: judged.filter((r) => Number(r.qa.overall_10) === 10).length,
-  send_ready: judged.filter((r) => r.qa.send_ready === true).length,
+  ten_out_of_ten: headline.filter((r) => Number(r.qa.overall_10) === 10).length,
+  send_ready: headline.filter((r) => r.qa.send_ready === true).length,
   root_causes: countBy(
-    judged.map((r) => String(r.qa.likely_root_cause || "unknown")),
+    headline.map((r) => String(r.qa.likely_root_cause || "unknown")),
   ),
   primary_gaps: countBy(
-    judged.map((r) => String(r.qa.primary_gap || "unknown")),
+    headline.map((r) => String(r.qa.primary_gap || "unknown")),
+  ),
+  exclusion_reasons: countBy(
+    judged.flatMap((result) => result.ticket.exclusionReasons ?? []),
   ),
 };
 

@@ -8,16 +8,18 @@ import { classifyLiveFactDependency } from "./eval-live-fact.js";
 
 const flag = (c) => classifyLiveFactDependency(c).live_fact_dependent;
 
-// --- should be flagged: live topic + human used live data + redacted id + unresolvable ---
+// --- should be flagged: live topic + human used live data + unresolvable id ---
 const g036 = {
   intent: "tracking",
   body: "Hello, could I get an update on the shipping status of this order? Order number: [order number]",
-  humanReply: "Hi there, we have received your order and forwarded it to our warehouse partner. We expect it will ship today or tomorrow.",
+  humanReply:
+    "Hi there, we have received your order and forwarded it to our warehouse partner. We expect it will ship today or tomorrow.",
 };
 const g041 = {
   intent: "tracking",
   body: "Hej Acezone, Ville høre om mit headset når at blive sendt i dag. Mit ordre nummer er [order number]",
-  humanReply: "Hej igen, jeg har lige været inde og tjekke din forsendelse. Den er blevet oprettet i dag, og vores lager venter på at DAO kommer og henter den.",
+  humanReply:
+    "Hej igen, jeg har lige været inde og tjekke din forsendelse. Den er blevet oprettet i dag, og vores lager venter på at DAO kommer og henter den.",
 };
 
 test("flags unresolvable live-fact cases (g-036, g-041)", () => {
@@ -25,39 +27,134 @@ test("flags unresolvable live-fact cases (g-036, g-041)", () => {
   assert.equal(flag(g041), true);
 });
 
+test("flags missing identifiers because eval's synthetic sender cannot do the production email lookup", () => {
+  assert.equal(
+    flag({
+      intent: "tracking",
+      body: "Tracking has not moved. Can you check whether my package has shipped?",
+      humanReply:
+        "I checked with the warehouse and your order will ship today.",
+    }),
+    true,
+  );
+});
+
+test("flags historical repair-staff availability that cannot be reproduced today", () => {
+  const result = classifyLiveFactDependency({
+    intent: "repair",
+    body: "Can the broken headband be repaired, and when could you estimate the cost?",
+    humanReply:
+      "Our repair technician is on vacation until 27 July, so I cannot estimate it until he is back.",
+  });
+
+  assert.equal(result.live_fact_dependent, true);
+  assert.equal(result.reason, "service_topic + historical_staff_availability");
+
+  assert.equal(
+    flag({
+      body: "Thanks, here are my details and the photos.",
+      humanReply:
+        "Our guy handling repairs is on vacation until 27 July, so we cannot provide an estimate until he is back.",
+    }),
+    true,
+    "the exact operational phrasing is caught even when the latest turn omits repair",
+  );
+
+  assert.equal(
+    flag({
+      body: "Kan mit headset repareres?",
+      humanReply:
+        "Vores tekniker er på ferie til 27. juli. Vi kan først vurdere det, når teknikeren er tilbage.",
+    }),
+    true,
+    "Danish staff availability is also temporal",
+  );
+});
+
 // --- should stay comparable ---
-const g037 = { // real order number → resolvable
+const g037 = {
+  // real order number → resolvable
   intent: "tracking",
   body: "When will my order #100423 ship? I need it this week.",
   humanReply: "I just checked your order and it has shipped with DAO.",
 };
-const g040 = { // checkout-country question, human did no live lookup
+const g040 = {
+  // checkout-country question, human did no live lookup
   intent: "tracking",
   body: "I am trying to order to my country but it is not an option at checkout under Country.",
-  humanReply: "Hi there, thanks for reaching out — could you tell me which country you are in so we can look into the checkout options?",
+  humanReply:
+    "Hi there, thanks for reaching out — could you tell me which country you are in so we can look into the checkout options?",
 };
-const g027 = { // refund but human gives policy, no live lookup, redacted id
+const g027 = {
+  // refund but human gives policy, no live lookup, redacted id
   intent: "refund",
   body: "Previous Ticket ID: [order number]. I am reaching out again due to the headset's issue and would like a refund.",
-  humanReply: "Our refund policy allows returns within 30 days of receipt. Please send the headset back and we will process it.",
+  humanReply:
+    "Our refund policy allows returns within 30 days of receipt. Please send the headset back and we will process it.",
 };
-const g012 = { // exchange / physical damage — not a live-fact topic
+const g012 = {
+  // exchange / physical damage — not a live-fact topic
   intent: "exchange",
   body: "Hej, halvdelen af mit headset er sprækket uden slag. Er der mulighed for ombytning?",
-  humanReply: "Vi vil gerne hjælpe dig med en ombytning. Send os venligst et foto af skaden samt dit ordrenummer.",
+  humanReply:
+    "Vi vil gerne hjælpe dig med en ombytning. Send os venligst et foto af skaden samt dit ordrenummer.",
 };
-const g024 = { // technical troubleshooting — not a live-fact topic
+const g024 = {
+  // technical troubleshooting — not a live-fact topic
   intent: "product_question",
   body: "hello my a-spire wireless dont want to power on even when i have a cable connected.",
-  humanReply: "Let's try a few troubleshooting steps. 1. Ensure the cable is connected. 2. Factory reset: hold power 15 seconds.",
+  humanReply:
+    "Let's try a few troubleshooting steps. 1. Ensure the cable is connected. 2. Factory reset: hold power 15 seconds.",
+};
+
+const stableRepairGuidance = {
+  intent: "repair",
+  body: "Can my headset be repaired?",
+  humanReply:
+    "Repairs normally take 10–14 business days after the workshop receives the headset.",
+};
+const technicianAdvice = {
+  intent: "repair",
+  body: "Can my headset be repaired?",
+  humanReply:
+    "Our repair technician recommends trying a factory reset before sending it in.",
+};
+const customerAvailability = {
+  intent: "repair",
+  body: "Can my headset be repaired? I am away next week.",
+  humanReply:
+    "Let us know when you are back from vacation, and we can explain the repair process.",
 };
 
 test("keeps resolvable and non-live cases comparable", () => {
   assert.equal(flag(g037), false, "real order number is resolvable");
   assert.equal(flag(g040), false, "checkout-country, no live lookup");
   assert.equal(flag(g027), false, "refund policy answer, no live lookup");
-  assert.equal(flag(g012), false, "physical-damage exchange is not a live-fact topic");
-  assert.equal(flag(g024), false, "technical troubleshooting is not a live-fact topic");
+  assert.equal(
+    flag(g012),
+    false,
+    "physical-damage exchange is not a live-fact topic",
+  );
+  assert.equal(
+    flag(g024),
+    false,
+    "technical troubleshooting is not a live-fact topic",
+  );
+  assert.equal(
+    flag(stableRepairGuidance),
+    false,
+    "stable repair turnaround is not staff availability",
+  );
+  assert.equal(
+    flag(technicianAdvice),
+    false,
+    "technician guidance without availability remains comparable",
+  );
+  assert.equal(
+    flag(customerAvailability),
+    false,
+    "the customer's availability is not an internal live fact",
+  );
 });
 
 test("blank input is comparable", () => {

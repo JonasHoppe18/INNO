@@ -78,7 +78,9 @@ const FALLBACK_RESULT: VerifierResult = {
   contradictions: [],
   policy_violations: [],
   confidence: 0,
-  block_send: false,
+  // Fail closed. A verifier outage is not evidence that a draft is safe to
+  // auto-send; the pipeline must route it to human review.
+  block_send: true,
   retry_with_stronger_model: true,
   issues: ["verifier_api_error"],
 };

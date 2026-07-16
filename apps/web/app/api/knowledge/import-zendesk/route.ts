@@ -2,12 +2,19 @@ import { NextResponse } from "next/server";
 import { createHash } from "node:crypto";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
-import { resolveAuthScope, listScopedShops } from "@/lib/server/workspace-auth";
+import { listScopedShops, resolveAuthScope } from "@/lib/server/workspace-auth";
+import { normalizeZendeskBaseUrl } from "@/lib/server/zendesk-url";
 import {
+  anchorFinalAgentReply,
+  hasResidualZendeskPii,
+  hasUnclassifiedZendeskPublicComment,
   importRetryDelayMs,
   isRetryableImportStatus,
   nextExportCursor,
+  nextZendeskPageCursor,
   parseRetryAfterMs,
+  planZendeskRefreshCuration,
+  zendeskCommentsToTurns,
 } from "@/lib/server/zendesk-import-helpers";
 
 export const runtime = "nodejs";
@@ -18,20 +25,24 @@ const SUPABASE_URL = (
   process.env.EXPO_PUBLIC_SUPABASE_URL ||
   ""
 ).replace(/\/$/, "");
-const SUPABASE_SERVICE_KEY =
-  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ||
   process.env.SERVICE_ROLE_KEY ||
   process.env.SUPABASE_SERVICE_KEY ||
   "";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
-const OPENAI_EMBEDDING_MODEL =
-  process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small";
+const OPENAI_EMBEDDING_MODEL = process.env.OPENAI_EMBEDDING_MODEL ||
+  "text-embedding-3-small";
 const OPENAI_REDACT_MODEL = process.env.OPENAI_REDACT_MODEL || "gpt-4o-mini";
+const ZENDESK_ALLOWED_HOSTS = process.env.ZENDESK_ALLOWED_HOSTS || "";
 
 const SOURCE_PROVIDER = "zendesk";
+// Keep this resumable, PII-scrubbed ticket-example pipeline isolated from the
+// legacy generic history worker, which intentionally fails closed (HIST-0).
+const IMPORT_JOB_PROVIDER = "zendesk_ticket_examples_v2";
 const EMBED_BATCH_SIZE = 50;
 const CHUNK_TICKETS = 10;
 const MAX_EXTERNAL_RETRIES = 3;
+const MAX_COMMENT_PAGES_PER_TICKET = 3;
 const IMPORT_STATUSES = ["solved", "closed"];
 
 class RetryableImportError extends Error {
@@ -64,7 +75,9 @@ async function fetchExternalWithRetry(
 
     if (!isRetryableImportStatus(response.status)) return response;
     if (attempt === MAX_EXTERNAL_RETRIES) {
-      throw new RetryableImportError(`${context} is temporarily unavailable (${response.status}).`);
+      throw new RetryableImportError(
+        `${context} is temporarily unavailable (${response.status}).`,
+      );
     }
     await sleep(importRetryDelayMs({
       attempt,
@@ -72,13 +85,30 @@ async function fetchExternalWithRetry(
     }));
   }
 
-  const detail = lastNetworkError instanceof Error ? `: ${lastNetworkError.message}` : "";
+  const detail = lastNetworkError instanceof Error
+    ? `: ${lastNetworkError.message}`
+    : "";
   throw new RetryableImportError(`${context} could not be reached${detail}`);
 }
 
 function createServiceClient() {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return null;
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+}
+
+async function resolveRequiredTenantScope(
+  supabase: NonNullable<ReturnType<typeof createServiceClient>>,
+  authIds: { clerkUserId: string; orgId: string | null | undefined },
+) {
+  const scope = await resolveAuthScope(supabase, authIds, {
+    // A user without an active Clerk org must not silently fall through to an
+    // arbitrary membership when more than one workspace is available.
+    requireExplicitWorkspace: true,
+  });
+  if (!scope?.workspaceId && !scope?.supabaseUserId) {
+    throw new Error("No tenant scope is available for this account.");
+  }
+  return scope;
 }
 
 function decodeCredentials(raw: string) {
@@ -92,36 +122,6 @@ function decodeCredentials(raw: string) {
   return new TextDecoder().decode(bytes);
 }
 
-function stripHtml(html: string) {
-  return String(html || "")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function isAutoReply(text: string) {
-  const lower = String(text || "").toLowerCase();
-  return (
-    lower.includes("this is an automated reply") ||
-    lower.includes("we have received your request") ||
-    lower.includes("auto-reply") ||
-    lower.includes("out of office") ||
-    lower.length < 60
-  );
-}
-
-function normalizeText(value: unknown) {
-  return String(value || "")
-    .replace(/\r\n/g, "\n")
-    .replace(/\u0000/g, "")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
 /** The customer message (embedding source + few-shot display) */
 function buildCustomerMsg(subject: string, customerBody: string) {
   return subject ? `${subject}\n${customerBody}`.trim() : customerBody.trim();
@@ -133,18 +133,22 @@ function ticketHash(ticketId: string) {
 
 async function embedBatch(texts: string[]): Promise<number[][]> {
   if (!texts.length) return [];
-  const response = await fetchExternalWithRetry("https://api.openai.com/v1/embeddings", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
-      "Content-Type": "application/json",
+  const response = await fetchExternalWithRetry(
+    "https://api.openai.com/v1/embeddings",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ model: OPENAI_EMBEDDING_MODEL, input: texts }),
     },
-    body: JSON.stringify({ model: OPENAI_EMBEDDING_MODEL, input: texts }),
-  }, "OpenAI embeddings");
+    "OpenAI embeddings",
+  );
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
     throw new Error(
-      payload?.error?.message || `Embedding failed (${response.status})`
+      payload?.error?.message || `Embedding failed (${response.status})`,
     );
   }
   return (payload?.data ?? [])
@@ -158,8 +162,9 @@ async function embedBatch(texts: string[]): Promise<number[][]> {
 // customer's name/address/phone into a live reply (observed in production).
 // Every imported pair is run through an LLM redactor before embedding/insert.
 // If redaction fails for a ticket, that ticket is DROPPED — we never store raw PII.
-const REDACT_SYSTEM = `You are a strict GDPR redaction engine for customer-support transcripts.
-You receive JSON with fields: subject, customer_msg, agent_reply.
+const REDACT_SYSTEM =
+  `You are a strict GDPR redaction engine for customer-support transcripts.
+You receive JSON with fields: subject, customer_msg, agent_reply, conversation_context.
 Return JSON with the SAME fields, rewritten so that ALL personal data is replaced by neutral placeholders, while preserving meaning, tone, structure and any product/issue details.
 
 Replace:
@@ -178,23 +183,33 @@ async function redactOne(input: {
   subject: string;
   customer_msg: string;
   agent_reply: string;
-}): Promise<{ subject: string; customer_msg: string; agent_reply: string }> {
-  const res = await fetchExternalWithRetry("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
-      "Content-Type": "application/json",
+  conversation_context: string;
+}): Promise<{
+  subject: string;
+  customer_msg: string;
+  agent_reply: string;
+  conversation_context: string;
+}> {
+  const res = await fetchExternalWithRetry(
+    "https://api.openai.com/v1/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: OPENAI_REDACT_MODEL,
+        temperature: 0,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: REDACT_SYSTEM },
+          { role: "user", content: JSON.stringify(input) },
+        ],
+      }),
     },
-    body: JSON.stringify({
-      model: OPENAI_REDACT_MODEL,
-      temperature: 0,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: REDACT_SYSTEM },
-        { role: "user", content: JSON.stringify(input) },
-      ],
-    }),
-  }, "OpenAI redaction");
+    "OpenAI redaction",
+  );
   if (!res.ok) throw new Error(`Redaction failed (${res.status})`);
   const payload = await res.json();
   const parsed = JSON.parse(payload.choices[0].message.content);
@@ -202,16 +217,22 @@ async function redactOne(input: {
     subject: String(parsed.subject ?? ""),
     customer_msg: String(parsed.customer_msg ?? ""),
     agent_reply: String(parsed.agent_reply ?? ""),
+    conversation_context: String(parsed.conversation_context ?? ""),
   };
 }
 
 /**
- * Redact a batch of {subject, customerBody, agentReply} pairs with bounded
- * concurrency. Tickets whose redaction fails are dropped (null) so raw PII is
- * never persisted.
+ * Redact a batch of {subject, customerBody, agentReply, conversationContext}
+ * pairs with bounded concurrency. Tickets whose redaction fails are dropped
+ * (null) so raw PII is never persisted.
  */
 async function redactPairs<
-  T extends { subject: string; customerBody: string; agentReply: string },
+  T extends {
+    subject: string;
+    customerBody: string;
+    agentReply: string;
+    conversationContext: string;
+  },
 >(pairs: T[]): Promise<(T | null)[]> {
   const CONCURRENCY = 5;
   const out: (T | null)[] = new Array(pairs.length).fill(null);
@@ -226,8 +247,24 @@ async function redactPairs<
           subject: p.subject,
           customer_msg: p.customerBody,
           agent_reply: p.agentReply,
+          conversation_context: p.conversationContext,
         });
-        if (!r.customer_msg || !r.agent_reply) {
+        if (
+          !r.customer_msg ||
+          !r.agent_reply ||
+          (p.conversationContext && !r.conversation_context)
+        ) {
+          out[idx] = null;
+          continue;
+        }
+        if (
+          hasResidualZendeskPii({
+            subject: p.subject,
+            customer_msg: p.customerBody,
+            agent_reply: p.agentReply,
+            conversation_context: p.conversationContext,
+          }, r)
+        ) {
           out[idx] = null;
           continue;
         }
@@ -236,6 +273,7 @@ async function redactPairs<
           subject: r.subject,
           customerBody: r.customer_msg,
           agentReply: r.agent_reply,
+          conversationContext: r.conversation_context,
         };
       } catch (error) {
         if (error instanceof RetryableImportError) {
@@ -271,17 +309,160 @@ async function fetchTicketChunk(opts: {
   if (opts.cursor.after) params.set("page[after]", opts.cursor.after);
   const res = await fetchExternalWithRetry(
     `${opts.baseUrl}/api/v2/search/export?${params.toString()}`,
-    { headers: { Authorization: opts.authorization, "Content-Type": "application/json" }, cache: "no-store" },
+    {
+      headers: {
+        Authorization: opts.authorization,
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+      redirect: "error",
+    },
     "Zendesk ticket export",
   );
   if (!res.ok) throw new Error(`Zendesk ticket export failed: ${res.status}`);
-  const data = await res.json().catch(() => ({ results: [], meta: {} }));
-  const tickets = Array.isArray(data.results) ? data.results : [];
+  const data = await res.json().catch(() => null);
+  if (
+    !data || !Array.isArray(data.results) ||
+    !data.meta || typeof data.meta.has_more !== "boolean"
+  ) {
+    throw new Error("Zendesk ticket export response was malformed.");
+  }
+  const tickets = data.results;
+  const hasMore = data.meta.has_more === true;
+  const afterCursor = typeof data.meta.after_cursor === "string"
+    ? data.meta.after_cursor.trim() || null
+    : null;
+  if (hasMore && !afterCursor) {
+    throw new Error(
+      "Zendesk ticket export pagination was missing its next cursor.",
+    );
+  }
   return {
     tickets,
-    hasMore: Boolean(data?.meta?.has_more),
-    afterCursor: typeof data?.meta?.after_cursor === "string" ? data.meta.after_cursor : null,
+    hasMore,
+    afterCursor,
   };
+}
+
+type ZendeskAuthorRole = "agent" | "admin" | "end-user";
+type ZendeskImportOutcome = "inserted" | "refreshed" | "skipped" | "dropped";
+type ZendeskImportItem = {
+  externalTicketId: string;
+  outcome: ZendeskImportOutcome;
+  reason: string;
+};
+
+async function fetchAllTicketComments(opts: {
+  baseUrl: string;
+  authorization: string;
+  ticketId: string;
+}): Promise<{ comments: any[] | null; skipReason: string | null }> {
+  const comments: any[] = [];
+  let after: string | null = null;
+
+  // Bound per-ticket work so a single unusually long thread cannot consume the
+  // entire serverless lease. We never anchor against partial history: tickets
+  // beyond the safe limit receive a durable skip reason instead.
+  for (let page = 0; page < MAX_COMMENT_PAGES_PER_TICKET; page += 1) {
+    const params = new URLSearchParams({
+      "page[size]": "100",
+      sort: "created_at",
+    });
+    if (after) params.set("page[after]", after);
+
+    const response = await fetchExternalWithRetry(
+      `${opts.baseUrl}/api/v2/tickets/${opts.ticketId}/comments.json?${params.toString()}`,
+      {
+        headers: { Authorization: opts.authorization },
+        cache: "no-store",
+        redirect: "error",
+      },
+      `Zendesk comments for ticket ${opts.ticketId}`,
+    );
+    if (response.status === 404) {
+      return { comments: null, skipReason: "comments_not_found" };
+    }
+    if (!response.ok) {
+      throw new Error(`Zendesk comments fetch failed (${response.status}).`);
+    }
+
+    const payload = await response.json().catch(() => null);
+    if (!payload || !Array.isArray(payload.comments)) {
+      throw new Error("Zendesk comments response was malformed.");
+    }
+    comments.push(...payload.comments);
+
+    if (payload?.meta?.has_more !== true) {
+      return { comments, skipReason: null };
+    }
+    const nextAfter = nextZendeskPageCursor(payload);
+    if (!nextAfter || nextAfter === after) {
+      return { comments: null, skipReason: "comments_pagination_invalid" };
+    }
+    after = nextAfter;
+  }
+
+  return { comments: null, skipReason: "comments_over_safe_limit" };
+}
+
+async function resolveZendeskAuthorRoles(opts: {
+  baseUrl: string;
+  authorization: string;
+  comments: any[];
+  cache: Map<string, ZendeskAuthorRole | null>;
+}): Promise<Map<string, ZendeskAuthorRole | null>> {
+  const authorIds = Array.from(
+    new Set(
+      opts.comments
+        .map((comment) => String(comment?.author_id ?? "").trim())
+        .filter(Boolean),
+    ),
+  );
+  const missingIds = authorIds.filter((id) => !opts.cache.has(id));
+
+  for (let offset = 0; offset < missingIds.length; offset += 100) {
+    const ids = missingIds.slice(offset, offset + 100);
+    const params = new URLSearchParams({
+      ids: ids.join(","),
+      include_deleted: "true",
+    });
+    const response = await fetchExternalWithRetry(
+      `${opts.baseUrl}/api/v2/users/show_many.json?${params.toString()}`,
+      {
+        headers: { Authorization: opts.authorization },
+        cache: "no-store",
+        redirect: "error",
+      },
+      "Zendesk comment authors",
+    );
+    if (!response.ok) {
+      throw new Error(`Zendesk author lookup failed (${response.status}).`);
+    }
+    const payload = await response.json().catch(() => null);
+    if (!payload || !Array.isArray(payload.users)) {
+      throw new Error("Zendesk author lookup response was malformed.");
+    }
+
+    const returned = new Set<string>();
+    for (const user of payload.users) {
+      const id = String(user?.id ?? "").trim();
+      if (!id) continue;
+      returned.add(id);
+      const role = String(user?.role || "").toLowerCase();
+      opts.cache.set(
+        id,
+        role === "agent" || role === "admin" || role === "end-user"
+          ? role
+          : null,
+      );
+    }
+    // Unknown/deleted authors fail closed and are never treated as agents.
+    for (const id of ids) {
+      if (!returned.has(id)) opts.cache.set(id, null);
+    }
+  }
+
+  return opts.cache;
 }
 
 /** Sum Zendesk's search count across both import statuses (solved + closed). */
@@ -292,8 +473,14 @@ async function countZendeskTickets(opts: {
   let total = 0;
   for (const status of IMPORT_STATUSES) {
     const res = await fetchExternalWithRetry(
-      `${opts.baseUrl}/api/v2/search/count.json?query=${encodeURIComponent(`type:ticket status:${status}`)}`,
-      { headers: { Authorization: opts.authorization }, cache: "no-store" },
+      `${opts.baseUrl}/api/v2/search/count.json?query=${
+        encodeURIComponent(`type:ticket status:${status}`)
+      }`,
+      {
+        headers: { Authorization: opts.authorization },
+        cache: "no-store",
+        redirect: "error",
+      },
       "Zendesk ticket count",
     );
     if (!res.ok) throw new Error(`Zendesk count failed: ${res.status}`);
@@ -303,20 +490,45 @@ async function countZendeskTickets(opts: {
   return total;
 }
 
+async function excludeLedgeredZendeskTickets(opts: {
+  supabase: NonNullable<ReturnType<typeof createServiceClient>>;
+  jobId: string;
+  tickets: any[];
+}): Promise<any[]> {
+  if (opts.tickets.length === 0) return [];
+  const externalTicketIds = opts.tickets.map((ticket) =>
+    String(ticket?.id ?? "").trim()
+  );
+  if (externalTicketIds.some((id) => !id)) {
+    throw new Error("Zendesk ticket response was missing a stable id.");
+  }
+  const { data, error } = await opts.supabase
+    .from("knowledge_import_job_items")
+    .select("external_ticket_id")
+    .eq("job_id", opts.jobId)
+    .in("external_ticket_id", externalTicketIds);
+  if (error) {
+    throw new Error(`Could not read import ledger: ${error.message}`);
+  }
+  const processed = new Set(
+    (data ?? []).map((row: any) => String(row.external_ticket_id)),
+  );
+  return opts.tickets.filter((ticket) => !processed.has(String(ticket.id)));
+}
+
 /**
  * Build ticket_examples rows from a raw ticket batch: fetch comments per
  * ticket, apply the non-support/auto-reply/empty-body filters, redact PII,
- * embed, and upsert (ignoreDuplicates). This is the exact pipeline the
+ * embed, and refresh by stable external ticket id. This is the exact pipeline the
  * legacy POST body ran inline — extracted verbatim so both legacy and
  * job-chunk mode share the same redaction/quality/dedupe core.
  *
  * Returns:
- * - imported: rows newly inserted by the upsert (new-row count is measured
- *   as pre-upsert DB count -> post-upsert DB count for this shop, since
- *   supabase-js's ignoreDuplicates upsert does not report affected rows).
+ * - imported: rows newly inserted by the upsert.
+ * - updated: existing Zendesk rows refreshed with the corrected final-agent
+ *   anchor, preceding context, preserved paragraphs and a new embedding.
  * - skipped: tickets that never became a safe pair (no comments, filtered as
- *   non-support/auto-reply, or missing customer/agent body) PLUS pairs whose
- *   redaction succeeded but were duplicates already in ticket_examples.
+ *   non-support/auto-reply, or missing customer/agent body).
  * - dropped: pairs whose PII redaction failed (never stored raw).
  */
 async function importTicketBatch(opts: {
@@ -326,61 +538,123 @@ async function importTicketBatch(opts: {
   authorization: string;
   shopId: string;
   workspaceId: string | null;
-}): Promise<{ imported: number; skipped: number; dropped: number }> {
-  const { supabase, tickets, baseUrl, authorization, shopId, workspaceId } = opts;
+  jobId: string;
+}): Promise<{
+  imported: number;
+  updated: number;
+  skipped: number;
+  dropped: number;
+  items: ZendeskImportItem[];
+}> {
+  const {
+    supabase,
+    tickets,
+    baseUrl,
+    authorization,
+    shopId,
+    workspaceId,
+    jobId,
+  } = opts;
   if (!supabase) throw new Error("Supabase not configured");
 
-  const NON_SUPPORT = /\b(faktura|invoice|payment reminder|påmindelse|bill|betaling)\b/i;
-  const pairs: Array<{ ticketId: string; subject: string; customerBody: string; agentReply: string }> = [];
+  const NON_SUPPORT =
+    /\b(faktura|invoice|payment reminder|påmindelse|bill|betaling)\b/i;
+  const pairs: Array<{
+    ticketId: string;
+    subject: string;
+    customerBody: string;
+    agentReply: string;
+    conversationContext: string;
+    anchorTag: string;
+  }> = [];
+  const authorRoleCache = new Map<string, ZendeskAuthorRole | null>();
+  const itemByTicketId = new Map<string, ZendeskImportItem>();
+  const recordItem = (
+    externalTicketId: string,
+    outcome: ZendeskImportOutcome,
+    reason: string,
+  ) => {
+    itemByTicketId.set(externalTicketId, {
+      externalTicketId,
+      outcome,
+      reason,
+    });
+  };
   let skippedPreRedaction = 0;
 
   for (const ticket of tickets) {
+    const ticketId = String(ticket?.id ?? "").trim();
+    if (!ticketId) {
+      throw new Error("Zendesk ticket response was missing a stable id.");
+    }
     if (NON_SUPPORT.test(String(ticket.subject || ""))) {
       skippedPreRedaction++;
+      recordItem(ticketId, "skipped", "non_support_subject");
       continue;
     }
 
-    const commentsRes = await fetchExternalWithRetry(
-      `${baseUrl}/api/v2/tickets/${ticket.id}/comments.json?sort_order=asc`,
-      { headers: { Authorization: authorization }, cache: "no-store" },
-      `Zendesk comments for ticket ${ticket.id}`,
+    const commentResult = await fetchAllTicketComments({
+      baseUrl,
+      authorization,
+      ticketId,
+    });
+    if (!commentResult.comments) {
+      skippedPreRedaction++;
+      recordItem(
+        ticketId,
+        "skipped",
+        commentResult.skipReason || "comments_not_found",
+      );
+      continue;
+    }
+    const comments = commentResult.comments;
+    const authorRoles = await resolveZendeskAuthorRoles({
+      baseUrl,
+      authorization,
+      comments,
+      cache: authorRoleCache,
+    });
+    if (hasUnclassifiedZendeskPublicComment(comments, authorRoles)) {
+      skippedPreRedaction++;
+      recordItem(ticketId, "skipped", "unclassified_public_author");
+      continue;
+    }
+    const anchored = anchorFinalAgentReply(
+      zendeskCommentsToTurns(comments, authorRoles),
     );
-    if (!commentsRes.ok) {
-      if (commentsRes.status !== 404) {
-        throw new Error(`Zendesk comments fetch failed (${commentsRes.status}).`);
-      }
+
+    if (
+      !anchored ||
+      !/^\d+$/.test(anchored.customerTurnId || "") ||
+      !/^\d+$/.test(anchored.agentTurnId || "")
+    ) {
       skippedPreRedaction++;
-      continue;
-    }
-
-    const { comments = [] } = await commentsRes.json().catch(() => ({ comments: [] }));
-    const publicComments = comments.filter((c: any) => c.public);
-    const customerComment = publicComments.find((c: any) => c.author_id === ticket.requester_id) || publicComments[0];
-    const agentComment = publicComments.find((c: any) => c.author_id !== ticket.requester_id);
-
-    if (!customerComment || !agentComment) {
-      skippedPreRedaction++;
-      continue;
-    }
-
-    const customerBody = normalizeText(stripHtml(customerComment.html_body || customerComment.body || ""));
-    const agentReply = normalizeText(stripHtml(agentComment.html_body || agentComment.body || ""));
-
-    if (!customerBody || !agentReply || isAutoReply(agentReply)) {
-      skippedPreRedaction++;
+      recordItem(ticketId, "skipped", "no_eligible_versioned_anchor");
       continue;
     }
 
     pairs.push({
-      ticketId: String(ticket.id),
+      ticketId,
       subject: String(ticket.subject || "").trim(),
-      customerBody: customerBody.slice(0, 2000),
-      agentReply: agentReply.slice(0, 2000),
+      customerBody: anchored.customerBody.slice(0, 2000),
+      agentReply: anchored.agentReply.slice(0, 2000),
+      // Keep the recent end when a very long thread must be bounded; it is the
+      // context closest to the customer turn under test and therefore the most
+      // relevant for retrieval and writer continuity.
+      conversationContext: (anchored.conversationContext || "").slice(-6000),
+      anchorTag:
+        `zendesk_anchor_v1:${anchored.customerTurnId}:${anchored.agentTurnId}`,
     });
   }
 
   if (!pairs.length) {
-    return { imported: 0, skipped: skippedPreRedaction, dropped: 0 };
+    return {
+      imported: 0,
+      updated: 0,
+      skipped: skippedPreRedaction,
+      dropped: 0,
+      items: Array.from(itemByTicketId.values()),
+    };
   }
 
   // GDPR: redact PII out of every pair BEFORE embedding/storing. Tickets that
@@ -388,14 +662,29 @@ async function importTicketBatch(opts: {
   // few-shot example.
   const redacted = await redactPairs(pairs);
   const droppedForPii = redacted.filter((r) => r === null).length;
-  const safePairs = redacted.filter((p): p is NonNullable<typeof p> => p !== null);
+  redacted.forEach((pair, index) => {
+    if (pair === null) {
+      recordItem(pairs[index].ticketId, "dropped", "pii_redaction_failed");
+    }
+  });
+  const safePairs = redacted.filter((p): p is NonNullable<typeof p> =>
+    p !== null
+  );
 
   if (!safePairs.length) {
-    return { imported: 0, skipped: skippedPreRedaction, dropped: droppedForPii };
+    return {
+      imported: 0,
+      updated: 0,
+      skipped: skippedPreRedaction,
+      dropped: droppedForPii,
+      items: Array.from(itemByTicketId.values()),
+    };
   }
 
   // Embed on customer message — semantic search must match similar customer questions, not agent replies
-  const customerMsgs = safePairs.map((p) => buildCustomerMsg(p.subject, p.customerBody));
+  const customerMsgs = safePairs.map((p) =>
+    buildCustomerMsg(p.subject, p.customerBody)
+  );
   const allEmbeddings: number[][] = [];
 
   for (let i = 0; i < customerMsgs.length; i += EMBED_BATCH_SIZE) {
@@ -404,69 +693,177 @@ async function importTicketBatch(opts: {
     allEmbeddings.push(...embeddings);
   }
 
-  const rows = safePairs.map((pair, idx) => ({
+  const baseRows = safePairs.map((pair, idx) => ({
     shop_id: shopId,
     workspace_id: workspaceId,
     source_provider: SOURCE_PROVIDER,
     external_ticket_id: pair.ticketId,
     customer_msg: customerMsgs[idx],
     agent_reply: pair.agentReply,
+    conversation_context: pair.conversationContext || null,
     subject: pair.subject,
     embedding: allEmbeddings[idx],
-    tags: ["pii_scrubbed"],
+    anchorTag: pair.anchorTag,
   }));
 
-  // Count how many rows for this shop exist BEFORE the upsert, so we can
-  // measure exactly how many were newly inserted (ignoreDuplicates upsert
-  // does not tell us which rows were skipped as dupes).
-  const { count: countBefore, error: countBeforeError } = await supabase
+  // The stable provider ticket id tells us which rows are new. Pair-specific
+  // curation is preserved only when the exact Zendesk comment anchor is still
+  // the same; legacy/changed anchors must be reclassified.
+  const externalTicketIds = baseRows.map((row) => row.external_ticket_id);
+  const { data: existingRows, error: existingRowsError } = await supabase
     .from("ticket_examples")
-    .select("id", { count: "exact", head: true })
+    .select("external_ticket_id, tags, intent, language, csat_score")
     .eq("shop_id", shopId)
-    .eq("source_provider", SOURCE_PROVIDER);
-  if (countBeforeError) {
-    console.warn("[import-zendesk] count failed:", countBeforeError.message);
+    .eq("source_provider", SOURCE_PROVIDER)
+    .in("external_ticket_id", externalTicketIds);
+  if (existingRowsError) {
+    throw new Error(
+      `Could not prepare Zendesk refresh: ${existingRowsError.message}`,
+    );
   }
+  const existingByExternalId = new Map(
+    (existingRows ?? []).map((row: any) => [
+      String(row.external_ticket_id),
+      row,
+    ]),
+  );
+  const rows = baseRows.map(({ anchorTag, ...row }) => {
+    const externalTicketId = String(row.external_ticket_id);
+    const existing = existingByExternalId.get(externalTicketId);
+    const curation = planZendeskRefreshCuration({
+      existing,
+      anchorTag,
+      jobId,
+    });
 
-  // Dedup enforced by DB constraint (shop_id, source_provider, external_ticket_id)
+    recordItem(
+      externalTicketId,
+      curation.outcome,
+      curation.outcome === "inserted"
+        ? "new_ticket_example"
+        : "corrected_or_refreshed",
+    );
+    return {
+      ...row,
+      tags: curation.tags,
+      intent: curation.intent,
+      language: curation.language,
+      csat_score: curation.csat_score,
+    };
+  });
+
+  // The unique constraint makes this idempotent. Unlike the legacy
+  // ignoreDuplicates path, conflict rows are intentionally updated so a
+  // controlled reimport repairs their old first-reply anchors.
   const { error: insertError } = await supabase
     .from("ticket_examples")
-    .upsert(rows, { onConflict: "shop_id,source_provider,external_ticket_id", ignoreDuplicates: true });
+    .upsert(rows, {
+      onConflict: "shop_id,source_provider,external_ticket_id",
+      ignoreDuplicates: false,
+    });
 
   if (insertError) throw new Error(insertError.message);
 
-  const { count: countAfter, error: countAfterError } = await supabase
-    .from("ticket_examples")
-    .select("id", { count: "exact", head: true })
-    .eq("shop_id", shopId)
-    .eq("source_provider", SOURCE_PROVIDER);
-  if (countAfterError) {
-    console.warn("[import-zendesk] count failed:", countAfterError.message);
+  return {
+    imported:
+      Array.from(itemByTicketId.values()).filter((item) =>
+        item.outcome === "inserted"
+      ).length,
+    updated:
+      Array.from(itemByTicketId.values()).filter((item) =>
+        item.outcome === "refreshed"
+      ).length,
+    skipped: skippedPreRedaction,
+    dropped: droppedForPii,
+    items: Array.from(itemByTicketId.values()),
+  };
+}
+
+async function recordZendeskImportItems(opts: {
+  supabase: NonNullable<ReturnType<typeof createServiceClient>>;
+  jobId: string;
+  items: ZendeskImportItem[];
+}): Promise<{
+  imported: number;
+  updated: number;
+  skipped: number;
+  dropped: number;
+}> {
+  if (opts.items.length > 0) {
+    const ledgerRows = opts.items.map((item) => ({
+      job_id: opts.jobId,
+      external_ticket_id: item.externalTicketId,
+      outcome: item.outcome,
+      reason: item.reason,
+    }));
+    const { error } = await opts.supabase
+      .from("knowledge_import_job_items")
+      .upsert(ledgerRows, {
+        onConflict: "job_id,external_ticket_id",
+        // The first durable outcome wins. Retrying a successful example upsert
+        // must not turn an original insert into a refresh or double-count it.
+        ignoreDuplicates: true,
+      });
+    if (error) {
+      throw new Error(`Could not record import ledger: ${error.message}`);
+    }
   }
 
-  const newRows = Math.max(0, (countAfter ?? 0) - (countBefore ?? 0));
-  const duplicates = rows.length - newRows;
-
-  return {
-    imported: newRows,
-    skipped: skippedPreRedaction + duplicates,
-    dropped: droppedForPii,
+  const countOutcome = async (outcome: ZendeskImportOutcome) => {
+    const { count, error } = await opts.supabase
+      .from("knowledge_import_job_items")
+      .select("external_ticket_id", { count: "exact", head: true })
+      .eq("job_id", opts.jobId)
+      .eq("outcome", outcome);
+    if (error) {
+      throw new Error(`Could not recount import ledger: ${error.message}`);
+    }
+    return count ?? 0;
   };
+  const [imported, updated, skipped, dropped] = await Promise.all([
+    countOutcome("inserted"),
+    countOutcome("refreshed"),
+    countOutcome("skipped"),
+    countOutcome("dropped"),
+  ]);
+  return { imported, updated, skipped, dropped };
 }
 
 export async function GET() {
   // Return count of already-imported zendesk tickets for this shop
   const { userId: clerkUserId, orgId } = await auth();
-  if (!clerkUserId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!clerkUserId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   const supabase = createServiceClient();
-  if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
+  if (!supabase) {
+    return NextResponse.json({ error: "Supabase not configured" }, {
+      status: 500,
+    });
+  }
 
-  const scope = await resolveAuthScope(supabase, { clerkUserId, orgId }).catch(() => null);
-  const shops = await listScopedShops(supabase, scope, { fields: "id" }).catch(() => []);
+  let shops: any[];
+  try {
+    const scope = await resolveRequiredTenantScope(supabase, {
+      clerkUserId,
+      orgId,
+    });
+    shops = await listScopedShops(supabase, scope, { fields: "id" });
+  } catch (err: any) {
+    return NextResponse.json({ error: String(err?.message ?? err) }, {
+      status: 500,
+    });
+  }
   const shopIds = shops.map((s: any) => s.id).filter(Boolean);
 
-  if (!shopIds.length) return NextResponse.json({ count: 0, imported_examples: 0, last_job: null });
+  if (!shopIds.length) {
+    return NextResponse.json({
+      count: 0,
+      imported_examples: 0,
+      last_job: null,
+    });
+  }
 
   const { count } = await supabase
     .from("ticket_examples")
@@ -478,7 +875,7 @@ export async function GET() {
     .from("knowledge_import_jobs")
     .select("*")
     .in("shop_id", shopIds)
-    .eq("provider", "zendesk")
+    .eq("provider", IMPORT_JOB_PROVIDER)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -493,24 +890,97 @@ export async function GET() {
 
 export async function POST(req: Request) {
   const { userId: clerkUserId, orgId } = await auth();
-  if (!clerkUserId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!clerkUserId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
-  if (!OPENAI_API_KEY) return NextResponse.json({ error: "OPENAI_API_KEY not configured" }, { status: 500 });
+  if (!OPENAI_API_KEY) {
+    return NextResponse.json({ error: "OPENAI_API_KEY not configured" }, {
+      status: 500,
+    });
+  }
 
   const supabase = createServiceClient();
-  if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
+  if (!supabase) {
+    return NextResponse.json({ error: "Supabase not configured" }, {
+      status: 500,
+    });
+  }
+
+  // Read the body once before resolving the target shop. In a multi-shop
+  // workspace, start/estimate requires an explicit shop; continue may recover
+  // it from the already-scoped job id.
+  const body = await req.json().catch(() => ({}));
+  const mode = String(body?.mode || "").trim();
 
   let scope: any;
   try {
-    scope = await resolveAuthScope(supabase, { clerkUserId, orgId });
+    scope = await resolveRequiredTenantScope(supabase, {
+      clerkUserId,
+      orgId,
+    });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 
-  // Resolve shop
-  const shops = await listScopedShops(supabase, scope, { fields: "id" }).catch(() => []);
-  const shop = shops[0];
-  if (!shop?.id) return NextResponse.json({ error: "No shop found" }, { status: 400 });
+  let shops: any[];
+  try {
+    shops = await listScopedShops(supabase, scope, { fields: "id" });
+  } catch (err: any) {
+    return NextResponse.json({ error: String(err?.message ?? err) }, {
+      status: 500,
+    });
+  }
+  const shopIds = shops.map((candidate) => String(candidate?.id || ""))
+    .filter(Boolean);
+  if (!shopIds.length) {
+    return NextResponse.json({ error: "No shop found" }, { status: 400 });
+  }
+
+  let targetShopId = String(body?.shopId || body?.shop_id || "").trim();
+  if (!targetShopId && mode === "continue") {
+    const jobId = String(body?.jobId || "").trim();
+    if (!jobId) {
+      return NextResponse.json({ error: "jobId is required" }, {
+        status: 400,
+      });
+    }
+    const { data: scopedJob, error: scopedJobError } = await supabase
+      .from("knowledge_import_jobs")
+      .select("shop_id")
+      .eq("id", jobId)
+      .eq("provider", IMPORT_JOB_PROVIDER)
+      .in("shop_id", shopIds)
+      .maybeSingle();
+    if (scopedJobError) {
+      return NextResponse.json({ error: scopedJobError.message }, {
+        status: 500,
+      });
+    }
+    if (!scopedJob?.shop_id) {
+      return NextResponse.json({ error: "job not found" }, { status: 404 });
+    }
+    targetShopId = String(scopedJob.shop_id);
+  }
+  if (!targetShopId) {
+    if (shops.length !== 1) {
+      return NextResponse.json({
+        error: "shopId is required when multiple shops are available.",
+      }, { status: 400 });
+    }
+    targetShopId = String(shops[0].id);
+  }
+  const shop = shops.find((candidate) =>
+    String(candidate?.id || "") === targetShopId
+  );
+  if (!shop?.id) {
+    return NextResponse.json(
+      { error: "Shop not found in your current scope." },
+      {
+        status: 404,
+      },
+    );
+  }
 
   // Fetch Zendesk integration scoped to workspace
   let integrationQuery = supabase
@@ -520,60 +990,84 @@ export async function POST(req: Request) {
     .eq("is_active", true)
     .order("created_at", { ascending: false })
     .limit(1);
-  if (scope?.workspaceId) integrationQuery = integrationQuery.eq("workspace_id", scope.workspaceId);
-  else if (scope?.supabaseUserId) integrationQuery = integrationQuery.eq("user_id", scope.supabaseUserId);
+  if (scope?.workspaceId) {
+    integrationQuery = integrationQuery.eq("workspace_id", scope.workspaceId);
+  } else if (scope?.supabaseUserId) {
+    integrationQuery = integrationQuery.eq("user_id", scope.supabaseUserId);
+  }
 
   const { data: integration } = await integrationQuery.maybeSingle();
   if (!integration) {
     return NextResponse.json(
-      { error: "Zendesk integration not found. Connect Zendesk in settings first." },
-      { status: 404 }
+      {
+        error:
+          "Zendesk integration not found. Connect Zendesk in settings first.",
+      },
+      { status: 404 },
     );
   }
 
   const config = integration.config || {};
   const email = String(config.email || "").trim();
-  const baseUrl = String(config.domain || config.base_url || config.subdomain || "").replace(/\/$/, "");
+  const configuredBaseUrl = String(
+    config.domain || config.base_url || config.subdomain || "",
+  ).trim();
   const token = decodeCredentials(integration.credentials_enc);
 
-  if (!email || !token || !baseUrl) {
-    return NextResponse.json({ error: "Zendesk credentials incomplete." }, { status: 400 });
+  if (!email || !token || !configuredBaseUrl) {
+    return NextResponse.json({ error: "Zendesk credentials incomplete." }, {
+      status: 400,
+    });
+  }
+  let baseUrl: string;
+  try {
+    baseUrl = normalizeZendeskBaseUrl(configuredBaseUrl, {
+      allowedCustomHosts: ZENDESK_ALLOWED_HOSTS,
+    });
+  } catch (err: any) {
+    return NextResponse.json({ error: String(err?.message ?? err) }, {
+      status: 400,
+    });
   }
 
-  const authorization = `Basic ${Buffer.from(`${email}/token:${token}`).toString("base64")}`;
-
-  // Body is read exactly once and every import must use the resumable
-  // estimate -> start -> continue protocol below.
-  const body = await req.json().catch(() => ({}));
-  const mode = String(body?.mode || "").trim();
+  const authorization = `Basic ${
+    Buffer.from(`${email}/token:${token}`).toString("base64")
+  }`;
 
   if (mode === "estimate") {
     let total: number;
     try {
       total = await countZendeskTickets({ baseUrl, authorization });
     } catch (err: any) {
-      return NextResponse.json({ error: String(err?.message ?? err) }, { status: 502 });
+      return NextResponse.json({ error: String(err?.message ?? err) }, {
+        status: 502,
+      });
     }
     return NextResponse.json({ estimate: { ticketCount: total } });
   }
 
   if (mode === "start") {
     if (body?.confirm !== true) {
-      return NextResponse.json({ error: "confirm:true required to start import" }, { status: 400 });
+      return NextResponse.json({
+        error: "confirm:true required to start import",
+      }, { status: 400 });
     }
 
-    const activeJobQuery = () => supabase
-      .from("knowledge_import_jobs")
-      .select("*")
-      .eq("provider", "zendesk")
-      .eq("shop_id", shop.id)
-      .in("status", ["queued", "running"])
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const activeJobQuery = () =>
+      supabase
+        .from("knowledge_import_jobs")
+        .select("*")
+        .eq("provider", IMPORT_JOB_PROVIDER)
+        .eq("shop_id", shop.id)
+        .in("status", ["queued", "running"])
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
     const { data: existingJob, error: existingErr } = await activeJobQuery();
-    if (existingErr) return NextResponse.json({ error: existingErr.message }, { status: 500 });
+    if (existingErr) {
+      return NextResponse.json({ error: existingErr.message }, { status: 500 });
+    }
     if (existingJob) {
       return NextResponse.json({ job: existingJob, resumed: true });
     }
@@ -582,19 +1076,22 @@ export async function POST(req: Request) {
     try {
       totalCount = await countZendeskTickets({ baseUrl, authorization });
     } catch (err: any) {
-      return NextResponse.json({ error: String(err?.message ?? err) }, { status: 502 });
+      return NextResponse.json({ error: String(err?.message ?? err) }, {
+        status: 502,
+      });
     }
 
     const { data: insertedJob, error: insertError } = await supabase
       .from("knowledge_import_jobs")
       .insert({
-        provider: "zendesk",
+        provider: IMPORT_JOB_PROVIDER,
         shop_id: shop.id,
         workspace_id: scope?.workspaceId ?? null,
         user_id: scope?.supabaseUserId ?? null,
         status: "running",
         batch_size: CHUNK_TICKETS,
         imported_count: 0,
+        updated_count: 0,
         skipped_count: 0,
         dropped_count: 0,
         total_count: totalCount,
@@ -605,7 +1102,9 @@ export async function POST(req: Request) {
     if (insertError?.code === "23505") {
       const { data: raceJob, error: raceError } = await activeJobQuery();
       if (raceError || !raceJob) {
-        return NextResponse.json({ error: raceError?.message || "Import job could not be resumed." }, { status: 500 });
+        return NextResponse.json({
+          error: raceError?.message || "Import job could not be resumed.",
+        }, { status: 500 });
       }
       return NextResponse.json({ job: raceJob, resumed: true });
     }
@@ -615,7 +1114,9 @@ export async function POST(req: Request) {
 
     // Starting is intentionally cheap. The client invokes `continue` only
     // after this response, so job creation can never time out while importing.
-    return NextResponse.json({ job: insertedJob, resumed: false }, { status: 201 });
+    return NextResponse.json({ job: insertedJob, resumed: false }, {
+      status: 201,
+    });
   }
 
   if (mode === "continue") {
@@ -624,8 +1125,11 @@ export async function POST(req: Request) {
       .select("*")
       .eq("id", String(body?.jobId || ""))
       .eq("shop_id", shop.id)
+      .eq("provider", IMPORT_JOB_PROVIDER)
       .maybeSingle();
-    if (error || !data) return NextResponse.json({ error: "job not found" }, { status: 404 });
+    if (error || !data) {
+      return NextResponse.json({ error: "job not found" }, { status: 404 });
+    }
     let job = data;
     if (job.status !== "running") return NextResponse.json({ job });
 
@@ -633,27 +1137,35 @@ export async function POST(req: Request) {
     // claim, a later request can see that the current cursor is actively being
     // processed and must wait. If a serverless invocation is killed, the lease
     // expires and the exact same page can be reclaimed safely.
-    const rawCursor = job.cursor && typeof job.cursor === "object" ? job.cursor : {};
-    const rawAfterCreatedAt = Date.parse(String(rawCursor.after_created_at || ""));
-    const exportCursorIsFresh =
-      typeof rawCursor.after === "string" &&
+    const rawCursor = job.cursor && typeof job.cursor === "object"
+      ? job.cursor
+      : {};
+    const rawAfterCreatedAt = Date.parse(
+      String(rawCursor.after_created_at || ""),
+    );
+    const exportCursorIsFresh = typeof rawCursor.after === "string" &&
       Number.isFinite(rawAfterCreatedAt) &&
       Date.now() - rawAfterCreatedAt < 50 * 60 * 1000;
-    const effectiveCursor =
-      typeof rawCursor.status === "string" && IMPORT_STATUSES.includes(rawCursor.status)
-        ? {
-            status: rawCursor.status,
-            after: exportCursorIsFresh ? rawCursor.after : null,
-            ...(exportCursorIsFresh ? { after_created_at: rawCursor.after_created_at } : {}),
-          }
-        : { status: IMPORT_STATUSES[0], after: null };
+    const effectiveCursor = typeof rawCursor.status === "string" &&
+        IMPORT_STATUSES.includes(rawCursor.status)
+      ? {
+        status: rawCursor.status,
+        after: exportCursorIsFresh ? rawCursor.after : null,
+        ...(exportCursorIsFresh
+          ? { after_created_at: rawCursor.after_created_at }
+          : {}),
+      }
+      : { status: IMPORT_STATUSES[0], after: null };
     const leaseExpiresAt = Date.parse(String(rawCursor.lease_expires_at || ""));
     if (Number.isFinite(leaseExpiresAt) && leaseExpiresAt > Date.now()) {
       return NextResponse.json(
         {
           error: "job busy",
           job,
-          retry_after_ms: Math.min(5000, Math.max(1000, leaseExpiresAt - Date.now())),
+          retry_after_ms: Math.min(
+            5000,
+            Math.max(1000, leaseExpiresAt - Date.now()),
+          ),
         },
         { status: 409 },
       );
@@ -668,6 +1180,8 @@ export async function POST(req: Request) {
       .from("knowledge_import_jobs")
       .update({ cursor: leaseCursor, updated_at: new Date().toISOString() })
       .eq("id", job.id)
+      .eq("shop_id", shop.id)
+      .eq("provider", IMPORT_JOB_PROVIDER)
       .eq("status", "running");
     // NB: .eq() on a jsonb column needs the filter VALUE as JSON text — passing
     // the raw object serializes as "[object Object]" and Postgres rejects it
@@ -676,14 +1190,18 @@ export async function POST(req: Request) {
     claimQuery = job.cursor == null
       ? claimQuery.is("cursor", null)
       : claimQuery.eq("cursor", JSON.stringify(job.cursor));
-    const { data: claimed, error: claimErr } = await claimQuery.select("*").maybeSingle();
-    if (claimErr) return NextResponse.json({ error: claimErr.message }, { status: 500 });
+    const { data: claimed, error: claimErr } = await claimQuery.select("*")
+      .maybeSingle();
+    if (claimErr) {
+      return NextResponse.json({ error: claimErr.message }, { status: 500 });
+    }
     if (!claimed) {
       const { data: freshJob } = await supabase
         .from("knowledge_import_jobs")
         .select("*")
         .eq("id", job.id)
         .eq("shop_id", shop.id)
+        .eq("provider", IMPORT_JOB_PROVIDER)
         .maybeSingle();
       return NextResponse.json(
         { error: "job busy", job: freshJob ?? job, retry_after_ms: 1500 },
@@ -699,16 +1217,26 @@ export async function POST(req: Request) {
         cursor: effectiveCursor,
         batchSize: Number(job.batch_size) || CHUNK_TICKETS,
       });
+      const unprocessedTickets = await excludeLedgeredZendeskTickets({
+        supabase,
+        jobId: job.id,
+        tickets,
+      });
 
-      const { imported: importedThisChunk, skipped: skippedThisChunk, dropped: droppedThisChunk } =
-        await importTicketBatch({
-          supabase,
-          tickets,
-          baseUrl,
-          authorization,
-          shopId: shop.id,
-          workspaceId: scope?.workspaceId ?? null,
-        });
+      const batchResult = await importTicketBatch({
+        supabase,
+        tickets: unprocessedTickets,
+        baseUrl,
+        authorization,
+        shopId: shop.id,
+        workspaceId: scope?.workspaceId ?? null,
+        jobId: job.id,
+      });
+      const durableCounts = await recordZendeskImportItems({
+        supabase,
+        jobId: job.id,
+        items: batchResult.items,
+      });
 
       const newCursor = nextExportCursor({
         statuses: IMPORT_STATUSES,
@@ -726,18 +1254,24 @@ export async function POST(req: Request) {
           // last plain cursor keeps the NOT NULL constraint intact.
           cursor: done ? effectiveCursor : newCursor,
           status: done ? "completed" : "running",
-          imported_count: job.imported_count + importedThisChunk,
-          skipped_count: job.skipped_count + skippedThisChunk,
-          dropped_count: (job.dropped_count ?? 0) + droppedThisChunk,
+          // Absolute ledger counts stay correct across retries, lease expiry
+          // and cursor resets; never increment counters from volatile state.
+          imported_count: durableCounts.imported,
+          updated_count: durableCounts.updated,
+          skipped_count: durableCounts.skipped,
+          dropped_count: durableCounts.dropped,
           last_error: null,
           updated_at: new Date().toISOString(),
         })
         .eq("id", job.id)
         .eq("shop_id", shop.id)
+        .eq("provider", IMPORT_JOB_PROVIDER)
         .eq("cursor", JSON.stringify(leaseCursor))
         .select("*")
         .single();
-      if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+      if (updErr) {
+        return NextResponse.json({ error: updErr.message }, { status: 500 });
+      }
       return NextResponse.json({ job: updated });
     } catch (err: any) {
       // Job stays "running" — cursor is untouched, so the next continue call
@@ -752,6 +1286,7 @@ export async function POST(req: Request) {
         })
         .eq("id", job.id)
         .eq("shop_id", shop.id)
+        .eq("provider", IMPORT_JOB_PROVIDER)
         .eq("cursor", JSON.stringify(leaseCursor))
         .select("*")
         .maybeSingle();
@@ -774,16 +1309,34 @@ export async function POST(req: Request) {
 
 export async function DELETE(req: Request) {
   const { userId: clerkUserId, orgId } = await auth();
-  if (!clerkUserId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!clerkUserId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   const supabase = createServiceClient();
-  if (!supabase) return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
+  if (!supabase) {
+    return NextResponse.json({ error: "Supabase not configured" }, {
+      status: 500,
+    });
+  }
 
-  const scope = await resolveAuthScope(supabase, { clerkUserId, orgId }).catch(() => null);
-  const shops = await listScopedShops(supabase, scope, { fields: "id" }).catch(() => []);
+  let shops: any[];
+  try {
+    const scope = await resolveRequiredTenantScope(supabase, {
+      clerkUserId,
+      orgId,
+    });
+    shops = await listScopedShops(supabase, scope, { fields: "id" });
+  } catch (err: any) {
+    return NextResponse.json({ error: String(err?.message ?? err) }, {
+      status: 500,
+    });
+  }
   const shopIds = shops.map((s: any) => s.id).filter(Boolean);
 
-  if (!shopIds.length) return NextResponse.json({ error: "No shop found" }, { status: 400 });
+  if (!shopIds.length) {
+    return NextResponse.json({ error: "No shop found" }, { status: 400 });
+  }
 
   const { error } = await supabase
     .from("ticket_examples")
@@ -791,7 +1344,9 @@ export async function DELETE(req: Request) {
     .in("shop_id", shopIds)
     .eq("source_provider", SOURCE_PROVIDER);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 
   return NextResponse.json({ ok: true });
 }

@@ -1,8 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useCustomerLookup } from "@/hooks/useCustomerLookup";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { badgeVariants } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
 import { SonaActivityContent } from "@/components/inbox/SonaActivityContent";
 import { CustomerTab } from "@/components/inbox/CustomerTab";
 import { ChevronRight, ExternalLink, Truck, X } from "lucide-react";
@@ -12,6 +20,26 @@ import { SonaLogo } from "@/components/ui/SonaLogo";
 
 const asString = (value) => (typeof value === "string" ? value.trim() : "");
 const DISPLAY_TIMEZONE = "Europe/Copenhagen";
+
+const SONA_INTENT_LABELS = {
+  tracking: "Tracking",
+  return: "Return",
+  refund: "Refund",
+  exchange: "Exchange",
+  address_change: "Address change",
+  product_question: "Product question",
+  complaint: "Complaint",
+  thanks: "Thanks",
+  update: "Status update",
+  other: "General inquiry",
+};
+
+const getSonaConfidenceLabel = (value) => {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "Analysis available";
+  if (value >= 0.85) return "High confidence";
+  if (value >= 0.65) return "Medium confidence";
+  return "Needs review";
+};
 
 const stripThreadMeta = (value) =>
   String(value || "")
@@ -534,49 +562,75 @@ export function SonaInsightsModal({
                 </div>
               )}
 
-              <button
+              <Button
                 type="button"
+                variant="outline"
                 onClick={() => setSonaLogOpen(true)}
-                className="group flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition-[border-color,box-shadow,transform,background-color] duration-150 ease-out hover:border-slate-300 hover:bg-slate-50 hover:shadow-md active:scale-[0.99]"
+                className="group h-auto w-full justify-start gap-3 whitespace-normal rounded-2xl border-slate-200 bg-white p-4 text-left shadow-sm transition-[border-color,box-shadow,transform,background-color] duration-150 ease-out hover:border-slate-300 hover:bg-slate-50 hover:shadow-md active:scale-[0.99]"
               >
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white">
                   <SonaLogo size={28} className="h-7 w-7" speed={logsLoading ? "working" : "idle"} />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-semibold text-slate-900">
-                    Sona activity
+                    How Sona built this draft
                   </span>
                   <span className="mt-0.5 block truncate text-xs text-slate-500">
                     {logsLoading
-                      ? "Loading…"
+                      ? "Loading Sona’s activity…"
                       : diagnostic
                         ? [
-                            diagnostic.kb_chunks?.length
-                              ? `${diagnostic.kb_chunks.length} source${diagnostic.kb_chunks.length !== 1 ? "s" : ""}`
-                              : null,
-                            diagnostic.ticket_examples?.length
-                              ? `${diagnostic.ticket_examples.length} example${diagnostic.ticket_examples.length !== 1 ? "s" : ""}`
-                              : null,
-                            diagnostic.knowledge_gaps?.length
-                              ? `${diagnostic.knowledge_gaps.length} gap${diagnostic.knowledge_gaps.length !== 1 ? "s" : ""}`
-                              : null,
-                          ].filter(Boolean).join(" · ") || "View details"
+                            SONA_INTENT_LABELS[diagnostic.intent] || null,
+                            getSonaConfidenceLabel(diagnostic.confidence),
+                            `${(diagnostic.kb_chunks?.length || 0) + (diagnostic.ticket_examples?.length || 0)} references`,
+                          ].filter(Boolean).join(" · ")
                         : "No activity recorded yet"}
                   </span>
                 </span>
+                {diagnostic?.decision?.routingHint === "review" ? (
+                  <span className={`${badgeVariants({ variant: "outline" })} hidden shrink-0 border-amber-200 bg-amber-50 text-amber-700 sm:inline-flex`}>
+                    Review
+                  </span>
+                ) : null}
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-300 transition-colors group-hover:bg-slate-100 group-hover:text-slate-500">
                   <ChevronRight className="h-4 w-4" />
                 </span>
-              </button>
+              </Button>
 
               <Dialog open={sonaLogOpen} onOpenChange={setSonaLogOpen}>
-                <DialogContent className="max-w-lg max-h-[80vh] flex flex-col gap-0 p-0 overflow-hidden">
-                  <DialogHeader className="px-6 pt-6 pb-4 border-b border-border shrink-0">
-                    <DialogTitle>Sona activity</DialogTitle>
+                <DialogContent className="flex max-h-[90vh] max-w-[calc(100vw-1.5rem)] flex-col gap-0 overflow-hidden border-border/80 p-0 shadow-[0_24px_80px_rgba(15,23,42,0.22)] sm:max-w-[720px]">
+                  <DialogHeader className="shrink-0 border-b border-border/70 bg-background/95 px-6 pb-5 pt-6 text-left backdrop-blur-sm">
+                    <div className="flex items-start gap-3 pr-8">
+                      <span className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50 to-indigo-50 shadow-sm">
+                        <SonaLogo size={26} className="size-7" speed={logsLoading ? "working" : "idle"} />
+                      </span>
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <DialogTitle className="text-xl tracking-[-0.02em]">How Sona built this draft</DialogTitle>
+                        <DialogDescription className="leading-relaxed">
+                          The context, evidence, and decisions that shaped the reply.
+                        </DialogDescription>
+                      </div>
+                    </div>
                   </DialogHeader>
-                  <div className="overflow-y-auto flex-1 px-6 py-5">
+                  <div className="flex-1 overflow-y-auto bg-muted/[0.12] px-6 py-6">
                     {logsLoading ? (
-                      <p className="py-4 text-center text-sm text-muted-foreground">Loading…</p>
+                      <div className="flex flex-col gap-4" aria-label="Loading Sona activity">
+                        <Skeleton className="h-32 w-full rounded-xl" />
+                        <div className="flex gap-3">
+                          <Skeleton className="size-9 shrink-0 rounded-full" />
+                          <div className="flex flex-1 flex-col gap-2">
+                            <Skeleton className="h-4 w-40" />
+                            <Skeleton className="h-16 w-full rounded-lg" />
+                          </div>
+                        </div>
+                        <div className="flex gap-3">
+                          <Skeleton className="size-9 shrink-0 rounded-full" />
+                          <div className="flex flex-1 flex-col gap-2">
+                            <Skeleton className="h-4 w-48" />
+                            <Skeleton className="h-24 w-full rounded-lg" />
+                          </div>
+                        </div>
+                      </div>
                     ) : (
                       <SonaActivityContent
                         diagnostic={diagnostic}

@@ -43,7 +43,7 @@ const SUPPORT_VOICE_PATTERNS: Array<[SupportVoiceViolation, RegExp]> = [
   ],
   [
     "team_handoff",
-    /\b(?:(?:teamet|vores team|our team|the team)\s+(?:kan|vil|skal|må|vender|vende|hjælper|hjælpe|undersøge|gennemgå|review|investigate|look into|get back|follow up)|(?:send(?:er|es)?|videresend(?:er|es)?|forward(?:ed|ing)?|pass(?:ed)?)[^.?!\n]{0,80}\b(?:teamet|vores team|our team|the team))\b/i,
+    /\b(?:(?:teamet|vores team|our team|the team)\s+(?:kan|vil|skal|må|vender|vende|hjælper|hjælpe|undersøge|gennemgå|can|will|shall|may|helps?|review|investigate|look into|get back|follow up)|(?:send(?:er|es)?|videresend(?:er|es)?|forward(?:ed|ing)?|pass(?:ed)?)[^.?!\n]{0,80}\b(?:teamet|vores team|our team|the team))\b/i,
   ],
 ];
 

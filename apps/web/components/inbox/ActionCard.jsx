@@ -236,6 +236,16 @@ function getImpactSummaryLines({ actionType = "", payload = {}, orderDisplayNumb
     lines.push("Shipping method on the order will be changed.");
   } else if (normalizedAction === "update_customer_contact") {
     lines.push("Customer contact details will be updated.");
+  } else if (normalizedAction === "forward_email") {
+    const targetEmail = String(payload?.target_email || payload?.forward_to_email || "").trim();
+    const category = String(payload?.category_key || "")
+      .trim()
+      .replace(/[_-]+/g, " ");
+    lines.push(
+      targetEmail
+        ? `Forward this${category ? ` ${category}` : ""} email to ${targetEmail}.`
+        : String(detail || "").trim() || "Forward this email."
+    );
   } else if (normalizedAction === "add_note" || normalizedAction === "add_internal_note_or_tag") {
     lines.push("An internal note will be added to the Shopify order.");
   } else if (normalizedAction === "add_tag") {

@@ -29,6 +29,8 @@ test("managed domain provisioning creates Postmark and GoDaddy records idempoten
   assert.match(provisioner, /pm-bounces\.\$\{domain\}/);
   assert.match(provisioner, /upsertGoDaddyDnsRecord/);
   assert.match(provisioner, /managed_sender/);
+  assert.match(provisioner, /current\.from_email !== desiredFromEmail/);
+  assert.match(provisioner, /from_email: desiredFromEmail/);
   assert.match(godaddy, /method: "PUT"/);
   assert.match(godaddy, /Authorization: `sso-key/);
 });

@@ -1,5 +1,28 @@
 // supabase/scripts/lib/golden-eval-core.mjs
+import { createHash } from "node:crypto";
+
 export const ACEZONE_SHOP_ID = "38df5fef-2a23-47f3-803e-39f2d6f1ed99";
+export const GOLDEN_DATASET_SCHEMA_VERSION = "golden-file-selection-v2";
+
+function canonicalize(value) {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.keys(value).sort().map((key) => [key, canonicalize(value[key])]),
+    );
+  }
+  return value;
+}
+
+export function sha256Json(value) {
+  return createHash("sha256")
+    .update(JSON.stringify(canonicalize(value)))
+    .digest("hex");
+}
+
+export function sha256Text(value) {
+  return createHash("sha256").update(String(value ?? "")).digest("hex");
+}
 
 export function parseArgs(argv) {
   const has = (f) => argv.includes(f);
@@ -16,11 +39,23 @@ export function parseArgs(argv) {
     "--issue-tiebreak", "--source-consolidate",
     "--writer-model", "--strong-model", "--disable-escalation", "--writer-effort",
   ]);
+  const VALUE_FLAGS = new Set([
+    "--shop", "--set", "--tier", "--limit", "--intent", "--abs-floor",
+    "--pq-budget", "--writer-model", "--strong-model", "--writer-effort",
+  ]);
   for (const tok of argv) {
     if (typeof tok === "string" && tok.startsWith("--") && !KNOWN_FLAGS.has(tok)) {
       throw new Error(
         `Unknown argument: ${tok}. Known flags: ${[...KNOWN_FLAGS].join(", ")}`,
       );
+    }
+  }
+  for (let i = 0; i < argv.length; i++) {
+    const tok = argv[i];
+    if (!VALUE_FLAGS.has(tok)) continue;
+    const value = argv[i + 1];
+    if (typeof value !== "string" || value.startsWith("--") || !value.trim()) {
+      throw new Error(`Missing value for ${tok}`);
     }
   }
   const tier = val("--tier");
@@ -31,20 +66,39 @@ export function parseArgs(argv) {
   const intentRaw = val("--intent");
   const absFloorRaw = val("--abs-floor");
   const pqBudgetRaw = val("--pq-budget");
+  const limit = limitRaw !== null ? Number(limitRaw) : null;
+  if (limit !== null && (!Number.isInteger(limit) || limit <= 0)) {
+    throw new Error("limit must be a positive integer");
+  }
+  const retrievalAbsFloor = absFloorRaw !== null ? Number(absFloorRaw) : null;
+  if (retrievalAbsFloor !== null && !Number.isFinite(retrievalAbsFloor)) {
+    throw new Error("abs-floor must be a number");
+  }
+  const retrievalPqBudget = pqBudgetRaw !== null ? Number(pqBudgetRaw) : null;
+  if (
+    retrievalPqBudget !== null &&
+    (!Number.isInteger(retrievalPqBudget) || retrievalPqBudget <= 0)
+  ) {
+    throw new Error("pq-budget must be a positive integer");
+  }
+  const intent = intentRaw !== null
+    ? intentRaw.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean)
+    : null;
+  if (intentRaw !== null && intent.length === 0) {
+    throw new Error("intent must include at least one non-empty value");
+  }
   return {
     shop: val("--shop") || ACEZONE_SHOP_ID,
     // Path to a curated subset file. null = use the default full golden set.
     set: val("--set"),
     tier,
-    limit: limitRaw !== null ? parseInt(limitRaw, 10) : null,
+    limit,
     // Comma-separated list of intents to keep (e.g. "complaint,product_question").
     // null = no intent filter.
-    intent: intentRaw !== null
-      ? intentRaw.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean)
-      : null,
+    intent,
     accept: has("--accept"),
-    retrievalAbsFloor: absFloorRaw !== null ? parseFloat(absFloorRaw) : null,
-    retrievalPqBudget: pqBudgetRaw !== null ? parseInt(pqBudgetRaw, 10) : null,
+    retrievalAbsFloor,
+    retrievalPqBudget,
     retrievalIssueTiebreak: has("--issue-tiebreak"),
     retrievalSourceConsolidate: has("--source-consolidate"),
     // Writer-model A/B (e.g. --writer-model gpt-5.4-mini --strong-model
@@ -83,16 +137,129 @@ export function validateCase(c) {
   return c;
 }
 
-export function loadGoldenSet(set, { tier = null, limit = null, intent = null } = {}) {
-  if (!set || !Array.isArray(set.cases)) throw new Error("golden set must have a cases array");
-  let cases = set.cases.map(validateCase);
+// The newer DB-backed gold seed is the authoritative home for manual review
+// verdicts, while the file runner still uses the original ticket-shaped set.
+// Overlay only quality-gate metadata by source_case_id; never replace the
+// actual prompt/reference content used by this runner.
+export function overlayBenchmarkMetadata(set, reviewSeed) {
+  if (!set || !Array.isArray(set.cases)) {
+    throw new Error("golden set must have a cases array");
+  }
+  const metadataById = new Map(
+    (Array.isArray(reviewSeed?.cases) ? reviewSeed.cases : [])
+      .filter((c) => String(c?.source_case_id || "").trim())
+      .map((c) => [String(c.source_case_id), {
+        benchmark_status: c.benchmark_status ?? null,
+        manual_reviewed: c.manual_reviewed === true,
+        is_active: c.is_active !== false,
+        review_notes: c.review_notes ?? null,
+      }]),
+  );
+  return {
+    ...set,
+    cases: set.cases.map((c) => {
+      const metadata = metadataById.get(String(c?.id || ""));
+      return metadata ? { ...c, ...metadata } : c;
+    }),
+  };
+}
+
+function manualExclusionReason(c) {
+  if (c?.benchmark_status === "EXCLUDE") return "benchmark_status=EXCLUDE";
+  if (c?.is_active === false) {
+    return c?.benchmark_status
+      ? `inactive (${c.benchmark_status})`
+      : "inactive";
+  }
+  return null;
+}
+
+export function selectGoldenCases(
+  set,
+  { tier = null, limit = null, intent = null } = {},
+) {
+  if (!set || !Array.isArray(set.cases)) {
+    throw new Error("golden set must have a cases array");
+  }
+  const validated = set.cases.map(validateCase);
+  const qualityGateExclusions = [];
+  let cases = validated.filter((c) => {
+    const reason = manualExclusionReason(c);
+    if (!reason) return true;
+    qualityGateExclusions.push({
+      id: c.id,
+      benchmark_status: c.benchmark_status ?? null,
+      reason,
+      review_notes: c.review_notes ?? null,
+    });
+    return false;
+  });
   if (tier) cases = cases.filter((c) => c.tier === tier);
   if (intent && intent.length) {
     const wanted = new Set(intent.map((s) => String(s).toLowerCase()));
     cases = cases.filter((c) => wanted.has(String(c.intent || "").toLowerCase()));
   }
   if (limit) cases = cases.slice(0, limit);
-  return cases;
+  return { cases, qualityGateExclusions };
+}
+
+export function loadGoldenSet(set, options = {}) {
+  return selectGoldenCases(set, options).cases;
+}
+
+function caseForDatasetHash(c) {
+  return {
+    id: c.id,
+    tier: c.tier,
+    subject: c.subject ?? "",
+    body: c.body,
+    source_thread_id: c.source_thread_id ?? null,
+    human_reply: c.human_reply,
+    language: c.language ?? null,
+    intent: c.intent ?? null,
+    expected_action: c.expected_action ?? null,
+    must_contain: c.must_contain ?? [],
+    must_not_contain: c.must_not_contain ?? [],
+    benchmark_status: c.benchmark_status ?? null,
+    manual_reviewed: c.manual_reviewed ?? null,
+    is_active: c.is_active ?? null,
+  };
+}
+
+export function buildDatasetProvenance({
+  set,
+  cases,
+  setPath,
+  setSourceText,
+  reviewSourceText = null,
+  opts = {},
+}) {
+  const caseIds = cases.map((c) => c.id);
+  const selection = {
+    kind: opts.set ? "custom_set" : "default_full_set",
+    shop_id: opts.shop ?? set?.shop_id ?? null,
+    tier: opts.tier ?? null,
+    limit: opts.limit ?? null,
+    intent: Array.isArray(opts.intent) ? [...opts.intent].sort() : null,
+    case_ids: caseIds,
+  };
+  return {
+    schema_version: GOLDEN_DATASET_SCHEMA_VERSION,
+    declared_version: set?.version ?? null,
+    set_path: setPath,
+    source_sha256: sha256Text(setSourceText),
+    review_metadata_sha256: reviewSourceText == null
+      ? null
+      : sha256Text(reviewSourceText),
+    selected_sha256: sha256Json({
+      shop_id: set?.shop_id ?? null,
+      cases: cases.map(caseForDatasetHash),
+    }),
+    cohort_sha256: sha256Json(selection),
+    selected_case_count: cases.length,
+    case_ids: caseIds,
+    selection,
+  };
 }
 
 export function extractActionTypes(actions) {
@@ -304,9 +471,78 @@ export function computeCoherence(chunks) {
   return { n_chunks, distinct_sources, distinct_products, top_source_share, is_grab_bag };
 }
 
-export function diffBaseline(current, baseline) {
+export function baselineCompatibility(provenance, baseline) {
+  const currentDataset = provenance?.dataset;
+  const currentJudge = provenance?.judge;
+  const baselineDataset = baseline?.provenance?.dataset;
+  const baselineJudge = baseline?.provenance?.judge;
+  const mismatches = [];
+  if (!currentDataset || !currentJudge) {
+    mismatches.push("current run is missing dataset/judge provenance");
+  }
+  if (!baselineDataset || !baselineJudge) {
+    mismatches.push("baseline predates dataset/judge provenance");
+  }
+  const hasString = (object, key) =>
+    typeof object?.[key] === "string" && object[key].length > 0;
+  const currentDatasetValid = hasString(currentDataset, "cohort_sha256") &&
+    hasString(currentDataset, "selected_sha256");
+  const baselineDatasetValid = hasString(baselineDataset, "cohort_sha256") &&
+    hasString(baselineDataset, "selected_sha256");
+  const currentJudgeValid = hasString(currentJudge, "model") &&
+    hasString(currentJudge, "definition_sha256");
+  const baselineJudgeValid = hasString(baselineJudge, "model") &&
+    hasString(baselineJudge, "definition_sha256");
+  if (currentDataset && !currentDatasetValid) {
+    mismatches.push("current dataset provenance is incomplete");
+  }
+  if (baselineDataset && !baselineDatasetValid) {
+    mismatches.push("baseline dataset provenance is incomplete");
+  }
+  if (currentJudge && !currentJudgeValid) {
+    mismatches.push("current judge provenance is incomplete");
+  }
+  if (baselineJudge && !baselineJudgeValid) {
+    mismatches.push("baseline judge provenance is incomplete");
+  }
+  if (currentDatasetValid && baselineDatasetValid) {
+    if (currentDataset.cohort_sha256 !== baselineDataset.cohort_sha256) {
+      mismatches.push("cohort hash differs");
+    }
+    if (currentDataset.selected_sha256 !== baselineDataset.selected_sha256) {
+      mismatches.push("selected dataset hash differs");
+    }
+  }
+  if (currentJudgeValid && baselineJudgeValid) {
+    if (currentJudge.model !== baselineJudge.model) {
+      mismatches.push("judge model differs");
+    }
+    if (currentJudge.definition_sha256 !== baselineJudge.definition_sha256) {
+      mismatches.push("judge definition hash differs");
+    }
+  }
+  return { compatible: mismatches.length === 0, mismatches };
+}
+
+export function diffBaseline(current, baseline, provenance = null) {
   if (!baseline || !baseline.aggregate) {
-    return { aggregateDeltas: null, regressedCases: [] };
+    return {
+      compatible: false,
+      mismatchReasons: ["baseline missing"],
+      aggregateDeltas: null,
+      regressedCases: [],
+    };
+  }
+  if (provenance) {
+    const compatibility = baselineCompatibility(provenance, baseline);
+    if (!compatibility.compatible) {
+      return {
+        compatible: false,
+        mismatchReasons: compatibility.mismatches,
+        aggregateDeltas: null,
+        regressedCases: [],
+      };
+    }
   }
   const aggregateDeltas = {};
   for (const dim of [...DIMS, "send_ready_rate"]) {
@@ -321,7 +557,140 @@ export function diffBaseline(current, baseline) {
       regressedCases.push({ id, from: base, to: score });
     }
   }
-  return { aggregateDeltas, regressedCases };
+  return {
+    compatible: true,
+    mismatchReasons: [],
+    aggregateDeltas,
+    regressedCases,
+  };
+}
+
+export function validateBaselineAcceptance({
+  opts = {},
+  failedRuns = 0,
+  gateFailures = 0,
+  integrityFailures = 0,
+  scoredRuns = 0,
+  runShopId = null,
+  datasetShopId = null,
+}) {
+  const reasons = [];
+  if (opts.set) reasons.push("--set selects a subset/custom cohort");
+  if (opts.tier) reasons.push("--tier filters the cohort");
+  if (opts.limit != null) reasons.push("--limit filters the cohort");
+  if (Array.isArray(opts.intent) && opts.intent.length > 0) {
+    reasons.push("--intent filters the cohort");
+  }
+  if (runShopId && datasetShopId && runShopId !== datasetShopId) {
+    reasons.push("run shop does not match the dataset shop");
+  }
+  if (failedRuns > 0) reasons.push(`${failedRuns} generation/judge run(s) failed`);
+  if (gateFailures > 0) reasons.push(`${gateFailures} edge gate(s) failed`);
+  if (integrityFailures > 0) {
+    reasons.push(`${integrityFailures} eval-integrity check(s) failed`);
+  }
+  if (scoredRuns <= 0) reasons.push("no cases were scored");
+  return { allowed: reasons.length === 0, reasons };
+}
+
+export function goldenEvalExitCode({
+  failedRuns = 0,
+  gateFailures = 0,
+  integrityFailures = 0,
+  acceptRejected = false,
+} = {}) {
+  return failedRuns > 0 || gateFailures > 0 || integrityFailures > 0 ||
+      acceptRejected
+    ? 1
+    : 0;
+}
+
+export function isReviewedGoldLabel(label) {
+  if (!label || typeof label !== "object") return false;
+  if (label._needs_human_review === true) return false;
+  if (label._needs_human_review === false) return true;
+  if (label.human_reviewed === true || label._human_reviewed === true) return true;
+  const status = String(label.review_status || label._review_status || "")
+    .trim().toLowerCase();
+  return status === "approved" || status === "reviewed";
+}
+
+export function buildReviewedGoldLabelMap(goldLabels) {
+  const labels = Array.isArray(goldLabels?.labels) ? goldLabels.labels : [];
+  const reviewed = labels.filter(isReviewedGoldLabel);
+  const skipped = labels.filter((label) => !isReviewedGoldLabel(label));
+  return {
+    byId: new Map(
+      reviewed.map((label) => [label.id, label.correct_snippet_ids || []]),
+    ),
+    reviewedIds: reviewed.map((label) => label.id),
+    skippedUnreviewedIds: skipped.map((label) => label.id),
+  };
+}
+
+function uniqueNumericIds(values) {
+  return [...new Set(
+    (Array.isArray(values) ? values : [])
+      .map((value) => Number(value))
+      .filter(Number.isFinite),
+  )].sort((a, b) => a - b);
+}
+
+export function assessTicketExampleLeakage(trace) {
+  if (!trace || trace.telemetry_status === "legacy_unavailable") {
+    return {
+      status: "legacy_unavailable",
+      passed: true,
+      fatal: false,
+      failures: [],
+      warning:
+        "deployed generate-draft-v2 predates ticket-example trace; leakage could not be verified",
+    };
+  }
+  if (trace.telemetry_status !== "available") {
+    return {
+      status: "invalid_trace",
+      passed: false,
+      fatal: true,
+      failures: ["ticket-example telemetry is partially present or malformed"],
+      warning: null,
+    };
+  }
+  if (
+    !Array.isArray(trace.selected_ids) ||
+    !Array.isArray(trace.exclusions?.external_id_matches) ||
+    !Array.isArray(trace.exclusions?.duplicate_question_matches)
+  ) {
+    return {
+      status: "invalid_trace",
+      passed: false,
+      fatal: true,
+      failures: ["ticket-example telemetry is marked available but missing ID arrays"],
+      warning: null,
+    };
+  }
+  const selectedIds = uniqueNumericIds(trace.selected_ids);
+  const externalMatches = uniqueNumericIds(trace.exclusions?.external_id_matches);
+  const duplicateMatches = uniqueNumericIds(
+    trace.exclusions?.duplicate_question_matches,
+  );
+  const excluded = new Set([...externalMatches, ...duplicateMatches]);
+  const leakedIds = selectedIds.filter((id) => excluded.has(id));
+  return {
+    status: leakedIds.length ? "leak_detected" : "verified",
+    passed: leakedIds.length === 0,
+    fatal: leakedIds.length > 0,
+    failures: leakedIds.length
+      ? [`excluded ticket example(s) reached writer: ${leakedIds.join(", ")}`]
+      : [],
+    warning: null,
+    selected_ids: selectedIds,
+    exclusions: {
+      external_id_matches: externalMatches,
+      duplicate_question_matches: duplicateMatches,
+    },
+    leaked_ids: leakedIds,
+  };
 }
 
 // ---- Retrieval metrics (matcher precision, separate from answer quality) ----
@@ -443,6 +812,8 @@ export function buildGoldenEvalResult({
   retrieval,
   candidateDiagnostics,
   retrievalFunnel,
+  ticketExampleTrace = null,
+  leakage = null,
   anchorClass,
   liveFactDependent,
 }) {
@@ -476,6 +847,8 @@ export function buildGoldenEvalResult({
     retrievalDebug: gen.retrievalDebug || [],
     candidate_diagnostics: candidateDiagnostics,
     retrieval_funnel: retrievalFunnel,
+    ticket_example_trace: ticketExampleTrace,
+    leakage_check: leakage,
     routing_hint: routingHint,
     block_send_recommended: blockSendRecommended,
     safety: gen?.safety ?? null,

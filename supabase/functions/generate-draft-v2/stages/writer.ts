@@ -7,7 +7,14 @@ import {
 } from "./case-continuity.ts";
 import { detectStepGuideChunks } from "./step-guide-mode.ts";
 import { RetrieverResult } from "./retriever.ts";
-import { FactResolverResult, deriveRefundStatus, isStockAvailabilityQuestion, type OrderMatch, type RefundStatus, type ResolvedFact } from "./fact-resolver.ts";
+import {
+  deriveRefundStatus,
+  FactResolverResult,
+  isStockAvailabilityQuestion,
+  type OrderMatch,
+  type RefundStatus,
+  type ResolvedFact,
+} from "./fact-resolver.ts";
 import type { TrackingFact } from "../../_shared/tracking/normalized-tracking.ts";
 import { ActionProposal } from "./action-decision.ts";
 import { resolveReplyLanguage } from "./language.ts";
@@ -43,16 +50,16 @@ import {
   derivePurchaseProductCandidate,
   detectManualCheckoutLinkFlow,
   firstTrustedProductLink,
-  isAmbiguousProductRequest,
   isAccessoryReplacementRequest,
+  isAmbiguousProductRequest,
   isCheckoutLinkRequest,
   isPurchaseLinkRequest,
+  type ProductSourceRow,
   resolvePublicStorefrontDomain,
   selectGroundedProductLinkFromChunks,
   selectGroundedProductLinkFromProducts,
   shouldSuppressProductLinkForAccessory,
   threadMentionsCheckoutLink,
-  type ProductSourceRow,
 } from "./purchase-link.ts";
 import type { ResolveCustomerNameResult } from "./customer-name-resolution.ts";
 import { buildPlatformSupportGuardrailsBlock } from "./platform-support-guardrails.ts";
@@ -532,8 +539,12 @@ export function normalizeOpeningGreeting(
   const name = salutationName.trim();
   if (!name) {
     if (!forceNeutral) return draft;
-    const neutral = language === "en" ? "Hi there," : `${greetingPrefix(language)},`;
-    if (/^(hi|hello|hej|hallo|bonjour|hola|ciao)\b[^\n]*,?\s*\n+/i.test(draft)) {
+    const neutral = language === "en"
+      ? "Hi there,"
+      : `${greetingPrefix(language)},`;
+    if (
+      /^(hi|hello|hej|hallo|bonjour|hola|ciao)\b[^\n]*,?\s*\n+/i.test(draft)
+    ) {
       return draft.replace(
         /^(hi|hello|hej|hallo|bonjour|hola|ciao)\b[^\n]*,?\s*\n+/i,
         `${neutral}\n\n`,
@@ -552,7 +563,10 @@ export function normalizeOpeningGreeting(
   ) {
     return draft;
   }
-  if (/^(hi|hello|hej|hallo|bonjour|hola|ciao)\s+[A-ZÆØÅÄÖÜÉÈÁÀÍÓÚÑ][^\n,]{1,60},?\s*\n+/i.test(draft)) {
+  if (
+    /^(hi|hello|hej|hallo|bonjour|hola|ciao)\s+[A-ZÆØÅÄÖÜÉÈÁÀÍÓÚÑ][^\n,]{1,60},?\s*\n+/i
+      .test(draft)
+  ) {
     return draft.replace(
       /^(hi|hello|hej|hallo|bonjour|hola|ciao)\s+[A-ZÆØÅÄÖÜÉÈÁÀÍÓÚÑ][^\n,]{1,60},?\s*\n+/i,
       `${expected}\n\n`,
@@ -564,7 +578,10 @@ export function normalizeOpeningGreeting(
       `${expected}\n\n`,
     );
   }
-  if (/^[A-ZÆØÅÄÖÜÉÈÁÀÍÓÚÑ][A-Za-zÆØÅæøåÄÖÜäöüßÉéÈèÁáÀàÍíÓóÚúÑñ'-]{1,29}\s*,\s*\n+/i.test(draft)) {
+  if (
+    /^[A-ZÆØÅÄÖÜÉÈÁÀÍÓÚÑ][A-Za-zÆØÅæøåÄÖÜäöüßÉéÈèÁáÀàÍíÓóÚúÑñ'-]{1,29}\s*,\s*\n+/i
+      .test(draft)
+  ) {
     return draft.replace(
       /^[A-ZÆØÅÄÖÜÉÈÁÀÍÓÚÑ][A-Za-zÆØÅæøåÄÖÜäöüßÉéÈèÁáÀàÍíÓóÚúÑñ'-]{1,29}\s*,\s*\n+/i,
       `${expected}\n\n`,
@@ -701,17 +718,21 @@ export function customerClaimsNotReceived(message?: string | null): boolean {
     /\b(?:package|parcel|order|it|shipment)\s+(?:is\s+)?missing\b/.test(m) ||
     /\bmissing\s+(?:package|parcel|order|shipment)\b/.test(m) ||
     /\bcan'?t\s+find\s+(?:it|the|my)\b/.test(m) ||
-    /\b(?:delivered\s+but|says\s+delivered\s+but|marked\s+delivered\s+but)\b/.test(m)
+    /\b(?:delivered\s+but|says\s+delivered\s+but|marked\s+delivered\s+but)\b/
+      .test(m)
   ) {
     return true;
   }
   // Danish
   if (
-    /\bikke\s+(?:har\s+)?(?:endnu\s+)?(?:modtaget|fået|modtog|kommet|ankommet)\b/.test(m) ||
+    /\bikke\s+(?:har\s+)?(?:endnu\s+)?(?:modtaget|fået|modtog|kommet|ankommet)\b/
+      .test(m) ||
     /\b(?:har|er)\s+ikke\s+(?:modtaget|fået|kommet|ankommet)\b/.test(m) ||
     /\baldrig\s+(?:modtaget|fået|kommet)\b/.test(m) ||
-    /\b(?:pakken|pakke|ordren|ordre|forsendelsen|varen)\s+(?:er\s+)?(?:væk|forsvundet|mangler|ikke\s+kommet)\b/.test(m) ||
-    /\bmangler\s+(?:min\s+|stadig\s+)?(?:pakke|pakken|ordre|ordren|vare|varen)\b/.test(m) ||
+    /\b(?:pakken|pakke|ordren|ordre|forsendelsen|varen)\s+(?:er\s+)?(?:væk|forsvundet|mangler|ikke\s+kommet)\b/
+      .test(m) ||
+    /\bmangler\s+(?:min\s+|stadig\s+)?(?:pakke|pakken|ordre|ordren|vare|varen)\b/
+      .test(m) ||
     /\bkan\s+ikke\s+finde\s+(?:den|min|pakken|ordren)\b/.test(m) ||
     /\bleveret\s+men\b/.test(m)
   ) {
@@ -722,14 +743,18 @@ export function customerClaimsNotReceived(message?: string | null): boolean {
 
 // Detects when the customer states that the tracking page says delivered.
 // CUSTOMER-STATED only — never treated as verified carrier tracking.
-export function customerReportsTrackingDelivered(message?: string | null): boolean {
+export function customerReportsTrackingDelivered(
+  message?: string | null,
+): boolean {
   const m = String(message ?? "").toLowerCase();
   // English
   if (
     /\b(?:tracking|carrier|status|page|link|website|app)[^.?!]{0,80}\b(?:says|shows|showed|marked|lists|states|is|was)\s+(?:(?:the\s+)?(?:package|parcel|order|shipment|it)\s+)?(?:as\s+)?delivered\b/
       .test(m) ||
-    /\b(?:says|shows|showed|marked|listed|states)\s+(?:(?:the\s+)?(?:package|parcel|order|shipment|it)\s+)?(?:as\s+)?delivered\b/.test(m) ||
-    /\b(?:marked|listed)\s+(?:(?:the\s+)?(?:package|parcel|order|shipment|it)\s+)?(?:as\s+)?delivered\b/.test(m)
+    /\b(?:says|shows|showed|marked|listed|states)\s+(?:(?:the\s+)?(?:package|parcel|order|shipment|it)\s+)?(?:as\s+)?delivered\b/
+      .test(m) ||
+    /\b(?:marked|listed)\s+(?:(?:the\s+)?(?:package|parcel|order|shipment|it)\s+)?(?:as\s+)?delivered\b/
+      .test(m)
   ) {
     return true;
   }
@@ -737,7 +762,8 @@ export function customerReportsTrackingDelivered(message?: string | null): boole
   if (
     /\b(?:tracking|trackingen|status|siden|linket|appen)[^.?!]{0,80}\b(?:siger|viser|står|markeret|meldt)\s+(?:som\s+)?leveret\b/
       .test(m) ||
-    /\b(?:der\s+står|står|viser|siger|markeret|meldt)\s+(?:som\s+)?leveret\b/.test(m)
+    /\b(?:der\s+står|står|viser|siger|markeret|meldt)\s+(?:som\s+)?leveret\b/
+      .test(m)
   ) {
     return true;
   }
@@ -755,16 +781,24 @@ export function customerReportsTrackingDelivered(message?: string | null): boole
 // not promise any refund/replacement/reshipment/compensation/claim outcome.
 export function buildTrackingDirective(
   facts: TrackingFact[],
-  opts?: { customerClaimsNotReceived?: boolean; customerReportsTrackingDelivered?: boolean },
+  opts?: {
+    customerClaimsNotReceived?: boolean;
+    customerReportsTrackingDelivered?: boolean;
+  },
 ): string {
   const notReceived = opts?.customerClaimsNotReceived === true;
-  const customerReportedDelivered = opts?.customerReportsTrackingDelivered === true;
+  const customerReportedDelivered =
+    opts?.customerReportsTrackingDelivered === true;
   if (!Array.isArray(facts) || facts.length === 0) {
-    return notReceived && customerReportedDelivered ? CUSTOMER_REPORTED_DELIVERED_NOT_RECEIVED_DIRECTIVE : "";
+    return notReceived && customerReportedDelivered
+      ? CUSTOMER_REPORTED_DELIVERED_NOT_RECEIVED_DIRECTIVE
+      : "";
   }
   const outbound = facts.filter((f) => f.direction === "outbound");
   const ret = facts.filter((f) => f.direction === "return");
-  const lines: string[] = ["# Forsendelses-tracking (struktureret, verificeret kun hvor angivet)"];
+  const lines: string[] = [
+    "# Forsendelses-tracking (struktureret, verificeret kun hvor angivet)",
+  ];
 
   if (outbound.length > 1) {
     lines.push(
@@ -772,11 +806,21 @@ export function buildTrackingDirective(
     );
   }
   for (const f of outbound) {
-    lines.push(`## Outbound ${f.tracking_number}${f.carrier ? ` (${f.carrier})` : ""} — state: ${f.state}, verification: ${f.verification}`);
-    lines.push(trackingStateLine(f, { customerClaimsNotReceived: notReceived }));
+    lines.push(
+      `## Outbound ${f.tracking_number}${
+        f.carrier ? ` (${f.carrier})` : ""
+      } — state: ${f.state}, verification: ${f.verification}`,
+    );
+    lines.push(
+      trackingStateLine(f, { customerClaimsNotReceived: notReceived }),
+    );
   }
   for (const f of ret) {
-    lines.push(`## Return ${f.tracking_number}${f.carrier ? ` (${f.carrier})` : ""} — state: ${f.state}, verification: ${f.verification}`);
+    lines.push(
+      `## Return ${f.tracking_number}${
+        f.carrier ? ` (${f.carrier})` : ""
+      } — state: ${f.state}, verification: ${f.verification}`,
+    );
     lines.push(returnStateLine(f));
   }
   lines.push(
@@ -787,11 +831,37 @@ export function buildTrackingDirective(
   return lines.join("\n");
 }
 
-const DELIVERED_NOT_RECEIVED_NEXT_STEP =
-  "Once you confirm the address, we can look into the shipment further with our shipping partner.";
+const DELIVERED_NOT_RECEIVED_NEXT_STEP: Record<string, string> = {
+  da:
+    "Når du har bekræftet adressen, undersøger vi forsendelsen nærmere sammen med vores fragtpartner.",
+  sv:
+    "När du har bekräftat adressen undersöker vi försändelsen närmare tillsammans med vår fraktpartner.",
+  de:
+    "Sobald die Adresse bestätigt ist, prüfen wir die Sendung gemeinsam mit unserem Versandpartner genauer.",
+  en:
+    "Once you confirm the address, we can look into the shipment further with our shipping partner.",
+  nl:
+    "Zodra je het adres hebt bevestigd, onderzoeken we de zending verder samen met onze vervoerder.",
+  fr:
+    "Dès que vous aurez confirmé l’adresse, nous examinerons l’envoi plus en détail avec notre transporteur.",
+  no:
+    "Når du har bekreftet adressen, undersøker vi forsendelsen nærmere sammen med fraktpartneren vår.",
+  fi:
+    "Kun olet vahvistanut osoitteen, selvitämme lähetystä tarkemmin kuljetuskumppanimme kanssa.",
+  es:
+    "Cuando confirmes la dirección, investigaremos el envío con más detalle junto con nuestro transportista.",
+  it:
+    "Dopo la conferma dell’indirizzo, esamineremo più a fondo la spedizione con il nostro corriere.",
+};
 
-const GENERIC_DELIVERED_NOT_RECEIVED_CLOSING_RE =
-  /(?:\n\s*)?(?:I look forward to hearing from you|Looking forward to hearing from you|Feel free to reach out|Please let me know|Let me know|If you have any questions, feel free to contact us)\.?\s*$/i;
+const GENERIC_DELIVERED_NOT_RECEIVED_CLOSING_RE: Record<string, RegExp> = {
+  en:
+    /(?:\n\s*)?(?:I look forward to hearing from you|Looking forward to hearing from you|Feel free to reach out|Please let me know|Let me know|If you have any questions, feel free to contact us)\.?\s*$/i,
+  da:
+    /(?:\n\s*)?(?:Jeg ser frem til at høre fra dig|Sig gerne til|Giv gerne besked|Du må gerne give besked)\.?\s*$/i,
+  de:
+    /(?:\n\s*)?(?:Ich freue mich auf Ihre Antwort|Ich freue mich, von Ihnen zu hören|Geben Sie (?:uns|mir) gerne Bescheid)\.?\s*$/i,
+};
 
 function isDeliveredNotReceivedFlow(
   facts: TrackingFact[],
@@ -809,7 +879,8 @@ function isDeliveredNotReceivedFlow(
     fact.verification === "carrier_verified"
   );
   return hasVerifiedDelivered ||
-    (!hasAnyVerifiedOutbound && customerReportsTrackingDelivered(latestCustomerMessage));
+    (!hasAnyVerifiedOutbound &&
+      customerReportsTrackingDelivered(latestCustomerMessage));
 }
 
 export function cleanupDeliveredNotReceivedDraft(
@@ -817,21 +888,41 @@ export function cleanupDeliveredNotReceivedDraft(
   opts: {
     trackingFacts?: TrackingFact[];
     latestCustomerMessage?: string | null;
+    language?: string | null;
   },
 ): string {
-  if (!isDeliveredNotReceivedFlow(opts.trackingFacts ?? [], opts.latestCustomerMessage)) {
+  if (
+    !isDeliveredNotReceivedFlow(
+      opts.trackingFacts ?? [],
+      opts.latestCustomerMessage,
+    )
+  ) {
     return draft;
   }
   const trimmed = String(draft ?? "").trim();
   if (!trimmed) return trimmed;
+  const language = String(opts.language ?? "en").trim().toLowerCase().slice(
+    0,
+    2,
+  );
+  const nextStep = DELIVERED_NOT_RECEIVED_NEXT_STEP[language] ??
+    DELIVERED_NOT_RECEIVED_NEXT_STEP.en;
+  const genericClosing = GENERIC_DELIVERED_NOT_RECEIVED_CLOSING_RE[language] ??
+    GENERIC_DELIVERED_NOT_RECEIVED_CLOSING_RE.en;
   const withoutGenericClosing = trimmed.replace(
-    GENERIC_DELIVERED_NOT_RECEIVED_CLOSING_RE,
+    genericClosing,
     "",
   ).trimEnd();
-  if (/once you confirm the address/i.test(withoutGenericClosing)) {
+  if (
+    withoutGenericClosing.toLocaleLowerCase().includes(
+      nextStep.toLocaleLowerCase(),
+    ) ||
+    (language === "en" &&
+      /once you confirm the address/i.test(withoutGenericClosing))
+  ) {
     return withoutGenericClosing.trim();
   }
-  return `${withoutGenericClosing}\n\n${DELIVERED_NOT_RECEIVED_NEXT_STEP}`.trim();
+  return `${withoutGenericClosing}\n\n${nextStep}`.trim();
 }
 
 function stockValueField(value: string, key: string): string | null {
@@ -840,12 +931,14 @@ function stockValueField(value: string, key: string): string | null {
 }
 
 export function buildStockAvailabilityDirective(facts: ResolvedFact[]): string {
-  const stockFacts = facts.filter((fact) => fact.label === "Live stock availability");
+  const stockFacts = facts.filter((fact) =>
+    fact.label === "Live stock availability"
+  );
   if (stockFacts.length === 0) {
     return [
       "# Live stock availability guardrails",
       "- No live Shopify stock availability fact is present. Do NOT claim that a product or variant is in stock, out of stock, available for preorder, reserved, held, discontinued, or expected back on a date.",
-      "- If the customer asks about stock/availability and no live stock fact is present, say that live availability cannot be confirmed right now and ask for the exact product name or link if needed. Example neutral phrasing: \"Jeg kan ikke se lagerstatus direkte her, så jeg vil ikke love noget forkert. Hvis du sender modellen/produktnavnet, kan vi tjekke det.\"",
+      '- If the customer asks about stock/availability and no live stock fact is present, say that live availability cannot be confirmed right now and ask for the exact product name or link if needed. Example neutral phrasing: "Jeg kan ikke se lagerstatus direkte her, så jeg vil ikke love noget forkert. Hvis du sender modellen/produktnavnet, kan vi tjekke det."',
       "- Do not use old knowledge-base chunks, product descriptions, or examples as live stock truth.",
       "- CRITICAL: Shopify product catalog chunks (source_label containing 'shopify_product') describe a product's features/specs but are NOT proof that the product is released, available, purchasable, or in stock. A product page may exist in Shopify for a product that is unreleased, on a waitlist, or hidden from the storefront. Never infer availability, release status, or purchasability from product descriptions alone.",
       "- If a knowledge chunk has risk_flags=shopify_product_not_live, the product is explicitly marked as not publicly available (waitlist, hidden price, draft, or placeholder price). Do NOT claim it is available, released, or purchasable. Do NOT provide a purchase link for it.",
@@ -864,15 +957,33 @@ export function buildStockAvailabilityDirective(facts: ResolvedFact[]): string {
     const variant = stockValueField(fact.value, "variant");
     lines.push(`- Fact: ${fact.value}`);
     if (state === "in_stock") {
-      lines.push(`  Writer rule: You may say ${product}${variant && variant !== "all_variants" && variant !== "default" ? ` (${variant})` : ""} is currently available in the store. Do not include exact quantity.`);
+      lines.push(
+        `  Writer rule: You may say ${product}${
+          variant && variant !== "all_variants" && variant !== "default"
+            ? ` (${variant})`
+            : ""
+        } is currently available in the store. Do not include exact quantity.`,
+      );
     } else if (state === "out_of_stock") {
-      lines.push(`  Writer rule: You may say ${product}${variant && variant !== "all_variants" && variant !== "default" ? ` (${variant})` : ""} currently appears to be out of stock. Also say there is no confirmed restock date right now unless a separate verified fact provides one.`);
+      lines.push(
+        `  Writer rule: You may say ${product}${
+          variant && variant !== "all_variants" && variant !== "default"
+            ? ` (${variant})`
+            : ""
+        } currently appears to be out of stock. Also say there is no confirmed restock date right now unless a separate verified fact provides one.`,
+      );
     } else if (state === "variant_clarification_required") {
-      lines.push("  Writer rule: Availability differs by variant/version. Ask the customer which version, color, or variant they mean before answering availability.");
+      lines.push(
+        "  Writer rule: Availability differs by variant/version. Ask the customer which version, color, or variant they mean before answering availability.",
+      );
     } else if (state === "unavailable" || state === "discontinued") {
-      lines.push(`  Writer rule: Do not say ${product} is in stock. Say it is not currently available in the store if the customer asks.`);
+      lines.push(
+        `  Writer rule: Do not say ${product} is in stock. Say it is not currently available in the store if the customer asks.`,
+      );
     } else {
-      lines.push("  Writer rule: Live availability is inconclusive. Say you cannot confirm live availability right now and ask for the exact product name/link or variant if needed. Example neutral phrasing: \"Jeg kan ikke se lagerstatus direkte her, så jeg vil ikke love noget forkert.\"");
+      lines.push(
+        '  Writer rule: Live availability is inconclusive. Say you cannot confirm live availability right now and ask for the exact product name/link or variant if needed. Example neutral phrasing: "Jeg kan ikke se lagerstatus direkte her, så jeg vil ikke love noget forkert."',
+      );
     }
   }
   return lines.join("\n");
@@ -887,21 +998,21 @@ const DELIVERED_NOT_RECEIVED_DIRECTIVE = [
   "- DELIVERED-NOT-RECEIVED: Carrier-tracking viser LEVERET, men kunden siger pakken IKKE er modtaget/mangler/ikke kan findes. Følg denne struktur (tilpas naturligt til kundens sprog):",
   "  1. Anerkend og beklag oprigtigt at kunden ikke har modtaget sin ordre (empati).",
   "  2. Sig at tracking viser pakken som leveret — men at dette IKKE nødvendigvis bekræfter at kunden personligt har modtaget den.",
-  "  3. KRITISK: Stil et eksplicit spørgsmål hvor kunden skal bekræfte leveringsadressen, fx: \"Kan du bekræfte, at leveringsadressen på ordren er korrekt?\" eller \"Bekræft venligst leveringsadressen, så vi kan undersøge forsendelsen nærmere.\" Dette må ikke udelades.",
+  '  3. KRITISK: Stil et eksplicit spørgsmål hvor kunden skal bekræfte leveringsadressen, fx: "Kan du bekræfte, at leveringsadressen på ordren er korrekt?" eller "Bekræft venligst leveringsadressen, så vi kan undersøge forsendelsen nærmere." Dette må ikke udelades.',
   "  4. Foreslå at tjekke relevante steder: naboer, husstandsmedlemmer, reception/portner (hvis relevant), pakkeshop/afhentningssted (hvis relevant) samt sikre steder/postkasse hvor fragtmanden kan have efterladt pakken.",
   "  5. Afslut med et konkret næste skridt: Når kunden har bekræftet adressen, kan vi undersøge forsendelsen nærmere med fragtfirmaet/carrieren. Brug denne type konkrete afslutning i stedet for generiske afslutninger.",
-  "  FORBUDT (brug aldrig disse eller lignende, hverken dansk eller engelsk): love refundering; love erstatning eller en ny vare; love genfremsendelse/reshipment; love kompensation; love at oprette en carrier-erstatningssag/claim (der findes INGEN claim-action); love et garanteret udfald af undersøgelsen; antage eller påstå at kunden har modtaget pakken; afslutte generisk med \"I look forward to hearing from you\", \"Feel free to reach out\", \"Let me know\" eller tilsvarende.",
+  '  FORBUDT (brug aldrig disse eller lignende, hverken dansk eller engelsk): love refundering; love erstatning eller en ny vare; love genfremsendelse/reshipment; love kompensation; love at oprette en carrier-erstatningssag/claim (der findes INGEN claim-action); love et garanteret udfald af undersøgelsen; antage eller påstå at kunden har modtaget pakken; afslutte generisk med "I look forward to hearing from you", "Feel free to reach out", "Let me know" eller tilsvarende.',
 ].join("\n");
 
 const CUSTOMER_REPORTED_DELIVERED_NOT_RECEIVED_DIRECTIVE = [
   "- CUSTOMER-REPORTED-DELIVERED-NOT-RECEIVED: Kunden oplyser selv, at tracking viser/angiver pakken som LEVERET, men kunden siger pakken IKKE er modtaget/mangler/ikke kan findes. Der findes ingen verificeret live carrier-status i fakta. Følg denne struktur (tilpas naturligt til kundens sprog):",
   "  1. Anerkend og beklag oprigtigt at kunden ikke kan finde/modtage sin ordre (empati).",
-  "  2. Referér forsigtigt til kundens oplysninger, fx: \"Since you mention that the tracking shows the package as delivered...\" eller \"If the tracking page shows the package as delivered...\". Påstå IKKE at Sona/shoppen har verificeret carrier-status.",
+  '  2. Referér forsigtigt til kundens oplysninger, fx: "Since you mention that the tracking shows the package as delivered..." eller "If the tracking page shows the package as delivered...". Påstå IKKE at Sona/shoppen har verificeret carrier-status.',
   "  3. Sig at en leveret-status ikke nødvendigvis bekræfter at kunden personligt har modtaget pakken.",
-  "  4. KRITISK: Stil et eksplicit spørgsmål hvor kunden skal bekræfte leveringsadressen, fx: \"Kan du bekræfte, at leveringsadressen på ordren er korrekt?\" eller \"Bekræft venligst leveringsadressen, så vi kan undersøge forsendelsen nærmere.\" Dette må ikke udelades.",
+  '  4. KRITISK: Stil et eksplicit spørgsmål hvor kunden skal bekræfte leveringsadressen, fx: "Kan du bekræfte, at leveringsadressen på ordren er korrekt?" eller "Bekræft venligst leveringsadressen, så vi kan undersøge forsendelsen nærmere." Dette må ikke udelades.',
   "  5. Foreslå at tjekke relevante steder: naboer, husstandsmedlemmer, reception/portner (hvis relevant), pakkeshop/afhentningssted (hvis relevant), postkasse samt sikre steder hvor fragtmanden kan have efterladt pakken.",
   "  6. Afslut med et konkret næste skridt: Når kunden har bekræftet adressen, kan vi undersøge forsendelsen nærmere med fragtfirmaet/carrieren/shipping partner. Brug denne type konkrete afslutning i stedet for generiske afslutninger.",
-  "  FORBUDT (brug aldrig disse eller lignende, hverken dansk eller engelsk): påstå live/verificeret trackingstatus; love refundering; love erstatning eller en ny vare; love genfremsendelse/reshipment; love kompensation; love at oprette en carrier-erstatningssag/claim; love et garanteret udfald; antage eller påstå at kunden har modtaget pakken; afslutte generisk med \"I look forward to hearing from you\", \"Feel free to reach out\", \"Let me know\" eller tilsvarende.",
+  '  FORBUDT (brug aldrig disse eller lignende, hverken dansk eller engelsk): påstå live/verificeret trackingstatus; love refundering; love erstatning eller en ny vare; love genfremsendelse/reshipment; love kompensation; love at oprette en carrier-erstatningssag/claim; love et garanteret udfald; antage eller påstå at kunden har modtaget pakken; afslutte generisk med "I look forward to hearing from you", "Feel free to reach out", "Let me know" eller tilsvarende.',
 ].join("\n");
 
 function trackingStateLine(
@@ -910,7 +1021,9 @@ function trackingStateLine(
 ): string {
   switch (f.state) {
     case "delivered":
-      if (opts?.customerClaimsNotReceived) return DELIVERED_NOT_RECEIVED_DIRECTIVE;
+      if (opts?.customerClaimsNotReceived) {
+        return DELIVERED_NOT_RECEIVED_DIRECTIVE;
+      }
       return "- Carrier-tracking viser LEVERET. Sig at tracking viser leveret; påstå IKKE at kunden personligt har modtaget pakken — hvis kunden siger den ikke er modtaget, tilbyd at undersøge.";
     case "out_for_delivery":
       return "- Pakken er ude til levering i dag (verificeret).";
@@ -943,8 +1056,8 @@ function returnStateLine(f: TrackingFact): string {
     return [
       "- Kunde-oplyst retur-tracking (IKKE carrier-verificeret).",
       `  Anerkend nummeret i almindelig medarbejder-sprog, fx "Tak, jeg har trackingnummeret nu". Skriv IKKE "vi har noteret". Hvis ${carrierRef} ikke er verificeret i fakta, må du IKKE påstå at returpakken er ankommet/modtaget, registreret hos shoppen eller færdig.`,
-      "  Hvis verificerede refund-fakta viser at ingen refundering er udstedt: sig naturligt at refunderingen ikke er lavet endnu, fx \"Jeg kan ikke se, at refunderingen er lavet endnu\".",
-      "  Hvis modtagelse/behandling ikke er verificeret: sig kun at returen ikke er bekræftet modtaget endnu, eller at returen først skal bekræftes modtaget før vi kan sige mere om refunderingen. Skriv IKKE \"registreres hos os\" eller \"bekræfte næste skridt\".",
+      '  Hvis verificerede refund-fakta viser at ingen refundering er udstedt: sig naturligt at refunderingen ikke er lavet endnu, fx "Jeg kan ikke se, at refunderingen er lavet endnu".',
+      '  Hvis modtagelse/behandling ikke er verificeret: sig kun at returen ikke er bekræftet modtaget endnu, eller at returen først skal bekræftes modtaget før vi kan sige mere om refunderingen. Skriv IKKE "registreres hos os" eller "bekræfte næste skridt".',
       "  Giv kun kundens næste skridt: hvis kunden ikke skal sende mere lige nu, sig det kort; hvis én konkret oplysning mangler, spørg kun om den.",
       "  FORBUDT (brug aldrig disse eller lignende, hverken på dansk eller engelsk): 'vi har noteret', 'we have noted', 'registreres hos os', 'registered with us', 'bekræfte næste skridt', 'confirm next steps', 'manuel gennemgang', 'manual review', 'teamet kan', 'vores system', 'undersøge returstatus nærmere/yderligere', love refundering efter at returen er modtaget/behandlet; sige at refunderingen udstedes/igangsættes når pakken modtages; beskrive en automatisk refunderings-proces; love en refunderingsdato/tid; love at kunden får besked; bede kunden om selv at følge trackingen; sige at en carrier-bekræftet ankomst betyder intern behandling.",
     ].join("\n");
@@ -972,8 +1085,10 @@ function returnStateLine(f: TrackingFact): string {
 // wording — it is a CUSTOMER-STATED fact, never treated as verified receipt.
 export function customerClaimsReturned(message?: string | null): boolean {
   const m = String(message ?? "").toLowerCase();
-  return /\b(returned|sent\s+(?:it\s+|them\s+|the\s+\w+\s+)?back|shipped\s+(?:it\s+|them\s+)?back|posted\s+(?:it\s+)?back|mailed\s+(?:it\s+)?back)\b/.test(m) ||
-    /\b(returneret|returnerede|sendt\s+(?:den\s+|det\s+|dem\s+|varen\s+|pakken\s+)?(?:retur|tilbage)|sendte\s+(?:den\s+|det\s+|dem\s+|varen\s+|pakken\s+)?(?:retur|tilbage))\b/.test(m);
+  return /\b(returned|sent\s+(?:it\s+|them\s+|the\s+\w+\s+)?back|shipped\s+(?:it\s+|them\s+)?back|posted\s+(?:it\s+)?back|mailed\s+(?:it\s+)?back)\b/
+    .test(m) ||
+    /\b(returneret|returnerede|sendt\s+(?:den\s+|det\s+|dem\s+|varen\s+|pakken\s+)?(?:retur|tilbage)|sendte\s+(?:den\s+|det\s+|dem\s+|varen\s+|pakken\s+)?(?:retur|tilbage))\b/
+      .test(m);
 }
 
 export function buildRefundStatusDirective(
@@ -1001,11 +1116,19 @@ export function buildRefundStatusDirective(
 - Antag IKKE at en returnering er modtaget, selvom kunden siger de har returneret varen — bed om det ene konkrete bevis/oplysning der mangler.`;
     case "full_refund_issued":
       return `${header}
-- Hele beløbet ER refunderet${refund.total_refunded && refund.currency ? ` (${refund.total_refunded} ${refund.currency})` : ""}. Du må oplyse verificeret beløb og tidspunkt hvis tilgængeligt.
+- Hele beløbet ER refunderet${
+        refund.total_refunded && refund.currency
+          ? ` (${refund.total_refunded} ${refund.currency})`
+          : ""
+      }. Du må oplyse verificeret beløb og tidspunkt hvis tilgængeligt.
 - Lov IKKE hvornår beløbet vises på kontoen med en konkret tidsramme (fx antal dage) medmindre verificeret politik angiver den. Brug i stedet: "Refunderingen er udstedt. Hvor lang tid det tager før beløbet vises på din konto kan afhænge af din betalingsudbyder."`;
     case "partial_refund_issued":
       return `${header}
-- En DELVIS refundering ER udstedt${refund.total_refunded && refund.currency ? ` (${refund.total_refunded} ${refund.currency})` : ""}. Du må oplyse verificeret beløb og tidspunkt hvis tilgængeligt.
+- En DELVIS refundering ER udstedt${
+        refund.total_refunded && refund.currency
+          ? ` (${refund.total_refunded} ${refund.currency})`
+          : ""
+      }. Du må oplyse verificeret beløb og tidspunkt hvis tilgængeligt.
 - Antyd IKKE at restbeløbet automatisk bliver refunderet.
 - Lov ikke en konkret bankbehandlingstid medmindre verificeret politik angiver den; tiden før beløbet vises kan afhænge af kundens betalingsudbyder.`;
     case "refund_pending_or_unclear":
@@ -1140,10 +1263,25 @@ function extractMessageSignals(messageText: string) {
 }
 
 // --- Few-shot block (primary tone anchor) ---
-// Examples are STYLE references only by default (see CRITICAL SUBJECT RULE
-// below) — except a "near-duplicate" example (same product, high similarity,
-// see stages/retriever.ts), which the writer MAY treat as a grounding source
-// for its factual resolution. See docs/superpowers/specs/2026-07-13-ticket-example-near-duplicate-grounding-design.md.
+// Historical ticket examples are STYLE references only. They are not curated
+// policy and can contain stale stock, pricing, warranty or process claims.
+const HISTORICAL_GREETING_RE =
+  /^(?:(?:hi|hello)(?:\s+(?:there|again))?|hey|hej(?:\s+igen)?|hejsa|hallo|bonjour|hola|ciao)(?:\s+\[[^\]\n]{1,40}\]|\s+[A-ZÆØÅÄÖÜÉÈÁÀÍÓÚÑ][A-Za-zÆØÅæøåÄÖÜäöüßÉéÈèÁáÀàÍíÓóÚúÑñ'-]{1,29})?\s*[,!.]\s*/i;
+const HISTORICAL_SIGNOFF_RE =
+  /\s+(?:med\s+venlig\s+hilsen|venlig\s+hilsen|kind\s+regards|best\s+regards|best\s+wishes|warm\s+regards|all\s+the\s+best|de\s+bedste\s+hilsner|mange\s+hilsner|sincerely|cheers)\b[\s\S]{0,220}$/i;
+
+export function stripHistoricalStyleArtifacts(text: string): string {
+  return String(text ?? "")
+    .trim()
+    .replace(HISTORICAL_GREETING_RE, "")
+    .replace(HISTORICAL_SIGNOFF_RE, "")
+    .replace(/\s*\[Agent\]\s*$/i, "")
+    .replace(/[ \t]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 export function buildFewShotBlock(
   examples: Array<{
     id?: number;
@@ -1160,20 +1298,7 @@ export function buildFewShotBlock(
 ): string {
   if (examples.length === 0) return "";
 
-  const hasNearDuplicate = examples.some((e) => e.is_near_duplicate);
-
-  const nearDuplicateExceptionBlock = hasNearDuplicate
-    ? `
-EXCEPTION — near-duplicate examples: An example labelled
-"[Near-duplicate — SAME product...]" is a near-identical match to the
-current customer's question about the SAME product. For that example ONLY
-you MAY reuse its factual resolution (what we do, whether the item is
-sold/available, the concrete outcome). Still apply it ONLY to the exact
-product the current customer named, and still copy NO personal data.
-`
-    : "";
-
-  return `# Examples of similar cases — use ONLY as a reference for STYLE, TONE and how to resolve the case
+  return `# Examples of similar cases — use ONLY as a reference for STYLE, TONE and STRUCTURE
 These show the right kind of response and the correct tone/voice in similar situations. "Corrected" means the agent rewrote Sona's draft significantly — the strongest signal of what's expected. "Confirmed" means Sona's draft was nearly correct.
 
 CRITICAL PRIVACY RULE: These examples are from OTHER customers. They are STYLE references only.
@@ -1181,6 +1306,8 @@ NEVER copy any personal data out of them into your reply — no names, greetings
 postal addresses, phone numbers, order numbers, tracking numbers or agent signatures. Address the
 reply ONLY to the CURRENT customer using ONLY details from the current conversation and verified facts.
 If you are unsure of the current customer's name, use a neutral greeting — never borrow a name from an example.
+Historical examples are NEVER factual authority, even when they look nearly identical. Current policy,
+availability, prices, dates, order state and promised outcomes must come from verified knowledge or live facts.
 
 CRITICAL SUBJECT RULE: These examples show HOW to phrase a reply, NEVER what the reply is about.
 NEVER carry the subject matter of an example into your reply — no product names, models, accessories,
@@ -1189,7 +1316,6 @@ An example may be about a DIFFERENT product than the current customer asked abou
 "ear pads" or a spare part when the customer asked about the headset itself). In that case you MUST NOT
 mention that other product. Answer ONLY about the exact product/subject the CURRENT customer named, using
 ONLY verified facts and the current conversation — take nothing but tone and structure from the examples.
-${nearDuplicateExceptionBlock}
 ` +
     examples
       .map(
@@ -1203,10 +1329,7 @@ ${nearDuplicateExceptionBlock}
             : ex.csat_score >= 90
             ? " [Confirmed — Sona's reply was nearly correct]"
             : "";
-          const nearDuplicateLabel = ex.is_near_duplicate
-            ? " [Near-duplicate — SAME product as the current case]"
-            : "";
-          const label = `${csatLabel}${nearDuplicateLabel}`;
+          const label = csatLabel;
           const contextBlock = ex.conversation_context
             ? `Earlier in the conversation:\n${
               ex.conversation_context.slice(0, 400)
@@ -1215,9 +1338,10 @@ ${nearDuplicateExceptionBlock}
           const agentReply = opts.isReturnRefund
             ? stripAddressLinesFromExample(ex.agent_reply)
             : ex.agent_reply;
+          const styleBody = stripHistoricalStyleArtifacts(agentReply);
           return `[Example ${i + 1}${label}]
 ${contextBlock}Customer: "${ex.customer_msg.slice(0, 350)}"
-Support replied: "${agentReply.slice(0, 500)}"`;
+Support replied: "${styleBody.slice(0, 500)}"`;
         },
       )
       .join("\n\n");
@@ -1508,7 +1632,6 @@ Output: the 2 sentences only.`;
   }
 }
 
-
 // Static core rules for the MAIN writer prompt (variant A: HOLDNING → AFSLUT-
 // NING). Extracted verbatim for the 5.4 re-tuning variant mechanism (plan
 // docs/superpowers/plans/2026-07-07-writer-prompt-54-retuning.md); output is
@@ -1613,7 +1736,6 @@ INTENT:
 - "thanks"/"update": KUN 1-2 sætningers anerkendelse — ingen spørgsmål, ingen troubleshooting.
 - "other" uden åbne spørgsmål: anerkend og afslut kortfattet.`;
 }
-
 
 // COMPACT core rules for gpt-5-family models (re-tuning step 2, plan
 // 2026-07-07). Small models drown in ~40 equal-weight directives: they hedge
@@ -1835,7 +1957,9 @@ Intet sikkert kundenavn til hilsenen. Start med en neutral hilsen på kundens sp
     : "";
   const trackingBlock = buildTrackingDirective(facts.tracking_facts ?? [], {
     customerClaimsNotReceived: customerClaimsNotReceived(latestCustomerMessage),
-    customerReportsTrackingDelivered: customerReportsTrackingDelivered(latestCustomerMessage),
+    customerReportsTrackingDelivered: customerReportsTrackingDelivered(
+      latestCustomerMessage,
+    ),
   });
   const serviceRecoveryBlock = buildServiceRecoveryDirective({
     latestCustomerMessage,
@@ -1905,22 +2029,26 @@ Intet sikkert kundenavn til hilsenen. Start med en neutral hilsen på kundens sp
   });
   // Suppress the ordinary online stock-status answer in the manual flow.
   if (manualCheckoutFlow) stockAvailabilityBlock = "";
-  const purchaseLinkBlock = manualCheckoutFlow ? "" : buildPurchaseLinkDirective({
-    isPurchaseLinkRequest: isPurchaseLinkRequest(latestCustomerMessage),
-    isCheckoutLinkRequest: isCheckoutLinkRequest(latestCustomerMessage),
-    isStockQuestion: isStockAvailabilityQuestion(latestCustomerMessage),
-    groundedProductUrl,
-    ambiguousProduct: isAmbiguousProductRequest(latestCustomerMessage),
-    threadMentionsCheckoutLink: checkoutLinkInThread,
-    noPublicStorefrontDomain,
-  });
-  const stockLinkFallbackBlock = manualCheckoutFlow ? "" : buildStockUnknownLinkFallbackDirective({
-    isStockQuestion: isStockAvailabilityQuestion(latestCustomerMessage),
-    stockConfirmed: Boolean(stockFactState) && stockFactState !== "unknown",
-    groundedProductUrl,
-    threadMentionsCheckoutLink: checkoutLinkInThread,
-    noPublicStorefrontDomain,
-  });
+  const purchaseLinkBlock = manualCheckoutFlow
+    ? ""
+    : buildPurchaseLinkDirective({
+      isPurchaseLinkRequest: isPurchaseLinkRequest(latestCustomerMessage),
+      isCheckoutLinkRequest: isCheckoutLinkRequest(latestCustomerMessage),
+      isStockQuestion: isStockAvailabilityQuestion(latestCustomerMessage),
+      groundedProductUrl,
+      ambiguousProduct: isAmbiguousProductRequest(latestCustomerMessage),
+      threadMentionsCheckoutLink: checkoutLinkInThread,
+      noPublicStorefrontDomain,
+    });
+  const stockLinkFallbackBlock = manualCheckoutFlow
+    ? ""
+    : buildStockUnknownLinkFallbackDirective({
+      isStockQuestion: isStockAvailabilityQuestion(latestCustomerMessage),
+      stockConfirmed: Boolean(stockFactState) && stockFactState !== "unknown",
+      groundedProductUrl,
+      threadMentionsCheckoutLink: checkoutLinkInThread,
+      noPublicStorefrontDomain,
+    });
 
   // Multi-turn troubleshooting → replacement/warranty flow. Stops repeated
   // troubleshooting after failed attempts and gates "we will send a new unit"
@@ -2203,7 +2331,11 @@ ${
       : ""
   }
 
-${useCompactRules ? buildCompactCoreRules(actionResult) : buildCoreRulesA(actionResult)}
+${
+    useCompactRules
+      ? buildCompactCoreRules(actionResult)
+      : buildCoreRulesA(actionResult)
+  }
 
 Returner KUN gyldigt JSON — ingen markdown udenfor JSON.`;
 
@@ -2225,7 +2357,11 @@ ${
 RESOLUTION STAGE (læs først):
 Den første blok i brugerbeskeden er "# RESOLUTION STAGE" og er en STÆRK ANBEFALING om hvad svaret bør gøre. Følg den som default. MEN: hvis kundens besked tydeligt viser at stagen er forkert valgt (fx kunden har eksplicit skrevet "jeg har prøvet alt" men stagen er "troubleshoot_first", eller kunden tydeligt beder om refund og det er rimeligt at give), så brug din dømmekraft og følg kundens reelle behov. Stagen er ikke en hård lås — den er en stærk default.
 
-${useCompactRules ? buildCompactCoreRules(actionResult) : buildCoreRulesB(actionResult)}
+${
+    useCompactRules
+      ? buildCompactCoreRules(actionResult)
+      : buildCoreRulesB(actionResult)
+  }
 
 Returner KUN gyldigt JSON — ingen markdown udenfor JSON.`;
 
@@ -2258,7 +2394,7 @@ ${customerHistory}`
 
   const stageDirectives: Record<string, string> = {
     clarify_symptom:
-      "KRITISK — kunden har IKKE beskrevet et konkret produkt, symptom eller problem endnu (kun noget i retning af \"det virker ikke\"/\"problem med min ordre\"). Stil PRÆCIS ét kort, venligt spørgsmål der beder om (a) hvilket produkt eller hvilken ordre det drejer sig om, og (b) hvad der konkret ikke virker/er galt. Giv INGEN troubleshooting-trin, årsagsforslag eller løsningsforslag — problemet er endnu ukendt, så gæt ALDRIG på produkt, symptom eller årsag. Nævn IKKE garanti, retur eller refund medmindre kunden allerede selv har bedt om det. Dette er IKKE en anbefaling der kan fraviges — svar KUN med spørgsmålet, i en naturlig og hjælpsom tone som en rigtig supportmedarbejder, ikke robotagtigt eller proceduremæssigt.",
+      'KRITISK — kunden har IKKE beskrevet et konkret produkt, symptom eller problem endnu (kun noget i retning af "det virker ikke"/"problem med min ordre"). Stil PRÆCIS ét kort, venligt spørgsmål der beder om (a) hvilket produkt eller hvilken ordre det drejer sig om, og (b) hvad der konkret ikke virker/er galt. Giv INGEN troubleshooting-trin, årsagsforslag eller løsningsforslag — problemet er endnu ukendt, så gæt ALDRIG på produkt, symptom eller årsag. Nævn IKKE garanti, retur eller refund medmindre kunden allerede selv har bedt om det. Dette er IKKE en anbefaling der kan fraviges — svar KUN med spørgsmålet, i en naturlig og hjælpsom tone som en rigtig supportmedarbejder, ikke robotagtigt eller proceduremæssigt.',
     troubleshoot_first:
       "Foretrukken sti: giv produkt-specifikke troubleshooting-trin fra hentede sources før garanti/retur/ombytning nævnes. UNDTAGELSE: hvis kunden eksplicit skriver de allerede har prøvet trin, eller eksplicit beder om replacement/refund og kontekst gør det rimeligt, så følg kundens behov i stedet.",
     request_evidence:
@@ -2294,17 +2430,17 @@ ${stageDirectives[resolutionStage] ?? stageDirectives.info_only}`;
   // guardrails. Placed high in the prompt so it governs how older context and
   // legacy knowledge below are used. Never present in clarification-only mode
   // (mutually exclusive), ordinary runtime, or Returns & Refunds preview.
-  const productSupportTopicBlock =
-    productSupportTopicLock && !clarificationOnly
-      ? buildProductSupportTopicGuardrails()
-      : "";
+  const productSupportTopicBlock = productSupportTopicLock && !clarificationOnly
+    ? buildProductSupportTopicGuardrails()
+    : "";
 
   // Product Support PREVIEW only: structured completed-troubleshooting block.
   // Non-suppressed so it governs the reply in BOTH section-selected (topic-lock)
   // and abstained (clarification) modes — once a path is exhausted the writer
   // asks for the order number instead of repeating a completed step. Empty in
   // ordinary runtime and Returns & Refunds preview.
-  const completedTroubleshootingPreviewBlock = completedTroubleshootingBlock || "";
+  const completedTroubleshootingPreviewBlock = completedTroubleshootingBlock ||
+    "";
 
   const userContent = [
     clarificationBlock,
@@ -2485,6 +2621,7 @@ Returner JSON:
         {
           trackingFacts: facts.tracking_facts ?? [],
           latestCustomerMessage,
+          language: replyLanguage,
         },
       ),
       { latestCustomerMessage, language: replyLanguage },

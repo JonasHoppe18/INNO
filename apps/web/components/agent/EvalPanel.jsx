@@ -676,7 +676,8 @@ function RunCard({ run, expanded, onToggle, onDelete }) {
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold">{run.run_label}</p>
             <p className="text-xs text-muted-foreground flex items-center gap-1.5 flex-wrap">
-              {run.count} ticket{run.count !== 1 ? "s" : ""} · {run.send_ready_count ?? 0} send-ready · <span className="font-mono">{run.model}</span>
+              {run.count} included ticket{run.count !== 1 ? "s" : ""} · {run.send_ready_count ?? 0} send-ready
+              {run.excluded_count > 0 ? ` · ${run.excluded_count} excluded` : ""} · <span className="font-mono">{run.model}</span>
               {run.pipeline_version === "v2" && (
                 <span className="inline-flex items-center rounded border border-violet-200 bg-violet-50 px-1.5 py-0 text-[10px] font-semibold text-violet-700">V2</span>
               )}

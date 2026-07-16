@@ -594,7 +594,7 @@ export function ZendeskSheet({ children, onConnected, initialData = null }) {
                 </p>
                 {historyJob && historyJob.status !== "running" ? (
                   <p className="text-xs text-muted-foreground">
-                    Last import: {historyJob.imported_count ?? 0} imported ·{" "}
+                    Last import: {historyJob.imported_count ?? 0} imported · {historyJob.updated_count ?? 0} refreshed ·{" "}
                     {historyJob.skipped_count ?? 0} skipped · {historyJob.dropped_count ?? 0} dropped of ~
                     {historyJob.total_count ?? 0} ({historyJob.status}, {formatDate(historyJob.created_at)})
                   </p>
@@ -604,7 +604,8 @@ export function ZendeskSheet({ children, onConnected, initialData = null }) {
 
             {historyJob?.status === "running" ? (
               <p className="text-xs text-muted-foreground">
-                Imported {historyJob.imported_count ?? 0} · skipped {historyJob.skipped_count ?? 0} · dropped{" "}
+                Imported {historyJob.imported_count ?? 0} · refreshed {historyJob.updated_count ?? 0} · skipped{" "}
+                {historyJob.skipped_count ?? 0} · dropped{" "}
                 {historyJob.dropped_count ?? 0} of ~{historyJob.total_count ?? 0}
               </p>
             ) : null}

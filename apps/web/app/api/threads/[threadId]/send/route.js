@@ -1934,7 +1934,8 @@ export async function POST(request, { params }) {
     }
   }
 
-  // AI auto-tagging + løsningsopsummering (fire-and-forget)
+  // AI auto-tagging (fire-and-forget). Solution summaries are generated only
+  // when a ticket is resolved, so competing async flows cannot overwrite them.
   const workspaceIdForTags = scope?.workspaceId || thread?.workspace_id || null;
   if (workspaceIdForTags && coreBodyText?.trim()) {
     (async () => {
@@ -1964,12 +1965,6 @@ export async function POST(request, { params }) {
           );
         }
 
-        if (result.solution_summary) {
-          await serviceClient
-            .from("mail_threads")
-            .update({ solution_summary: result.solution_summary })
-            .eq("id", threadId);
-        }
       } catch (err) {
         console.warn("[auto-tag] fejl:", err?.message);
       }
@@ -2026,6 +2021,9 @@ export async function POST(request, { params }) {
       editClassification,
       editDistance: sentEditDistance,
       editDeltaPct,
+      // Persist the already-computed case-state intent with the human outcome.
+      // This lets readiness learn per category without an unreliable later join.
+      intent: thread?.case_state_json?.intents?.[0]?.type || null,
     });
     for (const event of sentEvents) {
       await emitDraftEvent({ serviceClient, logger: console, ...event });

@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { resolveAuthScope } from "@/lib/server/workspace-auth";
 import { classifyAnchor } from "@/lib/server/eval-anchor";
+import { anchorFinalAgentReply } from "@/lib/server/zendesk-import-helpers";
 
 const SUPABASE_URL = (
   process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -159,12 +160,18 @@ export async function GET(req) {
 
     // Build full conversation from public comments
     const publicComments = comments.filter((c) => c.public);
-    const conversation = publicComments
+    const publicConversation = publicComments
       .map((c) => ({
         role: c.author_id === ticket.requester_id ? "customer" : "agent",
         body: stripHtml(c.html_body || c.body || "").trim(),
       }))
-      .filter((c) => c.body.length > 0 && !isAutoReply(c.body));
+      .filter((c) => c.body.length > 0);
+    const finalPublicAgent = [...publicConversation]
+      .reverse()
+      .find((turn) => turn.role === "agent");
+    if (!finalPublicAgent || isAutoReply(finalPublicAgent.body)) continue;
+
+    const conversation = publicConversation.filter((turn) => !isAutoReply(turn.body));
 
     if (conversation.length < 2) continue;
 
@@ -182,30 +189,12 @@ export async function GET(req) {
     // tickets it becomes a real warm follow-up where the prior agent's
     // commitments live in the history — exactly the cases the conversation-aware
     // pipeline must handle.
-    let lastAgentIdx = -1;
-    for (let i = conversation.length - 1; i >= 0; i--) {
-      if (conversation[i].role === "agent") { lastAgentIdx = i; break; }
-    }
-    if (lastAgentIdx <= 0) continue;
+    const anchored = anchorFinalAgentReply(conversation);
+    if (!anchored) continue;
 
-    // The customer turn the final agent reply responds to = last customer turn
-    // before lastAgentIdx.
-    let answeredCustomerIdx = -1;
-    for (let i = lastAgentIdx - 1; i >= 0; i--) {
-      if (conversation[i].role === "customer") { answeredCustomerIdx = i; break; }
-    }
-    if (answeredCustomerIdx === -1) continue;
-
-    // History = everything strictly BEFORE the answered customer turn.
-    const priorMessages = conversation.slice(0, answeredCustomerIdx);
-    const conversationHistory = priorMessages.length > 0
-      ? priorMessages.map((m) => `${m.role === "customer" ? "Customer" : "Agent"}: ${m.body}`).join("\n\n")
-      : null;
-
-    const customerBody = conversation[answeredCustomerIdx].body;
-    const agentBody = conversation[lastAgentIdx].body;
-
-    if (!customerBody || !agentBody) continue;
+    const customerBody = anchored.customerBody;
+    const agentBody = anchored.agentReply;
+    const conversationHistory = anchored.conversationContext;
 
     const { anchor_class, signals: anchor_signals } = classifyAnchor({
       humanReply: agentBody,
@@ -219,7 +208,7 @@ export async function GET(req) {
       conversation_history: conversationHistory ? conversationHistory.slice(0, 3000) : null,
       anchor_class,
       anchor_signals,
-      multi_turn: priorMessages.length > 0,
+      multi_turn: anchored.multiTurn,
       created_at: ticket.created_at,
     });
 

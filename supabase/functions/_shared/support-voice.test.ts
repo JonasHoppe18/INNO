@@ -9,12 +9,24 @@ Deno.test("detectSupportVoiceViolations flags internal process and handoff wordi
   const draft =
     "Tak for at sende trackingnummeret for din returnering. Returneringen skal gennemgå en manuel gennemgang, før vi kan bekræfte behandling. Teamet kan bruge trackingnummeret til at undersøge returneringsstatus yderligere.";
 
-  assertEquals(detectSupportVoiceViolations(draft).sort(), [
-    "formal_opening",
-    "investigate_further",
-    "manual_process_wording",
-    "team_handoff",
-  ].sort());
+  assertEquals(
+    detectSupportVoiceViolations(draft).sort(),
+    [
+      "formal_opening",
+      "investigate_further",
+      "manual_process_wording",
+      "team_handoff",
+    ].sort(),
+  );
+});
+
+Deno.test("detectSupportVoiceViolations flags English team promises", () => {
+  assertEquals(
+    detectSupportVoiceViolations(
+      "Our team will review this and get back to you.",
+    ),
+    ["team_handoff"],
+  );
 });
 
 Deno.test("detectSupportVoiceViolations flags case-management wording from return drafts", () => {

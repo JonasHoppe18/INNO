@@ -1362,9 +1362,9 @@ export async function resolveOutboundTrackingFacts(
 }
 
 // Normalized RETURN resolver for a customer-provided tracking number. direction
-// is always "return". verification stays "customer_provided" unless a SUPPORTED
-// carrier lookup succeeds (→ "carrier_verified"). Unsupported carriers (USPS /
-// FedEx / unknown) are never fetched and stay customer_provided + unknown.
+// is always "return". verification stays "customer_provided" unless a live
+// carrier lookup succeeds (→ "carrier_verified"). GLS/PostNord use native
+// adapters; non-native carriers can use the config-gated Ship24 fallback.
 export async function resolveReturnTrackingFact(
   input: { tracking_number: string; carrier_hint?: string; source_order_id?: string },
   deps?: { fetchDetail?: FetchDetailFn },

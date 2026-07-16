@@ -47,9 +47,17 @@ function extractNameFromBody(body: string): string | null {
     .map((line) => line.trim())
     .filter(Boolean);
 
-  for (const line of lines) {
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
     const explicit = line.match(/^name\s*:\s*(.+)$/i);
     if (explicit?.[1]) return toNull(explicit[1]);
+
+    if (/^name\s*:\s*$/i.test(line)) {
+      const candidate = normalize(lines[index + 1] || "");
+      if (candidate && candidate.length <= 40 && /^[A-Za-zÆØÅæøåÀ-ÿ' -]+$/.test(candidate)) {
+        return candidate;
+      }
+    }
   }
 
   for (let i = 0; i < lines.length - 1; i += 1) {

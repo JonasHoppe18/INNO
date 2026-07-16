@@ -7,6 +7,10 @@ import { classifyAnchor } from "./eval-anchor.js";
 // PII-free). Each asserts the class the eval harness must assign.
 
 const NON_COMPARABLE = [
+  // historical address-change replies that only confirm an already executed action
+  "Then it’s all fixed for you.",
+  "All fixed.",
+  "Then it's all fixed for you! 😃 Have a lovely evening. Kind regards, [Agent]",
   // pilot 294 — agent created a shipment
   "Hi again,\n\nI have now created the shipment; 770012345 Sent with FedEx.\n\nHave a great day.",
   // pilot 274 — agent made the shipment ready with carrier tracking
@@ -40,13 +44,21 @@ const COMPARABLE = [
   "Hi,\n\nPlease bring the headset close to the dongle and try pairing again, then let me know if it connects.",
   // pilot 276 — Danish technical explanation, no action cues (must stay comparable)
   "Hej der,\n\nNår du anvender en EQ profil i CS2, kan du dæmpe visse frekvensområder. Al processering ligger i selve headsettet, så du har mindre forsinkelse.",
+  // "all fixed" is only a signal when it is a declarative, standalone confirmation
+  "Please check whether it’s all fixed for you, and let us know if the issue continues.",
+  "Is it all fixed for you now, or do you still need help?",
+  "This troubleshooting guide fixes all known pairing issues.",
   "", // empty reply defaults to comparable
 ];
 
 test("non_comparable_anchor: completed action confirmations", () => {
   for (const humanReply of NON_COMPARABLE) {
     const { anchor_class, signals } = classifyAnchor({ humanReply });
-    assert.equal(anchor_class, "non_comparable_anchor", `expected non_comparable for: ${humanReply.slice(0, 50)}`);
+    assert.equal(
+      anchor_class,
+      "non_comparable_anchor",
+      `expected non_comparable for: ${humanReply.slice(0, 50)}`,
+    );
     assert.ok(signals.length > 0, "non-comparable must record a signal");
   }
 });
@@ -54,14 +66,22 @@ test("non_comparable_anchor: completed action confirmations", () => {
 test("action_required: out-of-band info/credential requests", () => {
   for (const humanReply of ACTION_REQUIRED) {
     const { anchor_class } = classifyAnchor({ humanReply });
-    assert.equal(anchor_class, "action_required", `expected action_required for: ${humanReply.slice(0, 50)}`);
+    assert.equal(
+      anchor_class,
+      "action_required",
+      `expected action_required for: ${humanReply.slice(0, 50)}`,
+    );
   }
 });
 
 test("comparable: ordinary CS replies (no false positives)", () => {
   for (const humanReply of COMPARABLE) {
     const { anchor_class } = classifyAnchor({ humanReply });
-    assert.equal(anchor_class, "comparable", `expected comparable for: ${humanReply.slice(0, 50)}`);
+    assert.equal(
+      anchor_class,
+      "comparable",
+      `expected comparable for: ${humanReply.slice(0, 50)}`,
+    );
   }
 });
 

@@ -9,18 +9,22 @@
 //   node supabase/scripts/run-golden-eval.mjs                 # full run vs baseline
 //   node supabase/scripts/run-golden-eval.mjs --tier edge     # gates only
 //   node supabase/scripts/run-golden-eval.mjs --limit 2       # smoke test
-//   node supabase/scripts/run-golden-eval.mjs --accept        # write current run as new baseline
+//   node supabase/scripts/run-golden-eval.mjs --accept        # accept a complete, clean full run only
 //
-// Exit code: non-zero if any edge gate fails. Baseline regressions are reported, not fatal.
+// Exit code: non-zero on generation/judge errors, eval-integrity failures, or
+// edge-gate failures. Baseline regressions are reported, not fatal.
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import {
-  parseArgs, loadGoldenSet, runGates, computeAggregate, diffBaseline, computeCoherence,
+  parseArgs, overlayBenchmarkMetadata, selectGoldenCases, runGates,
+  computeAggregate, diffBaseline, computeCoherence,
   computeRetrievalMetrics, aggregateRetrievalMetrics, resolveSetPath,
   summarizeCandidateDiagnostics, formatCandidateDiagnosticsSummary,
-  buildGoldenEvalResult,
+  buildGoldenEvalResult, buildDatasetProvenance, buildReviewedGoldLabelMap,
+  assessTicketExampleLeakage, validateBaselineAcceptance, sha256Text,
+  goldenEvalExitCode,
 } from "./lib/golden-eval-core.mjs";
 import {
-  generateDraftV2, judgeWithOpenAI, draftForJudge,
+  generateDraftV2, judgeWithOpenAI, draftForJudge, getJudgeMetadata,
 } from "../../apps/web/lib/server/eval-runner.js";
 import { classifyAnchor } from "../../apps/web/lib/server/eval-anchor.js";
 import { classifyLiveFactDependency } from "../../apps/web/lib/server/eval-live-fact.js";
@@ -29,6 +33,8 @@ const SET_PATH = "supabase/eval/golden-set.acezone.json";
 const BASELINE_PATH = "supabase/eval/golden-baseline.acezone.json";
 const RUNS_DIR = "supabase/eval/runs";
 const GOLD_LABELS_PATH = "supabase/eval/gold-labels.acezone.json";
+const REVIEW_METADATA_PATH = "supabase/eval/gold-eval-cases.acezone.json";
+const JUDGE_MODEL = "gpt-4o-mini";
 
 function readJsonOrNull(path) {
   try { return JSON.parse(readFileSync(path, "utf8")); } catch { return null; }
@@ -38,17 +44,79 @@ const opts = parseArgs(process.argv.slice(2));
 // --set targets a curated subset (e.g. the 10-case pilot). A missing --set file
 // throws instead of silently running the full golden set.
 const setPath = resolveSetPath(opts, { defaultPath: SET_PATH, existsSync });
-const set = JSON.parse(readFileSync(setPath, "utf8"));
-const cases = loadGoldenSet(set, { tier: opts.tier, limit: opts.limit, intent: opts.intent });
+const setSourceText = readFileSync(setPath, "utf8");
+const baseSet = JSON.parse(setSourceText);
+if (!existsSync(REVIEW_METADATA_PATH)) {
+  throw new Error(`Manual review metadata not found: ${REVIEW_METADATA_PATH}`);
+}
+const reviewSourceText = readFileSync(REVIEW_METADATA_PATH, "utf8");
+const reviewMetadata = JSON.parse(reviewSourceText);
+const set = overlayBenchmarkMetadata(baseSet, reviewMetadata);
+const selection = selectGoldenCases(set, {
+  tier: opts.tier,
+  limit: opts.limit,
+  intent: opts.intent,
+});
+const cases = selection.cases;
+const dataset = buildDatasetProvenance({
+  set,
+  cases,
+  setPath,
+  setSourceText,
+  reviewSourceText,
+  opts,
+});
+const judge = getJudgeMetadata(JUDGE_MODEL);
+const provenance = { dataset, judge };
+if (opts.accept) {
+  const preflight = validateBaselineAcceptance({
+    opts,
+    scoredRuns: 1,
+    runShopId: opts.shop,
+    datasetShopId: set.shop_id ?? null,
+  });
+  if (!preflight.allowed) {
+    throw new Error(
+      `--accept requires the unfiltered full dataset: ${preflight.reasons.join("; ")}`,
+    );
+  }
+}
 console.log(`Case set: ${setPath} (${cases.length} cases)`);
-const goldLabels = readJsonOrNull(GOLD_LABELS_PATH);
-const goldById = new Map(
-  (goldLabels?.labels || []).map((l) => [l.id, l.correct_snippet_ids || []]),
+if (selection.qualityGateExclusions.length) {
+  console.log(
+    `Manual quality gate excluded ${selection.qualityGateExclusions.length}: ${
+      selection.qualityGateExclusions.map((entry) => entry.id).join(", ")
+    }`,
+  );
+}
+const goldLabelsSourceText = existsSync(GOLD_LABELS_PATH)
+  ? readFileSync(GOLD_LABELS_PATH, "utf8")
+  : null;
+const goldLabels = goldLabelsSourceText
+  ? JSON.parse(goldLabelsSourceText)
+  : null;
+const reviewedGold = buildReviewedGoldLabelMap(goldLabels);
+const goldById = reviewedGold.byId;
+const retrievalGoldLabels = {
+  path: GOLD_LABELS_PATH,
+  source_sha256: goldLabelsSourceText == null
+    ? null
+    : sha256Text(goldLabelsSourceText),
+  reviewed_count: reviewedGold.reviewedIds.length,
+  reviewed_ids: reviewedGold.reviewedIds,
+  skipped_unreviewed_count: reviewedGold.skippedUnreviewedIds.length,
+  skipped_unreviewed_ids: reviewedGold.skippedUnreviewedIds,
+};
+console.log(
+  `Retrieval gold labels: ${retrievalGoldLabels.reviewed_count} reviewed, ` +
+    `${retrievalGoldLabels.skipped_unreviewed_count} unreviewed skipped`,
 );
 console.log(`Running ${cases.length} cases against deployed generate-draft-v2 (shop ${opts.shop})`);
 
 const results = [];
 let gateFailures = 0;
+let integrityFailures = 0;
+let legacyTraceWarnings = 0;
 for (const c of cases) {
   try {
     const gen = await generateDraftV2(opts.shop, c.subject, c.body, {
@@ -62,11 +130,26 @@ for (const c of cases) {
       retrievalIssueTiebreak: opts.retrievalIssueTiebreak || undefined,
       retrievalSourceConsolidate: opts.retrievalSourceConsolidate || undefined,
     });
+    const leakage = assessTicketExampleLeakage(gen.ticketExampleTrace);
+    if (leakage.status === "legacy_unavailable") legacyTraceWarnings++;
+    if (!leakage.passed) {
+      integrityFailures++;
+      results.push({
+        id: c.id,
+        intent: c.intent || null,
+        tier: c.tier,
+        status: "integrity_failed",
+        ticket_example_trace: gen.ticketExampleTrace,
+        leakage_check: leakage,
+      });
+      console.error(`  [${c.id}] INTEGRITY ERROR: ${leakage.failures.join("; ")}`);
+      continue;
+    }
     const anchorClass = c.anchor_class ||
       classifyAnchor({ humanReply: c.human_reply }).anchor_class;
     const judgeHuman = anchorClass === "non_comparable_anchor" ? null : c.human_reply;
     const judged = await judgeWithOpenAI(
-      c.body, draftForJudge(gen.draft, gen.actions), judgeHuman, "gpt-4o-mini", anchorClass,
+      c.body, draftForJudge(gen.draft, gen.actions), judgeHuman, JUDGE_MODEL, anchorClass,
     );
     const gate = runGates(gen.draft, gen.actions, c);
     if (!gate.passed) gateFailures++;
@@ -96,6 +179,8 @@ for (const c of cases) {
       retrieval,
       candidateDiagnostics,
       retrievalFunnel,
+      ticketExampleTrace: gen.ticketExampleTrace,
+      leakage,
       anchorClass,
       liveFactDependent: live_fact_dependent,
     }));
@@ -113,12 +198,41 @@ const retrievalAgg = aggregateRetrievalMetrics(
   results.filter((r) => r.status === "scored" && r.retrieval).map((r) => r.retrieval),
 );
 const baseline = readJsonOrNull(BASELINE_PATH);
-const diff = diffBaseline(summary, baseline);
+const diff = diffBaseline(summary, baseline, provenance);
+
+const failedRuns = results.filter((r) => r.status === "failed").length;
+const scoredRuns = results.filter((r) => r.status === "scored").length;
+const acceptance = validateBaselineAcceptance({
+  opts,
+  failedRuns,
+  gateFailures,
+  integrityFailures,
+  scoredRuns,
+  runShopId: opts.shop,
+  datasetShopId: set.shop_id ?? null,
+});
 
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 mkdirSync(RUNS_DIR, { recursive: true });
 const reportPath = `${RUNS_DIR}/${stamp}.json`;
-writeFileSync(reportPath, JSON.stringify({ stamp, opts, summary, retrievalAgg, diff, results }, null, 2));
+writeFileSync(reportPath, JSON.stringify({
+  stamp,
+  opts,
+  provenance,
+  selection: {
+    quality_gate_exclusions: selection.qualityGateExclusions,
+  },
+  retrievalGoldLabels,
+  summary,
+  retrievalAgg,
+  diff,
+  integrity: {
+    failures: integrityFailures,
+    legacy_trace_warnings: legacyTraceWarnings,
+  },
+  acceptance,
+  results,
+}, null, 2));
 
 console.log("\n=== Aggregate ===");
 console.log(summary.aggregate);
@@ -174,7 +288,10 @@ if (retrievalAgg.n_labeled > 0) {
     n_abstain_cases: retrievalAgg.n_abstain_cases,
   });
 } else {
-  console.log("\n(no retrieval metrics — gold-labels missing or matcher not emitting yet)");
+  const retrievalReason = retrievalGoldLabels.reviewed_count === 0
+    ? "no human-reviewed retrieval labels (unreviewed proposals were skipped)"
+    : "reviewed gold-labels missing from this cohort or matcher not emitting";
+  console.log(`\n(no retrieval metrics — ${retrievalReason})`);
 }
 if (diff.aggregateDeltas) {
   console.log("\n=== vs baseline ===");
@@ -186,21 +303,45 @@ if (diff.aggregateDeltas) {
     console.log("no per-case regressions");
   }
 } else {
-  console.log("\n(no baseline yet — run with --accept to establish one)");
+  const why = diff.mismatchReasons?.length
+    ? `: ${diff.mismatchReasons.join("; ")}`
+    : "";
+  console.log(`\n(no comparable baseline${why})`);
 }
-const failedRuns = results.filter((r) => r.status === "failed").length;
-console.log(`\nReport: ${reportPath} | scored=${summary.n_cases} failed=${failedRuns} gateFailures=${gateFailures}`);
+if (legacyTraceWarnings > 0) {
+  console.warn(
+    `\nWARNING: ${legacyTraceWarnings} case(s) came from an older deployed ` +
+      "generate-draft-v2 without ticket-example trace; leakage was not verifiable.",
+  );
+}
+console.log(
+  `\nReport: ${reportPath} | scored=${summary.n_cases} failed=${failedRuns} ` +
+    `gateFailures=${gateFailures} integrityFailures=${integrityFailures}`,
+);
 
+let acceptRejected = false;
 if (opts.accept) {
-  const newBaseline = {
-    accepted_at: new Date().toISOString(),
-    n_cases: summary.n_cases,
-    aggregate: summary.aggregate,
-    per_intent: summary.per_intent,
-    per_case: summary.per_case,
-  };
-  writeFileSync(BASELINE_PATH, JSON.stringify(newBaseline, null, 2));
-  console.log(`Baseline updated: ${BASELINE_PATH}`);
+  if (!acceptance.allowed) {
+    acceptRejected = true;
+    console.error("Baseline NOT updated:");
+    for (const reason of acceptance.reasons) console.error(`  - ${reason}`);
+  } else {
+    const newBaseline = {
+      accepted_at: new Date().toISOString(),
+      provenance,
+      n_cases: summary.n_cases,
+      aggregate: summary.aggregate,
+      per_intent: summary.per_intent,
+      per_case: summary.per_case,
+    };
+    writeFileSync(BASELINE_PATH, JSON.stringify(newBaseline, null, 2));
+    console.log(`Baseline updated: ${BASELINE_PATH}`);
+  }
 }
 
-process.exit(gateFailures > 0 ? 1 : 0);
+process.exit(goldenEvalExitCode({
+  failedRuns,
+  gateFailures,
+  integrityFailures,
+  acceptRejected,
+}));

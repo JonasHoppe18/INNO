@@ -197,15 +197,15 @@ function classifyQuotedLine(lines: string[], index: number) {
   if (trimmed.startsWith(">")) {
     return { strategy: "angle_quote" as const, boundaryLine: trimmed };
   }
-  if (QUOTED_INTRO_RE.test(trimmed)) {
-    return { strategy: "on_wrote" as const, boundaryLine: trimmed };
-  }
   if (FORWARDED_SEPARATOR_RE.test(trimmed)) {
     return { strategy: "forwarded_separator" as const, boundaryLine: trimmed };
   }
   const headerBlock = detectHeaderBlock(lines, index);
   if (headerBlock) {
     return { strategy: headerBlock.strategy, boundaryLine: trimmed };
+  }
+  if (QUOTED_INTRO_RE.test(trimmed)) {
+    return { strategy: "on_wrote" as const, boundaryLine: trimmed };
   }
   return null;
 }

@@ -63,6 +63,7 @@ const SENT_CTX = {
   editClassification: "major_edit",
   editDistance: 84,
   editDeltaPct: 0.42,
+  intent: "complaint",
 };
 
 // --- draft_edited --------------------------------------------------------------
@@ -117,7 +118,7 @@ test("buildDraftSentEvents: emits umbrella + with_edit subtype for major_edit", 
   // umbrella carries no edit metrics
   assert.equal(umbrella.editClassification, null);
   assert.equal(umbrella.editDistance, null);
-  assert.deepEqual(umbrella.payload, { provider: "smtp" });
+  assert.deepEqual(umbrella.payload, { provider: "smtp", intent: "complaint" });
 
   assert.equal(subtype.eventType, "draft_sent_with_edit");
   assert.equal(subtype.dedupKey, "sent_sub:pm_123");
@@ -141,6 +142,18 @@ test("buildDraftSentEvents: no_edit -> draft_sent_without_edit, metrics omitted"
   // metrics only on with_edit; without_edit leaves them null
   assert.equal(subtype.editDistance, null);
   assert.equal(subtype.editDeltaPct, null);
+});
+
+test("buildDraftSentEvents: normalizes the exact generated intent onto both outcome events", () => {
+  const events = buildDraftSentEvents({
+    ...SENT_CTX,
+    intent: "  Tracking  ",
+    editClassification: "no_edit",
+  });
+  assert.deepEqual(events.map((event) => event.payload), [
+    { provider: "smtp", intent: "tracking" },
+    { provider: "smtp", intent: "tracking" },
+  ]);
 });
 
 test("buildDraftSentEvents: editClass null -> umbrella only, no subtype", () => {
@@ -174,7 +187,9 @@ test("buildDraftSentEvents: never carries a raw body even if ctx leaks one", () 
   const serialized = JSON.stringify(events);
   assert.ok(!serialized.includes("499"), "no body content in built events");
   assert.ok(!serialized.includes("customer asked"), "no customer message in built events");
-  for (const ev of events) assert.deepEqual(ev.payload, { provider: "smtp" });
+  for (const ev of events) {
+    assert.deepEqual(ev.payload, { provider: "smtp", intent: "complaint" });
+  }
 });
 
 // --- integration with the real emitDraftEvent guard ----------------------------

@@ -23,6 +23,14 @@ test("parseArgs: rejects bad tier", () => {
   assert.throws(() => parseArgs(["--tier", "bogus"]), /tier must be/);
 });
 
+test("parseArgs: rejects missing and malformed filter values before a costly run", () => {
+  assert.throws(() => parseArgs(["--set"]), /Missing value for --set/);
+  assert.throws(() => parseArgs(["--limit", "0"]), /positive integer/);
+  assert.throws(() => parseArgs(["--limit", "2.5"]), /positive integer/);
+  assert.throws(() => parseArgs(["--intent", ","]), /at least one/);
+  assert.throws(() => parseArgs(["--pq-budget", "many"]), /positive integer/);
+});
+
 import { validateCase, loadGoldenSet } from "./golden-eval-core.mjs";
 
 const histCase = {
@@ -688,4 +696,253 @@ test("summarizeCandidateDiagnostics: policy_fallback null when matcher omits it"
   assert.equal(s.policy_fallback, null);
   assert.equal(s.policy_fallback_count, null);
   assert.equal(s.policy_fallback_score_basis, null);
+});
+
+// ---------------------------------------------------------------------------
+// Reproducibility, manual quality gates, baseline acceptance, and leakage
+// ---------------------------------------------------------------------------
+import {
+  assessTicketExampleLeakage,
+  baselineCompatibility,
+  buildDatasetProvenance,
+  buildReviewedGoldLabelMap,
+  overlayBenchmarkMetadata,
+  selectGoldenCases,
+  sha256Json,
+  validateBaselineAcceptance,
+  goldenEvalExitCode,
+} from "./golden-eval-core.mjs";
+import {
+  buildTicketExampleTraceFromGenerateDraftV2Response,
+  getJudgeMetadata,
+} from "../../../apps/web/lib/server/eval-runner.js";
+
+test("manual benchmark metadata excludes inactive and EXCLUDE cases", () => {
+  const set = { cases: [histCase, edgeCase] };
+  const reviewed = {
+    cases: [
+      {
+        source_case_id: "e-001",
+        benchmark_status: "EXCLUDE",
+        manual_reviewed: true,
+        is_active: false,
+        review_notes: "bad facit",
+      },
+    ],
+  };
+  const selected = selectGoldenCases(overlayBenchmarkMetadata(set, reviewed));
+  assert.deepEqual(selected.cases.map((c) => c.id), ["g-001"]);
+  assert.deepEqual(selected.qualityGateExclusions, [{
+    id: "e-001",
+    benchmark_status: "EXCLUDE",
+    reason: "benchmark_status=EXCLUDE",
+    review_notes: "bad facit",
+  }]);
+});
+
+test("AceZone authoritative review removes e-002 and all inactive review cases", () => {
+  const full = loadFile(FULL_SET);
+  const review = loadFile("supabase/eval/gold-eval-cases.acezone.json");
+  const selected = selectGoldenCases(overlayBenchmarkMetadata(full, review));
+  assert.equal(selected.cases.length, 37);
+  assert.equal(selected.cases.some((c) => c.id === "e-002"), false);
+  assert.deepEqual(
+    selected.qualityGateExclusions.map((c) => c.id).sort(),
+    ["e-002", "g-005", "g-008", "g-015", "g-031", "g-032", "g-044"],
+  );
+});
+
+test("dataset provenance hashes the selected content and cohort deterministically", () => {
+  const args = {
+    set: { shop_id: "s", cases: [histCase] },
+    cases: [histCase],
+    setPath: "set.json",
+    setSourceText: "{\"cases\":[]}",
+    reviewSourceText: "{\"cases\":[]}",
+    opts: { set: null, tier: null, limit: null, intent: null },
+  };
+  const first = buildDatasetProvenance(args);
+  const second = buildDatasetProvenance(args);
+  assert.equal(first.schema_version, "golden-file-selection-v2");
+  assert.match(first.selected_sha256, /^[a-f0-9]{64}$/);
+  assert.equal(first.selected_sha256, second.selected_sha256);
+  assert.equal(first.cohort_sha256, second.cohort_sha256);
+
+  const changed = buildDatasetProvenance({
+    ...args,
+    cases: [{ ...histCase, body: "changed" }],
+  });
+  assert.notEqual(changed.selected_sha256, first.selected_sha256);
+  assert.equal(sha256Json({ b: 2, a: 1 }), sha256Json({ a: 1, b: 2 }));
+  const otherShop = buildDatasetProvenance({
+    ...args,
+    opts: { ...args.opts, shop: "other-shop" },
+  });
+  assert.notEqual(otherShop.cohort_sha256, first.cohort_sha256);
+});
+
+test("baseline comparison requires matching cohort, dataset, and judge", () => {
+  const provenance = {
+    dataset: { cohort_sha256: "cohort", selected_sha256: "dataset" },
+    judge: { model: "gpt-4o-mini", definition_sha256: "judge" },
+  };
+  const baseline = { provenance };
+  assert.deepEqual(baselineCompatibility(provenance, baseline), {
+    compatible: true,
+    mismatches: [],
+  });
+  const mismatch = baselineCompatibility(
+    { ...provenance, dataset: { ...provenance.dataset, selected_sha256: "other" } },
+    baseline,
+  );
+  assert.equal(mismatch.compatible, false);
+  assert.match(mismatch.mismatches.join("|"), /selected dataset hash differs/);
+  assert.equal(baselineCompatibility(provenance, {}).compatible, false);
+  assert.equal(
+    baselineCompatibility(provenance, {
+      provenance: { dataset: {}, judge: {} },
+    }).compatible,
+    false,
+  );
+
+  const current = computeAggregate(results);
+  const baselineWithScores = {
+    ...baseline,
+    aggregate: { overall_10: 7 },
+    per_case: { "g-001": 8 },
+  };
+  assert.notEqual(
+    diffBaseline(current, baselineWithScores, provenance).aggregateDeltas,
+    null,
+  );
+  assert.equal(
+    diffBaseline(current, baselineWithScores, {
+      ...provenance,
+      judge: { ...provenance.judge, definition_sha256: "new-judge" },
+    }).aggregateDeltas,
+    null,
+  );
+});
+
+test("--accept is fail-closed for subsets, generation errors, gates, and integrity", () => {
+  const clean = validateBaselineAcceptance({ scoredRuns: 37 });
+  assert.equal(clean.allowed, true);
+
+  for (const opts of [
+    { set: "pilot.json" },
+    { tier: "edge" },
+    { limit: 2 },
+    { intent: ["complaint"] },
+  ]) {
+    const result = validateBaselineAcceptance({ opts, scoredRuns: 2 });
+    assert.equal(result.allowed, false);
+    assert.match(result.reasons.join("|"), /subset|filters|cohort/);
+  }
+
+  const broken = validateBaselineAcceptance({
+    scoredRuns: 10,
+    failedRuns: 1,
+    gateFailures: 2,
+    integrityFailures: 3,
+  });
+  assert.equal(broken.allowed, false);
+  assert.match(broken.reasons.join("|"), /generation\/judge/);
+  assert.match(broken.reasons.join("|"), /edge gate/);
+  assert.match(broken.reasons.join("|"), /eval-integrity/);
+
+  const wrongShop = validateBaselineAcceptance({
+    scoredRuns: 10,
+    runShopId: "shop-b",
+    datasetShopId: "shop-a",
+  });
+  assert.equal(wrongShop.allowed, false);
+  assert.match(wrongShop.reasons.join("|"), /dataset shop/);
+
+  assert.equal(goldenEvalExitCode(), 0);
+  assert.equal(goldenEvalExitCode({ failedRuns: 1 }), 1);
+  assert.equal(goldenEvalExitCode({ gateFailures: 1 }), 1);
+  assert.equal(goldenEvalExitCode({ integrityFailures: 1 }), 1);
+  assert.equal(goldenEvalExitCode({ acceptRejected: true }), 1);
+});
+
+test("retrieval metrics include only explicitly human-reviewed labels", () => {
+  const labels = buildReviewedGoldLabelMap({ labels: [
+    { id: "proposed", correct_snippet_ids: ["x"], _needs_human_review: true },
+    { id: "approved", correct_snippet_ids: ["y"], _needs_human_review: false },
+    { id: "approved-2", correct_snippet_ids: [], review_status: "approved" },
+    {
+      id: "conflicting",
+      correct_snippet_ids: ["q"],
+      _needs_human_review: true,
+      review_status: "approved",
+    },
+    { id: "unknown", correct_snippet_ids: ["z"] },
+  ] });
+  assert.deepEqual([...labels.byId.keys()], ["approved", "approved-2"]);
+  assert.deepEqual(
+    labels.skippedUnreviewedIds,
+    ["proposed", "conflicting", "unknown"],
+  );
+});
+
+test("ticket-example trace parser is backward-compatible but rejects partial telemetry", () => {
+  const legacy = buildTicketExampleTraceFromGenerateDraftV2Response({
+    retrieval_debug: { chunks: [] },
+  });
+  assert.equal(legacy.telemetry_status, "legacy_unavailable");
+  assert.equal(assessTicketExampleLeakage(legacy).passed, true);
+
+  const partial = buildTicketExampleTraceFromGenerateDraftV2Response({
+    retrieval_debug: { ticket_examples: [] },
+  });
+  assert.equal(partial.telemetry_status, "invalid");
+  assert.equal(assessTicketExampleLeakage(partial).passed, false);
+
+  const malformed = buildTicketExampleTraceFromGenerateDraftV2Response({
+    retrieval_debug: {
+      ticket_examples: [{ id: "9" }],
+      ticket_example_exclusions: {
+        external_id_matches: [],
+        duplicate_question_matches: [],
+      },
+    },
+  });
+  assert.equal(malformed.telemetry_status, "invalid");
+  assert.equal(assessTicketExampleLeakage({
+    telemetry_status: "available",
+    selected_ids: [],
+    exclusions: null,
+  }).passed, false);
+});
+
+test("ticket-example leakage check captures IDs and fails on excluded intersection", () => {
+  const trace = buildTicketExampleTraceFromGenerateDraftV2Response({
+    retrieval_debug: {
+      ticket_examples: [{ id: 9 }, { id: 7 }],
+      ticket_example_exclusions: {
+        external_id_matches: [9],
+        duplicate_question_matches: [11],
+      },
+    },
+  });
+  const check = assessTicketExampleLeakage(trace);
+  assert.equal(trace.telemetry_status, "available");
+  assert.equal(check.passed, false);
+  assert.deepEqual(check.selected_ids, [7, 9]);
+  assert.deepEqual(check.leaked_ids, [9]);
+
+  const clean = assessTicketExampleLeakage({
+    ...trace,
+    selected_ids: [7],
+  });
+  assert.equal(clean.passed, true);
+  assert.deepEqual(clean.leaked_ids, []);
+});
+
+test("judge metadata is stable, versioned, and hashes the judge definition", () => {
+  const first = getJudgeMetadata("gpt-4o-mini");
+  const second = getJudgeMetadata("gpt-4o-mini");
+  assert.match(first.version, /^sona-golden-judge-/);
+  assert.match(first.definition_sha256, /^[a-f0-9]{64}$/);
+  assert.deepEqual(first, second);
 });

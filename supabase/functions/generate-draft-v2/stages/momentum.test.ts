@@ -19,11 +19,40 @@ Deno.test("detects a reply that delivers the requested labeled details", () => {
   assertEquals(customerDeliveredRequestedDetails(WRIGHT_REPLY), true);
 });
 
-Deno.test("a single labeled field or plain question does not trigger", () => {
+Deno.test("fewer than three populated contact fields or a plain question does not trigger", () => {
   assertEquals(customerDeliveredRequestedDetails("Full name: Liam Wright"), false);
+  assertEquals(
+    customerDeliveredRequestedDetails(
+      "Order number: #4821\nEmail address: liam@example.com",
+    ),
+    false,
+  );
+  assertEquals(
+    customerDeliveredRequestedDetails("Navn: Karen Jensen\nAdresse: Testvej 1"),
+    false,
+  );
+  assertEquals(
+    customerDeliveredRequestedDetails("Name:\nAddress:\nPhone:"),
+    false,
+  );
   assertEquals(customerDeliveredRequestedDetails("Hvor er min pakke?"), false);
   assertEquals(customerDeliveredRequestedDetails(""), false);
   assertEquals(customerDeliveredRequestedDetails(null), false);
+});
+
+Deno.test("detects populated Danish and German contact-detail intake replies", () => {
+  assertEquals(
+    customerDeliveredRequestedDetails(
+      "Fulde navn: Karen Jensen\nAdresse: Testvej 1\nTelefon: 12345678",
+    ),
+    true,
+  );
+  assertEquals(
+    customerDeliveredRequestedDetails(
+      "Vollständiger Name: Lea Müller\nAdresse: Hauptstraße 4\nTelefonnummer: 12345678",
+    ),
+    true,
+  );
 });
 
 Deno.test("directive fires with next-step mandate and permission-ask ban", () => {
@@ -75,6 +104,32 @@ Deno.test("cleanup does not fire when details were not delivered", () => {
     cleanupMomentumStall(STALL_DRAFT, { latestCustomerMessage: "Hvad koster A-Blaze?", language: "en" }),
     STALL_DRAFT,
   );
+});
+
+Deno.test("two arbitrary labels do not turn an ordinary ticket into a repair quote flow", () => {
+  const customerMessage =
+    "Order number: #4821\nEmail address: customer@example.com";
+  assertEquals(
+    cleanupMomentumStall(STALL_DRAFT, {
+      latestCustomerMessage: customerMessage,
+      language: "en",
+    }),
+    STALL_DRAFT,
+  );
+  assertEquals(buildMomentumDirective({ latestCustomerMessage: customerMessage }), "");
+});
+
+Deno.test("non-repair intake cleanup advances generically without inventing repair costs", () => {
+  const returnDraft =
+    "Thanks for the details. We can start the return. Please let us know if you would like to proceed.";
+  const out = cleanupMomentumStall(returnDraft, {
+    latestCustomerMessage:
+      "Full name: Alex Smith\nFull address: Main Street 1\nPhone number: 12345678",
+    language: "en",
+  });
+  assert(!/would like to proceed/i.test(out));
+  assert(/next step/i.test(out));
+  assert(!/repair|shipping costs?|estimate/i.test(out));
 });
 
 Deno.test("Danish stall variant gets a Danish committed next step", () => {

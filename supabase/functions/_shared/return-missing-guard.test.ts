@@ -2,13 +2,13 @@ import { assertEquals } from "jsr:@std/assert@1";
 
 import { resolveReturnMissingDetails } from "./return-missing-guard.ts";
 
-Deno.test("resolveReturnMissingDetails removes order/name when selected order is known", () => {
+Deno.test("resolveReturnMissingDetails removes order but keeps an unknown customer name", () => {
   const result = resolveReturnMissingDetails({
     missingDetails: ["order_number", "customer_name", "return_reason"],
     selectedOrder: { id: 12345 },
   });
 
-  assertEquals(result.effectiveMissingDetails, ["return_reason"]);
+  assertEquals(result.effectiveMissingDetails, ["customer_name", "return_reason"]);
   assertEquals(result.knownOrderNumber, true);
   assertEquals(result.knownCustomerName, false);
 });
@@ -19,7 +19,7 @@ Deno.test("resolveReturnMissingDetails removes customer_name when first name is 
     customerFirstName: "An",
   });
 
-  assertEquals(result.effectiveMissingDetails, ["return_reason"]);
+  assertEquals(result.effectiveMissingDetails, ["return_reason", "order_number"]);
   assertEquals(result.knownCustomerName, true);
 });
 

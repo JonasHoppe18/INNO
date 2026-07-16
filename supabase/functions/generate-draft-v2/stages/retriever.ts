@@ -142,6 +142,12 @@ export interface RetrieverResult {
     policy_fallback_details?: PolicyFallbackDebug[];
   };
   candidate_diagnostics?: RetrievalCandidateDiagnostics;
+  // Eval-only trace proving that answer-bearing historical examples matching
+  // the held-out customer message were removed before few-shot selection.
+  ticket_example_exclusion_debug?: {
+    external_id_matches: number[];
+    duplicate_question_matches: number[];
+  };
 }
 
 export interface RetrieverInput {
@@ -154,12 +160,93 @@ export interface RetrieverInput {
   // Eval mode: exclude this ticket's own stored reply from few-shot examples
   // to prevent the model from trivially finding the correct answer in the KB.
   excludeExternalTicketId?: string;
+  // Eval mode: exclude cross-provider copies of the held-out customer message.
+  // A source ticket may exist both as a Zendesk import and as a promoted Sona
+  // thread under different external ids, so id-only exclusion is insufficient.
+  excludeDuplicateTicketQuestions?: boolean;
   // Preview mode: exclude specific agent_knowledge chunk ids from retrieval.
   // Used by the "test snippet against ticket" feature to compare a draft with
   // and without a candidate snippet's chunks present in the KB.
   excludeChunkIds?: string[];
   // Retrieval coherence rules. Omitted/undefined fields = production defaults.
   coherenceFlags?: Partial<RetrievalCoherenceFlags>;
+}
+
+function normalizeEvalQuestion(value: string): string {
+  return String(value || "")
+    .normalize("NFKC")
+    .toLocaleLowerCase("und")
+    .replace(/&(?:nbsp|amp|lt|gt|quot|#39);/g, " ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const EVAL_DUPLICATE_STOP_WORDS = new Set([
+  "acezone",
+  "agent",
+  "best",
+  "customer",
+  "dear",
+  "email",
+  "fra",
+  "hej",
+  "hello",
+  "here",
+  "hilsen",
+  "kind",
+  "med",
+  "number",
+  "ordre",
+  "order",
+  "regards",
+  "support",
+  "tak",
+  "thanks",
+  "there",
+  "venlig",
+]);
+
+function evalQuestionTokens(value: string): Set<string> {
+  return new Set(
+    normalizeEvalQuestion(value)
+      .split(" ")
+      .filter((token) =>
+        token.length >= 3 &&
+        !/^\d+$/.test(token) &&
+        !EVAL_DUPLICATE_STOP_WORDS.has(token) &&
+        token !== "redacted"
+      ),
+  );
+}
+
+/**
+ * Strict evaluation leakage guard. Besides normalized equality, it catches
+ * copies changed only by a greeting, redaction or provider formatting. The
+ * threshold is intentionally high so ordinary similar customer cases remain
+ * valid style examples while cross-provider copies stay out of the holdout.
+ */
+export function isDuplicateEvalQuestion(
+  candidateQuestion: string,
+  heldOutQuestion: string,
+): boolean {
+  const candidate = normalizeEvalQuestion(candidateQuestion);
+  const heldOut = normalizeEvalQuestion(heldOutQuestion);
+  if (!candidate || !heldOut) return false;
+  if (candidate === heldOut) return true;
+
+  const candidateTokens = evalQuestionTokens(candidate);
+  const heldOutTokens = evalQuestionTokens(heldOut);
+  const smallerSize = Math.min(candidateTokens.size, heldOutTokens.size);
+  if (smallerSize < 12) return false;
+  let shared = 0;
+  for (const token of candidateTokens) {
+    if (heldOutTokens.has(token)) shared += 1;
+  }
+  const overlapCoefficient = shared / smallerSize;
+  const unionSize = new Set([...candidateTokens, ...heldOutTokens]).size;
+  const jaccard = unionSize > 0 ? shared / unionSize : 0;
+  return overlapCoefficient >= 0.82 && jaccard >= 0.65;
 }
 
 function sanitiseBm25Query(query: string): string {
@@ -1940,6 +2027,7 @@ export async function runRetriever(
     shop,
     supabase,
     excludeExternalTicketId,
+    excludeDuplicateTicketQuestions,
     excludeChunkIds,
     coherenceFlags,
   }: RetrieverInput,
@@ -1997,6 +2085,7 @@ export async function runRetriever(
       if (typeof row.id === "number") excludedTicketExampleIds.add(row.id);
     }
   }
+  const duplicateQuestionExampleIds = new Set<number>();
 
   // Run knowledge queries + ticket lookup in parallel. Saved replies are indexed
   // into agent_knowledge with source_provider='saved_reply', so they use the same
@@ -2045,9 +2134,7 @@ export async function runRetriever(
         const groundingThreshold = Number(
           Deno.env.get("TICKET_EXAMPLE_GROUNDING_MIN_SIMILARITY") ?? "0.75",
         );
-        const ticketQueryText = `${queries.join(" ")} ${
-          customerMessage || ""
-        }`;
+        const ticketQueryText = `${queries.join(" ")} ${customerMessage || ""}`;
         const ticketQueryProductTerms = extractMentionedProductTerms(
           ticketQueryText,
           shop,
@@ -2125,6 +2212,20 @@ export async function runRetriever(
                 correctionBoost;
               // Skip tickets that are the source of this eval run
               if (excludedTicketExampleIds.has(item.id)) continue;
+              // A historical case can be copied across providers under a new
+              // external id (for example Zendesk -> Sona thread). In eval mode,
+              // an identical customer question still carries the held-out
+              // answer and must never enter the writer's few-shot block.
+              if (
+                excludeDuplicateTicketQuestions &&
+                isDuplicateEvalQuestion(
+                  item.customer_msg,
+                  customerMessage || "",
+                )
+              ) {
+                duplicateQuestionExampleIds.add(item.id);
+                continue;
+              }
               const existing = resultMap.get(String(item.id));
               if (!existing || score > existing.score) {
                 resultMap.set(String(item.id), {
@@ -2151,9 +2252,9 @@ export async function runRetriever(
           .sort((a, b) => b.score - a.score)
           .slice(0, 3)
           .map((item) => {
-            const exampleText = `${item.subject || ""} ${item.customer_msg} ${
-              item.agent_reply
-            }`;
+            const exampleText = `${
+              item.subject || ""
+            } ${item.customer_msg} ${item.agent_reply}`;
             const similarity = Number(item.similarity || 0);
             return {
               id: item.id,
@@ -2548,6 +2649,7 @@ export async function runRetriever(
   const pastTicketExamples = ticketResult
     .filter((t) => t.agent_reply && t.agent_reply.length > 20)
     .map((t) => ({
+      id: t.id,
       customer_msg: t.customer_msg,
       agent_reply: t.agent_reply,
       subject: t.subject ?? null,
@@ -2567,6 +2669,19 @@ export async function runRetriever(
   return {
     chunks: finalChunks,
     past_ticket_examples: pastTicketExamples,
+    ...(excludeDuplicateTicketQuestions
+      ? {
+        ticket_example_exclusion_debug: {
+          external_id_matches: [...excludedTicketExampleIds].sort((a, b) =>
+            a - b
+          ),
+          duplicate_question_matches: [...duplicateQuestionExampleIds].sort((
+            a,
+            b,
+          ) => a - b),
+        },
+      }
+      : {}),
     ...(matcherDebug ? { matcher_debug: matcherDebug } : {}),
     ...(candidateDiagnostics
       ? { candidate_diagnostics: candidateDiagnostics }

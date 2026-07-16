@@ -56,7 +56,7 @@ export async function GET(req) {
 
   const { data, error } = await supabase
     .from("ticket_examples")
-    .select("id, external_ticket_id, source_provider, subject, customer_msg, agent_reply, intent, language, csat_score, tags, imported_at")
+    .select("id, external_ticket_id, source_provider, subject, customer_msg, agent_reply, conversation_context, intent, language, csat_score, tags, imported_at")
     .in("shop_id", shopIds)
     .order("imported_at", { ascending: false })
     .limit(limit);
@@ -78,6 +78,7 @@ export async function GET(req) {
         subject: row.subject || "(no subject)",
         customer_body: String(row.customer_msg || "").slice(0, 3000),
         human_reply,
+        conversation_history: String(row.conversation_context || "").slice(-3000),
         intent: row.intent,
         language: row.language,
         csat_score: row.csat_score,

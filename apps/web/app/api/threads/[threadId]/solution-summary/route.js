@@ -45,16 +45,12 @@ export async function POST(_request, { params }) {
   const { data: thread, error: threadError } = await applyScope(
     serviceClient
       .from("mail_threads")
-      .select("id, solution_summary")
+      .select("id")
       .eq("id", threadId)
       .maybeSingle(),
     scope
   );
   if (threadError || !thread) return NextResponse.json({ error: "Thread not found." }, { status: 404 });
-
-  if (thread.solution_summary) {
-    return NextResponse.json({ solution_summary: thread.solution_summary });
-  }
 
   const { data: messages } = await serviceClient
     .from("mail_messages")
@@ -88,7 +84,7 @@ export async function POST(_request, { params }) {
         {
           role: "system",
           content:
-            "You are a support analyst. Given a resolved support conversation, write 1-2 English sentences summarizing how the issue was resolved. Be specific and concise. Focus on what action was taken to solve the problem.",
+            "You are a support analyst. Given a resolved support conversation, write 1-2 sentences summarizing how the issue was resolved. Always write the entire summary in English, even when the conversation is in another language. Be specific and concise. Focus on the action taken to solve the problem. Preserve product names and order identifiers exactly.",
         },
         { role: "user", content: messageContext },
       ],

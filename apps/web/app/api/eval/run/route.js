@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { listScopedShops, resolveAuthScope } from "@/lib/server/workspace-auth";
+import { normalizeEvalItems } from "@/lib/server/eval-run-data";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -32,48 +33,6 @@ function resolveAppBaseUrl(request) {
   if (!host) return "";
   const proto = request.headers.get("x-forwarded-proto") || "https";
   return `${proto}://${host}`;
-}
-
-function normalizeItems({ emails, thread_ids, zendesk_tickets }) {
-  const hasEmails = Array.isArray(emails) && emails.length > 0;
-  const hasThreads = Array.isArray(thread_ids) && thread_ids.length > 0;
-  const hasZendesk = Array.isArray(zendesk_tickets) && zendesk_tickets.length > 0;
-
-  if (hasEmails) {
-    const items = emails
-      .map((email) => ({
-        subject: String(email?.subject || "").trim(),
-        body: String(email?.body || "").trim(),
-      }))
-      .filter((email) => email.body);
-    return { mode: "manual", items };
-  }
-
-  if (hasThreads) {
-    const items = thread_ids
-      .map((id) => String(id || "").trim())
-      .filter(Boolean);
-    return { mode: "threads", items };
-  }
-
-  if (hasZendesk) {
-    const items = zendesk_tickets
-      .map((ticket) => ({
-        id: String(ticket?.id || "").trim(),
-        subject: String(ticket?.subject || "").trim(),
-        body: ticket?.body ?? ticket?.customer_body ?? "",
-        customer_body: ticket?.customer_body ?? ticket?.body ?? "",
-        human_reply: ticket?.human_reply ?? "",
-        conversation_history: ticket?.conversation_history ?? "",
-        anchor_class: ticket?.anchor_class ?? "comparable",
-        anchor_signals: Array.isArray(ticket?.anchor_signals) ? ticket.anchor_signals : [],
-        multi_turn: ticket?.multi_turn === true,
-      }))
-      .filter((ticket) => String(ticket.customer_body || ticket.body || "").trim());
-    return { mode: "zendesk", items };
-  }
-
-  return { mode: null, items: [] };
 }
 
 export async function GET(request) {
@@ -143,7 +102,7 @@ export async function POST(request) {
     );
   }
 
-  const { mode, items } = normalizeItems(body || {});
+  const { mode, items } = normalizeEvalItems(body || {});
   if (!mode || items.length === 0) {
     return NextResponse.json({
       error: "emails, thread_ids, or zendesk_tickets required",

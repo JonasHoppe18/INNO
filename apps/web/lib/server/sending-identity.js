@@ -1,6 +1,7 @@
 const DEFAULT_SHARED_LOCAL_PART = "support";
 const DEFAULT_SHARED_DOMAIN = "sona-ai.dk";
 const DEFAULT_SHARED_FROM_EMAIL = `${DEFAULT_SHARED_LOCAL_PART}@${DEFAULT_SHARED_DOMAIN}`;
+const DEFAULT_MANAGED_LOCAL_PART = "support";
 
 function asString(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -87,6 +88,16 @@ export function getManagedSenderFromMailbox(mailbox = {}) {
   };
 }
 
+export function buildManagedSenderEmail(domain) {
+  const normalizedDomain = asString(domain).toLowerCase().replace(/^\.+|\.+$/g, "");
+  if (!normalizedDomain) return null;
+  const localPart = slugifyDomainLabel(
+    process.env.SONA_MANAGED_FROM_LOCAL_PART || DEFAULT_MANAGED_LOCAL_PART,
+    DEFAULT_MANAGED_LOCAL_PART
+  );
+  return `${localPart}@${normalizedDomain}`;
+}
+
 export function getVerifiedManagedSenderEmail(mailbox = {}) {
   const managed = getManagedSenderFromMailbox(mailbox);
   if (
@@ -97,7 +108,7 @@ export function getVerifiedManagedSenderEmail(mailbox = {}) {
   ) {
     return null;
   }
-  return managed.from_email;
+  return buildManagedSenderEmail(managed.domain);
 }
 
 export function buildEffectiveSharedFromEmail({ shop = {}, mailbox = {} } = {}) {

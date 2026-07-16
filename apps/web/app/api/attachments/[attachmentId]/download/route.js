@@ -2,6 +2,11 @@ import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
+import {
+  buildHeicPreviewFilename,
+  convertHeicToJpeg,
+  isHeicAttachment,
+} from "@/lib/server/heic-preview";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -67,6 +72,10 @@ export async function GET(request, { params }) {
   if (!attachmentId) {
     return NextResponse.json({ error: "attachmentId is required." }, { status: 400 });
   }
+  const dispositionParam = String(new URL(request.url).searchParams.get("disposition") || "")
+    .trim()
+    .toLowerCase();
+  const wantsInlinePreview = dispositionParam === "inline";
 
   const serviceClient = createServiceClient();
   if (!serviceClient) {
@@ -145,18 +154,37 @@ export async function GET(request, { params }) {
     return NextResponse.json({ error: "Attachment content is unavailable." }, { status: 404 });
   }
 
-  const filename = String(data.filename || "attachment").replace(/["\r\n]/g, "_");
-  const dispositionParam = String(new URL(request.url).searchParams.get("disposition") || "")
-    .trim()
-    .toLowerCase();
-  const dispositionType = dispositionParam === "inline" ? "inline" : "attachment";
+  let filename = String(data.filename || "attachment").replace(/["\r\n]/g, "_");
+  if (
+    wantsInlinePreview &&
+    isHeicAttachment({ filename, mimeType: resolvedMimeType })
+  ) {
+    try {
+      bytes = await convertHeicToJpeg(bytes);
+      resolvedMimeType = "image/jpeg";
+      filename = buildHeicPreviewFilename(filename);
+    } catch (conversionError) {
+      console.error("HEIC attachment preview conversion failed:", {
+        attachmentId,
+        error: conversionError?.message || conversionError,
+      });
+      return NextResponse.json(
+        { error: conversionError?.message || "HEIC preview could not be generated." },
+        { status: 422 }
+      );
+    }
+  }
+
+  const dispositionType = wantsInlinePreview ? "inline" : "attachment";
   return new Response(bytes, {
     status: 200,
     headers: {
       "Content-Type": resolvedMimeType || "application/octet-stream",
       "Content-Length": String(bytes.byteLength),
       "Content-Disposition": `${dispositionType}; filename="${filename}"`,
-      "Cache-Control": "private, max-age=60",
+      "Cache-Control": wantsInlinePreview
+        ? "private, max-age=86400, immutable"
+        : "private, max-age=60",
     },
   });
 }

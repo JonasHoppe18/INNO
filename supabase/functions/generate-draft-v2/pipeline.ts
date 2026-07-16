@@ -50,7 +50,10 @@ import {
   ShopActionConfig,
 } from "./stages/action-decision.ts";
 import { buildRetrievalLogPayload } from "./stages/retrieval-log.ts";
-import { assessGroundingCoverage, buildOwnsTheCaseBlock } from "./stages/grounding-coverage.ts";
+import {
+  assessGroundingCoverage,
+  buildOwnsTheCaseBlock,
+} from "./stages/grounding-coverage.ts";
 import { runWriter } from "./stages/writer.ts";
 import { runVerifier, type VerifierResult } from "./stages/verifier.ts";
 import {
@@ -237,6 +240,20 @@ export interface PipelineResult {
       products: string[];
       issue_types: string[];
     }>;
+    // Eval-only few-shot trace. IDs/scores only: enough to prove that a
+    // historical ticket did not retrieve its own answer without exposing
+    // customer or reply text in the response.
+    ticket_examples: Array<{
+      id: number;
+      score: number;
+      similarity: number;
+      is_near_duplicate: boolean;
+      csat_score: number | null;
+    }>;
+    ticket_example_exclusions: {
+      external_id_matches: number[];
+      duplicate_question_matches: number[];
+    };
     // Snippet-matcher trace (eval only). Mirrors RetrieverResult["matcher_debug"].
     matcher?: {
       candidates: Array<
@@ -273,6 +290,7 @@ export interface PipelineResult {
 const STRONG_MODEL = Deno.env.get("OPENAI_STRONG_MODEL") ?? "gpt-5-mini";
 const SIMPLE_MODEL = Deno.env.get("OPENAI_SIMPLE_MODEL") ?? "gpt-4o-mini";
 const CONFIDENCE_ESCALATION_THRESHOLD = 0.6;
+export const AUTO_SEND_CONFIDENCE_THRESHOLD = 0.8;
 
 function safeErrorMessage(err: unknown): string {
   const message = err instanceof Error
@@ -321,7 +339,10 @@ function buildPipelineSources(input: {
 }) {
   return [
     ...input.previewSources,
-    ...input.retrievedChunks.slice(0, Math.max(0, 5 - input.previewSources.length)).map((c) => ({
+    ...input.retrievedChunks.slice(
+      0,
+      Math.max(0, 5 - input.previewSources.length),
+    ).map((c) => ({
       content: c.content.slice(0, 200),
       kind: c.kind,
       source_label: c.source_label,
@@ -537,6 +558,60 @@ function cleanupPostActionDraftText(
     );
   }
   return draftText;
+}
+
+export function prepareStrongRetryCandidate(input: {
+  draftText: string;
+  replyLanguage: string;
+  compatibilityEnabled: boolean;
+  postActionResult: Record<string, unknown> | null;
+  orderMatchState: string | null | undefined;
+  customerMessage: string | null | undefined;
+  imageAttachmentCount: number;
+}): { draftText: string; violations: string[] } {
+  let draftText = String(input.draftText || "").trim();
+  if (!mixedLanguageCheck(draftText, input.replyLanguage).ok) {
+    draftText = cleanupMixedLanguageDraft(draftText, input.replyLanguage);
+  }
+  if (input.compatibilityEnabled) {
+    draftText = sanitizeCompatibilityDraft(draftText);
+  }
+  draftText = sanitizeSupportVoiceDraft(draftText);
+  draftText = cleanupPostActionDraftText(
+    draftText,
+    input.postActionResult,
+    input.replyLanguage,
+  );
+
+  const violations = [
+    ...(!mixedLanguageCheck(draftText, input.replyLanguage).ok
+      ? ["mixed_language"]
+      : []),
+    ...detectPostActionDraftIssues(
+      draftText,
+      input.postActionResult,
+      input.replyLanguage,
+    ).map((issue) => `post_action:${issue}`),
+    ...detectVerifiedOrderProofAsks(
+      draftText,
+      input.orderMatchState,
+    ).map((issue) => `verified_order:${issue}`),
+    ...detectMissingDamageDocumentationAsk({
+      draftText,
+      customerMessage: input.customerMessage,
+      imageAttachmentCount: input.imageAttachmentCount,
+    }).map((issue) => `damage_documentation:${issue}`),
+    ...(input.compatibilityEnabled
+      ? detectCompatibilityToneViolations(draftText).map((issue) =>
+        `compatibility_tone:${issue}`
+      )
+      : []),
+    ...detectSupportVoiceViolations(draftText).map((issue) =>
+      `support_voice:${issue}`
+    ),
+  ];
+
+  return { draftText, violations: [...new Set(violations)] };
 }
 
 function formatActionAmountForLanguage(
@@ -918,6 +993,60 @@ export function applyImageEvidenceClaimGuard(
   };
 }
 
+// Final fail-closed draft-routing gate. Action routing happens before writing,
+// but only the verifier has seen the actual customer-facing reply. Therefore a
+// verifier block/error or low-confidence result must be able to downgrade an
+// otherwise "auto" action decision. Auto also requires an explicit per-intent
+// allowlist entry; an absent setting never opts a shop into autonomous sending.
+export function applyVerifierRoutingGuard(
+  current: {
+    routingHint: "auto" | "review" | "block";
+    blockSendRecommended: boolean;
+  },
+  verifier: Pick<VerifierResult, "block_send" | "confidence" | "issues">,
+  options: {
+    autoSendAllowed: boolean;
+    minConfidence?: number;
+  },
+): {
+  routingHint: "auto" | "review" | "block";
+  blockSendRecommended: boolean;
+  reasons: string[];
+} {
+  const reasons: string[] = [];
+  let routingHint = current.routingHint;
+  let blockSendRecommended = current.blockSendRecommended;
+  const minConfidence = Number.isFinite(options.minConfidence)
+    ? Math.max(0, Math.min(1, options.minConfidence as number))
+    : AUTO_SEND_CONFIDENCE_THRESHOLD;
+
+  if (verifier.block_send) {
+    return {
+      routingHint: "block",
+      blockSendRecommended: true,
+      reasons: verifier.issues.includes("verifier_api_error")
+        ? ["verifier_api_error"]
+        : ["verifier_block_send"],
+    };
+  }
+
+  if (
+    !Number.isFinite(verifier.confidence) ||
+    verifier.confidence < minConfidence
+  ) {
+    if (routingHint !== "block") routingHint = "review";
+    blockSendRecommended = true;
+    reasons.push("verifier_confidence_below_auto_send_threshold");
+  }
+
+  if (routingHint === "auto" && !options.autoSendAllowed) {
+    routingHint = "review";
+    reasons.push("auto_send_intent_not_enabled");
+  }
+
+  return { routingHint, blockSendRecommended, reasons };
+}
+
 export function shouldDeferDraftUntilActionDecision(
   proposals: ActionProposal[],
   routingHint: "auto" | "review" | "block",
@@ -1283,11 +1412,14 @@ export async function runDraftV2Pipeline(
     ] = await Promise.all([
       updateCaseState({ thread, messages, shop, supabase }),
 
-      // agent_automation flags: order_updates, cancel_orders, automatic_refunds
+      // agent_automation flags: action permissions + explicit draft auto-send
+      // allowlist. Missing/empty auto_send_intents always means human review.
       workspaceId
         ? supabase
           .from("agent_automation")
-          .select("order_updates,cancel_orders,automatic_refunds")
+          .select(
+            "order_updates,cancel_orders,automatic_refunds,auto_send_intents",
+          )
           .eq("workspace_id", workspaceId)
           .order("updated_at", { ascending: false })
           .limit(1)
@@ -1331,13 +1463,20 @@ export async function runDraftV2Pipeline(
       order_updates: automationResult.data?.order_updates === true,
       cancel_orders: automationResult.data?.cancel_orders === true,
       automatic_refunds: automationResult.data?.automatic_refunds === true,
+      auto_send_intents: Array.isArray(
+          automationResult.data?.auto_send_intents,
+        )
+        ? automationResult.data.auto_send_intents
+          .map((intent: unknown) => String(intent).trim().toLowerCase())
+          .filter(Boolean)
+        : [] as string[],
     };
     const isTestMode = testModeResult.data?.test_mode === true;
     // Fail-safe: unknown/missing auto_close_mode ⇒ "approve" (suggest only,
     // never hard-close on an unrecognized value).
     const autoCloseMode = String(
-      testModeResult.data?.auto_close_mode ?? "approve",
-    ) === "auto"
+        testModeResult.data?.auto_close_mode ?? "approve",
+      ) === "auto"
       ? "auto"
       : "approve";
 
@@ -1550,9 +1689,8 @@ export async function runDraftV2Pipeline(
     // 4b. Closing-acknowledgment gate — pure "yes thanks" on an already
     // resolved thread: skip the writer/retrieval entirely and flag the
     // thread ready-to-close instead of generating a (possibly wrong) draft.
-    const priorAgentResolution =
-      (Array.isArray(caseState?.decisions_made) &&
-        caseState.decisions_made.length > 0) ||
+    const priorAgentResolution = (Array.isArray(caseState?.decisions_made) &&
+      caseState.decisions_made.length > 0) ||
       (thread as { status?: string }).status === "waiting_customer";
     const closing = assessConversationClosing({
       intent: plan.primary_intent,
@@ -1605,6 +1743,9 @@ export async function runDraftV2Pipeline(
         // writer just parrots its previous phrasing.
         excludeExternalTicketId: eval_payload?.source_thread_id ?? thread_id ??
           undefined,
+        // Eval-only cluster leakage guard. The same conversation may have been
+        // imported under a Zendesk id and later promoted under a Sona thread id.
+        excludeDuplicateTicketQuestions: Boolean(eval_payload),
         excludeChunkIds: input.exclude_chunk_ids,
         coherenceFlags: {
           absFloor: eval_options?.retrieval_abs_floor ?? null,
@@ -1686,7 +1827,9 @@ export async function runDraftV2Pipeline(
     if (suppressedLegacyChunks.length > 0) {
       retrieved.chunks = liveCommerceGate.kept;
       console.log(
-        `[generate-draft-v2] live-commerce gate: suppressed ${suppressedLegacyChunks.length} legacy factual chunk(s) from writer set (intent=${plan.primary_intent}, order=${facts.order?.name ?? "none"})`,
+        `[generate-draft-v2] live-commerce gate: suppressed ${suppressedLegacyChunks.length} legacy factual chunk(s) from writer set (intent=${plan.primary_intent}, order=${
+          facts.order?.name ?? "none"
+        })`,
       );
     }
     // Stage 4B-3-1: structured product-compatibility facts. Only for
@@ -1718,7 +1861,9 @@ export async function runDraftV2Pipeline(
             .eq("shop_ref_id", shop_id);
           compatProductId = detectCompatibilityProduct(
             latestBody,
-            (Array.isArray(prodRows) ? prodRows : []) as Array<{ id: number; title: string }>,
+            (Array.isArray(prodRows) ? prodRows : []) as Array<
+              { id: number; title: string }
+            >,
           );
         } catch (_err) {
           compatProductId = null;
@@ -1827,7 +1972,8 @@ export async function runDraftV2Pipeline(
       // language detection (which abstains on short "hej"-only messages) and
       // correct cross-border (a US customer gets USD, not the shop's DKK).
       const contactCountry = (() => {
-        const fields = (contactFormIdentity as { fields?: Record<string, string> })?.fields;
+        const fields =
+          (contactFormIdentity as { fields?: Record<string, string> })?.fields;
         if (!fields || typeof fields !== "object") return null;
         const entries = Object.entries(fields);
         const find = (label: string) =>
@@ -1897,7 +2043,9 @@ export async function runDraftV2Pipeline(
       const names = [...anchored].filter((n) => n.length > 1);
       if (names.length > 0) {
         subjectAnchorBlock =
-          `EMNE — kunden spørger om: ${names.join(", ")}. Din besked skal handle ` +
+          `EMNE — kunden spørger om: ${
+            names.join(", ")
+          }. Din besked skal handle ` +
           `om netop dette. Hvis et eksempel, en videns-chunk eller et fakta handler ` +
           `om et ANDET produkt eller en reservedel end det kunden spurgte om, så nævn ` +
           `eller anvend det IKKE. Angiv fx lager-/tilgængeligheds-status for præcis ` +
@@ -1910,14 +2058,19 @@ export async function runDraftV2Pipeline(
     let ownsTheCaseBlock = "";
     const groundingCoverage = assessGroundingCoverage({
       intent: plan.primary_intent,
-      chunkCount: Array.isArray(retrieved.chunks) ? retrieved.chunks.length : null,
+      chunkCount: Array.isArray(retrieved.chunks)
+        ? retrieved.chunks.length
+        : null,
       matcherAbstained: retrieved.matcher_debug?.abstained === true,
-      verifiedFactsCount: Array.isArray(facts.facts) ? facts.facts.length : null,
+      verifiedFactsCount: Array.isArray(facts.facts)
+        ? facts.facts.length
+        : null,
       structuredFactsCount: structuredFactsProvenance.length,
       strongTicketExampleCount: Array.isArray(retrieved.past_ticket_examples)
         ? retrieved.past_ticket_examples.filter(
-            (e) => (e as { is_near_duplicate?: boolean }).is_near_duplicate === true,
-          ).length
+          (e) =>
+            (e as { is_near_duplicate?: boolean }).is_near_duplicate === true,
+        ).length
         : null,
     });
     if (groundingCoverage.ungrounded) {
@@ -1929,7 +2082,9 @@ export async function runDraftV2Pipeline(
       // gate (above) reassigns retrieved.chunks when it suppresses legacy
       // factual chunks.
       if (groundingCoverage.reason === "matcher_abstained_no_facts") {
-        const suppressedCount = Array.isArray(retrieved.chunks) ? retrieved.chunks.length : 0;
+        const suppressedCount = Array.isArray(retrieved.chunks)
+          ? retrieved.chunks.length
+          : 0;
         retrieved.chunks = [];
         console.log(
           `[generate-draft-v2] grounding-coverage: suppressed ${suppressedCount} abstained noise chunk(s) from writer set (matcher_abstained_no_facts)`,
@@ -1956,7 +2111,10 @@ export async function runDraftV2Pipeline(
           created_at: new Date().toISOString(),
         }).then(({ error }) => {
           if (error) {
-            console.warn("[pipeline] draft_ungrounded_gap log failed:", error.message);
+            console.warn(
+              "[pipeline] draft_ungrounded_gap log failed:",
+              error.message,
+            );
           }
         });
       }
@@ -1983,7 +2141,9 @@ export async function runDraftV2Pipeline(
       contactFormName: contactFormIdentity.detected
         ? contactFormIdentity.customerName
         : null,
-      orderCustomerName: facts.facts.find((fact) => fact.label === "Kundenavn")?.value ?? null,
+      orderCustomerName: facts.facts.find((fact) =>
+        fact.label === "Kundenavn"
+      )?.value ?? null,
       orderCustomerEmail: facts.order?.email ?? null,
       recentCustomerMessages: messages
         .filter((message) => {
@@ -2012,9 +2172,10 @@ export async function runDraftV2Pipeline(
         drop_reasons: eval_payload && retrieved.candidate_diagnostics
           ? "captured_in_candidate_diagnostics"
           : "not_available_in_generate_draft_v2_retriever",
-        raw_candidate_diagnostics: eval_payload && retrieved.candidate_diagnostics
-          ? "captured_eval_only"
-          : "not_captured",
+        raw_candidate_diagnostics:
+          eval_payload && retrieved.candidate_diagnostics
+            ? "captured_eval_only"
+            : "not_captured",
       },
       ...(eval_payload && retrieved.candidate_diagnostics
         ? { candidate_diagnostics: retrieved.candidate_diagnostics }
@@ -2202,7 +2363,9 @@ export async function runDraftV2Pipeline(
       recentInboundForLanguage || latestCustomerMessage,
       replyLanguageFallback,
     );
-    const writerReplyLanguageFallback = eval_payload ? replyLanguage : undefined;
+    const writerReplyLanguageFallback = eval_payload
+      ? replyLanguage
+      : undefined;
 
     const shouldWaitForActionDecision = shouldDeferDraftUntilActionDecision(
       finalProposals,
@@ -2371,13 +2534,15 @@ export async function runDraftV2Pipeline(
       intentOverride,
     });
 
-    const previewLatestCustomerMessage = latestCustomerMessage ?? latestBody ?? "";
-    const previewConversationHistory = Array.isArray(quotedAwareConversationHistory)
-      ? quotedAwareConversationHistory
-        .map((turn) => String(turn?.text ?? ""))
-        .filter(Boolean)
-        .join("\n")
-      : undefined;
+    const previewLatestCustomerMessage = latestCustomerMessage ?? latestBody ??
+      "";
+    const previewConversationHistory =
+      Array.isArray(quotedAwareConversationHistory)
+        ? quotedAwareConversationHistory
+          .map((turn) => String(turn?.text ?? ""))
+          .filter(Boolean)
+          .join("\n")
+        : undefined;
 
     // Hybrid Product Support section selection: embed the latest customer issue
     // ONCE, and ONLY for an explicit Product Support preview run. Never for
@@ -2387,12 +2552,15 @@ export async function runDraftV2Pipeline(
     const previewChunks = input.preview_document_context?.chunks;
     const isProductSupportPreview = Array.isArray(previewChunks) &&
       previewChunks.some((c) =>
-        (c?.metadata as Record<string, unknown> | null | undefined)?.category ===
+        (c?.metadata as Record<string, unknown> | null | undefined)
+          ?.category ===
           "product_support"
       );
     if (isProductSupportPreview && previewLatestCustomerMessage.trim()) {
       try {
-        previewQueryEmbedding = await embedText(previewLatestCustomerMessage.slice(0, 4000));
+        previewQueryEmbedding = await embedText(
+          previewLatestCustomerMessage.slice(0, 4000),
+        );
       } catch (error) {
         console.warn(
           `[generate-draft-v2] product-support query embedding failed, falling back to lexical: ${error}`,
@@ -2408,10 +2576,11 @@ export async function runDraftV2Pipeline(
         queryEmbedding: previewQueryEmbedding,
       },
     );
-    const authoritativePreviewDocumentContext =
-      previewDocument.blockText ?? undefined;
+    const authoritativePreviewDocumentContext = previewDocument.blockText ??
+      undefined;
     if (previewDocument.diagnostics) {
-      actionDecisionTrace.preview_document_context = previewDocument.diagnostics;
+      actionDecisionTrace.preview_document_context =
+        previewDocument.diagnostics;
       await updateDraftGenerationTrace(supabase, generationId, {
         action_decision_json: actionDecisionTrace,
       });
@@ -2488,12 +2657,15 @@ export async function runDraftV2Pipeline(
     let productSupportLegacyScope:
       | ReturnType<typeof scopeLegacyChunksToProduct>["diagnostics"]
       | undefined;
-    const psSelection = previewDocument.diagnostics?.product_support_section_selection;
+    const psSelection = previewDocument.diagnostics
+      ?.product_support_section_selection;
     if (psSelection?.product_scope) {
       let selectedProductTitle: string | null = null;
       let siblingProductTitles: string[] = [];
       let knownProductExternalIds: string[] = [];
-      const selectedExternalId = externalIdFromProductScope(psSelection.product_scope);
+      const selectedExternalId = externalIdFromProductScope(
+        psSelection.product_scope,
+      );
       if (selectedExternalId) {
         try {
           // Fetch the shop's product titles so the legacy title-mention fallback
@@ -2506,10 +2678,14 @@ export async function runDraftV2Pipeline(
             .eq("shop_id", shop_id);
           const productRows = Array.isArray(prods) ? prods : [];
           siblingProductTitles = productRows
-            .map((p) => String((p as Record<string, unknown>).title || "").trim())
+            .map((p) =>
+              String((p as Record<string, unknown>).title || "").trim()
+            )
             .filter(Boolean);
           knownProductExternalIds = productRows
-            .map((p) => String((p as Record<string, unknown>).external_id || "").trim())
+            .map((p) =>
+              String((p as Record<string, unknown>).external_id || "").trim()
+            )
             .filter(Boolean);
           selectedProductTitle = (productRows.find((p) =>
             String((p as Record<string, unknown>).external_id || "").trim() ===
@@ -2559,7 +2735,9 @@ export async function runDraftV2Pipeline(
     // a US customer got the default address (g-034).
     if (isReturnRefundIntent(plan.primary_intent, latestBody)) {
       const hasReturnsDoc = hasGroundedReturnAddressChunk(
-        retrieved.chunks as unknown as Parameters<typeof hasGroundedReturnAddressChunk>[0],
+        retrieved.chunks as unknown as Parameters<
+          typeof hasGroundedReturnAddressChunk
+        >[0],
       );
       if (!hasReturnsDoc) {
         try {
@@ -2587,7 +2765,10 @@ export async function runDraftV2Pipeline(
             });
           }
         } catch (err) {
-          console.warn("[generate-draft-v2] returns-doc grounding fetch failed:", err);
+          console.warn(
+            "[generate-draft-v2] returns-doc grounding fetch failed:",
+            err,
+          );
         }
       }
     }
@@ -2608,7 +2789,11 @@ export async function runDraftV2Pipeline(
     // shop_id). Best-effort and tolerant of a pre-migration schema: a missing
     // column yields an error → empty list → unchanged chunk-based behavior.
     let productLinkRows: Array<
-      { title: string | null; handle: string | null; product_url: string | null }
+      {
+        title: string | null;
+        handle: string | null;
+        product_url: string | null;
+      }
     > = [];
     {
       const { data: prodRows, error: prodErr } = await supabase
@@ -2638,7 +2823,7 @@ export async function runDraftV2Pipeline(
       resolvedCustomerName,
       replyLanguageFallback: writerReplyLanguageFallback,
       model: firstPassModel,
-          effort: writerEffortOverride,
+      effort: writerEffortOverride,
       attachments: imageAttachments,
       actionResult: postActionResult,
       customerHistory: customerHistory ?? undefined,
@@ -2727,7 +2912,9 @@ export async function runDraftV2Pipeline(
     // emits it, so strip the grammatically-safe offenders post-hoc. Only runs
     // when a compatibility directive was actually injected; never touches facts.
     if (compatibilityBlock && languageCheckedWritten.draft_text) {
-      const cleaned = sanitizeCompatibilityDraft(languageCheckedWritten.draft_text);
+      const cleaned = sanitizeCompatibilityDraft(
+        languageCheckedWritten.draft_text,
+      );
       if (cleaned !== languageCheckedWritten.draft_text) {
         languageCheckedWritten = {
           ...languageCheckedWritten,
@@ -2746,7 +2933,11 @@ export async function runDraftV2Pipeline(
       }
     }
 
-    for (let attempt = 1; !productSupportClarification && attempt <= 3; attempt++) {
+    for (
+      let attempt = 1;
+      !productSupportClarification && attempt <= 3;
+      attempt++
+    ) {
       const postActionIssues = detectPostActionDraftIssues(
         languageCheckedWritten.draft_text,
         postActionResult,
@@ -2867,7 +3058,10 @@ export async function runDraftV2Pipeline(
         if (correctionWritten.draft_text) {
           languageCheckedWritten = correctionWritten;
           if (
-            !mixedLanguageCheck(languageCheckedWritten.draft_text, replyLanguage)
+            !mixedLanguageCheck(
+              languageCheckedWritten.draft_text,
+              replyLanguage,
+            )
               .ok
           ) {
             languageCheckedWritten = {
@@ -2931,7 +3125,10 @@ export async function runDraftV2Pipeline(
         if (correctionWritten.draft_text) {
           languageCheckedWritten = correctionWritten;
           if (
-            !mixedLanguageCheck(languageCheckedWritten.draft_text, replyLanguage)
+            !mixedLanguageCheck(
+              languageCheckedWritten.draft_text,
+              replyLanguage,
+            )
               .ok
           ) {
             languageCheckedWritten = {
@@ -2952,7 +3149,9 @@ export async function runDraftV2Pipeline(
     }
 
     if (languageCheckedWritten.draft_text) {
-      const cleaned = sanitizeSupportVoiceDraft(languageCheckedWritten.draft_text);
+      const cleaned = sanitizeSupportVoiceDraft(
+        languageCheckedWritten.draft_text,
+      );
       if (cleaned !== languageCheckedWritten.draft_text) {
         languageCheckedWritten = {
           ...languageCheckedWritten,
@@ -3067,6 +3266,7 @@ export async function runDraftV2Pipeline(
     let finalDraft = languageCheckedWritten.draft_text;
     let finalConfidence = verified.confidence;
     let finalRoutingHint = effectiveRoutingHint;
+    let finalVerification = verified;
 
     if (!mixedLanguageCheck(finalDraft, replyLanguage).ok) {
       finalConfidence = Math.min(finalConfidence, 0.62);
@@ -3114,52 +3314,66 @@ export async function runDraftV2Pipeline(
           resolvedCustomerName,
           replyLanguageFallback: writerReplyLanguageFallback,
           model: escalationModel,
+          effort: writerEffortOverride,
           attachments: imageAttachments,
           actionResult: postActionResult,
+          customerHistory: customerHistory ?? undefined,
+          nonImageAttachmentsMeta: nonImageAttachmentsMeta || undefined,
         });
 
         if (strongWritten.draft_text) {
-          let strongDraftText = strongWritten.draft_text;
-          if (!mixedLanguageCheck(strongDraftText, replyLanguage).ok) {
-            strongDraftText = cleanupMixedLanguageDraft(
-              strongDraftText,
-              replyLanguage,
-            );
-          }
-          const strongVerified = await runVerifier({
-            draftText: strongDraftText,
-            proposedActions: finalProposals,
-            citations: strongWritten.citations,
-            facts,
-            retrievedChunks: retrieved.chunks,
+          const strongCandidate = prepareStrongRetryCandidate({
+            draftText: strongWritten.draft_text,
+            replyLanguage,
+            compatibilityEnabled: Boolean(compatibilityBlock),
+            postActionResult,
+            orderMatchState: facts.match?.state ?? null,
             customerMessage: latestCustomerMessage,
-            conversationHistory,
-            primaryIntent: plan.primary_intent,
-            language: replyLanguage,
+            imageAttachmentCount: imageAttachments.length,
           });
-
-          if (strongVerified.confidence >= verified.confidence) {
-            finalDraft = strongDraftText;
-            finalConfidence = strongVerified.confidence;
-            await updateDraftGenerationTrace(supabase, generationId, {
-              writer_model: strongWritten.usage?.model ?? escalationModel,
-              writer_prompt_hash: strongWritten.usage?.prompt_hash ?? null,
-              writer_input_tokens: strongWritten.usage?.input_tokens ?? null,
-              writer_output_tokens: strongWritten.usage?.output_tokens ?? null,
-              writer_cost_usd: strongWritten.usage?.cost_usd ?? null,
-              writer_latency_ms: strongWritten.usage?.latency_ms ?? null,
-              total_input_tokens: strongWritten.usage?.input_tokens ?? null,
-              total_output_tokens: strongWritten.usage?.output_tokens ?? null,
-              total_cost_usd: strongWritten.usage?.cost_usd ?? null,
-              verifier_output_json: strongVerified,
-            });
-            if (!mixedLanguageCheck(finalDraft, replyLanguage).ok) {
-              finalConfidence = Math.min(finalConfidence, 0.62);
-              finalRoutingHint = "review";
-            }
-            console.log(
-              `[generate-draft-v2] strong model improved confidence: ${verified.confidence} → ${strongVerified.confidence}`,
+          if (strongCandidate.violations.length > 0) {
+            console.warn(
+              `[generate-draft-v2] rejected strong retry before verifier: ${
+                strongCandidate.violations.join(";")
+              }`,
             );
+          } else {
+            const strongVerified = await runVerifier({
+              draftText: strongCandidate.draftText,
+              proposedActions: finalProposals,
+              citations: strongWritten.citations,
+              facts,
+              retrievedChunks: retrieved.chunks,
+              customerMessage: latestCustomerMessage,
+              conversationHistory,
+              primaryIntent: plan.primary_intent,
+              language: replyLanguage,
+            });
+
+            if (
+              !strongVerified.block_send &&
+              strongVerified.confidence >= verified.confidence
+            ) {
+              finalDraft = strongCandidate.draftText;
+              finalConfidence = strongVerified.confidence;
+              finalVerification = strongVerified;
+              await updateDraftGenerationTrace(supabase, generationId, {
+                writer_model: strongWritten.usage?.model ?? escalationModel,
+                writer_prompt_hash: strongWritten.usage?.prompt_hash ?? null,
+                writer_input_tokens: strongWritten.usage?.input_tokens ?? null,
+                writer_output_tokens: strongWritten.usage?.output_tokens ??
+                  null,
+                writer_cost_usd: strongWritten.usage?.cost_usd ?? null,
+                writer_latency_ms: strongWritten.usage?.latency_ms ?? null,
+                total_input_tokens: strongWritten.usage?.input_tokens ?? null,
+                total_output_tokens: strongWritten.usage?.output_tokens ?? null,
+                total_cost_usd: strongWritten.usage?.cost_usd ?? null,
+                verifier_output_json: strongVerified,
+              });
+              console.log(
+                `[generate-draft-v2] strong model improved confidence: ${verified.confidence} → ${strongVerified.confidence}`,
+              );
+            }
           }
         }
       } catch (err) {
@@ -3170,13 +3384,30 @@ export async function runDraftV2Pipeline(
       }
     }
 
-    if (verified.block_send) {
+    if (finalVerification.block_send) {
       console.warn(
         `[generate-draft-v2] verifier blocked send — confidence: ${finalConfidence}`,
       );
     }
 
-    let blockSendRecommended = false;
+    const verifierRoutingGuard = applyVerifierRoutingGuard(
+      { routingHint: finalRoutingHint, blockSendRecommended: false },
+      finalVerification,
+      {
+        autoSendAllowed: automation.auto_send_intents.includes(
+          plan.primary_intent,
+        ),
+      },
+    );
+    finalRoutingHint = verifierRoutingGuard.routingHint;
+    let blockSendRecommended = verifierRoutingGuard.blockSendRecommended;
+    if (verifierRoutingGuard.reasons.length > 0) {
+      console.warn(
+        `[generate-draft-v2] verifier routing guard: ${
+          verifierRoutingGuard.reasons.join(",")
+        } — routing=${finalRoutingHint}`,
+      );
+    }
     const finalSupportVoiceViolations = detectSupportVoiceViolations(
       finalDraft ?? "",
     );
@@ -3328,7 +3559,9 @@ export async function runDraftV2Pipeline(
       finalDraft = capabilityRewrite.draft;
       finalRoutingHint = "review";
       blockSendRecommended = true;
-      console.warn("[generate-draft-v2] ungrounded capability refusal rewritten to owns-the-case hedge");
+      console.warn(
+        "[generate-draft-v2] ungrounded capability refusal rewritten to owns-the-case hedge",
+      );
     }
 
     const policyChunkCount = retrieved.chunks.filter((c) =>
@@ -3336,8 +3569,8 @@ export async function runDraftV2Pipeline(
     ).length;
     const knowledgeGaps = detectKnowledgeGaps(
       plan.primary_intent,
-      verified.issues,
-      verified.grounded_claims_pct,
+      finalVerification.issues,
+      finalVerification.grounded_claims_pct,
       retrieved.chunks.length,
       policyChunkCount,
     );
@@ -3634,6 +3867,20 @@ export async function runDraftV2Pipeline(
               products: c.products ?? [],
               issue_types: c.chunk_issue_types,
             })),
+            ticket_examples: retrieved.past_ticket_examples
+              .filter((example) => typeof example.id === "number")
+              .map((example) => ({
+                id: example.id as number,
+                score: example.score,
+                similarity: example.similarity,
+                is_near_duplicate: example.is_near_duplicate,
+                csat_score: example.csat_score,
+              })),
+            ticket_example_exclusions:
+              retrieved.ticket_example_exclusion_debug ?? {
+                external_id_matches: [],
+                duplicate_question_matches: [],
+              },
             ...(retrieved.matcher_debug
               ? { matcher: retrieved.matcher_debug }
               : {}),

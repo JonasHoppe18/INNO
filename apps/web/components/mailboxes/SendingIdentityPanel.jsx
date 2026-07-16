@@ -87,7 +87,7 @@ export function SendingIdentityPanel({
       : null;
   const activeFromEmail = isVerified
     ? resolvedFromEmail || initialFromEmail
-    : sharedFromEmail || "kundeservice@webshop.sona-ai.dk";
+    : sharedFromEmail || "support@sona-ai.dk";
 
   const handleSetup = async (event) => {
     event.preventDefault();

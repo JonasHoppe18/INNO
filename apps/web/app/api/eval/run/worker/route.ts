@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { listScopedShops, resolveAuthScope } from "@/lib/server/workspace-auth";
+import { evalSourceThreadId } from "@/lib/server/eval-run-data";
 import {
   draftForJudge,
   generateDraftV2,
@@ -131,14 +132,15 @@ async function scoreZendesk({
   const ticketSubject = String(ticket?.subject || "").trim() || null;
   const humanReply = String(ticket?.human_reply || "").trim() || null;
   const conversationHistory = String(ticket?.conversation_history || "").trim() || null;
-  const zendeskId = String(ticket?.id || "");
+  const sourceThreadId = evalSourceThreadId(ticket);
+  const zendeskId = String(ticket?.external_ticket_id || ticket?.id || "");
   if (!ticketBody) return;
 
   const { draft, actions, confidence, sources, routingHint, latencyMs } =
     await generateDraftV2(shopId, ticketSubject, ticketBody, {
       ...v2Options,
       conversationHistory,
-      sourceThreadId: zendeskId || undefined,
+      sourceThreadId,
     });
 
   const judgeBody = conversationHistory

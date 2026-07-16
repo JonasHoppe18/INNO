@@ -50,7 +50,8 @@ Deno.test("generic fallback upgraded by concrete Shopify shipment_status → sho
   assertEquals(facts[0].state, "delivered");
 });
 
-// 3 & 4. return tracking — supported carrier verified; unsupported stays customer_provided
+// 3 & 4. return tracking — a successful live lookup is verified regardless of
+// whether the carrier uses a native adapter or the configured Ship24 fallback.
 Deno.test("resolveReturnTrackingFact: supported carrier → carrier_verified, direction return", async () => {
   const fact = await resolveReturnTrackingFact(
     { tracking_number: "JJD123", carrier_hint: "GLS" },
@@ -61,16 +62,36 @@ Deno.test("resolveReturnTrackingFact: supported carrier → carrier_verified, di
   assertEquals(fact.state, "in_transit");
 });
 
-Deno.test("resolveReturnTrackingFact: unsupported carrier (USPS) → customer_provided + unknown, no fetch", async () => {
+Deno.test("resolveReturnTrackingFact: non-native carrier (USPS) can be carrier_verified via live lookup", async () => {
   let fetched = false;
   const fact = await resolveReturnTrackingFact(
     { tracking_number: "9588871095290073926950", carrier_hint: "USPS" },
     { fetchDetail: () => { fetched = true; return Promise.resolve(liveDetail("x", "delivered")); } },
   );
   assertEquals(fact.direction, "return");
+  assertEquals(fact.verification, "carrier_verified");
+  assertEquals(fact.state, "delivered");
+  assertEquals(fetched, true);
+});
+
+Deno.test("resolveReturnTrackingFact: unavailable live lookup stays customer_provided + unknown", async () => {
+  const fact = await resolveReturnTrackingFact(
+    { tracking_number: "9588871095290073926950", carrier_hint: "USPS" },
+    {
+      fetchDetail: () => Promise.resolve({
+        carrier: "USPS",
+        statusText: "Shipped - follow the parcel via tracking link.",
+        trackingNumber: "9588871095290073926950",
+        trackingUrl: "",
+        lookupSource: "shopify_fallback",
+        lookupDetail: "carrier_unknown",
+        snapshot: { statusCode: "unknown", statusText: "Shipped - follow the parcel via tracking link.", events: [] },
+      }),
+    },
+  );
+  assertEquals(fact.direction, "return");
   assertEquals(fact.verification, "customer_provided");
   assertEquals(fact.state, "unknown");
-  assertEquals(fetched, false); // unsupported → never calls a carrier
 });
 
 // 11. outbound facts cannot be reused as return facts (distinct functions / direction)

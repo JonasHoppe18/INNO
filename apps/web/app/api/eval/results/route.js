@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { resolveAuthScope, listScopedShops } from "@/lib/server/workspace-auth";
+import { summarizeEvalResults } from "@/lib/server/eval-run-data";
 
 const SUPABASE_URL = (
   process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -80,27 +81,9 @@ export async function GET() {
 
   // Compute averages per run
   const runs = Object.values(grouped).map((run) => {
-    const n = run.results.length;
-    const avg = (key) =>
-      Math.round((run.results.reduce((s, r) => s + (r[key] || 0), 0) / n) * 10) / 10;
-    const rootCauses = run.results.reduce((acc, row) => {
-      const key = String(row.likely_root_cause || "unknown");
-      acc[key] = (acc[key] || 0) + 1;
-      return acc;
-    }, {});
     return {
       ...run,
-      count: n,
-      send_ready_count: run.results.filter((row) => row.send_ready === true).length,
-      root_causes: rootCauses,
-      averages: {
-        correctness: avg("correctness"),
-        completeness: avg("completeness"),
-        tone: avg("tone"),
-        actionability: avg("actionability"),
-        overall: avg("overall"),
-        overall_10: avg("overall_10"),
-      },
+      ...summarizeEvalResults(run.results),
     };
   });
 

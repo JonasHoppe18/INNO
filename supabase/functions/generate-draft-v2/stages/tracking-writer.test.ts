@@ -76,10 +76,12 @@ function cleanup(
   draft: string,
   state: TrackingFact["state"] = "delivered",
   message = "Hi, the tracking says delivered, but I have not received my package.",
+  language = "en",
 ) {
   return cleanupDeliveredNotReceivedDraft(draft, {
     trackingFacts: [f({ direction: "outbound", verification: "carrier_verified", state })],
     latestCustomerMessage: message,
+    language,
   });
 }
 
@@ -181,6 +183,76 @@ Deno.test("delivered-not-received cleanup adds no refund replacement reshipment 
   for (const phrase of DNR_FORBIDDEN) {
     assert(!cleaned.includes(phrase), `must not contain affirmative promise "${phrase}"`);
   }
+});
+
+Deno.test("delivered-not-received cleanup replaces a Danish closing in Danish only", () => {
+  const draft = [
+    "Hej Maja,",
+    "",
+    "Trackingen viser pakken som leveret. Kan du bekræfte, at leveringsadressen er korrekt?",
+    "",
+    "Jeg ser frem til at høre fra dig.",
+  ].join("\n");
+  const cleaned = cleanup(
+    draft,
+    "delivered",
+    "Trackingen står som leveret, men jeg har ikke modtaget pakken.",
+    "da",
+  );
+  assert(!/Jeg ser frem til at høre fra dig/i.test(cleaned));
+  assertStringIncludes(cleaned, "Når du har bekræftet adressen");
+  assertStringIncludes(cleaned, "fragtpartner");
+  assert(!/Once you confirm|shipping partner/i.test(cleaned));
+});
+
+Deno.test("delivered-not-received cleanup uses an explicitly resolved German reply language", () => {
+  const draft =
+    "Die Sendungsverfolgung zeigt die Lieferung an. Bitte bestätigen Sie die Lieferadresse.\n\nIch freue mich auf Ihre Antwort.";
+  const cleaned = cleanup(
+    draft,
+    "delivered",
+    "The tracking says delivered, but I have not received the parcel.",
+    "de",
+  );
+  assert(!/Ich freue mich auf Ihre Antwort/i.test(cleaned));
+  assertStringIncludes(cleaned, "Sobald die Adresse bestätigt ist");
+  assert(!/Once you confirm|shipping partner/i.test(cleaned));
+});
+
+Deno.test("delivered-not-received cleanup has no English fallback in any supported non-English language", () => {
+  const expectedByLanguage: Record<string, string> = {
+    da: "Når du har bekræftet adressen",
+    sv: "När du har bekräftat adressen",
+    de: "Sobald die Adresse bestätigt ist",
+    nl: "Zodra je het adres hebt bevestigd",
+    fr: "Dès que vous aurez confirmé l’adresse",
+    no: "Når du har bekreftet adressen",
+    fi: "Kun olet vahvistanut osoitteen",
+    es: "Cuando confirmes la dirección",
+    it: "Dopo la conferma dell’indirizzo",
+  };
+  for (const [language, expected] of Object.entries(expectedByLanguage)) {
+    const cleaned = cleanup(
+      "Please confirm the delivery address.",
+      "delivered",
+      "The tracking says delivered, but I have not received the parcel.",
+      language,
+    );
+    assertStringIncludes(cleaned, expected);
+    assert(!/Once you confirm|shipping partner/i.test(cleaned), language);
+  }
+});
+
+Deno.test("non-disputed Danish delivered reply remains byte-identical", () => {
+  const draft =
+    "Trackingen viser, at pakken er leveret.\n\nJeg ser frem til at høre fra dig.";
+  assert(
+    cleanupDeliveredNotReceivedDraft(draft, {
+      trackingFacts: [f({ state: "delivered" })],
+      latestCustomerMessage: "Kan du sende tracking-linket?",
+      language: "da",
+    }) === draft,
+  );
 });
 
 Deno.test("ordinary delivered tracking without dispute cleanup is unchanged", () => {

@@ -88,3 +88,40 @@ Deno.test("writer history includes quoted support but does not duplicate quoted 
     false,
   );
 });
+
+Deno.test("writer history excludes unsent composer drafts but keeps sent multilingual agent turns", () => {
+  const latest = {
+    clean_body_text: "Ja, adressen er korrekt.",
+    body_text: "Ja, adressen er korrekt.",
+    from_me: false,
+    is_draft: false,
+  };
+  const history = buildWriterConversationHistory([
+    {
+      clean_body_text: "Min pakke er ikke kommet.",
+      body_text: "Min pakke er ikke kommet.",
+      from_me: false,
+      is_draft: false,
+    },
+    {
+      clean_body_text: "Kan du bekræfte leveringsadressen?",
+      body_text: "Kan du bekræfte leveringsadressen?",
+      from_me: true,
+      direction: "outbound",
+      is_draft: false,
+    },
+    {
+      clean_body_text: "We have refunded and reshipped your order.",
+      body_text: "We have refunded and reshipped your order.",
+      from_me: true,
+      direction: "outbound",
+      is_draft: true,
+    },
+    latest,
+  ], latest);
+
+  assertEquals(history, [
+    { role: "customer", text: "Min pakke er ikke kommet." },
+    { role: "agent", text: "Kan du bekræfte leveringsadressen?" },
+  ]);
+});

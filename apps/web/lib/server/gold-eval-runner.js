@@ -6,7 +6,8 @@
 // the batch up into a compact summary on the gold_eval_runs row.
 //
 // Grading is DETERMINISTIC only (no LLM judge here):
-//   - intent_correct: normalized expected_intent === normalized actual_intent
+//   - intent_correct: normalized expected_intent === normalized actual_intent,
+//     but only when expected_intent is representable by the runtime planner
 //   - retrieval_hit_at_k: gold_knowledge_chunk_ids vs the retrieved chunk ids
 // Everything that needs human/LLM judgement (facts/resolution/action correctness,
 // completeness/tone/send-ready scores) is left null so manual assessment stays
@@ -20,6 +21,26 @@ const RUNS_TABLE = "gold_eval_runs";
 const RESULTS_TABLE = "gold_eval_results";
 
 const DEFAULT_KS = [1, 3, 5, 10];
+
+// The planner's actual output vocabulary. Keep business/analytics categories out
+// of this list: a gold label such as `technical_support` or `order_status` is not
+// deterministically comparable when the runtime cannot emit that label. Request
+// suffixes are handled below by normalizeIntent solely as naming aliases.
+export const RUNTIME_INTENT_TAXONOMY = Object.freeze([
+  "tracking",
+  "return",
+  "refund",
+  "exchange",
+  "cancel",
+  "address_change",
+  "product_question",
+  "complaint",
+  "thanks",
+  "update",
+  "other",
+]);
+
+const NORMALIZED_RUNTIME_INTENTS = new Set(RUNTIME_INTENT_TAXONOMY.map((intent) => normalizeIntent(intent)));
 
 function normalizeLabel(value) {
   return String(value ?? "")
@@ -52,6 +73,52 @@ export function compareIntent(expectedIntent, actualIntent) {
     actualIntent: actualIntentNormalized || actualIntentRaw,
     actualIntentRaw,
     actualIntentNormalized,
+  };
+}
+
+// Runner-specific grading guard. compareIntent intentionally remains a generic
+// exact-match helper; this wrapper prevents gold labels outside the planner's
+// output vocabulary from becoming deterministic failures by construction.
+export function gradeRuntimeIntent(expectedIntent, actualIntent) {
+  const expectedIntentRaw = expectedIntent ?? null;
+  const expectedIntentNormalized = normalizeIntent(expectedIntent);
+  const actualIntentRaw = actualIntent ?? null;
+  const actualIntentNormalized = normalizeIntent(actualIntent);
+  const actualIntentValue = actualIntentNormalized || actualIntentRaw;
+
+  if (!expectedIntentNormalized) {
+    return {
+      intentCorrect: null,
+      actualIntent: actualIntentValue,
+      actualIntentRaw,
+      actualIntentNormalized,
+      expectedIntentRaw,
+      expectedIntentNormalized,
+      intentGradeable: false,
+      intentGradeSkipReason: "missing_expected_intent",
+    };
+  }
+
+  if (!NORMALIZED_RUNTIME_INTENTS.has(expectedIntentNormalized)) {
+    return {
+      intentCorrect: null,
+      actualIntent: actualIntentValue,
+      actualIntentRaw,
+      actualIntentNormalized,
+      expectedIntentRaw,
+      expectedIntentNormalized,
+      intentGradeable: false,
+      intentGradeSkipReason: "expected_intent_outside_runtime_taxonomy",
+    };
+  }
+
+  const comparison = compareIntent(expectedIntent, actualIntent);
+  return {
+    ...comparison,
+    expectedIntentRaw,
+    expectedIntentNormalized,
+    intentGradeable: true,
+    intentGradeSkipReason: null,
   };
 }
 
@@ -161,10 +228,16 @@ async function runSingleCase({ serviceClient, runId, goldCase, generate }) {
     };
   }
 
-  const { intentCorrect, actualIntent, actualIntentRaw, actualIntentNormalized } = compareIntent(
-    goldCase.expected_intent,
-    gen.intent,
-  );
+  const {
+    intentCorrect,
+    actualIntent,
+    actualIntentRaw,
+    actualIntentNormalized,
+    expectedIntentRaw,
+    expectedIntentNormalized,
+    intentGradeable,
+    intentGradeSkipReason,
+  } = gradeRuntimeIntent(goldCase.expected_intent, gen.intent);
   const { hitAtK, retrievedChunkIds } = computeRetrievalHitAtK(
     goldCase.gold_knowledge_chunk_ids,
     gen.retrievalDebug,
@@ -180,6 +253,13 @@ async function runSingleCase({ serviceClient, runId, goldCase, generate }) {
     actual_intent_raw: actualIntentRaw,
     actual_intent_normalized: actualIntentNormalized,
     intent_correct: intentCorrect,
+    // Eval-run metadata returned to callers and aggregated into summary_json.
+    // These fields are deliberately stripped before inserting gold_eval_results,
+    // whose fixed schema has no gradeability columns.
+    intent_gradeable: intentGradeable,
+    intent_grade_skip_reason: intentGradeSkipReason,
+    expected_intent_raw: expectedIntentRaw,
+    expected_intent_normalized: expectedIntentNormalized,
     retrieved_chunk_ids: retrievedChunkIds,
     retrieval_hit_at_k: hitAtK,
     facts_json: trace?.facts_json ?? null,
@@ -210,6 +290,7 @@ function summarize(results) {
   const failedCases = [];
   let intentGraded = 0;
   let intentCorrect = 0;
+  const intentSkippedCases = [];
   let retrievalGraded = 0;
   let hitAt5 = 0;
   let missingFacts = 0;
@@ -231,6 +312,13 @@ function summarize(results) {
       intentGraded += 1;
       if (r.intent_correct) intentCorrect += 1;
       else failedCases.push({ eval_case_id: r.eval_case_id, reason: "intent_mismatch" });
+    } else if (r.intent_gradeable === false) {
+      intentSkippedCases.push({
+        eval_case_id: r.eval_case_id,
+        reason: r.intent_grade_skip_reason,
+        expected_intent_raw: r.expected_intent_raw,
+        expected_intent_normalized: r.expected_intent_normalized,
+      });
     }
     const hk = r.retrieval_hit_at_k;
     if (hk && typeof hk === "object" && "hit_at_5" in hk) {
@@ -262,6 +350,8 @@ function summarize(results) {
     failed_count: failedCases.length,
     intent_accuracy: intentGraded > 0 ? intentCorrect / intentGraded : null,
     intent_graded: intentGraded,
+    intent_ungraded: intentSkippedCases.length,
+    intent_skipped_cases: intentSkippedCases,
     retrieval_hit_at_5: retrievalGraded > 0 ? hitAt5 / retrievalGraded : null,
     retrieval_graded: retrievalGraded,
     cases_missing_facts: missingFacts,
@@ -316,7 +406,16 @@ export async function runGoldEval({
   for (const goldCase of cases) {
     const row = await runSingleCase({ serviceClient, runId, goldCase, generate });
     results.push(row);
-    const { error: insErr } = await serviceClient.from(RESULTS_TABLE).insert(row);
+    // Gradeability is represented in the run summary without requiring a DB
+    // migration. Persist only columns that exist on gold_eval_results.
+    const {
+      intent_gradeable: _intentGradeable,
+      intent_grade_skip_reason: _intentGradeSkipReason,
+      expected_intent_raw: _expectedIntentRaw,
+      expected_intent_normalized: _expectedIntentNormalized,
+      ...persistedRow
+    } = row;
+    const { error: insErr } = await serviceClient.from(RESULTS_TABLE).insert(persistedRow);
     if (insErr) {
       // Don't abort the whole batch on a single insert failure — record and move on.
       row.error_message = `result_insert_failed: ${insErr.message}`;

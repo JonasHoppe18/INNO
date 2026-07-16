@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
+import { normalizeZendeskBaseUrl } from "@/lib/server/zendesk-url";
 
 const SUPABASE_BASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -12,16 +13,11 @@ const SUPABASE_SERVICE_KEY =
   process.env.SERVICE_ROLE_KEY ||
   process.env.SUPABASE_SERVICE_KEY ||
   "";
+const ZENDESK_ALLOWED_HOSTS = process.env.ZENDESK_ALLOWED_HOSTS || "";
 
 function createServiceClient() {
   if (!SUPABASE_BASE_URL || !SUPABASE_SERVICE_KEY) return null;
   return createClient(SUPABASE_BASE_URL, SUPABASE_SERVICE_KEY);
-}
-
-function normalizeZendeskUrl(input = "") {
-  const trimmed = String(input || "").trim().replace(/\/+$/, "");
-  if (!trimmed) return "";
-  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
 
 function encodeToBytea(value) {
@@ -105,11 +101,11 @@ export async function PATCH(request) {
   }
 
   const body = await request.json().catch(() => ({}));
-  const domain = normalizeZendeskUrl(body?.domain);
+  const domainInput = String(body?.domain || "").trim();
   const email = String(body?.email || "").trim();
   const apiToken = String(body?.api_token || "").trim();
 
-  if (!domain || !email) {
+  if (!domainInput || !email) {
     return NextResponse.json(
       { error: "Zendesk URL and agent email are required." },
       { status: 400 },
@@ -117,6 +113,17 @@ export async function PATCH(request) {
   }
   if (!/^\S+@\S+\.\S+$/.test(email)) {
     return NextResponse.json({ error: "Enter a valid agent email." }, { status: 400 });
+  }
+  let domain;
+  try {
+    domain = normalizeZendeskBaseUrl(domainInput, {
+      allowedCustomHosts: ZENDESK_ALLOWED_HOSTS,
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Invalid Zendesk URL." },
+      { status: 400 },
+    );
   }
 
   const { data: current, error: currentError } = await scopedZendeskQuery(

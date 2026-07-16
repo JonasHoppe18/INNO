@@ -476,9 +476,10 @@ export function ZendeskDetailsPage() {
           </CardHeader>
 
           <CardContent className="flex flex-col gap-5">
-            <div className="grid gap-3 rounded-lg bg-muted/40 p-4 sm:grid-cols-4">
+            <div className="grid gap-3 rounded-lg bg-muted/40 p-4 sm:grid-cols-5">
               {[
                 ["Imported", job?.imported_count ?? history?.imported_examples ?? 0],
+                ["Refreshed", job?.updated_count ?? 0],
                 ["Skipped", job?.skipped_count ?? 0],
                 ["Dropped", job?.dropped_count ?? 0],
                 ["Total", job?.total_count ?? 0],

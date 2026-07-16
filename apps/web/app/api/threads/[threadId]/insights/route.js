@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
+import { describeKnowledgeSource, formatOrderNumber } from "@/lib/inbox/sona-source";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -39,7 +40,14 @@ function extractThreadIdFromDetail(value = "") {
 
 function safeParseJson(value) {
   if (!value) return null;
+  if (typeof value === "object") return value;
   try { return JSON.parse(value); } catch { return null; }
+}
+
+function stringArray(value) {
+  return Array.isArray(value)
+    ? value.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
 }
 
 const INTENT_LABELS = {
@@ -65,9 +73,12 @@ function buildReasoning(intent, confidence, orderNumber, kb_chunks, knowledge_ga
 
   // Sentence 2: order + sources
   const parts = [];
-  if (orderNumber) parts.push(`Found order #${orderNumber}.`);
+  if (orderNumber) parts.push(`Found order ${formatOrderNumber(orderNumber)}.`);
   if (kb_chunks.length > 0) {
-    const topTitles = kb_chunks.slice(0, 2).map((c) => c.title).filter(Boolean);
+    const topTitles = kb_chunks
+      .slice(0, 2)
+      .map((source) => describeKnowledgeSource(source).title)
+      .filter(Boolean);
     const remainder = kb_chunks.length - 2;
     if (topTitles.length > 0) {
       const listed = topTitles.map((t) => `"${t}"`).join(" and ");
@@ -94,29 +105,62 @@ function buildReasoning(intent, confidence, orderNumber, kb_chunks, knowledge_ga
   return [s1, ...parts, s3].filter(Boolean).join(" ");
 }
 
-function parseDiagnostic(logs) {
+function parseDiagnostic(logs, generation = null) {
   const find = (stepName) => logs.findLast((l) => l.step_name === stepName);
 
   const intentLog       = find("draft_intent_assessed");
   const contextLog      = find("draft_context_loaded");
   const retrievalLog    = find("retrieval_completed");
   const gapLog          = find("knowledge_gap_detected");
+  const draftLog        = find("draft_created");
 
   const intentDetail    = safeParseJson(intentLog?.step_detail);
   const contextDetail   = safeParseJson(contextLog?.step_detail);
   const retrievalDetail = safeParseJson(retrievalLog?.step_detail);
   const gapDetail       = safeParseJson(gapLog?.step_detail);
+  const draftDetail     = safeParseJson(draftLog?.step_detail);
+  const planDetail      = safeParseJson(generation?.resolution_plan_json)
+    || safeParseJson(generation?.planner_output_json)
+    || {};
+  const factsDetail     = safeParseJson(generation?.facts_json) || {};
 
   const intent          = intentDetail?.primary_intent ?? null;
-  const confidence      = typeof intentDetail?.confidence === "number" ? intentDetail.confidence : null;
+  const intentConfidence = typeof intentDetail?.confidence === "number" ? intentDetail.confidence : null;
+  const confidence      = typeof draftDetail?.confidence === "number"
+    ? draftDetail.confidence
+    : intentConfidence;
+  const language        = intentDetail?.language ?? planDetail?.language ?? null;
   const orderNumber     = contextDetail?.order_number ?? null;
+  const orderFound      = contextDetail?.order_found === true || Boolean(orderNumber);
+  const factsCount      = typeof contextDetail?.facts_count === "number"
+    ? contextDetail.facts_count
+    : Array.isArray(factsDetail?.facts) ? factsDetail.facts.length : 0;
   const kb_chunks       = retrievalDetail?.kb_chunks ?? [];
   const ticket_examples = retrievalDetail?.ticket_examples ?? [];
   const knowledge_gaps  = gapDetail?.gaps ?? [];
+  const decision = {
+    resolutionStage: planDetail?.resolution_stage ?? null,
+    requiredFacts: stringArray(planDetail?.required_facts),
+    skillsConsidered: stringArray(planDetail?.skills_to_consider),
+    routingHint: draftDetail?.routing_hint ?? null,
+  };
 
   const reasoning = buildReasoning(intent, confidence, orderNumber, kb_chunks, knowledge_gaps);
 
-  return { reasoning, intent, confidence, orderNumber, kb_chunks, ticket_examples, knowledge_gaps };
+  return {
+    reasoning,
+    intent,
+    confidence,
+    intentConfidence,
+    language,
+    orderNumber,
+    orderFound,
+    factsCount,
+    kb_chunks,
+    ticket_examples,
+    knowledge_gaps,
+    decision,
+  };
 }
 
 const THREAD_SCOPED_STEP_NAMES = [
@@ -207,6 +251,18 @@ export async function GET(_request, { params }) {
   const draftIdRows = Array.isArray(draftsData) ? draftsData : [];
   const draftIds = draftIdRows.map((row) => row?.draft_id).filter(Boolean);
 
+  let generationQuery = serviceClient
+    .from("draft_generations")
+    .select("planner_output_json, facts_json, resolution_plan_json, created_at")
+    .eq("thread_id", thread.id)
+    .order("created_at", { ascending: false })
+    .limit(1);
+  if (thread.workspace_id) {
+    generationQuery = generationQuery.eq("workspace_id", thread.workspace_id);
+  }
+  const { data: generationRows } = await generationQuery;
+  const latestGeneration = Array.isArray(generationRows) ? generationRows[0] ?? null : null;
+
   let draftLogs = [];
   if (draftIds.length) {
     const { data } = await serviceClient
@@ -292,6 +348,6 @@ export async function GET(_request, { params }) {
     return (Number.isFinite(aTs) ? aTs : 0) - (Number.isFinite(bTs) ? bTs : 0);
   });
 
-  const diagnostic = parseDiagnostic(logs);
+  const diagnostic = parseDiagnostic(logs, latestGeneration);
   return NextResponse.json({ logs, diagnostic }, { status: 200 });
 }

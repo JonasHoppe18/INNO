@@ -12,6 +12,7 @@ const IMPORT_WORKER_SECRET =
   process.env.IMPORT_HISTORY_WORKER_SECRET ||
   process.env.CRON_SECRET ||
   "";
+const LEGACY_HISTORY_PROVIDERS = ["zendesk", "gorgias", "freshdesk"];
 
 function resolveAppBaseUrl(request: Request) {
   const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "";
@@ -75,6 +76,8 @@ export async function POST(request: Request) {
     .from("knowledge_import_jobs")
     .select("*")
     .in("status", ["queued", "running"])
+    // Never claim jobs owned by a dedicated, safety-reviewed importer.
+    .in("provider", LEGACY_HISTORY_PROVIDERS)
     .order("updated_at", { ascending: true })
     .limit(1);
   if (requestedJobId) {

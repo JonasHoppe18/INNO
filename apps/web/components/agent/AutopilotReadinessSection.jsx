@@ -41,10 +41,10 @@ const READINESS_CONFIG = {
   },
 };
 
-function ConfidenceBar({ value }) {
+function OutcomeBar({ value }) {
   if (value === null) return <div className="h-1.5 w-full rounded-full bg-slate-100" />;
   const pct = Math.round(value * 100);
-  const color = value >= 0.78 ? "bg-emerald-500" : value >= 0.65 ? "bg-amber-400" : "bg-red-400";
+  const color = value >= 0.95 ? "bg-emerald-500" : value >= 0.8 ? "bg-amber-400" : "bg-red-400";
   return (
     <div className="h-1.5 w-full rounded-full bg-slate-100">
       <div className={cn("h-full rounded-full transition-all", color)} style={{ width: `${pct}%` }} />
@@ -55,7 +55,7 @@ function ConfidenceBar({ value }) {
 function CategoryRow({ category, onToggle, disabled }) {
   const cfg = READINESS_CONFIG[category.readiness];
   const canEnable = category.readiness === "ready";
-  const pct = category.avg_confidence !== null ? Math.round(category.avg_confidence * 100) : null;
+  const pct = category.no_edit_rate !== null ? Math.round(category.no_edit_rate * 100) : null;
 
   return (
     <div className="px-4 py-4 md:px-5">
@@ -75,11 +75,12 @@ function CategoryRow({ category, onToggle, disabled }) {
             </span>
           </div>
           <div className="space-y-1">
-            <ConfidenceBar value={category.avg_confidence} />
+            <OutcomeBar value={category.no_edit_rate} />
             <div className="flex items-center justify-between">
               <span className="text-[11px] text-slate-400">
-                {pct !== null ? `${pct}% avg quality` : "No data yet"}
-                {category.ticket_count > 0 && ` · ${category.ticket_count} ticket${category.ticket_count !== 1 ? "s" : ""}`}
+                {pct !== null ? `${pct}% sent without edits` : "No labeled sends yet"}
+                {category.ticket_count > 0 && ` · ${category.ticket_count} labeled ticket${category.ticket_count !== 1 ? "s" : ""}`}
+                {category.major_edit_count > 0 && ` · ${category.major_edit_count} major edit${category.major_edit_count !== 1 ? "s" : ""}`}
               </span>
               {!canEnable && category.readiness !== "insufficient_data" && (
                 <span className="text-[11px] text-slate-400">
@@ -87,7 +88,7 @@ function CategoryRow({ category, onToggle, disabled }) {
                 </span>
               )}
               {category.readiness === "insufficient_data" && (
-                <span className="text-[11px] text-slate-400">Process more tickets to unlock</span>
+                <span className="text-[11px] text-slate-400">More reviewed sends required</span>
               )}
             </div>
           </div>
@@ -97,7 +98,7 @@ function CategoryRow({ category, onToggle, disabled }) {
             checked={category.auto_send_enabled}
             onCheckedChange={(checked) => onToggle(category.intent, checked)}
             disabled={disabled || !canEnable}
-            aria-label={`Auto-send ${category.label}`}
+            aria-label={`Select ${category.label} for an autopilot pilot`}
           />
         </div>
       </div>
@@ -150,8 +151,8 @@ export function AutopilotReadinessSection({ autoDraftEnabled }) {
       if (!res.ok) throw new Error();
       toast.success(
         enabled
-          ? `Auto-send enabled for ${categories.find((c) => c.intent === intent)?.label ?? intent}`
-          : `Auto-send disabled`
+          ? `Autopilot pilot selected for ${categories.find((c) => c.intent === intent)?.label ?? intent}`
+          : `Autopilot pilot removed`
       );
     } catch {
       // revert on error
@@ -174,15 +175,15 @@ export function AutopilotReadinessSection({ autoDraftEnabled }) {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-1.5 max-w-xl">
             <div className="flex items-center gap-2.5">
-              <h2 className="text-[15px] font-semibold text-slate-900">Autopilot by ticket type</h2>
+              <h2 className="text-[15px] font-semibold text-slate-900">Autopilot eligibility by ticket type</h2>
               {enabledCount > 0 && (
                 <Badge variant="secondary" className="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[11px]">
-                  {enabledCount} active
+                  {enabledCount} selected
                 </Badge>
               )}
             </div>
             <p className="text-sm leading-relaxed text-slate-600">
-              Let Sona send replies automatically for ticket types it handles well. Sona flags when a category is ready — you always decide when to enable it.
+              Use recent replies sent by your team to identify ticket types that are safe enough for an autopilot pilot. Sona only unlocks a category after strong human outcome evidence.
             </p>
             {!autoDraftEnabled && (
               <p className="text-xs text-slate-500">Enable Sona Assistant above to configure autopilot.</p>
@@ -212,7 +213,7 @@ export function AutopilotReadinessSection({ autoDraftEnabled }) {
           <>
             {readyCount > 0 && (
               <p className="text-[12px] text-slate-500 mb-3">
-                Sona recommends enabling autopilot for <span className="font-medium text-slate-700">{readyCount} {readyCount === 1 ? "category" : "categories"}</span> based on recent quality scores.
+                Sona recommends an autopilot pilot for <span className="font-medium text-slate-700">{readyCount} {readyCount === 1 ? "category" : "categories"}</span> based on recent human send outcomes.
               </p>
             )}
             <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
@@ -227,7 +228,7 @@ export function AutopilotReadinessSection({ autoDraftEnabled }) {
               ))}
             </div>
             <p className="mt-3 text-[11px] text-slate-400">
-              Quality scores based on the last 30 days of processed tickets. Only categories marked &quot;Ready&quot; can be enabled.
+              Based on the last 90 days. Ready requires at least 30 labeled sends, at least 95% sent without edits, no major edits, and a 90% lower statistical confidence bound. Only Ready categories can be selected.
             </p>
           </>
         )}

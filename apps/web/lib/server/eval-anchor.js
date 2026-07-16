@@ -22,6 +22,11 @@
 // stays the default and a genuine CS reply is never silently dropped.
 
 const COMPLETED_ACTION = [
+  // A terse, declarative "all fixed" reply is an action confirmation, not a
+  // reproducible support answer. Keep this deliberately sentence-scoped so
+  // questions such as "is it all fixed?" and troubleshooting prose stay
+  // comparable.
+  /(?:^|[\n.!?]\s*)(?:(?:hi|hello|hey|hej|hejsa)(?:\s+(?:again|there|igen))?[,!.]?\s*)?(?:then\s+)?(?:it(?:'|’)?s\s+)?all fixed(?:\s+for you)?[.!](?=\s|$)/i,
   // shipment created / dispatched. Note: a bare carrier name is deliberately NOT
   // a signal on its own — words like "bring"/"ups" are too common and would
   // false-positive. Real confirmations carry a tracking ref or a "sent with …".
@@ -72,7 +77,8 @@ export function classifyAnchor({ humanReply = "" } = {}) {
   for (const re of COMPLETED_ACTION) {
     if (re.test(h)) completed.push(`completed:${re.source.slice(0, 28)}`);
   }
-  if (completed.length) return { anchor_class: "non_comparable_anchor", signals: completed };
+  if (completed.length)
+    return { anchor_class: "non_comparable_anchor", signals: completed };
 
   const needs = [];
   for (const re of NEEDS_OUT_OF_BAND) {

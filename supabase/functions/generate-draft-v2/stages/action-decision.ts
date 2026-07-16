@@ -838,10 +838,17 @@ Only include actions directly necessary. Empty proposals array is fine.`,
 
 // ─── Routing ──────────────────────────────────────────────────────────────────
 
-function computeRoutingHint(
+export function computeRoutingHint(
   proposals: ActionProposal[],
   plan: Plan,
 ): "auto" | "review" | "block" {
+  // Planner uncertainty or an explicit human-escalation resolution must never
+  // become auto merely because no structured action was proposed.
+  if (plan.resolution_stage === "escalate_human") return "review";
+  if (!Number.isFinite(plan.confidence) || plan.confidence < 0.65) {
+    return "review";
+  }
+
   // Klager og exchanges kræver altid menneskelig vurdering
   if (plan.primary_intent === "complaint") return "review";
   if (plan.primary_intent === "exchange") return "review";

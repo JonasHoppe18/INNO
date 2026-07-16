@@ -31,23 +31,30 @@ export function assessGroundingCoverage(input: {
   }
   // Fail-safe: signals must be PRESENT numbers/booleans to count as evidence
   // of absence. Undefined counts mean "unknown" -> grounded.
-  const chunkCount = typeof input?.chunkCount === "number" ? input.chunkCount : null;
-  const verifiedFactsCount =
-    typeof input?.verifiedFactsCount === "number" ? input.verifiedFactsCount : null;
-  const structuredFactsCount =
-    typeof input?.structuredFactsCount === "number" ? input.structuredFactsCount : null;
+  const chunkCount = typeof input?.chunkCount === "number"
+    ? input.chunkCount
+    : null;
+  const verifiedFactsCount = typeof input?.verifiedFactsCount === "number"
+    ? input.verifiedFactsCount
+    : null;
+  const structuredFactsCount = typeof input?.structuredFactsCount === "number"
+    ? input.structuredFactsCount
+    : null;
   const matcherAbstained = input?.matcherAbstained === true;
 
-  if (chunkCount === null || verifiedFactsCount === null || structuredFactsCount === null) {
+  if (
+    chunkCount === null || verifiedFactsCount === null ||
+    structuredFactsCount === null
+  ) {
     return { ungrounded: false, reason: null };
   }
 
   const hasFacts = verifiedFactsCount > 0 || structuredFactsCount > 0;
   if (hasFacts) return { ungrounded: false, reason: null };
 
-  const strongExamples =
-    typeof input?.strongTicketExampleCount === "number" ? input.strongTicketExampleCount : 0;
-  if (strongExamples > 0) return { ungrounded: false, reason: null };
+  // Historical replies are tone/resolution-pattern examples, not verified
+  // factual sources. Even a near-identical old ticket cannot ground a current
+  // policy, availability or order-specific answer.
 
   if (chunkCount === 0) {
     return { ungrounded: true, reason: "no_chunks_no_facts" };
@@ -66,7 +73,9 @@ export function buildOwnsTheCaseBlock(input: {
   intent?: string | null;
 }): string {
   const ask = String(input?.customerAsk ?? "").trim();
-  const askLine = ask ? `Kundens konkrete spørgsmål: "${ask.slice(0, 200)}"` : "";
+  const askLine = ask
+    ? `Kundens konkrete spørgsmål: "${ask.slice(0, 200)}"`
+    : "";
   return [
     "VIDENS-HUL — intet i shoppens viden eller live-data grounder svaret på kundens kerne-spørgsmål.",
     askLine,

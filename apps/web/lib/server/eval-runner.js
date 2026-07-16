@@ -1,4 +1,5 @@
 import { detectHardCapSignals } from "./judge-hardcaps.js";
+import { createHash } from "node:crypto";
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const SUPABASE_URL = (
@@ -147,6 +148,23 @@ const ACTION_REQUIRED_NOTE =
   `without a stated fact is UNSUPPORTED AVAILABILITY (set unsupported_availability=true, cap overall<=3) ` +
   `EVEN IF you then ask for order/shipping details.`;
 
+const JUDGE_DEFINITION_VERSION = "sona-golden-judge-2026-07-15-v1";
+
+function getJudgeMetadata(judgeModel = "gpt-4o-mini") {
+  const model = normalizeJudgeModel(judgeModel);
+  const definition = [
+    JUDGE_DEFINITION_VERSION,
+    JUDGE_SYSTEM_PROMPT,
+    JUDGE_WITH_HUMAN_PROMPT,
+    ACTION_REQUIRED_NOTE,
+  ].join("\n\u0000\n");
+  return {
+    version: JUDGE_DEFINITION_VERSION,
+    model,
+    definition_sha256: createHash("sha256").update(definition).digest("hex"),
+  };
+}
+
 async function judgeWithOpenAI(
   ticketBody,
   draftContent,
@@ -275,6 +293,50 @@ function buildSafetyFromGenerateDraftV2Response(data) {
   };
 }
 
+function buildTicketExampleTraceFromGenerateDraftV2Response(data) {
+  const debug = isPlainObject(data?.retrieval_debug)
+    ? data.retrieval_debug
+    : null;
+  const hasExamples = debug != null && Object.hasOwn(debug, "ticket_examples");
+  const hasExclusions = debug != null &&
+    Object.hasOwn(debug, "ticket_example_exclusions");
+  if (!hasExamples && !hasExclusions) {
+    return {
+      telemetry_status: "legacy_unavailable",
+      selected_ids: null,
+      exclusions: null,
+    };
+  }
+  const examplesValid = Array.isArray(debug?.ticket_examples) &&
+    debug.ticket_examples.every((example) => Number.isFinite(example?.id));
+  const exclusionsValid = isPlainObject(debug?.ticket_example_exclusions) &&
+    Array.isArray(debug.ticket_example_exclusions.external_id_matches) &&
+    debug.ticket_example_exclusions.external_id_matches.every(Number.isFinite) &&
+    Array.isArray(debug.ticket_example_exclusions.duplicate_question_matches) &&
+    debug.ticket_example_exclusions.duplicate_question_matches.every(Number.isFinite);
+  if (!hasExamples || !hasExclusions || !examplesValid || !exclusionsValid) {
+    return {
+      telemetry_status: "invalid",
+      selected_ids: examplesValid
+        ? debug.ticket_examples.map((example) => example?.id).filter(Number.isFinite)
+        : null,
+      exclusions: exclusionsValid ? debug.ticket_example_exclusions : null,
+    };
+  }
+  return {
+    telemetry_status: "available",
+    selected_ids: debug.ticket_examples
+      .map((example) => example?.id)
+      .filter(Number.isFinite),
+    exclusions: {
+      external_id_matches:
+        debug.ticket_example_exclusions.external_id_matches.filter(Number.isFinite),
+      duplicate_question_matches:
+        debug.ticket_example_exclusions.duplicate_question_matches.filter(Number.isFinite),
+    },
+  };
+}
+
 async function generateDraftV2(shopId, subject, emailBody, options = {}) {
   const startTime = Date.now();
   const endpoint = `${SUPABASE_URL}/functions/v1/generate-draft-v2`;
@@ -377,6 +439,8 @@ async function generateDraftV2(shopId, subject, emailBody, options = {}) {
       typeof data.retrieval_debug.candidate_diagnostics === "object"
       ? data.retrieval_debug.candidate_diagnostics
       : null;
+  const ticketExampleTrace =
+    buildTicketExampleTraceFromGenerateDraftV2Response(data);
   return {
     draft,
     actions,
@@ -390,6 +454,7 @@ async function generateDraftV2(shopId, subject, emailBody, options = {}) {
     retrievalDebug,
     matcherDebug,
     candidateDiagnostics,
+    ticketExampleTrace,
     // Additive fields — already present in the eval-mode response — so the gold
     // runner can couple by generation_id and grade intent without a second call.
     generationId: typeof data?.generation_id === "string" ? data.generation_id : null,
@@ -405,5 +470,7 @@ export {
   draftForJudge,
   generateDraftV2,
   buildSafetyFromGenerateDraftV2Response,
+  buildTicketExampleTraceFromGenerateDraftV2Response,
+  getJudgeMetadata,
   judgeWithOpenAI,
 };

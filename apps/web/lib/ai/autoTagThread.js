@@ -1,25 +1,23 @@
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o";
 
-const SYSTEM_PROMPT = `Du er en support-kategoriseringsmodel. Du modtager en support-samtale og en liste af tilgængelige tags.
-Returner JSON med præcis disse felter:
-- tag_ids: array af op til 3 tag-IDs der passer bedst til sagen (kan være tomt array [])
-- solution_summary: 1-2 sætninger der beskriver hvad kundens problem var og hvordan det blev løst
+export const AUTO_TAG_SYSTEM_PROMPT = `You classify support conversations using a provided list of tags.
+Return JSON with exactly one field:
+- tag_ids: an array containing up to 3 matching tag IDs (or an empty array)
 
-Regler:
-- Vælg KUN tag-IDs fra listen over tilgængelige tags
-- Returner aldrig tag-IDs der ikke er i listen
-- Returner altid valid JSON — ingen markdown, ingen forklaring
-- Vær kortfattet i solution_summary`;
+Rules:
+- Select IDs only from the provided tag list
+- Never invent or return an ID that is not in the list
+- Return valid JSON only, without markdown or explanation`;
 
 /**
  * Kalder OpenAI for at klassificere en ticket og generere en løsningsopsummering.
  * @param {{ subject: string, sentReply: string, availableTags: Array<{id: string, name: string, category?: string}> }} options
- * @returns {Promise<{ tag_ids: string[], solution_summary: string }>}
+ * @returns {Promise<{ tag_ids: string[] }>}
  */
 export async function autoTagThread({ subject, sentReply, availableTags }) {
   if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY mangler.");
-  if (!availableTags?.length) return { tag_ids: [], solution_summary: "" };
+  if (!availableTags?.length) return { tag_ids: [] };
 
   const tagList = availableTags
     .map((t) => `- ID: ${t.id} | Navn: ${t.name}${t.category ? ` | Kategori: ${t.category}` : ""}`)
@@ -47,7 +45,7 @@ export async function autoTagThread({ subject, sentReply, availableTags }) {
       max_tokens: 200,
       response_format: { type: "json_object" },
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: AUTO_TAG_SYSTEM_PROMPT },
         { role: "user", content: userMessage },
       ],
     }),
@@ -65,7 +63,7 @@ export async function autoTagThread({ subject, sentReply, availableTags }) {
   try {
     parsed = JSON.parse(raw);
   } catch {
-    return { tag_ids: [], solution_summary: "" };
+    return { tag_ids: [] };
   }
 
   const validIds = new Set(availableTags.map((t) => t.id));
@@ -73,9 +71,5 @@ export async function autoTagThread({ subject, sentReply, availableTags }) {
     .filter((id) => typeof id === "string" && validIds.has(id))
     .slice(0, 3);
 
-  const solution_summary = typeof parsed.solution_summary === "string"
-    ? parsed.solution_summary.trim().slice(0, 500)
-    : "";
-
-  return { tag_ids, solution_summary };
+  return { tag_ids };
 }

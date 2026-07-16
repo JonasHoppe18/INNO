@@ -9,8 +9,13 @@
 // whitelisted `provider` into payload. They never read or forward any body
 // field, even if the caller's ctx happens to carry one.
 
-function providerPayload(provider) {
-  return provider ? { provider } : {};
+function providerPayload(provider, intent = null) {
+  const payload = provider ? { provider } : {};
+  const normalizedIntent = typeof intent === "string"
+    ? intent.trim().toLowerCase()
+    : "";
+  if (normalizedIntent) payload.intent = normalizedIntent;
+  return payload;
 }
 
 // draft_edited — emitted from the composer save route when the saved text
@@ -58,6 +63,7 @@ export function buildDraftSentEvents({
   editClassification = null,
   editDistance = null,
   editDeltaPct = null,
+  intent = null,
 } = {}) {
   const base = {
     threadId,
@@ -66,7 +72,7 @@ export function buildDraftSentEvents({
     agentUserId,
     draftId,
     generationId: null,
-    payload: providerPayload(provider),
+    payload: providerPayload(provider, intent),
   };
 
   const events = [

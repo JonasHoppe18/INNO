@@ -1,11 +1,15 @@
 import { assertEquals, assertNotEquals } from "jsr:@std/assert@1";
 import {
   applyAutomationConstraints,
+  applyImageEvidenceClaimGuard,
+  applyVerifierRoutingGuard,
   CHEAP_MODEL_INTENTS,
   pickWriterModel,
-  applyImageEvidenceClaimGuard,
+  prepareStrongRetryCandidate,
   shouldDeferDraftUntilActionDecision,
 } from "./pipeline.ts";
+import { computeRoutingHint } from "./stages/action-decision.ts";
+import { isDuplicateEvalQuestion } from "./stages/retriever.ts";
 import type { ActionProposal } from "./stages/action-decision.ts";
 
 function proposal(overrides: Partial<ActionProposal> = {}): ActionProposal {
@@ -51,6 +55,167 @@ Deno.test("applyAutomationConstraints requires review when automation flag is di
   assertEquals(result.proposals[0].requires_approval, true);
 });
 
+Deno.test("action routing: explicit human escalation and low planner confidence never auto-route", () => {
+  const basePlan = {
+    primary_intent: "other",
+    resolution_stage: "info_only" as const,
+    sub_queries: [],
+    required_facts: [],
+    skills_to_consider: [],
+    confidence: 0.9,
+    language: "en",
+  };
+  assertEquals(
+    computeRoutingHint([], {
+      ...basePlan,
+      resolution_stage: "escalate_human",
+    }),
+    "review",
+  );
+  assertEquals(
+    computeRoutingHint([], { ...basePlan, confidence: 0.2 }),
+    "review",
+  );
+  assertEquals(computeRoutingHint([], basePlan), "auto");
+});
+
+Deno.test("verifier routing guard fails closed on block or verifier API error", () => {
+  const blocked = applyVerifierRoutingGuard(
+    { routingHint: "auto", blockSendRecommended: false },
+    { block_send: true, confidence: 0.95, issues: ["contradiction"] },
+    { autoSendAllowed: true },
+  );
+  assertEquals(blocked.routingHint, "block");
+  assertEquals(blocked.blockSendRecommended, true);
+
+  const outage = applyVerifierRoutingGuard(
+    { routingHint: "auto", blockSendRecommended: false },
+    { block_send: true, confidence: 0, issues: ["verifier_api_error"] },
+    { autoSendAllowed: true },
+  );
+  assertEquals(outage.routingHint, "block");
+  assertEquals(outage.blockSendRecommended, true);
+  assertEquals(outage.reasons, ["verifier_api_error"]);
+});
+
+Deno.test("verifier routing guard requires high confidence and explicit intent allowlist", () => {
+  const lowConfidence = applyVerifierRoutingGuard(
+    { routingHint: "auto", blockSendRecommended: false },
+    { block_send: false, confidence: 0.79, issues: [] },
+    { autoSendAllowed: true },
+  );
+  assertEquals(lowConfidence.routingHint, "review");
+  assertEquals(lowConfidence.blockSendRecommended, true);
+
+  const notEnabled = applyVerifierRoutingGuard(
+    { routingHint: "auto", blockSendRecommended: false },
+    { block_send: false, confidence: 0.9, issues: [] },
+    { autoSendAllowed: false },
+  );
+  assertEquals(notEnabled.routingHint, "review");
+  assertEquals(notEnabled.blockSendRecommended, false);
+
+  const allowed = applyVerifierRoutingGuard(
+    { routingHint: "auto", blockSendRecommended: false },
+    { block_send: false, confidence: 0.9, issues: [] },
+    { autoSendAllowed: true },
+  );
+  assertEquals(allowed.routingHint, "auto");
+  assertEquals(allowed.blockSendRecommended, false);
+});
+
+Deno.test("eval leakage guard catches cross-provider copies without collapsing similar cases", () => {
+  assertEquals(
+    isDuplicateEvalQuestion(
+      "Hej!  Hvor er min ordre #123?",
+      "hej hvor er min ordre 123",
+    ),
+    true,
+  );
+  assertEquals(
+    isDuplicateEvalQuestion(
+      "Hvor er min ordre #123?",
+      "Hvor er min ordre #124?",
+    ),
+    false,
+  );
+  assertEquals(
+    isDuplicateEvalQuestion(
+      "Hi there. På jeres hjemmeside står der, at I sender inden for 24 timer. Det er nu over et døgn siden, og tracking viser stadig intet. Kan I undersøge status på min [order number]?",
+      "Hej. På jeres hjemmeside står der, at I sender inden for 24 timer. Det er nu over et døgn siden, og tracking viser stadig intet. Kan I undersøge status på min ordre?",
+    ),
+    true,
+  );
+  assertEquals(
+    isDuplicateEvalQuestion(
+      "Min ordre er forsinket, og tracking står stille. Kan I undersøge den?",
+      "Mit headset har en løs mikrofonarm. Kan den repareres under garantien?",
+    ),
+    false,
+  );
+});
+
+Deno.test("strong retry candidate cannot bypass first-pass proof and damage guards", () => {
+  const unsafe = prepareStrongRetryCandidate({
+    draftText:
+      "Hi there, please send your receipt. We will arrange a replacement for the cracked headset.",
+    replyLanguage: "en",
+    compatibilityEnabled: false,
+    postActionResult: null,
+    orderMatchState: "exact_order_number",
+    customerMessage: "My headset is cracked near the headband.",
+    imageAttachmentCount: 0,
+  });
+  assertEquals(
+    unsafe.violations.some((issue) => issue.startsWith("verified_order:")),
+    true,
+  );
+  assertEquals(
+    unsafe.violations.some((issue) =>
+      issue.startsWith("damage_documentation:")
+    ),
+    true,
+  );
+
+  const safe = prepareStrongRetryCandidate({
+    draftText:
+      "Hi there, please send clear photos of the crack, and I'll review the warranty options for order #123.",
+    replyLanguage: "en",
+    compatibilityEnabled: false,
+    postActionResult: null,
+    orderMatchState: "exact_order_number",
+    customerMessage: "My headset is cracked near the headband.",
+    imageAttachmentCount: 0,
+  });
+  assertEquals(safe.violations, []);
+});
+
+Deno.test("strong retry candidate cannot bypass post-action or support-voice guards", () => {
+  const result = prepareStrongRetryCandidate({
+    draftText:
+      "Hi there, our team will refund 100 DKK as soon as possible and get back to you.",
+    replyLanguage: "en",
+    compatibilityEnabled: false,
+    postActionResult: {
+      action_type: "refund_order",
+      amount: "100",
+      amount_display: "DKK 100.00",
+      currency: "DKK",
+    },
+    orderMatchState: "exact_order_number",
+    customerMessage: "Where is my refund?",
+    imageAttachmentCount: 0,
+  });
+  assertEquals(
+    result.violations.some((issue) => issue.startsWith("post_action:")),
+    true,
+  );
+  assertEquals(
+    result.violations.some((issue) => issue.startsWith("support_voice:")),
+    true,
+  );
+});
+
 // ── AZ-1b Stage 12d wiring ──────────────────────────────────────────────────
 const IMAGE_CLAIM_DRAFT =
   "Jeg har set de vedhæftede billeder, og det ser ud til at være en fysisk skade.";
@@ -90,8 +255,14 @@ Deno.test("image guard: broad 'det ser ud til' with 0 images → not triggered",
 });
 
 Deno.test("shouldDeferDraftUntilActionDecision defers only action review flows", () => {
-  assertEquals(shouldDeferDraftUntilActionDecision([proposal()], "review"), true);
-  assertEquals(shouldDeferDraftUntilActionDecision([proposal()], "auto"), false);
+  assertEquals(
+    shouldDeferDraftUntilActionDecision([proposal()], "review"),
+    true,
+  );
+  assertEquals(
+    shouldDeferDraftUntilActionDecision([proposal()], "auto"),
+    false,
+  );
   assertEquals(shouldDeferDraftUntilActionDecision([], "review"), false);
 });
 
@@ -136,13 +307,22 @@ Deno.test("action-decision: returns [] when pending_asks is non-empty", async ()
   const customerMessage = "headset is broken";
 
   const result = applyDeterministicRules(
-    plan, caseState, facts, retrieved, shopConfig, customerMessage
+    plan,
+    caseState,
+    facts,
+    retrieved,
+    shopConfig,
+    customerMessage,
   );
 
-  assertEquals(result, [], "should return no actions when pending_asks is non-empty");
+  assertEquals(
+    result,
+    [],
+    "should return no actions when pending_asks is non-empty",
+  );
 });
 
-Deno.test("action-decision: proposes exchange when pending_asks is empty", async () => {
+Deno.test("action-decision: globally disabled exchange stays disabled when pending_asks is empty", async () => {
   const { applyDeterministicRules } = await import(
     "./stages/action-decision.ts"
   );
@@ -183,10 +363,19 @@ Deno.test("action-decision: proposes exchange when pending_asks is empty", async
   const customerMessage = "headset is physically broken";
 
   const result = applyDeterministicRules(
-    plan, caseState, facts, retrieved, shopConfig, customerMessage
+    plan,
+    caseState,
+    facts,
+    retrieved,
+    shopConfig,
+    customerMessage,
   );
 
-  assertNotEquals(result.length, 0, "should propose exchange when no pending asks");
+  assertEquals(
+    result,
+    [],
+    "exchange remains disabled until the executable workflow is intentionally enabled",
+  );
 });
 
 // --- Hybrid writer-model routing (cost optimization, 2026-07-08) ------------
@@ -229,7 +418,10 @@ Deno.test("pickWriterModel: tracking uses simple only when the order was found",
     simpleModel: "gpt-4o-mini",
     strongModel: "gpt-4o",
   };
-  assertEquals(pickWriterModel({ ...base, hasOrderFacts: true }), "gpt-4o-mini");
+  assertEquals(
+    pickWriterModel({ ...base, hasOrderFacts: true }),
+    "gpt-4o-mini",
+  );
   assertEquals(pickWriterModel({ ...base, hasOrderFacts: false }), "gpt-4o");
 });
 
@@ -268,7 +460,11 @@ Deno.test("pickWriterModel: ENABLED — cheap model routes ONLY the measured-par
   };
   // parity intents -> cheap
   for (const intent of ["exchange", "other"]) {
-    assertEquals(pickWriterModel({ ...enabled, intent }), "gpt-5.4-mini", intent);
+    assertEquals(
+      pickWriterModel({ ...enabled, intent }),
+      "gpt-5.4-mini",
+      intent,
+    );
   }
   // the expensive/hard intents stay on the strong model
   for (const intent of ["complaint", "return", "refund", "product_question"]) {

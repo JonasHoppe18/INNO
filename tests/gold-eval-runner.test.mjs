@@ -18,7 +18,9 @@ import { dirname, join } from "node:path";
 import {
   compareIntent,
   computeRetrievalHitAtK,
+  gradeRuntimeIntent,
   normalizeIntent,
+  RUNTIME_INTENT_TAXONOMY,
   runGoldEval,
 } from "../apps/web/lib/server/gold-eval-runner.js";
 
@@ -112,6 +114,48 @@ test("compareIntent: no expected_intent → null (not graded)", () => {
 test("compareIntent: empty expected_intent → null (not graded)", () => {
   const { intentCorrect } = compareIntent("", "order_status");
   assert.equal(intentCorrect, null);
+});
+
+test("gradeRuntimeIntent: planner taxonomy is explicit and stable", () => {
+  assert.deepEqual(RUNTIME_INTENT_TAXONOMY, [
+    "tracking",
+    "return",
+    "refund",
+    "exchange",
+    "cancel",
+    "address_change",
+    "product_question",
+    "complaint",
+    "thanks",
+    "update",
+    "other",
+  ]);
+});
+
+test("gradeRuntimeIntent: DB-only business label is ungraded while actual intent is retained", () => {
+  const result = gradeRuntimeIntent("technical_support", "complaint");
+  assert.equal(result.intentCorrect, null);
+  assert.equal(result.intentGradeable, false);
+  assert.equal(result.intentGradeSkipReason, "expected_intent_outside_runtime_taxonomy");
+  assert.equal(result.expectedIntentRaw, "technical_support");
+  assert.equal(result.expectedIntentNormalized, "technical_support");
+  assert.equal(result.actualIntentRaw, "complaint");
+  assert.equal(result.actualIntentNormalized, "complaint");
+  assert.equal(result.actualIntent, "complaint");
+});
+
+test("gradeRuntimeIntent: request suffix is a naming alias within the runtime taxonomy", () => {
+  const result = gradeRuntimeIntent("return_request", "return");
+  assert.equal(result.intentGradeable, true);
+  assert.equal(result.intentCorrect, true);
+  assert.equal(result.expectedIntentNormalized, "return_request");
+  assert.equal(result.actualIntentNormalized, "return_request");
+});
+
+test("gradeRuntimeIntent: tracking remains distinct from order_status", () => {
+  const result = gradeRuntimeIntent("tracking", "order_status");
+  assert.equal(result.intentGradeable, true);
+  assert.equal(result.intentCorrect, false);
 });
 
 // ---------------------------------------------------------------------------
@@ -353,16 +397,67 @@ test("runGoldEval stores raw and normalized actual intent and grades normalized 
   assert.equal(client.lastInsertedResults[0].intent_correct, true);
 });
 
+test("runGoldEval does not count non-runtime gold labels as deterministic intent failures", async () => {
+  const unsupportedExpectedIntents = [
+    "technical_support",
+    "order_status",
+    "checkout_issue",
+    "partnership_request",
+  ];
+  const cases = makeActiveCases(
+    unsupportedExpectedIntents.map((expected_intent, index) => ({
+      id: `c${index + 1}`,
+      shop_id: "shop-1",
+      title: "t",
+      customer_message: "msg",
+      is_active: true,
+      expected_intent,
+      gold_knowledge_chunk_ids: null,
+      thread_history_json: null,
+    })),
+  );
+  const client = makeServiceClient(cases);
+  const { results, summary } = await runGoldEval({
+    serviceClient: client,
+    shopId: "shop-1",
+    generate: makeGenerate("complaint"),
+  });
+
+  assert.equal(summary.intent_graded, 0);
+  assert.equal(summary.intent_accuracy, null);
+  assert.equal(summary.intent_ungraded, 4);
+  assert.equal(summary.failed_count, 0);
+  assert.deepEqual(
+    summary.intent_skipped_cases.map((item) => item.reason),
+    Array(4).fill("expected_intent_outside_runtime_taxonomy"),
+  );
+  for (const [index, result] of results.entries()) {
+    assert.equal(result.intent_correct, null);
+    assert.equal(result.intent_gradeable, false);
+    assert.equal(result.expected_intent_raw, unsupportedExpectedIntents[index]);
+    assert.equal(result.actual_intent_raw, "complaint");
+    assert.equal(result.actual_intent_normalized, "complaint");
+  }
+
+  // Gradeability metadata lives in summary_json / the return value and is not
+  // sent to the fixed gold_eval_results schema.
+  for (const persisted of client.lastInsertedResults) {
+    assert.equal(Object.hasOwn(persisted, "intent_gradeable"), false);
+    assert.equal(Object.hasOwn(persisted, "intent_grade_skip_reason"), false);
+    assert.equal(persisted.intent_correct, null);
+  }
+});
+
 test("runner summary: intent accuracy aggregation", async () => {
   const cases = makeActiveCases([
-    { id: "c1", shop_id: "s", title: "t1", customer_message: "m1", is_active: true, expected_intent: "order_status", gold_knowledge_chunk_ids: null, thread_history_json: null },
+    { id: "c1", shop_id: "s", title: "t1", customer_message: "m1", is_active: true, expected_intent: "tracking", gold_knowledge_chunk_ids: null, thread_history_json: null },
     { id: "c2", shop_id: "s", title: "t2", customer_message: "m2", is_active: true, expected_intent: "return", gold_knowledge_chunk_ids: null, thread_history_json: null },
   ]);
   const client = makeServiceClient(cases);
 
-  // generate always returns intent "order_status" → c1 matches, c2 doesn't
+  // generate always returns intent "tracking" → c1 matches, c2 doesn't
   const { summary } = await runGoldEval({
-    serviceClient: client, shopId: "s", generate: makeGenerate("order_status"),
+    serviceClient: client, shopId: "s", generate: makeGenerate("tracking"),
   });
   assert.equal(summary.intent_graded, 2);
   assert.ok(Math.abs(summary.intent_accuracy - 0.5) < 0.001, `expected 0.5, got ${summary.intent_accuracy}`);

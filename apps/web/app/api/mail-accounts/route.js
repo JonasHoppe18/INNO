@@ -5,6 +5,7 @@ import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
 import {
   buildEffectiveSharedFromEmail,
   getManagedSenderFromMailbox,
+  getVerifiedManagedSenderEmail,
 } from "@/lib/server/sending-identity";
 
 export const dynamic = "force-dynamic";
@@ -152,7 +153,8 @@ export async function GET() {
           }),
           managedSenderStatus: managedSender?.status || "unprovisioned",
           managedSenderDomain: managedSender?.domain || null,
-          managedSenderEmail: managedSender?.from_email || null,
+          managedSenderEmail:
+            getVerifiedManagedSenderEmail(account) || managedSender?.from_email || null,
           managedSenderDkimVerified: managedSender?.dkim_verified === true,
           managedSenderReturnPathVerified:
             managedSender?.return_path_verified === true,

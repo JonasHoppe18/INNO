@@ -11,7 +11,23 @@ type EmailMessageRow = {
   quoted_body_text?: string | null;
   direction?: string | null;
   from_me?: boolean | null;
+  is_draft?: boolean | null;
 };
+
+// Composer autosaves are stored in mail_messages as outbound rows with
+// is_draft=true. They are private working text, not a message the customer has
+// seen, so they must never become agent history or case evidence.
+export function isUnsentComposerDraft(
+  message: { is_draft?: unknown } | null | undefined,
+): boolean {
+  return message?.is_draft === true;
+}
+
+export function withoutUnsentComposerDrafts<T>(messages: T[]): T[] {
+  return messages.filter((message) =>
+    !isUnsentComposerDraft(message as { is_draft?: unknown })
+  );
+}
 
 const QUOTED_HEADER_RE =
   /^(?:(?:on|den|d\.) .{0,300} (?:wrote|skrev|schrieb|a écrit)\s*:|(?:from|fra|från|sent|sendt|date|dato|to|til|subject|emne)\s*:.*)$/i;
@@ -124,7 +140,7 @@ export function buildWriterConversationHistory(
   const history: Array<{ role: "customer" | "agent"; text: string }> = [];
   const seenQuoted = new Set<string>();
 
-  for (const message of messages) {
+  for (const message of withoutUnsentComposerDrafts(messages)) {
     if (message !== latestMessage) {
       const isAgent = message.direction === "outbound" || message.from_me === true;
       const text = visibleEmailText(message);
