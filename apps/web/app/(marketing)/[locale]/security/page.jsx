@@ -17,10 +17,30 @@ export async function generateMetadata({ params: { locale } }) {
   };
 }
 
+function RegionBadge({ region }) {
+  const tone =
+    region === "EU"
+      ? "bg-emerald-50 text-emerald-700"
+      : region === "US"
+      ? "bg-zinc-100 text-zinc-600"
+      : "bg-amber-50 text-amber-700";
+  return <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${tone}`}>{region}</span>;
+}
+
 export default async function SecurityPage({ params: { locale } }) {
   unstable_setRequestLocale(locale);
   const t = await getTranslations("landing.security");
   const points = [1, 2, 3, 4, 5];
+  // Provider names are proper nouns (hardcoded); roles/regions are honest and
+  // reviewed with the team. Postmark region unconfirmed → "EU (to confirm)".
+  const subprocessors = [
+    { name: "DigitalOcean", role: t("roleHosting"), region: "EU" },
+    { name: "Supabase", role: t("roleDatabase"), region: "EU" },
+    { name: "OpenAI", role: t("roleAi"), region: "US" },
+    { name: "Postmark", role: t("roleEmail"), region: t("regionToConfirm") },
+    { name: "Shopify", role: t("roleStore"), region: "—" },
+    { name: "Clerk", role: t("roleAuth"), region: "US" },
+  ];
   return (
     <MarketingShell locale={locale}>
       <section className="px-5 pt-20 pb-24">
@@ -40,6 +60,23 @@ export default async function SecurityPage({ params: { locale } }) {
               </Reveal>
             ))}
           </div>
+          <Reveal delay={80} className="mt-12">
+            <h2 className="text-xl font-bold tracking-tight text-zinc-950">{t("subTitle")}</h2>
+            <p className="mt-2 text-sm text-zinc-500">{t("subIntro")}</p>
+            <div className="mt-5 divide-y divide-zinc-100 overflow-hidden rounded-2xl border border-zinc-200">
+              {subprocessors.map((s) => (
+                <div key={s.name} className="flex items-center justify-between gap-4 px-5 py-3.5">
+                  <div className="min-w-0">
+                    <span className="text-sm font-semibold text-zinc-900">{s.name}</span>
+                    <span className="ml-2 text-sm text-zinc-500">{s.role}</span>
+                  </div>
+                  <RegionBadge region={s.region} />
+                </div>
+              ))}
+            </div>
+            <p className="mt-3 text-xs leading-relaxed text-zinc-500">{t("aiNote")}</p>
+          </Reveal>
+
           <Reveal delay={80} className="mt-8 rounded-2xl border border-zinc-200 bg-zinc-50 p-6 text-center">
             <p className="text-sm leading-relaxed text-zinc-600">{t("note")}</p>
             <a
