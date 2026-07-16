@@ -214,8 +214,6 @@ function collectExplicitPiiTokens(text: string): string[] {
   const addMatches = (
     pattern: RegExp,
     group = 0,
-    keep: (token: string) => boolean = () => true,
-    includeNameParts = false,
   ) => {
     const globalPattern = pattern.global
       ? pattern
@@ -223,26 +221,56 @@ function collectExplicitPiiTokens(text: string): string[] {
     let match: RegExpExecArray | null;
     while ((match = globalPattern.exec(text)) !== null) {
       const token = normalizePiiToken(String(match[group] || ""));
-      if (token.length >= 3 && keep(token)) {
-        tokens.add(token);
-        if (includeNameParts) {
-          for (const part of token.split(/\s+/)) {
-            if (part.length >= 2 && keep(part)) tokens.add(part);
-          }
+      if (token.length >= 3) tokens.add(token);
+      if (match[0] === "") globalPattern.lastIndex += 1;
+    }
+  };
+  const nonPersonNameParts = new Set([
+    "acezone",
+    "agent",
+    "care",
+    "customer",
+    "department",
+    "experience",
+    "happiness",
+    "helpdesk",
+    "operations",
+    "sales",
+    "service",
+    "success",
+    "support",
+    "team",
+    "technical",
+    "the",
+    "there",
+  ]);
+  const addNameMatches = (pattern: RegExp, group = 1) => {
+    const globalPattern = pattern.global
+      ? pattern
+      : new RegExp(pattern.source, `${pattern.flags}g`);
+    let match: RegExpExecArray | null;
+    while ((match = globalPattern.exec(text)) !== null) {
+      const token = normalizePiiToken(String(match[group] || ""));
+      const parts = token.split(/\s+/).filter(Boolean);
+      const personParts = parts.filter((part) =>
+        part.length >= 3 && !nonPersonNameParts.has(part)
+      );
+      if (personParts.length > 0) {
+        // Keep a full multi-part personal name only when the phrase contains no
+        // organization/team vocabulary. "ACEZONE Team" and "Customer Service
+        // Team" are brand identities, not PII; "Emil ACEZONE Team" still
+        // contributes the personal part "Emil".
+        if (
+          parts.length > 1 &&
+          parts.every((part) => !nonPersonNameParts.has(part))
+        ) {
+          tokens.add(token);
         }
+        for (const part of personParts) tokens.add(part);
       }
       if (match[0] === "") globalPattern.lastIndex += 1;
     }
   };
-  const keepPersonName = (token: string) =>
-    !new Set([
-      "agent",
-      "customer",
-      "support",
-      "team",
-      "there",
-      "there again",
-    ]).has(token);
 
   addMatches(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi);
   for (const token of collectPhoneLikeTokens(text)) tokens.add(token);
@@ -250,35 +278,26 @@ function collectExplicitPiiTokens(text: string): string[] {
     /(?:order|ordre|ordrenummer|tracking|track|serial|serienummer|telefon|phone|postal|postnummer|zip)\s*(?:number|nummer|nr\.?|no\.?|#|:)?\s*([A-Z0-9-]{4,})/gi,
     1,
   );
-  addMatches(
+  addNameMatches(
     new RegExp(
       String
         .raw`(?:[Mm]y name is|[Jj]eg hedder|[Nn]ame|[Nn]avn)\s*(?:[Ii]s|[Ee]r|:)?\s*(${PERSON_NAME_WORD_SOURCE}(?:\s+${PERSON_NAME_WORD_SOURCE}){0,3})${PERSON_NAME_BOUNDARY_SOURCE}`,
       "gu",
     ),
-    1,
-    keepPersonName,
-    true,
   );
-  addMatches(
+  addNameMatches(
     new RegExp(
       String
         .raw`(?:^|\n)\s*(?:[Hh]i|[Hh]ello|[Hh]ey|[Hh]ej|[Hh]ejsa|[Kk]ære|[Dd]ear|[Hh]allo|[Bb]onjour|[Hh]ola|[Cc]iao)\s+(${PERSON_NAME_WORD_SOURCE}(?:\s+${PERSON_NAME_WORD_SOURCE}){0,2})${PERSON_NAME_BOUNDARY_SOURCE}`,
       "gu",
     ),
-    1,
-    keepPersonName,
-    true,
   );
-  addMatches(
+  addNameMatches(
     new RegExp(
       String
         .raw`(?:[Bb]est regards|[Kk]ind regards|[Ww]arm regards|[Rr]egards|[Ss]incerely|[Cc]heers|[Mm]ed venlig hilsen|[Vv]enlig hilsen|[Dd]e bedste hilsner|[Mm]ange hilsner|[Mm]vh)\s*[,!:\-]?\s*(?:\n\s*)?(${PERSON_NAME_WORD_SOURCE}(?:\s+${PERSON_NAME_WORD_SOURCE}){0,2})${PERSON_NAME_BOUNDARY_SOURCE}`,
       "gu",
     ),
-    1,
-    keepPersonName,
-    true,
   );
   addMatches(
     /\b(\d{4,6}\s+[A-ZÆØÅÄÖÜ][A-ZÆØÅÄÖÜa-zæøåäöüß'’-]{2,30}(?:\s+[A-ZÆØÅÄÖÜ][A-ZÆØÅÄÖÜa-zæøåäöüß'’-]{1,30}){0,2})\b/g,
@@ -301,6 +320,14 @@ function collectExplicitPiiTokens(text: string): string[] {
   return Array.from(tokens);
 }
 
+function containsStandalonePiiToken(text: string, token: string): boolean {
+  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(
+    `(?:^|[^\\p{L}\\p{N}])${escaped}(?=$|[^\\p{L}\\p{N}])`,
+    "iu",
+  ).test(text);
+}
+
 /** Fail closed when deterministic checks find PII that survived redaction. */
 export function hasResidualZendeskPii(
   raw: ZendeskRedactionFields,
@@ -315,7 +342,7 @@ export function hasResidualZendeskPii(
 
   const normalizedOutput = normalizePiiToken(redactedText);
   return collectExplicitPiiTokens(rawText).some((token) =>
-    normalizedOutput.includes(token)
+    containsStandalonePiiToken(normalizedOutput, token)
   );
 }
 
@@ -414,9 +441,18 @@ export function countZendeskRefreshResults(
  * Callers remain responsible for filtering private comments, auto-replies and
  * empty bodies before invoking this helper.
  */
-export function anchorFinalAgentReply(
+export type ZendeskAnchorFailureReason =
+  | "no_public_human_turns"
+  | "no_public_agent_reply"
+  | "no_customer_before_final_agent";
+
+export type ZendeskAnchorAnalysis =
+  | { anchored: AnchoredZendeskReply; reason: null }
+  | { anchored: null; reason: ZendeskAnchorFailureReason };
+
+export function analyzeZendeskReplyAnchor(
   turns: ZendeskConversationTurn[],
-): AnchoredZendeskReply | null {
+): ZendeskAnchorAnalysis {
   const conversation = (Array.isArray(turns) ? turns : [])
     .map((turn) => {
       const sourceId = String(turn?.sourceId || "").trim();
@@ -430,6 +466,10 @@ export function anchorFinalAgentReply(
       (turn.role === "customer" || turn.role === "agent") && Boolean(turn.body)
     );
 
+  if (conversation.length === 0) {
+    return { anchored: null, reason: "no_public_human_turns" };
+  }
+
   let lastAgentIndex = -1;
   for (let index = conversation.length - 1; index >= 0; index -= 1) {
     if (conversation[index].role === "agent") {
@@ -437,7 +477,9 @@ export function anchorFinalAgentReply(
       break;
     }
   }
-  if (lastAgentIndex <= 0) return null;
+  if (lastAgentIndex < 0) {
+    return { anchored: null, reason: "no_public_agent_reply" };
+  }
 
   let answeredCustomerIndex = -1;
   for (let index = lastAgentIndex - 1; index >= 0; index -= 1) {
@@ -446,7 +488,9 @@ export function anchorFinalAgentReply(
       break;
     }
   }
-  if (answeredCustomerIndex < 0) return null;
+  if (answeredCustomerIndex < 0) {
+    return { anchored: null, reason: "no_customer_before_final_agent" };
+  }
 
   const priorTurns = conversation.slice(0, answeredCustomerIndex);
   const conversationContext = priorTurns.length > 0
@@ -458,17 +502,26 @@ export function anchorFinalAgentReply(
     : null;
 
   return {
-    customerBody: conversation[answeredCustomerIndex].body,
-    agentReply: conversation[lastAgentIndex].body,
-    conversationContext,
-    multiTurn: priorTurns.length > 0,
-    ...(conversation[answeredCustomerIndex].sourceId
-      ? { customerTurnId: conversation[answeredCustomerIndex].sourceId }
-      : {}),
-    ...(conversation[lastAgentIndex].sourceId
-      ? { agentTurnId: conversation[lastAgentIndex].sourceId }
-      : {}),
+    anchored: {
+      customerBody: conversation[answeredCustomerIndex].body,
+      agentReply: conversation[lastAgentIndex].body,
+      conversationContext,
+      multiTurn: priorTurns.length > 0,
+      ...(conversation[answeredCustomerIndex].sourceId
+        ? { customerTurnId: conversation[answeredCustomerIndex].sourceId }
+        : {}),
+      ...(conversation[lastAgentIndex].sourceId
+        ? { agentTurnId: conversation[lastAgentIndex].sourceId }
+        : {}),
+    },
+    reason: null,
   };
+}
+
+export function anchorFinalAgentReply(
+  turns: ZendeskConversationTurn[],
+): AnchoredZendeskReply | null {
+  return analyzeZendeskReplyAnchor(turns).anchored;
 }
 
 export function estimateImportCost(input: { ticketCount: number }): {

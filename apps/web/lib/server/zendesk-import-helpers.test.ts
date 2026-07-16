@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import {
+  analyzeZendeskReplyAnchor,
   anchorFinalAgentReply,
   classifyZendeskAuthor,
   countZendeskRefreshResults,
@@ -199,6 +200,88 @@ Deno.test("residual PII validation rejects echoes and accepts neutral placeholde
     }),
     false,
   );
+
+  for (
+    const signoff of [
+      "Best regards, ACEZONE Team",
+      "Best regards, Customer Service Team",
+      "Best regards, Support Team",
+    ]
+  ) {
+    assertEquals(
+      hasResidualZendeskPii({
+        subject: "A-Spire help",
+        customer_msg: "Hi there,\nMy headset is noisy.",
+        agent_reply: signoff,
+        conversation_context: "",
+      }, {
+        subject: "A-Spire help",
+        customer_msg: "Hi there,\nMy headset is noisy.",
+        agent_reply: signoff,
+        conversation_context: "",
+      }),
+      false,
+    );
+  }
+
+  assertEquals(
+    hasResidualZendeskPii({
+      subject: "A-Spire help",
+      customer_msg: "Hi Sam,\nMy headset is noisy.",
+      agent_reply: "Please repeat the reset.",
+      conversation_context: "",
+    }, {
+      subject: "A-Spire help",
+      customer_msg: "Hi there,\nPlease follow the same steps.",
+      agent_reply: "Please repeat the reset.",
+      conversation_context: "",
+    }),
+    false,
+  );
+
+  assertEquals(
+    hasResidualZendeskPii({
+      subject: "A-Spire help",
+      customer_msg: "Hi Ali,\nMy headset is noisy.",
+      agent_reply: "Please repeat the reset.",
+      conversation_context: "",
+    }, {
+      subject: "A-Spire help",
+      customer_msg: "Hi there,\nThe audio quality is better now.",
+      agent_reply: "Please repeat the reset.",
+      conversation_context: "",
+    }),
+    false,
+  );
+
+  assert(
+    hasResidualZendeskPii({
+      subject: "A-Spire help",
+      customer_msg: "Hi there,\nMy headset is noisy.",
+      agent_reply: "Best regards, Emil ACEZONE Team",
+      conversation_context: "",
+    }, {
+      subject: "A-Spire help",
+      customer_msg: "Hi there,\nMy headset is noisy.",
+      agent_reply: "Best regards, Emil ACEZONE Team",
+      conversation_context: "",
+    }),
+  );
+
+  assertEquals(
+    hasResidualZendeskPii({
+      subject: "A-Spire help",
+      customer_msg: "Hi there,\nMy headset is noisy.",
+      agent_reply: "Best regards, Emil ACEZONE Team",
+      conversation_context: "",
+    }, {
+      subject: "A-Spire help",
+      customer_msg: "Hi there,\nMy headset is noisy.",
+      agent_reply: "Best regards, [Agent]",
+      conversation_context: "",
+    }),
+    false,
+  );
 });
 
 Deno.test("Zendesk comments exclude unsafe records and filter auto-replies only for agents", () => {
@@ -374,6 +457,36 @@ Deno.test("anchorFinalAgentReply handles single exchanges and rejects incomplete
   assertEquals(
     anchorFinalAgentReply([{ role: "agent", body: "Hello." }]),
     null,
+  );
+});
+
+Deno.test("analyzeZendeskReplyAnchor reports why a ticket cannot be anchored", () => {
+  assertEquals(analyzeZendeskReplyAnchor([]), {
+    anchored: null,
+    reason: "no_public_human_turns",
+  });
+  assertEquals(
+    analyzeZendeskReplyAnchor([{ role: "customer", body: "Hello?" }]),
+    { anchored: null, reason: "no_public_agent_reply" },
+  );
+  assertEquals(
+    analyzeZendeskReplyAnchor([{ role: "agent", body: "Hello." }]),
+    { anchored: null, reason: "no_customer_before_final_agent" },
+  );
+  assertEquals(
+    analyzeZendeskReplyAnchor([
+      { role: "customer", body: "Where is my order?" },
+      { role: "agent", body: "It arrives tomorrow." },
+    ]),
+    {
+      anchored: {
+        customerBody: "Where is my order?",
+        agentReply: "It arrives tomorrow.",
+        conversationContext: null,
+        multiTurn: false,
+      },
+      reason: null,
+    },
   );
 });
 

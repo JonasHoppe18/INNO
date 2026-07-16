@@ -5,7 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 import { listScopedShops, resolveAuthScope } from "@/lib/server/workspace-auth";
 import { normalizeZendeskBaseUrl } from "@/lib/server/zendesk-url";
 import {
-  anchorFinalAgentReply,
+  analyzeZendeskReplyAnchor,
   hasResidualZendeskPii,
   hasUnclassifiedZendeskPublicComment,
   importRetryDelayMs,
@@ -221,10 +221,20 @@ async function redactOne(input: {
   };
 }
 
+type ZendeskRedactionFailureReason =
+  | "pii_redaction_missing_required_fields"
+  | "pii_residual_detected"
+  | "pii_redaction_model_output_invalid";
+
+type ZendeskRedactionResult<T> =
+  | { pair: T; failureReason: null }
+  | { pair: null; failureReason: ZendeskRedactionFailureReason };
+
 /**
  * Redact a batch of {subject, customerBody, agentReply, conversationContext}
  * pairs with bounded concurrency. Tickets whose redaction fails are dropped
- * (null) so raw PII is never persisted.
+ * with a durable reason so raw PII is never persisted and the next import can
+ * distinguish residual PII from malformed model output.
  */
 async function redactPairs<
   T extends {
@@ -233,9 +243,9 @@ async function redactPairs<
     agentReply: string;
     conversationContext: string;
   },
->(pairs: T[]): Promise<(T | null)[]> {
+>(pairs: T[]): Promise<ZendeskRedactionResult<T>[]> {
   const CONCURRENCY = 5;
-  const out: (T | null)[] = new Array(pairs.length).fill(null);
+  const out: ZendeskRedactionResult<T>[] = new Array(pairs.length);
   let cursor = 0;
   let retryableError: RetryableImportError | null = null;
   async function worker() {
@@ -254,7 +264,10 @@ async function redactPairs<
           !r.agent_reply ||
           (p.conversationContext && !r.conversation_context)
         ) {
-          out[idx] = null;
+          out[idx] = {
+            pair: null,
+            failureReason: "pii_redaction_missing_required_fields",
+          };
           continue;
         }
         if (
@@ -265,22 +278,31 @@ async function redactPairs<
             conversation_context: p.conversationContext,
           }, r)
         ) {
-          out[idx] = null;
+          out[idx] = {
+            pair: null,
+            failureReason: "pii_residual_detected",
+          };
           continue;
         }
         out[idx] = {
-          ...p,
-          subject: r.subject,
-          customerBody: r.customer_msg,
-          agentReply: r.agent_reply,
-          conversationContext: r.conversation_context,
+          pair: {
+            ...p,
+            subject: r.subject,
+            customerBody: r.customer_msg,
+            agentReply: r.agent_reply,
+            conversationContext: r.conversation_context,
+          },
+          failureReason: null,
         };
       } catch (error) {
         if (error instanceof RetryableImportError) {
           retryableError = error;
           continue;
         }
-        out[idx] = null; // malformed/unsafe model output is never stored raw
+        out[idx] = {
+          pair: null,
+          failureReason: "pii_redaction_model_output_invalid",
+        }; // malformed/unsafe model output is never stored raw
       }
     }
   }
@@ -619,17 +641,22 @@ async function importTicketBatch(opts: {
       recordItem(ticketId, "skipped", "unclassified_public_author");
       continue;
     }
-    const anchored = anchorFinalAgentReply(
+    const anchorAnalysis = analyzeZendeskReplyAnchor(
       zendeskCommentsToTurns(comments, authorRoles),
     );
+    const anchored = anchorAnalysis.anchored;
 
+    if (!anchored) {
+      skippedPreRedaction++;
+      recordItem(ticketId, "skipped", anchorAnalysis.reason);
+      continue;
+    }
     if (
-      !anchored ||
       !/^\d+$/.test(anchored.customerTurnId || "") ||
       !/^\d+$/.test(anchored.agentTurnId || "")
     ) {
       skippedPreRedaction++;
-      recordItem(ticketId, "skipped", "no_eligible_versioned_anchor");
+      recordItem(ticketId, "skipped", "missing_versioned_comment_ids");
       continue;
     }
 
@@ -660,15 +687,20 @@ async function importTicketBatch(opts: {
   // GDPR: redact PII out of every pair BEFORE embedding/storing. Tickets that
   // fail redaction are dropped so raw customer data is never persisted as a
   // few-shot example.
-  const redacted = await redactPairs(pairs);
-  const droppedForPii = redacted.filter((r) => r === null).length;
-  redacted.forEach((pair, index) => {
-    if (pair === null) {
-      recordItem(pairs[index].ticketId, "dropped", "pii_redaction_failed");
+  const redactionResults = await redactPairs(pairs);
+  const droppedForPii =
+    redactionResults.filter((result) => result.pair === null).length;
+  redactionResults.forEach((result, index) => {
+    if (result.pair === null) {
+      recordItem(
+        pairs[index].ticketId,
+        "dropped",
+        result.failureReason,
+      );
     }
   });
-  const safePairs = redacted.filter((p): p is NonNullable<typeof p> =>
-    p !== null
+  const safePairs = redactionResults.flatMap((result) =>
+    result.pair ? [result.pair] : []
   );
 
   if (!safePairs.length) {
