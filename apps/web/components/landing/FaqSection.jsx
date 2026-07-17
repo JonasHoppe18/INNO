@@ -5,7 +5,7 @@ import Reveal from "./Reveal";
 export default async function FaqSection() {
   const t = await getTranslations("landing.faq");
   return (
-    <section className="border-t border-zinc-100 bg-zinc-50 px-5 py-24">
+    <section className="bg-zinc-50 px-5 pt-12 pb-24">
       <div className="mx-auto max-w-2xl">
         <SectionHeading title={t("title")} />
         <div className="mt-10 space-y-2.5">

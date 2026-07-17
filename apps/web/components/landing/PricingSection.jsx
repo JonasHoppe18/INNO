@@ -9,7 +9,7 @@ export default async function PricingSection({ locale }) {
   const t = await getTranslations("landing.pricing");
   const countFmt = new Intl.NumberFormat(locale === "da" ? "da-DK" : "en-IE");
   return (
-    <section id="pricing" className="border-t border-zinc-100 bg-zinc-50 px-5 py-24">
+    <section id="pricing" className="border-t border-zinc-100 bg-zinc-50 px-5 pt-24 pb-12">
       <div className="mx-auto max-w-6xl">
         <SectionHeading kicker={t("kicker")} title={t("title")} subtitle={t("subtitle")} />
         <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
