@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import {
+  analyzeResidualZendeskPii,
   analyzeZendeskReplyAnchor,
   anchorFinalAgentReply,
   classifyZendeskAuthor,
@@ -17,6 +18,7 @@ import {
   nextZendeskPageCursor,
   parseRetryAfterMs,
   planZendeskRefreshCuration,
+  scrubResidualZendeskPii,
   stripZendeskHtml,
   zendeskCommentsToTurns,
 } from "./zendesk-import-helpers.ts";
@@ -282,6 +284,65 @@ Deno.test("residual PII validation rejects echoes and accepts neutral placeholde
     }),
     false,
   );
+});
+
+Deno.test("residual PII analysis reports only privacy-safe categories", () => {
+  const raw = {
+    subject: "Order 1234-ABC for John",
+    customer_msg:
+      "My name is John. Email john@example.com or call +45 12 34 56 78.\n12 Main Street\n2100 Copenhagen",
+    agent_reply: "Best regards, Alex",
+    conversation_context: "Tracking number ZXCV123456",
+  };
+
+  assertEquals(analyzeResidualZendeskPii(raw, raw), {
+    hasResidual: true,
+    categories: [
+      "address",
+      "email",
+      "identifier",
+      "person_name",
+      "phone",
+    ],
+  });
+  assertEquals(
+    Object.hasOwn(analyzeResidualZendeskPii(raw, raw), "values"),
+    false,
+  );
+});
+
+Deno.test("deterministic PII scrub recovers residual model output and keeps support content", () => {
+  const raw = {
+    subject: "A-Spire order 12345678 for John",
+    customer_msg:
+      "Hi John,\nEmail john@example.com or call +45 12 34 56 78.\n12 Main Street\n2100 Copenhagen",
+    agent_reply:
+      "Hi John, order 12345678 is covered by the 30 day return policy. Best regards, Alex",
+    conversation_context: "Tracking number ZXCV123456",
+  };
+  const scrubbed = scrubResidualZendeskPii(raw, raw);
+
+  assertEquals(hasResidualZendeskPii(raw, scrubbed), false);
+  assert(scrubbed.subject.includes("A-Spire"));
+  assert(scrubbed.agent_reply.includes("30 day return policy"));
+  assert(scrubbed.subject.includes("[redacted identifier]"));
+  assert(scrubbed.customer_msg.includes("[email]"));
+  assert(scrubbed.customer_msg.includes("[phone]"));
+  assert(scrubbed.customer_msg.includes("[address]"));
+  assert(scrubbed.agent_reply.includes("[redacted name]"));
+  assert(scrubbed.conversation_context.includes("[redacted identifier]"));
+});
+
+Deno.test("deterministic PII scrub preserves product names, dates and team sign-offs", () => {
+  const safe = {
+    subject: "A-Spire help 2026-07-15",
+    customer_msg: "Hi there, does the A-Spire have a 30 day return window?",
+    agent_reply: "Yes. Best regards, ACEZONE Team",
+    conversation_context: "Warranty began on 2026-07-15.",
+  };
+
+  assertEquals(scrubResidualZendeskPii(safe, safe), safe);
+  assertEquals(hasResidualZendeskPii(safe, safe), false);
 });
 
 Deno.test("Zendesk comments exclude unsafe records and filter auto-replies only for agents", () => {
