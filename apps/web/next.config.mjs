@@ -4,6 +4,10 @@ const nextConfig = {
   experimental: {
     typedRoutes: true,
     externalDir: true,
+    // heic-convert loads libheif's WASM bundle through dynamic CommonJS
+    // requires. Keep it as a runtime-only Node dependency so webpack does not
+    // try to statically analyze (and warn about) the vendor bundle.
+    serverComponentsExternalPackages: ["heic-convert"],
   },
   images: {
     remotePatterns: [
