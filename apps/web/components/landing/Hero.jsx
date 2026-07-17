@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 import SignupForm from "./SignupForm";
 import Reveal from "./Reveal";
+import BookDemoButton from "./BookDemoButton";
 import { CheckIcon } from "./icons";
 
 export default async function Hero({ locale, children }) {
@@ -36,12 +37,11 @@ export default async function Hero({ locale, children }) {
         className="landing-enter mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row"
         style={{ "--enter-delay": "210ms" }}
       >
-        <a
-          href="#book-demo"
+        <BookDemoButton
+          label={t("ctaDemo")}
+          fallbackHref="#book-demo"
           className="rounded-lg bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-600/25 transition-all duration-200 hover:bg-indigo-500 active:scale-[0.97]"
-        >
-          {t("ctaDemo")}
-        </a>
+        />
         <SignupForm source="landing-hero" />
       </div>
       <div

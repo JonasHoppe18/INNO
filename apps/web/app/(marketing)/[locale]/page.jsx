@@ -2,15 +2,10 @@ import { unstable_setRequestLocale } from "next-intl/server";
 import LandingNav from "@/components/landing/LandingNav";
 import Hero from "@/components/landing/Hero";
 import DemoInbox from "@/components/landing/demo-inbox/DemoInbox";
-import ProblemSection from "@/components/landing/ProblemSection";
 import HowItWorks from "@/components/landing/HowItWorks";
-import FeatureDives from "@/components/landing/FeatureDives";
-import LanguagesSection from "@/components/landing/LanguagesSection";
-import ControlSection from "@/components/landing/ControlSection";
-import TrustSection from "@/components/landing/TrustSection";
+import TrustStrip from "@/components/landing/TrustStrip";
+import ExploreProduct from "@/components/landing/ExploreProduct";
 import PricingSection from "@/components/landing/PricingSection";
-import IntegrationsSection from "@/components/landing/IntegrationsSection";
-import FaqSection from "@/components/landing/FaqSection";
 import FinalCta from "@/components/landing/FinalCta";
 
 export async function generateMetadata({ params: { locale } }) {
@@ -29,6 +24,9 @@ export async function generateMetadata({ params: { locale } }) {
   };
 }
 
+// Lean homepage: hook (hero + interactive demo) → the fast "what is this"
+// (how it works) → a compact trust strip → cards into the deeper pages →
+// pricing → book a demo. Product depth lives on /product.
 export default async function LandingPage({ params: { locale } }) {
   unstable_setRequestLocale(locale);
   return (
@@ -37,15 +35,10 @@ export default async function LandingPage({ params: { locale } }) {
       <Hero locale={locale}>
         <DemoInbox />
       </Hero>
-      <ProblemSection />
       <HowItWorks />
-      <FeatureDives />
-      <LanguagesSection />
-      <ControlSection />
-      <TrustSection locale={locale} />
+      <TrustStrip locale={locale} />
+      <ExploreProduct locale={locale} />
       <PricingSection locale={locale} />
-      <IntegrationsSection locale={locale} />
-      <FaqSection />
       <FinalCta locale={locale} />
     </main>
   );

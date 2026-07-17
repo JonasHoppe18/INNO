@@ -2,6 +2,7 @@ import { getTranslations } from "next-intl/server";
 import { PRICING_TIERS, formatTierPrice } from "@/lib/landing/pricing";
 import SectionHeading from "./SectionHeading";
 import Reveal from "./Reveal";
+import BookDemoButton from "./BookDemoButton";
 import { CheckIcon } from "./icons";
 
 export default async function PricingSection({ locale }) {
@@ -40,16 +41,15 @@ export default async function PricingSection({ locale }) {
                   </li>
                 ))}
               </ul>
-              <a
-                href="#book-demo"
-                className={`mt-6 block rounded-lg py-2.5 text-center text-sm font-semibold transition-all duration-200 active:scale-[0.98] ${
+              <BookDemoButton
+                label={t("cta")}
+                fallbackHref="#book-demo"
+                className={`mt-6 block w-full rounded-lg py-2.5 text-center text-sm font-semibold transition-all duration-200 active:scale-[0.98] ${
                   tier.highlighted
                     ? "bg-indigo-600 text-white hover:bg-indigo-500"
                     : "border border-zinc-200 text-zinc-900 hover:bg-zinc-50"
                 }`}
-              >
-                {t("cta")}
-              </a>
+              />
             </Reveal>
           ))}
         </div>

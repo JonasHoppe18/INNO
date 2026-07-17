@@ -2,8 +2,8 @@
   "landing": {
     "nav": {
       "product": "Produkt",
-      "how": "Sådan virker det",
       "pricing": "Priser",
+      "integrations": "Integrationer",
       "demo": "Demo",
       "login": "Log ind",
       "bookDemo": "Book en demo",
@@ -95,10 +95,6 @@
       "feature2": "Alle features inkluderet",
       "feature3": "Ingen binding — opsig månedligt"
     },
-    "integrations": {
-      "title": "Virker med de værktøjer, du allerede bruger",
-      "moreSoon": "flere på vej"
-    },
     "faq": {
       "title": "Spørgsmål, besvaret",
       "q1": "Kan mine kunder se, at det er AI?",
@@ -137,15 +133,9 @@
       "integrations": "Integrationer"
     },
     "trust": {
-      "kicker": "HVORFOR SONA",
-      "title": "Ny — og med hands-on på hver butik",
-      "body": "Sona er tidlig, og det er hele pointen. Vi arbejder direkte med hver butik, vi onboarder, så opsætning ikke er en ticket-kø — det er dem, der har bygget Sona, der hjælper dig til dine første gode udkast.",
       "pillar1Title": "Du godkender alt",
-      "pillar1Body": "Indtil du slår autopilot til, er hvert svar dit at sende.",
       "pillar2Title": "Hostet i EU",
-      "pillar2Body": "Sonas app og database kører i EU, og kundedata bruges kun til at besvare tickets.",
       "pillar3Title": "Onboardet af dem, der byggede det",
-      "pillar3Body": "Du får dem, der har bygget Sona, med på opsætningen — ikke en support-kø.",
       "securityLink": "Læs om sikkerhed & data"
     },
     "security": {
@@ -199,6 +189,22 @@
       "updatedLabel": "Sidst opdateret",
       "placeholder": "Denne side er en placeholder. Den endelige, juridisk gennemgåede tekst offentliggøres her før launch.",
       "contactLine": "Spørgsmål? Skriv til os på hello@sona.ai."
+    },
+    "explore": {
+      "kicker": "PRODUKTET",
+      "title": "Alt hvad Sona kan",
+      "learnMore": "Læs mere",
+      "card1Title": "Sådan virker Sona",
+      "card1Body": "Hele produktet — forankrede svar, rigtige butiks-handlinger, alle sprog og kontrol-tilstandene.",
+      "card2Title": "Integrationer",
+      "card2Body": "Arbejder oven på din butik, din indbakke og din helpdesk. Ingen migrering.",
+      "card3Title": "Sikkerhed & data",
+      "card3Body": "EU-hostet, bruges kun til at besvare tickets, og intet sendes uden din godkendelse."
+    },
+    "productPage": {
+      "title": "Produktet",
+      "subtitle": "Hvordan Sona læser en ticket, finder ordren, skriver svaret og udfører handlingen — og hvordan du beholder kontrollen hele vejen.",
+      "cta": "Book en demo"
     }
   }
 }

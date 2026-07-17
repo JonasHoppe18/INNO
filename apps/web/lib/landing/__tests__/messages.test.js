@@ -13,7 +13,11 @@ describe("landing messages", () => {
     expect(keyPaths(da).sort()).toEqual(keyPaths(en).sort());
   });
   it("has all landing section namespaces", () => {
-    for (const ns of ["nav", "hero", "how", "dives", "languages", "control", "pricing", "integrations", "faq", "finalCta", "footer"]) {
+    for (const ns of [
+      "nav", "hero", "problem", "how", "dives", "languages", "control", "trust",
+      "explore", "pricing", "faq", "finalCta", "footer", "demo", "productPage",
+      "security", "integrationsPage", "legal",
+    ]) {
       expect(en.landing[ns], `missing landing.${ns}`).toBeTruthy();
     }
   });

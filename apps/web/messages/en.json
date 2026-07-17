@@ -2,8 +2,8 @@
   "landing": {
     "nav": {
       "product": "Product",
-      "how": "How it works",
       "pricing": "Pricing",
+      "integrations": "Integrations",
       "demo": "Demo",
       "login": "Log in",
       "bookDemo": "Book a demo",
@@ -95,10 +95,6 @@
       "feature2": "All features included",
       "feature3": "No binding — cancel monthly"
     },
-    "integrations": {
-      "title": "Works with the tools you already use",
-      "moreSoon": "more soon"
-    },
     "faq": {
       "title": "Questions, answered",
       "q1": "Will my customers know it's AI?",
@@ -137,15 +133,9 @@
       "integrations": "Integrations"
     },
     "trust": {
-      "kicker": "WHY SONA",
-      "title": "New — and hands-on with every store",
-      "body": "Sona is early, and that's the point. We work directly with each store we onboard, so setup isn't a ticket queue — it's the people who built Sona helping you get your first great drafts.",
       "pillar1Title": "You approve everything",
-      "pillar1Body": "Until you switch on autopilot, every reply is yours to send.",
       "pillar2Title": "Hosted in the EU",
-      "pillar2Body": "Sona's app and database run in the EU, and customer data is used only to answer tickets.",
       "pillar3Title": "Onboarded by the makers",
-      "pillar3Body": "You get the people who built Sona on setup — not a support queue.",
       "securityLink": "Read about security & data"
     },
     "security": {
@@ -199,6 +189,22 @@
       "updatedLabel": "Last updated",
       "placeholder": "This page is a placeholder. The final, legally reviewed text will be published here before launch.",
       "contactLine": "Questions? Reach us at hello@sona.ai."
+    },
+    "explore": {
+      "kicker": "THE PRODUCT",
+      "title": "Everything Sona can do",
+      "learnMore": "Learn more",
+      "card1Title": "How Sona works",
+      "card1Body": "The full product — grounded answers, real store actions, every language, and the control modes.",
+      "card2Title": "Integrations",
+      "card2Body": "Works on top of your store, your inbox and your helpdesk. No migration.",
+      "card3Title": "Security & data",
+      "card3Body": "EU-hosted, used only to answer tickets, and nothing sent without your approval."
+    },
+    "productPage": {
+      "title": "The product",
+      "subtitle": "How Sona reads a ticket, finds the order, drafts the reply and takes the action — and how you stay in control the whole way.",
+      "cta": "Book a demo"
     }
   }
 }

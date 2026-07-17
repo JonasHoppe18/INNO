@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 import { SonaMark } from "./icons";
 import LocaleSwitcher from "./LocaleSwitcher";
+import BookDemoButton from "./BookDemoButton";
 
 export default async function LandingNav({ locale }) {
   const t = await getTranslations("landing.nav");
@@ -12,17 +13,19 @@ export default async function LandingNav({ locale }) {
           <SonaMark /> sona
         </Link>
         <nav className="hidden items-center gap-6 text-sm text-zinc-600 md:flex">
-          <Link href={`/${locale}#product`} className="hover:text-zinc-900">{t("product")}</Link>
-          <Link href={`/${locale}#how`} className="hover:text-zinc-900">{t("how")}</Link>
+          <Link href={`/${locale}/product`} className="hover:text-zinc-900">{t("product")}</Link>
+          <Link href={`/${locale}/integrations`} className="hover:text-zinc-900">{t("integrations")}</Link>
           <Link href={`/${locale}#pricing`} className="hover:text-zinc-900">{t("pricing")}</Link>
           <Link href={`/${locale}/demo`} className="hover:text-zinc-900">{t("demo")}</Link>
         </nav>
         <div className="flex items-center gap-4">
           <LocaleSwitcher locale={locale} />
           <Link href="/sign-in" className="hidden text-sm text-zinc-600 hover:text-zinc-900 sm:block">{t("login")}</Link>
-          <a href={`/${locale}#book-demo`} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:bg-indigo-500 active:scale-[0.97]">
-            {t("bookDemo")}
-          </a>
+          <BookDemoButton
+            label={t("bookDemo")}
+            fallbackHref={`/${locale}#book-demo`}
+            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:bg-indigo-500 active:scale-[0.97]"
+          />
         </div>
       </div>
     </header>
