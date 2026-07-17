@@ -5,8 +5,8 @@ import { createClient } from "@supabase/supabase-js";
 import { listScopedShops, resolveAuthScope } from "@/lib/server/workspace-auth";
 import { normalizeZendeskBaseUrl } from "@/lib/server/zendesk-url";
 import {
+  analyzeResidualZendeskPii,
   analyzeZendeskReplyAnchor,
-  hasResidualZendeskPii,
   hasUnclassifiedZendeskPublicComment,
   importRetryDelayMs,
   isRetryableImportStatus,
@@ -14,6 +14,7 @@ import {
   nextZendeskPageCursor,
   parseRetryAfterMs,
   planZendeskRefreshCuration,
+  scrubResidualZendeskPii,
   zendeskCommentsToTurns,
 } from "@/lib/server/zendesk-import-helpers";
 
@@ -34,6 +35,8 @@ const OPENAI_EMBEDDING_MODEL = process.env.OPENAI_EMBEDDING_MODEL ||
   "text-embedding-3-small";
 const OPENAI_REDACT_MODEL = process.env.OPENAI_REDACT_MODEL || "gpt-4o-mini";
 const ZENDESK_ALLOWED_HOSTS = process.env.ZENDESK_ALLOWED_HOSTS || "";
+const IMPORT_WORKER_SECRET = process.env.IMPORT_HISTORY_WORKER_SECRET ||
+  process.env.CRON_SECRET || "";
 
 const SOURCE_PROVIDER = "zendesk";
 // Keep this resumable, PII-scrubbed ticket-example pipeline isolated from the
@@ -44,6 +47,39 @@ const CHUNK_TICKETS = 10;
 const MAX_EXTERNAL_RETRIES = 3;
 const MAX_COMMENT_PAGES_PER_TICKET = 3;
 const IMPORT_STATUSES = ["solved", "closed"];
+
+function resolveAppBaseUrl(request: Request) {
+  const host = request.headers.get("x-forwarded-host") ||
+    request.headers.get("host") || "";
+  if (!host) return "";
+  const proto = request.headers.get("x-forwarded-proto") || "https";
+  return `${proto}://${host}`;
+}
+
+/** Continue an import inside the deployed app so progress does not depend on
+ * a browser tab. The durable cursor + lease still make every call resumable. */
+function kickZendeskImportWorker(
+  request: Request,
+  jobId: string,
+  retryCount = 0,
+) {
+  if (!IMPORT_WORKER_SECRET || !jobId) return;
+  const baseUrl = resolveAppBaseUrl(request);
+  if (!baseUrl) return;
+  void fetch(`${baseUrl}/api/knowledge/import-zendesk`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-import-history-worker-secret": IMPORT_WORKER_SECRET,
+    },
+    body: JSON.stringify({
+      mode: "continue",
+      jobId,
+      chain: true,
+      worker_retry_count: retryCount,
+    }),
+  }).catch(() => null);
+}
 
 class RetryableImportError extends Error {
   constructor(message: string) {
@@ -223,7 +259,7 @@ async function redactOne(input: {
 
 type ZendeskRedactionFailureReason =
   | "pii_redaction_missing_required_fields"
-  | "pii_residual_detected"
+  | `pii_residual_detected:${string}`
   | "pii_redaction_model_output_invalid";
 
 type ZendeskRedactionResult<T> =
@@ -270,27 +306,30 @@ async function redactPairs<
           };
           continue;
         }
-        if (
-          hasResidualZendeskPii({
-            subject: p.subject,
-            customer_msg: p.customerBody,
-            agent_reply: p.agentReply,
-            conversation_context: p.conversationContext,
-          }, r)
-        ) {
+        const raw = {
+          subject: p.subject,
+          customer_msg: p.customerBody,
+          agent_reply: p.agentReply,
+          conversation_context: p.conversationContext,
+        };
+        const scrubbed = scrubResidualZendeskPii(raw, r);
+        const residual = analyzeResidualZendeskPii(raw, scrubbed);
+        if (residual.hasResidual) {
           out[idx] = {
             pair: null,
-            failureReason: "pii_residual_detected",
+            failureReason: `pii_residual_detected:${
+              residual.categories.join("+")
+            }`,
           };
           continue;
         }
         out[idx] = {
           pair: {
             ...p,
-            subject: r.subject,
-            customerBody: r.customer_msg,
-            agentReply: r.agent_reply,
-            conversationContext: r.conversation_context,
+            subject: scrubbed.subject,
+            customerBody: scrubbed.customer_msg,
+            agentReply: scrubbed.agent_reply,
+            conversationContext: scrubbed.conversation_context,
           },
           failureReason: null,
         };
@@ -921,11 +960,6 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const { userId: clerkUserId, orgId } = await auth();
-  if (!clerkUserId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   if (!OPENAI_API_KEY) {
     return NextResponse.json({ error: "OPENAI_API_KEY not configured" }, {
       status: 500,
@@ -939,29 +973,74 @@ export async function POST(req: Request) {
     });
   }
 
-  // Read the body once before resolving the target shop. In a multi-shop
-  // workspace, start/estimate requires an explicit shop; continue may recover
-  // it from the already-scoped job id.
   const body = await req.json().catch(() => ({}));
   const mode = String(body?.mode || "").trim();
+  const jobId = String(body?.jobId || "").trim();
+  const internalToken = String(
+    req.headers.get("x-import-history-worker-secret") || "",
+  ).trim();
+  const internalAuthorized = Boolean(
+    IMPORT_WORKER_SECRET && internalToken &&
+      internalToken === IMPORT_WORKER_SECRET,
+  );
 
-  let scope: any;
-  try {
-    scope = await resolveRequiredTenantScope(supabase, {
-      clerkUserId,
-      orgId,
+  if (internalToken && !internalAuthorized) {
+    return NextResponse.json({ error: "Unauthorized worker request." }, {
+      status: 401,
     });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+  if (internalAuthorized && (mode !== "continue" || !jobId)) {
+    return NextResponse.json({
+      error: "Internal worker calls require mode:continue and jobId.",
+    }, { status: 400 });
   }
 
+  let scope: any;
   let shops: any[];
-  try {
-    shops = await listScopedShops(supabase, scope, { fields: "id" });
-  } catch (err: any) {
-    return NextResponse.json({ error: String(err?.message ?? err) }, {
-      status: 500,
-    });
+  if (internalAuthorized) {
+    const { data: workerJob, error: workerJobError } = await supabase
+      .from("knowledge_import_jobs")
+      .select("id, shop_id, workspace_id, user_id")
+      .eq("id", jobId)
+      .eq("provider", IMPORT_JOB_PROVIDER)
+      .in("status", ["queued", "running"])
+      .maybeSingle();
+    if (workerJobError) {
+      return NextResponse.json({ error: workerJobError.message }, {
+        status: 500,
+      });
+    }
+    if (!workerJob?.shop_id) {
+      return NextResponse.json({ error: "Active import job not found." }, {
+        status: 404,
+      });
+    }
+    if (!workerJob.workspace_id && !workerJob.user_id) {
+      return NextResponse.json({ error: "Import job has no tenant scope." }, {
+        status: 400,
+      });
+    }
+    scope = {
+      workspaceId: workerJob.workspace_id ?? null,
+      supabaseUserId: workerJob.user_id ?? null,
+    };
+    shops = [{ id: workerJob.shop_id }];
+  } else {
+    const { userId: clerkUserId, orgId } = await auth();
+    if (!clerkUserId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    try {
+      scope = await resolveRequiredTenantScope(supabase, {
+        clerkUserId,
+        orgId,
+      });
+      shops = await listScopedShops(supabase, scope, { fields: "id" });
+    } catch (err: any) {
+      return NextResponse.json({ error: String(err?.message ?? err) }, {
+        status: 500,
+      });
+    }
   }
   const shopIds = shops.map((candidate) => String(candidate?.id || ""))
     .filter(Boolean);
@@ -1101,6 +1180,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: existingErr.message }, { status: 500 });
     }
     if (existingJob) {
+      kickZendeskImportWorker(req, existingJob.id);
       return NextResponse.json({ job: existingJob, resumed: true });
     }
 
@@ -1146,6 +1226,7 @@ export async function POST(req: Request) {
 
     // Starting is intentionally cheap. The client invokes `continue` only
     // after this response, so job creation can never time out while importing.
+    kickZendeskImportWorker(req, insertedJob.id);
     return NextResponse.json({ job: insertedJob, resumed: false }, {
       status: 201,
     });
@@ -1190,14 +1271,23 @@ export async function POST(req: Request) {
       : { status: IMPORT_STATUSES[0], after: null };
     const leaseExpiresAt = Date.parse(String(rawCursor.lease_expires_at || ""));
     if (Number.isFinite(leaseExpiresAt) && leaseExpiresAt > Date.now()) {
+      const retryAfterMs = Math.min(
+        5000,
+        Math.max(1000, leaseExpiresAt - Date.now()),
+      );
+      if (internalAuthorized && body?.chain === true) {
+        await sleep(retryAfterMs);
+        kickZendeskImportWorker(
+          req,
+          job.id,
+          Number(body?.worker_retry_count) || 0,
+        );
+      }
       return NextResponse.json(
         {
           error: "job busy",
           job,
-          retry_after_ms: Math.min(
-            5000,
-            Math.max(1000, leaseExpiresAt - Date.now()),
-          ),
+          retry_after_ms: retryAfterMs,
         },
         { status: 409 },
       );
@@ -1235,6 +1325,14 @@ export async function POST(req: Request) {
         .eq("shop_id", shop.id)
         .eq("provider", IMPORT_JOB_PROVIDER)
         .maybeSingle();
+      if (internalAuthorized && body?.chain === true) {
+        await sleep(1500);
+        kickZendeskImportWorker(
+          req,
+          job.id,
+          Number(body?.worker_retry_count) || 0,
+        );
+      }
       return NextResponse.json(
         { error: "job busy", job: freshJob ?? job, retry_after_ms: 1500 },
         { status: 409 },
@@ -1304,6 +1402,12 @@ export async function POST(req: Request) {
       if (updErr) {
         return NextResponse.json({ error: updErr.message }, { status: 500 });
       }
+      if (
+        internalAuthorized && body?.chain === true &&
+        updated.status === "running"
+      ) {
+        kickZendeskImportWorker(req, updated.id);
+      }
       return NextResponse.json({ job: updated });
     } catch (err: any) {
       // Job stays "running" — cursor is untouched, so the next continue call
@@ -1322,6 +1426,16 @@ export async function POST(req: Request) {
         .eq("cursor", JSON.stringify(leaseCursor))
         .select("*")
         .maybeSingle();
+      if (internalAuthorized && body?.chain === true) {
+        const retryCount = Math.max(
+          0,
+          Number(body?.worker_retry_count) || 0,
+        );
+        if (retryCount < 5) {
+          await sleep(2000);
+          kickZendeskImportWorker(req, job.id, retryCount + 1);
+        }
+      }
       return NextResponse.json(
         {
           error: message,

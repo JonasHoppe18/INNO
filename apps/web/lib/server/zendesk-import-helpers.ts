@@ -209,10 +209,34 @@ const PERSON_NAME_WORD_SOURCE = String.raw`[\p{Lu}][\p{L}\p{M}'’\-]{1,30}`;
 const PERSON_NAME_BOUNDARY_SOURCE = String
   .raw`(?=\s*(?:[,!.]|\r?\n|$|[^\p{L}\p{N}\s]))`;
 
-function collectExplicitPiiTokens(text: string): string[] {
-  const tokens = new Set<string>();
+export type ZendeskResidualPiiCategory =
+  | "email"
+  | "phone"
+  | "identifier"
+  | "person_name"
+  | "address";
+
+type ZendeskPiiCandidate = {
+  token: string;
+  category: ZendeskResidualPiiCategory;
+};
+
+function collectExplicitPiiCandidates(text: string): ZendeskPiiCandidate[] {
+  const candidates = new Map<string, ZendeskPiiCandidate>();
+  const addCandidate = (
+    token: string,
+    category: ZendeskResidualPiiCategory,
+  ) => {
+    const normalized = normalizePiiToken(token);
+    if (normalized.length < 3) return;
+    candidates.set(`${category}:${normalized}`, {
+      token: normalized,
+      category,
+    });
+  };
   const addMatches = (
     pattern: RegExp,
+    category: ZendeskResidualPiiCategory,
     group = 0,
   ) => {
     const globalPattern = pattern.global
@@ -220,8 +244,7 @@ function collectExplicitPiiTokens(text: string): string[] {
       : new RegExp(pattern.source, `${pattern.flags}g`);
     let match: RegExpExecArray | null;
     while ((match = globalPattern.exec(text)) !== null) {
-      const token = normalizePiiToken(String(match[group] || ""));
-      if (token.length >= 3) tokens.add(token);
+      addCandidate(String(match[group] || ""), category);
       if (match[0] === "") globalPattern.lastIndex += 1;
     }
   };
@@ -264,18 +287,24 @@ function collectExplicitPiiTokens(text: string): string[] {
           parts.length > 1 &&
           parts.every((part) => !nonPersonNameParts.has(part))
         ) {
-          tokens.add(token);
+          addCandidate(token, "person_name");
         }
-        for (const part of personParts) tokens.add(part);
+        for (const part of personParts) addCandidate(part, "person_name");
       }
       if (match[0] === "") globalPattern.lastIndex += 1;
     }
   };
 
-  addMatches(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi);
-  for (const token of collectPhoneLikeTokens(text)) tokens.add(token);
+  addMatches(
+    /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,
+    "email",
+  );
+  for (const token of collectPhoneLikeTokens(text)) {
+    addCandidate(token, "phone");
+  }
   addMatches(
     /(?:order|ordre|ordrenummer|tracking|track|serial|serienummer|telefon|phone|postal|postnummer|zip)\s*(?:number|nummer|nr\.?|no\.?|#|:)?\s*([A-Z0-9-]{4,})/gi,
+    "identifier",
     1,
   );
   addNameMatches(
@@ -301,6 +330,7 @@ function collectExplicitPiiTokens(text: string): string[] {
   );
   addMatches(
     /\b(\d{4,6}\s+[A-ZÆØÅÄÖÜ][A-ZÆØÅÄÖÜa-zæøåäöüß'’-]{2,30}(?:\s+[A-ZÆØÅÄÖÜ][A-ZÆØÅÄÖÜa-zæøåäöüß'’-]{1,30}){0,2})\b/g,
+    "address",
     1,
   );
 
@@ -314,10 +344,10 @@ function collectExplicitPiiTokens(text: string): string[] {
         )
     ) {
       const token = normalizePiiToken(line);
-      if (token.length >= 5) tokens.add(token);
+      if (token.length >= 5) addCandidate(token, "address");
     }
   }
-  return Array.from(tokens);
+  return Array.from(candidates.values());
 }
 
 function containsStandalonePiiToken(text: string, token: string): boolean {
@@ -328,22 +358,121 @@ function containsStandalonePiiToken(text: string, token: string): boolean {
   ).test(text);
 }
 
+function replaceStandalonePiiToken(
+  text: string,
+  token: string,
+  placeholder: string,
+): string {
+  const escaped = token
+    .split(/\s+/)
+    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("\\s+");
+  return text.replace(
+    new RegExp(
+      `(^|[^\\p{L}\\p{N}])${escaped}(?=$|[^\\p{L}\\p{N}])`,
+      "giu",
+    ),
+    (_match, prefix) => `${prefix}${placeholder}`,
+  );
+}
+
+export type ZendeskResidualPiiAnalysis = {
+  hasResidual: boolean;
+  categories: ZendeskResidualPiiCategory[];
+};
+
+/** Report privacy-safe residual categories without returning the PII values. */
+export function analyzeResidualZendeskPii(
+  raw: ZendeskRedactionFields,
+  redacted: ZendeskRedactionFields,
+): ZendeskResidualPiiAnalysis {
+  const rawText = Object.values(raw).join("\n");
+  const redactedText = Object.values(redacted).join("\n");
+  const categories = new Set<ZendeskResidualPiiCategory>();
+  if (/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(redactedText)) {
+    categories.add("email");
+  }
+  if (collectPhoneLikeTokens(redactedText).length > 0) {
+    categories.add("phone");
+  }
+
+  const normalizedOutput = normalizePiiToken(redactedText);
+  for (const candidate of collectExplicitPiiCandidates(rawText)) {
+    if (containsStandalonePiiToken(normalizedOutput, candidate.token)) {
+      categories.add(candidate.category);
+    }
+  }
+  return {
+    hasResidual: categories.size > 0,
+    categories: Array.from(categories).sort(),
+  };
+}
+
+const PII_PLACEHOLDER: Record<ZendeskResidualPiiCategory, string> = {
+  email: "[email]",
+  phone: "[phone]",
+  identifier: "[redacted identifier]",
+  person_name: "[redacted name]",
+  address: "[address]",
+};
+
+/**
+ * Deterministic second pass for values the model left behind. Only explicit
+ * PII candidates found in the raw input are replaced, and raw values are never
+ * returned in diagnostics or persisted.
+ */
+export function scrubResidualZendeskPii(
+  raw: ZendeskRedactionFields,
+  redacted: ZendeskRedactionFields,
+): ZendeskRedactionFields {
+  const fields: ZendeskRedactionFields = { ...redacted };
+  const keys = Object.keys(fields) as Array<keyof ZendeskRedactionFields>;
+
+  // Replace labelled raw values first so an order number made only of digits
+  // becomes an identifier placeholder instead of being mistaken for a phone.
+  const rawText = Object.values(raw).join("\n");
+  const priority: Record<ZendeskResidualPiiCategory, number> = {
+    identifier: 0,
+    address: 1,
+    email: 2,
+    phone: 3,
+    // Names come last because a personal name can also be the local part of an
+    // email address; replacing the substring first would leave a broken leak.
+    person_name: 4,
+  };
+  const candidates = collectExplicitPiiCandidates(rawText).sort((a, b) =>
+    priority[a.category] - priority[b.category]
+  );
+  for (const candidate of candidates) {
+    for (const key of keys) {
+      fields[key] = replaceStandalonePiiToken(
+        fields[key],
+        candidate.token,
+        PII_PLACEHOLDER[candidate.category],
+      );
+    }
+  }
+
+  // Catch direct email/phone leaks that were not identifiable from a label in
+  // the source (or that the model introduced). This remains a fail-closed pass.
+  for (const key of keys) {
+    fields[key] = fields[key].replace(
+      /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,
+      "[email]",
+    );
+    for (const phone of collectPhoneLikeTokens(fields[key])) {
+      fields[key] = replaceStandalonePiiToken(fields[key], phone, "[phone]");
+    }
+  }
+  return fields;
+}
+
 /** Fail closed when deterministic checks find PII that survived redaction. */
 export function hasResidualZendeskPii(
   raw: ZendeskRedactionFields,
   redacted: ZendeskRedactionFields,
 ): boolean {
-  const rawText = Object.values(raw).join("\n");
-  const redactedText = Object.values(redacted).join("\n");
-  if (/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(redactedText)) {
-    return true;
-  }
-  if (collectPhoneLikeTokens(redactedText).length > 0) return true;
-
-  const normalizedOutput = normalizePiiToken(redactedText);
-  return collectExplicitPiiTokens(rawText).some((token) =>
-    containsStandalonePiiToken(normalizedOutput, token)
-  );
+  return analyzeResidualZendeskPii(raw, redacted).hasResidual;
 }
 
 export function mergeZendeskImportTags(
