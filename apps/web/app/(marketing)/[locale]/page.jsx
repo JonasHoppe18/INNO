@@ -1,10 +1,13 @@
-import { unstable_setRequestLocale } from "next-intl/server";
+import Link from "next/link";
+import { getTranslations, unstable_setRequestLocale } from "next-intl/server";
 import LandingNav from "@/components/landing/LandingNav";
 import Hero from "@/components/landing/Hero";
 import DemoInbox from "@/components/landing/demo-inbox/DemoInbox";
 import HowItWorks from "@/components/landing/HowItWorks";
+import FeatureDives from "@/components/landing/FeatureDives";
+import LanguagesSection from "@/components/landing/LanguagesSection";
+import Reveal from "@/components/landing/Reveal";
 import TrustStrip from "@/components/landing/TrustStrip";
-import ExploreProduct from "@/components/landing/ExploreProduct";
 import PricingSection from "@/components/landing/PricingSection";
 import FinalCta from "@/components/landing/FinalCta";
 
@@ -24,11 +27,14 @@ export async function generateMetadata({ params: { locale } }) {
   };
 }
 
-// Lean homepage: hook (hero + interactive demo) → the fast "what is this"
-// (how it works) → a compact trust strip → cards into the deeper pages →
-// pricing → book a demo. Product depth lives on /product.
+// Homepage: it explains the product in full — the interactive demo shows Sona
+// working, then how-it-works, then what it actually does (grounded answers,
+// real store actions, every language), a trust strip, pricing, and book-a-demo.
+// The deepest detail (problem framing, the three control modes, FAQ) lives on
+// /product, reachable from the "see the full product" link and the nav.
 export default async function LandingPage({ params: { locale } }) {
   unstable_setRequestLocale(locale);
+  const t = await getTranslations("landing.productPage");
   return (
     <main className="min-h-screen bg-white text-zinc-900">
       <LandingNav locale={locale} />
@@ -36,9 +42,19 @@ export default async function LandingPage({ params: { locale } }) {
         <DemoInbox />
       </Hero>
       <HowItWorks />
-      <TrustStrip locale={locale} />
-      <ExploreProduct locale={locale} />
+      <FeatureDives />
+      <LanguagesSection />
+      <Reveal className="px-5 pb-8 text-center">
+        <Link
+          href={`/${locale}/product`}
+          className="text-sm font-semibold text-indigo-600 transition-colors hover:text-indigo-700"
+        >
+          {t("seeAll")} →
+        </Link>
+      </Reveal>
       <PricingSection locale={locale} />
+      {/* Trust signals sit right before the ask — reassure, then book. */}
+      <TrustStrip locale={locale} />
       <FinalCta locale={locale} />
     </main>
   );
