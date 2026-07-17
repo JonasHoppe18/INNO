@@ -186,9 +186,11 @@
       "shopifyBody": "Read live order, fulfilment and customer data, and take actions like refunds and address changes.",
       "emailBody": "Forward your support inbox to Sona — it works alongside your existing email, no new helpdesk to learn.",
       "zendeskBody": "Import your past tickets so Sona learns how your team already answers.",
-      "wooBody": "Live order and customer data for WooCommerce stores.",
+      "woocommerceBody": "Live order and customer data for WooCommerce stores.",
       "magentoBody": "Live order and customer data for Magento stores.",
-      "moreBody": "More e-commerce, email and helpdesk connections are on the way.",
+      "requestTitle": "Don't see your platform?",
+      "requestBody": "Tell us what you run on. We build the integrations our customers actually ask for — and your answer moves it up the list.",
+      "requestCta": "Request an integration",
       "cta": "Book a demo"
     },
     "legal": {

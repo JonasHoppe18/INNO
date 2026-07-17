@@ -44,7 +44,7 @@ export default async function LandingPage({ params: { locale } }) {
       <ControlSection />
       <TrustSection locale={locale} />
       <PricingSection locale={locale} />
-      <IntegrationsSection />
+      <IntegrationsSection locale={locale} />
       <FaqSection />
       <FinalCta locale={locale} />
     </main>

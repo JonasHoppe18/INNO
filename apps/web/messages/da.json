@@ -186,9 +186,11 @@
       "shopifyBody": "Læs live ordre-, fulfilment- og kundedata, og udfør handlinger som refusioner og adresseændringer.",
       "emailBody": "Videresend din support-indbakke til Sona — den arbejder oven på din nuværende email, ingen ny helpdesk at lære.",
       "zendeskBody": "Importér dine gamle tickets, så Sona lærer, hvordan dit team allerede svarer.",
-      "wooBody": "Live ordre- og kundedata for WooCommerce-butikker.",
+      "woocommerceBody": "Live ordre- og kundedata for WooCommerce-butikker.",
       "magentoBody": "Live ordre- og kundedata for Magento-butikker.",
-      "moreBody": "Flere e-commerce-, email- og helpdesk-forbindelser er på vej.",
+      "requestTitle": "Kan du ikke se din platform?",
+      "requestBody": "Fortæl os hvad I kører på. Vi bygger de integrationer, vores kunder rent faktisk beder om — og dit svar rykker den op på listen.",
+      "requestCta": "Anmod om en integration",
       "cta": "Book en demo"
     },
     "legal": {
