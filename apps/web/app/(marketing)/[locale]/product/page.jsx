@@ -8,7 +8,6 @@ import ProblemSection from "@/components/landing/ProblemSection";
 import FeatureDives from "@/components/landing/FeatureDives";
 import LanguagesSection from "@/components/landing/LanguagesSection";
 import ControlSection from "@/components/landing/ControlSection";
-import FaqSection from "@/components/landing/FaqSection";
 
 export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));
@@ -36,9 +35,8 @@ export default async function ProductPage({ params: { locale } }) {
       <FeatureDives />
       <LanguagesSection />
       <ControlSection />
-      <FaqSection />
 
-      <section className="px-5 pb-24 text-center">
+      <section className="px-5 pt-12 pb-24 text-center">
         <Reveal>
           <BookDemoButton
             label={t("cta")}

@@ -1,14 +1,13 @@
-import Link from "next/link";
-import { getTranslations, unstable_setRequestLocale } from "next-intl/server";
+import { unstable_setRequestLocale } from "next-intl/server";
 import LandingNav from "@/components/landing/LandingNav";
 import Hero from "@/components/landing/Hero";
 import DemoInbox from "@/components/landing/demo-inbox/DemoInbox";
 import HowItWorks from "@/components/landing/HowItWorks";
 import FeatureDives from "@/components/landing/FeatureDives";
 import LanguagesSection from "@/components/landing/LanguagesSection";
-import Reveal from "@/components/landing/Reveal";
-import TrustStrip from "@/components/landing/TrustStrip";
 import PricingSection from "@/components/landing/PricingSection";
+import FaqSection from "@/components/landing/FaqSection";
+import TrustStrip from "@/components/landing/TrustStrip";
 import FinalCta from "@/components/landing/FinalCta";
 
 export async function generateMetadata({ params: { locale } }) {
@@ -27,14 +26,13 @@ export async function generateMetadata({ params: { locale } }) {
   };
 }
 
-// Homepage: it explains the product in full — the interactive demo shows Sona
-// working, then how-it-works, then what it actually does (grounded answers,
-// real store actions, every language), a trust strip, pricing, and book-a-demo.
-// The deepest detail (problem framing, the three control modes, FAQ) lives on
-// /product, reachable from the "see the full product" link and the nav.
+// Homepage: the interactive demo shows Sona working, then how-it-works, then
+// what it actually does (grounded answers, real store actions, every language),
+// pricing, objection-handling FAQ, a trust strip, and book-a-demo. The deepest
+// detail (problem framing, the three control modes) lives on /product, reachable
+// from the nav.
 export default async function LandingPage({ params: { locale } }) {
   unstable_setRequestLocale(locale);
-  const t = await getTranslations("landing.productPage");
   return (
     <main className="min-h-screen bg-white text-zinc-900">
       <LandingNav locale={locale} />
@@ -44,15 +42,8 @@ export default async function LandingPage({ params: { locale } }) {
       <HowItWorks />
       <FeatureDives />
       <LanguagesSection />
-      <Reveal className="px-5 pb-8 text-center">
-        <Link
-          href={`/${locale}/product`}
-          className="text-sm font-semibold text-indigo-600 transition-colors hover:text-indigo-700"
-        >
-          {t("seeAll")} →
-        </Link>
-      </Reveal>
       <PricingSection locale={locale} />
+      <FaqSection />
       {/* Trust signals sit right before the ask — reassure, then book. */}
       <TrustStrip locale={locale} />
       <FinalCta locale={locale} />

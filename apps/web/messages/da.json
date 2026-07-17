@@ -190,17 +190,6 @@
       "placeholder": "Denne side er en placeholder. Den endelige, juridisk gennemgåede tekst offentliggøres her før launch.",
       "contactLine": "Spørgsmål? Skriv til os på hello@sona.ai."
     },
-    "explore": {
-      "kicker": "PRODUKTET",
-      "title": "Alt hvad Sona kan",
-      "learnMore": "Læs mere",
-      "card1Title": "Sådan virker Sona",
-      "card1Body": "Hele produktet — forankrede svar, rigtige butiks-handlinger, alle sprog og kontrol-tilstandene.",
-      "card2Title": "Integrationer",
-      "card2Body": "Arbejder oven på din butik, din indbakke og din helpdesk. Ingen migrering.",
-      "card3Title": "Sikkerhed & data",
-      "card3Body": "EU-hostet, bruges kun til at besvare tickets, og intet sendes uden din godkendelse."
-    },
     "productPage": {
       "title": "Produktet",
       "subtitle": "Hvordan Sona læser en ticket, finder ordren, skriver svaret og udfører handlingen — og hvordan du beholder kontrollen hele vejen.",

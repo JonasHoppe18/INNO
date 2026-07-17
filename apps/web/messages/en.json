@@ -190,17 +190,6 @@
       "placeholder": "This page is a placeholder. The final, legally reviewed text will be published here before launch.",
       "contactLine": "Questions? Reach us at hello@sona.ai."
     },
-    "explore": {
-      "kicker": "THE PRODUCT",
-      "title": "Everything Sona can do",
-      "learnMore": "Learn more",
-      "card1Title": "How Sona works",
-      "card1Body": "The full product — grounded answers, real store actions, every language, and the control modes.",
-      "card2Title": "Integrations",
-      "card2Body": "Works on top of your store, your inbox and your helpdesk. No migration.",
-      "card3Title": "Security & data",
-      "card3Body": "EU-hosted, used only to answer tickets, and nothing sent without your approval."
-    },
     "productPage": {
       "title": "The product",
       "subtitle": "How Sona reads a ticket, finds the order, drafts the reply and takes the action — and how you stay in control the whole way.",
