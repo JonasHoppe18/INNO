@@ -12,10 +12,134 @@ import {
   Dialog,
   DialogClose,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+} from "@/components/ui/field";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import {
+  ACTION_DECLINE_REASONS,
+  actionDeclineReasonNeedsNote,
+} from "@/lib/action-decline";
 import shopifyLogo from "../../../../assets/Shopify-Logo.png";
+
+function DeclineActionDialog({
+  open,
+  onOpenChange,
+  actionName,
+  loading,
+  onConfirm,
+}) {
+  const [reasonCode, setReasonCode] = useState("wrong_action");
+  const [reason, setReason] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+  const noteRequired = actionDeclineReasonNeedsNote(reasonCode);
+  const noteMissing = noteRequired && !reason.trim();
+
+  const reset = () => {
+    setReasonCode("wrong_action");
+    setReason("");
+    setSubmitted(false);
+  };
+
+  const handleOpenChange = (nextOpen) => {
+    if (loading) return;
+    if (!nextOpen) reset();
+    onOpenChange(nextOpen);
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setSubmitted(true);
+    if (noteMissing || loading) return;
+    const completed = await onConfirm?.({
+      decisionReasonCode: reasonCode,
+      decisionReason: reason.trim(),
+    });
+    if (completed === false) return;
+    reset();
+    onOpenChange(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="sm:max-w-[520px]">
+        <form className="flex flex-col gap-5" onSubmit={handleSubmit}>
+          <DialogHeader>
+            <DialogTitle>Decline {actionName.toLowerCase()}?</DialogTitle>
+            <DialogDescription>
+              Tell Sona why, so the replacement draft stays accurate and never claims the action happened.
+            </DialogDescription>
+          </DialogHeader>
+
+          <FieldGroup className="gap-5">
+            <FieldSet className="gap-3">
+              <FieldLegend variant="label">Why should Sona not take this action?</FieldLegend>
+              <RadioGroup value={reasonCode} onValueChange={setReasonCode}>
+                {ACTION_DECLINE_REASONS.map((option) => (
+                  <Field key={option.value} orientation="horizontal">
+                    <RadioGroupItem id={`decline-${option.value}`} value={option.value} />
+                    <FieldLabel htmlFor={`decline-${option.value}`}>
+                      <span className="flex flex-col gap-0.5">
+                        <span>{option.label}</span>
+                        <span className="text-xs font-normal text-muted-foreground">
+                          {option.description}
+                        </span>
+                      </span>
+                    </FieldLabel>
+                  </Field>
+                ))}
+              </RadioGroup>
+            </FieldSet>
+
+            <Field data-invalid={submitted && noteMissing}>
+              <FieldLabel htmlFor="decline-action-reason">
+                Context for Sona {noteRequired ? "" : "(optional)"}
+              </FieldLabel>
+              <Textarea
+                id="decline-action-reason"
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                placeholder="For example: The order was fulfilled this morning, so the address can no longer be changed."
+                aria-invalid={submitted && noteMissing}
+                maxLength={800}
+                disabled={loading}
+                className="min-h-[96px] resize-none"
+              />
+              <FieldDescription>
+                Internal context only. Sona will paraphrase customer-safe facts in the store&apos;s normal tone.
+              </FieldDescription>
+              {submitted && noteMissing ? (
+                <FieldError>Add the specific reason Sona should use.</FieldError>
+              ) : null}
+            </Field>
+          </FieldGroup>
+
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button type="button" variant="outline" onClick={() => handleOpenChange(false)} disabled={loading}>
+              Keep action
+            </Button>
+            <Button type="submit" variant="destructive" disabled={loading || noteMissing}>
+              {loading ? "Creating new draft..." : "Decline and redraft"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 function formatAddressLines(detail = "") {
   const stripped = String(detail || "")
@@ -321,6 +445,7 @@ export function ActionCard({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [showApprovedDetail, setShowApprovedDetail] = useState(false);
+  const [showDeclineDialog, setShowDeclineDialog] = useState(false);
   const [nowMs, setNowMs] = useState(null);
   const isProposed = status === "proposed";
   const isExecuting = status === "executing";
@@ -590,57 +715,76 @@ export function ActionCard({
   }
 
   return (
-    <div className="animate-in fade-in slide-in-from-bottom-2 w-full max-w-[520px] overflow-hidden rounded-lg border border-violet-200 dark:border-violet-500/30 bg-card duration-300">
-      <div className="p-3">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex min-w-0 items-center gap-2">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center">
-              <Image src={shopifyLogo} alt="" className="h-10 w-10 object-contain" />
+    <>
+      <div className="animate-in fade-in slide-in-from-bottom-2 w-full max-w-[520px] overflow-hidden rounded-lg border border-violet-200 dark:border-violet-500/30 bg-card duration-300">
+        <div className="p-3">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center">
+                <Image src={shopifyLogo} alt="" className="h-10 w-10 object-contain" />
+              </div>
+              <div className="truncate text-l font-semibold leading-tight text-foreground">
+                {proposedTitle}
+              </div>
             </div>
-            <div className="truncate text-l font-semibold leading-tight text-foreground">{proposedTitle}</div>
+            <div className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-violet-600 dark:text-violet-400">
+              <LoaderCircle className="h-5 w-5 animate-spin" />
+              <span>Awaiting approval</span>
+            </div>
           </div>
-          <div className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-violet-600 dark:text-violet-400">
-            <LoaderCircle className="h-5 w-5 animate-spin" />
-            <span>Awaiting approval</span>
+
+          <div className="mt-3 rounded-md border border-violet-200/70 dark:border-violet-500/20 bg-muted/40 p-2.5">
+            <div className="space-y-0.5 text-sm text-foreground/80">
+              {impactSummaryLines.map((line, index) => (
+                <div key={`impact-line-${index}`}>{line}</div>
+              ))}
+            </div>
           </div>
+
+          {error ? (
+            <div className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</div>
+          ) : null}
+          {validationError ? (
+            <div className="mt-2 text-xs text-amber-700 dark:text-amber-400">
+              {validationError}
+            </div>
+          ) : null}
+          {extraContent ? <div className="mt-2">{extraContent}</div> : null}
         </div>
 
-        <div className="mt-3 rounded-md border border-violet-200/70 dark:border-violet-500/20 bg-muted/40 p-2.5">
-          <div className="space-y-0.5 text-sm text-foreground/80">
-            {impactSummaryLines.map((line, index) => (
-              <div key={`impact-line-${index}`}>{line}</div>
-            ))}
-          </div>
+        <div className="flex items-center justify-end gap-2 border-t border-violet-200/70 dark:border-violet-500/20 px-3 py-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setShowDeclineDialog(true)}
+            disabled={loading}
+          >
+            Reject
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={onApprove}
+            disabled={loading || Boolean(validationError)}
+          >
+            {loading ? (
+              <LoaderCircle data-icon="inline-start" className="animate-spin" />
+            ) : (
+              <CheckCircle2 data-icon="inline-start" />
+            )}
+            {loading ? "Applying..." : approveButtonLabel}
+          </Button>
         </div>
-
-        {error ? <div className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</div> : null}
-        {validationError ? (
-          <div className="mt-2 text-xs text-amber-700 dark:text-amber-400">
-            {validationError}
-          </div>
-        ) : null}
-        {extraContent ? <div className="mt-2">{extraContent}</div> : null}
       </div>
 
-      <div className="flex items-center justify-end gap-2 border-t border-violet-200/70 dark:border-violet-500/20 px-3 py-2">
-        <button
-          type="button"
-          className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground/80 transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
-          onClick={onDecline}
-          disabled={loading}
-        >
-          Reject
-        </button>
-        <button
-          type="button"
-          className="inline-flex items-center gap-1 rounded-md bg-violet-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
-          onClick={onApprove}
-          disabled={loading || Boolean(validationError)}
-        >
-          <CheckCircle2 className="h-3.5 w-3.5" />
-          {loading ? "Applying..." : approveButtonLabel}
-        </button>
-      </div>
-    </div>
+      <DeclineActionDialog
+        open={showDeclineDialog}
+        onOpenChange={setShowDeclineDialog}
+        actionName={actionName}
+        loading={loading}
+        onConfirm={onDecline}
+      />
+    </>
   );
 }

@@ -6,6 +6,7 @@ import {
   CHEAP_MODEL_INTENTS,
   pickWriterModel,
   prepareStrongRetryCandidate,
+  shouldAutoExecuteActionProposals,
   shouldDeferDraftUntilActionDecision,
 } from "./pipeline.ts";
 import { computeRoutingHint } from "./stages/action-decision.ts";
@@ -36,7 +37,53 @@ Deno.test("applyAutomationConstraints routes test-mode actions to review", () =>
   );
 
   assertEquals(result.routing_hint, "review");
+  assertEquals(result.proposals[0].requires_approval, true);
+});
+
+Deno.test("applyAutomationConstraints removes actions configured off", () => {
+  const result = applyAutomationConstraints(
+    [proposal()],
+    "review",
+    { order_updates: true, cancel_orders: true, automatic_refunds: true },
+    false,
+    { action_modes: { cancel_order: "off" } },
+  );
+
+  assertEquals(result.proposals, []);
+});
+
+Deno.test("applyAutomationConstraints makes configured address auto executable", () => {
+  const result = applyAutomationConstraints(
+    [proposal({
+      type: "update_shipping_address",
+      confidence: "high",
+      requires_approval: true,
+    })],
+    "auto",
+    { order_updates: false, cancel_orders: false, automatic_refunds: false },
+    false,
+    { action_modes: { update_shipping_address: "auto" } },
+  );
+
+  assertEquals(result.routing_hint, "auto");
   assertEquals(result.proposals[0].requires_approval, false);
+  assertEquals(
+    shouldAutoExecuteActionProposals(result.proposals, result.routing_hint, false),
+    true,
+  );
+});
+
+Deno.test("unsupported refund auto mode is downgraded to approval", () => {
+  const result = applyAutomationConstraints(
+    [proposal({ type: "refund_order", requires_approval: false })],
+    "auto",
+    { order_updates: true, cancel_orders: true, automatic_refunds: true },
+    false,
+    { action_modes: { refund_order: "auto" } },
+  );
+
+  assertEquals(result.routing_hint, "review");
+  assertEquals(result.proposals[0].requires_approval, true);
 });
 
 Deno.test("applyAutomationConstraints requires review when automation flag is disabled", () => {
@@ -216,6 +263,30 @@ Deno.test("strong retry candidate cannot bypass post-action or support-voice gua
   );
 });
 
+Deno.test("declined outcomes are never rewritten as completed post-action confirmations", () => {
+  const result = prepareStrongRetryCandidate({
+    draftText:
+      "Hi, we have not changed the order. Could you confirm the missing address details?",
+    replyLanguage: "en",
+    compatibilityEnabled: false,
+    postActionResult: {
+      action_type: "update_shipping_address",
+      outcome: "declined",
+      reason_code: "missing_information",
+      decision_reason: "The house number is missing.",
+    },
+    orderMatchState: "exact_order_number",
+    customerMessage: "Please change my delivery address.",
+    imageAttachmentCount: 0,
+  });
+
+  assertEquals(
+    result.violations.some((issue) => issue.startsWith("post_action:")),
+    false,
+  );
+  assertEquals(result.draftText.includes("has already been executed"), false);
+});
+
 // ── AZ-1b Stage 12d wiring ──────────────────────────────────────────────────
 const IMAGE_CLAIM_DRAFT =
   "Jeg har set de vedhæftede billeder, og det ser ud til at være en fysisk skade.";
@@ -322,7 +393,7 @@ Deno.test("action-decision: returns [] when pending_asks is non-empty", async ()
   );
 });
 
-Deno.test("action-decision: globally disabled exchange stays disabled when pending_asks is empty", async () => {
+Deno.test("action-decision: exchange is off by default and enabled explicitly", async () => {
   const { applyDeterministicRules } = await import(
     "./stages/action-decision.ts"
   );
@@ -376,6 +447,63 @@ Deno.test("action-decision: globally disabled exchange stays disabled when pendi
     [],
     "exchange remains disabled until the executable workflow is intentionally enabled",
   );
+
+  const enabledResult = applyDeterministicRules(
+    plan,
+    caseState,
+    facts,
+    retrieved,
+    {
+      action_modes: { create_exchange_request: "approve" },
+    },
+    customerMessage,
+  );
+  assertEquals(enabledResult.length, 1);
+  assertEquals(enabledResult[0].type, "create_exchange_request");
+  assertEquals(enabledResult[0].requires_approval, true);
+});
+
+Deno.test("action-decision: enabled return uses the executable approval flow", async () => {
+  const { applyDeterministicRules } = await import(
+    "./stages/action-decision.ts"
+  );
+  const result = applyDeterministicRules(
+    {
+      primary_intent: "return",
+      resolution_stage: "refund_or_exchange" as const,
+      sub_queries: [],
+      required_facts: [],
+      skills_to_consider: [],
+      confidence: 0.9,
+      language: "en",
+    },
+    {
+      intents: [{ type: "return", confidence: 0.9 }],
+      entities: { order_numbers: ["1001"], customer_email: "", products_mentioned: [] },
+      decisions_made: [],
+      open_questions: [],
+      pending_asks: [],
+      language: "en",
+      last_updated_msg_id: "msg-return",
+    },
+    {
+      order: {
+        id: "gid://shopify/Order/1001",
+        name: "#1001",
+        fulfillment_status: "fulfilled",
+        financial_status: "paid",
+        line_items: [],
+      },
+      facts: [{ label: "Returret", value: "Ja — inden for 30 dage" }],
+    },
+    { chunks: [], past_ticket_examples: [] },
+    { action_modes: { initiate_return: "approve" } },
+    "I would like to return my order",
+  );
+
+  assertEquals(result.length, 1);
+  assertEquals(result[0].type, "send_return_instructions");
+  assertEquals(result[0].requires_approval, true);
 });
 
 // --- Hybrid writer-model routing (cost optimization, 2026-07-08) ------------

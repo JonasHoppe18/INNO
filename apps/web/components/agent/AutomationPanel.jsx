@@ -27,41 +27,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useAgentAutomation } from "@/hooks/useAgentAutomation";
 import { useActionConfig } from "@/hooks/useActionConfig";
 import { AutopilotReadinessSection } from "@/components/agent/AutopilotReadinessSection";
+import { CORE_ACTIONS } from "@/lib/action-modes";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { CircleOff, UserCheck, Zap } from "lucide-react";
 
-// Definition af de tilstande vi lader brugeren styre fra automation-panelet.
-const toggles = [
-  {
-    key: "orderUpdates",
-    label: "Order updates",
-    description:
-      "Allow Sona to automatically update customer orders. When disabled, Sona will suggest the change for review instead.",
-  },
-  {
-    key: "cancelOrders",
-    label: "Allow cancellations",
-    description:
-      "Allow Sona to automatically cancel unshipped orders. When disabled, cancellations require approval.",
-    status: "comingSoon",
-  },
-  {
-    key: "historicInboxAccess",
-    label: "Historical inbox",
-    description: "Allow Sona to use previous conversations as context when drafting replies.",
-    status: "comingSoon",
-  },
-  {
-    key: "automaticRefunds",
-    label: "Automatic refunds",
-    description:
-      "Allow Sona to automatically process eligible refunds. When disabled, refunds require approval.",
-    status: "comingSoon",
-  },
+const ACTION_MODE_OPTIONS = [
+  { value: "off", label: "Off", icon: CircleOff },
+  { value: "approve", label: "Approve", icon: UserCheck },
+  { value: "auto", label: "Auto", icon: Zap },
 ];
 
 const DEFAULT_RETURN_SETTINGS = {
@@ -143,35 +122,47 @@ function SettingsSection({
   );
 }
 
-function ToggleRow({
-  label,
-  description,
-  checked,
-  onCheckedChange,
-  disabled,
-  badge,
-  helper,
-}) {
+function ActionModeRow({ action, value, onValueChange, disabled }) {
   return (
-    <div className="px-4 py-4 md:px-5">
-      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-6">
-        <div className="space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="text-sm font-medium text-slate-900">{label}</p>
-            {badge}
-          </div>
-          <p className="text-sm text-slate-600">{description}</p>
-          {helper ? <p className="text-xs text-slate-500">{helper}</p> : null}
+    <div className="grid gap-4 px-4 py-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center md:gap-6 md:px-5">
+      <div className="grid gap-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-sm font-medium text-foreground">{action.label}</p>
+          {!action.autoAvailable ? (
+            <Badge variant="secondary">Approve only</Badge>
+          ) : null}
         </div>
-        <div className="flex justify-start sm:justify-end sm:pl-4">
-          <Switch
-            checked={checked}
-            onCheckedChange={onCheckedChange}
-            disabled={disabled}
-            aria-label={label}
-          />
-        </div>
+        <p className="text-sm text-muted-foreground">{action.description}</p>
       </div>
+      <ToggleGroup
+        type="single"
+        variant="outline"
+        size="sm"
+        value={value}
+        onValueChange={(next) => {
+          if (next) onValueChange(next);
+        }}
+        aria-label={`${action.label} permission`}
+        className="w-full justify-start md:w-auto md:justify-end"
+      >
+        {ACTION_MODE_OPTIONS.map((option) => {
+          const Icon = option.icon;
+          const unavailable = option.value === "auto" && !action.autoAvailable;
+          return (
+            <ToggleGroupItem
+              key={option.value}
+              value={option.value}
+              disabled={disabled || unavailable}
+              aria-label={`${action.label}: ${option.label}`}
+              title={unavailable ? "Auto requires additional workflow and safety rules." : undefined}
+              className="min-w-[88px] transition-transform duration-150 active:scale-[0.97]"
+            >
+              <Icon data-icon="inline-start" />
+              {option.label}
+            </ToggleGroupItem>
+          );
+        })}
+      </ToggleGroup>
     </div>
   );
 }
@@ -197,6 +188,7 @@ export function AutomationPanel({ children = null }) {
     error: actionConfigError,
     isDirty: actionConfigDirty,
     update: updateActionConfig,
+    updateActionMode,
     save: saveActionConfig,
     reset: resetActionConfig,
   } = useActionConfig();
@@ -254,25 +246,11 @@ export function AutomationPanel({ children = null }) {
     }
   }, [loading]);
 
-  // Hver switch får sin egen change handler der opdaterer lokale state felter.
-  const handleToggle = useCallback(
-    (key) => (next) => {
-      setLocal((s) => ({ ...(s || {}), [key]: Boolean(next) }));
-    },
-    []
-  );
-
   const handleSave = useCallback(async () => {
     if (!settings) return;
     const toastId = toast.loading("Saving changes...");
     try {
       const updates = {};
-
-      toggles.forEach(({ key }) => {
-        if (Boolean(local?.[key]) !== Boolean(settings?.[key])) {
-          updates[key] = Boolean(local?.[key]);
-        }
-      });
 
       if (Boolean(local?.autoDraftEnabled) !== Boolean(settings?.autoDraftEnabled)) {
         updates.autoDraftEnabled = Boolean(local?.autoDraftEnabled);
@@ -328,14 +306,11 @@ export function AutomationPanel({ children = null }) {
 
   // dirty bruges både af header knappen og lokale CTA'er.
   const dirty = useMemo(() => {
-    const baseDirty = toggles.some(
-      ({ key }) => Boolean(local?.[key]) !== Boolean(settings?.[key])
-    );
     const draftDirty =
       Boolean(local?.autoDraftEnabled) !== Boolean(settings?.autoDraftEnabled);
     const returnsDirty =
       returnSettingsSnapshot(returnSettings) !== returnSettingsSnapshot(initialReturnSettings);
-    return baseDirty || draftDirty || returnsDirty || actionConfigDirty;
+    return draftDirty || returnsDirty || actionConfigDirty;
   }, [actionConfigDirty, initialReturnSettings, local, returnSettings, settings]);
 
   useEffect(() => {
@@ -385,11 +360,11 @@ export function AutomationPanel({ children = null }) {
   const contextValue = useMemo(
     () => ({
       save: handleSave,
-      saving,
+      saving: saving || actionConfigSaving,
       loading,
       dirty,
     }),
-    [handleSave, saving, loading, dirty]
+    [actionConfigSaving, handleSave, saving, loading, dirty]
   );
 
   const handleToggleAutoDraft = useCallback((next) => {
@@ -522,45 +497,40 @@ export function AutomationPanel({ children = null }) {
             <AutopilotReadinessSection autoDraftEnabled={isAutoDraftEnabled} />
 
             <SettingsSection
-              title="AI Permissions"
-              description="Choose what actions Sona can perform automatically. When disabled, Sona will suggest the action for review instead."
+              title="Action permissions"
+              description="Set a separate permission for every webshop action. Reply sending is configured independently."
               note={!isAutoDraftEnabled ? "Enable Sona Assistant to configure these settings." : null}
+              titleBadge={<Badge variant="secondary">No Auto by default</Badge>}
             >
-              <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-                {toggles.map((item) => {
-                  const isOn = Boolean(local?.[item.key]);
-                  const isComingSoon = item.status === "comingSoon";
-                  const disabled = !canEditDependent || isComingSoon;
-                  return (
-                    <div key={item.key} className="border-b border-slate-100 last:border-b-0">
-                      <ToggleRow
-                        label={item.label}
-                        description={item.description}
-                        checked={isOn}
-                        onCheckedChange={handleToggle(item.key)}
-                        disabled={disabled}
-                        badge={
-                          isComingSoon ? (
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span>
-                                  <Badge
-                                    variant="secondary"
-                                    className="border border-slate-200 bg-slate-100 text-xs text-slate-600"
-                                  >
-                                    Coming soon
-                                  </Badge>
-                                </span>
-                              </TooltipTrigger>
-                              <TooltipContent>Not available yet.</TooltipContent>
-                            </Tooltip>
-                          ) : null
-                        }
-                      />
-                    </div>
-                  );
-                })}
+              <div className="overflow-hidden rounded-xl border border-border bg-card">
+                {CORE_ACTIONS.map((action) => (
+                  <div key={action.type} className="border-b border-border last:border-b-0">
+                    <ActionModeRow
+                      action={action}
+                      value={actionConfig.action_modes?.[action.type] || "off"}
+                      onValueChange={(mode) => updateActionMode(action.type, mode)}
+                      disabled={!canEditDependent || actionConfigLoading || actionConfigSaving}
+                    />
+                  </div>
+                ))}
               </div>
+              <dl className="mt-4 grid gap-3 rounded-lg bg-muted/40 p-4 text-xs sm:grid-cols-3">
+                <div className="grid gap-1">
+                  <dt className="font-medium text-foreground">Off</dt>
+                  <dd className="text-muted-foreground">Draft only. No action is proposed or performed.</dd>
+                </div>
+                <div className="grid gap-1">
+                  <dt className="font-medium text-foreground">Approve</dt>
+                  <dd className="text-muted-foreground">A team member must approve before anything changes.</dd>
+                </div>
+                <div className="grid gap-1">
+                  <dt className="font-medium text-foreground">Auto</dt>
+                  <dd className="text-muted-foreground">Sona rechecks live data first. Test Mode still blocks changes.</dd>
+                </div>
+              </dl>
+              {actionConfigError ? (
+                <p className="mt-3 text-xs text-destructive">{actionConfigError.message}</p>
+              ) : null}
             </SettingsSection>
 
             <SettingsSection
@@ -748,7 +718,7 @@ export function AutomationPanel({ children = null }) {
             )}
             <StickySaveBar
               isVisible={dirty}
-              isSaving={saving || loading || returnsLoading}
+              isSaving={saving || actionConfigSaving || loading || returnsLoading}
               onSave={handleSave}
               onDiscard={handleResetLocal}
             />

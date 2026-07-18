@@ -886,7 +886,9 @@ function TicketDetailComponent({
                             approvalPayloadOverride
                           )
                         }
-                        onDecline={() => onOrderUpdateDecision?.("denied")}
+                        onDecline={(declineContext) =>
+                          onOrderUpdateDecision?.("denied", declineContext)
+                        }
                       />
                     </TicketRenderBoundary>
                   </div>
@@ -949,7 +951,9 @@ function TicketDetailComponent({
                       approvalPayloadOverride
                     )
                   }
-                  onDecline={() => onOrderUpdateDecision?.("denied")}
+                  onDecline={(declineContext) =>
+                    onOrderUpdateDecision?.("denied", declineContext)
+                  }
                 />
               </TicketRenderBoundary>
             </div>

@@ -46,8 +46,12 @@ export type AutomationResult = {
 };
 
 type ExecuteOptions = {
-  supabase: SupabaseClient | null;
+  // The pipeline uses the JSR Supabase client while older shared helpers use
+  // the esm.sh build. Their runtime API is identical but their protected class
+  // fields make the nominal TypeScript types incompatible.
+  supabase: any;
   supabaseUserId: string | null;
+  workspaceId?: string | null;
   actions: AutomationAction[];
   automation: AutomationSettings;
   tokenSecret?: string | null;
@@ -62,6 +66,8 @@ const LOW_RISK_ACTIONS = new Set([
   "lookup_order_status",
   "fetch_tracking",
 ]);
+
+const READ_ONLY_ACTIONS = new Set(["lookup_order_status", "fetch_tracking"]);
 
 function resolveOrderIdFromContext(
   action: AutomationAction,
@@ -98,10 +104,12 @@ function resolveOrderIdFromContext(
 async function getShopCredentials(
   supabase: SupabaseClient,
   userId: string,
+  workspaceId?: string | null,
 ): Promise<ShopCredentials> {
   return await getShopCredentialsForUser({
     supabase,
     userId,
+    workspaceId,
   });
 }
 
@@ -284,8 +292,10 @@ async function resolveWorkspaceIdForSupabaseUser(
 async function resolveWorkspaceTestMode(
   supabase: SupabaseClient,
   supabaseUserId: string,
+  workspaceIdOverride?: string | null,
 ): Promise<boolean> {
-  const workspaceId = await resolveWorkspaceIdForSupabaseUser(supabase, supabaseUserId);
+  const workspaceId = workspaceIdOverride ||
+    await resolveWorkspaceIdForSupabaseUser(supabase, supabaseUserId);
   if (!workspaceId) return false;
   const { data } = await supabase
     .from("workspaces")
@@ -299,8 +309,10 @@ async function resolveWebshipperIntegration(
   supabase: SupabaseClient,
   supabaseUserId: string,
   tokenSecret?: string | null,
+  workspaceIdOverride?: string | null,
 ): Promise<WebshipperIntegrationConfig | null> {
-  const workspaceId = await resolveWorkspaceIdForSupabaseUser(supabase, supabaseUserId);
+  const workspaceId = workspaceIdOverride ||
+    await resolveWorkspaceIdForSupabaseUser(supabase, supabaseUserId);
 
   let integration: {
     config?: Record<string, unknown> | null;
@@ -1169,6 +1181,7 @@ async function handleAction(
 export async function executeAutomationActions({
   supabase,
   supabaseUserId,
+  workspaceId = null,
   actions,
   automation,
   tokenSecret,
@@ -1191,13 +1204,18 @@ export async function executeAutomationActions({
   let workspaceTestMode = false;
   try {
     void tokenSecret;
-    shop = await getShopCredentials(supabase, supabaseUserId);
+    shop = await getShopCredentials(supabase, supabaseUserId, workspaceId);
     webshipper = await resolveWebshipperIntegration(
       supabase,
       supabaseUserId,
       tokenSecret,
+      workspaceId,
     );
-    workspaceTestMode = await resolveWorkspaceTestMode(supabase, supabaseUserId);
+    workspaceTestMode = await resolveWorkspaceTestMode(
+      supabase,
+      supabaseUserId,
+      workspaceId,
+    );
     console.log("automation: shop credentials resolved", {
       shop_domain: shop?.shop_domain,
       supabaseUserId,
@@ -1255,14 +1273,7 @@ export async function executeAutomationActions({
       seenActionKeys.add(actionKey);
 
       const normalizedActionType = String(action.type || "").trim().toLowerCase();
-      if (
-        workspaceTestMode &&
-        (
-          normalizedActionType === "add_note" ||
-          normalizedActionType === "add_tag" ||
-          normalizedActionType === "add_internal_note_or_tag"
-        )
-      ) {
+      if (workspaceTestMode && !READ_ONLY_ACTIONS.has(normalizedActionType)) {
         results.push({
           type: action.type,
           ok: true,
@@ -1273,7 +1284,7 @@ export async function executeAutomationActions({
             simulated: true,
             test_mode: true,
           },
-          detail: "Skipped Shopify note/tag mutation because workspace test mode is enabled.",
+          detail: "Skipped external mutation because workspace test mode is enabled.",
         });
         continue;
       }

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { toLegacyUiStatus } from "@/lib/inbox/status-model";
 import { isOutboundMessage } from "@/components/inbox/inbox-utils";
+import { normalizeActionDeclineInput } from "@/lib/action-decline";
 
 // Matches InboxSplitView.jsx's local `normalizeStatus` wrapper exactly.
 const normalizeStatus = (value) => toLegacyUiStatus(value);
@@ -679,7 +680,9 @@ export function useThreadActions({
         delete next[selectedThreadId];
         return next;
       });
-      const toastId = toast.loading("Applying action...");
+      const toastId = toast.loading(
+        normalized === "accepted" ? "Applying action..." : "Creating a new draft...",
+      );
       const loadGeneratedDraft = async (threadId) => {
         for (let attempt = 0; attempt < 6; attempt += 1) {
           const draftRes = await fetch(`/api/threads/${threadId}/draft`, {
@@ -728,6 +731,9 @@ export function useThreadActions({
       };
       try {
         const nowIso = new Date().toISOString();
+        const declineContext = normalized === "denied"
+          ? normalizeActionDeclineInput(options)
+          : null;
         const pendingId = String(pending.id || "").trim();
         const pendingLooksLikeUuid =
           /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
@@ -743,7 +749,9 @@ export function useThreadActions({
               actionId: pendingLooksLikeUuid ? pendingId : null,
               proposalLogId: pendingLooksLikeUuid ? null : pending.id || null,
               proposalText: pending.detail || "",
+              ...(declineContext || {}),
               payloadOverride:
+                normalized === "accepted" &&
                 options &&
                 typeof options === "object" &&
                 Object.keys(options).length
@@ -828,7 +836,7 @@ export function useThreadActions({
           }
 
           toast.error(blockedReason, { id: toastId });
-          return;
+          return false;
         }
         if (payload?.returnCase && typeof payload.returnCase === "object") {
           setReturnCaseByThread((prev) => ({
@@ -915,8 +923,25 @@ export function useThreadActions({
             }));
           }
         } else {
-          toast.success("Order update denied.", { id: toastId });
+          if (payload?.draftGenerated) {
+            setPostApprovalDraftLoadingByThread((prev) => ({
+              ...prev,
+              [selectedThreadId]: true,
+            }));
+            await loadGeneratedDraft(selectedThreadId);
+            setPostApprovalDraftLoadingByThread((prev) => ({
+              ...prev,
+              [selectedThreadId]: false,
+            }));
+          }
+          toast.success(
+            payload?.draftGenerated
+              ? "Action declined and a new draft is ready."
+              : "Action declined.",
+            { id: toastId },
+          );
         }
+        return true;
       } catch (error) {
         const message = error?.message || "Could not update action.";
         setOrderUpdateErrorByThread((prev) => ({
@@ -926,6 +951,7 @@ export function useThreadActions({
         toast.error(error?.message || "Could not update action.", {
           id: toastId,
         });
+        return false;
       } finally {
         setOrderUpdateSubmittingByThread((prev) => ({
           ...prev,

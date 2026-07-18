@@ -20,6 +20,7 @@ import {
   Trash2,
   User,
   Users2,
+  Zap,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -82,7 +83,7 @@ const MENU_SECTIONS = [
     label: "AI & AUTOMATION",
     items: [
       { key: "ai", label: "AI instructions", icon: Bot },
-      { key: "automation", label: "Automation", icon: Bot },
+      { key: "automation", label: "Actions & automation", icon: Zap },
       { key: "playground", label: "Playground", icon: SlidersHorizontal },
     ],
   },

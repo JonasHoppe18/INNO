@@ -49,6 +49,16 @@ import {
   runActionDecision,
   ShopActionConfig,
 } from "./stages/action-decision.ts";
+import {
+  canAutoExecuteAction,
+  normalizeCoreActionType,
+  resolveActionMode,
+} from "../_shared/action-modes.ts";
+import { executeAutomationActions } from "../_shared/automation-actions.ts";
+import {
+  actionOutcomeRequiresReview,
+  isExecutedActionResult,
+} from "../_shared/action-outcomes.ts";
 import { buildRetrievalLogPayload } from "./stages/retrieval-log.ts";
 import {
   assessGroundingCoverage,
@@ -436,7 +446,7 @@ function detectPostActionDraftIssues(
   actionResult: Record<string, unknown> | null,
   replyLanguage = "en",
 ): string[] {
-  if (!actionResult) return [];
+  if (!isExecutedActionResult(actionResult)) return [];
   const text = String(draftText || "").toLowerCase();
   const actionType = String(actionResult.action_type || "");
   const issues: string[] = [];
@@ -535,7 +545,8 @@ function cleanupPostActionDraftText(
   replyLanguage: string,
 ): string {
   if (
-    !actionResult || String(actionResult.action_type || "") !== "refund_order"
+    !isExecutedActionResult(actionResult) ||
+    String(actionResult?.action_type || "") !== "refund_order"
   ) {
     return draftText;
   }
@@ -886,7 +897,11 @@ function actionNeedsApproval(
     cancel_orders: boolean;
     automatic_refunds: boolean;
   },
+  shopActionConfig: ShopActionConfig,
 ): boolean {
+  const actionMode = resolveActionMode(type, shopActionConfig, automation);
+  if (actionMode) return actionMode !== "auto" || !canAutoExecuteAction(type);
+
   switch (type) {
     case "update_shipping_address":
     case "change_shipping_method":
@@ -925,17 +940,28 @@ export function applyAutomationConstraints(
     automatic_refunds: boolean;
   },
   isTestMode: boolean,
+  shopActionConfig: ShopActionConfig = {},
 ): { proposals: ActionProposal[]; routing_hint: "auto" | "review" | "block" } {
+  const enabledProposals = proposals.filter((proposal) =>
+    resolveActionMode(proposal.type, shopActionConfig, automation) !== "off"
+  );
+
   if (aiRoutingHint === "block") {
-    return { proposals, routing_hint: "block" };
+    return { proposals: enabledProposals, routing_hint: "block" };
   }
 
-  // Apply automation flags to each proposal
-  const updatedProposals = proposals.map((p) => ({
-    ...p,
-    requires_approval: p.requires_approval ||
-      actionNeedsApproval(p.type, automation),
-  }));
+  // A configured core mode is authoritative. Business readiness is encoded in
+  // canAutoExecuteAction; non-core actions retain their existing safeguards.
+  const updatedProposals = enabledProposals.map((proposal) => {
+    const coreType = normalizeCoreActionType(proposal.type);
+    return {
+      ...proposal,
+      requires_approval: isTestMode || (coreType
+        ? actionNeedsApproval(proposal.type, automation, shopActionConfig)
+        : proposal.requires_approval ||
+          actionNeedsApproval(proposal.type, automation, shopActionConfig)),
+    };
+  });
 
   // Test mode: actions are shown but never executed in Shopify — always review
   if (isTestMode) {
@@ -1052,6 +1078,18 @@ export function shouldDeferDraftUntilActionDecision(
   routingHint: "auto" | "review" | "block",
 ): boolean {
   return proposals.length > 0 && routingHint === "review";
+}
+
+export function shouldAutoExecuteActionProposals(
+  proposals: ActionProposal[],
+  routingHint: "auto" | "review" | "block",
+  isTestMode: boolean,
+): boolean {
+  return !isTestMode &&
+    routingHint === "auto" &&
+    proposals.length === 1 &&
+    proposals[0].requires_approval === false &&
+    canAutoExecuteAction(proposals[0].type);
 }
 
 function parseReplacementShippingAddress(message = "", existingShipping = {}) {
@@ -1272,7 +1310,7 @@ export async function runDraftV2Pipeline(
     const disableEscalation = eval_payload
       ? eval_options?.disable_escalation === true
       : false;
-    const postActionResult =
+    let postActionResult =
       action_result && typeof action_result === "object" &&
         typeof (action_result as Record<string, unknown>).action_type ===
           "string"
@@ -2264,15 +2302,20 @@ export async function runDraftV2Pipeline(
         actionDecision.routing_hint,
         automation,
         isTestMode,
+        shopActionConfig,
       );
     if (postActionResult) {
       finalProposals = [];
-      effectiveRoutingHint = "auto";
+      effectiveRoutingHint = actionOutcomeRequiresReview(postActionResult)
+        ? "review"
+        : "auto";
     }
     if (
+      !postActionResult &&
       finalProposals.length === 0 &&
       plan.primary_intent === "address_change" &&
       facts.order &&
+      facts.match?.state === "exact_order_number" &&
       (facts.order.fulfillment_status === null ||
         facts.order.fulfillment_status === "unfulfilled")
     ) {
@@ -2320,9 +2363,184 @@ export async function runDraftV2Pipeline(
           "review",
           automation,
           isTestMode,
+          shopActionConfig,
         );
         finalProposals = constrained.proposals;
         effectiveRoutingHint = constrained.routing_hint;
+      }
+    }
+
+    if (
+      !postActionResult &&
+      !isDryRun &&
+      Boolean(thread_id) &&
+      shouldAutoExecuteActionProposals(
+        finalProposals,
+        effectiveRoutingHint,
+        isTestMode,
+      )
+    ) {
+      currentStage = "auto_action_execution";
+      const proposal = finalProposals[0];
+      const orderId = Number(proposal.params?.order_id ?? facts.order?.id ?? 0);
+      const ownerUserId = String(
+        (shop as Record<string, unknown>).owner_user_id ?? "",
+      ).trim();
+      const latestMessageId = String(
+        (latestMessage as Record<string, unknown>).id ?? input.message_id ?? "latest",
+      );
+      const actionKey = `auto_${proposal.type}_${thread_id}_${latestMessageId}`;
+      const nowIso = new Date().toISOString();
+
+      const { data: existingAutoAction } = thread_id
+        ? await supabase
+          .from("thread_actions")
+          .select("id,status,detail,payload,order_id")
+          .eq("thread_id", thread_id)
+          .eq("action_key", actionKey)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        : { data: null };
+
+      if (existingAutoAction?.status === "applied") {
+        postActionResult = {
+          action_type: proposal.type,
+          outcome: "executed",
+          detail: existingAutoAction.detail ?? proposal.reason,
+          order_id: existingAutoAction.order_id ?? orderId,
+          payload: existingAutoAction.payload ?? proposal.params,
+        };
+        finalProposals = [];
+        effectiveRoutingHint = "auto";
+      } else if (existingAutoAction?.status === "pending") {
+        return await completeSkippedGeneration("auto_action_in_progress", {
+          routing_hint: "block",
+          proposed_actions: [],
+        });
+      } else if (
+        !existingAutoAction &&
+        Number.isFinite(orderId) &&
+        orderId > 0 &&
+        ownerUserId
+      ) {
+        let autoActionId: string | null = null;
+        if (thread_id) {
+          const { data: insertedAutoAction, error: autoInsertError } = await supabase
+            .from("thread_actions")
+            .insert({
+              workspace_id: workspaceId,
+              user_id: ownerUserId,
+              thread_id,
+              action_type: proposal.type,
+              action_key: actionKey,
+              status: "pending",
+              detail: proposal.reason,
+              payload: {
+                ...proposal.params,
+                _confidence: proposal.confidence,
+                _mode: "auto",
+              },
+              order_id: String(orderId),
+              order_number: facts.order?.name ?? null,
+              source: "automation",
+              created_at: nowIso,
+              updated_at: nowIso,
+            })
+            .select("id")
+            .maybeSingle();
+          if (autoInsertError) {
+            console.warn("[pipeline] auto action insert failed:", autoInsertError.message);
+          }
+          autoActionId = insertedAutoAction?.id
+            ? String(insertedAutoAction.id)
+            : null;
+        }
+
+        if (!autoActionId) {
+          return await completeSkippedGeneration("auto_action_lock_unavailable", {
+            routing_hint: "block",
+            proposed_actions: [],
+          });
+        }
+
+        const [executionResult] = await executeAutomationActions({
+          supabase,
+          supabaseUserId: ownerUserId,
+          workspaceId,
+          actions: [{
+            type: proposal.type,
+            orderId,
+            payload: proposal.params,
+          }],
+          automation: {
+            order_updates: proposal.type === "update_shipping_address",
+            cancel_orders: proposal.type === "cancel_order",
+            automatic_refunds: proposal.type === "refund_order",
+            historic_inbox_access: false,
+          },
+          tokenSecret: Deno.env.get("ENCRYPTION_KEY") ?? null,
+          apiVersion: Deno.env.get("SHOPIFY_API_VERSION") ?? "2024-07",
+        });
+
+        if (
+          executionResult?.ok ||
+          executionResult?.status === "partial_failure"
+        ) {
+          const appliedAt = new Date().toISOString();
+          if (autoActionId) {
+            await supabase
+              .from("thread_actions")
+              .update({
+                status: "applied",
+                detail: executionResult.detail ?? proposal.reason,
+                payload: {
+                  ...proposal.params,
+                  _confidence: proposal.confidence,
+                  _mode: "auto",
+                },
+                decided_at: appliedAt,
+                applied_at: appliedAt,
+                updated_at: appliedAt,
+                error: null,
+              })
+              .eq("id", autoActionId);
+          }
+          postActionResult = {
+            action_type: proposal.type,
+            outcome: "executed",
+            detail: executionResult.detail ?? proposal.reason,
+            order_id: orderId,
+            order_name: facts.order?.name ?? null,
+            payload: proposal.params,
+          };
+          finalProposals = [];
+          effectiveRoutingHint = executionResult.status === "partial_failure"
+            ? "review"
+            : "auto";
+        } else {
+          const executionError = executionResult?.error ||
+            "Automatic action execution failed.";
+          if (autoActionId) {
+            await supabase
+              .from("thread_actions")
+              .update({
+                status: "failed",
+                updated_at: new Date().toISOString(),
+                error: executionError,
+              })
+              .eq("id", autoActionId);
+          }
+          finalProposals = [{
+            ...proposal,
+            reason: `${proposal.reason} Auto execution failed: ${executionError}`,
+            requires_approval: true,
+          }];
+          effectiveRoutingHint = "review";
+        }
+      } else {
+        finalProposals = [{ ...proposal, requires_approval: true }];
+        effectiveRoutingHint = "review";
       }
     }
     const actionDecisionTrace: Record<string, unknown> = {
@@ -3401,6 +3619,10 @@ export async function runDraftV2Pipeline(
     );
     finalRoutingHint = verifierRoutingGuard.routingHint;
     let blockSendRecommended = verifierRoutingGuard.blockSendRecommended;
+    if (actionOutcomeRequiresReview(postActionResult)) {
+      finalRoutingHint = "review";
+      blockSendRecommended = true;
+    }
     if (verifierRoutingGuard.reasons.length > 0) {
       console.warn(
         `[generate-draft-v2] verifier routing guard: ${
@@ -3474,9 +3696,8 @@ export async function runDraftV2Pipeline(
     // replacement" with no executed action). Executed actions come ONLY from a
     // post-action pass (postActionResult) — never from proposed/requires_approval
     // actions. Same additive posture: never rewrites, only escalates to review.
-    const executedActionTypes = postActionResult &&
-        String(postActionResult.outcome || "executed") !== "declined" &&
-        typeof postActionResult.action_type === "string"
+    const executedActionTypes = isExecutedActionResult(postActionResult) &&
+        typeof postActionResult?.action_type === "string"
       ? [String(postActionResult.action_type)]
       : [];
     const liveFactActionClaimCheck = checkLiveFactAndActionClaims({
