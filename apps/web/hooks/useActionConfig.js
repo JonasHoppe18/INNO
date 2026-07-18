@@ -1,12 +1,21 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { normalizeActionModes } from "@/lib/action-modes";
 
 const DEFAULT_CONFIG = {
   defect_requires_photo: false,
   spare_parts_workflow: "shopify",
   exchange_workflow: "shopify",
+  action_modes: normalizeActionModes(),
 };
+
+const normalizeConfig = (value = {}) => ({
+  defect_requires_photo: value?.defect_requires_photo ?? false,
+  spare_parts_workflow: value?.spare_parts_workflow ?? "shopify",
+  exchange_workflow: value?.exchange_workflow ?? "shopify",
+  action_modes: normalizeActionModes(value?.action_modes),
+});
 
 export function useActionConfig() {
   const [config, setConfig] = useState(DEFAULT_CONFIG);
@@ -22,11 +31,7 @@ export function useActionConfig() {
       .then((r) => r.json())
       .then((data) => {
         if (!active) return;
-        const loaded = {
-          defect_requires_photo: data?.action_config?.defect_requires_photo ?? false,
-          spare_parts_workflow: data?.action_config?.spare_parts_workflow ?? "shopify",
-          exchange_workflow: data?.action_config?.exchange_workflow ?? "shopify",
-        };
+        const loaded = normalizeConfig(data?.action_config);
         setConfig(loaded);
         setInitialConfig(loaded);
       })
@@ -49,15 +54,12 @@ export function useActionConfig() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error ?? "Save failed");
-      const saved = {
-        defect_requires_photo: data.action_config?.defect_requires_photo ?? false,
-        spare_parts_workflow: data.action_config?.spare_parts_workflow ?? "shopify",
-        exchange_workflow: data.action_config?.exchange_workflow ?? "shopify",
-      };
+      const saved = normalizeConfig(data.action_config);
       setConfig(saved);
       setInitialConfig(saved);
     } catch (err) {
       setError(err);
+      throw err;
     } finally {
       setSaving(false);
     }
@@ -67,9 +69,29 @@ export function useActionConfig() {
     setConfig((prev) => ({ ...prev, [key]: value }));
   }, []);
 
+  const updateActionMode = useCallback((type, mode) => {
+    setConfig((prev) => ({
+      ...prev,
+      action_modes: {
+        ...normalizeActionModes(prev?.action_modes),
+        [type]: mode,
+      },
+    }));
+  }, []);
+
   const reset = useCallback(() => {
     setConfig(initialConfig);
   }, [initialConfig]);
 
-  return { config, loading, saving, error, isDirty, update, save, reset };
+  return {
+    config,
+    loading,
+    saving,
+    error,
+    isDirty,
+    update,
+    updateActionMode,
+    save,
+    reset,
+  };
 }

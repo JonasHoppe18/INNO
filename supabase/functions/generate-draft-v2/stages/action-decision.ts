@@ -15,6 +15,10 @@ import { CaseState } from "./case-state-updater.ts";
 import { FactResolverResult, type OrderMatchState } from "./fact-resolver.ts";
 import { RetrieverResult } from "./retriever.ts";
 import { callOpenAIJson } from "./openai-json.ts";
+import {
+  type ActionMode,
+  resolveActionMode,
+} from "../../_shared/action-modes.ts";
 
 // ─── Typer ────────────────────────────────────────────────────────────────────
 
@@ -82,6 +86,17 @@ export function applyMatchActionPolicy(
 // Per-shop action konfiguration — læst fra shops.action_config JSONB.
 // Alle felter er valgfrie med fornuftige defaults.
 export interface ShopActionConfig {
+  // Canonical permission per core action. Missing values keep the legacy-safe
+  // defaults; "off" removes the proposal entirely.
+  action_modes?: Partial<Record<
+    | "update_shipping_address"
+    | "cancel_order"
+    | "refund_order"
+    | "initiate_return"
+    | "create_exchange_request",
+    ActionMode
+  >>;
+
   // Hvordan håndteres reservedels-anmodninger (kabler, dongler, ørepuder osv.)?
   // "office"  → sendes fra kontoret — tilføj note til ordre, ingen Shopify exchange (AceZone-model)
   // "shopify" → opret Shopify exchange (standard for de fleste shops)
@@ -216,9 +231,6 @@ function kbSaysOfficeShipment(retrieved: RetrieverResult): boolean {
 }
 
 const GLOBALLY_DISABLED_ACTIONS = new Set([
-  "create_exchange_request",
-  "refund_order",
-  "initiate_return",
   "add_internal_note_or_tag",
   "add_note",
   "add_tag",
@@ -233,6 +245,8 @@ function isActionDisabled(
   type: string,
   shopConfig: ShopActionConfig,
 ): boolean {
+  const actionMode = resolveActionMode(type, shopConfig);
+  if (actionMode) return actionMode === "off";
   if (GLOBALLY_DISABLED_ACTIONS.has(type)) return true;
   return shopConfig.disabled_actions?.includes(type) ?? false;
 }
@@ -463,7 +477,8 @@ export function applyDeterministicRules(
             order_name: order.name,
             shipping_address: shippingAddress,
           },
-          requires_approval: !(shopConfig.address_change_auto ?? false),
+          requires_approval:
+            resolveActionMode("update_shipping_address", shopConfig) !== "auto",
         }];
       }
     }
@@ -473,7 +488,14 @@ export function applyDeterministicRules(
 
   // ── 3. Returanmodning ──────────────────────────────────────────────────────
   if (intent === "return") {
-    if (alreadyDecided(decided, "return_offered", "initiate_return")) return [];
+    if (
+      alreadyDecided(
+        decided,
+        "return_offered",
+        "initiate_return",
+        "send_return_instructions",
+      )
+    ) return [];
     if (!order) return [];
 
     const eligibility = factMap["Returret"] ?? "";
@@ -482,11 +504,11 @@ export function applyDeterministicRules(
       !isActionDisabled("initiate_return", shopConfig)
     ) {
       return [{
-        type: "initiate_return",
+        type: "send_return_instructions",
         confidence: "high",
         reason: `Ordre inden for returvinduet: ${eligibility}`,
         params: { order_id: order.id, order_name: order.name },
-        requires_approval: false,
+        requires_approval: true,
       }];
     }
     // Uden for returvindue eller mangler returret-fakta → ingen action, writer forklarer
@@ -505,22 +527,14 @@ export function applyDeterministicRules(
       order.financial_status === "paid" ||
       order.financial_status === "partially_paid"
     ) {
-      // Auto-approve check: er ordren inden for shopConfig.refund_auto_days?
-      const autoDays = shopConfig.refund_auto_days ?? 0;
-      let requiresApproval = true;
-      if (autoDays > 0 && order.created_at) {
-        const daysSince = Math.floor(
-          (Date.now() - new Date(order.created_at).getTime()) / 86_400_000,
-        );
-        requiresApproval = daysSince > autoDays;
-      }
-
       return [{
         type: "refund_order",
         confidence: "medium",
         reason: "Kunden anmoder om refundering på betalt ordre",
         params: { order_id: order.id, order_name: order.name },
-        requires_approval: requiresApproval,
+        // Refund auto-execution stays locked until amount/line-item limits are
+        // part of the canonical policy.
+        requires_approval: true,
       }];
     }
     return [];
@@ -542,10 +556,10 @@ export function applyDeterministicRules(
     ) {
       return [{
         type: "cancel_order",
-        confidence: "medium",
+        confidence: "high",
         reason: "Kunden ønsker annullering og ordren er endnu ikke afsendt",
         params: { order_id: order.id, order_name: order.name },
-        requires_approval: true,
+        requires_approval: resolveActionMode("cancel_order", shopConfig) !== "auto",
       }];
     }
     // Afsendt → ingen annullering mulig, writer forklarer

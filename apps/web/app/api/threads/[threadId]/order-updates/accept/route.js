@@ -10,6 +10,11 @@ import {
 import { ensureManagedSendingDomain } from "@/lib/server/managed-sending-domain";
 import { getEffectiveSenderEmail, getEffectiveSenderName, getReplyTargetEmail } from "@/lib/inbox/sender";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
+import { normalizeCoreActionType, resolveActionMode } from "@/lib/action-modes";
+import {
+  actionDeclineReasonNeedsNote,
+  normalizeActionDeclineInput,
+} from "@/lib/action-decline";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -20,7 +25,6 @@ const SUPABASE_SERVICE_ROLE_KEY =
   process.env.SERVICE_ROLE_KEY ||
   process.env.SUPABASE_SERVICE_KEY ||
   "";
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || "2024-07";
 const POSTMARK_FROM_NAME = process.env.POSTMARK_FROM_NAME || "Sona";
 
@@ -659,38 +663,6 @@ async function loadMailboxSender(serviceClient, scope, mailboxId) {
   return { fromEmail, fromName };
 }
 
-function buildReturnInstructionsBody({
-  customerName = "",
-  returnWindowDays = 30,
-  returnAddress = "",
-  requireUnused = true,
-  requireOriginalPackaging = true,
-  returnShippingMode = "customer_paid",
-}) {
-  const normalizedName = String(customerName || "").trim();
-  const greeting = normalizedName ? `Hi ${normalizedName},` : "Hi,";
-  const requirementParts = [];
-  if (requireUnused) requirementParts.push("unused");
-  if (requireOriginalPackaging) requirementParts.push("in its original packaging");
-  const requirementLine = requirementParts.length
-    ? `as long as the item is ${requirementParts.join(" and ")}`
-    : "according to our return requirements";
-  const shippingLine =
-    returnShippingMode === "customer_paid"
-      ? "Please note that return shipping costs are paid by the customer."
-      : "Return shipping is handled according to your store return settings.";
-  return [
-    greeting,
-    "",
-    `You can return your order within ${returnWindowDays} days of receiving it ${requirementLine}.`,
-    "",
-    "Please send the return to:",
-    returnAddress || "Return address is currently not configured. Reply here and we will provide it.",
-    "",
-    shippingLine,
-  ].join("\n");
-}
-
 async function upsertReturnCase({
   serviceClient,
   workspaceId,
@@ -801,225 +773,6 @@ function buildBlockedActionDetail(actionType = "", blockedReason = "") {
   return String(blockedReason || "Order is Fulfilled and cannot be changed").trim();
 }
 
-function inferCustomerFirstNameFromText(value = "") {
-  const text = String(value || "").trim();
-  if (!text) return "";
-  const patterns = [
-    /(?:^|\n)\s*(?:mvh|vh|venlig hilsen|bedste hilsner|hilsen|kind regards|best regards|regards)\s*\n\s*([A-ZÆØÅ][A-Za-zÆØÅæøå'-]{1,40})\b/i,
-    /(?:^|\n)\s*([A-ZÆØÅ][A-Za-zÆØÅæøå'-]{1,40})\s*$/m,
-  ];
-  for (const pattern of patterns) {
-    const match = text.match(pattern);
-    if (match?.[1]) return match[1].trim();
-  }
-  return "";
-}
-
-function resolveCustomerFirstName(customerFirstName, customerMessage) {
-  const explicit = String(customerFirstName || "").trim();
-  if (explicit && !/^there$/i.test(explicit) && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(explicit)) {
-    return explicit.split(/\s+/)[0];
-  }
-  return inferCustomerFirstNameFromText(customerMessage);
-}
-
-function buildGreetingLine({ isDanish, customerName }) {
-  const name = String(customerName || "").trim();
-  if (isDanish) return name ? `Hej ${name}` : "Hej";
-  return name ? `Hi ${name},` : "Hi,";
-}
-
-async function generateBlockedActionDraft({
-  actionType,
-  blockedReason,
-  customerFirstName,
-  customerMessage,
-  orderName,
-}) {
-  const customerName = resolveCustomerFirstName(customerFirstName, customerMessage);
-  const orderRef = String(orderName || "").trim();
-  const isDanish = /[æøå]|\b(hej|ordren|adresse|ændre|kan|ikke|venlig|hilsen)\b/i.test(
-    String(customerMessage || "")
-  );
-  const reasonLower = String(blockedReason || "").toLowerCase();
-
-  // Deterministic fallback for canceled orders so we never hallucinate shipment/tracking details.
-  if (reasonLower.includes("canceled") || reasonLower.includes("cancelled")) {
-    const blockedActionLineDa =
-      actionType === "cancel_order"
-        ? "Ordren er allerede annulleret."
-        : "Ordren er annulleret, så vi kan desværre ikke ændre leveringsadressen.";
-    const blockedActionLineEn =
-      actionType === "cancel_order"
-        ? "This order is already canceled."
-        : "This order is canceled, so we unfortunately cannot update the shipping address.";
-    if (isDanish) {
-      return [
-        buildGreetingLine({ isDanish: true, customerName }),
-        "",
-        orderRef ? `${orderRef}: ${blockedActionLineDa}` : blockedActionLineDa,
-        "",
-        actionType === "cancel_order"
-          ? "Hvis du har andre spørgsmål til ordren, hjælper vi gerne."
-          : "Hvis du stadig ønsker varen, kan du lægge en ny ordre.",
-        "",
-        "God dag.",
-      ].join("\n");
-    }
-    return [
-      buildGreetingLine({ isDanish: false, customerName }),
-      "",
-      orderRef ? `${orderRef}: ${blockedActionLineEn}` : blockedActionLineEn,
-      "",
-      actionType === "cancel_order"
-        ? "If you have any other questions about the order, we are happy to help."
-        : "If you still want the item, please place a new order.",
-      "",
-      "Have a great day.",
-    ].join("\n");
-  }
-
-  if (
-    actionType === "cancel_order" &&
-    (reasonLower.includes("fulfilled") || reasonLower.includes("shipped"))
-  ) {
-    if (isDanish) {
-      return [
-        buildGreetingLine({ isDanish: true, customerName }),
-        "",
-        `Vi kan desværre ikke annullere ${orderRef || "ordren"}, da den allerede er afsendt.`,
-        "",
-        "Hvis du ikke ønsker at beholde varen, kan du svare her, så hjælper vi dig videre med returneringen.",
-        "",
-        "God dag!",
-      ].join("\n");
-    }
-    return [
-      buildGreetingLine({ isDanish: false, customerName }),
-      "",
-      `We unfortunately cannot cancel ${orderRef || "your order"} because it has already been shipped.`,
-      "",
-      "If you do not want to keep the item, reply here and we will help you with the return.",
-      "",
-      "Have a good day.",
-    ].join("\n");
-  }
-
-  if (!OPENAI_API_KEY) return null;
-
-  const systemPrompt = [
-    "You are Sona, a customer support agent.",
-    "Write a short, empathetic email reply in the same language as the customer message.",
-    "The requested operation was NOT completed. State this clearly.",
-    "Do not invent actions and do not claim any update/cancellation was completed.",
-    "Never write phrases equivalent to 'I have updated' or 'I have cancelled' in this context.",
-    "Never mention tracking number, tracking link, or shipment status unless explicitly provided in the prompt.",
-    "Never tell the customer to contact this support email address; they are already writing in this thread.",
-    "Do not include email addresses, phone numbers, URLs, or new contact channels unless explicitly provided as the next step.",
-    "Do not include any signature. Signature is added later by the app.",
-  ].join(" ");
-
-  const userPrompt = [
-    `Action type: ${actionType}`,
-    `Blocked reason: ${blockedReason}`,
-    orderName ? `Order reference: ${orderName}` : "",
-    `Customer first name: ${customerName || "(unknown)"}`,
-    "Customer message:",
-    customerMessage || "(empty)",
-    "Write only the reply body text.",
-    "Important: Explain that this request could not be completed.",
-  ]
-    .filter(Boolean)
-    .join("\n");
-
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      temperature: 0.2,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-    }),
-  });
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    const message =
-      payload?.error?.message || `OpenAI returned ${response.status} while generating blocked draft.`;
-    throw new Error(message);
-  }
-  const text = String(payload?.choices?.[0]?.message?.content || "").trim();
-  return text || null;
-}
-
-async function loadLatestInboundContext({ serviceClient, scope, thread }) {
-  let messageQuery = serviceClient
-    .from("mail_messages")
-    .select(
-      "body_text, body_html, subject, from_name, from_email, extracted_customer_name, extracted_customer_email"
-    )
-    .eq("thread_id", thread.id)
-    .eq("from_me", false)
-    .order("received_at", { ascending: false })
-    .order("created_at", { ascending: false })
-    .limit(1);
-  messageQuery = applyScope(messageQuery, scope);
-  const { data: inboundRow } = await messageQuery.maybeSingle();
-  const bodyText = asString(inboundRow?.body_text) || asString(inboundRow?.body_html) || "";
-  const subject = asString(inboundRow?.subject) || asString(thread?.subject) || "Order support";
-  const rawFullName = asString(getEffectiveSenderName(inboundRow)) || "";
-  // If the "name" is actually an email address, treat it as no name
-  const isEmailAddress = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(rawFullName);
-  const fullName = isEmailAddress ? "" : rawFullName;
-  return {
-    bodyText,
-    subject,
-    customerFirstName: fullName ? fullName.split(/\s+/)[0] : "",
-    customerEmail: asString(getEffectiveSenderEmail(inboundRow)) || "",
-  };
-}
-
-function buildActionConfirmationSentence(actionType, orderRef, isDanish) {
-  const orEn = orderRef ? ` for order ${orderRef}` : "";
-  const orDa = orderRef ? ` for ordre ${orderRef}` : "";
-  const templates = {
-    cancel_order:                   { en: `Order ${orderRef || "your order"} has been cancelled.`,      da: `Ordre ${orderRef || "din ordre"} er annulleret.` },
-    refund_order:                   { en: `Your refund request${orEn} has been processed.`,             da: `Din refusionsanmodning${orDa} er behandlet.` },
-    update_shipping_address:        { en: `The shipping address${orEn} has been updated.`,              da: `Leveringsadressen${orDa} er opdateret.` },
-    change_shipping_method:         { en: `The shipping method${orEn} has been updated.`,               da: `Forsendelsesmetoden${orDa} er ændret.` },
-    hold_or_release_fulfillment:    { en: `The fulfillment status${orEn} has been updated.`,            da: `Ekspeditionsstatus${orDa} er opdateret.` },
-    edit_line_items:                { en: `Your order${orEn} has been updated as requested.`,           da: `Din ordre${orDa} er opdateret som ønsket.` },
-    update_customer_contact:        { en: `Your contact information${orEn} has been updated.`,         da: `Dine kontaktoplysninger${orDa} er opdateret.` },
-    resend_confirmation_or_invoice: { en: `Your order confirmation${orEn} has been resent.`,           da: `Din ordrebekræftelse${orDa} er gensendt.` },
-    create_exchange_request:        { en: `Your exchange request${orEn} has been submitted.`,          da: `Din ombytningsanmodning${orDa} er oprettet.` },
-    add_note:                       { en: `A note has been added to your order${orEn}.`,               da: `Der er tilføjet en note til din ordre${orDa}.` },
-    add_tag:                        { en: `Your order${orEn} has been updated.`,                       da: `Din ordre${orDa} er opdateret.` },
-  };
-  const t = templates[String(actionType || "").toLowerCase()];
-  if (t) return isDanish ? t.da : t.en;
-  return isDanish
-    ? `Din anmodning${orDa} er behandlet.`
-    : `Your request${orEn} has been processed.`;
-}
-
-function formatShippingAddressInline(address = {}) {
-  if (!address || typeof address !== "object") return "";
-  const parts = [
-    address.address1,
-    address.address2,
-    [address.zip || address.postal_code || address.postcode, address.city].filter(Boolean).join(" ").trim(),
-    address.country,
-  ]
-    .map((part) => String(part || "").trim())
-    .filter(Boolean);
-  return parts.join(", ");
-}
-
 function extractRefundTransaction(payload = {}) {
   const executionResult =
     payload?.execution_result && typeof payload.execution_result === "object"
@@ -1036,22 +789,16 @@ function extractRefundTransaction(payload = {}) {
   return transactions.find((transaction) => asNumber(transaction?.amount) > 0) || null;
 }
 
-function formatRefundAmountForReply(payload = {}, isDanish = false) {
-  const transaction = extractRefundTransaction(payload);
-  const amount = asNumber(transaction?.amount ?? payload?.amount);
-  if (!amount) return "";
-  const currency = asString(transaction?.currency || payload?.currency || payload?.currency_code || "DKK") || "DKK";
-  try {
-    return new Intl.NumberFormat(isDanish ? "da-DK" : "en-US", {
-      style: "currency",
-      currency,
-    }).format(amount);
-  } catch {
-    return `${amount.toFixed(2)} ${currency}`;
-  }
-}
-
-function buildActionResultForDraft({ actionType, order, payload = {}, detail = "", outcome = "executed" }) {
+function buildActionResultForDraft({
+  actionType,
+  order,
+  payload = {},
+  detail = "",
+  outcome = "executed",
+  decisionReasonCode = "",
+  decisionReason = "",
+  customerSafeFacts = {},
+}) {
   const refundTransaction = extractRefundTransaction(payload);
   const amount = asNumber(refundTransaction?.amount ?? payload?.amount);
   const currency = asString(refundTransaction?.currency || payload?.currency || payload?.currency_code || "");
@@ -1062,6 +809,11 @@ function buildActionResultForDraft({ actionType, order, payload = {}, detail = "
     order_name: asString(order?.name) || (order?.order_number ? `#${order.order_number}` : ""),
     order_number: order?.order_number ? String(order.order_number) : "",
     detail,
+    execution_confirmed: outcome === "executed",
+    customer_safe_facts:
+      customerSafeFacts && typeof customerSafeFacts === "object" ? customerSafeFacts : {},
+    ...(decisionReasonCode ? { reason_code: decisionReasonCode } : {}),
+    ...(decisionReason ? { decision_reason: decisionReason } : {}),
     ...(amount ? { amount: amount.toFixed(2) } : {}),
     ...(currency ? { currency } : {}),
   };
@@ -1087,235 +839,12 @@ async function generatePostActionDraftV2({ threadId, shopId, actionResult }) {
   if (!response.ok) {
     throw new Error(payload?.error || `generate-draft-v2 returned ${response.status}`);
   }
-  return payload?.draft_text || null;
-}
-
-async function generateActionOutcomeDraft({
-  actionType,
-  outcome,
-  outcomeDetail,
-  customerFirstName,
-  customerMessage,
-  orderName,
-  decisionReason,
-  payload,
-}) {
-  const orderRef = String(orderName || "").trim();
-  const note = String(decisionReason || "").trim();
-
-  // Extract just the body text from contact form emails (which have "Body:\n..." structure)
-  const rawMessage = String(customerMessage || "");
-  const bodyMatch = rawMessage.match(/\bBody:\s*\n([\s\S]+)/i);
-  const extractedBody = bodyMatch ? bodyMatch[1].trim() : rawMessage;
-  // Strip quoted reply content (lines starting with > and "On ... wrote:" headers)
-  const messageBodyText = extractedBody
-    .split("\n")
-    .filter((line) => !line.trimStart().startsWith(">") && !/^On .{10,} wrote:/.test(line.trim()))
-    .join("\n")
-    .trim();
-
-  const customerName = resolveCustomerFirstName(customerFirstName, messageBodyText);
-  const isConfirmedOutcome = outcome === "executed" || outcome === "approved_test_mode";
-  const orEn = orderRef ? ` for order ${orderRef}` : "";
-  const isDanish = /\b(hej|ordre|levering|adresse|mvh|tak|kan i|ændre)\b/i.test(messageBodyText);
-  const actionKey = String(actionType || "").toLowerCase();
-
-  if (isConfirmedOutcome && actionKey === "cancel_order") {
-    const greeting = buildGreetingLine({ isDanish, customerName });
-    const sentence = isDanish
-      ? `Vi har annulleret ordre ${orderRef || "din ordre"}.`
-      : `We have cancelled order ${orderRef || "your order"}.`;
-    const closing = isDanish ? "God dag!" : "Have a good day.";
-    return [greeting, "", sentence, "", closing].join("\n");
-  }
-
-  if (isConfirmedOutcome && actionKey === "refund_order") {
-    const greeting = buildGreetingLine({ isDanish, customerName });
-    const amount = formatRefundAmountForReply(payload, isDanish);
-    const sentence = isDanish
-      ? `Vi har refunderet ${amount || "beløbet"}${orderRef ? ` for ordre ${orderRef}` : ""}.`
-      : `We have refunded ${amount || "the amount"}${orderRef ? ` for order ${orderRef}` : ""}.`;
-    const timing = isDanish
-      ? "Beløbet bliver tilbageført til den oprindelige betalingsmetode."
-      : "The amount will be returned to the original payment method.";
-    const closing = isDanish ? "God dag!" : "Have a good day.";
-    return [greeting, "", sentence, "", timing, "", closing].join("\n");
-  }
-
-  const shippingAddress = payload?.shipping_address ?? payload?.shippingAddress;
-  const addressInline = formatShippingAddressInline(shippingAddress);
-  if (
-    isConfirmedOutcome &&
-    actionKey === "update_shipping_address" &&
-    addressInline
-  ) {
-    const greeting = buildGreetingLine({ isDanish, customerName });
-    const sentence = isDanish
-      ? `Vi har opdateret leveringsadressen til ${addressInline}${orderRef ? ` for din ordre ${orderRef}` : ""}.`
-      : `We have updated the shipping address to ${addressInline}${orderRef ? ` for your order ${orderRef}` : ""}.`;
-    const closing = isDanish ? "God dag!" : "Have a good day.";
-    return [greeting, "", sentence, "", closing].join("\n");
-  }
-
-  // Build the core facts deterministically in English — AI only translates, never invents
-  const confirmationEn = isConfirmedOutcome
-    ? buildActionConfirmationSentence(actionType, orderRef, false)
-    : `We were unable to process your request${orEn}.${note ? ` Note: ${note}` : ""}`;
-
-  // Fallback when no OpenAI key: English only
-  if (!OPENAI_API_KEY) {
-    const greeting = buildGreetingLine({ isDanish: false, customerName });
-    const closing = "Let us know if there is anything else we can help with.";
-    return [greeting, "", confirmationEn, "", closing].join("\n");
-  }
-
-  const systemPrompt = [
-    "You are Sona, a customer support assistant writing a short outcome confirmation email.",
-    "Reply in the EXACT SAME LANGUAGE as the customer message below.",
-    `The customer's first name is: ${customerName || "(unknown)"}.`,
-    `The outcome to communicate is: "${confirmationEn}"`,
-    "Write exactly three parts separated by blank lines:",
-    "1. A greeting line using the customer's name when available. If the name is unknown, use only a neutral greeting, never 'there'.",
-    "2. The outcome sentence — translate it to the customer's language, do not change its meaning or add anything.",
-    "3. A single short closing line offering further help.",
-    "Do not add signatures, filler phrases like 'thank you for your patience', or any extra sentences.",
-  ].join(" ");
-
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${OPENAI_API_KEY}` },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      temperature: 0,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: messageBodyText || "(no message)" },
-      ],
-    }),
-  });
-  const json = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(json?.error?.message || `OpenAI error ${response.status}`);
-  }
-  return String(json?.choices?.[0]?.message?.content || "").trim() || null;
-}
-
-async function supersedeInternalRecommendationDrafts({
-  serviceClient,
-  scope,
-  thread,
-  sourceActionId,
-}) {
-  let query = serviceClient
-    .from("drafts")
-    .update({ status: "superseded" })
-    .eq("thread_id", thread.provider_thread_id || thread.id)
-    .eq("status", "pending")
-    .eq("kind", "internal_recommendation");
-  if (sourceActionId) query = query.eq("source_action_id", String(sourceActionId));
-  query = scope?.workspaceId ? query.eq("workspace_id", scope.workspaceId) : query;
-  await query;
-}
-
-async function insertFinalReplyDraftRow({
-  serviceClient,
-  scope,
-  thread,
-  subject,
-  customerEmail,
-  draftMessageId,
-  executionState,
-  sourceActionId,
-}) {
-  const nowIso = new Date().toISOString();
-  await serviceClient.from("drafts").insert({
-    shop_id: null,
-    workspace_id: scope?.workspaceId || null,
-    customer_email: customerEmail || null,
-    subject,
-    status: "pending",
-    kind: "final_customer_reply",
-    execution_state: executionState,
-    source_action_id: sourceActionId ? String(sourceActionId) : null,
-    final_reply_generated_at: nowIso,
-    platform: thread.provider || "smtp",
-    draft_id: draftMessageId ? String(draftMessageId) : null,
-    message_id: draftMessageId ? String(draftMessageId) : null,
-    thread_id: thread.provider_thread_id || thread.id,
-    created_at: nowIso,
-  });
-}
-
-async function supersedePendingFinalReplyDrafts({ serviceClient, scope, thread }) {
-  let query = serviceClient
-    .from("drafts")
-    .update({ status: "superseded" })
-    .eq("thread_id", thread.provider_thread_id || thread.id)
-    .eq("status", "pending")
-    .eq("kind", "final_customer_reply");
-  query = scope?.workspaceId ? query.eq("workspace_id", scope.workspaceId) : query;
-  await query;
-}
-
-async function finalizeActionDecisionDraft({
-  serviceClient,
-  scope,
-  thread,
-  actionRecord,
-  actionType,
-  outcome,
-  outcomeDetail,
-  executionState,
-  orderName,
-  preferredText,
-  decisionReason,
-}) {
-  const inbound = await loadLatestInboundContext({ serviceClient, scope, thread });
-  const bodyText =
-    preferredText ||
-    (await generateActionOutcomeDraft({
-      actionType,
-      outcome,
-      outcomeDetail,
-      customerFirstName: inbound.customerFirstName,
-      customerMessage: inbound.bodyText,
-      orderName,
-      decisionReason,
-      payload:
-        actionRecord?.payload && typeof actionRecord.payload === "object"
-          ? actionRecord.payload
-          : {},
-    }));
-  if (!bodyText) return null;
-  const draftMessageId = await upsertThreadDraft({
-    serviceClient,
-    scope,
-    thread,
-    bodyText,
-    subject: inbound.subject || thread.subject || "Order support",
-  });
-  await supersedeInternalRecommendationDrafts({
-    serviceClient,
-    scope,
-    thread,
-    sourceActionId: actionRecord?.id || null,
-  });
-  await supersedePendingFinalReplyDrafts({
-    serviceClient,
-    scope,
-    thread,
-  });
-  await insertFinalReplyDraftRow({
-    serviceClient,
-    scope,
-    thread,
-    subject: inbound.subject || thread.subject || "Order support",
-    customerEmail: inbound.customerEmail,
-    draftMessageId,
-    executionState,
-    sourceActionId: actionRecord?.id || null,
-  });
-  return bodyText;
+  return {
+    draftText: payload?.draft_text || null,
+    draftId: payload?.draft_id || null,
+    routingHint: payload?.routing_hint || null,
+    blockSendRecommended: payload?.block_send_recommended === true,
+  };
 }
 
 async function captureActionDecisionFeedback({
@@ -1344,99 +873,6 @@ async function captureActionDecisionFeedback({
     status: "info",
     created_at: createdAt || new Date().toISOString(),
   });
-}
-
-function draftImpliesCompletedAction(text = "", actionType = "") {
-  const normalized = String(text || "").toLowerCase();
-  if (!normalized) return false;
-  if (actionType === "update_shipping_address") {
-    return (
-      normalized.includes("har opdateret leveringsadressen") ||
-      normalized.includes("har opdateret adressen") ||
-      normalized.includes("i have updated the shipping address") ||
-      normalized.includes("i have updated the address")
-    );
-  }
-  if (actionType === "cancel_order") {
-    return (
-      normalized.includes("har annulleret ordren") ||
-      normalized.includes("i have cancelled the order")
-    );
-  }
-  return false;
-}
-
-async function upsertThreadDraft({
-  serviceClient,
-  scope,
-  thread,
-  bodyText,
-  subject,
-}) {
-  const nowIso = new Date().toISOString();
-  const snippet = String(bodyText || "").replace(/\s+/g, " ").trim().slice(0, 240);
-
-  const { data: existingDraft } = await applyScope(
-    serviceClient
-      .from("mail_messages")
-      .select("id")
-      .eq("thread_id", thread.id)
-      .eq("from_me", true)
-      .eq("is_draft", true)
-      .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    scope
-  );
-
-  if (existingDraft?.id) {
-    const { data, error } = await applyScope(
-      serviceClient
-        .from("mail_messages")
-        .update({
-          subject,
-          snippet,
-          body_text: bodyText,
-          body_html: null,
-          ai_draft_text: bodyText,
-          updated_at: nowIso,
-        })
-        .eq("id", existingDraft.id)
-        .eq("thread_id", thread.id)
-        .select("id")
-        .maybeSingle(),
-      scope
-    );
-    if (error) throw new Error(error.message);
-    return data?.id || existingDraft.id;
-  }
-
-  const { data, error } = await applyScope(
-    serviceClient
-      .from("mail_messages")
-      .insert({
-        user_id: thread.user_id,
-        workspace_id: thread.workspace_id || null,
-        mailbox_id: thread.mailbox_id || null,
-        thread_id: thread.id,
-        provider: thread.provider || "smtp",
-        provider_message_id: `draft-${thread.id}-${Date.now()}`,
-        subject,
-        snippet,
-        body_text: bodyText,
-        body_html: null,
-        from_me: true,
-        is_draft: true,
-        ai_draft_text: bodyText,
-        created_at: nowIso,
-        updated_at: nowIso,
-      })
-      .select("id")
-      .maybeSingle(),
-    scope
-  );
-  if (error) throw new Error(error.message);
-  return data?.id || null;
 }
 
 function matchesOrderNumber(order = {}, orderNumber = "") {
@@ -2961,7 +2397,23 @@ export async function POST(request, { params }) {
   const actionId = body?.actionId ? String(body.actionId).trim() : "";
   const proposalLogId = body?.proposalLogId ? String(body.proposalLogId) : "";
   const proposalText = body?.proposalText ? String(body.proposalText) : "";
-  const decisionReason = String(body?.decisionReason || body?.reason || body?.note || "").trim();
+  const declineContext = normalizeActionDeclineInput(body);
+  const decisionReason = decision === "declined"
+    ? declineContext.decisionReason
+    : String(body?.decisionReason || body?.reason || body?.note || "").trim();
+  const decisionReasonCode = decision === "declined"
+    ? declineContext.decisionReasonCode
+    : "";
+  if (
+    decision === "declined" &&
+    actionDeclineReasonNeedsNote(decisionReasonCode) &&
+    !decisionReason
+  ) {
+    return NextResponse.json(
+      { error: "Add the specific reason Sona should use for the replacement draft." },
+      { status: 400 }
+    );
+  }
   const payloadOverride =
     body?.payloadOverride && typeof body.payloadOverride === "object" ? body.payloadOverride : null;
   if (!actionId && !proposalLogId && !proposalText) {
@@ -3043,7 +2495,76 @@ export async function POST(request, { params }) {
 
   if (decision === "declined") {
     const nowIso = new Date().toISOString();
+    let declinedShopId = null;
+    let declinedShopQuery = serviceClient
+      .from("shops")
+      .select("id")
+      .eq("platform", "shopify")
+      .is("uninstalled_at", null)
+      .order("created_at", { ascending: false })
+      .limit(1);
+    declinedShopQuery = applyScope(declinedShopQuery, scope, {
+      workspaceColumn: "workspace_id",
+      userColumn: "owner_user_id",
+    });
+    const { data: declinedShop, error: declinedShopError } = await declinedShopQuery.maybeSingle();
+    if (declinedShopError) {
+      return NextResponse.json({ error: declinedShopError.message }, { status: 500 });
+    }
+    declinedShopId = declinedShop?.id ?? null;
+    if (!declinedShopId) {
+      return NextResponse.json(
+        { error: "A connected Shopify shop is required to create the replacement draft." },
+        { status: 409 }
+      );
+    }
+
+    const declinedActionType = asString(actionRecord?.action_type || "");
+    if (!declinedActionType) {
+      return NextResponse.json({ error: "Action type is missing." }, { status: 400 });
+    }
+    const declinedOrder = {
+      id: actionRecord?.order_id || "",
+      order_number: actionRecord?.order_number || "",
+      name: actionRecord?.order_number || "",
+    };
+    let declinedDraftResult;
+    try {
+      declinedDraftResult = await generatePostActionDraftV2({
+        threadId,
+        shopId: declinedShopId,
+        actionResult: buildActionResultForDraft({
+          actionType: declinedActionType,
+          order: declinedOrder,
+          detail: actionRecord?.detail || proposalText || "",
+          outcome: "declined",
+          decisionReasonCode,
+          decisionReason,
+          customerSafeFacts: {
+            action_was_executed: false,
+            ...(actionRecord?.order_number
+              ? { order_number: String(actionRecord.order_number) }
+              : {}),
+          },
+        }),
+      });
+    } catch (error) {
+      console.warn("order-updates/accept: failed to generate declined draft", error?.message || error);
+      return NextResponse.json(
+        { error: "Sona could not create the replacement draft. The action has not been declined." },
+        { status: 502 }
+      );
+    }
+    if (!declinedDraftResult?.draftText) {
+      return NextResponse.json(
+        { error: "Sona returned an empty replacement draft. The action has not been declined." },
+        { status: 502 }
+      );
+    }
+
     if (actionRecord?.id) {
+      const existingPayload =
+        actionRecord?.payload && typeof actionRecord.payload === "object" ? actionRecord.payload : {};
       const { error: updateActionError } = await serviceClient
         .from("thread_actions")
         .update({
@@ -3052,6 +2573,7 @@ export async function POST(request, { params }) {
           decided_at: nowIso,
           decided_by: clerkUserId,
           decision_reason: decisionReason || null,
+          payload: { ...existingPayload, decline_reason_code: decisionReasonCode },
           updated_at: nowIso,
           error: null,
         })
@@ -3062,51 +2584,23 @@ export async function POST(request, { params }) {
     }
 
     await serviceClient.from("agent_logs").insert({
-      draft_id: null,
+      draft_id: declinedDraftResult.draftId,
       step_name: "shopify_action_declined",
       step_detail: JSON.stringify({
         thread_id: threadId,
-        action: actionRecord?.action_type || null,
+        action: declinedActionType,
         detail: actionRecord?.detail || proposalText || null,
+        reason_code: decisionReasonCode,
+        decision_reason: decisionReason || null,
+        replacement_draft_id: declinedDraftResult.draftId,
       }),
       status: "info",
       created_at: nowIso,
     });
-
-    let declinedShopId = null;
-    try {
-      let declinedShopQuery = serviceClient
-        .from("shops")
-        .select("id")
-        .eq("platform", "shopify")
-        .is("uninstalled_at", null)
-        .order("created_at", { ascending: false })
-        .limit(1);
-      declinedShopQuery = applyScope(declinedShopQuery, scope, {
-        workspaceColumn: "workspace_id",
-        userColumn: "owner_user_id",
-      });
-      const { data: declinedShop } = await declinedShopQuery.maybeSingle();
-      declinedShopId = declinedShop?.id ?? null;
-    } catch {}
-
-    const declinedDraftText = await generatePostActionDraftV2({
-      threadId,
-      shopId: declinedShopId,
-      actionResult: buildActionResultForDraft({
-        actionType: asString(actionRecord?.action_type || ""),
-        order: null,
-        detail: actionRecord?.detail || proposalText || "",
-        outcome: "declined",
-      }),
-    }).catch((error) => {
-      console.warn("order-updates/accept: failed to generate declined draft", error?.message || error);
-      return null;
-    });
     await captureActionDecisionFeedback({
       serviceClient,
       threadId,
-      actionType: asString(actionRecord?.action_type || ""),
+      actionType: declinedActionType,
       decision: "rejected",
       decidedBy: clerkUserId,
       decisionReason,
@@ -3121,7 +2615,9 @@ export async function POST(request, { params }) {
         ok: true,
         decision: "declined",
         actionId: actionRecord?.id || null,
-        draftGenerated: Boolean(declinedDraftText),
+        draftGenerated: true,
+        draftId: declinedDraftResult.draftId,
+        requiresReview: true,
       },
       { status: 200 }
     );
@@ -3232,17 +2728,79 @@ export async function POST(request, { params }) {
     );
   }
 
+  const coreActionType = normalizeCoreActionType(normalizedActionType);
+  let actionShopId = null;
+  if (coreActionType) {
+    let policyShopQuery = serviceClient
+      .from("shops")
+      .select("id, action_config")
+      .eq("platform", "shopify")
+      .is("uninstalled_at", null)
+      .order("created_at", { ascending: false })
+      .limit(1);
+    policyShopQuery = applyScope(policyShopQuery, scope, {
+      workspaceColumn: "workspace_id",
+      userColumn: "owner_user_id",
+    });
+    const { data: policyShop, error: policyShopError } = await policyShopQuery.maybeSingle();
+    if (policyShopError) {
+      return NextResponse.json({ error: policyShopError.message }, { status: 500 });
+    }
+    actionShopId = policyShop?.id || null;
+    const currentMode = resolveActionMode(
+      coreActionType,
+      policyShop?.action_config?.action_modes
+    );
+    if (currentMode === "off") {
+      const nowIso = new Date().toISOString();
+      if (actionRecord?.id) {
+        await serviceClient
+          .from("thread_actions")
+          .update({
+            status: "superseded",
+            updated_at: nowIso,
+            error: "Action is disabled in settings.",
+          })
+          .eq("id", actionRecord.id);
+      }
+      return NextResponse.json(
+        {
+          error: "This action was disabled in settings after it was proposed. No changes were made.",
+          action: normalizedActionType,
+          mode: currentMode,
+        },
+        { status: 409 }
+      );
+    }
+  }
+
   if (normalizedActionType === "create_return_case" || normalizedActionType === "send_return_instructions") {
     const nowIso = new Date().toISOString();
     if (!scope?.workspaceId) {
       return NextResponse.json({ error: "Return actions require workspace scope." }, { status: 400 });
     }
 
-    const mergedPayload = {
+    let mergedPayload = {
       ...(actionRecord?.payload && typeof actionRecord.payload === "object" ? actionRecord.payload : {}),
       ...(parsed?.payload && typeof parsed.payload === "object" ? parsed.payload : {}),
       ...(payloadOverride && typeof payloadOverride === "object" ? payloadOverride : {}),
     };
+    const { data: liveReturnSettings, error: returnSettingsError } = await serviceClient
+      .from("workspace_return_settings")
+      .select("return_window_days,return_shipping_mode,return_address")
+      .eq("workspace_id", scope.workspaceId)
+      .maybeSingle();
+    if (returnSettingsError) {
+      return NextResponse.json({ error: returnSettingsError.message }, { status: 500 });
+    }
+    if (liveReturnSettings) {
+      mergedPayload = {
+        ...mergedPayload,
+        return_window_days: liveReturnSettings.return_window_days,
+        return_shipping_mode: liveReturnSettings.return_shipping_mode,
+        return_address: liveReturnSettings.return_address,
+      };
+    }
     const inferredOrderId = asString(parsed?.orderId || actionRecord?.order_id || mergedPayload?.order_id || "");
     const actionKey =
       actionRecord?.action_key ||
@@ -3336,7 +2894,6 @@ export async function POST(request, { params }) {
     if (!customerEmail) {
       return NextResponse.json({ error: "Customer email is missing for return instructions." }, { status: 400 });
     }
-    const customerName = asString(getEffectiveSenderName(inboundMessage)).split(/\s+/)[0] || "";
     const eligibility = mergedPayload?.eligibility && typeof mergedPayload.eligibility === "object"
       ? mergedPayload.eligibility
       : {};
@@ -3352,15 +2909,6 @@ export async function POST(request, { params }) {
       typeof mergedPayload?.require_original_packaging === "boolean"
         ? mergedPayload.require_original_packaging
         : true;
-    const instructionsText = buildReturnInstructionsBody({
-      customerName,
-      returnWindowDays,
-      returnAddress,
-      requireUnused,
-      requireOriginalPackaging,
-      returnShippingMode,
-    });
-
     if (workspaceTestSettings.testMode) {
       const testMessage = "Action approved, but no changes were made because Test Mode is enabled.";
       const returnCase = await upsertReturnCase({
@@ -3390,7 +2938,6 @@ export async function POST(request, { params }) {
               test_mode: true,
               customer_email: customerEmail,
               return_case_id: returnCase?.id || null,
-              instructions_text: instructionsText,
             },
             action_type: normalizedActionType,
             action_key: actionKey,
@@ -3414,7 +2961,6 @@ export async function POST(request, { params }) {
             test_mode: true,
             customer_email: customerEmail,
             return_case_id: returnCase?.id || null,
-            instructions_text: instructionsText,
           },
           source: "manual_approval",
           decided_at: nowIso,
@@ -3437,58 +2983,19 @@ export async function POST(request, { params }) {
       );
     }
 
-    // Build a complete, ready-to-send return instructions reply
     const orderRef = asString(actionRecord?.order_number || parsed?.orderNumber || "");
-    const isDanish = /[æøå]|\b(hej|ordren|adresse|ændre|kan|ikke|venlig|hilsen|opdateret|retur)\b/i.test(
-      asString(inboundMessage?.body_text || "")
-    );
-    const returnAddressText = returnAddress || (isDanish ? "(returadresse sendes separat)" : "(return address will be provided separately)");
-    const orderSuffix = orderRef ? (isDanish ? ` for ordre ${orderRef}` : ` for order ${orderRef}`) : "";
-    const conditionDa = [
-      requireUnused ? "ubrugt" : null,
-      requireOriginalPackaging ? "i original emballage" : null,
-    ].filter(Boolean).join(" og ");
-    const conditionEn = [
-      requireUnused ? "unused" : null,
-      requireOriginalPackaging ? "in its original packaging" : null,
-    ].filter(Boolean).join(" and ");
-    const shippingDa = returnShippingMode === "customer_paid"
-      ? "Bemærk at returfragt betales af dig som kunde."
-      : "Returfragt er forudbetalt — vi sender dig en label.";
-    const shippingEn = returnShippingMode === "customer_paid"
-      ? "Please note that return shipping costs are paid by the customer."
-      : "Return shipping is prepaid — we will send you a return label.";
-
-    const returnInstructionsDraft = isDanish
-      ? [
-          `Hej ${customerName},`,
-          "",
-          `Din returanmodning${orderSuffix} er godkendt.`,
-          "",
-          `Du kan sende varen retur inden for ${returnWindowDays} dage fra modtagelse${conditionDa ? `, forudsat at varen er ${conditionDa}` : ""}.`,
-          "",
-          "Send returnering til:",
-          returnAddressText,
-          "",
-          shippingDa,
-          "",
-          "Skriv her i tråden, hvis du har spørgsmål.",
-        ].join("\n")
-      : [
-          `Hi ${customerName},`,
-          "",
-          `Your return request${orderSuffix} has been approved.`,
-          "",
-          `Please send the item back within ${returnWindowDays} days of receiving it${conditionEn ? `, making sure the item is ${conditionEn}` : ""}.`,
-          "",
-          "Please send the return to:",
-          returnAddressText,
-          "",
-          shippingEn,
-          "",
-          "Reply here if you have any questions.",
-        ].join("\n");
-
+    if (returnShippingMode === "customer_paid" && !returnAddress) {
+      return NextResponse.json(
+        { error: "Configure a return address in Returns settings before approving this action." },
+        { status: 409 }
+      );
+    }
+    if (!actionShopId) {
+      return NextResponse.json(
+        { error: "A connected Shopify shop is required to generate return instructions." },
+        { status: 409 }
+      );
+    }
 
     const returnCase = await upsertReturnCase({
       serviceClient,
@@ -3500,7 +3007,7 @@ export async function POST(request, { params }) {
         shopify_order_id: inferredOrderId || asString(mergedPayload?.shopify_order_id || ""),
         return_shipping_mode: returnShippingMode,
       },
-      status: "draft_generated",
+      status: "requested",
       isEligible:
         typeof eligibility?.eligible === "boolean" ? eligibility.eligible : null,
       eligibilityReason: asString(eligibility?.reason || "") || null,
@@ -3510,8 +3017,47 @@ export async function POST(request, { params }) {
       ...mergedPayload,
       customer_email: customerEmail,
       return_case_id: returnCase?.id || null,
-      instructions_text: instructionsText,
     };
+    let returnDraftResult;
+    try {
+      returnDraftResult = await generatePostActionDraftV2({
+        threadId,
+        shopId: actionShopId,
+        actionResult: buildActionResultForDraft({
+          actionType: normalizedActionType,
+          order: {
+            id: inferredOrderId,
+            order_number: orderRef,
+            name: orderRef,
+          },
+          payload: actionPayload,
+          detail: "Return instructions approved for drafting.",
+          outcome: "prepared",
+          customerSafeFacts: {
+            action_was_executed: false,
+            return_request_approved:
+              mergedPayload?.is_eligible !== false && eligibility?.eligible !== false,
+            return_window_days: returnWindowDays,
+            return_shipping_mode: returnShippingMode,
+            ...(returnAddress ? { return_address: returnAddress } : {}),
+            require_unused: requireUnused,
+            require_original_packaging: requireOriginalPackaging,
+          },
+        }),
+      });
+    } catch (error) {
+      console.warn("order-updates/accept: failed to generate return instructions", error?.message || error);
+      return NextResponse.json(
+        { error: "Sona could not generate the return instructions. The action remains pending." },
+        { status: 502 }
+      );
+    }
+    if (!returnDraftResult?.draftText) {
+      return NextResponse.json(
+        { error: "Sona returned empty return instructions. The action remains pending." },
+        { status: 502 }
+      );
+    }
     if (actionRecord?.id) {
       await serviceClient
         .from("thread_actions")
@@ -3563,6 +3109,8 @@ export async function POST(request, { params }) {
         decision: "accepted",
         action: normalizedActionType,
         draft_generated: true,
+        draftGenerated: true,
+        draftId: returnDraftResult.draftId || null,
         returnCase: returnCase || null,
         sourceStep: proposalStepName,
       },
@@ -3949,15 +3497,18 @@ export async function POST(request, { params }) {
       created_at: nowIso,
     });
 
-    const testModeDraftText = await generatePostActionDraftV2({
+    const testModeDraftResult = await generatePostActionDraftV2({
       threadId,
       shopId: shopRow.id,
       actionResult: buildActionResultForDraft({
         actionType: normalizedActionType,
         order,
         payload: actionRowPayload,
-        detail: detailText || `The ${normalizedActionType.replace(/_/g, " ")} action has been completed.`,
-        outcome: "executed",
+        detail:
+          detailText ||
+          `The ${normalizedActionType.replace(/_/g, " ")} action was simulated and not executed.`,
+        outcome: "simulated",
+        customerSafeFacts: { action_was_executed: false },
       }),
     }).catch((error) => {
       console.warn("order-updates/accept: failed to generate approved_test_mode draft", error?.message || error);
@@ -3976,7 +3527,7 @@ export async function POST(request, { params }) {
         orderId: String(order.id),
         orderNumber: order.order_number ?? null,
         detail: detailText || null,
-        draftGenerated: Boolean(testModeDraftText),
+        draftGenerated: Boolean(testModeDraftResult?.draftText),
         sourceStep: proposalStepName,
       },
       { status: 200 }
@@ -3994,59 +3545,28 @@ export async function POST(request, { params }) {
       blockedReason
     );
 
-    let latestInboundText = "";
-    let latestInboundSubject = thread.subject || "";
-    let latestInboundName = "";
-    let messageQuery = serviceClient
-      .from("mail_messages")
-      .select("body_text, body_html, subject, from_name, extracted_customer_name")
-      .eq("thread_id", thread.id)
-      .eq("from_me", false)
-      .order("received_at", { ascending: false })
-      .order("created_at", { ascending: false })
-      .limit(1);
-    messageQuery = applyScope(messageQuery, scope);
-    const { data: inboundRow } = await messageQuery.maybeSingle();
-    latestInboundText = asString(inboundRow?.body_text) || asString(inboundRow?.body_html) || "";
-    latestInboundSubject = asString(inboundRow?.subject) || latestInboundSubject;
-    latestInboundName = asString(getEffectiveSenderName(inboundRow)) || "";
-    const firstName = latestInboundName ? latestInboundName.split(/\s+/)[0] : "";
-
-    let generatedDraftText = null;
+    let blockedDraftResult = null;
     try {
-      generatedDraftText = await generateBlockedActionDraft({
-        actionType: normalizedActionType,
-        blockedReason,
-        customerFirstName: firstName,
-        customerMessage: latestInboundText,
-        orderName: asString(order?.name) || asString(order?.order_number),
-      });
-      if (draftImpliesCompletedAction(generatedDraftText, normalizedActionType)) {
-        generatedDraftText = await generateBlockedActionDraft({
+      blockedDraftResult = await generatePostActionDraftV2({
+        threadId,
+        shopId: shopRow.id,
+        actionResult: buildActionResultForDraft({
           actionType: normalizedActionType,
-          blockedReason,
-          customerFirstName: firstName,
-          customerMessage: `${latestInboundText}\n\nIMPORTANT: The requested operation was NOT completed. Reply must explicitly state this.`,
-          orderName: asString(order?.name) || asString(order?.order_number),
-        });
-      }
+          order,
+          payload: payloadForExecution,
+          detail: blockedReason,
+          outcome: "blocked",
+          customerSafeFacts: {
+            action_was_executed: false,
+            blocked_reason: blockedReason,
+            fulfillment_status: order?.fulfillment_status || null,
+            cancelled_at: order?.cancelled_at || null,
+            closed_at: order?.closed_at || null,
+          },
+        }),
+      });
     } catch (error) {
       console.warn("order-updates/accept: blocked draft generation failed", error?.message || error);
-    }
-
-    let generatedDraftId = null;
-    if (generatedDraftText) {
-      try {
-        generatedDraftId = await upsertThreadDraft({
-          serviceClient,
-          scope,
-          thread,
-          bodyText: generatedDraftText,
-          subject: latestInboundSubject || thread.subject || "Re:",
-        });
-      } catch (error) {
-        console.warn("order-updates/accept: blocked draft upsert failed", error?.message || error);
-      }
     }
 
     if (actionRecord?.id) {
@@ -4104,25 +3624,6 @@ export async function POST(request, { params }) {
       created_at: nowIso,
     });
 
-    if (generatedDraftId) {
-      await supersedeInternalRecommendationDrafts({
-        serviceClient,
-        scope,
-        thread,
-        sourceActionId: actionRecord?.id || null,
-      });
-      await insertFinalReplyDraftRow({
-        serviceClient,
-        scope,
-        thread,
-        subject: latestInboundSubject || thread.subject || "Re:",
-        customerEmail: "",
-        draftMessageId: generatedDraftId,
-        executionState: "blocked",
-        sourceActionId: actionRecord?.id || null,
-      });
-    }
-
     return NextResponse.json(
       {
         ok: true,
@@ -4132,7 +3633,7 @@ export async function POST(request, { params }) {
         orderId: String(order.id),
         orderNumber: order.order_number ?? null,
         reason: blockedReason,
-        draftGenerated: Boolean(generatedDraftText),
+        draftGenerated: Boolean(blockedDraftResult?.draftText),
       },
       { status: 200 }
     );
@@ -4218,43 +3719,23 @@ export async function POST(request, { params }) {
         : buildActionKey(normalizedActionType, order.id, payloadForExecution);
       const failedActionDetail = "Could not resend confirmation/invoice automatically.";
 
-      let latestInboundText = "";
-      let latestInboundSubject = thread.subject || "";
-      let latestInboundName = "";
-      let messageQuery = serviceClient
-        .from("mail_messages")
-        .select("body_text, body_html, subject, from_name, extracted_customer_name")
-        .eq("thread_id", thread.id)
-        .eq("from_me", false)
-        .order("received_at", { ascending: false })
-        .order("created_at", { ascending: false })
-        .limit(1);
-      messageQuery = applyScope(messageQuery, scope);
-      const { data: inboundRow } = await messageQuery.maybeSingle();
-      latestInboundText = asString(inboundRow?.body_text) || asString(inboundRow?.body_html) || "";
-      latestInboundSubject = asString(inboundRow?.subject) || latestInboundSubject;
-      latestInboundName = asString(getEffectiveSenderName(inboundRow)) || "";
-      const firstName = latestInboundName ? latestInboundName.split(/\s+/)[0] : "";
-
-      let generatedDraftText = null;
-      let generatedDraftId = null;
+      let failedDraftResult = null;
       try {
-        generatedDraftText = await generateBlockedActionDraft({
-          actionType: normalizedActionType,
-          blockedReason: friendlyReason,
-          customerFirstName: firstName,
-          customerMessage: latestInboundText,
-          orderName: asString(order?.name) || asString(order?.order_number),
+        failedDraftResult = await generatePostActionDraftV2({
+          threadId,
+          shopId: shopRow.id,
+          actionResult: buildActionResultForDraft({
+            actionType: normalizedActionType,
+            order,
+            payload: payloadForExecution,
+            detail: friendlyReason,
+            outcome: "failed",
+            customerSafeFacts: {
+              action_was_executed: false,
+              manual_next_step_required: true,
+            },
+          }),
         });
-        if (generatedDraftText) {
-          generatedDraftId = await upsertThreadDraft({
-            serviceClient,
-            scope,
-            thread,
-            bodyText: generatedDraftText,
-            subject: latestInboundSubject || thread.subject || "Order support",
-          });
-        }
       } catch (error) {
         console.warn(
           "order-updates/accept: failed to generate fallback draft after Shopify 406",
@@ -4331,25 +3812,6 @@ export async function POST(request, { params }) {
         created_at: nowIso,
       });
 
-      if (generatedDraftId) {
-        await supersedeInternalRecommendationDrafts({
-          serviceClient,
-          scope,
-          thread,
-          sourceActionId: actionRecord?.id || null,
-        });
-        await insertFinalReplyDraftRow({
-          serviceClient,
-          scope,
-          thread,
-          subject: latestInboundSubject || thread.subject || "Order support",
-          customerEmail: "",
-          draftMessageId: generatedDraftId,
-          executionState: "blocked",
-          sourceActionId: actionRecord?.id || null,
-        });
-      }
-
       return NextResponse.json(
         {
           ok: true,
@@ -4360,7 +3822,7 @@ export async function POST(request, { params }) {
           orderNumber: order.order_number ?? null,
           reason: friendlyReason,
           detail: failedActionDetail,
-          draftGenerated: Boolean(generatedDraftText),
+          draftGenerated: Boolean(failedDraftResult?.draftText),
         },
         { status: 200 }
       );
@@ -4405,8 +3867,37 @@ export async function POST(request, { params }) {
       status: "error",
       created_at: nowIso,
     });
+    let failedDraftResult = null;
+    try {
+      failedDraftResult = await generatePostActionDraftV2({
+        threadId,
+        shopId: shopRow.id,
+        actionResult: buildActionResultForDraft({
+          actionType: normalizedActionType,
+          order,
+          payload: payloadForExecution,
+          detail: "The requested action could not be completed.",
+          outcome: "failed",
+          customerSafeFacts: { action_was_executed: false },
+        }),
+      });
+    } catch (error) {
+      console.warn("order-updates/accept: failed to generate action-failure draft", error?.message || error);
+    }
 
-    return NextResponse.json({ error: String(rawMessage) }, { status: statusCode });
+    return NextResponse.json(
+      {
+        ok: true,
+        blocked: true,
+        applied: false,
+        action: normalizedActionType,
+        orderId: String(order.id),
+        orderNumber: order.order_number ?? null,
+        reason: "The requested action could not be completed.",
+        draftGenerated: Boolean(failedDraftResult?.draftText),
+      },
+      { status: 200 }
+    );
   }
 
   let webshipperSync = null;
@@ -4611,7 +4102,7 @@ export async function POST(request, { params }) {
     }
   }
 
-  const appliedDraftText = await generatePostActionDraftV2({
+  const appliedDraftResult = await generatePostActionDraftV2({
     threadId,
     shopId: shopRow.id,
     actionResult: buildActionResultForDraft({
@@ -4638,7 +4129,7 @@ export async function POST(request, { params }) {
       sourceStep: proposalStepName,
       webshipperSync,
       followUpAction,
-      draftGenerated: Boolean(appliedDraftText),
+      draftGenerated: Boolean(appliedDraftResult?.draftText),
     },
     { status: 200 }
   );
