@@ -191,7 +191,11 @@
       "subtitle": "Følg én support-ticket hele vejen — fra den lander til handlingen der løser den — og se præcis hvordan Sona virker.",
       "cta": "Book en demo",
       "closingTitle": "Klar til at se det på jeres egne tickets?",
-      "closingSubtitle": "Book en 20-minutters demo — vi viser Sona besvare tickets som jeres."
+      "closingSubtitle": "Book en 20-minutters demo — vi viser Sona besvare tickets som jeres.",
+      "closingKicker": "Book en demo",
+      "closingBullet1": "20-minutters gennemgang på tickets som jeres",
+      "closingBullet2": "Uden binding — starter med en guidet pilot",
+      "calendarFallback": "Book en demo"
     },
     "anatomy": {
       "kicker": "SÅDAN BLIVER EN TICKET LØST",

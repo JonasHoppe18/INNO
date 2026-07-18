@@ -191,7 +191,11 @@
       "subtitle": "Follow one support ticket all the way through — from the moment it lands to the action that resolves it — and see exactly how Sona works.",
       "cta": "Book a demo",
       "closingTitle": "Ready to see it on your own tickets?",
-      "closingSubtitle": "Book a 20-minute demo — we'll walk through Sona answering tickets like yours."
+      "closingSubtitle": "Book a 20-minute demo — we'll walk through Sona answering tickets like yours.",
+      "closingKicker": "Book a demo",
+      "closingBullet1": "20-minute walkthrough on tickets like yours",
+      "closingBullet2": "No pressure — starts with a guided pilot",
+      "calendarFallback": "Book a demo"
     },
     "anatomy": {
       "kicker": "ANATOMY OF AN ANSWER",

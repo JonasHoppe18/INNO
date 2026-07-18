@@ -3,12 +3,13 @@ import { routing } from "@/i18n/routing";
 import MarketingShell from "@/components/landing/MarketingShell";
 import SectionHeading from "@/components/landing/SectionHeading";
 import Reveal from "@/components/landing/Reveal";
-import BookDemoButton from "@/components/landing/BookDemoButton";
+import InlineBookingCalendar from "@/components/landing/InlineBookingCalendar";
 import DemoInbox from "@/components/landing/demo-inbox/DemoInbox";
 import ProblemSection from "@/components/landing/ProblemSection";
 import AnatomyOfAnswer from "@/components/landing/AnatomyOfAnswer";
 import ControlSection from "@/components/landing/ControlSection";
 import CapabilitiesGrid from "@/components/landing/CapabilitiesGrid";
+import { CheckIcon } from "@/components/landing/icons";
 
 export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));
@@ -58,26 +59,44 @@ export default async function ProductPage({ params: { locale } }) {
       <ControlSection />
       <CapabilitiesGrid />
 
-      {/* Closing CTA: dark, with heading + subtitle, so it flows straight into
-          MarketingShell's dark footer instead of ending on a lone button. */}
-      <section className="relative overflow-hidden bg-zinc-950 px-5 pt-20 pb-4 text-center">
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute -top-24 left-1/2 h-64 w-[32rem] -translate-x-1/2 bg-[radial-gradient(ellipse,rgba(99,102,241,0.35),transparent_70%)]"
-        />
-        <Reveal className="relative">
-          <h2 className="text-balance text-3xl font-bold tracking-tight text-white sm:text-4xl">
-            {t("closingTitle")}
-          </h2>
-          <p className="mx-auto mt-3.5 max-w-lg text-base text-zinc-400">{t("closingSubtitle")}</p>
-        </Reveal>
-        <Reveal delay={100} className="mt-9">
-          <BookDemoButton
-            label={t("cta")}
-            fallbackHref={`/${locale}#book-demo`}
-            className="inline-block rounded-lg bg-white px-6 py-3 text-sm font-semibold text-zinc-950 shadow-lg transition-all duration-200 hover:bg-zinc-100 active:scale-[0.97]"
-          />
-        </Reveal>
+      {/* Closing CTA: pitch + bullets left, an inline booking calendar right.
+          Constrained to one column of a two-column grid — unlike the earlier
+          full-width inline calendar (which read as an oversized, awkward
+          block and was replaced by a popup site-wide), a column-width embed
+          here reads as an intentional booking widget, not a stray form. */}
+      <section className="border-t border-zinc-100 bg-zinc-50 px-5 py-24">
+        <div className="mx-auto grid max-w-6xl items-start gap-10 lg:grid-cols-[0.8fr_1.2fr]">
+          <Reveal className="lg:pt-6">
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-indigo-600">
+              {t("closingKicker")}
+            </p>
+            <h2 className="mt-2.5 text-balance text-3xl font-bold tracking-tight text-zinc-950 sm:text-4xl">
+              {t("closingTitle")}
+            </h2>
+            <p className="mt-3.5 text-base leading-relaxed text-zinc-600">{t("closingSubtitle")}</p>
+            <ul className="mt-6 space-y-3">
+              {["closingBullet1", "closingBullet2"].map((key) => (
+                <li key={key} className="flex items-center gap-2.5 text-sm text-zinc-700">
+                  <CheckIcon /> {t(key)}
+                </li>
+              ))}
+            </ul>
+          </Reveal>
+          {/* Cal's embed auto-resizes unpredictably (grew past 2000px in
+              testing regardless of column width) — cap the card height and
+              let it scroll internally. overflow-hidden alone (no cap+scroll)
+              silently clipped the times/details steps; this keeps every step
+              reachable without letting the section grow unbounded. */}
+          <Reveal
+            delay={100}
+            className="max-h-[640px] overflow-y-auto rounded-2xl border border-zinc-200 bg-white shadow-[0_20px_60px_-30px_rgba(0,0,0,0.25)]"
+          >
+            <InlineBookingCalendar
+              fallbackLabel={t("calendarFallback")}
+              fallbackHref={`/${locale}#book-demo`}
+            />
+          </Reveal>
+        </div>
       </section>
     </MarketingShell>
   );
