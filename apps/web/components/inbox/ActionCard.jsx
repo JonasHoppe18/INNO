@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  Check,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
   LoaderCircle,
+  Plus,
   X,
   XCircle,
 } from "lucide-react";
@@ -15,7 +17,44 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import shopifyLogo from "../../../../assets/Shopify-Logo.png";
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function getForwardTargetEmail(payload = {}, detail = "") {
+  const payloadEmail = String(payload?.target_email || payload?.forward_to_email || "")
+    .trim()
+    .toLowerCase();
+  if (payloadEmail) return payloadEmail;
+  return String(detail || "").match(/[^\s@]+@[^\s@]+\.[^\s@.,;:!?]+/i)?.[0]?.toLowerCase() || "";
+}
+
+function getForwardSentenceParts(detail = "", targetEmail = "") {
+  const fallback = { lead: "Forward this email to", tail: "." };
+  const text = String(detail || "").trim();
+  if (!text) return fallback;
+
+  const exactIndex = targetEmail
+    ? text.toLowerCase().indexOf(String(targetEmail).toLowerCase())
+    : -1;
+  const fallbackMatch = exactIndex < 0 ? text.match(/[^\s@]+@[^\s@]+\.[^\s@.,;:!?]+/i) : null;
+  const emailIndex = exactIndex >= 0 ? exactIndex : fallbackMatch?.index ?? -1;
+  const emailLength = exactIndex >= 0 ? targetEmail.length : fallbackMatch?.[0]?.length || 0;
+  if (emailIndex < 0 || !emailLength) return fallback;
+
+  return {
+    lead: text.slice(0, emailIndex).trimEnd() || fallback.lead,
+    tail: text.slice(emailIndex + emailLength).trimStart() || ".",
+  };
+}
 
 function formatAddressLines(detail = "") {
   const stripped = String(detail || "")
@@ -312,6 +351,12 @@ export function ActionCard({
   const [expanded, setExpanded] = useState(false);
   const [showApprovedDetail, setShowApprovedDetail] = useState(false);
   const [nowMs, setNowMs] = useState(null);
+  const normalizedAction = String(actionType || "").trim().toLowerCase();
+  const initialForwardEmail = getForwardTargetEmail(payload, detail);
+  const [forwardTargetEmail, setForwardTargetEmail] = useState(initialForwardEmail);
+  const [customForwardEmail, setCustomForwardEmail] = useState("");
+  const [isCustomForwardTarget, setIsCustomForwardTarget] = useState(false);
+  const [forwardRoutes, setForwardRoutes] = useState([]);
   const isProposed = status === "proposed";
   const isExecuting = status === "executing";
   const isCompleted = status === "completed";
@@ -323,6 +368,44 @@ export function ActionCard({
   const addressLines = useMemo(() => formatAddressLines(detail), [detail]);
   const canExpand = !isProposed && (addressLines.length > 0 || Boolean(detail));
   const shouldShowDetails = isProposed || (canExpand && expanded);
+
+  useEffect(() => {
+    if (normalizedAction !== "forward_email") return;
+    setForwardTargetEmail(initialForwardEmail);
+    setCustomForwardEmail("");
+    setIsCustomForwardTarget(false);
+  }, [initialForwardEmail, normalizedAction]);
+
+  useEffect(() => {
+    if (normalizedAction !== "forward_email" || !isProposed) return;
+    const controller = new AbortController();
+
+    fetch("/api/settings/email-routing", {
+      cache: "no-store",
+      credentials: "include",
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) return [];
+        const data = await response.json().catch(() => ({}));
+        return Array.isArray(data?.routes) ? data.routes : [];
+      })
+      .then((routes) => {
+        const seen = new Set();
+        const nextRoutes = routes.filter((route) => {
+          const email = String(route?.forward_to_email || "").trim().toLowerCase();
+          if (!route?.is_active || !EMAIL_PATTERN.test(email) || seen.has(email)) return false;
+          seen.add(email);
+          return true;
+        });
+        setForwardRoutes(nextRoutes);
+      })
+      .catch((error) => {
+        if (error?.name !== "AbortError") setForwardRoutes([]);
+      });
+
+    return () => controller.abort();
+  }, [isProposed, normalizedAction]);
 
   useEffect(() => {
     setNowMs(Date.now());
@@ -355,7 +438,6 @@ export function ActionCard({
     () => getResultStatusText({ status, actionType, testMode }),
     [actionType, status, testMode]
   );
-  const normalizedAction = String(actionType || "").trim().toLowerCase();
   // Prefer display name (#4229) over internal ID — name/orderNumber before id
   const resolvedOrderNumber = String(
     orderSummary?.name ||
@@ -385,6 +467,38 @@ export function ActionCard({
     () => getActionValidationError({ actionType, payload }),
     [actionType, payload]
   );
+  const selectedForwardEmail = isCustomForwardTarget
+    ? customForwardEmail.trim().toLowerCase()
+    : forwardTargetEmail;
+  const hasValidForwardEmail = EMAIL_PATTERN.test(selectedForwardEmail);
+  const forwardValidationError =
+    normalizedAction === "forward_email" && !hasValidForwardEmail
+      ? selectedForwardEmail
+        ? "Enter a valid forwarding email address."
+        : "Choose or enter a forwarding email address."
+      : "";
+  const displayedValidationError = validationError || forwardValidationError;
+  const forwardSentence = useMemo(
+    () => getForwardSentenceParts(detail, initialForwardEmail),
+    [detail, initialForwardEmail]
+  );
+  const availableForwardRoutes = useMemo(() => {
+    const routes = [...forwardRoutes];
+    if (
+      initialForwardEmail &&
+      !routes.some(
+        (route) =>
+          String(route?.forward_to_email || "").trim().toLowerCase() === initialForwardEmail
+      )
+    ) {
+      routes.unshift({
+        id: `current-${initialForwardEmail}`,
+        label: String(payload?.category_label || payload?.label || "Current recipient").trim(),
+        forward_to_email: initialForwardEmail,
+      });
+    }
+    return routes;
+  }, [forwardRoutes, initialForwardEmail, payload?.category_label, payload?.label]);
   const impactSummaryLines = useMemo(
     () =>
       getImpactSummaryLines({
@@ -595,18 +709,99 @@ export function ActionCard({
           </div>
         </div>
 
-        <div className="mt-3 rounded-md border border-violet-200/70 dark:border-violet-500/20 bg-muted/40 p-2.5">
-          <div className="space-y-0.5 text-sm text-foreground/80">
-            {impactSummaryLines.map((line, index) => (
-              <div key={`impact-line-${index}`}>{line}</div>
-            ))}
+        {normalizedAction === "forward_email" ? (
+          <div className="mt-3 rounded-md border border-violet-200/70 bg-muted/40 p-2.5 dark:border-violet-500/20">
+            <div className="flex flex-wrap items-center gap-x-1 gap-y-2 text-sm text-foreground/80">
+              <span>{forwardSentence.lead}</span>
+              <DropdownMenu>
+                {isCustomForwardTarget ? (
+                  <div className="inline-flex min-w-0 items-center rounded-md border border-input bg-background shadow-sm focus-within:ring-1 focus-within:ring-violet-500">
+                    <Input
+                      autoFocus
+                      type="email"
+                      inputMode="email"
+                      value={customForwardEmail}
+                      onChange={(event) => setCustomForwardEmail(event.target.value)}
+                      placeholder="name@company.com"
+                      aria-label="Forwarding email address"
+                      aria-invalid={Boolean(selectedForwardEmail && !hasValidForwardEmail)}
+                      className="h-7 w-[220px] min-w-0 border-0 px-2 text-sm shadow-none focus-visible:ring-0"
+                    />
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex h-7 w-7 shrink-0 items-center justify-center border-l border-input text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                        aria-label="Choose forwarding recipient"
+                      >
+                        <ChevronDown className="h-3.5 w-3.5" />
+                      </button>
+                    </DropdownMenuTrigger>
+                  </div>
+                ) : (
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="inline-flex max-w-full items-center gap-1 rounded-md border border-input bg-background px-2 py-1 font-medium text-foreground shadow-sm transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-violet-500"
+                    >
+                      <span className="truncate">{forwardTargetEmail || "Choose recipient"}</span>
+                      <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    </button>
+                  </DropdownMenuTrigger>
+                )}
+                <DropdownMenuContent align="start" className="w-[340px] max-w-[calc(100vw-2rem)]">
+                  {availableForwardRoutes.map((route) => {
+                    const routeEmail = String(route?.forward_to_email || "").trim().toLowerCase();
+                    const isSelected = !isCustomForwardTarget && routeEmail === forwardTargetEmail;
+                    return (
+                      <DropdownMenuItem
+                        key={route?.id || routeEmail}
+                        onSelect={() => {
+                          setForwardTargetEmail(routeEmail);
+                          setCustomForwardEmail("");
+                          setIsCustomForwardTarget(false);
+                        }}
+                        className="py-2"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate font-medium">
+                            {String(route?.label || "Forward recipient").trim()}
+                          </div>
+                          <div className="truncate text-xs text-muted-foreground">{routeEmail}</div>
+                        </div>
+                        {isSelected ? <Check className="ml-auto text-violet-600" /> : null}
+                      </DropdownMenuItem>
+                    );
+                  })}
+                  {availableForwardRoutes.length ? <DropdownMenuSeparator /> : null}
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      setCustomForwardEmail("");
+                      setIsCustomForwardTarget(true);
+                    }}
+                    className="py-2 font-medium text-violet-700 focus:text-violet-700 dark:text-violet-300 dark:focus:text-violet-300"
+                  >
+                    <Plus />
+                    Add new email
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <span>{forwardSentence.tail}</span>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="mt-3 rounded-md border border-violet-200/70 bg-muted/40 p-2.5 dark:border-violet-500/20">
+            <div className="space-y-0.5 text-sm text-foreground/80">
+              {impactSummaryLines.map((line, index) => (
+                <div key={`impact-line-${index}`}>{line}</div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {error ? <div className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</div> : null}
-        {validationError ? (
+        {displayedValidationError ? (
           <div className="mt-2 text-xs text-amber-700 dark:text-amber-400">
-            {validationError}
+            {displayedValidationError}
           </div>
         ) : null}
         {extraContent ? <div className="mt-2">{extraContent}</div> : null}
@@ -624,8 +819,14 @@ export function ActionCard({
         <button
           type="button"
           className="inline-flex items-center gap-1 rounded-md bg-violet-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
-          onClick={onApprove}
-          disabled={loading || Boolean(validationError)}
+          onClick={() =>
+            onApprove?.(
+              normalizedAction === "forward_email"
+                ? { target_email: selectedForwardEmail }
+                : undefined
+            )
+          }
+          disabled={loading || Boolean(displayedValidationError)}
         >
           <CheckCircle2 className="h-3.5 w-3.5" />
           {loading ? "Applying..." : approveButtonLabel}

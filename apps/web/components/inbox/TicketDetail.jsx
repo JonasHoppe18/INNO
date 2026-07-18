@@ -758,10 +758,12 @@ function TicketDetailComponent({
                         error={orderUpdateError || ""}
                         loading={Boolean(orderUpdateSubmitting)}
                         extraContent={processReturnExtraContent}
-                        onApprove={() =>
+                        onApprove={(payloadOverride) =>
                           onOrderUpdateDecision?.(
                             "accepted",
-                            isProcessReturnAction ? { restock: processReturnRestock } : undefined
+                            isProcessReturnAction
+                              ? { restock: processReturnRestock }
+                              : payloadOverride
                           )
                         }
                         onDecline={() => onOrderUpdateDecision?.("denied")}
@@ -821,10 +823,12 @@ function TicketDetailComponent({
                   error={orderUpdateError || ""}
                   loading={Boolean(orderUpdateSubmitting)}
                   extraContent={processReturnExtraContent}
-                  onApprove={() =>
+                  onApprove={(payloadOverride) =>
                     onOrderUpdateDecision?.(
                       "accepted",
-                      isProcessReturnAction ? { restock: processReturnRestock } : undefined
+                      isProcessReturnAction
+                        ? { restock: processReturnRestock }
+                        : payloadOverride
                     )
                   }
                   onDecline={() => onOrderUpdateDecision?.("denied")}
