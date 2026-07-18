@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { resolveAuthScope, listScopedShops } from "@/lib/server/workspace-auth";
 import { classifyAnchor } from "@/lib/server/eval-anchor";
+import { customerBodyFromTicketExample } from "@/lib/server/eval-run-data";
 
 const SUPABASE_URL = (
   process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -53,19 +54,23 @@ export async function GET(req) {
 
   const { searchParams } = new URL(req.url);
   const limit = Math.min(Number(searchParams.get("limit") || "120"), 200);
+  // Fetch beyond the visible limit so low-quality/non-comparable anchors can be
+  // removed without leaving the evaluator with a tiny or misleading sample.
+  const candidateLimit = Math.min(Math.max(limit * 5, limit), 1000);
 
   const { data, error } = await supabase
     .from("ticket_examples")
     .select("id, external_ticket_id, source_provider, subject, customer_msg, agent_reply, conversation_context, intent, language, csat_score, tags, imported_at")
     .in("shop_id", shopIds)
     .order("imported_at", { ascending: false })
-    .limit(limit);
+    .order("id", { ascending: false })
+    .limit(candidateLimit);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const examples = (data ?? [])
+  const classified = (data ?? [])
     .filter((row) => String(row.customer_msg || "").trim() && String(row.agent_reply || "").trim())
     .map((row) => {
       const human_reply = String(row.agent_reply || "").slice(0, 3000);
@@ -76,9 +81,12 @@ export async function GET(req) {
         external_ticket_id: row.external_ticket_id,
         source_provider: row.source_provider,
         subject: row.subject || "(no subject)",
-        customer_body: String(row.customer_msg || "").slice(0, 3000),
+        customer_body: customerBodyFromTicketExample(
+          String(row.customer_msg || ""),
+          row.subject,
+        ).slice(0, 3000),
         human_reply,
-        conversation_history: String(row.conversation_context || "").slice(-3000),
+        conversation_history: String(row.conversation_context || "").slice(-6000),
         intent: row.intent,
         language: row.language,
         csat_score: row.csat_score,
@@ -88,6 +96,17 @@ export async function GET(req) {
         created_at: row.imported_at,
       };
     });
+  const examples = classified
+    .filter((row) => row.anchor_class !== "non_comparable_anchor")
+    .slice(0, limit);
+  const excludedNonComparable = classified.filter(
+    (row) => row.anchor_class === "non_comparable_anchor",
+  ).length;
 
-  return NextResponse.json({ examples, fetched: examples.length, requested: limit });
+  return NextResponse.json({
+    examples,
+    fetched: examples.length,
+    requested: limit,
+    excluded_non_comparable: excludedNonComparable,
+  });
 }

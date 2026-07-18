@@ -54,6 +54,16 @@ test("unsupported availability: controls do not fire", () => {
   assert.equal(detectUnsupportedAvailability(c276.draft, { ticketBody: c276.ticket }), false);
   // availability stated but no customer doubt → no false positive
   assert.equal(detectUnsupportedAvailability(confirmedAvail.draft, { ticketBody: confirmedAvail.ticket }), false);
+  assert.equal(
+    detectUnsupportedAvailability(
+      "The mouse pad is expected to be in stock in mid to late August.",
+      {
+        ticketBody:
+          "When will it be in stock?\n\nOn 12 July Support wrote: Vi regner med midt-slut August.",
+      },
+    ),
+    false,
+  );
 });
 
 test("missing/blank input is safe", () => {

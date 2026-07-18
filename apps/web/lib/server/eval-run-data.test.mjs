@@ -1,10 +1,36 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  customerBodyFromTicketExample,
   evalSourceThreadId,
   normalizeEvalItems,
   summarizeEvalResults,
 } from "./eval-run-data.js";
+
+test("ticket-example eval removes the retrieval-only subject prefix", () => {
+  assert.equal(
+    customerBodyFromTicketExample("Please cancel order 123\nThanks!", "Please cancel order 123"),
+    "Thanks!",
+  );
+  assert.equal(
+    customerBodyFromTicketExample("The headset still will not pair.", "Pairing issue"),
+    "The headset still will not pair.",
+  );
+});
+
+test("ticket-example eval uses a substantive subject for an image-only message", () => {
+  assert.equal(
+    customerBodyFromTicketExample(
+      "A-Spire Wireless dongle issue\n![](https://example.test/image.png)",
+      "A-Spire Wireless dongle issue",
+    ),
+    "A-Spire Wireless dongle issue",
+  );
+  assert.equal(
+    customerBodyFromTicketExample("Cancel order 123\nThanks!", "Cancel order 123"),
+    "Thanks!",
+  );
+});
 
 test("imported eval examples retain their external ticket id for self-exclusion", () => {
   const normalized = normalizeEvalItems({

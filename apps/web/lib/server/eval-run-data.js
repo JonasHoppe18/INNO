@@ -58,6 +58,30 @@ export function evalSourceThreadId(ticket = {}) {
   return String(value).trim() || undefined;
 }
 
+/** Imports embed `subject + customer body` for retrieval, while eval must send
+ * only the actual latest customer turn to the draft pipeline. Otherwise a
+ * subject such as "Cancel order" can override a latest body that only says
+ * "Thanks", producing the wrong intent and a false quality failure. */
+export function customerBodyFromTicketExample(customerMsg, subject) {
+  const message = String(customerMsg || "").trim();
+  const normalizedSubject = String(subject || "").trim();
+  if (!message || !normalizedSubject) return message;
+  const prefix = `${normalizedSubject}\n`;
+  const body = message.startsWith(prefix)
+    ? message.slice(prefix.length).trim()
+    : message;
+  const bodySignal = body
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+    .replace(/https?:\/\/\S+/gi, " ")
+    .replace(/\b[^\s]+\.(?:png|jpe?g|gif|webp|heic|pdf)\b/gi, " ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+  const genericSubject =
+    /^(?:new customer message(?:\s+on.*)?|contact form|support request|no subject|pakke|ordre|order)$/iu
+      .test(normalizedSubject);
+  return !bodySignal && !genericSubject ? normalizedSubject : body;
+}
+
 export function summarizeEvalResults(results = []) {
   const allResults = Array.isArray(results) ? results : [];
   const aggregateResults = allResults.filter(

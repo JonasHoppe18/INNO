@@ -1,6 +1,9 @@
 // deno test --no-check -A supabase/functions/generate-draft-v2/stages/live-fact-action-claim-check.test.ts
 import { assert, assertEquals } from "jsr:@std/assert@1";
-import { checkLiveFactAndActionClaims } from "./live-fact-action-claim-check.ts";
+import {
+  checkLiveFactAndActionClaims,
+  removeUnsupportedOperationalUpdateClaims,
+} from "./live-fact-action-claim-check.ts";
 import type { ResolvedFact } from "./fact-resolver.ts";
 import type { TrackingFact } from "../../_shared/tracking/normalized-tracking.ts";
 
@@ -264,6 +267,93 @@ Deno.test("replacement-sent claim with executed exchange action → compliant", 
   assertEquals(r.compliant, true);
 });
 
+Deno.test("backorder case-update claim without an executed action → review", () => {
+  const r = checkLiveFactAndActionClaims({
+    draft_text: "We have now marked your ticket as a back order.",
+    facts: [],
+  });
+  assertEquals(r.compliant, false);
+  assert(
+    r.violations.some((v) => v.type === "action/not_executed_case_update"),
+  );
+});
+
+Deno.test("Danish waitlist case-update claim with executed tag action → compliant", () => {
+  const r = checkLiveFactAndActionClaims({
+    draft_text: "Vi har nu markeret sagen som venteliste.",
+    facts: [],
+    executed_action_types: ["add_order_tag"],
+  });
+  assertEquals(r.compliant, true);
+});
+
+Deno.test("proactive restock update promise without a notification action → review", () => {
+  const r = checkLiveFactAndActionClaims({
+    draft_text: "We'll keep you updated on the restock.",
+    facts: [],
+  });
+  assertEquals(r.compliant, false);
+  assert(
+    r.violations.some((v) => v.type === "action/not_executed_followup"),
+  );
+});
+
+Deno.test("proactive restock update promise with a subscription action → compliant", () => {
+  const r = checkLiveFactAndActionClaims({
+    draft_text: "Vi giver dig besked, når varen er tilbage.",
+    facts: [],
+    executed_action_types: ["create_restock_subscription"],
+  });
+  assertEquals(r.compliant, true);
+});
+
+Deno.test("unsupported backorder and notification sentence is removed from an otherwise useful reply", () => {
+  const cleaned = removeUnsupportedOperationalUpdateClaims({
+    draft_text:
+      "Hi there! We have marked your ticket as a back order, and we'll keep you updated. Have a great summer!",
+    facts: [],
+    language: "en",
+  });
+  assertEquals(cleaned, "Hi there!\n\nHave a great summer!");
+});
+
+Deno.test("future keep-marked backorder promise is removed too", () => {
+  const cleaned = removeUnsupportedOperationalUpdateClaims({
+    draft_text:
+      "I appreciate your understanding! We will keep your ticket marked as a back order and notify you once it is back in stock. Have a great summer!",
+    facts: [],
+    language: "en",
+  });
+  assertEquals(
+    cleaned,
+    "I appreciate your understanding!\n\nHave a great summer!",
+  );
+});
+
+Deno.test("executed restock subscription preserves the operational update sentence", () => {
+  const draft = "We'll notify you when it is back in stock.";
+  assertEquals(
+    removeUnsupportedOperationalUpdateClaims({
+      draft_text: draft,
+      facts: [],
+      executed_action_types: ["create_restock_subscription"],
+      language: "en",
+    }),
+    draft,
+  );
+});
+
+Deno.test("an all-unsafe operational reply falls back to a neutral acknowledgement", () => {
+  assertEquals(
+    removeUnsupportedOperationalUpdateClaims({
+      draft_text: "Vi holder dig opdateret.",
+      facts: [],
+      language: "da",
+    }),
+    "Tak for din forståelse.",
+  );
+});
+
 // ── 15. Safe wording must NOT flag ──────────────────────────────────────────
 Deno.test("safe wording: asked shop manager to provide invoice → compliant", () => {
   const r = checkLiveFactAndActionClaims({
@@ -276,8 +366,7 @@ Deno.test("safe wording: asked shop manager to provide invoice → compliant", (
 
 Deno.test("safe wording: tracking not available yet → compliant", () => {
   const r = checkLiveFactAndActionClaims({
-    draft_text:
-      "Tracking is not available yet. The order has not shipped yet.",
+    draft_text: "Tracking is not available yet. The order has not shipped yet.",
     facts: [notYetShippedFact],
   });
   assertEquals(r.compliant, true);

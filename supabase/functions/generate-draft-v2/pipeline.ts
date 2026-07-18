@@ -12,7 +12,12 @@ import {
   replacementIntentOverride,
   resolveReplacementFlowState,
 } from "./stages/replacement-flow.ts";
-import { runRetriever } from "./stages/retriever.ts";
+import {
+  extractMentionedProductTerms,
+  extractMostRecentConversationProductTerms,
+  isGenericEarPadProductTerm,
+  runRetriever,
+} from "./stages/retriever.ts";
 import type { RetrievalCandidateDiagnostics } from "./stages/retriever.ts";
 import { runInternalRules } from "./stages/internal-rules.ts";
 import {
@@ -109,6 +114,7 @@ import {
 } from "./stages/product-support-legacy-scope.ts";
 import {
   buildWriterConversationHistory,
+  latestCustomerTextWithSubjectFallback,
   visibleEmailText,
 } from "./stages/email-thread-normalizer.ts";
 import { detectCustomerProvidedReturnTracking } from "./stages/return-tracking-attribution.ts";
@@ -117,7 +123,10 @@ import { detectMissingDamageDocumentationAsk } from "./stages/damage-documentati
 import { resolveCustomerName } from "./stages/customer-name-resolution.ts";
 import { checkUnsupportedCommitments } from "./stages/unsupported-commitment-check.ts";
 import { checkUnsupportedAssumptions } from "./stages/unsupported-assumption-check.ts";
-import { checkLiveFactAndActionClaims } from "./stages/live-fact-action-claim-check.ts";
+import {
+  checkLiveFactAndActionClaims,
+  removeUnsupportedOperationalUpdateClaims,
+} from "./stages/live-fact-action-claim-check.ts";
 import { checkUnsupportedNegativeClaims } from "./stages/unsupported-negative-claim-check.ts";
 import { rewriteCapabilityRefusals } from "./stages/capability-refusal-rewrite.ts";
 import {
@@ -956,10 +965,11 @@ export function applyAutomationConstraints(
     const coreType = normalizeCoreActionType(proposal.type);
     return {
       ...proposal,
-      requires_approval: isTestMode || (coreType
-        ? actionNeedsApproval(proposal.type, automation, shopActionConfig)
-        : proposal.requires_approval ||
-          actionNeedsApproval(proposal.type, automation, shopActionConfig)),
+      requires_approval: isTestMode ||
+        (coreType
+          ? actionNeedsApproval(proposal.type, automation, shopActionConfig)
+          : proposal.requires_approval ||
+            actionNeedsApproval(proposal.type, automation, shopActionConfig)),
     };
   });
 
@@ -1310,12 +1320,11 @@ export async function runDraftV2Pipeline(
     const disableEscalation = eval_payload
       ? eval_options?.disable_escalation === true
       : false;
-    let postActionResult =
-      action_result && typeof action_result === "object" &&
+    let postActionResult = action_result && typeof action_result === "object" &&
         typeof (action_result as Record<string, unknown>).action_type ===
           "string"
-        ? action_result as Record<string, unknown>
-        : null;
+      ? action_result as Record<string, unknown>
+      : null;
 
     // 1. Load context — either from DB (normal) or from eval_payload (eval mode)
     currentStage = "load_context";
@@ -1407,7 +1416,10 @@ export async function runDraftV2Pipeline(
     if (!latestMessage && !eval_payload) {
       return await completeSkippedGeneration("no_messages");
     }
-    const latestVisibleCustomerText = visibleEmailText(latestMessage);
+    const latestVisibleCustomerText = latestCustomerTextWithSubjectFallback(
+      latestMessage,
+      String((thread as Record<string, unknown>).subject || ""),
+    );
     if (latestVisibleCustomerText) {
       latestMessage = {
         ...latestMessage,
@@ -1766,12 +1778,31 @@ export async function runDraftV2Pipeline(
 
     // 5. Retrieve + resolve facts + interne regler parallelt (uafhængige)
     currentStage = "context_resolution";
+    const recentConversationProducts =
+      extractMostRecentConversationProductTerms(messages, shop);
+    const subjectProducts = extractMentionedProductTerms(
+      String((thread as Record<string, unknown>).subject || ""),
+      shop,
+    );
+    const recentIsOnlyGenericEarPad = recentConversationProducts.length > 0 &&
+      recentConversationProducts.every(isGenericEarPadProductTerm);
+    const knownRetrievalProducts = recentIsOnlyGenericEarPad &&
+        subjectProducts.length === 1
+      ? subjectProducts
+      : recentConversationProducts.length
+      ? recentConversationProducts
+      : subjectProducts.length
+      ? subjectProducts
+      : Array.isArray(caseState.entities.products_mentioned)
+      ? caseState.entities.products_mentioned
+      : [];
     const [retrieved, facts, internalRules] = await Promise.all([
       runRetriever({
         plan,
         shop_id,
         workspace_id: workspaceId,
         customerMessage: latestBody,
+        knownProducts: knownRetrievalProducts,
         shop,
         supabase,
         // Self-echo guard: exclude ticket_examples promoted from THIS thread.
@@ -2387,7 +2418,8 @@ export async function runDraftV2Pipeline(
         (shop as Record<string, unknown>).owner_user_id ?? "",
       ).trim();
       const latestMessageId = String(
-        (latestMessage as Record<string, unknown>).id ?? input.message_id ?? "latest",
+        (latestMessage as Record<string, unknown>).id ?? input.message_id ??
+          "latest",
       );
       const actionKey = `auto_${proposal.type}_${thread_id}_${latestMessageId}`;
       const nowIso = new Date().toISOString();
@@ -2426,31 +2458,35 @@ export async function runDraftV2Pipeline(
       ) {
         let autoActionId: string | null = null;
         if (thread_id) {
-          const { data: insertedAutoAction, error: autoInsertError } = await supabase
-            .from("thread_actions")
-            .insert({
-              workspace_id: workspaceId,
-              user_id: ownerUserId,
-              thread_id,
-              action_type: proposal.type,
-              action_key: actionKey,
-              status: "pending",
-              detail: proposal.reason,
-              payload: {
-                ...proposal.params,
-                _confidence: proposal.confidence,
-                _mode: "auto",
-              },
-              order_id: String(orderId),
-              order_number: facts.order?.name ?? null,
-              source: "automation",
-              created_at: nowIso,
-              updated_at: nowIso,
-            })
-            .select("id")
-            .maybeSingle();
+          const { data: insertedAutoAction, error: autoInsertError } =
+            await supabase
+              .from("thread_actions")
+              .insert({
+                workspace_id: workspaceId,
+                user_id: ownerUserId,
+                thread_id,
+                action_type: proposal.type,
+                action_key: actionKey,
+                status: "pending",
+                detail: proposal.reason,
+                payload: {
+                  ...proposal.params,
+                  _confidence: proposal.confidence,
+                  _mode: "auto",
+                },
+                order_id: String(orderId),
+                order_number: facts.order?.name ?? null,
+                source: "automation",
+                created_at: nowIso,
+                updated_at: nowIso,
+              })
+              .select("id")
+              .maybeSingle();
           if (autoInsertError) {
-            console.warn("[pipeline] auto action insert failed:", autoInsertError.message);
+            console.warn(
+              "[pipeline] auto action insert failed:",
+              autoInsertError.message,
+            );
           }
           autoActionId = insertedAutoAction?.id
             ? String(insertedAutoAction.id)
@@ -2458,10 +2494,13 @@ export async function runDraftV2Pipeline(
         }
 
         if (!autoActionId) {
-          return await completeSkippedGeneration("auto_action_lock_unavailable", {
-            routing_hint: "block",
-            proposed_actions: [],
-          });
+          return await completeSkippedGeneration(
+            "auto_action_lock_unavailable",
+            {
+              routing_hint: "block",
+              proposed_actions: [],
+            },
+          );
         }
 
         const [executionResult] = await executeAutomationActions({
@@ -2533,7 +2572,8 @@ export async function runDraftV2Pipeline(
           }
           finalProposals = [{
             ...proposal,
-            reason: `${proposal.reason} Auto execution failed: ${executionError}`,
+            reason:
+              `${proposal.reason} Auto execution failed: ${executionError}`,
             requires_approval: true,
           }];
           effectiveRoutingHint = "review";
@@ -3630,6 +3670,22 @@ export async function runDraftV2Pipeline(
         } — routing=${finalRoutingHint}`,
       );
     }
+    const executedActionTypes = isExecutedActionResult(postActionResult) &&
+        typeof postActionResult?.action_type === "string"
+      ? [String(postActionResult.action_type)]
+      : [];
+    // Remove only narrow, provably unsupported operational-update sentences
+    // (e.g. "we marked you as backorder and will notify you") before the
+    // remaining safety checks and before the draft reaches an employee. This
+    // does not invent a replacement action; it preserves the rest of the human
+    // reply and uses a neutral acknowledgement only if nothing remains.
+    finalDraft = removeUnsupportedOperationalUpdateClaims({
+      draft_text: finalDraft ?? "",
+      facts: facts.facts,
+      tracking_facts: facts.tracking_facts,
+      executed_action_types: executedActionTypes,
+      language: replyLanguage,
+    });
     const finalSupportVoiceViolations = detectSupportVoiceViolations(
       finalDraft ?? "",
     );
@@ -3696,10 +3752,6 @@ export async function runDraftV2Pipeline(
     // replacement" with no executed action). Executed actions come ONLY from a
     // post-action pass (postActionResult) — never from proposed/requires_approval
     // actions. Same additive posture: never rewrites, only escalates to review.
-    const executedActionTypes = isExecutedActionResult(postActionResult) &&
-        typeof postActionResult?.action_type === "string"
-      ? [String(postActionResult.action_type)]
-      : [];
     const liveFactActionClaimCheck = checkLiveFactAndActionClaims({
       draft_text: finalDraft ?? "",
       facts: facts.facts,

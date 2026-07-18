@@ -15,6 +15,7 @@ import {
 } from "./snippet-matcher.ts";
 import { embedText } from "../../_shared/embed-text.ts";
 import { filterSoftDisabledRows } from "../../_shared/knowledge-flags.ts";
+import { assessHistoricalExampleQuality } from "../../_shared/historical-example-quality.js";
 
 // Snippet-matcher config. Thresholds are starting values calibrated against the
 // retrieval-eval (E); adjust only against measured aggregates, never single cases.
@@ -155,6 +156,9 @@ export interface RetrieverInput {
   shop_id: string;
   workspace_id?: string | null;
   customerMessage?: string;
+  // Product identity already established from earlier turns in case-state.
+  // Used only when the newest customer message omits the model name.
+  knownProducts?: string[];
   shop?: Record<string, unknown>;
   supabase: SupabaseClient;
   // Eval mode: exclude this ticket's own stored reply from few-shot examples
@@ -439,9 +443,63 @@ export function extractMentionedProductTerms(
   return resolveMostSpecificProductTerms(matched);
 }
 
+/** Resolve the most recently established product from a thread without asking
+ * an LLM to repeat it on every follow-up. The newest message containing a
+ * product wins; if that message names multiple products we keep all of them so
+ * downstream product gates fail closed instead of guessing. */
+export function extractMostRecentConversationProductTerms(
+  messages: Array<Record<string, unknown>>,
+  shop?: Record<string, unknown>,
+): string[] {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index] ?? {};
+    const visible = [
+      message.subject,
+      message.clean_body_text,
+      message.body_text,
+    ].map((value) => String(value || "").trim()).filter(Boolean).join("\n");
+    const visibleProducts = extractMentionedProductTerms(visible, shop);
+    if (visibleProducts.length) return visibleProducts;
+
+    // Some helpdesks place the whole preceding conversation only in the latest
+    // inbound message's quoted body. Use it as a fallback, never ahead of the
+    // customer's visible current turn.
+    const quotedProducts = extractMentionedProductTerms(
+      String(message.quoted_body_text || ""),
+      shop,
+    );
+    if (quotedProducts.length) return quotedProducts;
+  }
+  return [];
+}
+
 function isKnowledgeDocumentProvider(sourceProvider: unknown): boolean {
   return String(sourceProvider || "").trim().toLowerCase() ===
     KNOWLEDGE_DOCUMENT_PROVIDER;
+}
+
+/** A narrowly matching admin-authored Q&A should not be blended with a broad
+ * document that happens to share words. Keep this conservative: exactly one
+ * manual answer in the selected set, an explicit question, and meaningful
+ * lexical overlap with the customer's current issue. */
+export function preferFocusedManualAnswer(input: {
+  selected: RetrievedChunk[];
+  customerMessage?: string;
+}): RetrievedChunk[] {
+  const selected = Array.isArray(input.selected) ? input.selected : [];
+  if (selected.length < 2) return selected;
+  const manualAnswers = selected.filter((chunk) =>
+    String(chunk.source_provider || "").toLowerCase() === "manual_text" &&
+    ["fact", "procedure"].includes(chunk.usable_as) &&
+    String(chunk.question || "").trim().length > 0
+  );
+  if (manualAnswers.length !== 1) return selected;
+  const manual = manualAnswers[0];
+  const overlap = tokenOverlapJaccard(
+    String(input.customerMessage || ""),
+    `${manual.question || ""} ${manual.source_title || ""}`,
+  );
+  return overlap >= 0.18 ? [manual] : selected;
 }
 
 function isReturnRefundContext(
@@ -638,12 +696,73 @@ export type RuntimeKnowledgeDocumentDecision = {
   reason: string;
 };
 
+export function resolveRetrievalProductTerms(input: {
+  customerMessage?: string;
+  plannerQueries?: string[];
+  knownProducts?: string[];
+  shop?: Record<string, unknown>;
+}): string[] {
+  const current = extractMentionedProductTerms(
+    input.customerMessage || "",
+    input.shop,
+  );
+  const established = extractMentionedProductTerms(
+    (input.knownProducts ?? []).join(" "),
+    input.shop,
+  );
+  if (current.length) {
+    // A follow-up such as "Do you make deeper earcups?" can match a generic
+    // accessory catalog term ("ear pads") even though the actual headset was
+    // established in the subject/thread. Preserve the specific established
+    // product unless the customer explicitly names a different real model.
+    if (
+      established.length === 1 &&
+      current.every((term) =>
+        term === established[0] || isGenericEarPadProductTerm(term)
+      )
+    ) {
+      return established;
+    }
+    return current;
+  }
+  if (established.length) return established;
+
+  return extractMentionedProductTerms(
+    (input.plannerQueries ?? []).join(" "),
+    input.shop,
+  );
+}
+
+export function isGenericEarPadProductTerm(term: string): boolean {
+  return /^(?:ear\s*(?:pads?|cups?)|earpads?|earcups?|cushions?|ørepuder?|ørekopper?)$/iu
+    .test(String(term || "").trim());
+}
+
+/** The resolved customer/thread product is authoritative for scoring. Planner
+ * sub-queries may mention comparison products or generic catalog names and
+ * must not widen a single-product request into an ambiguous multi-product one. */
+export function resolveScoringProductTerms(input: {
+  resolvedProducts?: string[];
+  queryText?: string;
+  shop?: Record<string, unknown>;
+}): string[] {
+  const resolved = resolveMostSpecificProductTerms(
+    (input.resolvedProducts ?? []).map((term) =>
+      String(term || "").trim().toLowerCase()
+    ).filter(Boolean),
+  );
+  return resolved.length
+    ? resolved
+    : extractMentionedProductTerms(input.queryText || "", input.shop);
+}
+
 export function evaluateRuntimeKnowledgeDocumentAccess(input: {
   source_provider?: string | null;
   content?: string;
   metadata?: Record<string, unknown> | null;
   plan: Plan;
   customerMessage?: string;
+  knownProducts?: string[];
   shop?: Record<string, unknown>;
 }): RuntimeKnowledgeDocumentDecision {
   if (!isKnowledgeDocumentProvider(input.source_provider)) {
@@ -681,10 +800,17 @@ export function evaluateRuntimeKnowledgeDocumentAccess(input: {
 
   // Product Support docs are currently used in inbox drafts as human-reviewed
   // draft context. No auto-send/autonomous action path exists.
-  const mentionedProducts = extractMentionedProductTerms(
-    input.customerMessage || "",
-    input.shop,
-  );
+  // Follow-up messages often omit the model because it is already established
+  // in the thread ("Do you make deeper ear cups?"). The planner's sub-queries
+  // carry that resolved thread context, so include them when enforcing the
+  // product gate. This still fails closed when zero or multiple products are
+  // resolved and never lets a wrong-product document through.
+  const mentionedProducts = resolveRetrievalProductTerms({
+    customerMessage: input.customerMessage,
+    plannerQueries: input.plan.sub_queries,
+    knownProducts: input.knownProducts,
+    shop: input.shop,
+  });
   const documentProducts = extractKnowledgeDocumentProductTerms({
     content: input.content,
     metadata,
@@ -821,7 +947,10 @@ function extractIssueTerms(text: string): string[] {
   addIf("audio", /\b(audio|sound|lyd|cable|kabel|usb|usb-c)\b/);
   addIf("microphone", /\b(mic|microphone|mikrofon|mute|unmute)\b/);
   addIf("battery", /\b(battery|batteri|charging|charge|strøm|oplade)\b/);
-  addIf("ear_pads", /\b(ear\s*pads?|earpads?|pads?|cushions?|ørepuder?)\b/);
+  addIf(
+    "ear_pads",
+    /\b(ear\s*pads?|earpads?|ear\s*cups?|earcups?|pads?|cushions?|ørepuder?|ørekopper?)\b/,
+  );
   addIf(
     "physical_damage",
     /\b(damage|damaged|broken|crack|cracked|skade|ødelagt|knækket|broke)\b/,
@@ -1051,6 +1180,39 @@ export function buildFallbackQueries(
   if (issues.includes("ear_pads")) {
     queries.push({
       text: `${products[0] || ""} ear pads earpads compatible replaceable`
+        .trim(),
+      productAgnostic: false,
+    });
+  }
+  if (
+    /\b(?:dongle|usb\s*(?:dongle|adapter))\b/iu.test(text) &&
+    /\b(?:white|hvid)\b/iu.test(text)
+  ) {
+    queries.push({
+      text: `${products[0] || ""} dongle LED white pairing reconnect no sound`
+        .trim(),
+      productAgnostic: false,
+    });
+  }
+  if (/\b(?:push[- ]?to[- ]?talk|ptt)\b/iu.test(text)) {
+    queries.push({
+      text: `${
+        products[0] || ""
+      } push to talk audio cuts out microphone Windows`
+        .trim(),
+      productAgnostic: false,
+    });
+  }
+  const comparesCableAndAux =
+    /\b(?:cable|wired|kabel|dongle|usb)\b/iu.test(text) &&
+    /\b(?:aux|audio\s*interface|lydkort)\b/iu.test(text) &&
+    /\b(?:bad|poor|terrible|distort(?:ed|ion)?|muffled|fine|good|works?|dårlig|forvrænget|fint|godt|virker)\b/iu
+      .test(text);
+  if (comparesCableAndAux) {
+    queries.push({
+      text: `${
+        products[0] || ""
+      } cable dongle bad audio audio interface Generic USB Audio driver`
         .trim(),
       productAgnostic: false,
     });
@@ -2024,6 +2186,7 @@ export async function runRetriever(
     shop_id,
     workspace_id,
     customerMessage,
+    knownProducts,
     shop,
     supabase,
     excludeExternalTicketId,
@@ -2047,12 +2210,24 @@ export async function runRetriever(
   const queryDefs: FallbackQuery[] = [];
   const seenQueryText = new Set<string>();
   const plannerQueries = plan.sub_queries.filter(Boolean);
+  const resolvedProducts = resolveRetrievalProductTerms({
+    customerMessage,
+    plannerQueries,
+    knownProducts,
+    shop,
+  });
   for (const text of plannerQueries) {
     if (seenQueryText.has(text)) continue;
     seenQueryText.add(text);
     queryDefs.push({ text, productAgnostic: false });
   }
-  const fallbackQueries = buildFallbackQueries(plan, customerMessage, shop);
+  const fallbackMessage = extractMentionedProductTerms(
+          customerMessage || "",
+          shop,
+        ).length === 0 && resolvedProducts.length === 1
+    ? `${customerMessage || ""} ${resolvedProducts[0]}`
+    : customerMessage;
+  const fallbackQueries = buildFallbackQueries(plan, fallbackMessage, shop);
   for (const q of fallbackQueries) {
     if (seenQueryText.has(q.text)) continue;
     seenQueryText.add(q.text);
@@ -2062,10 +2237,7 @@ export async function runRetriever(
   const queries = boundedQueryDefs.map((q) => q.text);
   if (queries.length === 0) return { chunks: [], past_ticket_examples: [] };
 
-  const filterProducts = extractMentionedProductTerms(
-    customerMessage || "",
-    shop,
-  );
+  const filterProducts = resolvedProducts;
   const intentIssueTypes = INTENT_TO_ISSUE_TYPES[plan.primary_intent] ?? [];
   const detectedIssueTypes = extractIssueTerms(customerMessage || "");
   const filterIssueTypes = uniqueStrings([
@@ -2247,6 +2419,8 @@ export async function runRetriever(
         return [...resultMap.values()]
           .filter((item) =>
             item.agent_reply && item.agent_reply.length > 20 &&
+            assessHistoricalExampleQuality({ agentReply: item.agent_reply })
+              .usable &&
             item.score >= 0.45
           )
           .sort((a, b) => b.score - a.score)
@@ -2310,8 +2484,14 @@ export async function runRetriever(
     plan.primary_intent,
     flags.pqBudget,
   );
-  const queryText = `${queries.join(" ")} ${customerMessage || ""}`;
-  const productTerms = extractMentionedProductTerms(queryText, shop);
+  const queryText = `${queries.join(" ")} ${customerMessage || ""} ${
+    resolvedProducts.join(" ")
+  }`;
+  const productTerms = resolveScoringProductTerms({
+    resolvedProducts,
+    queryText,
+    shop,
+  });
   const issueTerms = extractIssueTerms(queryText);
   // When exactly one product is mentioned, identify other shop products to penalise.
   // Exclude every VARIANT of the mentioned product ("iem and sound card" is the
@@ -2355,6 +2535,7 @@ export async function runRetriever(
           metadata: meta,
           plan,
           customerMessage,
+          knownProducts,
           shop,
         }).allowed;
       }
@@ -2372,6 +2553,7 @@ export async function runRetriever(
           metadata: meta,
           plan,
           customerMessage,
+          knownProducts,
           shop,
         })
         : null;
@@ -2538,6 +2720,10 @@ export async function runRetriever(
         byId,
         threshold: SNIPPET_MATCHER_THRESHOLD,
         budget: knowledgeBudget,
+      });
+      finalChunks = preferFocusedManualAnswer({
+        selected: finalChunks,
+        customerMessage,
       });
       // Fix B.2: when the matcher selected nothing, rescue the top already-pooled
       // policy/procedure chunks by RETRIEVAL score (not matcher relevance, which

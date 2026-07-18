@@ -199,13 +199,14 @@ export async function GET(req) {
     const { anchor_class, signals: anchor_signals } = classifyAnchor({
       humanReply: agentBody,
     });
+    if (anchor_class === "non_comparable_anchor") continue;
 
     results.push({
       id: String(ticketId),
       subject,
       customer_body: customerBody.slice(0, 3000),
       human_reply: agentBody.slice(0, 3000),
-      conversation_history: conversationHistory ? conversationHistory.slice(0, 3000) : null,
+      conversation_history: conversationHistory ? conversationHistory.slice(-6000) : null,
       anchor_class,
       anchor_signals,
       multi_turn: anchored.multiTurn,

@@ -30,7 +30,7 @@ export function withoutUnsentComposerDrafts<T>(messages: T[]): T[] {
 }
 
 const QUOTED_HEADER_RE =
-  /^(?:(?:on|den|d\.) .{0,300} (?:wrote|skrev|schrieb|a écrit)\s*:|(?:from|fra|från|sent|sendt|date|dato|to|til|subject|emne)\s*:.*)$/i;
+  /^(?:(?:on|den|d\.) .{0,300} (?:wrote|skrev|schrieb|a écrit)\s*:|(?:man|tir|ons|tor|tors|fre|lør|søn)(?:dag)?\.?\s+.{0,220}\s+skrev\s+.{0,160}:|(?:from|fra|från|sent|sendt|date|dato|to|til|subject|emne)\s*:.*)$/i;
 
 const AGENT_HEADER_RE =
   /\b(support|customer\s*service|help\s*desk|agent|team|kundeservice|service)\b|support@/i;
@@ -70,7 +70,11 @@ function inferRoleFromHeader(header: string): NormalizedEmailTurn["role"] {
 
 function flushSegment(
   segments: NormalizedEmailTurn[],
-  current: { header: string; role: NormalizedEmailTurn["role"]; lines: string[] } | null,
+  current: {
+    header: string;
+    role: NormalizedEmailTurn["role"];
+    lines: string[];
+  } | null,
 ) {
   if (!current) return;
   const text = normalizeText(
@@ -88,12 +92,18 @@ function flushSegment(
   });
 }
 
-export function parseQuotedEmailHistory(quotedBodyText?: string | null): NormalizedEmailTurn[] {
+export function parseQuotedEmailHistory(
+  quotedBodyText?: string | null,
+): NormalizedEmailTurn[] {
   const text = normalizeText(String(quotedBodyText || ""));
   if (!text) return [];
 
   const segments: NormalizedEmailTurn[] = [];
-  let current: { header: string; role: NormalizedEmailTurn["role"]; lines: string[] } | null = null;
+  let current: {
+    header: string;
+    role: NormalizedEmailTurn["role"];
+    lines: string[];
+  } | null = null;
 
   for (const rawLine of normalizeNewlines(text).split("\n")) {
     const { text: lineText } = stripQuotePrefix(rawLine);
@@ -116,12 +126,17 @@ export function parseQuotedEmailHistory(quotedBodyText?: string | null): Normali
 }
 
 export function visibleEmailText(message: EmailMessageRow): string {
-  const text = normalizeText(String(message.clean_body_text || message.body_text || ""));
+  const text = normalizeText(
+    String(message.clean_body_text || message.body_text || ""),
+  );
   if (!text) return "";
   const lines = normalizeNewlines(text).split("\n");
   const kept: string[] = [];
   for (const line of lines) {
-    if (kept.some((entry) => entry.trim()) && looksLikeQuotedHeader(stripQuotePrefix(line).text)) {
+    if (
+      kept.some((entry) => entry.trim()) &&
+      looksLikeQuotedHeader(stripQuotePrefix(line).text)
+    ) {
       break;
     }
     kept.push(line);
@@ -129,8 +144,50 @@ export function visibleEmailText(message: EmailMessageRow): string {
   return normalizeText(kept.join("\n"));
 }
 
+const GENERIC_SUBJECT_RE =
+  /^(?:new customer message(?:\s+on.*)?|contact form|support request|customer message|no subject|\(no subject\)|pakke|ordre|order)$/iu;
+
+function stripNonMessageArtifacts(value: string): string {
+  return String(value || "")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+    .replace(/<img\b[^>]*>/giu, " ")
+    .replace(/https?:\/\/\S+/giu, " ")
+    .replace(/\b[^\s]+\.(?:png|jpe?g|gif|webp|heic|pdf)\b/giu, " ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+/**
+ * Use the thread subject only when the newest body contains no actual request
+ * (for example an image-only defect report). A substantive acknowledgement or
+ * follow-up always wins, so a stale subject such as "Cancel order" can never
+ * override a newest "Thanks" message.
+ */
+export function latestCustomerTextWithSubjectFallback(
+  message: EmailMessageRow,
+  subject?: string | null,
+): string {
+  const body = visibleEmailText(message);
+  const normalizedSubject = String(subject || "")
+    .replace(/^(?:(?:re|fw|fwd)\s*:\s*)+/iu, "")
+    .trim();
+  const usableSubject = normalizedSubject.length >= 8 &&
+    !GENERIC_SUBJECT_RE.test(normalizedSubject);
+  if (!usableSubject) return body;
+
+  const bodySignal = stripNonMessageArtifacts(body);
+  if (!bodySignal) return normalizedSubject;
+
+  const attachmentOnlyNote = bodySignal.length <= 80 &&
+    /\b(?:see|attached|attachment|image|photo|vedh(?:æ|ae)ftet|billede|foto)\b/iu
+      .test(bodySignal);
+  return attachmentOnlyNote ? `${normalizedSubject}\n${body}`.trim() : body;
+}
+
 function dedupeKey(turn: NormalizedEmailTurn) {
-  return `${turn.role}:${turn.text.toLowerCase().replace(/\s+/g, " ").slice(0, 500)}`;
+  return `${turn.role}:${
+    turn.text.toLowerCase().replace(/\s+/g, " ").slice(0, 500)
+  }`;
 }
 
 export function buildWriterConversationHistory(
@@ -142,7 +199,8 @@ export function buildWriterConversationHistory(
 
   for (const message of withoutUnsentComposerDrafts(messages)) {
     if (message !== latestMessage) {
-      const isAgent = message.direction === "outbound" || message.from_me === true;
+      const isAgent = message.direction === "outbound" ||
+        message.from_me === true;
       const text = visibleEmailText(message);
       if (text) {
         history.push({
@@ -153,7 +211,9 @@ export function buildWriterConversationHistory(
     }
 
     if (message.from_me === true || message.direction === "outbound") continue;
-    for (const quotedTurn of parseQuotedEmailHistory(message.quoted_body_text)) {
+    for (
+      const quotedTurn of parseQuotedEmailHistory(message.quoted_body_text)
+    ) {
       if (quotedTurn.role !== "agent") continue;
       const key = dedupeKey(quotedTurn);
       if (seenQuoted.has(key)) continue;

@@ -81,6 +81,61 @@ Deno.test("empty message yields no queries", () => {
   assertEquals(buildFallbackQueries(plan("return"), "", {}), []);
 });
 
+Deno.test("ear-cup wording recalls the canonical ear-pad guide", () => {
+  const qs = buildFallbackQueries(
+    plan("product_question"),
+    "Do you make deeper earcups? The ANC speaker touches my ear.",
+    { name: "Test Shop" },
+  );
+  assert(
+    qs.some((q) => q.text.includes("ear pads") && q.text.includes("earpads")),
+    `expected ear-pad probe in ${JSON.stringify(qs)}`,
+  );
+});
+
+Deno.test("white dongle LED emits an exact pairing probe", () => {
+  const qs = buildFallbackQueries(
+    plan("complaint"),
+    "The dongle stays white and I get no sound.",
+    { name: "Test Shop" },
+  );
+  assert(
+    qs.some((q) =>
+      q.text.includes("dongle LED white") && q.text.includes("pairing")
+    ),
+    `expected white-LED probe in ${JSON.stringify(qs)}`,
+  );
+});
+
+Deno.test("push-to-talk audio interruption emits an exact microphone probe", () => {
+  const qs = buildFallbackQueries(
+    plan("complaint"),
+    "Push-to-talk briefly cuts out my game audio on Windows.",
+    { name: "Test Shop", product_overview: "Model Wireless" },
+  );
+  assert(
+    qs.some((q) =>
+      q.text.includes("push to talk audio cuts out microphone Windows")
+    ),
+    `expected push-to-talk probe in ${JSON.stringify(qs)}`,
+  );
+});
+
+Deno.test("cable/dongle versus audio-interface contrast emits an exact driver probe", () => {
+  const qs = buildFallbackQueries(
+    plan("complaint"),
+    "The audio is bad over the cable and dongle, but sounds fine through my audio interface aux output.",
+    { name: "Test Shop", product_overview: "Model Wireless" },
+  );
+  assert(
+    qs.some((q) =>
+      q.text.includes("cable dongle bad audio") &&
+      q.text.includes("Generic USB Audio driver")
+    ),
+    `expected driver probe in ${JSON.stringify(qs)}`,
+  );
+});
+
 Deno.test("complaint + initiate_warranty_repair emits a return probe even without return terms", () => {
   const qs = buildFallbackQueries(
     plan("complaint", "initiate_warranty_repair"),

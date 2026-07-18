@@ -64,11 +64,14 @@ export async function GET() {
     return NextResponse.json({ runs: [] });
   }
 
-  // Group by run_label
+  // New rows are grouped by the immutable job id. Fall back to run_label for
+  // historical rows created before eval_run_id was introduced.
   const grouped = {};
   for (const row of rows) {
-    if (!grouped[row.run_label]) {
-      grouped[row.run_label] = {
+    const groupKey = row.eval_run_id || `legacy:${row.run_label}`;
+    if (!grouped[groupKey]) {
+      grouped[groupKey] = {
+        eval_run_id: row.eval_run_id || null,
         run_label: row.run_label,
         model: row.model,
         pipeline_version: row.pipeline_version ?? "v2",
@@ -76,7 +79,7 @@ export async function GET() {
         results: [],
       };
     }
-    grouped[row.run_label].results.push(row);
+    grouped[groupKey].results.push(row);
   }
 
   // Compute averages per run

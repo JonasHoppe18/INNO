@@ -704,7 +704,8 @@ export function buildLiveFactAuthorityBlock(): string {
 5. Lad ALDRIG forældet viden (inkl. cachede shop_products pris/lager) overstyre verificerede live-fakta ved konflikt — live-fakta vinder. Dette gælder også refund-status: live refund-fakta vinder over enhver knowledge/legacy-kilde.
 6. GÆT ALDRIG ordre-, tracking-, lager-, refunderings-, annullerings- eller fulfillment-status når verificerede live-fakta mangler — spørg eller brug sikker formulering i stedet.
 7. Påstå ALDRIG at en refundering er udstedt, et refund-beløb, et refund-tidspunkt, at en returnering er modtaget, eller hvornår pengene ankommer, uden verificerede live-fakta eller verificeret politik-kontekst.
-8. Påstå ALDRIG at en handling allerede er udført (fx "jeg har sendt fakturaen", "din ordre er annulleret", "jeg har opdateret din adresse", "vi har sendt en erstatning", "beløbet er refunderet") medmindre et udført action-resultat bekræfter det. En foreslået action der afventer godkendelse er IKKE udført — formuler den som igangsat/anmodet/under behandling. Ved fakturaanmodning uden en udført faktura-action: lov IKKE at fakturaen sendes, er sendt eller vil blive modtaget/tilsendt, og påstå IKKE at nogen (fx shop-manager) allerede er blevet bedt om det — brug fx "Jeg kan ikke sende fakturaen direkte herfra."`;
+8. Påstå ALDRIG at en handling allerede er udført (fx "jeg har sendt fakturaen", "din ordre er annulleret", "jeg har opdateret din adresse", "vi har sendt en erstatning", "beløbet er refunderet", "jeg har markeret sagen som backorder/venteliste" eller "jeg har tilføjet et tag/en note") medmindre et udført action-resultat bekræfter PRÆCIS den handling. Historiske svar og case-state er aldrig bevis på at handlingen er udført i den aktuelle sag. En foreslået action der afventer godkendelse er IKKE udført — formuler den som igangsat/anmodet/under behandling. Ved fakturaanmodning uden en udført faktura-action: lov IKKE at fakturaen sendes, er sendt eller vil blive modtaget/tilsendt, og påstå IKKE at nogen (fx shop-manager) allerede er blevet bedt om det — brug fx "Jeg kan ikke sende fakturaen direkte herfra."
+9. Lov ALDRIG en proaktiv fremtidig opdatering (fx "we'll keep you updated", "we'll notify you when it is back", "vi holder dig opdateret" eller "vi giver dig besked når varen er tilbage") medmindre et udført action-resultat bekræfter en konkret notifikations-, subscription- eller waitlist-handling. Hvis kunden blot siger tak, svar kort og naturligt uden nye løfter.`;
 }
 
 // Detects when the customer states (in their own words) that the package has
@@ -1375,10 +1376,67 @@ export function buildSendReadyNextStepStandardBlock(opts: {
       "- Preserve exact values from the retrieved source when giving troubleshooting, pairing, firmware, charging, reset, or power-button steps.",
       "- If a retrieved source says 15 seconds, write 15 seconds exactly. Never change it to 10 seconds or any other invented value.",
       "- Do not add generic troubleshooting steps that are not explicitly supported by the retrieved source selected for the customer's issue.",
+      "- When the selected source explains why the exact symptom happens, include that concrete explanation in one short sentence before the steps. Do not replace it with a vague paraphrase.",
     );
   }
 
   return lines.join("\n");
+}
+
+export function buildKnowledgeSelectionDirective(
+  chunks: Array<{ usable_as?: string; content?: string }>,
+): string {
+  const answerBearing = (Array.isArray(chunks) ? chunks : []).filter((chunk) =>
+    ["policy", "procedure", "fact", "saved_reply"].includes(
+      String(chunk?.usable_as || ""),
+    )
+  );
+  if (answerBearing.length < 2) return "";
+
+  return `# Vælg den mest specifikke guide — bland ikke flere svarspor
+- Brug kundens SENESTE uløste problem som primær driver. Emnelinjen og ældre problemer i tråden er kun kontekst og må ikke overstyre det nyeste problem.
+- Hvis kunden siger at en tidligere løsning virkede, er det problem lukket. Genåbn eller gentag ikke den gamle guide; svar på det nye problem.
+- Sammenlign guidernes triggertekst (fx "Use this guide when...") med kundens konkrete produkt, symptom, forbindelse og kontrast (fx kabel virker, dongle virker ikke). Vælg den SNÆVRESTE guide der matcher alle disse detaljer.
+- En produktspecifik eller forbindelsesspecifik guide vinder over en generel guide. Brug kun den generelle guide hvis ingen specifik guide matcher.
+- Giv ét sammenhængende svarspor. Bland ikke trin fra flere guider, medmindre kunden tydeligt har flere samtidige uløste problemer.`;
+}
+
+/** True only when the latest customer message contains address values, not
+ * merely the word "address". This prevents an address-change request such as
+ * "I need to change my address" from being mistaken for the new address itself. */
+export function hasConcreteShippingAddress(message: string): boolean {
+  const text = String(message ?? "").replace(/\r\n?/g, "\n").trim();
+  if (!text) return false;
+
+  const streetSuffix = String
+    .raw`(?:street|st\.?|road|rd\.?|avenue|ave\.?|lane|ln\.?|drive|dr\.?|boulevard|blvd\.?|way|gade|vej|all[ée]|gata|strasse|stra[ßs]e|rue|via|calle)`;
+  const numberFirst = new RegExp(
+    String
+      .raw`\b\d{1,5}[a-z]?\s+[\p{L}\p{M}][\p{L}\p{M}\s.'’\-]{1,45}\b${streetSuffix}\b`,
+    "iu",
+  );
+  const streetFirst = new RegExp(
+    String
+      .raw`\b[\p{L}\p{M}][\p{L}\p{M}\s.'’\-]{1,45}\b${streetSuffix}\s+\d{1,5}[a-z]?\b`,
+    "iu",
+  );
+  if (numberFirst.test(text) || streetFirst.test(text)) return true;
+
+  // Nordic/common format without a suffix: "Langelinie 12, 2100 Copenhagen".
+  if (
+    /\b[\p{L}\p{M}][\p{L}\p{M}.'’\-]*(?:\s+[\p{L}\p{M}][\p{L}\p{M}.'’\-]*){0,3}\s+\d{1,5}[a-z]?\s*,?\s+[a-z]?\d[a-z0-9 -]{2,8}\s+[\p{L}\p{M}][\p{L}\p{M}\s.'’\-]{1,35}\b/iu
+      .test(text)
+  ) return true;
+
+  // Explicitly labelled address fields are also concrete when they contain a
+  // value. A bare question mentioning "zip" or "address" does not pass.
+  const hasStreetField =
+    /\b(?:street(?: address)?|address line 1|adresse|gade|vej)\s*:\s*[^\n]{3,80}\d/iu
+      .test(text);
+  const hasPostalField =
+    /\b(?:postal code|postcode|zip(?: code)?|postnummer)\s*:\s*[a-z0-9][a-z0-9 -]{2,9}\b/iu
+      .test(text);
+  return hasStreetField || hasPostalField;
 }
 
 function buildInfoRequirementsBlock(
@@ -1520,11 +1578,7 @@ function buildInfoRequirementsBlock(
   }
 
   if (plan.primary_intent === "address_change") {
-    const hasAddressLike =
-      /\b\d{1,5}\s+[A-Za-zÆØÅæøåÄÖÜäöüß][\w\s.'-]{2,}\b/.test(messageText) ||
-      /\b(address|adresse|gade|street|road|vej|gata|zip|postal|postnummer)\b/i
-        .test(messageText);
-    if (!hasAddressLike) {
+    if (!hasConcreteShippingAddress(messageText)) {
       missing.push("new_shipping_address: den nye leveringsadresse");
     }
   }
@@ -2192,6 +2246,9 @@ Intet sikkert kundenavn til hilsenen. Start med en neutral hilsen på kundens sp
     latestCustomerMessage,
     replyMode,
   });
+  const knowledgeSelectionBlock = buildKnowledgeSelectionDirective(
+    chunksForPrompt,
+  );
 
   // --- Shop policy (deterministisk — brug altid disse regler) ---
   const policyBlock = policyContext
@@ -2515,6 +2572,7 @@ ${stageDirectives[resolutionStage] ?? stageDirectives.info_only}`;
     returnsGroundingBlock,
     selectedPolicyUseBlock,
     sendReadyNextStepBlock,
+    knowledgeSelectionBlock,
     stockAvailabilityBlock,
     factsBlock,
     salutationBlock,
