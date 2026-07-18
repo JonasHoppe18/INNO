@@ -88,10 +88,23 @@ export default async function ProductPage({ params: { locale } }) {
               is unpredictable (grew past 2000px in testing), and
               overflow-hidden with no cap silently clipped the times/details
               steps — this keeps every step reachable without unbounded growth. */}
-          <Reveal delay={100} className="max-h-[640px] overflow-y-auto">
+          <Reveal delay={100} className="relative max-h-[640px] overflow-y-auto">
             <InlineBookingCalendar
               fallbackLabel={t("calendarFallback")}
               fallbackHref={`/${locale}#book-demo`}
+            />
+            {/* Cal's "Cal.eu" branding footer lives inside a cross-origin
+                iframe we can't restyle directly — this masks it with a plain
+                white bar matching the embed's own background. Pinned to the
+                wrapper's bottom, so it only lines up correctly in the common,
+                unscrolled state (content height under the 640px cap, true for
+                every state observed in testing). If Cal.com changes the
+                footer's height or the embed grows past the cap, this may need
+                adjusting. pointer-events-none so it can never block a real
+                click if the estimate is ever slightly off. */}
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-x-0 bottom-0 h-9 bg-white"
             />
           </Reveal>
         </div>
