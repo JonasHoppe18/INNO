@@ -12,7 +12,7 @@
     "hero": {
       "badge": "AI-support til e-commerce",
       "titleLine1": "Support der besvarer sig selv.",
-      "titleLine2": "Du godkender hvert svar.",
+      "titleLine2": "Du beholder kontrollen.",
       "subtitle": "Sona læser hver kundemail, slår ordren op i din butik og skriver det rigtige svar i din tone — klar til godkendelse med ét klik.",
       "ctaDemo": "Book en demo",
       "trust1": "Virker med enhver webshop",
@@ -128,7 +128,7 @@
       "integrations": "Integrationer"
     },
     "trust": {
-      "pillar1Title": "Du godkender alt",
+      "pillar1Title": "Du vælger tilstanden",
       "pillar2Title": "Hostet i EU",
       "pillar3Title": "Onboardet af dem, der byggede det",
       "securityLink": "Læs om sikkerhed & data"

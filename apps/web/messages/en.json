@@ -12,7 +12,7 @@
     "hero": {
       "badge": "AI support for e-commerce",
       "titleLine1": "Support that answers itself.",
-      "titleLine2": "You approve every reply.",
+      "titleLine2": "You stay in control.",
       "subtitle": "Sona reads every customer email, looks up the order in your store, and drafts the right reply in your brand voice — ready for one-click approval.",
       "ctaDemo": "Book a demo",
       "trust1": "Works with any webshop",
@@ -128,7 +128,7 @@
       "integrations": "Integrations"
     },
     "trust": {
-      "pillar1Title": "You approve everything",
+      "pillar1Title": "You choose the mode",
       "pillar2Title": "Hosted in the EU",
       "pillar3Title": "Onboarded by the makers",
       "securityLink": "Read about security & data"

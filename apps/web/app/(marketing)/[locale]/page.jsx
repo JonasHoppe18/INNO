@@ -14,8 +14,8 @@ export async function generateMetadata({ params: { locale } }) {
   const isDa = locale === "da";
   return {
     title: isDa
-      ? "Sona — AI-support til webshops. Du godkender hvert svar."
-      : "Sona — AI support for webshops. You approve every reply.",
+      ? "Sona — AI-support til webshops. Du beholder kontrollen."
+      : "Sona — AI support for webshops. You stay in control.",
     description: isDa
       ? "Sona læser hver kundemail, slår ordren op i din butik og skriver det rigtige svar — klar til godkendelse med ét klik."
       : "Sona reads every customer email, looks up the order in your store, and drafts the right reply — ready for one-click approval.",
