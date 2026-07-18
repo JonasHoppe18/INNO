@@ -1,13 +1,5 @@
 import { Component, memo, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Package, Sparkles, TriangleAlert, X } from "lucide-react";
 import { MessageBubble, MessageRenderBoundary } from "@/components/inbox/MessageBubble";
 import { Composer } from "@/components/inbox/Composer";
@@ -227,10 +219,6 @@ function TicketDetailComponent({
 }) {
   const [composerCollapsed, setComposerCollapsed] = useState(false);
   const [processReturnRestock, setProcessReturnRestock] = useState(true);
-  const [forwardTargetEmail, setForwardTargetEmail] = useState("");
-  const [forwardRouteOptions, setForwardRouteOptions] = useState([]);
-  const [forwardRoutesLoading, setForwardRoutesLoading] = useState(false);
-  const [forwardRoutesError, setForwardRoutesError] = useState("");
   const [dismissedCloseSuggestionByThread, setDismissedCloseSuggestionByThread] = useState({});
   const [returnTrackingCandidates, setReturnTrackingCandidates] = useState([]);
   const [returnTrackingSubmitting, setReturnTrackingSubmitting] = useState("");
@@ -285,15 +273,6 @@ function TicketDetailComponent({
   const pendingActionTitle =
     pendingActionTitleByType[pendingActionType] || "Review Action";
   const isProcessReturnAction = pendingActionType === "process_exchange_return";
-  const isForwardEmailAction = pendingActionType === "forward_email";
-  const proposedForwardTarget = String(
-    pendingOrderUpdate?.payload?.target_email ||
-      pendingOrderUpdate?.payload?.forward_to_email ||
-      ""
-  )
-    .trim()
-    .toLowerCase();
-  const resolvedForwardTarget = forwardTargetEmail || proposedForwardTarget;
   const isApprovalManagedActionType = APPROVAL_ACTION_TYPES.has(
     String(pendingActionType || "").trim().toLowerCase()
   );
@@ -307,53 +286,6 @@ function TicketDetailComponent({
     }
     setProcessReturnRestock(true);
   }, [isProcessReturnAction, pendingOrderUpdate?.id, pendingOrderUpdate?.payload?.restock]);
-
-  useEffect(() => {
-    if (!isForwardEmailAction) return;
-    setForwardTargetEmail(proposedForwardTarget);
-  }, [isForwardEmailAction, pendingOrderUpdate?.id, proposedForwardTarget]);
-
-  useEffect(() => {
-    if (!isForwardEmailAction || pendingUpdateState !== "proposed") return;
-
-    const controller = new AbortController();
-    setForwardRoutesLoading(true);
-    setForwardRoutesError("");
-
-    fetch("/api/settings/email-routing", {
-      cache: "no-store",
-      credentials: "include",
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        const result = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          throw new Error(result?.error || "Could not load forwarding addresses.");
-        }
-        const seen = new Set();
-        const options = [];
-        for (const route of Array.isArray(result?.routes) ? result.routes : []) {
-          const email = String(route?.forward_to_email || "").trim().toLowerCase();
-          if (!email || seen.has(email) || route?.is_active === false) continue;
-          seen.add(email);
-          options.push({
-            email,
-            label: String(route?.label || route?.category_key || "").trim(),
-          });
-        }
-        setForwardRouteOptions(options);
-      })
-      .catch((error) => {
-        if (error?.name === "AbortError") return;
-        setForwardRouteOptions([]);
-        setForwardRoutesError(error?.message || "Could not load forwarding addresses.");
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setForwardRoutesLoading(false);
-      });
-
-    return () => controller.abort();
-  }, [isForwardEmailAction, pendingUpdateState, pendingOrderUpdate?.id]);
 
   const processReturnMeta = useMemo(() => {
     if (!isProcessReturnAction) return null;
@@ -479,60 +411,11 @@ function TicketDetailComponent({
         ) : null}
       </div>
     ) : null;
-  const availableForwardTargets = useMemo(() => {
-    const options = [...forwardRouteOptions];
-    if (
-      proposedForwardTarget &&
-      !options.some((option) => option.email === proposedForwardTarget)
-    ) {
-      options.unshift({ email: proposedForwardTarget, label: "Suggested recipient" });
-    }
-    return options;
-  }, [forwardRouteOptions, proposedForwardTarget]);
-  const forwardEmailExtraContent =
-    isForwardEmailAction && pendingUpdateState === "proposed" ? (
-      <div className="flex flex-col gap-1.5">
-        <label
-          className="text-xs font-medium text-muted-foreground"
-          htmlFor={`forward-target-${pendingOrderUpdate?.id || "pending"}`}
-        >
-          Forward to
-        </label>
-        <Select
-          value={resolvedForwardTarget}
-          onValueChange={setForwardTargetEmail}
-          disabled={forwardRoutesLoading || Boolean(orderUpdateSubmitting)}
-        >
-          <SelectTrigger id={`forward-target-${pendingOrderUpdate?.id || "pending"}`}>
-            <SelectValue placeholder={forwardRoutesLoading ? "Loading addresses..." : "Select recipient"} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              {availableForwardTargets.map((option) => (
-                <SelectItem key={option.email} value={option.email}>
-                  {option.label ? `${option.label} — ${option.email}` : option.email}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-        {forwardRoutesError ? (
-          <p className="text-xs text-muted-foreground">
-            Other forwarding addresses could not be loaded. The suggested recipient is still available.
-          </p>
-        ) : null}
-      </div>
-    ) : null;
-  const actionCardExtraContent = processReturnExtraContent || forwardEmailExtraContent;
-  const actionCardPayload =
-    isForwardEmailAction && resolvedForwardTarget
-      ? { ...(pendingOrderUpdate?.payload || {}), target_email: resolvedForwardTarget }
-      : pendingOrderUpdate?.payload || {};
+  const actionCardExtraContent = processReturnExtraContent;
+  const actionCardPayload = pendingOrderUpdate?.payload || {};
   const approvalPayloadOverride = isProcessReturnAction
     ? { restock: processReturnRestock }
-    : isForwardEmailAction && resolvedForwardTarget
-      ? { target_email: resolvedForwardTarget }
-      : undefined;
+    : undefined;
 
   useEffect(() => {
     initialScrollTopRef.current = Number(conversationScrollTop) || 0;
@@ -880,10 +763,10 @@ function TicketDetailComponent({
                         error={orderUpdateError || ""}
                         loading={Boolean(orderUpdateSubmitting)}
                         extraContent={actionCardExtraContent}
-                        onApprove={() =>
+                        onApprove={(payloadOverride) =>
                           onOrderUpdateDecision?.(
                             "accepted",
-                            approvalPayloadOverride
+                            payloadOverride || approvalPayloadOverride
                           )
                         }
                         onDecline={() => onOrderUpdateDecision?.("denied")}
@@ -943,10 +826,10 @@ function TicketDetailComponent({
                   error={orderUpdateError || ""}
                   loading={Boolean(orderUpdateSubmitting)}
                   extraContent={actionCardExtraContent}
-                  onApprove={() =>
+                  onApprove={(payloadOverride) =>
                     onOrderUpdateDecision?.(
                       "accepted",
-                      approvalPayloadOverride
+                      payloadOverride || approvalPayloadOverride
                     )
                   }
                   onDecline={() => onOrderUpdateDecision?.("denied")}
