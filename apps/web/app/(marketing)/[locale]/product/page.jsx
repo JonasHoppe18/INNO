@@ -65,12 +65,24 @@ export default async function ProductPage({ params: { locale } }) {
       <ControlSection />
       <CapabilitiesGrid />
 
-      <section className="border-t border-zinc-100 bg-zinc-50 px-5 py-20 text-center">
-        <Reveal>
+      {/* Closing CTA: dark, with heading + subtitle, so it flows straight into
+          MarketingShell's dark footer instead of ending on a lone button. */}
+      <section className="relative overflow-hidden bg-zinc-950 px-5 pt-20 pb-4 text-center">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -top-24 left-1/2 h-64 w-[32rem] -translate-x-1/2 bg-[radial-gradient(ellipse,rgba(99,102,241,0.35),transparent_70%)]"
+        />
+        <Reveal className="relative">
+          <h2 className="text-balance text-3xl font-bold tracking-tight text-white sm:text-4xl">
+            {t("closingTitle")}
+          </h2>
+          <p className="mx-auto mt-3.5 max-w-lg text-base text-zinc-400">{t("closingSubtitle")}</p>
+        </Reveal>
+        <Reveal delay={100} className="mt-9">
           <BookDemoButton
             label={t("cta")}
             fallbackHref={`/${locale}#book-demo`}
-            className="inline-block rounded-lg bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-600/25 transition-all duration-200 hover:bg-indigo-500 active:scale-[0.97]"
+            className="inline-block rounded-lg bg-white px-6 py-3 text-sm font-semibold text-zinc-950 shadow-lg transition-all duration-200 hover:bg-zinc-100 active:scale-[0.97]"
           />
         </Reveal>
       </section>

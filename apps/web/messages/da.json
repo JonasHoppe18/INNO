@@ -189,7 +189,9 @@
       "badge": "Produkt-tur",
       "title": "Hver ticket, løst fra start til slut",
       "subtitle": "Følg én support-ticket hele vejen — fra den lander til handlingen der løser den — og se præcis hvordan Sona virker.",
-      "cta": "Book en demo"
+      "cta": "Book en demo",
+      "closingTitle": "Klar til at se det på jeres egne tickets?",
+      "closingSubtitle": "Book en 20-minutters demo — vi viser Sona besvare tickets som jeres."
     },
     "anatomy": {
       "kicker": "SÅDAN BLIVER EN TICKET LØST",
