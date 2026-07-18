@@ -82,15 +82,13 @@ export default async function ProductPage({ params: { locale } }) {
               ))}
             </ul>
           </Reveal>
-          {/* Cal's embed auto-resizes unpredictably (grew past 2000px in
-              testing regardless of column width) — cap the card height and
-              let it scroll internally. overflow-hidden alone (no cap+scroll)
-              silently clipped the times/details steps; this keeps every step
-              reachable without letting the section grow unbounded. */}
-          <Reveal
-            delay={100}
-            className="max-h-[640px] overflow-y-auto rounded-2xl border border-zinc-200 bg-white shadow-[0_20px_60px_-30px_rgba(0,0,0,0.25)]"
-          >
+          {/* Cal's own embed already renders as a rounded, shadowed card, so
+              no wrapping border/shadow here — that doubled up into a
+              box-in-a-box look. Height cap + scroll stays: Cal's auto-resize
+              is unpredictable (grew past 2000px in testing), and
+              overflow-hidden with no cap silently clipped the times/details
+              steps — this keeps every step reachable without unbounded growth. */}
+          <Reveal delay={100} className="max-h-[640px] overflow-y-auto">
             <InlineBookingCalendar
               fallbackLabel={t("calendarFallback")}
               fallbackHref={`/${locale}#book-demo`}
