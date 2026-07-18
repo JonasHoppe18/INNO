@@ -60,12 +60,12 @@ export default async function ProductPage({ params: { locale } }) {
       <CapabilitiesGrid />
 
       {/* Closing CTA: pitch + bullets left, an inline booking calendar right.
-          Constrained to one column of a two-column grid — unlike the earlier
-          full-width inline calendar (which read as an oversized, awkward
-          block and was replaced by a popup site-wide), a column-width embed
-          here reads as an intentional booking widget, not a stray form. */}
+          The calendar column is a fixed-remainder width (not a proportional
+          fraction) — Cal's embed needs real width (~800px+) to lay out its
+          info panel, date grid and time slots side by side like the popup;
+          narrower and it falls back to a cramped, zoomed-in stacked view. */}
       <section className="border-t border-zinc-100 bg-zinc-50 px-5 py-24">
-        <div className="mx-auto grid max-w-6xl items-start gap-10 lg:grid-cols-[0.8fr_1.2fr]">
+        <div className="mx-auto grid max-w-7xl items-start gap-10 lg:grid-cols-[340px_minmax(0,1fr)]">
           <Reveal className="lg:pt-6">
             <p className="text-xs font-bold uppercase tracking-[0.14em] text-indigo-600">
               {t("closingKicker")}
