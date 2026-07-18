@@ -31,7 +31,17 @@ export default async function ProductPage({ params: { locale } }) {
   const t = await getTranslations("landing.productPage");
   return (
     <MarketingShell locale={locale}>
-      <section className="px-5 pt-20 pb-4">
+      <section className="relative overflow-hidden px-5 pt-16 pb-12 text-center">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 top-0 h-64 bg-[radial-gradient(ellipse_at_50%_0%,rgba(99,102,241,0.14),rgba(147,51,234,0.06)_55%,transparent_75%)]"
+        />
+        <Reveal className="relative mb-5">
+          <span className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white/70 px-3 py-1.5 text-xs font-medium text-zinc-600">
+            <span className="h-1.5 w-1.5 rounded-full bg-indigo-600" />
+            {t("badge")}
+          </span>
+        </Reveal>
         <SectionHeading title={t("title")} subtitle={t("subtitle")} />
         <Reveal delay={80} className="mt-8 text-center">
           <BookDemoButton

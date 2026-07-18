@@ -109,7 +109,7 @@ export default function AnatomyOfAnswer() {
   const t = useTranslations("landing.anatomy");
   const steps = [1, 2, 3, 4, 5];
   return (
-    <section className="border-t border-zinc-100 bg-zinc-50 px-5 py-24">
+    <section className="border-t border-zinc-100 bg-zinc-50 px-5 pt-16 pb-24">
       <div className="mx-auto max-w-5xl">
         <div className="text-center">
           <p className="text-xs font-bold uppercase tracking-[0.14em] text-indigo-600">{t("kicker")}</p>

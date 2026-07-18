@@ -186,6 +186,7 @@
       "contactLine": "Questions? Reach us at hello@sona.ai."
     },
     "productPage": {
+      "badge": "Product tour",
       "title": "Every ticket, answered end to end",
       "subtitle": "Follow one support ticket all the way through — from the moment it lands to the action that resolves it — and see exactly how Sona works.",
       "cta": "Book a demo"
