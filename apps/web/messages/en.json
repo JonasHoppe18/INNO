@@ -15,11 +15,6 @@
       "titleLine2": "You approve every reply.",
       "subtitle": "Sona reads every customer email, looks up the order in your store, and drafts the right reply in your brand voice — ready for one-click approval.",
       "ctaDemo": "Book a demo",
-      "ctaAccess": "Get early access",
-      "emailPlaceholder": "Your email",
-      "emailInvalid": "Please enter a valid email.",
-      "emailError": "Something went wrong. Please try again.",
-      "emailSuccess": "Thanks! We'll email you as soon as we open more spots.",
       "trust1": "Works with any webshop",
       "trust2": "Keep your existing inbox",
       "trust3": "Set up in minutes"
@@ -191,9 +186,39 @@
       "contactLine": "Questions? Reach us at hello@sona.ai."
     },
     "productPage": {
-      "title": "The product",
-      "subtitle": "How Sona reads a ticket, finds the order, drafts the reply and takes the action — and how you stay in control the whole way.",
+      "title": "Every ticket, answered end to end",
+      "subtitle": "Follow one support ticket all the way through — from the moment it lands to the action that resolves it — and see exactly how Sona works.",
       "cta": "Book a demo"
+    },
+    "anatomy": {
+      "kicker": "ANATOMY OF AN ANSWER",
+      "title": "One ticket, start to finish",
+      "step1Title": "The ticket lands",
+      "step1Body": "A customer emails your support address. Sona reads it and understands what they're actually asking.",
+      "step2Title": "Sona checks your store",
+      "step2Body": "It looks up the order, payment and delivery status live — and finds the policy that applies.",
+      "step3Title": "It drafts a grounded reply",
+      "step3Body": "Sona writes the answer in your tone, citing the exact order data and policy it used. Nothing invented.",
+      "step4Title": "You approve — the action runs",
+      "step4Body": "One click sends the reply and executes the refund in your store. Until you switch on autopilot, nothing goes out without you.",
+      "step5Title": "Every edit makes it sharper",
+      "step5Body": "When you tweak a draft, Sona learns from it — so the next answer to a question like this is better."
+    },
+    "capabilities": {
+      "kicker": "CAPABILITIES",
+      "title": "Everything Sona brings to your inbox",
+      "cap1Title": "Real order data",
+      "cap1Body": "Tracking, delivery, payments and refunds, read live from your store.",
+      "cap2Title": "Real store actions",
+      "cap2Body": "Refunds, exchanges, address changes and cancellations — executed, not just promised.",
+      "cap3Title": "Every language",
+      "cap3Body": "Replies in the customer's language, always in your brand voice.",
+      "cap4Title": "Grounded in your policies",
+      "cap4Body": "Every answer cites the policy and source it's based on.",
+      "cap5Title": "You stay in control",
+      "cap5Body": "Manual, suggest or autopilot — set per ticket type, changeable any time.",
+      "cap6Title": "Improves every week",
+      "cap6Body": "Every edit you make teaches Sona what a great answer looks like."
     }
   }
 }

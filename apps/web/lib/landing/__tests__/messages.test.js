@@ -15,8 +15,8 @@ describe("landing messages", () => {
   it("has all landing section namespaces", () => {
     for (const ns of [
       "nav", "hero", "problem", "how", "dives", "languages", "control", "trust",
-      "explore", "pricing", "faq", "finalCta", "footer", "demo", "productPage",
-      "security", "integrationsPage", "legal",
+      "pricing", "faq", "finalCta", "footer", "demo", "productPage",
+      "security", "integrationsPage", "legal", "anatomy", "capabilities",
     ]) {
       expect(en.landing[ns], `missing landing.${ns}`).toBeTruthy();
     }

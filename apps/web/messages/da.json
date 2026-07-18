@@ -15,11 +15,6 @@
       "titleLine2": "Du godkender hvert svar.",
       "subtitle": "Sona læser hver kundemail, slår ordren op i din butik og skriver det rigtige svar i din tone — klar til godkendelse med ét klik.",
       "ctaDemo": "Book en demo",
-      "ctaAccess": "Få tidlig adgang",
-      "emailPlaceholder": "Din email",
-      "emailInvalid": "Indtast en gyldig email.",
-      "emailError": "Noget gik galt. Prøv igen.",
-      "emailSuccess": "Tak! Vi skriver til dig, så snart vi åbner flere pladser.",
       "trust1": "Virker med enhver webshop",
       "trust2": "Behold din nuværende indbakke",
       "trust3": "Opsat på få minutter"
@@ -191,9 +186,39 @@
       "contactLine": "Spørgsmål? Skriv til os på hello@sona.ai."
     },
     "productPage": {
-      "title": "Produktet",
-      "subtitle": "Hvordan Sona læser en ticket, finder ordren, skriver svaret og udfører handlingen — og hvordan du beholder kontrollen hele vejen.",
+      "title": "Hver ticket, løst fra start til slut",
+      "subtitle": "Følg én support-ticket hele vejen — fra den lander til handlingen der løser den — og se præcis hvordan Sona virker.",
       "cta": "Book en demo"
+    },
+    "anatomy": {
+      "kicker": "SÅDAN BLIVER EN TICKET LØST",
+      "title": "Én ticket, fra start til slut",
+      "step1Title": "Ticketen lander",
+      "step1Body": "En kunde skriver til din support-adresse. Sona læser den og forstår, hvad de faktisk spørger om.",
+      "step2Title": "Sona tjekker din butik",
+      "step2Body": "Den slår ordre-, betalings- og leveringsstatus op live — og finder den politik, der gælder.",
+      "step3Title": "Den skriver et forankret svar",
+      "step3Body": "Sona skriver svaret i din tone og citerer de præcise ordredata og den politik, den brugte. Intet opdigtet.",
+      "step4Title": "Du godkender — handlingen udføres",
+      "step4Body": "Ét klik sender svaret og udfører refusionen i din butik. Indtil du slår autopilot til, ryger intet ud uden dig.",
+      "step5Title": "Hver rettelse gør den skarpere",
+      "step5Body": "Når du justerer et udkast, lærer Sona af det — så næste svar på et lignende spørgsmål bliver bedre."
+    },
+    "capabilities": {
+      "kicker": "HVAD SONA KAN",
+      "title": "Alt hvad Sona giver din indbakke",
+      "cap1Title": "Rigtige ordredata",
+      "cap1Body": "Tracking, levering, betalinger og refusioner — læst live fra din butik.",
+      "cap2Title": "Rigtige butiks-handlinger",
+      "cap2Body": "Refusioner, ombytninger, adresseændringer og annulleringer — udført, ikke bare lovet.",
+      "cap3Title": "Alle sprog",
+      "cap3Body": "Svar på kundens sprog, altid i din brand-tone.",
+      "cap4Title": "Forankret i dine politikker",
+      "cap4Body": "Hvert svar citerer den politik og kilde, det bygger på.",
+      "cap5Title": "Du beholder kontrollen",
+      "cap5Body": "Manuel, foreslå eller autopilot — sat pr. ticket-type, kan ændres når som helst.",
+      "cap6Title": "Bliver bedre hver uge",
+      "cap6Body": "Hver rettelse du laver, lærer Sona hvad et godt svar er."
     }
   }
 }
