@@ -33,7 +33,7 @@ export default function BookDemoButton({ label, className, fallbackHref }) {
 
   if (!CAL_LINK) {
     return (
-      <a href={fallbackHref || "mailto:hello@sona.ai?subject=Demo"} className={className}>
+      <a href={fallbackHref || "mailto:hello@sona-ai.dk?subject=Demo"} className={className}>
         {label}
       </a>
     );

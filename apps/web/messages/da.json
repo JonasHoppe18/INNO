@@ -123,7 +123,7 @@
     "footer": {
       "privacy": "Privatliv",
       "terms": "Vilkår",
-      "contact": "hello@sona.ai",
+      "contact": "hello@sona-ai.dk",
       "security": "Sikkerhed",
       "integrations": "Integrationer"
     },
@@ -183,7 +183,7 @@
       "termsTitle": "Handelsbetingelser",
       "updatedLabel": "Sidst opdateret",
       "placeholder": "Denne side er en placeholder. Den endelige, juridisk gennemgåede tekst offentliggøres her før launch.",
-      "contactLine": "Spørgsmål? Skriv til os på hello@sona.ai."
+      "contactLine": "Spørgsmål? Skriv til os på hello@sona-ai.dk."
     },
     "productPage": {
       "badge": "Produkt-tur",

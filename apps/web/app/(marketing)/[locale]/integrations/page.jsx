@@ -101,7 +101,7 @@ export default async function IntegrationsPage({ params: { locale } }) {
               {t("requestBody")}
             </p>
             <a
-              href={`mailto:hello@sona.ai?subject=${encodeURIComponent(t("requestCta"))}`}
+              href={`mailto:hello@sona-ai.dk?subject=${encodeURIComponent(t("requestCta"))}`}
               className="mt-5 inline-block rounded-lg border border-zinc-200 bg-white px-5 py-2.5 text-sm font-semibold text-zinc-900 transition-all duration-200 hover:bg-zinc-50 active:scale-[0.97]"
             >
               {t("requestCta")}

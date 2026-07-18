@@ -44,18 +44,19 @@ export default async function ProductPage({ params: { locale } }) {
           </span>
         </Reveal>
         <SectionHeading title={t("title")} subtitle={t("subtitle")} />
-        <Reveal delay={80} className="mt-8 text-center">
+
+        {/* Static full-inbox anchor (Front-style): the whole product up top,
+            broken down step by step in the walkthrough below. */}
+        <Reveal delay={100} className="relative mt-12">
+          <DemoInbox showTabs={false} />
+        </Reveal>
+
+        <Reveal delay={80} className="mt-10 text-center">
           <BookDemoButton
             label={t("cta")}
             fallbackHref={`/${locale}#book-demo`}
             className="inline-block rounded-lg bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-600/25 transition-all duration-200 hover:bg-indigo-500 active:scale-[0.97]"
           />
-        </Reveal>
-
-        {/* Static full-inbox anchor (Front-style): the whole product up top,
-            broken down step by step in the walkthrough below. */}
-        <Reveal delay={120} className="relative mt-14">
-          <DemoInbox showTabs={false} />
         </Reveal>
       </section>
 

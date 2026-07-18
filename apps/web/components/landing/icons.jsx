@@ -1,11 +1,6 @@
 // Delte inline-SVG'er for landing-siden. Ingen emoji — kun stroke-ikoner.
-export function SonaMark({ size = 16 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden="true">
-      <circle cx="8" cy="8" r="6.2" stroke="#6366f1" strokeWidth="2.4" fill="none" />
-    </svg>
-  );
-}
+// Brand-mærket bruger den rigtige, animerede SonaLogo (components/ui/SonaLogo)
+// — ikke et separat statisk mærke — se LandingNav/LandingFooter.
 
 export function CheckIcon() {
   return (

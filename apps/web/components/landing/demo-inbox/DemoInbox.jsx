@@ -13,7 +13,7 @@ function BrowserChrome({ children }) {
           <span key={i} className="h-2.5 w-2.5 rounded-full bg-zinc-200" />
         ))}
         <span className="mx-auto w-64 rounded-md bg-zinc-100 py-1 text-center text-[11px] text-zinc-400">
-          app.sona.ai/inbox
+          app.sona-ai.dk/inbox
         </span>
         <span className="w-10" />
       </div>
