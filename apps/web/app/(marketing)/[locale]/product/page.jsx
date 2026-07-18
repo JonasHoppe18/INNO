@@ -32,7 +32,7 @@ export default async function ProductPage({ params: { locale } }) {
   const t = await getTranslations("landing.productPage");
   return (
     <MarketingShell locale={locale}>
-      <section className="relative overflow-hidden px-5 pt-16 pb-12 text-center">
+      <section className="relative overflow-hidden px-5 pt-16 pb-16 text-center">
         <div
           aria-hidden="true"
           className="pointer-events-none absolute inset-x-0 top-0 h-64 bg-[radial-gradient(ellipse_at_50%_0%,rgba(99,102,241,0.14),rgba(147,51,234,0.06)_55%,transparent_75%)]"
@@ -46,17 +46,10 @@ export default async function ProductPage({ params: { locale } }) {
         <SectionHeading title={t("title")} subtitle={t("subtitle")} />
 
         {/* Static full-inbox anchor (Front-style): the whole product up top,
-            broken down step by step in the walkthrough below. */}
+            broken down step by step in the walkthrough below. The page's own
+            CTA lives once, at the close (below) — no duplicate mid-page ask. */}
         <Reveal delay={100} className="relative mt-12">
           <DemoInbox showTabs={false} />
-        </Reveal>
-
-        <Reveal delay={80} className="mt-10 text-center">
-          <BookDemoButton
-            label={t("cta")}
-            fallbackHref={`/${locale}#book-demo`}
-            className="inline-block rounded-lg bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-600/25 transition-all duration-200 hover:bg-indigo-500 active:scale-[0.97]"
-          />
         </Reveal>
       </section>
 
