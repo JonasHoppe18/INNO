@@ -4,6 +4,7 @@ import MarketingShell from "@/components/landing/MarketingShell";
 import SectionHeading from "@/components/landing/SectionHeading";
 import Reveal from "@/components/landing/Reveal";
 import BookDemoButton from "@/components/landing/BookDemoButton";
+import DemoInbox from "@/components/landing/demo-inbox/DemoInbox";
 import ProblemSection from "@/components/landing/ProblemSection";
 import AnatomyOfAnswer from "@/components/landing/AnatomyOfAnswer";
 import ControlSection from "@/components/landing/ControlSection";
@@ -49,6 +50,12 @@ export default async function ProductPage({ params: { locale } }) {
             fallbackHref={`/${locale}#book-demo`}
             className="inline-block rounded-lg bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-600/25 transition-all duration-200 hover:bg-indigo-500 active:scale-[0.97]"
           />
+        </Reveal>
+
+        {/* Static full-inbox anchor (Front-style): the whole product up top,
+            broken down step by step in the walkthrough below. */}
+        <Reveal delay={120} className="relative mt-14">
+          <DemoInbox showTabs={false} />
         </Reveal>
       </section>
 

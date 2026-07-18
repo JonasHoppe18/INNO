@@ -56,38 +56,45 @@ function noop() {}
 // the inbox panel below re-renders the actual production MessageBubble/ActionCard
 // with fictional data and crossfades in. The product surface itself is
 // non-interactive (pointer-events-none/aria-hidden) — only the tabs respond.
-export default function DemoInbox() {
+//
+// `showTabs={false}` renders a static full-inbox screenshot (locked to the first
+// scenario, no tabs) — used as the /product hero anchor, where the walkthrough
+// below breaks the same inbox down step by step.
+export default function DemoInbox({ showTabs = true }) {
   const [activeId, setActiveId] = useState(SCENARIOS[0].id);
-  const scenario = SCENARIOS.find((s) => s.id === activeId) || SCENARIOS[0];
+  const scenario = showTabs
+    ? SCENARIOS.find((s) => s.id === activeId) || SCENARIOS[0]
+    : SCENARIOS[0];
 
   return (
     <div className="mx-auto max-w-4xl">
-      {/* Scenario tabs — the only interactive part */}
-      <div
-        role="tablist"
-        aria-label="Product demo scenarios"
-        className="mb-4 flex flex-wrap justify-center gap-2"
-      >
-        {SCENARIOS.map((s) => {
-          const active = s.id === activeId;
-          return (
-            <button
-              key={s.id}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              onClick={() => setActiveId(s.id)}
-              className={`rounded-full border px-3.5 py-1.5 text-xs font-medium transition-all duration-200 active:scale-[0.97] ${
-                active
-                  ? "border-transparent bg-indigo-600 text-white shadow-sm shadow-indigo-600/25"
-                  : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:text-zinc-900"
-              }`}
-            >
-              {s.tabLabel}
-            </button>
-          );
-        })}
-      </div>
+      {showTabs ? (
+        <div
+          role="tablist"
+          aria-label="Product demo scenarios"
+          className="mb-4 flex flex-wrap justify-center gap-2"
+        >
+          {SCENARIOS.map((s) => {
+            const active = s.id === activeId;
+            return (
+              <button
+                key={s.id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setActiveId(s.id)}
+                className={`rounded-full border px-3.5 py-1.5 text-xs font-medium transition-all duration-200 active:scale-[0.97] ${
+                  active
+                    ? "border-transparent bg-indigo-600 text-white shadow-sm shadow-indigo-600/25"
+                    : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:text-zinc-900"
+                }`}
+              >
+                {s.tabLabel}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
 
       <BrowserChrome>
         {/* key on scenario id so the crossfade animation replays on each switch */}
