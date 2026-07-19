@@ -2,7 +2,7 @@ import { unstable_setRequestLocale } from "next-intl/server";
 import { marketingMetadata } from "@/lib/landing/metadata";
 import LandingNav from "@/components/landing/LandingNav";
 import Hero from "@/components/landing/Hero";
-import DemoInbox from "@/components/landing/demo-inbox/DemoInbox";
+import AnimatedDemoInbox from "@/components/landing/demo-inbox/AnimatedDemoInbox";
 import HowItWorks from "@/components/landing/HowItWorks";
 import FeatureDives from "@/components/landing/FeatureDives";
 import LanguagesSection from "@/components/landing/LanguagesSection";
@@ -34,8 +34,8 @@ export default async function LandingPage({ params: { locale } }) {
   return (
     <main className="min-h-screen bg-white text-zinc-900">
       <LandingNav locale={locale} />
-      <Hero locale={locale}>
-        <DemoInbox />
+      <Hero>
+        <AnimatedDemoInbox />
       </Hero>
       <HowItWorks />
       <FeatureDives />
