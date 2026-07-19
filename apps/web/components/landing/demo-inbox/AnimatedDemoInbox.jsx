@@ -47,15 +47,68 @@ function DraftComposer({ scenario, phase, onDone }) {
   const full = scenario.draft.body_text;
   const [typed, setTyped] = useState("");
   const approved = phase === "approved";
+  const wrapperRef = useRef(null);
+  const approveRef = useRef(null);
+  const cursorRef = useRef(null);
+
+  // Glide a fake pointer over to the Approve button and "click" it the moment
+  // the draft finishes typing — the click is what flips the parent to approved.
+  // Driven imperatively (style/dataset on the cursor node) so it doesn't fight
+  // the phase-prop re-render that the click itself triggers. Returns the timer
+  // ids so the caller can clean them up.
+  const runApproveCursor = (register) => {
+    const wrap = wrapperRef.current;
+    const btn = approveRef.current;
+    const cur = cursorRef.current;
+    if (!wrap || !btn || !cur) {
+      onDone?.();
+      return;
+    }
+    const wr = wrap.getBoundingClientRect();
+    const br = btn.getBoundingClientRect();
+    const tx = br.left - wr.left + br.width * 0.5;
+    const ty = br.top - wr.top + br.height * 0.5;
+
+    cur.style.transition = "none";
+    cur.style.transform = `translate(${tx + 56}px, ${ty + 66}px)`;
+    cur.style.opacity = "0";
+    cur.dataset.click = "0";
+
+    register(setTimeout(() => {
+      cur.style.transition =
+        "transform 640ms cubic-bezier(0.5,0,0.2,1), opacity 220ms ease-out";
+      cur.style.transform = `translate(${tx}px, ${ty}px)`;
+      cur.style.opacity = "1";
+    }, 60));
+    register(setTimeout(() => {
+      cur.dataset.click = "1";
+      onDone?.();
+    }, 60 + 660));
+    register(setTimeout(() => {
+      cur.dataset.click = "0";
+    }, 60 + 660 + 200));
+    register(setTimeout(() => {
+      cur.style.transition = "opacity 320ms ease-out";
+      cur.style.opacity = "0";
+    }, 60 + 660 + 820));
+  };
 
   useEffect(() => {
+    const cur = cursorRef.current;
     if (phase !== "typing") {
       if (phase === "approved") setTyped(full);
       else setTyped("");
       return undefined;
     }
+    // Reset the pointer for a fresh scenario.
+    if (cur) {
+      cur.style.transition = "none";
+      cur.style.opacity = "0";
+      cur.dataset.click = "0";
+    }
     setTyped("");
     const timers = [];
+    const register = (id) => timers.push(id);
     let i = 0;
     const tick = () => {
       i += 1;
@@ -66,17 +119,18 @@ function DraftComposer({ scenario, phase, onDone }) {
           ch === "\n" ? 80 : ch === "." || ch === "," ? 55 : 12 + Math.random() * 16;
         timers.push(setTimeout(tick, delay));
       } else {
-        timers.push(setTimeout(() => onDone?.(), 650));
+        timers.push(setTimeout(() => runApproveCursor(register), 420));
       }
     };
     tick();
     return () => timers.forEach(clearTimeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, full, onDone]);
 
   const typing = phase === "typing" && typed.length < full.length;
 
   return (
-    <div className="w-full max-w-full sm:max-w-[560px] lg:max-w-[620px]">
+    <div ref={wrapperRef} className="relative w-full max-w-full sm:max-w-[560px] lg:max-w-[620px]">
       <div className="flex flex-wrap items-center gap-2 px-1">
         <div className="text-[13px] font-semibold text-zinc-900">
           Sona <span className="text-[12px] font-normal text-zinc-400">now</span>
@@ -107,6 +161,7 @@ function DraftComposer({ scenario, phase, onDone }) {
       <div className="mt-2 flex items-center justify-end gap-2 px-1">
         <span className="rounded-md px-3 py-1.5 text-[12px] font-medium text-zinc-400">Edit</span>
         <span
+          ref={approveRef}
           className={`inline-flex items-center gap-1.5 rounded-md px-3.5 py-1.5 text-[12px] font-semibold transition-all duration-500 ${
             approved
               ? "bg-emerald-600 text-white shadow-sm shadow-emerald-600/25"
@@ -124,6 +179,31 @@ function DraftComposer({ scenario, phase, onDone }) {
             "Approve & send"
           )}
         </span>
+      </div>
+
+      {/* Fake pointer that glides over and clicks Approve when the draft is
+          done. Positioned/animated imperatively via runApproveCursor; the tip
+          of the arrow sits at translate origin, so we nudge it up-left a touch. */}
+      <div
+        ref={cursorRef}
+        data-click="0"
+        aria-hidden="true"
+        className="group pointer-events-none absolute left-0 top-0 z-10 opacity-0"
+        style={{ transform: "translate(-100px, -100px)" }}
+      >
+        <div className="relative -ml-1 -mt-1 transition-transform duration-150 group-data-[click=1]:scale-90">
+          {/* click ripple */}
+          <span className="absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 rounded-full bg-indigo-500/25 opacity-0 group-data-[click=1]:animate-ping group-data-[click=1]:opacity-100" />
+          <svg width="22" height="22" viewBox="0 0 24 24" className="relative drop-shadow-[0_2px_4px_rgba(0,0,0,0.35)]">
+            <path
+              d="M5 3l5 16 2.2-6.4L18.6 10 5 3z"
+              fill="#ffffff"
+              stroke="#18181b"
+              strokeWidth="1.4"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </div>
       </div>
     </div>
   );
