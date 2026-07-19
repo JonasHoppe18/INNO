@@ -3,6 +3,7 @@ import { PRICING_TIERS, formatTierPrice } from "@/lib/landing/pricing";
 import SectionHeading from "./SectionHeading";
 import Reveal from "./Reveal";
 import BookDemoButton from "./BookDemoButton";
+import CountUp from "./CountUp";
 import { CheckIcon } from "./icons";
 
 export default async function PricingSection({ locale }) {
@@ -35,7 +36,13 @@ export default async function PricingSection({ locale }) {
               ) : null}
               <h3 className="text-sm font-bold text-zinc-900">{t(tier.nameKey)}</h3>
               <p className="mt-3 text-3xl font-bold tracking-tight text-zinc-950">
-                {formatTierPrice(tier, locale)}
+                <CountUp
+                  value={locale === "da" ? tier.dkk : tier.eur}
+                  formatted={formatTierPrice(tier, locale)}
+                  prefix={locale === "da" ? "" : "€"}
+                  suffix={locale === "da" ? " kr" : ""}
+                  localeTag={locale === "da" ? "da-DK" : "en-IE"}
+                />
                 <span className="text-sm font-normal text-zinc-400">{t("perMonth")}</span>
               </p>
               <p className="mt-1 text-xs text-zinc-500">{t("ticketsLabel", { count: countFmt.format(tier.tickets) })}</p>

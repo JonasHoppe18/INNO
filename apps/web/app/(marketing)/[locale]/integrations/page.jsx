@@ -23,8 +23,10 @@ export async function generateMetadata({ params: { locale } }) {
 function IntegrationCard({ name, categoryLabel, body, comingSoon, comingSoonLabel }) {
   return (
     <div
-      className={`rounded-2xl border p-6 ${
-        comingSoon ? "border-dashed border-zinc-200 bg-zinc-50/60" : "border-zinc-200 bg-white"
+      className={`group rounded-2xl border p-6 transition-all duration-300 ${
+        comingSoon
+          ? "border-dashed border-zinc-200 bg-zinc-50/60"
+          : "border-zinc-200 bg-white hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-[0_16px_44px_-20px_rgba(79,70,229,0.35)]"
       }`}
     >
       <div className="flex items-center justify-between gap-3">
