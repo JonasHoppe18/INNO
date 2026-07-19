@@ -17,7 +17,7 @@ export default async function LandingNav({ locale }) {
           <Link href={`/${locale}/product`} className="hover:text-zinc-900">{t("product")}</Link>
           <Link href={`/${locale}/integrations`} className="hover:text-zinc-900">{t("integrations")}</Link>
           <Link href={`/${locale}#pricing`} className="hover:text-zinc-900">{t("pricing")}</Link>
-          <Link href={`/${locale}/demo`} className="hover:text-zinc-900">{t("demo")}</Link>
+          <Link href={`/${locale}/security`} className="hover:text-zinc-900">{t("security")}</Link>
         </nav>
         <div className="flex items-center gap-4">
           <LocaleSwitcher locale={locale} />

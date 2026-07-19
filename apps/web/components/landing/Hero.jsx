@@ -1,12 +1,10 @@
-import Link from "next/link";
 import { getTranslations } from "next-intl/server";
 import Reveal from "./Reveal";
 import BookDemoButton from "./BookDemoButton";
 import { CheckIcon } from "./icons";
 
-export default async function Hero({ locale, children }) {
+export default async function Hero({ children }) {
   const t = await getTranslations("landing.hero");
-  const tDemo = await getTranslations("landing.demo");
   return (
     <section id="product" className="relative overflow-hidden px-5 pt-24 text-center">
       <div
@@ -41,21 +39,6 @@ export default async function Hero({ locale, children }) {
           fallbackHref="#book-demo"
           className="rounded-lg bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-600/25 transition-all duration-200 hover:bg-indigo-500 active:scale-[0.97]"
         />
-      </div>
-      <div
-        className="landing-enter mt-5 flex justify-center"
-        style={{ "--enter-delay": "280ms" }}
-      >
-        <Link
-          href={`/${locale}/demo`}
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-indigo-600 transition-colors hover:text-indigo-700"
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-            <circle cx="7" cy="7" r="6.25" fill="none" stroke="currentColor" strokeWidth="1.2" />
-            <path d="M5.6 4.5v5l4-2.5-4-2.5z" fill="currentColor" />
-          </svg>
-          {tDemo("watchLink")}
-        </Link>
       </div>
 
       {/* Interactive product demo, with a soft glow behind it. */}

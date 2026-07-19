@@ -1,6 +1,7 @@
 import { getTranslations, unstable_setRequestLocale } from "next-intl/server";
 import { routing } from "@/i18n/routing";
 import MarketingShell from "@/components/landing/MarketingShell";
+import { marketingMetadata } from "@/lib/landing/metadata";
 
 export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));
@@ -8,10 +9,11 @@ export function generateStaticParams() {
 
 export async function generateMetadata({ params: { locale } }) {
   const t = await getTranslations({ locale, namespace: "landing.legal" });
-  return {
+  return marketingMetadata({
+    locale,
+    path: "/privacy",
     title: `Sona — ${t("privacyTitle")}`,
-    alternates: { canonical: `/${locale}/privacy`, languages: { en: "/en/privacy", da: "/da/privacy" } },
-  };
+  });
 }
 
 export default async function PrivacyPage({ params: { locale } }) {

@@ -1,6 +1,7 @@
 import { getTranslations, unstable_setRequestLocale } from "next-intl/server";
 import { routing } from "@/i18n/routing";
 import MarketingShell from "@/components/landing/MarketingShell";
+import { marketingMetadata } from "@/lib/landing/metadata";
 
 export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));
@@ -8,10 +9,11 @@ export function generateStaticParams() {
 
 export async function generateMetadata({ params: { locale } }) {
   const t = await getTranslations({ locale, namespace: "landing.legal" });
-  return {
+  return marketingMetadata({
+    locale,
+    path: "/terms",
     title: `Sona — ${t("termsTitle")}`,
-    alternates: { canonical: `/${locale}/terms`, languages: { en: "/en/terms", da: "/da/terms" } },
-  };
+  });
 }
 
 export default async function TermsPage({ params: { locale } }) {

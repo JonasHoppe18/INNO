@@ -5,6 +5,7 @@ import LandingNav from "@/components/landing/LandingNav";
 import LandingFooter from "@/components/landing/LandingFooter";
 import VideoEmbed from "@/components/landing/VideoEmbed";
 import Reveal from "@/components/landing/Reveal";
+import { marketingMetadata } from "@/lib/landing/metadata";
 
 export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));
@@ -12,16 +13,14 @@ export function generateStaticParams() {
 
 export async function generateMetadata({ params: { locale } }) {
   const isDa = locale === "da";
-  return {
+  return marketingMetadata({
+    locale,
+    path: "/demo",
     title: isDa ? "Se Sona i aktion — demo" : "See Sona in action — demo",
     description: isDa
       ? "En kort gennemgang af hvordan Sona læser en ticket, finder ordren og skriver svaret, du godkender."
       : "A short walkthrough of how Sona reads a ticket, finds the order, and drafts the reply you approve.",
-    alternates: {
-      canonical: `/${locale}/demo`,
-      languages: { en: "/en/demo", da: "/da/demo" },
-    },
-  };
+  });
 }
 
 export default async function DemoPage({ params: { locale } }) {

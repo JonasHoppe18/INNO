@@ -4,6 +4,7 @@ import { integrationsByStatus, integrationBodyKey } from "@/lib/landing/integrat
 import MarketingShell from "@/components/landing/MarketingShell";
 import SectionHeading from "@/components/landing/SectionHeading";
 import Reveal from "@/components/landing/Reveal";
+import { marketingMetadata } from "@/lib/landing/metadata";
 
 export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));
@@ -11,14 +12,12 @@ export function generateStaticParams() {
 
 export async function generateMetadata({ params: { locale } }) {
   const t = await getTranslations({ locale, namespace: "landing.integrationsPage" });
-  return {
+  return marketingMetadata({
+    locale,
+    path: "/integrations",
     title: `Sona — ${t("title")}`,
     description: t("subtitle"),
-    alternates: {
-      canonical: `/${locale}/integrations`,
-      languages: { en: "/en/integrations", da: "/da/integrations" },
-    },
-  };
+  });
 }
 
 function IntegrationCard({ name, categoryLabel, body, comingSoon, comingSoonLabel }) {

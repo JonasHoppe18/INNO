@@ -3,6 +3,7 @@ import { routing } from "@/i18n/routing";
 import MarketingShell from "@/components/landing/MarketingShell";
 import SectionHeading from "@/components/landing/SectionHeading";
 import Reveal from "@/components/landing/Reveal";
+import { marketingMetadata } from "@/lib/landing/metadata";
 
 export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));
@@ -10,11 +11,12 @@ export function generateStaticParams() {
 
 export async function generateMetadata({ params: { locale } }) {
   const t = await getTranslations({ locale, namespace: "landing.security" });
-  return {
+  return marketingMetadata({
+    locale,
+    path: "/security",
     title: `Sona — ${t("title")}`,
     description: t("subtitle"),
-    alternates: { canonical: `/${locale}/security`, languages: { en: "/en/security", da: "/da/security" } },
-  };
+  });
 }
 
 function RegionBadge({ region }) {

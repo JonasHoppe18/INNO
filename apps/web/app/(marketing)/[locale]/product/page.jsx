@@ -10,6 +10,7 @@ import AnatomyOfAnswer from "@/components/landing/AnatomyOfAnswer";
 import ControlSection from "@/components/landing/ControlSection";
 import CapabilitiesGrid from "@/components/landing/CapabilitiesGrid";
 import { CheckIcon } from "@/components/landing/icons";
+import { marketingMetadata } from "@/lib/landing/metadata";
 
 export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));
@@ -17,11 +18,12 @@ export function generateStaticParams() {
 
 export async function generateMetadata({ params: { locale } }) {
   const t = await getTranslations({ locale, namespace: "landing.productPage" });
-  return {
+  return marketingMetadata({
+    locale,
+    path: "/product",
     title: `Sona — ${t("title")}`,
     description: t("subtitle"),
-    alternates: { canonical: `/${locale}/product`, languages: { en: "/en/product", da: "/da/product" } },
-  };
+  });
 }
 
 // The product page goes deep in a different shape from the homepage: its own
