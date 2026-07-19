@@ -9,8 +9,13 @@ export default async function PricingSection({ locale }) {
   const t = await getTranslations("landing.pricing");
   const countFmt = new Intl.NumberFormat(locale === "da" ? "da-DK" : "en-IE");
   return (
-    <section id="pricing" className="border-t border-zinc-100 bg-zinc-50 px-5 pt-24 pb-12">
-      <div className="mx-auto max-w-6xl">
+    <section id="pricing" className="relative overflow-hidden border-t border-zinc-100 bg-zinc-50 px-5 pt-24 pb-12">
+      {/* Soft indigo bloom behind the grid so the featured plan sits in light. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute left-1/2 top-40 h-80 w-[46rem] -translate-x-1/2 bg-[radial-gradient(ellipse,rgba(99,102,241,0.14),transparent_70%)]"
+      />
+      <div className="relative mx-auto max-w-6xl">
         <SectionHeading kicker={t("kicker")} title={t("title")} subtitle={t("subtitle")} />
         <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {PRICING_TIERS.map((tier, i) => (
