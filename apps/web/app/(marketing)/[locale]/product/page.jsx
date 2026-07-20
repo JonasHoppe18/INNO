@@ -4,7 +4,7 @@ import MarketingShell from "@/components/landing/MarketingShell";
 import SectionHeading from "@/components/landing/SectionHeading";
 import Reveal from "@/components/landing/Reveal";
 import InlineBookingCalendar from "@/components/landing/InlineBookingCalendar";
-import DemoInbox from "@/components/landing/demo-inbox/DemoInbox";
+import AnimatedDemoInbox from "@/components/landing/demo-inbox/AnimatedDemoInbox";
 import ProblemSection from "@/components/landing/ProblemSection";
 import AnatomyOfAnswer from "@/components/landing/AnatomyOfAnswer";
 import ControlSection from "@/components/landing/ControlSection";
@@ -48,11 +48,13 @@ export default async function ProductPage({ params: { locale } }) {
         </Reveal>
         <SectionHeading title={t("title")} subtitle={t("subtitle")} />
 
-        {/* Static full-inbox anchor (Front-style): the whole product up top,
-            broken down step by step in the walkthrough below. The page's own
-            CTA lives once, at the close (below) — no duplicate mid-page ask. */}
+        {/* Live product tour up top: the same self-playing demo as the
+            homepage, which literally acts out the page's promise ("follow one
+            ticket start to finish"). The walkthrough below then breaks the same
+            flow down step by step. The page's own CTA lives once, at the close
+            (below) — no duplicate mid-page ask. */}
         <Reveal delay={100} className="relative mt-12">
-          <DemoInbox showTabs={false} />
+          <AnimatedDemoInbox />
         </Reveal>
       </section>
 
@@ -61,53 +63,57 @@ export default async function ProductPage({ params: { locale } }) {
       <ControlSection />
       <CapabilitiesGrid />
 
-      {/* Closing CTA: pitch + bullets left, an inline booking calendar right.
-          The calendar column is a fixed-remainder width (not a proportional
-          fraction) — Cal's embed needs real width (~800px+) to lay out its
-          info panel, date grid and time slots side by side like the popup;
-          narrower and it falls back to a cramped, zoomed-in stacked view. */}
+      {/* Closing CTA framed as one intentional "booking" panel: pitch + bullets
+          in a bordered left column, the inline calendar in a tinted right
+          column. Wrapping both in a single elevated card (rather than a tight
+          border around just the embed) makes the calendar read as designed-in,
+          not a raw iframe dropped on the page. The calendar column is a
+          fixed-remainder width (not a proportional fraction) — Cal's embed needs
+          real width (~800px+) to lay its info panel, date grid and time slots
+          side by side like the popup; narrower and it falls back to a cramped,
+          zoomed-in stacked view. */}
       <section className="border-t border-zinc-100 bg-zinc-50 px-5 py-24">
-        <div className="mx-auto grid max-w-7xl items-start gap-10 lg:grid-cols-[340px_minmax(0,1fr)]">
-          <Reveal className="lg:pt-6">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-indigo-600">
-              {t("closingKicker")}
-            </p>
-            <h2 className="mt-2.5 text-balance text-3xl font-bold tracking-tight text-zinc-950 sm:text-4xl">
-              {t("closingTitle")}
-            </h2>
-            <p className="mt-3.5 text-base leading-relaxed text-zinc-600">{t("closingSubtitle")}</p>
-            <ul className="mt-6 space-y-3">
-              {["closingBullet1", "closingBullet2"].map((key) => (
-                <li key={key} className="flex items-center gap-2.5 text-sm text-zinc-700">
-                  <CheckIcon /> {t(key)}
-                </li>
-              ))}
-            </ul>
-          </Reveal>
-          {/* Cal's own embed already renders as a rounded, shadowed card, so
-              no wrapping border/shadow here — that doubled up into a
-              box-in-a-box look. Height cap + scroll stays: Cal's auto-resize
-              is unpredictable (grew past 2000px in testing), and
-              overflow-hidden with no cap silently clipped the times/details
-              steps — this keeps every step reachable without unbounded growth. */}
-          <Reveal delay={100} className="relative max-h-[640px] overflow-y-auto">
-            <InlineBookingCalendar
-              fallbackLabel={t("calendarFallback")}
-              fallbackHref={`/${locale}#book-demo`}
-            />
-            {/* Cal's "Cal.eu" branding footer lives inside a cross-origin
-                iframe we can't restyle directly — this masks it with a plain
-                white bar matching the embed's own background. Pinned to the
-                wrapper's bottom, so it only lines up correctly in the common,
-                unscrolled state (content height under the 640px cap, true for
-                every state observed in testing). If Cal.com changes the
-                footer's height or the embed grows past the cap, this may need
-                adjusting. pointer-events-none so it can never block a real
-                click if the estimate is ever slightly off. */}
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-x-0 bottom-0 h-9 bg-white"
-            />
+        <div className="mx-auto max-w-7xl">
+          <Reveal className="overflow-hidden rounded-3xl border border-zinc-200 bg-white shadow-[0_28px_90px_-40px_rgba(24,24,27,0.28)]">
+            <div className="grid lg:grid-cols-[360px_minmax(0,1fr)]">
+              <div className="border-b border-zinc-100 p-8 lg:border-b-0 lg:border-r lg:p-10">
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-indigo-600">
+                  {t("closingKicker")}
+                </p>
+                <h2 className="mt-2.5 text-balance text-3xl font-bold tracking-tight text-zinc-950 sm:text-4xl">
+                  {t("closingTitle")}
+                </h2>
+                <p className="mt-3.5 text-base leading-relaxed text-zinc-600">{t("closingSubtitle")}</p>
+                <ul className="mt-6 space-y-3">
+                  {["closingBullet1", "closingBullet2"].map((key) => (
+                    <li key={key} className="flex items-center gap-2.5 text-sm text-zinc-700">
+                      <CheckIcon /> {t(key)}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              {/* Height cap + scroll: Cal's auto-resize is unpredictable (grew
+                  past 2000px in testing), and overflow-hidden with no cap
+                  silently clipped the times/details steps — this keeps every
+                  step reachable without unbounded growth. */}
+              <div className="relative max-h-[620px] overflow-y-auto p-3 sm:p-5">
+                <InlineBookingCalendar
+                  fallbackLabel={t("calendarFallback")}
+                  fallbackHref={`/${locale}#book-demo`}
+                />
+                {/* Cal's "Cal.eu" branding footer lives inside a cross-origin
+                    iframe we can't restyle directly — this masks it with a bar
+                    matching the column's own background. Pinned to the column's
+                    bottom, so it only lines up in the common, unscrolled state
+                    (content height under the cap, true for every state observed
+                    in testing). pointer-events-none so it can never block a real
+                    click if the estimate is ever slightly off. */}
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-x-0 bottom-0 h-9 bg-white"
+                />
+              </div>
+            </div>
           </Reveal>
         </div>
       </section>
