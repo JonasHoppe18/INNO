@@ -34,12 +34,12 @@ export default async function SecurityPage({ params: { locale } }) {
   const t = await getTranslations("landing.security");
   const points = [1, 2, 3, 4, 5];
   // Provider names are proper nouns (hardcoded); roles/regions are honest and
-  // reviewed with the team. Postmark region unconfirmed → "EU (to confirm)".
+  // reviewed with the team.
   const subprocessors = [
     { name: "DigitalOcean", role: t("roleHosting"), region: "EU" },
     { name: "Supabase", role: t("roleDatabase"), region: "EU" },
     { name: "OpenAI", role: t("roleAi"), region: "US" },
-    { name: "Postmark", role: t("roleEmail"), region: t("regionToConfirm") },
+    { name: "Postmark", role: t("roleEmail"), region: "EU" },
     { name: "Shopify", role: t("roleStore"), region: "—" },
     { name: "Clerk", role: t("roleAuth"), region: "US" },
   ];

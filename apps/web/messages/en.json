@@ -155,7 +155,6 @@
       "roleEmail": "Inbound email",
       "roleStore": "Store data",
       "roleAuth": "Team login",
-      "regionToConfirm": "EU (to confirm)",
       "aiNote": "To draft replies, ticket content is sent to OpenAI's API (United States). OpenAI does not use data submitted through its API to train its models.",
       "note": "We're working toward formal certifications. Have specific compliance requirements? Talk to us.",
       "cta": "Book a demo"

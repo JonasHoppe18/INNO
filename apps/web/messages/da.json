@@ -155,7 +155,6 @@
       "roleEmail": "Indgående email",
       "roleStore": "Butiksdata",
       "roleAuth": "Team-login",
-      "regionToConfirm": "EU (bekræftes)",
       "aiNote": "For at skrive udkast sendes ticket-indhold til OpenAIs API (USA). OpenAI bruger ikke data sendt via deres API til at træne deres modeller.",
       "note": "Vi arbejder hen imod formelle certificeringer. Har I specifikke compliance-krav? Tal med os.",
       "cta": "Book en demo"
