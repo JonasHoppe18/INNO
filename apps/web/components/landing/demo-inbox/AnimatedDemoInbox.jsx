@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MessageBubble, MessageRenderBoundary } from "@/components/inbox/MessageBubble";
 import { ActionCard } from "@/components/inbox/ActionCard";
 import { SCENARIOS } from "./demo-data";
@@ -135,19 +135,36 @@ function DraftComposer({ scenario, phase, showApprove, approveRef, onTypingDone 
   );
 }
 
-// The scripted hero product demo. It loops through the same fictional scenarios
-// as the interactive DemoInbox, but plays each one as a story: a ticket arrives
-// → Sona reads it and pulls the order → a pointer approves the proposed action on
-// the real ActionCard (or, when there's no action, approves & sends the reply
-// itself) → the confirmation reply types out and is sent. The inbound message and
-// action card are the real production components. Respects prefers-reduced-motion.
-export default function AnimatedDemoInbox() {
+// The scripted hero product demo. It loops through the fictional scenarios,
+// playing each as a story: a ticket arrives → Sona reads it and pulls the order
+// → a pointer approves the proposed action on the real ActionCard (or, when
+// there's no action, approves & sends the reply itself) → the confirmation reply
+// types out and is sent. The inbound message and action card are the real
+// production components. Respects prefers-reduced-motion.
+//
+// Props:
+//  - showList: render the inbox ticket-list sidebar (homepage). Off gives a
+//    tighter, conversation-only frame (the /product hero, so it doesn't read as
+//    a carbon copy of the homepage).
+//  - only: play just this scenario id on a loop instead of cycling all of them.
+//  - wrapClassName: outer width wrapper.
+export default function AnimatedDemoInbox({
+  showList = true,
+  only = null,
+  wrapClassName = "mx-auto max-w-4xl",
+}) {
   const reduce = usePrefersReducedMotion();
-  const [idx, setIdx] = useState(0);
+  const scenarios = useMemo(
+    () => (only ? SCENARIOS.filter((s) => s.id === only) : SCENARIOS),
+    [only]
+  );
+  // Monotonic counter (not a modulo index) so a single-scenario loop still
+  // changes state each cycle and re-triggers the orchestrator effect.
+  const [cycle, setCycle] = useState(0);
   const [stage, setStage] = useState(STAGE.ARRIVE);
   const [actionApproved, setActionApproved] = useState(false);
   const [sent, setSent] = useState(false);
-  const scenario = SCENARIOS[idx];
+  const scenario = scenarios[cycle % scenarios.length] || scenarios[0];
 
   const panelRef = useRef(null);
   const actionWrapRef = useRef(null);
@@ -274,7 +291,7 @@ export default function AnimatedDemoInbox() {
 
       await wait(2600);
       if (cancelled) return;
-      setIdx((n) => (n + 1) % SCENARIOS.length);
+      setCycle((c) => c + 1);
     };
 
     run();
@@ -283,7 +300,7 @@ export default function AnimatedDemoInbox() {
       timeouts.forEach(clearTimeout);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idx, reduce]);
+  }, [cycle, reduce]);
 
   const draftPhase = reduce
     ? "approved"
@@ -296,13 +313,15 @@ export default function AnimatedDemoInbox() {
   const showActionApproved = reduce || actionApproved;
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div className={wrapClassName}>
       <BrowserChrome>
         <div className="flex bg-zinc-50/60">
-          <TicketListColumn
-            selectedId={scenario.ticketId}
-            pulseId={!reduce && stage <= STAGE.MESSAGE ? scenario.ticketId : null}
-          />
+          {showList ? (
+            <TicketListColumn
+              selectedId={scenario.ticketId}
+              pulseId={!reduce && stage <= STAGE.MESSAGE ? scenario.ticketId : null}
+            />
+          ) : null}
           <div
             ref={panelRef}
             className="relative flex min-h-[440px] min-w-0 flex-1 select-none flex-col gap-3 p-4 text-left sm:min-h-[460px]"

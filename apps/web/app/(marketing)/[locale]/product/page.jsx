@@ -54,7 +54,10 @@ export default async function ProductPage({ params: { locale } }) {
             flow down step by step. The page's own CTA lives once, at the close
             (below) — no duplicate mid-page ask. */}
         <Reveal delay={100} className="relative mt-12">
-          <AnimatedDemoInbox />
+          {/* Focused variant so it doesn't read as a copy of the homepage: no
+              inbox sidebar, and a single looping ticket (address change — a
+              different case than the refund the walkthrough below dissects). */}
+          <AnimatedDemoInbox showList={false} only="address" wrapClassName="mx-auto max-w-2xl" />
         </Reveal>
       </section>
 
