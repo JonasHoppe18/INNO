@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { getCalApi } from "@calcom/embed-react";
+import { CONTACT_EMAIL } from "@/lib/landing/contact";
 
 // Booking config. NEXT_PUBLIC_CAL_LINK is "<team-or-user>/<event-slug>";
 // NEXT_PUBLIC_CAL_ORIGIN is only needed when the booking page isn't on cal.com
@@ -33,7 +34,7 @@ export default function BookDemoButton({ label, className, fallbackHref }) {
 
   if (!CAL_LINK) {
     return (
-      <a href={fallbackHref || "mailto:hello@sona-ai.dk?subject=Demo"} className={className}>
+      <a href={fallbackHref || `mailto:${CONTACT_EMAIL}?subject=Demo`} className={className}>
         {label}
       </a>
     );

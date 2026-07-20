@@ -6,6 +6,7 @@ import SectionHeading from "@/components/landing/SectionHeading";
 import Reveal from "@/components/landing/Reveal";
 import IntegrationLogo from "@/components/landing/IntegrationLogo";
 import { marketingMetadata } from "@/lib/landing/metadata";
+import { CONTACT_EMAIL } from "@/lib/landing/contact";
 
 export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));
@@ -108,7 +109,7 @@ export default async function IntegrationsPage({ params: { locale } }) {
               {t("requestBody")}
             </p>
             <a
-              href={`mailto:hello@sona-ai.dk?subject=${encodeURIComponent(t("requestCta"))}`}
+              href={`mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(t("requestCta"))}`}
               className="mt-5 inline-block rounded-lg border border-zinc-200 bg-white px-5 py-2.5 text-sm font-semibold text-zinc-900 transition-all duration-200 hover:bg-zinc-50 active:scale-[0.97]"
             >
               {t("requestCta")}

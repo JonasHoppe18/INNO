@@ -124,7 +124,7 @@
     "footer": {
       "privacy": "Privatliv",
       "terms": "Vilkår",
-      "contact": "hello@sona-ai.dk",
+      "contact": "jonas@sona-ai.dk",
       "security": "Sikkerhed",
       "integrations": "Integrationer"
     },
@@ -184,8 +184,140 @@
       "privacyTitle": "Privatlivspolitik",
       "termsTitle": "Handelsbetingelser",
       "updatedLabel": "Sidst opdateret",
-      "placeholder": "Denne side er en placeholder. Den endelige, juridisk gennemgåede tekst offentliggøres her før launch.",
-      "contactLine": "Spørgsmål? Skriv til os på hello@sona-ai.dk."
+      "updatedDate": "20. juli 2026",
+      "contactPrompt": "Spørgsmål til denne side? Skriv til jonas@sona-ai.dk.",
+      "privacySections": [
+        {
+          "title": "Hvem vi er",
+          "paragraphs": [
+            "Sona AI (“Sona”, “vi”, “os”) leverer et AI-assisteret supportværktøj til webshops. Denne politik forklarer, hvilke data vi behandler, når du eller dine kunder bruger Sona, hvorfor vi behandler dem, og hvilke rettigheder du har."
+          ]
+        },
+        {
+          "title": "Hvilke data vi behandler",
+          "paragraphs": [
+            "For at kunne udkaste svar på dine supporttickets behandler Sona:"
+          ],
+          "items": [
+            "Supportbeskeder du videresender til Sona (afsender, emne, indhold, vedhæftninger)",
+            "Ordre-, betalings- og forsendelsesdata fra din tilknyttede butik (fx Shopify)",
+            "Dit teams kontodata — navn, email og login-aktivitet — via Clerk",
+            "Drafts, redigeringer og godkendelser dit team foretager, som bruges til at forbedre fremtidige svar"
+          ]
+        },
+        {
+          "title": "Hvorfor vi behandler dem",
+          "paragraphs": [
+            "Vi behandler dataene for at læse en ticket, slå den relevante ordre op og udkaste et svar forankret i din butiks data og politikker. En kundes data bruges udelukkende til at besvare den kundes egne tickets — aldrig til at besvare andres, og aldrig solgt eller delt med andre virksomheder, der bruger Sona."
+          ]
+        },
+        {
+          "title": "Hvor data behandles",
+          "paragraphs": [
+            "Sonas app og database kører i EU. Enkelte behandlingstrin bruger underleverandører uden for EU, under passende garantier (standardkontraktbestemmelser)."
+          ],
+          "items": [
+            "DigitalOcean (EU) — app-hosting",
+            "Supabase (EU) — database & backend",
+            "Postmark (EU) — indgående email",
+            "OpenAI (USA) — udkaster svar. Indhold sendt til OpenAIs API bruges ikke til at træne deres modeller.",
+            "Clerk (USA) — teamlogin og autentificering",
+            "Shopify — din egen butiks ordre- og kundedata, tilgået med de rettigheder du giver"
+          ]
+        },
+        {
+          "title": "Hvor længe vi opbevarer data",
+          "paragraphs": [
+            "Vi opbevarer ticket- og ordredata, så længe dit workspace er aktivt, så Sona kan referere til tidligere tickets og fortsat blive bedre. Lukker du din konto, sletter eller anonymiserer vi dine data inden for rimelig tid, medmindre vi er forpligtet til at opbevare dem længere ved lov."
+          ]
+        },
+        {
+          "title": "Dine rettigheder",
+          "paragraphs": [
+            "Er du i EU/EØS, har du ret til indsigt, berigtigelse, sletning, begrænsning af eller indsigelse mod behandlingen af dine persondata samt til dataportabilitet. Kontakt os på jonas@sona-ai.dk for at gøre brug af dine rettigheder."
+          ]
+        },
+        {
+          "title": "Sikkerhed",
+          "paragraphs": [
+            "Vi bruger kryptering i transit og i hvile, afgrænset adgangsstyring, og hvert workspace har sine egne isolerede data. Intet når frem til en kunde uden dit teams godkendelse, medmindre du eksplicit har slået autopilot til for den ticket-type."
+          ]
+        },
+        {
+          "title": "Ændringer til denne politik",
+          "paragraphs": [
+            "Vi opdaterer løbende denne politik, i takt med at Sona udvikler sig. Datoen nedenfor opdateres, når vi gør. Er en ændring væsentlig, giver vi aktive kunder direkte besked."
+          ]
+        }
+      ],
+      "termsSections": [
+        {
+          "title": "Accept af vilkårene",
+          "paragraphs": [
+            "Disse handelsbetingelser (“Vilkårene”) gælder for din brug af Sona AIs supportplatform (“Sona”, “Tjenesten”). Ved at oprette et workspace eller bruge Sona accepterer du Vilkårene på vegne af din virksomhed."
+          ]
+        },
+        {
+          "title": "Hvad Sona gør",
+          "paragraphs": [
+            "Sona læser indkommende supportmails, slår relevante data op i din tilknyttede butik og udkaster et svar. Som udgangspunkt gennemgår og godkender et medlem af dit team hvert svar, før det sendes. Du kan slå automatisk afsendelse (“autopilot”) til for specifikke ticket-typer, når I er trygge ved resultaterne."
+          ]
+        },
+        {
+          "title": "Under aktiv udvikling",
+          "paragraphs": [
+            "Sona er under aktiv udvikling. Funktioner, draft-kvalitet og tilgængelige integrationer kan ændre sig, i takt med at vi forbedrer produktet. Nye kunder starter typisk med en guidet pilot, før vi ruller bredere ud, så vi kan tilpasse Sona til jeres butik og politikker sammen."
+          ]
+        },
+        {
+          "title": "Din konto & dit ansvar",
+          "paragraphs": [
+            "Du er ansvarlig for rigtigheden af de oplysninger, politikker og butiksforbindelser, du giver Sona, og for at gennemgå drafts, før du godkender dem (medmindre autopilot er slået til). Du bekræfter, at du har ret til at dele dine kunders data med Sona med henblik på at besvare deres supporttickets, i overensstemmelse med dine egne privatlivsforpligtelser over for dem."
+          ]
+        },
+        {
+          "title": "Priser & betaling",
+          "paragraphs": [
+            "Betalte planer faktureres månedligt baseret på det ticket-volumen-niveau, du vælger, som beskrevet på vores prisside. Vi giver besked, før eventuelle prisændringer træder i kraft."
+          ]
+        },
+        {
+          "title": "Acceptabel brug",
+          "paragraphs": [
+            "Du accepterer ikke at bruge Sona til at behandle data, du ikke har ret til at dele, til at forsøge at forstyrre eller reverse-engineere Tjenesten, eller til noget ulovligt."
+          ]
+        },
+        {
+          "title": "Tredjepartstjenester",
+          "paragraphs": [
+            "Sona er afhængig af tredjepartsudbydere — herunder din e-handelsplatform, OpenAI samt vores hosting- og emailudbydere — for at fungere. Deres tilgængelighed og vilkår kan påvirke Sonas tjeneste; se vores side om sikkerhed & data for den fulde liste."
+          ]
+        },
+        {
+          "title": "Opsigelse",
+          "paragraphs": [
+            "Du kan lukke dit workspace når som helst. Vi kan suspendere eller opsige adgang, hvis disse Vilkår overtrædes, eller hvis loven kræver det. Ved opsigelse håndterer vi dine data som beskrevet i vores privatlivspolitik."
+          ]
+        },
+        {
+          "title": "Ansvarsfraskrivelse & ansvar",
+          "paragraphs": [
+            "Sona leveres “som den er”. Selvom Sona forankrer sine drafts i jeres reelle ordre- og politikdata, er I ansvarlige for at gennemgå dem, før de når en kunde (medmindre autopilot er slået til for den ticket-type). I det omfang loven tillader det, er vores ansvar for ethvert krav relateret til Tjenesten begrænset til de gebyrer, I har betalt os i de tre måneder forud for kravets opståen."
+          ]
+        },
+        {
+          "title": "Lovvalg",
+          "paragraphs": [
+            "Disse Vilkår er underlagt dansk ret. Tvister afgøres ved danske domstole."
+          ]
+        },
+        {
+          "title": "Ændringer til disse vilkår",
+          "paragraphs": [
+            "Vi kan opdatere disse Vilkår, i takt med at Sona udvikler sig. Datoen nedenfor opdateres, når vi gør, og vi giver aktive kunder besked om væsentlige ændringer."
+          ]
+        }
+      ]
     },
     "productPage": {
       "badge": "Produkt-tur",

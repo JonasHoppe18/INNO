@@ -1,6 +1,7 @@
 "use client";
 
 import Cal from "@calcom/embed-react";
+import { CONTACT_EMAIL } from "@/lib/landing/contact";
 
 // Same env contract as BookDemoButton (NEXT_PUBLIC_CAL_LINK / _ORIGIN), but
 // rendered inline instead of as a popup. Scoped to the /product closing
@@ -16,7 +17,7 @@ export default function InlineBookingCalendar({ fallbackLabel, fallbackHref }) {
       <div className="flex h-full min-h-[420px] flex-col items-center justify-center gap-4 p-8 text-center">
         <p className="text-sm text-zinc-500">{fallbackLabel}</p>
         <a
-          href={fallbackHref || "mailto:hello@sona-ai.dk?subject=Demo"}
+          href={fallbackHref || `mailto:${CONTACT_EMAIL}?subject=Demo`}
           className="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white transition-all duration-200 hover:bg-indigo-500 active:scale-[0.97]"
         >
           {fallbackLabel}

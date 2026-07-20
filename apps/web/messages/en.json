@@ -124,7 +124,7 @@
     "footer": {
       "privacy": "Privacy",
       "terms": "Terms",
-      "contact": "hello@sona-ai.dk",
+      "contact": "jonas@sona-ai.dk",
       "security": "Security",
       "integrations": "Integrations"
     },
@@ -184,8 +184,140 @@
       "privacyTitle": "Privacy Policy",
       "termsTitle": "Terms of Service",
       "updatedLabel": "Last updated",
-      "placeholder": "This page is a placeholder. The final, legally reviewed text will be published here before launch.",
-      "contactLine": "Questions? Reach us at hello@sona-ai.dk."
+      "updatedDate": "July 20, 2026",
+      "contactPrompt": "Questions about this page? Email jonas@sona-ai.dk.",
+      "privacySections": [
+        {
+          "title": "Who we are",
+          "paragraphs": [
+            "Sona AI (“Sona”, “we”, “us”) provides an AI-assisted customer support tool for e-commerce businesses. This policy explains what data we process when you or your customers use Sona, why we process it, and what rights you have."
+          ]
+        },
+        {
+          "title": "What data we process",
+          "paragraphs": [
+            "To draft replies to your support tickets, Sona processes:"
+          ],
+          "items": [
+            "Customer support messages you forward to Sona (sender, subject, body, attachments)",
+            "Order, payment and shipping data from your connected store (e.g. Shopify)",
+            "Your team's account data — name, email and login activity — via Clerk",
+            "Drafts, edits and approvals your team makes, used to improve future replies"
+          ]
+        },
+        {
+          "title": "Why we process it",
+          "paragraphs": [
+            "We process this data to read a ticket, look up the relevant order, and draft a reply grounded in your store data and policies. A customer's data is used only to answer that customer's own tickets — never to answer someone else's, and never sold or shared with other businesses using Sona."
+          ]
+        },
+        {
+          "title": "Where data is processed",
+          "paragraphs": [
+            "Sona's application and database run in the EU. Some processing steps use sub-processors outside the EU, under appropriate safeguards (standard contractual clauses)."
+          ],
+          "items": [
+            "DigitalOcean (EU) — application hosting",
+            "Supabase (EU) — database & backend",
+            "Postmark (EU) — inbound email delivery",
+            "OpenAI (US) — drafts replies. Content sent to OpenAI's API is not used to train its models.",
+            "Clerk (US) — team login and authentication",
+            "Shopify — your own store's order and customer data, accessed with the permissions you grant"
+          ]
+        },
+        {
+          "title": "How long we keep it",
+          "paragraphs": [
+            "We keep ticket and order data for as long as your workspace is active, so Sona can reference past tickets and keep improving its answers. If you close your account, we delete or anonymise your data within a reasonable period, except where we're required to keep it longer by law."
+          ]
+        },
+        {
+          "title": "Your rights",
+          "paragraphs": [
+            "If you're in the EU/EEA, you have the right to access, correct, delete, restrict or object to the processing of your personal data, and to data portability. To exercise any of these rights, contact us at jonas@sona-ai.dk."
+          ]
+        },
+        {
+          "title": "Security",
+          "paragraphs": [
+            "We use encryption in transit and at rest, scoped access controls, and give every workspace its own isolated data. Nothing reaches a customer without your team's approval, unless you've explicitly turned on autopilot for that ticket type."
+          ]
+        },
+        {
+          "title": "Changes to this policy",
+          "paragraphs": [
+            "We may update this policy as Sona evolves. We'll update the date below when we do. If a change is material, we'll let active customers know directly."
+          ]
+        }
+      ],
+      "termsSections": [
+        {
+          "title": "Agreement to these terms",
+          "paragraphs": [
+            "These Terms of Service (“Terms”) govern your use of Sona AI's support platform (“Sona”, “the Service”). By creating a workspace or using Sona, you agree to these Terms on behalf of your business."
+          ]
+        },
+        {
+          "title": "What Sona does",
+          "paragraphs": [
+            "Sona reads incoming customer support emails, looks up relevant data in your connected store, and drafts a reply. By default, a member of your team reviews and approves every reply before it's sent. You can enable automatic sending (“autopilot”) for specific ticket types once you're confident in the results."
+          ]
+        },
+        {
+          "title": "Active development",
+          "paragraphs": [
+            "Sona is under active development. Features, draft quality and available integrations may change as we improve the product. New customers typically start with a guided pilot before broader rollout, so we can tune Sona to their store and policies together."
+          ]
+        },
+        {
+          "title": "Your account & responsibilities",
+          "paragraphs": [
+            "You're responsible for the accuracy of the information, policies and store connections you give Sona, and for reviewing drafts before approving them (unless autopilot is enabled). You confirm you have the right to share your customers' data with Sona for the purpose of answering their support tickets, in line with your own privacy obligations to them."
+          ]
+        },
+        {
+          "title": "Fees & billing",
+          "paragraphs": [
+            "Paid plans are billed monthly based on the ticket volume tier you select, as described on our pricing page. We'll notify you before any pricing changes take effect."
+          ]
+        },
+        {
+          "title": "Acceptable use",
+          "paragraphs": [
+            "You agree not to use Sona to process data you don't have the right to share, to attempt to disrupt or reverse-engineer the Service, or to use it for anything unlawful."
+          ]
+        },
+        {
+          "title": "Third-party services",
+          "paragraphs": [
+            "Sona relies on third-party providers — including your e-commerce platform, OpenAI, and our hosting and email providers — to operate. Their availability and terms may affect Sona's service; see our Security & data page for the full list."
+          ]
+        },
+        {
+          "title": "Termination",
+          "paragraphs": [
+            "You can close your workspace at any time. We may suspend or terminate access if these Terms are breached, or if required by law. On termination, we handle your data as described in our Privacy Policy."
+          ]
+        },
+        {
+          "title": "Disclaimer & liability",
+          "paragraphs": [
+            "Sona is provided “as is”. While Sona grounds its drafts in your real order and policy data, you're responsible for reviewing them before they reach a customer (unless you've enabled autopilot for that ticket type). To the extent permitted by law, our liability for any claim relating to the Service is limited to the fees you paid us in the three months before the claim arose."
+          ]
+        },
+        {
+          "title": "Governing law",
+          "paragraphs": [
+            "These Terms are governed by Danish law. Disputes will be resolved in the courts of Denmark."
+          ]
+        },
+        {
+          "title": "Changes to these terms",
+          "paragraphs": [
+            "We may update these Terms as Sona evolves. We'll update the date below when we do, and let active customers know of material changes."
+          ]
+        }
+      ]
     },
     "productPage": {
       "badge": "Product tour",
