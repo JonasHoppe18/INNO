@@ -20,7 +20,10 @@ const LOCALE_PATTERN = new RegExp(`^/(${routing.locales.join("|")})`);
 // opens a listbox of the other locales. Swaps only the locale segment of the
 // current path, so switching keeps you on the same page. `tone="dark"` is for
 // placement on a dark background (the footer); default is the light header.
-export default function LocaleSwitcher({ locale, tone = "light" }) {
+// `compactOnMobile` hides the text label below `sm` (flag + chevron only) —
+// used in the header, where the trigger competes for space with the hamburger
+// and the primary CTA; the footer has room to spare and keeps the full label.
+export default function LocaleSwitcher({ locale, tone = "light", compactOnMobile = false }) {
   const t = useTranslations("landing.nav");
   const pathname = usePathname() || "/";
   const [open, setOpen] = useState(false);
@@ -61,7 +64,7 @@ export default function LocaleSwitcher({ locale, tone = "light" }) {
         }`}
       >
         <span aria-hidden="true">{current.flag}</span>
-        <span>{current.label}</span>
+        <span className={compactOnMobile ? "hidden sm:inline" : undefined}>{current.label}</span>
         <svg
           width="10"
           height="10"

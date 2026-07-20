@@ -3,9 +3,16 @@ import { getTranslations } from "next-intl/server";
 import { SonaLogo } from "@/components/ui/SonaLogo";
 import LocaleSwitcher from "./LocaleSwitcher";
 import BookDemoButton from "./BookDemoButton";
+import MobileNavMenu from "./MobileNavMenu";
 
 export default async function LandingNav({ locale }) {
   const t = await getTranslations("landing.nav");
+  const links = [
+    { href: `/${locale}/product`, label: t("product") },
+    { href: `/${locale}/integrations`, label: t("integrations") },
+    { href: `/${locale}#pricing`, label: t("pricing") },
+    { href: `/${locale}/security`, label: t("security") },
+  ];
   return (
     <header className="sticky top-0 z-40 border-b border-zinc-100 bg-white/80 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
@@ -14,14 +21,21 @@ export default async function LandingNav({ locale }) {
           Sona AI
         </Link>
         <nav className="hidden items-center gap-6 text-sm text-zinc-600 md:flex">
-          <Link href={`/${locale}/product`} className="hover:text-zinc-900">{t("product")}</Link>
-          <Link href={`/${locale}/integrations`} className="hover:text-zinc-900">{t("integrations")}</Link>
-          <Link href={`/${locale}#pricing`} className="hover:text-zinc-900">{t("pricing")}</Link>
-          <Link href={`/${locale}/security`} className="hover:text-zinc-900">{t("security")}</Link>
+          {links.map((link) => (
+            <Link key={link.href} href={link.href} className="hover:text-zinc-900">
+              {link.label}
+            </Link>
+          ))}
         </nav>
-        <div className="flex items-center gap-4">
-          <LocaleSwitcher locale={locale} />
-          <Link href="/sign-in" className="hidden text-sm text-zinc-600 hover:text-zinc-900 sm:block">{t("login")}</Link>
+        <div className="flex items-center gap-2 sm:gap-4">
+          <MobileNavMenu
+            links={links}
+            loginLabel={t("login")}
+            menuLabel={t("menu")}
+            closeMenuLabel={t("closeMenu")}
+          />
+          <LocaleSwitcher locale={locale} compactOnMobile />
+          <Link href="/sign-in" className="hidden text-sm text-zinc-600 hover:text-zinc-900 md:block">{t("login")}</Link>
           <BookDemoButton
             label={t("bookDemo")}
             fallbackHref={`/${locale}#book-demo`}

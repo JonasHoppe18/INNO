@@ -8,7 +8,9 @@
       "demo": "Demo",
       "login": "Log ind",
       "bookDemo": "Book en demo",
-      "switchLanguage": "Skift sprog"
+      "switchLanguage": "Skift sprog",
+      "menu": "Menu",
+      "closeMenu": "Luk menu"
     },
     "hero": {
       "badge": "AI-support til e-commerce",

@@ -8,7 +8,9 @@
       "demo": "Demo",
       "login": "Log in",
       "bookDemo": "Book a demo",
-      "switchLanguage": "Switch language"
+      "switchLanguage": "Switch language",
+      "menu": "Menu",
+      "closeMenu": "Close menu"
     },
     "hero": {
       "badge": "AI support for e-commerce",
