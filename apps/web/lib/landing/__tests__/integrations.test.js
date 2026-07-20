@@ -25,8 +25,11 @@ describe("landing integrations", () => {
   it("splits into available and roadmap", () => {
     expect(integrationsByStatus("available").map((i) => i.id)).toEqual([
       "shopify",
+      "webshipper",
       "email",
       "zendesk",
+      "freshdesk",
+      "gorgias",
     ]);
     expect(integrationsByStatus("roadmap").map((i) => i.id)).toEqual(["woocommerce", "magento"]);
   });
@@ -44,6 +47,15 @@ describe("landing integrations", () => {
       const key = integrationBodyKey(integration);
       expect(en.landing.integrationsPage, `en is missing ${key}`).toHaveProperty(key);
       expect(da.landing.integrationsPage, `da is missing ${key}`).toHaveProperty(key);
+    }
+  });
+
+  // Every category needs a label in both locales — the available cards render
+  // t(integration.category), so a missing key would surface as a raw slug.
+  it("has a category label in both locales for every integration", () => {
+    for (const category of new Set(INTEGRATIONS.map((i) => i.category))) {
+      expect(en.landing.integrationsPage, `en is missing ${category}`).toHaveProperty(category);
+      expect(da.landing.integrationsPage, `da is missing ${category}`).toHaveProperty(category);
     }
   });
 });
