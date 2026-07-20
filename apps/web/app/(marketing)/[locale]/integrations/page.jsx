@@ -4,6 +4,7 @@ import { integrationsByStatus, integrationBodyKey } from "@/lib/landing/integrat
 import MarketingShell from "@/components/landing/MarketingShell";
 import SectionHeading from "@/components/landing/SectionHeading";
 import Reveal from "@/components/landing/Reveal";
+import IntegrationLogo from "@/components/landing/IntegrationLogo";
 import { marketingMetadata } from "@/lib/landing/metadata";
 
 export function generateStaticParams() {
@@ -20,7 +21,7 @@ export async function generateMetadata({ params: { locale } }) {
   });
 }
 
-function IntegrationCard({ name, categoryLabel, body, comingSoon, comingSoonLabel }) {
+function IntegrationCard({ id, name, categoryLabel, body, comingSoon, comingSoonLabel }) {
   return (
     <div
       className={`group rounded-2xl border p-6 transition-all duration-300 ${
@@ -30,7 +31,10 @@ function IntegrationCard({ name, categoryLabel, body, comingSoon, comingSoonLabe
       }`}
     >
       <div className="flex items-center justify-between gap-3">
-        <span className="text-base font-bold tracking-tight text-zinc-900">{name}</span>
+        <div className={`flex min-w-0 items-center gap-3 ${comingSoon ? "opacity-70" : ""}`}>
+          <IntegrationLogo id={id} name={name} />
+          <span className="truncate text-base font-bold tracking-tight text-zinc-900">{name}</span>
+        </div>
         {comingSoon ? (
           <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-semibold text-zinc-500">
             {comingSoonLabel}
@@ -41,7 +45,7 @@ function IntegrationCard({ name, categoryLabel, body, comingSoon, comingSoonLabe
           </span>
         )}
       </div>
-      <p className="mt-2 text-sm leading-relaxed text-zinc-500">{body}</p>
+      <p className="mt-3 text-sm leading-relaxed text-zinc-500">{body}</p>
     </div>
   );
 }
@@ -67,6 +71,7 @@ export default async function IntegrationsPage({ params: { locale } }) {
               {available.map((integration) => (
                 <IntegrationCard
                   key={integration.id}
+                  id={integration.id}
                   name={integration.name}
                   categoryLabel={t(integration.category)}
                   body={t(integrationBodyKey(integration))}
@@ -84,6 +89,7 @@ export default async function IntegrationsPage({ params: { locale } }) {
                 {roadmap.map((integration) => (
                   <IntegrationCard
                     key={integration.id}
+                    id={integration.id}
                     name={integration.name}
                     body={t(integrationBodyKey(integration))}
                     comingSoon
