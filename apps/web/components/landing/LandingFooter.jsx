@@ -17,7 +17,7 @@ export default async function LandingFooter({ locale }) {
         <Link href={`/${locale}/privacy`} className="hover:text-zinc-300">{t("privacy")}</Link>
         <Link href={`/${locale}/terms`} className="hover:text-zinc-300">{t("terms")}</Link>
         <a href={`mailto:${t("contact")}`} className="hover:text-zinc-300">{t("contact")}</a>
-        <LocaleSwitcher locale={locale} />
+        <LocaleSwitcher locale={locale} tone="dark" />
       </div>
     </div>
   );
