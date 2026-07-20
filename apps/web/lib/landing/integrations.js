@@ -20,8 +20,6 @@ export const INTEGRATIONS = [
   { id: "webshipper", name: "Webshipper", category: "logistics", status: "available" },
   { id: "email", name: "Email", category: "email", status: "available" },
   { id: "zendesk", name: "Zendesk", category: "helpdesk", status: "available" },
-  { id: "freshdesk", name: "Freshdesk", category: "helpdesk", status: "available" },
-  { id: "gorgias", name: "Gorgias", category: "helpdesk", status: "available" },
   { id: "woocommerce", name: "WooCommerce", category: "ecommerce", status: "roadmap" },
   { id: "magento", name: "Magento", category: "ecommerce", status: "roadmap" },
 ];

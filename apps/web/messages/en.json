@@ -174,8 +174,6 @@
       "webshipperBody": "Connect your 3PL to keep fulfilment and shipping status in sync across your orders.",
       "emailBody": "Forward your support inbox to Sona — it works alongside your existing email, no new helpdesk to learn.",
       "zendeskBody": "Import your past tickets so Sona learns how your team already answers.",
-      "freshdeskBody": "Import your Freshdesk tickets so Sona learns how your team already replies.",
-      "gorgiasBody": "Import your Gorgias conversations so Sona matches your team's tone and answers.",
       "woocommerceBody": "Live order and customer data for WooCommerce stores.",
       "magentoBody": "Live order and customer data for Magento stores.",
       "requestTitle": "Don't see your platform?",

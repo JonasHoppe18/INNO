@@ -2,7 +2,6 @@ import Image from "next/image";
 import shopifyLogo from "../../../../assets/Shopify-Logo.png";
 import webshipperLogo from "../../../../assets/Webshipper_logo.png";
 import zendeskLogo from "../../../../assets/Zendesk_logo.webp";
-import gorgiasLogo from "../../../../assets/gorgias-removebg-preview.png";
 
 // Real brand assets we already ship in the product (same files the dashboard
 // connect cards use). Only the ones we actually have — no hand-drawn marks.
@@ -10,13 +9,11 @@ const LOGOS = {
   shopify: shopifyLogo,
   webshipper: webshipperLogo,
   zendesk: zendeskLogo,
-  gorgias: gorgiasLogo,
 };
 
 // Brand-tinted lettermark fallback for integrations we don't ship a logo asset
 // for yet. Approximate brand hues — deliberate placeholders, not the real mark.
 const FALLBACK = {
-  freshdesk: { initial: "F", className: "bg-emerald-500" },
   woocommerce: { initial: "W", className: "bg-[#7f54b3]" },
   magento: { initial: "M", className: "bg-[#f26322]" },
 };

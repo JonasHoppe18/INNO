@@ -174,8 +174,6 @@
       "webshipperBody": "Forbind dit 3PL, så fulfilment- og forsendelsesstatus holdes synkroniseret på tværs af dine ordrer.",
       "emailBody": "Videresend din support-indbakke til Sona — den arbejder oven på din nuværende email, ingen ny helpdesk at lære.",
       "zendeskBody": "Importér dine gamle tickets, så Sona lærer, hvordan dit team allerede svarer.",
-      "freshdeskBody": "Importér dine Freshdesk-tickets, så Sona lærer, hvordan dit team allerede svarer.",
-      "gorgiasBody": "Importér dine Gorgias-samtaler, så Sona rammer dit teams tone og svar.",
       "woocommerceBody": "Live ordre- og kundedata for WooCommerce-butikker.",
       "magentoBody": "Live ordre- og kundedata for Magento-butikker.",
       "requestTitle": "Kan du ikke se din platform?",

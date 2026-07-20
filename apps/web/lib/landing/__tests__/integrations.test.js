@@ -28,8 +28,6 @@ describe("landing integrations", () => {
       "webshipper",
       "email",
       "zendesk",
-      "freshdesk",
-      "gorgias",
     ]);
     expect(integrationsByStatus("roadmap").map((i) => i.id)).toEqual(["woocommerce", "magento"]);
   });
