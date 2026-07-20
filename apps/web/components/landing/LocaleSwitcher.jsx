@@ -57,10 +57,10 @@ export default function LocaleSwitcher({ locale, tone = "light", compactOnMobile
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={t("switchLanguage")}
-        className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors duration-200 ${
+        className={`flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium transition-colors duration-200 ${
           dark
-            ? "border-white/15 bg-white/5 text-zinc-300 hover:border-white/25 hover:text-white"
-            : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:text-zinc-900"
+            ? "text-zinc-400 hover:text-white"
+            : "text-zinc-600 hover:text-zinc-900"
         }`}
       >
         <span aria-hidden="true">{current.flag}</span>
