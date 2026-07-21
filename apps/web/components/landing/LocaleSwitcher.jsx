@@ -58,7 +58,7 @@ export default function LocaleSwitcher({ locale, tone = "light" }) {
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={t("switchLanguage")}
-        className={`flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium transition-colors duration-200 ${
+        className={`flex items-center gap-1 text-sm font-medium transition-colors duration-200 ${
           dark
             ? "text-zinc-400 hover:text-white"
             : "text-zinc-600 hover:text-zinc-900"
