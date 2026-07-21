@@ -1,0 +1,367 @@
+{
+  "landing": {
+    "nav": {
+      "product": "Produkt",
+      "pricing": "Priser",
+      "integrations": "Integrationer",
+      "security": "Sikkerhed",
+      "demo": "Demo",
+      "login": "Log ind",
+      "bookDemo": "Book en demo",
+      "switchLanguage": "Skift sprog",
+      "menu": "Menu",
+      "closeMenu": "Luk menu"
+    },
+    "hero": {
+      "badge": "AI-support til e-commerce",
+      "titleLine1": "Support der besvarer sig selv.",
+      "titleLine2": "Du beholder kontrollen.",
+      "subtitle": "Sona læser hver kundemail, slår ordren op i din butik og skriver det rigtige svar i din tone — klar til godkendelse med ét klik.",
+      "ctaDemo": "Book en demo",
+      "trust1": "Virker med enhver webshop",
+      "trust2": "Behold din nuværende indbakke",
+      "trust3": "Opsat på få minutter"
+    },
+    "problem": {
+      "kicker": "PROBLEMET",
+      "title": "De samme spørgsmål. Hver eneste dag.",
+      "card1Title": "“Hvor er min ordre?” — igen",
+      "card1Body": "Nogle få spørgsmål fylder det meste af indbakken, og hvert af dem betyder stadig at grave i butikken for at svare.",
+      "card2Title": "Kunderne venter for længe",
+      "card2Body": "Folk forventer svar på minutter. Manuelle opslag får dem til at vente i timer — og skrive igen imens.",
+      "card3Title": "Chatbots kan ikke rigtig hjælpe",
+      "card3Body": "Gammeldags bots svarer med skabelon-tekst. De kan ikke tjekke en ordre, lave en refusion eller rette en adresse.",
+      "card4Title": "Jeres bedste svar står ingen steder",
+      "card4Body": "Måden I håndterer hver sag på bor i hovedet på én person — så det kan ikke skalere, og det forsvinder ud ad døren med dem."
+    },
+    "how": {
+      "kicker": "SÅDAN VIRKER DET",
+      "title": "Kørende på tre trin",
+      "step1Title": "Forbind din butik",
+      "step1Body": "Tilslut din webshop og support-email. Ingen migrering — Sona arbejder oven på det, du allerede har.",
+      "step2Title": "Lær Sona din butik",
+      "step2Body": "Importér politikker, FAQ og gamle tickets. Sona lærer dine produkter, regler og tone.",
+      "step3Title": "Godkend, og automatisér så",
+      "step3Body": "Start med at godkende hvert udkast. Sæt ticket-typer på autopilot i takt med at tilliden vokser."
+    },
+    "dives": {
+      "aKicker": "VIDEN",
+      "aTitle": "Sona kender din butik",
+      "aBody": "Importér returpolitikker, fragtregler, FAQ og gamle tickets. Hvert svar er forankret i din butiks egen viden — og citerer kilden, det bygger på, så du kan verificere med ét blik.",
+      "aPoint1": "Svar citerer præcis den politik, de bygger på",
+      "aPoint2": "Importér fra Zendesk, dokumenter eller din hjemmeside",
+      "aPoint3": "Sona spørger i stedet for at gætte, når viden mangler",
+      "bKicker": "HANDLINGER",
+      "bTitle": "Fra svar til handling",
+      "bBody": "Refusioner, ombytninger, adresseændringer, annulleringer — Sona forbereder handlingen sammen med svaret og udfører den i din butik, i det øjeblik du godkender. Ikke lovet i teksten. Gjort.",
+      "bPoint1": "Refusioner og ombytninger udført i din butik",
+      "bPoint2": "Adresseændringer fanget før pakken afsendes",
+      "bPoint3": "Hver handling kræver din eksplicitte godkendelse"
+    },
+    "languages": {
+      "kicker": "ALLE SPROG",
+      "title": "Alle sprog, din stemme",
+      "body": "Dine kunder skriver på deres sprog. Sona svarer på det — samme tone, samme politikker, ingen oversættelses-omveje."
+    },
+    "control": {
+      "kicker": "DU HAR KONTROLLEN",
+      "title": "Du bestemmer, hvor meget Sona gør",
+      "subtitle": "Sæt det pr. ticket-type. Start med udkast, du godkender, og slå autopilot til kun der, hvor resultaterne siger, du er klar.",
+      "defaultLabel": "Standard",
+      "mode1Name": "Manuel",
+      "mode1Body": "Sona holder sig ude. Dit team skriver og sender svaret.",
+      "mode2Name": "Foreslå",
+      "mode2Body": "Sona skriver udkastet med live ordredata og citerede kilder. Du godkender, før noget sendes.",
+      "mode3Name": "Autopilot",
+      "mode3Body": "For ticket-typer, du stoler på, sender Sona svaret og udfører handlingen selv."
+    },
+    "pricing": {
+      "kicker": "PRISER",
+      "title": "Enkle priser der vokser med dig",
+      "subtitle": "Alle planer inkluderer alle features og ubegrænsede brugere. Ingen binding — måned til måned.",
+      "perMonth": "/md",
+      "ticketsLabel": "op til {count} tickets/md",
+      "mostPopular": "Mest populær",
+      "cta": "Book en demo",
+      "pilotNote": "Alle planer starter med en guidet pilot.",
+      "enterprise": "Mere end 5.000 tickets om måneden? Tal med os.",
+      "tierMini": "Mini",
+      "tierStarter": "Starter",
+      "tierGrowth": "Growth",
+      "tierScale": "Scale",
+      "feature1": "Ubegrænsede brugere",
+      "feature2": "Alle features inkluderet",
+      "feature3": "Ingen binding — opsig månedligt"
+    },
+    "faq": {
+      "title": "Spørgsmål, besvaret",
+      "q1": "Kan mine kunder se, at det er AI?",
+      "a1": "Svar sendes fra din egen support-adresse, i din tone, og du godkender dem, før de sendes. Om du oplyser AI-involvering, er dit valg — Sona virker begge veje.",
+      "q2": "Hvad sker der, når Sona ikke kender svaret?",
+      "a2": "Sona flager ticketen til dig i stedet for at gætte. Ubesvarede spørgsmål bliver forslag til din vidensbase, så dækningen vokser over tid.",
+      "q3": "Skal jeg skifte helpdesk?",
+      "a3": "Nej. Sona arbejder oven på din eksisterende support-email — du kan beholde dit nuværende setup og dine arbejdsgange.",
+      "q4": "Hvor lang tid tager opsætningen?",
+      "a4": "At forbinde butik og email tager minutter. At lære Sona dine politikker er et guidet trin — de fleste butikker ser deres første gode udkast samme dag.",
+      "q5": "Hvad med GDPR og mine kunders data?",
+      "a5": "Kundedata behandles kun for at besvare deres henvendelser, opbevares i EU og bruges aldrig til at træne modeller for andre virksomheder.",
+      "q6": "Hvad tæller som en ticket?",
+      "a6": "En kundesamtale, uanset hvor mange emails den tager. Automatiske notifikationer og spam tæller ikke."
+    },
+    "finalCta": {
+      "title": "Klar til at få support af bordet?",
+      "subtitle": "Book en 20-minutters demo — vi viser Sona besvare tickets som dine.",
+      "ctaDemo": "Book en demo"
+    },
+    "demo": {
+      "watchLink": "Se 2-minutters demoen",
+      "title": "Se Sona i aktion",
+      "subtitle": "En kort gennemgang: Sona læser en ticket, finder ordren i din butik og skriver svaret, du godkender — hele vejen.",
+      "placeholderTitle": "Demovideo på vej",
+      "placeholderBody": "Vi lægger sidste hånd på den. Book i mellemtiden en live-demo, så viser vi dig Sona på dine egne tickets.",
+      "bookCta": "Book en live-demo",
+      "tryInteractive": "Prøv den interaktive demo",
+      "back": "Tilbage til forsiden"
+    },
+    "footer": {
+      "privacy": "Privatliv",
+      "terms": "Vilkår",
+      "contact": "jonas@sona-ai.dk",
+      "security": "Sikkerhed",
+      "integrations": "Integrationer"
+    },
+    "trust": {
+      "pillar1Title": "Du vælger tilstanden",
+      "pillar2Title": "Hostet i EU",
+      "pillar3Title": "Onboardet af dem, der byggede det",
+      "securityLink": "Læs om sikkerhed & data"
+    },
+    "security": {
+      "title": "Sikkerhed & data",
+      "subtitle": "Sådan håndterer Sona dine kunders data — og hvorfor du beholder kontrollen.",
+      "p1Title": "Hostet i EU",
+      "p1Body": "Sonas app og database kører i EU (DigitalOcean og Supabase).",
+      "p2Title": "Bruges kun til at besvare tickets",
+      "p2Body": "En kundes data bruges til at skrive udkast til deres egne tickets — intet andet.",
+      "p3Title": "Bruges ikke til at træne AI-modeller",
+      "p3Body": "Svar skrives med OpenAIs API. Indhold sendt til API'et bruges ikke til at træne OpenAIs modeller.",
+      "p4Title": "Du beholder kontrollen",
+      "p4Body": "Intet når en kunde uden din godkendelse, indtil du slår autopilot til pr. ticket-type.",
+      "p5Title": "Afgrænsede integrationer",
+      "p5Body": "Sona forbinder til din butik og indbakke med den adgang, den skal bruge — og ikke mere.",
+      "subTitle": "Underdatabehandlere",
+      "subIntro": "De tjenester, der hjælper os med at drive Sona og behandle data på vores vegne.",
+      "roleHosting": "App-hosting",
+      "roleDatabase": "Database & backend",
+      "roleAi": "AI-udkast",
+      "roleEmail": "Indgående email",
+      "roleStore": "Butiksdata",
+      "roleAuth": "Team-login",
+      "aiNote": "For at skrive udkast sendes ticket-indhold til OpenAIs API (USA). OpenAI bruger ikke data sendt via deres API til at træne deres modeller.",
+      "note": "Vi arbejder hen imod formelle certificeringer. Har I specifikke compliance-krav? Tal med os.",
+      "cta": "Book en demo"
+    },
+    "integrationsPage": {
+      "title": "Integrationer",
+      "subtitle": "Sona arbejder oven på de værktøjer, du allerede bruger — ingen migrering nødvendig.",
+      "availableKicker": "Tilgængelige nu",
+      "roadmapKicker": "På vej",
+      "roadmapLabel": "Kommer snart",
+      "ecommerce": "E-commerce",
+      "email": "Email",
+      "helpdesk": "Helpdesk-import",
+      "logistics": "Logistik (3PL)",
+      "shopifyBody": "Læs live ordre-, fulfilment- og kundedata, og udfør handlinger som refusioner og adresseændringer.",
+      "webshipperBody": "Forbind dit 3PL, så fulfilment- og forsendelsesstatus holdes synkroniseret på tværs af dine ordrer.",
+      "emailBody": "Videresend din support-indbakke til Sona — den arbejder oven på din nuværende email, ingen ny helpdesk at lære.",
+      "zendeskBody": "Importér dine gamle tickets, så Sona lærer, hvordan dit team allerede svarer.",
+      "woocommerceBody": "Live ordre- og kundedata for WooCommerce-butikker.",
+      "magentoBody": "Live ordre- og kundedata for Magento-butikker.",
+      "requestTitle": "Kan du ikke se din platform?",
+      "requestBody": "Fortæl os hvad I kører på. Vi bygger de integrationer, vores kunder rent faktisk beder om — og dit svar rykker den op på listen.",
+      "requestCta": "Anmod om en integration",
+      "cta": "Book en demo"
+    },
+    "legal": {
+      "privacyTitle": "Privatlivspolitik",
+      "termsTitle": "Handelsbetingelser",
+      "updatedLabel": "Sidst opdateret",
+      "updatedDate": "20. juli 2026",
+      "contactPrompt": "Spørgsmål til denne side? Skriv til jonas@sona-ai.dk.",
+      "privacySections": [
+        {
+          "title": "Hvem vi er",
+          "paragraphs": [
+            "Sona AI (“Sona”, “vi”, “os”) leverer et AI-assisteret supportværktøj til webshops. Denne politik forklarer, hvilke data vi behandler, når du eller dine kunder bruger Sona, hvorfor vi behandler dem, og hvilke rettigheder du har."
+          ]
+        },
+        {
+          "title": "Hvilke data vi behandler",
+          "paragraphs": [
+            "For at kunne udkaste svar på dine supporttickets behandler Sona:"
+          ],
+          "items": [
+            "Supportbeskeder du videresender til Sona (afsender, emne, indhold, vedhæftninger)",
+            "Ordre-, betalings- og forsendelsesdata fra din tilknyttede butik (fx Shopify)",
+            "Dit teams kontodata — navn, email og login-aktivitet — via Clerk",
+            "Drafts, redigeringer og godkendelser dit team foretager, som bruges til at forbedre fremtidige svar"
+          ]
+        },
+        {
+          "title": "Hvorfor vi behandler dem",
+          "paragraphs": [
+            "Vi behandler dataene for at læse en ticket, slå den relevante ordre op og udkaste et svar forankret i din butiks data og politikker. En kundes data bruges udelukkende til at besvare den kundes egne tickets — aldrig til at besvare andres, og aldrig solgt eller delt med andre virksomheder, der bruger Sona."
+          ]
+        },
+        {
+          "title": "Hvor data behandles",
+          "paragraphs": [
+            "Sonas app og database kører i EU. Enkelte behandlingstrin bruger underleverandører uden for EU, under passende garantier (standardkontraktbestemmelser)."
+          ],
+          "items": [
+            "DigitalOcean (EU) — app-hosting",
+            "Supabase (EU) — database & backend",
+            "Postmark (EU) — indgående email",
+            "OpenAI (USA) — udkaster svar. Indhold sendt til OpenAIs API bruges ikke til at træne deres modeller.",
+            "Clerk (USA) — teamlogin og autentificering",
+            "Shopify — din egen butiks ordre- og kundedata, tilgået med de rettigheder du giver"
+          ]
+        },
+        {
+          "title": "Hvor længe vi opbevarer data",
+          "paragraphs": [
+            "Vi opbevarer ticket- og ordredata, så længe dit workspace er aktivt, så Sona kan referere til tidligere tickets og fortsat blive bedre. Lukker du din konto, sletter eller anonymiserer vi dine data inden for rimelig tid, medmindre vi er forpligtet til at opbevare dem længere ved lov."
+          ]
+        },
+        {
+          "title": "Dine rettigheder",
+          "paragraphs": [
+            "Er du i EU/EØS, har du ret til indsigt, berigtigelse, sletning, begrænsning af eller indsigelse mod behandlingen af dine persondata samt til dataportabilitet. Kontakt os på jonas@sona-ai.dk for at gøre brug af dine rettigheder."
+          ]
+        },
+        {
+          "title": "Sikkerhed",
+          "paragraphs": [
+            "Vi bruger kryptering i transit og i hvile, afgrænset adgangsstyring, og hvert workspace har sine egne isolerede data. Intet når frem til en kunde uden dit teams godkendelse, medmindre du eksplicit har slået autopilot til for den ticket-type."
+          ]
+        },
+        {
+          "title": "Ændringer til denne politik",
+          "paragraphs": [
+            "Vi opdaterer løbende denne politik, i takt med at Sona udvikler sig. Datoen nedenfor opdateres, når vi gør. Er en ændring væsentlig, giver vi aktive kunder direkte besked."
+          ]
+        }
+      ],
+      "termsSections": [
+        {
+          "title": "Accept af vilkårene",
+          "paragraphs": [
+            "Disse handelsbetingelser (“Vilkårene”) gælder for din brug af Sona AIs supportplatform (“Sona”, “Tjenesten”). Ved at oprette et workspace eller bruge Sona accepterer du Vilkårene på vegne af din virksomhed."
+          ]
+        },
+        {
+          "title": "Hvad Sona gør",
+          "paragraphs": [
+            "Sona læser indkommende supportmails, slår relevante data op i din tilknyttede butik og udkaster et svar. Som udgangspunkt gennemgår og godkender et medlem af dit team hvert svar, før det sendes. Du kan slå automatisk afsendelse (“autopilot”) til for specifikke ticket-typer, når I er trygge ved resultaterne."
+          ]
+        },
+        {
+          "title": "Under aktiv udvikling",
+          "paragraphs": [
+            "Sona er under aktiv udvikling. Funktioner, draft-kvalitet og tilgængelige integrationer kan ændre sig, i takt med at vi forbedrer produktet. Nye kunder starter typisk med en guidet pilot, før vi ruller bredere ud, så vi kan tilpasse Sona til jeres butik og politikker sammen."
+          ]
+        },
+        {
+          "title": "Din konto & dit ansvar",
+          "paragraphs": [
+            "Du er ansvarlig for rigtigheden af de oplysninger, politikker og butiksforbindelser, du giver Sona, og for at gennemgå drafts, før du godkender dem (medmindre autopilot er slået til). Du bekræfter, at du har ret til at dele dine kunders data med Sona med henblik på at besvare deres supporttickets, i overensstemmelse med dine egne privatlivsforpligtelser over for dem."
+          ]
+        },
+        {
+          "title": "Priser & betaling",
+          "paragraphs": [
+            "Betalte planer faktureres månedligt baseret på det ticket-volumen-niveau, du vælger, som beskrevet på vores prisside. Vi giver besked, før eventuelle prisændringer træder i kraft."
+          ]
+        },
+        {
+          "title": "Acceptabel brug",
+          "paragraphs": [
+            "Du accepterer ikke at bruge Sona til at behandle data, du ikke har ret til at dele, til at forsøge at forstyrre eller reverse-engineere Tjenesten, eller til noget ulovligt."
+          ]
+        },
+        {
+          "title": "Tredjepartstjenester",
+          "paragraphs": [
+            "Sona er afhængig af tredjepartsudbydere — herunder din e-handelsplatform, OpenAI samt vores hosting- og emailudbydere — for at fungere. Deres tilgængelighed og vilkår kan påvirke Sonas tjeneste; se vores side om sikkerhed & data for den fulde liste."
+          ]
+        },
+        {
+          "title": "Opsigelse",
+          "paragraphs": [
+            "Du kan lukke dit workspace når som helst. Vi kan suspendere eller opsige adgang, hvis disse Vilkår overtrædes, eller hvis loven kræver det. Ved opsigelse håndterer vi dine data som beskrevet i vores privatlivspolitik."
+          ]
+        },
+        {
+          "title": "Ansvarsfraskrivelse & ansvar",
+          "paragraphs": [
+            "Sona leveres “som den er”. Selvom Sona forankrer sine drafts i jeres reelle ordre- og politikdata, er I ansvarlige for at gennemgå dem, før de når en kunde (medmindre autopilot er slået til for den ticket-type). I det omfang loven tillader det, er vores ansvar for ethvert krav relateret til Tjenesten begrænset til de gebyrer, I har betalt os i de tre måneder forud for kravets opståen."
+          ]
+        },
+        {
+          "title": "Lovvalg",
+          "paragraphs": [
+            "Disse Vilkår er underlagt dansk ret. Tvister afgøres ved danske domstole."
+          ]
+        },
+        {
+          "title": "Ændringer til disse vilkår",
+          "paragraphs": [
+            "Vi kan opdatere disse Vilkår, i takt med at Sona udvikler sig. Datoen nedenfor opdateres, når vi gør, og vi giver aktive kunder besked om væsentlige ændringer."
+          ]
+        }
+      ]
+    },
+    "productPage": {
+      "badge": "Produkt-tur",
+      "title": "Hver ticket, løst fra start til slut",
+      "subtitle": "Følg én support-ticket hele vejen — fra den lander til handlingen der løser den — og se præcis hvordan Sona virker.",
+      "cta": "Book en demo",
+      "closingTitle": "Klar til at se det på jeres egne tickets?",
+      "closingSubtitle": "Book en 20-minutters demo — vi viser Sona besvare tickets som jeres.",
+      "closingKicker": "Book en demo",
+      "closingBullet1": "20-minutters gennemgang på tickets som jeres",
+      "closingBullet2": "Uden binding — starter med en guidet pilot",
+      "calendarFallback": "Book en demo"
+    },
+    "anatomy": {
+      "kicker": "SÅDAN BLIVER EN TICKET LØST",
+      "title": "Én ticket, fra start til slut",
+      "step1Title": "Ticketen lander",
+      "step1Body": "En kunde skriver til din support-adresse. Sona læser den og forstår, hvad de faktisk spørger om.",
+      "step2Title": "Sona tjekker din butik",
+      "step2Body": "Den slår ordre-, betalings- og leveringsstatus op live — og finder den politik, der gælder.",
+      "step3Title": "Den skriver et forankret svar",
+      "step3Body": "Sona skriver svaret i din tone og citerer de præcise ordredata og den politik, den brugte. Intet opdigtet.",
+      "step4Title": "Du godkender — handlingen udføres",
+      "step4Body": "Ét klik sender svaret og udfører refusionen i din butik. Indtil du slår autopilot til, ryger intet ud uden dig.",
+      "step5Title": "Hver rettelse gør den skarpere",
+      "step5Body": "Når du justerer et udkast, lærer Sona af det — så næste svar på et lignende spørgsmål bliver bedre."
+    },
+    "capabilities": {
+      "kicker": "HVAD SONA KAN",
+      "title": "Alt hvad Sona giver din indbakke",
+      "cap1Title": "Rigtige ordredata",
+      "cap1Body": "Tracking, levering, betalinger og refusioner — læst live fra din butik.",
+      "cap2Title": "Rigtige butiks-handlinger",
+      "cap2Body": "Refusioner, ombytninger, adresseændringer og annulleringer — udført, ikke bare lovet.",
+      "cap3Title": "Alle sprog",
+      "cap3Body": "Svar på kundens sprog, altid i din brand-tone.",
+      "cap4Title": "Forankret i dine politikker",
+      "cap4Body": "Hvert svar citerer den politik og kilde, det bygger på.",
+      "cap5Title": "Du beholder kontrollen",
+      "cap5Body": "Manuel, foreslå eller autopilot — sat pr. ticket-type, kan ændres når som helst.",
+      "cap6Title": "Bliver bedre hver uge",
+      "cap6Body": "Hver rettelse du laver, lærer Sona hvad et godt svar er."
+    }
+  }
+}

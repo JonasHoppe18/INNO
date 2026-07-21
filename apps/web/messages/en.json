@@ -1,0 +1,367 @@
+{
+  "landing": {
+    "nav": {
+      "product": "Product",
+      "pricing": "Pricing",
+      "integrations": "Integrations",
+      "security": "Security",
+      "demo": "Demo",
+      "login": "Log in",
+      "bookDemo": "Book a demo",
+      "switchLanguage": "Switch language",
+      "menu": "Menu",
+      "closeMenu": "Close menu"
+    },
+    "hero": {
+      "badge": "AI support for e-commerce",
+      "titleLine1": "Support that answers itself.",
+      "titleLine2": "You stay in control.",
+      "subtitle": "Sona reads every customer email, looks up the order in your store, and drafts the right reply in your brand voice — ready for one-click approval.",
+      "ctaDemo": "Book a demo",
+      "trust1": "Works with any webshop",
+      "trust2": "Keep your existing inbox",
+      "trust3": "Set up in minutes"
+    },
+    "problem": {
+      "kicker": "THE PROBLEM",
+      "title": "The same questions. Every single day.",
+      "card1Title": "“Where is my order?” — again",
+      "card1Body": "A handful of questions make up most of your inbox, and every one still means digging through your store to answer.",
+      "card2Title": "Customers wait too long",
+      "card2Body": "People expect an answer in minutes. Manual lookups make them wait hours — and email again while they wait.",
+      "card3Title": "Chatbots can't actually help",
+      "card3Body": "Old-school bots reply with canned text. They can't check an order, issue a refund, or fix an address.",
+      "card4Title": "Your best answers aren't written down",
+      "card4Body": "How you handle each case lives in one person's head — so it can't scale, and it walks out the door when they do."
+    },
+    "how": {
+      "kicker": "HOW IT WORKS",
+      "title": "Live in three steps",
+      "step1Title": "Connect your shop",
+      "step1Body": "Link your webshop and support email. No migration — Sona works alongside what you already have.",
+      "step2Title": "Teach Sona your shop",
+      "step2Body": "Import your policies, FAQ and past tickets. Sona learns your products, rules and tone of voice.",
+      "step3Title": "Approve, then automate",
+      "step3Body": "Start by approving every draft. Put ticket types on autopilot as trust grows."
+    },
+    "dives": {
+      "aKicker": "KNOWLEDGE",
+      "aTitle": "Sona knows your shop",
+      "aBody": "Import return policies, shipping rules, FAQs and past tickets. Every answer is grounded in your shop's own knowledge — and cites the source it's based on, so you can verify at a glance.",
+      "aPoint1": "Answers cite the exact policy they rely on",
+      "aPoint2": "Import from Zendesk, documents or your website",
+      "aPoint3": "Sona asks instead of guessing when knowledge is missing",
+      "bKicker": "ACTIONS",
+      "bTitle": "From answer to action",
+      "bBody": "Refunds, exchanges, address changes, cancellations — Sona prepares the action alongside the reply, and executes it in your store the moment you approve. Not promised in text. Done.",
+      "bPoint1": "Refunds and exchanges executed in your store",
+      "bPoint2": "Address changes caught before the parcel ships",
+      "bPoint3": "Every action requires your explicit approval"
+    },
+    "languages": {
+      "kicker": "EVERY LANGUAGE",
+      "title": "Every language, your voice",
+      "body": "Your customers write in their language. Sona replies in it — same tone, same policies, no translation round-trips."
+    },
+    "control": {
+      "kicker": "YOU'RE IN CONTROL",
+      "title": "You decide how much Sona does",
+      "subtitle": "Set it per ticket type. Start with drafts you approve, and switch on autopilot only where the results say you're ready.",
+      "defaultLabel": "Default",
+      "mode1Name": "Manual",
+      "mode1Body": "Sona stays out of it. Your team writes and sends the reply.",
+      "mode2Name": "Suggest",
+      "mode2Body": "Sona drafts the reply with live order data and cited sources. You approve before anything sends.",
+      "mode3Name": "Autopilot",
+      "mode3Body": "For ticket types you trust, Sona sends the reply and takes the action on its own."
+    },
+    "pricing": {
+      "kicker": "PRICING",
+      "title": "Simple pricing that grows with you",
+      "subtitle": "Every plan includes all features and unlimited users. No binding — month to month.",
+      "perMonth": "/month",
+      "ticketsLabel": "up to {count} tickets/month",
+      "mostPopular": "Most popular",
+      "cta": "Book a demo",
+      "pilotNote": "Every plan starts with a guided pilot.",
+      "enterprise": "More than 5,000 tickets a month? Talk to us.",
+      "tierMini": "Mini",
+      "tierStarter": "Starter",
+      "tierGrowth": "Growth",
+      "tierScale": "Scale",
+      "feature1": "Unlimited users",
+      "feature2": "All features included",
+      "feature3": "No binding — cancel monthly"
+    },
+    "faq": {
+      "title": "Questions, answered",
+      "q1": "Will my customers know it's AI?",
+      "a1": "Replies go out from your own support address, in your tone of voice, and you approve them before they're sent. Whether you disclose AI involvement is your choice — Sona works either way.",
+      "q2": "What happens when Sona doesn't know the answer?",
+      "a2": "Sona flags the ticket for you instead of guessing. Unanswered questions become suggestions for your knowledge base, so coverage grows over time.",
+      "q3": "Do I have to switch helpdesk?",
+      "a3": "No. Sona works on top of your existing support email — you can keep your current setup and workflows.",
+      "q4": "How long does setup take?",
+      "a4": "Connecting your store and email takes minutes. Teaching Sona your policies is a guided step — most shops see their first quality drafts the same day.",
+      "q5": "What about GDPR and my customers' data?",
+      "a5": "Customer data is processed only to answer their tickets, stored in the EU, and never used to train models for other companies.",
+      "q6": "What counts as a ticket?",
+      "a6": "A customer conversation, however many emails it takes. Automated notifications and spam don't count."
+    },
+    "finalCta": {
+      "title": "Ready to take support off your plate?",
+      "subtitle": "Book a 20-minute demo — we'll show Sona answering tickets like yours.",
+      "ctaDemo": "Book a demo"
+    },
+    "demo": {
+      "watchLink": "Watch the 2-minute demo",
+      "title": "See Sona in action",
+      "subtitle": "A short walkthrough: Sona reads a ticket, finds the order in your store, and drafts the reply you approve — end to end.",
+      "placeholderTitle": "Demo video coming soon",
+      "placeholderBody": "We're putting the finishing touches on it. In the meantime, book a live demo and we'll walk you through Sona on your own tickets.",
+      "bookCta": "Book a live demo",
+      "tryInteractive": "Try the interactive demo",
+      "back": "Back to home"
+    },
+    "footer": {
+      "privacy": "Privacy",
+      "terms": "Terms",
+      "contact": "jonas@sona-ai.dk",
+      "security": "Security",
+      "integrations": "Integrations"
+    },
+    "trust": {
+      "pillar1Title": "You choose the mode",
+      "pillar2Title": "Hosted in the EU",
+      "pillar3Title": "Onboarded by the makers",
+      "securityLink": "Read about security & data"
+    },
+    "security": {
+      "title": "Security & data",
+      "subtitle": "How Sona handles your customers' data — and why you stay in control of it.",
+      "p1Title": "Hosted in the EU",
+      "p1Body": "Sona's app and database run in the EU (DigitalOcean and Supabase).",
+      "p2Title": "Used only to answer tickets",
+      "p2Body": "A customer's data is used to draft replies to their own tickets — nothing else.",
+      "p3Title": "Not used to train AI models",
+      "p3Body": "Replies are drafted with OpenAI's API. Content sent to the API is not used to train OpenAI's models.",
+      "p4Title": "You stay in control",
+      "p4Body": "Nothing reaches a customer without your approval, until you turn on autopilot per ticket type.",
+      "p5Title": "Scoped integrations",
+      "p5Body": "Sona connects to your store and inbox with the access it needs to do the job, and no more.",
+      "subTitle": "Sub-processors",
+      "subIntro": "The services that help us run Sona and process data on our behalf.",
+      "roleHosting": "App hosting",
+      "roleDatabase": "Database & backend",
+      "roleAi": "AI drafting",
+      "roleEmail": "Inbound email",
+      "roleStore": "Store data",
+      "roleAuth": "Team login",
+      "aiNote": "To draft replies, ticket content is sent to OpenAI's API (United States). OpenAI does not use data submitted through its API to train its models.",
+      "note": "We're working toward formal certifications. Have specific compliance requirements? Talk to us.",
+      "cta": "Book a demo"
+    },
+    "integrationsPage": {
+      "title": "Integrations",
+      "subtitle": "Sona works on top of the tools you already use — no migration required.",
+      "availableKicker": "Available now",
+      "roadmapKicker": "On the roadmap",
+      "roadmapLabel": "Coming soon",
+      "ecommerce": "E-commerce",
+      "email": "Email",
+      "helpdesk": "Helpdesk import",
+      "logistics": "Logistics (3PL)",
+      "shopifyBody": "Read live order, fulfilment and customer data, and take actions like refunds and address changes.",
+      "webshipperBody": "Connect your 3PL to keep fulfilment and shipping status in sync across your orders.",
+      "emailBody": "Forward your support inbox to Sona — it works alongside your existing email, no new helpdesk to learn.",
+      "zendeskBody": "Import your past tickets so Sona learns how your team already answers.",
+      "woocommerceBody": "Live order and customer data for WooCommerce stores.",
+      "magentoBody": "Live order and customer data for Magento stores.",
+      "requestTitle": "Don't see your platform?",
+      "requestBody": "Tell us what you run on. We build the integrations our customers actually ask for — and your answer moves it up the list.",
+      "requestCta": "Request an integration",
+      "cta": "Book a demo"
+    },
+    "legal": {
+      "privacyTitle": "Privacy Policy",
+      "termsTitle": "Terms of Service",
+      "updatedLabel": "Last updated",
+      "updatedDate": "July 20, 2026",
+      "contactPrompt": "Questions about this page? Email jonas@sona-ai.dk.",
+      "privacySections": [
+        {
+          "title": "Who we are",
+          "paragraphs": [
+            "Sona AI (“Sona”, “we”, “us”) provides an AI-assisted customer support tool for e-commerce businesses. This policy explains what data we process when you or your customers use Sona, why we process it, and what rights you have."
+          ]
+        },
+        {
+          "title": "What data we process",
+          "paragraphs": [
+            "To draft replies to your support tickets, Sona processes:"
+          ],
+          "items": [
+            "Customer support messages you forward to Sona (sender, subject, body, attachments)",
+            "Order, payment and shipping data from your connected store (e.g. Shopify)",
+            "Your team's account data — name, email and login activity — via Clerk",
+            "Drafts, edits and approvals your team makes, used to improve future replies"
+          ]
+        },
+        {
+          "title": "Why we process it",
+          "paragraphs": [
+            "We process this data to read a ticket, look up the relevant order, and draft a reply grounded in your store data and policies. A customer's data is used only to answer that customer's own tickets — never to answer someone else's, and never sold or shared with other businesses using Sona."
+          ]
+        },
+        {
+          "title": "Where data is processed",
+          "paragraphs": [
+            "Sona's application and database run in the EU. Some processing steps use sub-processors outside the EU, under appropriate safeguards (standard contractual clauses)."
+          ],
+          "items": [
+            "DigitalOcean (EU) — application hosting",
+            "Supabase (EU) — database & backend",
+            "Postmark (EU) — inbound email delivery",
+            "OpenAI (US) — drafts replies. Content sent to OpenAI's API is not used to train its models.",
+            "Clerk (US) — team login and authentication",
+            "Shopify — your own store's order and customer data, accessed with the permissions you grant"
+          ]
+        },
+        {
+          "title": "How long we keep it",
+          "paragraphs": [
+            "We keep ticket and order data for as long as your workspace is active, so Sona can reference past tickets and keep improving its answers. If you close your account, we delete or anonymise your data within a reasonable period, except where we're required to keep it longer by law."
+          ]
+        },
+        {
+          "title": "Your rights",
+          "paragraphs": [
+            "If you're in the EU/EEA, you have the right to access, correct, delete, restrict or object to the processing of your personal data, and to data portability. To exercise any of these rights, contact us at jonas@sona-ai.dk."
+          ]
+        },
+        {
+          "title": "Security",
+          "paragraphs": [
+            "We use encryption in transit and at rest, scoped access controls, and give every workspace its own isolated data. Nothing reaches a customer without your team's approval, unless you've explicitly turned on autopilot for that ticket type."
+          ]
+        },
+        {
+          "title": "Changes to this policy",
+          "paragraphs": [
+            "We may update this policy as Sona evolves. We'll update the date below when we do. If a change is material, we'll let active customers know directly."
+          ]
+        }
+      ],
+      "termsSections": [
+        {
+          "title": "Agreement to these terms",
+          "paragraphs": [
+            "These Terms of Service (“Terms”) govern your use of Sona AI's support platform (“Sona”, “the Service”). By creating a workspace or using Sona, you agree to these Terms on behalf of your business."
+          ]
+        },
+        {
+          "title": "What Sona does",
+          "paragraphs": [
+            "Sona reads incoming customer support emails, looks up relevant data in your connected store, and drafts a reply. By default, a member of your team reviews and approves every reply before it's sent. You can enable automatic sending (“autopilot”) for specific ticket types once you're confident in the results."
+          ]
+        },
+        {
+          "title": "Active development",
+          "paragraphs": [
+            "Sona is under active development. Features, draft quality and available integrations may change as we improve the product. New customers typically start with a guided pilot before broader rollout, so we can tune Sona to their store and policies together."
+          ]
+        },
+        {
+          "title": "Your account & responsibilities",
+          "paragraphs": [
+            "You're responsible for the accuracy of the information, policies and store connections you give Sona, and for reviewing drafts before approving them (unless autopilot is enabled). You confirm you have the right to share your customers' data with Sona for the purpose of answering their support tickets, in line with your own privacy obligations to them."
+          ]
+        },
+        {
+          "title": "Fees & billing",
+          "paragraphs": [
+            "Paid plans are billed monthly based on the ticket volume tier you select, as described on our pricing page. We'll notify you before any pricing changes take effect."
+          ]
+        },
+        {
+          "title": "Acceptable use",
+          "paragraphs": [
+            "You agree not to use Sona to process data you don't have the right to share, to attempt to disrupt or reverse-engineer the Service, or to use it for anything unlawful."
+          ]
+        },
+        {
+          "title": "Third-party services",
+          "paragraphs": [
+            "Sona relies on third-party providers — including your e-commerce platform, OpenAI, and our hosting and email providers — to operate. Their availability and terms may affect Sona's service; see our Security & data page for the full list."
+          ]
+        },
+        {
+          "title": "Termination",
+          "paragraphs": [
+            "You can close your workspace at any time. We may suspend or terminate access if these Terms are breached, or if required by law. On termination, we handle your data as described in our Privacy Policy."
+          ]
+        },
+        {
+          "title": "Disclaimer & liability",
+          "paragraphs": [
+            "Sona is provided “as is”. While Sona grounds its drafts in your real order and policy data, you're responsible for reviewing them before they reach a customer (unless you've enabled autopilot for that ticket type). To the extent permitted by law, our liability for any claim relating to the Service is limited to the fees you paid us in the three months before the claim arose."
+          ]
+        },
+        {
+          "title": "Governing law",
+          "paragraphs": [
+            "These Terms are governed by Danish law. Disputes will be resolved in the courts of Denmark."
+          ]
+        },
+        {
+          "title": "Changes to these terms",
+          "paragraphs": [
+            "We may update these Terms as Sona evolves. We'll update the date below when we do, and let active customers know of material changes."
+          ]
+        }
+      ]
+    },
+    "productPage": {
+      "badge": "Product tour",
+      "title": "Every ticket, answered end to end",
+      "subtitle": "Follow one support ticket all the way through — from the moment it lands to the action that resolves it — and see exactly how Sona works.",
+      "cta": "Book a demo",
+      "closingTitle": "Ready to see it on your own tickets?",
+      "closingSubtitle": "Book a 20-minute demo — we'll walk through Sona answering tickets like yours.",
+      "closingKicker": "Book a demo",
+      "closingBullet1": "20-minute walkthrough on tickets like yours",
+      "closingBullet2": "No pressure — starts with a guided pilot",
+      "calendarFallback": "Book a demo"
+    },
+    "anatomy": {
+      "kicker": "ANATOMY OF AN ANSWER",
+      "title": "One ticket, start to finish",
+      "step1Title": "The ticket lands",
+      "step1Body": "A customer emails your support address. Sona reads it and understands what they're actually asking.",
+      "step2Title": "Sona checks your store",
+      "step2Body": "It looks up the order, payment and delivery status live — and finds the policy that applies.",
+      "step3Title": "It drafts a grounded reply",
+      "step3Body": "Sona writes the answer in your tone, citing the exact order data and policy it used. Nothing invented.",
+      "step4Title": "You approve — the action runs",
+      "step4Body": "One click sends the reply and executes the refund in your store. Until you switch on autopilot, nothing goes out without you.",
+      "step5Title": "Every edit makes it sharper",
+      "step5Body": "When you tweak a draft, Sona learns from it — so the next answer to a question like this is better."
+    },
+    "capabilities": {
+      "kicker": "CAPABILITIES",
+      "title": "Everything Sona brings to your inbox",
+      "cap1Title": "Real order data",
+      "cap1Body": "Tracking, delivery, payments and refunds, read live from your store.",
+      "cap2Title": "Real store actions",
+      "cap2Body": "Refunds, exchanges, address changes and cancellations — executed, not just promised.",
+      "cap3Title": "Every language",
+      "cap3Body": "Replies in the customer's language, always in your brand voice.",
+      "cap4Title": "Grounded in your policies",
+      "cap4Body": "Every answer cites the policy and source it's based on.",
+      "cap5Title": "You stay in control",
+      "cap5Body": "Manual, suggest or autopilot — set per ticket type, changeable any time.",
+      "cap6Title": "Improves every week",
+      "cap6Body": "Every edit you make teaches Sona what a great answer looks like."
+    }
+  }
+}

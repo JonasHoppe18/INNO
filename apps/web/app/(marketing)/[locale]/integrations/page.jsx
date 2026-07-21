@@ -1,0 +1,131 @@
+import { getTranslations, unstable_setRequestLocale } from "next-intl/server";
+import { routing } from "@/i18n/routing";
+import { integrationsByStatus, integrationBodyKey } from "@/lib/landing/integrations";
+import MarketingShell from "@/components/landing/MarketingShell";
+import SectionHeading from "@/components/landing/SectionHeading";
+import Reveal from "@/components/landing/Reveal";
+import IntegrationLogo from "@/components/landing/IntegrationLogo";
+import { marketingMetadata } from "@/lib/landing/metadata";
+import { CONTACT_EMAIL } from "@/lib/landing/contact";
+
+export function generateStaticParams() {
+  return routing.locales.map((locale) => ({ locale }));
+}
+
+export async function generateMetadata({ params: { locale } }) {
+  const t = await getTranslations({ locale, namespace: "landing.integrationsPage" });
+  return marketingMetadata({
+    locale,
+    path: "/integrations",
+    title: `Sona — ${t("title")}`,
+    description: t("subtitle"),
+  });
+}
+
+function IntegrationCard({ id, name, categoryLabel, body, comingSoon, comingSoonLabel }) {
+  return (
+    <div
+      className={`group rounded-2xl border p-6 transition-all duration-300 ${
+        comingSoon
+          ? "border-dashed border-zinc-200 bg-zinc-50/60"
+          : "border-zinc-200 bg-white hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-[0_16px_44px_-20px_rgba(79,70,229,0.35)]"
+      }`}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className={`flex min-w-0 items-center gap-3 ${comingSoon ? "opacity-70" : ""}`}>
+          <IntegrationLogo id={id} name={name} />
+          <span className="truncate text-base font-bold tracking-tight text-zinc-900">{name}</span>
+        </div>
+        {comingSoon ? (
+          <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-semibold text-zinc-500">
+            {comingSoonLabel}
+          </span>
+        ) : (
+          <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wider text-indigo-600">
+            {categoryLabel}
+          </span>
+        )}
+      </div>
+      <p className="mt-3 text-sm leading-relaxed text-zinc-500">{body}</p>
+    </div>
+  );
+}
+
+export default async function IntegrationsPage({ params: { locale } }) {
+  unstable_setRequestLocale(locale);
+  const t = await getTranslations("landing.integrationsPage");
+
+  const available = integrationsByStatus("available");
+  const roadmap = integrationsByStatus("roadmap");
+
+  return (
+    <MarketingShell locale={locale}>
+      <section className="px-5 pt-20 pb-24">
+        <div className="mx-auto max-w-4xl">
+          <SectionHeading title={t("title")} subtitle={t("subtitle")} />
+
+          <Reveal className="mt-12">
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-indigo-600">
+              {t("availableKicker")}
+            </p>
+            <div className="mt-4 grid gap-4 sm:grid-cols-3">
+              {available.map((integration) => (
+                <IntegrationCard
+                  key={integration.id}
+                  id={integration.id}
+                  name={integration.name}
+                  categoryLabel={t(integration.category)}
+                  body={t(integrationBodyKey(integration))}
+                />
+              ))}
+            </div>
+          </Reveal>
+
+          {roadmap.length ? (
+            <Reveal delay={80} className="mt-12">
+              <p className="text-xs font-bold uppercase tracking-[0.14em] text-zinc-400">
+                {t("roadmapKicker")}
+              </p>
+              <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                {roadmap.map((integration) => (
+                  <IntegrationCard
+                    key={integration.id}
+                    id={integration.id}
+                    name={integration.name}
+                    body={t(integrationBodyKey(integration))}
+                    comingSoon
+                    comingSoonLabel={t("roadmapLabel")}
+                  />
+                ))}
+              </div>
+            </Reveal>
+          ) : null}
+
+          {/* Demand capture: a mailto for now — swap for a form once there's an
+              endpoint that can store the requested platform. */}
+          <Reveal delay={80} className="mt-12 rounded-2xl border border-zinc-200 bg-zinc-50 p-8 text-center">
+            <h2 className="text-xl font-bold tracking-tight text-zinc-950">{t("requestTitle")}</h2>
+            <p className="mx-auto mt-2 max-w-lg text-sm leading-relaxed text-zinc-500">
+              {t("requestBody")}
+            </p>
+            <a
+              href={`mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(t("requestCta"))}`}
+              className="mt-5 inline-block rounded-lg border border-zinc-200 bg-white px-5 py-2.5 text-sm font-semibold text-zinc-900 transition-all duration-200 hover:bg-zinc-50 active:scale-[0.97]"
+            >
+              {t("requestCta")}
+            </a>
+          </Reveal>
+
+          <Reveal delay={80} className="mt-10 text-center">
+            <a
+              href={`/${locale}#book-demo`}
+              className="inline-block rounded-lg bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-600/25 transition-all duration-200 hover:bg-indigo-500 active:scale-[0.97]"
+            >
+              {t("cta")}
+            </a>
+          </Reveal>
+        </div>
+      </section>
+    </MarketingShell>
+  );
+}
