@@ -78,7 +78,7 @@
     "pricing": {
       "kicker": "PRICING",
       "title": "Simple pricing that grows with you",
-      "subtitle": "Every plan includes all features and unlimited users. No binding — month to month.",
+      "subtitle": "Every plan includes all features. No binding — month to month.",
       "perMonth": "/month",
       "ticketsLabel": "up to {count} tickets/month",
       "mostPopular": "Most popular",
@@ -90,6 +90,7 @@
       "tierGrowth": "Growth",
       "tierScale": "Scale",
       "feature1": "Unlimited users",
+      "maxUsersLabel": "Max {count} user",
       "feature2": "All features included",
       "feature3": "No binding — cancel monthly"
     },

@@ -78,7 +78,7 @@
     "pricing": {
       "kicker": "PRISER",
       "title": "Enkle priser der vokser med dig",
-      "subtitle": "Alle planer inkluderer alle features og ubegrænsede brugere. Ingen binding — måned til måned.",
+      "subtitle": "Alle planer inkluderer alle features. Ingen binding — måned til måned.",
       "perMonth": "/md",
       "ticketsLabel": "op til {count} tickets/md",
       "mostPopular": "Mest populær",
@@ -90,6 +90,7 @@
       "tierGrowth": "Growth",
       "tierScale": "Scale",
       "feature1": "Ubegrænsede brugere",
+      "maxUsersLabel": "Maks. {count} bruger",
       "feature2": "Alle features inkluderet",
       "feature3": "Ingen binding — opsig månedligt"
     },

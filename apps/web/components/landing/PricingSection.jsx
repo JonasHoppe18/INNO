@@ -47,7 +47,13 @@ export default async function PricingSection({ locale }) {
               </p>
               <p className="mt-1 text-xs text-zinc-500">{t("ticketsLabel", { count: countFmt.format(tier.tickets) })}</p>
               <ul className="mt-4 space-y-2">
-                {["feature1", "feature2", "feature3"].map((f) => (
+                <li className="flex items-center gap-2 text-xs text-zinc-600">
+                  <CheckIcon />{" "}
+                  {tier.maxUsers
+                    ? t("maxUsersLabel", { count: tier.maxUsers })
+                    : t("feature1")}
+                </li>
+                {["feature2", "feature3"].map((f) => (
                   <li key={f} className="flex items-center gap-2 text-xs text-zinc-600">
                     <CheckIcon /> {t(f)}
                   </li>
