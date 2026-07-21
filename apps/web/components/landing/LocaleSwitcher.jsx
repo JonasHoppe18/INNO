@@ -6,24 +6,25 @@ import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { routing } from "@/i18n/routing";
 
-// Metadata for the switcher UI (flag + display name) — only en/da for now.
-// Keyed by locale code so adding a new locale to routing.js without adding an
-// entry here still renders something sane (uppercase code, globe icon).
+// Metadata for the switcher UI (short code for the trigger, full name for the
+// dropdown list) — only en/da for now. Keyed by locale code so adding a new
+// locale to routing.js without adding an entry here still renders something
+// sane (uppercase code as both). No flags: emoji glyphs render in the OS's
+// emoji font, not Inter, so they never actually match the rest of the UI —
+// plain text does.
 const LOCALE_META = {
-  en: { label: "English", flag: "🇬🇧" },
-  da: { label: "Dansk", flag: "🇩🇰" },
+  en: { code: "EN", label: "English" },
+  da: { code: "DA", label: "Dansk" },
 };
 
 const LOCALE_PATTERN = new RegExp(`^/(${routing.locales.join("|")})`);
 
-// Dropdown language switcher: flag + current language on a pill trigger,
-// opens a listbox of the other locales. Swaps only the locale segment of the
-// current path, so switching keeps you on the same page. `tone="dark"` is for
-// placement on a dark background (the footer); default is the light header.
-// `compactOnMobile` hides the text label below `sm` (flag + chevron only) —
-// used in the header, where the trigger competes for space with the hamburger
-// and the primary CTA; the footer has room to spare and keeps the full label.
-export default function LocaleSwitcher({ locale, tone = "light", compactOnMobile = false }) {
+// Dropdown language switcher: a short code + chevron trigger (e.g. "EN"),
+// opens a listbox of the other locales by full name. Swaps only the locale
+// segment of the current path, so switching keeps you on the same page.
+// `tone="dark"` is for placement on a dark background (the footer); default
+// is the light header.
+export default function LocaleSwitcher({ locale, tone = "light" }) {
   const t = useTranslations("landing.nav");
   const pathname = usePathname() || "/";
   const [open, setOpen] = useState(false);
@@ -46,7 +47,7 @@ export default function LocaleSwitcher({ locale, tone = "light", compactOnMobile
     };
   }, [open]);
 
-  const current = LOCALE_META[locale] || { label: locale.toUpperCase(), flag: "🌐" };
+  const current = LOCALE_META[locale] || { code: locale.toUpperCase(), label: locale.toUpperCase() };
   const targetFor = (code) => pathname.replace(LOCALE_PATTERN, `/${code}`);
 
   return (
@@ -63,8 +64,7 @@ export default function LocaleSwitcher({ locale, tone = "light", compactOnMobile
             : "text-zinc-600 hover:text-zinc-900"
         }`}
       >
-        <span aria-hidden="true">{current.flag}</span>
-        <span className={compactOnMobile ? "hidden sm:inline" : undefined}>{current.label}</span>
+        <span>{current.code}</span>
         <svg
           width="10"
           height="10"
@@ -92,7 +92,7 @@ export default function LocaleSwitcher({ locale, tone = "light", compactOnMobile
           }`}
         >
           {routing.locales.map((code) => {
-            const meta = LOCALE_META[code] || { label: code.toUpperCase(), flag: "🌐" };
+            const meta = LOCALE_META[code] || { label: code.toUpperCase() };
             const selected = code === locale;
             return (
               <li key={code} role="option" aria-selected={selected}>
@@ -109,7 +109,6 @@ export default function LocaleSwitcher({ locale, tone = "light", compactOnMobile
                       : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900"
                   }`}
                 >
-                  <span aria-hidden="true">{meta.flag}</span>
                   <span className="flex-1">{meta.label}</span>
                   {selected ? (
                     <svg

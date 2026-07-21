@@ -39,7 +39,7 @@ export default async function LandingNav({ locale }) {
             menuLabel={t("menu")}
             closeMenuLabel={t("closeMenu")}
           />
-          <LocaleSwitcher locale={locale} compactOnMobile />
+          <LocaleSwitcher locale={locale} />
           <Link href="/sign-in" className="hidden text-sm text-zinc-600 hover:text-zinc-900 md:block">{t("login")}</Link>
           <BookDemoButton
             label={t("bookDemo")}
