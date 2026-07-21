@@ -21,7 +21,11 @@ import { KnowledgeDocsToolbar } from "./KnowledgeDocsToolbar";
 import { KnowledgeDocsCanvas } from "./KnowledgeDocsCanvas";
 
 const EDITOR_SCROLL_HEIGHT_CLASS = "max-h-[75vh] min-h-[420px]";
-const SECTION_SCROLL_SPY_OFFSET = 32;
+// Keep in sync with the H2 `scroll-mt-28` (112px) applied in KnowledgeDocsCanvas —
+// that value reserves room for the sticky header+toolbar stack so scrollIntoView
+// doesn't hide a heading behind it. The spy offset must agree so a section is
+// marked active at the same point scrollIntoView would land it.
+const SECTION_SCROLL_SPY_OFFSET = 112;
 const SECTION_HIGHLIGHT_CLASS = "animate-knowledge-doc-section-flash";
 const SECTION_HIGHLIGHT_DURATION_MS = 900;
 
@@ -132,7 +136,11 @@ export function KnowledgeDocumentEditorCard({
     handleScroll();
     container.addEventListener("scroll", handleScroll, { passive: true });
     return () => container.removeEventListener("scroll", handleScroll);
-  }, []);
+    // Re-run once `loading` flips to false: the scroll container (scrollRootRef)
+    // only exists in the non-loading JSX branch, so the mount-time run (while
+    // loading=true) always bails with container=null. Depending on `loading`
+    // ensures this effect re-attaches the listener once the real container mounts.
+  }, [loading]);
 
   const scrollToSection = useCallback((sectionId) => {
     const container = scrollRootRef.current;
