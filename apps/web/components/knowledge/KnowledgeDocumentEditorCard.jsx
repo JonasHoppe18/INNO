@@ -21,11 +21,6 @@ import { KnowledgeDocsToolbar } from "./KnowledgeDocsToolbar";
 import { KnowledgeDocsCanvas } from "./KnowledgeDocsCanvas";
 
 const EDITOR_SCROLL_HEIGHT_CLASS = "max-h-[75vh] min-h-[420px]";
-// Keep in sync with the H2 `scroll-mt-28` (112px) applied in KnowledgeDocsCanvas —
-// that value reserves room for the sticky header+toolbar stack so scrollIntoView
-// doesn't hide a heading behind it. The spy offset must agree so a section is
-// marked active at the same point scrollIntoView would land it.
-const SECTION_SCROLL_SPY_OFFSET = 112;
 const SECTION_HIGHLIGHT_CLASS = "animate-knowledge-doc-section-flash";
 const SECTION_HIGHLIGHT_DURATION_MS = 900;
 
@@ -60,6 +55,13 @@ export function KnowledgeDocumentEditorCard({
 
   const scrollRootRef = useRef(null);
   const sectionsRef = useRef([]);
+  const stickyHeaderRef = useRef(null);
+  // 112px is just a reasonable initial guess before the first ResizeObserver
+  // measurement lands — the real value is measured live below so the scroll-spy
+  // offset and the H2 scroll-margin (applied via the --knowledge-doc-header-height
+  // CSS var in KnowledgeDocsCanvas) can never desync from the actual rendered
+  // height of the sticky header+toolbar stack.
+  const [headerHeight, setHeaderHeight] = useState(112);
 
   const loadDocument = useCallback(async () => {
     setLoading(true);
@@ -105,6 +107,23 @@ export function KnowledgeDocumentEditorCard({
   }, [sections]);
 
   useEffect(() => {
+    const stickyHeader = stickyHeaderRef.current;
+    if (!stickyHeader) return undefined;
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      setHeaderHeight(entry.contentRect.height);
+    });
+    observer.observe(stickyHeader);
+    return () => observer.disconnect();
+    // Re-run once `loading` flips to false: stickyHeaderRef only exists in the
+    // non-loading JSX branch, so the mount-time run (while loading=true) always
+    // bails with stickyHeader=null. Depending on `loading` ensures this effect
+    // attaches the observer once the real element mounts.
+  }, [loading]);
+
+  useEffect(() => {
     const container = scrollRootRef.current;
     if (!container) return undefined;
 
@@ -128,7 +147,7 @@ export function KnowledgeDocumentEditorCard({
       const nextActive = getActiveSectionId({
         sectionTops,
         scrollTop: container.scrollTop,
-        offset: SECTION_SCROLL_SPY_OFFSET,
+        offset: headerHeight,
       });
       setActiveSectionId(nextActive);
     };
@@ -140,7 +159,10 @@ export function KnowledgeDocumentEditorCard({
     // only exists in the non-loading JSX branch, so the mount-time run (while
     // loading=true) always bails with container=null. Depending on `loading`
     // ensures this effect re-attaches the listener once the real container mounts.
-  }, [loading]);
+    // Also re-run when `headerHeight` changes so the spy offset used inside the
+    // (memoized) handleScroll closure never goes stale relative to the live
+    // measurement.
+  }, [loading, headerHeight]);
 
   const scrollToSection = useCallback((sectionId) => {
     const container = scrollRootRef.current;
@@ -278,8 +300,12 @@ export function KnowledgeDocumentEditorCard({
           />
         </div>
         <div className="min-w-0 flex-1 overflow-hidden rounded-xl border bg-card">
-          <div ref={scrollRootRef} className={cn("overflow-y-auto", EDITOR_SCROLL_HEIGHT_CLASS)}>
-            <div className="sticky top-0 z-20 bg-card">
+          <div
+            ref={scrollRootRef}
+            className={cn("overflow-y-auto", EDITOR_SCROLL_HEIGHT_CLASS)}
+            style={{ "--knowledge-doc-header-height": `${headerHeight}px` }}
+          >
+            <div ref={stickyHeaderRef} className="sticky top-0 z-20 bg-card">
               <div className="flex flex-col gap-4 border-b px-6 py-5 md:flex-row md:items-start md:justify-between">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
