@@ -61,7 +61,7 @@ function LearningPanel() {
       <div className="mt-3 flex items-center gap-2 text-[11px]">
         <span className="rounded-md bg-zinc-100 px-2 py-0.5 text-zinc-500 line-through">We have issued your refund.</span>
         <span className="text-zinc-400">→</span>
-        <span className="rounded-md bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700">I'm so sorry — refund's on the way.</span>
+        <span className="rounded-md bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700">I&apos;m so sorry — refund&apos;s on the way.</span>
       </div>
     </Surface>
   );
