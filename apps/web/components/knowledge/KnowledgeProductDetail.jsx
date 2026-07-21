@@ -51,27 +51,31 @@ export function KnowledgeProductDetail({ productId, productTitle }) {
 
   return (
     <div className="space-y-4">
-      <Button
-        asChild
-        variant="ghost"
-        size="sm"
-        className="-ml-3 h-8 px-3 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <Link href="/knowledge/product-questions">
-          <ArrowLeft className="h-4 w-4" />
-          Back to products
-        </Link>
-      </Button>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-lg font-semibold leading-tight">{productTitle || "Product"}</h1>
-          <p className="text-sm text-muted-foreground">
-            Maintain this product&apos;s support document. Legacy snippets remain available as reference.
-          </p>
-        </div>
-        <Button type="button" variant="outline" size="sm" onClick={() => setView("legacy")}>
-          View legacy snippets
+      <div className="flex items-center justify-between gap-3">
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="-ml-3 h-8 px-3 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <Link href="/knowledge/product-questions">
+            <ArrowLeft className="h-4 w-4" />
+            Back to products
+          </Link>
         </Button>
+        <button
+          type="button"
+          onClick={() => setView("legacy")}
+          className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+        >
+          View legacy snippets
+        </button>
+      </div>
+      <div className="min-w-0">
+        <h1 className="text-lg font-semibold leading-tight">{productTitle || "Product"}</h1>
+        <p className="text-sm text-muted-foreground">
+          Maintain this product&apos;s support document. Legacy snippets remain available as reference.
+        </p>
       </div>
       <KnowledgeDocumentEditorCard
         shopId={shopId}
