@@ -175,6 +175,26 @@
   }
 }
 
+/* Knowledge doc section jump — brief flash when navigating to a section via the outline. */
+@keyframes knowledge-doc-section-flash {
+  0% {
+    background-color: hsl(var(--primary) / 0.14);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.animate-knowledge-doc-section-flash {
+  animation: knowledge-doc-section-flash 900ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-knowledge-doc-section-flash {
+    animation: none;
+  }
+}
+
 @keyframes context-menu-enter {
   from {
     opacity: 0;
