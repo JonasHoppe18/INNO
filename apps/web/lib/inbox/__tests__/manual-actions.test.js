@@ -57,6 +57,24 @@ describe("buildManualActionInsert", () => {
     expect(result.ok).toBe(false);
   });
 
+  it("accepts an order whose id/adminId are numbers, as the real customer-lookup payload sends them", () => {
+    const numericOrder = { id: 1048, adminId: 17013859123549 };
+    const result = buildManualActionInsert({
+      actionType: "cancel_order",
+      order: numericOrder,
+      formPayload: {},
+    });
+    expect(result).toEqual({
+      ok: true,
+      insert: {
+        action_type: "cancel_order",
+        order_id: "17013859123549",
+        order_number: "1048",
+        payload: {},
+      },
+    });
+  });
+
   it("builds a cancel_order insert with an empty payload, mapping order fields correctly", () => {
     const result = buildManualActionInsert({ actionType: "cancel_order", order, formPayload: {} });
     expect(result).toEqual({
