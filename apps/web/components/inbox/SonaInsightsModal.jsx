@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import { useCustomerLookup } from "@/hooks/useCustomerLookup";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { badgeVariants } from "@/components/ui/badge";
@@ -13,17 +14,24 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { SonaActivityContent } from "@/components/inbox/SonaActivityContent";
 import { CustomerTab } from "@/components/inbox/CustomerTab";
-import { ChevronRight, ExternalLink, Truck, X } from "lucide-react";
+import { Ban, Banknote, ChevronRight, ExternalLink, MapPin, RotateCcw, Truck, X } from "lucide-react";
 import { TicketMetadataPanel } from "@/components/inbox/TicketMetadataPanel";
 import { TrackingCard } from "@/components/inbox/TrackingCard";
 import { SonaLogo } from "@/components/ui/SonaLogo";
 import { ManualActionDialog } from "@/components/inbox/ManualActionDialog";
 import { CORE_ACTIONS } from "@/lib/action-modes";
 import { MANUAL_ACTION_TYPES, resolveMatchedOrder } from "@/lib/inbox/manual-actions";
+import shopifyLogo from "../../../../assets/Shopify-Logo.png";
 
 const asString = (value) => (typeof value === "string" ? value.trim() : "");
 const DISPLAY_TIMEZONE = "Europe/Copenhagen";
 const MANUAL_CORE_ACTIONS = CORE_ACTIONS.filter((action) => MANUAL_ACTION_TYPES.includes(action.type));
+const MANUAL_ACTION_ICONS = {
+  update_shipping_address: MapPin,
+  cancel_order: Ban,
+  refund_order: Banknote,
+  initiate_return: RotateCcw,
+};
 
 const SONA_INTENT_LABELS = {
   tracking: "Tracking",
@@ -681,9 +689,10 @@ export function SonaInsightsModal({
               ) : (
                 <>
                   {matchedOrder ? (
-                    <div className="rounded-lg border border-border bg-card px-3 py-2 text-sm">
+                    <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm">
+                      <Image src={shopifyLogo} alt="Shopify" width={26} height={18} className="shrink-0" />
                       <span className="font-medium text-foreground">Order {matchedOrder.id}</span>
-                      <span className="ml-2 text-muted-foreground">{matchedOrder.status}</span>
+                      <span className="ml-1 text-muted-foreground">{matchedOrder.status}</span>
                     </div>
                   ) : (
                     <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
@@ -691,21 +700,27 @@ export function SonaInsightsModal({
                     </p>
                   )}
                   <div className="overflow-hidden rounded-xl border border-border bg-card">
-                    {MANUAL_CORE_ACTIONS.map((action) => (
-                      <button
-                        key={action.type}
-                        type="button"
-                        disabled={!matchedOrder}
-                        onClick={() => setActiveManualAction(action.type)}
-                        className="flex w-full items-center justify-between gap-3 border-b border-border px-4 py-4 text-left last:border-b-0 disabled:cursor-not-allowed disabled:opacity-50 hover:bg-muted/60"
-                      >
-                        <div className="grid gap-1">
-                          <p className="text-sm font-medium text-foreground">{action.label}</p>
-                          <p className="text-sm text-muted-foreground">{action.description}</p>
-                        </div>
-                        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      </button>
-                    ))}
+                    {MANUAL_CORE_ACTIONS.map((action) => {
+                      const ActionIcon = MANUAL_ACTION_ICONS[action.type];
+                      return (
+                        <button
+                          key={action.type}
+                          type="button"
+                          disabled={!matchedOrder}
+                          onClick={() => setActiveManualAction(action.type)}
+                          className="flex w-full items-center gap-3 border-b border-border px-4 py-4 text-left last:border-b-0 disabled:cursor-not-allowed disabled:opacity-50 hover:bg-muted/60"
+                        >
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                            {ActionIcon ? <ActionIcon className="h-4 w-4" /> : null}
+                          </div>
+                          <div className="grid flex-1 gap-1">
+                            <p className="text-sm font-medium text-foreground">{action.label}</p>
+                            <p className="text-sm text-muted-foreground">{action.description}</p>
+                          </div>
+                          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        </button>
+                      );
+                    })}
                   </div>
                 </>
               )}
