@@ -17,7 +17,6 @@ import {
   Pencil,
   Plus,
   RotateCcw,
-  Shield,
   Tag,
   Trash2,
   Truck,
@@ -1161,27 +1160,8 @@ export function KnowledgeCategoriesClient() {
               onClick={() => router.push(`/knowledge/${cat.slug}`)}
             />
           ))}
-          <Card
-            className="group cursor-pointer border-amber-200 bg-amber-50/30 transition-all duration-150 hover:border-amber-300 hover:shadow-sm active:scale-[0.98] dark:border-amber-900/50 dark:bg-amber-950/10 dark:hover:border-amber-800"
-            onClick={() => router.push("/knowledge/internal-rules")}
-          >
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-100 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400">
-                  <Shield className="h-4 w-4" />
-                </div>
-                <ChevronRight className="h-4 w-4 text-amber-300 transition-all duration-150 group-hover:translate-x-0.5 group-hover:text-amber-400" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <CardTitle className="text-[13px] font-semibold text-gray-900 dark:text-gray-100">
-                Internal rules
-              </CardTitle>
-              <CardDescription className="mt-1 text-[12px] line-clamp-2 leading-[1.5] dark:text-gray-400">
-                Instructions that govern how the AI handles a case — always followed, never quoted verbatim to the customer.
-              </CardDescription>
-            </CardContent>
-          </Card>
+          {/* Internal rules card temporarily hidden — not yet clear how merchants
+              should use it. Re-enable once the usage story is settled. */}
         </div>
       )}
 
