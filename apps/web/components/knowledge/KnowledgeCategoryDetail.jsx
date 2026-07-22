@@ -461,10 +461,9 @@ function PolicyEditor({ title, description, field, initialContent, shopId, synce
   const [saved, setSaved] = useState(() => decodeEntities(initialContent));
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  // Policy text from Shopify is usually long — collapse it by default so it
-  // doesn't dominate the page, and let the admin expand when they need to
-  // read or edit.
-  const [expanded, setExpanded] = useState(false);
+  // Start expanded so the policy is readable/editable immediately; the
+  // collapse toggle below still lets the admin tuck it away if they want to.
+  const [expanded, setExpanded] = useState(true);
 
   useEffect(() => {
     const decoded = decodeEntities(initialContent);
