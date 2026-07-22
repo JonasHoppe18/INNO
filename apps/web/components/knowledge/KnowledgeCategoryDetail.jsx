@@ -729,7 +729,7 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
             )}
           </div>
         </div>
-        {!isProductCategory && (
+        {!isProductCategory && !hasGeneralDocument && (
           <div className="ml-auto">
             <Button onClick={() => openEditor(null)}>
               <Plus className="h-4 w-4 mr-1.5" />
@@ -798,7 +798,7 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
       )}
 
       {/* Snippets */}
-      {!isProductCategory && (
+      {!isProductCategory && !hasGeneralDocument && (
         <>
           <div className="flex items-start justify-between gap-3">
             <div>
