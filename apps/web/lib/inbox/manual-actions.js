@@ -20,6 +20,15 @@ export const RETURN_REASONS = [
 
 const asString = (value) => (typeof value === "string" ? value.trim() : "");
 
+// Order ids from the customer-lookup payload can be numbers (Shopify's
+// order_number / numeric order id), not just strings — unlike form text
+// fields, which are always strings from the DOM.
+const asIdString = (value) => {
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return "";
+};
+
 const asPositiveNumber = (value) => {
   const num = typeof value === "number" ? value : Number(String(value ?? "").trim());
   return Number.isFinite(num) && num > 0 ? num : null;
@@ -36,8 +45,8 @@ export function buildManualActionInsert({ actionType, order, formPayload = {} })
     return { ok: false, error: `Unsupported manual action type: ${actionType}` };
   }
 
-  const orderAdminId = asString(order?.adminId);
-  const orderNumber = asString(order?.id);
+  const orderAdminId = asIdString(order?.adminId);
+  const orderNumber = asIdString(order?.id);
   if (!orderAdminId || !orderNumber) {
     return { ok: false, error: "No matched order to act on." };
   }
