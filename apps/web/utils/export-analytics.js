@@ -142,6 +142,27 @@ export async function exportAnalyticsToExcel(data, periodLabel) {
       "Median resolution time",
       formatDurationMinutes(kpis.medianResolutionMinutes),
     ],
+    [
+      "Resolution time data quality",
+      kpis.resolutionProxyCount
+        ? `${kpis.resolutionProxyCount} historical estimates included`
+        : "Measured lifecycle events",
+    ],
+    [],
+    ["SERVICE QUALITY"],
+    ["Metric", "Value", "Sample"],
+    [
+      "First contact resolution",
+      kpis.firstContactResolutionRate == null ? "Collecting data" : `${kpis.firstContactResolutionRate}%`,
+      kpis.firstContactResolutionEligibleTickets
+        ? `${kpis.firstContactResolutionTickets} of ${kpis.firstContactResolutionEligibleTickets} mature tickets`
+        : `Needs ${kpis.firstContactResolutionObservationDays || 7}-day lifecycle history`,
+    ],
+    [
+      "One-touch",
+      kpis.solvedTickets ? `${kpis.oneTouchRate}%` : "Collecting data",
+      `${kpis.oneTouchTickets || 0} tickets`,
+    ],
   ];
   XLSX.utils.book_append_sheet(
     wb,
@@ -149,7 +170,38 @@ export async function exportAnalyticsToExcel(data, periodLabel) {
     "Support KPIs",
   );
 
-  // Sheet 5: Ticket list
+  // Sheet 5: Commerce and customer outcomes
+  const commerce = data?.commerce ?? {};
+  const outcomes = data?.customerOutcomes ?? {};
+  const businessRows = [
+    ["COMMERCE"],
+    ["Metric", "Value"],
+    ["Orders", commerce.orderCount ?? 0],
+    ["Tickets linked to an order", commerce.linkedSupportTickets ?? 0],
+    ["Tickets per 100 orders", commerce.ticketsPer100Orders ?? "Collecting data"],
+    ["Return cases", commerce.returnCases ?? 0],
+    ["Return rate", commerce.returnRate == null ? "Collecting data" : `${commerce.returnRate}%`],
+    ["Refunded orders", commerce.refundedOrders ?? 0],
+    ["Refund rate", commerce.refundRate == null ? "Collecting data" : `${commerce.refundRate}%`],
+    [],
+    ["REFUND VALUE"],
+    ["Currency", "Amount"],
+    ...(commerce.refundTotals ?? []).map((row) => [row.currency, row.amount]),
+    [],
+    ["CUSTOMER OUTCOMES"],
+    ["Reopened tickets", outcomes.lifecycleTrackingAvailable ? outcomes.reopenedTickets : "Collecting data"],
+    ["Escalated tickets", outcomes.lifecycleTrackingAvailable ? outcomes.escalatedTickets : "Collecting data"],
+    ["CSAT average", outcomes.csatAvailable ? outcomes.csatAverage : "Collecting data"],
+    ["CSAT responses", outcomes.csatResponses ?? 0],
+    ["Positive CSAT", outcomes.csatPositiveRate == null ? "Collecting data" : `${outcomes.csatPositiveRate}%`],
+  ];
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.aoa_to_sheet(businessRows),
+    "Business outcomes",
+  );
+
+  // Sheet 6: Ticket list
   const tickets = data?.drilldowns?.defaultTickets ?? [];
   const ticketRows = [
     ["Note: Shows most recent tickets for the selected period. Filters applied in the UI are not reflected here."],

@@ -1,10 +1,25 @@
 // @ts-nocheck
 import { assertEquals } from "jsr:@std/assert@1";
-import { PRODUCT_WEBHOOK_TOPICS, ensureShopifyWebhooks } from "./shopify-webhooks.js";
+import {
+  ANALYTICS_WEBHOOK_TOPICS,
+  COMMERCE_WEBHOOK_TOPICS,
+  PRODUCT_WEBHOOK_TOPICS,
+  ensureShopifyWebhooks,
+} from "./shopify-webhooks.js";
 
 Deno.test("PRODUCT_WEBHOOK_TOPICS covers create/update/delete", () => {
   assertEquals(PRODUCT_WEBHOOK_TOPICS, [
     "products/create", "products/update", "products/delete",
+  ]);
+});
+
+Deno.test("commerce webhook topics include anonymous order and refund facts", () => {
+  assertEquals(ANALYTICS_WEBHOOK_TOPICS, [
+    "orders/create", "orders/updated", "refunds/create",
+  ]);
+  assertEquals(COMMERCE_WEBHOOK_TOPICS, [
+    ...PRODUCT_WEBHOOK_TOPICS,
+    ...ANALYTICS_WEBHOOK_TOPICS,
   ]);
 });
 

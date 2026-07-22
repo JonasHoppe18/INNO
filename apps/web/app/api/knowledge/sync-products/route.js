@@ -22,7 +22,7 @@ import {
   fetchPrimaryMarketCurrency,
   fetchShopCurrency,
 } from "@/lib/server/commerce/shopify-presentment";
-import { ensureShopifyWebhooks, PRODUCT_WEBHOOK_TOPICS } from "@/lib/server/commerce/shopify-webhooks";
+import { COMMERCE_WEBHOOK_TOPICS, ensureShopifyWebhooks } from "@/lib/server/commerce/shopify-webhooks";
 
 const SUPABASE_URL =
   (process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -237,7 +237,7 @@ async function syncShopify({ serviceClient, creds }) {
   // gracefully on any failure — never throws, never aborts the sync.
   await ensureShopifyWebhooks({
     domain, accessToken: creds.access_token, apiVersion: SHOPIFY_API_VERSION,
-    appUrl: (process.env.APP_URL || "").trim(), topics: PRODUCT_WEBHOOK_TOPICS,
+    appUrl: (process.env.APP_URL || "").trim(), topics: COMMERCE_WEBHOOK_TOPICS,
   });
 
   return {

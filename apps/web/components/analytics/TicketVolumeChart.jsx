@@ -16,7 +16,7 @@ import {
 const chartConfig = {
   count: {
     label: "Tickets",
-    color: "#6366f1",
+    color: "hsl(var(--primary))",
   },
 };
 
@@ -56,21 +56,21 @@ export function TicketVolumeChart({ data = [], periodDays = "30", compact = fals
   }
 
   return (
-    <ChartContainer config={chartConfig} className={`${compact ? "h-[48px]" : "h-[150px] lg:h-[180px]"} w-full`}>
+    <ChartContainer config={chartConfig} className={`${compact ? "h-[48px]" : "h-[190px] sm:h-[220px]"} w-full`}>
       <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -16, bottom: 0 }}>
         <defs>
           <linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#6366f1" stopOpacity={0.18} />
-            <stop offset="100%" stopColor="#6366f1" stopOpacity={0} />
+            <stop offset="0%" stopColor="var(--color-count)" stopOpacity={0.18} />
+            <stop offset="100%" stopColor="var(--color-count)" stopOpacity={0} />
           </linearGradient>
         </defs>
-        <CartesianGrid vertical={false} stroke="#ececf1" />
+        <CartesianGrid vertical={false} stroke="hsl(var(--border))" strokeOpacity={0.75} />
         <XAxis
           dataKey="date"
           tickLine={false}
           axisLine={false}
           tickMargin={10}
-          tick={{ fontSize: 11, fill: "#b4b4c0" }}
+          tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
           tickFormatter={(v) => formatXLabel(v, periodDays)}
           interval="preserveStartEnd"
         />
@@ -78,12 +78,12 @@ export function TicketVolumeChart({ data = [], periodDays = "30", compact = fals
           tickLine={false}
           axisLine={false}
           tickMargin={8}
-          tick={{ fontSize: 11, fill: "#b4b4c0" }}
+          tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
           allowDecimals={false}
           width={24}
         />
         <ChartTooltip
-          cursor={{ stroke: "#6366f1", strokeWidth: 1, strokeDasharray: "4 4" }}
+          cursor={{ stroke: "var(--color-count)", strokeWidth: 1, strokeDasharray: "4 4" }}
           content={
             <ChartTooltipContent
               hideLabel={false}
@@ -96,13 +96,13 @@ export function TicketVolumeChart({ data = [], periodDays = "30", compact = fals
         <Area
           dataKey="count"
           type="monotone"
-          stroke="#6366f1"
+          stroke="var(--color-count)"
           strokeWidth={2}
           fill="url(#areaGradient)"
           dot={false}
-          activeDot={{ r: 4, fill: "#6366f1", strokeWidth: 0 }}
+          activeDot={{ r: 4, fill: "var(--color-count)", strokeWidth: 0 }}
           isAnimationActive
-          animationDuration={380}
+          animationDuration={240}
           animationEasing="ease-out"
         />
       </AreaChart>

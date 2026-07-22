@@ -8,6 +8,15 @@ export const PRODUCT_WEBHOOK_TOPICS = [
   "products/create", "products/update", "products/delete",
 ];
 
+export const ANALYTICS_WEBHOOK_TOPICS = [
+  "orders/create", "orders/updated", "refunds/create",
+];
+
+export const COMMERCE_WEBHOOK_TOPICS = [
+  ...PRODUCT_WEBHOOK_TOPICS,
+  ...ANALYTICS_WEBHOOK_TOPICS,
+];
+
 async function ensureOneWebhook({ apiBase, headers, topic, address }) {
   const createRes = await fetch(`${apiBase}/webhooks.json`, {
     method: "POST", headers,

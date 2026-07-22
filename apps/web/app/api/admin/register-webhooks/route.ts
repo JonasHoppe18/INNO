@@ -12,6 +12,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { decryptString } from "@/lib/server/shopify-oauth";
 import { registerShopUpdateWebhook } from "@/lib/server/shopify-policy-sync";
+import { COMMERCE_WEBHOOK_TOPICS, ensureShopifyWebhooks } from "@/lib/server/commerce/shopify-webhooks";
 
 const ADMIN_SECRET = process.env.ADMIN_SECRET || "";
 const SUPABASE_URL = (
@@ -65,6 +66,13 @@ export async function POST(req: NextRequest) {
     try {
       const accessToken = decryptString(shop.access_token_encrypted);
       await registerShopUpdateWebhook(shop.shop_domain, accessToken);
+      await ensureShopifyWebhooks({
+        domain: shop.shop_domain,
+        accessToken,
+        apiVersion: process.env.SHOPIFY_API_VERSION || "2024-07",
+        appUrl: process.env.APP_URL || "",
+        topics: COMMERCE_WEBHOOK_TOPICS,
+      });
       results.push({ shop_domain: shop.shop_domain, status: "ok" });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

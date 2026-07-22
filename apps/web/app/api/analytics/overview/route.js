@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
 import { applyScope, resolveAuthScope } from "@/lib/server/workspace-auth";
+import { buildAnalyticsTrendSeries, buildPrioritySignals, calculateFirstContactResolution } from "@/lib/server/analytics-series";
 
 const SUPABASE_URL = (
   process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -347,6 +348,39 @@ async function fetchTagRows(serviceClient, threadIds) {
   return data ?? [];
 }
 
+async function fetchWorkspacePeriodFacts(
+  serviceClient,
+  scope,
+  { table, fields, dateColumn, since, until },
+) {
+  if (!scope?.workspaceId) return [];
+  let query = serviceClient
+    .from(table)
+    .select(fields)
+    .eq("workspace_id", scope.workspaceId)
+    .lt(dateColumn, until);
+  if (since) query = query.gte(dateColumn, since);
+  const { data, error } = await query;
+  // Let the UI ship safely before the additive analytics migration. Missing
+  // fact tables mean "not collecting yet", not a broken analytics page.
+  if (error && ["42P01", "PGRST205"].includes(error.code)) return [];
+  if (error) throw new Error(error.message);
+  return Array.isArray(data) ? data : [];
+}
+
+function moneyByCurrency(rows) {
+  const totals = {};
+  for (const row of rows) {
+    const currency = String(row.currency || "").toUpperCase();
+    const amount = Number(row.amount);
+    if (!currency || !Number.isFinite(amount)) continue;
+    totals[currency] = (totals[currency] || 0) + amount;
+  }
+  return Object.entries(totals)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([currency, amount]) => ({ currency, amount: Number(amount.toFixed(2)) }));
+}
+
 function buildTicketRow(thread, context) {
   const tags = context.tagsByThreadId[thread.id] ?? [];
   const drafts = context.draftsByThreadId[thread.id] ?? [];
@@ -374,7 +408,7 @@ function buildTicketRow(thread, context) {
     updatedAt: thread.updated_at,
     firstReplyMinutes: context.firstReplyByThreadId[thread.id] ?? null,
     resolutionMinutes: context.resolutionByThreadId[thread.id] ?? null,
-    resolutionIsProxy: context.resolutionByThreadId[thread.id] != null,
+    resolutionIsProxy: context.resolutionProxyThreadIds?.has(thread.id) || false,
     sonaUsage: anyAppliedAction
       ? "Action approved"
       : qualityLabel(latestQualityDraft?.edit_classification, drafts.length > 0),
@@ -406,15 +440,59 @@ async function fetchPeriodMetrics(serviceClient, scope, since, until) {
 
   let actionsQ = serviceClient
     .from("thread_actions")
-    .select("thread_id, action_type, status, created_at, decided_at, applied_at, declined_at")
+    .select("thread_id, action_type, status, order_id, created_at, decided_at, applied_at, declined_at")
     .lt("created_at", until);
   if (since) actionsQ = actionsQ.gte("created_at", since);
   actionsQ = applyScope(actionsQ, scope);
 
-  const [threadsResult, draftsResult, actionsResult] = await Promise.all([
+  const [
+    threadsResult,
+    draftsResult,
+    actionsResult,
+    orders,
+    refunds,
+    returnCases,
+    feedbackRows,
+    lifecycleEvents,
+  ] = await Promise.all([
     threadsQ,
     draftsQ,
     actionsQ,
+    fetchWorkspacePeriodFacts(serviceClient, scope, {
+      table: "commerce_orders",
+      fields: "external_order_id, order_created_at, total_amount, currency, financial_status, cancelled_at",
+      dateColumn: "order_created_at",
+      since,
+      until,
+    }),
+    fetchWorkspacePeriodFacts(serviceClient, scope, {
+      table: "commerce_refunds",
+      fields: "id, external_refund_id, external_order_id, refunded_at, amount, currency",
+      dateColumn: "refunded_at",
+      since,
+      until,
+    }),
+    fetchWorkspacePeriodFacts(serviceClient, scope, {
+      table: "return_cases",
+      fields: "id, thread_id, shopify_order_id, reason, status, created_at",
+      dateColumn: "created_at",
+      since,
+      until,
+    }),
+    fetchWorkspacePeriodFacts(serviceClient, scope, {
+      table: "support_feedback",
+      fields: "thread_id, score, reason_category, submitted_at",
+      dateColumn: "submitted_at",
+      since,
+      until,
+    }),
+    fetchWorkspacePeriodFacts(serviceClient, scope, {
+      table: "ticket_lifecycle_events",
+      fields: "thread_id, event_type, from_status, to_status, occurred_at",
+      dateColumn: "occurred_at",
+      since,
+      until,
+    }),
   ]);
 
   if (threadsResult.error) throw new Error(threadsResult.error.message);
@@ -489,10 +567,30 @@ async function fetchPeriodMetrics(serviceClient, scope, since, until) {
     actionsByThreadId[action.thread_id].push(action);
   }
 
+  let refundItems = [];
+  const refundIds = refunds.map((row) => row.id).filter(Boolean);
+  if (refundIds.length) {
+    const { data, error } = await serviceClient
+      .from("commerce_refund_items")
+      .select("refund_id, external_product_id, quantity, amount")
+      .in("refund_id", refundIds);
+    if (error) throw new Error(error.message);
+    refundItems = data ?? [];
+  }
+
   const grouping = groupKeyForRange(since, until);
   const volumeMap = {};
+  const resolvedAtByThreadId = {};
+  for (const event of lifecycleEvents) {
+    if (event.event_type !== "resolved" || !event.thread_id || !event.occurred_at) continue;
+    const existing = resolvedAtByThreadId[event.thread_id];
+    if (!existing || new Date(event.occurred_at).getTime() < new Date(existing).getTime()) {
+      resolvedAtByThreadId[event.thread_id] = event.occurred_at;
+    }
+  }
   const firstReplyByThreadId = {};
   const resolutionByThreadId = {};
+  const resolutionProxyThreadIds = new Set();
   const topicReplyMinutes = {};
   const firstReplyMinutes = [];
   const resolutionMinutes = [];
@@ -500,6 +598,7 @@ async function fetchPeriodMetrics(serviceClient, scope, since, until) {
   let totalAgentReplies = 0;
   let solvedTickets = 0;
   let oneTouchTickets = 0;
+  const agentReplyCountsByThreadId = {};
 
   for (const thread of threadRows) {
     const key = grouping === "month" ? monthKey(thread.created_at) : grouping === "week" ? weekKey(thread.created_at) : dateKey(thread.created_at);
@@ -514,6 +613,7 @@ async function fetchPeriodMetrics(serviceClient, scope, since, until) {
     const outboundMessages = threadMessages
       .filter((row) => row.from_me === true)
       .sort((a, b) => new Date(asTimestamp(a)).getTime() - new Date(asTimestamp(b)).getTime());
+    agentReplyCountsByThreadId[thread.id] = outboundMessages.length;
     totalAgentReplies += outboundMessages.length;
 
     const firstInboundAt = asTimestamp(inboundMessages[0]) || thread.created_at;
@@ -536,14 +636,106 @@ async function fetchPeriodMetrics(serviceClient, scope, since, until) {
     }
 
     if (isSolvedThread(thread)) {
-      const proxyResolution = minutesBetween(thread.created_at, thread.updated_at);
-      if (proxyResolution != null) {
-        resolutionByThreadId[thread.id] = proxyResolution;
-        resolutionMinutes.push(proxyResolution);
+      const resolvedAt = resolvedAtByThreadId[thread.id] || thread.updated_at;
+      const measuredResolution = minutesBetween(thread.created_at, resolvedAt);
+      if (measuredResolution != null) {
+        resolutionByThreadId[thread.id] = measuredResolution;
+        resolutionMinutes.push(measuredResolution);
+        if (!resolvedAtByThreadId[thread.id]) resolutionProxyThreadIds.add(thread.id);
       }
       if (outboundMessages.length === 1) oneTouchTickets++;
     }
   }
+
+  const observationEnd = new Date(
+    Math.min(Date.now(), new Date(until).getTime()),
+  ).toISOString();
+  const firstContactResolution = calculateFirstContactResolution({
+    threads: threadRows,
+    lifecycleEvents,
+    agentReplyCountsByThreadId,
+    observationEnd,
+    observationDays: 7,
+  });
+
+  const linkedTicketIds = new Set();
+  for (const action of actions) {
+    if (action.thread_id && action.order_id && threadIds.includes(action.thread_id)) {
+      linkedTicketIds.add(action.thread_id);
+    }
+  }
+  for (const returnCase of returnCases) {
+    if (returnCase.thread_id && returnCase.shopify_order_id && threadIds.includes(returnCase.thread_id)) {
+      linkedTicketIds.add(returnCase.thread_id);
+    }
+  }
+
+  const returnReasonCounts = {};
+  for (const returnCase of returnCases) {
+    inc(returnReasonCounts, String(returnCase.reason || "Unspecified").trim() || "Unspecified");
+  }
+  const returnReasons = listFromCountMap(returnReasonCounts, returnCases.length, {
+    keyPrefix: "return-reason",
+  }).slice(0, 8);
+
+  const refundProductStats = {};
+  const refundCurrencyById = Object.fromEntries(
+    refunds.map((row) => [String(row.id), String(row.currency || "").toUpperCase() || null]),
+  );
+  for (const item of refundItems) {
+    const productId = String(item.external_product_id || "").trim();
+    if (!productId) continue;
+    const currency = refundCurrencyById[String(item.refund_id)] || null;
+    const key = `${productId}:${currency || "unknown"}`;
+    if (!refundProductStats[key]) {
+      refundProductStats[key] = { productId, currency, quantity: 0, amount: 0 };
+    }
+    refundProductStats[key].quantity += Number(item.quantity) || 0;
+    refundProductStats[key].amount += Number(item.amount) || 0;
+  }
+  const refundProducts = Object.values(refundProductStats)
+    .sort((a, b) => b.amount - a.amount || b.quantity - a.quantity)
+    .slice(0, 8)
+    .map((row) => ({ ...row, amount: Number(row.amount.toFixed(2)) }));
+
+  const feedbackScores = feedbackRows
+    .map((row) => Number(row.score))
+    .filter((score) => Number.isFinite(score));
+  const csatAverage = feedbackScores.length
+    ? Number((feedbackScores.reduce((sum, score) => sum + score, 0) / feedbackScores.length).toFixed(1))
+    : null;
+  const positiveFeedback = feedbackScores.filter((score) => score >= 4).length;
+  const reopenedTickets = lifecycleEvents.filter((row) => row.event_type === "reopened").length;
+  const escalatedTickets = lifecycleEvents.filter((row) => row.event_type === "escalated").length;
+
+  const orderCount = orders.length;
+  const refundedOrderCount = new Set(refunds.map((row) => row.external_order_id).filter(Boolean)).size;
+  const commerce = {
+    orderCount,
+    linkedSupportTickets: linkedTicketIds.size,
+    ticketsPer100Orders: orderCount > 0 ? Number(((linkedTicketIds.size / orderCount) * 100).toFixed(1)) : null,
+    returnCases: returnCases.length,
+    returnRate: orderCount > 0 ? Number(((returnCases.length / orderCount) * 100).toFixed(1)) : null,
+    refundedOrders: refundedOrderCount,
+    refundRate: orderCount > 0 ? Number(((refundedOrderCount / orderCount) * 100).toFixed(1)) : null,
+    refundTotals: moneyByCurrency(refunds),
+    returnReasons,
+    refundProducts,
+    orderDataAvailable: orderCount > 0,
+    refundDataAvailable: refunds.length > 0,
+  };
+
+  const customerOutcomes = {
+    reopenedTickets,
+    reopenedRate: threadRows.length > 0 ? Number(((reopenedTickets / threadRows.length) * 100).toFixed(1)) : null,
+    escalatedTickets,
+    escalationRate: threadRows.length > 0 ? Number(((escalatedTickets / threadRows.length) * 100).toFixed(1)) : null,
+    csatAverage,
+    csatResponses: feedbackScores.length,
+    csatPositiveRate: feedbackScores.length > 0 ? pct(positiveFeedback, feedbackScores.length) : null,
+    lifecycleTrackingAvailable: lifecycleEvents.length > 0,
+    csatAvailable: feedbackScores.length > 0,
+  };
 
   const volumeSeries = Object.entries(volumeMap)
     .sort(([a], [b]) => a.localeCompare(b))
@@ -697,6 +889,7 @@ async function fetchPeriodMetrics(serviceClient, scope, since, until) {
     productMap,
     firstReplyByThreadId,
     resolutionByThreadId,
+    resolutionProxyThreadIds,
   };
   const ticketRows = threadRows.map((thread) => buildTicketRow(thread, context));
   const threadById = Object.fromEntries(threadRows.map((thread) => [thread.id, thread]));
@@ -800,7 +993,15 @@ async function fetchPeriodMetrics(serviceClient, scope, since, until) {
   const byKey = {
     all: newestTickets,
     support_tickets: newestTickets,
+    unsolved_tickets: ticketRows.filter((row) => !SOLVED_STATUSES.has(normalizeStatus(row.status))).slice(0, 25),
+    solved_tickets: ticketRows.filter((row) => SOLVED_STATUSES.has(normalizeStatus(row.status))).slice(0, 25),
+    first_contact_resolution: ticketRows.filter((row) => firstContactResolution.firstContactResolvedThreadIds.has(row.id)).slice(0, 25),
+    slow_resolutions: [...ticketRows]
+      .filter((row) => row.resolutionMinutes != null)
+      .sort((a, b) => b.resolutionMinutes - a.resolutionMinutes)
+      .slice(0, 25),
     sona_assisted: ticketRows.filter((row) => row.hasDraft).slice(0, 25),
+    refund_requests: ticketRows.filter((row) => /refund|money back|chargeback/i.test(`${row.requestType || ""} ${row.issueSummary || ""}`)).slice(0, 25),
     "action:all": ticketRows.filter((row) => row.hasAction).slice(0, 25),
     sent_as_is: ticketRows.filter((row) => row.draftQuality === "no_edit").slice(0, 25),
     minor_edits: ticketRows.filter((row) => row.draftQuality === "minor_edit").slice(0, 25),
@@ -841,15 +1042,28 @@ async function fetchPeriodMetrics(serviceClient, scope, since, until) {
 
   const noMinorEditCount = qualityCounts.no_edit + qualityCounts.minor_edit;
   const actionHandled = actionsApproved + actionsApplied;
+  const trendSeries = buildAnalyticsTrendSeries({
+    grouping,
+    threads: threadRows,
+    lifecycleEvents,
+    orders,
+    refunds,
+    returnCases,
+    linkedThreadIds: linkedTicketIds,
+    assistedThreadIds: draftedThreadIds,
+    isSolvedThread,
+  });
 
   return {
     supportTickets: threadRows.length,
     solvedTickets,
     oneTouchTickets,
+    firstContactResolution,
     firstReplyMinutes,
     resolutionMinutes,
     medianFirstReplyMinutes: median(firstReplyMinutes),
     medianResolutionMinutes: median(resolutionMinutes),
+    resolutionProxyCount: resolutionProxyThreadIds.size,
     responseTimeTrackedTickets: repliedTickets,
     totalAgentReplies,
     drafts,
@@ -874,6 +1088,7 @@ async function fetchPeriodMetrics(serviceClient, scope, since, until) {
     needsReviewCategories,
     mostAssistedTopics,
     volumeSeries,
+    trendSeries,
     grouping,
     requestTypes,
     products,
@@ -881,6 +1096,8 @@ async function fetchPeriodMetrics(serviceClient, scope, since, until) {
     fastestTopics,
     slowestTopics,
     highVolumeSlowResponse,
+    commerce,
+    customerOutcomes,
     ticketRows,
     byKey,
     coverage: {
@@ -900,6 +1117,15 @@ function buildStructuredPayload({ windowInfo, current, previous }) {
   const unsolvedTicketsChangePct = previousUnsolved != null ? changePct(currentUnsolved, previousUnsolved) : null;
   const medianFirstReplyChangePct = previous
     ? changePct(current.medianFirstReplyMinutes ?? NaN, previous.medianFirstReplyMinutes ?? NaN)
+    : null;
+  const ticketsPer100OrdersChangePct = previous
+    ? changePct(current.commerce.ticketsPer100Orders ?? NaN, previous.commerce.ticketsPer100Orders ?? NaN)
+    : null;
+  const returnRateChangePct = previous
+    ? changePct(current.commerce.returnRate ?? NaN, previous.commerce.returnRate ?? NaN)
+    : null;
+  const refundRateChangePct = previous
+    ? changePct(current.commerce.refundRate ?? NaN, previous.commerce.refundRate ?? NaN)
     : null;
   const noMinorEditRate = pct(current.noMinorEditCount, current.qualityData.length);
   const previousNoMinorEditRate = previous ? pct(previous.noMinorEditCount, previous.qualityData.length) : null;
@@ -935,6 +1161,15 @@ function buildStructuredPayload({ windowInfo, current, previous }) {
             status: "needs_review",
             description: "Keep human review for now",
           };
+  const signals = buildPrioritySignals({
+    unsolvedTickets: currentUnsolved,
+    unsolvedTicketsChangePct,
+    medianFirstReplyChangePct,
+    highVolumeSlowResponse: current.highVolumeSlowResponse,
+    ticketsPer100OrdersChangePct,
+    refundRateChangePct,
+    readyCandidates: current.autopilotCandidates.readyToTest,
+  });
 
   return {
     period: {
@@ -969,6 +1204,14 @@ function buildStructuredPayload({ windowInfo, current, previous }) {
       noMinorEditCount: current.noMinorEditCount,
       trackedSentDrafts: current.qualityData.length,
     },
+    commerce: {
+      ...current.commerce,
+      ticketsPer100OrdersChangePct,
+      returnRateChangePct,
+      refundRateChangePct,
+      trendSeries: current.trendSeries.commerce.series,
+    },
+    customerOutcomes: current.customerOutcomes,
     sonaImpact: {
       aiAssistedTickets: current.draftedThreadIds.size,
       aiAssistedReplies: current.draftsGenerated,
@@ -1038,7 +1281,15 @@ function buildStructuredPayload({ windowInfo, current, previous }) {
         needsReviewCategories: current.needsReviewCategories,
         mostAssistedTopics: current.mostAssistedTopics,
       },
+      trendSeries: current.trendSeries.sona.series,
     },
+    supportTrend: {
+      grouping: current.grouping,
+      series: current.trendSeries.support.series,
+      solvedDataQuality: current.trendSeries.support.solvedDataQuality,
+      solvedProxyCount: current.trendSeries.support.solvedProxyCount,
+    },
+    signals,
     volume: {
       total: current.supportTickets,
       previousTotal: previous?.supportTickets ?? null,
@@ -1073,10 +1324,17 @@ function buildStructuredPayload({ windowInfo, current, previous }) {
       unsolvedTickets: current.supportTickets - current.solvedTickets,
       oneTouchTickets: current.oneTouchTickets,
       oneTouchRate: pct(current.oneTouchTickets, current.solvedTickets),
+      firstContactResolutionTickets: current.firstContactResolution.firstContactResolvedTickets,
+      firstContactResolutionEligibleTickets: current.firstContactResolution.eligibleTickets,
+      firstContactResolutionRate: current.firstContactResolution.rate,
+      firstContactResolutionObservationDays: current.firstContactResolution.observationDays,
       reopenedTickets: null,
       reopenedRate: null,
       medianFirstReplyMinutes: current.medianFirstReplyMinutes,
       medianResolutionMinutes: current.medianResolutionMinutes,
+      resolutionTrackedTickets: current.resolutionMinutes.length,
+      resolutionProxyCount: current.resolutionProxyCount,
+      resolutionDataQuality: current.resolutionProxyCount > 0 ? "proxy_included" : "measured",
       firstReplyBrackets: computeFirstReplyBrackets(current.firstReplyMinutes, current.supportTickets),
       resolutionBrackets: computeResolutionBrackets(current.resolutionMinutes),
     },
