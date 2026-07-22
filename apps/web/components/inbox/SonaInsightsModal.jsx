@@ -279,6 +279,7 @@ export function SonaInsightsModal({
   const [sonaLogOpen, setSonaLogOpen] = useState(false);
   const [diagnostic, setDiagnostic] = useState(null);
   const [activeManualAction, setActiveManualAction] = useState(null);
+  const [pendingManualActionId, setPendingManualActionId] = useState(null);
 
   const {
     data: internalLookup,
@@ -337,6 +338,12 @@ export function SonaInsightsModal({
   useEffect(() => {
     setDiagnostic(null);
   }, [threadId]);
+
+  useEffect(() => {
+    if (!pendingManualActionId) return;
+    onOrderUpdateDecision?.("accepted");
+    setPendingManualActionId(null);
+  }, [pendingManualActionId, onOrderUpdateDecision]);
 
   useEffect(() => {
     let active = true;
@@ -721,7 +728,7 @@ export function SonaInsightsModal({
                     createdAt: action.createdAt,
                   },
                 }));
-                onOrderUpdateDecision?.("accepted");
+                setPendingManualActionId(action.id);
               }}
             />
           </TabsContent>
