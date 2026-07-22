@@ -68,6 +68,12 @@ export async function POST(request, { params }) {
       { status: 400 }
     );
   }
+  if (!scope?.supabaseUserId) {
+    return NextResponse.json(
+      { error: "Manual actions require a resolvable user account." },
+      { status: 400 }
+    );
+  }
 
   let threadQuery = serviceClient.from("mail_threads").select("id").eq("id", threadId);
   threadQuery = applyScope(threadQuery, scope);
@@ -84,7 +90,7 @@ export async function POST(request, { params }) {
     .from("thread_actions")
     .insert({
       workspace_id: scope.workspaceId,
-      user_id: scope.supabaseUserId ?? null,
+      user_id: scope.supabaseUserId,
       thread_id: thread.id,
       action_type: built.insert.action_type,
       action_key: `manual_${built.insert.action_type}_${thread.id}_${Date.now()}`,
