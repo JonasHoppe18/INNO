@@ -2463,7 +2463,7 @@ export async function POST(request, { params }) {
     let actionLookupQuery = serviceClient
       .from("thread_actions")
       .select(
-        "id, user_id, thread_id, action_type, status, detail, payload, order_id, order_number, action_key"
+        "id, user_id, thread_id, action_type, status, detail, payload, order_id, order_number, action_key, source"
       )
       .eq("id", actionId)
       .eq("thread_id", thread.id);
@@ -2480,7 +2480,7 @@ export async function POST(request, { params }) {
     let latestPendingQuery = serviceClient
       .from("thread_actions")
       .select(
-        "id, user_id, thread_id, action_type, status, detail, payload, order_id, order_number, action_key"
+        "id, user_id, thread_id, action_type, status, detail, payload, order_id, order_number, action_key, source"
       )
       .eq("thread_id", thread.id)
       .eq("status", "pending")
@@ -4102,20 +4102,27 @@ export async function POST(request, { params }) {
     }
   }
 
-  const appliedDraftResult = await generatePostActionDraftV2({
-    threadId,
-    shopId: shopRow.id,
-    actionResult: buildActionResultForDraft({
-      actionType: normalizedActionType,
-      order,
-      payload: actionRowPayload,
-      detail: detailText || `The ${normalizedActionType.replace(/_/g, " ")} action has been completed.`,
-      outcome: "executed",
-    }),
-  }).catch((error) => {
-    console.warn("order-updates/accept: failed to generate post-action draft via v2", error?.message || error);
-    return null;
-  });
+  // Manually-triggered actions (Sona Insights "Actions" tab) skip auto-draft
+  // generation — the agent already knows what they did and can use the
+  // composer's existing "Generate draft" button if they want a customer
+  // email. AI-proposed actions keep the automatic follow-up draft.
+  const appliedDraftResult =
+    actionRecord?.source === "manual"
+      ? null
+      : await generatePostActionDraftV2({
+          threadId,
+          shopId: shopRow.id,
+          actionResult: buildActionResultForDraft({
+            actionType: normalizedActionType,
+            order,
+            payload: actionRowPayload,
+            detail: detailText || `The ${normalizedActionType.replace(/_/g, " ")} action has been completed.`,
+            outcome: "executed",
+          }),
+        }).catch((error) => {
+          console.warn("order-updates/accept: failed to generate post-action draft via v2", error?.message || error);
+          return null;
+        });
 
   return NextResponse.json(
     {
