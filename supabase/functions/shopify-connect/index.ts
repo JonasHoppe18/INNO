@@ -5,6 +5,7 @@ import { encryptShopifyToken } from "../_shared/shopify-credentials.ts";
 const SHOPIFY_API_VERSION = "2024-07"; // Holder API-version ét sted så vi nemt kan opgradere
 const WEBHOOK_TOPICS = [
   "shop/update", "products/create", "products/update", "products/delete",
+  "orders/create", "orders/updated", "refunds/create",
 ];
 
 const PROJECT_URL = Deno.env.get("PROJECT_URL") ?? Deno.env.get("SUPABASE_URL");
