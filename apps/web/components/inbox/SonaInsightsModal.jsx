@@ -689,7 +689,7 @@ export function SonaInsightsModal({
               ) : (
                 <>
                   {matchedOrder ? (
-                    <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm">
+                    <div className="flex items-center gap-2 px-1 text-sm">
                       <Image src={shopifyLogo} alt="Shopify" width={26} height={18} className="shrink-0" />
                       <span className="font-medium text-foreground">Order {matchedOrder.id}</span>
                       <span className="ml-1 text-muted-foreground">{matchedOrder.status}</span>
