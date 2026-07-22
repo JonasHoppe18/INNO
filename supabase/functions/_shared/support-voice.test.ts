@@ -45,12 +45,46 @@ Deno.test("detectSupportVoiceViolations passes a concise employee-style reply", 
   assertEquals(detectSupportVoiceViolations(draft), []);
 });
 
+Deno.test("detectSupportVoiceViolations flags customer-facing evidence language", () => {
+  assertEquals(
+    detectSupportVoiceViolations(
+      "Vi har ikke nogen dokumenteret version af stofpuder til A-Spire Wireless.",
+    ),
+    ["evidence_language"],
+  );
+  assertEquals(
+    detectSupportVoiceViolations(
+      "That option is not documented in our knowledge base.",
+    ),
+    ["evidence_language"],
+  );
+});
+
+Deno.test("ordinary requests for customer documentation are not evidence-language violations", () => {
+  assertEquals(
+    detectSupportVoiceViolations(
+      "Send gerne et billede som dokumentation for skaden.",
+    ),
+    [],
+  );
+});
+
 Deno.test("sanitizeSupportVoiceDraft removes safe filler and system qualifiers only", () => {
   const out = sanitizeSupportVoiceDraft(
     "Jeg kan ikke se refunderingen i vores system endnu.\n\nHvis du har yderligere spørgsmål, er du velkommen til at skrive.",
   );
 
   assertEquals(out, "Jeg kan ikke se refunderingen endnu.");
+});
+
+Deno.test("support voice removes compound Danish invitation filler", () => {
+  const filler =
+    "Hvis du har brug for yderligere hjælp eller har andre spørgsmål, er du velkommen til at skrive igen.";
+  assertEquals(detectSupportVoiceViolations(filler), ["generic_filler"]);
+  assertEquals(
+    sanitizeSupportVoiceDraft(`Svaret er nej. ${filler}`),
+    "Svaret er nej.",
+  );
 });
 
 Deno.test("buildSupportVoiceRewriteInstruction preserves factual safety contract", () => {
@@ -62,6 +96,11 @@ Deno.test("buildSupportVoiceRewriteInstruction preserves factual safety contract
   assertStringIncludes(instruction, "Preserve the same facts");
   assertStringIncludes(instruction, "Do not add promises");
   assertStringIncludes(instruction, "team_handoff");
+  assertStringIncludes(
+    instruction,
+    "Never turn missing evidence into an absolute no",
+  );
+  assertStringIncludes(instruction, "one direct answer sentence");
   assert(!/change facts/i.test(instruction));
 });
 

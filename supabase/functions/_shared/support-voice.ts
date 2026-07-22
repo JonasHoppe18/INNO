@@ -1,6 +1,7 @@
 export type SupportVoiceViolation =
   | "ai_meta"
   | "case_management_wording"
+  | "evidence_language"
   | "empathy_deflection"
   | "formal_opening"
   | "generic_filler"
@@ -11,6 +12,13 @@ export type SupportVoiceViolation =
 
 const SUPPORT_VOICE_PATTERNS: Array<[SupportVoiceViolation, RegExp]> = [
   ["ai_meta", /\b(?:as an ai|som ai|kunstig intelligens)\b/i],
+  [
+    // Customers need the answer, not a report about how the answer was found.
+    // Keep this narrower than ordinary requests for documentation (photos,
+    // receipts, proof of purchase), which can be legitimate support asks.
+    "evidence_language",
+    /\b(?:(?:ingen|ikke nogen|intet|ikke|uden)\s+(?:klart\s+)?dokumenteret(?:e|et)?|(?:no|not|isn['’]?t|is not)\s+(?:clearly\s+)?documented|according to (?:our|the) (?:documentation|knowledge base|records)|(?:vores|our|the) (?:vidensbase|knowledge base))\b/i,
+  ],
   [
     // Template empathy immediately dismissed by "men"/"but" — reads as a
     // deflection of the complaint, not an acknowledgment of it.
@@ -23,7 +31,7 @@ const SUPPORT_VOICE_PATTERNS: Array<[SupportVoiceViolation, RegExp]> = [
   ],
   [
     "generic_filler",
-    /\b(?:if you have any (?:other|further|more) questions|feel free to (?:ask|reach out|contact us)|do(?:n['’]?t| not) hesitate to (?:ask|reach out|contact us)|du er (?:altid )?velkommen til at (?:skrive|kontakte os|spørge)|hvis du har (?:yderligere |flere )?spørgsmål[^.?!\n]{0,80}\b(?:velkommen|skriv|spørg|kontakt|sig endelig))\b/i,
+    /\b(?:if you have any (?:other|further|more) questions|feel free to (?:ask|reach out|contact us)|do(?:n['’]?t| not) hesitate to (?:ask|reach out|contact us)|(?:du er|er du) (?:altid )?velkommen til at (?:skrive|kontakte os|spørge)|hvis du har (?:yderligere |flere )?spørgsmål[^.?!\n]{0,80}\b(?:velkommen|skriv|spørg|kontakt|sig endelig))\b/i,
   ],
   [
     "case_management_wording",
@@ -48,7 +56,7 @@ const SUPPORT_VOICE_PATTERNS: Array<[SupportVoiceViolation, RegExp]> = [
 ];
 
 const FILLER_SENTENCE_RE =
-  /[^.!?\n]*\b(?:if you have any (?:other|further|more) questions|feel free to (?:ask|reach out|contact us)|do(?:n['’]?t| not) hesitate to (?:ask|reach out|contact us)|du er (?:altid )?velkommen til at (?:skrive|kontakte os|spørge)|hvis du har (?:yderligere |flere )?spørgsmål[^.?!\n]{0,80}\b(?:velkommen|skriv|spørg|kontakt|sig endelig))\b[^.!?\n]*[.!?]?/gi;
+  /[^.!?\n]*\b(?:if you have any (?:other|further|more) questions|feel free to (?:ask|reach out|contact us)|do(?:n['’]?t| not) hesitate to (?:ask|reach out|contact us)|(?:du er|er du) (?:altid )?velkommen til at (?:skrive|kontakte os|spørge)|hvis du har (?:yderligere |flere )?spørgsmål[^.?!\n]{0,80}\b(?:velkommen|skriv|spørg|kontakt|sig endelig))\b[^.!?\n]*[.!?]?/gi;
 
 const INTERNAL_SYSTEM_QUALIFIER_RE =
   /\s+\b(?:i vores system|in our system|in our data|in our records)\b/gi;
@@ -91,8 +99,10 @@ export function buildSupportVoiceRewriteInstruction(input: {
     `Fix these support-voice violations: ${violations}.`,
     "Preserve the same facts, limitations, asks and next steps. Do not add promises, dates, refunds, delivery claims, actions, goodwill or certainty.",
     "Lead with the useful customer-facing outcome, then stop. Use short natural paragraphs.",
+    "Never describe source coverage or how the answer was researched with phrases such as 'documented', 'according to our documentation', 'knowledge base', or 'verified information'. If the sources explicitly establish a yes/no answer, state that customer outcome directly. If they do not, keep the uncertainty but express it naturally, for example 'Jeg kan desværre ikke finde den variant i vores sortiment' / 'I cannot find that option in our current range'. Never turn missing evidence into an absolute no.",
+    "For a simple product question, use one direct answer sentence and at most one relevant explanatory sentence. Remove unasked specifications, sales language, and stock clauses unless the customer asked for them and live facts support them. Use range wording such as 'i vores sortiment' / 'we carry' for catalogue facts; never say 'tilgængelig' / 'available' unless live availability is verified.",
     "Do not expose internal process wording, internal data/system wording, team handoff language, manual-review wording, AI/meta wording, or generic filler.",
     "Prefer plain employee phrasing like 'Tak, jeg har trackingnummeret nu' and 'Jeg kan ikke se, at refunderingen er lavet endnu' when those facts are supported.",
-    "Forbidden customer-facing patterns include: 'vi har noteret', 'we have noted', 'registreres hos os', 'bekræfte næste skridt', 'teamet kan', 'our team can', 'vores system', 'in our system', 'manuel gennemgang', 'manual review', 'undersøge yderligere', 'investigate further', 'feel free to reach out', and 'tak for din henvendelse'.",
+    "Forbidden customer-facing patterns include: 'ingen dokumenteret version', 'not documented', 'according to our documentation', 'knowledge base', 'vi har noteret', 'we have noted', 'registreres hos os', 'bekræfte næste skridt', 'teamet kan', 'our team can', 'vores system', 'in our system', 'manuel gennemgang', 'manual review', 'undersøge yderligere', 'investigate further', 'feel free to reach out', and 'tak for din henvendelse'.",
   ].join(" ");
 }

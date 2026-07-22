@@ -67,6 +67,7 @@ import {
   isExecutedActionResult,
   normalizeActionOutcome,
 } from "../../_shared/action-outcomes.ts";
+import { sanitizeSupportVoiceDraft } from "../../_shared/support-voice.ts";
 
 export interface WriterResult {
   draft_text: string;
@@ -350,7 +351,7 @@ async function hashPromptForTrace(
 }
 
 const SIGNOFF_LINE_RE =
-  /^(?:best regards|kind regards|warm regards|all the best|regards|with warm regards|sincerely|yours sincerely|cheers|thanks|thank you|mvh|venlig hilsen|med venlig hilsen|de bedste hilsner|mange hilsner|hilsen|god dag|have a great day|ha en god dag|auf wiedersehen|bonne journée|fijne dag)[,.!]?$/i;
+  /^(?:best regards|kind regards|warm regards|all the best|regards|with warm regards|sincerely|yours sincerely|cheers|thanks|thank you|mvh|venlig hilsen|med venlig hilsen|bedste hilsner|de bedste hilsner|mange hilsner|hilsen|god dag|have a great day|ha en god dag|auf wiedersehen|bonne journée|fijne dag)[,.!]?$/i;
 
 // Matches shop/team name signature lines like "AceZone Support", "The AceZone Team", "Support-teamet"
 const SHOP_SIGNATURE_LINE_RE =
@@ -464,6 +465,7 @@ export function stripDuplicateGreeting(text: string): string {
 const CLOSER_PREFIXES = [
   "i hope (?:this|that) (?:helps|clarifies)[^.!?\\n]*?,?\\s*(?:and\\s+)?",
   "if you have any (?:other |further )?questions(?: or (?:need|require)[^.!?\\n]*?)?,?\\s*",
+  "hvis du har brug for (?:yderligere |mere )?hjælp eller har (?:andre |flere |yderligere )?spørgsmål,?\\s*",
 ];
 
 const CLOSER_CORES = [
@@ -476,7 +478,7 @@ const CLOSER_CORES = [
   "we(?:'re| are)? (?:always )?here (?:to help|if you need anything)",
   // Danish
   "jeg ser frem til at høre fra dig",
-  "du er (?:altid )?velkommen til at (?:skrive|kontakte os|spørge)",
+  "(?:du er|er du) (?:altid )?velkommen til at (?:skrive|kontakte os|spørge)",
   "(?:er du velkommen til at (?:skrive|kontakte os)|tøv ikke med at (?:skrive|kontakte os)|så skriv (?:gerne )?til os)",
   "tak for din (?:forståelse|tålmodighed)",
   "sig (?:gerne )?til,? hvis (?:du har (?:flere |yderligere )?spørgsmål|der er (?:noget )?andet|jeg kan hjælpe (?:dig )?med (?:noget )?andet)",
@@ -508,7 +510,13 @@ export function stripGenericClosers(text: string): string {
 }
 
 export function applySendReadyStyleCleanup(text: string): string {
-  return stripGenericClosers(stripDuplicateGreeting(String(text ?? "").trim()));
+  return stripGenericClosers(
+    stripGeneratedSignature(
+      stripDuplicateGreeting(
+        sanitizeSupportVoiceDraft(String(text ?? "").trim()),
+      ),
+    ),
+  );
 }
 
 function greetingPrefix(language: string): string {
@@ -1808,7 +1816,7 @@ function buildCompactCoreRules(
 1. SANDHED: Brug KUN fakta fra "Verificerede fakta" og den valgte knowledge. Står et faktum dér, så sig det direkte og selvsikkert — hedge aldrig et dækket faktum. Står det der IKKE, så opfind det aldrig (ingen priser, datoer, lagerstatus, policies, personer eller processer) — spørg i stedet præcist om det ene der mangler.
 2. LØS SAGEN: Du er en erfaren kundeservice-kollega med mandat. Led med beslutningen/svaret i FØRSTE sætning. Sig aldrig "vi vender tilbage"/"sender videre" medmindre du reelt afventer noget eksternt. Skriv aldrig at en handling ER udført medmindre actionResult har outcome "executed".
 3. FØLG #-BLOKKENE: Blokke markeret med # (Ordre-match, FEJLFINDINGS-GUIDE, AKTIVT FLOW, refunderingsstatus, KØBT HOS TREDJEPART m.fl.) er bindende instruktioner for netop denne sag — følg dem præcist, de overtrumfer generelle regler.
-4. TONE: Menneskelig kollega — aldrig "vores system" eller proces-sprog, ingen fyld-indledninger ("Tak for din besked..."), sig hver pointe én gang, ingen opsummerende recap. Korte afsnit (1-2 sætninger) med luft imellem. MENNESKELIG TONE (kritisk): Åbn ALDRIG med robot-floskler som "I can help you with…", "I'd be happy to assist…", "I can assist you with…", "I'm here to help…", "Jeg kan hjælpe dig med…", "Jeg vil med glæde assistere…". Gå direkte til sagen og ejerskab: fx "Selvfølgelig — jeg retter adressen på #4845 for dig." / "Of course — I'll get that address on #4845 sorted for you." Kunden må ikke kunne mærke at det er en AI. SERVICE-RECOVERY: Påpeger kunden en fejl/forsinkelse/et brudt løfte fra vores side (og fakta bekræfter eller ikke modsiger det), så anerkend det eksplicit som det FØRSTE, beklag én gang, og giv konkret status + konkret næste skridt — aldrig "Jeg forstår, at det kan være frustrerende, men ..." og aldrig "hurtigst muligt" som eneste handling. MOMENTUM: Har kunden allerede bedt om handlingen og leveret det vi bad om, så spørg aldrig om de "ønsker at gå videre" — bekræft næste skridt og hvad kunden kan forvente.
+4. TONE: Menneskelig kollega — aldrig "vores system" eller proces-sprog, ingen fyld-indledninger ("Tak for din besked..."), sig hver pointe én gang, ingen opsummerende recap. Forklar ALDRIG hvordan svaret blev fundet: ingen kundevendte formuleringer som "ikke dokumenteret", "ifølge vores dokumentation", "vidensbasen" eller "verificerede oplysninger". Er et ja/nej-faktum dækket, så sig udfaldet direkte. Er det ikke dækket, så bevar usikkerheden i naturligt kundesprog (fx "Jeg kan desværre ikke finde den variant i vores sortiment") — gør aldrig manglende evidens til et kategorisk nej. Et simpelt produktspørgsmål får én direkte svar-sætning og højst én relevant forklaring; ingen uopfordrede specs, salgstekst eller lagerbemærkninger. Brug "i sortimentet" om katalogfakta — aldrig "tilgængelig/available" uden verificeret live-lagerstatus. Korte afsnit (1-2 sætninger) med luft imellem. MENNESKELIG TONE (kritisk): Åbn ALDRIG med robot-floskler som "I can help you with…", "I'd be happy to assist…", "I can assist you with…", "I'm here to help…", "Jeg kan hjælpe dig med…", "Jeg vil med glæde assistere…". Gå direkte til sagen og ejerskab: fx "Selvfølgelig — jeg retter adressen på #4845 for dig." / "Of course — I'll get that address on #4845 sorted for you." Kunden må ikke kunne mærke at det er en AI. SERVICE-RECOVERY: Påpeger kunden en fejl/forsinkelse/et brudt løfte fra vores side (og fakta bekræfter eller ikke modsiger det), så anerkend det eksplicit som det FØRSTE, beklag én gang, og giv konkret status + konkret næste skridt — aldrig "Jeg forstår, at det kan være frustrerende, men ..." og aldrig "hurtigst muligt" som eneste handling. MOMENTUM: Har kunden allerede bedt om handlingen og leveret det vi bad om, så spørg aldrig om de "ønsker at gå videre" — bekræft næste skridt og hvad kunden kan forvente.
 5. LÆNGDE: Transaktionelle svar korte (2-5 sætninger). Guides/procedurer komplette — ALLE trin fra den valgte knowledge, hvert trin på egen linje, udelad aldrig dækkede trin.
 
 OPSLAGSREGLER (brug når situationen opstår):
@@ -1847,6 +1855,7 @@ SÅDAN SVARER DU (vigtigst):
 - Svar som en travl, erfaren senior-medarbejder der allerede har besluttet sig. Led med beslutningen / svaret / næste konkrete handling i den FØRSTE sætning. Højst 1-2 sætninger mere — UNDTAGELSE: følg "FEJLFINDINGS-GUIDE"-blokken hvis den findes nedenfor.
 - Reciter ALDRIG policy, betingelser, frister, specs eller edge-cases kunden ikke spurgte om. Giv kun den ene del der er relevant lige nu (fx kun returadressen — ikke hele return-policyen).
 - Udtræk højst ÉT relevant faktum fra knowledge. Gengiv aldrig knowledge ordret, og lim aldrig flere kilder sammen — UNDTAGELSE: en valgt fejlfindings-guides TRIN skal gengives komplet (se "FEJLFINDINGS-GUIDE"-blokken).
+- Oversæt altid knowledge til almindeligt kundesprog. Skriv aldrig "ikke dokumenteret", "ifølge vores dokumentation", "vidensbasen" eller "verificerede oplysninger" til kunden. Er et ja/nej-faktum dækket, så sig det direkte. Er det ikke dækket, så bevar usikkerheden naturligt (fx "Jeg kan desværre ikke finde den variant i vores sortiment") uden at gøre den til et kategorisk nej. Ved simple produktspørgsmål: én direkte svar-sætning + højst én relevant forklaring; ingen uopfordrede specs, salgstekst eller lagerbemærkninger. Brug "i sortimentet" om katalogfakta — aldrig "tilgængelig/available" uden verificeret live-lagerstatus.
 - Hvis vi har nok info til at handle, så gør det — bed ikke om mere. Spørg KUN om felter i missing_required_fields, og kun hvis de faktisk mangler.
 - Undgå defensivt proces-sprog: "vi vurderer", "når vi har bekræftet", "hvis du er berettiget", "send flere billeder", "vi vender tilbage", "sagen sendes videre". Tag beslutningen nu, eller bed præcist om det ene der mangler.
 - Korte afsnit på 1-2 sætninger med tom linje imellem. Ingen indledende fyld ("Tak for din besked..."), gentag ikke kundens spørgsmål.
