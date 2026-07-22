@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
+import { cn } from "@/lib/utils";
 import { useCustomerLookup } from "@/hooks/useCustomerLookup";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { badgeVariants } from "@/components/ui/badge";
@@ -32,6 +33,43 @@ const MANUAL_ACTION_ICONS = {
   refund_order: Banknote,
   initiate_return: RotateCcw,
 };
+// Semantic tints per action so agents can scan by colour (blue = address,
+// rose = destructive cancel, emerald = money/refund, amber = return).
+const MANUAL_ACTION_ICON_TONES = {
+  update_shipping_address: "bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-300",
+  cancel_order: "bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-300",
+  refund_order: "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300",
+  initiate_return: "bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300",
+};
+
+function OrderStatusPill({ status }) {
+  const raw = String(status || "").trim().toLowerCase();
+  const label = raw ? raw.charAt(0).toUpperCase() + raw.slice(1) : "Unknown";
+  const isFulfilled = raw === "fulfilled";
+  const isPending =
+    raw === "unfulfilled" || raw === "partial" || raw === "partially_fulfilled";
+  const tone = isFulfilled
+    ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"
+    : isPending
+    ? "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
+    : "bg-muted text-muted-foreground";
+  const dot = isFulfilled
+    ? "bg-emerald-500"
+    : isPending
+    ? "bg-amber-500"
+    : "bg-muted-foreground/50";
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[12px] font-medium",
+        tone,
+      )}
+    >
+      <span className={cn("h-1.5 w-1.5 rounded-full", dot)} />
+      {label}
+    </span>
+  );
+}
 
 const SONA_INTENT_LABELS = {
   tracking: "Tracking",
@@ -689,16 +727,27 @@ export function SonaInsightsModal({
               ) : (
                 <>
                   {matchedOrder ? (
-                    <div className="flex items-center gap-2 px-1 text-sm">
-                      <Image src={shopifyLogo} alt="Shopify" width={26} height={18} className="shrink-0" />
-                      <span className="font-medium text-foreground">Order {matchedOrder.id}</span>
-                      <span className="ml-1 text-muted-foreground">{matchedOrder.status}</span>
+                    <div className="flex items-center gap-2.5 px-1 text-sm">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted">
+                        <Image
+                          src={shopifyLogo}
+                          alt="Shopify"
+                          width={40}
+                          height={28}
+                          className="h-7 w-auto max-w-none"
+                        />
+                      </span>
+                      <span className="font-semibold text-foreground">Order {matchedOrder.id}</span>
+                      <OrderStatusPill status={matchedOrder.status} />
                     </div>
                   ) : (
                     <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
                       No order found on this ticket — find the customer/order under the Customer tab.
                     </p>
                   )}
+                  <p className="px-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400/80">
+                    Available actions
+                  </p>
                   <div className="overflow-hidden rounded-xl border border-border bg-card">
                     {MANUAL_CORE_ACTIONS.map((action) => {
                       const ActionIcon = MANUAL_ACTION_ICONS[action.type];
@@ -710,12 +759,17 @@ export function SonaInsightsModal({
                           onClick={() => setActiveManualAction(action.type)}
                           className="flex w-full items-center gap-3 border-b border-border px-4 py-4 text-left last:border-b-0 disabled:cursor-not-allowed disabled:opacity-50 hover:bg-muted/60"
                         >
-                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                            {ActionIcon ? <ActionIcon className="h-4 w-4" /> : null}
+                          <div
+                            className={cn(
+                              "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
+                              MANUAL_ACTION_ICON_TONES[action.type] || "bg-muted text-muted-foreground",
+                            )}
+                          >
+                            {ActionIcon ? <ActionIcon className="h-[18px] w-[18px]" /> : null}
                           </div>
                           <div className="grid flex-1 gap-1">
                             <p className="text-sm font-medium text-foreground">{action.label}</p>
-                            <p className="text-sm text-muted-foreground">{action.description}</p>
+                            <p className="text-[13px] leading-snug text-muted-foreground">{action.description}</p>
                           </div>
                           <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
                         </button>
