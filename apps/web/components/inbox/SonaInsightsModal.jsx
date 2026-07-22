@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import { useCustomerLookup } from "@/hooks/useCustomerLookup";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { badgeVariants } from "@/components/ui/badge";
@@ -13,13 +14,24 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { SonaActivityContent } from "@/components/inbox/SonaActivityContent";
 import { CustomerTab } from "@/components/inbox/CustomerTab";
-import { ChevronRight, ExternalLink, Truck, X } from "lucide-react";
+import { Ban, Banknote, ChevronRight, ExternalLink, MapPin, RotateCcw, Truck, X } from "lucide-react";
 import { TicketMetadataPanel } from "@/components/inbox/TicketMetadataPanel";
 import { TrackingCard } from "@/components/inbox/TrackingCard";
 import { SonaLogo } from "@/components/ui/SonaLogo";
+import { ManualActionDialog } from "@/components/inbox/ManualActionDialog";
+import { CORE_ACTIONS } from "@/lib/action-modes";
+import { MANUAL_ACTION_TYPES, resolveMatchedOrder } from "@/lib/inbox/manual-actions";
+import shopifyLogo from "../../../../assets/Shopify-Logo.png";
 
 const asString = (value) => (typeof value === "string" ? value.trim() : "");
 const DISPLAY_TIMEZONE = "Europe/Copenhagen";
+const MANUAL_CORE_ACTIONS = CORE_ACTIONS.filter((action) => MANUAL_ACTION_TYPES.includes(action.type));
+const MANUAL_ACTION_ICONS = {
+  update_shipping_address: MapPin,
+  cancel_order: Ban,
+  refund_order: Banknote,
+  initiate_return: RotateCcw,
+};
 
 const SONA_INTENT_LABELS = {
   tracking: "Tracking",
@@ -261,6 +273,8 @@ export function SonaInsightsModal({
   customerLookupParams,
   onOpenTicket,
   returnTrackingActionState = null,
+  onSeedPendingOrderUpdate,
+  onOrderUpdateDecision,
 }) {
   const [logs, setLogs] = useState([]);
   const [logsLoading, setLogsLoading] = useState(false);
@@ -272,6 +286,8 @@ export function SonaInsightsModal({
   }, []);
   const [sonaLogOpen, setSonaLogOpen] = useState(false);
   const [diagnostic, setDiagnostic] = useState(null);
+  const [activeManualAction, setActiveManualAction] = useState(null);
+  const [pendingManualActionId, setPendingManualActionId] = useState(null);
 
   const {
     data: internalLookup,
@@ -291,6 +307,11 @@ export function SonaInsightsModal({
     const orders = Array.isArray(effectiveLookup?.orders) ? effectiveLookup.orders : [];
     return orders.find((order) => order?.tracking?.number || order?.tracking?.url) || null;
   }, [effectiveLookup?.orders]);
+  const matchedOrder = useMemo(
+    () => resolveMatchedOrder(effectiveLookup?.orders),
+    [effectiveLookup?.orders]
+  );
+  const hasShopifyShop = Boolean(effectiveLookup?.shopDomain);
   const returnTrackingCandidate = returnTrackingActionState?.candidates?.[0] || null;
   const returnTrackingNumber = String(
     returnTrackingCandidate?.normalized_tracking_number ||
@@ -325,6 +346,12 @@ export function SonaInsightsModal({
   useEffect(() => {
     setDiagnostic(null);
   }, [threadId]);
+
+  useEffect(() => {
+    if (!pendingManualActionId) return;
+    onOrderUpdateDecision?.("accepted");
+    setPendingManualActionId(null);
+  }, [pendingManualActionId, onOrderUpdateDecision]);
 
   useEffect(() => {
     let active = true;
@@ -438,9 +465,10 @@ export function SonaInsightsModal({
           </Button>
         </div>
         <Tabs defaultValue="actions" className="flex min-w-0 flex-1 flex-col gap-4 overflow-hidden">
-          <TabsList className="grid w-full min-w-0 grid-cols-2">
+          <TabsList className="grid w-full min-w-0 grid-cols-3">
             <TabsTrigger value="actions">Overview</TabsTrigger>
             <TabsTrigger value="customer">Customer</TabsTrigger>
+            <TabsTrigger value="manual-actions">Actions</TabsTrigger>
           </TabsList>
           <TabsContent value="actions" className="min-w-0 flex-1 overflow-y-auto">
             <div className="space-y-5">
@@ -650,6 +678,73 @@ export function SonaInsightsModal({
               onRefresh={effectiveRefresh}
               lookupParams={customerLookupParams}
               onOpenTicket={onOpenTicket}
+            />
+          </TabsContent>
+          <TabsContent value="manual-actions" className="min-w-0 flex-1 overflow-y-auto">
+            <div className="flex flex-col gap-3 p-1">
+              {!hasShopifyShop ? (
+                <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
+                  Actions is only available for Shopify shops.
+                </p>
+              ) : (
+                <>
+                  {matchedOrder ? (
+                    <div className="flex items-center gap-2 px-1 text-sm">
+                      <Image src={shopifyLogo} alt="Shopify" width={26} height={18} className="shrink-0" />
+                      <span className="font-medium text-foreground">Order {matchedOrder.id}</span>
+                      <span className="ml-1 text-muted-foreground">{matchedOrder.status}</span>
+                    </div>
+                  ) : (
+                    <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
+                      No order found on this ticket — find the customer/order under the Customer tab.
+                    </p>
+                  )}
+                  <div className="overflow-hidden rounded-xl border border-border bg-card">
+                    {MANUAL_CORE_ACTIONS.map((action) => {
+                      const ActionIcon = MANUAL_ACTION_ICONS[action.type];
+                      return (
+                        <button
+                          key={action.type}
+                          type="button"
+                          disabled={!matchedOrder}
+                          onClick={() => setActiveManualAction(action.type)}
+                          className="flex w-full items-center gap-3 border-b border-border px-4 py-4 text-left last:border-b-0 disabled:cursor-not-allowed disabled:opacity-50 hover:bg-muted/60"
+                        >
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                            {ActionIcon ? <ActionIcon className="h-4 w-4" /> : null}
+                          </div>
+                          <div className="grid flex-1 gap-1">
+                            <p className="text-sm font-medium text-foreground">{action.label}</p>
+                            <p className="text-sm text-muted-foreground">{action.description}</p>
+                          </div>
+                          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+            <ManualActionDialog
+              actionType={activeManualAction}
+              order={matchedOrder}
+              threadId={threadId}
+              onClose={() => setActiveManualAction(null)}
+              onSubmitted={(action) => {
+                setActiveManualAction(null);
+                if (!action || !threadId) return;
+                onSeedPendingOrderUpdate?.((prev) => ({
+                  ...prev,
+                  [threadId]: {
+                    id: action.id,
+                    detail: action.detail,
+                    actionType: action.actionType,
+                    payload: action.payload,
+                    createdAt: action.createdAt,
+                  },
+                }));
+                setPendingManualActionId(action.id);
+              }}
             />
           </TabsContent>
         </Tabs>

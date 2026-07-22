@@ -3850,6 +3850,8 @@ export function InboxSplitView({
           onCustomerRefresh={refreshCustomerLookup}
           customerLookupParams={customerLookupParams}
           onOpenTicket={handleOpenPreviousTicket}
+          onSeedPendingOrderUpdate={setPendingOrderUpdateByThread}
+          onOrderUpdateDecision={handleOrderUpdateDecision}
           returnTrackingActionState={
             returnTrackingActionState?.threadId === selectedThread?.id
               ? returnTrackingActionState

@@ -321,7 +321,22 @@ const sanitizeEmailHtml = (value, attachments = [], options = {}) => {
 
       const styleMatch = String(imgTag).match(/\sstyle=(['"])([\s\S]*?)\1/i);
       const safeStyle = preserveInlineStyles ? sanitizeInlineStyle(styleMatch?.[2] || "") : "";
-      const styleAttr = safeStyle ? ` style="${escapeHtml(safeStyle)}"` : "";
+
+      // Signature/logo images are almost always sized via HTML width/height
+      // attributes rather than CSS (standard email-client practice), often at
+      // a small display size backed by a much larger source file. Rebuilding
+      // the tag drops those attributes, so without this the browser falls
+      // back to the image's native pixel size.
+      const widthAttrValue = String(imgTag).match(/\swidth=(['"]?)(\d+)(?:px)?\1?/i)?.[2];
+      const parsedWidth = widthAttrValue ? parseInt(widthAttrValue, 10) : NaN;
+      const hasExplicitWidth = Number.isFinite(parsedWidth) && parsedWidth > 0 && parsedWidth <= 2000;
+      const sizeStyle =
+        hasExplicitWidth && !/(?:^|;)\s*width\s*:/i.test(safeStyle)
+          ? `width:${parsedWidth}px;height:auto;max-width:100%;`
+          : "";
+
+      const combinedStyle = [sizeStyle, safeStyle].filter(Boolean).join(" ");
+      const styleAttr = combinedStyle ? ` style="${escapeHtml(combinedStyle)}"` : "";
       return `<img src="${escapeHtml(resolvedSrc)}" alt="Inline attachment image" loading="lazy"${styleAttr}>`;
     }
   );
@@ -441,7 +456,7 @@ const formatStructuredFormText = (value, subjectLine = "") => {
 };
 
 const EMAIL_BODY_CLASS =
-  "max-w-none w-full min-w-0 break-words [overflow-wrap:anywhere] text-[14px] leading-[1.55] text-foreground font-[inherit] [&_*]:max-w-full [&_*]:min-w-0 [&_*]:break-words [&_*]:[overflow-wrap:anywhere] [&_*]:font-[inherit] [&_*]:text-[14px] [&_*]:leading-[1.55] [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-blue-700 dark:hover:[&_a]:text-blue-300 [&_img]:max-h-[340px] [&_img]:w-auto [&_img]:rounded-lg [&_img]:my-2 [&_img]:cursor-zoom-in [&_img]:transition-opacity [&_img]:duration-150 hover:[&_img]:opacity-90";
+  "max-w-none w-full min-w-0 break-words [overflow-wrap:anywhere] text-[14px] leading-[1.55] text-foreground font-[inherit] [&_*]:max-w-full [&_*]:min-w-0 [&_*]:break-words [&_*]:[overflow-wrap:anywhere] [&_*]:font-[inherit] [&_*]:text-[14px] [&_*]:leading-[1.55] [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-blue-700 dark:hover:[&_a]:text-blue-300 [&_img]:max-h-[340px] [&_img]:max-w-full [&_img]:w-auto [&_img]:rounded-lg [&_img]:my-2 [&_img]:cursor-zoom-in [&_img]:transition-opacity [&_img]:duration-150 hover:[&_img]:opacity-90";
 const EMAIL_MODAL_BODY_CLASS =
   "max-w-none w-full min-w-0 break-words [overflow-wrap:anywhere] text-[14px] leading-[1.55] text-foreground [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-blue-700 dark:hover:[&_a]:text-blue-300 [&_img]:!block [&_img]:!h-auto [&_img]:!max-h-[72px] [&_img]:!max-w-[170px] [&_img]:!object-contain [&_img]:!my-0 [&_td]:!align-middle";
 
