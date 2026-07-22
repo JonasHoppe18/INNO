@@ -18,7 +18,7 @@ Two other approaches were considered and rejected:
 
 ## Scope
 
-- **Action types:** only the 5 "core" actions already defined in `lib/action-modes.js` (`update_shipping_address`, `cancel_order`, `refund_order`, `initiate_return`, `create_exchange_request`). The broader set of undocumented/globally-disabled action types (`change_shipping_method`, `edit_line_items`, etc.) is out of scope for this iteration.
+- **Action types (v1):** 4 of the 5 "core" actions defined in `lib/action-modes.js` — `update_shipping_address`, `cancel_order`, `refund_order`, `initiate_return`. **`create_exchange_request` is deferred** — discovered during implementation planning: it requires a Shopify line-item and replacement-variant picker, and no existing endpoint in this codebase exposes line-item/variant IDs (the order data already fetched for the Customer tab only has item titles as text). Building that picker is a separate follow-up plan once a variant-search API exists. The broader set of undocumented/globally-disabled action types (`change_shipping_method`, `edit_line_items`, etc.) remains out of scope entirely.
 - **Platform:** Shopify only. If the ticket's shop `platform !== "shopify"`, the Actions tab shows an empty state and no action list.
 - **Shop `action_modes` config is not consulted here.** `off`/`approve`/`auto` govern what the *AI* may do automatically; they do not restrict a human agent acting directly. All 5 actions are always available to the agent regardless of shop config (see "Action list" below).
 
@@ -38,7 +38,6 @@ Added to the existing `Tabs` in `SonaInsightsModal.jsx`, alongside "Overview" an
 │ Cancel unfulfilled order   → │
 │ Refund order                → │
 │ Start return                → │
-│ Exchange or replacement     → │
 └─────────────────────────────┘
 ```
 
@@ -62,7 +61,6 @@ Clicking a row opens a `Dialog` (the same primitive already used for "How Sona b
 | Cancel unfulfilled order | None — confirmation-only dialog showing order summary |
 | Refund order | Amount (pre-filled with order total, editable for partial refunds), optional note |
 | Start return | Reason (dropdown, same enum the pipeline already normalizes to — `COLOR`, `DEFECTIVE`, `NOT_AS_DESCRIBED`, `OTHER`, `SIZE_TOO_LARGE`, `SIZE_TOO_SMALL`, `STYLE`, `UNKNOWN`, `UNWANTED`, `WRONG_ITEM`), optional note |
-| Exchange or replacement | Line item to return (picker), replacement variant to send (picker), reason (same enum as above) |
 
 The dialog's primary button states the concrete consequence rather than a generic "Confirm" (Stripe/Square pattern), e.g. "Refund 350 kr", "Cancel order #4538".
 
@@ -70,9 +68,11 @@ The dialog's primary button states the concrete consequence rather than a generi
 
 1. Dialog submit → `POST /api/threads/[threadId]/actions/manual` (**new** endpoint). Validates the fields required for the chosen type, resolves the order already matched on the thread, and inserts a `thread_actions` row: `status: "pending"`, `action_type`, `order_id`/`order_number`, `payload` built from the form fields. Returns the new `actionId`.
 2. Client immediately calls the **existing, unmodified** `POST /api/threads/[threadId]/order-updates/accept` with `{ actionId, decision: "accepted" }`. This is the same code path the AI-approval flow already uses — Shopify/Webshipper mutation, test-mode simulation, `agent_logs` audit entry, and post-action draft regeneration all apply unchanged.
-3. The result renders as the same `ActionCard` the agent already sees for AI-proposed actions — no new result UI.
+3. The result renders as the same `ActionCard` the agent already sees for AI-proposed actions — the client must trigger the same thread-detail refetch the approval flow triggers after a decision, so the card picks up the new state without a full reselect of the thread.
 
-No changes are made to `order-updates/accept/route.js`.
+No changes are made to `order-updates/accept/route.js`. Two mapping details the manual endpoint must get right for execution to work against the existing route, found during implementation planning:
+- **`action_type` for "Start return" must be inserted as `create_return_case`**, not the `CORE_ACTIONS` type string `initiate_return` — the accept route branches on the legacy literal string for returns, not the core alias, and `initiate_return` alone falls through to "Unsupported action type".
+- **`order_id`/`order_number` are not interchangeable with the Customer tab's order object fields of the same names.** The Customer tab's mapped order uses `id` for the human-readable order number and `adminId` for Shopify's actual numeric order ID. The `thread_actions.order_id` column must get the numeric `adminId`; `order_number` gets `id`.
 
 ## Error handling
 
