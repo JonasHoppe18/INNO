@@ -21,6 +21,12 @@ const RUNS_TABLE = "gold_eval_runs";
 const RESULTS_TABLE = "gold_eval_results";
 
 const DEFAULT_KS = [1, 3, 5, 10];
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export function persistableGenerationId(value) {
+  const id = String(value ?? "").trim();
+  return UUID_RE.test(id) ? id : null;
+}
 
 // The planner's actual output vocabulary. Keep business/analytics categories out
 // of this list: a gold label such as `technical_support` or `order_status` is not
@@ -145,6 +151,34 @@ function toIdList(value, idKeys = ["id", "chunk_id", "source_id"]) {
   return out;
 }
 
+export function activeGoldChunkIdsFromRows(goldChunkIds, rows) {
+  const configured = toIdList(goldChunkIds);
+  const activeIds = new Set(
+    (Array.isArray(rows) ? rows : [])
+      .filter((row) => {
+        const metadata = row?.metadata && typeof row.metadata === "object"
+          ? row.metadata
+          : {};
+        return metadata.active_for_ai !== false && metadata.archived !== true;
+      })
+      .map((row) => String(row.id)),
+  );
+  return configured.filter((id) => activeIds.has(id));
+}
+
+async function loadActiveGoldChunkIds(serviceClient, goldChunkIds) {
+  const configured = toIdList(goldChunkIds);
+  if (!configured.length) return [];
+  const { data, error } = await serviceClient
+    .from("agent_knowledge")
+    .select("id, metadata")
+    .in("id", configured);
+  if (error) {
+    throw new Error(`gold-eval: failed to validate gold chunks: ${error.message}`);
+  }
+  return activeGoldChunkIdsFromRows(configured, data);
+}
+
 // Deterministic retrieval hit@k. retrievedChunkIds must be in retrieval rank order
 // (best first). Returns null when the case carries no gold chunk ids (not graded).
 export function computeRetrievalHitAtK(goldChunkIds, retrievedChunks, ks = DEFAULT_KS) {
@@ -216,7 +250,12 @@ async function loadGenerationTrace(serviceClient, generationId) {
 async function runSingleCase({ serviceClient, runId, goldCase, generate }) {
   const conversationHistory = goldCase.thread_history_json ?? undefined;
   let gen;
+  let activeGoldChunkIds;
   try {
+    activeGoldChunkIds = await loadActiveGoldChunkIds(
+      serviceClient,
+      goldCase.gold_knowledge_chunk_ids,
+    );
     gen = await generate(goldCase.shop_id, goldCase.title || "", goldCase.customer_message, {
       conversationHistory,
     });
@@ -239,16 +278,27 @@ async function runSingleCase({ serviceClient, runId, goldCase, generate }) {
     intentGradeSkipReason,
   } = gradeRuntimeIntent(goldCase.expected_intent, gen.intent);
   const { hitAtK, retrievedChunkIds } = computeRetrievalHitAtK(
-    goldCase.gold_knowledge_chunk_ids,
+    activeGoldChunkIds,
     gen.retrievalDebug,
   );
+  const configuredGoldChunkIds = toIdList(goldCase.gold_knowledge_chunk_ids);
+  const retrievalGradeable = activeGoldChunkIds.length > 0;
+  const retrievalGradeSkipReason = retrievalGradeable
+    ? null
+    : configuredGoldChunkIds.length > 0
+      ? "all_expected_chunks_inactive_or_missing"
+      : "missing_expected_chunks";
 
-  const trace = await loadGenerationTrace(serviceClient, gen.generationId);
+  // Eval-mode intentionally returns a synthetic `dry-run:<uuid>` identifier so
+  // it cannot be confused with a persisted customer generation. The DB column
+  // is a UUID FK, therefore only real persisted UUIDs may be written there.
+  const generationId = persistableGenerationId(gen.generationId);
+  const trace = await loadGenerationTrace(serviceClient, generationId);
 
   return {
     eval_case_id: goldCase.id,
     eval_run_id: runId,
-    generation_id: gen.generationId ?? null,
+    generation_id: generationId,
     actual_intent: actualIntent,
     actual_intent_raw: actualIntentRaw,
     actual_intent_normalized: actualIntentNormalized,
@@ -260,6 +310,8 @@ async function runSingleCase({ serviceClient, runId, goldCase, generate }) {
     intent_grade_skip_reason: intentGradeSkipReason,
     expected_intent_raw: expectedIntentRaw,
     expected_intent_normalized: expectedIntentNormalized,
+    retrieval_gradeable: retrievalGradeable,
+    retrieval_grade_skip_reason: retrievalGradeSkipReason,
     retrieved_chunk_ids: retrievedChunkIds,
     retrieval_hit_at_k: hitAtK,
     facts_json: trace?.facts_json ?? null,
@@ -293,7 +345,8 @@ function summarize(results) {
   const intentSkippedCases = [];
   let retrievalGraded = 0;
   let hitAt5 = 0;
-  let missingFacts = 0;
+  let missingExpectedChunks = 0;
+  const retrievalSkippedCases = [];
   let confidenceSum = 0;
   let confidenceCount = 0;
   let latencySum = 0;
@@ -324,7 +377,12 @@ function summarize(results) {
     if (hk && typeof hk === "object" && "hit_at_5" in hk) {
       retrievalGraded += 1;
       if (hk.hit_at_5) hitAt5 += 1;
-      if (!hk.hit_at_5) missingFacts += 1;
+      if (!hk.hit_at_5) missingExpectedChunks += 1;
+    } else if (r.retrieval_gradeable === false) {
+      retrievalSkippedCases.push({
+        eval_case_id: r.eval_case_id,
+        reason: r.retrieval_grade_skip_reason,
+      });
     }
     if (typeof r.verifier_confidence === "number") {
       confidenceSum += r.verifier_confidence;
@@ -354,7 +412,9 @@ function summarize(results) {
     intent_skipped_cases: intentSkippedCases,
     retrieval_hit_at_5: retrievalGraded > 0 ? hitAt5 / retrievalGraded : null,
     retrieval_graded: retrievalGraded,
-    cases_missing_facts: missingFacts,
+    retrieval_ungraded: retrievalSkippedCases.length,
+    retrieval_skipped_cases: retrievalSkippedCases,
+    cases_missing_expected_chunks: missingExpectedChunks,
     avg_verifier_confidence: avg(confidenceSum, confidenceCount),
     avg_latency_ms: avg(latencySum, latencyCount),
     avg_input_tokens: avg(inputTokenSum, inputTokenCount),
@@ -413,6 +473,8 @@ export async function runGoldEval({
       intent_grade_skip_reason: _intentGradeSkipReason,
       expected_intent_raw: _expectedIntentRaw,
       expected_intent_normalized: _expectedIntentNormalized,
+      retrieval_gradeable: _retrievalGradeable,
+      retrieval_grade_skip_reason: _retrievalGradeSkipReason,
       ...persistedRow
     } = row;
     const { error: insErr } = await serviceClient.from(RESULTS_TABLE).insert(persistedRow);
@@ -435,4 +497,10 @@ export async function runGoldEval({
   return { runId, summary, results };
 }
 
-export const __internals = { loadActiveGoldCases, runSingleCase, summarize, toIdList };
+export const __internals = {
+  loadActiveGoldCases,
+  loadActiveGoldChunkIds,
+  runSingleCase,
+  summarize,
+  toIdList,
+};

@@ -22,16 +22,23 @@ const OFFER_CLAIM =
 const PURCHASE_LINK = /https?:\/\/\S+\/(products|collections|spare-parts)\b/i;
 const CUSTOMER_DOUBT =
   /\b(sold out|out of stock|in stock|are these[^.\n]*available|is (it|this) available|can i (buy|purchase|order|get)|where (can|do) i (buy|purchase)|link to purchase|restock|udsolgt|på lager|kan jeg købe)\b/i;
+const EXPLICIT_DATED_AVAILABILITY_FACT =
+  /\b(?:we\s+(?:expect|estimate)|expected|estimated|back\s+in\s+stock|will\s+be\s+(?:back\s+)?in\s+stock|regner\s+med|forventes)\b[\s\S]{0,90}\b(?:early|mid|late|start|end|week|month|january|february|march|april|may|june|july|august|september|october|november|december|tidligt|midt|slut|uge|måned|januar|februar|marts|maj|juni|juli|august|september|oktober|november|december|20\d{2})\b/i;
 
 /**
  * The draft asserts a product/part is available/purchasable while the customer
  * expressed stock doubt — and no fact backs it. Customer-doubt gate avoids
  * false positives on ordinary confirmed-availability replies.
  */
-export function detectUnsupportedAvailability(draftText, { ticketBody = "" } = {}) {
+export function detectUnsupportedAvailability(
+  draftText,
+  { ticketBody = "", humanReply = "" } = {},
+) {
   const draft = String(draftText || "");
   const claim = AVAIL_CLAIM.test(draft) || OFFER_CLAIM.test(draft) || PURCHASE_LINK.test(draft);
-  return claim && CUSTOMER_DOUBT.test(String(ticketBody || ""));
+  const context = `${ticketBody || ""}\n${humanReply || ""}`;
+  const groundedDatedFact = EXPLICIT_DATED_AVAILABILITY_FACT.test(context);
+  return claim && CUSTOMER_DOUBT.test(String(ticketBody || "")) && !groundedDatedFact;
 }
 
 const HANDOFF =

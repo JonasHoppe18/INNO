@@ -20,7 +20,10 @@ Deno.test("cuts Danish Outlook iOS signature plus Scandinavian reply header", ()
     ].join("\n"),
   });
 
-  assertEquals(parsed.cleanBodyText, "Hej\n\nJeg vil gerne vide mere om min ordre.");
+  assertEquals(
+    parsed.cleanBodyText,
+    "Hej\n\nJeg vil gerne vide mere om min ordre.",
+  );
   assertEquals(parsed.parserStrategy, "outlook_ios_signature");
   assertMatch(parsed.quotedBodyText || "", /^Sendt fra Outlook til iOS/m);
 });
@@ -86,4 +89,23 @@ Deno.test("cuts Outlook iOS signature when blank lines separate signature and he
   assertEquals(parsed.cleanBodyText, "Nyeste besked");
   assertEquals(parsed.parserStrategy, "outlook_ios_signature");
   assertEquals(parsed.matchedBoundaryLine, "Sendt fra Outlook til iOS");
+});
+
+Deno.test("cuts a Danish Gmail weekday-and-date quoted reply marker", () => {
+  const parsed = parseEmailReplyBodies({
+    text: [
+      "Do you make deeper earcups because the ANC speaker touches my ear?",
+      "",
+      "tors 2 juli 2026 kl. 08:52 skrev AceZone Support (Support) <support@example.com>:",
+      "",
+      "Hi there,",
+      "The older return conversation must not become the latest request.",
+    ].join("\n"),
+  });
+
+  assertEquals(
+    parsed.cleanBodyText,
+    "Do you make deeper earcups because the ANC speaker touches my ear?",
+  );
+  assertEquals(parsed.parserStrategy, "on_wrote");
 });

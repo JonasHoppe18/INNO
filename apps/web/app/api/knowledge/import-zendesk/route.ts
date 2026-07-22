@@ -17,6 +17,7 @@ import {
   scrubResidualZendeskPii,
   zendeskCommentsToTurns,
 } from "@/lib/server/zendesk-import-helpers";
+import { assessHistoricalExampleQuality } from "../../../../../../supabase/functions/_shared/historical-example-quality.js";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -696,6 +697,19 @@ async function importTicketBatch(opts: {
     ) {
       skippedPreRedaction++;
       recordItem(ticketId, "skipped", "missing_versioned_comment_ids");
+      continue;
+    }
+
+    const exampleQuality = assessHistoricalExampleQuality({
+      agentReply: anchored.agentReply,
+    });
+    if (!exampleQuality.usable) {
+      skippedPreRedaction++;
+      recordItem(
+        ticketId,
+        "skipped",
+        `low_quality_agent_reply:${exampleQuality.reason}`,
+      );
       continue;
     }
 

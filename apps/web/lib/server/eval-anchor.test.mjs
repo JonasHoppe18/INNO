@@ -28,6 +28,8 @@ const NON_COMPARABLE = [
   // plain Danish shipment + gift-card refund confirmations
   "Hej,\n\nPakken er sendt.",
   "Hej,\n\nBeløbet er tilbageført til dit gavekort.",
+  "Hi again,\n\nI have now created a return label for you.",
+  "Hi again,\n\nI have now marked this ticket as a back order.",
 ];
 
 const ACTION_REQUIRED = [
@@ -35,6 +37,13 @@ const ACTION_REQUIRED = [
   "Hi again,\n\nCould you provide your SWIFT / IBAN so we can get a transfer going?",
   // pilot 297 — agent needs the identity block to create a shipment + invoice
   "Hi there,\n\nCould you please provide me with the following information:\nFull name\nFull address (postal code important)\nPhone\nEmail",
+];
+
+const LOW_QUALITY = [
+  "Thanks!",
+  "Hi there,\n\nThank you very much.\n\nKind regards,\n[Agent]",
+  "Hej,\n\nMange tak.\n\nMed venlig hilsen\nAceZone Support",
+  "Best regards,\nAceZone Support",
 ];
 
 const COMPARABLE = [
@@ -71,6 +80,14 @@ test("action_required: out-of-band info/credential requests", () => {
       "action_required",
       `expected action_required for: ${humanReply.slice(0, 50)}`,
     );
+  }
+});
+
+test("non_comparable_anchor: acknowledgements and signature-only replies", () => {
+  for (const humanReply of LOW_QUALITY) {
+    const { anchor_class, signals } = classifyAnchor({ humanReply });
+    assert.equal(anchor_class, "non_comparable_anchor", humanReply);
+    assert.ok(signals.some((signal) => signal.startsWith("low_quality:")));
   }
 });
 

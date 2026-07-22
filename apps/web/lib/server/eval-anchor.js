@@ -21,6 +21,8 @@
 // Conservative by design: only the strongest cues flag a case, so `comparable`
 // stays the default and a genuine CS reply is never silently dropped.
 
+import { assessHistoricalExampleQuality } from "../../../../supabase/functions/_shared/historical-example-quality.js";
+
 const COMPLETED_ACTION = [
   // A terse, declarative "all fixed" reply is an action confirmation, not a
   // reproducible support answer. Keep this deliberately sentence-scoped so
@@ -50,6 +52,10 @@ const COMPLETED_ACTION = [
   /\b(transfer (is )?(done|completed)|overførs(el|len)|overførsel (er )?gennemført|payment sent)\b/i,
   // order / invoice created
   /\b(created the order|oprettet ordren|invoice (is )?(created|attached|sent)|faktura (er )?(oprettet|sendt))\b/i,
+  // return-label / waitlist actions completed outside Sona
+  /\b(?:(?:i|we) have now|i(?:'|’)ve|we(?:'|’)ve|jeg|vi)\s+(?:nu\s+)?(?:created|made|lavet|oprettet)\s+(?:a|an|et|en)?\s*(?:return\s*|retur)?label\b/i,
+  /\b(?:marked|tagged|added)\s+(?:this|the|your)?\s*(?:ticket|order|request)\s+(?:as|to)\s+(?:a\s+)?(?:back\s*order|waitlist)\b/i,
+  /\bmarkeret\s+(?:denne|din|sagen|ordren|ticketen)?\s*(?:som\s+)?(?:back\s*order|venteliste)\b/i,
 ];
 
 const NEEDS_OUT_OF_BAND = [
@@ -85,6 +91,14 @@ export function classifyAnchor({ humanReply = "" } = {}) {
     if (re.test(h)) needs.push(`needs:${re.source.slice(0, 28)}`);
   }
   if (needs.length) return { anchor_class: "action_required", signals: needs };
+
+  const quality = assessHistoricalExampleQuality({ agentReply: h });
+  if (!quality.usable) {
+    return {
+      anchor_class: "non_comparable_anchor",
+      signals: [`low_quality:${quality.reason}`],
+    };
+  }
 
   return { anchor_class: "comparable", signals: [] };
 }

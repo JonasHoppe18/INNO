@@ -1,9 +1,40 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import {
   buildWriterConversationHistory,
+  latestCustomerTextWithSubjectFallback,
   parseQuotedEmailHistory,
   visibleEmailText,
 } from "./email-thread-normalizer.ts";
+
+Deno.test("image-only messages fall back to a substantive issue subject", () => {
+  assertEquals(
+    latestCustomerTextWithSubjectFallback(
+      { clean_body_text: "![](https://example.test/image.png)" },
+      "A-Spire Wireless dongle connects but has no sound",
+    ),
+    "A-Spire Wireless dongle connects but has no sound",
+  );
+});
+
+Deno.test("a newest acknowledgement is never overridden by a stale subject", () => {
+  assertEquals(
+    latestCustomerTextWithSubjectFallback(
+      { clean_body_text: "Thanks!" },
+      "Cancel order 1234",
+    ),
+    "Thanks!",
+  );
+});
+
+Deno.test("generic subjects are not treated as customer requests", () => {
+  assertEquals(
+    latestCustomerTextWithSubjectFallback(
+      { clean_body_text: "![](https://example.test/image.png)" },
+      "New customer message on 12 July 2026",
+    ),
+    "![](https://example.test/image.png)",
+  );
+});
 
 Deno.test("visible text keeps newest customer message separate from quoted history", () => {
   const raw = `The USPS tracking number is 9588871095290073926950
@@ -38,8 +69,23 @@ Britt.`,
   );
 });
 
+Deno.test("visible text trims Danish Gmail weekday reply history", () => {
+  assertEquals(
+    visibleEmailText({
+      clean_body_text: `Do you make deeper earcups?
+
+tors 2 juli 2026 kl. 08:52 skrev AceZone Support <support@example.com>:
+
+Older support reply`,
+      body_text: "",
+    }),
+    "Do you make deeper earcups?",
+  );
+});
+
 Deno.test("quoted support replies are represented as agent context", () => {
-  const quoted = `On Tue, Jun 9, 2026 at 11:15 PM Britt <britt@example.com> wrote:
+  const quoted =
+    `On Tue, Jun 9, 2026 at 11:15 PM Britt <britt@example.com> wrote:
 
 > I am still going to go through with the refund.
 >
@@ -60,7 +106,8 @@ Deno.test("writer history includes quoted support but does not duplicate quoted 
   const latest = {
     clean_body_text: "The USPS tracking number is 9588871095290073926950",
     body_text: "The USPS tracking number is 9588871095290073926950",
-    quoted_body_text: `On Tue, Jun 9, 2026 at 11:15 PM Britt <britt@example.com> wrote:
+    quoted_body_text:
+      `On Tue, Jun 9, 2026 at 11:15 PM Britt <britt@example.com> wrote:
 > I am still going to go through with the refund.
 >
 > On Tue, Jun 9, 2026 at 3:41 AM Example Support <support@example.com> wrote:
@@ -84,7 +131,9 @@ Deno.test("writer history includes quoted support but does not duplicate quoted 
   assertStringIncludes(history[1].text, "does not authorize refunds");
   assertStringIncludes(history[1].text, "Please send the return");
   assertEquals(
-    history.some((turn) => turn.text.includes("I am still going to go through")),
+    history.some((turn) =>
+      turn.text.includes("I am still going to go through")
+    ),
     false,
   );
 });

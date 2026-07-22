@@ -49,6 +49,8 @@ function normalizeJobItems(job: Record<string, unknown>) {
 }
 
 async function scoreEmail({
+  evalRunId,
+  sourceItemKey,
   shopId,
   runLabel,
   model,
@@ -57,6 +59,8 @@ async function scoreEmail({
   ticket,
   v2Options,
 }: {
+  evalRunId: string;
+  sourceItemKey: string;
   shopId: string;
   runLabel: string;
   model: string;
@@ -81,7 +85,9 @@ async function scoreEmail({
 
   const { error: insertError } = await supabase
     .from("eval_results")
-    .insert({
+    .upsert({
+      eval_run_id: evalRunId,
+      source_item_key: sourceItemKey,
       shop_id: shopId,
       thread_id: null,
       run_label: runLabel,
@@ -106,12 +112,17 @@ async function scoreEmail({
       missing_for_10: scores.missing_for_10,
       likely_root_cause: scores.likely_root_cause,
       reasoning: scores.reasoning,
+    }, {
+      onConflict: "eval_run_id,source_item_key",
+      ignoreDuplicates: true,
     });
 
   if (insertError) throw new Error(`eval_results insert failed: ${insertError.message}`);
 }
 
 async function scoreZendesk({
+  evalRunId,
+  sourceItemKey,
   shopId,
   runLabel,
   model,
@@ -120,6 +131,8 @@ async function scoreZendesk({
   ticket,
   v2Options,
 }: {
+  evalRunId: string;
+  sourceItemKey: string;
   shopId: string;
   runLabel: string;
   model: string;
@@ -165,7 +178,9 @@ async function scoreZendesk({
 
   const { error: insertError } = await supabase
     .from("eval_results")
-    .insert({
+    .upsert({
+      eval_run_id: evalRunId,
+      source_item_key: sourceItemKey,
       shop_id: shopId,
       thread_id: null,
       run_label: runLabel,
@@ -195,12 +210,17 @@ async function scoreZendesk({
       missing_for_10: scores.missing_for_10,
       likely_root_cause: scores.likely_root_cause,
       reasoning: scores.reasoning,
+    }, {
+      onConflict: "eval_run_id,source_item_key",
+      ignoreDuplicates: true,
     });
 
   if (insertError) throw new Error(`eval_results insert failed: ${insertError.message}`);
 }
 
 async function scoreThread({
+  evalRunId,
+  sourceItemKey,
   shopId,
   runLabel,
   model,
@@ -208,6 +228,8 @@ async function scoreThread({
   supabase,
   threadId,
 }: {
+  evalRunId: string;
+  sourceItemKey: string;
   shopId: string;
   runLabel: string;
   model: string;
@@ -251,7 +273,9 @@ async function scoreThread({
 
   const { error: insertError } = await supabase
     .from("eval_results")
-    .insert({
+    .upsert({
+      eval_run_id: evalRunId,
+      source_item_key: sourceItemKey,
       shop_id: shopId,
       thread_id: threadId,
       run_label: runLabel,
@@ -270,6 +294,9 @@ async function scoreThread({
       missing_for_10: scores.missing_for_10,
       likely_root_cause: scores.likely_root_cause,
       reasoning: scores.reasoning,
+    }, {
+      onConflict: "eval_run_id,source_item_key",
+      ignoreDuplicates: true,
     });
 
   if (insertError) throw new Error(`eval_results insert failed: ${insertError.message}`);
@@ -436,9 +463,13 @@ export async function POST(request: Request) {
   }
 
   const results = await Promise.allSettled(
-    slice.map((item) => {
+    slice.map((item, offset) => {
+      const evalRunId = String(job.id);
+      const sourceItemKey = `${mode}:${processedItems + offset}`;
       if (mode === "manual") {
         return scoreEmail({
+          evalRunId,
+          sourceItemKey,
           shopId,
           runLabel,
           model,
@@ -449,6 +480,8 @@ export async function POST(request: Request) {
         });
       } else if (mode === "zendesk") {
         return scoreZendesk({
+          evalRunId,
+          sourceItemKey,
           shopId,
           runLabel,
           model,
@@ -459,6 +492,8 @@ export async function POST(request: Request) {
         });
       } else if (mode === "threads") {
         return scoreThread({
+          evalRunId,
+          sourceItemKey,
           shopId,
           runLabel,
           model,

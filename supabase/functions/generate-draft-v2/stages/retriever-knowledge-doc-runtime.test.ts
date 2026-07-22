@@ -2,9 +2,136 @@ import { assertEquals } from "jsr:@std/assert@1";
 import {
   buildScoreBreakdown,
   evaluateRuntimeKnowledgeDocumentAccess,
+  extractMostRecentConversationProductTerms,
+  preferFocusedManualAnswer,
+  resolveRetrievalProductTerms,
+  resolveScoringProductTerms,
   type RetrievedChunk,
   type RuntimeKnowledgeDocumentDecision,
 } from "./retriever.ts";
+
+Deno.test("most recent product mention resolves a model omitted by the latest follow-up", () => {
+  assertEquals(
+    extractMostRecentConversationProductTerms([
+      { clean_body_text: "I used to have an A-Spire Wireless." },
+      { clean_body_text: "My new headset is an A-Blaze." },
+      { clean_body_text: "Do you make deeper earcups?" },
+    ], SHOP),
+    ["a-blaze"],
+  );
+});
+
+Deno.test("quoted helpdesk history can establish the product for a vague follow-up", () => {
+  assertEquals(
+    extractMostRecentConversationProductTerms([
+      {
+        clean_body_text: "The ANC speaker still touches my ear.",
+        quoted_body_text:
+          "Earlier customer message: My A-Blaze is uncomfortable.",
+      },
+    ], SHOP),
+    ["a-blaze"],
+  );
+});
+
+Deno.test("multiple products in the newest relevant turn remain ambiguous", () => {
+  assertEquals(
+    extractMostRecentConversationProductTerms([
+      { clean_body_text: "Do A-Blaze and A-Spire Wireless use the same pads?" },
+      { clean_body_text: "What about the fit?" },
+    ], SHOP),
+    ["a-spire wireless", "a-blaze"],
+  );
+});
+
+Deno.test("planner comparison terms cannot widen an established single-product request", () => {
+  assertEquals(
+    resolveScoringProductTerms({
+      resolvedProducts: ["a-blaze"],
+      queryText:
+        "Do you make deeper earcups for A-Blaze? A-Spire ANC ear pads compatibility",
+      shop: SHOP,
+    }),
+    ["a-blaze"],
+  );
+});
+
+Deno.test("a generic earcup follow-up keeps the specific headset established in the thread", () => {
+  assertEquals(
+    resolveRetrievalProductTerms({
+      customerMessage: "Do you make deeper earcups?",
+      knownProducts: ["A-Blaze"],
+      plannerQueries: ["A-Spire ear pad compatibility"],
+      shop: SHOP,
+    }),
+    ["a-blaze"],
+  );
+});
+
+Deno.test("an explicitly named different headset still overrides the established model", () => {
+  assertEquals(
+    resolveRetrievalProductTerms({
+      customerMessage: "Do you make deeper earcups for A-Rise?",
+      knownProducts: ["A-Blaze"],
+      shop: SHOP,
+    }),
+    ["a-rise"],
+  );
+});
+
+Deno.test("one exact manual Q&A wins over a broad selected document", () => {
+  const manual = chunk({
+    id: "manual-exact",
+    content: "Keep Windows Sound settings open while playing.",
+    source_label: "Push-to-talk briefly cuts game audio",
+    source_provider: "manual_text",
+    source_title: "Push-to-talk briefly cuts game audio",
+    usable_as: "procedure",
+    question:
+      "Why does push-to-talk briefly cut the game audio on my wireless headset?",
+  });
+  const broad = chunk({
+    id: "broad-document",
+    content: "General microphone troubleshooting.",
+    source_label: "Pulsating or distorted microphone",
+    source_provider: "knowledge_document",
+    usable_as: "policy",
+  });
+  assertEquals(
+    preferFocusedManualAnswer({
+      selected: [manual, broad],
+      customerMessage:
+        "The game audio cuts out briefly whenever I press push-to-talk.",
+    }).map((row) => row.id),
+    ["manual-exact"],
+  );
+});
+
+Deno.test("an unrelated manual Q&A does not suppress selected context", () => {
+  const manual = chunk({
+    id: "manual-unrelated",
+    content: "Pair the headset again.",
+    source_label: "Bluetooth pairing",
+    source_provider: "manual_text",
+    source_title: "Bluetooth pairing",
+    usable_as: "procedure",
+    question: "How do I pair a headset over Bluetooth?",
+  });
+  const exactDocument = chunk({
+    id: "exact-document",
+    content: "The deeper ear-pad fit is fixed.",
+    source_label: "Ear-pad fit",
+    source_provider: "knowledge_document",
+    usable_as: "policy",
+  });
+  assertEquals(
+    preferFocusedManualAnswer({
+      selected: [manual, exactDocument],
+      customerMessage: "Do you make deeper earcups?",
+    }).map((row) => row.id),
+    ["manual-unrelated", "exact-document"],
+  );
+});
 
 const SHOP = {
   product_overview: [
@@ -35,6 +162,7 @@ function decision(input: {
   environment?: string;
   metadata?: Record<string, unknown>;
   sub_queries?: string[];
+  knownProducts?: string[];
 }): RuntimeKnowledgeDocumentDecision {
   const runtimePlan = plan(input.intent ?? "complaint", input.resolution_stage);
   runtimePlan.sub_queries = input.sub_queries ?? [];
@@ -49,6 +177,7 @@ function decision(input: {
     },
     plan: runtimePlan,
     customerMessage: input.customerMessage,
+    knownProducts: input.knownProducts,
     shop: SHOP,
   });
 }
@@ -118,6 +247,41 @@ Deno.test("General Missing accessories section gets narrow replacement-policy bo
   assertEquals(boosted.general_policy_boost > 0, true);
   assertEquals(ordinary.general_policy_boost, 0);
   assertEquals(boosted.final_score > ordinary.final_score, true);
+});
+
+Deno.test("a single product resolved from thread-aware planner queries opens only that product document", () => {
+  const result = decision({
+    content:
+      "# A-Blaze — Product Support\n\n## Ear-pad fit\nNo deeper ear cups are available.",
+    category: "product_support",
+    customerMessage: "Do you make deeper earcups?",
+    sub_queries: ["A-Blaze deeper ear cups fit"],
+  });
+  assertEquals(result, { allowed: true, reason: "same_product_context" });
+
+  const wrongProduct = decision({
+    content:
+      "# A-Spire Wireless — Product Support\n\n## Ear-pad fit\nPairing steps.",
+    category: "product_support",
+    customerMessage: "Do you make deeper earcups?",
+    sub_queries: ["A-Blaze deeper ear cups fit"],
+  });
+  assertEquals(wrongProduct, {
+    allowed: false,
+    reason: "wrong_product_context",
+  });
+});
+
+Deno.test("a product established in case-state resolves a vague follow-up", () => {
+  const result = decision({
+    content:
+      "# A-Blaze — Product Support\n\n## Ear-pad fit\nNo deeper ear cups are available.",
+    category: "product_support",
+    customerMessage: "Do you make deeper earcups?",
+    knownProducts: ["A-Blaze"],
+    sub_queries: ["ear pad fit options"],
+  });
+  assertEquals(result, { allowed: true, reason: "same_product_context" });
 });
 
 Deno.test("General docs are not boosted for ordinary specs, stock, or compatibility", () => {
@@ -206,7 +370,7 @@ Deno.test("Factory reset survives runtime access without resolved product for ch
   });
 });
 
-Deno.test("Factory reset runtime access can use planner power reset intent", () => {
+Deno.test("Factory reset runtime access can use planner product context", () => {
   const result = decision({
     category: "product_support",
     content:
@@ -218,7 +382,7 @@ Deno.test("Factory reset runtime access can use planner power reset intent", () 
 
   assertEquals(result, {
     allowed: true,
-    reason: "cross_product_power_reset_context",
+    reason: "same_product_context",
   });
 });
 
@@ -785,7 +949,10 @@ Deno.test("Returns & Refunds policy receives narrow return/refund pre-pool boost
 
   assertEquals(returnsBreakdown.return_policy_boost > 0, true);
   assertEquals(returnsBreakdown.final_score > 0.7, true);
-  assertEquals(troubleshootingBreakdown.final_score > returnsBreakdown.final_score, true);
+  assertEquals(
+    troubleshootingBreakdown.final_score > returnsBreakdown.final_score,
+    true,
+  );
 });
 
 Deno.test("Warranty/proof-of-purchase policy receives narrow warranty pre-pool boost", () => {
@@ -804,7 +971,8 @@ Deno.test("Warranty/proof-of-purchase policy receives narrow warranty pre-pool b
     id: "doc-physical",
     content:
       "# A-Spire Wireless — Product Support\n\n## Physical damage or cracked plastic casing\nUse this guide for cracked headbands.",
-    source_label: "knowledge_document: Physical damage or cracked plastic casing",
+    source_label:
+      "knowledge_document: Physical damage or cracked plastic casing",
     source_provider: "knowledge_document",
     document_category: "product_support",
     knowledge_document_access_reason: "same_product_context",
@@ -832,7 +1000,10 @@ Deno.test("Warranty/proof-of-purchase policy receives narrow warranty pre-pool b
 
   assertEquals(warrantyBreakdown.return_policy_boost > 0, true);
   assertEquals(warrantyBreakdown.final_score > 0.7, true);
-  assertEquals(physicalBreakdown.final_score > warrantyBreakdown.final_score, true);
+  assertEquals(
+    physicalBreakdown.final_score > warrantyBreakdown.final_score,
+    true,
+  );
 });
 
 Deno.test("Unrelated troubleshooting does not boost Returns & Refunds policy", () => {

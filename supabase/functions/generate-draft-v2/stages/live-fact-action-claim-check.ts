@@ -29,7 +29,9 @@ export type LiveFactActionViolationType =
   | "action/not_executed_invoice"
   | "action/not_executed_cancel"
   | "action/not_executed_address"
-  | "action/not_executed_replacement";
+  | "action/not_executed_replacement"
+  | "action/not_executed_case_update"
+  | "action/not_executed_followup";
 
 export type LiveFactActionClaimCheckInput = {
   draft_text: string;
@@ -156,8 +158,7 @@ const FAMILIES: ClaimFamily[] = [
       // generic tracking-portal link without a number does not match.
       /\bhttps?:\/\/\S*(?:track|sporing|find-pakke|sendungsverfolgung|parcel)\S*\d{8,}/i,
     ],
-    isSupported: (ctx) =>
-      hasVerifiedTrackingFact(ctx.facts, ctx.trackingFacts),
+    isSupported: (ctx) => hasVerifiedTrackingFact(ctx.facts, ctx.trackingFacts),
   },
   // 1b. Delivered claims (stronger support requirement).
   {
@@ -169,8 +170,7 @@ const FAMILIES: ClaimFamily[] = [
       // DA
       /\b(?:din\s+ordre|pakken|din\s+pakke)\s+(?:er|blev)\s+(?:blevet\s+)?leveret\b/i,
     ],
-    isSupported: (ctx) =>
-      hasVerifiedDeliveryFact(ctx.facts, ctx.trackingFacts),
+    isSupported: (ctx) => hasVerifiedDeliveryFact(ctx.facts, ctx.trackingFacts),
   },
   // 2. Refund-issued claims.
   {
@@ -243,8 +243,37 @@ const FAMILIES: ClaimFamily[] = [
       /\bvi\s+har\s+(?:allerede\s+)?sendt\s+(?:dig\s+)?(?:en\s+)?erstatning\b/i,
       /\bvi\s+har\s+(?:allerede\s+)?oprettet\s+(?:en\s+)?(?:erstatningsordre|ny\s+ordre)\b/i,
     ],
+    isSupported: (ctx) => executedMatches(ctx.executed, /replac|exchange/i),
+  },
+  // 3e. Ticket/order marked as backorder/waitlist. These are merchant-specific
+  // case updates and must never be inferred from an old reply example.
+  {
+    violationType: "action/not_executed_case_update",
+    patterns: [
+      /\b(?:i|we)(?:'ve| have)\s+(?:now\s+|already\s+)?(?:marked|tagged|added)\s+(?:this|the|your)?\s*(?:ticket|order|request)\s+(?:as|to)\s+(?:a\s+)?(?:back\s*order|waitlist)\b/i,
+      /\b(?:this|the|your)\s+(?:ticket|order|request)\s+has\s+been\s+(?:marked|tagged|added)\s+(?:as|to)\s+(?:a\s+)?(?:back\s*order|waitlist)\b/i,
+      /\bwe(?:'ll| will)\s+keep\s+(?:this|the|your)\s+(?:ticket|order|request)\s+marked\s+(?:as\s+)?(?:a\s+)?(?:back\s*order|waitlist)\b/i,
+      /\b(?:jeg|vi)\s+har\s+(?:nu\s+|allerede\s+)?(?:markeret|tagget|tilføjet)\s+(?:denne|din|sagen|ordren|ticketen)?\s*(?:som|til|på)\s+(?:back\s*order|venteliste)\b/i,
+      /\b(?:sagen|ordren|ticketen)\s+er\s+(?:nu\s+)?(?:markeret|tagget|tilføjet)\s+(?:som|til|på)\s+(?:back\s*order|venteliste)\b/i,
+      /\bvi\s+holder\s+(?:din|denne)?\s*(?:sag|ordre|ticket)\s+(?:markeret\s+)?(?:som|på)\s+(?:back\s*order|venteliste)\b/i,
+    ],
     isSupported: (ctx) =>
-      executedMatches(ctx.executed, /replac|exchange/i),
+      executedMatches(ctx.executed, /tag|note|back.?order|waitlist/i),
+  },
+  // 3f. A proactive future notification is an operational commitment too. It
+  // needs an actual waitlist/subscription/notification action, not merely a
+  // historical example where an employee remembered to follow up manually.
+  {
+    violationType: "action/not_executed_followup",
+    patterns: [
+      /\bwe(?:'ll| will)\s+keep\s+you\s+(?:posted|updated)\b/i,
+      /\bwe(?:'ll| will)\s+(?:notify|message|email)\s+you\s+(?:when|once|as soon as)\b/i,
+      /\band\s+(?:we(?:'ll| will)\s+)?(?:notify|message|email)\s+you\s+(?:when|once|as soon as)\b/i,
+      /\bvi\s+holder\s+dig\s+opdateret\b/i,
+      /\bvi\s+(?:giver|sender)\s+dig\s+besked\s+(?:når|så snart)\b/i,
+    ],
+    isSupported: (ctx) =>
+      executedMatches(ctx.executed, /notify|subscription|subscribe|waitlist/i),
   },
 ];
 
@@ -270,6 +299,21 @@ function buildExcerpt(sentence: string): string {
   const MAX_LEN = 140;
   if (sentence.length <= MAX_LEN) return sentence;
   return `${sentence.slice(0, MAX_LEN).trim()}…`;
+}
+
+function hasUnsupportedFamilyClaim(
+  sentence: string,
+  family: ClaimFamily,
+  ctx: SupportContext,
+): boolean {
+  for (const re of family.patterns) {
+    const match = re.exec(sentence);
+    if (!match) continue;
+    const precedingText = sentence.slice(0, match.index);
+    if (HEDGE_RE.test(precedingText)) continue;
+    return !family.isSupported(ctx);
+  }
+  return false;
 }
 
 export function checkLiveFactAndActionClaims(
@@ -301,17 +345,7 @@ export function checkLiveFactAndActionClaims(
       // fabricated claim followed by an unrelated hedge about a different
       // sub-fact — the trailing hedge must not retroactively excuse the
       // earlier claim. Only text preceding the actual regex match is checked.
-      let violatingMatch: RegExpExecArray | null = null;
-      for (const re of family.patterns) {
-        const match = re.exec(sentence);
-        if (!match) continue;
-        const precedingText = sentence.slice(0, match.index);
-        if (HEDGE_RE.test(precedingText)) continue;
-        violatingMatch = match;
-        break;
-      }
-      if (!violatingMatch) continue;
-      if (family.isSupported(ctx)) continue;
+      if (!hasUnsupportedFamilyClaim(sentence, family, ctx)) continue;
       violations.push({
         type: family.violationType,
         excerpt: buildExcerpt(sentence),
@@ -324,4 +358,54 @@ export function checkLiveFactAndActionClaims(
     violations,
     requires_review: violations.length > 0,
   };
+}
+
+const REMOVABLE_OPERATIONAL_UPDATE_TYPES = new Set<
+  LiveFactActionViolationType
+>([
+  "action/not_executed_case_update",
+  "action/not_executed_followup",
+]);
+
+/** Remove only sentences that falsely claim an operational case update or a
+ * proactive notification. Other high-risk action claims remain review-only;
+ * deleting them could change the customer's requested outcome. */
+export function removeUnsupportedOperationalUpdateClaims(
+  input: LiveFactActionClaimCheckInput,
+): string {
+  const draft = String(input.draft_text || "").trim();
+  if (!draft) return draft;
+
+  const ctx: SupportContext = {
+    facts: Array.isArray(input.facts) ? input.facts : [],
+    trackingFacts: Array.isArray(input.tracking_facts)
+      ? input.tracking_facts
+      : [],
+    executed: Array.isArray(input.executed_action_types)
+      ? input.executed_action_types
+      : [],
+  };
+  const removableFamilies = FAMILIES.filter((family) =>
+    REMOVABLE_OPERATIONAL_UPDATE_TYPES.has(family.violationType)
+  );
+  const sentences = splitSentences(draft);
+  const kept = sentences.filter((sentence) =>
+    !removableFamilies.some((family) =>
+      hasUnsupportedFamilyClaim(sentence, family, ctx)
+    )
+  );
+  if (kept.length === sentences.length) return draft;
+  if (kept.length) return kept.join("\n\n").trim();
+
+  const language = String(input.language || "en").toLowerCase().slice(0, 2);
+  const fallback: Record<string, string> = {
+    da: "Tak for din forståelse.",
+    de: "Vielen Dank für Ihr Verständnis.",
+    fr: "Merci pour votre compréhension.",
+    nl: "Bedankt voor je begrip.",
+    sv: "Tack för din förståelse.",
+    no: "Takk for forståelsen.",
+    en: "Thank you for your understanding.",
+  };
+  return fallback[language] ?? fallback.en;
 }

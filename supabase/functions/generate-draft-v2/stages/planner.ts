@@ -96,6 +96,207 @@ const PLANNER_SCHEMA = {
   ],
 };
 
+const RECEIPT_OR_INVOICE_RE =
+  /\b(?:invoice|receipt|order\s+confirmation|faktura|kvittering|ordrebekr(?:æ|ae)ftelse)\b/iu;
+const PURE_ACKNOWLEDGEMENT_RE =
+  /^(?:many\s+thanks|thank\s+you|thanks|tak|mange\s+tak|perfekt|perfect|great|super|okay|ok|yes|ja)[.!\s🙂😊👍]*$/iu;
+
+/**
+ * Resolve only high-confidence, explicit customer asks. The model still owns
+ * ambiguous classification, but a stated outcome such as "I want a refund"
+ * must outrank the dissatisfaction that explains why. This is ecommerce-wide
+ * behavior and deliberately contains no merchant or product names.
+ */
+export function explicitIntentFromMessage(message: string): string | null {
+  const text = String(message ?? "").replace(/\s+/g, " ").trim();
+  if (!text || PURE_ACKNOWLEDGEMENT_RE.test(text)) return null;
+
+  // A shipment shown as delivered but missing is still a tracking case. The
+  // customer's frustration must not turn the operational question (where is
+  // the parcel?) into a generic complaint.
+  const deliveredButMissing =
+    /\b(?:package|parcel|shipment|order)\b.{0,80}\b(?:marked|shown?|says?|claimed)\b.{0,30}\bdelivered\b/iu
+        .test(text) &&
+      /\b(?:not\s+(?:here|received|arrived)|isn['’]?t\s+(?:here|there)|wrong\s+(?:place|location|address)|where\s+is\s+it)\b/iu
+        .test(text) ||
+    (
+      /\b(?:pakke|pakke\w*|forsendelse|ordre)\b.{0,80}\b(?:står|markeret|vist)\b.{0,20}\b(?:som\s+)?leveret\b/iu
+        .test(text) &&
+      /\b(?:ikke\s+(?:modtaget|ankommet|her)|forkert\s+(?:sted|adresse)|hvor\s+er\s+den)\b/iu
+        .test(text)
+    );
+  if (deliveredButMissing) return "tracking";
+
+  // Checkout availability is a shop/market configuration question, not a
+  // product question. "other" is the runtime taxonomy's generic commerce
+  // bucket until checkout has a dedicated intent.
+  if (
+    /\b(?:checkout|check\s*out|kassen)\b/iu.test(text) &&
+    /\b(?:country(?:\s*\/\s*region)?|region|delivery\s+country|shipping\s+country|land|leveringsland)\b/iu
+      .test(text) &&
+    /\b(?:not\s+(?:an\s+)?option|can(?:not|'t)\s+(?:select|choose)|unable\s+to\s+(?:select|choose)|missing|ikke\s+(?:en\s+)?mulighed|kan\s+ikke\s+(?:vælge|vaelge))\b/iu
+      .test(text)
+  ) return "other";
+
+  const strongRefundRequested =
+    /\b(?:refund|money\s+back|full\s+refund|partial\s+refund)\b/iu.test(text) ||
+    /\b(?:refusion|refundering|tilbagebetal[\p{L}]*|pengene\s+(?:tilbage|retur))\b/iu
+      .test(text);
+  const refundRequested = strongRefundRequested ||
+    /\b(?:reimburse(?:ment|d|able)?)\b/iu.test(text);
+  const returnRequested =
+    /\b(?:i\s+(?:want|need|would\s+like|plan)\s+to|can\s+i|could\s+i|may\s+i|how\s+(?:can|do)\s+i|if\s+i)\s+(?:return\b|send\s+(?:it|this|the\s+product)\s+back\b)/iu
+      .test(text) ||
+    /\b(?:jeg\s+(?:vil|ønsker|oensker)\s+gerne|kan\s+jeg|hvordan\s+kan\s+jeg|hvis\s+jeg)\b.{0,18}\b(?:returnere|sende\s+(?:den|varen)\s+retur)\b/iu
+      .test(text);
+  const returnNegated =
+    /\b(?:do\s+not|don['’]?t|dont|not)\s+(?:want|need|plan)\b.{0,18}\breturn\b/iu
+      .test(text);
+  if (RECEIPT_OR_INVOICE_RE.test(text) && !refundRequested) return null;
+
+  if (
+    !/\b(?:do\s+not|don['’]?t|dont|please\s+do\s+not)\b.{0,25}\b(?:change|update|correct|edit)\b/iu
+      .test(text) &&
+    (
+      /\b(?:change|update|correct|edit)\b.{0,45}\b(?:shipping|delivery)?\s*address\b/iu
+        .test(text) ||
+      /\b(?:ændr|aendr|ret|opdat)[\p{L}]*\b.{0,45}\b(?:leverings)?adresse\b/iu
+        .test(text)
+    )
+  ) return "address_change";
+
+  if (
+    (
+      /\b(?:please|can\s+you|could\s+you|would\s+you|i\s+(?:want|need|would\s+like)\s+to)\b.{0,45}\bcancel\b/iu
+        .test(text) ||
+      /\b(?:kan\s+(?:i|du)|jeg\s+(?:vil|ønsker|oensker)\s+gerne|venligst)\b.{0,45}\b(?:annull[ée]r|afbestil)[\p{L}]*\b/iu
+        .test(text) ||
+      /^(?:cancel|annull[ée]r|afbestil)[\p{L}]*\b/iu.test(text)
+    ) &&
+    !/\b(?:do\s+not|don['’]?t|dont|not\s+want\s+to|please\s+do\s+not)\b.{0,25}\bcancel\b/iu
+      .test(text) &&
+    !/\b(?:ikke)\b.{0,20}\b(?:annull[ée]r|afbestil)[\p{L}]*\b/iu.test(text)
+  ) {
+    return "cancel";
+  }
+
+  // "If I return it, will you reimburse me?" is a return-policy request. A
+  // direct refund/money-back ask still wins when both outcomes are present.
+  if (returnRequested && !returnNegated && !strongRefundRequested) {
+    return "return";
+  }
+
+  if (
+    refundRequested &&
+    !/\b(?:do\s+not|don['’]?t|dont|not)\s+(?:want|need|request|ask(?:ing)?\s+for)\b.{0,20}\b(?:refund|reimbursement|money\s+back)\b/iu
+      .test(text) &&
+    !/\b(?:ønsker|oensker|vil|skal)\s+ikke\b.{0,20}\b(?:refusion|refundering|pengene\s+tilbage)\b/iu
+      .test(text)
+  ) return "refund";
+
+  // Questions about buying, compatibility, specifications or firmware are
+  // informational product questions even when the accessory is described as
+  // a replacement. Do not turn those into an exchange workflow.
+  if (
+    /\b(?:can|could|may|where|how)\s+(?:i|we)\s+(?:buy|purchase|order)\b/iu
+      .test(text) ||
+    /\b(?:kan|hvor)\s+(?:jeg|vi)\s+(?:købe|koebe|bestille)\b/iu.test(text) ||
+    /\b(?:er\s+det\s+muligt|er\s+der\s+mulighed\s+for)(?:\s+for\s+\w+)?\s+at\s+(?:købe|koebe|bestille)\b/iu
+      .test(text) ||
+    /\b(?:is\s+it\s+possible|is\s+there\s+a\s+way)\s+to\s+(?:buy|purchase|order)\b/iu
+      .test(text) ||
+    /\b(?:compatible|compatibility|kompatibel|kompatibilitet|latest\s+(?:firmware|version)|newest\s+(?:firmware|version)|battery\s+life|dimensions|specifications?|what\s+options)\b/iu
+      .test(text)
+  ) return "product_question";
+
+  if (
+    /\b(?:i\s+(?:want|need|would\s+like)|can\s+i\s+get|could\s+you|please)\b.{0,55}\b(?:exchange|replacement|replace|swap|new\s+(?:unit|one|headset|product))\b/iu
+      .test(text) ||
+    /\b(?:jeg\s+(?:ønsker|oensker|vil\s+gerne)|kan\s+jeg\s+få|faa|venligst)\b.{0,55}\b(?:ombyt[\p{L}]*|erstat[\p{L}]*|nyt\s+(?:produkt|headset))\b/iu
+      .test(text) ||
+    /\b(?:request(?:ing)?|anmod[\p{L}]*)\b.{0,35}\b(?:exchange|replacement|ombyt[\p{L}]*)\b/iu
+      .test(text)
+  ) return "exchange";
+
+  if (
+    returnRequested &&
+    !returnNegated
+  ) return "return";
+
+  return null;
+}
+
+export function applyDeterministicIntentPrecedence(
+  plan: Plan,
+  message: string,
+): Plan {
+  const explicitIntent = explicitIntentFromMessage(message);
+  if (!explicitIntent || explicitIntent === plan.primary_intent) return plan;
+
+  const requiredFacts = [...plan.required_facts];
+  const needsOrder = [
+    "tracking",
+    "refund",
+    "return",
+    "exchange",
+    "cancel",
+    "address_change",
+  ].includes(explicitIntent);
+  if (needsOrder && !requiredFacts.includes("order_state")) {
+    requiredFacts.push("order_state");
+  }
+
+  if (explicitIntent === "product_question") {
+    const productFacts = requiredFacts.filter((fact) =>
+      !["order_state", "tracking", "return_eligibility"].includes(fact)
+    );
+    if (!productFacts.includes("product_specs")) {
+      productFacts.push("product_specs");
+    }
+    return {
+      ...plan,
+      primary_intent: explicitIntent,
+      resolution_stage: "info_only",
+      required_facts: productFacts,
+      skills_to_consider: [],
+      confidence: Math.max(plan.confidence, 0.9),
+    };
+  }
+
+  if (explicitIntent === "tracking") {
+    if (!requiredFacts.includes("tracking")) requiredFacts.push("tracking");
+    return {
+      ...plan,
+      primary_intent: explicitIntent,
+      resolution_stage: "info_only",
+      required_facts: requiredFacts,
+      confidence: Math.max(plan.confidence, 0.9),
+    };
+  }
+
+  if (explicitIntent === "other") {
+    return {
+      ...plan,
+      primary_intent: explicitIntent,
+      resolution_stage: "info_only",
+      skills_to_consider: [],
+      confidence: Math.max(plan.confidence, 0.9),
+    };
+  }
+
+  return {
+    ...plan,
+    primary_intent: explicitIntent,
+    resolution_stage: explicitIntent === "cancel"
+      ? "cancel_order"
+      : explicitIntent === "address_change"
+      ? "info_only"
+      : plan.resolution_stage,
+    required_facts: requiredFacts,
+    confidence: Math.max(plan.confidence, 0.9),
+  };
+}
+
 export async function runPlanner(
   { caseState, latestMessage, shop }: PlannerInput,
   deps: { callJson?: CallJson } = {},
@@ -224,7 +425,10 @@ IMPORTANT for sub_queries: If the current message is short or vague (e.g. "it st
       schema: PLANNER_SCHEMA,
       schemaName: "draft_v2_plan",
     });
-    return { ...parsed, language: deterministicLanguage || parsed.language };
+    return applyDeterministicIntentPrecedence(
+      { ...parsed, language: deterministicLanguage || parsed.language },
+      body,
+    );
   } catch (err) {
     console.error("[planner] Error:", err);
     return FALLBACK_PLAN(deterministicLanguage || caseState.language);
