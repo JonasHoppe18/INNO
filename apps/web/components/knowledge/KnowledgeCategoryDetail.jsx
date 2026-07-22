@@ -630,6 +630,10 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
   const isProductCategory = categorySlug === "product-questions";
   const hasPolicySection = categorySlug === "returns" || categorySlug === "shipping";
   const hasGeneralDocument = categorySlug === "general";
+  // Shipping's pinned Shopify-synced policy is the only knowledge source for
+  // now — the legacy snippet-list UI (Add snippet + Snippets panel) doesn't
+  // apply there, same as on the General document page.
+  const hideLegacySnippetsUi = hasGeneralDocument || categorySlug === "shipping";
 
   const [snippets, setSnippets] = useState([]);
   const [shopId, setShopId] = useState(null);
@@ -729,7 +733,7 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
             )}
           </div>
         </div>
-        {!isProductCategory && !hasGeneralDocument && (
+        {!isProductCategory && !hideLegacySnippetsUi && (
           <div className="ml-auto">
             <Button onClick={() => openEditor(null)}>
               <Plus className="h-4 w-4 mr-1.5" />
@@ -798,7 +802,7 @@ export function KnowledgeCategoryDetail({ categorySlug }) {
       )}
 
       {/* Snippets */}
-      {!isProductCategory && !hasGeneralDocument && (
+      {!isProductCategory && !hideLegacySnippetsUi && (
         <>
           <div className="flex items-start justify-between gap-3">
             <div>
