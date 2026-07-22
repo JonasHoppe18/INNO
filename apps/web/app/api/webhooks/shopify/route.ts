@@ -6,6 +6,9 @@
  *   - products/create   → indexes the one product's knowledge chunks + shop_products row
  *   - products/update   → same as products/create (re-index)
  *   - products/delete   → removes the product's agent_knowledge chunks + shop_products row
+ *   - orders/create     → stores an anonymous order fact for contact-rate analytics
+ *   - orders/updated    → refreshes totals/status without storing customer data
+ *   - refunds/create    → stores refund amount and product ids without free text
  *
  * Shopify sends:
  *   POST /api/webhooks/shopify
@@ -21,10 +24,12 @@ import { credsFromShopRow, runPolicySyncForCreds } from "@/lib/server/shopify-po
 import { upsertProductKnowledge, embedText } from "@/lib/server/commerce/sync-one-product";
 import { fetchPresentmentPrices, fetchShopCurrency } from "@/lib/server/commerce/shopify-presentment";
 import { mapShopifyProductToNormalizedProduct, toShopProductRow } from "@/lib/server/commerce/normalize-product";
+import { mapShopifyOrderFact, mapShopifyRefundFact } from "@/lib/server/commerce/shopify-analytics";
 
 const SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET || "";
 const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION || "2024-07";
 const PRODUCT_TOPICS = new Set(["products/create", "products/update", "products/delete"]);
+const ORDER_TOPICS = new Set(["orders/create", "orders/updated"]);
 const SUPABASE_URL = (
   process.env.NEXT_PUBLIC_SUPABASE_URL ||
   process.env.EXPO_PUBLIC_SUPABASE_URL ||
@@ -98,6 +103,63 @@ export async function POST(req: NextRequest) {
   if (!shopRow.access_token_encrypted) {
     console.warn(`[shopify-webhook] No access token for ${shopDomain}`);
     return NextResponse.json({ ok: true, note: "no token" });
+  }
+
+  if (ORDER_TOPICS.has(topic)) {
+    try {
+      const payload = JSON.parse(rawBody);
+      const orderFact = mapShopifyOrderFact(payload, {
+        workspaceId: shopRow.workspace_id,
+        shopId: shopRow.id,
+      });
+      if (!orderFact) return NextResponse.json({ ok: true, topic, note: "incomplete order fact" });
+
+      const { error } = await serviceClient
+        .from("commerce_orders")
+        .upsert(orderFact, { onConflict: "shop_id,external_order_id" });
+      if (error) throw error;
+      return NextResponse.json({ ok: true, topic, order_id: orderFact.external_order_id });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(JSON.stringify({ event: "shopify.webhook.order_fact_error", topic, shop_domain: shopDomain, error: message }));
+      return NextResponse.json({ ok: false, error: message });
+    }
+  }
+
+  if (topic === "refunds/create") {
+    try {
+      const payload = JSON.parse(rawBody);
+      const refundFact = mapShopifyRefundFact(payload, {
+        workspaceId: shopRow.workspace_id,
+        shopId: shopRow.id,
+      });
+      if (!refundFact) return NextResponse.json({ ok: true, topic, note: "incomplete refund fact" });
+
+      const { data: refundRow, error: refundError } = await serviceClient
+        .from("commerce_refunds")
+        .upsert(refundFact.refund, { onConflict: "shop_id,external_refund_id" })
+        .select("id")
+        .single();
+      if (refundError) throw refundError;
+
+      const { error: deleteItemsError } = await serviceClient
+        .from("commerce_refund_items")
+        .delete()
+        .eq("refund_id", refundRow.id);
+      if (deleteItemsError) throw deleteItemsError;
+
+      if (refundFact.items.length) {
+        const { error: itemError } = await serviceClient
+          .from("commerce_refund_items")
+          .insert(refundFact.items.map((item) => ({ ...item, refund_id: refundRow.id })));
+        if (itemError) throw itemError;
+      }
+      return NextResponse.json({ ok: true, topic, refund_id: refundFact.refund.external_refund_id });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(JSON.stringify({ event: "shopify.webhook.refund_fact_error", topic, shop_domain: shopDomain, error: message }));
+      return NextResponse.json({ ok: false, error: message });
+    }
   }
 
   if (PRODUCT_TOPICS.has(topic)) {
