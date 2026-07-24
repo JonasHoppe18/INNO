@@ -1,5 +1,8 @@
 import { assert, assertStringIncludes } from "jsr:@std/assert@1";
-import { buildStockAvailabilityDirective } from "./writer.ts";
+import {
+  buildStockAvailabilityDirective,
+  stripUnaskedRestockTiming,
+} from "./writer.ts";
 
 Deno.test("no live stock fact forbids availability claims from stale sources", () => {
   const block = buildStockAvailabilityDirective([]).toLowerCase();
@@ -61,4 +64,30 @@ Deno.test("no live stock fact warns about shopify_product catalog chunks", () =>
   assertStringIncludes(block, "shopify product catalog chunks");
   assertStringIncludes(block, "not proof");
   assertStringIncludes(block, "shopify_product_not_live");
+});
+
+Deno.test("simple stock question removes unasked restock timing", () => {
+  assert(
+    stripUnaskedRestockTiming(
+      "Hi there,\n\nThe A-Rise is out of stock. Unfortunately, there is no confirmed restock date at the moment.",
+      "Is the A-Rise in stock right now?",
+    ) === "Hi there,\n\nThe A-Rise is out of stock.",
+  );
+  assert(
+    stripUnaskedRestockTiming(
+      "Hej,\n\nA-Rise er udsolgt lige nu. Vi har desværre ikke en bekræftet dato for, hvornår den kommer på lager igen.",
+      "Har I A-Rise på lager?",
+    ) === "Hej,\n\nA-Rise er udsolgt lige nu.",
+  );
+});
+
+Deno.test("restock timing is kept when the customer asks when it returns", () => {
+  const draft =
+    "The A-Rise is out of stock. Unfortunately, there is no confirmed restock date yet.";
+  assert(
+    stripUnaskedRestockTiming(
+      draft,
+      "When will the A-Rise be back in stock?",
+    ) === draft,
+  );
 });

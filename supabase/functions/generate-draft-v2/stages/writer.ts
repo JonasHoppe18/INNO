@@ -1025,6 +1025,44 @@ export function buildStockAvailabilityDirective(facts: ResolvedFact[]): string {
   return lines.join("\n");
 }
 
+function isRestockTimingQuestion(
+  message: string | null | undefined,
+): boolean {
+  const text = String(message ?? "");
+  return /\b(?:when|what\s+date|how\s+soon)[^.?!\n]{0,80}\b(?:back\s+in\s+stock|restock|available\s+again)|\b(?:hvornår|hvilken\s+dato)[^.?!\n]{0,80}\b(?:på\s+lager\s+igen|tilgængelig\s+igen|genopfyld|kommer\s+igen)|\b(?:wann|welches\s+datum)[^.?!\n]{0,80}\b(?:wieder\s+(?:auf\s+lager|verfügbar)|nachschub)|\b(?:när|vilket\s+datum)[^.?!\n]{0,80}\b(?:i\s+lager\s+igen|tillgänglig\s+igen)\b/i
+    .test(text);
+}
+
+const UNASKED_RESTOCK_TIMING_SENTENCE_PATTERNS = [
+  /(?:Unfortunately,\s*)?(?:there\s+is|there's|we\s+have)\s+(?:currently\s+)?no\s+confirmed\s+(?:restock|return-to-stock)\s+date(?:\s+(?:at\s+the\s+moment|right\s+now|yet))?[.!]?/gi,
+  /We\s+(?:do\s+not|don't)\s+have\s+a\s+confirmed\s+(?:restock|return-to-stock)\s+date(?:\s+(?:at\s+the\s+moment|right\s+now|yet))?[.!]?/gi,
+  /(?:Vi\s+har|Der\s+er)\s+desværre\s+(?:ikke\s+en|ingen)\s+bekræftet\s+(?:lager)?dato(?:\s+for,?\s+hvornår\s+[^.!?\n]+)?[.!]?/gi,
+  /Leider\s+gibt\s+es\s+(?:derzeit\s+)?keinen\s+bestätigten\s+Termin(?:\s+für\s+[^.!?\n]+)?[.!]?/gi,
+  /Vi\s+har\s+tyvärr\s+inget\s+bekräftat\s+datum(?:\s+för\s+[^.!?\n]+)?[.!]?/gi,
+];
+
+export function stripUnaskedRestockTiming(
+  draft: string,
+  latestCustomerMessage: string | null | undefined,
+): string {
+  if (
+    !isStockAvailabilityQuestion(latestCustomerMessage) ||
+    isRestockTimingQuestion(latestCustomerMessage)
+  ) {
+    return String(draft ?? "").trim();
+  }
+  let out = String(draft ?? "");
+  for (const pattern of UNASKED_RESTOCK_TIMING_SENTENCE_PATTERNS) {
+    out = out.replace(pattern, "");
+  }
+  return out
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\s+([.!?,])/g, "$1")
+    .trim();
+}
+
 // Delivered + customer states not-received → deterministic safe workflow.
 // Carrier "delivered" ≠ personal receipt. Asks for address confirmation and
 // nearby-checks, offers a closer look — but promises NOTHING (no refund,
@@ -2764,10 +2802,14 @@ Returner JSON:
       ),
       { latestCustomerMessage, language: replyLanguage },
     );
+    const stockFocusedDraft = stripUnaskedRestockTiming(
+      cleanedDraft,
+      latestCustomerMessage,
+    );
     return {
       draft_text: applySendReadyStyleCleanup(
         normalizeOpeningGreeting(
-          cleanedDraft,
+          stockFocusedDraft,
           salutationName.name,
           replyLanguage,
           resolvedCustomerName?.first_name === null,
