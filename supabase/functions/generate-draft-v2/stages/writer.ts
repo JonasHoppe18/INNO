@@ -1063,6 +1063,33 @@ export function stripUnaskedRestockTiming(
     .trim();
 }
 
+const UNASKED_STOCK_SHOPPING_FILLER_PATTERNS = [
+  /Du\s+kan\s+finde\s+(?:det|den|produktet)\s+i\s+vores\s+(?:webshop|onlinebutik)[.!]?/gi,
+  /You\s+can\s+find\s+(?:it|the\s+product)\s+in\s+our\s+(?:webshop|online\s+store)[.!]?/gi,
+];
+
+export function stripUnaskedStockShoppingFiller(
+  draft: string,
+  latestCustomerMessage: string | null | undefined,
+): string {
+  if (
+    !isStockAvailabilityQuestion(latestCustomerMessage) ||
+    isPurchaseLinkRequest(latestCustomerMessage)
+  ) {
+    return String(draft ?? "").trim();
+  }
+  let out = String(draft ?? "");
+  for (const pattern of UNASKED_STOCK_SHOPPING_FILLER_PATTERNS) {
+    out = out.replace(pattern, "");
+  }
+  return out
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\s+([.!?,])/g, "$1")
+    .trim();
+}
+
 // Delivered + customer states not-received → deterministic safe workflow.
 // Carrier "delivered" ≠ personal receipt. Asks for address confirmation and
 // nearby-checks, offers a closer look — but promises NOTHING (no refund,
@@ -2802,8 +2829,11 @@ Returner JSON:
       ),
       { latestCustomerMessage, language: replyLanguage },
     );
-    const stockFocusedDraft = stripUnaskedRestockTiming(
-      cleanedDraft,
+    const stockFocusedDraft = stripUnaskedStockShoppingFiller(
+      stripUnaskedRestockTiming(
+        cleanedDraft,
+        latestCustomerMessage,
+      ),
       latestCustomerMessage,
     );
     return {

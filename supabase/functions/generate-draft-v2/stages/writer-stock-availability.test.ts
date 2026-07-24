@@ -1,6 +1,7 @@
 import { assert, assertStringIncludes } from "jsr:@std/assert@1";
 import {
   buildStockAvailabilityDirective,
+  stripUnaskedStockShoppingFiller,
   stripUnaskedRestockTiming,
 } from "./writer.ts";
 
@@ -88,6 +89,32 @@ Deno.test("restock timing is kept when the customer asks when it returns", () =>
     stripUnaskedRestockTiming(
       draft,
       "When will the A-Rise be back in stock?",
+    ) === draft,
+  );
+});
+
+Deno.test("simple stock question removes generic webshop shopping filler", () => {
+  assert(
+    stripUnaskedStockShoppingFiller(
+      "Hej,\n\nA-Spire er på lager lige nu. Du kan finde det i vores webshop.",
+      "Har I A-Spire på lager?",
+    ) === "Hej,\n\nA-Spire er på lager lige nu.",
+  );
+  assert(
+    stripUnaskedStockShoppingFiller(
+      "Hi,\n\nA-Spire is in stock. You can find it in our online store.",
+      "Is A-Spire in stock?",
+    ) === "Hi,\n\nA-Spire is in stock.",
+  );
+});
+
+Deno.test("purchase-link requests keep shopping guidance", () => {
+  const draft =
+    "A-Spire is in stock. You can find it in our online store.";
+  assert(
+    stripUnaskedStockShoppingFiller(
+      draft,
+      "Where can I buy A-Spire? Please send the product link.",
     ) === draft,
   );
 });
