@@ -1029,7 +1029,7 @@ function isRestockTimingQuestion(
 const UNASKED_RESTOCK_TIMING_SENTENCE_PATTERNS = [
   /(?:Unfortunately,\s*)?(?:there\s+is|there's|we\s+have)\s+(?:currently\s+)?no\s+confirmed\s+(?:restock|return-to-stock)\s+date(?:\s+(?:at\s+the\s+moment|right\s+now|yet))?[.!]?/gi,
   /We\s+(?:do\s+not|don't)\s+have\s+a\s+confirmed\s+(?:restock|return-to-stock)\s+date(?:\s+(?:at\s+the\s+moment|right\s+now|yet))?[.!]?/gi,
-  /(?:Vi\s+har|Der\s+er)\s+desværre\s+(?:ikke\s+en|ingen)\s+bekræftet\s+(?:lager)?dato(?:\s+for,?\s+hvornår\s+[^.!?\n]+)?[.!]?/gi,
+  /(?:Vi\s+har|Der\s+er)(?:\s+desværre)?\s+(?:ikke\s+en|ingen)\s+bekræftet\s+(?:lager)?dato(?:\s+for,?\s+hvornår\s+[^.!?\n]+)?[.!]?/gi,
   /Leider\s+gibt\s+es\s+(?:derzeit\s+)?keinen\s+bestätigten\s+Termin(?:\s+für\s+[^.!?\n]+)?[.!]?/gi,
   /Vi\s+har\s+tyvärr\s+inget\s+bekräftat\s+datum(?:\s+för\s+[^.!?\n]+)?[.!]?/gi,
   /Vi\s+kan\s+(?:gerne\s+)?notere\s+din\s+interesse\s+og\s+kontakte\s+dig,\s+når\s+[^.!?\n]+(?:tilgængelig(?:e)?|på\s+lager)\s+igen[.!]?/gi,

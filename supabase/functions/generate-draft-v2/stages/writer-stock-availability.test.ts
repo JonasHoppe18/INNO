@@ -83,6 +83,13 @@ Deno.test("simple stock question removes unasked restock timing", () => {
       "Har I A-Rise på lager?",
     ) === "Hej,\n\nA-Rise er udsolgt lige nu.",
   );
+  assert(
+    stripUnaskedRestockTiming(
+      "Hej,\n\nA-Rise stoførepuder er desværre ikke på lager lige nu. Der er ingen bekræftet dato for, hvornår de kommer tilbage på lager.",
+      "Har I A-Rise stoførepuder på lager?",
+    ) ===
+      "Hej,\n\nA-Rise stoførepuder er desværre ikke på lager lige nu.",
+  );
 });
 
 Deno.test("simple stock question removes unsupported interest and restock notification offers", () => {
