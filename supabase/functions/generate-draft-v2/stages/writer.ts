@@ -951,7 +951,7 @@ export function buildStockAvailabilityDirective(facts: ResolvedFact[]): string {
     return [
       "# Live stock availability guardrails",
       "- No live Shopify stock availability fact is present. Do NOT claim that a product or variant is in stock, out of stock, available for preorder, reserved, held, discontinued, or expected back on a date.",
-      '- If the customer asks about stock/availability and the exact product is already clear, use natural employee wording such as: "Jeg skal lige have lagerstatus på [produkt] bekræftet, før jeg kan give dig et sikkert svar." Do NOT mention live data, Shopify, systems, lookups, missing facts, or what you can/cannot see.',
+      '- If the customer asks about stock/availability and the exact product is already clear, take ownership in ONE short sentence: "Jeg undersøger lagerstatus på [produkt] og vender tilbage." / "I’ll check the stock status for [product] and get back to you." Do NOT preface this with "availability is unclear/unknown", explain that you need confirmation before answering, ask whether the customer wants you to check, or mention live data, Shopify, systems, lookups, missing facts, or what you can/cannot see.',
       '- If the product or variant is genuinely unclear, ask exactly one concrete question, e.g. "Hvilken model og farve drejer det sig om?" Do not ask for details already present in the conversation.',
       "- Do not use old knowledge-base chunks, product descriptions, or examples as live stock truth.",
       "- CRITICAL: Shopify product catalog chunks (source_label containing 'shopify_product') describe a product's features/specs but are NOT proof that the product is released, available, purchasable, or in stock. A product page may exist in Shopify for a product that is unreleased, on a waitlist, or hidden from the storefront. Never infer availability, release status, or purchasability from product descriptions alone.",
@@ -1010,16 +1010,9 @@ export function buildStockAvailabilityDirective(facts: ResolvedFact[]): string {
         `  Writer rule: Answer directly that ${product} is not currently available in the store. Do not mention Shopify/live data or hedge with "appears".`,
       );
     } else {
-      const reason = stockValueField(fact.value, "reason");
-      if (reason === "ambiguous_product") {
-        lines.push(
-          `  Writer rule: The product match is ambiguous. Ask one concrete question for the exact model or variant. Do not mention live data, Shopify, systems, lookups, or what you can/cannot see.`,
-        );
-      } else {
-        lines.push(
-          `  Writer rule: The exact product query is "${product}", but its stock status still needs checking. Use natural employee wording such as: "Jeg skal lige have lagerstatus på ${product} bekræftet, før jeg kan give dig et sikkert svar." Do not mention live data, Shopify, systems, lookups, missing facts, or what you can/cannot see. Do not ask for the product name again.`,
-        );
-      }
+      lines.push(
+        `  Writer rule: The customer already identified "${product}", but its stock status still needs an internal check. Take ownership in ONE short sentence: "Jeg undersøger lagerstatus på ${product} og vender tilbage." / "I’ll check the stock status for ${product} and get back to you." Do not preface this with "availability is unclear/unknown", explain that you need confirmation before answering, ask whether the customer wants you to check, or mention live data, Shopify, systems, lookups, missing facts, or what you can/cannot see. Do not ask for the product name again.`,
+      );
     }
   }
   return lines.join("\n");

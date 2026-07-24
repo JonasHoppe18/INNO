@@ -46,18 +46,21 @@ Deno.test("unknown stock fact uses employee wording instead of live-data wording
     label: "Live stock availability",
     value: "state=unknown; product_query=A-Rise; reason=not_found; source=shopify_live",
   }]).toLowerCase();
-  assertStringIncludes(block, "lagerstatus på a-rise bekræftet");
+  assertStringIncludes(block, "jeg undersøger lagerstatus på a-rise");
+  assertStringIncludes(block, "i’ll check the stock status for a-rise");
+  assertStringIncludes(block, "availability is unclear/unknown");
   assert(!block.includes("cannot confirm live availability"));
   assert(!block.includes("cannot see the stock status"));
 });
 
-Deno.test("ambiguous stock lookup asks one concrete product question", () => {
+Deno.test("ambiguous internal product match does not bounce the lookup back to the customer", () => {
   const block = buildStockAvailabilityDirective([{
     label: "Live stock availability",
     value: "state=unknown; product_query=A-Spire; reason=ambiguous_product; source=shopify_live",
   }]).toLowerCase();
-  assertStringIncludes(block, "ask one concrete question");
-  assertStringIncludes(block, "exact model");
+  assertStringIncludes(block, "customer already identified");
+  assertStringIncludes(block, "internal check");
+  assert(!block.includes("ask one concrete question"));
 });
 
 Deno.test("no live stock fact warns about shopify_product catalog chunks", () => {

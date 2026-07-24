@@ -728,7 +728,7 @@ export function buildStockUnknownLinkFallbackDirective(opts: {
   const lines = [
     "# Stock status unavailable — keep the answer honest and human",
     "- Do not expose the inventory lookup. Never say \"live availability\", \"cannot confirm live stock\", \"I cannot see the stock status\", \"jeg kan ikke se den aktuelle lagerstatus\", or mention Shopify/systems/data.",
-    "- If the exact product is already clear, use natural employee wording such as: \"Jeg skal lige have lagerstatus på [produkt] bekræftet, før jeg kan give dig et sikkert svar.\" (adapt to the reply language).",
+    "- If the exact product is already clear, take ownership in ONE short sentence: \"Jeg undersøger lagerstatus på [produkt] og vender tilbage.\" / \"I’ll check the stock status for [product] and get back to you.\" Do not preface it with \"availability is unclear/unknown\", explain that confirmation is needed before answering, or ask whether the customer wants you to check.",
     "- If the product or variant is genuinely ambiguous, ask exactly one concrete model/variant question. Do not ask for information already present in the conversation.",
     "- FORBIDDEN unless live stock state is actually out_of_stock: \"ikke på lager\", \"udsolgt\", \"out of stock\", \"sold out\".",
     "- FORBIDDEN in all unknown cases (these imply a restock you cannot promise): \"når det er tilgængeligt igen\", \"back in stock\", \"tilbage på lager\", \"kommer på lager igen\", \"restock\".",
